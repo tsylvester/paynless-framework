@@ -16,6 +16,12 @@ A robust authentication system built with React, Vite, TypeScript, and Supabase.
 │   │   │   ├── SignOut.tsx        # Sign out component
 │   │   │   ├── ResetPassword.tsx  # Reset password component
 │   │   │   └── UpdatePassword.tsx # Update password component
+│   │   ├── profile/
+│   │   │   ├── ProfileField.tsx          # Reusable profile field component
+│   │   │   ├── UserNameField.tsx         # Username field component
+│   │   │   ├── EmailField.tsx            # Email field component
+│   │   │   ├── PasswordChangeField.tsx   # Password change component
+│   │   │   └── EmailVerificationBanner.tsx # Email verification status banner
 │   │   └── layout/
 │   │       ├── Header.tsx         # Application header with navigation
 │   │       ├── Footer.tsx         # Application footer
@@ -25,7 +31,7 @@ A robust authentication system built with React, Vite, TypeScript, and Supabase.
 │   ├── pages/
 │   │   ├── Home.tsx               # Home page with auth status display
 │   │   ├── Landing.tsx            # Landing page
-│   │   ├── Profile.tsx            # User profile page
+│   │   ├── Profile.tsx            # User profile page with editing capabilities
 │   │   └── AuthCallbackPage.tsx   # Handle auth callbacks
 │   ├── services/
 │   │   └── supabase.ts            # Supabase client and methods
@@ -158,6 +164,58 @@ withRetry<T>(fn: () => Promise<T>, options?: Partial<RetryOptions>): Promise<T>
 isRetryableError(error: any): boolean
 ```
 
+## Profile Components and Functions
+
+### Profile Field Components
+
+* `ProfileField.tsx` - Reusable component for profile field display and editing
+  * Arguments: 
+    * `label` (string) - Field label
+    * `value` (string | null) - Current field value
+    * `isEditing` (boolean) - Edit mode state
+    * `isLoading` (boolean) - Loading state
+    * `error` (string | null) - Error message
+    * `onEdit` () => void - Edit button handler
+    * `onCancel` () => void - Cancel edit handler
+    * `onChange` (value: string) => void - Value change handler
+    * `onSave` () => Promise<void> - Save handler
+    * `inputType` (string) - Input element type (optional)
+    * `placeholder` (string) - Placeholder text (optional)
+    * `validation` (value: string) => string | null - Validation function (optional)
+    * `readOnly` (boolean) - If field is read-only (optional)
+  * Outputs: Display or editable field component
+
+* `UserNameField.tsx` - Username field component
+  * Arguments: 
+    * `userName` (string | null) - Current username
+    * `onUpdate` (newUsername: string) => void - Update callback
+  * Outputs: Username editing component using ProfileField
+
+* `EmailField.tsx` - Email field component
+  * Arguments: 
+    * `email` (string) - Current email
+    * `onUpdate` (newEmail: string) => void - Update callback
+  * Outputs: Email editing component using ProfileField
+
+* `PasswordChangeField.tsx` - Password change component
+  * Arguments: None
+  * Outputs: Password change form
+
+* `EmailVerificationBanner.tsx` - Email verification banner
+  * Arguments: 
+    * `email` (string) - User's email
+    * `isVerified` (boolean) - Verification status
+  * Outputs: Verification status display with resend option
+
+### Profile Page (`src/pages/Profile.tsx`)
+
+The Profile page provides functionality to:
+  - View and edit username
+  - View and change email address (with verification)
+  - Change password
+  - View account creation date
+  - Handle all profile loading, error, and empty states
+
 ## Component Props and Outputs
 
 ### Auth Components
@@ -208,7 +266,7 @@ isRetryableError(error: any): boolean
 
 * `Profile.tsx`
   * Arguments: None
-  * Outputs: User profile information (protected)
+  * Outputs: User profile information with editable fields
 
 * `AuthCallbackPage.tsx`
   * Arguments: None
@@ -224,11 +282,14 @@ This application is a Vite app using React with TypeScript. It features a comple
 - Password reset via email
 - Password change within the app
 - Email validation after email changes
+- User profile management (username, email, password)
 - Offline mode support with proper error handling
 - Network status monitoring
 - Retry mechanism for API calls
 
 The application uses Supabase's Row Level Security to ensure users can only access their own data. It follows best practices for separation of concerns, type safety, and comprehensive error handling.
+
+The profile system is built with a modular, reusable approach that makes it easy to extend with additional fields in the future. Components are designed to be composable and handle their own state, validation, and error management.
 
 ## Setup and Deployment
 
@@ -249,4 +310,35 @@ Or in watch mode:
 
 ```bash
 npm run test:watch
+```
+
+## Adding Additional Profile Fields
+
+To add a new profile field to the system:
+
+1. Add the column to the profiles table in Supabase
+2. Create a new field component based on the ProfileField pattern
+3. Add the new component to the Profile page
+
+Example:
+
+```typescript
+// Create a new component like src/components/profile/BioField.tsx
+import React, { useState } from 'react';
+import { supabase } from '../../services/supabase';
+import { useAuth } from '../../context/AuthContext';
+import { logger } from '../../utils/logger';
+import ProfileField from './ProfileField';
+
+interface BioFieldProps {
+  bio: string | null;
+  onUpdate: (newBio: string) => void;
+}
+
+const BioField: React.FC<BioFieldProps> = ({ bio, onUpdate }) => {
+  // Implement field-specific logic here
+};
+
+// Then add to the Profile page
+<BioField bio={profileData?.bio} onUpdate={handleBioUpdate} />
 ```
