@@ -1,0 +1,101 @@
+import React, { useState } from 'react';
+import { Link } from 'react-router-dom';
+import { useAuth } from '../../context/AuthContext';
+import { Shield, User, LogOut, ChevronDown } from 'lucide-react';
+
+const Header: React.FC = () => {
+  const { user, signOut } = useAuth();
+  const [dropdownOpen, setDropdownOpen] = useState(false);
+
+  const toggleDropdown = () => {
+    setDropdownOpen(!dropdownOpen);
+  };
+
+  const handleSignOut = async () => {
+    await signOut();
+    setDropdownOpen(false);
+  };
+
+  return (
+    <header className="bg-white shadow-sm">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div className="flex justify-between h-16">
+          {/* Logo and App Name */}
+          <div className="flex">
+            <Link to="/" className="flex-shrink-0 flex items-center">
+              <Shield className="h-8 w-8 text-blue-600" />
+              <span className="ml-2 text-xl font-bold text-gray-900">Auth Framework</span>
+            </Link>
+          </div>
+
+          {/* Auth Buttons */}
+          <div className="flex items-center">
+            {user ? (
+              <div className="relative ml-3">
+                <div>
+                  <button
+                    onClick={toggleDropdown}
+                    className="flex items-center text-sm font-medium text-gray-700 hover:text-gray-900 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 bg-gray-100 px-4 py-2 rounded-md"
+                    aria-expanded="false"
+                    aria-haspopup="true"
+                  >
+                    <span className="sr-only">Open user menu</span>
+                    <span className="mr-2">{user.email}</span>
+                    <ChevronDown className="h-4 w-4" />
+                  </button>
+                </div>
+
+                {/* Dropdown menu */}
+                {dropdownOpen && (
+                  <div 
+                    className="origin-top-right absolute right-0 mt-2 w-48 rounded-md shadow-lg bg-white ring-1 ring-black ring-opacity-5 focus:outline-none z-10"
+                    role="menu"
+                    aria-orientation="vertical"
+                    aria-labelledby="user-menu"
+                  >
+                    <div className="py-1" role="none">
+                      <Link 
+                        to="/profile" 
+                        className="flex items-center px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                        onClick={() => setDropdownOpen(false)}
+                        role="menuitem"
+                      >
+                        <User className="mr-2 h-4 w-4" />
+                        Profile
+                      </Link>
+                      <button
+                        onClick={handleSignOut}
+                        className="flex w-full items-center px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                        role="menuitem"
+                      >
+                        <LogOut className="mr-2 h-4 w-4" />
+                        Sign Out
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div className="flex space-x-4">
+                <Link
+                  to="/signin"
+                  className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-blue-600 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+                >
+                  Sign In
+                </Link>
+                <Link
+                  to="/signup"
+                  className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+                >
+                  Sign Up
+                </Link>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    </header>
+  );
+};
+
+export default Header;

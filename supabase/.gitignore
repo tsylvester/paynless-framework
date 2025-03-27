@@ -1,0 +1,4 @@
+# Logs
+.env
+functions_out
+migrations/**/*.hash
