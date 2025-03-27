@@ -1,6 +1,6 @@
-# Auth Framework
+# AI Chat Framework
 
-A robust authentication system built with React, Vite, TypeScript, and Supabase. This framework provides user authentication with sign-in, sign-up, and sign-out functionality, along with email validation and password reset capabilities.
+A robust authentication system with ChatGPT integration built with React, Vite, TypeScript, and Supabase. This framework provides user authentication with sign-in, sign-up, and sign-out functionality, along with email validation and password reset capabilities. It also features a complete ChatGPT integration with conversation history tracking.
 
 ## File Structure
 
@@ -16,6 +16,12 @@ A robust authentication system built with React, Vite, TypeScript, and Supabase.
 │   │   │   ├── SignOut.tsx        # Sign out component
 │   │   │   ├── ResetPassword.tsx  # Reset password component
 │   │   │   └── UpdatePassword.tsx # Update password component
+│   │   ├── chat/
+│   │   │   ├── ChatContainer.tsx   # Main chat container component
+│   │   │   ├── ChatHistory.tsx     # Chat message history component
+│   │   │   ├── ChatHistoryCard.tsx # Card for displaying chat history
+│   │   │   ├── ChatInput.tsx       # Input component for chat messages
+│   │   │   └── ChatMessage.tsx     # Individual message component
 │   │   ├── profile/
 │   │   │   ├── ProfileField.tsx          # Reusable profile field component
 │   │   │   ├── UserNameField.tsx         # Username field component
@@ -27,16 +33,21 @@ A robust authentication system built with React, Vite, TypeScript, and Supabase.
 │   │       ├── Footer.tsx         # Application footer
 │   │       └── Layout.tsx         # Main layout wrapper
 │   ├── context/
-│   │   └── AuthContext.tsx        # Authentication context provider
+│   │   ├── AuthContext.tsx        # Authentication context provider
+│   │   └── ChatContext.tsx        # Chat context provider for OpenAI integration
 │   ├── pages/
 │   │   ├── Home.tsx               # Home page with auth status display
-│   │   ├── Landing.tsx            # Landing page
+│   │   ├── Landing.tsx            # Landing page with chat functionality
 │   │   ├── Profile.tsx            # User profile page with editing capabilities
-│   │   └── AuthCallbackPage.tsx   # Handle auth callbacks
+│   │   ├── AuthCallbackPage.tsx   # Handle auth callbacks
+│   │   ├── ChatHistoryPage.tsx    # Page for viewing chat history
+│   │   └── ChatDetailsPage.tsx    # Page for viewing chat details
 │   ├── services/
-│   │   └── supabase.ts            # Supabase client and methods
+│   │   ├── supabase.ts            # Supabase client and methods
+│   │   └── chatService.ts         # Services for OpenAI integration
 │   ├── types/
-│   │   └── auth.types.ts          # Type definitions for auth components
+│   │   ├── auth.types.ts          # Type definitions for auth components
+│   │   └── chat.types.ts          # Type definitions for chat components
 │   ├── utils/
 │   │   ├── logger.ts              # Logging utility
 │   │   ├── network.ts             # Network status monitoring
@@ -45,7 +56,9 @@ A robust authentication system built with React, Vite, TypeScript, and Supabase.
 │   ├── index.css                  # Global styles
 │   └── main.tsx                   # Entry point
 ├── supabase/
-│   └── migrations/                # SQL migrations for database setup
+│   ├── migrations/                # SQL migrations for database setup
+│   └── functions/
+│       └── chat/                  # Supabase Edge Function for OpenAI integration
 ├── tests/
 │   ├── auth.test.tsx              # Tests for auth components
 │   └── setup.ts                   # Test environment setup
@@ -103,6 +116,24 @@ updatePassword(password: string): Promise<void>
 retryAuth(): Promise<void>
 ```
 
+### Chat Context (`src/context/ChatContext.tsx`)
+
+The `ChatProvider` component provides the chat context and the following functions:
+
+```typescript
+// Get the current chat state
+const { messages, isLoading, error, systemPrompts, selectedPrompt } = useChat();
+
+// Send a chat message
+sendMessage(message: string, systemPromptName?: string): Promise<void>
+
+// Clear the current chat
+clearChat(): void
+
+// Set the selected system prompt
+setSelectedPrompt(promptName: string): void
+```
+
 ### Supabase Service (`src/services/supabase.ts`)
 
 ```typescript
@@ -123,6 +154,26 @@ safeSignOut(): Promise<boolean>
 
 // Categorize authentication errors
 categorizeAuthError(error: any): AuthErrorType
+```
+
+### Chat Service (`src/services/chatService.ts`)
+
+```typescript
+// Send a chat message to OpenAI API
+sendChatMessage(
+  prompt: string, 
+  previousMessages?: ChatMessage[],
+  systemPromptName?: string
+): Promise<{ response: string; messages: ChatMessage[] }>
+
+// Get available system prompts
+getSystemPrompts(): Promise<SystemPrompt[]>
+
+// Get user's chat history
+getUserChatHistory(limit?: number): Promise<UserEvent[]>
+
+// Get a specific chat event by ID
+getChatEventById(eventId: string): Promise<UserEvent | null>
 ```
 
 ### Logger Service (`src/utils/logger.ts`)
@@ -164,139 +215,94 @@ withRetry<T>(fn: () => Promise<T>, options?: Partial<RetryOptions>): Promise<T>
 isRetryableError(error: any): boolean
 ```
 
-## Profile Components and Functions
+## Chat Components and Functions
 
-### Profile Field Components
+### Chat Components
 
-* `ProfileField.tsx` - Reusable component for profile field display and editing
+* `ChatContainer.tsx` - Main container for the chat interface
   * Arguments: 
-    * `label` (string) - Field label
-    * `value` (string | null) - Current field value
-    * `isEditing` (boolean) - Edit mode state
-    * `isLoading` (boolean) - Loading state
-    * `error` (string | null) - Error message
-    * `onEdit` () => void - Edit button handler
-    * `onCancel` () => void - Cancel edit handler
-    * `onChange` (value: string) => void - Value change handler
-    * `onSave` () => Promise<void> - Save handler
-    * `inputType` (string) - Input element type (optional)
-    * `placeholder` (string) - Placeholder text (optional)
-    * `validation` (value: string) => string | null - Validation function (optional)
-    * `readOnly` (boolean) - If field is read-only (optional)
-  * Outputs: Display or editable field component
+    * `onSubmitWithoutAuth` (function) - Optional callback for handling unauthenticated submissions
+  * Outputs: Complete chat interface with history and input
 
-* `UserNameField.tsx` - Username field component
+* `ChatInput.tsx` - Input component for sending messages
   * Arguments: 
-    * `userName` (string | null) - Current username
-    * `onUpdate` (newUsername: string) => void - Update callback
-  * Outputs: Username editing component using ProfileField
+    * `onSubmitWithoutAuth` (function) - Optional callback for handling unauthenticated submissions
+  * Outputs: Text input and send button with system prompt selector
 
-* `EmailField.tsx` - Email field component
+* `ChatHistory.tsx` - Displays chat message history
   * Arguments: 
-    * `email` (string) - Current email
-    * `onUpdate` (newEmail: string) => void - Update callback
-  * Outputs: Email editing component using ProfileField
+    * `messages` (ChatMessage[]) - Array of chat messages
+    * `isLoading` (boolean) - Optional loading state
+  * Outputs: Scrollable list of chat messages
 
-* `PasswordChangeField.tsx` - Password change component
-  * Arguments: None
-  * Outputs: Password change form
-
-* `EmailVerificationBanner.tsx` - Email verification banner
+* `ChatMessage.tsx` - Individual message component
   * Arguments: 
-    * `email` (string) - User's email
-    * `isVerified` (boolean) - Verification status
-  * Outputs: Verification status display with resend option
+    * `message` (ChatMessage) - Message object
+  * Outputs: Formatted message with user/assistant styling
 
-### Profile Page (`src/pages/Profile.tsx`)
+* `ChatHistoryCard.tsx` - Card for displaying chat history summary
+  * Arguments: 
+    * `event` (UserEvent) - Chat event object
+  * Outputs: Card with chat summary and link to details
 
-The Profile page provides functionality to:
-  - View and edit username
-  - View and change email address (with verification)
-  - Change password
-  - View account creation date
-  - Handle all profile loading, error, and empty states
+## Database Tables
 
-## Component Props and Outputs
+### `profiles` Table
+  - `id` (uuid, primary key)
+  - `created_at` (timestamptz)
+  - `updated_at` (timestamptz)
+  - `user_name` (text)
 
-### Auth Components
+### `user_events` Table
+  - `event_id` (uuid, primary key)
+  - `user_id` (uuid, references auth.users)
+  - `event_type` (text)
+  - `created_at` (timestamptz)
+  - `event_description` (text)
+  - `event_details` (jsonb)
 
-* `SignIn.tsx`
-  * Arguments: None
-  * Outputs: Sign-in form component
-
-* `SignUp.tsx`
-  * Arguments: None
-  * Outputs: Sign-up form component, success confirmation
-
-* `SignOut.tsx`
-  * Arguments: None
-  * Outputs: Sign-out button (null if no user)
-
-* `ResetPassword.tsx`
-  * Arguments: None
-  * Outputs: Password reset form, success confirmation
-
-* `UpdatePassword.tsx`
-  * Arguments: None
-  * Outputs: Password update form, success confirmation
-
-### Layout Components
-
-* `Layout.tsx`
-  * Arguments: `children` (ReactNode)
-  * Outputs: Layout wrapper with header and footer
-
-* `Header.tsx`
-  * Arguments: None
-  * Outputs: Application header with navigation and auth buttons
-
-* `Footer.tsx`
-  * Arguments: None
-  * Outputs: Empty footer component
-
-### Page Components
-
-* `Home.tsx`
-  * Arguments: None
-  * Outputs: Home page with auth status and actions
-
-* `Landing.tsx`
-  * Arguments: None
-  * Outputs: Landing page with app introduction
-
-* `Profile.tsx`
-  * Arguments: None
-  * Outputs: User profile information with editable fields
-
-* `AuthCallbackPage.tsx`
-  * Arguments: None
-  * Outputs: Handles auth callback from email links
+### `system_prompts` Table
+  - `prompt_id` (uuid, primary key)
+  - `name` (text, unique)
+  - `description` (text)
+  - `content` (text)
+  - `created_at` (timestamptz)
+  - `updated_at` (timestamptz)
+  - `is_active` (boolean)
+  - `tag` (text)
 
 ## Development Context
 
-This application is a Vite app using React with TypeScript. It features a complete user authentication system using Supabase for authentication and database storage. The authentication system includes:
-
-- Sign In functionality
-- Sign Up with email verification
-- Sign Out
-- Password reset via email
-- Password change within the app
-- Email validation after email changes
-- User profile management (username, email, password)
-- Offline mode support with proper error handling
-- Network status monitoring
-- Retry mechanism for API calls
+This application is a Vite app using React with TypeScript. It features a complete user authentication system using Supabase for authentication and database storage, along with ChatGPT integration for AI-powered conversations.
 
 The application uses Supabase's Row Level Security to ensure users can only access their own data. It follows best practices for separation of concerns, type safety, and comprehensive error handling.
 
-The profile system is built with a modular, reusable approach that makes it easy to extend with additional fields in the future. Components are designed to be composable and handle their own state, validation, and error management.
+The chat system is built with:
+- OpenAI API integration via Supabase Edge Functions
+- System prompt management for contextualizing conversations
+- Chat history tracking and retrieval
+- Responsive UI with markdown support for rich responses
+
+## Environment Requirements
+
+The following environment variables are required:
+
+```
+VITE_SUPABASE_URL=your-supabase-url
+VITE_SUPABASE_ANON_KEY=your-supabase-anon-key
+OPENAI_API_KEY=your-openai-api-key
+```
+
+The OpenAI API key is used by the Supabase Edge Function and must be set in your Supabase project settings.
 
 ## Setup and Deployment
 
 1. Set up Supabase project and configure authentication settings
 2. Update `.env` file with Supabase URL and anon key
-3. Run Supabase migrations to create required tables and policies
-4. Deploy to Netlify for hosting
+3. Add your OpenAI API key to Supabase environment variables
+4. Run Supabase migrations to create required tables and policies
+5. Deploy Supabase Edge Functions for ChatGPT integration
+6. Deploy to Netlify for hosting
 
 ## Testing
 
@@ -312,33 +318,46 @@ Or in watch mode:
 npm run test:watch
 ```
 
-## Adding Additional Profile Fields
+## AI Integration Guidelines
 
-To add a new profile field to the system:
+For developers working with the ChatGPT integration:
 
-1. Add the column to the profiles table in Supabase
-2. Create a new field component based on the ProfileField pattern
-3. Add the new component to the Profile page
+1. **System Prompts**: To create a new system prompt, add it to the `system_prompts` table with a unique name and set `is_active` to true.
 
-Example:
+2. **Edge Function**: The chat edge function handles:
+   - User authentication
+   - System prompt selection
+   - OpenAI API integration
+   - Chat history storage
 
-```typescript
-// Create a new component like src/components/profile/BioField.tsx
-import React, { useState } from 'react';
-import { supabase } from '../../services/supabase';
-import { useAuth } from '../../context/AuthContext';
-import { logger } from '../../utils/logger';
-import ProfileField from './ProfileField';
+3. **Chat History**: User interactions are automatically stored in the `user_events` table with:
+   - The initial prompt
+   - System prompt used
+   - AI response
+   - Timestamp information
 
-interface BioFieldProps {
-  bio: string | null;
-  onUpdate: (newBio: string) => void;
-}
+4. **Chat Context**: The `ChatContext` component manages conversation state and integrates with the authentication system to ensure users are properly authenticated before sending messages.
 
-const BioField: React.FC<BioFieldProps> = ({ bio, onUpdate }) => {
-  // Implement field-specific logic here
-};
+5. **Extending the Chat System**:
+   - To add features, extend the `ChatContext` or relevant services
+   - For new UI components, follow the existing pattern of separation of concerns
+   - Always maintain proper typing with the interfaces in `chat.types.ts`
 
-// Then add to the Profile page
-<BioField bio={profileData?.bio} onUpdate={handleBioUpdate} />
-```
+## Development Strategy 
+
+This application follows these development principles:
+
+1. **Full separation of concerns**: Each file has a specific purpose and responsibility
+2. **Minimal file sizes**: Components are broken into functional pieces
+3. **API integration**: External services are properly integrated with error handling
+4. **Security**: Authentication and data protection at all levels
+5. **Reliability**: Comprehensive error handling and retry mechanisms
+6. **Well-structured code**: Consistent patterns and organization
+7. **Complete documentation**: All components and functions are documented
+
+When extending this codebase, maintain these principles by:
+- Scanning the entire codebase before adding new functionality
+- Using event notifications instead of delays
+- Properly typing all components and functions
+- Following established patterns for consistency
+- Using the logger service for comprehensive error tracking

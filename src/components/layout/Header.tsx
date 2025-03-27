@@ -1,11 +1,12 @@
 import React, { useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
-import { Shield, User, LogOut, ChevronDown } from 'lucide-react';
+import { Shield, User, LogOut, ChevronDown, History, MessageSquare } from 'lucide-react';
 
 const Header: React.FC = () => {
   const { user, signOut } = useAuth();
   const [dropdownOpen, setDropdownOpen] = useState(false);
+  const location = useLocation();
 
   const toggleDropdown = () => {
     setDropdownOpen(!dropdownOpen);
@@ -16,6 +17,10 @@ const Header: React.FC = () => {
     setDropdownOpen(false);
   };
 
+  const isActive = (path: string) => {
+    return location.pathname === path;
+  };
+
   return (
     <header className="bg-white shadow-sm">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -24,9 +29,42 @@ const Header: React.FC = () => {
           <div className="flex">
             <Link to="/" className="flex-shrink-0 flex items-center">
               <Shield className="h-8 w-8 text-blue-600" />
-              <span className="ml-2 text-xl font-bold text-gray-900">Auth Framework</span>
+              <span className="ml-2 text-xl font-bold text-gray-900">AI Chat Framework</span>
             </Link>
           </div>
+
+          {/* Nav Links */}
+          {user && (
+            <div className="hidden sm:flex sm:items-center space-x-4">
+              <Link 
+                to="/" 
+                className={`px-3 py-2 text-sm font-medium rounded-md ${
+                  isActive('/') 
+                    ? 'bg-blue-50 text-blue-700' 
+                    : 'text-gray-700 hover:text-gray-900 hover:bg-gray-50'
+                }`}
+              >
+                <div className="flex items-center">
+                  <MessageSquare className="h-4 w-4 mr-1" />
+                  Chat
+                </div>
+              </Link>
+              
+              <Link 
+                to="/history" 
+                className={`px-3 py-2 text-sm font-medium rounded-md ${
+                  isActive('/history') 
+                    ? 'bg-blue-50 text-blue-700' 
+                    : 'text-gray-700 hover:text-gray-900 hover:bg-gray-50'
+                }`}
+              >
+                <div className="flex items-center">
+                  <History className="h-4 w-4 mr-1" />
+                  History
+                </div>
+              </Link>
+            </div>
+          )}
 
           {/* Auth Buttons */}
           <div className="flex items-center">
@@ -62,6 +100,15 @@ const Header: React.FC = () => {
                       >
                         <User className="mr-2 h-4 w-4" />
                         Profile
+                      </Link>
+                      <Link 
+                        to="/history" 
+                        className="flex items-center px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 sm:hidden"
+                        onClick={() => setDropdownOpen(false)}
+                        role="menuitem"
+                      >
+                        <History className="mr-2 h-4 w-4" />
+                        Chat History
                       </Link>
                       <button
                         onClick={handleSignOut}

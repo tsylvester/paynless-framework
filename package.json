@@ -14,8 +14,10 @@
   "dependencies": {
     "@supabase/supabase-js": "^2.38.4",
     "lucide-react": "^0.344.0",
+    "openai": "^4.28.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
+    "react-markdown": "^9.0.1",
     "react-router-dom": "^6.21.1"
   },
   "devDependencies": {
