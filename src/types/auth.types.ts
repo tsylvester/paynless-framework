@@ -1,9 +1,10 @@
-export interface User {
-  id: string;
-  email: string;
-  created_at: string;
-  updated_at: string;
-}
+/**
+ * Authentication types for the application
+ * Original code - not derived from external sources
+ */
+import { Session as SupabaseSession, User as SupabaseUser } from '@supabase/supabase-js';
+
+export type User = SupabaseUser
 
 export type NetworkStatus = 'online' | 'offline' | 'unknown';
 export type AuthStatus = 'loading' | 'authenticated' | 'unauthenticated';
@@ -17,10 +18,10 @@ export interface AuthState {
   networkStatus: NetworkStatus;
 }
 
-export interface Session {
+export interface Session extends Omit<SupabaseSession, 'expires_at'> {
   access_token: string;
   refresh_token: string;
-  expires_at: number;
+  expires_at?: number;
   user: User;
 }
 
