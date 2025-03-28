@@ -35,7 +35,7 @@ export interface SubscriptionPlan {
   subscription_limits: {
     messages_per_day: number | null;
     history_days: number | null;
-    [key: string]: any;
+    [key: string]: number | null;
   };
   stripe_price_id: string | null;
 }
@@ -52,7 +52,7 @@ export interface Subscription {
   current_period_end: string | null;
   canceled_at: string | null;
   ended_at: string | null;
-  metadata: Record<string, any> | null;
+  metadata: Record<string, string | number | boolean | null> | null;
   created_at: string;
   updated_at: string;
 }
@@ -69,7 +69,7 @@ export interface SubscriptionEvent {
   subscription_event_type: SubscriptionEventType | string;
   subscription_previous_state: string | null;
   subscription_status: string | null;
-  event_data: Record<string, any> | null;
+  event_data: Record<string, string | number | boolean | null> | null;
   created_at: string;
 }
 
@@ -93,7 +93,7 @@ export interface SubscriptionContextType {
   resumeSubscription: () => Promise<boolean>;
   changePlan: (planId: string) => Promise<boolean>;
   isSubscriptionFeatureEnabled: (featureName: string) => boolean;
-  getRemainingUsage: (usageType: string) => number | null;
+  getRemainingUsage: (usageType: string) => Promise<number | null>;
 }
 
 export interface CheckoutSessionResponse {

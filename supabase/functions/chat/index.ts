@@ -309,7 +309,7 @@ serve(async (req: Request) => {
         },
       };
       
-      const { data: insertData2, error: insertError } = await supabase
+      const { error: insertError } = await supabase
         .from("user_events")
         .insert(insertData)
         .select();

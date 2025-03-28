@@ -1,3 +1,4 @@
+// Path: src/context/SubscriptionContext.tsx
 import React, { createContext, useState, useEffect, useCallback, ReactNode } from 'react';
 import { useAuth } from '../hooks/useAuth';
 import { logger } from '../utils/logger';
@@ -16,6 +17,7 @@ import {
   SubscriptionWithPlan,
   SubscriptionContextType
 } from '../types/subscription.types';
+import { eventEmitter } from '../utils/eventEmitter';
 
 export const SubscriptionContext = createContext<SubscriptionContextType | undefined>(undefined);
 
@@ -217,6 +219,17 @@ export const SubscriptionProvider: React.FC<{ children: ReactNode }> = ({ childr
       // Clear subscription data if user is logged out
       setSubscription(null);
       setSubscriptionEvents([]);
+    }
+    const subscriptionLoadListener = ({ subscription }: { subscription: boolean }) => {
+        if (subscription) {
+            loadSubscription();
+            loadSubscriptionEvents();
+            loadPlans();
+        }
+    }
+    eventEmitter.on('subscription-loaded', subscriptionLoadListener);
+    return () => {
+      eventEmitter.off('subscription-loaded', subscriptionLoadListener);
     }
   }, [authStatus, user, loadSubscription, loadSubscriptionEvents, loadPlans]);
 

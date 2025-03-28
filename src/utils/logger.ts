@@ -1,3 +1,7 @@
+/**
+ * Custom logger implementation for the application
+ * Original code - not derived from external sources
+ */
 type LogLevel = 'info' | 'warn' | 'error' | 'debug';
 
 class Logger {
@@ -5,7 +9,9 @@ class Logger {
 
   private formatMessage(level: LogLevel, message: string, ...args: unknown[]): string {
     const timestamp = new Date().toISOString();
-    return `[${timestamp}] [${level.toUpperCase()}] ${message}`;
+    return `[${timestamp}] [${level.toUpperCase()}] ${message} ${args.map(arg => 
+      typeof arg === 'object' ? JSON.stringify(arg) : arg
+    ).join(' ')}`;
   }
 
   info(message: string, ...args: unknown[]): void {

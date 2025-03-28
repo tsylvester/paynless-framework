@@ -1,6 +1,55 @@
-# AI Chat Framework
+# Paynless App Framework
 
-A robust authentication system with ChatGPT integration built with React, Vite, TypeScript, and Supabase. This framework provides user authentication with sign-in, sign-up, and sign-out functionality, along with email validation and password reset capabilities. It also features a complete ChatGPT integration with conversation history tracking, and a subscription management system with Stripe integration.
+A robust user environment with AI integration built with React, Vite, and TypeScript. The Paynless framework provides Supabase user auth, Supabase database integration, user history, Stripe subscription management, and ChatGPT integration. The framework is intended to get new apps up and running in minutes. Whether vibe coding or traditional coding, with Paynless, you don't have to worry about setting up your environment and can immediately start delivering function. 
+
+## Bug to be fixed: 
+- Chat history currently saved per exchange instead of continuously
+- Chat date overlaps delete button
+- Page reload forgets user session
+
+## In testing: 
+- Subscription elements
+
+## Coming features: 
+- Color theme abstraction for reskinning
+- Recast app as API routes
+- Dark / light mode
+- Support for Claude, Perplexity, Gemini
+- Personal bios
+- Notifications
+- Profile links
+- User privacy levels
+- Location awareness
+- Media creation function
+- Feed function
+- Follow function
+- User chats / DMs
+- Dating / introduction / user discovery function
+- Calendars & events 
+- User groups & lists 
+- Organizations 
+
+## How to Use Paynless App
+
+- Branch from Github to your own repo
+- Clone repo in your dev environment
+- Connect Netlify to your Github repo
+- Connect Supabase to your Netlify account
+
+# How to use in Bolt.new
+- Authorize Bolt.new for your Github account
+- Load this route in Bolt.new while logged in: https://bolt.new/~/github.com/[YOUR PROJECT ROUTE]
+- "Download" the project from Bolt.new
+- Unzip to your local project directory
+- Check it in your dev environment
+- Push the updated copy to Github
+- Reload the Github route in Bolt.new to continue
+
+## How to use in Claude.ai
+- Choose "+"
+- Choose "Add from Github"
+- Select your project
+- Unselect package-lock.json
 
 ## File Structure
 
