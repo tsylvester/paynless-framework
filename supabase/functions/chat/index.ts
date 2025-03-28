@@ -9,10 +9,20 @@ const corsHeaders = {
 };
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") || "";
-const SUPABASE_ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY") || "";
+const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
 const OPENAI_API_KEY = Deno.env.get("OPENAI_API_KEY") || "";
 
-const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+// In your Edge Function
+const supabase = createClient(
+  SUPABASE_URL,
+  SUPABASE_SERVICE_ROLE_KEY, // Use service role instead of anon key
+  {
+    auth: {
+      persistSession: false,
+    }
+  }
+);
+
 const openai = new OpenAI({
   apiKey: OPENAI_API_KEY,
 });
@@ -29,9 +39,37 @@ interface Message {
   content: string;
 }
 
+// Check available models and select the best one
+async function getBestAvailableModel(openai) {
+  try {
+    const { data } = await openai.models.list();
+    
+    // Define model preference order
+    const preferredModels = [
+      "gpt-4-turbo",
+      "gpt-4-1106-preview",
+      "gpt-4",
+      "gpt-3.5-turbo-1106",
+      "gpt-3.5-turbo"
+    ];
+    
+    // Find the best available model from our preference list
+    const availableModels = data.map(model => model.id);
+    const bestModel = preferredModels.find(model => availableModels.includes(model));
+    
+    return bestModel || "gpt-3.5-turbo"; // Default fallback
+  } catch (error) {
+    console.error("Error fetching models:", error);
+    return "gpt-3.5-turbo"; // Default fallback if API call fails
+  }
+}
+
 serve(async (req: Request) => {
+  console.log("Request received");
+  
   // Handle CORS preflight request
   if (req.method === "OPTIONS") {
+    console.log("Handling OPTIONS request");
     return new Response(null, {
       status: 204,
       headers: corsHeaders,
@@ -41,6 +79,8 @@ serve(async (req: Request) => {
   try {
     // Get the authorization header
     const authHeader = req.headers.get("Authorization");
+    console.log("Auth header present:", !!authHeader);
+    
     if (!authHeader) {
       return new Response(
         JSON.stringify({ error: "Missing authorization header" }),
@@ -53,10 +93,16 @@ serve(async (req: Request) => {
 
     // Verify the user is authenticated
     const token = authHeader.replace("Bearer ", "");
-    const {
-      data: { user },
-      error: authError,
-    } = await supabase.auth.getUser(token);
+    console.log("Attempting to authenticate user with token");
+    
+    const authResponse = await supabase.auth.getUser(token);
+    console.log("Auth response received:", !!authResponse);
+    
+    const user = authResponse.data?.user;
+    const authError = authResponse.error;
+    
+    console.log("User authenticated:", !!user);
+    console.log("Auth error:", authError ? JSON.stringify(authError) : "none");
 
     if (authError || !user) {
       return new Response(
@@ -68,8 +114,16 @@ serve(async (req: Request) => {
       );
     }
 
+    console.log("User ID:", user.id);
+    
     // Parse request
-    const { prompt, systemPromptName = "default", previousMessages = [] } = await req.json() as ChatRequest;
+    const requestData = await req.json();
+    console.log("Request body parsed");
+    
+    const { prompt, systemPromptName = "default", previousMessages = [] } = requestData as ChatRequest;
+    console.log("Prompt:", prompt ? prompt.substring(0, 30) + "..." : "missing");
+    console.log("System prompt name:", systemPromptName);
+    console.log("Previous messages count:", previousMessages.length);
 
     if (!prompt) {
       return new Response(
@@ -82,62 +136,106 @@ serve(async (req: Request) => {
     }
 
     // Get the system prompt
-    const { data: systemPromptData, error: systemPromptError } = await supabase
+    console.log("Fetching system prompt:", systemPromptName);
+    
+    let systemPromptData;
+    const systemPromptResponse = await supabase
       .from("system_prompts")
       .select("content")
       .eq("name", systemPromptName)
       .eq("is_active", true)
       .single();
+    
+    const data = systemPromptResponse.data;
+    const systemPromptError = systemPromptResponse.error;
+    
+    console.log("System prompt found:", !!data);
+    console.log("System prompt error:", systemPromptError ? JSON.stringify(systemPromptError) : "none");
 
     if (systemPromptError) {
       console.error("Error fetching system prompt:", systemPromptError);
       // If we can't find the specified prompt, use a fallback
       systemPromptData = { content: "You are a helpful AI assistant. Answer questions concisely and accurately." };
+      console.log("Using fallback system prompt");
+    } else {
+      systemPromptData = data;
+      console.log("Using retrieved system prompt");
     }
 
     // Prepare messages for OpenAI
-    const messages: Message[] = [
+    const messages = [
       { role: "system", content: systemPromptData.content },
       ...previousMessages,
       { role: "user", content: prompt },
     ];
+    console.log("Messages prepared for OpenAI");
 
-    // Call OpenAI API using gpt-3.5-turbo instead of gpt-4-turbo-preview
+    // Get the best available model
+    console.log("Selecting best available model");
+    const model = await getBestAvailableModel(openai);
+    console.log("Selected model:", model);
+
+    // Call OpenAI API with the selected model
+    console.log("Calling OpenAI API");
     const completion = await openai.chat.completions.create({
-      model: "gpt-3.5-turbo",
+      model: model,
       messages: messages,
       max_tokens: 1000,
     });
+    console.log("OpenAI API response received");
 
     const response = completion.choices[0].message.content;
+    console.log("Response extracted from OpenAI response");
 
-    // Store the interaction in user_events
-    const { error: insertError } = await supabase
+    // Create a complete response message array
+    const allMessages = [
+      ...messages,
+      { role: "assistant", content: response }
+    ];
+    console.log("All messages prepared for storage");
+
+    // Store the interaction in user_events with complete message history
+    console.log("Storing chat in user_events table");
+    console.log("User ID for storage:", user.id);
+    
+    const insertData = {
+      user_id: user.id,
+      event_type: "chat",
+      event_description: prompt.substring(0, 100) + (prompt.length > 100 ? "..." : ""),
+      event_details: {
+        prompt,
+        systemPromptName,
+        response,
+        timestamp: new Date().toISOString(),
+        messages: allMessages,
+        model: model
+      },
+    };
+    console.log("Insert data prepared:", JSON.stringify(insertData).substring(0, 100) + "...");
+    
+    const insertResponse = await supabase
       .from("user_events")
-      .insert({
-        user_id: user.id,
-        event_type: "chat",
-        event_description: prompt.substring(0, 100) + (prompt.length > 100 ? "..." : ""),
-        event_details: {
-          prompt,
-          systemPromptName,
-          response,
-          timestamp: new Date().toISOString(),
-        },
-      });
+      .insert(insertData);
+    
+    const insertError = insertResponse.error;
+    
+    console.log("Insert completed");
+    console.log("Insert error:", insertError ? JSON.stringify(insertError) : "none");
+    console.log("Insert status:", insertError ? "FAILED" : "SUCCESS");
 
     if (insertError) {
       console.error("Error storing chat history:", insertError);
+    } else {
+      console.log("Chat history stored successfully");
     }
 
     // Return the response
+    console.log("Preparing response to client");
     return new Response(
       JSON.stringify({
         response,
-        messages: [
-          ...messages,
-          { role: "assistant", content: response },
-        ],
+        messages: allMessages,
+        model: model,
       }),
       {
         headers: { "Content-Type": "application/json", ...corsHeaders },
@@ -145,6 +243,10 @@ serve(async (req: Request) => {
     );
   } catch (error) {
     console.error("Error processing request:", error);
+    // Log the full error details
+    console.error("Error stack:", error.stack);
+    console.error("Error message:", error.message);
+    
     return new Response(
       JSON.stringify({ error: "Internal Server Error", details: error.message }),
       {
