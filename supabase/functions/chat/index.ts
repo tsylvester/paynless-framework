@@ -1,4 +1,3 @@
-
 // Modified edge function with improved error handling and RLS bypass
 // Path: supabase/functions/chat/index.ts
 
@@ -49,6 +48,7 @@ interface ChatRequest {
   prompt: string;
   systemPromptName?: string;
   previousMessages?: Message[];
+  conversationId?: string | null;
 }
 
 interface Message {
@@ -137,10 +137,17 @@ serve(async (req: Request) => {
     const requestData = await req.json();
     console.log("Request body parsed");
     
-    const { prompt, systemPromptName = "default", previousMessages = [] } = requestData as ChatRequest;
+    const { 
+      prompt, 
+      systemPromptName = "default", 
+      previousMessages = [],
+      conversationId = null 
+    } = requestData as ChatRequest;
+    
     console.log("Prompt:", prompt ? prompt.substring(0, 30) + "..." : "missing");
     console.log("System prompt name:", systemPromptName);
     console.log("Previous messages count:", previousMessages.length);
+    console.log("Conversation ID:", conversationId);
 
     if (!prompt) {
       return new Response(
@@ -212,65 +219,106 @@ serve(async (req: Request) => {
     ];
     console.log("All messages prepared for storage");
 
-    // Store the interaction in user_events with complete message history
-    // Here we're using the supabase client with SERVICE ROLE credentials
-    console.log("Storing chat in user_events table");
-    console.log("User ID for storage:", user.id);
-    
-    const insertData = {
-      user_id: user.id,
-      event_type: "chat",
-      event_description: prompt.substring(0, 100) + (prompt.length > 100 ? "..." : ""),
-      event_details: {
-        prompt,
-        systemPromptName,
-        response,
-        timestamp: new Date().toISOString(),
-        messages: allMessages,
-        model: model
-      },
-    };
-    
-    console.log("Insert data prepared");
-    
-    // Direct insert using service role credentials should bypass RLS
-    const { data: insertData2, error: insertError } = await supabase
-      .from("user_events")
-      .insert(insertData)
-      .select();
-
-    if (insertError) {
-      console.error("Error storing chat history:", insertError);
+    // Check if we have a conversation ID already
+    if (conversationId) {
+      console.log("Using existing conversation ID:", conversationId);
       
-      // Try a different approach - explicitly set auth context
-      try {
-        console.log("Attempting alternative insert approach");
+      // Try to find an existing conversation with this ID
+      const { data: existingChat, error: findError } = await supabase
+        .from("user_events")
+        .select("event_id, event_details")
+        .eq("event_id", conversationId)
+        .maybeSingle();
+      
+      if (findError) {
+        console.error("Error checking for existing conversation:", findError);
+      }
+      
+      if (existingChat) {
+        console.log("Found existing conversation, updating");
         
-        // Using a raw SQL insert as a last resort to bypass RLS completely
-        const { data: sqlData, error: sqlError } = await supabase.rpc('insert_chat_event', {
-          p_user_id: user.id,
-          p_event_type: 'chat',
-          p_event_description: prompt.substring(0, 100) + (prompt.length > 100 ? "..." : ""),
-          p_event_details: JSON.stringify({
+        // Update the existing conversation with new messages
+        const updatedDetails = {
+          ...existingChat.event_details,
+          prompt, // Latest prompt
+          response, // Latest response
+          timestamp: new Date().toISOString(),
+          messages: allMessages, // All messages including the new ones
+          model: model,
+          systemPromptName
+        };
+        
+        // Update existing record instead of creating a new one
+        const { error: updateError } = await supabase
+          .from("user_events")
+          .update({
+            event_details: updatedDetails,
+            event_description: prompt.substring(0, 100) + (prompt.length > 100 ? "..." : "")
+          })
+          .eq("event_id", conversationId);
+        
+        if (updateError) {
+          console.error("Error updating existing conversation:", updateError);
+        } else {
+          console.log("Conversation updated successfully");
+        }
+      } else {
+        console.log("Conversation ID provided but no existing conversation found, creating new");
+        
+        // Create a new record with the provided ID
+        const insertData = {
+          event_id: conversationId, // Use the provided conversation ID
+          user_id: user.id,
+          event_type: "chat",
+          event_description: prompt.substring(0, 100) + (prompt.length > 100 ? "..." : ""),
+          event_details: {
             prompt,
             systemPromptName,
             response,
             timestamp: new Date().toISOString(),
             messages: allMessages,
             model: model
-          })
-        });
+          },
+        };
         
-        if (sqlError) {
-          console.error("Alternative insert also failed:", sqlError);
+        const { error: insertError } = await supabase
+          .from("user_events")
+          .insert(insertData);
+        
+        if (insertError) {
+          console.error("Error creating new conversation with provided ID:", insertError);
         } else {
-          console.log("Alternative insert succeeded");
+          console.log("New conversation created with provided ID");
         }
-      } catch (altError) {
-        console.error("Alternative insert exception:", altError);
       }
     } else {
-      console.log("Chat history stored successfully");
+      // No conversation ID provided, create a new one
+      console.log("No conversation ID provided, creating new conversation");
+      
+      const insertData = {
+        user_id: user.id,
+        event_type: "chat",
+        event_description: prompt.substring(0, 100) + (prompt.length > 100 ? "..." : ""),
+        event_details: {
+          prompt,
+          systemPromptName,
+          response,
+          timestamp: new Date().toISOString(),
+          messages: allMessages,
+          model: model
+        },
+      };
+      
+      const { data: insertData2, error: insertError } = await supabase
+        .from("user_events")
+        .insert(insertData)
+        .select();
+      
+      if (insertError) {
+        console.error("Error storing chat history:", insertError);
+      } else {
+        console.log("New conversation created successfully");
+      }
     }
 
     // Always return the response to the client, even if storage fails

@@ -11,7 +11,8 @@ import { PostgrestResponse, PostgrestSingleResponse } from '@supabase/supabase-j
 export const sendChatMessage = async (
   prompt: string, 
   previousMessages: ChatMessage[] = [],
-  systemPromptName: string = 'default'
+  systemPromptName: string = 'default',
+  conversationId: string | null = null
 ): Promise<{ response: string; messages: ChatMessage[] }> => {
   try {
     // First, ensure we have a valid session
@@ -23,6 +24,8 @@ export const sendChatMessage = async (
     }
     
     const apiUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/chat`;
+    
+    logger.debug('Sending chat with conversation ID:', conversationId);
     
     // Use retry pattern for better resilience
     const response = await withRetry(
@@ -37,6 +40,7 @@ export const sendChatMessage = async (
             prompt,
             systemPromptName,
             previousMessages,
+            conversationId, // Pass the conversation ID to the edge function
           }),
         });
         

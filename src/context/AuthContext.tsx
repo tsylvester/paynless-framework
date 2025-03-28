@@ -209,34 +209,49 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   
   // Initialize auth state
   useEffect(() => {
-    // Add checkPersistedSession call at the beginning
-    const checkPersistedSession = async () => {
+    const initializeAuth = async () => {
+      // Set loading state
+      updateAuthStatus({ isLoading: true });
+      
       try {
+        // FIRST check for persisted session in localStorage
         const { data } = await supabase.auth.getSession();
+        
         if (data?.session) {
-          logger.debug('Found persisted session');
-          // Update auth state with the persisted session
-          updateAuthStatus({
-            user: data.session.user as User | null,
-            session: data.session as Session | null,
-            isLoading: false,
-          });
+          // We have a valid persisted session - use it immediately
+          logger.debug('Found persisted session - using immediately');
           
-          // Schedule session refresh
-          if (data.session) {
+          // Get the user data based on the session
+          const { data: userData } = await supabase.auth.getUser();
+          
+          if (userData?.user) {
+            updateAuthStatus({
+              user: userData.user as User,
+              session: data.session as Session,
+              isLoading: false,
+              authStatus: 'authenticated',
+            });
+            
+            // Schedule session refresh
             scheduleSessionRefresh(data.session as Session);
+            
+            // No need to continue with other initialization
+            return;
           }
         }
+        
+        // If no persisted session or user, fall back to normal initialization
+        await safeInitialize();
       } catch (error) {
-        logger.error('Error checking persisted session:', error);
+        logger.error('Error during auth initialization:', error);
+        updateAuthStatus({ 
+          isLoading: false, 
+          error: error as Error,
+        });
       }
     };
     
-    // Run persistence check first
-    checkPersistedSession();
-    
-    // Then proceed with normal initialization
-    safeInitialize();
+    initializeAuth();
     
     // Set up network status monitoring
     const removeNetworkListener = networkMonitor.addListener((status) => {

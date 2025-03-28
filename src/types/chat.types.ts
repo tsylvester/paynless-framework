@@ -18,6 +18,7 @@ export interface ChatRequest {
   prompt: string;
   systemPromptName?: string;
   previousMessages?: ChatMessage[];
+  conversationId?: string | null;
 }
 
 export interface ChatResponse {
@@ -52,5 +53,6 @@ export interface ChatContextType {
   systemPrompts: SystemPrompt[];
   selectedPrompt: string;
   setSelectedPrompt: (promptName: string) => void;
-  navigateToAuth: (path?: string) => void; // Add this new function
+  navigateToAuth: (path?: string) => void;
+  conversationId: string | null;
 }

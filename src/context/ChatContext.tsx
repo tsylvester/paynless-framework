@@ -16,6 +16,7 @@ const initialState: ChatContextType = {
   selectedPrompt: 'default',
   setSelectedPrompt: () => {},
   navigateToAuth: () => {}, 
+  conversationId: null,
 };
 
 export const ChatContext = createContext<ChatContextType>(initialState);
@@ -24,7 +25,8 @@ export const ChatContext = createContext<ChatContextType>(initialState);
 const PENDING_MESSAGE_KEY = 'pendingChatMessage';
 const PENDING_PROMPT_KEY = 'pendingSystemPrompt';
 const NAVIGATION_TYPE_KEY = 'chatNavigationType';
-const CHAT_MESSAGES_KEY = 'chatMessages'; // New key for saving current chat
+const CHAT_MESSAGES_KEY = 'chatMessages';
+const CONVERSATION_ID_KEY = 'currentConversationId';
 
 export const ChatProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -32,6 +34,7 @@ export const ChatProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const [error, setError] = useState<Error | null>(null);
   const [systemPrompts, setSystemPrompts] = useState<SystemPrompt[]>([]);
   const [selectedPrompt, setSelectedPrompt] = useState<string>('default');
+  const [conversationId, setConversationId] = useState<string | null>(null);
   
   const { user, isOnline } = useAuth();
   const location = useLocation();
@@ -40,14 +43,29 @@ export const ChatProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const retryTimeoutRef = useRef<number | null>(null);
   const sendMessageRef = useRef<((message: string, systemPromptName?: string) => Promise<void>) | null>(null);
   const retryMessageRef = useRef<{ message: string; systemPromptName: string } | null>(null);
+  const previousUserStateRef = useRef<boolean>(!!user);
+
+  // Function to generate a new conversation ID
+  const generateConversationId = useCallback(() => {
+    // Use crypto.randomUUID() if available, otherwise fallback to a simple UUID generator
+    const newId = crypto.randomUUID ? crypto.randomUUID() : 'chat-' + Date.now() + '-' + Math.random().toString(36).substr(2, 9);
+    return newId;
+  }, []);
 
   const clearChat = useCallback(() => {
     setMessages([]);
     setError(null);
     
-    // Also clear saved chat messages from localStorage
+    // Generate a new conversation ID when starting a fresh chat
+    const newId = generateConversationId();
+    setConversationId(newId);
+    localStorage.setItem(CONVERSATION_ID_KEY, newId);
+    
+    // Clear saved chat messages from localStorage
     localStorage.removeItem(CHAT_MESSAGES_KEY);
-  }, []);
+    
+    logger.info('Chat cleared, new conversation ID generated:', newId);
+  }, [generateConversationId]);
 
   // Function to save current chat to localStorage
   const saveChatToLocalStorage = useCallback((chatMessages: ChatMessage[]) => {
@@ -75,13 +93,27 @@ export const ChatProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     return null;
   }, []);
   
-  // Load saved messages on initial mount
+  // Load saved messages and conversation ID on initial mount
   useEffect(() => {
+    // Load conversation ID first
+    const savedConversationId = localStorage.getItem(CONVERSATION_ID_KEY);
+    if (savedConversationId) {
+      setConversationId(savedConversationId);
+      logger.info('Loaded existing conversation ID:', savedConversationId);
+    } else {
+      // If no existing conversation ID, generate a new one
+      const newId = generateConversationId();
+      setConversationId(newId);
+      localStorage.setItem(CONVERSATION_ID_KEY, newId);
+      logger.info('Generated new conversation ID:', newId);
+    }
+    
+    // Then load saved messages
     const savedMessages = loadChatFromLocalStorage();
     if (savedMessages) {
       setMessages(savedMessages);
     }
-  }, [loadChatFromLocalStorage]);
+  }, [loadChatFromLocalStorage, generateConversationId]);
   
   // Add useEffect to fetch system prompts
   useEffect(() => {
@@ -145,6 +177,14 @@ export const ChatProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     setIsLoading(true);
     setError(null);
     
+    // If there's no conversationId yet, create one
+    if (!conversationId) {
+      const newId = generateConversationId();
+      setConversationId(newId);
+      localStorage.setItem(CONVERSATION_ID_KEY, newId);
+      logger.info('Generated new conversation ID during send message:', newId);
+    }
+    
     // Add user message immediately for better UX
     const userMessage: ChatMessage = { role: 'user', content: message };
     const updatedMessages = [...messages, userMessage];
@@ -160,7 +200,8 @@ export const ChatProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       const { messages: responseMessages } = await sendChatMessage(
         message,
         previousMessages,
-        systemPromptName
+        systemPromptName,
+        conversationId // Pass the conversationId to the chat service
       );
       
       // Update with complete message history from the response
@@ -169,7 +210,7 @@ export const ChatProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       // Save the response messages to localStorage
       saveChatToLocalStorage(responseMessages);
       
-      logger.info('Message sent successfully');
+      logger.info('Message sent successfully with conversation ID:', conversationId);
     } catch (err) {
       logger.error('Error sending message:', err);
       setError(err as Error);
@@ -192,7 +233,7 @@ export const ChatProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     } finally {
       setIsLoading(false);
     }
-  }, [user, isOnline, messages, selectedPrompt, prepareAuthNavigation, saveChatToLocalStorage, scheduleRetry]);
+  }, [user, isOnline, messages, selectedPrompt, conversationId, generateConversationId, prepareAuthNavigation, saveChatToLocalStorage, scheduleRetry]);
   
   // Store sendMessage in ref
   useEffect(() => {
@@ -223,6 +264,29 @@ export const ChatProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       }
     }
   }, [user, selectedPrompt, sendMessage]);
+  
+  // Detect user sign in/out changes and handle conversation ID appropriately
+  useEffect(() => {
+    // Check if user state has changed from logged in to logged out
+    const wasLoggedIn = previousUserStateRef.current;
+    const isLoggedIn = !!user;
+    
+    // Update the ref to the current state for the next check
+    previousUserStateRef.current = isLoggedIn;
+    
+    // Only take action if the user has signed out (was logged in, now is not)
+    if (wasLoggedIn && !isLoggedIn) {
+      // User signed out, generate a new conversation ID for next session
+      const newId = generateConversationId();
+      setConversationId(newId);
+      localStorage.setItem(CONVERSATION_ID_KEY, newId);
+      logger.info('User signed out, generated new conversation ID:', newId);
+      
+      // Clear messages when user signs out
+      setMessages([]);
+      localStorage.removeItem(CHAT_MESSAGES_KEY);
+    }
+  }, [user, generateConversationId]);
   
   // Path change detection for chat clearing
   useEffect(() => {
@@ -265,6 +329,7 @@ export const ChatProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     selectedPrompt,
     setSelectedPrompt,
     navigateToAuth, // Expose this function for components
+    conversationId,
   };
 
   return <ChatContext.Provider value={value}>{children}</ChatContext.Provider>;
