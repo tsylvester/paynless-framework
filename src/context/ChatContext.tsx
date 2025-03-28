@@ -1,7 +1,8 @@
-import React, { createContext, useState, useContext, ReactNode, useEffect } from 'react';
+import React, { createContext, useState, ReactNode, useEffect, useRef, useCallback } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { ChatMessage, ChatContextType, SystemPrompt } from '../types/chat.types';
 import { sendChatMessage, getSystemPrompts } from '../services/chatService';
-import { useAuth } from './AuthContext';
+import { useAuth } from '../hooks/useAuth';
 import { logger } from '../utils/logger';
 
 const initialState: ChatContextType = {
@@ -13,9 +14,15 @@ const initialState: ChatContextType = {
   systemPrompts: [],
   selectedPrompt: 'default',
   setSelectedPrompt: () => {},
+  navigateToAuth: () => {}, 
 };
 
 export const ChatContext = createContext<ChatContextType>(initialState);
+
+// Define specific storage keys
+const PENDING_MESSAGE_KEY = 'pendingChatMessage';
+const PENDING_PROMPT_KEY = 'pendingSystemPrompt';
+const NAVIGATION_TYPE_KEY = 'chatNavigationType';
 
 export const ChatProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -25,10 +32,13 @@ export const ChatProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const [selectedPrompt, setSelectedPrompt] = useState<string>('default');
   
   const { user, isOnline } = useAuth();
-
-  // Fetch available system prompts
+  const location = useLocation();
+  const navigate = useNavigate();
+  const previousPathRef = useRef<string>('');
+  
+  // Add useEffect to fetch system prompts
   useEffect(() => {
-    const fetchSystemPrompts = async () => {
+    const fetchPrompts = async () => {
       try {
         const prompts = await getSystemPrompts();
         setSystemPrompts(prompts);
@@ -36,11 +46,18 @@ export const ChatProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         logger.error('Error fetching system prompts:', err);
       }
     };
-
-    fetchSystemPrompts();
-  }, [user]);
-
-  const sendMessage = async (message: string, systemPromptName: string = selectedPrompt) => {
+    fetchPrompts();
+  }, []);
+  
+  // Function to prepare for auth flow navigation
+  const prepareAuthNavigation = useCallback((message: string, systemPromptName: string = selectedPrompt) => {
+    localStorage.setItem(PENDING_MESSAGE_KEY, message);
+    localStorage.setItem(PENDING_PROMPT_KEY, systemPromptName);
+    localStorage.setItem(NAVIGATION_TYPE_KEY, 'auth-flow');
+  }, [selectedPrompt]);
+  
+  // Updated sendMessage function wrapped in useCallback
+  const sendMessage = useCallback(async (message: string, systemPromptName: string = selectedPrompt) => {
     if (!message.trim()) return;
     
     if (!isOnline) {
@@ -48,8 +65,9 @@ export const ChatProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       return;
     }
     
+    // If user is not authenticated, prepare for auth flow and return
     if (!user) {
-      setError(new Error('You must be signed in to use the chat feature.'));
+      prepareAuthNavigation(message, systemPromptName);
       return;
     }
     
@@ -64,7 +82,7 @@ export const ChatProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       // Filter messages to only include user and assistant for the API call
       const previousMessages = messages.filter(msg => msg.role !== 'system');
       
-      const { response, messages: updatedMessages } = await sendChatMessage(
+      const { messages: updatedMessages } = await sendChatMessage(
         message,
         previousMessages,
         systemPromptName
@@ -87,33 +105,81 @@ export const ChatProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     } finally {
       setIsLoading(false);
     }
-  };
-
+  }, [user, isOnline, messages, selectedPrompt, prepareAuthNavigation]);
+  
+  // Load any pending message on auth success
+  useEffect(() => {
+    if (user) {
+      const navigationType = localStorage.getItem(NAVIGATION_TYPE_KEY);
+      const pendingMessage = localStorage.getItem(PENDING_MESSAGE_KEY);
+      const pendingPrompt = localStorage.getItem(PENDING_PROMPT_KEY);
+      
+      // Only process pending message if navigation type indicates auth flow
+      if (navigationType === 'auth-flow' && pendingMessage) {
+        logger.info('Processing pending message after authentication');
+        
+        // Use the stored prompt or fallback to default
+        const promptToUse = pendingPrompt || selectedPrompt;
+        
+        // Send the pending message
+        sendMessage(pendingMessage, promptToUse);
+        
+        // Clear the pending state
+        localStorage.removeItem(PENDING_MESSAGE_KEY);
+        localStorage.removeItem(PENDING_PROMPT_KEY);
+        localStorage.removeItem(NAVIGATION_TYPE_KEY);
+      }
+    }
+  }, [user, selectedPrompt, sendMessage]);
+  
+  // Path change detection for chat clearing
+  useEffect(() => {
+    const currentPath = location.pathname;
+    
+    // Define which routes should preserve chat history
+    const chatRoutes = ['/', '/home'];
+    const isCurrentChatRoute = chatRoutes.some(route => currentPath === route);
+    const isPreviousChatRoute = chatRoutes.some(route => previousPathRef.current === route);
+    
+    // Check if we're moving away from a chat route to a non-chat route
+    if (isPreviousChatRoute && !isCurrentChatRoute) {
+      const navigationType = localStorage.getItem(NAVIGATION_TYPE_KEY);
+      
+      // Only clear if it's not part of the auth flow
+      if (navigationType !== 'auth-flow') {
+        logger.debug(`Navigated away from chat page to ${currentPath}, clearing chat`);
+        clearChat();
+      }
+    }
+    
+    // Update previous path reference
+    previousPathRef.current = currentPath;
+  }, [location.pathname]);
+  
   const clearChat = () => {
     setMessages([]);
     setError(null);
   };
 
-  const value = {
-    messages,
-    isLoading,
-    error,
-    sendMessage,
-    clearChat,
-    systemPrompts,
-    selectedPrompt,
-    setSelectedPrompt,
-  };
+    // Function to handle navigation to auth pages
+    const navigateToAuth = (path: string = '/signin') => {
+      // Mark this as part of auth flow to prevent chat clearing
+      localStorage.setItem(NAVIGATION_TYPE_KEY, 'auth-flow');
+      navigate(path);
+    };
+
+    
+    const value = {
+      messages,
+      isLoading,
+      error,
+      sendMessage,
+      clearChat,
+      systemPrompts,
+      selectedPrompt,
+      setSelectedPrompt,
+      navigateToAuth, // Expose this function for components
+    };
 
   return <ChatContext.Provider value={value}>{children}</ChatContext.Provider>;
-};
-
-export const useChat = (): ChatContextType => {
-  const context = useContext(ChatContext);
-  
-  if (context === undefined) {
-    throw new Error('useChat must be used within a ChatProvider');
-  }
-  
-  return context;
 };

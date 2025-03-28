@@ -42,6 +42,7 @@ export interface ChatEventDetails {
   messages?: ChatMessage[];
 }
 
+// In src/types/chat.types.ts
 export interface ChatContextType {
   messages: ChatMessage[];
   isLoading: boolean;
@@ -51,4 +52,5 @@ export interface ChatContextType {
   systemPrompts: SystemPrompt[];
   selectedPrompt: string;
   setSelectedPrompt: (promptName: string) => void;
+  navigateToAuth: (path?: string) => void; // Add this new function
 }

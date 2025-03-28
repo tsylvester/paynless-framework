@@ -1,14 +1,32 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import ChatHistory from './ChatHistory';
 import ChatInput from './ChatInput';
-import { useChat } from '../../context/ChatContext';
+import { useChat } from '../../hooks/useChat';
 
 interface ChatContainerProps {
   onSubmitWithoutAuth?: (message: string) => void;
 }
 
 const ChatContainer: React.FC<ChatContainerProps> = ({ onSubmitWithoutAuth }) => {
-  const { messages, isLoading, error, clearChat } = useChat();
+  const { messages, isLoading, error, clearChat, sendMessage } = useChat();
+  const [retryMessage, setRetryMessage] = useState<string | null>(null);
+
+  const handleRetry = () => {
+    if (retryMessage) {
+      sendMessage(retryMessage);
+      setRetryMessage(null);
+    }
+  };
+
+  // Set retry message when there's an error
+  useEffect(() => {
+    if (error && messages.length > 0) {
+      const lastUserMessage = [...messages].reverse().find(m => m.role === 'user');
+      if (lastUserMessage) {
+        setRetryMessage(lastUserMessage.content);
+      }
+    }
+  }, [error, messages]);
 
   return (
     <div className="w-full max-w-4xl mx-auto bg-white rounded-lg shadow-md overflow-hidden">
@@ -31,7 +49,15 @@ const ChatContainer: React.FC<ChatContainerProps> = ({ onSubmitWithoutAuth }) =>
       
       {error && (
         <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 mx-4 my-2 rounded-md">
-          {error.message}
+          <p>{error.message}</p>
+          {retryMessage && (
+            <button 
+              onClick={handleRetry}
+              className="mt-2 text-sm bg-red-100 px-3 py-1 rounded-md hover:bg-red-200"
+            >
+              Retry Last Message
+            </button>
+          )}
         </div>
       )}
       

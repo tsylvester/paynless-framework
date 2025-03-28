@@ -24,10 +24,20 @@ export interface Session {
   user: User;
 }
 
+// Error categories for better handling
+export enum AuthErrorType {
+  NOT_AUTHENTICATED = 'NOT_AUTHENTICATED',
+  EXPIRED_SESSION = 'EXPIRED_SESSION',
+  INVALID_CREDENTIALS = 'INVALID_CREDENTIALS',
+  NETWORK_ERROR = 'NETWORK_ERROR',
+  SERVER_ERROR = 'SERVER_ERROR',
+  UNKNOWN_ERROR = 'UNKNOWN_ERROR',
+}
+
 export interface AuthError extends Error {
+  type: AuthErrorType;
+  originalError?: unknown;
   status?: number;
-  type?: string;
-  originalError?: any;
 }
 
 export interface AuthContextType {

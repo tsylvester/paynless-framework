@@ -2,6 +2,7 @@ import { createClient } from '@supabase/supabase-js';
 import { logger } from '../utils/logger';
 import { networkMonitor } from '../utils/network';
 import { withRetry, isRetryableError } from '../utils/retry';
+import { AuthError, AuthErrorType } from '../types/auth.types';
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
@@ -11,23 +12,21 @@ if (!supabaseUrl || !supabaseAnonKey) {
   throw new Error('Missing Supabase environment variables');
 }
 
-export const supabase = createClient(supabaseUrl, supabaseAnonKey);
+export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
+  auth: {
+    persistSession: true, // Enable persistent sessions
+    storageKey: 'auth-storage', // Custom storage key
+    autoRefreshToken: true, // Auto-refresh the token
+    detectSessionInUrl: true, // Detect auth redirects
+  }
+});
 
-// Error categories for better handling
-export enum AuthErrorType {
-  NOT_AUTHENTICATED = 'NOT_AUTHENTICATED',
-  EXPIRED_SESSION = 'EXPIRED_SESSION',
-  INVALID_CREDENTIALS = 'INVALID_CREDENTIALS',
-  NETWORK_ERROR = 'NETWORK_ERROR',
-  SERVER_ERROR = 'SERVER_ERROR',
-  UNKNOWN_ERROR = 'UNKNOWN_ERROR',
-}
 
 /**
  * Categorizes an error into a specific auth error type
  */
-export function categorizeAuthError(error: any): AuthErrorType {
-  const message = error?.message?.toLowerCase() || '';
+export function categorizeAuthError(error: unknown): AuthErrorType {
+  const message = error instanceof Error ? error.message.toLowerCase() : '';
   
   if (!networkMonitor.isOnline()) {
     return AuthErrorType.NETWORK_ERROR;
@@ -49,7 +48,7 @@ export function categorizeAuthError(error: any): AuthErrorType {
     return AuthErrorType.NETWORK_ERROR;
   }
   
-  if (error?.status >= 500) {
+  if (error instanceof Error && 'status' in error && typeof error.status === 'number' && error.status >= 500) {
     return AuthErrorType.SERVER_ERROR;
   }
   
@@ -95,8 +94,10 @@ export const getUser = async () => {
       
       // Throw the categorized error for other error types
       logger.error(`Error fetching user: ${errorType}`, error);
-      error.type = errorType;
-      throw error;
+      const authError = new Error(error.message) as AuthError;
+      authError.type = errorType;
+      authError.originalError = error;
+      throw authError;
     }
     
     return data.user;
@@ -106,8 +107,10 @@ export const getUser = async () => {
     logger.error(`Unexpected error in getUser: ${errorType}`, error);
     
     // Attach the error category and rethrow
-    (error as any).type = errorType;
-    throw error;
+    const authError = new Error(error instanceof Error ? error.message : 'Unknown error') as AuthError;
+    authError.type = errorType;
+    authError.originalError = error;
+    throw authError;
   }
 };
 
@@ -118,51 +121,42 @@ export const getUser = async () => {
  */
 export const getSession = async () => {
   try {
-    // Only try network operations if we're online
-    if (!networkMonitor.isOnline()) {
-      logger.debug('Network offline, cannot fetch session');
-      return null;
-    }
-    
-    // Use retry pattern for network operations
-    const { data, error } = await withRetry(
-      () => supabase.auth.getSession(),
-      {
-        maxRetries: 2,
-        initialDelay: 300,
-        onRetry: (attempt) => {
-          logger.debug(`Retrying getSession, attempt ${attempt}`);
-        }
-      }
-    );
+    // Try to get session from localStorage first (for offline support)
+    const { data, error } = await supabase.auth.getSession();
     
     if (error) {
       const errorType = categorizeAuthError(error);
+      logger.error(`Error fetching session: ${errorType}`, error);
       
-      // Return null for authentication-related errors
-      if (
-        errorType === AuthErrorType.NOT_AUTHENTICATED ||
-        errorType === AuthErrorType.EXPIRED_SESSION
-      ) {
-        logger.debug(`Auth error in getSession: ${errorType}`);
+      if (errorType === AuthErrorType.NOT_AUTHENTICATED || 
+          errorType === AuthErrorType.EXPIRED_SESSION) {
         return null;
       }
       
-      // Throw the categorized error for other error types
-      logger.error(`Error fetching session: ${errorType}`, error);
-      error.type = errorType;
-      throw error;
+      const authError = new Error(error.message) as AuthError;
+      authError.type = errorType;
+      authError.originalError = error;
+      throw authError;
+    }
+    
+    // If we have a session but we're online, refresh it to ensure it's valid
+    if (data.session && networkMonitor.isOnline()) {
+      try {
+        const { data: refreshData } = await supabase.auth.refreshSession();
+        return refreshData.session;
+      } catch (refreshError) {
+        logger.warn('Session refresh failed, using existing session', refreshError);
+        return data.session;
+      }
     }
     
     return data.session;
   } catch (error) {
-    // Categorize unexpected errors
+    // Log but don't throw to improve resilience
     const errorType = categorizeAuthError(error);
     logger.error(`Unexpected error in getSession: ${errorType}`, error);
     
-    // Attach the error category and rethrow
-    (error as any).type = errorType;
-    throw error;
+    return null;
   }
 };
 
@@ -204,36 +198,40 @@ export const refreshSession = async (): Promise<boolean> => {
  */
 export const safeSignOut = async (): Promise<boolean> => {
   try {
-    // Always update local state first for better UX
-    // Then try to sync with server if online
+    // Always try to sign out on the server first (if online)
     if (networkMonitor.isOnline()) {
       const { error } = await withRetry(
-        () => supabase.auth.signOut(),
+        () => supabase.auth.signOut({ scope: 'global' }), // Use global scope explicitly
         { maxRetries: 2 }
       );
       
       if (error) {
-        logger.error('Error during sign out', error);
-        return false;
+        logger.error('Error during server sign out', error);
+        // Continue to local sign out even if server sign out fails
       }
-    } else {
-      // If offline, we can only clean up client-side
-      logger.debug('Offline sign out - clearing local state only');
+    } 
+    
+    // Always perform local sign out to clean up client state
+    try {
+      // This handles the localStorage clearing properly
       await supabase.auth.signOut({ scope: 'local' });
+      
+      // Force clear any localStorage auth items as a fallback
+      for (const key of Object.keys(localStorage)) {
+        if (key.startsWith('supabase.auth') || key.startsWith('sb-')) {
+          localStorage.removeItem(key);
+        }
+      }
+      
+      logger.debug('Local sign out completed');
+    } catch (localError) {
+      logger.error('Local sign out failed', localError);
+      return false;
     }
     
     return true;
   } catch (error) {
     logger.error('Unexpected error during sign out', error);
-    
-    // Try to clean up locally even if the server request failed
-    try {
-      await supabase.auth.signOut({ scope: 'local' });
-      logger.debug('Fallback to local sign out after error');
-    } catch (localError) {
-      logger.error('Even local sign out failed', localError);
-    }
-    
     return false;
   }
 };

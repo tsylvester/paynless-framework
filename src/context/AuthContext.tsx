@@ -1,5 +1,6 @@
-import React, { createContext, useState, useEffect, useContext, ReactNode, useCallback, useRef } from 'react';
-import { supabase, getUser, getSession, refreshSession, safeSignOut, categorizeAuthError, AuthErrorType } from '../services/supabase';
+import React, { createContext, useState, useEffect, ReactNode, useCallback, useRef } from 'react';
+import { supabase, getUser, getSession, refreshSession, safeSignOut, categorizeAuthError } from '../services/supabase';
+import { AuthErrorType } from '../types/auth.types';
 import { AuthContextType, AuthState, AuthError, User, Session } from '../types/auth.types';
 import { logger } from '../utils/logger';
 import { networkMonitor } from '../utils/network';
@@ -20,6 +21,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const [state, setState] = useState<AuthState>(initialState);
   const refreshTimerRef = useRef<number | null>(null);
   const initializingRef = useRef<boolean>(false);
+  const safeInitializeRef = useRef<(() => Promise<void>) | null>(null);
   
   // Track auth status changes
   const updateAuthStatus = useCallback((newState: Partial<AuthState>) => {
@@ -37,6 +39,41 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       
       return { ...prev, ...newState, authStatus };
     });
+  }, []);
+  
+  // Function to schedule session refresh before expiry
+  const scheduleSessionRefresh = useCallback((session: Session) => {
+    // Clear any existing timer
+    if (refreshTimerRef.current) {
+      window.clearTimeout(refreshTimerRef.current);
+      refreshTimerRef.current = null;
+    }
+    
+    if (!session?.expires_at) return;
+    
+    // Calculate time until session expiry (in milliseconds)
+    const expiresAt = session.expires_at * 1000; // Convert to milliseconds
+    const now = Date.now();
+    const timeUntilExpiry = expiresAt - now;
+    
+    // Refresh 5 minutes before expiry, or immediately if already expired
+    const refreshDelay = Math.max(0, timeUntilExpiry - 5 * 60 * 1000);
+    
+    logger.debug(`Scheduling session refresh in ${Math.floor(refreshDelay / 1000)} seconds`);
+    
+    refreshTimerRef.current = window.setTimeout(async () => {
+      logger.debug('Attempting session refresh');
+      try {
+        const success = await refreshSession();
+        if (!success && safeInitializeRef.current) {
+          // If refresh fails, try to re-initialize auth
+          logger.debug('Session refresh failed, reinitializing auth');
+          await safeInitializeRef.current();
+        }
+      } catch (error) {
+        logger.error('Error during scheduled session refresh', error);
+      }
+    }, refreshDelay);
   }, []);
   
   // Safe initialize function that prevents duplicate initialization
@@ -72,7 +109,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
             });
             return;
           }
-        } catch (e) {
+        } catch {
           logger.debug('No cached session available while offline');
         }
         
@@ -126,45 +163,42 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     } finally {
       initializingRef.current = false;
     }
-  }, [updateAuthStatus]);
+  }, [updateAuthStatus, scheduleSessionRefresh]);
   
-  // Function to schedule session refresh before expiry
-  const scheduleSessionRefresh = useCallback((session: Session) => {
-    // Clear any existing timer
-    if (refreshTimerRef.current) {
-      window.clearTimeout(refreshTimerRef.current);
-      refreshTimerRef.current = null;
-    }
-    
-    if (!session?.expires_at) return;
-    
-    // Calculate time until session expiry (in milliseconds)
-    const expiresAt = session.expires_at * 1000; // Convert to milliseconds
-    const now = Date.now();
-    const timeUntilExpiry = expiresAt - now;
-    
-    // Refresh 5 minutes before expiry, or immediately if already expired
-    const refreshDelay = Math.max(0, timeUntilExpiry - 5 * 60 * 1000);
-    
-    logger.debug(`Scheduling session refresh in ${Math.floor(refreshDelay / 1000)} seconds`);
-    
-    refreshTimerRef.current = window.setTimeout(async () => {
-      logger.debug('Attempting session refresh');
-      try {
-        const success = await refreshSession();
-        if (!success) {
-          // If refresh fails, try to re-initialize auth
-          logger.debug('Session refresh failed, reinitializing auth');
-          await safeInitialize();
-        }
-      } catch (error) {
-        logger.error('Error during scheduled session refresh', error);
-      }
-    }, refreshDelay);
+  // Store safeInitialize in ref
+  useEffect(() => {
+    safeInitializeRef.current = safeInitialize;
   }, [safeInitialize]);
   
   // Initialize auth state
   useEffect(() => {
+    // Add checkPersistedSession call at the beginning
+    const checkPersistedSession = async () => {
+      try {
+        const { data } = await supabase.auth.getSession();
+        if (data?.session) {
+          logger.debug('Found persisted session');
+          // Update auth state with the persisted session
+          updateAuthStatus({
+            user: data.session.user as User | null,
+            session: data.session as Session | null,
+            isLoading: false,
+          });
+          
+          // Schedule session refresh
+          if (data.session) {
+            scheduleSessionRefresh(data.session as Session);
+          }
+        }
+      } catch (error) {
+        logger.error('Error checking persisted session:', error);
+      }
+    };
+    
+    // Run persistence check first
+    checkPersistedSession();
+    
+    // Then proceed with normal initialization
     safeInitialize();
     
     // Set up network status monitoring
@@ -201,7 +235,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
             }
             
             logger.info(`Auth state updated: ${event}`);
-          } else if (event === 'SIGNED_OUT' || event === 'USER_DELETED') {
+          } else if (event === 'SIGNED_OUT') {
             // Clear session refresh timer
             if (refreshTimerRef.current) {
               window.clearTimeout(refreshTimerRef.current);
@@ -579,14 +613,4 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
-};
-
-export const useAuth = (): AuthContextType => {
-  const context = useContext(AuthContext);
-  
-  if (context === undefined) {
-    throw new Error('useAuth must be used within an AuthProvider');
-  }
-  
-  return context;
 };

@@ -105,3 +105,40 @@ const ChatInput: React.FC<ChatInputProps> = ({ onSubmitWithoutAuth }) => {
 };
 
 export default ChatInput;
+
+// In src/components/chat/ChatInput.tsx
+
+import React, { useState, FormEvent } from 'react';
+import { useChat } from '../../context/ChatContext';
+import { useAuth } from '../../context/AuthContext';
+import { Send } from 'lucide-react';
+
+const ChatInput: React.FC = () => {
+  const [inputMessage, setInputMessage] = useState('');
+  const { sendMessage, isLoading, selectedPrompt, systemPrompts, navigateToAuth } = useChat();
+  const { user, isOnline } = useAuth();
+
+  const handleSubmit = async (e: FormEvent) => {
+    e.preventDefault();
+    
+    const message = inputMessage.trim();
+    if (!message) return;
+    
+    // If user is not authenticated, store the message and redirect to sign in
+    if (!user) {
+      // The navigateToAuth will prepare the message to be sent after auth
+      navigateToAuth('/signin');
+      return;
+    }
+    
+    // Send the message
+    await sendMessage(message, selectedPrompt);
+    setInputMessage('');
+  };
+
+  return (
+    <form onSubmit={handleSubmit} className="w-full">
+      {/* Rest of component remains the same */}
+    </form>
+  );
+};
