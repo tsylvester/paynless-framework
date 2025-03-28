@@ -487,7 +487,7 @@ The subscription system is built with:
 The following environment variables are required:
 
 ```
-VITE_SUPABASE_URL=your-supabase-url
+VITE_SUPABASE_DATABASE_URL=your-supabase-url
 VITE_SUPABASE_ANON_KEY=your-supabase-anon-key
 OPENAI_API_KEY=your-openai-api-key
 STRIPE_SECRET_KEY=your-stripe-secret-key

@@ -28,7 +28,7 @@ Object.defineProperty(window, 'matchMedia', {
 
 // Handle environment variables
 vi.mock('@env', () => ({
-  VITE_SUPABASE_URL: 'https://test-supabase-url.co',
+  VITE_SUPABASE_DATABASE_URL: 'https://test-supabase-url.co',
   VITE_SUPABASE_ANON_KEY: 'test-anon-key',
 }));
 
@@ -36,7 +36,7 @@ vi.mock('@env', () => ({
 globalThis.import = {
   meta: {
     env: {
-      VITE_SUPABASE_URL: 'https://test-supabase-url.co',
+      VITE_SUPABASE_DATABASE_URL: 'https://test-supabase-url.co',
       VITE_SUPABASE_ANON_KEY: 'test-anon-key',
       PROD: false,
     },

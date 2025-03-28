@@ -24,7 +24,7 @@ export const sendChatMessage = async (
       throw new Error('User must be authenticated to use chat');
     }
     
-    const apiUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/chat`;
+    const apiUrl = `${import.meta.env.VITE_SUPABASE_DATABASE_URL}/functions/v1/chat`;
     
     logger.debug('Sending chat with conversation ID:', conversationId);
     

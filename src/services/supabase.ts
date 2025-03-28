@@ -8,7 +8,7 @@ import { AuthError, AuthErrorType } from '../types/auth.types';
 import { eventEmitter } from '../utils/eventEmitter';
 import { Session } from '../types/auth.types';
 
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+const supabaseUrl = import.meta.env.VITE_SUPABASE_DATABASE_URL;
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
 
 if (!supabaseUrl || !supabaseAnonKey) {

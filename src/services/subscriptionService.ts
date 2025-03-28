@@ -134,7 +134,7 @@ export const createCheckoutSession = async (
 
     // Call the Supabase Edge Function to create a checkout session
     const response = await fetch(
-      `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/create-checkout`,
+      `${import.meta.env.VITE_SUPABASE_DATABASE_URL}/functions/v1/create-checkout`,
       {
         method: 'POST',
         headers: {
@@ -176,7 +176,7 @@ export const manageSubscription = async (
 
     // Call the Supabase Edge Function to manage the subscription
     const response = await fetch(
-      `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/manage-subscription`,
+      `${import.meta.env.VITE_SUPABASE_DATABASE_URL}/functions/v1/manage-subscription`,
       {
         method: 'POST',
         headers: {

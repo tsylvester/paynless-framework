@@ -1,7 +1,6 @@
-// Manage existing subscriptions (cancel, resume, change plans)
-import { serve } from "https://deno.land/std@0.177.0/http/server.ts";
-import Stripe from "npm:stripe@12.4.0";
-import { createClient } from "npm:@supabase/supabase-js@2.38.4";
+import "jsr:@supabase/functions-js/edge-runtime.d.ts";
+import Stripe from "npm:stripe";
+import { createClient } from "jsr:@supabase/supabase-js";
 
 // Initialize Stripe
 const stripeSecretKey = Deno.env.get("STRIPE_SECRET_KEY") || "";
@@ -19,7 +18,7 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
-serve(async (req) => {
+Deno.serve(async (req) => {
   // Handle CORS preflight request
   if (req.method === "OPTIONS") {
     return new Response(null, {
@@ -113,18 +112,15 @@ serve(async (req) => {
 // Cancel a subscription
 async function cancelSubscription(subscription, userId) {
   if (!subscription.stripe_subscription_id) {
-    // If no Stripe subscription (free plan), nothing to cancel
     return { message: "No active subscription to cancel" };
   }
 
   try {
-    // Cancel the subscription at period end in Stripe
     const stripeSubscription = await stripe.subscriptions.update(
       subscription.stripe_subscription_id,
       { cancel_at_period_end: true }
     );
 
-    // Update the subscription status in the database
     await supabase
       .from("subscriptions")
       .update({
@@ -133,7 +129,6 @@ async function cancelSubscription(subscription, userId) {
       })
       .eq("user_id", userId);
 
-    // Record the cancellation event
     await supabase
       .from("subscription_events")
       .insert({
@@ -159,7 +154,7 @@ async function cancelSubscription(subscription, userId) {
   }
 }
 
-// Resume a subscription that was canceled but hasn't ended yet
+// Resume a subscription
 async function resumeSubscription(subscription, userId) {
   if (!subscription.stripe_subscription_id) {
     throw new Error("No active subscription to resume");
@@ -170,13 +165,11 @@ async function resumeSubscription(subscription, userId) {
   }
 
   try {
-    // Resume the subscription in Stripe
     const stripeSubscription = await stripe.subscriptions.update(
       subscription.stripe_subscription_id,
       { cancel_at_period_end: false }
     );
 
-    // Update the subscription status in the database
     await supabase
       .from("subscriptions")
       .update({
@@ -185,7 +178,6 @@ async function resumeSubscription(subscription, userId) {
       })
       .eq("user_id", userId);
 
-    // Record the resumption event
     await supabase
       .from("subscription_events")
       .insert({
@@ -212,7 +204,6 @@ async function resumeSubscription(subscription, userId) {
 
 // Change subscription plan
 async function changePlan(subscription, newPlanId, userId) {
-  // Get the new plan details
   const { data: newPlan, error: planError } = await supabase
     .from("subscription_plans")
     .select("*")
@@ -224,16 +215,13 @@ async function changePlan(subscription, newPlanId, userId) {
     throw new Error("New plan not found or is inactive");
   }
 
-  // If changing to free plan, cancel the subscription
   if (newPlanId === "free") {
     if (!subscription.stripe_subscription_id) {
       return { message: "Already on the free plan" };
     }
 
-    // Cancel immediately in Stripe
     await stripe.subscriptions.cancel(subscription.stripe_subscription_id);
 
-    // Update the subscription to free plan
     await supabase
       .from("subscriptions")
       .update({
@@ -247,7 +235,6 @@ async function changePlan(subscription, newPlanId, userId) {
       })
       .eq("user_id", userId);
 
-    // Record the downgrade event
     await supabase
       .from("subscription_events")
       .insert({
@@ -269,23 +256,18 @@ async function changePlan(subscription, newPlanId, userId) {
     };
   }
 
-  // If current plan is free, need to create a new subscription
   if (subscription.subscription_plan_id === "free" || !subscription.stripe_subscription_id) {
-    // For free to paid upgrades, client should use the checkout session
     return {
       message: "Use checkout to upgrade from free plan",
       require_checkout: true
     };
   }
 
-  // If it's an existing paid plan being changed to another paid plan
   try {
-    // Get the stripe subscription
     const stripeSubscription = await stripe.subscriptions.retrieve(
       subscription.stripe_subscription_id
     );
 
-    // Update to the new price
     await stripe.subscriptions.update(
       subscription.stripe_subscription_id,
       {
@@ -299,7 +281,6 @@ async function changePlan(subscription, newPlanId, userId) {
       }
     );
 
-    // Record the plan change event 
     await supabase
       .from("subscription_events")
       .insert({
