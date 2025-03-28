@@ -1,6 +1,6 @@
 # AI Chat Framework
 
-A robust authentication system with ChatGPT integration built with React, Vite, TypeScript, and Supabase. This framework provides user authentication with sign-in, sign-up, and sign-out functionality, along with email validation and password reset capabilities. It also features a complete ChatGPT integration with conversation history tracking.
+A robust authentication system with ChatGPT integration built with React, Vite, TypeScript, and Supabase. This framework provides user authentication with sign-in, sign-up, and sign-out functionality, along with email validation and password reset capabilities. It also features a complete ChatGPT integration with conversation history tracking, and a subscription management system with Stripe integration.
 
 ## File Structure
 
@@ -28,26 +28,32 @@ A robust authentication system with ChatGPT integration built with React, Vite, 
 │   │   │   ├── EmailField.tsx            # Email field component
 │   │   │   ├── PasswordChangeField.tsx   # Password change component
 │   │   │   └── EmailVerificationBanner.tsx # Email verification status banner
+│   │   ├── subscription/
+│   │   │   └── UsageIndicator.tsx         # Usage limit indicator component
 │   │   └── layout/
 │   │       ├── Header.tsx         # Application header with navigation
 │   │       ├── Footer.tsx         # Application footer
 │   │       └── Layout.tsx         # Main layout wrapper
 │   ├── context/
 │   │   ├── AuthContext.tsx        # Authentication context provider
-│   │   └── ChatContext.tsx        # Chat context provider for OpenAI integration
+│   │   ├── ChatContext.tsx        # Chat context provider for OpenAI integration
+│   │   └── SubscriptionContext.tsx # Subscription context provider for Stripe integration
 │   ├── pages/
 │   │   ├── Home.tsx               # Home page with auth status display
 │   │   ├── Landing.tsx            # Landing page with chat functionality
 │   │   ├── Profile.tsx            # User profile page with editing capabilities
 │   │   ├── AuthCallbackPage.tsx   # Handle auth callbacks
 │   │   ├── ChatHistoryPage.tsx    # Page for viewing chat history
-│   │   └── ChatDetailsPage.tsx    # Page for viewing chat details
+│   │   ├── ChatDetailsPage.tsx    # Page for viewing chat details
+│   │   └── SubscriptionPage.tsx   # Page for managing subscription plans
 │   ├── services/
 │   │   ├── supabase.ts            # Supabase client and methods
-│   │   └── chatService.ts         # Services for OpenAI integration
+│   │   ├── chatService.ts         # Services for OpenAI integration
+│   │   └── subscriptionService.ts # Services for Stripe subscription management
 │   ├── types/
 │   │   ├── auth.types.ts          # Type definitions for auth components
-│   │   └── chat.types.ts          # Type definitions for chat components
+│   │   ├── chat.types.ts          # Type definitions for chat components
+│   │   └── subscription.types.ts  # Type definitions for subscription components
 │   ├── utils/
 │   │   ├── logger.ts              # Logging utility
 │   │   ├── network.ts             # Network status monitoring
@@ -58,7 +64,10 @@ A robust authentication system with ChatGPT integration built with React, Vite, 
 ├── supabase/
 │   ├── migrations/                # SQL migrations for database setup
 │   └── functions/
-│       └── chat/                  # Supabase Edge Function for OpenAI integration
+│       ├── chat/                  # Supabase Edge Function for OpenAI integration
+│       ├── stripe-webhook/        # Supabase Edge Function for Stripe webhook handling
+│       ├── create-checkout/       # Supabase Edge Function for Stripe checkout creation
+│       └── manage-subscription/   # Supabase Edge Function for subscription management
 ├── tests/
 │   ├── auth.test.tsx              # Tests for auth components
 │   └── setup.ts                   # Test environment setup
@@ -134,6 +143,49 @@ clearChat(): void
 setSelectedPrompt(promptName: string): void
 ```
 
+### Subscription Context (`src/context/SubscriptionContext.tsx`)
+
+The `SubscriptionProvider` component provides the subscription context and the following functions:
+
+```typescript
+// Get the current subscription state
+const { 
+  subscription, 
+  subscriptionEvents, 
+  plans, 
+  isLoading, 
+  error, 
+  checkoutSession 
+} = useSubscription();
+
+// Load subscription data
+loadSubscription(): Promise<void>
+
+// Load subscription events history
+loadSubscriptionEvents(): Promise<void>
+
+// Load available subscription plans
+loadPlans(): Promise<void>
+
+// Create a Stripe checkout session for subscription upgrade
+createCheckoutSession(planId: string): Promise<{ url: string } | null>
+
+// Cancel the current subscription
+cancelSubscription(): Promise<boolean>
+
+// Resume a canceled subscription
+resumeSubscription(): Promise<boolean>
+
+// Change subscription plan
+changePlan(planId: string): Promise<boolean>
+
+// Check if a subscription feature is enabled
+isSubscriptionFeatureEnabled(featureName: string): boolean
+
+// Get remaining usage for a specific feature
+getRemainingUsage(usageType: string): Promise<number | null>
+```
+
 ### Supabase Service (`src/services/supabase.ts`)
 
 ```typescript
@@ -174,6 +226,44 @@ getUserChatHistory(limit?: number): Promise<UserEvent[]>
 
 // Get a specific chat event by ID
 getChatEventById(eventId: string): Promise<UserEvent | null>
+```
+
+### Subscription Service (`src/services/subscriptionService.ts`)
+
+```typescript
+// Get all available subscription plans
+getSubscriptionPlans(): Promise<SubscriptionPlan[]>
+
+// Get the current user's subscription with plan details
+getCurrentSubscription(): Promise<SubscriptionWithPlan | null>
+
+// Get the user's subscription event history
+getSubscriptionEvents(limit?: number): Promise<SubscriptionEvent[]>
+
+// Create a Stripe checkout session for plan upgrade
+createCheckoutSession(
+  planId: string,
+  successUrl: string,
+  cancelUrl: string
+): Promise<CheckoutSessionResponse>
+
+// Manage subscription (cancel, resume, change plan)
+manageSubscription(
+  action: 'cancel' | 'resume' | 'change_plan',
+  planId?: string
+): Promise<ManageSubscriptionResponse>
+
+// Check if a subscription feature is enabled
+isFeatureEnabled(
+  subscription: SubscriptionWithPlan | null,
+  featureName: string
+): boolean
+
+// Calculate remaining usage for a limited feature
+getRemainingUsage(
+  subscription: SubscriptionWithPlan | null,
+  usageType: string
+): Promise<number | null>
 ```
 
 ### Logger Service (`src/utils/logger.ts`)
@@ -245,6 +335,19 @@ isRetryableError(error: any): boolean
     * `event` (UserEvent) - Chat event object
   * Outputs: Card with chat summary and link to details
 
+## Subscription Components and Functions
+
+### Subscription Components
+
+* `SubscriptionPage.tsx` - Page for managing subscription plans
+  * Outputs: Complete subscription management interface
+
+* `UsageIndicator.tsx` - Component for displaying usage limits
+  * Arguments:
+    * `usageType` (string) - Type of usage to display (e.g., "messages_per_day")
+    * `label` (string) - Display label for the usage metric
+  * Outputs: Visual indicator of usage limits with remaining count
+
 ## Database Tables
 
 ### `profiles` Table
@@ -271,9 +374,49 @@ isRetryableError(error: any): boolean
   - `is_active` (boolean)
   - `tag` (text)
 
+### `subscription_plans` Table
+  - `subscription_plan_id` (text, primary key)
+  - `subscription_name` (text)
+  - `subscription_description` (text)
+  - `subscription_price` (numeric)
+  - `interval` (text)
+  - `features` (text[])
+  - `is_active` (boolean)
+  - `created_at` (timestamptz)
+  - `updated_at` (timestamptz)
+  - `subscription_limits` (jsonb)
+  - `stripe_price_id` (text)
+
+### `subscription_events` Table
+  - `subscription_event_id` (uuid, primary key)
+  - `subscription_id` (uuid)
+  - `user_id` (uuid, references auth.users)
+  - `stripe_subscription_id` (text)
+  - `subscription_event_type` (text)
+  - `subscription_previous_state` (text)
+  - `subscription_status` (text)
+  - `event_data` (jsonb)
+  - `created_at` (timestamptz)
+
+### `subscriptions` Table
+  - `subscription_id` (uuid, primary key)
+  - `user_id` (uuid, references auth.users)
+  - `stripe_subscription_id` (text)
+  - `stripe_customer_id` (text)
+  - `subscription_status` (text)
+  - `subscription_plan_id` (text, references subscription_plans)
+  - `subscription_price` (numeric)
+  - `current_period_start` (timestamptz)
+  - `current_period_end` (timestamptz)
+  - `canceled_at` (timestamptz)
+  - `ended_at` (timestamptz)
+  - `metadata` (jsonb)
+  - `created_at` (timestamptz)
+  - `updated_at` (timestamptz)
+
 ## Development Context
 
-This application is a Vite app using React with TypeScript. It features a complete user authentication system using Supabase for authentication and database storage, along with ChatGPT integration for AI-powered conversations.
+This application is a Vite app using React with TypeScript. It features a complete user authentication system using Supabase for authentication and database storage, along with ChatGPT integration for AI-powered conversations and a subscription management system using Stripe.
 
 The application uses Supabase's Row Level Security to ensure users can only access their own data. It follows best practices for separation of concerns, type safety, and comprehensive error handling.
 
@@ -283,6 +426,13 @@ The chat system is built with:
 - Chat history tracking and retrieval
 - Responsive UI with markdown support for rich responses
 
+The subscription system is built with:
+- Stripe integration for payment processing
+- Free and premium subscription plans
+- Usage limits based on subscription tier
+- Subscription history tracking
+- Ability to upgrade, cancel, and resume subscriptions
+
 ## Environment Requirements
 
 The following environment variables are required:
@@ -291,18 +441,21 @@ The following environment variables are required:
 VITE_SUPABASE_URL=your-supabase-url
 VITE_SUPABASE_ANON_KEY=your-supabase-anon-key
 OPENAI_API_KEY=your-openai-api-key
+STRIPE_SECRET_KEY=your-stripe-secret-key
+STRIPE_WEBHOOK_SECRET=your-stripe-webhook-secret
 ```
 
-The OpenAI API key is used by the Supabase Edge Function and must be set in your Supabase project settings.
+The OpenAI API key and Stripe keys are used by the Supabase Edge Functions and must be set in your Supabase project settings.
 
 ## Setup and Deployment
 
 1. Set up Supabase project and configure authentication settings
 2. Update `.env` file with Supabase URL and anon key
-3. Add your OpenAI API key to Supabase environment variables
+3. Add your OpenAI API key and Stripe keys to Supabase environment variables
 4. Run Supabase migrations to create required tables and policies
-5. Deploy Supabase Edge Functions for ChatGPT integration
-6. Deploy to Netlify for hosting
+5. Deploy Supabase Edge Functions for ChatGPT integration and Stripe integration
+6. Create products and prices in your Stripe dashboard that match the subscription_plans table
+7. Deploy to Netlify for hosting
 
 ## Testing
 
@@ -342,6 +495,35 @@ For developers working with the ChatGPT integration:
    - To add features, extend the `ChatContext` or relevant services
    - For new UI components, follow the existing pattern of separation of concerns
    - Always maintain proper typing with the interfaces in `chat.types.ts`
+
+## Subscription Management Guidelines
+
+For developers working with the subscription system:
+
+1. **Subscription Plans**: Plans are defined in the `subscription_plans` table:
+   - Each plan has a unique ID, name, description, price, and feature list
+   - The `subscription_limits` JSON field defines usage restrictions
+
+2. **Edge Functions**: Three edge functions handle subscription management:
+   - `create-checkout`: Creates Stripe checkout sessions for new subscriptions
+   - `manage-subscription`: Handles subscription cancellation, resumption, and plan changes
+   - `stripe-webhook`: Processes webhook events from Stripe
+
+3. **Subscription Flow**:
+   - New users are automatically assigned the free plan
+   - Users can upgrade to paid plans through Stripe checkout
+   - Plan changes are processed through the Stripe API
+   - Subscription events are recorded in the `subscription_events` table
+
+4. **Usage Limits**: Feature restrictions are enforced based on subscription tier:
+   - The `subscription_limits` field in the plan defines usage caps
+   - The `UsageIndicator` component visualizes remaining usage
+   - The `isSubscriptionFeatureEnabled` function checks if features are available
+
+5. **Extending the Subscription System**:
+   - To add new plans, insert records into the `subscription_plans` table
+   - For new subscription features, extend the `isFeatureEnabled` function
+   - Always maintain proper typing with the interfaces in `subscription.types.ts`
 
 ## Development Strategy 
 

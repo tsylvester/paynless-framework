@@ -1,10 +1,12 @@
 import React, { useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { useAuth } from '../../hooks/useAuth';
-import { Shield, User, LogOut, ChevronDown, History, MessageSquare } from 'lucide-react';
+import { useSubscription } from '../../hooks/useSubscription';
+import { Shield, User, LogOut, ChevronDown, History, MessageSquare, CreditCard } from 'lucide-react';
 
 const Header: React.FC = () => {
   const { user, signOut } = useAuth();
+  const { subscription } = useSubscription();
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const location = useLocation();
 
@@ -20,6 +22,9 @@ const Header: React.FC = () => {
   const isActive = (path: string) => {
     return location.pathname === path;
   };
+
+  // Determine if user has premium subscription
+  const isPremium = subscription && subscription.subscription_plan_id !== 'free';
 
   return (
     <header className="bg-white shadow-sm">
@@ -63,6 +68,25 @@ const Header: React.FC = () => {
                   History
                 </div>
               </Link>
+
+              <Link 
+                to="/subscription" 
+                className={`px-3 py-2 text-sm font-medium rounded-md ${
+                  isActive('/subscription') 
+                    ? 'bg-blue-50 text-blue-700' 
+                    : 'text-gray-700 hover:text-gray-900 hover:bg-gray-50'
+                }`}
+              >
+                <div className="flex items-center">
+                  <CreditCard className="h-4 w-4 mr-1" />
+                  Subscription
+                  {isPremium && (
+                    <span className="ml-1.5 px-1.5 py-0.5 text-xs font-semibold bg-green-100 text-green-800 rounded-full">
+                      Premium
+                    </span>
+                  )}
+                </div>
+              </Link>
             </div>
           )}
 
@@ -100,6 +124,20 @@ const Header: React.FC = () => {
                       >
                         <User className="mr-2 h-4 w-4" />
                         Profile
+                      </Link>
+                      <Link 
+                        to="/subscription" 
+                        className="flex items-center px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                        onClick={() => setDropdownOpen(false)}
+                        role="menuitem"
+                      >
+                        <CreditCard className="mr-2 h-4 w-4" />
+                        Subscription
+                        {isPremium && (
+                          <span className="ml-1.5 px-1.5 py-0.5 text-xs font-semibold bg-green-100 text-green-800 rounded-full">
+                            Premium
+                          </span>
+                        )}
                       </Link>
                       <Link 
                         to="/history" 
