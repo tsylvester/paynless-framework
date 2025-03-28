@@ -7,6 +7,7 @@ import { PostgrestResponse, PostgrestSingleResponse } from '@supabase/supabase-j
 
 /**
  * Sends a chat message to the OpenAI API via Supabase Edge Function
+ * Maintains conversation continuity by passing and receiving the conversation ID
  */
 export const sendChatMessage = async (
   prompt: string, 
@@ -45,7 +46,7 @@ export const sendChatMessage = async (
         });
         
         if (!res.ok) {
-          const errorData = await res.json();
+          const errorData = await res.json().catch(() => ({ error: 'Failed to parse error response' }));
           logger.error('Error response from chat function:', errorData);
           throw new Error(errorData.error || 'Failed to send message');
         }
@@ -102,7 +103,7 @@ export const getSystemPrompts = async (): Promise<SystemPrompt[]> => {
     return [{
       prompt_id: 'default',
       name: 'default',
-      description: 'Default system prompt',
+      description: 'Default system prompt for general conversations',
       content: 'You are a helpful AI assistant. Answer questions concisely and accurately.',
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
@@ -185,5 +186,41 @@ export const getChatEventById = async (eventId: string): Promise<UserEvent | nul
   } catch (error) {
     logger.error('Error in getChatEventById:', error);
     return null;
+  }
+};
+
+/**
+ * Deletes a chat event by ID
+ */
+export const deleteChatEvent = async (eventId: string): Promise<boolean> => {
+  try {
+    // First check if the user is authenticated
+    const { data: sessionData } = await supabase.auth.getSession();
+    
+    if (!sessionData.session) {
+      logger.warn('Trying to delete chat event without authentication');
+      return false;
+    }
+    
+    const { error } = await withRetry(
+      async () => {
+        return await supabase
+          .from('user_events')
+          .delete()
+          .eq('event_id', eventId)
+          .eq('user_id', sessionData.session?.user.id); // Ensure user can only delete their own events
+      },
+      { maxRetries: 2 }
+    );
+    
+    if (error) {
+      logger.error('Error deleting chat event:', error);
+      throw error;
+    }
+    
+    return true;
+  } catch (error) {
+    logger.error('Error in deleteChatEvent:', error);
+    return false;
   }
 };

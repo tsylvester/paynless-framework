@@ -68,9 +68,12 @@ export const ChatProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   }, [generateConversationId]);
 
   // Function to save current chat to localStorage
-  const saveChatToLocalStorage = useCallback((chatMessages: ChatMessage[]) => {
+  const saveChatToLocalStorage = useCallback((chatMessages: ChatMessage[], chatConversationId: string | null) => {
     try {
       localStorage.setItem(CHAT_MESSAGES_KEY, JSON.stringify(chatMessages));
+      if (chatConversationId) {
+        localStorage.setItem(CONVERSATION_ID_KEY, chatConversationId);
+      }
     } catch (err) {
       logger.error('Error saving chat to localStorage:', err);
     }
@@ -190,12 +193,14 @@ export const ChatProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     const updatedMessages = [...messages, userMessage];
     setMessages(updatedMessages);
     
-    // Save the updated messages to localStorage
-    saveChatToLocalStorage(updatedMessages);
+    // Save the updated messages to localStorage with the conversation ID
+    saveChatToLocalStorage(updatedMessages, conversationId);
     
     try {
       // Filter messages to only include user and assistant for the API call
       const previousMessages = messages.filter(msg => msg.role !== 'system');
+      
+      logger.debug('Sending message with conversation ID:', conversationId);
       
       const { messages: responseMessages } = await sendChatMessage(
         message,
@@ -208,7 +213,7 @@ export const ChatProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       setMessages(responseMessages);
       
       // Save the response messages to localStorage
-      saveChatToLocalStorage(responseMessages);
+      saveChatToLocalStorage(responseMessages, conversationId);
       
       logger.info('Message sent successfully with conversation ID:', conversationId);
     } catch (err) {
@@ -229,7 +234,7 @@ export const ChatProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       setMessages(messagesWithError);
       
       // Save even the error state to localStorage to preserve context
-      saveChatToLocalStorage(messagesWithError);
+      saveChatToLocalStorage(messagesWithError, conversationId);
     } finally {
       setIsLoading(false);
     }

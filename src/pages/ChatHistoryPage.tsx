@@ -3,7 +3,7 @@ import { useAuth } from '../hooks/useAuth';
 import { getUserChatHistory } from '../services/chatService';
 import { UserEvent } from '../types/chat.types';
 import ChatHistoryCard from '../components/chat/ChatHistoryCard';
-import { History, Search, AlertTriangle } from 'lucide-react';
+import { History, Search, AlertTriangle, Trash2 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { logger } from '../utils/logger';
 
@@ -22,22 +22,37 @@ const ChatHistoryPage: React.FC = () => {
       return;
     }
 
-    const fetchChatHistory = async () => {
-      setIsLoading(true);
-      setError(null);
-      try {
-        const history = await getUserChatHistory(50); // Get up to 50 recent chats
-        setChatHistory(history);
-      } catch (err) {
-        logger.error('Error fetching chat history:', err);
-        setError('Failed to load chat history. Please try again later.');
-      } finally {
-        setIsLoading(false);
-      }
-    };
-
     fetchChatHistory();
   }, [user, navigate]);
+
+  const fetchChatHistory = async () => {
+    setIsLoading(true);
+    setError(null);
+    try {
+      const history = await getUserChatHistory(50); // Get up to 50 recent chats
+      setChatHistory(history);
+    } catch (err) {
+      logger.error('Error fetching chat history:', err);
+      setError('Failed to load chat history. Please try again later.');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleDeleteChat = (eventId: string) => {
+    // Update local state to remove the deleted chat
+    setChatHistory(prev => prev.filter(chat => chat.event_id !== eventId));
+    // Show a success message
+    setTimeout(() => {
+      const successElement = document.getElementById('delete-success');
+      if (successElement) {
+        successElement.classList.remove('hidden');
+        setTimeout(() => {
+          successElement.classList.add('hidden');
+        }, 3000);
+      }
+    }, 100);
+  };
 
   const filteredHistory = searchTerm
     ? chatHistory.filter(chat => 
@@ -83,7 +98,7 @@ const ChatHistoryPage: React.FC = () => {
             <AlertTriangle className="h-10 w-10 text-red-500 mx-auto mb-3" />
             <p className="text-red-700">{error}</p>
             <button
-              onClick={() => window.location.reload()}
+              onClick={() => fetchChatHistory()}
               className="mt-4 px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700"
             >
               Try Again
@@ -102,11 +117,27 @@ const ChatHistoryPage: React.FC = () => {
             </button>
           </div>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {filteredHistory.map(chat => (
-              <ChatHistoryCard key={chat.event_id} event={chat} />
-            ))}
-          </div>
+          <>
+            {/* Success notification for deleted chats */}
+            <div id="delete-success" className="fixed top-4 right-4 bg-green-100 border border-green-400 text-green-700 px-4 py-3 rounded shadow-md hidden transition-opacity duration-300 z-50">
+              <div className="flex items-center">
+                <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7"></path>
+                </svg>
+                <span>Chat deleted successfully</span>
+              </div>
+            </div>
+            
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              {filteredHistory.map(chat => (
+                <ChatHistoryCard 
+                  key={chat.event_id} 
+                  event={chat} 
+                  onDelete={handleDeleteChat}
+                />
+              ))}
+            </div>
+          </>
         )}
       </div>
     </div>

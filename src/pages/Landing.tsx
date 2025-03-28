@@ -32,6 +32,11 @@ const Landing: React.FC = () => {
     }
   }, [user]);
 
+  const handleDeleteChat = (eventId: string) => {
+    // Update local state to remove the deleted chat
+    setRecentChats(prev => prev.filter(chat => chat.event_id !== eventId));
+  };
+
   return (
     <div className="min-h-[calc(100vh-8rem)] px-4 py-8">
       <div className="max-w-6xl mx-auto">
@@ -62,7 +67,11 @@ const Landing: React.FC = () => {
             ) : recentChats.length > 0 ? (
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                 {recentChats.map(chat => (
-                  <ChatHistoryCard key={chat.event_id} event={chat} />
+                  <ChatHistoryCard 
+                    key={chat.event_id} 
+                    event={chat} 
+                    onDelete={handleDeleteChat}
+                  />
                 ))}
               </div>
             ) : (
