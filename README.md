@@ -5,7 +5,6 @@ A robust user environment with AI integration built with React, Vite, and TypeSc
 ## Bug to be fixed: 
 - Chat history currently saved per exchange instead of continuously
 - Chat date overlaps delete button
-- Page reload forgets user session
 
 ## In testing: 
 - Subscription elements
@@ -50,6 +49,49 @@ A robust user environment with AI integration built with React, Vite, and TypeSc
 - Choose "Add from Github"
 - Select your project
 - Unselect package-lock.json
+
+## How to load the keys into Supabase
+- Navigate to https://supabase.com/dashboard/project/[YOUR DATABASE]/functions/secrets
+- Add key-value pairs for: 
+-- SUPABASE_URL
+-- SUPABASE_ANON_KEY
+-- SUPABASE_SERVICE_ROLE_KEY
+-- SUPABASE_DB_URL
+-- OPENAI_API_KEY
+-- STRIPE_SECRET_KEY
+-- STRIPE_TEST_WEBHOOK_SECRET
+-- STRIPE_LIVE_WEBHOOK_SECRET
+
+## How to set up Supabase edge functions
+- Navigate to https://supabase.com/dashboard/project/[YOUR DATABASE]/functions
+- Click the "Create with Supabase Assistant" button beside "Deploy new function" 
+
+- Deploy chat edge function
+-- Tell Supabase you want to create a AI chat function at https://[YOUR DATABASE].supabase.co/functions/v1/chat
+-- Give it the /supabase/functions/chat/index.ts file. 
+-- Let it analyze the file, then select "Deploy". 
+
+- Deploy create-checkout edge function
+-- Tell Supabase you want to create a create-checkout function at https://[YOUR DATABASE].supabase.co/functions/v1/create-checkout
+-- Give it the /supabase/functions/create-checkout/index.ts file.
+-- Let it analyze the file, then select "Deploy." 
+
+- Deploy manage-subscription edge function
+-- Tell Supabase you want to create a manage-subscription function at https://[YOUR DATABASE].supabase.co/functions/v1/manage-subscription
+-- Give it the /supabase/functions/manage-subscription/index.ts file.
+-- Let it analyze the file, then select "Deploy." 
+
+- Deploy stripe-webhook edge function
+-- Tell Supabase you want to create a stripe-webhook function at https://[YOUR DATABASE].supabase.co/functions/v1/stripe-webhook
+-- Give it the /supabase/functions/stripe-webhook/index.ts file.
+-- Let it analyze the file, then select "Deploy." 
+
+## How to load keys into Netlify
+- Connect Netlify to Supabase under Site Configuration -> Supabase. 
+
+## How to set up Stripe webhooks 
+
+## How to set up Stripe keys
 
 ## File Structure
 

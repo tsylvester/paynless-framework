@@ -25,10 +25,15 @@ class EventEmitter {
     }
 
     emit<K extends keyof EventMap>(event: K, data: EventMap[K]): void {
-        this.listeners[event]?.forEach(listener => listener(data));
+        const eventListeners = this.listeners[event] || [];
+        eventListeners.forEach(listener => {
+            try {
+                listener(data);
+            } catch (error) {
+                console.error(`Error in event listener for ${String(event)}:`, error);
+            }
+        });
     }
 }
 
 export const eventEmitter = new EventEmitter();
-
-

@@ -132,6 +132,15 @@ export const createCheckoutSession = async (
       throw new Error('Authentication required');
     }
 
+    // Modify the success URL to include the required parameters
+    // Add a random cache buster to prevent browser caching
+    const enhancedSuccessUrl = `${successUrl}${successUrl.includes('?') ? '&' : '?'}session_id={CHECKOUT_SESSION_ID}&session_status=success&t=${Date.now()}`;
+    
+    logger.debug('Creating checkout session with URLs:', { 
+      success: enhancedSuccessUrl, 
+      cancel: cancelUrl 
+    });
+
     // Call the Supabase Edge Function to create a checkout session
     const response = await fetch(
       `${import.meta.env.VITE_SUPABASE_DATABASE_URL}/functions/v1/create-checkout`,
@@ -143,7 +152,7 @@ export const createCheckoutSession = async (
         },
         body: JSON.stringify({
           planId,
-          successUrl,
+          successUrl: enhancedSuccessUrl,
           cancelUrl,
         }),
       }
@@ -155,6 +164,11 @@ export const createCheckoutSession = async (
     }
 
     const data = await response.json();
+    logger.info('Checkout session created successfully', { 
+      sessionId: data.session_id,
+      hasUrl: !!data.url
+    });
+    
     return data as CheckoutSessionResponse;
   } catch (error) {
     logger.error('Error creating checkout session:', error);
@@ -196,6 +210,7 @@ export const manageSubscription = async (
     }
 
     const data = await response.json();
+    logger.info(`Subscription ${action} successful`, data);
     return data as ManageSubscriptionResponse;
   } catch (error) {
     logger.error(`Error managing subscription (${action}):`, error);
