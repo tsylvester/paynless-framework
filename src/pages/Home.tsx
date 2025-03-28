@@ -1,5 +1,5 @@
 import React from 'react';
-import { useAuth } from '../context/AuthContext';
+import { useAuth } from '../hooks/useAuth';
 import SignOut from '../components/auth/SignOut';
 import { Shield, WifiOff, RefreshCw } from 'lucide-react';
 import { Link } from 'react-router-dom';

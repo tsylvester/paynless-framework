@@ -1,3 +1,4 @@
+// Path: src/context/AuthContext.tsx
 import React, { createContext, useState, useEffect, ReactNode, useCallback, useRef } from 'react';
 import { supabase, getUser, getSession, refreshSession, safeSignOut, categorizeAuthError } from '../services/supabase';
 import { AuthErrorType } from '../types/auth.types';
@@ -95,6 +96,39 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       logger.debug(`Auth initializing with network status: ${networkStatus}`);
       updateAuthStatus({ networkStatus });
       
+      // First, try to get the session from Supabase - this should use the
+      // persisted session in localStorage if available
+      const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
+      
+      if (sessionError) {
+        logger.error('Error getting session:', sessionError);
+      } else if (sessionData.session) {
+        logger.info('Found existing session');
+        
+        // Get the user data based on the session
+        const { data: userData, error: userError } = await supabase.auth.getUser();
+        
+        if (userError) {
+          logger.error('Error getting user from session:', userError);
+        } else if (userData.user) {
+          // We have both a valid session and a user - update state
+          updateAuthStatus({
+            user: userData.user as User | null,
+            session: sessionData.session as Session | null,
+            isLoading: false,
+            authStatus: 'authenticated',
+          });
+          
+          // Set up session refresh
+          scheduleSessionRefresh(sessionData.session as Session);
+          
+          initializingRef.current = false;
+          return;
+        }
+      }
+      
+      // If we reach here, either there was no session or it wasn't valid
+      // Continue with normal initialization
       if (!isOnline) {
         logger.debug('Network offline during auth initialization - using cached data if available');
         // Even offline, we can still check for local session data
@@ -107,6 +141,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
               isLoading: false,
               authStatus: 'authenticated',
             });
+            initializingRef.current = false;
             return;
           }
         } catch {
@@ -114,9 +149,11 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         }
         
         updateAuthStatus({ isLoading: false, authStatus: 'unauthenticated' });
+        initializingRef.current = false;
         return;
       }
       
+      // Standard online initialization
       // Attempt to get both user and session
       const [user, session] = await Promise.all([getUser(), getSession()]);
       

@@ -1,3 +1,4 @@
+// Path: src/context/ChatContext.tsx
 import React, { createContext, useState, ReactNode, useEffect, useRef, useCallback } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { ChatMessage, ChatContextType, SystemPrompt } from '../types/chat.types';
@@ -23,6 +24,7 @@ export const ChatContext = createContext<ChatContextType>(initialState);
 const PENDING_MESSAGE_KEY = 'pendingChatMessage';
 const PENDING_PROMPT_KEY = 'pendingSystemPrompt';
 const NAVIGATION_TYPE_KEY = 'chatNavigationType';
+const CHAT_MESSAGES_KEY = 'chatMessages'; // New key for saving current chat
 
 export const ChatProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -35,6 +37,51 @@ export const ChatProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const location = useLocation();
   const navigate = useNavigate();
   const previousPathRef = useRef<string>('');
+  const retryTimeoutRef = useRef<number | null>(null);
+  const sendMessageRef = useRef<((message: string, systemPromptName?: string) => Promise<void>) | null>(null);
+  const retryMessageRef = useRef<{ message: string; systemPromptName: string } | null>(null);
+
+  const clearChat = useCallback(() => {
+    setMessages([]);
+    setError(null);
+    
+    // Also clear saved chat messages from localStorage
+    localStorage.removeItem(CHAT_MESSAGES_KEY);
+  }, []);
+
+  // Function to save current chat to localStorage
+  const saveChatToLocalStorage = useCallback((chatMessages: ChatMessage[]) => {
+    try {
+      localStorage.setItem(CHAT_MESSAGES_KEY, JSON.stringify(chatMessages));
+    } catch (err) {
+      logger.error('Error saving chat to localStorage:', err);
+    }
+  }, []);
+
+  // Function to load chat from localStorage
+  const loadChatFromLocalStorage = useCallback(() => {
+    try {
+      const savedChat = localStorage.getItem(CHAT_MESSAGES_KEY);
+      if (savedChat) {
+        const parsedChat = JSON.parse(savedChat);
+        if (Array.isArray(parsedChat) && parsedChat.length > 0) {
+          logger.info('Loaded saved chat from localStorage');
+          return parsedChat as ChatMessage[];
+        }
+      }
+    } catch (err) {
+      logger.error('Error loading chat from localStorage:', err);
+    }
+    return null;
+  }, []);
+  
+  // Load saved messages on initial mount
+  useEffect(() => {
+    const savedMessages = loadChatFromLocalStorage();
+    if (savedMessages) {
+      setMessages(savedMessages);
+    }
+  }, [loadChatFromLocalStorage]);
   
   // Add useEffect to fetch system prompts
   useEffect(() => {
@@ -42,6 +89,13 @@ export const ChatProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       try {
         const prompts = await getSystemPrompts();
         setSystemPrompts(prompts);
+        
+        // If we have a saved preferred prompt and it exists in the fetched prompts,
+        // use it as the selected prompt
+        const savedPrompt = localStorage.getItem(PENDING_PROMPT_KEY);
+        if (savedPrompt && prompts.some(p => p.name === savedPrompt)) {
+          setSelectedPrompt(savedPrompt);
+        }
       } catch (err) {
         logger.error('Error fetching system prompts:', err);
       }
@@ -55,6 +109,23 @@ export const ChatProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     localStorage.setItem(PENDING_PROMPT_KEY, systemPromptName);
     localStorage.setItem(NAVIGATION_TYPE_KEY, 'auth-flow');
   }, [selectedPrompt]);
+  
+  // Auto retry mechanism for failed messages
+  const scheduleRetry = useCallback((message: string, systemPromptName: string) => {
+    if (retryTimeoutRef.current) {
+      window.clearTimeout(retryTimeoutRef.current);
+    }
+    
+    retryMessageRef.current = { message, systemPromptName };
+    
+    // Retry after 3 seconds
+    retryTimeoutRef.current = window.setTimeout(() => {
+      if (user && isOnline && sendMessageRef.current && retryMessageRef.current) {
+        logger.info('Attempting to retry failed message');
+        sendMessageRef.current(retryMessageRef.current.message, retryMessageRef.current.systemPromptName);
+      }
+    }, 3000);
+  }, [user, isOnline]);
   
   // Updated sendMessage function wrapped in useCallback
   const sendMessage = useCallback(async (message: string, systemPromptName: string = selectedPrompt) => {
@@ -76,36 +147,57 @@ export const ChatProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     
     // Add user message immediately for better UX
     const userMessage: ChatMessage = { role: 'user', content: message };
-    setMessages(prevMessages => [...prevMessages, userMessage]);
+    const updatedMessages = [...messages, userMessage];
+    setMessages(updatedMessages);
+    
+    // Save the updated messages to localStorage
+    saveChatToLocalStorage(updatedMessages);
     
     try {
       // Filter messages to only include user and assistant for the API call
       const previousMessages = messages.filter(msg => msg.role !== 'system');
       
-      const { messages: updatedMessages } = await sendChatMessage(
+      const { messages: responseMessages } = await sendChatMessage(
         message,
         previousMessages,
         systemPromptName
       );
       
       // Update with complete message history from the response
-      setMessages(updatedMessages);
+      setMessages(responseMessages);
+      
+      // Save the response messages to localStorage
+      saveChatToLocalStorage(responseMessages);
       
       logger.info('Message sent successfully');
     } catch (err) {
       logger.error('Error sending message:', err);
       setError(err as Error);
       
+      // If the error is an auth error, schedule a retry after user logs in again
+      if ((err as Error).message.includes('session') || (err as Error).message.includes('sign in')) {
+        scheduleRetry(message, systemPromptName);
+      }
+      
       // Keep the user message but add an error indicator
       const errorMessage: ChatMessage = { 
         role: 'assistant', 
-        content: 'Sorry, there was an error processing your request. Please try again later.' 
+        content: `Error: ${(err as Error).message || 'There was a problem sending your message. Please try again.'}` 
       };
-      setMessages(prevMessages => [...prevMessages, errorMessage]);
+      const messagesWithError = [...updatedMessages, errorMessage];
+      setMessages(messagesWithError);
+      
+      // Save even the error state to localStorage to preserve context
+      saveChatToLocalStorage(messagesWithError);
     } finally {
       setIsLoading(false);
     }
-  }, [user, isOnline, messages, selectedPrompt, prepareAuthNavigation]);
+  }, [user, isOnline, messages, selectedPrompt, prepareAuthNavigation, saveChatToLocalStorage, scheduleRetry]);
+  
+  // Store sendMessage in ref
+  useEffect(() => {
+    sendMessageRef.current = sendMessage;
+  }, [sendMessage]);
   
   // Load any pending message on auth success
   useEffect(() => {
@@ -154,32 +246,26 @@ export const ChatProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     
     // Update previous path reference
     previousPathRef.current = currentPath;
-  }, [location.pathname]);
-  
-  const clearChat = () => {
-    setMessages([]);
-    setError(null);
-  };
+  }, [location.pathname, clearChat]);
 
-    // Function to handle navigation to auth pages
-    const navigateToAuth = (path: string = '/signin') => {
-      // Mark this as part of auth flow to prevent chat clearing
-      localStorage.setItem(NAVIGATION_TYPE_KEY, 'auth-flow');
-      navigate(path);
-    };
-
+  // Function to handle navigation to auth pages
+  const navigateToAuth = useCallback((path: string = '/signin') => {
+    // Mark this as part of auth flow to prevent chat clearing
+    localStorage.setItem(NAVIGATION_TYPE_KEY, 'auth-flow');
+    navigate(path);
+  }, [navigate]);
     
-    const value = {
-      messages,
-      isLoading,
-      error,
-      sendMessage,
-      clearChat,
-      systemPrompts,
-      selectedPrompt,
-      setSelectedPrompt,
-      navigateToAuth, // Expose this function for components
-    };
+  const value = {
+    messages,
+    isLoading,
+    error,
+    sendMessage,
+    clearChat,
+    systemPrompts,
+    selectedPrompt,
+    setSelectedPrompt,
+    navigateToAuth, // Expose this function for components
+  };
 
   return <ChatContext.Provider value={value}>{children}</ChatContext.Provider>;
 };

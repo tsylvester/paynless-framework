@@ -1,5 +1,12 @@
+
+// Modified edge function with improved error handling and RLS bypass
+// Path: supabase/functions/chat/index.ts
+
+// @ts-expect-error Deno used by Supabase
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+// @ts-expect-error Deno used by Supabase
 import OpenAI from "npm:openai@4.28.0";
+// @ts-expect-error Deno used by Supabase
 import { createClient } from "npm:@supabase/supabase-js@2.38.4";
 
 const corsHeaders = {
@@ -8,17 +15,27 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "Content-Type, Authorization",
 };
 
+// @ts-expect-error Deno used by Supabase
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") || "";
+// @ts-expect-error Deno used by Supabase
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
+// @ts-expect-error Deno used by Supabase
 const OPENAI_API_KEY = Deno.env.get("OPENAI_API_KEY") || "";
 
-// In your Edge Function
+// Initialize Supabase client with service role key to bypass RLS
 const supabase = createClient(
   SUPABASE_URL,
-  SUPABASE_SERVICE_ROLE_KEY, // Use service role instead of anon key
+  SUPABASE_SERVICE_ROLE_KEY,
   {
     auth: {
       persistSession: false,
+      autoRefreshToken: false,
+    },
+    // Explicitly set the global settings to use service role permissions
+    global: {
+      headers: {
+        'Authorization': `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`
+      }
     }
   }
 );
@@ -77,7 +94,7 @@ serve(async (req: Request) => {
   }
 
   try {
-    // Get the authorization header
+    // Get the authorization header for user authentication
     const authHeader = req.headers.get("Authorization");
     console.log("Auth header present:", !!authHeader);
     
@@ -91,7 +108,7 @@ serve(async (req: Request) => {
       );
     }
 
-    // Verify the user is authenticated
+    // Verify the user is authenticated (we still need to know who the user is)
     const token = authHeader.replace("Bearer ", "");
     console.log("Attempting to authenticate user with token");
     
@@ -139,6 +156,7 @@ serve(async (req: Request) => {
     console.log("Fetching system prompt:", systemPromptName);
     
     let systemPromptData;
+    // Use admin client for this query to bypass RLS
     const systemPromptResponse = await supabase
       .from("system_prompts")
       .select("content")
@@ -195,6 +213,7 @@ serve(async (req: Request) => {
     console.log("All messages prepared for storage");
 
     // Store the interaction in user_events with complete message history
+    // Here we're using the supabase client with SERVICE ROLE credentials
     console.log("Storing chat in user_events table");
     console.log("User ID for storage:", user.id);
     
@@ -211,61 +230,50 @@ serve(async (req: Request) => {
         model: model
       },
     };
-    console.log("Insert data prepared:", JSON.stringify(insertData).substring(0, 100) + "...");
     
-    // When inserting user events with service role
-    const insertResponse = await supabase
+    console.log("Insert data prepared");
+    
+    // Direct insert using service role credentials should bypass RLS
+    const { data: insertData2, error: insertError } = await supabase
       .from("user_events")
       .insert(insertData)
-      .select(); // Add select to get the returned data
-
-    // If this fails due to RLS (which it shouldn't with service role)
-    if (insertResponse.error) {
-      console.error("Error storing chat history:", insertResponse.error);
-      
-      // Attempt with RLS bypass if needed
-      if (insertResponse.error.code === "42501") { // Permission denied
-        try {
-          const bypassResponse = await supabase.auth.admin.updateUserById(
-            user.id,
-            { app_metadata: { bypass_rls: true } }
-          );
-          
-          if (!bypassResponse.error) {
-            // Try the insert again
-            const retryInsert = await supabase
-              .from("user_events")
-              .insert(insertData);
-              
-            // Reset the bypass_rls
-            await supabase.auth.admin.updateUserById(
-              user.id,
-              { app_metadata: { bypass_rls: false } }
-            );
-              
-            if (!retryInsert.error) {
-              console.log("Chat history stored successfully using RLS bypass");
-            }
-          }
-        } catch (bypassError) {
-          console.error("Error with RLS bypass attempt:", bypassError);
-        }
-      }
-    }    
-    const insertError = insertResponse.error;
-    
-    console.log("Insert completed");
-    console.log("Insert error:", insertError ? JSON.stringify(insertError) : "none");
-    console.log("Insert status:", insertError ? "FAILED" : "SUCCESS");
+      .select();
 
     if (insertError) {
       console.error("Error storing chat history:", insertError);
+      
+      // Try a different approach - explicitly set auth context
+      try {
+        console.log("Attempting alternative insert approach");
+        
+        // Using a raw SQL insert as a last resort to bypass RLS completely
+        const { data: sqlData, error: sqlError } = await supabase.rpc('insert_chat_event', {
+          p_user_id: user.id,
+          p_event_type: 'chat',
+          p_event_description: prompt.substring(0, 100) + (prompt.length > 100 ? "..." : ""),
+          p_event_details: JSON.stringify({
+            prompt,
+            systemPromptName,
+            response,
+            timestamp: new Date().toISOString(),
+            messages: allMessages,
+            model: model
+          })
+        });
+        
+        if (sqlError) {
+          console.error("Alternative insert also failed:", sqlError);
+        } else {
+          console.log("Alternative insert succeeded");
+        }
+      } catch (altError) {
+        console.error("Alternative insert exception:", altError);
+      }
     } else {
       console.log("Chat history stored successfully");
     }
 
-    // Return the response
-    console.log("Preparing response to client");
+    // Always return the response to the client, even if storage fails
     return new Response(
       JSON.stringify({
         response,

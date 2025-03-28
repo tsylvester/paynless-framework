@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useAuth } from '../context/AuthContext';
+import { useAuth } from '../hooks/useAuth';
 import { getUserChatHistory } from '../services/chatService';
 import { UserEvent } from '../types/chat.types';
 import ChatHistoryCard from '../components/chat/ChatHistoryCard';

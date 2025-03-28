@@ -1,3 +1,4 @@
+// Path: src/services/supabase.ts
 import { createClient } from '@supabase/supabase-js';
 import { logger } from '../utils/logger';
 import { networkMonitor } from '../utils/network';
@@ -12,15 +13,16 @@ if (!supabaseUrl || !supabaseAnonKey) {
   throw new Error('Missing Supabase environment variables');
 }
 
+// Configure Supabase client with proper persistence options
 export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   auth: {
     persistSession: true, // Enable persistent sessions
     storageKey: 'auth-storage', // Custom storage key
     autoRefreshToken: true, // Auto-refresh the token
     detectSessionInUrl: true, // Detect auth redirects
+    storage: localStorage // Explicitly set storage to localStorage
   }
 });
-
 
 /**
  * Categorizes an error into a specific auth error type
@@ -62,6 +64,26 @@ export function categorizeAuthError(error: unknown): AuthErrorType {
  */
 export const getUser = async () => {
   try {
+    // Try to get session from localStorage first
+    const storedSession = localStorage.getItem('auth-storage');
+    
+    // Check if we have a stored session before making network requests
+    if (storedSession) {
+      try {
+        const parsedSession = JSON.parse(storedSession);
+        if (parsedSession && parsedSession.user) {
+          logger.debug('Retrieved user from localStorage');
+          // If we have a valid local session and we're offline, use it
+          if (!networkMonitor.isOnline()) {
+            return parsedSession.user;
+          }
+        }
+      } catch (e) {
+        logger.debug('Error parsing stored session', e);
+        // Continue to network request if parsing fails
+      }
+    }
+    
     // Only try network operations if we're online
     if (!networkMonitor.isOnline()) {
       logger.debug('Network offline, cannot fetch user');
@@ -142,10 +164,17 @@ export const getSession = async () => {
     // If we have a session but we're online, refresh it to ensure it's valid
     if (data.session && networkMonitor.isOnline()) {
       try {
-        const { data: refreshData } = await supabase.auth.refreshSession();
+        const { data: refreshData, error: refreshError } = await supabase.auth.refreshSession();
+        
+        if (refreshError) {
+          logger.warn('Session refresh failed', refreshError);
+          // If refresh fails, still return the existing session
+          return data.session;
+        }
+        
         return refreshData.session;
       } catch (refreshError) {
-        logger.warn('Session refresh failed, using existing session', refreshError);
+        logger.warn('Session refresh failed with exception', refreshError);
         return data.session;
       }
     }
@@ -218,7 +247,7 @@ export const safeSignOut = async (): Promise<boolean> => {
       
       // Force clear any localStorage auth items as a fallback
       for (const key of Object.keys(localStorage)) {
-        if (key.startsWith('supabase.auth') || key.startsWith('sb-')) {
+        if (key.startsWith('supabase.auth') || key.startsWith('sb-') || key === 'auth-storage') {
           localStorage.removeItem(key);
         }
       }

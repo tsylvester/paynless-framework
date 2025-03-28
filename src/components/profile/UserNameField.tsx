@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { supabase } from '../../services/supabase';
-import { useAuth } from '../../context/AuthContext';
+import { useAuth } from '../../hooks/useAuth';
 import { logger } from '../../utils/logger';
 import ProfileField from './ProfileField';
 

@@ -1,5 +1,5 @@
 import React from 'react';
-import { useAuth } from '../../context/AuthContext';
+import { useAuth } from '../../hooks/useAuth';
 import { logger } from '../../utils/logger';
 import { LogOut } from 'lucide-react';
 

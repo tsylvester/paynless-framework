@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useAuth } from '../context/AuthContext';
+import { useAuth } from '../hooks/useAuth';
 import ChatContainer from '../components/chat/ChatContainer';
 import { getUserChatHistory } from '../services/chatService';
 import ChatHistoryCard from '../components/chat/ChatHistoryCard';
@@ -32,17 +32,11 @@ const Landing: React.FC = () => {
     }
   }, [user]);
 
-  // Pass the onSubmitWithoutAuth prop to maintain the interface but we don't need to do anything
-  // since the ChatInput now handles storing the message in localStorage
-  const handleSubmitWithoutAuth = () => {
-    // The actual storage of the message is now handled in ChatInput
-  };
-
   return (
     <div className="min-h-[calc(100vh-8rem)] px-4 py-8">
       <div className="max-w-6xl mx-auto">
         <div className="mb-8">
-          <ChatContainer onSubmitWithoutAuth={handleSubmitWithoutAuth} />
+          <ChatContainer/>
         </div>
 
         {user && (

@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { getChatEventById } from '../services/chatService';
 import { UserEvent, ChatMessage } from '../types/chat.types';
-import { useAuth } from '../context/AuthContext';
+import { useAuth } from '../hooks/useAuth';
 import ChatHistory from '../components/chat/ChatHistory';
 import { ArrowLeft, Calendar, Tag } from 'lucide-react';
 import { logger } from '../utils/logger';

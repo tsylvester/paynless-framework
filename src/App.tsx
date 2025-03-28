@@ -1,4 +1,3 @@
-import React from 'react';
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import { AuthProvider } from './context/AuthContext';
 import { ChatProvider } from './context/ChatContext';
@@ -17,8 +16,8 @@ import ChatDetailsPage from './pages/ChatDetailsPage';
 function App() {
   return (
     <AuthProvider>
-      <ChatProvider>
-        <Router>
+      <Router>
+        <ChatProvider>
           <Layout>
             <Routes>
               <Route path="/" element={<Landing />} />
@@ -33,8 +32,8 @@ function App() {
               <Route path="/auth/update-password" element={<UpdatePassword />} />
             </Routes>
           </Layout>
-        </Router>
-      </ChatProvider>
+        </ChatProvider>
+      </Router>
     </AuthProvider>
   );
 }

@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { useAuth } from '../context/AuthContext';
+import { useAuth } from '../hooks/useAuth';
 import { supabase } from '../services/supabase';
-import { UserCircle, Mail, Calendar, Loader } from 'lucide-react';
+import { UserCircle, Calendar, Loader } from 'lucide-react';
 import { logger } from '../utils/logger';
 import UserNameField from '../components/profile/UserNameField';
 import EmailField from '../components/profile/EmailField';
@@ -131,7 +131,7 @@ const Profile: React.FC = () => {
     }
   };
 
-  const handleEmailUpdate = (newEmail: string) => {
+  const handleEmailUpdate = () => {
     // Just update the UI temporarily - actual verification status
     // will be updated on the next page load from the auth API
     setIsVerified(false);
@@ -206,7 +206,7 @@ const Profile: React.FC = () => {
         <div className="space-y-6">
           {/* Username field */}
           <UserNameField 
-            userName={profileData?.user_name} 
+            userName={profileData?.user_name ?? "Username"} 
             onUpdate={handleUserNameUpdate} 
           />
 

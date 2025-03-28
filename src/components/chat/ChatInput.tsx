@@ -1,33 +1,11 @@
-import React, { useState, FormEvent, useEffect } from 'react';
-import { useChat } from '../../context/ChatContext';
-import { useAuth } from '../../context/AuthContext';
-import { useNavigate } from 'react-router-dom';
+import React, { useState, FormEvent } from 'react';
+import { useChat } from '../../hooks/useChat';
+import { useAuth } from '../../hooks/useAuth';
 import { Send } from 'lucide-react';
-
-interface ChatInputProps {
-  onSubmitWithoutAuth?: (message: string) => void;
-}
-
-const PENDING_MESSAGE_KEY = 'pendingChatMessage';
-
-const ChatInput: React.FC<ChatInputProps> = ({ onSubmitWithoutAuth }) => {
+const ChatInput: React.FC = () => {
   const [inputMessage, setInputMessage] = useState('');
-  const { sendMessage, isLoading, selectedPrompt, systemPrompts } = useChat();
+  const { sendMessage, isLoading, selectedPrompt, systemPrompts, navigateToAuth, setSelectedPrompt } = useChat();
   const { user, isOnline } = useAuth();
-  const navigate = useNavigate();
-
-  // Check for pending message in localStorage when component mounts or user changes
-  useEffect(() => {
-    if (user) {
-      const pendingMessage = localStorage.getItem(PENDING_MESSAGE_KEY);
-      if (pendingMessage) {
-        // Send the pending message
-        sendMessage(pendingMessage, selectedPrompt);
-        // Clear the pending message from localStorage
-        localStorage.removeItem(PENDING_MESSAGE_KEY);
-      }
-    }
-  }, [user, sendMessage, selectedPrompt]);
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
@@ -35,15 +13,10 @@ const ChatInput: React.FC<ChatInputProps> = ({ onSubmitWithoutAuth }) => {
     const message = inputMessage.trim();
     if (!message) return;
     
-    // If user is not authenticated, store the message and redirect to sign in
+    // If user is not authenticated, prepare for auth flow and return
     if (!user) {
-      // Store message in localStorage before redirecting
-      localStorage.setItem(PENDING_MESSAGE_KEY, message);
-      
-      if (onSubmitWithoutAuth) {
-        onSubmitWithoutAuth(message);
-      }
-      navigate('/signin');
+      // The navigateToAuth will prepare the message to be sent after auth
+      navigateToAuth('/signin');
       return;
     }
     
@@ -89,7 +62,7 @@ const ChatInput: React.FC<ChatInputProps> = ({ onSubmitWithoutAuth }) => {
           <select
             className="text-sm border border-gray-300 rounded-md p-1 text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500"
             value={selectedPrompt}
-            onChange={(e) => useChat().setSelectedPrompt(e.target.value)}
+            onChange={(e) => setSelectedPrompt(e.target.value)}
             disabled={isLoading}
           >
             {systemPrompts.map((prompt) => (
@@ -106,39 +79,3 @@ const ChatInput: React.FC<ChatInputProps> = ({ onSubmitWithoutAuth }) => {
 
 export default ChatInput;
 
-// In src/components/chat/ChatInput.tsx
-
-import React, { useState, FormEvent } from 'react';
-import { useChat } from '../../context/ChatContext';
-import { useAuth } from '../../context/AuthContext';
-import { Send } from 'lucide-react';
-
-const ChatInput: React.FC = () => {
-  const [inputMessage, setInputMessage] = useState('');
-  const { sendMessage, isLoading, selectedPrompt, systemPrompts, navigateToAuth } = useChat();
-  const { user, isOnline } = useAuth();
-
-  const handleSubmit = async (e: FormEvent) => {
-    e.preventDefault();
-    
-    const message = inputMessage.trim();
-    if (!message) return;
-    
-    // If user is not authenticated, store the message and redirect to sign in
-    if (!user) {
-      // The navigateToAuth will prepare the message to be sent after auth
-      navigateToAuth('/signin');
-      return;
-    }
-    
-    // Send the message
-    await sendMessage(message, selectedPrompt);
-    setInputMessage('');
-  };
-
-  return (
-    <form onSubmit={handleSubmit} className="w-full">
-      {/* Rest of component remains the same */}
-    </form>
-  );
-};

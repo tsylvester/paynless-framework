@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { useAuth } from '../../context/AuthContext';
+import { useAuth } from '../../hooks/useAuth';
 import { SignUpFormData, AuthError } from '../../types/auth.types';
 import { logger } from '../../utils/logger';
 import { UserPlus } from 'lucide-react';

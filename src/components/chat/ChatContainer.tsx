@@ -3,11 +3,7 @@ import ChatHistory from './ChatHistory';
 import ChatInput from './ChatInput';
 import { useChat } from '../../hooks/useChat';
 
-interface ChatContainerProps {
-  onSubmitWithoutAuth?: (message: string) => void;
-}
-
-const ChatContainer: React.FC<ChatContainerProps> = ({ onSubmitWithoutAuth }) => {
+const ChatContainer: React.FC = () => {
   const { messages, isLoading, error, clearChat, sendMessage } = useChat();
   const [retryMessage, setRetryMessage] = useState<string | null>(null);
 
@@ -62,7 +58,7 @@ const ChatContainer: React.FC<ChatContainerProps> = ({ onSubmitWithoutAuth }) =>
       )}
       
       <div className="border-t border-gray-200 p-4">
-        <ChatInput onSubmitWithoutAuth={onSubmitWithoutAuth} />
+        <ChatInput />
       </div>
     </div>
   );
