@@ -100,13 +100,33 @@ serve(async (req) => {
       
       customerId = customer.id;
       
-      // Update the subscription record with the new customer ID
-      await supabase
+      // Check if subscription record exists before updating
+      const { data: existingSub } = await supabase
         .from("subscriptions")
-        .update({ stripe_customer_id: customerId })
-        .eq("user_id", user.id);
+        .select("subscription_id")
+        .eq("user_id", user.id)
+        .single();
+        
+      if (existingSub) {
+        // Update existing record
+        await supabase
+          .from("subscriptions")
+          .update({ stripe_customer_id: customerId })
+          .eq("user_id", user.id);
+      } else {
+        // Create new subscription record
+        await supabase
+          .from("subscriptions")
+          .insert({
+            user_id: user.id,
+            stripe_customer_id: customerId,
+            subscription_status: 'active',
+            subscription_plan_id: 'free',
+            subscription_price: 0
+          });
+      }
     }
-
+    
     // Create the checkout session
     const session = await stripe.checkout.sessions.create({
       customer: customerId,
