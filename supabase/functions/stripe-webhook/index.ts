@@ -1,318 +1,243 @@
-import { serve } from "https://deno.land/std@0.177.0/http/server.ts";
-import Stripe from "npm:stripe@12.4.0";
-import { createClient } from "npm:@supabase/supabase-js@2.38.4";
+import Stripe from 'https://esm.sh/stripe@14?target=denonext';
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2.38.4?target=denonext";
 
-// Environment variables
+// Initialize environment variables
 const stripeSecretKey = Deno.env.get("STRIPE_SECRET_KEY") || "";
 const liveWebhookSecret = Deno.env.get("STRIPE_LIVE_WEBHOOK_SECRET") || "";
 const testWebhookSecret = Deno.env.get("STRIPE_TEST_WEBHOOK_SECRET") || "";
 
-// Enable debug logging for development
-const DEBUG = true;
-const logDebug = (message: string, data?: any) => {
-  if (DEBUG) {
-    console.log(`[DEBUG] ${message}`, data ? JSON.stringify(data) : '');
-  }
-};
+// Initialize Supabase client
+const supabaseUrl = Deno.env.get("SUPABASE_URL") || "";
+const supabaseServiceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
+const supabase = createClient(supabaseUrl, supabaseServiceRoleKey);
 
 // Initialize Stripe
 const stripe = new Stripe(stripeSecretKey, {
-  apiVersion: "2023-10-16",
+  apiVersion: '2023-10-16'
 });
 
-// Initialize Supabase client with service role key to bypass RLS
-const supabaseUrl = Deno.env.get("SUPABASE_URL") || "";
-const supabaseServiceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
-const supabase = createClient(supabaseUrl, supabaseServiceRoleKey, {
-  auth: {
-    persistSession: false,
-    autoRefreshToken: false,
-  },
-  global: {
-    headers: {
-      'Authorization': `Bearer ${supabaseServiceRoleKey}`
-    }
-  }
-});
+// This is needed in order to use the Web Crypto API in Deno.
+const cryptoProvider = Stripe.createSubtleCryptoProvider();
 
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, stripe-signature",
-};
+console.log('Starting Stripe Webhook handler...');
 
-serve(async (req) => {
-  // Log incoming request
-  logDebug('Webhook request received', { 
-    method: req.method,
-    url: req.url,
-    hasSignature: !!req.headers.get("stripe-signature")
-  });
-
-  // Handle CORS preflight request
-  if (req.method === "OPTIONS") {
+Deno.serve(async (request) => {
+  // Log incoming request for debugging
+  console.log(`Webhook received: ${request.method} ${request.url}`);
+  
+  // Handle OPTIONS for CORS if needed
+  if (request.method === "OPTIONS") {
     return new Response(null, {
-      headers: corsHeaders,
       status: 204,
+      headers: {
+        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Methods": "POST, OPTIONS",
+        "Access-Control-Allow-Headers": "Content-Type, Stripe-Signature",
+      },
     });
   }
 
+  const signature = request.headers.get('Stripe-Signature');
+  if (!signature) {
+    console.error("Missing Stripe-Signature header");
+    return new Response("Missing Stripe-Signature header", { status: 400 });
+  }
+  
+  // First step is to verify the event. The .text() method must be used as the
+  // verification relies on the raw request body rather than the parsed JSON.
+  const body = await request.text();
+  
+  // Parse the raw body to determine if this is a live or test event
+  let rawEvent;
   try {
-    // Get the stripe signature from the request headers
-    const signature = req.headers.get("stripe-signature");
-    if (!signature) {
-      console.error("Missing stripe-signature header");
-      return new Response(JSON.stringify({ error: "Missing stripe-signature header" }), {
-        status: 400,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
-
-    // Get the raw body for signature verification
-    const body = await req.text();
-    logDebug('Request body received', { length: body.length });
-    
-    // Parse the raw body to determine if this is a live or test event
-    let rawEvent;
-    try {
-      rawEvent = JSON.parse(body);
-      logDebug('Event parsed successfully', { 
-        type: rawEvent.type,
-        id: rawEvent.id,
-        livemode: rawEvent.livemode
-      });
-    } catch (err) {
-      console.error(`Error parsing webhook body: ${err.message}`);
-      return new Response(JSON.stringify({ error: "Invalid JSON in webhook body" }), {
-        status: 400,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
-    
-    // Determine which secret to use based on livemode flag
-    const isLiveMode = rawEvent.livemode === true;
-    const webhookSecret = isLiveMode ? liveWebhookSecret : testWebhookSecret;
-    
-    logDebug('Selected webhook environment', { 
-      mode: isLiveMode ? 'live' : 'test',
-      secretPresent: !!webhookSecret
-    });
-    
-    // Fail early if the appropriate webhook secret is not available
-    if (!webhookSecret) {
-      console.error(`Missing webhook secret for ${isLiveMode ? 'live' : 'test'} mode`);
-      return new Response(JSON.stringify({ 
-        error: `Missing webhook secret for ${isLiveMode ? 'live' : 'test'} mode`
-      }), {
-        status: 500,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
-    
-    // Verify the webhook signature with the appropriate secret
-    let event;
-    try {
-      event = stripe.webhooks.constructEvent(body, signature, webhookSecret);
-      logDebug('Signature verification successful', { 
-        eventType: event.type,
-        eventId: event.id
-      });
-    } catch (err) {
-      console.error(`Webhook signature verification failed: ${err.message}`);
-      return new Response(JSON.stringify({ 
-        error: `Webhook signature verification failed: ${err.message}`,
-        details: {
-          mode: isLiveMode ? 'live' : 'test',
-          secretLength: webhookSecret.length,
-        }
-      }), {
-        status: 400,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
-
-    console.log(`Handling Stripe event: ${event.type} in ${isLiveMode ? 'live' : 'test'} mode`);
-
-    // Special handling for invoice.payment_succeeded events
-    if (event.type === "invoice.payment_succeeded") {
-      const invoice = event.data.object;
-      await handleInvoiceEvent(event);
-      
-      return new Response(JSON.stringify({ 
-        received: true,
-        eventId: event.id,
-        eventType: event.type,
-        mode: isLiveMode ? 'live' : 'test',
-        invoiceId: invoice.id
-      }), {
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-        status: 200,
-      });
-    }
-
-    // Handle other event types
-    switch (event.type) {
-      case "customer.subscription.created":
-      case "customer.subscription.updated":
-      case "customer.subscription.deleted":
-        await handleSubscriptionEvent(event);
+    rawEvent = JSON.parse(body);
+    console.log(`Event type: ${rawEvent.type}, id: ${rawEvent.id}, livemode: ${rawEvent.livemode}`);
+  } catch (err) {
+    console.error(`Error parsing webhook body: ${err.message}`);
+    return new Response("Invalid JSON payload", { status: 400 });
+  }
+  
+  // Select the appropriate webhook secret based on livemode
+  const isLiveMode = rawEvent.livemode === true;
+  const webhookSecret = isLiveMode ? liveWebhookSecret : testWebhookSecret;
+  
+  if (!webhookSecret) {
+    console.error(`Missing webhook secret for ${isLiveMode ? 'live' : 'test'} mode`);
+    return new Response(
+      `Missing webhook secret for ${isLiveMode ? 'live' : 'test'} mode`,
+      { status: 500 }
+    );
+  }
+  
+  let receivedEvent;
+  try {
+    receivedEvent = await stripe.webhooks.constructEventAsync(
+      body,
+      signature,
+      webhookSecret,
+      undefined,
+      cryptoProvider
+    );
+  } catch (err) {
+    console.error(`Webhook signature verification failed: ${err.message}`);
+    return new Response(err.message, { status: 400 });
+  }
+  
+  console.log(`🔔 Event received and verified: ${receivedEvent.id}`);
+  
+  // Process the event
+  try {
+    switch (receivedEvent.type) {
+      case 'invoice.payment_succeeded':
+        await handleInvoicePaymentSucceeded(receivedEvent);
         break;
-      case "invoice.payment_failed":
-        await handlePaymentFailedEvent(event);
+      case 'customer.subscription.created':
+      case 'customer.subscription.updated':
+        await handleSubscriptionUpdated(receivedEvent);
+        break;
+      case 'customer.subscription.deleted':
+        await handleSubscriptionDeleted(receivedEvent);
         break;
       default:
-        console.log(`Unhandled event type: ${event.type}`);
+        console.log(`Unhandled event type: ${receivedEvent.type}`);
     }
-
-    return new Response(JSON.stringify({ 
-      received: true,
-      eventId: event.id,
-      eventType: event.type,
-      mode: isLiveMode ? 'live' : 'test'
-    }), {
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-      status: 200,
-    });
-  } catch (error) {
-    console.error(`Error processing webhook: ${error.message}`);
-    console.error(`Error stack: ${error.stack}`);
-    return new Response(JSON.stringify({ 
-      error: "Internal server error",
-      message: error.message
-    }), {
-      status: 500,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
+  } catch (err) {
+    console.error(`Error processing webhook: ${err.message}`);
+    // We still return 200 to acknowledge receipt to Stripe
   }
+  
+  return new Response(JSON.stringify({ received: true }), { 
+    status: 200,
+    headers: { "Content-Type": "application/json" }
+  });
 });
 
-// Handle subscription events (created, updated, deleted)
-async function handleSubscriptionEvent(event) {
+async function handleInvoicePaymentSucceeded(event) {
+  const invoice = event.data.object;
+  const subscriptionId = invoice.subscription;
+  
+  if (!subscriptionId) {
+    console.log('No subscription ID found in invoice');
+    return;
+  }
+  
+  try {
+    // Find user by subscription ID
+    const { data: subData, error: subError } = await supabase
+      .from("subscriptions")
+      .select("user_id, subscription_id, subscription_status")
+      .eq("stripe_subscription_id", subscriptionId)
+      .single();
+    
+    if (subError) {
+      console.log(`Error finding subscription: ${subError.message}`);
+      
+      // Try by customer ID
+      const { data: custData, error: custError } = await supabase
+        .from("subscriptions")
+        .select("user_id, subscription_id, subscription_status")
+        .eq("stripe_customer_id", invoice.customer)
+        .single();
+      
+      if (custError) {
+        console.log(`Error finding customer: ${custError.message}`);
+        return;
+      }
+      
+      // Record invoice payment event
+      await recordInvoiceEvent(custData, subscriptionId, invoice);
+      return;
+    }
+    
+    // Record invoice payment event
+    await recordInvoiceEvent(subData, subscriptionId, invoice);
+  } catch (error) {
+    console.error(`Error in handleInvoicePaymentSucceeded: ${error.message}`);
+  }
+}
+
+async function recordInvoiceEvent(userData, subscriptionId, invoice) {
+  try {
+    const { error } = await supabase
+      .from("subscription_events")
+      .insert({
+        user_id: userData.user_id,
+        subscription_id: userData.subscription_id,
+        stripe_subscription_id: subscriptionId,
+        subscription_event_type: "invoice.payment_succeeded",
+        subscription_status: userData.subscription_status,
+        event_data: {
+          invoice_id: invoice.id,
+          amount_paid: invoice.amount_paid / 100,
+          invoice_status: invoice.status,
+          invoice_created: new Date(invoice.created * 1000).toISOString(),
+          payment_intent: invoice.payment_intent
+        }
+      });
+    
+    if (error) {
+      console.error(`Error recording invoice event: ${error.message}`);
+    } else {
+      console.log('Invoice event recorded successfully');
+    }
+  } catch (error) {
+    console.error(`Error in recordInvoiceEvent: ${error.message}`);
+  }
+}
+
+async function handleSubscriptionUpdated(event) {
   const subscription = event.data.object;
   const customerId = subscription.customer;
   const subscriptionId = subscription.id;
-  const status = subscription.status;
-  const priceId = subscription.items.data[0].price.id;
-
-  logDebug(`Processing subscription event`, {
-    type: event.type,
-    subscriptionId,
-    customerId,
-    status,
-    priceId
-  });
-
+  
   try {
-    // Get the subscription plan ID from the price ID
-    const { data: plans, error: planError } = await supabase
+    // Get price ID
+    let priceId;
+    if (subscription.items?.data?.[0]?.price?.id) {
+      priceId = subscription.items.data[0].price.id;
+    } else if (subscription.plan?.id) {
+      priceId = subscription.plan.id;
+    } else {
+      console.log('No price ID found in subscription');
+      return;
+    }
+    
+    // Find the plan
+    const { data: planData, error: planError } = await supabase
       .from("subscription_plans")
       .select("subscription_plan_id")
       .eq("stripe_price_id", priceId)
       .single();
-
+    
     if (planError) {
-      console.error(`Error finding subscription plan for price ${priceId}: ${planError.message}`);
-      logDebug('Plan query error', { error: planError });
+      console.error(`Error finding plan: ${planError.message}`);
       return;
     }
-
-    const planId = plans.subscription_plan_id;
-    logDebug('Found matching plan', { planId });
-
-    // Get the Supabase user ID from the Stripe customer ID
+    
+    const planId = planData.subscription_plan_id;
+    
+    // Find the user
     const { data: userData, error: userError } = await supabase
       .from("subscriptions")
       .select("user_id, subscription_id")
       .eq("stripe_customer_id", customerId)
       .single();
-
+    
     if (userError) {
-      console.error(`Error finding user for Stripe customer ${customerId}: ${userError.message}`);
-      logDebug('User query error', { error: userError });
-      
-      // If we can't find the user by customer ID, check if there's metadata on the subscription
-      if (subscription.metadata && subscription.metadata.user_id) {
-        const userId = subscription.metadata.user_id;
-        logDebug('Using user_id from subscription metadata', { userId });
-        
-        // Look up the subscription record by user_id instead
-        const { data: altUserData, error: altUserError } = await supabase
-          .from("subscriptions")
-          .select("user_id, subscription_id")
-          .eq("user_id", userId)
-          .single();
-          
-        if (altUserError) {
-          console.error(`Error finding subscription for user ${userId}: ${altUserError.message}`);
-          return;
-        }
-        
-        if (altUserData) {
-          logDebug('Found subscription by user_id', { altUserData });
-          // Continue processing with the user ID from metadata
-          await processSubscriptionUpdate(
-            event,
-            subscription,
-            altUserData.user_id,
-            altUserData.subscription_id,
-            planId,
-            status
-          );
-          return;
-        }
-      }
-      
+      console.error(`Error finding user: ${userError.message}`);
       return;
     }
-
-    // Process the subscription with retrieved user data
-    await processSubscriptionUpdate(
-      event,
-      subscription,
-      userData.user_id,
-      userData.subscription_id,
-      planId,
-      status
-    );
-
-  } catch (error) {
-    console.error(`Error in handleSubscriptionEvent: ${error.message}`);
-    console.error(`Error stack: ${error.stack}`);
-  }
-}
-
-// Helper function to process subscription updates
-async function processSubscriptionUpdate(event, subscription, userId, subscriptionId, planId, status) {
-  logDebug('Processing subscription update', { 
-    userId,
-    subscriptionId,
-    planId,
-    status
-  });
-
-  const previousState = await getCurrentSubscriptionState(userId);
-  
-  if (event.type === "customer.subscription.created" || event.type === "customer.subscription.updated") {
-    // Get price information from Stripe
-    const priceResponse = await stripe.prices.retrieve(subscription.items.data[0].price.id);
-    const price = priceResponse.unit_amount / 100; // Convert from cents to dollars
     
-    logDebug('Updating subscription record', {
-      userId,
-      subscriptionId,
-      price,
-      planId
-    });
-    
-    // Handle subscription creation or update
+    // Update subscription
     const { error: updateError } = await supabase
       .from("subscriptions")
       .upsert({
-        user_id: userId,
+        user_id: userData.user_id,
         stripe_subscription_id: subscription.id,
         stripe_customer_id: subscription.customer,
-        subscription_status: status,
+        subscription_status: subscription.status,
         subscription_plan_id: planId,
-        subscription_price: price,
+        subscription_price: (subscription.items?.data?.[0]?.price?.unit_amount || subscription.plan?.amount || 0) / 100,
         current_period_start: new Date(subscription.current_period_start * 1000).toISOString(),
         current_period_end: new Date(subscription.current_period_end * 1000).toISOString(),
         canceled_at: subscription.canceled_at ? new Date(subscription.canceled_at * 1000).toISOString() : null,
@@ -320,17 +245,78 @@ async function processSubscriptionUpdate(event, subscription, userId, subscripti
         updated_at: new Date().toISOString(),
         metadata: subscription.metadata || {}
       }, { onConflict: "user_id" });
-
+    
     if (updateError) {
-      console.error(`Error updating subscription record: ${updateError.message}`);
-      logDebug('Subscription update error', { error: updateError });
+      console.error(`Error updating subscription: ${updateError.message}`);
       return;
     }
     
-    logDebug('Subscription record updated successfully');
+    // Record event
+    const { error: eventError } = await supabase
+      .from("subscription_events")
+      .insert({
+        user_id: userData.user_id,
+        subscription_id: userData.subscription_id,
+        stripe_subscription_id: subscription.id,
+        subscription_event_type: event.type,
+        subscription_status: subscription.status,
+        event_data: {
+          current_plan_id: planId,
+          stripe_event_id: event.id
+        }
+      });
+    
+    if (eventError) {
+      console.error(`Error recording subscription event: ${eventError.message}`);
+    } else {
+      console.log('Subscription updated successfully');
+    }
+  } catch (error) {
+    console.error(`Error in handleSubscriptionUpdated: ${error.message}`);
+  }
+}
 
-  } else if (event.type === "customer.subscription.deleted") {
-    // If subscription is deleted, update to free plan
+async function handleSubscriptionDeleted(event) {
+  const subscription = event.data.object;
+  
+  try {
+    // Find the user
+    const { data: userData, error: userError } = await supabase
+      .from("subscriptions")
+      .select("user_id, subscription_id, subscription_status, subscription_plan_id")
+      .eq("stripe_subscription_id", subscription.id)
+      .single();
+    
+    if (userError) {
+      console.error(`Error finding user: ${userError.message}`);
+      
+      // Try by customer ID
+      const { data: custData, error: custError } = await supabase
+        .from("subscriptions")
+        .select("user_id, subscription_id, subscription_status, subscription_plan_id")
+        .eq("stripe_customer_id", subscription.customer)
+        .single();
+      
+      if (custError) {
+        console.error(`Error finding user by customer: ${custError.message}`);
+        return;
+      }
+      
+      // Revert to free plan
+      await revertToFreePlan(custData, subscription);
+      return;
+    }
+    
+    // Revert to free plan
+    await revertToFreePlan(userData, subscription);
+  } catch (error) {
+    console.error(`Error in handleSubscriptionDeleted: ${error.message}`);
+  }
+}
+
+async function revertToFreePlan(userData, subscription) {
+  try {
+    // Update to free plan
     const { error: updateError } = await supabase
       .from("subscriptions")
       .update({
@@ -342,255 +328,35 @@ async function processSubscriptionUpdate(event, subscription, userId, subscripti
         canceled_at: new Date().toISOString(),
         stripe_subscription_id: null
       })
-      .eq("user_id", userId);
-
+      .eq("user_id", userData.user_id);
+    
     if (updateError) {
-      console.error(`Error updating subscription to free plan: ${updateError.message}`);
-      logDebug('Free plan update error', { error: updateError });
+      console.error(`Error reverting to free plan: ${updateError.message}`);
       return;
     }
     
-    logDebug('Subscription canceled successfully');
-  }
-
-  // Record the subscription event
-  const { error: eventError } = await supabase
-    .from("subscription_events")
-    .insert({
-      user_id: userId,
-      subscription_id: subscriptionId,
-      stripe_subscription_id: subscription.id,
-      subscription_event_type: event.type,
-      subscription_previous_state: previousState?.subscription_status || null,
-      subscription_status: status,
-      event_data: {
-        current_plan_id: planId,
-        previous_plan_id: previousState?.subscription_plan_id || null,
-        stripe_event: event.type,
-        stripe_event_id: event.id
-      }
-    });
-
-  if (eventError) {
-    console.error(`Error recording subscription event: ${eventError.message}`);
-    logDebug('Event record error', { error: eventError });
-  } else {
-    logDebug('Subscription event recorded successfully');
-  }
-}
-
-// Helper function to get current subscription state
-async function getCurrentSubscriptionState(userId) {
-  try {
-    const { data, error } = await supabase
-      .from("subscriptions")
-      .select("subscription_status, subscription_plan_id")
-      .eq("user_id", userId)
-      .single();
-      
-    if (error) {
-      console.error(`Error getting current subscription state: ${error.message}`);
-      return null;
-    }
+    // Record event
+    const { error: eventError } = await supabase
+      .from("subscription_events")
+      .insert({
+        user_id: userData.user_id,
+        subscription_id: userData.subscription_id,
+        stripe_subscription_id: subscription.id,
+        subscription_event_type: "subscription_canceled",
+        subscription_previous_state: userData.subscription_status,
+        subscription_status: "canceled",
+        event_data: {
+          previous_plan_id: userData.subscription_plan_id,
+          current_plan_id: "free"
+        }
+      });
     
-    return data;
-  } catch (error) {
-    console.error(`Unexpected error getting subscription state: ${error.message}`);
-    return null;
-  }
-}
-
-// Handle successful invoice payment
-async function handleInvoiceEvent(event) {
-  const invoice = event.data.object;
-  
-  // Extract subscription ID from the event data
-  const subscriptionId = invoice.subscription;
-  
-  // Only process subscription invoices
-  if (!subscriptionId) {
-    logDebug('Ignoring non-subscription invoice', { invoiceId: invoice.id });
-    return;
-  }
-
-  logDebug('Processing invoice payment success', { 
-    invoiceId: invoice.id,
-    subscriptionId,
-    amount: invoice.amount_paid / 100,
-    customerId: invoice.customer
-  });
-
-  try {
-    // Get the Supabase subscription record using the Stripe subscription ID
-    const { data: subData, error: subError } = await supabase
-      .from("subscriptions")
-      .select("user_id, subscription_id, subscription_status")
-      .eq("stripe_subscription_id", subscriptionId)
-      .single();
-
-    if (subError) {
-      console.error(`Error finding subscription for Stripe subscription ${subscriptionId}: ${subError.message}`);
-      logDebug('Subscription query error', { error: subError });
-      
-      // Try finding the subscription by customer ID instead
-      const { data: customerSubData, error: customerSubError } = await supabase
-        .from("subscriptions")
-        .select("user_id, subscription_id, subscription_status")
-        .eq("stripe_customer_id", invoice.customer)
-        .single();
-        
-      if (customerSubError) {
-        console.error(`Error finding subscription for Stripe customer ${invoice.customer}: ${customerSubError.message}`);
-        return;
-      }
-      
-      if (customerSubData) {
-        // Record the payment event using customer data
-        await recordInvoicePaymentEvent(customerSubData, subscriptionId, invoice);
-        return;
-      }
-      
-      return;
+    if (eventError) {
+      console.error(`Error recording cancellation event: ${eventError.message}`);
+    } else {
+      console.log('Subscription canceled successfully');
     }
-
-    // Record the payment event
-    await recordInvoicePaymentEvent(subData, subscriptionId, invoice);
-
   } catch (error) {
-    console.error(`Error in handleInvoiceEvent: ${error.message}`);
-    console.error(`Error stack: ${error.stack}`);
-  }
-}
-
-// Helper function to record invoice payment events
-async function recordInvoicePaymentEvent(subscriptionData, subscriptionId, invoice) {
-  const { error: eventError } = await supabase
-    .from("subscription_events")
-    .insert({
-      user_id: subscriptionData.user_id,
-      subscription_id: subscriptionData.subscription_id,
-      stripe_subscription_id: subscriptionId,
-      subscription_event_type: "invoice.payment_succeeded",
-      subscription_status: subscriptionData.subscription_status,
-      event_data: {
-        invoice_id: invoice.id,
-        amount_paid: invoice.amount_paid / 100,
-        invoice_status: invoice.status,
-        invoice_created: new Date(invoice.created * 1000).toISOString(),
-        payment_intent: invoice.payment_intent
-      }
-    });
-
-  if (eventError) {
-    console.error(`Error recording payment event: ${eventError.message}`);
-    logDebug('Payment event record error', { error: eventError });
-  } else {
-    logDebug('Payment event recorded successfully');
-  }
-}
-
-// Handle failed invoice payment
-async function handlePaymentFailedEvent(event) {
-  const invoice = event.data.object;
-  const subscriptionId = invoice.subscription;
-  
-  if (!subscriptionId) {
-    logDebug('Ignoring non-subscription invoice', { invoiceId: invoice.id });
-    return;
-  }
-
-  logDebug('Processing invoice payment failure', { 
-    invoiceId: invoice.id,
-    subscriptionId,
-    amount: invoice.amount_due / 100
-  });
-
-  try {
-    // Get the Supabase subscription record using the Stripe subscription ID
-    const { data: subData, error: subError } = await supabase
-      .from("subscriptions")
-      .select("*")
-      .eq("stripe_subscription_id", subscriptionId)
-      .single();
-
-    if (subError) {
-      console.error(`Error finding subscription for Stripe subscription ${subscriptionId}: ${subError.message}`);
-      logDebug('Subscription query error', { error: subError });
-      
-      // Try finding the subscription by customer ID instead
-      const { data: customerSubData, error: customerSubError } = await supabase
-        .from("subscriptions")
-        .select("*")
-        .eq("stripe_customer_id", invoice.customer)
-        .single();
-        
-      if (customerSubError) {
-        console.error(`Error finding subscription for Stripe customer ${invoice.customer}: ${customerSubError.message}`);
-        return;
-      }
-      
-      if (customerSubData) {
-        // Update and record using customer data
-        await handlePaymentFailureWithData(customerSubData, subscriptionId, invoice);
-        return;
-      }
-      
-      return;
-    }
-
-    // Update subscription status and record the event
-    await handlePaymentFailureWithData(subData, subscriptionId, invoice);
-
-  } catch (error) {
-    console.error(`Error in handlePaymentFailedEvent: ${error.message}`);
-    console.error(`Error stack: ${error.stack}`);
-  }
-}
-
-// Helper function for handling payment failures
-async function handlePaymentFailureWithData(subscriptionData, subscriptionId, invoice) {
-  // Update subscription status to reflect payment failure
-  const { error: updateError } = await supabase
-    .from("subscriptions")
-    .update({
-      subscription_status: "past_due",
-      updated_at: new Date().toISOString()
-    })
-    .eq("subscription_id", subscriptionData.subscription_id);
-
-  if (updateError) {
-    console.error(`Error updating subscription status: ${updateError.message}`);
-    logDebug('Status update error', { error: updateError });
-  } else {
-    logDebug('Subscription status updated to past_due');
-  }
-
-  // Record the payment failure event
-  const { error: eventError } = await supabase
-    .from("subscription_events")
-    .insert({
-      user_id: subscriptionData.user_id,
-      subscription_id: subscriptionData.subscription_id,
-      stripe_subscription_id: subscriptionId,
-      subscription_event_type: "invoice.payment_failed",
-      subscription_previous_state: subscriptionData.subscription_status,
-      subscription_status: "past_due",
-      event_data: {
-        invoice_id: invoice.id,
-        amount_due: invoice.amount_due / 100,
-        invoice_status: invoice.status,
-        invoice_created: new Date(invoice.created * 1000).toISOString(),
-        payment_intent: invoice.payment_intent,
-        next_payment_attempt: invoice.next_payment_attempt 
-          ? new Date(invoice.next_payment_attempt * 1000).toISOString()
-          : null
-      }
-    });
-
-  if (eventError) {
-    console.error(`Error recording payment failure event: ${eventError.message}`);
-    logDebug('Payment failure event record error', { error: eventError });
-  } else {
-    logDebug('Payment failure event recorded successfully');
+    console.error(`Error in revertToFreePlan: ${error.message}`);
   }
 }
