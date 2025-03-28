@@ -20,7 +20,7 @@ const stripe = new Stripe(stripeSecretKey, {
   apiVersion: "2023-10-16",
 });
 
-// Initialize Supabase client with improved configuration
+// Initialize Supabase client with service role key to bypass RLS
 const supabaseUrl = Deno.env.get("SUPABASE_URL") || "";
 const supabaseServiceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
 const supabase = createClient(supabaseUrl, supabaseServiceRoleKey, {
@@ -37,7 +37,7 @@ const supabase = createClient(supabaseUrl, supabaseServiceRoleKey, {
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, stripe-signature",
 };
 
 serve(async (req) => {
@@ -45,7 +45,6 @@ serve(async (req) => {
   logDebug('Webhook request received', { 
     method: req.method,
     url: req.url,
-    hasAuth: !!req.headers.get("Authorization"),
     hasSignature: !!req.headers.get("stripe-signature")
   });
 
@@ -133,15 +132,29 @@ serve(async (req) => {
 
     console.log(`Handling Stripe event: ${event.type} in ${isLiveMode ? 'live' : 'test'} mode`);
 
-    // Handle different event types
+    // Special handling for invoice.payment_succeeded events
+    if (event.type === "invoice.payment_succeeded") {
+      const invoice = event.data.object;
+      await handleInvoiceEvent(event);
+      
+      return new Response(JSON.stringify({ 
+        received: true,
+        eventId: event.id,
+        eventType: event.type,
+        mode: isLiveMode ? 'live' : 'test',
+        invoiceId: invoice.id
+      }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        status: 200,
+      });
+    }
+
+    // Handle other event types
     switch (event.type) {
       case "customer.subscription.created":
       case "customer.subscription.updated":
       case "customer.subscription.deleted":
         await handleSubscriptionEvent(event);
-        break;
-      case "invoice.payment_succeeded":
-        await handleInvoiceEvent(event);
         break;
       case "invoice.payment_failed":
         await handlePaymentFailedEvent(event);
@@ -390,6 +403,8 @@ async function getCurrentSubscriptionState(userId) {
 // Handle successful invoice payment
 async function handleInvoiceEvent(event) {
   const invoice = event.data.object;
+  
+  // Extract subscription ID from the event data
   const subscriptionId = invoice.subscription;
   
   // Only process subscription invoices
@@ -401,7 +416,8 @@ async function handleInvoiceEvent(event) {
   logDebug('Processing invoice payment success', { 
     invoiceId: invoice.id,
     subscriptionId,
-    amount: invoice.amount_paid / 100
+    amount: invoice.amount_paid / 100,
+    customerId: invoice.customer
   });
 
   try {
@@ -415,37 +431,61 @@ async function handleInvoiceEvent(event) {
     if (subError) {
       console.error(`Error finding subscription for Stripe subscription ${subscriptionId}: ${subError.message}`);
       logDebug('Subscription query error', { error: subError });
+      
+      // Try finding the subscription by customer ID instead
+      const { data: customerSubData, error: customerSubError } = await supabase
+        .from("subscriptions")
+        .select("user_id, subscription_id, subscription_status")
+        .eq("stripe_customer_id", invoice.customer)
+        .single();
+        
+      if (customerSubError) {
+        console.error(`Error finding subscription for Stripe customer ${invoice.customer}: ${customerSubError.message}`);
+        return;
+      }
+      
+      if (customerSubData) {
+        // Record the payment event using customer data
+        await recordInvoicePaymentEvent(customerSubData, subscriptionId, invoice);
+        return;
+      }
+      
       return;
     }
 
     // Record the payment event
-    const { error: eventError } = await supabase
-      .from("subscription_events")
-      .insert({
-        user_id: subData.user_id,
-        subscription_id: subData.subscription_id,
-        stripe_subscription_id: subscriptionId,
-        subscription_event_type: "invoice.payment_succeeded",
-        subscription_status: subData.subscription_status,
-        event_data: {
-          invoice_id: invoice.id,
-          amount_paid: invoice.amount_paid / 100,
-          invoice_status: invoice.status,
-          invoice_created: new Date(invoice.created * 1000).toISOString(),
-          payment_intent: invoice.payment_intent
-        }
-      });
-
-    if (eventError) {
-      console.error(`Error recording payment event: ${eventError.message}`);
-      logDebug('Payment event record error', { error: eventError });
-    } else {
-      logDebug('Payment event recorded successfully');
-    }
+    await recordInvoicePaymentEvent(subData, subscriptionId, invoice);
 
   } catch (error) {
     console.error(`Error in handleInvoiceEvent: ${error.message}`);
     console.error(`Error stack: ${error.stack}`);
+  }
+}
+
+// Helper function to record invoice payment events
+async function recordInvoicePaymentEvent(subscriptionData, subscriptionId, invoice) {
+  const { error: eventError } = await supabase
+    .from("subscription_events")
+    .insert({
+      user_id: subscriptionData.user_id,
+      subscription_id: subscriptionData.subscription_id,
+      stripe_subscription_id: subscriptionId,
+      subscription_event_type: "invoice.payment_succeeded",
+      subscription_status: subscriptionData.subscription_status,
+      event_data: {
+        invoice_id: invoice.id,
+        amount_paid: invoice.amount_paid / 100,
+        invoice_status: invoice.status,
+        invoice_created: new Date(invoice.created * 1000).toISOString(),
+        payment_intent: invoice.payment_intent
+      }
+    });
+
+  if (eventError) {
+    console.error(`Error recording payment event: ${eventError.message}`);
+    logDebug('Payment event record error', { error: eventError });
+  } else {
+    logDebug('Payment event recorded successfully');
   }
 }
 
@@ -476,56 +516,81 @@ async function handlePaymentFailedEvent(event) {
     if (subError) {
       console.error(`Error finding subscription for Stripe subscription ${subscriptionId}: ${subError.message}`);
       logDebug('Subscription query error', { error: subError });
+      
+      // Try finding the subscription by customer ID instead
+      const { data: customerSubData, error: customerSubError } = await supabase
+        .from("subscriptions")
+        .select("*")
+        .eq("stripe_customer_id", invoice.customer)
+        .single();
+        
+      if (customerSubError) {
+        console.error(`Error finding subscription for Stripe customer ${invoice.customer}: ${customerSubError.message}`);
+        return;
+      }
+      
+      if (customerSubData) {
+        // Update and record using customer data
+        await handlePaymentFailureWithData(customerSubData, subscriptionId, invoice);
+        return;
+      }
+      
       return;
     }
 
-    // Update subscription status to reflect payment failure
-    const { error: updateError } = await supabase
-      .from("subscriptions")
-      .update({
-        subscription_status: "past_due",
-        updated_at: new Date().toISOString()
-      })
-      .eq("stripe_subscription_id", subscriptionId);
-
-    if (updateError) {
-      console.error(`Error updating subscription status: ${updateError.message}`);
-      logDebug('Status update error', { error: updateError });
-    } else {
-      logDebug('Subscription status updated to past_due');
-    }
-
-    // Record the payment failure event
-    const { error: eventError } = await supabase
-      .from("subscription_events")
-      .insert({
-        user_id: subData.user_id,
-        subscription_id: subData.subscription_id,
-        stripe_subscription_id: subscriptionId,
-        subscription_event_type: "invoice.payment_failed",
-        subscription_previous_state: subData.subscription_status,
-        subscription_status: "past_due",
-        event_data: {
-          invoice_id: invoice.id,
-          amount_due: invoice.amount_due / 100,
-          invoice_status: invoice.status,
-          invoice_created: new Date(invoice.created * 1000).toISOString(),
-          payment_intent: invoice.payment_intent,
-          next_payment_attempt: invoice.next_payment_attempt 
-            ? new Date(invoice.next_payment_attempt * 1000).toISOString()
-            : null
-        }
-      });
-
-    if (eventError) {
-      console.error(`Error recording payment failure event: ${eventError.message}`);
-      logDebug('Payment failure event record error', { error: eventError });
-    } else {
-      logDebug('Payment failure event recorded successfully');
-    }
+    // Update subscription status and record the event
+    await handlePaymentFailureWithData(subData, subscriptionId, invoice);
 
   } catch (error) {
     console.error(`Error in handlePaymentFailedEvent: ${error.message}`);
     console.error(`Error stack: ${error.stack}`);
+  }
+}
+
+// Helper function for handling payment failures
+async function handlePaymentFailureWithData(subscriptionData, subscriptionId, invoice) {
+  // Update subscription status to reflect payment failure
+  const { error: updateError } = await supabase
+    .from("subscriptions")
+    .update({
+      subscription_status: "past_due",
+      updated_at: new Date().toISOString()
+    })
+    .eq("subscription_id", subscriptionData.subscription_id);
+
+  if (updateError) {
+    console.error(`Error updating subscription status: ${updateError.message}`);
+    logDebug('Status update error', { error: updateError });
+  } else {
+    logDebug('Subscription status updated to past_due');
+  }
+
+  // Record the payment failure event
+  const { error: eventError } = await supabase
+    .from("subscription_events")
+    .insert({
+      user_id: subscriptionData.user_id,
+      subscription_id: subscriptionData.subscription_id,
+      stripe_subscription_id: subscriptionId,
+      subscription_event_type: "invoice.payment_failed",
+      subscription_previous_state: subscriptionData.subscription_status,
+      subscription_status: "past_due",
+      event_data: {
+        invoice_id: invoice.id,
+        amount_due: invoice.amount_due / 100,
+        invoice_status: invoice.status,
+        invoice_created: new Date(invoice.created * 1000).toISOString(),
+        payment_intent: invoice.payment_intent,
+        next_payment_attempt: invoice.next_payment_attempt 
+          ? new Date(invoice.next_payment_attempt * 1000).toISOString()
+          : null
+      }
+    });
+
+  if (eventError) {
+    console.error(`Error recording payment failure event: ${eventError.message}`);
+    logDebug('Payment failure event record error', { error: eventError });
+  } else {
+    logDebug('Payment failure event recorded successfully');
   }
 }

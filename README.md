@@ -89,9 +89,37 @@ A robust user environment with AI integration built with React, Vite, and TypeSc
 ## How to load keys into Netlify
 - Connect Netlify to Supabase under Site Configuration -> Supabase. 
 
-## How to set up Stripe webhooks 
+## How to set up Stripe live webhook
+- Navigate to https://dashboard.stripe.com/workbench/webhooks
+- Click "Add destination"
+- Add https://[YOUR DATABASE].supabase.co/functions/v1/stripe-webhook
+- Add these events: 
+-- checkout.session.completed
+-- customer.card.created
+-- customer.card.deleted
+-- customer.subscription.created
+-- customer.subscription.deleted
+-- customer.subscription.updated
+-- customer.created
+-- customer.deleted
+-- customer.updated
+-- invoice.paid
+-- invoice.payment_failed
+-- invoice.payment_succeeded
+- Click "Save"
+
+## How to set up Stripe test webhook
+- In the upper right, choose "Test Mode" 
+- Choose "Sandboxes" 
+- Choose "+Create" 
+- Name your sandbox
+- Set up a webhook exactly the same as your live webhook
+- Click "Save"
 
 ## How to set up Stripe keys
+- Get a Stripe Secret Key and load it into Supabase as above
+- Create a live webhook secret and load it into Supabase as above
+- Create a test webhook secret and load it into Supabase as above
 
 ## File Structure
 
