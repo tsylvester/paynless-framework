@@ -24,7 +24,11 @@ const AuthCallbackPage: React.FC = () => {
           
           if (data) {
             logger.info('Authentication successful via callback');
-            navigate('/', { replace: true });
+            
+            // Get the stored redirect path or default to home
+            const redirectPath = localStorage.getItem('authRedirectPath') || '/home';
+            localStorage.removeItem('authRedirectPath'); // Clean up
+            navigate(redirectPath, { replace: true });
           }
         }
       } catch (error) {

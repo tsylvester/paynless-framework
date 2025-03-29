@@ -162,6 +162,10 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     updateState({ isLoading: true, error: null });
     
     try {
+      // Store the current location before redirecting
+      const currentPath = window.location.pathname;
+      localStorage.setItem('authRedirectPath', currentPath);
+      
       const { data, error } = await supabase.auth.signUp({
         email,
         password,

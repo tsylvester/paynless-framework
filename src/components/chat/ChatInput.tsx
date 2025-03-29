@@ -39,7 +39,7 @@ const ChatInput: React.FC = () => {
     e.preventDefault();
     
     // Send the message (empty string is allowed)
-    await sendMessage(inputMessage);
+    await sendMessage(inputMessage, selectedPrompt);
     
     // Clear the input after sending
     setInputMessage('');

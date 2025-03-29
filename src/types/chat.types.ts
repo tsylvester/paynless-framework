@@ -1,6 +1,9 @@
 export interface ChatMessage {
   role: 'user' | 'assistant' | 'system';
   content: string;
+  userId?: string;  // Optional user ID for user messages
+  userName?: string;  // Optional display name for user messages
+  timestamp?: string;  // Optional timestamp for message ordering
 }
 
 export interface SystemPrompt {
@@ -55,4 +58,22 @@ export interface ChatContextType {
   setSelectedPrompt: (promptName: string) => void;
   navigateToAuth: (path?: string) => void;
   conversationId: string | null;
+}
+
+// Add a new type for chat participants
+export interface ChatParticipant {
+  userId: string;
+  userName: string;
+  joinedAt: string;
+  lastActive?: string;
+}
+
+// Add a new type for chat sessions
+export interface ChatSession {
+  sessionId: string;
+  participants: ChatParticipant[];
+  createdBy: string;
+  createdAt: string;
+  lastActive: string;
+  isActive: boolean;
 }
