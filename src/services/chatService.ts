@@ -1,9 +1,72 @@
 // Path: src/services/chatService.ts
 import { supabase } from './supabase';
 import { logger } from '../utils/logger';
-import { ChatMessage, SystemPrompt, UserEvent } from '../types/chat.types';
+import { ChatMessage, SystemPrompt, UserEvent, ChatSession, ChatParticipant } from '../types/chat.types';
 import { withRetry } from '../utils/retry';
 import { PostgrestResponse, PostgrestSingleResponse } from '@supabase/supabase-js';
+
+/**
+ * Prepares messages array with system prompt and user message
+ */
+const prepareMessages = (
+  systemPrompt: string,
+  previousMessages: ChatMessage[],
+  userPrompt: string,
+  userId?: string,
+  userName?: string
+): ChatMessage[] => {
+  const systemMessage: ChatMessage = {
+    role: 'system',
+    content: systemPrompt,
+    timestamp: new Date().toISOString()
+  };
+  
+  const userMessage: ChatMessage = {
+    role: 'user',
+    content: userPrompt || systemPrompt,
+    userId,
+    userName,
+    timestamp: new Date().toISOString()
+  };
+  
+  return [
+    systemMessage,
+    ...previousMessages.filter(msg => msg.role !== 'system'),
+    userMessage
+  ];
+};
+
+/**
+ * Creates a new chat session
+ */
+export const createChatSession = async (participants: ChatParticipant[]): Promise<ChatSession> => {
+  try {
+    const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
+    
+    if (sessionError || !sessionData.session) {
+      throw new Error('User must be authenticated to create chat session');
+    }
+
+    const newSession: ChatSession = {
+      sessionId: crypto.randomUUID(),
+      participants,
+      createdBy: sessionData.session.user.id,
+      createdAt: new Date().toISOString(),
+      lastActive: new Date().toISOString(),
+      isActive: true
+    };
+
+    const { error } = await supabase
+      .from('chat_sessions')
+      .insert(newSession);
+
+    if (error) throw error;
+    return newSession;
+  } catch (error) {
+    logger.error('Error creating chat session:', error);
+    throw error;
+  }
+};
 
 /**
  * Sends a chat message to the OpenAI API via Supabase Edge Function
@@ -13,7 +76,9 @@ export const sendChatMessage = async (
   prompt: string, 
   previousMessages: ChatMessage[] = [],
   systemPromptName: string = 'default',
-  conversationId: string | null = null
+  conversationId: string | null = null,
+  userId?: string,
+  userName?: string
 ): Promise<{ response: string; messages: ChatMessage[] }> => {
   try {
     // First, ensure we have a valid session
@@ -37,79 +102,19 @@ export const sendChatMessage = async (
       .eq('is_active', true)
       .single();
     
-    logger.debug('System prompt query result:', { data: systemPromptData, error: systemPromptError });
-    
     if (systemPromptError) {
       logger.error('Error fetching system prompt:', systemPromptError);
-      // If we can't find the specified prompt, use a fallback
-      const fallbackPrompt = "You are a helpful AI assistant. Answer questions concisely and accurately.";
-      logger.info('Using fallback system prompt');
-      
-      // Create the system message with fallback
-      const systemMessage: ChatMessage = {
-        role: 'system',
-        content: fallbackPrompt
-      };
-      
-      // If no prompt provided, use the system prompt as the user message
-      const userMessage: ChatMessage = {
-        role: 'user',
-        content: prompt || fallbackPrompt
-      };
-      
-      // Prepare messages array with system prompt first, then previous messages, then current prompt
-      const messages = [
-        systemMessage,
-        ...previousMessages.filter(msg => msg.role !== 'system'), // Remove any existing system messages
-        userMessage
-      ];
-      
-      const response = await fetch(apiUrl, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${sessionData.session.access_token}`
-        },
-        body: JSON.stringify({
-          prompt: userMessage.content,
-          systemPromptName,
-          previousMessages: messages,
-          conversationId
-        })
-      });
-      
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || 'Failed to send message');
-      }
-      
-      const data = await response.json();
-      return {
-        response: data.response,
-        messages: data.messages
-      };
+      throw new Error('Failed to fetch system prompt');
     }
     
-    // Create the system message with the fetched prompt content
-    const systemMessage: ChatMessage = {
-      role: 'system',
-      content: systemPromptData.content // Use the actual content from the database
-    };
-    
-    logger.debug('Created system message with content:', systemMessage.content);
-    
-    // If no prompt provided, use the system prompt as the user message
-    const userMessage: ChatMessage = {
-      role: 'user',
-      content: prompt || systemPromptData.content
-    };
-    
-    // Prepare messages array with system prompt first, then previous messages, then current prompt
-    const messages = [
-      systemMessage,
-      ...previousMessages.filter(msg => msg.role !== 'system'), // Remove any existing system messages
-      userMessage
-    ];
+    // Prepare messages array with user information
+    const messages = prepareMessages(
+      systemPromptData.content, 
+      previousMessages, 
+      prompt,
+      userId || sessionData.session.user.id,
+      userName || sessionData.session.user.user_metadata?.full_name
+    );
     
     const response = await fetch(apiUrl, {
       method: 'POST',
@@ -118,9 +123,9 @@ export const sendChatMessage = async (
         'Authorization': `Bearer ${sessionData.session.access_token}`
       },
       body: JSON.stringify({
-        prompt: userMessage.content,
+        prompt: messages[messages.length - 1].content,
         systemPromptName,
-        previousMessages: messages,
+        previousMessages: messages.slice(0, -1),
         conversationId
       })
     });
@@ -133,7 +138,11 @@ export const sendChatMessage = async (
     const data = await response.json();
     return {
       response: data.response,
-      messages: data.messages
+      messages: [...messages, { 
+        role: 'assistant', 
+        content: data.response,
+        timestamp: new Date().toISOString()
+      }]
     };
   } catch (error) {
     logger.error('Error in sendChatMessage:', error);
@@ -165,56 +174,40 @@ export const getSystemPrompts = async (): Promise<SystemPrompt[]> => {
     return ((data as unknown) as SystemPrompt[]) || [];
   } catch (error) {
     logger.error('Error in getSystemPrompts:', error);
-    // Return a default prompt as fallback
-    return [{
-      prompt_id: 'default',
-      name: 'default',
-      description: 'Default system prompt for general conversations',
-      content: 'You are a helpful AI assistant. Answer questions concisely and accurately.',
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-      is_active: true,
-      tag: 'general'
-    }];
+    throw error;
   }
 };
 
 /**
- * Fetches user's chat history
+ * Fetches chat history for the current user
  */
-export const getUserChatHistory = async (limit: number = 10): Promise<UserEvent[]> => {
+export const getUserChatHistory = async (): Promise<UserEvent[]> => {
   try {
-    // First check if the user is authenticated
-    const { data: sessionData } = await supabase.auth.getSession();
+    // First, ensure we have a valid session
+    const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
     
-    if (!sessionData.session) {
-      logger.warn('Trying to get chat history without authentication');
-      return [];
+    if (sessionError || !sessionData.session) {
+      logger.error('Session error in getUserChatHistory:', sessionError);
+      throw new Error('User must be authenticated to view chat history');
     }
     
-    const { data, error } = await withRetry(
-      async () => {
-        const response = await supabase
-          .from('user_events')
-          .select('*')
-          .eq('event_type', 'chat')
-          .order('created_at', { ascending: false })
-          .limit(limit);
-        return response as PostgrestResponse<UserEvent[]>;
-      },
-      { maxRetries: 2 }
-    );
+    // Get chat events for the current user
+    const { data, error } = await supabase
+      .from('user_events')
+      .select('*')
+      .eq('event_type', 'chat')
+      .eq('user_id', sessionData.session.user.id) // Add user ID filter
+      .order('created_at', { ascending: false });
     
     if (error) {
-      logger.error('Error fetching user chat history:', error);
+      logger.error('Error fetching chat history:', error);
       throw error;
     }
     
-    return ((data as unknown) as UserEvent[]) || [];
+    return data || [];
   } catch (error) {
     logger.error('Error in getUserChatHistory:', error);
-    // Return empty array instead of throwing to improve resilience
-    return [];
+    throw error;
   }
 };
 

@@ -75,16 +75,16 @@ const SignUp: React.FC = () => {
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
               </svg>
             </div>
-            <h2 className="mt-3 text-lg font-medium text-gray-900">Verification email sent!</h2>
+            <h2 className="mt-3 text-lg font-medium text-gray-900">Welcome to Paynless!</h2>
             <p className="mt-2 text-sm text-gray-600">
-              We've sent a verification link to your email address. Please check your inbox and click the link to verify your account.
+              We've sent a verification link to your email address. You can verify your email later, but feel free to start using the app now.
             </p>
             <div className="mt-6">
               <Link
-                to="/signin"
+                to="/home"
                 className="w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
               >
-                Back to Sign In
+                Continue to App
               </Link>
             </div>
           </div>
