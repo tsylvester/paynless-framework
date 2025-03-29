@@ -28,50 +28,59 @@ export const sendChatMessage = async (
     
     logger.debug('Sending chat with conversation ID:', conversationId);
     
-    // Use retry pattern for better resilience
-    const response = await withRetry(
-      async () => {
-        const res = await fetch(apiUrl, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${sessionData.session.access_token}`,
-          },
-          body: JSON.stringify({
-            prompt,
-            systemPromptName,
-            previousMessages,
-            conversationId, // Pass the conversation ID to the edge function
-          }),
-        });
-        
-        if (!res.ok) {
-          const errorData = await res.json().catch(() => ({ error: 'Failed to parse error response' }));
-          logger.error('Error response from chat function:', errorData);
-          throw new Error(errorData.error || 'Failed to send message');
-        }
-        
-        return res.json();
-      },
-      { maxRetries: 2, initialDelay: 500 }
-    );
+    // Get the system prompt
+    const { data: systemPromptData, error: systemPromptError } = await supabase
+      .from('system_prompts')
+      .select('content')
+      .eq('name', systemPromptName)
+      .eq('is_active', true)
+      .single();
     
-    // Even if event storage fails in the edge function, we'll still have the chat response
-    return response;
-  } catch (error) {
-    logger.error('Error in sendChatMessage:', error);
-    
-    // Enhance the error message for the user
-    const enhancedError = error instanceof Error ? error : new Error('Unknown error sending message');
-    if (error instanceof Error) {
-      if (error.message.includes('authentication') || error.message.includes('authenticated')) {
-        enhancedError.message = 'Your session has expired. Please sign in again.';
-      } else if (error.message.includes('network') || error.message.includes('fetch')) {
-        enhancedError.message = 'Network error. Please check your connection and try again.';
-      }
+    if (systemPromptError) {
+      logger.error('Error fetching system prompt:', systemPromptError);
+      throw new Error('Failed to fetch system prompt');
     }
     
-    throw enhancedError;
+    // Create the system message
+    const systemMessage: ChatMessage = {
+      role: 'system',
+      content: systemPromptData.content
+    };
+    
+    // Prepare messages array with system prompt first, then previous messages, then current prompt
+    const messages = [
+      systemMessage,
+      ...previousMessages.filter(msg => msg.role !== 'system'), // Remove any existing system messages
+      { role: 'user', content: prompt }
+    ];
+    
+    const response = await fetch(apiUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${sessionData.session.access_token}`
+      },
+      body: JSON.stringify({
+        prompt,
+        systemPromptName,
+        previousMessages: messages,
+        conversationId
+      })
+    });
+    
+    if (!response.ok) {
+      const errorData = await response.json();
+      throw new Error(errorData.error || 'Failed to send message');
+    }
+    
+    const data = await response.json();
+    return {
+      response: data.response,
+      messages: data.messages
+    };
+  } catch (error) {
+    logger.error('Error in sendChatMessage:', error);
+    throw error;
   }
 };
 

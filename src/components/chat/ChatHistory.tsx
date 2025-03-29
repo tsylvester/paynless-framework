@@ -1,9 +1,9 @@
 import React from 'react';
-import { ChatMessage as ChatMessageType } from '../../types/chat.types';
-import ChatMessage from './ChatMessage';
+import { ChatMessage } from '../../types/chat.types';
+import ChatMessageComponent from './ChatMessage';
 
 interface ChatHistoryProps {
-  messages: ChatMessageType[];
+  messages: ChatMessage[];
   isLoading?: boolean;
 }
 
@@ -19,9 +19,9 @@ const ChatHistory: React.FC<ChatHistoryProps> = ({ messages, isLoading = false }
   return (
     <div className="flex flex-col space-y-2 p-4">
       {messages
-        .filter(msg => msg.role !== 'system') // Don't show system messages
+        .filter(msg => msg.role !== 'system')
         .map((message, index) => (
-          <ChatMessage key={index} message={message} />
+          <ChatMessageComponent key={index} message={message} />
         ))}
       
       {isLoading && (

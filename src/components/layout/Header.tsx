@@ -34,7 +34,7 @@ const Header: React.FC = () => {
           <div className="flex">
             <Link to="/" className="flex-shrink-0 flex items-center">
               <Shield className="h-8 w-8 text-blue-600" />
-              <span className="ml-2 text-xl font-bold text-gray-900">AI Chat Framework</span>
+              <span className="ml-2 text-xl font-bold text-gray-900">Mystic Soul</span>
             </Link>
           </div>
 

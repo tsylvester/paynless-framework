@@ -99,6 +99,13 @@ ALTER TABLE subscription_plans ENABLE ROW LEVEL SECURITY;
 ALTER TABLE subscription_events ENABLE ROW LEVEL SECURITY;
 ALTER TABLE subscriptions ENABLE ROW LEVEL SECURITY;
 
+-- Drop existing policies if they exist
+DROP POLICY IF EXISTS "Anyone can view active subscription plans" ON subscription_plans;
+DROP POLICY IF EXISTS "Users can view their own subscription events" ON subscription_events;
+DROP POLICY IF EXISTS "Service role can insert subscription events" ON subscription_events;
+DROP POLICY IF EXISTS "Users can view their own subscriptions" ON subscriptions;
+DROP POLICY IF EXISTS "Service role can manage subscriptions" ON subscriptions;
+
 -- Create policies for subscription_plans
 CREATE POLICY "Anyone can view active subscription plans"
   ON subscription_plans
@@ -132,7 +139,7 @@ CREATE POLICY "Service role can manage subscriptions"
     (SELECT rolname FROM pg_roles WHERE oid = current_setting('role')::oid) = 'service_role'
   );
 
--- Insert default subscription plans
+-- Insert default subscription plans if they don't exist
 INSERT INTO subscription_plans (
   subscription_plan_id,
   subscription_name,
@@ -165,7 +172,8 @@ INSERT INTO subscription_plans (
   true,
   '{"messages_per_day": null, "history_days": null}',
   'price_premium_monthly'
-);
+)
+ON CONFLICT (subscription_plan_id) DO NOTHING;
 
 -- Create function to automatically create free subscription for new users
 CREATE OR REPLACE FUNCTION create_free_subscription()
