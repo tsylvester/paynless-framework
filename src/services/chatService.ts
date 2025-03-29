@@ -27,8 +27,9 @@ export const sendChatMessage = async (
     const apiUrl = `${import.meta.env.VITE_SUPABASE_DATABASE_URL}/functions/v1/chat`;
     
     logger.debug('Sending chat with conversation ID:', conversationId);
+    logger.debug('Using system prompt name:', systemPromptName);
     
-    // Get the system prompt
+    // Get the system prompt from the database
     const { data: systemPromptData, error: systemPromptError } = await supabase
       .from('system_prompts')
       .select('content')
@@ -36,16 +37,60 @@ export const sendChatMessage = async (
       .eq('is_active', true)
       .single();
     
+    logger.debug('System prompt query result:', { data: systemPromptData, error: systemPromptError });
+    
     if (systemPromptError) {
       logger.error('Error fetching system prompt:', systemPromptError);
-      throw new Error('Failed to fetch system prompt');
+      // If we can't find the specified prompt, use a fallback
+      const fallbackPrompt = "You are a helpful AI assistant. Answer questions concisely and accurately.";
+      logger.info('Using fallback system prompt');
+      
+      // Create the system message with fallback
+      const systemMessage: ChatMessage = {
+        role: 'system',
+        content: fallbackPrompt
+      };
+      
+      // Prepare messages array with system prompt first, then previous messages, then current prompt
+      const messages = [
+        systemMessage,
+        ...previousMessages.filter(msg => msg.role !== 'system'), // Remove any existing system messages
+        { role: 'user', content: prompt }
+      ];
+      
+      const response = await fetch(apiUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${sessionData.session.access_token}`
+        },
+        body: JSON.stringify({
+          prompt,
+          systemPromptName,
+          previousMessages: messages,
+          conversationId
+        })
+      });
+      
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to send message');
+      }
+      
+      const data = await response.json();
+      return {
+        response: data.response,
+        messages: data.messages
+      };
     }
     
-    // Create the system message
+    // Create the system message with the fetched prompt content
     const systemMessage: ChatMessage = {
       role: 'system',
-      content: systemPromptData.content
+      content: systemPromptData.content // Use the actual content from the database
     };
+    
+    logger.debug('Created system message with content:', systemMessage.content);
     
     // Prepare messages array with system prompt first, then previous messages, then current prompt
     const messages = [
