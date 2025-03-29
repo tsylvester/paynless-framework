@@ -8,7 +8,7 @@ const Footer: React.FC = () => {
         <div className="flex flex-col md:flex-row justify-between items-center">
           <div className="flex items-center mb-4 md:mb-0">
             <Shield className="h-5 w-5 text-blue-600 mr-2" />
-            <span className="text-gray-600 font-medium">AI Chat Framework © {new Date().getFullYear()}</span>
+            <span className="text-gray-600 font-medium">Mystic Soul © {new Date().getFullYear()}</span>
           </div>
           <div className="flex space-x-6">
             <a href="#" className="text-gray-500 hover:text-gray-700">Privacy Policy</a>

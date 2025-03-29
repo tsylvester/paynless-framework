@@ -62,56 +62,82 @@ BEGIN
   RAISE NOTICE 'Created free subscriptions for % user(s)', user_count;
 END $$;
 
--- Check if our create_free_subscription function exists and create it if it doesn't
-DO $$
-BEGIN
-  IF NOT EXISTS (SELECT 1 FROM pg_proc WHERE proname = 'create_free_subscription') THEN
-    -- Create function to automatically create free subscription for new users
-    CREATE OR REPLACE FUNCTION create_free_subscription()
-    RETURNS TRIGGER AS $$
-    BEGIN
-      -- Check if the user already has a subscription to prevent duplicates
-      IF NOT EXISTS (SELECT 1 FROM subscriptions WHERE user_id = NEW.id) THEN
-        INSERT INTO subscriptions (
-          user_id,
-          subscription_status,
-          subscription_plan_id,
-          subscription_price,
-          current_period_start,
-          metadata
-        ) 
-        VALUES (
-          NEW.id,
-          'active',
-          'free',
-          0,
-          CURRENT_TIMESTAMP,
-          '{"auto_created": true}'
-        );
-        
-        -- Log subscription event
-        INSERT INTO subscription_events (
-          user_id,
-          subscription_event_type,
-          subscription_status,
-          event_data
-        )
-        VALUES (
-          NEW.id,
-          'subscription_created',
-          'active',
-          jsonb_build_object('plan_id', 'free', 'auto_created', true)
-        );
-      END IF;
-      
-      RETURN NEW;
-    END;
-    $$ LANGUAGE plpgsql SECURITY DEFINER;
+-- Drop existing function and trigger if they exist
+DROP TRIGGER IF EXISTS on_user_created_add_subscription ON auth.users;
+DROP FUNCTION IF EXISTS create_free_subscription();
 
-    -- Create trigger for new user signup to add free subscription if it doesn't exist
-    DROP TRIGGER IF EXISTS on_user_created_add_subscription ON auth.users;
-    CREATE TRIGGER on_user_created_add_subscription
-      AFTER INSERT ON auth.users
-      FOR EACH ROW EXECUTE FUNCTION create_free_subscription();
+-- Create function to automatically create free subscription for new users
+CREATE OR REPLACE FUNCTION create_free_subscription()
+RETURNS TRIGGER AS $$
+DECLARE
+  subscription_id UUID;
+BEGIN
+  -- Log the trigger execution
+  RAISE NOTICE 'Creating free subscription for new user: %', NEW.id;
+  
+  -- Check if the user already has a subscription to prevent duplicates
+  IF NOT EXISTS (SELECT 1 FROM subscriptions WHERE user_id = NEW.id) THEN
+    -- Create the subscription
+    INSERT INTO subscriptions (
+      user_id,
+      subscription_status,
+      subscription_plan_id,
+      subscription_price,
+      current_period_start,
+      current_period_end,
+      metadata
+    ) 
+    VALUES (
+      NEW.id,
+      'active',
+      'free',
+      0,
+      CURRENT_TIMESTAMP,
+      NULL,
+      jsonb_build_object(
+        'auto_created', true,
+        'created_at', CURRENT_TIMESTAMP,
+        'created_by', 'user_signup_trigger'
+      )
+    )
+    RETURNING subscription_id INTO subscription_id;
+    
+    -- Log subscription event
+    INSERT INTO subscription_events (
+      user_id,
+      subscription_id,
+      subscription_event_type,
+      subscription_status,
+      event_data
+    )
+    VALUES (
+      NEW.id,
+      subscription_id,
+      'subscription_created',
+      'active',
+      jsonb_build_object(
+        'plan_id', 'free',
+        'auto_created', true,
+        'created_by', 'user_signup_trigger',
+        'user_id', NEW.id
+      )
+    );
+    
+    RAISE NOTICE 'Successfully created free subscription for user: %', NEW.id;
+  ELSE
+    RAISE NOTICE 'User % already has a subscription, skipping creation', NEW.id;
   END IF;
-END $$;
+  
+  RETURN NEW;
+EXCEPTION
+  WHEN OTHERS THEN
+    -- Log any errors that occur
+    RAISE WARNING 'Error creating free subscription for user %: %', NEW.id, SQLERRM;
+    RETURN NEW; -- Still return NEW to allow the user creation to proceed
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- Create trigger for new user signup to add free subscription
+CREATE TRIGGER on_user_created_add_subscription
+  AFTER INSERT ON auth.users
+  FOR EACH ROW EXECUTE FUNCTION create_free_subscription();
