@@ -216,25 +216,43 @@ async function handleSubscriptionUpdated(event) {
     
     const planId = planData.subscription_plan_id;
     
-    // Find the user
-    const { data: userData, error: userError } = await supabase
+    // Find the user by customer ID first
+    let { data: userData, error: userError } = await supabase
       .from("subscriptions")
       .select("user_id, subscription_id")
       .eq("stripe_customer_id", customerId)
       .single();
+    
+    // If not found by customer ID, try subscription ID
+    if (userError) {
+      const { data: subData, error: subError } = await supabase
+        .from("subscriptions")
+        .select("user_id, subscription_id")
+        .eq("stripe_subscription_id", subscriptionId)
+        .single();
+      
+      if (subError) {
+        console.error(`Error finding user by subscription: ${subError.message}`);
+        return;
+      }
+      
+      userData = subData;
+      userError = null;
+    }
     
     if (userError) {
       console.error(`Error finding user: ${userError.message}`);
       return;
     }
     
-    // Update subscription
+    // Update subscription with all available data
     const { error: updateError } = await supabase
       .from("subscriptions")
       .upsert({
         user_id: userData.user_id,
-        stripe_subscription_id: subscription.id,
-        stripe_customer_id: subscription.customer,
+        subscription_id: userData.subscription_id,
+        stripe_subscription_id: subscriptionId,
+        stripe_customer_id: customerId,
         subscription_status: subscription.status,
         subscription_plan_id: planId,
         subscription_price: (subscription.items?.data?.[0]?.price?.unit_amount || subscription.plan?.amount || 0) / 100,
@@ -244,7 +262,10 @@ async function handleSubscriptionUpdated(event) {
         ended_at: subscription.ended_at ? new Date(subscription.ended_at * 1000).toISOString() : null,
         updated_at: new Date().toISOString(),
         metadata: subscription.metadata || {}
-      }, { onConflict: "user_id" });
+      }, { 
+        onConflict: "user_id",
+        ignoreDuplicates: false
+      });
     
     if (updateError) {
       console.error(`Error updating subscription: ${updateError.message}`);
@@ -257,12 +278,13 @@ async function handleSubscriptionUpdated(event) {
       .insert({
         user_id: userData.user_id,
         subscription_id: userData.subscription_id,
-        stripe_subscription_id: subscription.id,
+        stripe_subscription_id: subscriptionId,
         subscription_event_type: event.type,
         subscription_status: subscription.status,
         event_data: {
           current_plan_id: planId,
-          stripe_event_id: event.id
+          stripe_event_id: event.id,
+          customer_id: customerId
         }
       });
     

@@ -83,7 +83,7 @@ serve(async (req) => {
     // Check if user already has a Stripe customer ID
     const { data: subscription, error: subscriptionError } = await supabase
       .from("subscriptions")
-      .select("stripe_customer_id")
+      .select("stripe_customer_id, subscription_id")
       .eq("user_id", user.id)
       .single();
 
@@ -101,20 +101,17 @@ serve(async (req) => {
       customerId = customer.id;
       
       // Check if subscription record exists before updating
-      const { data: existingSub } = await supabase
-        .from("subscriptions")
-        .select("subscription_id")
-        .eq("user_id", user.id)
-        .single();
-        
-      if (existingSub) {
-        // Update existing record
+      if (subscription) {
+        // Update existing record with customer ID
         await supabase
           .from("subscriptions")
-          .update({ stripe_customer_id: customerId })
+          .update({ 
+            stripe_customer_id: customerId,
+            updated_at: new Date().toISOString()
+          })
           .eq("user_id", user.id);
       } else {
-        // Create new subscription record
+        // Create new subscription record with customer ID
         await supabase
           .from("subscriptions")
           .insert({
@@ -122,7 +119,9 @@ serve(async (req) => {
             stripe_customer_id: customerId,
             subscription_status: 'active',
             subscription_plan_id: 'free',
-            subscription_price: 0
+            subscription_price: 0,
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString()
           });
       }
     }
@@ -151,11 +150,13 @@ serve(async (req) => {
       .from("subscription_events")
       .insert({
         user_id: user.id,
+        subscription_id: subscription?.subscription_id,
         subscription_event_type: "checkout_started",
         event_data: {
           session_id: session.id,
           plan_id: planId,
           checkout_url: session.url,
+          customer_id: customerId
         },
       });
 
