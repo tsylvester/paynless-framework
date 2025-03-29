@@ -38,54 +38,39 @@ const ChatInput: React.FC = () => {
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
     
-    const message = inputMessage.trim();
-    if (!message) return;
+    // Send the message (empty string is allowed)
+    await sendMessage(inputMessage);
     
-    // If user is not authenticated, prepare for auth flow and return
-    if (!user) {
-      // The navigateToAuth will prepare the message to be sent after auth
-      navigateToAuth('/signin');
-      return;
-    }
-    
-    // If user has reached their message limit, don't send
-    if (hasReachedLimit) {
-      return;
-    }
-    
-    // Send the message
-    await sendMessage(message, selectedPrompt);
+    // Clear the input after sending
     setInputMessage('');
   };
 
-  // Determine if this is a free plan
   const isFreePlan = subscription?.subscription_plan_id === 'free';
 
   return (
-    <form onSubmit={handleSubmit} className="w-full">
-      <div className="relative">
-        <textarea
-          className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none"
-          placeholder={hasReachedLimit ? "You've reached your daily message limit" : "Ask me anything..."}
-          rows={3}
+    <form onSubmit={handleSubmit} className="mt-4">
+      <div className="flex items-center space-x-2">
+        <input
+          type="text"
           value={inputMessage}
           onChange={(e) => setInputMessage(e.target.value)}
-          disabled={isLoading || !isOnline || hasReachedLimit}
+          placeholder="Type your message..."
+          className="flex-1 p-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+          disabled={isLoading || !isOnline}
         />
-        
         <button
           type="submit"
-          className="absolute right-3 bottom-3 p-2 bg-blue-600 text-white rounded-full hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-blue-300 disabled:cursor-not-allowed"
-          disabled={isLoading || !inputMessage.trim() || !isOnline || hasReachedLimit}
+          disabled={isLoading || !isOnline}
+          className={`p-2 rounded-lg ${
+            isLoading || !isOnline
+              ? 'bg-gray-300 cursor-not-allowed'
+              : 'bg-blue-600 hover:bg-blue-700'
+          } text-white`}
         >
-          {isLoading ? (
-            <div className="w-5 h-5 border-t-2 border-b-2 border-white rounded-full animate-spin"></div>
-          ) : (
-            <Send size={18} />
-          )}
+          <Send size={20} />
         </button>
       </div>
-      
+
       {!isOnline && (
         <div className="mt-2 text-amber-600 text-sm">
           You are offline. Please reconnect to send messages.

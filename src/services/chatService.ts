@@ -51,11 +51,17 @@ export const sendChatMessage = async (
         content: fallbackPrompt
       };
       
+      // If no prompt provided, use the system prompt as the user message
+      const userMessage: ChatMessage = {
+        role: 'user',
+        content: prompt || fallbackPrompt
+      };
+      
       // Prepare messages array with system prompt first, then previous messages, then current prompt
       const messages = [
         systemMessage,
         ...previousMessages.filter(msg => msg.role !== 'system'), // Remove any existing system messages
-        { role: 'user', content: prompt }
+        userMessage
       ];
       
       const response = await fetch(apiUrl, {
@@ -65,7 +71,7 @@ export const sendChatMessage = async (
           'Authorization': `Bearer ${sessionData.session.access_token}`
         },
         body: JSON.stringify({
-          prompt,
+          prompt: userMessage.content,
           systemPromptName,
           previousMessages: messages,
           conversationId
@@ -92,11 +98,17 @@ export const sendChatMessage = async (
     
     logger.debug('Created system message with content:', systemMessage.content);
     
+    // If no prompt provided, use the system prompt as the user message
+    const userMessage: ChatMessage = {
+      role: 'user',
+      content: prompt || systemPromptData.content
+    };
+    
     // Prepare messages array with system prompt first, then previous messages, then current prompt
     const messages = [
       systemMessage,
       ...previousMessages.filter(msg => msg.role !== 'system'), // Remove any existing system messages
-      { role: 'user', content: prompt }
+      userMessage
     ];
     
     const response = await fetch(apiUrl, {
@@ -106,7 +118,7 @@ export const sendChatMessage = async (
         'Authorization': `Bearer ${sessionData.session.access_token}`
       },
       body: JSON.stringify({
-        prompt,
+        prompt: userMessage.content,
         systemPromptName,
         previousMessages: messages,
         conversationId
