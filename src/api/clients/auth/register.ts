@@ -11,8 +11,8 @@ export class RegisterApiClient {
   private baseClient: BaseApiClient;
   
   constructor() {
-    // Use the full URL to the register endpoint
-    this.baseClient = BaseApiClient.getInstance('access');
+    // Use the root path since we moved the function to the root
+    this.baseClient = BaseApiClient.getInstance('');
   }
   
   /**
@@ -22,7 +22,7 @@ export class RegisterApiClient {
     try {
       logger.info('Registering new user', { email: request.email });
       
-      // Make sure we're posting to the full register endpoint
+      // Make sure we're posting to the register endpoint
       return await this.baseClient.post<AuthResponse>('/register', request);
     } catch (error) {
       logger.error('Error registering user', {

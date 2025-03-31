@@ -72,8 +72,8 @@ export class BaseApiClient {
         config.headers['apikey'] = anonKey;
         
         // Special handling for login/register endpoints
-        const isAuthEndpoint = config.url?.includes('/access/login') || 
-                              config.url?.includes('/access/register');
+        const isAuthEndpoint = config.url?.includes('/login') || 
+                              config.url?.includes('/register');
         
         if (isAuthEndpoint) {
           // For auth endpoints, add empty Authorization header (public function access)

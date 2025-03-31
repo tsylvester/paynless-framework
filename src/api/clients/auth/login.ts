@@ -11,8 +11,8 @@ export class LoginApiClient {
   private baseClient: BaseApiClient;
   
   constructor() {
-    // Use the correct path to the login endpoint
-    this.baseClient = BaseApiClient.getInstance('auth');
+    // Use the root path since we moved the function to the root
+    this.baseClient = BaseApiClient.getInstance('');
   }
   
   /**
@@ -22,7 +22,7 @@ export class LoginApiClient {
     try {
       logger.info('Logging in user', { email: credentials.email });
       
-      // Make the login request to the auth/login endpoint
+      // Make the login request to the login endpoint
       const response = await this.baseClient.post<AuthResponse>('/login', credentials);
       
       // If login is successful, store the tokens

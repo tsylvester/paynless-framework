@@ -1,18 +1,22 @@
-// supabase/functions/register/index.ts
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import { 
   createErrorResponse, 
-  createSuccessResponse 
-} from "../../_shared/cors-headers.ts";
+  createSuccessResponse,
+  handleCorsPreflightRequest 
+} from "../_shared/cors-headers.ts";
+import { verifyApiKey, createUnauthorizedResponse } from "../_shared/auth.ts";
 
-/**
- * Handles user registration requests
- */
-export default async function handleRegister(req: Request): Promise<Response> {
-  // Handle CORS preflight request
-  /*const corsResponse = handleCorsPreflightRequest(req);
-  if (corsResponse) return corsResponse;*/
+Deno.serve(async (req) => {
+  // Handle CORS preflight request first
+  const corsResponse = handleCorsPreflightRequest(req);
+  if (corsResponse) return corsResponse;
+
+  // Verify API key for all non-OPTIONS requests
+  const isValid = verifyApiKey(req);
+  if (!isValid) {
+    return createUnauthorizedResponse("Invalid or missing apikey");
+  }
 
   try {
     const { email, password } = await req.json();
@@ -28,14 +32,14 @@ export default async function handleRegister(req: Request): Promise<Response> {
       Deno.env.get('SUPABASE_ANON_KEY')!
     );
 
-    // Create the user
-    const { data, error } = await supabaseAdmin.auth.signUp({
+    // Sign in the user
+    const { data, error } = await supabaseAdmin.auth.signInWithPassword({
       email,
       password,
     });
 
     if (error) {
-      console.error("Registration error:", error);
+      console.error("Login error:", error);
       return createErrorResponse(error.message, 400);
     }
 
@@ -50,4 +54,4 @@ export default async function handleRegister(req: Request): Promise<Response> {
       err instanceof Error ? err.message : "An unexpected error occurred"
     );
   }
-}
+}); 
