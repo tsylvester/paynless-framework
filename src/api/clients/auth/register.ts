@@ -12,7 +12,7 @@ export class RegisterApiClient {
   
   constructor() {
     // Use the full URL to the register endpoint
-    this.baseClient = BaseApiClient.getInstance('');
+    this.baseClient = BaseApiClient.getInstance('access');
   }
   
   /**

@@ -17,13 +17,12 @@ import { verifyApiKey, createUnauthorizedResponse } from "../_shared/auth.ts";
 import handleLogin from "./login/index.ts";
 import handleRegister from "./register/index.ts";
 
-
 Deno.serve(async (req) => {
-  // Handle CORS preflight request
+  // Handle CORS preflight request first, before any other processing
   const corsResponse = handleCorsPreflightRequest(req);
   if (corsResponse) return corsResponse;
 
-  // Verify API key for all requests
+  // Verify API key for all non-OPTIONS requests
   const isValid = verifyApiKey(req);
   if (!isValid) {
     return createUnauthorizedResponse("Invalid or missing apikey");

@@ -1,14 +1,15 @@
 // supabase/functions/register/index.ts
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
-/*import { 
-  corsHeaders, 
-  handleCorsPreflightRequest, 
+import { 
   createErrorResponse, 
   createSuccessResponse 
-} from "../_shared/cors-headers.ts";*/
+} from "../../_shared/cors-headers.ts";
 
-Deno.serve(async (req: Request) => {
+/**
+ * Handles user registration requests
+ */
+export default async function handleRegister(req: Request): Promise<Response> {
   // Handle CORS preflight request
   /*const corsResponse = handleCorsPreflightRequest(req);
   if (corsResponse) return corsResponse;*/
@@ -49,4 +50,4 @@ Deno.serve(async (req: Request) => {
       err instanceof Error ? err.message : "An unexpected error occurred"
     );
   }
-});
+}
