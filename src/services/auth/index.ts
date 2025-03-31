@@ -80,6 +80,20 @@ export class AuthService {
   }
   
   /**
+   * Refresh the current session
+   */
+  async refreshSession(refreshToken: string): Promise<User | null> {
+    try {
+      return await this.sessionService.refreshSession(refreshToken);
+    } catch (error) {
+      logger.error('Unexpected error refreshing session', { 
+        error: error instanceof Error ? error.message : 'Unknown error',
+      });
+      return null;
+    }
+  }
+  
+  /**
    * Check if the user has the required role
    */
   hasRole(user: User | null, role: string): boolean {

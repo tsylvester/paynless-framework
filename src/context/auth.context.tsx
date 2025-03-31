@@ -8,6 +8,7 @@ interface AuthContextType extends AuthState {
   register: (email: string, password: string) => Promise<User | null>;
   logout: () => Promise<void>;
   resetPassword: (email: string) => Promise<boolean>;
+  refreshSession: () => Promise<boolean>; // New method
 }
 
 // Create context with default values
@@ -20,6 +21,7 @@ export const AuthContext = createContext<AuthContextType>({
   register: async () => null,
   logout: async () => {},
   resetPassword: async () => false,
+  refreshSession: async () => false, // New default method
 });
 
 interface AuthProviderProps {
@@ -33,6 +35,45 @@ export function AuthProvider({ children }: AuthProviderProps) {
     isLoading: true,
     error: null,
   });
+  
+  // Function to refresh the session
+  const refreshSession = async (): Promise<boolean> => {
+    try {
+      // Check if we have tokens in localStorage
+      const accessToken = localStorage.getItem('accessToken');
+      const refreshToken = localStorage.getItem('refreshToken');
+
+      if (!accessToken || !refreshToken) {
+        logger.warn('Cannot refresh session: missing tokens');
+        return false;
+      }
+
+      const user = await authService.refreshSession(refreshToken);
+      
+      if (user) {
+        setState({
+          user,
+          session: {
+            accessToken: localStorage.getItem('accessToken') || '',
+            refreshToken: localStorage.getItem('refreshToken') || '',
+            expiresAt: 0, // We'd get this from the token if needed
+          },
+          isLoading: false,
+          error: null,
+        });
+        logger.info('Session refreshed successfully');
+        return true;
+      }
+
+      logger.warn('Session refresh failed');
+      return false;
+    } catch (error) {
+      logger.error('Failed to refresh session', {
+        error: error instanceof Error ? error.message : 'Unknown error',
+      });
+      return false;
+    }
+  };
   
   useEffect(() => {
     const loadUser = async () => {
@@ -52,15 +93,45 @@ export function AuthProvider({ children }: AuthProviderProps) {
           return;
         }
 
-        const user = await authService.getCurrentUser();
+        // Try to get current user using the tokens
+        try {
+          const user = await authService.getCurrentUser();
+          
+          if (user) {
+            setState({
+              user,
+              session: {
+                accessToken,
+                refreshToken,
+                expiresAt: 0,
+              },
+              isLoading: false,
+              error: null,
+            });
+            return;
+          }
+        } catch (error) {
+          // If getting current user fails, try to refresh the session
+          logger.info('Current user fetch failed, trying to refresh session', {
+            error: error instanceof Error ? error.message : 'Unknown error',
+          });
+          
+          const success = await refreshSession();
+          
+          if (success) {
+            // Session refreshed successfully
+            return;
+          }
+        }
+        
+        // If we get here, both getCurrentUser and refreshSession failed
+        // Clear tokens and set user to null
+        localStorage.removeItem('accessToken');
+        localStorage.removeItem('refreshToken');
         
         setState({
-          user,
-          session: user ? {
-            accessToken,
-            refreshToken,
-            expiresAt: 0, // We'd get this from the token if needed
-          } : null,
+          user: null,
+          session: null,
           isLoading: false,
           error: null,
         });
@@ -203,6 +274,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
     register,
     logout,
     resetPassword,
+    refreshSession,
   };
   
   return (

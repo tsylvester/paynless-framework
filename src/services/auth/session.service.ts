@@ -53,4 +53,36 @@ export class SessionService {
       return null;
     }
   }
+  
+  /**
+   * Refresh the session using a refresh token
+   */
+  async refreshSession(refreshToken: string): Promise<User | null> {
+    try {
+      logger.info('Refreshing session');
+      
+      const response = await authApiClient.refreshSession(refreshToken);
+      
+      if (response.error || !response.data?.user) {
+        logger.error('Session refresh failed', { 
+          error: response.error,
+        });
+        return null;
+      }
+      
+      // Update tokens if provided in the response
+      if (response.data.session) {
+        localStorage.setItem('accessToken', response.data.session.accessToken);
+        localStorage.setItem('refreshToken', response.data.session.refreshToken);
+      }
+      
+      logger.info('Session refreshed successfully', { userId: response.data.user.id });
+      return response.data.user;
+    } catch (error) {
+      logger.error('Unexpected error during session refresh', { 
+        error: error instanceof Error ? error.message : 'Unknown error',
+      });
+      return null;
+    }
+  }
 }

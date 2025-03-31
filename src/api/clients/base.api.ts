@@ -64,8 +64,7 @@ export class BaseApiClient {
     this.client.interceptors.request.use(
       (config) => {
         // Debug logging
-        console.log("Making request to:", config.url);
-        console.log("Request method:", config.method);
+        logger.debug("Making request to:", { url: config.url, method: config.method });
 
         // Initialize headers if they don't exist
         config.headers = config.headers || {};
@@ -73,75 +72,136 @@ export class BaseApiClient {
         // Get the anon key
         const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
         if (!anonKey) {
-          console.error("VITE_SUPABASE_ANON_KEY is missing");
+          logger.error("VITE_SUPABASE_ANON_KEY is missing");
           return Promise.reject(new Error("VITE_SUPABASE_ANON_KEY is missing"));
         }
         
         // Always add the apikey header
         config.headers['apikey'] = anonKey;
         
-        // IMPORTANT: Supabase Edge Functions REQUIRE a JWT in the Authorization header to invoke the function
-        // This is separate from any tokens sent in the request body
-        // Only login/register endpoints can use an empty Bearer token
-        const isPublicAuthEndpoint = config.url?.includes('/login') || 
-                                   config.url?.includes('/register');
+        // Public auth endpoints only need the anon key
+        const isPublicAuthEndpoint = 
+          (config.url?.includes('/login') || config.url?.includes('/register'));
         
         if (isPublicAuthEndpoint) {
-          // For public auth endpoints, add empty Authorization header
-          console.log("Public auth endpoint detected - using empty Bearer token");
+          // For public auth endpoints, use empty Bearer token
+          logger.debug("Public auth endpoint - using empty Bearer token");
           config.headers['Authorization'] = 'Bearer ';
         } else {
-          // For ALL other endpoints (including session), add the JWT if available
+          // For ALL other endpoints, add the JWT if available
           const accessToken = localStorage.getItem('accessToken');
           if (accessToken) {
-            console.log("Adding Authorization header with JWT token");
+            logger.debug("Adding Authorization header with JWT token");
             config.headers['Authorization'] = `Bearer ${accessToken}`;
           } else {
-            console.log("No access token found in localStorage");
+            logger.warn("No access token found for authenticated request");
+            // Return a rejection if we don't have a token for a protected endpoint
+            return Promise.reject({ 
+              error: { 
+                code: 'unauthorized', 
+                message: 'No authentication token found' 
+              },
+              status: 401 
+            });
           }
         }
         
-        // Log the final headers for debugging
-        console.log("Final request headers:", JSON.stringify(config.headers, null, 2));
         return config;
       },
       (error) => {
-        console.error("Request interceptor error:", error);
+        logger.error("Request interceptor error:", error);
         return Promise.reject(error);
       }
     );    
     
-    // Response interceptor for handling errors
+    // Response interceptor for handling errors and auto refresh
     this.client.interceptors.response.use(
       (response) => response,
       async (error: AxiosError) => {
         // Log detailed error information
-        console.error("Response error:", error.message);
+        logger.error("Response error:", { 
+          message: error.message,
+          response: error.response?.data,
+          status: error.response?.status,
+        });
         
-        if (error.response) {
-          console.error("Response data:", error.response.data);
-          console.error("Response status:", error.response.status);
-          console.error("Response headers:", error.response.headers);
-
-          // Handle 401 errors
-          if (error.response.status === 401) {
-            // Only clear tokens and redirect if it's a session endpoint error
-            if (error.config?.url?.includes('/session')) {
-              console.log("Session endpoint returned 401 - clearing tokens and redirecting to login");
-              // Clear tokens
-              localStorage.removeItem('accessToken');
-              localStorage.removeItem('refreshToken');
-              
-              // Redirect to login
-              window.location.href = '/login';
-            } else {
-              console.log("Non-session endpoint returned 401 - not clearing tokens");
-            }
+        // Handle 401 Unauthorized errors - token expired or invalid
+        if (error.response?.status === 401) {
+          logger.info("401 Unauthorized response received");
+          
+          // Don't try to refresh token for login/register endpoints
+          const isAuthEndpoint = error.config?.url?.includes('/login') || 
+                                error.config?.url?.includes('/register');
+                                
+          if (isAuthEndpoint) {
+            logger.debug("Auth endpoint 401 - normal authentication failure");
+            return Promise.reject(error);
           }
-        } else if (error.request) {
-          console.error("Request error (no response received):", error.request);
-        } else {
-          console.error("Error setting up request:", error.message);
+          
+          // Try to refresh the session and retry the request
+          try {
+            const refreshToken = localStorage.getItem('refreshToken');
+            if (!refreshToken) {
+              throw new Error("No refresh token available");
+            }
+            
+            logger.info("Attempting to refresh the session");
+            
+            // Create a new axios instance specifically for the refresh request
+            // to avoid interceptor loop
+            const refreshResponse = await axios.post(
+              `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/refresh`,
+              { refresh_token: refreshToken },
+              { 
+                headers: {
+                  'Content-Type': 'application/json',
+                  'apikey': import.meta.env.VITE_SUPABASE_ANON_KEY,
+                  'Authorization': `Bearer ${localStorage.getItem('accessToken') || ''}`,
+                }
+              }
+            );
+            
+            // If refresh successful, update tokens
+            if (refreshResponse.data?.session) {
+              logger.info("Session refreshed successfully");
+              localStorage.setItem('accessToken', refreshResponse.data.session.accessToken);
+              localStorage.setItem('refreshToken', refreshResponse.data.session.refreshToken);
+              
+              // Clone the original request config
+              const originalRequest = { ...error.config };
+              
+              // Make sure headers exist
+              originalRequest.headers = originalRequest.headers || {};
+              
+              // Update authorization header with new token
+              originalRequest.headers['Authorization'] = 
+                `Bearer ${refreshResponse.data.session.accessToken}`;
+              
+              // Retry the original request with the new token
+              return this.client!.request(originalRequest);
+            }
+            
+            throw new Error("Session refresh did not return new tokens");
+          } catch (refreshError) {
+            logger.error("Session refresh failed:", refreshError);
+            
+            // Clear tokens and redirect to login
+            localStorage.removeItem('accessToken');
+            localStorage.removeItem('refreshToken');
+            
+            // Redirect to login on next tick to avoid state updates during render
+            setTimeout(() => {
+              window.location.href = '/login';
+            }, 0);
+            
+            return Promise.reject({
+              error: {
+                code: 'session_expired',
+                message: 'Your session has expired. Please log in again.',
+              },
+              status: 401,
+            });
+          }
         }
         
         // Handle API errors
@@ -200,7 +260,7 @@ export class BaseApiClient {
   async get<T>(path: string, config?: AxiosRequestConfig): Promise<ApiResponse<T>> {
     try {
       this.initializeClient();
-      console.log(`Making GET request to: ${path}`);
+      logger.debug(`Making GET request to: ${path}`);
       const response = await this.client!.get<T>(path, config);
       return {
         data: response.data,
@@ -217,15 +277,13 @@ export class BaseApiClient {
   async post<T>(path: string, data?: unknown, config?: AxiosRequestConfig): Promise<ApiResponse<T>> {
     try {
       this.initializeClient();
-      console.log(`Making POST request to: ${path}`);
-      console.log('POST data:', data);
+      logger.debug(`Making POST request to: ${path}`);
       const response = await this.client!.post<T>(path, data, config);
       return {
         data: response.data,
         status: response.status,
       };
     } catch (error: unknown) {
-      console.error('POST request failed:', error);
       return error as ApiResponse<T>;
     }
   }

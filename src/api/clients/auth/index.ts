@@ -94,6 +94,26 @@ export class AuthApiClient {
   }
   
   /**
+   * Refresh the session
+   */
+  async refreshSession(refreshToken: string): Promise<ApiResponse<AuthResponse>> {
+    try {
+      return await sessionApiClient.refreshSession(refreshToken);
+    } catch (error) {
+      logger.error('Error in AuthApiClient.refreshSession', {
+        error: error instanceof Error ? error.message : 'Unknown error'
+      });
+      return {
+        error: {
+          code: 'auth_error',
+          message: error instanceof Error ? error.message : 'An unknown error occurred',
+        },
+        status: 500,
+      };
+    }
+  }
+  
+  /**
    * Request a password reset email
    */
   async resetPassword(email: string): Promise<ApiResponse<void>> {
