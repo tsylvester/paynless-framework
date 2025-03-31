@@ -15,11 +15,34 @@ export class SessionApiClient {
   
   /**
    * Get current session
+   * 
+   * IMPORTANT: This endpoint requires:
+   * 1. A JWT in the Authorization header (handled by BaseApiClient)
+   * 2. Access and refresh tokens in the request body (handled here)
+   * 
+   * The JWT in the header is required by Supabase to invoke the edge function,
+   * while the tokens in the body are used by the function to validate/refresh the session.
    */
   async getSession(): Promise<ApiResponse<AuthResponse>> {
     try {
       logger.info('Getting current session');
-      return await this.baseClient.get<AuthResponse>('/session');
+      const accessToken = localStorage.getItem('accessToken');
+      const refreshToken = localStorage.getItem('refreshToken');
+      
+      if (!accessToken || !refreshToken) {
+        return {
+          error: {
+            code: 'session_error',
+            message: 'No session tokens found',
+          },
+          status: 401,
+        };
+      }
+
+      return await this.baseClient.post<AuthResponse>('/session', {
+        access_token: accessToken,
+        refresh_token: refreshToken
+      });
     } catch (error) {
       logger.error('Error getting session', {
         error: error instanceof Error ? error.message : 'Unknown error',

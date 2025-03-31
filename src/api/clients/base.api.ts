@@ -80,24 +80,29 @@ export class BaseApiClient {
         // Always add the apikey header
         config.headers['apikey'] = anonKey;
         
-        // Special handling for login/register endpoints
-        const isAuthEndpoint = config.url?.includes('/login') || 
-                              config.url?.includes('/register');
+        // IMPORTANT: Supabase Edge Functions REQUIRE a JWT in the Authorization header to invoke the function
+        // This is separate from any tokens sent in the request body
+        // Only login/register endpoints can use an empty Bearer token
+        const isPublicAuthEndpoint = config.url?.includes('/login') || 
+                                   config.url?.includes('/register');
         
-        if (isAuthEndpoint) {
-          // For auth endpoints, add empty Authorization header (public function access)
-          console.log("Auth endpoint detected - using empty Bearer token");
+        if (isPublicAuthEndpoint) {
+          // For public auth endpoints, add empty Authorization header
+          console.log("Public auth endpoint detected - using empty Bearer token");
           config.headers['Authorization'] = 'Bearer ';
         } else {
-          // For regular endpoints, add the JWT if available
+          // For ALL other endpoints (including session), add the JWT if available
           const accessToken = localStorage.getItem('accessToken');
           if (accessToken) {
             console.log("Adding Authorization header with JWT token");
             config.headers['Authorization'] = `Bearer ${accessToken}`;
+          } else {
+            console.log("No access token found in localStorage");
           }
         }
         
-        console.log("Request headers:", JSON.stringify(config.headers));
+        // Log the final headers for debugging
+        console.log("Final request headers:", JSON.stringify(config.headers, null, 2));
         return config;
       },
       (error) => {
@@ -120,12 +125,18 @@ export class BaseApiClient {
 
           // Handle 401 errors
           if (error.response.status === 401) {
-            // Clear tokens
-            localStorage.removeItem('accessToken');
-            localStorage.removeItem('refreshToken');
-            
-            // Redirect to login
-            window.location.href = '/login';
+            // Only clear tokens and redirect if it's a session endpoint error
+            if (error.config?.url?.includes('/session')) {
+              console.log("Session endpoint returned 401 - clearing tokens and redirecting to login");
+              // Clear tokens
+              localStorage.removeItem('accessToken');
+              localStorage.removeItem('refreshToken');
+              
+              // Redirect to login
+              window.location.href = '/login';
+            } else {
+              console.log("Non-session endpoint returned 401 - not clearing tokens");
+            }
           }
         } else if (error.request) {
           console.error("Request error (no response received):", error.request);
