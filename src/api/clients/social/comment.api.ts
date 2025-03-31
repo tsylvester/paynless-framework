@@ -10,7 +10,7 @@ export class CommentApiClient {
   private baseClient: BaseApiClient;
   
   constructor() {
-    this.baseClient = BaseApiClient.getInstance('social/comments');
+    this.baseClient = BaseApiClient.getInstance();
   }
   
   /**
@@ -18,18 +18,16 @@ export class CommentApiClient {
    */
   async getComments(postId: string): Promise<ApiResponse<Comment[]>> {
     try {
-      logger.info('Getting comments', { postId });
-      return await this.baseClient.get<Comment[]>(`/${postId}`);
+      return await this.baseClient.get<Comment[]>(`/social/comments/${postId}`);
     } catch (error) {
       logger.error('Error getting comments', {
         error: error instanceof Error ? error.message : 'Unknown error',
         postId,
       });
-      
       return {
         error: {
           code: 'comment_error',
-          message: error instanceof Error ? error.message : 'An unknown error occurred',
+          message: error instanceof Error ? error.message : 'An unexpected error occurred',
         },
         status: 500,
       };
@@ -37,22 +35,20 @@ export class CommentApiClient {
   }
   
   /**
-   * Add a comment to a post
+   * Create a new comment
    */
-  async addComment(postId: string, content: string): Promise<ApiResponse<Comment>> {
+  async createComment(postId: string, content: string): Promise<ApiResponse<Comment>> {
     try {
-      logger.info('Adding comment', { postId });
-      return await this.baseClient.post<Comment>('/', { postId, content });
+      return await this.baseClient.post<Comment>(`/social/comments/${postId}`, { content });
     } catch (error) {
-      logger.error('Error adding comment', {
+      logger.error('Error creating comment', {
         error: error instanceof Error ? error.message : 'Unknown error',
         postId,
       });
-      
       return {
         error: {
           code: 'comment_error',
-          message: error instanceof Error ? error.message : 'An unknown error occurred',
+          message: error instanceof Error ? error.message : 'An unexpected error occurred',
         },
         status: 500,
       };
@@ -64,18 +60,16 @@ export class CommentApiClient {
    */
   async deleteComment(commentId: string): Promise<ApiResponse<void>> {
     try {
-      logger.info('Deleting comment', { commentId });
-      return await this.baseClient.delete<void>(`/${commentId}`);
+      return await this.baseClient.delete<void>(`/social/comments/${commentId}`);
     } catch (error) {
       logger.error('Error deleting comment', {
         error: error instanceof Error ? error.message : 'Unknown error',
         commentId,
       });
-      
       return {
         error: {
           code: 'comment_error',
-          message: error instanceof Error ? error.message : 'An unknown error occurred',
+          message: error instanceof Error ? error.message : 'An unexpected error occurred',
         },
         status: 500,
       };

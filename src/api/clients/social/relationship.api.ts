@@ -10,103 +10,66 @@ export class RelationshipApiClient {
   private baseClient: BaseApiClient;
   
   constructor() {
-    this.baseClient = BaseApiClient.getInstance('social/relationships');
+    this.baseClient = BaseApiClient.getInstance();
   }
   
-  async followUser(userId: string): Promise<ApiResponse<Relationship>> {
+  /**
+   * Get relationships for a user
+   */
+  async getRelationships(userId: string): Promise<ApiResponse<Relationship[]>> {
     try {
-      logger.info('Following user', { userId });
-      return await this.baseClient.post<Relationship>('/follow', { userId });
+      return await this.baseClient.get<Relationship[]>(`/social/relationships/${userId}`);
     } catch (error) {
-      logger.error('Error following user', {
+      logger.error('Error getting relationships', {
         error: error instanceof Error ? error.message : 'Unknown error',
         userId,
       });
-      
       return {
         error: {
           code: 'relationship_error',
-          message: error instanceof Error ? error.message : 'An unknown error occurred',
+          message: error instanceof Error ? error.message : 'An unexpected error occurred',
         },
         status: 500,
       };
     }
   }
   
-  async unfollowUser(userId: string): Promise<ApiResponse<void>> {
+  /**
+   * Send a relationship request
+   */
+  async sendRequest(targetUserId: string): Promise<ApiResponse<Relationship>> {
     try {
-      logger.info('Unfollowing user', { userId });
-      return await this.baseClient.delete<void>(`/follow/${userId}`);
+      return await this.baseClient.post<Relationship>(`/social/relationships/${targetUserId}`);
     } catch (error) {
-      logger.error('Error unfollowing user', {
+      logger.error('Error sending relationship request', {
         error: error instanceof Error ? error.message : 'Unknown error',
-        userId,
+        targetUserId,
       });
-      
       return {
         error: {
           code: 'relationship_error',
-          message: error instanceof Error ? error.message : 'An unknown error occurred',
+          message: error instanceof Error ? error.message : 'An unexpected error occurred',
         },
         status: 500,
       };
     }
   }
   
-  async getFollowers(userId: string): Promise<ApiResponse<Relationship[]>> {
+  /**
+   * Update relationship status
+   */
+  async updateStatus(relationshipId: string, status: RelationshipStatus): Promise<ApiResponse<Relationship>> {
     try {
-      logger.info('Getting followers', { userId });
-      return await this.baseClient.get<Relationship[]>(`/${userId}/followers`);
+      return await this.baseClient.put<Relationship>(`/social/relationships/${relationshipId}`, { status });
     } catch (error) {
-      logger.error('Error getting followers', {
+      logger.error('Error updating relationship status', {
         error: error instanceof Error ? error.message : 'Unknown error',
-        userId,
+        relationshipId,
       });
-      
       return {
         error: {
           code: 'relationship_error',
-          message: error instanceof Error ? error.message : 'An unknown error occurred',
-        },
-        status: 500,
-      };
-    }
-  }
-  
-  async getFollowing(userId: string): Promise<ApiResponse<Relationship[]>> {
-    try {
-      logger.info('Getting following', { userId });
-      return await this.baseClient.get<Relationship[]>(`/${userId}/following`);
-    } catch (error) {
-      logger.error('Error getting following', {
-        error: error instanceof Error ? error.message : 'Unknown error',
-        userId,
-      });
-      
-      return {
-        error: {
-          code: 'relationship_error',
-          message: error instanceof Error ? error.message : 'An unknown error occurred',
-        },
-        status: 500,
-      };
-    }
-  }
-  
-  async getRelationshipStatus(userId: string): Promise<ApiResponse<RelationshipStatus>> {
-    try {
-      logger.info('Getting relationship status', { userId });
-      return await this.baseClient.get<RelationshipStatus>(`/${userId}/status`);
-    } catch (error) {
-      logger.error('Error getting relationship status', {
-        error: error instanceof Error ? error.message : 'Unknown error',
-        userId,
-      });
-      
-      return {
-        error: {
-          code: 'relationship_error',
-          message: error instanceof Error ? error.message : 'An unknown error occurred',
+          message: error instanceof Error ? error.message : 'An unexpected error occurred',
         },
         status: 500,
       };

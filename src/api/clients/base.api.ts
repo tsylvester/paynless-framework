@@ -7,19 +7,25 @@ import { logger } from '../../utils/logger';
  * Base API client that handles HTTP requests and error handling
  */
 export class BaseApiClient {
-  private client: AxiosInstance;
-  private basePath: string;
-  private static instances: Map<string, BaseApiClient> = new Map();
+  private client: AxiosInstance | null = null;
+  private static instance: BaseApiClient | null = null;
   
-  private constructor(path: string) {
+  private constructor() {
+    // Private constructor to enforce singleton
+  }
+
+  /**
+   * Initialize the client if it hasn't been initialized yet
+   */
+  private initializeClient(): void {
+    if (this.client) return;
+
     // Use Supabase Edge Functions URL
     const baseUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1`;
-    this.basePath = path;
     
     // Log environment variables
     logger.info('Initializing BaseApiClient', {
       baseUrl,
-      basePath: this.basePath,
       hasAnonKey: !!import.meta.env.VITE_SUPABASE_ANON_KEY,
     });
     
@@ -31,26 +37,29 @@ export class BaseApiClient {
       },
     });
     
-    // Debug logging
-    console.log('Base client initialized with URL:', baseUrl);
-    
     this.setupInterceptors();
   }
 
   /**
-   * Get or create a BaseApiClient instance for the given path
+   * Get the singleton instance of BaseApiClient
    */
-  public static getInstance(path: string): BaseApiClient {
-    if (!BaseApiClient.instances.has(path)) {
-      BaseApiClient.instances.set(path, new BaseApiClient(path));
+  public static getInstance(): BaseApiClient {
+    if (!BaseApiClient.instance) {
+      logger.info('Creating new BaseApiClient instance');
+      BaseApiClient.instance = new BaseApiClient();
+    } else {
+      logger.debug('Reusing existing BaseApiClient instance');
     }
-    return BaseApiClient.instances.get(path)!;
+    
+    return BaseApiClient.instance;
   }
   
   /**
    * Set up request and response interceptors
    */
   private setupInterceptors(): void {
+    if (!this.client) return;
+
     // Request interceptor for adding auth token
     this.client.interceptors.request.use(
       (config) => {
@@ -179,9 +188,9 @@ export class BaseApiClient {
    */
   async get<T>(path: string, config?: AxiosRequestConfig): Promise<ApiResponse<T>> {
     try {
-      const url = this.basePath ? `/${this.basePath}${path}` : path;
-      console.log(`Making GET request to: ${url}`);
-      const response = await this.client.get<T>(url, config);
+      this.initializeClient();
+      console.log(`Making GET request to: ${path}`);
+      const response = await this.client!.get<T>(path, config);
       return {
         data: response.data,
         status: response.status,
@@ -196,10 +205,10 @@ export class BaseApiClient {
    */
   async post<T>(path: string, data?: unknown, config?: AxiosRequestConfig): Promise<ApiResponse<T>> {
     try {
-      const url = this.basePath ? `/${this.basePath}${path}` : path;
-      console.log(`Making POST request to: ${url}`);
+      this.initializeClient();
+      console.log(`Making POST request to: ${path}`);
       console.log('POST data:', data);
-      const response = await this.client.post<T>(url, data, config);
+      const response = await this.client!.post<T>(path, data, config);
       return {
         data: response.data,
         status: response.status,
@@ -215,8 +224,8 @@ export class BaseApiClient {
    */
   async put<T>(path: string, data?: unknown, config?: AxiosRequestConfig): Promise<ApiResponse<T>> {
     try {
-      const url = this.basePath ? `/${this.basePath}${path}` : path;
-      const response = await this.client.put<T>(url, data, config);
+      this.initializeClient();
+      const response = await this.client!.put<T>(path, data, config);
       return {
         data: response.data,
         status: response.status,
@@ -231,8 +240,8 @@ export class BaseApiClient {
    */
   async delete<T>(path: string, config?: AxiosRequestConfig): Promise<ApiResponse<T>> {
     try {
-      const url = this.basePath ? `/${this.basePath}${path}` : path;
-      const response = await this.client.delete<T>(url, config);
+      this.initializeClient();
+      const response = await this.client!.delete<T>(path, config);
       return {
         data: response.data,
         status: response.status,
