@@ -1,32 +1,52 @@
+// supabase/functions/register/index.ts
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
+import { 
+  corsHeaders, 
+  handleCorsPreflightRequest, 
+  createErrorResponse, 
+  createSuccessResponse 
+} from "../_shared/cors-headers.ts";
 
 Deno.serve(async (req: Request) => {
-  if (req.method === 'OPTIONS') {
-    return new Response('ok', { status: 200 });
-  }
+  // Handle CORS preflight request
+  const corsResponse = handleCorsPreflightRequest(req);
+  if (corsResponse) return corsResponse;
 
-  const { email, password } = await req.json();
+  try {
+    const { email, password } = await req.json();
 
-  const supabaseClient = createClient(
-    Deno.env.get('SUPABASE_URL')!,
-    Deno.env.get('SUPABASE_ANON_KEY')!
-  );
+    // Basic validation
+    if (!email || !password) {
+      return createErrorResponse("Email and password are required", 400);
+    }
 
-  const { data, error } = await supabaseClient.auth.signUp({
-    email,
-    password,
-  });
+    // Initialize Supabase client
+    const supabaseAdmin = createClient(
+      Deno.env.get('SUPABASE_URL')!,
+      Deno.env.get('SUPABASE_ANON_KEY')!
+    );
 
-  if (error) {
-    return new Response(JSON.stringify({ error: error.message }), {
-      headers: { 'Content-Type': 'application/json' },
-      status: 400,
+    // Create the user
+    const { data, error } = await supabaseAdmin.auth.signUp({
+      email,
+      password,
     });
-  }
 
-  return new Response(JSON.stringify({ user: data.user }), {
-    headers: { 'Content-Type': 'application/json' },
-    status: 200,
-  });
+    if (error) {
+      console.error("Registration error:", error);
+      return createErrorResponse(error.message, 400);
+    }
+
+    // Return successful response
+    return createSuccessResponse({
+      user: data.user,
+      session: data.session
+    });
+  } catch (err) {
+    console.error("Unexpected error:", err);
+    return createErrorResponse(
+      err instanceof Error ? err.message : "An unexpected error occurred"
+    );
+  }
 });

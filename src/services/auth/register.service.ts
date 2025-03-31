@@ -1,3 +1,4 @@
+// src/services/auth/register.service.ts
 import { authApiClient } from '../../api/clients/auth';
 import { RegisterCredentials, User } from '../../types/auth.types';
 import { logger } from '../../utils/logger';
@@ -20,7 +21,13 @@ export class RegisterService {
           error: response.error,
           email: credentials.email,
         });
-        return null;
+        throw new Error(response.error?.message || 'Registration failed');
+      }
+      
+      // Store tokens in localStorage if available in the response
+      if (response.data.session) {
+        localStorage.setItem('accessToken', response.data.session.accessToken);
+        localStorage.setItem('refreshToken', response.data.session.refreshToken);
       }
       
       logger.info('User registered successfully', { userId: response.data.user.id });
@@ -30,7 +37,7 @@ export class RegisterService {
         error: error instanceof Error ? error.message : 'Unknown error',
         email: credentials.email,
       });
-      return null;
+      throw error;
     }
   }
 }

@@ -1,3 +1,4 @@
+// src/api/clients/base.api.ts - CORS headers fix
 import axios, { AxiosError, AxiosInstance } from 'axios';
 import { ApiError, ApiResponse } from '../../types/api.types';
 import { logger } from '../../utils/logger';
@@ -27,13 +28,13 @@ export class BaseApiClient {
       baseURL: baseUrl,
       headers: {
         'Content-Type': 'application/json',
+        // Add additional headers used in Supabase function calls
+        'x-client-info': 'api-driven-app',
       },
     });
     
-    // Add debugging
-    console.log('Base client headers:', this.client.defaults.headers);
-    console.log('Anon key available:', !!import.meta.env.VITE_SUPABASE_ANON_KEY);
-    console.log('Anon key value:', import.meta.env.VITE_SUPABASE_ANON_KEY ? 'present' : 'missing');
+    // Debug logging
+    console.log('Base client initialized with URL:', baseUrl);
     
     this.setupInterceptors();
   }
@@ -75,7 +76,7 @@ export class BaseApiClient {
         console.log("Setting apikey header:", anonKey ? 'present' : 'missing');
 
         // Add Authorization header if token exists and it's not a registration request
-        const token = localStorage.getItem('access_token');
+        const token = localStorage.getItem('accessToken');
         if (token && !config.url?.includes('/register')) {
           config.headers.Authorization = `Bearer ${token}`;
         }
@@ -93,6 +94,19 @@ export class BaseApiClient {
     this.client.interceptors.response.use(
       (response) => response,
       async (error: AxiosError) => {
+        // Log detailed error information
+        console.error("Response error:", error);
+        
+        if (error.response) {
+          console.error("Response data:", error.response.data);
+          console.error("Response status:", error.response.status);
+          console.error("Response headers:", error.response.headers);
+        } else if (error.request) {
+          console.error("Request error (no response received):", error.request);
+        } else {
+          console.error("Error setting up request:", error.message);
+        }
+        
         // Handle API errors
         if (error.response) {
           const responseData = error.response.data as { code?: string; message?: string };
@@ -122,10 +136,11 @@ export class BaseApiClient {
   /**
    * Make a GET request
    */
-  async get<T>(path: string): Promise<ApiResponse<T>> {
+  async get<T>(path: string, config?: any): Promise<ApiResponse<T>> {
     try {
       const url = this.basePath ? `/${this.basePath}${path}` : path;
-      const response = await this.client.get<T>(url);
+      console.log(`Making GET request to: ${url}`);
+      const response = await this.client.get<T>(url, config);
       return {
         data: response.data,
         status: response.status,
@@ -141,12 +156,15 @@ export class BaseApiClient {
   async post<T>(path: string, data?: unknown): Promise<ApiResponse<T>> {
     try {
       const url = this.basePath ? `/${this.basePath}${path}` : path;
+      console.log(`Making POST request to: ${url}`);
+      console.log('POST data:', data);
       const response = await this.client.post<T>(url, data);
       return {
         data: response.data,
         status: response.status,
       };
     } catch (error: unknown) {
+      console.error('POST request failed:', error);
       if (error instanceof Error) {
         return {
           error: {
