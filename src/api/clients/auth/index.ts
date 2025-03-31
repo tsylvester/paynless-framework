@@ -1,7 +1,7 @@
-import { AuthApiLogin } from './login';
-import { AuthApiRegister } from './register';
-import { AuthApiSession } from './session';
-import { AuthApiPassword } from './password';
+import { LoginApiClient } from './login';
+import { RegisterApiClient } from './register';
+import { SessionApiClient } from './session';
+import { PasswordApiClient } from './password';
 import { ApiResponse, AuthResponse, LoginCredentials, RegisterCredentials } from '../../../types/auth.types';
 import { logger } from '../../../utils/logger';
 
@@ -9,16 +9,16 @@ import { logger } from '../../../utils/logger';
  * API client for authentication operations
  */
 export class AuthApiClient {
-  private loginClient: AuthApiLogin;
-  private registerClient: AuthApiRegister;
-  private sessionClient: AuthApiSession;
-  private passwordClient: AuthApiPassword;
+  private loginClient: LoginApiClient;
+  private registerClient: RegisterApiClient;
+  private sessionClient: SessionApiClient;
+  private passwordClient: PasswordApiClient;
   
   constructor() {
-    this.loginClient = new AuthApiLogin();
-    this.registerClient = new AuthApiRegister();
-    this.sessionClient = new AuthApiSession();
-    this.passwordClient = new AuthApiPassword();
+    this.loginClient = new LoginApiClient();
+    this.registerClient = new RegisterApiClient();
+    this.sessionClient = new SessionApiClient();
+    this.passwordClient = new PasswordApiClient();
   }
   
   /**
@@ -86,7 +86,7 @@ export class AuthApiClient {
    */
   async getCurrentUser(): Promise<ApiResponse<AuthResponse>> {
     try {
-      return await this.sessionClient.getCurrentUser();
+      return await this.sessionClient.getSession();
     } catch (error) {
       logger.error('Unexpected error in AuthApiClient.getCurrentUser', {
         error: error instanceof Error ? error.message : 'Unknown error',

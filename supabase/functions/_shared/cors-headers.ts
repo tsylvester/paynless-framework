@@ -1,4 +1,4 @@
-//**
+/**
 * Standard CORS headers for API responses
 * Used in all API endpoints to ensure consistent CORS handling
 */
