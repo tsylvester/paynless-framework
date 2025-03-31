@@ -1,4 +1,4 @@
-import { createErrorResponse } from "../../_shared/cors-headers.ts";
+import { corsHeaders, createErrorResponse, createSuccessResponse } from "../../_shared/cors-headers.ts";
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.39.3';
 
 interface RegisterData {
@@ -23,10 +23,18 @@ export default async function handleRegister(data: RegisterData): Promise<Respon
       return createErrorResponse('Email and password are required', 400);
     }
 
-    // Create Supabase client
+    // Create Supabase client with service role key
+    const supabaseUrl = Deno.env.get('SUPABASE_URL');
+    const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+    
+    if (!supabaseUrl || !supabaseServiceKey) {
+      console.error('Missing Supabase URL or service role key');
+      return createErrorResponse('Server configuration error', 500);
+    }
+    
     const supabaseClient = createClient(
-      Deno.env.get('SUPABASE_URL') ?? '',
-      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '',
+      supabaseUrl,
+      supabaseServiceKey,
       {
         auth: {
           autoRefreshToken: false,
@@ -55,25 +63,26 @@ export default async function handleRegister(data: RegisterData): Promise<Respon
       return createErrorResponse('Failed to create user', 500);
     }
 
-    // Create user profile if first name or last name is provided
+    // Create user profile
     if (data.firstName || data.lastName) {
       const { error: profileError } = await supabaseClient
-        .from('profiles')
+        .from('user_profiles')  // Changed from 'profiles' to 'user_profiles'
         .insert({
           id: authData.user.id,
           first_name: data.firstName,
           last_name: data.lastName,
+          avatar_url: null,
           updated_at: new Date().toISOString()
         });
 
       if (profileError) {
         console.error('Error creating profile:', profileError);
-        // Don't return error here, as the user was created successfully
+        // Log but continue since user was created
       }
     }
 
-    // Sign in the user
-    const { data: signInData, error: signInError } = await supabaseClient.auth.admin.signInWithPassword({
+    // Sign in the user to get tokens
+    const { data: signInData, error: signInError } = await supabaseClient.auth.signInWithPassword({
       email: data.email,
       password: data.password
     });
@@ -83,22 +92,30 @@ export default async function handleRegister(data: RegisterData): Promise<Respon
       return createErrorResponse(signInError.message, 500);
     }
 
-    // Return success response with user and session
-    return new Response(
-      JSON.stringify({
-        user: signInData.user,
-        session: signInData.session
-      }),
-      {
-        headers: { 'Content-Type': 'application/json' },
-        status: 200
-      }
-    );
+    // Store tokens in localStorage (handled in frontend)
+    const tokens = {
+      access_token: signInData.session?.access_token,
+      refresh_token: signInData.session?.refresh_token
+    };
+
+    // Return success response in the format expected by the client
+    return createSuccessResponse({
+      user: {
+        id: authData.user.id,
+        email: authData.user.email,
+        firstName: data.firstName || null,
+        lastName: data.lastName || null,
+        role: authData.user.role || 'user',
+        createdAt: authData.user.created_at,
+        updatedAt: authData.user.updated_at
+      },
+      ...tokens
+    }, 201);
   } catch (error) {
     console.error('Registration error:', error);
     return createErrorResponse(
-      error instanceof Error ? error.message : 'An unexpected error occurred',
+      error instanceof Error ? error.message : 'An unexpected error occurred during registration',
       500
     );
   }
-} 
+}

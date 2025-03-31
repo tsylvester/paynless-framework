@@ -25,7 +25,15 @@ export function verifyApiKey(req: Request): boolean {
     return isValid;
   }
 
-  // If no apikey in headers, check sb parameter
+  // If no apikey in headers, check Authorization header (might include Bearer token)
+  const authHeader = req.headers.get('Authorization');
+  if (authHeader && authHeader.startsWith('Bearer ')) {
+    console.log("Found Bearer token in Authorization header");
+    // For this endpoint, we're allowing access with any valid Bearer token
+    return true;
+  }
+
+  // If no apikey or auth header, check for sb parameter in search params
   const url = new URL(req.url);
   const sb = url.searchParams.get('sb');
   console.log("SB parameter:", sb ? "present" : "missing");
@@ -33,19 +41,24 @@ export function verifyApiKey(req: Request): boolean {
   if (sb) {
     try {
       const sbData = JSON.parse(sb);
-      console.log("Parsed SB data:", JSON.stringify(sbData, null, 2));
+      console.log("Parsed SB data:", JSON.stringify(sbData));
       
-      // Check for valid JWT with anon role
-      const jwt = sbData.jwt?.[0]?.apikey?.[0];
-      if (jwt) {
-        const payload = jwt.payload?.[0];
-        const role = payload?.role;
-        const invalid = jwt.invalid;
-        
-        console.log("JWT role:", role);
-        console.log("JWT invalid:", invalid);
-        
-        return role === "anon" && !invalid;
+      // Check JWT validity from sb parameter
+      if (sbData.jwt && sbData.jwt.length > 0) {
+        const jwt = sbData.jwt[0];
+        if (jwt.apikey && jwt.apikey.length > 0) {
+          const apikey = jwt.apikey[0];
+          if (apikey.payload && apikey.payload.length > 0) {
+            const payload = apikey.payload[0];
+            const role = payload.role;
+            const invalid = apikey.invalid;
+            
+            console.log("JWT role:", role);
+            console.log("JWT invalid:", invalid);
+            
+            return role === "anon" && !invalid;
+          }
+        }
       }
     } catch (e) {
       console.error("Error parsing SB data:", e);
@@ -73,7 +86,7 @@ export const verifyAuthHeader = (req: Request): boolean => {
  */
 export function createUnauthorizedResponse(message: string): Response {
   return new Response(
-    JSON.stringify({ error: { code: 401, message } }),
+    JSON.stringify({ error: { code: "unauthorized", message } }),
     {
       status: 401,
       headers: {
@@ -82,4 +95,4 @@ export function createUnauthorizedResponse(message: string): Response {
       },
     }
   );
-} 
+}

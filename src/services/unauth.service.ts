@@ -21,24 +21,25 @@ export class UnauthService {
       
       const response = await this.unauthClient.register(data);
       
-      if (!response.user) {
+      if (response.error || !response.data) {
         logger.error('Registration failed', { 
+          error: response.error,
           email: data.email,
         });
-        return null;
+        throw new Error(response.error?.message || 'Registration failed');
       }
       
-      logger.info('User registered successfully', { userId: response.user.id });
-      return response.user;
+      logger.info('User registered successfully');
+      return response.data.user;
     } catch (error) {
       logger.error('Unexpected error during registration', { 
         error: error instanceof Error ? error.message : 'Unknown error',
         email: data.email,
       });
-      return null;
+      throw error; // Re-throw to let the caller handle it
     }
   }
 }
 
 // Export singleton instance
-export const unauthService = new UnauthService(); 
+export const unauthService = new UnauthService();
