@@ -21,11 +21,18 @@ import { EventsPage } from '../pages/Events';
 import { LocationsPage } from '../pages/Locations';
 import { MyContentPage } from '../pages/MyContent';
 import { CommunitiesPage } from '../pages/Communities';
+import { useAuth } from '../hooks/useAuth';
+
+// Root route component that handles both authenticated and unauthenticated states
+function RootRoute() {
+  const { user } = useAuth();
+  return user ? <Navigate to="/feed" replace /> : <HomePage />;
+}
 
 export const routes: AppRoute[] = [
   {
     path: '/',
-    element: <Navigate to="/feed" replace />,
+    element: <RootRoute />,
   },
   {
     path: '/login',
@@ -126,6 +133,6 @@ export const routes: AppRoute[] = [
   },
   {
     path: '*',
-    element: <Navigate to="/feed" replace />,
+    element: <Navigate to="/" replace />,
   },
 ];

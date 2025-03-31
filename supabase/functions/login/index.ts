@@ -43,10 +43,24 @@ Deno.serve(async (req) => {
       return createErrorResponse(error.message, 400);
     }
 
-    // Return successful response
+    // Get the user's profile
+    const { data: profile, error: profileError } = await supabaseAdmin
+      .from('user_profiles')
+      .select('*')
+      .eq('id', data.user.id)
+      .single();
+
+    if (profileError) {
+      console.error("Profile fetch error:", profileError);
+      // Don't fail the login if profile fetch fails
+      // The user can still log in and their profile will be created if missing
+    }
+
+    // Return successful response with user and profile data
     return createSuccessResponse({
       user: data.user,
-      session: data.session
+      session: data.session,
+      profile: profile || null
     });
   } catch (err) {
     console.error("Unexpected error:", err);

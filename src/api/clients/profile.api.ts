@@ -37,6 +37,29 @@ export class ProfileApiClient {
   }
   
   /**
+   * Create or update user profile
+   */
+  async createOrUpdateProfile(profile: Partial<UserProfile> & { id: string }): Promise<ApiResponse<UserProfile>> {
+    try {
+      logger.info('Creating or updating user profile', { userId: profile.id });
+      return await this.baseClient.put<UserProfile>('/me', profile);
+    } catch (error) {
+      logger.error('Error creating/updating user profile', {
+        error: error instanceof Error ? error.message : 'Unknown error',
+        profile,
+      });
+      
+      return {
+        error: {
+          code: 'profile_error',
+          message: error instanceof Error ? error.message : 'An unknown error occurred',
+        },
+        status: 500,
+      };
+    }
+  }
+  
+  /**
    * Update user profile
    */
   async updateProfile(profile: Partial<UserProfile>): Promise<ApiResponse<UserProfile>> {

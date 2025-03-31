@@ -43,6 +43,36 @@ Deno.serve(async (req) => {
       return createErrorResponse(error.message, 400);
     }
 
+    // Create a profile entry for the new user
+    const { error: profileError } = await supabaseAdmin
+      .from('user_profiles')
+      .insert([
+        {
+          id: data.user.id,
+          first_name: email.split('@')[0], // Use part of email as initial name
+          role: 'user',
+          privacy_settings: {
+            profileVisibility: 'public',
+            allowTagging: true,
+            allowMessaging: {
+              everyone: true,
+              followers: true,
+              none: false
+            },
+            showOnlineStatus: true,
+            showActivity: true,
+            showFollowers: true,
+            showFollowing: true
+          }
+        }
+      ]);
+
+    if (profileError) {
+      console.error("Profile creation error:", profileError);
+      // Don't fail the registration if profile creation fails
+      // The user can still log in and create their profile later
+    }
+
     // Return successful response
     return createSuccessResponse({
       user: data.user,
