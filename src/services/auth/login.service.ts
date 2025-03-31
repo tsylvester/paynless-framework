@@ -1,3 +1,4 @@
+// src/services/auth/login.service.ts
 import { authApiClient } from '../../api/clients/auth';
 import { LoginCredentials, User } from '../../types/auth.types';
 import { logger } from '../../utils/logger';
@@ -23,6 +24,13 @@ export class LoginService {
         return null;
       }
       
+      // If tokens were already stored in the API client, we don't need to do it again
+      // But we can double-check
+      if (response.data.session && !localStorage.getItem('accessToken')) {
+        localStorage.setItem('accessToken', response.data.session.accessToken);
+        localStorage.setItem('refreshToken', response.data.session.refreshToken);
+      }
+      
       logger.info('User logged in successfully', { userId: response.data.user.id });
       return response.data.user;
     } catch (error) {
@@ -30,7 +38,7 @@ export class LoginService {
         error: error instanceof Error ? error.message : 'Unknown error',
         email: credentials.email,
       });
-      return null;
+      throw error;
     }
   }
 }

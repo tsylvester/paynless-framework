@@ -1,3 +1,4 @@
+// src/api/clients/auth/login.ts
 import { BaseApiClient } from '../base.api';
 import { ApiResponse } from '../../../types/api.types';
 import { logger } from '../../../utils/logger';
@@ -10,6 +11,7 @@ export class LoginApiClient {
   private baseClient: BaseApiClient;
   
   constructor() {
+    // Use the correct path to the login endpoint
     this.baseClient = BaseApiClient.getInstance('auth');
   }
   
@@ -19,7 +21,17 @@ export class LoginApiClient {
   async login(credentials: LoginCredentials): Promise<ApiResponse<AuthResponse>> {
     try {
       logger.info('Logging in user', { email: credentials.email });
-      return await this.baseClient.post<AuthResponse>('/login', credentials);
+      
+      // Make the login request to the auth/login endpoint
+      const response = await this.baseClient.post<AuthResponse>('/login', credentials);
+      
+      // If login is successful, store the tokens
+      if (response.data?.session) {
+        localStorage.setItem('accessToken', response.data.session.accessToken);
+        localStorage.setItem('refreshToken', response.data.session.refreshToken);
+      }
+      
+      return response;
     } catch (error) {
       logger.error('Error logging in user', {
         error: error instanceof Error ? error.message : 'Unknown error',

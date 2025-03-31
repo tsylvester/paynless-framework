@@ -1,5 +1,5 @@
-// src/api/clients/base.api.ts - CORS headers fix
-import axios, { AxiosError, AxiosInstance } from 'axios';
+// src/api/clients/base.api.ts
+import axios, { AxiosError, AxiosInstance, AxiosRequestConfig } from 'axios';
 import { ApiError, ApiResponse } from '../../types/api.types';
 import { logger } from '../../utils/logger';
 
@@ -21,14 +21,12 @@ export class BaseApiClient {
       baseUrl,
       basePath: this.basePath,
       hasAnonKey: !!import.meta.env.VITE_SUPABASE_ANON_KEY,
-      anonKey: import.meta.env.VITE_SUPABASE_ANON_KEY ? 'present' : 'missing',
     });
     
     this.client = axios.create({
       baseURL: baseUrl,
       headers: {
         'Content-Type': 'application/json',
-        // Add additional headers used in Supabase function calls
         'x-client-info': 'api-driven-app',
       },
     });
@@ -56,46 +54,55 @@ export class BaseApiClient {
     // Request interceptor for adding auth token
     this.client.interceptors.request.use(
       (config) => {
-        // Log request details
+        // Debug logging
         console.log("Making request to:", config.url);
         console.log("Request method:", config.method);
-        console.log("Request headers before:", config.headers);
 
         // Initialize headers if they don't exist
         config.headers = config.headers || {};
 
-        // Ensure apikey header is set
+        // Get the anon key
         const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
         if (!anonKey) {
           console.error("VITE_SUPABASE_ANON_KEY is missing");
           return Promise.reject(new Error("VITE_SUPABASE_ANON_KEY is missing"));
         }
         
-        // Set the apikey header
+        // Always add the apikey header
         config.headers['apikey'] = anonKey;
-        console.log("Setting apikey header:", anonKey ? 'present' : 'missing');
-
-        // Add Authorization header if token exists and it's not a registration request
-        const token = localStorage.getItem('accessToken');
-        if (token && !config.url?.includes('/register')) {
-          config.headers.Authorization = `Bearer ${token}`;
+        
+        // Special handling for login/register endpoints
+        const isAuthEndpoint = config.url?.includes('/auth/login') || 
+                              config.url?.includes('/register');
+        
+        if (isAuthEndpoint) {
+          // For auth endpoints, add empty Authorization header (public function access)
+          console.log("Auth endpoint detected - using empty Bearer token");
+          config.headers['Authorization'] = 'Bearer ';
+        } else {
+          // For regular endpoints, add the JWT if available
+          const accessToken = localStorage.getItem('accessToken');
+          if (accessToken) {
+            console.log("Adding Authorization header with JWT token");
+            config.headers['Authorization'] = `Bearer ${accessToken}`;
+          }
         }
         
-        console.log("Request headers after:", config.headers);
+        console.log("Request headers:", JSON.stringify(config.headers));
         return config;
       },
       (error) => {
         console.error("Request interceptor error:", error);
         return Promise.reject(error);
       }
-    );
+    );    
     
     // Response interceptor for handling errors
     this.client.interceptors.response.use(
       (response) => response,
       async (error: AxiosError) => {
         // Log detailed error information
-        console.error("Response error:", error);
+        console.error("Response error:", error.message);
         
         if (error.response) {
           console.error("Response data:", error.response.data);
@@ -109,10 +116,34 @@ export class BaseApiClient {
         
         // Handle API errors
         if (error.response) {
-          const responseData = error.response.data as { code?: string; message?: string };
+          // Try to extract error information from the response
+          const responseData = error.response.data as any;
+          
+          // Determine the error message - handle different error formats
+          let errorMessage = 'An error occurred';
+          if (typeof responseData === 'string') {
+            errorMessage = responseData;
+          } else if (responseData.message) {
+            errorMessage = responseData.message;
+          } else if (responseData.error?.message) {
+            errorMessage = responseData.error.message;
+          } else if (responseData.error) {
+            errorMessage = typeof responseData.error === 'string' 
+              ? responseData.error 
+              : JSON.stringify(responseData.error);
+          }
+          
+          // Determine the error code
+          let errorCode = 'api_error';
+          if (responseData.code) {
+            errorCode = responseData.code;
+          } else if (responseData.error?.code) {
+            errorCode = responseData.error.code;
+          }
+          
           const apiError: ApiError = {
-            code: responseData.code || 'api_error',
-            message: responseData.message || 'An error occurred',
+            code: errorCode,
+            message: errorMessage,
           };
           
           return Promise.reject({
@@ -136,7 +167,7 @@ export class BaseApiClient {
   /**
    * Make a GET request
    */
-  async get<T>(path: string, config?: any): Promise<ApiResponse<T>> {
+  async get<T>(path: string, config?: AxiosRequestConfig): Promise<ApiResponse<T>> {
     try {
       const url = this.basePath ? `/${this.basePath}${path}` : path;
       console.log(`Making GET request to: ${url}`);
@@ -153,96 +184,51 @@ export class BaseApiClient {
   /**
    * Make a POST request
    */
-  async post<T>(path: string, data?: unknown): Promise<ApiResponse<T>> {
+  async post<T>(path: string, data?: unknown, config?: AxiosRequestConfig): Promise<ApiResponse<T>> {
     try {
       const url = this.basePath ? `/${this.basePath}${path}` : path;
       console.log(`Making POST request to: ${url}`);
       console.log('POST data:', data);
-      const response = await this.client.post<T>(url, data);
+      const response = await this.client.post<T>(url, data, config);
       return {
         data: response.data,
         status: response.status,
       };
     } catch (error: unknown) {
       console.error('POST request failed:', error);
-      if (error instanceof Error) {
-        return {
-          error: {
-            code: 'request_error',
-            message: error.message,
-          },
-          status: 500,
-        };
-      }
-      return {
-        error: {
-          code: 'request_error',
-          message: 'An unexpected error occurred',
-        },
-        status: 500,
-      };
+      return error as ApiResponse<T>;
     }
   }
 
   /**
    * Make a PUT request
    */
-  async put<T>(path: string, data?: unknown): Promise<ApiResponse<T>> {
+  async put<T>(path: string, data?: unknown, config?: AxiosRequestConfig): Promise<ApiResponse<T>> {
     try {
       const url = this.basePath ? `/${this.basePath}${path}` : path;
-      const response = await this.client.put<T>(url, data);
+      const response = await this.client.put<T>(url, data, config);
       return {
         data: response.data,
         status: response.status,
       };
     } catch (error: unknown) {
-      if (error instanceof Error) {
-        return {
-          error: {
-            code: 'request_error',
-            message: error.message,
-          },
-          status: 500,
-        };
-      }
-      return {
-        error: {
-          code: 'request_error',
-          message: 'An unexpected error occurred',
-        },
-        status: 500,
-      };
+      return error as ApiResponse<T>;
     }
   }
 
   /**
    * Make a DELETE request
    */
-  async delete<T>(path: string): Promise<ApiResponse<T>> {
+  async delete<T>(path: string, config?: AxiosRequestConfig): Promise<ApiResponse<T>> {
     try {
       const url = this.basePath ? `/${this.basePath}${path}` : path;
-      const response = await this.client.delete<T>(url);
+      const response = await this.client.delete<T>(url, config);
       return {
         data: response.data,
         status: response.status,
       };
     } catch (error: unknown) {
-      if (error instanceof Error) {
-        return {
-          error: {
-            code: 'request_error',
-            message: error.message,
-          },
-          status: 500,
-        };
-      }
-      return {
-        error: {
-          code: 'request_error',
-          message: 'An unexpected error occurred',
-        },
-        status: 500,
-      };
+      return error as ApiResponse<T>;
     }
   }
 }

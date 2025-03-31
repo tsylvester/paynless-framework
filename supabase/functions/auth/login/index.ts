@@ -1,86 +1,87 @@
-import { corsHeaders } from '../../_shared/cors-headers.ts';
+// supabase/functions/auth/login/index.ts
+import { createClient } from "jsr:@supabase/supabase-js@2";
+import { 
+  corsHeaders, 
+  handleCorsPreflightRequest, 
+  createErrorResponse, 
+  createSuccessResponse 
+} from "../../_shared/cors-headers.ts";
 
-export default async function handleLogin(req: Request) {
+Deno.serve(async (req: Request) => {
+  // Handle CORS preflight request
+  const corsResponse = handleCorsPreflightRequest(req);
+  if (corsResponse) return corsResponse;
+
+  // Log headers for debugging
+  console.log("Request headers:", Object.fromEntries(req.headers.entries()));
+
   try {
+    // Check for apikey header
+    const apiKey = req.headers.get('apikey');
+    if (!apiKey) {
+      console.error("Missing apikey header");
+      return createErrorResponse("Missing API key", 401);
+    }
+
+    // Verify the API key matches the ANON key
+    const anonKey = Deno.env.get('SUPABASE_ANON_KEY');
+    if (apiKey !== anonKey) {
+      console.error("Invalid API key");
+      return createErrorResponse("Invalid API key", 401);
+    }
+
+    // Parse request body
     const { email, password } = await req.json();
-    
+
+    // Basic validation
     if (!email || !password) {
-      return new Response(
-        JSON.stringify({ error: 'Email and password are required' }),
-        { 
-          status: 400,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        }
-      );
+      return createErrorResponse("Email and password are required", 400);
     }
 
-    // Use regular auth endpoint for login
-    const signInResponse = await fetch(
-      `${Deno.env.get('SUPABASE_URL')}/auth/v1/token?grant_type=password`,
+    // Use Supabase Auth API to sign in
+    const supabase = createClient(
+      Deno.env.get('SUPABASE_URL') || '',
+      Deno.env.get('SUPABASE_ANON_KEY') || '',
       {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'apikey': Deno.env.get('SUPABASE_ANON_KEY') ?? '',
-        },
-        body: JSON.stringify({ email, password })
-      }
-    );
-
-    if (!signInResponse.ok) {
-      const error = await signInResponse.json();
-      throw new Error(error.message || 'Invalid email or password');
-    }
-
-    const { access_token, refresh_token, expires_at, user } = await signInResponse.json();
-
-    // Get the user's profile using the user's access token
-    const profileResponse = await fetch(
-      `${Deno.env.get('SUPABASE_URL')}/rest/v1/user_profiles?id=eq.${user.id}&select=*`,
-      {
-        headers: {
-          'apikey': Deno.env.get('SUPABASE_ANON_KEY') ?? '',
-          'Authorization': `Bearer ${access_token}`,
+        auth: {
+          autoRefreshToken: false,
+          persistSession: false
         }
       }
     );
 
-    if (!profileResponse.ok) {
-      throw new Error('Failed to fetch user profile');
+    const { data, error } = await supabase.auth.signInWithPassword({
+      email,
+      password
+    });
+
+    if (error) {
+      console.error("Login error:", error);
+      return createErrorResponse(error.message, 400);
     }
 
-    const [profile] = await profileResponse.json();
-
-    return new Response(
-      JSON.stringify({
-        user: {
-          id: user.id,
-          email: user.email,
-          firstName: profile.first_name,
-          lastName: profile.last_name,
-          createdAt: user.created_at,
-          updatedAt: user.updated_at
-        },
-        session: {
-          accessToken: access_token,
-          refreshToken: refresh_token,
-          expiresAt: expires_at
-        }
-      }),
-      { 
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        status: 200,
+    // Transform the response to match your expected format
+    return createSuccessResponse({
+      user: {
+        id: data.user.id,
+        email: data.user.email,
+        firstName: data.user.user_metadata?.firstName,
+        lastName: data.user.user_metadata?.lastName,
+        avatarUrl: data.user.user_metadata?.avatarUrl,
+        role: data.user.role || 'user',
+        createdAt: data.user.created_at,
+        updatedAt: data.user.updated_at
+      },
+      session: {
+        accessToken: data.session.access_token,
+        refreshToken: data.session.refresh_token,
+        expiresAt: Math.floor(Date.now() / 1000) + data.session.expires_in
       }
-    );
-  } catch (error) {
-    return new Response(
-      JSON.stringify({ 
-        error: error instanceof Error ? error.message : 'An unknown error occurred',
-      }),
-      { 
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        status: 500,
-      }
+    });
+  } catch (err) {
+    console.error("Unexpected error during login:", err);
+    return createErrorResponse(
+      err instanceof Error ? err.message : "An unexpected error occurred"
     );
   }
-} 
+});
