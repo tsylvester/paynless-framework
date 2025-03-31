@@ -2,62 +2,41 @@ import React from 'react';
 import { authApiClient } from '../api/clients/auth.api';
 import { LoginCredentials, RegisterCredentials, User } from '../types/auth.types';
 import { logger } from '../utils/logger';
+import { AuthApiClient, RegisterData } from '../api/clients/auth.api';
+import { UnauthApiClient } from '../api/clients/unauth.api';
 
 /**
  * Service for handling authentication-related operations
  */
 export class AuthService {
+  private authClient: AuthApiClient;
+  private unauthClient: UnauthApiClient;
+
+  constructor() {
+    this.authClient = new AuthApiClient();
+    this.unauthClient = new UnauthApiClient();
+  }
+
   /**
    * Login with email and password
    */
-  async login(credentials: LoginCredentials): Promise<User | null> {
+  async login(email: string, password: string): Promise<User | null> {
     try {
-      logger.info('Attempting to login user', { email: credentials.email });
+      logger.info('Attempting to login user', { email });
       
-      const response = await authApiClient.login(credentials);
+      const response = await this.authClient.login({ email, password });
       
-      if (response.error || !response.data?.user) {
-        logger.error('Login failed', { 
-          error: response.error,
-          email: credentials.email,
-        });
+      if (!response.access_token) {
+        logger.error('Login failed', { email });
         return null;
       }
       
-      logger.info('User logged in successfully', { userId: response.data.user.id });
-      return response.data.user;
+      logger.info('User logged in successfully');
+      return null; // TODO: Get user details after successful login
     } catch (error) {
       logger.error('Unexpected error during login', { 
         error: error instanceof Error ? error.message : 'Unknown error',
-        email: credentials.email,
-      });
-      return null;
-    }
-  }
-  
-  /**
-   * Register a new user
-   */
-  async register(credentials: RegisterCredentials): Promise<User | null> {
-    try {
-      logger.info('Attempting to register new user', { email: credentials.email });
-      
-      const response = await authApiClient.register(credentials);
-      
-      if (response.error || !response.data?.user) {
-        logger.error('Registration failed', { 
-          error: response.error,
-          email: credentials.email,
-        });
-        return null;
-      }
-      
-      logger.info('User registered successfully', { userId: response.data.user.id });
-      return response.data.user;
-    } catch (error) {
-      logger.error('Unexpected error during registration', { 
-        error: error instanceof Error ? error.message : 'Unknown error',
-        email: credentials.email,
+        email,
       });
       return null;
     }
@@ -70,12 +49,7 @@ export class AuthService {
     try {
       logger.info('Attempting to logout user');
       
-      const response = await authApiClient.logout();
-      
-      if (response.error) {
-        logger.error('Logout failed', { error: response.error });
-        return false;
-      }
+      await this.authClient.logout();
       
       logger.info('User logged out successfully');
       return true;
@@ -94,15 +68,15 @@ export class AuthService {
     try {
       logger.info('Fetching current user');
       
-      const response = await authApiClient.getCurrentUser();
+      const user = await this.authClient.getCurrentUser();
       
-      if (response.error || !response.data?.user) {
+      if (!user) {
         logger.info('No authenticated user found');
         return null;
       }
       
-      logger.info('Current user fetched successfully', { userId: response.data.user.id });
-      return response.data.user;
+      logger.info('Current user fetched successfully', { userId: user.id });
+      return user;
     } catch (error) {
       logger.error('Unexpected error fetching current user', { 
         error: error instanceof Error ? error.message : 'Unknown error',
@@ -126,15 +100,7 @@ export class AuthService {
     try {
       logger.info('Attempting to reset password', { email });
       
-      const response = await authApiClient.resetPassword(email);
-      
-      if (response.error) {
-        logger.error('Password reset failed', { 
-          error: response.error,
-          email,
-        });
-        return false;
-      }
+      await this.authClient.resetPassword(email);
       
       logger.info('Password reset email sent successfully', { email });
       return true;

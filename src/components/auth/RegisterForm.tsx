@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { useAuth } from '../../hooks/useAuth';
+import { useUnauth } from '../../hooks/useUnauth';
 import { useNavigate, Link } from 'react-router-dom';
 import { Mail, Lock, User, AlertCircle } from 'lucide-react';
 import { logger } from '../../utils/logger';
@@ -17,7 +17,7 @@ export function RegisterForm({ onSuccess, redirectPath = '/' }: RegisterFormProp
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   
-  const { register } = useAuth();
+  const { register } = useUnauth();
   const navigate = useNavigate();
   
   const handleSubmit = async (e: React.FormEvent) => {

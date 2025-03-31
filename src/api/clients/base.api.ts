@@ -54,8 +54,14 @@ export class BaseApiClient {
 
         // Ensure apikey header is set
         const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+        if (!anonKey) {
+          console.error("VITE_SUPABASE_ANON_KEY is missing");
+          return Promise.reject(new Error("VITE_SUPABASE_ANON_KEY is missing"));
+        }
+        
+        // Set the apikey header
+        config.headers['apikey'] = anonKey;
         console.log("Setting apikey header:", anonKey ? 'present' : 'missing');
-        config.headers.apikey = anonKey || '';
 
         // Add Authorization header if token exists and it's not a registration request
         const token = localStorage.getItem('access_token');
@@ -128,7 +134,22 @@ export class BaseApiClient {
         status: response.status,
       };
     } catch (error: unknown) {
-      return error as ApiResponse<T>;
+      if (error instanceof Error) {
+        return {
+          error: {
+            code: 'request_error',
+            message: error.message,
+          },
+          status: 500,
+        };
+      }
+      return {
+        error: {
+          code: 'request_error',
+          message: 'An unexpected error occurred',
+        },
+        status: 500,
+      };
     }
   }
 }

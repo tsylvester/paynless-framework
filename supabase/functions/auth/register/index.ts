@@ -6,18 +6,50 @@ Deno.serve(async (req) => {
   const corsResponse = handleCorsPreflightRequest(req);
   if (corsResponse) return corsResponse;
 
-  // Log request headers for debugging
-  const headers = Object.fromEntries(req.headers.entries());
-  console.log("Request headers:", headers);
-  console.log("Apikey header:", req.headers.get('apikey'));
+  // Log request details for debugging
+  console.log("=== Registration Request Details ===");
+  console.log("Request method:", req.method);
+  console.log("Request URL:", req.url);
+  console.log("Request headers:", Object.fromEntries(req.headers.entries()));
+  
+  // Log environment variables (without sensitive values)
+  console.log("Environment variables configured:", {
+    SUPABASE_URL: !!Deno.env.get("SUPABASE_URL"),
+    SUPABASE_ANON_KEY: !!Deno.env.get("SUPABASE_ANON_KEY"),
+    SUPABASE_SERVICE_ROLE_KEY: !!Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")
+  });
+  
+  // Log search params
+  const url = new URL(req.url);
+  console.log("Search params:", Object.fromEntries(url.searchParams.entries()));
+  
+  // Log sb parameter
+  const sb = url.searchParams.get('sb');
+  console.log("SB parameter:", sb);
+  if (sb) {
+    try {
+      const sbData = JSON.parse(sb);
+      console.log("Parsed SB data:", JSON.stringify(sbData, null, 2));
+      console.log("JWT role:", sbData.jwt?.[0]?.apikey?.[0]?.payload?.[0]?.role);
+      console.log("JWT invalid:", sbData.jwt?.[0]?.apikey?.[0]?.invalid);
+    } catch (e) {
+      console.error("Error parsing SB data:", e);
+    }
+  }
 
   // Verify apikey for registration requests
-  if (!verifyApiKey(req)) {
+  console.log("=== API Key Verification ===");
+  const isValid = verifyApiKey(req);
+  console.log("API key verification result:", isValid);
+  if (!isValid) {
+    console.log("API key verification failed");
     return createUnauthorizedResponse("Invalid or missing apikey");
   }
 
   try {
+    console.log("=== Processing Registration ===");
     const { email, password, firstName, lastName } = await req.json();
+    console.log("Registration data received:", { email, firstName, lastName });
 
     // Validate input
     if (!email || !password) {
@@ -128,7 +160,8 @@ Deno.serve(async (req) => {
       refresh_token,
     });
   } catch (error) {
-    console.error("Registration error:", error);
+    console.error("=== Registration Error ===");
+    console.error("Error details:", error);
     return createErrorResponse(
       error instanceof Error ? error.message : "Registration failed",
       error instanceof Error && error.message.includes("already registered") ? 409 : 400
