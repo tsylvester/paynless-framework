@@ -10,10 +10,10 @@ const API_VERSION = 'v1';
 export class BaseApiClient {
   private client: AxiosInstance;
   private baseUrl: string;
-  private cache: Map<string, { data: any; timestamp: number }> = new Map();
+  private cache: Map<string, { data: unknown; timestamp: number }> = new Map();
   
   constructor(path: string) {
-    // Fix: Use the correct base URL for Supabase Edge Functions
+    // Use Supabase Edge Functions URL
     this.baseUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/${path}`;
     
     this.client = axios.create({
@@ -33,10 +33,13 @@ export class BaseApiClient {
     // Request interceptor for adding auth tokens etc
     this.client.interceptors.request.use(
       (config) => {
-        // Fix: Always include the access token in the Authorization header
-        const token = localStorage.getItem('accessToken');
-        if (token) {
-          config.headers.Authorization = `Bearer ${token}`;
+        // Don't add auth token for registration requests
+        if (!config.url?.includes('/register')) {
+          const token = localStorage.getItem('accessToken');
+          if (token) {
+            config.headers = config.headers || {};
+            config.headers.Authorization = `Bearer ${token}`;
+          }
         }
         return config;
       },
@@ -45,60 +48,84 @@ export class BaseApiClient {
     
     // Response interceptor for handling common errors and rate limits
     this.client.interceptors.response.use(
-      (response) => {
-        // Handle rate limits if present
-        const rateLimit = {
-          limit: parseInt(response.headers['x-ratelimit-limit'] || '0'),
-          remaining: parseInt(response.headers['x-ratelimit-remaining'] || '0'),
-          reset: parseInt(response.headers['x-ratelimit-reset'] || '0'),
-        };
-        
-        response.data = {
-          ...response.data,
-          rateLimit,
-        };
-        
-        return response;
-      },
+      (response) => response,
       async (error: AxiosError) => {
-        // Handle token refresh or other global error handling
-        if (error.response?.status === 401) {
-          // Clear invalid token
-          localStorage.removeItem('accessToken');
-          localStorage.removeItem('refreshToken');
+        // Handle API errors
+        if (error.response) {
+          // If unauthorized and not a registration request, try to refresh the token
+          if (error.response.status === 401 && !error.config?.url?.includes('/register')) {
+            try {
+              const refreshToken = localStorage.getItem('refreshToken');
+              if (!refreshToken) {
+                // If no refresh token, it's a genuine auth error
+                localStorage.removeItem('accessToken');
+                localStorage.removeItem('refreshToken');
+                // Only redirect if not on auth pages
+                if (!window.location.pathname.match(/^\/(register|login)$/)) {
+                  window.location.href = '/login';
+                }
+                throw new Error('No refresh token available');
+              }
+
+              const response = await axios.post(
+                `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/auth/refresh`,
+                { refreshToken }
+              );
+
+              if (response.data?.access_token) {
+                localStorage.setItem('accessToken', response.data.access_token);
+                if (response.data.refresh_token) {
+                  localStorage.setItem('refreshToken', response.data.refresh_token);
+                }
+                // Retry the request with the new token
+                const config = error.config;
+                if (config) {
+                  config.headers = config.headers || {};
+                  config.headers.Authorization = `Bearer ${response.data.access_token}`;
+                  return this.client(config);
+                }
+              }
+            } catch (refreshError) {
+              logger.error('Error refreshing token', {
+                error: refreshError instanceof Error ? refreshError.message : 'Unknown error',
+              });
+              // Only redirect to login if it's a genuine authentication error from the API
+              // and not from a fallback implementation or auth pages
+              const responseData = error.response.data as { code?: string; message?: string; fallback?: boolean };
+              if (responseData.code === 'unauthorized' && 
+                  responseData.message === 'User not authenticated' &&
+                  !responseData.fallback &&
+                  !window.location.pathname.match(/^\/(register|login)$/)) {
+                localStorage.removeItem('accessToken');
+                localStorage.removeItem('refreshToken');
+                window.location.href = '/login';
+              }
+            }
+          }
           
-          // Redirect to login
-          window.location.href = '/login';
-        }
-        
-        // Handle rate limiting
-        if (error.response?.status === 429) {
-          logger.warn('Rate limit exceeded', {
-            reset: error.response.headers['x-ratelimit-reset'],
+          const responseData = error.response.data as { code?: string; message?: string; details?: unknown };
+          const apiError: ApiError = {
+            code: responseData.code || 'api_error',
+            message: responseData.message || 'An error occurred',
+            details: responseData.details,
+          };
+          
+          return Promise.reject({
+            error: apiError,
+            status: error.response.status,
           });
         }
         
-        return Promise.reject(error);
+        // Handle network errors
+        return Promise.reject({
+          error: {
+            code: 'network_error',
+            message: error.message || 'A network error occurred',
+          },
+          status: 500,
+        });
       }
     );
-  }
-  
-  /**
-   * Convert Axios error to standardized API error
-   */
-  private handleError(error: unknown): ApiError {
-    if (error instanceof AxiosError) {
-      return {
-        code: error.code || 'unknown_error',
-        message: error.message || 'An unknown error occurred',
-        details: error.response?.data,
-      };
-    }
-    
-    return {
-      code: 'unknown_error',
-      message: error instanceof Error ? error.message : 'An unknown error occurred',
-    };
   }
   
   /**
@@ -115,123 +142,60 @@ export class BaseApiClient {
   /**
    * Make a GET request
    */
-  async get<T>(url: string, config?: ApiRequestConfig & { cache?: CacheConfig }): Promise<ApiResponse<T>> {
+  async get<T>(path: string, config?: ApiRequestConfig): Promise<ApiResponse<T>> {
     try {
-      // Check cache if enabled
-      if (config?.cache) {
-        const cacheKey = `${url}${JSON.stringify(config.params || {})}`;
-        
-        if (this.isCacheValid(cacheKey, config.cache)) {
-          const cached = this.cache.get(cacheKey)!;
-          return cached.data;
-        }
-        
-        // If stale-while-revalidate is enabled, return stale data while fetching
-        if (config.cache.staleWhileRevalidate && this.cache.has(cacheKey)) {
-          const cached = this.cache.get(cacheKey)!;
-          this.get(url, { ...config, cache: undefined }).then(newData => {
-            this.cache.set(cacheKey, { data: newData, timestamp: Date.now() });
-          });
-          return cached.data;
-        }
-      }
-      
-      const response = await this.client.get<T>(url, config as AxiosRequestConfig);
-      
-      const apiResponse = {
+      const response = await this.client.get(path, config);
+      return {
         data: response.data,
         status: response.status,
-        rateLimit: response.data.rateLimit,
       };
-      
-      // Cache the response if enabled
-      if (config?.cache) {
-        const cacheKey = `${url}${JSON.stringify(config.params || {})}`;
-        this.cache.set(cacheKey, { data: apiResponse, timestamp: Date.now() });
-      }
-      
-      return apiResponse;
-    } catch (error) {
-      return {
-        error: this.handleError(error),
-        status: axios.isAxiosError(error) ? error.response?.status || 500 : 500,
-      };
+    } catch (error: any) {
+      return error;
     }
   }
   
   /**
    * Make a POST request
    */
-  async post<T>(url: string, data: unknown, config?: ApiRequestConfig): Promise<ApiResponse<T>> {
+  async post<T>(path: string, data?: any, config?: ApiRequestConfig): Promise<ApiResponse<T>> {
     try {
-      const response = await this.client.post<T>(url, data, config as AxiosRequestConfig);
+      const response = await this.client.post(path, data, config);
       return {
         data: response.data,
         status: response.status,
-        rateLimit: response.data.rateLimit,
       };
-    } catch (error) {
-      return {
-        error: this.handleError(error),
-        status: axios.isAxiosError(error) ? error.response?.status || 500 : 500,
-      };
+    } catch (error: any) {
+      return error;
     }
   }
   
   /**
    * Make a PUT request
    */
-  async put<T>(url: string, data: unknown, config?: ApiRequestConfig): Promise<ApiResponse<T>> {
+  async put<T>(path: string, data?: any, config?: ApiRequestConfig): Promise<ApiResponse<T>> {
     try {
-      const response = await this.client.put<T>(url, data, config as AxiosRequestConfig);
+      const response = await this.client.put(path, data, config);
       return {
         data: response.data,
         status: response.status,
-        rateLimit: response.data.rateLimit,
       };
-    } catch (error) {
-      return {
-        error: this.handleError(error),
-        status: axios.isAxiosError(error) ? error.response?.status || 500 : 500,
-      };
-    }
-  }
-  
-  /**
-   * Make a PATCH request
-   */
-  async patch<T>(url: string, data: unknown, config?: ApiRequestConfig): Promise<ApiResponse<T>> {
-    try {
-      const response = await this.client.patch<T>(url, data, config as AxiosRequestConfig);
-      return {
-        data: response.data,
-        status: response.status,
-        rateLimit: response.data.rateLimit,
-      };
-    } catch (error) {
-      return {
-        error: this.handleError(error),
-        status: axios.isAxiosError(error) ? error.response?.status || 500 : 500,
-      };
+    } catch (error: any) {
+      return error;
     }
   }
   
   /**
    * Make a DELETE request
    */
-  async delete<T>(url: string, config?: ApiRequestConfig): Promise<ApiResponse<T>> {
+  async delete<T>(path: string, config?: ApiRequestConfig): Promise<ApiResponse<T>> {
     try {
-      const response = await this.client.delete<T>(url, config as AxiosRequestConfig);
+      const response = await this.client.delete(path, config);
       return {
         data: response.data,
         status: response.status,
-        rateLimit: response.data.rateLimit,
       };
-    } catch (error) {
-      return {
-        error: this.handleError(error),
-        status: axios.isAxiosError(error) ? error.response?.status || 500 : 500,
-      };
+    } catch (error: any) {
+      return error;
     }
   }
 }

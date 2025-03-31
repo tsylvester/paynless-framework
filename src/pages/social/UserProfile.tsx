@@ -3,7 +3,7 @@ import { useParams } from 'react-router-dom';
 import { Layout } from '../../components/layout/Layout';
 import { UserProfileHeader } from '../../components/social/UserProfileHeader';
 import { PostCard } from '../../components/social/PostCard';
-import { socialService } from '../../services/social.service';
+import { socialService } from '../../services/social/index';
 import { profileService } from '../../services/profile.service';
 import { Post } from '../../types/post.types';
 import { UserProfile } from '../../types/auth.types';

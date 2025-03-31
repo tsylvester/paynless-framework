@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Send, Bot, X } from 'lucide-react';
-import { socialService } from '../../services/social.service';
+import { socialService } from '../../services/social/index';
 import { aiService } from '../../services/ai';
 import { logger } from '../../utils/logger';
 import ReactTextareaAutosize from 'react-textarea-autosize';

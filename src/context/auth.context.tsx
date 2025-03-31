@@ -37,13 +37,27 @@ export function AuthProvider({ children }: AuthProviderProps) {
   useEffect(() => {
     const loadUser = async () => {
       try {
+        const accessToken = localStorage.getItem('accessToken');
+        const refreshToken = localStorage.getItem('refreshToken');
+
+        // Only try to load user if we have tokens
+        if (!accessToken || !refreshToken) {
+          setState({
+            user: null,
+            session: null,
+            isLoading: false,
+            error: null,
+          });
+          return;
+        }
+
         const user = await authService.getCurrentUser();
         
         setState({
           user,
           session: user ? {
-            accessToken: localStorage.getItem('accessToken') || '',
-            refreshToken: localStorage.getItem('refreshToken') || '',
+            accessToken,
+            refreshToken,
             expiresAt: 0, // We'd get this from the token if needed
           } : null,
           isLoading: false,

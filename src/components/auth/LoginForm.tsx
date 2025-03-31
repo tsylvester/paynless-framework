@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useAuth } from '../../hooks/useAuth';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
 import { Mail, Lock, AlertCircle } from 'lucide-react';
 import { logger } from '../../utils/logger';
 
@@ -104,9 +104,9 @@ export function LoginForm({ onSuccess, redirectPath = '/' }: LoginFormProps) {
             />
           </div>
           <div className="flex justify-end mt-1">
-            <a href="/forgot-password" className="text-sm text-indigo-600 hover:text-indigo-500">
+            <Link to="/forgot-password" className="text-sm text-indigo-600 hover:text-indigo-500">
               Forgot password?
-            </a>
+            </Link>
           </div>
         </div>
         
@@ -123,9 +123,9 @@ export function LoginForm({ onSuccess, redirectPath = '/' }: LoginFormProps) {
         <div className="mt-4 text-center">
           <span className="text-sm text-gray-600">
             Don't have an account?{' '}
-            <a href="/register" className="text-indigo-600 hover:text-indigo-500">
+            <Link to="/register" className="text-indigo-600 hover:text-indigo-500">
               Sign up
-            </a>
+            </Link>
           </span>
         </div>
       </form>

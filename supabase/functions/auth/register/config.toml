@@ -1,0 +1,5 @@
+[global]
+runtime = "deno"
+
+[functions.register]
+verify_jwt = false 

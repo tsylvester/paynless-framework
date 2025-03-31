@@ -1,58 +1,33 @@
-import { getSupabaseClient } from '../../utils/supabase';
+import { BaseApiClient } from '../../api/clients/base.api';
+import { ApiResponse } from '../../types/api.types';
 import { logger } from '../../utils/logger';
-import { AIResponse } from '../../types/ai.types';
 
 /**
  * Service for AI-related functionality
  */
 export class AIService {
-  /**
-   * Generate text using AI
-   */
-  async generateText(
-    content: string,
-    modelId: string,
-    promptId: string
-  ): Promise<AIResponse> {
+  private baseClient: BaseApiClient;
+  
+  constructor() {
+    this.baseClient = new BaseApiClient('ai');
+  }
+  
+  async generateResponse(prompt: string): Promise<ApiResponse<string>> {
     try {
-      const supabase = getSupabaseClient();
-      
-      // Call the AI Edge Function
-      const response = await fetch(
-        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/ai/generate`,
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${supabase.auth.session()?.access_token}`,
-          },
-          body: JSON.stringify({
-            content,
-            modelId,
-            promptId,
-          }),
-        }
-      );
-      
-      if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.message || 'Failed to generate AI response');
-      }
-      
-      return await response.json();
+      logger.info('Generating AI response', { prompt });
+      return await this.baseClient.post<string>('/generate', { prompt });
     } catch (error) {
-      logger.error('Error generating AI text', {
+      logger.error('Error generating AI response', {
         error: error instanceof Error ? error.message : 'Unknown error',
-        modelId,
-        promptId,
+        prompt,
       });
       
       return {
-        content: '',
         error: {
           code: 'ai_error',
           message: error instanceof Error ? error.message : 'An unknown error occurred',
         },
+        status: 500,
       };
     }
   }

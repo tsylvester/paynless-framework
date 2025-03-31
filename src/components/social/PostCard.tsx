@@ -4,7 +4,7 @@ import { Heart, MessageCircle, Share2, MoreHorizontal, User, ThumbsUp, HeartCrac
 import { formatDistanceToNow } from 'date-fns';
 import { Post, ReactionType } from '../../types/post.types';
 import { useAuth } from '../../hooks/useAuth';
-import { socialService } from '../../services/social.service';
+import { socialService } from '../../services/social/index';
 import { logger } from '../../utils/logger';
 
 interface PostCardProps {

@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { User, Lock, Globe, Users, Bot, X } from 'lucide-react';
-import { socialService } from '../../services/social.service';
+import { socialService } from '../../services/social/index';
 import { aiService } from '../../services/ai';
 import { PostVisibility } from '../../types/post.types';
 import { AIModel, SystemPrompt } from '../../types/ai.types';

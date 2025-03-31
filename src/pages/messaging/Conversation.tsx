@@ -3,7 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { Layout } from '../../components/layout/Layout';
 import { MessagesList } from '../../components/messaging/MessagesList';
 import { SendMessageForm } from '../../components/messaging/SendMessageForm';
-import { socialService } from '../../services/social.service';
+import { socialService } from '../../services/social/index';
 import { Message, Conversation } from '../../types/message.types';
 import { logger } from '../../utils/logger';
 import { useAuth } from '../../hooks/useAuth';

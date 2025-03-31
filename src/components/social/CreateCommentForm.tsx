@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { User } from 'lucide-react';
 import { useAuth } from '../../hooks/useAuth';
-import { socialService } from '../../services/social.service';
+import { socialService } from '../../services/social/index';
 import { logger } from '../../utils/logger';
 import ReactTextareaAutosize from 'react-textarea-autosize';
 

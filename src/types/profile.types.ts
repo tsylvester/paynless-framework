@@ -149,3 +149,19 @@ export interface VerifyContactResponse {
   success: boolean;
   message?: string;
 }
+
+export interface NotificationSettings {
+  email: boolean;
+  push: boolean;
+  marketing: boolean;
+}
+
+export interface UserSettings {
+  notifications: NotificationSettings;
+  theme: 'light' | 'dark';
+  language: string;
+}
+
+export interface UpdateSettingsRequest {
+  settings: Partial<UserSettings>;
+}

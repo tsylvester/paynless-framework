@@ -81,12 +81,23 @@ export const handleGetMessages = async (
       ? messages[messages.length - 1].createdAt
       : undefined;
     
+    // Determine the empty state reason
+    let emptyStateReason = null;
+    if (messages.length === 0) {
+      if (cursor) {
+        emptyStateReason = "end_of_messages";
+      } else {
+        emptyStateReason = "no_messages";
+      }
+    }
+    
     return createSuccessResponse({
       messages,
       pagination: {
         hasMore,
         nextCursor,
       },
+      emptyState: emptyStateReason,
     });
   } catch (error) {
     console.error("Error getting messages:", error);

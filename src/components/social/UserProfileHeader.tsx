@@ -3,7 +3,7 @@ import { UserProfile } from '../../types/auth.types';
 import { FollowerCount, RelationshipType } from '../../types/relationship.types';
 import { User, Loader, UserPlus, UserMinus, UserX, MessageCircle } from 'lucide-react';
 import { useAuth } from '../../hooks/useAuth';
-import { socialService } from '../../services/social.service';
+import { socialService } from '../../services/social/index';
 import { logger } from '../../utils/logger';
 import { Link } from 'react-router-dom';
 

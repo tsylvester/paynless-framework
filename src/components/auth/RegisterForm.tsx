@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useAuth } from '../../hooks/useAuth';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
 import { Mail, Lock, User, AlertCircle } from 'lucide-react';
 import { logger } from '../../utils/logger';
 
@@ -43,7 +43,7 @@ export function RegisterForm({ onSuccess, redirectPath = '/' }: RegisterFormProp
           navigate(redirectPath);
         }
       } else {
-        setError('Registration failed. Please try again.');
+        setError('Registration failed. Please check your information and try again.');
         logger.warn('Registration failed', { email });
       }
     } catch (err) {
@@ -158,9 +158,9 @@ export function RegisterForm({ onSuccess, redirectPath = '/' }: RegisterFormProp
         <div className="mt-4 text-center">
           <span className="text-sm text-gray-600">
             Already have an account?{' '}
-            <a href="/login" className="text-indigo-600 hover:text-indigo-500">
+            <Link to="/login" className="text-indigo-600 hover:text-indigo-500">
               Sign in
-            </a>
+            </Link>
           </span>
         </div>
       </form>

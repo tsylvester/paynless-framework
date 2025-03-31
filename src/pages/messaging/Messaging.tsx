@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { Layout } from '../../components/layout/Layout';
 import { ConversationsList } from '../../components/messaging/ConversationsList';
-import { socialService } from '../../services/social.service';
+import { socialService } from '../../services/social/index';
 import { Conversation } from '../../types/message.types';
 import { logger } from '../../utils/logger';
 import { Loader, Search, PlusCircle } from 'lucide-react';

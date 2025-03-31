@@ -75,12 +75,25 @@ export const handleTimeline = async (
         ? posts[posts.length - 1].createdAt
         : undefined;
       
+      // Determine the empty state reason
+      let emptyStateReason = null;
+      if (posts.length === 0) {
+        if (followingIds.length === 0) {
+          emptyStateReason = "no_following";
+        } else if (cursor) {
+          emptyStateReason = "end_of_feed";
+        } else {
+          emptyStateReason = "no_posts";
+        }
+      }
+      
       return createSuccessResponse({
         posts,
         pagination: {
           hasMore,
           nextCursor,
         },
+        emptyState: emptyStateReason,
       });
     }
     

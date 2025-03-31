@@ -4,7 +4,7 @@ import { Layout } from '../../components/layout/Layout';
 import { PostCard } from '../../components/social/PostCard';
 import { CommentsList } from '../../components/social/CommentsList';
 import { CreateCommentForm } from '../../components/social/CreateCommentForm';
-import { socialService } from '../../services/social.service';
+import { socialService } from '../../services/social/index';
 import { Post, Comment } from '../../types/post.types';
 import { logger } from '../../utils/logger';
 import { ArrowLeft, Loader } from 'lucide-react';

@@ -1,16 +1,12 @@
-import { BaseApiClient } from '../base.api';
+import { BaseApiClient } from '../../clients/base.api';
 import { ApiResponse } from '../../../types/api.types';
 import { 
   AIModel, 
-  AIModelType,
   AIModelProvider,
   AIRequest,
   AIResponse,
-  AIMessage,
-  AIFeatures,
 } from '../../../types/ai.types';
 import { logger } from '../../../utils/logger';
-import { getSupabaseClient } from '../../../utils/supabase';
 
 /**
  * Base class for AI model providers
@@ -20,53 +16,31 @@ export abstract class BaseAIProvider implements AIModelProvider {
   protected models: Map<string, AIModel>;
   
   constructor(path: string) {
-    this.baseClient = new BaseApiClient(`${import.meta.env.VITE_API_URL}/ai/${path}`);
+    this.baseClient = new BaseApiClient(`ai/${path}`);
     this.models = new Map();
     this.loadModels();
   }
   
   /**
-   * Load models from database
+   * Load models from API
    */
   private async loadModels(): Promise<void> {
     try {
-      const supabase = getSupabaseClient();
+      const response = await this.baseClient.get<AIModel[]>('/models');
       
-      const { data: modelsData, error } = await supabase
-        .from('ai_models')
-        .select(`
-          *,
-          provider:provider_id(
-            name,
-            type,
-            config
-          )
-        `)
-        .eq('is_enabled', true);
-      
-      if (error) {
-        throw error;
+      if ('error' in response && response.error) {
+        throw new Error(response.error.message);
       }
       
       // Clear existing models
       this.models.clear();
       
       // Add models to map
-      modelsData.forEach(model => {
-        this.models.set(model.id, {
-          id: model.id,
-          providerId: model.provider_id,
-          modelId: model.model_id,
-          name: model.name,
-          capabilities: model.capabilities,
-          maxTokens: model.max_tokens,
-          contextWindow: model.context_window,
-          isEnabled: model.is_enabled,
-          config: model.config,
-          createdAt: model.created_at,
-          updatedAt: model.updated_at,
+      if (response.data) {
+        response.data.forEach(model => {
+          this.models.set(model.id, model);
         });
-      });
+      }
     } catch (error) {
       logger.error('Error loading AI models', {
         error: error instanceof Error ? error.message : 'Unknown error',
@@ -92,21 +66,21 @@ export abstract class BaseAIProvider implements AIModelProvider {
   /**
    * Generate image from text prompt
    */
-  generateImage?(prompt: string): Promise<string> {
+  generateImage?(): Promise<string> {
     throw new Error('Image generation not supported by this provider');
   }
   
   /**
    * Generate code from text prompt
    */
-  generateCode?(prompt: string): Promise<string> {
+  generateCode?(): Promise<string> {
     throw new Error('Code generation not supported by this provider');
   }
   
   /**
    * Transcribe audio to text
    */
-  transcribeAudio?(audioData: Blob): Promise<string> {
+  transcribeAudio?(): Promise<string> {
     throw new Error('Audio transcription not supported by this provider');
   }
   
@@ -165,6 +139,34 @@ export abstract class BaseAIProvider implements AIModelProvider {
       return {
         error: {
           code: 'ai_request_failed',
+          message: error instanceof Error ? error.message : 'An unknown error occurred',
+        },
+        status: 500,
+      };
+    }
+  }
+}
+
+export class AIBaseApiClient {
+  private baseClient: BaseApiClient;
+  
+  constructor() {
+    this.baseClient = new BaseApiClient('ai');
+  }
+  
+  async generateText(prompt: string): Promise<ApiResponse<string>> {
+    try {
+      logger.info('Generating AI text', { prompt });
+      return await this.baseClient.post<string>('/generate', { prompt });
+    } catch (error) {
+      logger.error('Error generating AI text', {
+        error: error instanceof Error ? error.message : 'Unknown error',
+        prompt,
+      });
+      
+      return {
+        error: {
+          code: 'ai_error',
           message: error instanceof Error ? error.message : 'An unknown error occurred',
         },
         status: 500,

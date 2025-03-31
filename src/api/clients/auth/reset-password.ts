@@ -1,11 +1,11 @@
-import { BaseApiClient } from '../../clients/base.api';
+import { BaseApiClient } from '../base.api';
 import { ApiResponse } from '../../../types/api.types';
 import { logger } from '../../../utils/logger';
 
 /**
- * API client for authentication password operations
+ * API client for password reset operations
  */
-export class PasswordApiClient {
+export class ResetPasswordApiClient {
   private baseClient: BaseApiClient;
   
   constructor() {
@@ -13,9 +13,9 @@ export class PasswordApiClient {
   }
   
   /**
-   * Reset password
+   * Request a password reset email
    */
-  async resetPassword(email: string): Promise<ApiResponse<void>> {
+  async requestReset(email: string): Promise<ApiResponse<void>> {
     try {
       logger.info('Requesting password reset', { email });
       return await this.baseClient.post<void>('/reset-password', { email });
@@ -27,7 +27,7 @@ export class PasswordApiClient {
       
       return {
         error: {
-          code: 'password_error',
+          code: 'reset_password_error',
           message: error instanceof Error ? error.message : 'An unknown error occurred',
         },
         status: 500,
@@ -35,22 +35,28 @@ export class PasswordApiClient {
     }
   }
   
-  async updatePassword(newPassword: string): Promise<ApiResponse<void>> {
+  /**
+   * Reset password with token
+   */
+  async resetPassword(token: string, newPassword: string): Promise<ApiResponse<void>> {
     try {
-      logger.info('Updating password');
-      return await this.baseClient.put<void>('/password', { newPassword });
+      logger.info('Resetting password');
+      return await this.baseClient.post<void>('/reset-password/confirm', {
+        token,
+        password: newPassword,
+      });
     } catch (error) {
-      logger.error('Error updating password', {
+      logger.error('Error resetting password', {
         error: error instanceof Error ? error.message : 'Unknown error',
       });
       
       return {
         error: {
-          code: 'password_error',
+          code: 'reset_password_error',
           message: error instanceof Error ? error.message : 'An unknown error occurred',
         },
         status: 500,
       };
     }
   }
-}
+} 
