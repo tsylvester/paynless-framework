@@ -11,7 +11,7 @@ export class ProfileApiClient {
   private baseClient: BaseApiClient;
   
   constructor() {
-    this.baseClient = new BaseApiClient('profile');
+    this.baseClient = BaseApiClient.getInstance('profile');
   }
   
   /**

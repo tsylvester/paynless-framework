@@ -1,8 +1,8 @@
 import React, { useState } from 'react';
-import { useUnauth } from '../../hooks/useUnauth';
 import { useNavigate, Link } from 'react-router-dom';
-import { Mail, Lock, User, AlertCircle } from 'lucide-react';
+import { Mail, Lock, AlertCircle } from 'lucide-react';
 import { logger } from '../../utils/logger';
+import { useAuth } from '../../hooks/useAuth';
 
 interface RegisterFormProps {
   onSuccess?: () => void;
@@ -12,12 +12,10 @@ interface RegisterFormProps {
 export function RegisterForm({ onSuccess, redirectPath = '/' }: RegisterFormProps) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [firstName, setFirstName] = useState('');
-  const [lastName, setLastName] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   
-  const { register } = useUnauth();
+  const { register } = useAuth();
   const navigate = useNavigate();
   
   const handleSubmit = async (e: React.FormEvent) => {
@@ -33,7 +31,7 @@ export function RegisterForm({ onSuccess, redirectPath = '/' }: RegisterFormProp
     
     try {
       logger.info('Attempting to register user via form', { email });
-      const user = await register(email, password, firstName, lastName);
+      const user = await register(email, password);
       
       if (user) {
         logger.info('Registration successful, redirecting user');
@@ -67,41 +65,6 @@ export function RegisterForm({ onSuccess, redirectPath = '/' }: RegisterFormProp
       )}
       
       <form onSubmit={handleSubmit}>
-        <div className="grid grid-cols-2 gap-4 mb-4">
-          <div>
-            <label htmlFor="firstName" className="block text-sm font-medium text-gray-700 mb-1">
-              First Name
-            </label>
-            <div className="relative">
-              <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                <User size={18} className="text-gray-400" />
-              </div>
-              <input
-                id="firstName"
-                type="text"
-                value={firstName}
-                onChange={(e) => setFirstName(e.target.value)}
-                className="block w-full pl-10 pr-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500"
-                placeholder="John"
-              />
-            </div>
-          </div>
-          
-          <div>
-            <label htmlFor="lastName" className="block text-sm font-medium text-gray-700 mb-1">
-              Last Name
-            </label>
-            <input
-              id="lastName"
-              type="text"
-              value={lastName}
-              onChange={(e) => setLastName(e.target.value)}
-              className="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500"
-              placeholder="Doe"
-            />
-          </div>
-        </div>
-        
         <div className="mb-4">
           <label htmlFor="email" className="block text-sm font-medium text-gray-700 mb-1">
             Email

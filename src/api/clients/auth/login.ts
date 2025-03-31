@@ -1,7 +1,7 @@
 import { BaseApiClient } from '../base.api';
 import { ApiResponse } from '../../../types/api.types';
 import { logger } from '../../../utils/logger';
-import { LoginRequest, LoginResponse } from '../../../types/auth.types';
+import { LoginCredentials, AuthResponse } from '../../../types/auth.types';
 
 /**
  * API client for login operations
@@ -10,18 +10,18 @@ export class LoginApiClient {
   private baseClient: BaseApiClient;
   
   constructor() {
-    this.baseClient = new BaseApiClient('auth');
+    this.baseClient = BaseApiClient.getInstance('auth');
   }
   
   /**
    * Login with email and password
    */
-  async login(request: LoginRequest): Promise<ApiResponse<LoginResponse>> {
+  async login(credentials: LoginCredentials): Promise<ApiResponse<AuthResponse>> {
     try {
-      logger.info('Logging in user', { email: request.email });
-      return await this.baseClient.post<LoginResponse>('/login', request);
+      logger.info('Logging in user', { email: credentials.email });
+      return await this.baseClient.post<AuthResponse>('/login', credentials);
     } catch (error) {
-      logger.error('Error logging in', {
+      logger.error('Error logging in user', {
         error: error instanceof Error ? error.message : 'Unknown error',
       });
       
@@ -35,3 +35,6 @@ export class LoginApiClient {
     }
   }
 }
+
+// Export a singleton instance
+export const loginApiClient = new LoginApiClient();

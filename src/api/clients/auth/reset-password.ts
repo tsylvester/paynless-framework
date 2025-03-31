@@ -9,7 +9,7 @@ export class ResetPasswordApiClient {
   private baseClient: BaseApiClient;
   
   constructor() {
-    this.baseClient = new BaseApiClient('auth');
+    this.baseClient = BaseApiClient.getInstance('auth');
   }
   
   /**
@@ -59,4 +59,7 @@ export class ResetPasswordApiClient {
       };
     }
   }
-} 
+}
+
+// Export a singleton instance
+export const resetPasswordApiClient = new ResetPasswordApiClient(); 

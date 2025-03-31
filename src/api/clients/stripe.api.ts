@@ -13,7 +13,7 @@ export class StripeApiClient {
   private isTestMode: boolean;
   
   constructor() {
-    this.baseClient = new BaseApiClient('stripe');
+    this.baseClient = BaseApiClient.getInstance('stripe');
     this.isTestMode = isStripeTestMode();
     logger.info(`Stripe API client initialized in ${this.isTestMode ? 'TEST' : 'LIVE'} mode`);
   }

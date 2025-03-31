@@ -17,7 +17,7 @@ export class PostApiClient {
   private baseClient: BaseApiClient;
   
   constructor() {
-    this.baseClient = new BaseApiClient('social');
+    this.baseClient = BaseApiClient.getInstance('social');
   }
   
   /**
@@ -141,3 +141,6 @@ export class PostApiClient {
     }
   }
 }
+
+// Export a singleton instance
+export const postApiClient = new PostApiClient();

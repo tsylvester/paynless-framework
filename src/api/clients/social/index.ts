@@ -1,7 +1,7 @@
-import { BaseApiClient } from '../../clients/base.api';
+import { BaseApiClient } from '../base.api';
 import { ApiResponse } from '../../../types/api.types';
 import { logger } from '../../../utils/logger';
-import { Post } from '../../../types/social.types';
+import { Post, PostCreate, PostUpdate } from '../../../types/social.types';
 import { CommentApiClient } from './comment.api';
 import { ReactionApiClient } from './reaction.api';
 import { RelationshipApiClient } from './relationship.api';
@@ -18,7 +18,7 @@ export class SocialApiClient {
   private privacyClient: PrivacyApiClient;
   
   constructor() {
-    this.baseClient = new BaseApiClient('social');
+    this.baseClient = BaseApiClient.getInstance('social');
     this.commentClient = new CommentApiClient();
     this.reactionClient = new ReactionApiClient();
     this.relationshipClient = new RelationshipApiClient();

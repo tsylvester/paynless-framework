@@ -8,8 +8,9 @@ import { logger } from '../../utils/logger';
 export class BaseApiClient {
   private client: AxiosInstance;
   private basePath: string;
+  private static instances: Map<string, BaseApiClient> = new Map();
   
-  constructor(path: string) {
+  private constructor(path: string) {
     // Use Supabase Edge Functions URL
     const baseUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1`;
     this.basePath = path;
@@ -35,6 +36,16 @@ export class BaseApiClient {
     console.log('Anon key value:', import.meta.env.VITE_SUPABASE_ANON_KEY ? 'present' : 'missing');
     
     this.setupInterceptors();
+  }
+
+  /**
+   * Get or create a BaseApiClient instance for the given path
+   */
+  public static getInstance(path: string): BaseApiClient {
+    if (!BaseApiClient.instances.has(path)) {
+      BaseApiClient.instances.set(path, new BaseApiClient(path));
+    }
+    return BaseApiClient.instances.get(path)!;
   }
   
   /**
@@ -65,7 +76,7 @@ export class BaseApiClient {
 
         // Add Authorization header if token exists and it's not a registration request
         const token = localStorage.getItem('access_token');
-        if (token && !config.url?.includes('/auth/register')) {
+        if (token && !config.url?.includes('/register')) {
           config.headers.Authorization = `Bearer ${token}`;
         }
         
@@ -113,7 +124,8 @@ export class BaseApiClient {
    */
   async get<T>(path: string): Promise<ApiResponse<T>> {
     try {
-      const response = await this.client.get<T>(`/${this.basePath}${path}`);
+      const url = this.basePath ? `/${this.basePath}${path}` : path;
+      const response = await this.client.get<T>(url);
       return {
         data: response.data,
         status: response.status,
@@ -128,7 +140,70 @@ export class BaseApiClient {
    */
   async post<T>(path: string, data?: unknown): Promise<ApiResponse<T>> {
     try {
-      const response = await this.client.post<T>(`/${this.basePath}${path}`, data);
+      const url = this.basePath ? `/${this.basePath}${path}` : path;
+      const response = await this.client.post<T>(url, data);
+      return {
+        data: response.data,
+        status: response.status,
+      };
+    } catch (error: unknown) {
+      if (error instanceof Error) {
+        return {
+          error: {
+            code: 'request_error',
+            message: error.message,
+          },
+          status: 500,
+        };
+      }
+      return {
+        error: {
+          code: 'request_error',
+          message: 'An unexpected error occurred',
+        },
+        status: 500,
+      };
+    }
+  }
+
+  /**
+   * Make a PUT request
+   */
+  async put<T>(path: string, data?: unknown): Promise<ApiResponse<T>> {
+    try {
+      const url = this.basePath ? `/${this.basePath}${path}` : path;
+      const response = await this.client.put<T>(url, data);
+      return {
+        data: response.data,
+        status: response.status,
+      };
+    } catch (error: unknown) {
+      if (error instanceof Error) {
+        return {
+          error: {
+            code: 'request_error',
+            message: error.message,
+          },
+          status: 500,
+        };
+      }
+      return {
+        error: {
+          code: 'request_error',
+          message: 'An unexpected error occurred',
+        },
+        status: 500,
+      };
+    }
+  }
+
+  /**
+   * Make a DELETE request
+   */
+  async delete<T>(path: string): Promise<ApiResponse<T>> {
+    try {
+      const url = this.basePath ? `/${this.basePath}${path}` : path;
+      const response = await this.client.delete<T>(url);
       return {
         data: response.data,
         status: response.status,

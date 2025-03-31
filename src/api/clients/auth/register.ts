@@ -1,7 +1,7 @@
 import { BaseApiClient } from '../base.api';
 import { ApiResponse } from '../../../types/api.types';
 import { logger } from '../../../utils/logger';
-import { RegisterRequest, RegisterResponse } from '../../../types/auth.types';
+import { RegisterCredentials, AuthResponse } from '../../../types/auth.types';
 
 /**
  * API client for registration operations
@@ -10,16 +10,16 @@ export class RegisterApiClient {
   private baseClient: BaseApiClient;
   
   constructor() {
-    this.baseClient = new BaseApiClient('auth');
+    this.baseClient = BaseApiClient.getInstance('');  // Empty string for no base path
   }
   
   /**
    * Register a new user
    */
-  async register(request: RegisterRequest): Promise<ApiResponse<RegisterResponse>> {
+  async register(request: RegisterCredentials): Promise<ApiResponse<AuthResponse>> {
     try {
       logger.info('Registering new user', { email: request.email });
-      return await this.baseClient.post<RegisterResponse>('/register', request);
+      return await this.baseClient.post<AuthResponse>('/register', request);
     } catch (error) {
       logger.error('Error registering user', {
         error: error instanceof Error ? error.message : 'Unknown error',
@@ -35,3 +35,6 @@ export class RegisterApiClient {
     }
   }
 }
+
+// Export a singleton instance
+export const registerApiClient = new RegisterApiClient();

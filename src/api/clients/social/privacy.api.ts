@@ -1,4 +1,4 @@
-import { BaseApiClient } from '../../clients/base.api';
+import { BaseApiClient } from '../base.api';
 import { ApiResponse } from '../../../types/api.types';
 import { logger } from '../../../utils/logger';
 import { PrivacySettings } from '../../../types/social.types';
@@ -10,7 +10,7 @@ export class PrivacyApiClient {
   private baseClient: BaseApiClient;
   
   constructor() {
-    this.baseClient = new BaseApiClient('social/privacy');
+    this.baseClient = BaseApiClient.getInstance('social/privacy');
   }
   
   /**
@@ -57,3 +57,6 @@ export class PrivacyApiClient {
     }
   }
 }
+
+// Export a singleton instance
+export const privacyApiClient = new PrivacyApiClient();

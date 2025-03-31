@@ -1,32 +1,22 @@
-import { LoginApiClient } from './login';
-import { RegisterApiClient } from './register';
-import { SessionApiClient } from './session';
-import { PasswordApiClient } from './password';
-import { ApiResponse, AuthResponse, LoginCredentials, RegisterCredentials } from '../../../types/auth.types';
+import { registerApiClient } from './register';
+import { loginApiClient } from './login';
+import { sessionApiClient } from './session';
+import { passwordApiClient } from './password';
+import { resetPasswordApiClient } from './reset-password';
+import { AuthResponse, LoginCredentials, RegisterCredentials } from '../../../types/auth.types';
+import { ApiResponse } from '../../../types/api.types';
 import { logger } from '../../../utils/logger';
 
 /**
- * API client for authentication operations
+ * Main API client for authentication operations
  */
 export class AuthApiClient {
-  private loginClient: LoginApiClient;
-  private registerClient: RegisterApiClient;
-  private sessionClient: SessionApiClient;
-  private passwordClient: PasswordApiClient;
-  
-  constructor() {
-    this.loginClient = new LoginApiClient();
-    this.registerClient = new RegisterApiClient();
-    this.sessionClient = new SessionApiClient();
-    this.passwordClient = new PasswordApiClient();
-  }
-  
   /**
    * Login with email and password
    */
   async login(credentials: LoginCredentials): Promise<ApiResponse<AuthResponse>> {
     try {
-      return await this.loginClient.login(credentials);
+      return await loginApiClient.login(credentials);
     } catch (error) {
       logger.error('Error in AuthApiClient.login', {
         error: error instanceof Error ? error.message : 'Unknown error'
@@ -46,11 +36,12 @@ export class AuthApiClient {
    */
   async register(credentials: RegisterCredentials): Promise<ApiResponse<AuthResponse>> {
     try {
-      return await this.registerClient.register(credentials);
+      return await registerApiClient.register(credentials);
     } catch (error) {
       logger.error('Error in AuthApiClient.register', {
-        error: error instanceof Error ? error.message : 'Unknown error'
+        error: error instanceof Error ? error.message : 'Unknown error',
       });
+      
       return {
         error: {
           code: 'auth_error',
@@ -66,7 +57,7 @@ export class AuthApiClient {
    */
   async logout(): Promise<ApiResponse<void>> {
     try {
-      return await this.sessionClient.logout();
+      return await sessionApiClient.logout();
     } catch (error) {
       logger.error('Error in AuthApiClient.logout', {
         error: error instanceof Error ? error.message : 'Unknown error'
@@ -86,7 +77,7 @@ export class AuthApiClient {
    */
   async getCurrentUser(): Promise<ApiResponse<AuthResponse>> {
     try {
-      return await this.sessionClient.getSession();
+      return await sessionApiClient.getSession();
     } catch (error) {
       logger.error('Unexpected error in AuthApiClient.getCurrentUser', {
         error: error instanceof Error ? error.message : 'Unknown error',
@@ -103,15 +94,37 @@ export class AuthApiClient {
   }
   
   /**
-   * Reset password
+   * Request a password reset email
    */
   async resetPassword(email: string): Promise<ApiResponse<void>> {
     try {
-      return await this.passwordClient.resetPassword(email);
+      return await resetPasswordApiClient.requestReset(email);
     } catch (error) {
       logger.error('Error in AuthApiClient.resetPassword', {
-        error: error instanceof Error ? error.message : 'Unknown error'
+        error: error instanceof Error ? error.message : 'Unknown error',
       });
+      
+      return {
+        error: {
+          code: 'auth_error',
+          message: error instanceof Error ? error.message : 'An unknown error occurred',
+        },
+        status: 500,
+      };
+    }
+  }
+
+  /**
+   * Change password
+   */
+  async changePassword(currentPassword: string, newPassword: string): Promise<ApiResponse<void>> {
+    try {
+      return await passwordApiClient.changePassword(currentPassword, newPassword);
+    } catch (error) {
+      logger.error('Error in AuthApiClient.changePassword', {
+        error: error instanceof Error ? error.message : 'Unknown error',
+      });
+      
       return {
         error: {
           code: 'auth_error',
@@ -123,5 +136,5 @@ export class AuthApiClient {
   }
 }
 
-// Export singleton instance
+// Export a singleton instance
 export const authApiClient = new AuthApiClient();

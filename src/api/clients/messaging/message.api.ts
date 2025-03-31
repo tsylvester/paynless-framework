@@ -16,7 +16,7 @@ export class MessageApiClient {
   private baseClient: BaseApiClient;
   
   constructor() {
-    this.baseClient = new BaseApiClient('messaging');
+    this.baseClient = BaseApiClient.getInstance('messaging');
   }
   
   /**
@@ -90,3 +90,6 @@ export class MessageApiClient {
     }
   }
 }
+
+// Export a singleton instance
+export const messageApiClient = new MessageApiClient();

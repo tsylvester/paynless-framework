@@ -1,4 +1,4 @@
-import { BaseApiClient } from '../../clients/base.api';
+import { BaseApiClient } from '../base.api';
 import { ApiResponse } from '../../../types/api.types';
 import { logger } from '../../../utils/logger';
 import { Relationship, RelationshipStatus } from '../../../types/social.types';
@@ -10,7 +10,7 @@ export class RelationshipApiClient {
   private baseClient: BaseApiClient;
   
   constructor() {
-    this.baseClient = new BaseApiClient('social/relationships');
+    this.baseClient = BaseApiClient.getInstance('social/relationships');
   }
   
   async followUser(userId: string): Promise<ApiResponse<Relationship>> {
@@ -113,3 +113,6 @@ export class RelationshipApiClient {
     }
   }
 }
+
+// Export a singleton instance
+export const relationshipApiClient = new RelationshipApiClient();

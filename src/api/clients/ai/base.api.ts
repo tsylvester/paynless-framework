@@ -16,7 +16,7 @@ export abstract class BaseAIProvider implements AIModelProvider {
   protected models: Map<string, AIModel>;
   
   constructor(path: string) {
-    this.baseClient = new BaseApiClient(`ai/${path}`);
+    this.baseClient = BaseApiClient.getInstance(`ai/${path}`);
     this.models = new Map();
     this.loadModels();
   }
@@ -147,11 +147,14 @@ export abstract class BaseAIProvider implements AIModelProvider {
   }
 }
 
-export class AIBaseApiClient {
-  private baseClient: BaseApiClient;
+/**
+ * Base API client for AI operations
+ */
+export class AiBaseApiClient {
+  protected baseClient: BaseApiClient;
   
-  constructor() {
-    this.baseClient = new BaseApiClient('ai');
+  constructor(path: string) {
+    this.baseClient = BaseApiClient.getInstance(`ai/${path}`);
   }
   
   async generateText(prompt: string): Promise<ApiResponse<string>> {
@@ -174,3 +177,6 @@ export class AIBaseApiClient {
     }
   }
 }
+
+// Export a singleton instance
+export const aiBaseApiClient = new AiBaseApiClient('');

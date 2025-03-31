@@ -1,4 +1,4 @@
-import { BaseApiClient } from '../../clients/base.api';
+import { BaseApiClient } from '../base.api';
 import { ApiResponse } from '../../../types/api.types';
 import { logger } from '../../../utils/logger';
 import { Comment } from '../../../types/social.types';
@@ -10,7 +10,7 @@ export class CommentApiClient {
   private baseClient: BaseApiClient;
   
   constructor() {
-    this.baseClient = new BaseApiClient('social/comments');
+    this.baseClient = BaseApiClient.getInstance('social/comments');
   }
   
   /**
@@ -82,3 +82,6 @@ export class CommentApiClient {
     }
   }
 }
+
+// Export a singleton instance
+export const commentApiClient = new CommentApiClient();

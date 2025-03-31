@@ -5,7 +5,7 @@ import { logger } from '../utils/logger';
 
 interface AuthContextType extends AuthState {
   login: (email: string, password: string) => Promise<User | null>;
-  register: (email: string, password: string, firstName?: string, lastName?: string) => Promise<User | null>;
+  register: (email: string, password: string) => Promise<User | null>;
   logout: () => Promise<void>;
   resetPassword: (email: string) => Promise<boolean>;
 }
@@ -116,8 +116,6 @@ export function AuthProvider({ children }: AuthProviderProps) {
   const register = async (
     email: string,
     password: string,
-    firstName?: string,
-    lastName?: string
   ): Promise<User | null> => {
     setState({ ...state, isLoading: true, error: null });
     
@@ -125,8 +123,6 @@ export function AuthProvider({ children }: AuthProviderProps) {
       const user = await authService.register({
         email,
         password,
-        firstName,
-        lastName,
       });
       
       setState({
