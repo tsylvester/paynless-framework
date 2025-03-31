@@ -13,7 +13,7 @@ export default async function handleLogout(req: Request) {
       );
     }
 
-    // Use REST API for logout
+    // Use regular auth endpoint for logout
     const logoutResponse = await fetch(
       `${Deno.env.get('SUPABASE_URL')}/auth/v1/logout`,
       {

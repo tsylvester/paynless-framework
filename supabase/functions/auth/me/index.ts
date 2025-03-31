@@ -13,11 +13,12 @@ export default async function handleMe(req: Request) {
       );
     }
 
-    // Get the current user using REST API
+    // Get the current user using regular auth endpoint
     const userResponse = await fetch(
       `${Deno.env.get('SUPABASE_URL')}/auth/v1/user`,
       {
         headers: {
+          'Content-Type': 'application/json',
           'apikey': Deno.env.get('SUPABASE_ANON_KEY') ?? '',
           'Authorization': authHeader,
         }
@@ -36,6 +37,7 @@ export default async function handleMe(req: Request) {
       `${Deno.env.get('SUPABASE_URL')}/rest/v1/user_profiles?id=eq.${user.id}&select=*`,
       {
         headers: {
+          'Content-Type': 'application/json',
           'apikey': Deno.env.get('SUPABASE_ANON_KEY') ?? '',
           'Authorization': authHeader,
         }

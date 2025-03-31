@@ -1,130 +1,137 @@
-import { corsHeaders } from '../../_shared/cors-headers.ts';
+import { corsHeaders, handleCorsPreflightRequest, createErrorResponse, createSuccessResponse } from "../../_shared/cors-headers.ts";
+import { verifyApiKey, createUnauthorizedResponse } from "../../_shared/auth.ts";
 
-export default async function handleRegister(req: Request) {
+Deno.serve(async (req) => {
+  // Handle CORS preflight request
+  const corsResponse = handleCorsPreflightRequest(req);
+  if (corsResponse) return corsResponse;
+
+  // Log request headers for debugging
+  const headers = Object.fromEntries(req.headers.entries());
+  console.log("Request headers:", headers);
+  console.log("Apikey header:", req.headers.get('apikey'));
+
+  // Verify apikey for registration requests
+  if (!verifyApiKey(req)) {
+    return createUnauthorizedResponse("Invalid or missing apikey");
+  }
+
   try {
     const { email, password, firstName, lastName } = await req.json();
-    
+
+    // Validate input
     if (!email || !password) {
-      return new Response(
-        JSON.stringify({ error: 'Email and password are required' }),
-        { 
-          status: 400,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        }
-      );
+      return createErrorResponse("Email and password are required", 400);
     }
 
-    // Use Supabase REST API to create user
-    const signUpResponse = await fetch(
-      `${Deno.env.get('SUPABASE_URL')}/auth/v1/admin/users`,
+    // Validate optional fields if provided
+    if (firstName && typeof firstName !== 'string') {
+      return createErrorResponse("First name must be a string", 400);
+    }
+    if (lastName && typeof lastName !== 'string') {
+      return createErrorResponse("Last name must be a string", 400);
+    }
+
+    // Get service role key from environment
+    const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+    if (!serviceRoleKey) {
+      console.error("Service role key not configured");
+      throw new Error("Service role key not configured");
+    }
+
+    // Create user with admin privileges
+    console.log("Creating user with email:", email);
+    const createUserResponse = await fetch(
+      `${Deno.env.get("SUPABASE_URL")}/auth/v1/admin/users`,
       {
-        method: 'POST',
+        method: "POST",
         headers: {
-          'Content-Type': 'application/json',
-          'apikey': Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '',
+          "Authorization": `Bearer ${serviceRoleKey}`,
+          "Content-Type": "application/json",
         },
         body: JSON.stringify({
           email,
           password,
           email_confirm: true,
-          user_metadata: {
-            first_name: firstName,
-            last_name: lastName,
-          }
-        })
+        }),
       }
     );
 
-    if (!signUpResponse.ok) {
-      const error = await signUpResponse.json();
-      throw new Error(error.message || 'Failed to create user');
+    if (!createUserResponse.ok) {
+      const error = await createUserResponse.json();
+      console.error("Failed to create user:", error);
+      throw new Error(error.message || "Failed to create user");
     }
 
-    const { id: userId } = await signUpResponse.json();
+    const { user } = await createUserResponse.json();
+    console.log("User created successfully:", user.id);
 
-    // Create the user profile
-    const profileResponse = await fetch(
-      `${Deno.env.get('SUPABASE_URL')}/rest/v1/user_profiles`,
-      {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'apikey': Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '',
-        },
-        body: JSON.stringify({
-          id: userId,
-          email,
-          first_name: firstName,
-          last_name: lastName,
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString()
-        })
-      }
-    );
-
-    if (!profileResponse.ok) {
-      // If profile creation fails, delete the user to maintain consistency
-      await fetch(
-        `${Deno.env.get('SUPABASE_URL')}/auth/v1/admin/users/${userId}`,
+    // Create user profile if firstName or lastName is provided
+    if (firstName || lastName) {
+      console.log("Creating user profile");
+      const createProfileResponse = await fetch(
+        `${Deno.env.get("SUPABASE_URL")}/rest/v1/user_profiles`,
         {
-          method: 'DELETE',
+          method: "POST",
           headers: {
-            'apikey': Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '',
-          }
+            "Authorization": `Bearer ${serviceRoleKey}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            user_id: user.id,
+            first_name: firstName || null,
+            last_name: lastName || null,
+          }),
         }
       );
-      throw new Error('Failed to create user profile');
+
+      if (!createProfileResponse.ok) {
+        const error = await createProfileResponse.json();
+        console.error("Failed to create user profile:", error);
+        throw new Error(error.message || "Failed to create user profile");
+      }
+      console.log("User profile created successfully");
     }
 
-    // Sign in the user to get a session
+    // Sign in the user using regular auth endpoint
+    console.log("Signing in user");
     const signInResponse = await fetch(
-      `${Deno.env.get('SUPABASE_URL')}/auth/v1/token?grant_type=password`,
+      `${Deno.env.get("SUPABASE_URL")}/auth/v1/token?grant_type=password`,
       {
-        method: 'POST',
+        method: "POST",
         headers: {
-          'Content-Type': 'application/json',
-          'apikey': Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '',
+          "apikey": Deno.env.get("SUPABASE_ANON_KEY") ?? "",
+          "Content-Type": "application/json",
         },
-        body: JSON.stringify({ email, password })
+        body: JSON.stringify({ email, password }),
       }
     );
 
     if (!signInResponse.ok) {
-      throw new Error('Failed to sign in user');
+      const error = await signInResponse.json();
+      console.error("Failed to sign in user:", error);
+      throw new Error(error.message || "Failed to sign in user");
     }
 
-    const { access_token, refresh_token, expires_at } = await signInResponse.json();
+    const { access_token, refresh_token } = await signInResponse.json();
+    console.log("User signed in successfully");
 
-    return new Response(
-      JSON.stringify({
-        user: {
-          id: userId,
-          email,
-          firstName,
-          lastName,
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString()
-        },
-        session: {
-          accessToken: access_token,
-          refreshToken: refresh_token,
-          expiresAt: expires_at
-        }
-      }),
-      { 
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        status: 200,
-      }
-    );
+    return createSuccessResponse({
+      user: {
+        id: user.id,
+        email: user.email,
+        role: user.role,
+        createdAt: user.created_at,
+        updatedAt: user.updated_at,
+      },
+      access_token,
+      refresh_token,
+    });
   } catch (error) {
-    return new Response(
-      JSON.stringify({ 
-        error: error instanceof Error ? error.message : 'An unknown error occurred',
-      }),
-      { 
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        status: 500,
-      }
+    console.error("Registration error:", error);
+    return createErrorResponse(
+      error instanceof Error ? error.message : "Registration failed",
+      error instanceof Error && error.message.includes("already registered") ? 409 : 400
     );
   }
-} 
+}); 
