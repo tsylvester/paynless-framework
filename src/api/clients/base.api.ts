@@ -108,6 +108,16 @@ export class BaseApiClient {
           console.error("Response data:", error.response.data);
           console.error("Response status:", error.response.status);
           console.error("Response headers:", error.response.headers);
+
+          // Handle 401 errors
+          if (error.response.status === 401) {
+            // Clear tokens
+            localStorage.removeItem('accessToken');
+            localStorage.removeItem('refreshToken');
+            
+            // Redirect to login
+            window.location.href = '/login';
+          }
         } else if (error.request) {
           console.error("Request error (no response received):", error.request);
         } else {

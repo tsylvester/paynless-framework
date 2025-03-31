@@ -15,7 +15,7 @@ export default async function handleMe(req: Request) {
 
     // Get the current user using regular auth endpoint
     const userResponse = await fetch(
-      `${Deno.env.get('SUPABASE_URL')}/auth/v1/user`,
+      `${Deno.env.get('SUPABASE_URL')}/user`,
       {
         headers: {
           'Content-Type': 'application/json',

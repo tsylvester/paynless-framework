@@ -17,7 +17,7 @@ export default async function handleRefresh(req: Request) {
 
     // Use REST API for token refresh
     const refreshResponse = await fetch(
-      `${Deno.env.get('SUPABASE_URL')}/auth/v1/token?grant_type=refresh_token`,
+      `${Deno.env.get('SUPABASE_URL')}/token?grant_type=refresh_token`,
       {
         method: 'POST',
         headers: {

@@ -37,10 +37,11 @@ export function AuthProvider({ children }: AuthProviderProps) {
   useEffect(() => {
     const loadUser = async () => {
       try {
+        // Check if we have tokens in localStorage
         const accessToken = localStorage.getItem('accessToken');
         const refreshToken = localStorage.getItem('refreshToken');
 
-        // Only try to load user if we have tokens
+        // If no tokens, set not loading and return
         if (!accessToken || !refreshToken) {
           setState({
             user: null,
@@ -68,6 +69,10 @@ export function AuthProvider({ children }: AuthProviderProps) {
           error: error instanceof Error ? error.message : 'Unknown error',
         });
         
+        // Clear tokens on error
+        localStorage.removeItem('accessToken');
+        localStorage.removeItem('refreshToken');
+        
         setState({
           user: null,
           session: null,
@@ -91,7 +96,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
         session: user ? {
           accessToken: localStorage.getItem('accessToken') || '',
           refreshToken: localStorage.getItem('refreshToken') || '',
-          expiresAt: 0, // We'd get this from the token if needed
+          expiresAt: 0,
         } : null,
         isLoading: false,
         error: null,
@@ -157,6 +162,10 @@ export function AuthProvider({ children }: AuthProviderProps) {
     
     try {
       await authService.logout();
+      
+      // Clear tokens
+      localStorage.removeItem('accessToken');
+      localStorage.removeItem('refreshToken');
       
       setState({
         user: null,

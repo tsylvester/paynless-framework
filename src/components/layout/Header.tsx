@@ -47,98 +47,100 @@ export function Header() {
                 <Home className="h-6 w-6" />
               </Link>
             </div>
-            <nav className="hidden sm:ml-6 sm:flex sm:space-x-4">
-              <Link
-                to="/feed"
-                className={`${isActive('/feed') 
-                  ? 'border-primary text-textPrimary' 
-                  : 'border-transparent text-textSecondary hover:border-border hover:text-textPrimary'
-                } inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium`}
-              >
-                Feed
-              </Link>
-              <Link
-                to="/dashboard"
-                className={`${isActive('/dashboard') 
-                  ? 'border-primary text-textPrimary' 
-                  : 'border-transparent text-textSecondary hover:border-border hover:text-textPrimary'
-                } inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium`}
-              >
-                Dashboard
-              </Link>              
-              <Link
-                to="/discover"
-                className={`${isActive('/discover') 
-                  ? 'border-primary text-textPrimary' 
-                  : 'border-transparent text-textSecondary hover:border-border hover:text-textPrimary'
-                } inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium`}
-              >
-                Discover
-              </Link>
-              <Link
-                to="/notifications"
-                className={`${isActive('/notifications') 
-                  ? 'border-primary text-textPrimary' 
-                  : 'border-transparent text-textSecondary hover:border-border hover:text-textPrimary'
-                } inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium`}
-              >
-                Notifications
-              </Link>
-              <Link
-                to="/messages"
-                className={`${location.pathname.startsWith('/messages') 
-                  ? 'border-primary text-textPrimary' 
-                  : 'border-transparent text-textSecondary hover:border-border hover:text-textPrimary'
-                } inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium`}
-              >
-                Messages
-              </Link>
-              <Link
-                to="/calendar"
-                className={`${isActive('/calendar') 
-                  ? 'border-primary text-textPrimary' 
-                  : 'border-transparent text-textSecondary hover:border-border hover:text-textPrimary'
-                } inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium`}
-              >
-                Calendar
-              </Link>
-              <Link
-                to="/events"
-                className={`${isActive('/events') 
-                  ? 'border-primary text-textPrimary' 
-                  : 'border-transparent text-textSecondary hover:border-border hover:text-textPrimary'
-                } inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium`}
-              >
-                Events
-              </Link>
-              <Link
-                to="/locations"
-                className={`${isActive('/locations') 
-                  ? 'border-primary text-textPrimary' 
-                  : 'border-transparent text-textSecondary hover:border-border hover:text-textPrimary'
-                } inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium`}
-              >
-                Locations
-              </Link>
-              <Link
-                to="/my-content"
-                className={`${isActive('/my-content') 
-                  ? 'border-primary text-textPrimary' 
-                  : 'border-transparent text-textSecondary hover:border-border hover:text-textPrimary'
-                } inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium`}
-              >
-                My Content
-              </Link>
-              <Link
-                to="/communities"
-                className={`${isActive('/communities') 
-                  ? 'border-primary text-textPrimary' 
-                  : 'border-transparent text-textSecondary hover:border-border hover:text-textPrimary'
-                } inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium`}
-              >
-                Communities
-              </Link>
-            </nav>
+            {user && (
+              <nav className="hidden sm:ml-6 sm:flex sm:space-x-4">
+                <Link
+                  to="/feed"
+                  className={`${isActive('/feed') 
+                    ? 'border-primary text-textPrimary' 
+                    : 'border-transparent text-textSecondary hover:border-border hover:text-textPrimary'
+                  } inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium`}
+                >
+                  Feed
+                </Link>
+                <Link
+                  to="/dashboard"
+                  className={`${isActive('/dashboard') 
+                    ? 'border-primary text-textPrimary' 
+                    : 'border-transparent text-textSecondary hover:border-border hover:text-textPrimary'
+                  } inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium`}
+                >
+                  Dashboard
+                </Link>              
+                <Link
+                  to="/discover"
+                  className={`${isActive('/discover') 
+                    ? 'border-primary text-textPrimary' 
+                    : 'border-transparent text-textSecondary hover:border-border hover:text-textPrimary'
+                  } inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium`}
+                >
+                  Discover
+                </Link>
+                <Link
+                  to="/notifications"
+                  className={`${isActive('/notifications') 
+                    ? 'border-primary text-textPrimary' 
+                    : 'border-transparent text-textSecondary hover:border-border hover:text-textPrimary'
+                  } inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium`}
+                >
+                  Notifications
+                </Link>
+                <Link
+                  to="/messages"
+                  className={`${location.pathname.startsWith('/messages') 
+                    ? 'border-primary text-textPrimary' 
+                    : 'border-transparent text-textSecondary hover:border-border hover:text-textPrimary'
+                  } inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium`}
+                >
+                  Messages
+                </Link>
+                <Link
+                  to="/calendar"
+                  className={`${isActive('/calendar') 
+                    ? 'border-primary text-textPrimary' 
+                    : 'border-transparent text-textSecondary hover:border-border hover:text-textPrimary'
+                  } inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium`}
+                >
+                  Calendar
+                </Link>
+                <Link
+                  to="/events"
+                  className={`${isActive('/events') 
+                    ? 'border-primary text-textPrimary' 
+                    : 'border-transparent text-textSecondary hover:border-border hover:text-textPrimary'
+                  } inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium`}
+                >
+                  Events
+                </Link>
+                <Link
+                  to="/locations"
+                  className={`${isActive('/locations') 
+                    ? 'border-primary text-textPrimary' 
+                    : 'border-transparent text-textSecondary hover:border-border hover:text-textPrimary'
+                  } inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium`}
+                >
+                  Locations
+                </Link>
+                <Link
+                  to="/my-content"
+                  className={`${isActive('/my-content') 
+                    ? 'border-primary text-textPrimary' 
+                    : 'border-transparent text-textSecondary hover:border-border hover:text-textPrimary'
+                  } inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium`}
+                >
+                  My Content
+                </Link>
+                <Link
+                  to="/communities"
+                  className={`${isActive('/communities') 
+                    ? 'border-primary text-textPrimary' 
+                    : 'border-transparent text-textSecondary hover:border-border hover:text-textPrimary'
+                  } inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium`}
+                >
+                  Communities
+                </Link>
+              </nav>
+            )}
           </div>
           
           <div className="hidden sm:ml-6 sm:flex sm:items-center space-x-4">
@@ -232,103 +234,120 @@ export function Header() {
       {/* Mobile menu */}
       {isMenuOpen && (
         <div className="sm:hidden bg-surface">
-          <div className="pt-2 pb-3 space-y-1">
-            <Link
-              to="/feed"
-              className={`${isActive('/feed') 
-                ? 'bg-primary/10 border-primary text-primary' 
-                : 'border-transparent text-textSecondary hover:bg-surface hover:border-border hover:text-textPrimary'
-              } block pl-3 pr-4 py-2 border-l-4 text-base font-medium`}
-            >
-              Feed
-            </Link>
-            <Link
-              to="/discover"
-              className={`${isActive('/discover') 
-                ? 'bg-primary/10 border-primary text-primary' 
-                : 'border-transparent text-textSecondary hover:bg-surface hover:border-border hover:text-textPrimary'
-              } block pl-3 pr-4 py-2 border-l-4 text-base font-medium flex items-center`}
-            >
-              <UserPlus className="h-5 w-5 mr-2" />
-              Discover
-            </Link>
-            <Link
-              to="/notifications"
-              className={`${isActive('/notifications') 
-                ? 'bg-primary/10 border-primary text-primary' 
-                : 'border-transparent text-textSecondary hover:bg-surface hover:border-border hover:text-textPrimary'
-              } block pl-3 pr-4 py-2 border-l-4 text-base font-medium flex items-center`}
-            >
-              <Bell className="h-5 w-5 mr-2" />
-              Notifications
-            </Link>
-            <Link
-              to="/messages"
-              className={`${location.pathname.startsWith('/messages') 
-                ? 'bg-primary/10 border-primary text-primary' 
-                : 'border-transparent text-textSecondary hover:bg-surface hover:border-border hover:text-textPrimary'
-              } block pl-3 pr-4 py-2 border-l-4 text-base font-medium flex items-center`}
-            >
-              <MessageCircle className="h-5 w-5 mr-2" />
-              Messages
-            </Link>
-            <Link
-              to="/calendar"
-              className={`${isActive('/calendar') 
-                ? 'bg-primary/10 border-primary text-primary' 
-                : 'border-transparent text-textSecondary hover:bg-surface hover:border-border hover:text-textPrimary'
-              } block pl-3 pr-4 py-2 border-l-4 text-base font-medium flex items-center`}
-            >
-              <CalendarIcon className="h-5 w-5 mr-2" />
-              Calendar
-            </Link>
-            <Link
-              to="/events"
-              className={`${isActive('/events') 
-                ? 'bg-primary/10 border-primary text-primary' 
-                : 'border-transparent text-textSecondary hover:bg-surface hover:border-border hover:text-textPrimary'
-              } block pl-3 pr-4 py-2 border-l-4 text-base font-medium flex items-center`}
-            >
-              <LayoutIcon className="h-5 w-5 mr-2" />
-              Events
-            </Link>
-            <Link
-              to="/locations"
-              className={`${isActive('/locations') 
-                ? 'bg-primary/10 border-primary text-primary' 
-                : 'border-transparent text-textSecondary hover:bg-surface hover:border-border hover:text-textPrimary'
-              } block pl-3 pr-4 py-2 border-l-4 text-base font-medium flex items-center`}
-            >
-              <MapPin className="h-5 w-5 mr-2" />
-              Locations
-            </Link>
-            <Link
-              to="/my-content"
-              className={`${isActive('/my-content') 
-                ? 'bg-primary/10 border-primary text-primary' 
-                : 'border-transparent text-textSecondary hover:bg-surface hover:border-border hover:text-textPrimary'
-              } block pl-3 pr-4 py-2 border-l-4 text-base font-medium flex items-center`}
-            >
-              <LayoutIcon className="h-5 w-5 mr-2" />
-              My Content
-            </Link>
-            <Link
-              to="/communities"
-              className={`${isActive('/communities') 
-                ? 'bg-primary/10 border-primary text-primary' 
-                : 'border-transparent text-textSecondary hover:bg-surface hover:border-border hover:text-textPrimary'
-              } block pl-3 pr-4 py-2 border-l-4 text-base font-medium flex items-center`}
-            >
-              <Building2 className="h-5 w-5 mr-2" />
-              Communities
-            </Link>
-          </div>
+          {user ? (
+            <div className="pt-2 pb-3 space-y-1">
+              <Link
+                to="/feed"
+                className={`${isActive('/feed') 
+                  ? 'bg-primary/10 border-primary text-primary' 
+                  : 'border-transparent text-textSecondary hover:bg-surface hover:border-border hover:text-textPrimary'
+                } block pl-3 pr-4 py-2 border-l-4 text-base font-medium`}
+              >
+                Feed
+              </Link>
+              <Link
+                to="/discover"
+                className={`${isActive('/discover') 
+                  ? 'bg-primary/10 border-primary text-primary' 
+                  : 'border-transparent text-textSecondary hover:bg-surface hover:border-border hover:text-textPrimary'
+                } block pl-3 pr-4 py-2 border-l-4 text-base font-medium flex items-center`}
+              >
+                <UserPlus className="h-5 w-5 mr-2" />
+                Discover
+              </Link>
+              <Link
+                to="/notifications"
+                className={`${isActive('/notifications') 
+                  ? 'bg-primary/10 border-primary text-primary' 
+                  : 'border-transparent text-textSecondary hover:bg-surface hover:border-border hover:text-textPrimary'
+                } block pl-3 pr-4 py-2 border-l-4 text-base font-medium flex items-center`}
+              >
+                <Bell className="h-5 w-5 mr-2" />
+                Notifications
+              </Link>
+              <Link
+                to="/messages"
+                className={`${location.pathname.startsWith('/messages') 
+                  ? 'bg-primary/10 border-primary text-primary' 
+                  : 'border-transparent text-textSecondary hover:bg-surface hover:border-border hover:text-textPrimary'
+                } block pl-3 pr-4 py-2 border-l-4 text-base font-medium flex items-center`}
+              >
+                <MessageCircle className="h-5 w-5 mr-2" />
+                Messages
+              </Link>
+              <Link
+                to="/calendar"
+                className={`${isActive('/calendar') 
+                  ? 'bg-primary/10 border-primary text-primary' 
+                  : 'border-transparent text-textSecondary hover:bg-surface hover:border-border hover:text-textPrimary'
+                } block pl-3 pr-4 py-2 border-l-4 text-base font-medium flex items-center`}
+              >
+                <CalendarIcon className="h-5 w-5 mr-2" />
+                Calendar
+              </Link>
+              <Link
+                to="/events"
+                className={`${isActive('/events') 
+                  ? 'bg-primary/10 border-primary text-primary' 
+                  : 'border-transparent text-textSecondary hover:bg-surface hover:border-border hover:text-textPrimary'
+                } block pl-3 pr-4 py-2 border-l-4 text-base font-medium flex items-center`}
+              >
+                <LayoutIcon className="h-5 w-5 mr-2" />
+                Events
+              </Link>
+              <Link
+                to="/locations"
+                className={`${isActive('/locations') 
+                  ? 'bg-primary/10 border-primary text-primary' 
+                  : 'border-transparent text-textSecondary hover:bg-surface hover:border-border hover:text-textPrimary'
+                } block pl-3 pr-4 py-2 border-l-4 text-base font-medium flex items-center`}
+              >
+                <MapPin className="h-5 w-5 mr-2" />
+                Locations
+              </Link>
+              <Link
+                to="/my-content"
+                className={`${isActive('/my-content') 
+                  ? 'bg-primary/10 border-primary text-primary' 
+                  : 'border-transparent text-textSecondary hover:bg-surface hover:border-border hover:text-textPrimary'
+                } block pl-3 pr-4 py-2 border-l-4 text-base font-medium flex items-center`}
+              >
+                <LayoutIcon className="h-5 w-5 mr-2" />
+                My Content
+              </Link>
+              <Link
+                to="/communities"
+                className={`${isActive('/communities') 
+                  ? 'bg-primary/10 border-primary text-primary' 
+                  : 'border-transparent text-textSecondary hover:bg-surface hover:border-border hover:text-textPrimary'
+                } block pl-3 pr-4 py-2 border-l-4 text-base font-medium flex items-center`}
+              >
+                <Building2 className="h-5 w-5 mr-2" />
+                Communities
+              </Link>
+            </div>
+          ) : (
+            <div className="pt-2 pb-3 space-y-1">
+              <Link
+                to="/login"
+                className="block pl-3 pr-4 py-2 border-l-4 text-base font-medium border-transparent text-textSecondary hover:bg-surface hover:border-border hover:text-textPrimary"
+              >
+                Login
+              </Link>
+              <Link
+                to="/register"
+                className="block pl-3 pr-4 py-2 border-l-4 text-base font-medium border-transparent text-textSecondary hover:bg-surface hover:border-border hover:text-textPrimary"
+              >
+                Register
+              </Link>
+            </div>
+          )}
           
           <div className="pt-4 pb-3 border-t border-border">
             <div className="px-4">
               <ThemeSelector />
             </div>
-            {user ? (
+            {user && (
               <>
                 <div className="flex items-center px-4 mt-4">
                   <div className="flex-shrink-0">
@@ -380,23 +399,6 @@ export function Header() {
                   </button>
                 </div>
               </>
-            ) : (
-              <div className="mt-3 space-y-1">
-                <Link
-                  to="/login"
-                  className="block px-4 py-2 text-base font-medium text-textSecondary hover:text-textPrimary hover:bg-surface"
-                  onClick={() => setIsMenuOpen(false)}
-                >
-                  Login
-                </Link>
-                <Link
-                  to="/register"
-                  className="block px-4 py-2 text-base font-medium text-textSecondary hover:text-textPrimary hover:bg-surface"
-                  onClick={() => setIsMenuOpen(false)}
-                >
-                  Register
-                </Link>
-              </div>
             )}
           </div>
         </div>

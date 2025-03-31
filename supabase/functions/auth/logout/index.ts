@@ -15,7 +15,7 @@ export default async function handleLogout(req: Request) {
 
     // Use regular auth endpoint for logout
     const logoutResponse = await fetch(
-      `${Deno.env.get('SUPABASE_URL')}/auth/v1/logout`,
+      `${Deno.env.get('SUPABASE_URL')}/logout`,
       {
         method: 'POST',
         headers: {

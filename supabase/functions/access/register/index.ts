@@ -1,17 +1,17 @@
 // supabase/functions/register/index.ts
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
-import { 
+/*import { 
   corsHeaders, 
   handleCorsPreflightRequest, 
   createErrorResponse, 
   createSuccessResponse 
-} from "../_shared/cors-headers.ts";
+} from "../_shared/cors-headers.ts";*/
 
 Deno.serve(async (req: Request) => {
   // Handle CORS preflight request
-  const corsResponse = handleCorsPreflightRequest(req);
-  if (corsResponse) return corsResponse;
+  /*const corsResponse = handleCorsPreflightRequest(req);
+  if (corsResponse) return corsResponse;*/
 
   try {
     const { email, password } = await req.json();
