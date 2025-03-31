@@ -91,6 +91,118 @@ export class ProfileService {
       return null;
     }
   }
+
+  /**
+   * Get user preferences
+   */
+  async getUserPreferences(userId: string): Promise<UserPreferences | null> {
+    try {
+      logger.info('Fetching user preferences', { userId });
+      
+      const response = await profileApiClient.getUserPreferences(userId);
+      
+      if (response.error || !response.data) {
+        logger.warn('Failed to get user preferences', { 
+          error: response.error,
+          userId,
+        });
+        return null;
+      }
+      
+      logger.info('User preferences fetched successfully', { userId });
+      return response.data;
+    } catch (error) {
+      logger.error('Unexpected error fetching user preferences', { 
+        error: error instanceof Error ? error.message : 'Unknown error',
+        userId,
+      });
+      return null;
+    }
+  }
+
+  /**
+   * Get user details
+   */
+  async getUserDetails(userId: string): Promise<UserDetails | null> {
+    try {
+      logger.info('Fetching user details', { userId });
+      
+      const response = await profileApiClient.getUserDetails(userId);
+      
+      if (response.error || !response.data) {
+        logger.warn('Failed to get user details', { 
+          error: response.error,
+          userId,
+        });
+        return null;
+      }
+      
+      logger.info('User details fetched successfully', { userId });
+      return response.data;
+    } catch (error) {
+      logger.error('Unexpected error fetching user details', { 
+        error: error instanceof Error ? error.message : 'Unknown error',
+        userId,
+      });
+      return null;
+    }
+  }
+
+  /**
+   * Update user preferences
+   */
+  async updateUserPreferences(userId: string, updates: Partial<UserPreferences>): Promise<UserPreferences | null> {
+    try {
+      logger.info('Updating user preferences', { userId });
+      
+      const response = await profileApiClient.updateUserPreferences(userId, updates);
+      
+      if (response.error || !response.data) {
+        logger.error('Failed to update user preferences', { 
+          error: response.error,
+          userId,
+        });
+        return null;
+      }
+      
+      logger.info('User preferences updated successfully', { userId });
+      return response.data;
+    } catch (error) {
+      logger.error('Unexpected error updating user preferences', { 
+        error: error instanceof Error ? error.message : 'Unknown error',
+        userId,
+      });
+      return null;
+    }
+  }
+
+  /**
+   * Update user details
+   */
+  async updateUserDetails(userId: string, updates: Partial<UserDetails>): Promise<UserDetails | null> {
+    try {
+      logger.info('Updating user details', { userId });
+      
+      const response = await profileApiClient.updateUserDetails(userId, updates);
+      
+      if (response.error || !response.data) {
+        logger.error('Failed to update user details', { 
+          error: response.error,
+          userId,
+        });
+        return null;
+      }
+      
+      logger.info('User details updated successfully', { userId });
+      return response.data;
+    } catch (error) {
+      logger.error('Unexpected error updating user details', { 
+        error: error instanceof Error ? error.message : 'Unknown error',
+        userId,
+      });
+      return null;
+    }
+  }
 }
 
 // Export singleton instance

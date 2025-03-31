@@ -1,68 +1,129 @@
 // User API endpoints
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
-import { 
-  createSupabaseClient, 
-  getUserId 
-} from "../_shared/supabase-client.ts";
-import { 
-  corsHeaders, 
-  handleCorsPreflightRequest, 
-  createErrorResponse 
-} from "../_shared/cors-headers.ts";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.3";
+import { corsHeaders } from "../_shared/cors-headers.ts"
 import { getProfile, updateProfile } from "./handlers/profile.ts";
+import { getPreferences, updatePreferences } from "./handlers/preferences.ts";
+import { getDetails, updateDetails } from "./handlers/details.ts";
 import { getSettings, updateSettings } from "./handlers/settings.ts";
 
 // Handle API routes
-serve(async (req: Request) => {
+serve(async (req) => {
   // Handle CORS preflight requests
-  const corsResponse = handleCorsPreflightRequest(req);
-  if (corsResponse) return corsResponse;
+  if (req.method === "OPTIONS") {
+    return new Response("ok", { headers: corsHeaders });
+  }
 
   try {
-    const url = new URL(req.url);
-    const path = url.pathname.replace(/^\/api-users/, "");
-    const supabase = createSupabaseClient(req);
-    
-    try {
-      // GET /profile - Get user profile
-      if (path === "/profile" && req.method === "GET") {
-        const userId = await getUserId(req);
-        return await getProfile(supabase, userId);
+    // Create a Supabase client with the Auth context of the logged in user
+    const supabaseClient = createClient(
+      Deno.env.get("SUPABASE_URL") ?? "",
+      Deno.env.get("SUPABASE_ANON_KEY") ?? "",
+      {
+        auth: {
+          persistSession: false,
+          autoRefreshToken: false,
+        },
       }
-      
-      // PUT /profile - Update user profile
-      else if (path === "/profile" && req.method === "PUT") {
-        const userId = await getUserId(req);
-        const profileData = await req.json();
-        return await updateProfile(supabase, userId, profileData);
-      }
-      
-      // GET /settings - Get user settings
-      else if (path === "/settings" && req.method === "GET") {
-        const userId = await getUserId(req);
-        return await getSettings(supabase, userId);
-      }
-      
-      // PUT /settings - Update user settings
-      else if (path === "/settings" && req.method === "PUT") {
-        const userId = await getUserId(req);
-        const newSettings = await req.json();
-        return await updateSettings(supabase, userId, newSettings);
-      }
-      
-      // Route not found
-      else {
-        return createErrorResponse("Not found", 404);
-      }
-    } catch (routeError) {
-      // Specific handling for authentication errors
-      if (routeError.message === "Unauthorized") {
-        return createErrorResponse("Unauthorized", 401);
-      }
-      throw routeError; // Let the outer catch handle other errors
+    );
+
+    // Get the authorization header
+    const authHeader = req.headers.get("Authorization");
+    if (!authHeader) {
+      return new Response(
+        JSON.stringify({ error: "No authorization header" }),
+        {
+          status: 401,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        }
+      );
     }
+
+    // Get the JWT token from the Authorization header
+    const token = authHeader.replace("Bearer ", "");
+    const { data: { user }, error: authError } = await supabaseClient.auth.getUser(token);
+
+    if (authError || !user) {
+      return new Response(
+        JSON.stringify({ error: "Invalid token" }),
+        {
+          status: 401,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        }
+      );
+    }
+
+    // Handle different routes
+    const url = new URL(req.url);
+    const path = url.pathname;
+
+    // Handle /me routes
+    if (path.startsWith("/me")) {
+      const subPath = path.slice(3); // Remove /me from the path
+
+      switch (subPath) {
+        case "":
+          if (req.method === "GET") {
+            return await getProfile(supabaseClient, user.id);
+          } else if (req.method === "PUT") {
+            const body = await req.json();
+            return await updateProfile(supabaseClient, user.id, body);
+          }
+          break;
+
+        case "/preferences":
+          if (req.method === "GET") {
+            return await getPreferences(supabaseClient, user.id);
+          } else if (req.method === "PUT") {
+            const body = await req.json();
+            return await updatePreferences(supabaseClient, user.id, body);
+          }
+          break;
+
+        case "/details":
+          if (req.method === "GET") {
+            return await getDetails(supabaseClient, user.id);
+          } else if (req.method === "PUT") {
+            const body = await req.json();
+            return await updateDetails(supabaseClient, user.id, body);
+          }
+          break;
+
+        case "/settings":
+          if (req.method === "GET") {
+            return await getSettings(supabaseClient, user.id);
+          } else if (req.method === "PUT") {
+            const body = await req.json();
+            return await updateSettings(supabaseClient, user.id, body);
+          }
+          break;
+
+      }
+    }
+
+    // Handle /profile/:userId routes
+    if (path.startsWith("/profile/")) {
+      const userId = path.split("/")[2];
+      if (req.method === "GET") {
+        return await getProfile(supabaseClient, userId);
+      }
+    }
+
+    // Return 404 for unknown routes
+    return new Response(
+      JSON.stringify({ error: "Not found" }),
+      {
+        status: 404,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      }
+    );
   } catch (error) {
-    console.error("Error handling request:", error);
-    return createErrorResponse(error.message);
+    return new Response(
+      JSON.stringify({ error: error.message }),
+      {
+        status: 500,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      }
+    );
   }
 });

@@ -39,44 +39,78 @@ export default async function handleMe(req: Request) {
       );
     }
 
-    // Get the user's profile
-    const { data: profile, error: profileError } = await supabase
-      .from('user_profiles')
-      .select('*')
-      .eq('id', user.id)
-      .single();
+    // Handle different HTTP methods
+    switch (req.method) {
+      case 'GET': {
+        // Get the user's profile
+        const { data: profile, error: profileError } = await supabase
+          .from('user_profiles')
+          .select('*')
+          .eq('id', user.id)
+          .single();
 
-    if (profileError) {
-      console.error('Error fetching profile:', profileError);
-      return new Response(
-        JSON.stringify({ error: 'Failed to fetch profile' }),
-        { 
-          status: 500,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        if (profileError) {
+          console.error('Error fetching profile:', profileError);
+          return new Response(
+            JSON.stringify({ error: 'Failed to fetch profile' }),
+            { 
+              status: 500,
+              headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+            }
+          );
         }
-      );
-    }
 
-    return new Response(
-      JSON.stringify({
-        user: {
-          id: user.id,
-          email: user.email,
-          role: user.role,
-          createdAt: user.created_at,
-          updatedAt: user.updated_at,
-        },
-        profile: profile || null,
-      }),
-      { 
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        status: 200,
+        return new Response(
+          JSON.stringify(profile || null),
+          { 
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+            status: 200,
+          }
+        );
       }
-    );
-  } catch (error) {
-    console.error('Error in me handler:', error);
+
+      case 'PUT': {
+        const updates = await req.json();
+        
+        const { data: profile, error: updateError } = await supabase
+          .from('user_profiles')
+          .update(updates)
+          .eq('id', user.id)
+          .select()
+          .single();
+
+        if (updateError) {
+          console.error('Error updating profile:', updateError);
+          return new Response(
+            JSON.stringify({ error: 'Failed to update profile' }),
+            { 
+              status: 500,
+              headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+            }
+          );
+        }
+
+        return new Response(
+          JSON.stringify(profile),
+          { 
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+            status: 200,
+          }
+        );
+      }
+
+      default:
+        return new Response(
+          JSON.stringify({ error: 'Method not allowed' }),
+          { 
+            status: 405,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          }
+        );
+    }
+  } catch (err) {
     return new Response(
-      JSON.stringify({ error: 'Internal server error' }),
+      JSON.stringify({ error: err.message }),
       { 
         status: 500,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },

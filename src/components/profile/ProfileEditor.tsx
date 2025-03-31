@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { User, Link as LinkIcon, Table as Tabs, Component as TabsContent, List as TabsList, Refrigerator as TabsTrigger } from 'lucide-react';
+import { User, Link as LinkIcon, Table as Tabs, Component as TabsContent, List as TabsList, Refrigerator as TabsTrigger, Loader } from 'lucide-react';
 import { BirthdaySettings } from './BirthdaySettings';
 import { GenderSelector } from './GenderSelector';
 import { LocationSelector } from './LocationSelector';
@@ -54,6 +54,7 @@ export function ProfileEditor({
 }: ProfileEditorProps) {
   // Current tab state
   const [currentTab, setCurrentTab] = useState<TabType>('basic');
+  const [isSaving, setIsSaving] = useState(false);
 
   // Basic info state
   const [firstName, setFirstName] = useState(profile.firstName || '');
@@ -126,16 +127,14 @@ export function ProfileEditor({
 
   // Error state
   const [error, setError] = useState<string | null>(null);
-  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setError(null);
-    setIsSubmitting(true);
+    if (isSaving) return;
 
+    setIsSaving(true);
     try {
-      // Save profile updates
-      await onSave({
+      const updates: Partial<UserProfile> = {
         firstName,
         lastName,
         avatarUrl,
@@ -146,23 +145,10 @@ export function ProfileEditor({
         location,
         sexuality,
         relationshipStatus,
-        religion,
-        politicalView,
-        education,
-        heightCm,
-        languages: profile.languages,
-        interests,
-        bio: profile.bio,
-        lookingFor,
-        children_status: profile.children_status,
-        occupation,
-        company,
-        school,
         privacySettings: {
+          ...profile.privacySettings,
           birthDate: birthdayPrivacy,
-          birthTime: birthTime ? birthdayPrivacy : PrivacyLevel.PRIVATE,
           gender: genderPrivacy,
-          pronouns: genderPrivacy,
           location: locationPrivacy,
           sexuality: sexualityPrivacy,
           relationshipStatus: relationshipStatusPrivacy,
@@ -170,82 +156,69 @@ export function ProfileEditor({
           politicalView: politicalViewPrivacy,
           education: educationPrivacy,
           height: physicalPrivacy,
-          languages: profile.privacySettings?.languages || PrivacyLevel.PUBLIC,
           interests: interestsPrivacy,
-          bio: profile.privacySettings?.bio || PrivacyLevel.PUBLIC,
           lookingFor: lookingForPrivacy,
-          children_status: profile.privacySettings?.children_status || PrivacyLevel.PUBLIC,
-          occupation: profile.privacySettings?.occupation || PrivacyLevel.PUBLIC,
-          company: profile.privacySettings?.company || PrivacyLevel.PRIVATE,
-          school: profile.privacySettings?.school || PrivacyLevel.PUBLIC,
-          email: profile.privacySettings?.email || PrivacyLevel.PRIVATE,
-          phone: profile.privacySettings?.phone || PrivacyLevel.PRIVATE,
         },
-        socialLinks,
-      });
+      };
 
-      // Save details if handler provided
-      if (onSaveDetails) {
-        await onSaveDetails({
-          tobaccoUse,
-          drinking,
-          cannabisUse,
-          otherDrugs,
-          privacyLevel: substanceUsePrivacy,
-        });
-      }
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to save profile');
+      await onSave(updates);
+    } catch (error) {
+      console.error('Error saving profile:', error);
     } finally {
-      setIsSubmitting(false);
+      setIsSaving(false);
+    }
+  };
+
+  const handleSavePreferences = async (updates: Partial<UserPreferences>) => {
+    if (!onSavePreferences || isSaving) return;
+
+    setIsSaving(true);
+    try {
+      await onSavePreferences(updates);
+    } catch (error) {
+      console.error('Error saving preferences:', error);
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleSaveDetails = async (updates: Partial<UserDetails>) => {
+    if (!onSaveDetails || isSaving) return;
+
+    setIsSaving(true);
+    try {
+      await onSaveDetails(updates);
+    } catch (error) {
+      console.error('Error saving details:', error);
+    } finally {
+      setIsSaving(false);
     }
   };
 
   return (
-    <div>
-      {/* Tabs */}
-      <div className="border-b border-border mb-6">
+    <div className="space-y-6">
+      {/* Tab Navigation */}
+      <div className="border-b border-gray-200">
         <nav className="-mb-px flex space-x-8">
-          <button
-            onClick={() => setCurrentTab('basic')}
-            className={`py-4 px-1 border-b-2 font-medium text-sm ${
-              currentTab === 'basic'
-                ? 'border-primary text-primary'
-                : 'border-transparent text-textSecondary hover:text-textPrimary hover:border-border'
-            }`}
-          >
-            Basic Information
-          </button>
-          <button
-            onClick={() => setCurrentTab('details')}
-            className={`py-4 px-1 border-b-2 font-medium text-sm ${
-              currentTab === 'details'
-                ? 'border-primary text-primary'
-                : 'border-transparent text-textSecondary hover:text-textPrimary hover:border-border'
-            }`}
-          >
-            Additional Details
-          </button>
-          <button
-            onClick={() => setCurrentTab('preferences')}
-            className={`py-4 px-1 border-b-2 font-medium text-sm ${
-              currentTab === 'preferences'
-                ? 'border-primary text-primary'
-                : 'border-transparent text-textSecondary hover:text-textPrimary hover:border-border'
-            }`}
-          >
-            Match Preferences
-          </button>
+          {tabs.map((tab) => (
+            <button
+              key={tab.id}
+              onClick={() => setCurrentTab(tab.id)}
+              className={`
+                whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm
+                ${currentTab === tab.id
+                  ? 'border-primary text-primary'
+                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                }
+              `}
+            >
+              {tab.name}
+            </button>
+          ))}
         </nav>
       </div>
 
-      {error && (
-        <div className="mb-6 p-4 bg-red-50 text-red-700 rounded-lg">
-          {error}
-        </div>
-      )}
-
-      {/* Basic Information Tab */}
+      {/* Tab Content */}
       {currentTab === 'basic' && (
         <form onSubmit={handleSubmit} className="space-y-8">
           {/* Basic Info */}
@@ -272,6 +245,7 @@ export function ProfileEditor({
                   onChange={(e) => setFirstName(e.target.value)}
                   placeholder="First Name"
                   className="input"
+                  disabled={isSaving}
                 />
                 <input
                   type="text"
@@ -279,6 +253,7 @@ export function ProfileEditor({
                   onChange={(e) => setLastName(e.target.value)}
                   placeholder="Last Name"
                   className="input"
+                  disabled={isSaving}
                 />
               </div>
             </div>
@@ -286,20 +261,21 @@ export function ProfileEditor({
 
           {/* Birthday Settings */}
           <div className="space-y-6">
-            <h3 className="text-lg font-medium text-textPrimary">Birthday Information</h3>
+            <h3 className="text-lg font-medium text-textPrimary">Birthday Settings</h3>
             <BirthdaySettings
               birthDate={birthDate}
               birthTime={birthTime}
               showAge={showAge}
               showBirthday={showBirthday}
-              enableNotifications={enableBirthdayNotifications}
+              enableBirthdayNotifications={enableBirthdayNotifications}
               privacyLevel={birthdayPrivacy}
               onBirthDateChange={setBirthDate}
               onBirthTimeChange={setBirthTime}
               onShowAgeChange={setShowAge}
               onShowBirthdayChange={setShowBirthday}
-              onEnableNotificationsChange={setEnableBirthdayNotifications}
+              onEnableBirthdayNotificationsChange={setEnableBirthdayNotifications}
               onPrivacyLevelChange={setBirthdayPrivacy}
+              disabled={isSaving}
             />
           </div>
 
@@ -327,16 +303,26 @@ export function ProfileEditor({
             />
           </div>
 
-          {/* Submit Button */}
           <div className="flex justify-end">
             <button
               type="submit"
-              disabled={isSubmitting}
-              className={`px-6 py-2 bg-primary text-white rounded-md ${
-                isSubmitting ? 'opacity-50 cursor-not-allowed' : 'hover:bg-opacity-90'
-              }`}
+              disabled={isSaving}
+              className={`
+                px-4 py-2 rounded-md text-sm font-medium text-white
+                ${isSaving
+                  ? 'bg-primary/70 cursor-not-allowed'
+                  : 'bg-primary hover:bg-primary-dark'
+                }
+              `}
             >
-              {isSubmitting ? 'Saving...' : 'Save Changes'}
+              {isSaving ? (
+                <div className="flex items-center">
+                  <Loader className="h-4 w-4 mr-2 animate-spin" />
+                  Saving...
+                </div>
+              ) : (
+                'Save Changes'
+              )}
             </button>
           </div>
         </form>
@@ -490,16 +476,26 @@ export function ProfileEditor({
             />
           </div>
 
-          {/* Submit Button */}
           <div className="flex justify-end">
             <button
               type="submit"
-              disabled={isSubmitting}
-              className={`px-6 py-2 bg-primary text-white rounded-md ${
-                isSubmitting ? 'opacity-50 cursor-not-allowed' : 'hover:bg-opacity-90'
-              }`}
+              disabled={isSaving}
+              className={`
+                px-4 py-2 rounded-md text-sm font-medium text-white
+                ${isSaving
+                  ? 'bg-primary/70 cursor-not-allowed'
+                  : 'bg-primary hover:bg-primary-dark'
+                }
+              `}
             >
-              {isSubmitting ? 'Saving...' : 'Save Changes'}
+              {isSaving ? (
+                <div className="flex items-center">
+                  <Loader className="h-4 w-4 mr-2 animate-spin" />
+                  Saving...
+                </div>
+              ) : (
+                'Save Changes'
+              )}
             </button>
           </div>
         </form>
@@ -509,7 +505,7 @@ export function ProfileEditor({
       {currentTab === 'preferences' && preferences && onSavePreferences && (
         <PreferencesEditor
           preferences={preferences}
-          onSave={onSavePreferences}
+          onSave={handleSavePreferences}
         />
       )}
     </div>
