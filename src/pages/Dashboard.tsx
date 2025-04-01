@@ -1,10 +1,10 @@
 import React from 'react';
 import { Layout } from '../components/layout/Layout';
-import { useAuth } from '../hooks/useAuth';
 import { Navigate } from 'react-router-dom';
+import { useAuthStore } from '../store/authStore';
 
 export function DashboardPage() {
-  const { user, isLoading } = useAuth();
+  const { user, isLoading } = useAuthStore();
   
   if (isLoading) {
     return (

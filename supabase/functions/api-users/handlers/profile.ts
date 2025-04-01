@@ -1,5 +1,5 @@
 import { SupabaseClient } from "npm:@supabase/supabase-js@2.39.3";
-import { corsHeaders, UserProfile, UpdateProfileRequest, PrivacyLevel } from "../types.ts";
+import { corsHeaders, UpdateProfileRequest } from "../types.ts";
 
 /**
  * Get user profile
@@ -32,17 +32,6 @@ export const getProfile = async (
             firstName: null,
             lastName: null,
             role: "user",
-            privacySettings: {
-              birthDate: "public",
-              birthTime: "private",
-              gender: "public",
-              pronouns: "public",
-              location: "public",
-              sexuality: "private",
-              relationshipStatus: "public",
-              email: "private",
-              phone: "private"
-            }
           }
         ])
         .select()

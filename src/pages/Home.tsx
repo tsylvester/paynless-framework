@@ -2,10 +2,10 @@ import React from 'react';
 import { Layout } from '../components/layout/Layout';
 import { ArrowRight, Database, Lock, Server } from 'lucide-react';
 import { Link } from 'react-router-dom';
-import { useAuth } from '../hooks/useAuth';
+import { useAuthStore } from '../store/authStore';
 
 export function HomePage() {
-  const { user } = useAuth();
+  const { user } = useAuthStore();
   
   return (
     <Layout>

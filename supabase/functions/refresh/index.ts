@@ -7,6 +7,12 @@ import {
 } from "../_shared/cors-headers.ts";
 import { verifyApiKey, createUnauthorizedResponse } from "../_shared/auth.ts";
 
+/**
+ * NOTE: Edge functions don't return console logs to us in production environments.
+ * Avoid using console.log/error/warn/info for debugging as they won't be visible
+ * and can affect function execution.
+ */
+
 serve(async (req) => {
   // Handle CORS preflight request first
   const corsResponse = handleCorsPreflightRequest(req);
@@ -19,28 +25,34 @@ serve(async (req) => {
   }
 
   try {
-    const { refresh_token } = await req.json();
+    // Initialize Supabase client with Authorization header in global config
+    const supabaseClient = createClient(
+      Deno.env.get('SUPABASE_URL')!,
+      Deno.env.get('SUPABASE_ANON_KEY')!,
+      {
+        global: {
+          headers: { Authorization: req.headers.get('Authorization')! },
+        },
+      }
+    );
 
-    if (!refresh_token) {
+    // Get token from Authorization header
+    const token = req.headers.get('Authorization')?.replace('Bearer ', '');
+    if (!token) {
       return createErrorResponse("Refresh token is required", 400);
     }
 
-    // Initialize Supabase client
-    // Unlike login/register, here we DO need the Authorization header
-    // We'll use the API Key for this refresh request
-    const supabaseClient = createClient(
-      Deno.env.get('SUPABASE_URL')!,
-      Deno.env.get('SUPABASE_ANON_KEY')!
-    );
-
-    // Try to refresh the session
-    const { data, error } = await supabaseClient.auth.refreshSession({ 
-      refresh_token 
-    });
+    // Refresh the session using the token
+    const { data, error } = await supabaseClient.auth.refreshSession(token);
 
     if (error) {
       console.error("Refresh error:", error);
       return createErrorResponse(error.message, 401);
+    }
+
+    if (!data || !data.session) {
+      console.error("No session data returned after successful refresh");
+      return createErrorResponse("Failed to refresh session", 500);
     }
 
     const { session, user } = data;

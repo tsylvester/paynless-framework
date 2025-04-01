@@ -2,13 +2,12 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { 
   createSupabaseAdminClient 
-} from "../_shared/supabase-client.ts";
+} from "../_shared/auth.ts";
 import { 
   getStripeClient, 
   verifyWebhookSignature 
 } from "../_shared/stripe-client.ts";
 import { 
-  corsHeaders, 
   handleCorsPreflightRequest, 
   createErrorResponse, 
   createSuccessResponse 

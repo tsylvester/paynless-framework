@@ -1,6 +1,10 @@
-import { SupabaseClient } from "npm:@supabase/supabase-js@2.39.3";
+import { SupabaseClient } from "../../_shared/auth.ts";
 import Stripe from "npm:stripe@14.11.0";
-import { corsHeaders, BillingPortalRequest, SessionResponse } from "../types.ts";
+import { 
+  createErrorResponse,
+  createSuccessResponse 
+} from "../../_shared/cors-headers.ts";
+import { BillingPortalRequest, SessionResponse } from "../types.ts";
 
 /**
  * Create a billing portal session
@@ -15,10 +19,7 @@ export const createBillingPortalSession = async (
     const { returnUrl } = request;
     
     if (!returnUrl) {
-      return new Response(JSON.stringify({ error: "Missing return URL" }), {
-        status: 400,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+      return createErrorResponse("Missing return URL", 400);
     }
     
     // Get user profile to check for Stripe customer ID
@@ -29,10 +30,7 @@ export const createBillingPortalSession = async (
       .single();
     
     if (userError || !userData.stripe_customer_id) {
-      return new Response(JSON.stringify({ error: "No Stripe customer found" }), {
-        status: 400,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+      return createErrorResponse("No Stripe customer found", 400);
     }
     
     // Create billing portal session
@@ -46,14 +44,8 @@ export const createBillingPortalSession = async (
       url: session.url,
     };
     
-    return new Response(JSON.stringify(response), {
-      status: 200,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
+    return createSuccessResponse(response);
   } catch (err) {
-    return new Response(JSON.stringify({ error: err.message }), {
-      status: 500,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
+    return createErrorResponse(err.message);
   }
 };

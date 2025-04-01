@@ -1,26 +1,25 @@
-import { corsHeaders } from '../_shared/cors-headers.ts';
-import { createSupabaseClient } from '../_shared/supabase-client.ts';
-import { verifyApiKey } from '../_shared/auth.ts';
+import "jsr:@supabase/functions-js/edge-runtime.d.ts";
+import { 
+  handleCorsPreflightRequest, 
+  createErrorResponse, 
+  createSuccessResponse 
+} from '../_shared/cors-headers.ts';
+import { 
+  createSupabaseClient, 
+  verifyApiKey,
+  createUnauthorizedResponse
+} from '../_shared/auth.ts';
 
-export default async function handleProfile(req: Request) {
-  // Handle CORS preflight request
-  if (req.method === 'OPTIONS') {
-    return new Response(null, {
-      headers: corsHeaders,
-      status: 204,
-    });
-  }
+// Use Deno.serve for Edge Function
+Deno.serve(async (req) => {
+  // Handle CORS preflight requests
+  const corsResponse = handleCorsPreflightRequest(req);
+  if (corsResponse) return corsResponse;
 
-  // Verify API key
+  // Verify API key for all non-OPTIONS requests
   const isValid = verifyApiKey(req);
   if (!isValid) {
-    return new Response(
-      JSON.stringify({ error: 'Invalid or missing API key' }),
-      { 
-        status: 401,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      }
-    );
+    return createUnauthorizedResponse("Invalid or missing apikey");
   }
 
   try {
@@ -30,13 +29,7 @@ export default async function handleProfile(req: Request) {
     const { data: { user }, error: userError } = await supabase.auth.getUser();
     
     if (userError || !user) {
-      return new Response(
-        JSON.stringify({ error: 'Not authenticated' }),
-        { 
-          status: 401,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        }
-      );
+      return createUnauthorizedResponse("Not authenticated");
     }
 
     // Handle different HTTP methods
@@ -51,22 +44,10 @@ export default async function handleProfile(req: Request) {
 
         if (profileError) {
           console.error('Error fetching profile:', profileError);
-          return new Response(
-            JSON.stringify({ error: 'Failed to fetch profile' }),
-            { 
-              status: 500,
-              headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-            }
-          );
+          return createErrorResponse("Failed to fetch profile", 500);
         }
 
-        return new Response(
-          JSON.stringify(profile || null),
-          { 
-            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-            status: 200,
-          }
-        );
+        return createSuccessResponse(profile || null);
       }
 
       case 'PUT': {
@@ -88,41 +69,20 @@ export default async function handleProfile(req: Request) {
 
         if (updateError) {
           console.error('Error updating profile:', updateError);
-          return new Response(
-            JSON.stringify({ error: 'Failed to update profile' }),
-            { 
-              status: 500,
-              headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-            }
-          );
+          return createErrorResponse("Failed to update profile", 500);
         }
 
-        return new Response(
-          JSON.stringify(profile),
-          { 
-            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-            status: 200,
-          }
-        );
+        return createSuccessResponse(profile);
       }
 
       default:
-        return new Response(
-          JSON.stringify({ error: 'Method not allowed' }),
-          { 
-            status: 405,
-            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-          }
-        );
+        return createErrorResponse("Method not allowed", 405);
     }
-  } catch (error) {
-    console.error('Error in profile handler:', error);
-    return new Response(
-      JSON.stringify({ error: 'Internal server error' }),
-      { 
-        status: 500,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      }
+  } catch (err) {
+    console.error("Unexpected error:", err);
+    return createErrorResponse(
+      err instanceof Error ? err.message : "An unexpected error occurred",
+      500
     );
   }
-} 
+}); 

@@ -1,8 +1,8 @@
 import React, { useState } from 'react';
-import { useAuth } from '../../hooks/useAuth';
 import { useNavigate, Link } from 'react-router-dom';
 import { Mail, Lock, AlertCircle } from 'lucide-react';
 import { logger } from '../../utils/logger';
+import { useAuthStore } from '../../store/authStore';
 
 interface LoginFormProps {
   onSuccess?: () => void;
@@ -15,7 +15,7 @@ export function LoginForm({ onSuccess, redirectPath = '/' }: LoginFormProps) {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   
-  const { login } = useAuth();
+  const login = useAuthStore(state => state.login);
   const navigate = useNavigate();
   
   const handleSubmit = async (e: React.FormEvent) => {

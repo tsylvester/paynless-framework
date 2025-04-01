@@ -1,9 +1,12 @@
 // Subscription API endpoints
+import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { 
   createSupabaseClient, 
-  getUserId 
-} from "../_shared/supabase-client.ts";
+  getUserId,
+  isAuthenticated,
+  createUnauthorizedResponse
+} from "../_shared/auth.ts";
 import { 
   getStripeClient, 
   getStripeMode 
@@ -22,7 +25,7 @@ import { createBillingPortalSession } from "./handlers/billing-portal.ts";
 import { getUsageMetrics } from "./handlers/usage.ts";
 
 // Handle API routes
-serve(async (req: Request) => {
+serve(async (req) => {
   // Handle CORS preflight requests
   const corsResponse = handleCorsPreflightRequest(req);
   if (corsResponse) return corsResponse;
@@ -30,6 +33,15 @@ serve(async (req: Request) => {
   try {
     const url = new URL(req.url);
     const path = url.pathname.replace(/^\/api-subscriptions/, "");
+    
+    // First verify authentication
+    const { isValid, userId, error } = await isAuthenticated(req);
+    
+    if (!isValid) {
+      return createUnauthorizedResponse(error || "Authentication failed");
+    }
+    
+    // Create Supabase client
     const supabase = createSupabaseClient(req);
     
     // Parse request body if it exists
@@ -48,8 +60,7 @@ serve(async (req: Request) => {
     try {
       // GET /current - Get current user subscription
       if (path === "/current" && req.method === "GET") {
-        const userId = await getUserId(req);
-        return await getCurrentSubscription(supabase, userId, isTestMode);
+        return await getCurrentSubscription(supabase, userId);
       }
       
       // GET /plans - List available plans
@@ -59,33 +70,28 @@ serve(async (req: Request) => {
       
       // POST /checkout - Create checkout session
       else if (path === "/checkout" && req.method === "POST") {
-        const userId = await getUserId(req);
         return await createCheckoutSession(supabase, stripe, userId, requestData as any, isTestMode);
       }
       
       // POST /:id/cancel - Cancel subscription
       else if (path.match(/^\/[^/]+\/cancel$/) && req.method === "POST") {
-        const userId = await getUserId(req);
         const subscriptionId = path.split("/")[1];
         return await cancelSubscription(supabase, stripe, userId, subscriptionId);
       }
       
       // POST /:id/resume - Resume subscription
       else if (path.match(/^\/[^/]+\/resume$/) && req.method === "POST") {
-        const userId = await getUserId(req);
         const subscriptionId = path.split("/")[1];
         return await resumeSubscription(supabase, stripe, userId, subscriptionId);
       }
       
       // POST /billing-portal - Create billing portal session
       else if (path === "/billing-portal" && req.method === "POST") {
-        const userId = await getUserId(req);
         return await createBillingPortalSession(supabase, stripe, userId, requestData as any);
       }
       
       // GET /usage/:metric - Get usage metrics
       else if (path.match(/^\/usage\/[^/]+$/) && req.method === "GET") {
-        const userId = await getUserId(req);
         const metric = path.split("/")[2];
         return await getUsageMetrics(supabase, userId, metric);
       }
@@ -95,14 +101,9 @@ serve(async (req: Request) => {
         return createErrorResponse("Not found", 404);
       }
     } catch (routeError) {
-      // Specific handling for authentication errors
-      if (routeError.message === "Unauthorized") {
-        return createErrorResponse("Unauthorized", 401);
-      }
-      throw routeError; // Let the outer catch handle other errors
+      return createErrorResponse(routeError.message, 500);
     }
   } catch (error) {
-    console.error("Error handling request:", error);
-    return createErrorResponse(error.message);
+    return createErrorResponse(error.message, 500);
   }
 });

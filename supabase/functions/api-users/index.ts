@@ -3,9 +3,6 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.3";
 import { corsHeaders } from "../_shared/cors-headers.ts"
 import { getProfile, updateProfile } from "./handlers/profile.ts";
-import { getPreferences, updatePreferences } from "./handlers/preferences.ts";
-import { getDetails, updateDetails } from "./handlers/details.ts";
-import { getSettings, updateSettings } from "./handlers/settings.ts";
 
 // Handle API routes
 serve(async (req) => {
@@ -70,34 +67,6 @@ serve(async (req) => {
             return await updateProfile(supabaseClient, user.id, body);
           }
           break;
-
-        case "/preferences":
-          if (req.method === "GET") {
-            return await getPreferences(supabaseClient, user.id);
-          } else if (req.method === "PUT") {
-            const body = await req.json();
-            return await updatePreferences(supabaseClient, user.id, body);
-          }
-          break;
-
-        case "/details":
-          if (req.method === "GET") {
-            return await getDetails(supabaseClient, user.id);
-          } else if (req.method === "PUT") {
-            const body = await req.json();
-            return await updateDetails(supabaseClient, user.id, body);
-          }
-          break;
-
-        case "/settings":
-          if (req.method === "GET") {
-            return await getSettings(supabaseClient, user.id);
-          } else if (req.method === "PUT") {
-            const body = await req.json();
-            return await updateSettings(supabaseClient, user.id, body);
-          }
-          break;
-
       }
     }
 

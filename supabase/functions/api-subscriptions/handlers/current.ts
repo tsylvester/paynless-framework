@@ -1,6 +1,5 @@
-import { SupabaseClient } from "npm:@supabase/supabase-js@2.39.3";
+import { SupabaseClient } from "../../_shared/auth.ts";
 import { 
-  corsHeaders, 
   createErrorResponse, 
   createSuccessResponse 
 } from "../../_shared/cors-headers.ts";
@@ -11,8 +10,7 @@ import { UserSubscription } from "../types.ts";
  */
 export const getCurrentSubscription = async (
   supabase: SupabaseClient,
-  userId: string,
-  isTestMode: boolean
+  userId: string
 ): Promise<Response> => {
   try {
     const { data, error } = await supabase
@@ -28,22 +26,10 @@ export const getCurrentSubscription = async (
       return createErrorResponse(error.message, 400);
     }
     
-    // If no subscription found or it doesn't match the test mode, return free status
-    if (!data || (data.subscription_plans?.metadata?.test_mode !== undefined && 
-                data.subscription_plans.metadata.test_mode !== isTestMode)) {
-      const freeSubscription: UserSubscription = {
-        id: null,
-        userId,
-        stripeCustomerId: null,
-        stripeSubscriptionId: null,
-        status: "free",
-        currentPeriodStart: null,
-        currentPeriodEnd: null,
-        cancelAtPeriodEnd: false,
-        plan: null,
-      };
-      
-      return createSuccessResponse(freeSubscription);
+    // User should always have a subscription record thanks to the database trigger
+    // But handle the rare case where they might not
+    if (!data) {
+      return createErrorResponse("Subscription not found", 404);
     }
     
     // Transform the response to match client-side types

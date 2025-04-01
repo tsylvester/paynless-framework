@@ -1,4 +1,3 @@
-// src/services/auth/login.service.ts
 import { authApiClient } from '../../api/clients/auth';
 import { LoginCredentials, User } from '../../types/auth.types';
 import { logger } from '../../utils/logger';
@@ -24,9 +23,8 @@ export class LoginService {
         return null;
       }
       
-      // If tokens were already stored in the API client, we don't need to do it again
-      // But we can double-check
-      if (response.data.session && !localStorage.getItem('accessToken')) {
+      // Store tokens in localStorage
+      if (response.data.session) {
         localStorage.setItem('accessToken', response.data.session.accessToken);
         localStorage.setItem('refreshToken', response.data.session.refreshToken);
       }

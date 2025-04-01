@@ -1,15 +1,9 @@
-import { useContext } from 'react';
-import { SubscriptionContext } from '../context/subscription.context';
+import { useSubscriptionStore } from '../store/subscriptionStore';
 
 /**
- * Hook to access subscription context
+ * Hook to access subscription state and actions
+ * Acts as a compatibility layer for components still using the old hook
  */
 export function useSubscription() {
-  const context = useContext(SubscriptionContext);
-  
-  if (context === undefined) {
-    throw new Error('useSubscription must be used within a SubscriptionProvider');
-  }
-  
-  return context;
+  return useSubscriptionStore();
 }

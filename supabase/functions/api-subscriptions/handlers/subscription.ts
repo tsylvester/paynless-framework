@@ -1,6 +1,9 @@
-import { SupabaseClient } from "npm:@supabase/supabase-js@2.39.3";
+import { SupabaseClient } from "../../_shared/auth.ts";
 import Stripe from "npm:stripe@14.11.0";
-import { corsHeaders } from "../types.ts";
+import { 
+  createErrorResponse, 
+  createSuccessResponse 
+} from "../../_shared/cors-headers.ts";
 
 /**
  * Cancel a subscription at period end
@@ -21,17 +24,11 @@ export const cancelSubscription = async (
       .single();
     
     if (subscriptionError || !subscription) {
-      return new Response(JSON.stringify({ error: "Subscription not found or access denied" }), {
-        status: 404,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+      return createErrorResponse("Subscription not found or access denied", 404);
     }
     
     if (!subscription.stripe_subscription_id) {
-      return new Response(JSON.stringify({ error: "No active Stripe subscription found" }), {
-        status: 400,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+      return createErrorResponse("No active Stripe subscription found", 400);
     }
     
     // Cancel the subscription at period end
@@ -45,15 +42,10 @@ export const cancelSubscription = async (
       .update({ cancel_at_period_end: true })
       .eq("id", subscriptionId);
     
-    return new Response(JSON.stringify({ success: true }), {
-      status: 200,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
+    return createSuccessResponse({ success: true });
   } catch (err) {
-    return new Response(JSON.stringify({ error: err.message }), {
-      status: 500,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
+    console.error("Error cancelling subscription:", err);
+    return createErrorResponse(err.message);
   }
 };
 
@@ -76,17 +68,11 @@ export const resumeSubscription = async (
       .single();
     
     if (subscriptionError || !subscription) {
-      return new Response(JSON.stringify({ error: "Subscription not found or access denied" }), {
-        status: 404,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+      return createErrorResponse("Subscription not found or access denied", 404);
     }
     
     if (!subscription.stripe_subscription_id) {
-      return new Response(JSON.stringify({ error: "No active Stripe subscription found" }), {
-        status: 400,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+      return createErrorResponse("No active Stripe subscription found", 400);
     }
     
     // Resume the subscription
@@ -100,14 +86,9 @@ export const resumeSubscription = async (
       .update({ cancel_at_period_end: false })
       .eq("id", subscriptionId);
     
-    return new Response(JSON.stringify({ success: true }), {
-      status: 200,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
+    return createSuccessResponse({ success: true });
   } catch (err) {
-    return new Response(JSON.stringify({ error: err.message }), {
-      status: 500,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
+    console.error("Error resuming subscription:", err);
+    return createErrorResponse(err.message);
   }
 };

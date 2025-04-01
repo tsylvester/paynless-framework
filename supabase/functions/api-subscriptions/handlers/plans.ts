@@ -1,4 +1,4 @@
-import { SupabaseClient } from "npm:@supabase/supabase-js@2.39.3";
+import { SupabaseClient } from "../../_shared/auth.ts";
 import { 
   createErrorResponse, 
   createSuccessResponse 

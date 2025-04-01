@@ -8,7 +8,7 @@ interface AuthContextType extends AuthState {
   register: (email: string, password: string) => Promise<User | null>;
   logout: () => Promise<void>;
   resetPassword: (email: string) => Promise<boolean>;
-  refreshSession: () => Promise<boolean>; // New method
+  refreshSession: () => Promise<boolean>;
 }
 
 // Create context with default values
@@ -21,7 +21,7 @@ export const AuthContext = createContext<AuthContextType>({
   register: async () => null,
   logout: async () => {},
   resetPassword: async () => false,
-  refreshSession: async () => false, // New default method
+  refreshSession: async () => false,
 });
 
 interface AuthProviderProps {
@@ -39,12 +39,11 @@ export function AuthProvider({ children }: AuthProviderProps) {
   // Function to refresh the session
   const refreshSession = async (): Promise<boolean> => {
     try {
-      // Check if we have tokens in localStorage
-      const accessToken = localStorage.getItem('accessToken');
+      // Check if we have refresh token in localStorage
       const refreshToken = localStorage.getItem('refreshToken');
 
-      if (!accessToken || !refreshToken) {
-        logger.warn('Cannot refresh session: missing tokens');
+      if (!refreshToken) {
+        logger.warn('Cannot refresh session: missing refresh token');
         return false;
       }
 
@@ -78,12 +77,23 @@ export function AuthProvider({ children }: AuthProviderProps) {
   useEffect(() => {
     const loadUser = async () => {
       try {
+        logger.info('Loading auth state');
+        
         // Check if we have tokens in localStorage
         const accessToken = localStorage.getItem('accessToken');
         const refreshToken = localStorage.getItem('refreshToken');
 
+        // Log token status
+        logger.debug('Token status:', { 
+          hasAccessToken: !!accessToken,
+          hasRefreshToken: !!refreshToken,
+          accessTokenLength: accessToken?.length,
+          refreshTokenLength: refreshToken?.length
+        });
+
         // If no tokens, set not loading and return
         if (!accessToken || !refreshToken) {
+          logger.info('No tokens found in localStorage');
           setState({
             user: null,
             session: null,
@@ -95,9 +105,11 @@ export function AuthProvider({ children }: AuthProviderProps) {
 
         // Try to get current user using the tokens
         try {
+          logger.info('Attempting to get current user');
           const user = await authService.getCurrentUser();
           
           if (user) {
+            logger.info('Current user retrieved successfully');
             setState({
               user,
               session: {
@@ -110,6 +122,8 @@ export function AuthProvider({ children }: AuthProviderProps) {
             });
             return;
           }
+          
+          logger.warn('getCurrentUser returned null');
         } catch (error) {
           // If getting current user fails, try to refresh the session
           logger.info('Current user fetch failed, trying to refresh session', {
@@ -119,13 +133,16 @@ export function AuthProvider({ children }: AuthProviderProps) {
           const success = await refreshSession();
           
           if (success) {
-            // Session refreshed successfully
+            logger.info('Session refreshed successfully');
             return;
           }
+          
+          logger.warn('Session refresh failed');
         }
         
         // If we get here, both getCurrentUser and refreshSession failed
         // Clear tokens and set user to null
+        logger.info('Clearing auth state after failed attempts');
         localStorage.removeItem('accessToken');
         localStorage.removeItem('refreshToken');
         
@@ -189,10 +206,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
     }
   };
   
-  const register = async (
-    email: string,
-    password: string,
-  ): Promise<User | null> => {
+  const register = async (email: string, password: string): Promise<User | null> => {
     setState({ ...state, isLoading: true, error: null });
     
     try {

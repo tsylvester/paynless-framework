@@ -13,7 +13,7 @@ export class StripeApiClient {
   private isTestMode: boolean;
   
   constructor() {
-    this.baseClient = BaseApiClient.getInstance('stripe');
+    this.baseClient = BaseApiClient.getInstance();
     this.isTestMode = isStripeTestMode();
     logger.info(`Stripe API client initialized in ${this.isTestMode ? 'TEST' : 'LIVE'} mode`);
   }
@@ -98,7 +98,7 @@ export class StripeApiClient {
         mode: this.isTestMode ? 'TEST' : 'LIVE'
       });
       
-      return await this.baseClient.get<UserSubscription>(`/subscriptions/${userId}`);
+      return await this.baseClient.get<UserSubscription>(`/current`);
     } catch (error) {
       logger.error('Error fetching user subscription', {
         error: error instanceof Error ? error.message : 'Unknown error',

@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { Mail, Lock, AlertCircle } from 'lucide-react';
 import { logger } from '../../utils/logger';
-import { useAuth } from '../../hooks/useAuth';
+import { useAuthStore } from '../../store/authStore';
 
 interface RegisterFormProps {
   onSuccess?: () => void;
@@ -15,7 +15,7 @@ export function RegisterForm({ onSuccess, redirectPath = '/' }: RegisterFormProp
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   
-  const { register } = useAuth();
+  const register = useAuthStore(state => state.register);
   const navigate = useNavigate();
   
   const handleSubmit = async (e: React.FormEvent) => {

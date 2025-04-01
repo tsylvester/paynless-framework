@@ -1,6 +1,10 @@
-import { SupabaseClient } from "npm:@supabase/supabase-js@2.39.3";
+import { SupabaseClient } from "../../_shared/auth.ts";
 import Stripe from "npm:stripe@14.11.0";
-import { corsHeaders, CheckoutSessionRequest, SessionResponse } from "../types.ts";
+import { 
+  createErrorResponse, 
+  createSuccessResponse 
+} from "../../_shared/cors-headers.ts";
+import { CheckoutSessionRequest, SessionResponse } from "../types.ts";
 
 /**
  * Create a checkout session for subscription
@@ -16,28 +20,33 @@ export const createCheckoutSession = async (
     const { priceId, successUrl, cancelUrl } = request;
     
     if (!priceId || !successUrl || !cancelUrl) {
-      return new Response(JSON.stringify({ error: "Missing required parameters" }), {
-        status: 400,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+      return createErrorResponse("Missing required parameters", 400);
     }
     
-    // Get user details for the customer
+    // Get user details
     const { data: userData, error: userError } = await supabase
       .from("user_profiles")
-      .select("*")
+      .select("first_name, last_name")
       .eq("id", userId)
       .single();
     
     if (userError) {
-      return new Response(JSON.stringify({ error: userError.message }), {
-        status: 400,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+      return createErrorResponse(userError.message, 400);
+    }
+    
+    // Get user subscription to check for existing Stripe customer ID
+    const { data: subscription, error: subscriptionError } = await supabase
+      .from("user_subscriptions")
+      .select("stripe_customer_id")
+      .eq("user_id", userId)
+      .single();
+    
+    if (subscriptionError) {
+      return createErrorResponse(subscriptionError.message, 400);
     }
     
     // Get or create Stripe customer
-    let customerId = userData.stripe_customer_id;
+    let customerId = subscription?.stripe_customer_id;
     
     if (!customerId) {
       const { data: authData } = await supabase.auth.getUser();
@@ -53,11 +62,11 @@ export const createCheckoutSession = async (
       
       customerId = customer.id;
       
-      // Update user profile with Stripe customer ID
+      // Update user subscription with Stripe customer ID
       await supabase
-        .from("user_profiles")
+        .from("user_subscriptions")
         .update({ stripe_customer_id: customerId })
-        .eq("id", userId);
+        .eq("user_id", userId);
     }
     
     // Create checkout session
@@ -83,14 +92,8 @@ export const createCheckoutSession = async (
       url: session.url || '',
     };
     
-    return new Response(JSON.stringify(response), {
-      status: 200,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
+    return createSuccessResponse(response);
   } catch (err) {
-    return new Response(JSON.stringify({ error: err.message }), {
-      status: 500,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
+    return createErrorResponse(err.message);
   }
 };

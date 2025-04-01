@@ -9,9 +9,25 @@ import { logger } from '../../utils/logger';
 export class BaseApiClient {
   private client: AxiosInstance | null = null;
   private static instance: BaseApiClient | null = null;
+  private refreshDisabled: boolean = false;
   
   private constructor() {
     // Private constructor to enforce singleton
+  }
+
+  /**
+   * Set whether refresh attempts are disabled
+   */
+  public setRefreshDisabled(disabled: boolean): void {
+    this.refreshDisabled = disabled;
+    logger.info("Refresh attempts disabled:", { disabled });
+  }
+
+  /**
+   * Get whether refresh attempts are disabled
+   */
+  public isRefreshDisabled(): boolean {
+    return this.refreshDisabled;
   }
 
   /**
@@ -79,6 +95,13 @@ export class BaseApiClient {
         // Always add the apikey header
         config.headers['apikey'] = anonKey;
         
+        // Check localStorage for access token
+        const accessToken = localStorage.getItem('accessToken');
+        logger.debug("Access token status:", { 
+          exists: !!accessToken,
+          length: accessToken?.length
+        });
+
         // Public auth endpoints only need the anon key
         const isPublicAuthEndpoint = 
           (config.url?.includes('/login') || config.url?.includes('/register'));
@@ -89,7 +112,6 @@ export class BaseApiClient {
           config.headers['Authorization'] = 'Bearer ';
         } else {
           // For ALL other endpoints, add the JWT if available
-          const accessToken = localStorage.getItem('accessToken');
           if (accessToken) {
             logger.debug("Adding Authorization header with JWT token");
             config.headers['Authorization'] = `Bearer ${accessToken}`;
@@ -137,18 +159,69 @@ export class BaseApiClient {
             logger.debug("Auth endpoint 401 - normal authentication failure");
             return Promise.reject(error);
           }
+
+          // Check if refresh is disabled
+          if (this.refreshDisabled) {
+            logger.info("Refresh attempts are disabled, not attempting refresh");
+            return Promise.reject(error);
+          }
           
-          // Try to refresh the session and retry the request
+          // Attempt to notify global store for session refresh
+          if (typeof window !== 'undefined' && window.__AUTH_STORE_REFRESH_SESSION) {
+            try {
+              logger.info("Attempting to refresh session via global store");
+              const refreshSuccessful = await window.__AUTH_STORE_REFRESH_SESSION();
+              
+              if (refreshSuccessful) {
+                logger.info("Session refresh via store successful, retrying request");
+                
+                // Only proceed if we have the original request config
+                if (error.config) {
+                  // Clone the original request config
+                  const originalRequest: AxiosRequestConfig = { 
+                    ...error.config,
+                    headers: { ...(error.config.headers as Record<string, string>) }
+                  };
+                  
+                  // Update authorization header with new token
+                  const newToken = localStorage.getItem('accessToken');
+                  originalRequest.headers = {
+                    ...(originalRequest.headers as Record<string, string>),
+                    'Authorization': `Bearer ${newToken || ''}`
+                  };
+                  
+                  // Use direct axios call instead of client to avoid interceptor loop
+                  return axios(originalRequest);
+                }
+              }
+              
+              throw new Error("Store-based session refresh failed");
+            } catch (storeRefreshError) {
+              logger.error("Store-based session refresh failed:", {
+                error: storeRefreshError instanceof Error ? storeRefreshError.message : 'Unknown error'
+              });
+              // Fall back to direct refresh
+            }
+          }
+          
+          // Direct refresh fallback
           try {
             const refreshToken = localStorage.getItem('refreshToken');
             if (!refreshToken) {
+              logger.error("No refresh token available for token refresh");
               throw new Error("No refresh token available");
             }
             
-            logger.info("Attempting to refresh the session");
+            // Check if this is a refresh attempt for the /refresh endpoint itself
+            // to prevent an infinite loop
+            if (error.config?.url?.includes('/refresh')) {
+              logger.error("Refresh endpoint itself returned 401 - stopping refresh cycle");
+              throw new Error("Refresh endpoint authentication failed");
+            }
             
-            // Create a new axios instance specifically for the refresh request
-            // to avoid interceptor loop
+            logger.info("Attempting to refresh the session directly");
+            
+            // Use our edge function for refresh
             const refreshResponse = await axios.post(
               `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/refresh`,
               { refresh_token: refreshToken },
@@ -156,7 +229,8 @@ export class BaseApiClient {
                 headers: {
                   'Content-Type': 'application/json',
                   'apikey': import.meta.env.VITE_SUPABASE_ANON_KEY,
-                  'Authorization': `Bearer ${localStorage.getItem('accessToken') || ''}`,
+                  // For refresh endpoint, we need to send the refresh token as the JWT
+                  'Authorization': `Bearer ${refreshToken}`,
                 }
               }
             );
@@ -167,23 +241,31 @@ export class BaseApiClient {
               localStorage.setItem('accessToken', refreshResponse.data.session.accessToken);
               localStorage.setItem('refreshToken', refreshResponse.data.session.refreshToken);
               
-              // Clone the original request config
-              const originalRequest = { ...error.config };
-              
-              // Make sure headers exist
-              originalRequest.headers = originalRequest.headers || {};
-              
-              // Update authorization header with new token
-              originalRequest.headers['Authorization'] = 
-                `Bearer ${refreshResponse.data.session.accessToken}`;
-              
-              // Retry the original request with the new token
-              return this.client!.request(originalRequest);
+              // Only proceed if we have the original request config
+              if (error.config) {
+                // Clone the original request config
+                const originalRequest: AxiosRequestConfig = { 
+                  ...error.config,
+                  headers: { ...(error.config.headers as Record<string, string>) }
+                };
+                
+                // Update authorization header with new token
+                originalRequest.headers = {
+                  ...(originalRequest.headers as Record<string, string>),
+                  'Authorization': `Bearer ${refreshResponse.data.session.accessToken}`,
+                  'apikey': import.meta.env.VITE_SUPABASE_ANON_KEY
+                };
+                
+                // Use direct axios call instead of client to avoid interceptor loop
+                return axios(originalRequest);
+              }
             }
             
             throw new Error("Session refresh did not return new tokens");
           } catch (refreshError) {
-            logger.error("Session refresh failed:", refreshError);
+            logger.error("Session refresh failed:", {
+              error: refreshError instanceof Error ? refreshError.message : 'Unknown error'
+            });
             
             // Clear tokens and redirect to login
             localStorage.removeItem('accessToken');
@@ -207,7 +289,11 @@ export class BaseApiClient {
         // Handle API errors
         if (error.response) {
           // Try to extract error information from the response
-          const responseData = error.response.data as any;
+          const responseData = error.response.data as { 
+            message?: string; 
+            error?: string | { message?: string; code?: string }; 
+            code?: string;
+          };
           
           // Determine the error message - handle different error formats
           let errorMessage = 'An error occurred';
@@ -215,8 +301,8 @@ export class BaseApiClient {
             errorMessage = responseData;
           } else if (responseData.message) {
             errorMessage = responseData.message;
-          } else if (responseData.error?.message) {
-            errorMessage = responseData.error.message;
+          } else if (responseData.error && typeof responseData.error === 'object' && 'message' in responseData.error) {
+            errorMessage = responseData.error.message || 'Unknown error';
           } else if (responseData.error) {
             errorMessage = typeof responseData.error === 'string' 
               ? responseData.error 
@@ -227,7 +313,7 @@ export class BaseApiClient {
           let errorCode = 'api_error';
           if (responseData.code) {
             errorCode = responseData.code;
-          } else if (responseData.error?.code) {
+          } else if (responseData.error && typeof responseData.error !== 'string' && responseData.error.code) {
             errorCode = responseData.error.code;
           }
           

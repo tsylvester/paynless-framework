@@ -1,15 +1,9 @@
-import { useContext } from 'react';
-import { AuthContext } from '../context/auth.context';
+import { useAuthStore } from '../store/authStore';
 
 /**
- * Hook to access authentication context
+ * Hook to access authentication state and actions
+ * This is a compatibility layer for components still using the old useAuth hook
  */
 export function useAuth() {
-  const context = useContext(AuthContext);
-  
-  if (context === undefined) {
-    throw new Error('useAuth must be used within an AuthProvider');
-  }
-  
-  return context;
+  return useAuthStore();
 }

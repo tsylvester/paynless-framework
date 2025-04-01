@@ -1,5 +1,9 @@
-import { SupabaseClient } from "npm:@supabase/supabase-js@2.39.3";
-import { corsHeaders, SubscriptionUsageMetrics } from "../types.ts";
+import { SupabaseClient } from "../../_shared/auth.ts";
+import { 
+  createErrorResponse,
+  createSuccessResponse
+} from "../../_shared/cors-headers.ts";
+import { SubscriptionUsageMetrics } from "../types.ts";
 
 /**
  * Get usage metrics for a specific metric type
@@ -21,10 +25,7 @@ export const getUsageMetrics = async (
       .maybeSingle();
     
     if (subscriptionError) {
-      return new Response(JSON.stringify({ error: subscriptionError.message }), {
-        status: 400,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+      return createErrorResponse(subscriptionError.message, 400);
     }
     
     // Handle different metrics
@@ -49,20 +50,11 @@ export const getUsageMetrics = async (
         break;
         
       default:
-        return new Response(JSON.stringify({ error: "Unknown metric" }), {
-          status: 400,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        });
+        return createErrorResponse("Unknown metric", 400);
     }
     
-    return new Response(JSON.stringify(usageData), {
-      status: 200,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
+    return createSuccessResponse(usageData);
   } catch (err) {
-    return new Response(JSON.stringify({ error: err.message }), {
-      status: 500,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
+    return createErrorResponse(err.message);
   }
 };

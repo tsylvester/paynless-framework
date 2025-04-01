@@ -1,4 +1,67 @@
 import { corsHeaders } from './cors-headers.ts';
+import { createClient, SupabaseClient } from "npm:@supabase/supabase-js@2";
+
+/**
+ * Initialize Supabase client from request authorization
+ * Used for authenticated endpoints to get the current user
+ */
+export const createSupabaseClient = (req: Request): SupabaseClient => {
+  const authHeader = req.headers.get("Authorization");
+  const supabaseUrl = Deno.env.get("SUPABASE_URL") ?? "";
+  const supabaseKey = Deno.env.get("SUPABASE_ANON_KEY") ?? "";
+
+  return createClient(supabaseUrl, supabaseKey, {
+    global: { headers: { Authorization: authHeader ?? "" } },
+    auth: { persistSession: false },
+  });
+};
+
+/**
+ * Initialize Supabase client with service role
+ * Used for admin operations and webhooks
+ */
+export const createSupabaseAdminClient = (): SupabaseClient => {
+  const supabaseUrl = Deno.env.get("SUPABASE_URL") ?? "";
+  const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
+  
+  if (!supabaseUrl || !supabaseServiceKey) {
+    throw new Error("Missing Supabase URL or service role key");
+  }
+  
+  return createClient(supabaseUrl, supabaseServiceKey, {
+    auth: { persistSession: false },
+  });
+};
+
+/**
+ * Get authenticated user ID from request
+ * Helper function to simplify getting the current user ID
+ */
+export const getUserId = async (req: Request): Promise<string> => {
+  console.log("getUserId called");
+  const supabase = createSupabaseClient(req);
+  
+  try {
+    console.log("Attempting to get user from auth");
+    const { data, error } = await supabase.auth.getUser();
+    
+    if (error) {
+      console.error("Auth error getting user:", error);
+      throw new Error("Unauthorized");
+    }
+    
+    if (!data || !data.user) {
+      console.error("No user data returned from auth");
+      throw new Error("Unauthorized");
+    }
+    
+    console.log("Successfully obtained user ID:", data.user.id);
+    return data.user.id;
+  } catch (err) {
+    console.error("Error in getUserId:", err);
+    throw new Error("Unauthorized");
+  }
+};
 
 /**
  * Verify the request has a valid apikey
@@ -33,53 +96,62 @@ export function verifyApiKey(req: Request): boolean {
     return true;
   }
 
-  // If no apikey or auth header, check for sb parameter in search params
-  const url = new URL(req.url);
-  const sb = url.searchParams.get('sb');
-  console.log("SB parameter:", sb ? "present" : "missing");
-  
-  if (sb) {
-    try {
-      const sbData = JSON.parse(sb);
-      console.log("Parsed SB data:", JSON.stringify(sbData));
-      
-      // Check JWT validity from sb parameter
-      if (sbData.jwt && sbData.jwt.length > 0) {
-        const jwt = sbData.jwt[0];
-        if (jwt.apikey && jwt.apikey.length > 0) {
-          const apikey = jwt.apikey[0];
-          if (apikey.payload && apikey.payload.length > 0) {
-            const payload = apikey.payload[0];
-            const role = payload.role;
-            const invalid = apikey.invalid;
-            
-            console.log("JWT role:", role);
-            console.log("JWT invalid:", invalid);
-            
-            return role === "anon" && !invalid;
-          }
-        }
-      }
-    } catch (e) {
-      console.error("Error parsing SB data:", e);
-    }
-  }
-
   console.log("No valid authentication found");
   return false;
 }
 
 /**
- * Verify the request has a valid Authorization header
- * This is used for authenticated requests that need JWT authentication
+ * Verify the request has a valid JWT token
  */
-export const verifyAuthHeader = (req: Request): boolean => {
-  const authHeader = req.headers.get('Authorization');
-  if (!authHeader) {
-    return false;
+export async function isAuthenticated(req: Request): Promise<{ 
+  isValid: boolean; 
+  userId?: string;
+  error?: string;
+}> {
+  try {
+    const authHeader = req.headers.get('Authorization');
+    if (!authHeader?.startsWith('Bearer ')) {
+      return { isValid: false, error: 'Missing or invalid Authorization header' };
+    }
+
+    const token = authHeader.replace('Bearer ', '');
+    if (!token) {
+      return { isValid: false, error: 'Missing token' };
+    }
+
+    // Initialize Supabase client
+    const supabaseUrl = Deno.env.get('SUPABASE_URL');
+    const supabaseKey = Deno.env.get('SUPABASE_ANON_KEY');
+
+    if (!supabaseUrl || !supabaseKey) {
+      console.error('Missing Supabase configuration');
+      return { isValid: false, error: 'Server configuration error' };
+    }
+
+    const supabase = createClient(supabaseUrl, supabaseKey, {
+      auth: {
+        persistSession: false,
+        autoRefreshToken: false,
+      },
+    });
+
+    // Verify the token
+    const { data: { user }, error } = await supabase.auth.getUser(token);
+
+    if (error || !user) {
+      console.error('Token verification failed:', error);
+      return { isValid: false, error: error?.message || 'Invalid token' };
+    }
+
+    return { isValid: true, userId: user.id };
+  } catch (error) {
+    console.error('Error verifying authentication:', error);
+    return { 
+      isValid: false, 
+      error: error instanceof Error ? error.message : 'Authentication error' 
+    };
   }
-  return authHeader.startsWith('Bearer ');
-};
+}
 
 /**
  * Create an unauthorized response

@@ -7,6 +7,12 @@ import {
 } from "../_shared/cors-headers.ts";
 import { verifyApiKey, createUnauthorizedResponse } from "../_shared/auth.ts";
 
+/**
+ * NOTE: Edge functions don't return console logs to us in production environments.
+ * Avoid using console.log/error/warn/info for debugging as they won't be visible
+ * and can affect function execution.
+ */
+
 Deno.serve(async (req) => {
   // Handle CORS preflight request first
   const corsResponse = handleCorsPreflightRequest(req);

@@ -1,6 +1,6 @@
 import React, { ReactNode } from 'react';
 import { Navigate, useLocation } from 'react-router-dom';
-import { useAuth } from '../../hooks/useAuth';
+import { useAuthStore } from '../../store/authStore';
 import { UserRole } from '../../types/auth.types';
 
 interface ProtectedRouteProps {
@@ -9,7 +9,7 @@ interface ProtectedRouteProps {
 }
 
 export function ProtectedRoute({ children, allowedRoles }: ProtectedRouteProps) {
-  const { user, isLoading } = useAuth();
+  const { user, isLoading } = useAuthStore();
   const location = useLocation();
   
   if (isLoading) {

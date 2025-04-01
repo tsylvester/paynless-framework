@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
-import { useAuth } from '../../hooks/useAuth';
+import { useAuthStore } from '../../store/authStore';
 import { 
   LogOut, 
   Menu, 
@@ -9,19 +9,16 @@ import {
   Bell, 
   Calendar as CalendarIcon,
   MapPin,
-  Users,
   Layout as LayoutIcon,
   User,
   CreditCard,
-  Search,
   Home,
   UserPlus,
   Building2
 } from 'lucide-react';
-import { ThemeSelector } from '../theme/ThemeSelector';
 
 export function Header() {
-  const { user, logout } = useAuth();
+  const { user, logout } = useAuthStore();
   const navigate = useNavigate();
   const location = useLocation();
   const [isMenuOpen, setIsMenuOpen] = useState(false);
@@ -50,15 +47,6 @@ export function Header() {
             {user && (
               <nav className="hidden sm:ml-6 sm:flex sm:space-x-4">
                 <Link
-                  to="/feed"
-                  className={`${isActive('/feed') 
-                    ? 'border-primary text-textPrimary' 
-                    : 'border-transparent text-textSecondary hover:border-border hover:text-textPrimary'
-                  } inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium`}
-                >
-                  Feed
-                </Link>
-                <Link
                   to="/dashboard"
                   className={`${isActive('/dashboard') 
                     ? 'border-primary text-textPrimary' 
@@ -67,85 +55,11 @@ export function Header() {
                 >
                   Dashboard
                 </Link>              
-                <Link
-                  to="/discover"
-                  className={`${isActive('/discover') 
-                    ? 'border-primary text-textPrimary' 
-                    : 'border-transparent text-textSecondary hover:border-border hover:text-textPrimary'
-                  } inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium`}
-                >
-                  Discover
-                </Link>
-                <Link
-                  to="/notifications"
-                  className={`${isActive('/notifications') 
-                    ? 'border-primary text-textPrimary' 
-                    : 'border-transparent text-textSecondary hover:border-border hover:text-textPrimary'
-                  } inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium`}
-                >
-                  Notifications
-                </Link>
-                <Link
-                  to="/messages"
-                  className={`${location.pathname.startsWith('/messages') 
-                    ? 'border-primary text-textPrimary' 
-                    : 'border-transparent text-textSecondary hover:border-border hover:text-textPrimary'
-                  } inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium`}
-                >
-                  Messages
-                </Link>
-                <Link
-                  to="/calendar"
-                  className={`${isActive('/calendar') 
-                    ? 'border-primary text-textPrimary' 
-                    : 'border-transparent text-textSecondary hover:border-border hover:text-textPrimary'
-                  } inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium`}
-                >
-                  Calendar
-                </Link>
-                <Link
-                  to="/events"
-                  className={`${isActive('/events') 
-                    ? 'border-primary text-textPrimary' 
-                    : 'border-transparent text-textSecondary hover:border-border hover:text-textPrimary'
-                  } inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium`}
-                >
-                  Events
-                </Link>
-                <Link
-                  to="/locations"
-                  className={`${isActive('/locations') 
-                    ? 'border-primary text-textPrimary' 
-                    : 'border-transparent text-textSecondary hover:border-border hover:text-textPrimary'
-                  } inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium`}
-                >
-                  Locations
-                </Link>
-                <Link
-                  to="/my-content"
-                  className={`${isActive('/my-content') 
-                    ? 'border-primary text-textPrimary' 
-                    : 'border-transparent text-textSecondary hover:border-border hover:text-textPrimary'
-                  } inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium`}
-                >
-                  My Content
-                </Link>
-                <Link
-                  to="/communities"
-                  className={`${isActive('/communities') 
-                    ? 'border-primary text-textPrimary' 
-                    : 'border-transparent text-textSecondary hover:border-border hover:text-textPrimary'
-                  } inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium`}
-                >
-                  Communities
-                </Link>
               </nav>
             )}
           </div>
           
-          <div className="hidden sm:ml-6 sm:flex sm:items-center space-x-4">
-            <ThemeSelector />
-            
+          <div className="hidden sm:ml-6 sm:flex sm:items-center space-x-4">           
             {user ? (
               <div className="relative">
                 <button
@@ -169,7 +83,7 @@ export function Header() {
                 </button>
                 
                 {isUserMenuOpen && (
-                  <div className="absolute right-0 mt-2 w-48 bg-surface rounded-lg shadow-lg border border-border z-50">
+                  <div className="absolute right-0 mt-2 w-48 bg-surface rounded-lg shadow-xl border border-border z-50">
                     <div className="py-1">
                       <Link
                         to="/profile"
@@ -344,9 +258,6 @@ export function Header() {
           )}
           
           <div className="pt-4 pb-3 border-t border-border">
-            <div className="px-4">
-              <ThemeSelector />
-            </div>
             {user && (
               <>
                 <div className="flex items-center px-4 mt-4">

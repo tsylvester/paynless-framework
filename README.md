@@ -36,6 +36,7 @@ The architecture follows these principles:
 - Frontend as a consumer of the API, easily replaceable with mobile apps
 - Stateless authentication using JWT tokens
 - Consistent error handling and response formatting
+- State management using Zustand for predictable and reliable state
 
 ## AI Integration
 
@@ -66,115 +67,104 @@ The application supports multiple AI providers through a modular architecture:
 
 The application exposes the following API endpoints through Supabase Edge Functions:
 
-### Authentication (/api-auth)
+### Authentication
 - POST /login - Login with email/password
 - POST /register - Register new user
 - POST /logout - Logout user
 - GET /session - Get current session
+- POST /refresh - Refresh authentication tokens
 - POST /reset-password - Request password reset
 
-### Users (/api-users)
+### Users
+- GET /me - Get current user profile
 - GET /profile - Get user profile
 - PUT /profile - Update user profile
-- GET /settings - Get user settings
-- PUT /settings - Update user settings
+- GET /users/preferences - Get user preferences
+- PUT /users/preferences - Update user preferences
+- GET /users/details - Get user details
 
-### Social (/api-social)
-- GET /timeline - Get user timeline
-- POST /posts - Create post
-- GET /posts/:id - Get post details
-- PUT /posts/:id - Update post
-- DELETE /posts/:id - Delete post
-- GET /posts/user/:id - Get user posts
-- POST /comments - Create comment
-- GET /comments/:postId - Get post comments
-- POST /reactions - Create reaction
-- DELETE /reactions/:postId - Remove reaction
-- GET /relationships/counts/:userId - Get follower counts
-- POST /relationships - Create relationship
-- DELETE /relationships/:userId/:type - Remove relationship
+### Subscriptions
+- GET /api-subscriptions/plans - Get available subscription plans
+- GET /api-subscriptions/current - Get current user's subscription
+- POST /api-subscriptions/checkout - Create checkout session
+- POST /api-subscriptions/billing-portal - Create billing portal session
+- GET /api-subscriptions/usage/:metric - Get usage metrics
+- POST /api-subscriptions/:id/cancel - Cancel subscription
+- POST /api-subscriptions/:id/resume - Resume subscription
 
-### Messaging (/api-messages)
-- GET /conversations - Get user conversations
-- GET /conversations/:id - Get conversation messages
-- POST / - Send message
-- PUT /status - Update message status
-
-### AI Integration (/api-ai)
-- GET /models - Get available AI models
-- GET /prompts - Get system prompts
-- POST /generate - Generate AI response
-- GET /usage - Get AI usage metrics
-
-### Subscriptions (/api-subscriptions)
-- GET /plans - Get subscription plans
-- GET /current - Get current subscription
-- POST /checkout - Create checkout session
-- POST /billing-portal - Create billing portal session
-- GET /usage/:metric - Get usage metrics
+### Payments
+- POST /stripe-webhook - Handle Stripe webhook events
 
 ## Project Structure
 
 ```
 /src
 │
-├── /api                 # API client implementations
-│   ├── /clients         # Specific API clients for different endpoints
-│   └── /ai             # AI-specific API clients
+├── /api                  # API client implementations
+│   └── /clients          # Specific API clients for different endpoints
+│       ├── /auth         # Authentication API clients
+│       │   ├── index.ts  # Main auth client
+│       │   ├── login.ts  # Login client
+│       │   ├── register.ts # Register client
+│       │   ├── session.ts # Session management
+│       │   ├── password.ts # Password operations
+│       │   └── reset-password.ts # Password reset
+│       ├── base.api.ts   # Base API client with request handling
+│       ├── profile.api.ts # User profile operations
+│       └── stripe.api.ts # Subscription and payment operations
 │
-├── /components          # UI components
-│   ├── /ai             # AI-related components
-│   ├── /auth           # Authentication-related components
-│   ├── /layout         # Layout components
-│   ├── /social         # Social feature components
-│   └── /messaging      # Messaging components
+├── /components           # UI components
+│   ├── /auth            # Authentication-related components
+│   ├── /layout          # Layout components
+│   ├── /profile         # User profile components
+│   └── /subscription    # Subscription components
 │
-├── /context             # React context providers
-│   ├── auth.context.tsx # Authentication context
-│   └── subscription.context.tsx # Subscription context
+├── /config               # Configuration files
 │
-├── /hooks               # Custom React hooks
-│   ├── useAuth.ts       # Hook for auth context
-│   └── useSubscription.ts # Hook for subscription context
+├── /context              # React context providers
 │
-├── /pages               # Page components
+├── /hooks                # Custom React hooks
+│   ├── useAuth.ts       # Hook for auth context/store
+│   └── useSubscription.ts # Hook for subscription state
+│
+├── /pages                # Page components
 │   ├── Home.tsx
 │   ├── Login.tsx
 │   ├── Register.tsx
 │   ├── Dashboard.tsx
 │   ├── Profile.tsx
-│   ├── /social          # Social feature pages
-│   └── /messaging       # Messaging pages
+│   └── Subscription.tsx
 │
-├── /routes              # Routing configuration
+├── /routes               # Routing configuration
 │   └── routes.tsx       # Routes configuration
 │
-├── /services            # Business logic services
-│   ├── auth.service.ts  # Authentication service
+├── /services             # Business logic services
+│   ├── /auth            # Authentication services
+│   │   ├── index.ts     # Main auth service
+│   │   ├── login.service.ts # Login service
+│   │   ├── register.service.ts # Registration service
+│   │   └── session.service.ts # Session management
 │   ├── profile.service.ts # User profile service
-│   ├── social.service.ts # Social features service
-│   ├── ai.service.ts    # AI integration service
 │   └── subscription.service.ts # Subscription service
 │
-├── /types               # TypeScript types and interfaces
-│   ├── ai.types.ts      # AI-related types
+├── /store                # Zustand store implementations
+│   ├── authStore.ts     # Authentication state store
+│   └── subscriptionStore.ts # Subscription state store
+│
+├── /types                # TypeScript types and interfaces
 │   ├── api.types.ts     # API-related types
 │   ├── auth.types.ts    # Authentication types
-│   ├── message.types.ts # Messaging types
-│   ├── post.types.ts    # Post types
-│   ├── privacy.types.ts # Privacy settings types
 │   ├── profile.types.ts # Profile types
-│   ├── relationship.types.ts # Relationship types
 │   ├── route.types.ts   # Routing types
 │   └── subscription.types.ts # Subscription types
 │
-├── /utils               # Utility functions
+├── /utils                # Utility functions
 │   ├── logger.ts        # Logging service
 │   ├── supabase.ts      # Supabase client
 │   └── stripe.ts        # Stripe utilities
 │
-├── App.tsx              # Main App component
-└── main.tsx             # Entry point
+├── App.tsx               # Main App component
+└── main.tsx              # Entry point
 ```
 
 ## Edge Functions
@@ -184,18 +174,22 @@ Located in `/supabase/functions`:
 ```
 /supabase/functions
 │
-├── /_shared            # Shared utilities
-│   ├── cors-headers.ts # CORS handling
-│   ├── supabase-client.ts # Supabase client setup
+├── /_shared             # Shared utilities
+│   ├── auth.ts          # Authentication utilities
+│   ├── cors-headers.ts  # CORS handling
 │   └── stripe-client.ts # Stripe client setup
 │
-├── /api-auth           # Authentication endpoints
-├── /api-users          # User management endpoints
-├── /api-social         # Social feature endpoints
-├── /api-messages       # Messaging endpoints
-├── /api-ai             # AI integration endpoints
-├── /api-subscriptions  # Subscription management endpoints
-└── /stripe-webhook     # Stripe webhook handler
+├── /login               # Login endpoint
+├── /register            # Registration endpoint
+├── /logout              # Logout endpoint
+├── /session             # Session management
+├── /refresh             # Token refresh
+├── /reset-password      # Password reset
+├── /profile             # Profile management
+├── /me                  # Current user profile
+├── /api-users           # User management endpoints
+├── /api-subscriptions   # Subscription management endpoints
+└── /stripe-webhook      # Stripe webhook handler
 ```
 
 ## Core Framework Files (Do Not Modify)
@@ -203,7 +197,6 @@ Located in `/supabase/functions`:
 The following files form the core of the application and should not be modified:
 - `/api/clients/base.api.ts`
 - `/utils/logger.ts`
-- `/context/auth.context.tsx`
 - `/utils/supabase.ts`
 
 ## Getting Started
@@ -216,17 +209,26 @@ The following files form the core of the application and should not be modified:
 ## Supabase Setup
 
 1. Create a new Supabase project
-2. Click "Connect to Supabase" button to set up Supabase connection
-3. Run the SQL migrations in the `supabase/migrations` folder
+2. Set up your project reference ID
+3. Run the SQL migrations in the `supabase/migrations` folder //We need to create a migration file that represents the full state of the database
 
 ## API Implementation
 
 The application follows a clear layered architecture:
-1. UI Components → Make requests via Hooks
-2. Hooks → Call Service Layer methods
+1. UI Components → Make requests via Hooks or directly through stores
+2. Hooks/Stores → Call Service Layer methods
 3. Service Layer → Uses API Clients for remote operations
 4. API Clients → Handle HTTP, caching, error handling
 5. Backend API → Implements CRUD operations on data
+
+## State Management
+
+The application uses Zustand for state management:
+1. State is defined in stores (`/src/store`)
+2. Components access state through hooks or direct store imports
+3. Updates to state trigger re-renders of dependent components
+4. Authentication state is managed in `authStore.ts`
+5. Subscription state is managed in `subscriptionStore.ts`
 
 ## Contributing
 

@@ -1,14 +1,13 @@
 import React, { useEffect, useState } from 'react';
 import { Layout } from '../components/layout/Layout';
-import { useAuth } from '../hooks/useAuth';
 import { Navigate } from 'react-router-dom';
 import { profileService } from '../services/profile.service';
 import { logger } from '../utils/logger';
 import { UserProfile } from '../types/auth.types';
-import { UserPreferences, UserDetails } from '../types/dating.types';
 import { ProfileEditor } from '../components/profile/ProfileEditor';
 import { Loader } from 'lucide-react';
 import { profileApiClient as profileApi } from '../api/clients/profile.api';
+import { useAuthStore } from '../store/authStore';
 
 interface LoadingState {
   profile: boolean;
@@ -17,19 +16,17 @@ interface LoadingState {
 }
 
 export function ProfilePage() {
-  const { user, isLoading: authLoading } = useAuth();
+  const { user, isLoading: authLoading } = useAuthStore();
   const [loadingState, setLoadingState] = useState<LoadingState>({
     profile: true,
     preferences: true,
     details: true,
   });
   const [profile, setProfile] = useState<UserProfile | null>(null);
-  const [preferences, setPreferences] = useState<UserPreferences | null>(null);
-  const [details, setDetails] = useState<UserDetails | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
 
-  useEffect(() => {
+  useEffect(() =>  {
     async function loadProfile() {
       if (!user) return;
 
@@ -50,41 +47,9 @@ export function ProfilePage() {
           }
         };
 
-        const loadPreferences = async () => {
-          try {
-            const response = await profileApi.getMyPreferences();
-            if (response.error) {
-              throw new Error(response.error.message);
-            }
-            setPreferences(response.data);
-          } catch (error) {
-            logger.error('Error loading preferences:', error);
-            setError('Failed to load preferences');
-          } finally {
-            setLoadingState(prev => ({ ...prev, preferences: false }));
-          }
-        };
-
-        const loadDetails = async () => {
-          try {
-            const response = await profileApi.getMyDetails();
-            if (response.error) {
-              throw new Error(response.error.message);
-            }
-            setDetails(response.data);
-          } catch (error) {
-            logger.error('Error loading details:', error);
-            setError('Failed to load details');
-          } finally {
-            setLoadingState(prev => ({ ...prev, details: false }));
-          }
-        };
-
         // Load all data in parallel
         await Promise.all([
           loadProfileData(),
-          loadPreferences(),
-          loadDetails(),
         ]);
       } catch (error) {
         logger.error('Error in profile loading process', {
@@ -111,50 +76,6 @@ export function ProfilePage() {
     } catch (error) {
       logger.error('Error updating profile:', error);
       setError('Failed to update profile');
-    }
-  };
-
-  const handleSavePreferences = async (updates: Partial<UserPreferences>) => {
-    if (!user) return;
-
-    try {
-      const updatedPreferences = await profileService.updateUserPreferences(user.id, updates);
-      if (updatedPreferences) {
-        setPreferences(updatedPreferences);
-        logger.info('Preferences updated successfully', { userId: user.id });
-      } else {
-        setError('Failed to update preferences. Please try again.');
-      }
-    } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'An unexpected error occurred';
-      setError(errorMessage);
-      logger.error('Error updating preferences', {
-        error: errorMessage,
-        userId: user.id,
-      });
-      throw error;
-    }
-  };
-
-  const handleSaveDetails = async (updates: Partial<UserDetails>) => {
-    if (!user) return;
-
-    try {
-      const updatedDetails = await profileService.updateUserDetails(user.id, updates);
-      if (updatedDetails) {
-        setDetails(updatedDetails);
-        logger.info('Details updated successfully', { userId: user.id });
-      } else {
-        setError('Failed to update details. Please try again.');
-      }
-    } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'An unexpected error occurred';
-      setError(errorMessage);
-      logger.error('Error updating details', {
-        error: errorMessage,
-        userId: user.id,
-      });
-      throw error;
     }
   };
 
@@ -203,39 +124,13 @@ export function ProfilePage() {
                 </div>
               </div>
             </div>
-
-            {/* Preferences Skeleton */}
-            <div className="bg-surface rounded-lg shadow-sm p-6 animate-pulse">
-              <div className="space-y-4">
-                <div className="h-4 bg-gray-200 rounded w-1/3" />
-                <div className="space-y-2">
-                  <div className="h-4 bg-gray-200 rounded w-3/4" />
-                  <div className="h-4 bg-gray-200 rounded w-1/2" />
-                </div>
-              </div>
-            </div>
-
-            {/* Details Skeleton */}
-            <div className="bg-surface rounded-lg shadow-sm p-6 animate-pulse">
-              <div className="space-y-4">
-                <div className="h-4 bg-gray-200 rounded w-1/3" />
-                <div className="space-y-2">
-                  <div className="h-4 bg-gray-200 rounded w-2/3" />
-                  <div className="h-4 bg-gray-200 rounded w-1/2" />
-                </div>
-              </div>
-            </div>
-          </div>
+         </div>
         ) : (
           profile && (
             <div className="bg-surface rounded-lg shadow-sm p-6">
               <ProfileEditor
                 profile={profile}
-                preferences={preferences || undefined}
-                details={details || undefined}
                 onSave={handleSave}
-                onSavePreferences={handleSavePreferences}
-                onSaveDetails={handleSaveDetails}
               />
             </div>
           )

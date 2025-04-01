@@ -20,6 +20,10 @@ export class SessionService {
         return false;
       }
       
+      // Clear localStorage
+      localStorage.removeItem('accessToken');
+      localStorage.removeItem('refreshToken');
+      
       logger.info('User logged out successfully');
       return true;
     } catch (error) {
