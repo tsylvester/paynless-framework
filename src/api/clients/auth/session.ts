@@ -1,5 +1,5 @@
 import { BaseApiClient } from '../base.api';
-import { ApiResponse } from '../../../types/api.types';
+import { ApiResponse, ApiError } from '../../../types/api.types';
 import { logger } from '../../../utils/logger';
 import { AuthResponse } from '../../../types/auth.types';
 
@@ -61,7 +61,7 @@ export class SessionApiClient {
       
       // It might be useful to check if the error is from the API response
       if (error && typeof error === 'object' && 'response' in error && error.response) {
-        const response = error.response as { status?: number; data?: any };
+        const response = error.response as { status?: number; data?: ApiError };
         return {
            error: {
              code: 'session_error',
