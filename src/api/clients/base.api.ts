@@ -96,10 +96,10 @@ export class BaseApiClient {
         config.headers['apikey'] = anonKey;
         
         // Check localStorage for access token
-        const accessToken = localStorage.getItem('accessToken');
+        const access_token = localStorage.getItem('access_token');
         logger.debug("Access token status:", { 
-          exists: !!accessToken,
-          length: accessToken?.length
+          exists: !!access_token,
+          length: access_token?.length
         });
 
         // Public auth endpoints only need the anon key
@@ -112,9 +112,9 @@ export class BaseApiClient {
           config.headers['Authorization'] = 'Bearer ';
         } else {
           // For ALL other endpoints, add the JWT if available
-          if (accessToken) {
+          if (access_token) {
             logger.debug("Adding Authorization header with JWT token");
-            config.headers['Authorization'] = `Bearer ${accessToken}`;
+            config.headers['Authorization'] = `Bearer ${access_token}`;
           } else {
             logger.warn("No access token found for authenticated request");
             // Return a rejection if we don't have a token for a protected endpoint
@@ -184,7 +184,7 @@ export class BaseApiClient {
                   };
                   
                   // Update authorization header with new token
-                  const newToken = localStorage.getItem('accessToken');
+                  const newToken = localStorage.getItem('access_token');
                   originalRequest.headers = {
                     ...(originalRequest.headers as Record<string, string>),
                     'Authorization': `Bearer ${newToken || ''}`
@@ -206,8 +206,8 @@ export class BaseApiClient {
           
           // Direct refresh fallback
           try {
-            const refreshToken = localStorage.getItem('refreshToken');
-            if (!refreshToken) {
+            const refresh_token = localStorage.getItem('refresh_token');
+            if (!refresh_token) {
               logger.error("No refresh token available for token refresh");
               throw new Error("No refresh token available");
             }
@@ -224,13 +224,13 @@ export class BaseApiClient {
             // Use our edge function for refresh
             const refreshResponse = await axios.post(
               `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/refresh`,
-              { refresh_token: refreshToken },
+              { refresh_token: refresh_token },
               { 
                 headers: {
                   'Content-Type': 'application/json',
                   'apikey': import.meta.env.VITE_SUPABASE_ANON_KEY,
                   // For refresh endpoint, we need to send the refresh token as the JWT
-                  'Authorization': `Bearer ${refreshToken}`,
+                  'Authorization': `Bearer ${refresh_token}`,
                 }
               }
             );
@@ -238,8 +238,8 @@ export class BaseApiClient {
             // If refresh successful, update tokens
             if (refreshResponse.data?.session) {
               logger.info("Session refreshed successfully");
-              localStorage.setItem('accessToken', refreshResponse.data.session.accessToken);
-              localStorage.setItem('refreshToken', refreshResponse.data.session.refreshToken);
+              localStorage.setItem('access_token', refreshResponse.data.session.access_token);
+              localStorage.setItem('refresh_token', refreshResponse.data.session.refresh_token);
               
               // Only proceed if we have the original request config
               if (error.config) {
@@ -252,7 +252,7 @@ export class BaseApiClient {
                 // Update authorization header with new token
                 originalRequest.headers = {
                   ...(originalRequest.headers as Record<string, string>),
-                  'Authorization': `Bearer ${refreshResponse.data.session.accessToken}`,
+                  'Authorization': `Bearer ${refreshResponse.data.session.access_token}`,
                   'apikey': import.meta.env.VITE_SUPABASE_ANON_KEY
                 };
                 
@@ -268,8 +268,8 @@ export class BaseApiClient {
             });
             
             // Clear tokens and redirect to login
-            localStorage.removeItem('accessToken');
-            localStorage.removeItem('refreshToken');
+            localStorage.removeItem('access_token');
+            localStorage.removeItem('refresh_token');
             
             // Redirect to login on next tick to avoid state updates during render
             setTimeout(() => {

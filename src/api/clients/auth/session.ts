@@ -32,23 +32,44 @@ export class SessionApiClient {
   async getSession(): Promise<ApiResponse<AuthResponse>> {
     try {
       logger.info('Getting current session');
-      const accessToken = localStorage.getItem('accessToken');
+      const access_token = localStorage.getItem('access_token');
+      const refresh_token = localStorage.getItem('refresh_token'); // Also get refresh token
       
-      if (!accessToken) {
+      if (!access_token || !refresh_token) { // Check for both tokens
+        logger.warn('Missing token(s) for getSession', { 
+          hasAccessToken: !!access_token, 
+          hasRefreshToken: !!refresh_token 
+        });
         return {
           error: {
             code: 'session_error',
-            message: 'No access token found',
+            message: 'Missing access or refresh token',
           },
           status: 401,
         };
       }
 
-      return await this.baseClient.get<AuthResponse>('/session');
+      // Change to POST and include tokens in the body
+      return await this.baseClient.post<AuthResponse>('/session', {
+        access_token,
+        refresh_token,
+      });
     } catch (error) {
       logger.error('Error getting session', {
         error: error instanceof Error ? error.message : 'Unknown error',
       });
+      
+      // It might be useful to check if the error is from the API response
+      if (error && typeof error === 'object' && 'response' in error && error.response) {
+        const response = error.response as { status?: number; data?: any };
+        return {
+           error: {
+             code: 'session_error',
+             message: response.data?.message || 'Failed to get session',
+           },
+           status: response.status || 500,
+        }
+      }
       
       return {
         error: {
@@ -63,11 +84,11 @@ export class SessionApiClient {
   /**
    * Refresh session with refresh token
    */
-  async refreshSession(refreshToken: string): Promise<ApiResponse<AuthResponse>> {
+  async refreshSession(refresh_token: string): Promise<ApiResponse<AuthResponse>> {
     try {
       logger.info('Refreshing session');
 
-      if (!refreshToken) {
+      if (!refresh_token) {
         return {
           error: {
             code: 'session_error',
@@ -78,7 +99,7 @@ export class SessionApiClient {
       }
 
       return await this.baseClient.post<AuthResponse>('/refresh', {
-        refresh_token: refreshToken,
+        refresh_token: refresh_token,
       });
     } catch (error) {
       logger.error('Error refreshing session', {

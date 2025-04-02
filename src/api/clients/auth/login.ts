@@ -27,8 +27,8 @@ export class LoginApiClient {
       
       // If login is successful, store the tokens
       if (response.data?.session) {
-        localStorage.setItem('accessToken', response.data.session.accessToken);
-        localStorage.setItem('refreshToken', response.data.session.refreshToken);
+        localStorage.setItem('access_token', response.data.session.access_token);
+        localStorage.setItem('refresh_token', response.data.session.refresh_token);
       }
       
       return response;

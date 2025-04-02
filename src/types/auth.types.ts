@@ -13,7 +13,6 @@ export interface UserProfile {
   id: string;
   firstName?: string;
   lastName?: string;
-  avatarUrl?: string;
   role: UserRole;
   createdAt: string;
   updatedAt: string;
@@ -32,8 +31,8 @@ export interface AuthState {
 }
 
 export interface Session {
-  accessToken: string;
-  refreshToken: string;
+  access_token: string;
+  refresh_token: string;
   expiresAt: number;
 }
 

@@ -82,9 +82,9 @@ export class AuthService {
   /**
    * Refresh the current session
    */
-  async refreshSession(refreshToken: string): Promise<User | null> {
+  async refreshSession(refresh_token: string): Promise<User | null> {
     try {
-      return await this.sessionService.refreshSession(refreshToken);
+      return await this.sessionService.refreshSession(refresh_token);
     } catch (error) {
       logger.error('Unexpected error refreshing session', { 
         error: error instanceof Error ? error.message : 'Unknown error',

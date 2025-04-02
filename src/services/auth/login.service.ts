@@ -25,8 +25,9 @@ export class LoginService {
       
       // Store tokens in localStorage
       if (response.data.session) {
-        localStorage.setItem('accessToken', response.data.session.accessToken);
-        localStorage.setItem('refreshToken', response.data.session.refreshToken);
+        console.log("Access token is set to:", response.data.session.access_token, "Refresh token is set to:", response.data.session.refresh_token)
+        localStorage.setItem('access_token', response.data.session.access_token);
+        localStorage.setItem('refresh_token', response.data.session.refresh_token);
       }
       
       logger.info('User logged in successfully', { userId: response.data.user.id });

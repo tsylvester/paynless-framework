@@ -40,21 +40,21 @@ export function AuthProvider({ children }: AuthProviderProps) {
   const refreshSession = async (): Promise<boolean> => {
     try {
       // Check if we have refresh token in localStorage
-      const refreshToken = localStorage.getItem('refreshToken');
+      const refresh_token = localStorage.getItem('refresh_token');
 
-      if (!refreshToken) {
+      if (!refresh_token) {
         logger.warn('Cannot refresh session: missing refresh token');
         return false;
       }
 
-      const user = await authService.refreshSession(refreshToken);
+      const user = await authService.refreshSession(refresh_token);
       
       if (user) {
         setState({
           user,
           session: {
-            accessToken: localStorage.getItem('accessToken') || '',
-            refreshToken: localStorage.getItem('refreshToken') || '',
+            access_token: localStorage.getItem('access_token') || '',
+            refresh_token: localStorage.getItem('refresh_token') || '',
             expiresAt: 0, // We'd get this from the token if needed
           },
           isLoading: false,
@@ -80,19 +80,19 @@ export function AuthProvider({ children }: AuthProviderProps) {
         logger.info('Loading auth state');
         
         // Check if we have tokens in localStorage
-        const accessToken = localStorage.getItem('accessToken');
-        const refreshToken = localStorage.getItem('refreshToken');
+        const access_token = localStorage.getItem('access_token');
+        const refresh_token = localStorage.getItem('refresh_token');
 
         // Log token status
         logger.debug('Token status:', { 
-          hasAccessToken: !!accessToken,
-          hasRefreshToken: !!refreshToken,
-          accessTokenLength: accessToken?.length,
-          refreshTokenLength: refreshToken?.length
+          hasaccess_token: !!access_token,
+          hasrefresh_token: !!refresh_token,
+          access_tokenLength: access_token?.length,
+          refresh_tokenLength: refresh_token?.length
         });
 
         // If no tokens, set not loading and return
-        if (!accessToken || !refreshToken) {
+        if (!access_token || !refresh_token) {
           logger.info('No tokens found in localStorage');
           setState({
             user: null,
@@ -113,8 +113,8 @@ export function AuthProvider({ children }: AuthProviderProps) {
             setState({
               user,
               session: {
-                accessToken,
-                refreshToken,
+                access_token,
+                refresh_token,
                 expiresAt: 0,
               },
               isLoading: false,
@@ -143,8 +143,8 @@ export function AuthProvider({ children }: AuthProviderProps) {
         // If we get here, both getCurrentUser and refreshSession failed
         // Clear tokens and set user to null
         logger.info('Clearing auth state after failed attempts');
-        localStorage.removeItem('accessToken');
-        localStorage.removeItem('refreshToken');
+        localStorage.removeItem('access_token');
+        localStorage.removeItem('refresh_token');
         
         setState({
           user: null,
@@ -158,8 +158,8 @@ export function AuthProvider({ children }: AuthProviderProps) {
         });
         
         // Clear tokens on error
-        localStorage.removeItem('accessToken');
-        localStorage.removeItem('refreshToken');
+        localStorage.removeItem('access_token');
+        localStorage.removeItem('refresh_token');
         
         setState({
           user: null,
@@ -182,8 +182,8 @@ export function AuthProvider({ children }: AuthProviderProps) {
       setState({
         user,
         session: user ? {
-          accessToken: localStorage.getItem('accessToken') || '',
-          refreshToken: localStorage.getItem('refreshToken') || '',
+          access_token: localStorage.getItem('access_token') || '',
+          refresh_token: localStorage.getItem('refresh_token') || '',
           expiresAt: 0,
         } : null,
         isLoading: false,
@@ -218,8 +218,8 @@ export function AuthProvider({ children }: AuthProviderProps) {
       setState({
         user,
         session: user ? {
-          accessToken: localStorage.getItem('accessToken') || '',
-          refreshToken: localStorage.getItem('refreshToken') || '',
+          access_token: localStorage.getItem('access_token') || '',
+          refresh_token: localStorage.getItem('refresh_token') || '',
           expiresAt: 0,
         } : null,
         isLoading: false,
@@ -249,8 +249,8 @@ export function AuthProvider({ children }: AuthProviderProps) {
       await authService.logout();
       
       // Clear tokens
-      localStorage.removeItem('accessToken');
-      localStorage.removeItem('refreshToken');
+      localStorage.removeItem('access_token');
+      localStorage.removeItem('refresh_token');
       
       setState({
         user: null,

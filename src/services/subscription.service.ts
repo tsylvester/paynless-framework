@@ -157,7 +157,7 @@ export class SubscriptionService {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${localStorage.getItem('accessToken')}`,
+          'Authorization': `Bearer ${localStorage.getItem('access_token')}`,
         },
       });
       
@@ -193,7 +193,7 @@ export class SubscriptionService {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${localStorage.getItem('accessToken')}`,
+          'Authorization': `Bearer ${localStorage.getItem('access_token')}`,
         },
       });
       
@@ -228,7 +228,7 @@ export class SubscriptionService {
       const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/api-subscriptions/usage/${metric}`, {
         method: 'GET',
         headers: {
-          'Authorization': `Bearer ${localStorage.getItem('accessToken')}`,
+          'Authorization': `Bearer ${localStorage.getItem('access_token')}`,
         },
       });
       

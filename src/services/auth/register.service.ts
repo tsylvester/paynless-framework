@@ -26,8 +26,8 @@ export class RegisterService {
       
       // Store tokens in localStorage if available in the response
       if (response.data.session) {
-        localStorage.setItem('accessToken', response.data.session.accessToken);
-        localStorage.setItem('refreshToken', response.data.session.refreshToken);
+        localStorage.setItem('access_token', response.data.session.access_token);
+        localStorage.setItem('refresh_token', response.data.session.refresh_token);
       }
       
       logger.info('User registered successfully', { userId: response.data.user.id });

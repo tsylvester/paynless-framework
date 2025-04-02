@@ -96,9 +96,9 @@ export class AuthApiClient {
   /**
    * Refresh the session
    */
-  async refreshSession(refreshToken: string): Promise<ApiResponse<AuthResponse>> {
+  async refreshSession(refresh_token: string): Promise<ApiResponse<AuthResponse>> {
     try {
-      return await sessionApiClient.refreshSession(refreshToken);
+      return await sessionApiClient.refreshSession(refresh_token);
     } catch (error) {
       logger.error('Error in AuthApiClient.refreshSession', {
         error: error instanceof Error ? error.message : 'Unknown error'

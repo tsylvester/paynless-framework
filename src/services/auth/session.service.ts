@@ -21,8 +21,8 @@ export class SessionService {
       }
       
       // Clear localStorage
-      localStorage.removeItem('accessToken');
-      localStorage.removeItem('refreshToken');
+      localStorage.removeItem('access_token');
+      localStorage.removeItem('refresh_token');
       
       logger.info('User logged out successfully');
       return true;
@@ -61,11 +61,11 @@ export class SessionService {
   /**
    * Refresh the session using a refresh token
    */
-  async refreshSession(refreshToken: string): Promise<User | null> {
+  async refreshSession(refresh_token: string): Promise<User | null> {
     try {
       logger.info('Refreshing session');
       
-      const response = await authApiClient.refreshSession(refreshToken);
+      const response = await authApiClient.refreshSession(refresh_token);
       
       if (response.error || !response.data?.user) {
         logger.error('Session refresh failed', { 
@@ -76,8 +76,8 @@ export class SessionService {
       
       // Update tokens if provided in the response
       if (response.data.session) {
-        localStorage.setItem('accessToken', response.data.session.accessToken);
-        localStorage.setItem('refreshToken', response.data.session.refreshToken);
+        localStorage.setItem('access_token', response.data.session.access_token);
+        localStorage.setItem('refresh_token', response.data.session.refresh_token);
       }
       
       logger.info('Session refreshed successfully', { userId: response.data.user.id });

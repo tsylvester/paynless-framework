@@ -72,8 +72,8 @@ serve(async (req) => {
     return createSuccessResponse({
       user,
       session: {
-        accessToken: session.access_token,
-        refreshToken: session.refresh_token,
+        access_token: session.access_token,
+        refresh_token: session.refresh_token,
         expiresAt: session.expires_at
       },
       profile: profile || null

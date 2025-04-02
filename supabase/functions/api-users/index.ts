@@ -19,7 +19,7 @@ serve(async (req) => {
       {
         auth: {
           persistSession: false,
-          autoRefreshToken: false,
+          autorefresh_token: false,
         },
       }
     );

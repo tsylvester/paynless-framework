@@ -131,7 +131,7 @@ export async function isAuthenticated(req: Request): Promise<{
     const supabase = createClient(supabaseUrl, supabaseKey, {
       auth: {
         persistSession: false,
-        autoRefreshToken: false,
+        autorefresh_token: false,
       },
     });
 

@@ -39,16 +39,16 @@ export const useAuthStore = create<AuthStore>()(
           const user = await authService.login({ email, password });
           if (user) {
             // Get tokens from localStorage (set by the auth service)
-            const accessToken = localStorage.getItem('accessToken') || '';
-            const refreshToken = localStorage.getItem('refreshToken') || '';
+            const access_token = localStorage.getItem('access_token') || '';
+            const refresh_token = localStorage.getItem('refresh_token') || '';
             // Calculate expires time based on JWT expiry (default 1 hour)
             const expiresAt = Date.now() + (60 * 60 * 1000);
             
             set({
               user,
               session: {
-                accessToken,
-                refreshToken,
+                access_token,
+                refresh_token,
                 expiresAt,
               },
               isLoading: false,
@@ -76,16 +76,16 @@ export const useAuthStore = create<AuthStore>()(
           const user = await authService.register({ email, password });
           if (user) {
             // Get tokens from localStorage (set by the auth service)
-            const accessToken = localStorage.getItem('accessToken') || '';
-            const refreshToken = localStorage.getItem('refreshToken') || '';
+            const access_token = localStorage.getItem('access_token') || '';
+            const refresh_token = localStorage.getItem('refresh_token') || '';
             // Calculate expires time based on JWT expiry (default 1 hour)
             const expiresAt = Date.now() + (60 * 60 * 1000);
             
             set({
               user,
               session: {
-                accessToken,
-                refreshToken,
+                access_token,
+                refresh_token,
                 expiresAt,
               },
               isLoading: false,
@@ -112,8 +112,8 @@ export const useAuthStore = create<AuthStore>()(
         try {
           await authService.logout();
           // Clear localStorage
-          localStorage.removeItem('accessToken');
-          localStorage.removeItem('refreshToken');
+          localStorage.removeItem('access_token');
+          localStorage.removeItem('refresh_token');
           set({
             user: null,
             session: null,
@@ -125,8 +125,8 @@ export const useAuthStore = create<AuthStore>()(
             error: error instanceof Error ? error.message : 'Unknown error',
           });
           // Still clear data even on error for robustness
-          localStorage.removeItem('accessToken');
-          localStorage.removeItem('refreshToken');
+          localStorage.removeItem('access_token');
+          localStorage.removeItem('refresh_token');
           set({
             user: null,
             session: null,
@@ -149,25 +149,25 @@ export const useAuthStore = create<AuthStore>()(
       
       refreshSession: async () => {
         try {
-          const refreshToken = localStorage.getItem('refreshToken');
-          if (!refreshToken) {
+          const refresh_token = localStorage.getItem('refresh_token');
+          if (!refresh_token) {
             logger.warn('Cannot refresh session: missing refresh token');
             return false;
           }
           
-          const user = await authService.refreshSession(refreshToken);
+          const user = await authService.refreshSession(refresh_token);
           if (user) {
             // Get tokens from localStorage (updated by the auth service)
-            const accessToken = localStorage.getItem('accessToken') || '';
-            const refreshToken = localStorage.getItem('refreshToken') || '';
+            const access_token = localStorage.getItem('access_token') || '';
+            const refresh_token = localStorage.getItem('refresh_token') || '';
             // Calculate expires time based on JWT expiry (default 1 hour)
             const expiresAt = Date.now() + (60 * 60 * 1000);
             
             set({
               user,
               session: {
-                accessToken,
-                refreshToken,
+                access_token,
+                refresh_token,
                 expiresAt,
               },
               error: null,
@@ -189,10 +189,10 @@ export const useAuthStore = create<AuthStore>()(
       initialize: async () => {
         try {
           logger.info('Initializing auth state');
-          const accessToken = localStorage.getItem('accessToken');
-          const refreshToken = localStorage.getItem('refreshToken');
+          const access_token = localStorage.getItem('access_token');
+          const refresh_token = localStorage.getItem('refresh_token');
           
-          if (!accessToken || !refreshToken) {
+          if (!access_token || !refresh_token) {
             logger.info('No tokens found in localStorage');
             set({ isLoading: false });
             return;
@@ -208,8 +208,8 @@ export const useAuthStore = create<AuthStore>()(
               set({
                 user,
                 session: {
-                  accessToken,
-                  refreshToken,
+                  access_token,
+                  refresh_token,
                   expiresAt,
                 },
                 isLoading: false,
@@ -235,8 +235,8 @@ export const useAuthStore = create<AuthStore>()(
           
           // If we get here, both getCurrentUser and refreshSession failed
           logger.info('Clearing auth state after failed attempts');
-          localStorage.removeItem('accessToken');
-          localStorage.removeItem('refreshToken');
+          localStorage.removeItem('access_token');
+          localStorage.removeItem('refresh_token');
           set({
             user: null,
             session: null,
