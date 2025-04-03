@@ -46,7 +46,7 @@ serve(async (req: Request) => {
     const stripe = getStripeClient(isTestMode);
     
     // Verify webhook signature
-    let event;
+    let event: Stripe.Event;
     try {
       event = verifyWebhookSignature(stripe, body, signature, endpointSecret);
     } catch (err) {
@@ -58,29 +58,59 @@ serve(async (req: Request) => {
     // Handle various webhook events
     switch (event.type) {
       case "checkout.session.completed": {
-        await handleCheckoutSessionCompleted(supabase, stripe, event.data.object);
+        await handleCheckoutSessionCompleted(
+          supabase, 
+          stripe, 
+          event.data.object as Stripe.Checkout.Session,
+          event.id, 
+          event.type
+        );
         break;
       }
       
       case "customer.subscription.updated": {
-        await handleSubscriptionUpdated(supabase, stripe, event.data.object);
+        await handleSubscriptionUpdated(
+          supabase, 
+          stripe, 
+          event.data.object as Stripe.Subscription, 
+          event.id, 
+          event.type
+        );
         break;
       }
       
       case "customer.subscription.deleted": {
-        await handleSubscriptionDeleted(supabase, event.data.object);
+        await handleSubscriptionDeleted(
+          supabase, 
+          event.data.object as Stripe.Subscription, 
+          event.id, 
+          event.type
+        );
         break;
       }
       
       case "invoice.payment_succeeded": {
-        await handleInvoicePaymentSucceeded(supabase, event.data.object);
+        await handleInvoicePaymentSucceeded(
+          supabase, 
+          event.data.object as Stripe.Invoice,
+          event.id,
+          event.type
+        );
         break;
       }
       
       case "invoice.payment_failed": {
-        await handleInvoicePaymentFailed(supabase, event.data.object);
+        await handleInvoicePaymentFailed(
+          supabase, 
+          event.data.object as Stripe.Invoice,
+          event.id,
+          event.type
+        );
         break;
       }
+      
+      default: 
+        console.log(`Unhandled event type: ${event.type}`);
     }
     
     return createSuccessResponse({ received: true });

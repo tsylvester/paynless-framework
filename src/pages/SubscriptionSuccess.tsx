@@ -2,13 +2,13 @@
 import { useEffect } from 'react';
 import { Layout } from '../components/layout/Layout';
 import { useAuthStore } from '../store/authStore';
-import { useSubscription } from '../context/subscription.context';
 import { useNavigate } from 'react-router-dom';
 import { CheckCircle } from 'lucide-react';
+import { useSubscriptionStore } from '../store/subscriptionStore';
 
 export function SubscriptionSuccessPage() {
   const user = useAuthStore((state) => state.user);
-  const { refreshSubscription } = useSubscription();
+  const refreshSubscription = useSubscriptionStore((state) => state.refreshSubscription);
   const navigate = useNavigate();
   
   useEffect(() => {

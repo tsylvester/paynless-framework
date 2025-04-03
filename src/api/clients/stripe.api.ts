@@ -1,7 +1,7 @@
 // src/api/clients/stripe.api.ts
 import { api } from '../apiClient';
 import { ApiResponse } from '../../types/api.types';
-import { SubscriptionPlan, UserSubscription } from '../../types/subscription.types';
+import { SubscriptionPlan, UserSubscription, SubscriptionUsageMetrics } from '../../types/subscription.types';
 import { logger } from '../../utils/logger';
 import { isStripeTestMode } from '../../utils/stripe';
 
@@ -118,16 +118,60 @@ export class StripeApiClient {
     }
   }
 
-  async cancelSubscription(): Promise<ApiResponse<void>> {
+  async cancelSubscription(subscriptionId: string): Promise<ApiResponse<void>> {
     try {
-      logger.info('Cancelling subscription');
-      await api.post<void>('/cancel', {});
+      logger.info('Cancelling subscription', { subscriptionId });
+      // Use the specific endpoint from the backend router
+      await api.post<void>(`/api-subscriptions/${subscriptionId}/cancel`, {});
       return { status: 200 };
     } catch (error) {
       logger.error('Error cancelling subscription', {
         error: error instanceof Error ? error.message : 'Unknown error',
+        subscriptionId,
       });
       
+      return {
+        error: {
+          code: 'stripe_error',
+          message: error instanceof Error ? error.message : 'An unknown error occurred',
+        },
+        status: 500,
+      };
+    }
+  }
+
+  async resumeSubscription(subscriptionId: string): Promise<ApiResponse<void>> {
+    try {
+      logger.info('Resuming subscription', { subscriptionId });
+      // Use the specific endpoint from the backend router
+      await api.post<void>(`/api-subscriptions/${subscriptionId}/resume`, {});
+      return { status: 200 };
+    } catch (error) {
+      logger.error('Error resuming subscription', { 
+        error: error instanceof Error ? error.message : 'Unknown error',
+        subscriptionId,
+      });
+      return {
+        error: {
+          code: 'stripe_error',
+          message: error instanceof Error ? error.message : 'An unknown error occurred',
+        },
+        status: 500,
+      };
+    }
+  }
+
+  async getUsageMetrics(metric: string): Promise<ApiResponse<SubscriptionUsageMetrics>> {
+    try {
+      logger.info('Fetching usage metrics', { metric });
+      // Use the specific endpoint from the backend router
+      const resultData = await api.get<SubscriptionUsageMetrics>(`/api-subscriptions/usage/${metric}`);
+      return { data: resultData, status: 200 };
+    } catch (error) {
+      logger.error('Error fetching usage metrics', { 
+        error: error instanceof Error ? error.message : 'Unknown error',
+        metric 
+      });
       return {
         error: {
           code: 'stripe_error',

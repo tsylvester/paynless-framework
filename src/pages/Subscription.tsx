@@ -5,18 +5,19 @@ import { useAuthStore } from '../store/authStore';
 import { Navigate } from 'react-router-dom';
 import { logger } from '../utils/logger';
 import { Check, AlertCircle, CreditCard, Award, AlertTriangle } from 'lucide-react';
-import { useSubscription } from '../context/subscription.context';
+import { useSubscriptionStore } from '../store/subscriptionStore';
 
 export function SubscriptionPage() {
-  const { user, isLoading } = useAuthStore();
+  const { user, isLoading: authLoading } = useAuthStore();
   const { 
     userSubscription, 
     availablePlans, 
     isSubscriptionLoading, 
     isTestMode,
     createCheckoutSession,
-    createBillingPortalSession
-  } = useSubscription();
+    createBillingPortalSession,
+    cancelSubscription
+  } = useSubscriptionStore();
   
   const [isProcessing, setIsProcessing] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -28,19 +29,9 @@ export function SubscriptionPage() {
     setError(null);
     
     try {
-      // Get the current URL to use as cancel URL
-      const currentUrl = window.location.href;
-      const successUrl = `${window.location.origin}/subscription/success?session_id={CHECKOUT_SESSION_ID}`;
-      
-      // Create a checkout session
-      const checkoutUrl = await createCheckoutSession(
-        priceId,
-        successUrl,
-        currentUrl
-      );
+      const checkoutUrl = await createCheckoutSession(priceId);
       
       if (checkoutUrl) {
-        // Redirect to checkout
         window.location.href = checkoutUrl;
       } else {
         setError('Failed to create checkout session. Please try again.');
@@ -48,10 +39,36 @@ export function SubscriptionPage() {
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'An unexpected error occurred';
       setError(errorMessage);
-      logger.error('Error creating checkout session', {
+      logger.error('Error initiating checkout session process', {
         error: errorMessage,
         userId: user.id,
         priceId,
+      });
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+  
+  const handleCancelSubscription = async () => {
+    if (!user || !userSubscription?.id) return;
+    
+    setIsProcessing(true);
+    setError(null);
+    const subscriptionId = userSubscription.id;
+
+    try {
+      const success = await cancelSubscription(subscriptionId);
+      if (!success) {
+        setError('Failed to cancel subscription. Please try again or contact support.');
+      }
+      // No redirect needed, store refresh will update UI
+    } catch (err) { 
+      const errorMessage = err instanceof Error ? err.message : 'An unexpected error occurred';
+      setError(errorMessage);
+      logger.error('Error initiating subscription cancellation', {
+        error: errorMessage,
+        userId: user.id,
+        subscriptionId,
       });
     } finally {
       setIsProcessing(false);
@@ -65,22 +82,17 @@ export function SubscriptionPage() {
     setError(null);
     
     try {
-      // Get the current URL to use as return URL
-      const returnUrl = window.location.href;
-      
-      // Create a billing portal session
-      const billingPortalUrl = await createBillingPortalSession(returnUrl);
+      const billingPortalUrl = await createBillingPortalSession();
       
       if (billingPortalUrl) {
-        // Redirect to billing portal
         window.location.href = billingPortalUrl;
       } else {
         setError('Failed to access billing portal. Please try again.');
       }
-    } catch (err) {
+    } catch (err) { 
       const errorMessage = err instanceof Error ? err.message : 'An unexpected error occurred';
       setError(errorMessage);
-      logger.error('Error accessing billing portal', {
+      logger.error('Error initiating billing portal session', {
         error: errorMessage,
         userId: user.id,
       });
@@ -103,7 +115,7 @@ export function SubscriptionPage() {
     return `every ${count} ${interval}s`;
   };
   
-  if (isLoading || isSubscriptionLoading) {
+  if (authLoading || isSubscriptionLoading) {
     return (
       <Layout>
         <div className="flex justify-center items-center py-12">
@@ -192,7 +204,7 @@ export function SubscriptionPage() {
                       </div>
                     )}
                   </div>
-                  <div className="mt-4">
+                  <div className="mt-4 flex flex-wrap gap-3">
                     <button
                       onClick={handleManageSubscription}
                       disabled={isProcessing}
@@ -201,8 +213,19 @@ export function SubscriptionPage() {
                       }`}
                     >
                       <CreditCard className="mr-2 h-4 w-4" />
-                      Manage Subscription
+                      Manage Billing / Payment
                     </button>
+                    {userSubscription.status === 'active' && !userSubscription.cancelAtPeriodEnd && (
+                       <button
+                         onClick={handleCancelSubscription}
+                         disabled={isProcessing}
+                         className={`inline-flex items-center px-4 py-2 border border-border rounded-md shadow-sm text-sm font-medium text-textPrimary hover:bg-surface focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary ${
+                           isProcessing ? 'opacity-75 cursor-not-allowed' : ''
+                         }`}
+                       >
+                         Cancel Subscription
+                       </button>
+                    )}
                   </div>
                 </div>
               </div>
@@ -235,20 +258,29 @@ export function SubscriptionPage() {
                 </ul>
               </div>
               <div className="px-6 py-4 bg-background">
-                {userSubscription?.status === 'free' ? (
+                {(userSubscription?.status === 'active' || userSubscription?.status === 'trialing') ? (
                   <button
+                    onClick={handleCancelSubscription}
+                    disabled={isProcessing || !userSubscription?.id}
+                    className={`w-full inline-flex justify-center py-2 px-4 border border-border text-textPrimary rounded-md shadow-sm text-sm font-medium hover:bg-surface focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary ${
+                      (isProcessing || !userSubscription?.id) ? 'opacity-75 cursor-not-allowed' : ''
+                    }`}
+                  >
+                    {isProcessing ? 'Processing...' : 'Downgrade to Free'}
+                  </button>
+                ) : userSubscription?.status === 'free' ? (
+                   <button
                     disabled
                     className="w-full inline-flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-textSecondary/50 bg-surface cursor-not-allowed"
                   >
                     Current Plan
                   </button>
-                ) : (
+                 ) : (
                   <button
-                    onClick={() => handleSubscribe('price_id_for_free')}
-                    disabled={isProcessing}
-                    className="w-full inline-flex justify-center py-2 px-4 border border-border text-textPrimary rounded-md shadow-sm text-sm font-medium hover:bg-surface focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary"
+                    disabled
+                    className="w-full inline-flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-textSecondary/50 bg-surface cursor-not-allowed"
                   >
-                    Select Plan
+                    Select Plan (N/A)
                   </button>
                 )}
               </div>

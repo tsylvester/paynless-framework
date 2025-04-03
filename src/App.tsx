@@ -4,7 +4,6 @@ import { QueryClient, QueryClientProvider } from 'react-query';
 import { useEffect, useRef } from 'react';
 import { useAuthStore } from './store/authStore';
 import { ThemeProvider } from './context/theme.context';
-import { SubscriptionProvider } from './context/subscription.context';
 import { AuthenticatedGate } from './components/auth/AuthenticatedGate';
 
 // Create a client for React Query
@@ -34,9 +33,7 @@ function App() {
       <ThemeProvider>
         <BrowserRouter>
           <AuthenticatedGate>
-            <SubscriptionProvider>
               <></>
-            </SubscriptionProvider>
           </AuthenticatedGate>
 
           <Routes>
