@@ -27,8 +27,8 @@ export function ProfileEditor({
   const [currentTab, setCurrentTab] = useState<TabType>('basic');
 
   // Basic info state
-  const [firstName, setFirstName] = useState(profile.firstName || '');
-  const [lastName, setLastName] = useState(profile.lastName || '');
+  const [first_name, setfirst_name] = useState(profile.first_name || '');
+  const [last_name, setlast_name] = useState(profile.last_name || '');
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -36,8 +36,8 @@ export function ProfileEditor({
 
     try {
       const updates: Partial<UserProfile> = {
-        firstName,
-        lastName,
+        first_name,
+        last_name,
       };
 
       await onSave(updates);
@@ -86,16 +86,16 @@ export function ProfileEditor({
               <div className="flex-1 grid grid-cols-2 gap-4">
                 <input
                   type="text"
-                  value={firstName}
-                  onChange={(e) => setFirstName(e.target.value)}
+                  value={first_name}
+                  onChange={(e) => setfirst_name(e.target.value)}
                   placeholder="First Name"
                   className="input"
                   disabled={isSaving}
                 />
                 <input
                   type="text"
-                  value={lastName}
-                  onChange={(e) => setLastName(e.target.value)}
+                  value={last_name}
+                  onChange={(e) => setlast_name(e.target.value)}
                   placeholder="Last Name"
                   className="input"
                   disabled={isSaving}

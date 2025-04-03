@@ -1,6 +1,6 @@
 # API-Driven Application
 
-This project is a modern API-driven application built with React and Supabase. It follows a clear separation of concerns to support web, iOS, and Android clients through a unified API.
+This project is a modern API-driven application built with React and Supabase. It features user authentication, profile management, and Stripe-based subscriptions, following a clear separation of concerns.
 
 ## Development Context
 
@@ -30,70 +30,69 @@ When implementing features:
 ## Architecture Overview
 
 The architecture follows these principles:
-- Clear separation between frontend and backend
-- RESTful API endpoints to serve all business logic
-- Backend middleware to handle authentication and authorization
-- Frontend as a consumer of the API, easily replaceable with mobile apps
-- Stateless authentication using JWT tokens
-- Consistent error handling and response formatting
-- State management using Zustand for predictable and reliable state
+- Clear separation between frontend (React) and backend (Supabase Edge Functions)
+- RESTful API endpoints (Edge Functions) serve business logic
+- Frontend consumes the API via a layered structure (UI -> Service -> API Client)
+- Stateless authentication using JWT tokens managed via Supabase Auth
+- Consistent error handling and response formatting via `BaseApiClient`
+- State management primarily using Zustand stores
 
-## AI Integration
+## API Endpoints (Supabase Edge Functions)
 
-The application supports multiple AI providers through a modular architecture:
+The application exposes the following primary API endpoints through Supabase Edge Functions:
 
-### Supported Providers
-- OpenAI (ChatGPT)
-- Perplexity (Coming soon)
-- Claude (Coming soon)
-- DeepSeek (Coming soon)
-- Gemini (Coming soon)
-- Copilot (Coming soon)
+### Authentication (`/login`, `/register`, `/logout`, `/session`, `/refresh`, `/reset-password`)
+- Handles user sign-up, login, logout, session validation/refresh, and password reset.
 
-### Features
-- Model selection interface
-- System prompt management
-- Rate limiting based on subscription tier
-- Usage tracking and analytics
-- Provider-agnostic API design
+### Profile Management (`/me`, `/profile/:id`)
+- Allows fetching and updating the current user's profile (`/me`).
+- Allows fetching other users' profiles (`/profile/:id`).
 
-### Database Schema
-- `ai_models` - Available AI models
-- `ai_providers` - AI service providers
-- `system_prompts` - Pre-configured system prompts
-- `ai_usage` - Usage tracking and analytics
+### Subscriptions & Billing (`/api-subscriptions/...`, `/stripe-webhook`)
+- `GET /api-subscriptions/plans`: Fetches available Stripe subscription plans.
+- `GET /api-subscriptions/current`: Fetches the current user's subscription status.
+- `POST /api-subscriptions/checkout`: Creates a Stripe Checkout session.
+- `POST /api-subscriptions/billing-portal`: Creates a Stripe Customer Portal session.
+- `POST /api-subscriptions/:id/cancel`: Cancels a subscription.
+- `POST /api-subscriptions/:id/resume`: Resumes a subscription.
+- `GET /api-subscriptions/usage/:metric`: Fetches usage metrics (if applicable).
+- `POST /stripe-webhook`: Handles incoming webhook events from Stripe (e.g., payment success, subscription updates).
 
-## API Endpoints
+## Database Schema (Simplified)
 
-The application exposes the following API endpoints through Supabase Edge Functions:
+The core database tables likely include:
 
-### Authentication
-- POST /login - Login with email/password
-- POST /register - Register new user
-- POST /logout - Logout user
-- GET /session - Get current session
-- POST /refresh - Refresh authentication tokens
-- POST /reset-password - Request password reset
+- `public.user_profiles`
+  - `id` (uuid, references `auth.users.id`)
+  - `first_name` (text)
+  - `last_name` (text)
+  - `role` (text, e.g., 'user', 'admin')
+  - `created_at` (timestampz)
+  - `updated_at` (timestampz)
 
-### Users
-- GET /me - Get current user profile
-- GET /profile - Get user profile
-- PUT /profile - Update user profile
-- GET /users/preferences - Get user preferences
-- PUT /users/preferences - Update user preferences
-- GET /users/details - Get user details
+- `public.subscription_plans`
+  - `id` (uuid or text)
+  - `stripe_price_id` (text)
+  - `name` (text)
+  - `description` (text)
+  - `amount` (integer, smallest currency unit e.g., cents)
+  - `currency` (text, e.g., 'usd')
+  - `interval` (text, e.g., 'month', 'year')
+  - `interval_count` (integer)
+  - `metadata` (jsonb)
 
-### Subscriptions
-- GET /api-subscriptions/plans - Get available subscription plans
-- GET /api-subscriptions/current - Get current user's subscription
-- POST /api-subscriptions/checkout - Create checkout session
-- POST /api-subscriptions/billing-portal - Create billing portal session
-- GET /api-subscriptions/usage/:metric - Get usage metrics
-- POST /api-subscriptions/:id/cancel - Cancel subscription
-- POST /api-subscriptions/:id/resume - Resume subscription
+- `public.user_subscriptions`
+  - `id` (uuid)
+  - `user_id` (uuid, references `auth.users.id`)
+  - `stripe_customer_id` (text)
+  - `stripe_subscription_id` (text)
+  - `status` (text, e.g., 'active', 'canceled', 'trialing')
+  - `current_period_start` (timestampz)
+  - `current_period_end` (timestampz)
+  - `cancel_at_period_end` (boolean)
+  - `plan_id` (references `subscription_plans.id`)
 
-### Payments
-- POST /stripe-webhook - Handle Stripe webhook events
+*(Note: Actual schema might have variations, refer to migrations)*
 
 ## Project Structure
 
@@ -101,31 +100,27 @@ The application exposes the following API endpoints through Supabase Edge Functi
 /src
 │
 ├── /api                  # API client implementations
-│   └── /clients          # Specific API clients for different endpoints
-│       ├── /auth         # Authentication API clients
-│       │   ├── index.ts  # Main auth client
-│       │   ├── login.ts  # Login client
-│       │   ├── register.ts # Register client
-│       │   ├── session.ts # Session management
-│       │   ├── password.ts # Password operations
-│       │   └── reset-password.ts # Password reset
-│       ├── base.api.ts   # Base API client with request handling
-│       ├── profile.api.ts # User profile operations
-│       └── stripe.api.ts # Subscription and payment operations
+│   └── /clients          # Specific API clients
+│       ├── /auth         # Authentication API clients (index, login, register, etc.)
+│       ├── base.api.ts   # Base API client (Axios setup, interceptors)
+│       ├── profile.api.ts # Profile API client (getMyProfile, getProfile, updateMyProfile)
+│       └── stripe.api.ts # Stripe/Subscription API client
 │
 ├── /components           # UI components
-│   ├── /auth            # Authentication-related components
-│   ├── /layout          # Layout components
-│   ├── /profile         # User profile components
-│   └── /subscription    # Subscription components
+│   ├── /auth            # Auth forms, ProtectedRoute
+│   ├── /layout          # Main layout components (Layout, Header, Sidebar)
+│   └── /profile         # Profile editor/display components
 │
-├── /config               # Configuration files
+├── /config               # Configuration files (if any)
 │
 ├── /context              # React context providers
+│   ├── subscription.context.tsx # Context for subscription state (may overlap with store)
+│   └── theme.context.tsx    # Theme context
 │
 ├── /hooks                # Custom React hooks
-│   ├── useAuth.ts       # Hook for auth context/store
-│   └── useSubscription.ts # Hook for subscription state
+│   ├── useAuth.ts       # Convenience hook for auth store
+│   ├── useAuthSession.ts # Hook for managing session refresh
+│   └── useSubscription.ts # Hook for subscription context
 │
 ├── /pages                # Page components
 │   ├── Home.tsx
@@ -133,38 +128,38 @@ The application exposes the following API endpoints through Supabase Edge Functi
 │   ├── Register.tsx
 │   ├── Dashboard.tsx
 │   ├── Profile.tsx
-│   └── Subscription.tsx
+│   ├── Subscription.tsx
+│   └── SubscriptionSuccess.tsx
 │
 ├── /routes               # Routing configuration
-│   └── routes.tsx       # Routes configuration
+│   └── routes.tsx       # Route definitions
 │
-├── /services             # Business logic services
-│   ├── /auth            # Authentication services
-│   │   ├── index.ts     # Main auth service
-│   │   ├── login.service.ts # Login service
-│   │   ├── register.service.ts # Registration service
-│   │   └── session.service.ts # Session management
-│   ├── profile.service.ts # User profile service
+├── /services             # Business logic services (connect UI/stores to API clients)
+│   ├── /auth            # Auth services (index, login, register, etc.)
+│   ├── profile.service.ts # Profile service (getCurrentUserProfile, update, etc.)
 │   └── subscription.service.ts # Subscription service
 │
 ├── /store                # Zustand store implementations
-│   ├── authStore.ts     # Authentication state store
-│   └── subscriptionStore.ts # Subscription state store
+│   ├── authStore.ts     # Authentication state (user, session, loading)
+│   └── subscriptionStore.ts # Subscription state (plans, user sub, loading)
 │
 ├── /types                # TypeScript types and interfaces
-│   ├── api.types.ts     # API-related types
-│   ├── auth.types.ts    # Authentication types
-│   ├── profile.types.ts # Profile types
-│   ├── route.types.ts   # Routing types
-│   └── subscription.types.ts # Subscription types
+│   ├── api.types.ts
+│   ├── auth.types.ts
+│   ├── profile.types.ts
+│   ├── subscription.types.ts
+│   ├── route.types.ts
+│   └── theme.types.ts
 │
 ├── /utils                # Utility functions
-│   ├── logger.ts        # Logging service
-│   ├── supabase.ts      # Supabase client
-│   └── stripe.ts        # Stripe utilities
+│   ├── logger.ts        # Logging utility
+│   ├── supabase.ts      # Supabase client setup (if used directly)
+│   └── stripe.ts        # Stripe utilities (e.g., isStripeTestMode)
 │
-├── App.tsx               # Main App component
-└── main.tsx              # Entry point
+├── App.tsx               # Main App component (providers, routing setup)
+├── main.tsx              # Application entry point
+├── index.css             # Global styles
+└── vite-env.d.ts       # Vite environment types
 ```
 
 ## Edge Functions
@@ -174,67 +169,66 @@ Located in `/supabase/functions`:
 ```
 /supabase/functions
 │
-├── /_shared             # Shared utilities
-│   ├── auth.ts          # Authentication utilities
-│   ├── cors-headers.ts  # CORS handling
-│   └── stripe-client.ts # Stripe client setup
+├── /_shared             # Shared utilities (CORS, Auth helpers, Stripe client)
 │
 ├── /login               # Login endpoint
 ├── /register            # Registration endpoint
 ├── /logout              # Logout endpoint
-├── /session             # Session management
-├── /refresh             # Token refresh
-├── /reset-password      # Password reset
-├── /profile             # Profile management
-├── /me                  # Current user profile
-├── /api-users           # User management endpoints
-├── /api-subscriptions   # Subscription management endpoints
+├── /session             # Session validation endpoint
+├── /refresh             # Token refresh endpoint
+├── /reset-password      # Password reset endpoint
+├── /me                  # Current user profile endpoint (GET, PUT)
+├── /profile             # Other user profile endpoint (GET by ID)
+├── /api-subscriptions   # Subscription management endpoints (plans, checkout, portal, etc.)
 └── /stripe-webhook      # Stripe webhook handler
 ```
 
-## Core Framework Files (Do Not Modify)
+## Core Framework Files (Do Not Modify Generally)
 
-The following files form the core of the application and should not be modified:
-- `/api/clients/base.api.ts`
-- `/utils/logger.ts`
-- `/utils/supabase.ts`
+The following files form the core of the API interaction and utility setup:
+- `/src/api/clients/base.api.ts`
+- `/src/utils/logger.ts`
 
 ## Getting Started
 
 1. Clone this repository
-2. Copy `.env.example` to `.env` and add your Supabase credentials
-3. Run `npm install` to install dependencies
-4. Run `npm run dev` to start the development server
+2. Copy `.env.example` to `.env` and add your Supabase Project URL and Anon Key.
+3. Ensure Docker is running.
+4. Run `npm install` (or `yarn` or `pnpm install`) to install dependencies.
+5. Start the local Supabase stack: `supabase start`
+6. Apply database migrations: `supabase db reset` (if starting fresh) or ensure migrations are up-to-date.
+7. Run `npm run dev` to start the development server.
 
 ## Supabase Setup
 
-1. Create a new Supabase project
-2. Set up your project reference ID
-3. Run the SQL migrations in the `supabase/migrations` folder //We need to create a migration file that represents the full state of the database
+1. Create a new Supabase project.
+2. Link your local repository: `supabase link --project-ref YOUR_PROJECT_REF`
+3. Set up required environment variables in `.env` (`VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`).
+4. Ensure database migrations in `supabase/migrations` define the necessary tables (`user_profiles`, `subscription_plans`, `user_subscriptions`) and the trigger to create user profiles.
 
-## API Implementation
+## API Implementation Layering
 
-The application follows a clear layered architecture:
-1. UI Components → Make requests via Hooks or directly through stores
-2. Hooks/Stores → Call Service Layer methods
-3. Service Layer → Uses API Clients for remote operations
-4. API Clients → Handle HTTP, caching, error handling
-5. Backend API → Implements CRUD operations on data
+The application follows a clear layered architecture for API interactions:
+1. UI Components/Pages (`/src/pages`, `/src/components`) → Trigger actions (e.g., login, fetch profile).
+2. Hooks/Stores (`/src/hooks`, `/src/store`) → Manage state and call Service Layer methods.
+3. Service Layer (`/src/services`) → Implements application-specific logic, calls API Client methods.
+4. API Client Layer (`/src/api/clients`) → Handles HTTP requests to specific backend endpoints, uses `BaseApiClient`.
+5. Backend API (Supabase Edge Functions) → Receives requests, interacts with Supabase Auth/DB, Stripe.
 
 ## State Management
 
-The application uses Zustand for state management:
-1. State is defined in stores (`/src/store`)
-2. Components access state through hooks or direct store imports
-3. Updates to state trigger re-renders of dependent components
-4. Authentication state is managed in `authStore.ts`
-5. Subscription state is managed in `subscriptionStore.ts`
+The application uses Zustand for global state management:
+1. State slices are defined in stores (`/src/store/authStore.ts`, `/src/store/subscriptionStore.ts`).
+2. Stores include state variables and actions to modify state or interact with services.
+3. Components access state and actions using the generated hooks (e.g., `useAuthStore()`, `useSubscriptionStore()`).
+4. The `persist` middleware is used to save parts of the state (like auth session) to `localStorage`.
+5. A `SubscriptionContext` also exists, potentially overlapping with `subscriptionStore`. Evaluate if both are needed.
 
 ## Contributing
 
 To contribute to this project:
-1. Ensure you understand the architecture and follow the same patterns
-2. Never duplicate existing functionality
-3. Use proper TypeScript types
-4. Document all new code
-5. Test your changes thoroughly
+1. Ensure you understand the architecture and follow the established patterns.
+2. Avoid duplicating existing functionality; utilize services and stores.
+3. Use proper TypeScript types for all data structures.
+4. Document new components, services, functions, and complex logic.
+5. Test changes thoroughly, considering edge cases.

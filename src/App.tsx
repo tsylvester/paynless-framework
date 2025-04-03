@@ -6,6 +6,7 @@ import { useAuthStore } from './store/authStore';
 import { ThemeProvider } from './context/theme.context';
 import { useAuthSession } from './hooks/useAuthSession';
 import { logger } from './utils/logger';
+import { SubscriptionProvider } from './context/subscription.context';
 
 // Create a client for React Query
 const queryClient = new QueryClient({
@@ -54,17 +55,19 @@ function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <ThemeProvider>
-        <BrowserRouter>
-          <Routes>
-            {routes.map((route) => (
-              <Route
-                key={route.path}
-                path={route.path}
-                element={route.element}
-              />
-            ))}
-          </Routes>
-        </BrowserRouter>
+        <SubscriptionProvider>
+          <BrowserRouter>
+            <Routes>
+              {routes.map((route) => (
+                <Route
+                  key={route.path}
+                  path={route.path}
+                  element={route.element}
+                />
+              ))}
+            </Routes>
+          </BrowserRouter>
+        </SubscriptionProvider>
       </ThemeProvider>
     </QueryClientProvider>
   );

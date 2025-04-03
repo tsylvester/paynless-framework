@@ -29,8 +29,8 @@ export const getProfile = async (
         .insert([
           {
             id: userId,
-            firstName: null,
-            lastName: null,
+            first_name: null,
+            last_name: null,
             role: "user",
           }
         ])
@@ -95,7 +95,7 @@ export const updateProfile = async (
             id: userId,
             ...profileData,
             role: "user",
-            updatedAt: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
           }
         ])
         .select()
@@ -106,7 +106,7 @@ export const updateProfile = async (
         .from("user_profiles")
         .update({
           ...profileData,
-          updatedAt: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
         })
         .eq("id", userId)
         .select()

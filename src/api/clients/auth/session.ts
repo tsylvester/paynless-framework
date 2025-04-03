@@ -16,12 +16,6 @@ export class SessionApiClient {
   /**
    * Get current session
    * 
-  /**
-   * Get current session
-   * 
-  /**
-   * Get current session
-   * 
    * IMPORTANT: This endpoint requires:
    * 1. A JWT in the Authorization header (handled by BaseApiClient)
    * 2. Access and refresh tokens in the request body (handled here)

@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useState, useCallback } from 'react';
 import { Layout } from '../components/layout/Layout';
 import { Navigate } from 'react-router-dom';
 import { profileService } from '../services/profile.service';
@@ -9,76 +9,43 @@ import { Loader, AlertCircle, CheckCircle } from 'lucide-react';
 import { useAuthStore } from '../store/authStore';
 
 export function ProfilePage() {
-  const { user, isLoading: authLoading } = useAuthStore(state => ({ user: state.user, isLoading: state.isLoading }));
-  const [profile, setProfile] = useState<UserProfile | null>(null);
-  const [isProfileLoading, setIsProfileLoading] = useState<boolean>(true);
+  const { user, profile, setProfile, isLoading: authLoading } = useAuthStore(state => ({ 
+    user: state.user,
+    profile: state.profile,
+    setProfile: state.setProfile,
+    isLoading: state.isLoading 
+  }));
+  
   const [isSaving, setIsSaving] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
 
-  const loadProfile = useCallback(async () => {
-    if (!user) {
-      setIsProfileLoading(false);
+  const handleSave = async (updatedProfileData: Partial<UserProfile>) => {
+    if (!user || !profile) {
+      setError('Cannot save profile: User or profile data missing.');
       return;
     }
-
-    setIsProfileLoading(true);
-    setError(null);
-    setSuccess(null);
-
-    try {
-      logger.info('ProfilePage: Loading profile for user', { userId: user.id });
-      const fetchedProfile = await profileService.getCurrentUserProfile();
-
-      if (fetchedProfile) {
-        setProfile(fetchedProfile);
-        logger.info('ProfilePage: Profile loaded successfully', { userId: user.id });
-      } else {
-        logger.warn('ProfilePage: getCurrentUserProfile returned null', { userId: user.id });
-        setError('Could not load your profile data. Please try refreshing.');
-        setProfile(null);
-      }
-    } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : 'An unexpected error occurred';
-      logger.error('ProfilePage: Error loading profile', { error: errorMessage, userId: user.id });
-      setError('Failed to load profile data. Please try again later.');
-      setProfile(null);
-    } finally {
-      setIsProfileLoading(false);
-    }
-  }, [user]);
-
-  useEffect(() => {
-    if (!authLoading) {
-      loadProfile();
-    }
-  }, [authLoading, loadProfile]);
-
-  const handleSave = async (updatedProfileData: Partial<UserProfile>) => {
-    if (!profile) return;
 
     setIsSaving(true);
     setError(null);
     setSuccess(null);
 
     try {
-      logger.info('ProfilePage: Attempting to save profile', { userId: profile.id });
-      const updatedProfile = await profileService.updateCurrentUserProfile({
-        ...profile,
-        ...updatedProfileData,
-      });
+      logger.info('ProfilePage: Attempting to save profile changes', { userId: user.id, changes: updatedProfileData });
+      
+      const updatedProfile = await profileService.updateCurrentUserProfile(updatedProfileData);
 
       if (updatedProfile) {
         setProfile(updatedProfile);
         setSuccess('Profile updated successfully!');
-        logger.info('ProfilePage: Profile updated successfully', { userId: profile.id });
+        logger.info('ProfilePage: Profile updated successfully', { userId: user.id });
       } else {
-        logger.warn('ProfilePage: updateCurrentUserProfile returned null', { userId: profile.id });
+        logger.warn('ProfilePage: updateCurrentUserProfile returned null', { userId: user.id });
         setError('Failed to save profile changes. Please try again.');
       }
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'An unexpected error occurred';
-      logger.error('ProfilePage: Error updating profile', { error: errorMessage, userId: profile.id });
+      logger.error('ProfilePage: Error updating profile', { error: errorMessage, userId: user.id });
       setError('An error occurred while saving. Please try again later.');
     } finally {
       setIsSaving(false);
@@ -99,7 +66,7 @@ export function ProfilePage() {
     return <Navigate to="/login" replace />;
   }
 
-  const isLoading = isProfileLoading;
+  const isLoading = false;
 
   return (
     <Layout>
@@ -120,26 +87,7 @@ export function ProfilePage() {
           </div>
         )}
 
-        {isLoading ? (
-          <div className="space-y-6">
-            <div className="bg-surface rounded-lg shadow-sm p-6 animate-pulse">
-              <div className="flex items-center space-x-4 mb-4">
-                <div className="h-20 w-20 rounded-full bg-gray-200" />
-                <div className="flex-1 space-y-3">
-                  <div className="h-4 bg-gray-200 rounded w-1/4" />
-                  <div className="h-4 bg-gray-200 rounded w-2/4" />
-                  <div className="h-4 bg-gray-200 rounded w-1/3" />
-                </div>
-              </div>
-              <div className="space-y-4 mt-6">
-                <div className="h-4 bg-gray-200 rounded w-full" />
-                <div className="h-4 bg-gray-200 rounded w-full" />
-                <div className="h-4 bg-gray-200 rounded w-3/4" />
-                <div className="h-10 bg-gray-200 rounded w-1/4 mt-4" />
-              </div>
-            </div>
-         </div>
-        ) : profile ? (
+        {profile ? (
           <div className="bg-surface rounded-lg shadow-sm p-6">
             <ProfileEditor
               profile={profile}
@@ -149,8 +97,9 @@ export function ProfilePage() {
           </div>
         ) : (
           !error && (
-            <div className="text-center text-gray-500 py-10">
-              Could not load profile information.
+            <div className="p-4 bg-yellow-100 text-yellow-700 rounded flex items-center gap-2">
+              <AlertCircle className="h-5 w-5" />
+              <span>Could not load profile information. Please try refreshing the page.</span>
             </div>
           )
         )}

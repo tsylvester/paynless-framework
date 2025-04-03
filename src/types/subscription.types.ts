@@ -42,7 +42,7 @@ export interface SubscriptionTransaction {
   amount: number;
   currency: string;
   status: TransactionStatus;
-  createdAt: string;
+  created_at: string;
 }
 
 export type TransactionStatus = 

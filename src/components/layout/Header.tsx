@@ -70,7 +70,7 @@ export function Header() {
                     {user.avatarUrl ? (
                       <img
                         src={user.avatarUrl}
-                        alt={user.firstName || user.email}
+                        alt={user.first_name || user.email}
                         className="h-8 w-8 rounded-full object-cover"
                       />
                     ) : (
@@ -78,7 +78,7 @@ export function Header() {
                     )}
                   </div>
                   <span className="text-sm text-textSecondary">
-                    {user.firstName || user.email}
+                    {user.first_name || user.email}
                   </span>
                 </button>
                 
@@ -265,7 +265,7 @@ export function Header() {
                     {user.avatarUrl ? (
                       <img
                         src={user.avatarUrl}
-                        alt={user.firstName || user.email}
+                        alt={user.first_name || user.email}
                         className="h-10 w-10 rounded-full object-cover"
                       />
                     ) : (
@@ -276,7 +276,7 @@ export function Header() {
                   </div>
                   <div className="ml-3">
                     <div className="text-base font-medium text-textPrimary">
-                      {user.firstName} {user.lastName}
+                      {user.first_name} {user.last_name}
                     </div>
                     <div className="text-sm font-medium text-textSecondary">{user.email}</div>
                   </div>

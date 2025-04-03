@@ -58,8 +58,8 @@ Deno.serve(async (req) => {
           .from('user_profiles')
           .upsert({
             id: user.id,
-            first_name: profileData.firstName,
-            last_name: profileData.lastName,
+            first_name: profileData.first_name,
+            last_name: profileData.last_name,
             avatar_url: profileData.avatarUrl,
             role: profileData.role || 'user',
             updated_at: new Date().toISOString(),

@@ -4,7 +4,12 @@ import { Navigate } from 'react-router-dom';
 import { useAuthStore } from '../store/authStore';
 
 export function DashboardPage() {
-  const { user, isLoading } = useAuthStore();
+  // Get user AND profile from the store
+  const { user, profile, isLoading } = useAuthStore(state => ({ 
+    user: state.user,
+    profile: state.profile,
+    isLoading: state.isLoading 
+  }));
   
   if (isLoading) {
     return (
@@ -20,6 +25,11 @@ export function DashboardPage() {
     return <Navigate to="/login" />;
   }
   
+  // Determine the name to display, prioritizing profile, then user, then email
+  const displayName = profile?.first_name || user.first_name || user.email;
+  // Determine role, prioritizing profile, then user (User object might not have role)
+  const displayRole = profile?.role || user.role || 'user'; // Default to 'user' if unknown
+
   return (
     <Layout>
       <div className="py-6">
@@ -28,7 +38,7 @@ export function DashboardPage() {
         <div className="mt-6 bg-white shadow overflow-hidden sm:rounded-lg">
           <div className="px-4 py-5 sm:px-6">
             <h2 className="text-lg leading-6 font-medium text-gray-900">
-              Welcome back, {user.firstName || user.email}
+              Welcome back, {displayName}
             </h2>
             <p className="mt-1 max-w-2xl text-sm text-gray-500">
               Your personalized dashboard.
@@ -43,8 +53,9 @@ export function DashboardPage() {
                   <div className="mt-3 text-sm text-gray-500">
                     <p>User ID: {user.id}</p>
                     <p>Email: {user.email}</p>
-                    <p>Role: {user.role}</p>
-                    <p>Created: {new Date(user.createdAt).toLocaleDateString()}</p>
+                    {/* Display role from profile or fallback */}
+                    <p>Role: {displayRole}</p> 
+                    <p>Created: {new Date(user.created_at || profile?.created_at || Date.now()).toLocaleDateString()}</p>
                   </div>
                 </div>
               </div>

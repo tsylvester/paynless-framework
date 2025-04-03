@@ -1,12 +1,14 @@
 import { create } from 'zustand';
-import { AuthState, User, Session } from '../types/auth.types';
+import { AuthState, User, Session, UserProfile } from '../types/auth.types';
 import { authService } from '../services/auth';
 import { logger } from '../utils/logger';
 import { persist } from 'zustand/middleware';
+import { profileService } from '../services/profile.service';
 
 interface AuthStore extends AuthState {
   setUser: (user: User | null) => void;
   setSession: (session: Session | null) => void;
+  setProfile: (profile: UserProfile | null) => void;
   setIsLoading: (isLoading: boolean) => void;
   setError: (error: Error | null) => void;
   login: (email: string, password: string) => Promise<User | null>;
@@ -22,6 +24,7 @@ export const useAuthStore = create<AuthStore>()(
     (set, get) => ({
       user: null,
       session: null,
+      profile: null,
       isLoading: true,
       error: null,
       
@@ -29,21 +32,23 @@ export const useAuthStore = create<AuthStore>()(
       
       setSession: (session) => set({ session }),
       
+      setProfile: (profile) => set({ profile }),
+      
       setIsLoading: (isLoading) => set({ isLoading }),
       
       setError: (error) => set({ error }),
       
       login: async (email, password) => {
-        set({ isLoading: true, error: null });
+        set({ isLoading: true, error: null, profile: null });
         try {
           const user = await authService.login({ email, password });
           if (user) {
-            // Get tokens from localStorage (set by the auth service)
             const access_token = localStorage.getItem('access_token') || '';
             const refresh_token = localStorage.getItem('refresh_token') || '';
-            // Calculate expires time based on JWT expiry (default 1 hour)
             const expiresAt = Date.now() + (60 * 60 * 1000);
             
+            const profile = await profileService.getCurrentUserProfile();
+
             set({
               user,
               session: {
@@ -51,6 +56,7 @@ export const useAuthStore = create<AuthStore>()(
                 refresh_token,
                 expiresAt,
               },
+              profile,
               isLoading: false,
               error: null,
             });
@@ -65,21 +71,22 @@ export const useAuthStore = create<AuthStore>()(
           set({
             isLoading: false,
             error: error instanceof Error ? error : new Error('Failed to login'),
+            profile: null,
           });
           return null;
         }
       },
       
       register: async (email, password) => {
-        set({ isLoading: true, error: null });
+        set({ isLoading: true, error: null, profile: null });
         try {
           const user = await authService.register({ email, password });
           if (user) {
-            // Get tokens from localStorage (set by the auth service)
             const access_token = localStorage.getItem('access_token') || '';
             const refresh_token = localStorage.getItem('refresh_token') || '';
-            // Calculate expires time based on JWT expiry (default 1 hour)
             const expiresAt = Date.now() + (60 * 60 * 1000);
+
+            const profile = await profileService.getCurrentUserProfile();
             
             set({
               user,
@@ -88,6 +95,7 @@ export const useAuthStore = create<AuthStore>()(
                 refresh_token,
                 expiresAt,
               },
+              profile,
               isLoading: false,
               error: null,
             });
@@ -102,36 +110,34 @@ export const useAuthStore = create<AuthStore>()(
           set({
             isLoading: false,
             error: error instanceof Error ? error : new Error('Failed to register'),
+            profile: null,
           });
           return null;
         }
       },
       
       logout: async () => {
-        set({ isLoading: true, error: null });
+        set({ isLoading: true, error: null }); 
+        let logoutError: Error | null = null;
+
         try {
-          await authService.logout();
-          // Clear localStorage
-          localStorage.removeItem('access_token');
-          localStorage.removeItem('refresh_token');
-          set({
-            user: null,
-            session: null,
-            isLoading: false,
-            error: null,
-          });
+          await authService.logout(); 
+          logger.info('AuthStore: Logout API call successful or did not throw.');
         } catch (error) {
-          logger.error('Logout error in store', {
-            error: error instanceof Error ? error.message : 'Unknown error',
+          logoutError = error instanceof Error ? error : new Error('Failed to logout');
+          logger.error('Logout error caught in store', { 
+            error: logoutError.message
           });
-          // Still clear data even on error for robustness
+        } finally {
+          logger.info('AuthStore: Performing logout cleanup (localStorage and state).');
           localStorage.removeItem('access_token');
           localStorage.removeItem('refresh_token');
           set({
             user: null,
             session: null,
-            isLoading: false,
-            error: error instanceof Error ? error : new Error('Failed to logout'),
+            profile: null,
+            isLoading: false, 
+            error: logoutError, 
           });
         }
       },
@@ -157,10 +163,8 @@ export const useAuthStore = create<AuthStore>()(
           
           const user = await authService.refreshSession(refresh_token);
           if (user) {
-            // Get tokens from localStorage (updated by the auth service)
             const access_token = localStorage.getItem('access_token') || '';
             const refresh_token = localStorage.getItem('refresh_token') || '';
-            // Calculate expires time based on JWT expiry (default 1 hour)
             const expiresAt = Date.now() + (60 * 60 * 1000);
             
             set({
@@ -187,6 +191,7 @@ export const useAuthStore = create<AuthStore>()(
       },
       
       initialize: async () => {
+        set({ isLoading: true });
         try {
           logger.info('Initializing auth state');
           const access_token = localStorage.getItem('access_token');
@@ -194,62 +199,71 @@ export const useAuthStore = create<AuthStore>()(
           
           if (!access_token || !refresh_token) {
             logger.info('No tokens found in localStorage');
-            set({ isLoading: false });
+            set({ user: null, session: null, profile: null, isLoading: false, error: null });
             return;
           }
           
+          let currentUser: User | null = null;
+          let userProfile: UserProfile | null = null;
+
           try {
-            const user = await authService.getCurrentUser();
-            if (user) {
-              logger.info('Current user retrieved successfully');
-              // Calculate new expiresAt
-              const expiresAt = Date.now() + (60 * 60 * 1000);
-              
-              set({
-                user,
-                session: {
-                  access_token,
-                  refresh_token,
-                  expiresAt,
-                },
-                isLoading: false,
-                error: null,
-              });
-              return;
+            currentUser = await authService.getCurrentUser();
+            if (currentUser) {
+              userProfile = await profileService.getCurrentUserProfile();
+              logger.info('Current user and profile retrieved successfully');
             }
             
-            logger.warn('getCurrentUser returned null');
+            if (currentUser && !userProfile) {
+              logger.warn('getCurrentUser succeeded but getCurrentUserProfile returned null');
+            }
+
           } catch (error) {
-            logger.info('Current user fetch failed, trying to refresh session', {
+            logger.info('Current user/profile fetch failed, trying to refresh session', {
               error: error instanceof Error ? error.message : 'Unknown error',
             });
             
             const success = await get().refreshSession();
             if (success) {
-              logger.info('Session refreshed successfully');
-              return;
+              logger.info('Session refreshed successfully after initial fetch fail');
+              currentUser = get().user;
+              if (currentUser) {
+                 userProfile = await profileService.getCurrentUserProfile();
+              }
+            } else {
+              logger.warn('Session refresh failed during initialization');
+              currentUser = null;
+              userProfile = null;
+              localStorage.removeItem('access_token');
+              localStorage.removeItem('refresh_token');
             }
-            
-            logger.warn('Session refresh failed');
           }
-          
-          // If we get here, both getCurrentUser and refreshSession failed
-          logger.info('Clearing auth state after failed attempts');
+
+          if (currentUser) {
+             const expiresAt = Date.now() + (60 * 60 * 1000);
+             set({
+                user: currentUser,
+                session: { access_token, refresh_token, expiresAt },
+                profile: userProfile,
+                isLoading: false,
+                error: null,
+              });
+          } else {
+             logger.info('Clearing auth state after failed initialization attempts');
+             localStorage.removeItem('access_token');
+             localStorage.removeItem('refresh_token');
+             set({ user: null, session: null, profile: null, isLoading: false, error: null });
+          }
+
+        } catch (error) {
+          logger.error('Outer error initializing auth state', {
+            error: error instanceof Error ? error.message : 'Unknown error',
+          });
           localStorage.removeItem('access_token');
           localStorage.removeItem('refresh_token');
           set({
             user: null,
             session: null,
-            isLoading: false,
-            error: null,
-          });
-        } catch (error) {
-          logger.error('Error initializing auth state', {
-            error: error instanceof Error ? error.message : 'Unknown error',
-          });
-          set({
-            user: null,
-            session: null,
+            profile: null,
             isLoading: false,
             error: error instanceof Error ? error : new Error('Failed to initialize auth state'),
           });
@@ -257,8 +271,12 @@ export const useAuthStore = create<AuthStore>()(
       },
     }),
     {
-      name: 'auth-storage', // name for localStorage
-      partialize: (state) => ({ user: state.user, session: state.session }), // only store user and session
+      name: 'auth-storage',
+      partialize: (state) => ({ 
+          user: state.user, 
+          session: state.session, 
+          profile: state.profile
+      }), 
     }
   )
 );

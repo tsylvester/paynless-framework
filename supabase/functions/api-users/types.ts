@@ -71,8 +71,8 @@ export interface PrivacySettings {
 
 export interface UserProfile {
   id: string;
-  firstName?: string;
-  lastName?: string;
+  first_name?: string;
+  last_name?: string;
   avatarUrl?: string;
   birthDate?: string;
   birthTime?: string;
@@ -85,8 +85,8 @@ export interface UserProfile {
   privacySettings: PrivacySettings;
   socialLinks: SocialLink[];
   contactInfo: ContactInfo[];
-  createdAt: string;
-  updatedAt: string;
+  created_at: string;
+  updated_at: string;
 }
 
 export interface UserNotificationSettings {
@@ -103,8 +103,8 @@ export interface UserSettings {
 }
 
 export interface UpdateProfileRequest {
-  firstName?: string;
-  lastName?: string;
+  first_name?: string;
+  last_name?: string;
   avatarUrl?: string;
   birthDate?: string;
   birthTime?: string;

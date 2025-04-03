@@ -1,21 +1,21 @@
 export interface User {
   id: string;
   email: string;
-  firstName?: string;
-  lastName?: string;
+  first_name?: string;
+  last_name?: string;
   avatarUrl?: string;
   role: UserRole;
-  createdAt: string;
-  updatedAt: string;
+  created_at: string;
+  updated_at: string;
 }
 
 export interface UserProfile {
   id: string;
-  firstName?: string;
-  lastName?: string;
+  first_name?: string;
+  last_name?: string;
   role: UserRole;
-  createdAt: string;
-  updatedAt: string;
+  created_at: string;
+  updated_at: string;
 }
 
 export enum UserRole {
@@ -26,6 +26,7 @@ export enum UserRole {
 export interface AuthState {
   user: User | null;
   session: Session | null;
+  profile: UserProfile | null;
   isLoading: boolean;
   error: Error | null;
 }
@@ -50,4 +51,12 @@ export interface AuthResponse {
   user: User | null;
   session: Session | null;
   error?: Error;
+}
+
+interface AuthStore extends AuthState {
+  setUser: (user: User | null) => void;
+  setSession: (session: Session | null) => void;
+  setProfile: (profile: UserProfile | null) => void;
+  setIsLoading: (isLoading: boolean) => void;
+  setError: (error: Error | null) => void;
 }
