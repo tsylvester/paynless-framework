@@ -12,7 +12,7 @@ export class LoginApiClient {
   
   constructor() {
     // Use the root path since we moved the function to the root
-    this.baseClient = BaseApiClient.getInstance('');
+    this.baseClient = BaseApiClient.getInstance();
   }
   
   /**

@@ -1,5 +1,5 @@
 // src/pages/Subscription.tsx
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { Layout } from '../components/layout/Layout';
 import { useAuth } from '../hooks/useAuth';
 import { Navigate } from 'react-router-dom';

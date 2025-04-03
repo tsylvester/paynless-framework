@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useEffect, useState } from 'react';
+import React, { createContext, useEffect, useState, useCallback } from 'react';
 import { Theme, ThemeState, ColorMode, ThemeName } from '../types/theme.types';
 import { themes, getDarkTheme } from '../config/themes';
 
@@ -12,7 +12,7 @@ function hexToRgbString(hex: string): string {
   return `${r} ${g} ${b}`;
 }
 
-const ThemeContext = createContext<ThemeState>({
+export const ThemeContext = createContext<ThemeState>({
   currentTheme: themes.light,
   colorMode: 'light',
   setColorMode: () => {},
@@ -34,10 +34,10 @@ export function ThemeProvider({ children }: ThemeProviderProps) {
   const [themeName, setThemeName] = useState<ThemeName>(initialThemeName);
   
   // Get the current theme based on theme name and color mode
-  const getCurrentTheme = (): Theme => {
+  const getCurrentTheme = useCallback((): Theme => {
     const baseTheme = themes[themeName];
     return colorMode === 'dark' ? getDarkTheme(baseTheme) : baseTheme;
-  };
+  }, [colorMode, themeName]);
   
   const [currentTheme, setCurrentTheme] = useState<Theme>(getCurrentTheme());
   
@@ -68,7 +68,7 @@ export function ThemeProvider({ children }: ThemeProviderProps) {
       // Convert hex to RGB string before setting CSS variable
       root.style.setProperty(`--color-${key}`, hexToRgbString(value));
     });
-  }, [colorMode, themeName]);
+  }, [colorMode, themeName, getCurrentTheme]);
   
   // Listen for system color scheme changes
   useEffect(() => {
@@ -97,11 +97,3 @@ export function ThemeProvider({ children }: ThemeProviderProps) {
     </ThemeContext.Provider>
   );
 }
-
-export const useTheme = () => {
-  const context = useContext(ThemeContext);
-  if (!context) {
-    throw new Error('useTheme must be used within a ThemeProvider');
-  }
-  return context;
-};
