@@ -202,7 +202,7 @@ The following files form the core of the API interaction and utility setup:
 ## Supabase Setup
 
 1. Create a new Supabase project.
-2. Link your local repository: `supabase link --project-ref YOUR_PROJECT_REF`
+2. Link your local repository: `supabase link --project-ref YOUR_PROJECT_REF --password YOUR_PASSWORD`
 3. Set up required environment variables in `.env` (`VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`).
 4. Ensure database migrations in `supabase/migrations` define the necessary tables (`user_profiles`, `subscription_plans`, `user_subscriptions`) and the trigger to create user profiles.
 
