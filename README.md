@@ -1,6 +1,8 @@
-# API-Driven Application
+# Paynless Framework Application
 
-This project is a modern API-driven application built with React and Supabase. It features user authentication, profile management, and Stripe-based subscriptions, following a clear separation of concerns.
+The Paynless Framework is a modern API-based application framework built with React, Supabase, Stripe, and ChatGPT. The Paynless Framework is intended for multi-environment deployment on the web, iOS, and Android. 
+
+Whether hand-coding or vibe coding, with the Paynless Framework your user authentication, database, profiles, subscriptions, and AI agent implementation is ready immediately. 
 
 ## Development Context
 

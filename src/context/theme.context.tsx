@@ -2,6 +2,16 @@ import React, { createContext, useContext, useEffect, useState } from 'react';
 import { Theme, ThemeState, ColorMode, ThemeName } from '../types/theme.types';
 import { themes, getDarkTheme } from '../config/themes';
 
+// Helper function to convert hex color to RGB string
+function hexToRgbString(hex: string): string {
+  hex = hex.replace('#', '');
+  const bigint = parseInt(hex, 16);
+  const r = (bigint >> 16) & 255;
+  const g = (bigint >> 8) & 255;
+  const b = bigint & 255;
+  return `${r} ${g} ${b}`;
+}
+
 const ThemeContext = createContext<ThemeState>({
   currentTheme: themes.light,
   colorMode: 'light',
@@ -43,14 +53,20 @@ export function ThemeProvider({ children }: ThemeProviderProps) {
     localStorage.setItem('themeName', name);
   };
   
-  // Update CSS variables when theme changes
+  // Update CSS variables and manage dark class when theme changes
   useEffect(() => {
+    const root = document.documentElement;
+    const isDark = colorMode === 'dark';
+
+    // Add/remove dark class for Tailwind
+    root.classList.toggle('dark', isDark);
+
     const theme = getCurrentTheme();
     setCurrentTheme(theme);
     
-    const root = document.documentElement;
     Object.entries(theme.colors).forEach(([key, value]) => {
-      root.style.setProperty(`--color-${key}`, value);
+      // Convert hex to RGB string before setting CSS variable
+      root.style.setProperty(`--color-${key}`, hexToRgbString(value));
     });
   }, [colorMode, themeName]);
   

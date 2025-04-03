@@ -5,13 +5,13 @@ export default {
   theme: {
     extend: {
       colors: {
-        primary: 'var(--color-primary)',
-        secondary: 'var(--color-secondary)',
-        background: 'var(--color-background)',
-        surface: 'var(--color-surface)',
-        textPrimary: 'var(--color-textPrimary)',
-        textSecondary: 'var(--color-textSecondary)',
-        border: 'var(--color-border)',
+        primary: 'rgb(var(--color-primary) / <alpha-value>)',
+        secondary: 'rgb(var(--color-secondary) / <alpha-value>)',
+        background: 'rgb(var(--color-background) / <alpha-value>)',
+        surface: 'rgb(var(--color-surface) / <alpha-value>)',
+        textPrimary: 'rgb(var(--color-textPrimary) / <alpha-value>)',
+        textSecondary: 'rgb(var(--color-textSecondary) / <alpha-value>)',
+        border: 'rgb(var(--color-border) / <alpha-value>)',
       },
       ringWidth: {
         DEFAULT: '3px',

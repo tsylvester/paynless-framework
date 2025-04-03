@@ -54,8 +54,8 @@ export function LoginForm({ onSuccess, redirectPath = '/' }: LoginFormProps) {
   };
   
   return (
-    <div className="w-full max-w-md p-8 bg-white rounded-lg shadow-md">
-      <h2 className="text-2xl font-bold mb-6 text-center text-gray-800">Welcome Back</h2>
+    <div className="w-full max-w-md p-8 bg-surface rounded-lg shadow-md">
+      <h2 className="text-2xl font-bold mb-6 text-center text-textPrimary">Welcome Back</h2>
       
       {error && (
         <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-md flex items-center gap-2 text-red-700">
@@ -66,19 +66,19 @@ export function LoginForm({ onSuccess, redirectPath = '/' }: LoginFormProps) {
       
       <form onSubmit={handleSubmit}>
         <div className="mb-4">
-          <label htmlFor="email" className="block text-sm font-medium text-gray-700 mb-1">
+          <label htmlFor="email" className="block text-sm font-medium text-textSecondary mb-1">
             Email
           </label>
           <div className="relative">
             <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-              <Mail size={18} className="text-gray-400" />
+              <Mail size={18} className="text-textSecondary" />
             </div>
             <input
               id="email"
               type="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              className="block w-full pl-10 pr-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500"
+              className="block w-full pl-10 pr-3 py-2 border border-border rounded-md shadow-sm bg-background focus:outline-none focus:ring-primary focus:border-primary"
               placeholder="you@example.com"
               required
             />
@@ -86,25 +86,25 @@ export function LoginForm({ onSuccess, redirectPath = '/' }: LoginFormProps) {
         </div>
         
         <div className="mb-6">
-          <label htmlFor="password" className="block text-sm font-medium text-gray-700 mb-1">
+          <label htmlFor="password" className="block text-sm font-medium text-textSecondary mb-1">
             Password
           </label>
           <div className="relative">
             <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-              <Lock size={18} className="text-gray-400" />
+              <Lock size={18} className="text-textSecondary" />
             </div>
             <input
               id="password"
               type="password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              className="block w-full pl-10 pr-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500"
+              className="block w-full pl-10 pr-3 py-2 border border-border rounded-md shadow-sm bg-background focus:outline-none focus:ring-primary focus:border-primary"
               placeholder="••••••••"
               required
             />
           </div>
           <div className="flex justify-end mt-1">
-            <Link to="/forgot-password" className="text-sm text-indigo-600 hover:text-indigo-500">
+            <Link to="/forgot-password" className="text-sm text-primary hover:text-primary/90">
               Forgot password?
             </Link>
           </div>
@@ -113,7 +113,7 @@ export function LoginForm({ onSuccess, redirectPath = '/' }: LoginFormProps) {
         <button
           type="submit"
           disabled={isSubmitting}
-          className={`w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 ${
+          className={`w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-primary hover:bg-primary/90 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary ${
             isSubmitting ? 'opacity-75 cursor-not-allowed' : ''
           }`}
         >
@@ -121,9 +121,9 @@ export function LoginForm({ onSuccess, redirectPath = '/' }: LoginFormProps) {
         </button>
         
         <div className="mt-4 text-center">
-          <span className="text-sm text-gray-600">
+          <span className="text-sm text-textSecondary">
             Don't have an account?{' '}
-            <Link to="/register" className="text-indigo-600 hover:text-indigo-500">
+            <Link to="/register" className="text-primary hover:text-primary/90">
               Sign up
             </Link>
           </span>

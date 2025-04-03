@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { useAuthStore } from '../../store/authStore';
+import { useTheme } from '../../context/theme.context';
 import { 
   LogOut, 
   Menu, 
@@ -14,11 +15,14 @@ import {
   CreditCard,
   Home,
   UserPlus,
-  Building2
+  Building2,
+  Sun,
+  Moon
 } from 'lucide-react';
 
 export function Header() {
   const { user, logout } = useAuthStore();
+  const { colorMode, setColorMode } = useTheme();
   const navigate = useNavigate();
   const location = useLocation();
   const [isMenuOpen, setIsMenuOpen] = useState(false);
@@ -59,7 +63,15 @@ export function Header() {
             )}
           </div>
           
-          <div className="hidden sm:ml-6 sm:flex sm:items-center space-x-4">           
+          <div className="hidden sm:ml-6 sm:flex sm:items-center space-x-4">
+            <button
+              onClick={() => setColorMode(colorMode === 'light' ? 'dark' : 'light')}
+              className="p-2 rounded-lg text-textSecondary hover:bg-surface hover:text-textPrimary"
+              aria-label={colorMode === 'light' ? 'Switch to dark mode' : 'Switch to light mode'}
+            >
+              {colorMode === 'light' ? <Moon size={20} /> : <Sun size={20} />}
+            </button>
+            
             {user ? (
               <div className="relative">
                 <button
@@ -147,7 +159,16 @@ export function Header() {
       
       {/* Mobile menu */}
       {isMenuOpen && (
-        <div className="sm:hidden bg-surface">
+        <div className="sm:hidden bg-surface border-t border-border">
+          <div className="flex justify-end px-4 pt-2">
+            <button
+              onClick={() => setColorMode(colorMode === 'light' ? 'dark' : 'light')}
+              className="p-2 rounded-lg text-textSecondary hover:bg-surface hover:text-textPrimary"
+              aria-label={colorMode === 'light' ? 'Switch to dark mode' : 'Switch to light mode'}
+            >
+              {colorMode === 'light' ? <Moon size={20} /> : <Sun size={20} />}
+            </button>
+          </div>
           {user ? (
             <div className="pt-2 pb-3 space-y-1">
               <Link

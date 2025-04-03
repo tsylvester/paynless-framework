@@ -1,6 +1,7 @@
 // src/types/subscription.types.ts
 export interface SubscriptionPlan {
   id: string;
+  priceId: string;
   stripePriceId: string;
   name: string;
   description: string | null;
@@ -8,6 +9,7 @@ export interface SubscriptionPlan {
   currency: string;
   interval: string;
   intervalCount: number;
+  features?: string[];
   metadata?: Record<string, any>;
 }
 
