@@ -3,7 +3,7 @@ import { createContext, ReactNode, useEffect, useState, useContext, useCallback 
 import { SubscriptionPlan, UserSubscription } from '../types/subscription.types';
 import { subscriptionService } from '../services/subscription.service';
 import { logger } from '../utils/logger';
-import { useAuth } from '../hooks/useAuth';
+import { useAuthStore } from '../store/authStore';
 import { isStripeTestMode } from '../utils/stripe';
 
 interface SubscriptionState {
@@ -24,13 +24,17 @@ interface SubscriptionContextType extends SubscriptionState {
   getUsageMetrics: (metric: string) => Promise<any>;
 }
 
-export const SubscriptionContext = createContext<SubscriptionContextType>({
+const initialSubscriptionState: SubscriptionState = {
   userSubscription: null,
   availablePlans: [],
-  isSubscriptionLoading: true,
+  isSubscriptionLoading: false,
   hasActiveSubscription: false,
-  isTestMode: false,
+  isTestMode: isStripeTestMode(),
   error: null,
+};
+
+export const SubscriptionContext = createContext<SubscriptionContextType>({
+  ...initialSubscriptionState,
   refreshSubscription: async () => {},
   createCheckoutSession: async () => null,
   createBillingPortalSession: async () => null,
@@ -40,30 +44,28 @@ export const SubscriptionContext = createContext<SubscriptionContextType>({
 });
 
 interface SubscriptionProviderProps {
-  children: ReactNode;
+  children: React.ReactNode;
 }
 
 export function SubscriptionProvider({ children }: SubscriptionProviderProps) {
-  const { user } = useAuth();
-  const [state, setState] = useState<SubscriptionState>({
-    userSubscription: null,
-    availablePlans: [],
-    isSubscriptionLoading: true,
-    hasActiveSubscription: false,
-    isTestMode: isStripeTestMode(),
-    error: null,
-  });
+  const { user } = useAuthStore.getState();
+  
+  const [state, setState] = useState<SubscriptionState>(initialSubscriptionState);
   
   const loadSubscriptionData = useCallback(async () => {
-    if (!user) return;
-    
+    const currentUser = useAuthStore.getState().user;
+    if (!currentUser) {
+      logger.error('SubscriptionProvider: loadSubscriptionData called without a user. This should not happen due to AuthenticatedGate.');
+      return;
+    }
+
     setState(prev => ({ ...prev, isSubscriptionLoading: true, error: null }));
     
     try {
-      // Load plans and subscription in parallel
+      logger.info('SubscriptionProvider: Loading plans and user subscription', { userId: currentUser.id });
       const [plans, userSubscription] = await Promise.all([
         subscriptionService.getSubscriptionPlans(),
-        subscriptionService.getUserSubscription(user.id),
+        subscriptionService.getUserSubscription(currentUser.id),
       ]);
       
       const hasActiveSubscription = userSubscription 
@@ -78,49 +80,49 @@ export function SubscriptionProvider({ children }: SubscriptionProviderProps) {
         isTestMode: isStripeTestMode(),
         error: null,
       });
+      logger.info('SubscriptionProvider: Data loaded successfully', { userId: currentUser.id });
+
     } catch (error) {
-      logger.error('Failed to load subscription data', {
+      logger.error('SubscriptionProvider: Failed to load subscription data', {
         error: error instanceof Error ? error.message : 'Unknown error',
-        userId: user.id,
+        userId: currentUser.id,
       });
-      
       setState(prev => ({
         ...prev,
         isSubscriptionLoading: false,
         error: error instanceof Error ? error : new Error('Failed to load subscription data'),
       }));
     }
-  }, [user]);
+  }, []);
   
   useEffect(() => {
-    if (user) {
-      loadSubscriptionData();
-    } else {
-      setState({
-        userSubscription: null,
-        availablePlans: [],
-        isSubscriptionLoading: false,
-        hasActiveSubscription: false,
-        isTestMode: isStripeTestMode(),
-        error: null,
-      });
-    }
-  }, [user, loadSubscriptionData]);
+    logger.info('SubscriptionProvider: Mounted, loading subscription data...');
+    loadSubscriptionData();
+  }, [loadSubscriptionData]);
   
-  const refreshSubscription = async () => {
-    await loadSubscriptionData();
-  };
+  const refreshSubscription = useCallback(async () => {
+    const currentUser = useAuthStore.getState().user;
+    if (currentUser) {
+      await loadSubscriptionData();
+    } else {
+        logger.warn('SubscriptionProvider: Attempted to refresh subscription but user is not logged in.');
+    }
+  }, [loadSubscriptionData]);
   
   const createCheckoutSession = async (
     priceId: string,
     successUrl: string,
     cancelUrl: string
   ): Promise<string | null> => {
-    if (!user) return null;
+    const currentUser = useAuthStore.getState().user;
+    if (!currentUser) {
+        logger.warn('Cannot create checkout session, user not logged in');
+        return null;
+    }
     
     try {
       return await subscriptionService.createCheckoutSession(
-        user.id,
+        currentUser.id,
         priceId,
         successUrl,
         cancelUrl
@@ -128,7 +130,7 @@ export function SubscriptionProvider({ children }: SubscriptionProviderProps) {
     } catch (error) {
       logger.error('Error creating checkout session', {
         error: error instanceof Error ? error.message : 'Unknown error',
-        userId: user.id,
+        userId: currentUser.id,
         priceId,
       });
       setState(prev => ({
@@ -140,14 +142,18 @@ export function SubscriptionProvider({ children }: SubscriptionProviderProps) {
   };
   
   const createBillingPortalSession = async (returnUrl: string): Promise<string | null> => {
-    if (!user) return null;
+    const currentUser = useAuthStore.getState().user;
+     if (!currentUser) {
+        logger.warn('Cannot create billing portal session, user not logged in');
+        return null;
+    }
     
     try {
-      return await subscriptionService.createBillingPortalSession(user.id, returnUrl);
+      return await subscriptionService.createBillingPortalSession(currentUser.id, returnUrl);
     } catch (error) {
       logger.error('Error creating billing portal session', {
         error: error instanceof Error ? error.message : 'Unknown error',
-        userId: user.id,
+        userId: currentUser.id,
       });
       setState(prev => ({
         ...prev,
@@ -158,10 +164,14 @@ export function SubscriptionProvider({ children }: SubscriptionProviderProps) {
   };
   
   const cancelSubscription = async (subscriptionId: string): Promise<boolean> => {
-    if (!user) return false;
+    const currentUser = useAuthStore.getState().user;
+     if (!currentUser) {
+        logger.warn('Cannot cancel subscription, user not logged in');
+        return false;
+    }
     
     try {
-      const success = await subscriptionService.cancelSubscription(user.id, subscriptionId);
+      const success = await subscriptionService.cancelSubscription(currentUser.id, subscriptionId);
       if (success) {
         await refreshSubscription();
       }
@@ -169,7 +179,7 @@ export function SubscriptionProvider({ children }: SubscriptionProviderProps) {
     } catch (error) {
       logger.error('Error cancelling subscription', {
         error: error instanceof Error ? error.message : 'Unknown error',
-        userId: user.id,
+        userId: currentUser.id,
         subscriptionId,
       });
       setState(prev => ({
@@ -181,10 +191,14 @@ export function SubscriptionProvider({ children }: SubscriptionProviderProps) {
   };
   
   const resumeSubscription = async (subscriptionId: string): Promise<boolean> => {
-    if (!user) return false;
+    const currentUser = useAuthStore.getState().user;
+     if (!currentUser) {
+        logger.warn('Cannot resume subscription, user not logged in');
+        return false;
+    }
     
     try {
-      const success = await subscriptionService.resumeSubscription(user.id, subscriptionId);
+      const success = await subscriptionService.resumeSubscription(currentUser.id, subscriptionId);
       if (success) {
         await refreshSubscription();
       }
@@ -192,7 +206,7 @@ export function SubscriptionProvider({ children }: SubscriptionProviderProps) {
     } catch (error) {
       logger.error('Error resuming subscription', {
         error: error instanceof Error ? error.message : 'Unknown error',
-        userId: user.id,
+        userId: currentUser.id,
         subscriptionId,
       });
       setState(prev => ({
@@ -204,14 +218,18 @@ export function SubscriptionProvider({ children }: SubscriptionProviderProps) {
   };
   
   const getUsageMetrics = async (metric: string): Promise<any> => {
-    if (!user) return null;
+    const currentUser = useAuthStore.getState().user;
+    if (!currentUser) {
+        logger.warn('Cannot get usage metrics, user not logged in');
+        return null;
+    }
     
     try {
-      return await subscriptionService.getUsageMetrics(user.id, metric);
+      return await subscriptionService.getUsageMetrics(currentUser.id, metric);
     } catch (error) {
       logger.error('Error getting usage metrics', {
         error: error instanceof Error ? error.message : 'Unknown error',
-        userId: user.id,
+        userId: currentUser.id,
         metric,
       });
       setState(prev => ({
@@ -239,7 +257,6 @@ export function SubscriptionProvider({ children }: SubscriptionProviderProps) {
   );
 }
 
-// Custom hook to use the subscription context
 export function useSubscription() {
   const context = useContext(SubscriptionContext);
   

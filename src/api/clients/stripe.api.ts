@@ -1,6 +1,6 @@
 // src/api/clients/stripe.api.ts
-import { BaseApiClient } from './base.api';
-import { ApiResponse } from '../../types/api.types';
+import { api } from '../apiClient';
+import { ApiEndpoint, ApiResponse } from '../../types/api.types';
 import { SubscriptionPlan, UserSubscription } from '../../types/subscription.types';
 import { logger } from '../../utils/logger';
 import { isStripeTestMode } from '../../utils/stripe';
@@ -9,11 +9,10 @@ import { isStripeTestMode } from '../../utils/stripe';
  * API client for Stripe operations
  */
 export class StripeApiClient {
-  private baseClient: BaseApiClient;
+  private api: ApiEndpoint;
   private isTestMode: boolean;
   
   constructor() {
-    this.baseClient = BaseApiClient.getInstance();
     this.isTestMode = isStripeTestMode();
     logger.info(`Stripe API client initialized in ${this.isTestMode ? 'TEST' : 'LIVE'} mode`);
   }
@@ -24,7 +23,8 @@ export class StripeApiClient {
   async createCheckoutSession(planId: string): Promise<ApiResponse<{ url: string }>> {
     try {
       logger.info('Creating Stripe checkout session', { planId });
-      return await this.baseClient.post<{ url: string }>('/checkout', { planId });
+      const result = await api.post<{ url: string }>('/checkout', { planId });
+      return result;
     } catch (error) {
       logger.error('Error creating Stripe checkout session', {
         error: error instanceof Error ? error.message : 'Unknown error',
@@ -47,7 +47,8 @@ export class StripeApiClient {
   async createPortalSession(): Promise<ApiResponse<{ url: string }>> {
     try {
       logger.info('Creating portal session');
-      return await this.baseClient.post<{ url: string }>('/portal');
+      const result = await api.post<{ url: string }>('/portal');
+      return result; 
     } catch (error) {
       logger.error('Error creating portal session', {
         error: error instanceof Error ? error.message : 'Unknown error',
@@ -71,7 +72,7 @@ export class StripeApiClient {
       logger.info('Fetching subscription plans', {
         mode: this.isTestMode ? 'TEST' : 'LIVE'
       });
-      return await this.baseClient.get<SubscriptionPlan[]>('/plans');
+      return await api.get<SubscriptionPlan[]>('/plans');
     } catch (error) {
       logger.error('Error fetching subscription plans', {
         error: error instanceof Error ? error.message : 'Unknown error',
@@ -98,7 +99,7 @@ export class StripeApiClient {
         mode: this.isTestMode ? 'TEST' : 'LIVE'
       });
       
-      return await this.baseClient.get<UserSubscription>(`/current`);
+      return await this.apiClient.get<UserSubscription>(`/current`);
     } catch (error) {
       logger.error('Error fetching user subscription', {
         error: error instanceof Error ? error.message : 'Unknown error',
@@ -119,7 +120,7 @@ export class StripeApiClient {
   async cancelSubscription(): Promise<ApiResponse<void>> {
     try {
       logger.info('Cancelling subscription');
-      return await this.baseClient.post<void>('/cancel');
+      return await this.apiClient.post<void>('/cancel');
     } catch (error) {
       logger.error('Error cancelling subscription', {
         error: error instanceof Error ? error.message : 'Unknown error',

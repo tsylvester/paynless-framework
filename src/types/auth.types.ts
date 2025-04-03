@@ -22,15 +22,22 @@ export enum UserRole {
   USER = 'user',
   ADMIN = 'admin',
 }
-
-export interface AuthState {
-  user: User | null;
+export interface AuthStore {
+  setUser: (user: User | null) => void;
+  setSession: (session: Session | null) => void;
+  setProfile: (profile: UserProfile | null) => void;
+  setIsLoading: (isLoading: boolean) => void;
+  setError: (error: Error | null) => void;
+  login: (email: string, password: string) => Promise<User | null>;
+  register: (email: string, password: string) => Promise<User | null>;
+  logout: () => Promise<void>;
+  initialize: () => Promise<void>;
   session: Session | null;
+  user: User | null;
   profile: UserProfile | null;
   isLoading: boolean;
   error: Error | null;
 }
-
 export interface Session {
   access_token: string;
   refresh_token: string;
@@ -48,15 +55,13 @@ export interface RegisterCredentials {
 }
 
 export interface AuthResponse {
-  user: User | null;
-  session: Session | null;
-  error?: Error;
+  user: User;
+  session: Session;
+  profile: UserProfile;
 }
 
-interface AuthStore extends AuthState {
-  setUser: (user: User | null) => void;
-  setSession: (session: Session | null) => void;
-  setProfile: (profile: UserProfile | null) => void;
-  setIsLoading: (isLoading: boolean) => void;
-  setError: (error: Error | null) => void;
+// Type for successful Profile Edge Function Data Payload
+export interface ProfileResponse {
+  user: User;
+  profile: UserProfile;
 }

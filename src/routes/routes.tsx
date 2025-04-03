@@ -1,6 +1,5 @@
 import { Navigate } from 'react-router-dom';
 import { AppRoute } from '../types/route.types';
-import { HomePage } from '../pages/Home';
 import { LoginPage } from '../pages/Login';
 import { RegisterPage } from '../pages/Register';
 import { DashboardPage } from '../pages/Dashboard';
@@ -9,13 +8,7 @@ import { SubscriptionPage } from '../pages/Subscription';
 import { UserRole } from '../types/auth.types';
 import { ProtectedRoute } from '../components/auth/ProtectedRoute';
 import { SubscriptionSuccessPage } from '../pages/SubscriptionSuccess';
-import { useAuth } from '../hooks/useAuth';
-
-// Root route component that handles both authenticated and unauthenticated states
-function RootRoute() {
-  const { user } = useAuth();
-  return user ? <Navigate to="/dashboard" replace /> : <HomePage />;
-}
+import { RootRoute } from '../components/routes/RootRoute';
 
 export const routes: AppRoute[] = [
   {

@@ -1,17 +1,15 @@
 // src/pages/SubscriptionSuccess.tsx
-import React, { useEffect } from 'react';
+import { useEffect } from 'react';
 import { Layout } from '../components/layout/Layout';
-import { useAuth } from '../hooks/useAuth';
+import { useAuthStore } from '../store/authStore';
 import { useSubscription } from '../context/subscription.context';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import { CheckCircle } from 'lucide-react';
 
 export function SubscriptionSuccessPage() {
-  const { user } = useAuth();
+  const user = useAuthStore((state) => state.user);
   const { refreshSubscription } = useSubscription();
   const navigate = useNavigate();
-  const [searchParams] = useSearchParams();
-  const sessionId = searchParams.get('session_id');
   
   useEffect(() => {
     // Refresh subscription data when the component mounts

@@ -21,7 +21,10 @@ import {
 } from 'lucide-react';
 
 export function Header() {
-  const { user, logout } = useAuthStore();
+  // Use selector to get user and logout action
+  const user = useAuthStore((state) => state.user);
+  const logout = useAuthStore((state) => state.logout);
+  
   const { colorMode, setColorMode } = useTheme();
   const navigate = useNavigate();
   const location = useLocation();

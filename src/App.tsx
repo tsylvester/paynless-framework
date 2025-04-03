@@ -1,12 +1,11 @@
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import { routes } from './routes/routes';
 import { QueryClient, QueryClientProvider } from 'react-query';
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { useAuthStore } from './store/authStore';
 import { ThemeProvider } from './context/theme.context';
-import { useAuthSession } from './hooks/useAuthSession';
-import { logger } from './utils/logger';
 import { SubscriptionProvider } from './context/subscription.context';
+import { AuthenticatedGate } from './components/auth/AuthenticatedGate';
 
 // Create a client for React Query
 const queryClient = new QueryClient({
@@ -19,55 +18,37 @@ const queryClient = new QueryClient({
 });
 
 function App() {
-  const { initialize, refreshSession } = useAuthStore();
+  const { initialize } = useAuthStore();
+  const initializedRef = useRef(false);
   
-  // Use the auth session hook to auto-refresh sessions
-  useAuthSession();
-  
-  // Initialize auth state when app loads
+  // Initialize auth state when app loads, preventing double run in StrictMode
   useEffect(() => {
-    initialize();
-  }, [initialize]);
-  
-  // Register the refresh session function globally for interceptors
-  useEffect(() => {
-    if (typeof window !== 'undefined') {
-      logger.info('Registering global auth refresh handler');
-      window.__AUTH_STORE_REFRESH_SESSION = async () => {
-        try {
-          logger.info('Global refresh handler called');
-          return await refreshSession();
-        } catch (error) {
-          logger.error('Global refresh handler error', { 
-            error: error instanceof Error ? error.message : 'Unknown error' 
-          });
-          return false;
-        }
-      };
-      
-      return () => {
-        // Clean up on unmount
-        delete window.__AUTH_STORE_REFRESH_SESSION;
-      };
+    if (!initializedRef.current) {
+      initializedRef.current = true;
+      initialize();
     }
-  }, [refreshSession]);
+  }, [initialize]);
 
   return (
     <QueryClientProvider client={queryClient}>
       <ThemeProvider>
-        <SubscriptionProvider>
-          <BrowserRouter>
-            <Routes>
-              {routes.map((route) => (
-                <Route
-                  key={route.path}
-                  path={route.path}
-                  element={route.element}
-                />
-              ))}
-            </Routes>
-          </BrowserRouter>
-        </SubscriptionProvider>
+        <BrowserRouter>
+          <AuthenticatedGate>
+            <SubscriptionProvider>
+              <></>
+            </SubscriptionProvider>
+          </AuthenticatedGate>
+
+          <Routes>
+            {routes.map((route) => (
+              <Route
+                key={route.path}
+                path={route.path}
+                element={route.element}
+              />
+            ))}
+          </Routes>
+        </BrowserRouter>
       </ThemeProvider>
     </QueryClientProvider>
   );

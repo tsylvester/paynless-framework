@@ -1,6 +1,7 @@
 import { stripeApiClient } from '../api/clients/stripe.api';
 import { SubscriptionPlan, UserSubscription } from '../types/subscription.types';
 import { logger } from '../utils/logger';
+import { useAuthStore } from '../store/authStore';
 
 /**
  * Service for handling subscription operations
@@ -62,7 +63,7 @@ export class SubscriptionService {
    * Create checkout session for subscription
    */
   async createCheckoutSession(
-    userId: string, 
+    userId: string,
     priceId: string,
     successUrl: string,
     cancelUrl: string
@@ -70,13 +71,7 @@ export class SubscriptionService {
     try {
       logger.info('Creating checkout session', { userId, priceId });
       
-      const request = {
-        priceId,
-        successUrl,
-        cancelUrl,
-      };
-      
-      const response = await stripeApiClient.createCheckoutSession(request);
+      const response = await stripeApiClient.createCheckoutSession(priceId);
       
       if (response.error || !response.data) {
         logger.error('Failed to create checkout session', { 
@@ -105,11 +100,7 @@ export class SubscriptionService {
     try {
       logger.info('Creating billing portal session', { userId });
       
-      const request = {
-        returnUrl,
-      };
-      
-      const response = await stripeApiClient.createBillingPortalSession(request);
+      const response = await stripeApiClient.createPortalSession();
       
       if (response.error || !response.data) {
         logger.error('Failed to create billing portal session', { 
@@ -152,12 +143,13 @@ export class SubscriptionService {
   async cancelSubscription(userId: string, subscriptionId: string): Promise<boolean> {
     try {
       logger.info('Cancelling subscription', { userId, subscriptionId });
+      const token = useAuthStore.getState().session?.access_token;
       
       const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/api-subscriptions/${subscriptionId}/cancel`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${localStorage.getItem('access_token')}`,
+          'Authorization': `Bearer ${token || ''}`,
         },
       });
       
@@ -188,12 +180,13 @@ export class SubscriptionService {
   async resumeSubscription(userId: string, subscriptionId: string): Promise<boolean> {
     try {
       logger.info('Resuming subscription', { userId, subscriptionId });
+      const token = useAuthStore.getState().session?.access_token;
       
       const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/api-subscriptions/${subscriptionId}/resume`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${localStorage.getItem('access_token')}`,
+          'Authorization': `Bearer ${token || ''}`,
         },
       });
       
@@ -224,11 +217,12 @@ export class SubscriptionService {
   async getUsageMetrics(userId: string, metric: string): Promise<any> {
     try {
       logger.info('Fetching usage metrics', { userId, metric });
+      const token = useAuthStore.getState().session?.access_token;
       
       const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/api-subscriptions/usage/${metric}`, {
         method: 'GET',
         headers: {
-          'Authorization': `Bearer ${localStorage.getItem('access_token')}`,
+          'Authorization': `Bearer ${token || ''}`,
         },
       });
       

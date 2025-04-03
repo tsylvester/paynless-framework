@@ -1,14 +1,14 @@
 // src/pages/Subscription.tsx
 import { useState } from 'react';
 import { Layout } from '../components/layout/Layout';
-import { useAuth } from '../hooks/useAuth';
+import { useAuthStore } from '../store/authStore';
 import { Navigate } from 'react-router-dom';
 import { logger } from '../utils/logger';
 import { Check, AlertCircle, CreditCard, Award, AlertTriangle } from 'lucide-react';
 import { useSubscription } from '../context/subscription.context';
 
 export function SubscriptionPage() {
-  const { user, isLoading } = useAuth();
+  const { user, isLoading } = useAuthStore();
   const { 
     userSubscription, 
     availablePlans, 

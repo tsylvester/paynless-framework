@@ -10,6 +10,16 @@ import {
   createUnauthorizedResponse
 } from '../_shared/auth.ts';
 
+// Define an interface for the upsert data structure
+interface UserProfileUpsertData {
+  id: string;
+  updated_at: string;
+  first_name?: string;
+  last_name?: string;
+  avatar_url?: string; // Assuming snake_case for DB column
+  role?: string;       // Assuming role is stored as string, adjust if needed
+}
+
 // Use Deno.serve for Edge Function
 Deno.serve(async (req) => {
   // Handle CORS preflight requests
@@ -35,44 +45,78 @@ Deno.serve(async (req) => {
     // Handle different HTTP methods
     switch (req.method) {
       case 'GET': {
+        // User object is already fetched above
+        
         // Get the user's profile
         const { data: profile, error: profileError } = await supabase
           .from('user_profiles')
-          .select('*')
+          .select('*') // Select desired columns explicitly if needed
           .eq('id', user.id)
-          .single();
+          .maybeSingle(); // Use maybeSingle to handle missing profiles gracefully (returns null)
 
         if (profileError) {
           console.error('Error fetching profile:', profileError);
-          return createErrorResponse("Failed to fetch profile", 500);
+          return createErrorResponse(`Failed to fetch profile: ${profileError.message}`, 500);
         }
 
-        return createSuccessResponse(profile || null);
+        // Combine user and profile data
+        const responseData = {
+          user: user,         // The user object from auth.getUser()
+          profile: profile    // The profile object from user_profiles (or null)
+        };
+
+        // Return the combined object
+        return createSuccessResponse(responseData);
       }
 
       case 'PUT': {
-        const profileData = await req.json();
+        let profileData;
+        try {
+            profileData = await req.json();
+        } catch (parseError) {
+            console.error('Error parsing PUT body:', parseError);
+            return createErrorResponse("Invalid request body", 400);
+        }
         
-        // Update or create the profile
-        const { data: profile, error: updateError } = await supabase
-          .from('user_profiles')
-          .upsert({
+        // Construct the object for upsert using the defined interface
+        const upsertObject: UserProfileUpsertData = {
             id: user.id,
-            first_name: profileData.first_name,
-            last_name: profileData.last_name,
-            avatar_url: profileData.avatarUrl,
-            role: profileData.role || 'user',
-            updated_at: new Date().toISOString(),
-          })
+            updated_at: new Date().toISOString(), 
+        };
+
+        if (profileData.first_name !== undefined) {
+            upsertObject.first_name = profileData.first_name;
+        }
+        if (profileData.last_name !== undefined) {
+            upsertObject.last_name = profileData.last_name;
+        }
+        // Use correct column name 'avatar_url' 
+        if (profileData.avatarUrl !== undefined) { 
+            upsertObject.avatar_url = profileData.avatarUrl; 
+        }
+        // Only update role if provided - consider security implications
+        if (profileData.role !== undefined) { 
+            upsertObject.role = profileData.role;
+        }
+
+        // Log the object being sent to upsert for debugging
+        console.log('Upserting profile data:', JSON.stringify(upsertObject));
+
+        // Update or create the profile
+        const { data: updatedProfile, error: updateError } = await supabase
+          .from('user_profiles')
+          .upsert(upsertObject) 
           .select()
           .single();
 
         if (updateError) {
-          console.error('Error updating profile:', updateError);
-          return createErrorResponse("Failed to update profile", 500);
+          // Log the specific Supabase error
+          console.error('Error updating profile:', updateError); 
+          return createErrorResponse(`Failed to update profile: ${updateError.message}`, 500);
         }
 
-        return createSuccessResponse(profile);
+        // Return the updated profile
+        return createSuccessResponse(updatedProfile); 
       }
 
       default:
