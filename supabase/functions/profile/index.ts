@@ -16,8 +16,7 @@ interface UserProfileUpsertData {
   updated_at: string;
   first_name?: string;
   last_name?: string;
-  avatar_url?: string; // Assuming snake_case for DB column
-  role?: string;       // Assuming role is stored as string, adjust if needed
+  role?: string;       
 }
 
 // Use Deno.serve for Edge Function
@@ -90,10 +89,7 @@ Deno.serve(async (req) => {
         if (profileData.last_name !== undefined) {
             upsertObject.last_name = profileData.last_name;
         }
-        // Use correct column name 'avatar_url' 
-        if (profileData.avatarUrl !== undefined) { 
-            upsertObject.avatar_url = profileData.avatarUrl; 
-        }
+
         // Only update role if provided - consider security implications
         if (profileData.role !== undefined) { 
             upsertObject.role = profileData.role;

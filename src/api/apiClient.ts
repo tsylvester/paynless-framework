@@ -14,7 +14,8 @@ interface FetchOptions extends RequestInit {
 }
 
 // Base URL for Supabase Edge Functions
-const BASE_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1`;
+// Ensure BASE_URL does NOT have a trailing slash
+const BASE_URL = (import.meta.env.VITE_SUPABASE_URL || '').replace(/\/$/, '') + '/functions/v1';
 
 // Custom Error class
 class ApiError extends Error {
@@ -26,7 +27,10 @@ async function apiClient<T = unknown>(
   options: FetchOptions = {}
 ): Promise<T> { // Return the data directly or throw an error
 
-  const url = `${BASE_URL}/${endpoint}`;
+  // Construct URL safely, preventing double slashes
+  // Remove potential leading slash from endpoint before joining
+  const cleanEndpoint = endpoint.replace(/^\//, '');
+  const url = `${BASE_URL}/${cleanEndpoint}`;
   logger.debug(`[apiClient ${endpoint}] Starting request.`); // Log 1
 
   // Get token from Zustand store
