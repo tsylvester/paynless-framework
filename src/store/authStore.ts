@@ -4,6 +4,14 @@ import { logger } from '../utils/logger';
 import { persist } from 'zustand/middleware';
 import { api } from '../api/apiClient';
 
+// Define the structure of the response from the refresh endpoint
+// Updated to include user and profile, matching the backend
+interface RefreshResponse {
+  session: AuthStoreType['session'];
+  user: AuthStoreType['user'];
+  profile: AuthStoreType['profile'];
+}
+
 export const useAuthStore = create<AuthStoreType>()(
   persist(
     (set, get) => ({
@@ -125,6 +133,56 @@ export const useAuthStore = create<AuthStoreType>()(
         } else {
           logger.info('No persisted session token found.');
           set({ user: null, profile: null, session: null, isLoading: false, error: null });
+        }
+      },
+      
+      refreshSession: async () => {
+        const currentSession = get().session;
+        if (!currentSession?.refresh_token) {
+          logger.error('Refresh session: No refresh token found.');
+          return;
+        }
+
+        try {
+          const result = await api.post<RefreshResponse>('refresh', 
+            {}, // Empty body
+            { 
+              headers: { 
+                'Authorization': `Bearer ${currentSession.refresh_token}` 
+              } 
+            }
+          );
+
+          if (result?.session && result?.user && result?.profile) {
+            logger.info('Session refreshed successfully.');
+            set({
+              session: result.session,
+              user: result.user,
+              profile: result.profile,
+              isLoading: false,
+              error: null
+            });
+          } else {
+            logger.error('Refresh session: Invalid response from backend.');
+            set({
+              session: null,
+              user: null,
+              profile: null,
+              isLoading: false,
+              error: new Error('Failed to refresh session')
+            });
+          }
+        } catch (error) {
+          logger.error('Refresh session: Error during refresh attempt.', {
+            message: error instanceof Error ? error.message : 'Unknown error',
+          });
+          set({
+            session: null,
+            user: null,
+            profile: null,
+            isLoading: false,
+            error: error instanceof Error ? error : new Error('Failed to refresh session')
+          });
         }
       },
     }),

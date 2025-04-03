@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState } from 'react';
 import { Layout } from '../components/layout/Layout';
 import { Navigate } from 'react-router-dom';
 import { logger } from '../utils/logger';
@@ -33,7 +33,7 @@ export function ProfilePage() {
     try {
       logger.info('ProfilePage: Attempting to save profile changes', { userId: user.id, changes: updatedProfileData });
       
-      const updatedProfile = await api.put('/profile', updatedProfileData);
+      const updatedProfile = await api.put<UserProfile>('/profile', updatedProfileData);
 
       if (updatedProfile) {
         setProfile(updatedProfile);
@@ -65,8 +65,6 @@ export function ProfilePage() {
   if (!user) {
     return <Navigate to="/login" replace />;
   }
-
-  const isLoading = false;
 
   return (
     <Layout>

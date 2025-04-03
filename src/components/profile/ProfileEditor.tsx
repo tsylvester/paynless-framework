@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { User } from 'lucide-react';
 import { 
   UserProfile, 
-} from '../../types/profile.types';
+} from '../../types/auth.types';
 
 interface ProfileEditorProps {
   profile: UserProfile;
