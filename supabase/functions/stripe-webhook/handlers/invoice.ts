@@ -1,6 +1,6 @@
 import { SupabaseClient } from "npm:@supabase/supabase-js@2.39.3";
 import Stripe from "npm:stripe@14.11.0";
-import { Database } from "../../../types_db.ts";
+import { Database } from "../../types_db.ts";
 
 /**
  * Handle invoice.payment_succeeded event

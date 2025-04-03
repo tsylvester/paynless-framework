@@ -1,7 +1,7 @@
 import { SupabaseClient } from "npm:@supabase/supabase-js@2.39.3"; 
 import Stripe from "npm:stripe@14.11.0";
 // Keep relative path for local types
-import { Database } from "../../../types_db.ts"; 
+import { Database } from "../../types_db.ts"; 
 
 // Type alias for convenience
 type CheckoutSession = Stripe.Checkout.Session;
