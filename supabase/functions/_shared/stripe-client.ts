@@ -6,8 +6,8 @@ import Stripe from "npm:stripe@14.11.0";
  */
 export const getStripeClient = (isTestMode: boolean): Stripe => {
   const secretKey = isTestMode 
-    ? Deno.env.get("STRIPE_SECRET_KEY_TEST") 
-    : Deno.env.get("STRIPE_SECRET_KEY_LIVE");
+    ? Deno.env.get("STRIPE_SECRET_TEST_KEY")
+    : Deno.env.get("STRIPE_SECRET_LIVE_KEY");
   
   if (!secretKey) {
     throw new Error(`Stripe ${isTestMode ? "test" : "live"} secret key is not defined`);
@@ -19,18 +19,21 @@ export const getStripeClient = (isTestMode: boolean): Stripe => {
 };
 
 /**
- * Verify the Stripe webhook signature
+ * Verify the Stripe webhook signature (Asynchronously)
  * Used for webhook validation
  */
-export const verifyWebhookSignature = (
+export const verifyWebhookSignature = async (
   stripe: Stripe,
   body: string,
   signature: string,
   endpointSecret: string
-): Stripe.Event => {
+): Promise<Stripe.Event> => {
   try {
-    return stripe.webhooks.constructEvent(body, signature, endpointSecret);
+    // Use the async version for environments requiring it (like Deno/Edge)
+    return await stripe.webhooks.constructEventAsync(body, signature, endpointSecret);
   } catch (err) {
+    // Log the specific error for better debugging
+    console.error("Error during constructEventAsync:", err);
     throw new Error(`Webhook signature verification failed: ${err.message}`);
   }
 };
@@ -47,6 +50,6 @@ export const getStripeMode = (
     return Boolean(requestData.isTestMode);
   }
   
-  // Fall back to environment variable
-  return Deno.env.get("STRIPE_TEST_MODE") === "true";
+  // Fall back to environment variable. Default to TRUE (test mode) if not 'false'.
+  return Deno.env.get("STRIPE_TEST_MODE") !== "false";
 };

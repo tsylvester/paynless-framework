@@ -7,6 +7,12 @@ import { logger } from '../utils/logger';
 import { Check, AlertCircle, CreditCard, Award, AlertTriangle } from 'lucide-react';
 import { useSubscriptionStore } from '../store/subscriptionStore';
 
+// Define interface for structured description
+interface PlanDescription {
+  subtitle: string | null;
+  features: string[];
+}
+
 export function SubscriptionPage() {
   const { user, isLoading: authLoading } = useAuthStore();
   const { 
@@ -233,108 +239,99 @@ export function SubscriptionPage() {
           )}
           
           <div className="mt-12 sm:mt-16 grid gap-8 md:grid-cols-2 lg:grid-cols-3">
-            {/* Free Plan */}
-            <div className="border border-border rounded-lg shadow-sm divide-y divide-border bg-surface">
-              <div className="p-6">
-                <h2 className="text-xl font-medium text-textPrimary">Free</h2>
-                <p className="mt-2 text-sm text-textSecondary">Basic access to the platform</p>
-                <p className="mt-4">
-                  <span className="text-4xl font-extrabold text-textPrimary">$0</span>
-                  <span className="text-base font-medium text-textSecondary">/mo</span>
-                </p>
-                <ul className="mt-6 space-y-4">
-                  <li className="flex items-start">
-                    <div className="flex-shrink-0">
-                      <Check className="h-5 w-5 text-green-500" />
-                    </div>
-                    <p className="ml-3 text-sm text-textSecondary">Basic account features</p>
-                  </li>
-                  <li className="flex items-start">
-                    <div className="flex-shrink-0">
-                      <Check className="h-5 w-5 text-green-500" />
-                    </div>
-                    <p className="ml-3 text-sm text-textSecondary">Limited API access</p>
-                  </li>
-                </ul>
-              </div>
-              <div className="px-6 py-4 bg-background">
-                {(userSubscription?.status === 'active' || userSubscription?.status === 'trialing') ? (
-                  <button
-                    onClick={handleCancelSubscription}
-                    disabled={isProcessing || !userSubscription?.id}
-                    className={`w-full inline-flex justify-center py-2 px-4 border border-border text-textPrimary rounded-md shadow-sm text-sm font-medium hover:bg-surface focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary ${
-                      (isProcessing || !userSubscription?.id) ? 'opacity-75 cursor-not-allowed' : ''
-                    }`}
-                  >
-                    {isProcessing ? 'Processing...' : 'Downgrade to Free'}
-                  </button>
-                ) : userSubscription?.status === 'free' ? (
-                   <button
-                    disabled
-                    className="w-full inline-flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-textSecondary/50 bg-surface cursor-not-allowed"
-                  >
-                    Current Plan
-                  </button>
-                 ) : (
-                  <button
-                    disabled
-                    className="w-full inline-flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-textSecondary/50 bg-surface cursor-not-allowed"
-                  >
-                    Select Plan (N/A)
-                  </button>
-                )}
-              </div>
-            </div>
-            
-            {/* Paid Plans */}
+            {/* Loop over ALL available plans fetched from the store */}
             {availablePlans.map((plan) => {
-              const isActivePlan = userSubscription?.plan?.priceId === plan.priceId;
+              const isCurrentPlan = userSubscription?.plan?.id === plan.id;
+              const isFreePlan = plan.amount === 0;
+              const userIsOnPaidPlan = userSubscription?.status === 'active' || userSubscription?.status === 'trialing';
+
+              // Attempt to parse description - provide defaults if parsing fails or data is missing
+              let subtitle = plan.name; // Default to plan name
+              let features: string[] = [];
+
+              // Check if description is an object and try to extract properties safely
+              if (plan.description && typeof plan.description === 'object') {
+                const desc = plan.description as Partial<PlanDescription>; // Use Partial for safe access
+                subtitle = (typeof desc.subtitle === 'string' && desc.subtitle) ? desc.subtitle : plan.name;
+                features = Array.isArray(desc.features) ? desc.features : [];
+              } else if (typeof plan.description === 'string' && plan.description) {
+                // Basic fallback if description is still somehow a string after migration
+                subtitle = plan.description;
+              }
+              // Removed try-catch as type checks handle most cases
+
               return (
                 <div 
-                  key={plan.priceId} 
+                  key={plan.id} // Assuming plan.id is the unique DB identifier
                   className={`border rounded-lg shadow-sm divide-y bg-surface ${
-                    isActivePlan ? 'border-primary ring-2 ring-primary' : 'border-border divide-border'
+                    isCurrentPlan ? 'border-primary ring-2 ring-primary' : 'border-border divide-border'
                   }`}
                 >
                   <div className="p-6">
                     <h2 className="text-xl font-medium text-textPrimary">{plan.name}</h2>
-                    <p className="mt-2 text-sm text-textSecondary">{plan.description}</p>
+                    {/* Display subtitle from JSON */}
+                    <p className="mt-2 text-sm text-textSecondary">{subtitle}</p>
                     <p className="mt-4">
                       <span className="text-4xl font-extrabold text-textPrimary">
-                        {formatAmount(plan.amount, plan.currency)}
+                        {/* Display $0 for free plan, otherwise format amount */}
+                        {isFreePlan ? '$0' : formatAmount(plan.amount, plan.currency)}
                       </span>
                       <span className="text-base font-medium text-textSecondary">
-                        /{formatInterval(plan.interval, plan.intervalCount).replace('ly', '')}
+                        {/* Display /mo for free plan, otherwise format interval */}
+                        {isFreePlan ? '/mo' : `/${formatInterval(plan.interval, plan.intervalCount).replace('ly', '')}`}
                       </span>
                     </p>
+                    {/* Display features from JSON */}
                     <ul className="mt-6 space-y-4">
-                      {plan.features?.map((feature, index) => (
-                        <li key={index} className="flex items-start">
-                          <div className="flex-shrink-0">
-                            <Check className="h-5 w-5 text-green-500" />
-                          </div>
-                          <p className="ml-3 text-sm text-textSecondary">{feature}</p>
+                      {features.length > 0 ? (
+                        features.map((feature, index) => (
+                          <li key={index} className="flex items-start">
+                            <div className="flex-shrink-0">
+                              <Check className="h-5 w-5 text-green-500" />
+                            </div>
+                            <p className="ml-3 text-sm text-textSecondary">{feature}</p>
+                          </li>
+                        ))
+                      ) : (
+                        <li className="flex items-start">
+                           <div className="flex-shrink-0">
+                              <Check className="h-5 w-5 text-gray-400" />
+                            </div>
+                          <p className="ml-3 text-sm text-textSecondary italic">No specific features listed.</p>
                         </li>
-                      ))}
+                      )}
                     </ul>
                   </div>
                   <div className="px-6 py-4 bg-background">
-                    {isActivePlan ? (
+                    {isCurrentPlan ? (
+                      // Button for the CURRENT plan (Free or Paid)
                       <button
                         disabled
                         className="w-full inline-flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-textSecondary/50 bg-surface cursor-not-allowed"
                       >
                         Current Plan
                       </button>
-                    ) : (
+                    ) : isFreePlan ? (
+                      // Button for the Free plan card (only shown if NOT current)
                       <button
-                        onClick={() => handleSubscribe(plan.priceId)}
+                        onClick={handleCancelSubscription} // Downgrade action
+                        disabled={isProcessing || !userIsOnPaidPlan} // Can only downgrade if on a paid plan
+                        className={`w-full inline-flex justify-center py-2 px-4 border border-border rounded-md shadow-sm text-sm font-medium hover:bg-surface focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary ${
+                          (isProcessing || !userIsOnPaidPlan) ? 'text-textSecondary/50 opacity-75 cursor-not-allowed' : 'text-textPrimary'
+                        }`}
+                      >
+                        {isProcessing ? 'Processing...' : 'Downgrade to Free'}
+                      </button>
+                    ) : (
+                      // Button for Paid plan cards (only shown if NOT current)
+                      <button
+                        onClick={() => handleSubscribe(plan.stripePriceId || plan.id)} // Use stripePriceId or plan DB id
                         disabled={isProcessing}
                         className={`w-full inline-flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-primary hover:bg-primary/90 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary ${
                           isProcessing ? 'opacity-75 cursor-not-allowed' : ''
                         }`}
                       >
-                        {userSubscription && userSubscription.status !== 'free' ? 'Change Plan' : 'Subscribe'}
+                        {userIsOnPaidPlan ? 'Change Plan' : 'Subscribe'}
                       </button>
                     )}
                   </div>

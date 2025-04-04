@@ -1,3 +1,7 @@
+// DEPLOYMENT NOTE: This function handles user signup BEFORE a user JWT exists.
+// It should be secured via an API key check (e.g., Supabase anon key) within the function body.
+// Deploy using: supabase functions deploy register --no-verify-jwt
+
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import { 
@@ -5,7 +9,8 @@ import {
   createSuccessResponse,
   handleCorsPreflightRequest 
 } from "../_shared/cors-headers.ts";
-// import { verifyApiKey, createUnauthorizedResponse } from "../_shared/auth.ts"; // Temporarily disable API key check
+// Re-enable API key check for security
+import { verifyApiKey, createUnauthorizedResponse } from "../_shared/auth.ts"; 
 
 /**
  * NOTE: Edge functions don't return console logs to us in production environments.
@@ -18,13 +23,11 @@ Deno.serve(async (req) => {
   const corsResponse = handleCorsPreflightRequest(req);
   if (corsResponse) return corsResponse;
 
-  // Temporarily bypass API key check for debugging
-  /*
+  // Re-enable API key check
   const isValid = verifyApiKey(req);
   if (!isValid) {
     return createUnauthorizedResponse("Invalid or missing apikey");
   }
-  */
 
   // Allow only POST
   if (req.method !== 'POST') {

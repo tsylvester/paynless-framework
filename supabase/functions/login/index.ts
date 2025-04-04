@@ -1,3 +1,7 @@
+// DEPLOYMENT NOTE: This function handles user login BEFORE a user JWT exists.
+// It is secured via an API key check (verifyApiKey) within the function body.
+// Deploy using: supabase functions deploy login --no-verify-jwt
+
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import { 
