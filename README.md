@@ -1,6 +1,6 @@
 # Paynless Framework Application
 
-The Paynless Framework is a modern API-based application framework built with React, Supabase, Stripe, and ChatGPT. The Paynless Framework is intended for multi-environment deployment on the web, iOS, and Android. 
+The Paynless Framework is a modern API-based application framework monorepo built with React, Supabase, Stripe, and ChatGPT. The Paynless Framework is intended for multi-environment deployment on the web, iOS, and Android. 
 
 Whether hand-coding or vibe coding, with the Paynless Framework your user authentication, database, profiles, subscriptions, and AI agent implementation is ready immediately. 
 
@@ -70,268 +70,300 @@ The application exposes the following primary API endpoints through Supabase Edg
 
 ## Database Schema (Simplified)
 
-*(This section appears reasonably up-to-date based on typical Supabase/Stripe integrations. Keep as is unless specific schema changes are known.)*
+The core database tables defined in `supabase/migrations/` include:
 
-The core database tables likely include:
+- **`public.user_profiles`** (Stores public profile information for users)
+  - `id` (uuid, PK, references `auth.users(id) ON DELETE CASCADE`)
+  - `first_name` (text, nullable)
+  - `last_name` (text, nullable)
+  - `role` (public.user_role enum [`'user'`, `'admin'`], NOT NULL, default `'user'`)
+  - `created_at` (timestamp with time zone, NOT NULL, default `now()`)
+  - `updated_at` (timestamp with time zone, NOT NULL, default `now()`)
 
-- `public.user_profiles`
-  - `id` (uuid, references `auth.users.id`)
-  - `first_name` (text)
-  - `last_name` (text)
-  - `role` (text, e.g., 'user', 'admin')
-  - `created_at` (timestampz)
-  - `updated_at` (timestampz)
+- **`public.subscription_plans`** (Stores available subscription plans, mirrors Stripe Products/Prices)
+  - `id` (uuid, PK, default `uuid_generate_v4()`)
+  - `stripe_price_id` (text, UNIQUE, NOT NULL) - *Corresponds to Stripe Price ID (e.g., `price_...`)*
+  - `stripe_product_id` (text, nullable) - *Corresponds to Stripe Product ID (e.g., `prod_...`)*
+  - `name` (text, NOT NULL)
+  - `description` (jsonb, nullable) - *Structured as `{ "subtitle": "...", "features": ["...", "..."] }`*
+  - `amount` (integer, NOT NULL) - *Amount in smallest currency unit (e.g., cents)*
+  - `currency` (text, NOT NULL) - *3-letter ISO code (e.g., `'usd'`)*
+  - `interval` (text, NOT NULL) - *One of `'day'`, `'week'`, `'month'`, `'year'`*
+  - `interval_count` (integer, NOT NULL, default `1`)
+  - `active` (boolean, NOT NULL, default `true`) - *Whether the plan is offered*
+  - `metadata` (jsonb, nullable) - *For additional plan details*
+  - `created_at` (timestamp with time zone, NOT NULL, default `now()`)
+  - `updated_at` (timestamp with time zone, NOT NULL, default `now()`)
 
-- `public.subscription_plans`
-  - `id` (uuid or text)
-  - `stripe_price_id` (text)
-  - `name` (text)
-  - `description` (text)
-  - `amount` (integer, smallest currency unit e.g., cents)
-  - `currency` (text, e.g., 'usd')
-  - `interval` (text, e.g., 'month', 'year')
-  - `interval_count` (integer)
-  - `metadata` (jsonb)
+- **`public.user_subscriptions`** (Stores user subscription information linked to Stripe)
+  - `id` (uuid, PK, default `uuid_generate_v4()`)
+  - `user_id` (uuid, NOT NULL, references `public.user_profiles(id) ON DELETE CASCADE`)
+  - `stripe_customer_id` (text, UNIQUE, nullable)
+  - `stripe_subscription_id` (text, UNIQUE, nullable)
+  - `status` (text, NOT NULL) - *e.g., `'active'`, `'canceled'`, `'trialing'`, `'past_due'`, `'free'`*
+  - `plan_id` (uuid, nullable, references `public.subscription_plans(id)`)
+  - `current_period_start` (timestamp with time zone, nullable)
+  - `current_period_end` (timestamp with time zone, nullable)
+  - `cancel_at_period_end` (boolean, nullable, default `false`)
+  - `created_at` (timestamp with time zone, NOT NULL, default `now()`)
+  - `updated_at` (timestamp with time zone, NOT NULL, default `now()`)
 
-- `public.user_subscriptions`
-  - `id` (uuid)
-  - `user_id` (uuid, references `auth.users.id`)
-  - `stripe_customer_id` (text)
-  - `stripe_subscription_id` (text)
-  - `status` (text, e.g., 'active', 'canceled', 'trialing')
-  - `current_period_start` (timestampz)
-  - `current_period_end` (timestampz)
-  - `cancel_at_period_end` (boolean)
-  - `plan_id` (references `subscription_plans.id`)
+- **`public.subscription_transactions`** (Logs Stripe webhook events for processing and auditing)
+  - `id` (uuid, PK, default `gen_random_uuid()`)
+  - `user_id` (uuid, NOT NULL, references `auth.users(id) ON DELETE CASCADE`)
+  - `stripe_event_id` (text, UNIQUE, NOT NULL) - *Idempotency key*
+  - `event_type` (text, NOT NULL) - *e.g., `'checkout.session.completed'`*
+  - `status` (text, NOT NULL, default `'processing'`) - *Processing status*
+  - `stripe_checkout_session_id` (text, nullable)
+  - `stripe_subscription_id` (text, nullable)
+  - `stripe_customer_id` (text, nullable)
+  - `stripe_invoice_id` (text, nullable)
+  - `stripe_payment_intent_id` (text, nullable)
+  - `amount` (integer, nullable) - *Smallest currency unit*
+  - `currency` (text, nullable)
+  - `user_subscription_id` (uuid, nullable, references `public.user_subscriptions(id) ON DELETE SET NULL`)
+  - `created_at` (timestamp with time zone, NOT NULL, default `now()`)
+  - `updated_at` (timestamp with time zone, NOT NULL, default `now()`)
 
-*(Note: Actual schema might have variations, refer to migrations)*
+*(Note: This reflects the schema after applying all migrations in `supabase/migrations/`. RLS policies are also applied but not detailed here.)*
 
-## Project Structure (`src` directory)
+## Project Structure (Monorepo)
 
-```
-/src
-│
-├── /api                  # API client implementations
-│   ├── /clients          # Specific API clients
-│   │   └── stripe.api.ts # Stripe/Subscription API client
-│   └── apiClient.ts      # Base API client (fetch wrapper, error handling)
-│
-├── /components           # Reusable UI components (structure TBD)
-│   └── /layout          # Main layout components (e.g., Footer.tsx)
-│
-├── /config               # Configuration files (structure TBD)
-│
-├── /context              # React context providers (structure TBD)
-│
-├── /hooks                # Custom React hooks
-│   ├── useAuthSession.ts # Hook for managing session refresh logic
-│   ├── useSubscription.ts # Hook for subscription context/store access
-│   └── useTheme.ts      # Hook for theme management
-│
-├── /pages                # Page-level components
-│   ├── Dashboard.tsx
-│   ├── Home.tsx
-│   ├── Login.tsx        # (Likely placeholder/wrapper for auth logic)
-│   ├── Profile.tsx
-│   ├── Register.tsx     # (Likely placeholder/wrapper for auth logic)
-│   ├── Subscription.tsx
-│   └── SubscriptionSuccess.tsx
-│
-├── /routes               # Routing configuration (structure TBD)
-│
-├── /services             # Business logic services
-│   └── subscription.service.ts # Service for subscription-related operations
-│
-├── /store                # Zustand store implementations
-│   ├── authStore.ts     # Authentication state (user, session, profile, login/register/logout/refresh actions)
-│   └── subscriptionStore.ts # Subscription state (plans, user sub, actions)
-│
-├── /types                # TypeScript types and interfaces
-│   ├── api.types.ts
-│   ├── auth.types.ts
-│   ├── global.d.ts
-│   ├── profile.types.ts  # (Assuming based on usage, not listed in dir)
-│   ├── route.types.ts
-│   ├── subscription.types.ts
-│   └── theme.types.ts
-│
-├── /utils                # Utility functions (structure TBD)
-│   └── logger.ts        # Logging utility (assuming based on usage)
-│
-├── App.tsx               # Main App component (providers, routing setup)
-├── index.css             # Global styles & Tailwind CSS variable definitions
-├── main.tsx              # Application entry point
-└── vite-env.d.ts       # Vite environment types
-```
-
-## Edge Functions (`supabase/functions`)
+The project is organized as a monorepo using npm workspaces:
 
 ```
-/supabase/functions
+/
+├── apps/                   # Individual applications
+│   ├── web/                # React Web Application (Vite)
+│   ├── ios/                # iOS Application (Details TBD)
+│   └── android/            # Android Application (Details TBD)
 │
-├── /_shared             # Shared Deno utilities (CORS, Auth helpers, etc.)
+├── packages/               # Shared libraries/packages
+│   ├── api-client/         # Frontend API client logic
+│   │   └── src/
+│   │       ├── apiClient.ts      # Base API client (fetch wrapper, error handling)
+│   │       └── stripe.api.ts     # Stripe/Subscription specific API client
+│   ├── store/              # Zustand global state stores
+│   │   └── src/
+│   │       ├── authStore.ts        # Auth state (user, session, profile, actions)
+│   │       └── subscriptionStore.ts # Subscription state (plans, user sub, actions)
+│   ├── types/              # Shared TypeScript types and interfaces
+│   │   └── src/
+│   │       ├── api.types.ts
+│   │       ├── auth.types.ts
+│   │       ├── subscription.types.ts
+│   │       ├── theme.types.ts
+│   │       ├── route.types.ts
+│   │       └── index.ts            # Main export for types
+│   ├── ui-components/      # Reusable React UI components (Placeholder)
+│   │   └── src/
+│   │       └── index.ts            # Export point for components
+│   └── utils/              # Shared utility functions
+│       └── src/
+│           └── logger.ts         # Logging utility
 │
-├── /api-subscriptions   # Handles subscription actions (checkout, portal, plans, current)
-├── /api-users           # Handles user management actions
-├── /login               # Handles user login
-├── /logout              # Handles user logout
-├── /me                  # Handles fetching/updating the current user's profile
-├── /profile             # Handles profile-related actions (details TBD)
-├── /refresh             # Handles session token refresh
-├── /register            # Handles user registration
-├── /reset-password      # Handles password reset flow
-├── /session             # Handles session validation/information
-├── /stripe-webhook      # Handles incoming Stripe events
+├── supabase/
+│   ├── functions/          # Supabase Edge Functions (Backend API)
+│   │   ├── _shared/          # Shared Deno utilities for functions
+│   │   ├── login/
+│   │   ├── register/
+│   │   ├── logout/
+│   │   ├── refresh/
+│   │   ├── session/
+│   │   ├── me/               # User profile fetch/update
+│   │   ├── profile/          # Other profile actions?
+│   │   ├── api-subscriptions/ # Subscription management endpoints
+│   │   ├── stripe-webhook/   # Stripe event handler
+│   │   └── ... (other functions)
+│   └── migrations/         # Database migration files
+│
+├── .env                    # Local environment variables (Supabase keys, etc.)
+├── .env.example            # Example environment variables
+├── package.json            # Root package file (workspaces config)
+├── tsconfig.base.json      # Base TypeScript configuration for the monorepo
+└── README.md               # This file
+```
+
+## Edge Functions (`supabase/functions/`)
+
+```
+supabase/functions/
+│
+├── _shared/             # Shared Deno utilities (CORS, Auth helpers, etc.)
+│
+├── api-subscriptions/   # Handles subscription actions (checkout, portal, plans, current, cancel, resume, usage)
+├── api-users/           # Handles user management actions
+├── login/               # Handles user login
+├── logout/              # Handles user logout
+├── me/                  # Handles fetching/updating the current user's profile
+├── profile/             # Handles profile-related actions (details TBD)
+├── refresh/             # Handles session token refresh
+├── register/            # Handles user registration
+├── reset-password/      # Handles password reset flow
+├── session/             # Handles session validation/information
+├── stripe-webhook/      # Handles incoming Stripe events
 └── test-auth.ts         # Standalone test script for auth?
 ```
 
-## Core Framework Files (Review these for API/Util understanding)
+## Core Packages & Exports (For AI Assistants)
 
-This section details the key functions, methods, and store actions within the core files.
+This section details the key exports from the shared packages to help AI tools understand the available functionality.
 
-### 1. `/src/api/apiClient.ts` (Core Fetch Wrapper)
+### 1. `packages/api-client` (API Interaction)
 
-This file provides a centralized `fetch` wrapper for interacting with the backend Supabase Edge Functions.
+#### `src/apiClient.ts` (Base Fetch Wrapper)
+Provides a centralized `fetch` wrapper for interacting with Supabase Edge Functions.
 
-- **`api` object:** Exported object containing convenient methods for HTTP requests.
+- **`initializeApiClient(config: ApiClientConfig): void`**: Initializes the client.
+  - `config: { baseUrl: string; supabaseAnonKey: string; }`
+- **`api` object**: Methods for HTTP requests. Requires token in options if not public.
   - `api.get<T>(endpoint: string, options?: FetchOptions): Promise<T>`
   - `api.post<T>(endpoint: string, body: unknown, options?: FetchOptions): Promise<T>`
   - `api.put<T>(endpoint: string, body: unknown, options?: FetchOptions): Promise<T>`
   - `api.delete<T>(endpoint: string, options?: FetchOptions): Promise<T>`
-    - `endpoint`: Path to the Edge Function (e.g., '/login').
-    - `body`: Request payload for POST/PUT.
-    - `options`: Optional `FetchOptions` (extends standard `RequestInit`) including:
-      - `isPublic?: boolean`: If true, doesn't add the Authorization header.
-      - Standard `fetch` options like `headers`, `signal`, etc.
-    - Returns: A promise resolving to the data payload (`T`) from the `data` field of the JSON response, or throws `ApiError` on failure.
-- **`ApiError` class:** Custom error class thrown on API failures.
+- **`FetchOptions` type**: Extends `RequestInit`.
+  - `{ isPublic?: boolean; token?: string; }`
+- **`ApiError` class**: Custom error thrown on API failures.
   - `message: string`
-  - `code?: string | number` (HTTP status or backend error code)
+  - `code?: string | number`
 
-### 2. `/src/store/authStore.ts` (Core Auth Logic)
+#### `src/stripe.api.ts` (Stripe-Related API Client)
+Client for backend endpoints related to Stripe actions.
 
-Manages authentication state (user, session, profile) using Zustand.
+- **`StripeApiClient` class**:
+  - `constructor(getToken: () => string | undefined)`: Needs function to get auth token.
+  - `createCheckoutSession(priceId: string, isTestMode: boolean): Promise<ApiResponse<{ sessionId: string }>>`
+  - `createPortalSession(isTestMode: boolean): Promise<ApiResponse<{ url: string }>>`
+  - `getSubscriptionPlans(): Promise<ApiResponse<SubscriptionPlan[]>>`
+  - `getUserSubscription(userId: string): Promise<ApiResponse<UserSubscription>>`
+  - `cancelSubscription(subscriptionId: string): Promise<ApiResponse<void>>`
+  - `resumeSubscription(subscriptionId: string): Promise<ApiResponse<void>>`
+  - `getUsageMetrics(metric: string): Promise<ApiResponse<SubscriptionUsageMetrics>>`
+  *(Note: Returns `ApiResponse<T>` defined in `@paynless/types`)*
 
-- **`useAuthStore` hook:** Accesses the store's state and actions.
-  - **State:**
+### 2. `packages/store` (Global State Management)
+
+Uses Zustand for state management with persistence for session data.
+
+#### `src/authStore.ts` (Authentication State)
+Manages user, session, and profile state.
+
+- **`useAuthStore` hook**: Accesses the store's state and actions.
+  - **State**:
     - `user: User | null`
     - `session: Session | null`
     - `profile: UserProfile | null`
     - `isLoading: boolean`
     - `error: Error | null`
-  - **Actions:**
+  - **Actions**:
     - `setUser(user: User | null): void`
     - `setSession(session: Session | null): void`
     - `setProfile(profile: UserProfile | null): void`
     - `setIsLoading(isLoading: boolean): void`
     - `setError(error: Error | null): void`
-    - `login(email: string, password: string): Promise<User | null>`: Calls `/login` endpoint, updates state.
-    - `register(email: string, password: string): Promise<User | null>`: Calls `/register` endpoint, updates state.
-    - `logout(): Promise<void>`: Calls `/logout` endpoint, clears state.
-    - `initialize(): Promise<void>`: Checks persisted session, fetches profile if valid, updates state.
-    - `refreshSession(): Promise<void>`: Calls `/refresh` endpoint using refresh token, updates state (including user/profile).
+    - `login(email: string, password: string): Promise<User | null>`
+    - `register(email: string, password: string): Promise<User | null>`
+    - `logout(): Promise<void>`
+    - `initialize(): Promise<void>` (Checks persisted session, fetches profile)
+    - `refreshSession(): Promise<void>` (Uses refresh token)
+    - `updateProfile(profileData: UserProfileUpdate): Promise<boolean>`
 
-### 3. `/src/store/subscriptionStore.ts` (Core Subscription Logic)
+#### `src/subscriptionStore.ts` (Subscription State)
+Manages subscription plans and the user's current subscription status.
 
-Manages subscription state (plans, user's subscription) using Zustand.
-
-- **`useSubscriptionStore` hook:** Accesses the store's state and actions.
-  - **State:**
+- **`useSubscriptionStore` hook**: Accesses the store's state and actions.
+  - **State**:
     - `userSubscription: UserSubscription | null`
     - `availablePlans: SubscriptionPlan[]`
     - `isSubscriptionLoading: boolean`
     - `hasActiveSubscription: boolean`
     - `isTestMode: boolean`
     - `error: Error | null`
-  - **Actions:**
+  - **Actions**:
     - `setUserSubscription(subscription: UserSubscription | null): void`
     - `setAvailablePlans(plans: SubscriptionPlan[]): void`
     - `setIsLoading(isLoading: boolean): void`
     - `setError(error: Error | null): void`
-    - `loadSubscriptionData(): Promise<void>`: Fetches plans and user subscription using `subscriptionService`.
-    - `refreshSubscription(): Promise<void>`: Reloads subscription data.
-    - `createCheckoutSession(priceId: string, successUrl: string, cancelUrl: string): Promise<string | null>`: Calls `subscriptionService` to get Stripe Checkout URL.
-    - `createBillingPortalSession(returnUrl: string): Promise<string | null>`: Calls `subscriptionService` to get Stripe Billing Portal URL.
-    - `cancelSubscription(subscriptionId: string): Promise<boolean>`: Calls `subscriptionService` to cancel, then refreshes state.
-    - `resumeSubscription(subscriptionId: string): Promise<boolean>`: Calls `subscriptionService` to resume, then refreshes state.
-    - `getUsageMetrics(metric: string): Promise<any>`: Calls `subscriptionService` to fetch usage data.
+    - `loadSubscriptionData(userId: string): Promise<void>` (User ID is optional, taken from `authStore` if available)
+    - `refreshSubscription(): Promise<void>`
+    - `createCheckoutSession(priceId: string): Promise<string>` (Returns Stripe Session ID)
+    - `createBillingPortalSession(): Promise<string | null>` (Returns Stripe Portal URL)
+    - `cancelSubscription(subscriptionId: string): Promise<boolean>`
+    - `resumeSubscription(subscriptionId: string): Promise<boolean>`
+    - `getUsageMetrics(metric: string): Promise<SubscriptionUsageMetrics | null>`
 
-### 4. `/src/services/subscription.service.ts`
+### 3. `packages/utils` (Shared Utilities)
 
-Provides methods encapsulating subscription-related business logic, often acting as an intermediary between the store and the API clients or direct fetch calls.
+#### `src/logger.ts` (Logging Utility)
+Provides a singleton logger instance for consistent application logging.
 
-- **`SubscriptionService` class:** (Instantiated as `subscriptionService`)
-  - `getSubscriptionPlans(): Promise<SubscriptionPlan[]>`: Uses `stripeApiClient`.
-  - `getUserSubscription(userId: string): Promise<UserSubscription | null>`: Uses `stripeApiClient`.
-  - `createCheckoutSession(userId: string, priceId: string, successUrl: string, cancelUrl: string): Promise<string | null>`: Uses `stripeApiClient`.
-  - `createBillingPortalSession(userId: string, returnUrl: string): Promise<string | null>`: Uses `stripeApiClient`.
-  - `hasActiveSubscription(userId: string): Promise<boolean>`: Calls `getUserSubscription` internally.
-  - `cancelSubscription(userId: string, subscriptionId: string): Promise<boolean>`: Uses `fetch` directly to call `/api-subscriptions/:id/cancel`.
-  - `resumeSubscription(userId: string, subscriptionId: string): Promise<boolean>`: Uses `fetch` directly to call `/api-subscriptions/:id/resume`.
-  - `getUsageMetrics(userId: string, metric: string): Promise<any>`: Uses `fetch` directly to call `/api-subscriptions/usage/:metric`.
-  *(Note: Some methods use `fetch` directly, others use `stripeApiClient`)*
+- **`logger` instance**: Singleton instance of `Logger`.
+  - `logger.debug(message: string, metadata?: LogMetadata): void`
+  - `logger.info(message: string, metadata?: LogMetadata): void`
+  - `logger.warn(message: string, metadata?: LogMetadata): void`
+  - `logger.error(message: string, metadata?: LogMetadata): void`
+- **`Logger` class**:
+  - `Logger.getInstance(): Logger`
+  - `logger.configure(config: Partial<LoggerConfig>): void`
+- **`LogLevel` enum**: `DEBUG`, `INFO`, `WARN`, `ERROR`
+- **`LoggerConfig` interface**: `{ minLevel: LogLevel; enableConsole: boolean; captureErrors: boolean; }`
+- **`LogMetadata` interface**: `{ [key: string]: unknown; }`
 
-### 5. `/src/api/clients/stripe.api.ts`
+### 4. `packages/types` (Shared TypeScript Types)
 
-Frontend client specifically for interacting with backend endpoints related to Stripe actions (which then talk to Stripe).
+Contains centralized type definitions used across the monorepo.
 
-- **`StripeApiClient` class:** (Instantiated as `stripeApiClient`)
-  - `createCheckoutSession(planId: string): Promise<ApiResponse<{ url: string }>>`: Calls `api.post('/checkout', ...)`.
-  - `createPortalSession(): Promise<ApiResponse<{ url: string }>>`: Calls `api.post('/portal', ...)`.
-  - `getSubscriptionPlans(): Promise<ApiResponse<SubscriptionPlan[]>>`: Calls `api.get('/plans')`.
-  - `getUserSubscription(userId: string): Promise<ApiResponse<UserSubscription>>`: Calls `api.get('/current')`.
-  - `cancelSubscription(): Promise<ApiResponse<void>>`: Calls `api.post('/cancel', ...)`.
-  *(Note: Returns `ApiResponse<T>` which includes `data`, `status`, and optional `error`)*
+- **`src/api.types.ts`**: General API response types (`ApiResponse`, etc.).
+- **`src/auth.types.ts`**: Types for authentication (`User`, `Session`, `UserProfile`, `AuthStore`, etc.).
+- **`src/subscription.types.ts`**: Types for subscriptions (`SubscriptionPlan`, `UserSubscription`, `SubscriptionStore`, etc.).
+- **`src/theme.types.ts`**: Types related to theming.
+- **`src/route.types.ts`**: Types related to application routing.
+- **`src/index.ts`**: Exports all types from the package.
 
-### 6. `/supabase/functions/_shared/*` (Core Backend Utilities)
+### 5. `packages/ui-components` (Reusable UI Components)
 
-Contains shared Deno code used by multiple Edge Functions (CORS handling, Supabase client creation, auth helpers, Stripe client initialization).
+Intended for shared React components.
+
+- **`src/index.ts`**: Currently empty. Add component exports here (e.g., `export * from './Button';`).
+
+### 6. `supabase/functions/_shared/` (Backend Shared Utilities)
+
+Contains shared Deno code used by multiple Edge Functions (CORS handling, Supabase client creation, auth helpers, Stripe client initialization). Refer to the files within this directory for specific utilities.
 
 ## Getting Started
-
-*(Keep as is - seems standard)*
 
 1. Clone this repository
 2. Copy `.env.example` to `.env` and add your Supabase Project URL and Anon Key.
 3. Ensure Docker is running.
 4. Run `npm install` (or `yarn` or `pnpm install`) to install dependencies.
 5. Start the local Supabase stack: `supabase start`
-6. Apply database migrations: `supabase db reset` (if starting fresh) or ensure migrations are up-to-date.
-7. Run `npm run dev` to start the development server.
+6. Apply database migrations: `supabase db reset` (if starting fresh) or ensure migrations in `supabase/migrations` are up-to-date.
+7. Run `npm run dev` from the root or the specific app directory (e.g., `cd apps/web && npm run dev`) to start the development server.
 
 ## Supabase Setup
 
-*(Keep as is - seems standard)*
-
 1. Create a new Supabase project.
 2. Link your local repository: `supabase link --project-ref YOUR_PROJECT_REF --password YOUR_PASSWORD`
-3. Set up required environment variables in `.env` (`VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`).
+3. Set up required environment variables in `.env` (`VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`, `STRIPE_SECRET_KEY`, etc.). Refer to `.env.example`.
 4. Ensure database migrations in `supabase/migrations` define the necessary tables (`user_profiles`, `subscription_plans`, `user_subscriptions`) and the trigger to create user profiles.
 
 ## API Implementation Layering
 
-*(Keep as is - describes the intended architecture)*
-
 The application follows a clear layered architecture for API interactions:
-1. UI Components/Pages (`/src/pages`, `/src/components`) → Trigger actions (e.g., login, fetch profile).
-2. Hooks/Stores (`/src/hooks`, `/src/store`) → Manage state and call Service Layer methods.
-3. Service Layer (`/src/services`) → Implements application-specific logic, calls API Client methods.
-4. API Client Layer (`/src/api/clients`) → Handles HTTP requests to specific backend endpoints, uses `apiClient`.
-5. Backend API (Supabase Edge Functions) → Receives requests, interacts with Supabase Auth/DB, Stripe.
+1. UI Components/Pages (`apps/web/src/pages`, `packages/ui-components`) → Trigger actions.
+2. Hooks/Stores (`packages/store/src/*`) → Manage state and call API Client methods.
+3. API Client Layer (`packages/api-client/src/*`) → Handles HTTP requests to specific backend endpoints, uses base `apiClient`.
+4. Backend API (Supabase Edge Functions at `supabase/functions/*`) → Receives requests, interacts with Supabase Auth/DB, Stripe.
 
 ## State Management
 
-*(Update based on identified stores)*
-
 The application uses Zustand for global state management:
-1. State slices are defined in stores (`/src/store/authStore.ts`, `/src/store/subscriptionStore.ts`).
-2. Stores include state variables and actions to modify state or interact with services/API clients.
-3. Components access state and actions using the generated hooks (e.g., `useAuthStore()`).
+1. State slices are defined in stores within `packages/store/src/` (e.g., `authStore.ts`, `subscriptionStore.ts`).
+2. Stores include state variables and actions to modify state or interact with API clients.
+3. Components access state and actions using the generated hooks (e.g., `useAuthStore()`, `useSubscriptionStore()`).
 4. The `persist` middleware is used to save parts of the state (like auth session) to `localStorage`.
 
 ## Contributing
-
-*(Keep as is - standard contribution guidelines)*
 
 To contribute to this project:
 1. Ensure you understand the architecture and follow the established patterns.

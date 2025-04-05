@@ -1,0 +1,27 @@
+{
+  "name": "@paynless/store",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Zustand state management stores for Paynless framework",
+  "type": "module",
+  "main": "./dist/index.js", 
+  "types": "./dist/index.d.ts", 
+  "scripts": {
+    "build": "tsc",
+    "lint": "eslint . --fix"
+  },
+  "dependencies": {
+    "zustand": "^4.5.2",
+    "jwt-decode": "^4.0.0",
+    "@paynless/api-client": "file:../api-client",
+    "@paynless/types": "file:../types",
+    "@paynless/utils": "file:../utils"
+  },
+  "devDependencies": {
+    "typescript": "^5.5.3",
+    "eslint": "^8.57.0",
+    "@typescript-eslint/eslint-plugin": "^7.18.0",
+    "@typescript-eslint/parser": "^7.18.0"
+  },
+  "license": "ISC"
+} 

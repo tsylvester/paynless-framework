@@ -17,10 +17,23 @@ export const createCheckoutSession = async (
   isTestMode: boolean
 ): Promise<Response> => {
   try {
-    const { priceId, successUrl, cancelUrl } = request;
+    const { priceId } = request;
     
+    // 1. Get Redirect URLs from Environment Variables
+    const successUrlBase = Deno.env.get("STRIPE_CHECKOUT_SUCCESS_URL");
+    const cancelUrl = Deno.env.get("STRIPE_CHECKOUT_CANCEL_URL");
+
+    // Append the required Stripe placeholder to the success URL
+    const successUrl = successUrlBase ? `${successUrlBase}?session_id={CHECKOUT_SESSION_ID}` : null;
+
+    // 2. Validate required parameters (including fetched env vars)
     if (!priceId || !successUrl || !cancelUrl) {
-      return createErrorResponse("Missing required parameters", 400);
+      console.error("Missing required parameters for checkout", { 
+          priceId: !!priceId, 
+          successUrl: !!successUrl, 
+          cancelUrl: !!cancelUrl 
+      });
+      return createErrorResponse("Missing required parameters or server config for checkout URLs", 400);
     }
     
     // Get user details
@@ -69,7 +82,7 @@ export const createCheckoutSession = async (
         .eq("user_id", userId);
     }
     
-    // Create checkout session
+    // Create checkout session using URLs from env vars
     const session = await stripe.checkout.sessions.create({
       customer: customerId,
       line_items: [
@@ -87,13 +100,14 @@ export const createCheckoutSession = async (
       },
     });
     
-    const response: SessionResponse = {
+    // 3. Return only the session ID
+    const response: { sessionId: string } = {
       sessionId: session.id,
-      url: session.url || '',
     };
     
     return createSuccessResponse(response);
   } catch (err) {
+    console.error("Error creating checkout session:", err);
     return createErrorResponse(err.message);
   }
 };

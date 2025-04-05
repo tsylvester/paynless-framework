@@ -1,48 +1,33 @@
 {
-  "name": "paynless-framework",
+  "name": "paynless-framework-monorepo",
+  "version": "0.1.0",
   "private": true,
-  "version": "0.0.0",
-  "type": "module",
+  "description": "Monorepo for the Paynless framework backend, shared packages, and apps.",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
   "scripts": {
-    "dev": "vite",
-    "build": "tsc && vite build",
-    "lint": "eslint .",
-    "preview": "vite preview",
-    "test": "vitest"
+    "dev": "npm run dev --workspace=@paynless/web",
+    "build": "npm run build:clean && tsc -b --verbose",
+    "build:clean": "npm run clean:dist && npm run clean:buildinfo",
+    "clean:dist": "rimraf packages/types/dist packages/utils/dist packages/api-client/dist packages/store/dist packages/ui-components/dist apps/web/dist",
+    "clean:buildinfo": "rimraf packages/types/tsconfig.tsbuildinfo packages/utils/tsconfig.tsbuildinfo packages/api-client/tsconfig.tsbuildinfo packages/store/tsconfig.tsbuildinfo packages/ui-components/tsconfig.tsbuildinfo apps/web/tsconfig.tsbuildinfo tsconfig.tsbuildinfo",
+    "preview": "npm run preview --workspace=@paynless/web",
+    "lint": "npm run lint --workspaces --if-present",
+    "test": "echo \"Error: no root test specified\" && exit 1"
   },
-  "dependencies": {
-    "@supabase/supabase-js": "^2.39.3",
-    "axios": "^1.6.7",
-    "date-fns": "^3.5.0",
-    "jwt-decode": "^4.0.0",
-    "lucide-react": "^0.344.0",
-    "openai": "^4.28.0",
-    "react": "^18.3.1",
-    "react-dom": "^18.3.1",
-    "react-hook-form": "^7.50.1",
-    "react-query": "^3.39.3",
-    "react-router-dom": "^6.22.3",
-    "react-textarea-autosize": "^8.5.3",
-    "stripe": "^14.11.0",
-    "zod": "^3.22.4",
-    "zustand": "^4.5.2"
-  },
+  "keywords": [
+    "supabase",
+    "stripe",
+    "react",
+    "framework",
+    "saas"
+  ],
+  "author": "",
+  "license": "ISC",
   "devDependencies": {
-    "@eslint/js": "^9.9.1",
-    "@types/react": "^18.3.5",
-    "@types/react-dom": "^18.3.0",
-    "@vitejs/plugin-react": "^4.3.1",
-    "autoprefixer": "^10.4.18",
-    "eslint": "^9.9.1",
-    "eslint-plugin-react-hooks": "^5.1.0-rc.0",
-    "eslint-plugin-react-refresh": "^0.4.11",
-    "globals": "^15.9.0",
-    "msw": "^2.1.5",
-    "postcss": "^8.4.35",
-    "tailwindcss": "^3.4.1",
-    "typescript": "^5.5.3",
-    "typescript-eslint": "^8.3.0",
-    "vite": "^5.4.2",
-    "vitest": "^1.3.1"
+    "rimraf": "^5.0.10",
+    "typescript": "^5.5.3"
   }
 }
