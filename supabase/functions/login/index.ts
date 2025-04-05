@@ -3,13 +3,48 @@
 // Deploy using: supabase functions deploy login --no-verify-jwt
 
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
-import { createClient } from "jsr:@supabase/supabase-js@2";
+import { createClient as actualCreateClient } from "@supabase/supabase-js";
+import type { 
+    SupabaseClient, 
+    SignInWithPasswordCredentials, 
+    AuthResponse, 
+    SupabaseClientOptions, 
+    PostgrestSingleResponse // For profile fetch return type
+} from "@supabase/supabase-js";
 import { 
-  createErrorResponse, 
-  createSuccessResponse,
-  handleCorsPreflightRequest 
+  createErrorResponse as actualCreateErrorResponse, 
+  createSuccessResponse as actualCreateSuccessResponse,
+  handleCorsPreflightRequest as actualHandleCorsPreflightRequest 
 } from "../_shared/cors-headers.ts";
-import { verifyApiKey, createUnauthorizedResponse } from "../_shared/auth.ts";
+import { 
+    verifyApiKey as actualVerifyApiKey, 
+    createUnauthorizedResponse as actualCreateUnauthorizedResponse 
+} from "../_shared/auth.ts";
+
+// Define the interface for injectable dependencies
+// Includes profile fetching logic simulation
+export interface LoginHandlerDeps {
+    handleCorsPreflightRequest: (req: Request) => Response | null;
+    verifyApiKey: (req: Request) => boolean;
+    createUnauthorizedResponse: (message: string) => Response;
+    createErrorResponse: (message: string, status?: number) => Response;
+    createSuccessResponse: (data: unknown, status?: number) => Response;
+    // We inject the client factory AND potentially the specific methods
+    createSupabaseClient: (url: string, key: string, options?: SupabaseClientOptions<any>) => SupabaseClient<any>;
+    // Alternatively, inject specific methods if testing gets complex
+    // signInWithPassword?: (client: SupabaseClient<any>, creds: SignInWithPasswordCredentials) => Promise<AuthResponse>;
+    // fetchProfile?: (client: SupabaseClient<any>, userId: string) => Promise<PostgrestSingleResponse<any>>;
+}
+
+// Default dependencies using the actual implementations
+const defaultDeps: LoginHandlerDeps = {
+    handleCorsPreflightRequest: actualHandleCorsPreflightRequest,
+    verifyApiKey: actualVerifyApiKey,
+    createUnauthorizedResponse: actualCreateUnauthorizedResponse,
+    createErrorResponse: actualCreateErrorResponse,
+    createSuccessResponse: actualCreateSuccessResponse,
+    createSupabaseClient: actualCreateClient
+};
 
 /**
  * NOTE: Edge functions don't return console logs to us in production environments.
@@ -17,65 +52,91 @@ import { verifyApiKey, createUnauthorizedResponse } from "../_shared/auth.ts";
  * and can affect function execution.
  */
 
-Deno.serve(async (req) => {
-  // Handle CORS preflight request first
-  const corsResponse = handleCorsPreflightRequest(req);
+// Export the handler, accepting dependencies with defaults
+export async function handleLoginRequest(
+    req: Request,
+    deps: LoginHandlerDeps = defaultDeps
+): Promise<Response> {
+  // Use injected dependencies
+  const corsResponse = deps.handleCorsPreflightRequest(req);
   if (corsResponse) return corsResponse;
 
-  // Verify API key for all non-OPTIONS requests
-  const isValid = verifyApiKey(req);
+  const isValid = deps.verifyApiKey(req);
   if (!isValid) {
-    return createUnauthorizedResponse("Invalid or missing apikey");
+    return deps.createUnauthorizedResponse("Invalid or missing apikey");
+  }
+
+  // Only allow POST method after API key check
+  if (req.method !== 'POST') {
+      return deps.createErrorResponse('Method Not Allowed', 405);
   }
 
   try {
     const { email, password } = await req.json();
 
-    // Basic validation
     if (!email || !password) {
-      return createErrorResponse("Email and password are required", 400);
+      return deps.createErrorResponse("Email and password are required", 400);
     }
 
-    // Initialize Supabase client
-    const supabaseAdmin = createClient(
+    // Use injected client factory
+    const supabaseAdmin = deps.createSupabaseClient(
       Deno.env.get('SUPABASE_URL')!,
       Deno.env.get('SUPABASE_ANON_KEY')!
     );
 
     // Sign in the user
-    const { data, error } = await supabaseAdmin.auth.signInWithPassword({
+    const { data: authData, error: authError } = await supabaseAdmin.auth.signInWithPassword({
       email,
       password,
     });
 
-    if (error) {
-      console.error("Login error:", error);
-      return createErrorResponse(error.message, 400);
+    if (authError) {
+      console.error("Login error:", authError);
+      // Use error status if available, default to 400 for auth errors
+      return deps.createErrorResponse(authError.message, authError.status || 400); 
     }
 
-    // Get the user's profile
-    const { data: profile, error: profileError } = await supabaseAdmin
-      .from('user_profiles')
-      .select('*')
-      .eq('id', data.user.id)
-      .single();
-
-    if (profileError) {
-      console.error("Profile fetch error:", profileError);
-      // Don't fail the login if profile fetch fails
-      // The user can still log in and their profile will be created if missing
+    // Ensure user data exists after successful sign-in (Supabase should guarantee this, but check anyway)
+    if (!authData || !authData.user || !authData.session) {
+        console.error("Login succeeded but user/session data missing:", authData);
+        return deps.createErrorResponse("Login completed but failed to retrieve session.", 500);
     }
 
-    // Return successful response with user and profile data
-    return createSuccessResponse({
-      user: data.user,
-      session: data.session,
-      profile: profile || null
+    let profile = null;
+    try {
+        // Get the user's profile using the client
+        const { data: profileData, error: profileError } = await supabaseAdmin
+          .from('user_profiles')
+          .select('*')
+          .eq('id', authData.user.id)
+          .single();
+
+        if (profileError) {
+          console.error("Profile fetch error (non-critical):", profileError);
+          // Don't fail the login if profile fetch fails
+        } else {
+          profile = profileData; // Assign profile if fetch succeeded
+        }
+    } catch (profileCatchError) {
+        // Catch unexpected errors during profile fetch
+        console.error("Unexpected error during profile fetch:", profileCatchError);
+    }
+
+    // Return successful response with user, session, and profile data
+    return deps.createSuccessResponse({
+      user: authData.user,
+      session: authData.session,
+      profile: profile // Will be null if fetch failed or profile doesn't exist
     });
+
   } catch (err) {
-    console.error("Unexpected error:", err);
-    return createErrorResponse(
-      err instanceof Error ? err.message : "An unexpected error occurred"
+    console.error("Unexpected handler error:", err);
+    return deps.createErrorResponse(
+      err instanceof Error ? err.message : "An unexpected error occurred",
+      500 // Ensure status is 500 for unexpected errors
     );
   }
-}); 
+}
+
+// Deno.serve calls the handler, which uses defaultDeps by default
+Deno.serve(handleLoginRequest); 

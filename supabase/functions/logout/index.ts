@@ -1,26 +1,56 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
-import { createClient } from "jsr:@supabase/supabase-js@2";
+import { createClient as actualCreateClient } from "@supabase/supabase-js";
+import type { SupabaseClient, AuthResponse, SupabaseClientOptions } from "@supabase/supabase-js";
 import { 
-  createErrorResponse, 
-  createSuccessResponse,
-  handleCorsPreflightRequest 
+  createErrorResponse as actualCreateErrorResponse, 
+  createSuccessResponse as actualCreateSuccessResponse,
+  handleCorsPreflightRequest as actualHandleCorsPreflightRequest 
 } from "../_shared/cors-headers.ts";
-import { verifyApiKey, createUnauthorizedResponse } from "../_shared/auth.ts";
+import { 
+    verifyApiKey as actualVerifyApiKey, 
+    createUnauthorizedResponse as actualCreateUnauthorizedResponse 
+} from "../_shared/auth.ts";
 
-serve(async (req) => {
-  // Handle CORS preflight request first
-  const corsResponse = handleCorsPreflightRequest(req);
+// Define dependencies
+export interface LogoutHandlerDeps {
+    handleCorsPreflightRequest: (req: Request) => Response | null;
+    verifyApiKey: (req: Request) => boolean;
+    createUnauthorizedResponse: (message: string) => Response;
+    createErrorResponse: (message: string, status?: number) => Response;
+    createSuccessResponse: (data: unknown, status?: number) => Response;
+    createSupabaseClient: (url: string, key: string, options?: SupabaseClientOptions<any>) => SupabaseClient<any>;
+    // signOut?: (client: SupabaseClient<any>) => Promise<{ error: AuthError | null }>; // For finer-grained testing if needed
+}
+
+// Default dependencies
+const defaultDeps: LogoutHandlerDeps = {
+    handleCorsPreflightRequest: actualHandleCorsPreflightRequest,
+    verifyApiKey: actualVerifyApiKey,
+    createUnauthorizedResponse: actualCreateUnauthorizedResponse,
+    createErrorResponse: actualCreateErrorResponse,
+    createSuccessResponse: actualCreateSuccessResponse,
+    createSupabaseClient: actualCreateClient
+};
+
+// Export the handler, accepting dependencies
+export async function handleLogoutRequest(
+    req: Request,
+    deps: LogoutHandlerDeps = defaultDeps
+): Promise<Response> {
+  // Use injected dependencies
+  const corsResponse = deps.handleCorsPreflightRequest(req);
   if (corsResponse) return corsResponse;
 
-  // Verify API key for all non-OPTIONS requests
-  const isValid = verifyApiKey(req);
+  const isValid = deps.verifyApiKey(req);
   if (!isValid) {
-    return createUnauthorizedResponse("Invalid or missing apikey");
+    return deps.createUnauthorizedResponse("Invalid or missing apikey");
   }
 
+  // Note: Original didn't check method, so we won't add it here unless required
+
   try {
-    // Initialize Supabase client
-    const supabaseAdmin = createClient(
+    // Use injected client factory
+    const supabaseAdmin = deps.createSupabaseClient(
       Deno.env.get('SUPABASE_URL')!,
       Deno.env.get('SUPABASE_ANON_KEY')!
     );
@@ -30,12 +60,16 @@ serve(async (req) => {
     
     if (error) {
       console.error("Logout error:", error);
-      return createErrorResponse(error.message, 500);
+      return deps.createErrorResponse(error.message, 500); // Default to 500 for signOut errors
     }
 
-    return createSuccessResponse({ message: "Successfully signed out" });
+    return deps.createSuccessResponse({ message: "Successfully signed out" });
+
   } catch (error) {
     console.error("Error in logout handler:", error);
-    return createErrorResponse("Internal server error", 500);
+    return deps.createErrorResponse("Internal server error", 500);
   }
-}); 
+}
+
+// Deno.serve uses the handler with default dependencies
+serve(handleLogoutRequest); 

@@ -1,10 +1,18 @@
-import Stripe from "npm:stripe@14.11.0";
+import ActualStripe from "npm:stripe@14.11.0";
+import type Stripe from "npm:stripe@14.11.0";
+
+// Define dependency type
+type StripeConstructor = new (key: string, config?: Stripe.StripeConfig) => Stripe;
 
 /**
  * Initialize Stripe client based on test mode flag
  * @param isTestMode - Whether to use test keys (true) or live keys (false)
+ * @param stripeConstructor - Injected Stripe constructor
  */
-export const getStripeClient = (isTestMode: boolean): Stripe => {
+export const getStripeClient = (
+    isTestMode: boolean, 
+    stripeConstructor: StripeConstructor = ActualStripe // Default to actual constructor
+): Stripe => {
   const secretKey = isTestMode 
     ? Deno.env.get("STRIPE_SECRET_TEST_KEY")
     : Deno.env.get("STRIPE_SECRET_LIVE_KEY");
@@ -13,8 +21,10 @@ export const getStripeClient = (isTestMode: boolean): Stripe => {
     throw new Error(`Stripe ${isTestMode ? "test" : "live"} secret key is not defined`);
   }
   
-  return new Stripe(secretKey, {
+  // Use the injected constructor
+  return new stripeConstructor(secretKey, {
     apiVersion: "2023-10-16", // Use the latest stable API version
+    // Pass other Stripe options if needed, e.g., telemetry: false
   });
 };
 
