@@ -1,5 +1,5 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
-import { createClient as actualCreateClient } from "@supabase/supabase-js";
+import { createClient as actualCreateClient } from "npm:@supabase/supabase-js";
 import type { 
     SupabaseClient, 
     AuthResponse, 
@@ -105,7 +105,7 @@ export async function handleRefreshRequest(
         .from('user_profiles')
         .select('*')
         .eq('id', user.id)
-        .single();
+        .maybeSingle();
       
       if (profileError) {
         console.error("Profile fetch error after refresh (non-critical):", profileError);
@@ -138,5 +138,5 @@ export async function handleRefreshRequest(
 
 // Only run serve if the module is executed directly
 if (import.meta.main) {
-    serve(handleRefreshRequest);
+    serve((req) => handleRefreshRequest(req, defaultDeps));
 }

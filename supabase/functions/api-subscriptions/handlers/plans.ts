@@ -45,7 +45,8 @@ export const getSubscriptionPlans = async (
       metadata: plan.metadata,
     }));
     
-    return createSuccessResponse(subscriptionPlans);
+    // Return the plans wrapped in an object with a 'plans' key
+    return createSuccessResponse({ plans: subscriptionPlans });
   } catch (err) {
     console.error("Error getting subscription plans:", err);
     return createErrorResponse(err.message);

@@ -1,6 +1,6 @@
 // Subscription API endpoints
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
-import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { SupabaseClient, User, AuthError } from "npm:@supabase/supabase-js";
 import Stripe from "npm:stripe";
 // Shared utilities
@@ -74,6 +74,14 @@ const defaultDependencies: ApiSubscriptionsDependencies = {
 // --- Core Logic ---
 
 export async function handleApiSubscriptionsRequest(req: Request, deps: ApiSubscriptionsDependencies): Promise<Response> {
+  // --- DEBUGGING START ---
+  // console.log("[api-subscriptions-debug] Checking env vars at start of request:");
+  // const testModeEnv = Deno.env.get('STRIPE_TEST_MODE');
+  // const secretTestKeyEnv = Deno.env.get('STRIPE_SECRET_TEST_KEY');
+  // console.log(`[api-subscriptions-debug] Deno.env.get('STRIPE_TEST_MODE') = ${testModeEnv}`);
+  // console.log(`[api-subscriptions-debug] Deno.env.get('STRIPE_SECRET_TEST_KEY') = ${secretTestKeyEnv}`);
+  // --- DEBUGGING END ---
+
   const {
       handleCorsPreflightRequest,
       createUnauthorizedResponse,
@@ -110,24 +118,24 @@ export async function handleApiSubscriptionsRequest(req: Request, deps: ApiSubsc
             const { data: { user }, error: authError } = await getUser(supabase);
             
             if (authError || !user) {
-                console.warn("[api-subscriptions] Authentication failed:", authError?.message || 'No user');
+                // console.warn("[api-subscriptions] Authentication failed:", authError?.message || 'No user');
                 return createUnauthorizedResponse(authError?.message || "Authentication failed");
             }
             userId = user.id;
         } catch (clientError) {
-             console.error("[api-subscriptions] Failed to create or use Supabase client:", clientError);
+             // console.error("[api-subscriptions] Failed to create or use Supabase client:", clientError);
              return createErrorResponse("Internal configuration error", 500);
         }
     }
     
     // Path calculation now relies on the dependency
     const path = getPathname(req);
-    console.log(`[api-subscriptions] User ${userId || 'N/A'} requesting path: ${req.method} ${path}`);
+    // console.log(`[api-subscriptions] User ${userId || 'N/A'} requesting path: ${req.method} ${path}`);
 
     // Check if Supabase client is available for routes that require it (most of them)
     // If method is OPTIONS, supabase will be null, but that's handled by the CORS return
     if (req.method !== "OPTIONS" && !supabase) {
-         console.error("[api-subscriptions] Supabase client unexpectedly null after initial check.");
+         // console.error("[api-subscriptions] Supabase client unexpectedly null after initial check.");
          return createErrorResponse("Internal server error", 500);
     }
 
@@ -146,7 +154,7 @@ export async function handleApiSubscriptionsRequest(req: Request, deps: ApiSubsc
       }
     }
     if (parseError) {
-         console.warn(`[api-subscriptions] Invalid JSON body for ${req.method} ${path}`);
+         // console.warn(`[api-subscriptions] Invalid JSON body for ${req.method} ${path}`);
          return createErrorResponse("Invalid JSON body", 400);
     }
 
@@ -156,7 +164,7 @@ export async function handleApiSubscriptionsRequest(req: Request, deps: ApiSubsc
     try {
         stripe = getStripeClient(isTestMode);
     } catch (stripeError) {
-        console.error("[api-subscriptions] Failed to initialize Stripe client:", stripeError);
+        // console.error("[api-subscriptions] Failed to initialize Stripe client:", stripeError);
         return createErrorResponse("Stripe configuration error", 500);
     }
 
@@ -168,7 +176,7 @@ export async function handleApiSubscriptionsRequest(req: Request, deps: ApiSubsc
            return createErrorResponse("Method Not Allowed", 405);
        }
        if (!userId || !supabase) { // Double-check for safety
-           console.error("[api-subscriptions] Programming error: userId or supabase null in routing block.");
+           // console.error("[api-subscriptions] Programming error: userId or supabase null in routing block.");
            return createErrorResponse("Internal Server Error", 500);
        }
 
@@ -220,12 +228,12 @@ export async function handleApiSubscriptionsRequest(req: Request, deps: ApiSubsc
       }
     } catch (routeError) {
       // Catch errors thrown *within* the route handlers
-      console.error(`[api-subscriptions] Error in route handler for ${req.method} ${path}:`, routeError);
+      // console.error(`[api-subscriptions] Error in route handler for ${req.method} ${path}:`, routeError);
       return createErrorResponse(routeError.message || "Handler error", 500);
     }
   } catch (error) {
     // Catch errors during setup (auth, client creation, parsing etc.)
-    console.error("[api-subscriptions] Unexpected setup error:", error);
+    // console.error("[api-subscriptions] Unexpected setup error:", error);
     return createErrorResponse(error.message || "Internal server error", 500);
   }
 }

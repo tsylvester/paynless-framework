@@ -16,40 +16,89 @@
 
 *   **Phase 1: Backend (`supabase/`)**
     *   **1.1 Unit/Narrow Integration Tests:**
-        *   **Status:** Most initially completed, **require review** due to integration findings/refactoring.
-        *   [⚠️] `login/`, `me/`, `_shared/auth.ts`, `_shared/cors-headers.ts` need review.
-        *   [🚫] Stripe functions need review post-implementation.
-        *   [❓] `session/`, `refresh/`, `profile/`, `logout/`, `test-auth.ts` need verification/review.
-        *   **Task:** `[🚧] **Review and update all [⚠️]/[❓] unit tests.**`
+        *   **Status:** Most initially completed, but require review due to integration findings/refactoring.
+        *   **Framework:** Deno Standard Library
+        *   **Functions Tested:**
+            *   [✅] `register/`
+            *   [⚠️] `login/` *(Requires review/update due to DI usage & serve call)*
+            *   [🚫] `sync-stripe-plans/` *(Test errors previously noted, likely needs significant review post-Stripe implementation)*
+            *   [🚫] `stripe-webhook/` *(Test errors previously noted, needs review post-Stripe implementation)*
+            *   [✅] `reset-password/`
+            *   [❓] `session/` *(Not explicitly tested? Verify existence/need)*
+            *   [❓] `refresh/` *(Not explicitly tested? Verify existence/need)*
+            *   [⚠️] `me/` *(Requires review/update due to DI usage)*
+            *   [❓] `profile/` *(Not explicitly tested? Verify existence/need, overlaps with `me`?)*
+            *   [❓] `logout/` *(Not explicitly tested? Verify existence/need)*
+            *   [✅] `api-subscriptions/`
+            *   [⚠️] `_shared/auth.ts` *(Requires review/update)*
+            *   [⚠️] `_shared/cors-headers.ts` *(Requires review/update)*
+            *   [✅] `_shared/stripe-client.ts`
+            *   [❓] `test-auth.ts` *(Purpose unclear, review/remove?)*
+        *   **Task:** `[🚧] **Review and update all [⚠️] unit tests** based on integration test findings and refactoring.`
     *   **1.2 Integration Tests:**
-        *   [✅] **Environment Setup:** Done.
-        *   [ ] **Task (Postponed): Resolve Local Runtime Auth Issue** *(Workaround found: Use `[functions.<name>] verify_jwt = false` in `config.toml` for non-JWT functions)*.
-        *   [✅] **Function Integration (Auth):**
-            *   [✅] `/login` (Serve call updated, tests passing)
+        *   [✅] **Environment Setup:** Local Supabase environment configured (`config.toml`, `.env.local`). Test utilities created (`_shared/test-utils.ts`).
+        *   [🚧] **Function Integration (Auth):** Test key auth endpoints against local Supabase.
+            *   [✅] `/login` (Tests passing, function **requires `serve` call update**)
+            *   [🚧] **Task:** Update `serve` call in `login/index.ts` & re-run tests.
             *   [✅] `/me` (Tests passing)
-            *   [✅] `/register` (Config updated, tests passing)
-            *   [ ] `/reset-password`
-            *   [ ] `/session`, `/refresh`, `/logout` (If applicable)
+            *   [✅] `/register`
+            *   [✅] `/reset-password`
+            *   [✅] `/session`
+            *   [✅] `/refresh`
+            *   [⚠️] `/logout` *(Endpoint callable, but token invalidation side-effect unverified locally)*
         *   [ ] **Function Integration (Profile):**
-            *   [ ] `/profile` (If applicable)
+            *   [✅] `/profile/<userId>`
         *   [ ] **Function Integration (Stripe):**
             *   [ ] `/api-subscriptions` (Create, Get, Update, Delete)
-            *   [ ] `stripe-webhook`
-            *   [ ] `sync-stripe-plans`
-        *   [ ] **Database Integration:** (`supabase test db`).
-        *   [ ] **Stripe Integration:** (Test environment).
+            *   [ ] `stripe-webhook` (Simulate events via Stripe CLI)
+            *   [ ] `sync-stripe-plans` (If requires direct invocation/testing)
+        *   [ ] **Database Integration:** Use `supabase test db` to validate migrations and RLS policies.
+        *   [ ] **Stripe Integration:** Test against Stripe's test environment API and webhooks.
+    *   **1.3 Final Validation & Lockdown:**
+        *   [ ] **Task:** After all Phase 1.1 unit tests are reviewed/updated and Phase 1.2 integration tests pass, add comments to function code indicating validation status and advising caution for future changes without repeating testing phases.
 
 *   **Phase 2: Shared Packages (`packages/`)**
-    // ... unchanged ...
-*   **Phase 3: Web App (`apps/web/`)**
-    // ... unchanged ...
-*   **Phase 4: CI/CD**
-    // ... unchanged ...
+    *   **2.1 Unit Tests:**
+        *   [ ] `packages/api-client` (Vitest + MSW recommended).
+        *   [ ] `packages/store` (Vitest recommended).
+        *   [ ] `packages/ui-components` (Vitest + RTL recommended).
+        *   [ ] `packages/types` (Implicitly tested).
+        *   [ ] `packages/utils` (Vitest recommended).
 
+*   **Phase 3: Web App (`apps/web/`)**
+    *   **3.1 Unit Tests:**
+        *   [ ] `apps/web/src` (Components, hooks, pages - Vitest + RTL recommended).
+    *   **3.2 Integration Tests:**
+        *   [ ] **Component Integration:** Test interactions between composed components.
+        *   [ ] **API Integration (Mocked):** Test data fetching against MSW.
+    *   **3.3 End-to-End Tests:**
+        *   [ ] **Tooling:** Setup Playwright/Cypress.
+        *   [ ] **Core User Flows:** Auth cycle, Profile management.
+        *   [ ] **Payment Flows:** Subscription creation, Portal management.
+
+*   **Phase 4: CI/CD**
+    *   [ ] Setup CI pipeline (e.g., GitHub Actions).
+    *   [ ] Configure pipeline for Phase 1.1 tests.
+    *   [ ] Configure pipeline for Phase 2.1 tests.
+    *   [ ] Configure pipeline for Phase 3.1 tests.
+    *   [ ] (Optional): Configure Phase 1.2 tests.
+    *   [ ] (Optional): Configure Phase 3.3 tests.
+    *   [ ] Configure deployment steps.
 ---
 
 **Current Focus / Immediate Next Steps:**
 
-1.  **Integration Testing for `/reset-password`** (`supabase/functions/reset-password/`).
-2.  **(Parallel Option):** Work on Database Integration tests (`supabase test db`) or Stripe Integration tests.
-3.  **(Later Task):** Review and update affected Unit Tests (Phase 1.1). 
+1.  **Integration Testing for `/api-subscriptions`** (`supabase/functions/api-subscriptions/`).
+2.  **Integration Testing for `/profile`** (if necessary, depends on overlap with `/me`).
+3.  **(Parallel Option):** Work on Database Integration tests (`supabase test db`) or Stripe Integration tests.
+4.  **(Later Task):** Review and update affected Unit Tests (Phase 1.1).
+5.  **(Final Backend Task):** Perform Phase 1.3 Validation & Lockdown.
+
+### Function: `profile`
+-   **Goal**: Allow authenticated users to fetch public profile data for *any* user ID.
+-   **Endpoint**: `GET /profile/<userId>`
+-   **Status**:
+    -   Unit Tests: [ ]
+    -   Integration Tests: [✅] /profile/<userId>
+    -   End-to-end Tests: [ ]
+-   **Notes**: Requires authenticated user (valid JWT). Fetches data from `user_profiles` table based on `<userId>` path parameter. Uses RLS policy `Allow authenticated read access`. 

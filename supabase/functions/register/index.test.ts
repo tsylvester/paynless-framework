@@ -9,7 +9,7 @@ import * as cors from "../_shared/cors-headers.ts";
 import * as auth from "../_shared/auth.ts";
 
 // Mock Supabase client and import necessary types
-import * as supabaseJs from "@supabase/supabase-js";
+import * as supabaseJs from "npm:@supabase/supabase-js";
 // Import Session type
 import type { SupabaseClientOptions, SupabaseClient, SignUpWithPasswordCredentials, AuthResponse, Session, User, AuthError } from "@supabase/supabase-js";
 

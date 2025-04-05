@@ -1,6 +1,13 @@
 import ActualStripe from "npm:stripe@14.11.0";
 import type Stripe from "npm:stripe@14.11.0";
 
+// --- LOCAL DEV WORKAROUND START ---
+// Hardcode test keys here ONLY as a fallback for local dev where env vars might not inject correctly.
+// The deployed function MUST rely on environment variables set in the Supabase Dashboard.
+const LOCAL_FALLBACK_STRIPE_SECRET_TEST_KEY = "sk_test_51R7jhzIskUlhzlIxOWY9S9knK6Rl1FsyjwmtSguZPkTtI8M0tCUDYMHdiqEiGj40RYiF9imkjd8W4uGzlNx5I4v000zkHnudDm";
+const LOCAL_FALLBACK_STRIPE_TEST_WEBHOOK_SECRET = "whsec_xY3Tj8ufDEyXMaacTFb9NWq6Bkm20ByQ";
+// --- LOCAL DEV WORKAROUND END ---
+
 // Define dependency type
 type StripeConstructor = new (key: string, config?: Stripe.StripeConfig) => Stripe;
 
@@ -13,12 +20,21 @@ export const getStripeClient = (
     isTestMode: boolean, 
     stripeConstructor: StripeConstructor = ActualStripe // Default to actual constructor
 ): Stripe => {
-  const secretKey = isTestMode 
-    ? Deno.env.get("STRIPE_SECRET_TEST_KEY")
-    : Deno.env.get("STRIPE_SECRET_LIVE_KEY");
+  let secretKey: string | undefined;
+  const keyEnvVarName = isTestMode ? "STRIPE_SECRET_TEST_KEY" : "STRIPE_SECRET_LIVE_KEY";
+  
+  secretKey = Deno.env.get(keyEnvVarName);
+
+  // --- LOCAL DEV WORKAROUND START ---
+  if (!secretKey && isTestMode) {
+      console.warn(`[stripe-client] WARNING: Environment variable ${keyEnvVarName} not found. Using hardcoded local fallback test key. Ensure this is set in your deployed environment!`);
+      secretKey = LOCAL_FALLBACK_STRIPE_SECRET_TEST_KEY;
+  }
+  // --- LOCAL DEV WORKAROUND END ---
   
   if (!secretKey) {
-    throw new Error(`Stripe ${isTestMode ? "test" : "live"} secret key is not defined`);
+    // This error should now primarily occur if LIVE keys are missing in deployed env
+    throw new Error(`Stripe ${isTestMode ? "test" : "live"} secret key (${keyEnvVarName}) is not defined`);
   }
   
   // Use the injected constructor
@@ -36,8 +52,24 @@ export const verifyWebhookSignature = async (
   stripe: Stripe,
   body: string,
   signature: string,
-  endpointSecret: string
+  // Webhook secret is now determined based on mode inside the function
 ): Promise<Stripe.Event> => {
+  const isTestMode = getStripeMode(); // Determine mode
+  let endpointSecret = isTestMode 
+      ? Deno.env.get("STRIPE_TEST_WEBHOOK_SECRET") 
+      : Deno.env.get("STRIPE_LIVE_WEBHOOK_SECRET");
+
+  // --- LOCAL DEV WORKAROUND START ---
+  if (!endpointSecret && isTestMode) {
+      console.warn(`[stripe-client] WARNING: Environment variable STRIPE_TEST_WEBHOOK_SECRET not found. Using hardcoded local fallback test webhook secret. Ensure this is set in your deployed environment!`);
+      endpointSecret = LOCAL_FALLBACK_STRIPE_TEST_WEBHOOK_SECRET;
+  }
+  // --- LOCAL DEV WORKAROUND END ---
+
+  if (!endpointSecret) {
+      throw new Error(`Stripe ${isTestMode ? "test" : "live"} webhook secret is not defined`);
+  }
+
   try {
     // Use the async version for environments requiring it (like Deno/Edge)
     return await stripe.webhooks.constructEventAsync(body, signature, endpointSecret);
@@ -61,5 +93,7 @@ export const getStripeMode = (
   }
   
   // Fall back to environment variable. Default to TRUE (test mode) if not 'false'.
-  return Deno.env.get("STRIPE_TEST_MODE") !== "false";
+  // Allow fallback check if STRIPE_TEST_MODE env var is missing in local dev
+  const testModeEnv = Deno.env.get("STRIPE_TEST_MODE");
+  return testModeEnv === undefined || testModeEnv !== "false"; 
 };
