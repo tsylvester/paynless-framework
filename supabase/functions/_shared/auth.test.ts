@@ -38,12 +38,21 @@ Deno.test("Auth Utilities", async (t) => {
         }
     });
 
-    await t.step("verifyApiKey: should return true for Authorization Bearer header", () => {
-        // Doesn't need ANON_KEY if Bearer token is present
+    await t.step("verifyApiKey: should return false for only Authorization Bearer header", () => {
         const envStub = stub(Deno.env, "get", () => undefined);
         const req = new Request("http://example.com", { headers: { 'Authorization': 'Bearer some-jwt' } });
         try {
-            assertEquals(verifyApiKey(req), true);
+            assertEquals(verifyApiKey(req), false);
+        } finally {
+            envStub.restore();
+        }
+    });
+    
+    await t.step("verifyApiKey: should return false if apikey missing, even with Authorization", () => {
+        const envStub = stub(Deno.env, "get", (key) => key === 'SUPABASE_ANON_KEY' ? 'test-anon-key' : undefined);
+        const req = new Request("http://example.com", { headers: { 'Authorization': 'Bearer some-jwt' } });
+        try {
+            assertEquals(verifyApiKey(req), false);
         } finally {
             envStub.restore();
         }
@@ -60,10 +69,25 @@ Deno.test("Auth Utilities", async (t) => {
     });
     
     await t.step("verifyApiKey: should return false if ANON_KEY is missing", () => {
-        const envStub = stub(Deno.env, "get", () => undefined); // Simulate missing ANON_KEY
+        const envStub = stub(Deno.env, "get", () => undefined);
         const req = new Request("http://example.com", { headers: { 'apikey': 'test-anon-key' } });
         try {
             assertEquals(verifyApiKey(req), false);
+        } finally {
+            envStub.restore();
+        }
+    });
+
+    await t.step("verifyApiKey: should return true for valid apikey header even with Authorization", () => {
+        const envStub = stub(Deno.env, "get", (key) => key === 'SUPABASE_ANON_KEY' ? 'test-anon-key' : undefined);
+        const req = new Request("http://example.com", { 
+            headers: { 
+                'apikey': 'test-anon-key', 
+                'Authorization': 'Bearer some-jwt' 
+            }
+        });
+        try {
+            assertEquals(verifyApiKey(req), true);
         } finally {
             envStub.restore();
         }

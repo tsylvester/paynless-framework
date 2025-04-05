@@ -17,15 +17,6 @@ import {
   createUnauthorizedResponse as actualCreateUnauthorizedResponse
 } from '../_shared/auth.ts';
 
-// Define an interface for the upsert data structure
-interface UserProfileUpsertData {
-  id: string;
-  updated_at: string;
-  first_name?: string;
-  last_name?: string;
-  role?: string;       
-}
-
 // Define dependencies
 export interface ProfileHandlerDeps {
     handleCorsPreflightRequest: typeof actualHandleCorsPreflightRequest;
@@ -34,10 +25,7 @@ export interface ProfileHandlerDeps {
     createErrorResponse: typeof actualCreateErrorResponse;
     createSuccessResponse: typeof actualCreateSuccessResponse;
     createSupabaseClient: typeof actualCreateSupabaseClient;
-    // Optional finer-grained mocks 
-    // getUser?: (client: SupabaseClient) => Promise<{ data: { user: User | null }, error: AuthError | null }>;
-    // fetchProfileMaybe?: (client: SupabaseClient, userId: string) => Promise<PostgrestSingleResponse<any>>;
-    // upsertProfile?: (client: SupabaseClient, data: UserProfileUpsertData) => Promise<PostgrestSingleResponse<any>>;
+    getPathname: (req: Request) => string;
 }
 
 // Default dependencies
@@ -48,6 +36,7 @@ const defaultDeps: ProfileHandlerDeps = {
     createErrorResponse: actualCreateErrorResponse,
     createSuccessResponse: actualCreateSuccessResponse,
     createSupabaseClient: actualCreateSupabaseClient,
+    getPathname: (req) => new URL(req.url).pathname,
 };
 
 // Export the handler
@@ -55,104 +44,91 @@ export async function handleProfileRequest(
     req: Request,
     deps: ProfileHandlerDeps = defaultDeps
 ): Promise<Response> {
+  const { 
+      handleCorsPreflightRequest,
+      verifyApiKey,
+      createUnauthorizedResponse,
+      createErrorResponse,
+      createSuccessResponse,
+      createSupabaseClient,
+      getPathname
+  } = deps;
+
   // Handle CORS preflight requests
-  const corsResponse = deps.handleCorsPreflightRequest(req);
+  const corsResponse = handleCorsPreflightRequest(req);
   if (corsResponse) return corsResponse;
 
   // Verify API key
-  const isValidApiKey = deps.verifyApiKey(req);
+  const isValidApiKey = verifyApiKey(req);
   if (!isValidApiKey) {
-    return deps.createUnauthorizedResponse("Invalid or missing apikey");
+    return createUnauthorizedResponse("Invalid or missing apikey");
   }
 
   try {
     // Create client using injected factory
-    const supabase = deps.createSupabaseClient(req);
+    const supabase = createSupabaseClient(req);
     
-    // Get the current user
-    const { data: { user }, error: userError } = await supabase.auth.getUser();
+    // Get the current user (to ensure the request is authenticated)
+    const { data: { user: requestingUser }, error: userError } = await supabase.auth.getUser();
     
-    if (userError || !user) {
-      console.error("Auth error or no user:", userError);
-      return deps.createUnauthorizedResponse("Not authenticated");
+    if (userError || !requestingUser) {
+      console.error("Profile Auth error or no user:", userError);
+      return createUnauthorizedResponse("Not authenticated");
     }
+    
+    // --- Routing and Parameter Extraction ---
+    const path = getPathname(req);
+    const profileMatch = path.match(/^\/profile\/([^\/]+)$/); // Match /profile/<userId>
+    
+    if (!profileMatch) {
+        console.warn(`[profile] Invalid path accessed: ${path}`);
+        return createErrorResponse("Not Found", 404);
+    }
+    
+    const targetUserId = profileMatch[1];
+    console.log(`[profile] Requesting user ${requestingUser.id} fetching profile for user ${targetUserId}`);
 
-    // Handle different HTTP methods
+    // Handle different HTTP methods - Only GET is allowed now
     switch (req.method) {
       case 'GET': {
         let profile = null;
         let profileError = null;
         try {
+            // Fetch the profile using the userId from the path
             const { data, error } = await supabase
               .from('user_profiles')
-              .select('*') 
-              .eq('id', user.id)
+              .select('id, first_name, last_name, created_at') // Select only public fields
+              .eq('id', targetUserId) // Use targetUserId from path
               .maybeSingle(); 
             profile = data;
             profileError = error;
         } catch (fetchErr) {
-            console.error('Exception fetching profile:', fetchErr);
-            return deps.createErrorResponse("Error fetching profile data", 500);
+            console.error(`[profile] Exception fetching profile for ${targetUserId}:`, fetchErr);
+            return createErrorResponse("Error fetching profile data", 500);
         }
 
         if (profileError) {
-          console.error('Error fetching profile:', profileError);
-          return deps.createErrorResponse(`Failed to fetch profile: ${profileError.message}`, 500);
-        }
-
-        const responseData = { user, profile };
-        return deps.createSuccessResponse(responseData);
-      }
-
-      case 'PUT': {
-        let profileData: any;
-        try {
-            profileData = await req.json();
-        } catch (parseError) {
-            console.error('Error parsing PUT body:', parseError);
-            return deps.createErrorResponse("Invalid request body", 400);
+          console.error(`[profile] Error fetching profile for ${targetUserId}:`, profileError);
+          // Don't expose detailed DB errors
+          return createErrorResponse("Failed to fetch profile", 500); 
         }
         
-        const upsertObject: UserProfileUpsertData = {
-            id: user.id,
-            updated_at: new Date().toISOString(), 
-            // Conditionally add fields
-            ...(profileData.first_name !== undefined && { first_name: profileData.first_name }),
-            ...(profileData.last_name !== undefined && { last_name: profileData.last_name }),
-            ...(profileData.role !== undefined && { role: profileData.role }), 
-        };
-
-        console.log('Upserting profile data:', JSON.stringify(upsertObject));
-
-        let updatedProfile = null;
-        let updateError = null;
-        try {
-            const { data, error } = await supabase
-              .from('user_profiles')
-              .upsert(upsertObject) 
-              .select()
-              .single(); // select().single() after upsert is common
-            updatedProfile = data;
-            updateError = error;
-        } catch (upsertErr) {
-            console.error('Exception during profile upsert:', upsertErr);
-            return deps.createErrorResponse("Error saving profile data", 500);
+        if (!profile) {
+            // If maybeSingle returns null, the profile wasn't found
+            return createErrorResponse("Profile not found", 404);
         }
 
-        if (updateError) {
-          console.error('Error updating profile:', updateError); 
-          return deps.createErrorResponse(`Failed to update profile: ${updateError.message}`, 500);
-        }
-
-        return deps.createSuccessResponse(updatedProfile); 
+        // Return only the fetched profile data
+        return createSuccessResponse(profile);
       }
 
       default:
-        return deps.createErrorResponse("Method not allowed", 405);
+        // Return Method Not Allowed for anything other than GET
+        return createErrorResponse(`Method ${req.method} not allowed`, 405);
     }
   } catch (err) {
-    console.error("Unexpected error in /profile handler:", err);
-    return deps.createErrorResponse(
+    console.error("[profile] Unexpected error:", err);
+    return createErrorResponse(
       err instanceof Error ? err.message : "An unexpected error occurred",
       500
     );
@@ -161,5 +137,5 @@ export async function handleProfileRequest(
 
 // Only run serve if the module is executed directly
 if (import.meta.main) {
-    serve(handleProfileRequest);
+    serve((req) => handleProfileRequest(req, defaultDeps)); // Pass default deps
 } 

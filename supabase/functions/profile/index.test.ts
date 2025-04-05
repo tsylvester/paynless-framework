@@ -1,258 +1,301 @@
-import { assertEquals, assertExists } from "jsr:@std/assert@0.225.3";
-import { spy, assertSpyCall, assertSpyCalls, stub } from "jsr:@std/testing@0.225.1/mock"; 
+import {
+  describe,
+  it,
+  beforeEach,
+  afterEach,
+} from "https://deno.land/std@0.208.0/testing/bdd.ts";
+import {
+  assertEquals,
+  assertExists,
+  assertMatch,
+} from "https://deno.land/std@0.208.0/assert/mod.ts";
+import {
+  spy,
+  stub,
+  Spy,
+  Stub,
+  assertSpyCall,
+  assertSpyCalls,
+} from "https://deno.land/std@0.208.0/testing/mock.ts";
+// Ensure necessary types are imported
+import { SupabaseClient, User, AuthError, PostgrestError } from "npm:@supabase/supabase-js";
 
-// Import the handler function and the dependency interface
-import { handleProfileRequest, type ProfileHandlerDeps } from "./index.ts";
+import { handleProfileRequest, ProfileHandlerDeps } from "./index.ts";
 
-// Import types needed for mocks
-import type { 
-    SupabaseClient, 
-    AuthError, 
-    User,
-    PostgrestSingleResponse
-} from "@supabase/supabase-js";
+// --- Test Setup ---
 
-// --- Test Cases ---
-Deno.test("Profile Function (/profile) Tests", async (t) => {
+const defaultEnv = {
+  SUPABASE_URL: "http://localhost:54321",
+  SUPABASE_ANON_KEY: "test-anon-key",
+  API_KEY: "test-api-key",
+};
 
-    // --- Mock Data ---
-    const mockUser: User = { id: 'user-profile-456', email: 'profile@example.com' } as any;
-    const mockExistingProfile = { id: 'user-profile-456', first_name: 'Test', last_name: 'User' };
-    const mockPutData = { first_name: 'Updated' };
-    const mockUpsertedProfile = { ...mockExistingProfile, ...mockPutData, updated_at: "some-iso-string" }; // Simulate DB result
+let envStub: Stub | undefined;
 
-    // --- Helper to create Mock Dependencies ---
-    const createMockDeps = (overrides: Partial<ProfileHandlerDeps> = {}): ProfileHandlerDeps => {
-        // Default mocks for client methods
-        const mockGetUser = spy(async (): Promise<{ data: { user: User | null }, error: AuthError | null }> => ({ data: { user: mockUser }, error: null })); // Default: success
-        const mockProfileGetResponse: PostgrestSingleResponse<any> = { data: mockExistingProfile, error: null, status: 200, count: 1, statusText: 'OK' };
-        const mockProfileUpsertResponse: PostgrestSingleResponse<any> = { data: mockUpsertedProfile, error: null, status: 200, count: 1, statusText: 'OK' };
-        const mockMaybeSingleGet = spy(() => Promise.resolve(mockProfileGetResponse)); // Default GET: profile exists
-        const mockSingleUpsert = spy(() => Promise.resolve(mockProfileUpsertResponse)); // Default PUT: upsert success
-        const mockSelect = spy(() => ({ eq: spy(() => ({ maybeSingle: mockMaybeSingleGet })) })); // GET uses maybeSingle
-        const mockUpsert = spy(() => ({ select: spy(() => ({ single: mockSingleUpsert })) })); // PUT uses upsert()...single()
-        const mockFrom = spy((_table: string) => ({ 
-            select: mockSelect, 
-            upsert: mockUpsert 
-        }));
+function setupEnvStub(envVars: Record<string, string | undefined>) {
+  if (envStub) envStub.restore();
+  envStub = stub(Deno.env, "get", (key: string) => envVars[key]);
+}
 
-        const mockClient = {
-            auth: { getUser: mockGetUser },
-            from: mockFrom
-        };
-        
-        return {
-            handleCorsPreflightRequest: spy((_req: Request) => null), 
-            verifyApiKey: spy((_req: Request) => true), // Default: valid API key
-            createUnauthorizedResponse: spy((msg: string) => new Response(JSON.stringify({ error: msg }), { status: 401 })),
-            createErrorResponse: spy((msg: string, status?: number) => new Response(JSON.stringify({ error: msg }), { status: status || 500 })),
-            createSuccessResponse: spy((data: unknown, status = 200) => new Response(JSON.stringify(data), { status })),
-            createSupabaseClient: spy(() => mockClient as any), 
-            ...overrides,
-        };
-    };
-    
-    const envGetStub = stub(Deno.env, "get", (key: string): string | undefined => {
-        if (key === 'SUPABASE_URL') return 'http://localhost:54321';
-        if (key === 'SUPABASE_ANON_KEY') return 'test-anon-key';
-        return undefined;
+const mockRequestingUser: User = {
+  id: "user-requester-123",
+  app_metadata: {}, user_metadata: {}, aud: "authenticated", created_at: new Date().toISOString(),
+};
+
+const mockTargetProfileData = {
+    id: "user-target-456",
+    first_name: "Target",
+    last_name: "User",
+    created_at: new Date().toISOString(),
+};
+
+// --- Mock Dependencies --- 
+
+// Helper function to create a default Supabase client mock
+// Allows overriding the maybeSingle result for specific tests
+function createMockSupabaseClient(maybeSingleResult: Promise<{ data: any | null; error: PostgrestError | null }> = 
+    Promise.resolve({ data: mockTargetProfileData, error: null })) 
+{
+    const mockMaybeSingle = spy(() => maybeSingleResult);
+    const mockEq = spy(() => ({ maybeSingle: mockMaybeSingle }));
+    const mockSelect = spy(() => ({ eq: mockEq }));
+    const mockFrom = spy(() => ({ select: mockSelect }));
+    return {
+        auth: {
+            getUser: spy(() => Promise.resolve({ data: { user: mockRequestingUser }, error: null }))
+        },
+        from: mockFrom,
+        // Expose spies for assertion
+        _spies: { mockFrom, mockSelect, mockEq, mockMaybeSingle }
+    } as any;
+}
+
+function createMockDeps(overrides: Partial<ProfileHandlerDeps> = {}): ProfileHandlerDeps & { [K in keyof ProfileHandlerDeps]: Spy } & { supabaseSpies?: any } {
+  const defaultSupabaseClient = createMockSupabaseClient(); // Default success mock
+
+  const defaultJsonResponse = (body: any, status: number, headers?: HeadersInit) => 
+      new Response(JSON.stringify(body), { status, headers: headers ?? { 'Content-Type': 'application/json' } });
+
+  const mocks = {
+    handleCorsPreflightRequest: spy((req: Request) => req.method === 'OPTIONS' ? new Response("ok", { status: 200 }) : null),
+    verifyApiKey: spy((req: Request) => req.headers.get('apikey') === defaultEnv.API_KEY),
+    createUnauthorizedResponse: spy((message: string) => defaultJsonResponse({ error: message }, 401)),
+    createErrorResponse: spy(defaultJsonResponse), // Use default for errors too
+    createSuccessResponse: spy((body: any) => defaultJsonResponse(body, 200)),
+    // Use the helper for the default client, store spies
+    createSupabaseClient: spy(() => defaultSupabaseClient),
+    getPathname: spy((req: Request) => new URL(req.url).pathname),
+  };
+
+  // Store supabase spies for easy access in tests
+  const finalMocks = { ...mocks, supabaseSpies: defaultSupabaseClient._spies };
+
+  // Apply overrides - careful not to overwrite spies unintentionally
+  for (const key in overrides) {
+      if (Object.prototype.hasOwnProperty.call(overrides, key)) {
+          const overrideValue = overrides[key as keyof ProfileHandlerDeps];
+          if (key === 'createSupabaseClient') {
+              // If overriding Supabase client creation, update the stored spies
+              const client = overrideValue(null as any); // Call override fn to get client
+              (finalMocks as any)[key] = spy(() => client); // Spy on the override function itself
+              finalMocks.supabaseSpies = client._spies; // Store spies from the new client
+          } else if (typeof overrideValue === 'function' && !(overrideValue as any).isSpy) {
+              (finalMocks as any)[key] = spy(overrideValue); // Wrap other functions in spy
+          } else {
+              (finalMocks as any)[key] = overrideValue; // Assign non-functions directly
+          }
+      }
+  }
+
+  return finalMocks as any; // Cast needed due to complex type with spies
+}
+
+// --- Tests ---
+
+describe("Profile Handler (GET /profile/:userId)", () => {
+
+  afterEach(() => {
+    if (envStub) envStub.restore();
+    envStub = undefined;
+  });
+
+  // --- Basic Setup & Auth Tests ---
+
+  it("should handle CORS preflight requests", async () => {
+    const mockDeps = createMockDeps();
+    const req = new Request("http://example.com/profile/123", { method: "OPTIONS" });
+    const res = await handleProfileRequest(req, mockDeps);
+    assertEquals(res.status, 200);
+    assertEquals(await res.text(), "ok");
+    assertSpyCall(mockDeps.handleCorsPreflightRequest, 0);
+    assertSpyCalls(mockDeps.verifyApiKey, 0); // Skip API key check
+  });
+
+  it("should return 401 for invalid API key", async () => {
+    setupEnvStub(defaultEnv);
+    const mockDeps = createMockDeps();
+    const req = new Request("http://example.com/profile/123", { 
+        method: "GET", 
+        headers: { 'apikey': 'invalid' }
+    });
+    const res = await handleProfileRequest(req, mockDeps);
+    assertEquals(res.status, 401);
+    assertSpyCall(mockDeps.verifyApiKey, 0);
+    assertSpyCall(mockDeps.createUnauthorizedResponse, 0, { args: ["Invalid or missing apikey"] });
+  });
+
+  it("should return 401 if user is not authenticated", async () => {
+    setupEnvStub(defaultEnv);
+    const authError = new AuthError("Invalid JWT");
+    const mockGetUser = spy(() => Promise.resolve({ data: { user: null }, error: authError }));
+    const mockSupabaseClient = { auth: { getUser: mockGetUser }, from: spy() }; // Basic mock for this test
+    const mockDeps = createMockDeps({ 
+        createSupabaseClient: spy(() => mockSupabaseClient as any)
     });
 
-    // --- Actual Tests --- 
-    try {
-        // --- Auth/Setup Tests (similar to /me) ---
-        await t.step("OPTIONS request should handle CORS preflight", async () => {
-            const mockResponse = new Response(null, { status: 204 });
-            const mockDeps = createMockDeps({ handleCorsPreflightRequest: spy(() => mockResponse) });
-            const req = new Request('http://example.com/profile', { method: 'OPTIONS' });
-            const res = await handleProfileRequest(req, mockDeps);
-            assertEquals(res, mockResponse);
-            assertSpyCall(mockDeps.handleCorsPreflightRequest, 0);
-            assertSpyCalls(mockDeps.verifyApiKey, 0);
-        });
+    const req = new Request("http://example.com/profile/123", { 
+        method: "GET", 
+        headers: { 'apikey': defaultEnv.API_KEY } 
+    });
+    const res = await handleProfileRequest(req, mockDeps);
 
-        await t.step("Request without API key should return 401", async () => {
-            const mockDeps = createMockDeps({ verifyApiKey: spy(() => false) });
-            const req = new Request('http://example.com/profile', { method: 'GET', headers: { 'Authorization': 'Bearer token' } });
-            const res = await handleProfileRequest(req, mockDeps);
-            assertEquals(res.status, 401);
-            assertSpyCall(mockDeps.verifyApiKey, 0);
-            assertSpyCall(mockDeps.createUnauthorizedResponse, 0, { args: ["Invalid or missing apikey"] });
-            assertSpyCalls(mockDeps.createSupabaseClient, 0);
-        });
+    assertEquals(res.status, 401);
+    assertSpyCall(mockGetUser, 0); // Check getUser was called
+    assertSpyCall(mockDeps.createUnauthorizedResponse, 0, { args: ["Not authenticated"] });
+  });
 
-        await t.step("Request without Authorization header should cause getUser failure -> 401", async () => {
-            const mockGetUserError = spy(async () => ({ data: { user: null }, error: new Error("Not authenticated") as AuthError }));
-            const mockClientError = { auth: { getUser: mockGetUserError }, from: spy() };
-            const mockDeps = createMockDeps({ createSupabaseClient: spy(() => mockClientError as any) });
-            const req = new Request('http://example.com/profile', { method: 'GET', headers: { 'apikey': 'test-anon-key' } });
-            const res = await handleProfileRequest(req, mockDeps);
-            assertEquals(res.status, 401);
-            assertSpyCall(mockDeps.verifyApiKey, 0);
-            assertSpyCall(mockDeps.createSupabaseClient, 0);
-            assertSpyCall(mockGetUserError, 0);
-            assertSpyCall(mockDeps.createUnauthorizedResponse, 0, { args: ["Not authenticated"] });
-            assertSpyCalls(mockClientError.from, 0);
-        });
+  // --- Path and Method Tests ---
 
-        // --- GET Tests ---
-        await t.step("GET: successful fetch should return user and profile", async () => {
-            const mockDeps = createMockDeps(); // Uses default: getUser success, fetch profile success
-            const req = new Request('http://example.com/profile', { method: 'GET', headers: { 'apikey': 'test-anon-key', 'Authorization': 'Bearer good-token' } });
-            const res = await handleProfileRequest(req, mockDeps);
-            
-            assertEquals(res.status, 200);
-            const body = await res.json();
-            assertEquals(body, { user: mockUser, profile: mockExistingProfile });
+  it("should return 404 for invalid path (e.g., /profile/)", async () => {
+    setupEnvStub(defaultEnv);
+    const mockDeps = createMockDeps();
+    const req = new Request("http://example.com/profile/", { // Trailing slash
+        method: "GET", 
+        headers: { 'apikey': defaultEnv.API_KEY } 
+    });
+    const res = await handleProfileRequest(req, mockDeps);
+    assertEquals(res.status, 404);
+    assertSpyCall(mockDeps.getPathname, 0); // Path was checked
+    assertSpyCall(mockDeps.createErrorResponse, 0, { args: ["Not Found", 404] });
+  });
+  
+   it("should return 404 for invalid path (e.g., /profile)", async () => {
+    setupEnvStub(defaultEnv);
+    const mockDeps = createMockDeps();
+    const req = new Request("http://example.com/profile", { // No user ID
+        method: "GET", 
+        headers: { 'apikey': defaultEnv.API_KEY } 
+    });
+    const res = await handleProfileRequest(req, mockDeps);
+    assertEquals(res.status, 404);
+    assertSpyCall(mockDeps.createErrorResponse, 0, { args: ["Not Found", 404] });
+  });
 
-            const client = mockDeps.createSupabaseClient();
-            assertSpyCall(client.auth.getUser, 0);
-            assertSpyCall(client.from().select().eq().maybeSingle, 0);
-            assertSpyCall(mockDeps.createSuccessResponse, 0);
-        });
+  it("should return 405 for disallowed methods (e.g., PUT, POST)", async () => {
+    setupEnvStub(defaultEnv);
+    const mockDeps = createMockDeps();
+    const targetUserId = "user-target-456";
+    const reqPost = new Request(`http://example.com/profile/${targetUserId}`, { 
+        method: "POST", 
+        headers: { 'apikey': defaultEnv.API_KEY } 
+    });
+    const reqPut = new Request(`http://example.com/profile/${targetUserId}`, { 
+        method: "PUT", 
+        headers: { 'apikey': defaultEnv.API_KEY, 'Content-Type': 'application/json' },
+        body: JSON.stringify({})
+    });
 
-        await t.step("GET: successful fetch (no profile exists) should return user and null profile", async () => {
-            const mockNoProfileResponse: PostgrestSingleResponse<any> = { data: null, error: null, status: 200, count: 0, statusText: 'OK' };
-            const mockMaybeSingleNoData = spy(() => Promise.resolve(mockNoProfileResponse));
-            const mockFrom = spy(() => ({ select: spy(() => ({ eq: spy(() => ({ maybeSingle: mockMaybeSingleNoData })) })) }));
-            const mockClient = { auth: { getUser: spy(async()=>({data:{user:mockUser}, error:null})) }, from: mockFrom };
-            const mockDeps = createMockDeps({ createSupabaseClient: spy(() => mockClient as any) });
-            
-            const req = new Request('http://example.com/profile', { method: 'GET', headers: { 'apikey': 'test-anon-key', 'Authorization': 'Bearer good-token' } });
-            const res = await handleProfileRequest(req, mockDeps);
+    const resPost = await handleProfileRequest(reqPost, mockDeps);
+    assertEquals(resPost.status, 405);
+    assertSpyCall(mockDeps.createErrorResponse, 0, { args: ["Method POST not allowed", 405] });
 
-            assertEquals(res.status, 200);
-            const body = await res.json();
-            assertEquals(body, { user: mockUser, profile: null });
-            assertSpyCall(mockClient.auth.getUser, 0);
-            assertSpyCall(mockMaybeSingleNoData, 0);
-            assertSpyCall(mockDeps.createSuccessResponse, 0);
-        });
+    const resPut = await handleProfileRequest(reqPut, mockDeps);
+    assertEquals(resPut.status, 405);
+    assertSpyCall(mockDeps.createErrorResponse, 1, { args: ["Method PUT not allowed", 405] });
+    
+    // Ensure DB select wasn't called for these methods
+     assertSpyCalls(mockDeps.supabaseSpies.mockFrom, 0);
+  });
 
-         await t.step("GET: profile fetch DB error should return 500", async () => {
-            const mockErrorResponse: PostgrestSingleResponse<any> = { data: null, error: { message: 'DB down' } as any, status: 500, count: 0, statusText: 'Error' };
-            const mockMaybeSingleError = spy(() => Promise.resolve(mockErrorResponse));
-            const mockFrom = spy(() => ({ select: spy(() => ({ eq: spy(() => ({ maybeSingle: mockMaybeSingleError })) })) }));
-            const mockClient = { auth: { getUser: spy(async() => ({ data: { user: mockUser }, error: null })) }, from: mockFrom };
-            const mockDeps = createMockDeps({ createSupabaseClient: spy(() => mockClient as any) });
+  // --- GET /profile/:userId Logic Tests ---
 
-            const req = new Request('http://example.com/profile', { method: 'GET', headers: { 'apikey': 'test-anon-key', 'Authorization': 'Bearer good-token' } });
-            const res = await handleProfileRequest(req, mockDeps);
+  it("should successfully fetch profile with GET /profile/:userId", async () => {
+    setupEnvStub(defaultEnv);
+    // Use default mock client which simulates success
+    const mockDeps = createMockDeps(); 
+    const targetUserId = "user-target-456";
 
-            assertEquals(res.status, 500);
-            assertSpyCall(mockClient.auth.getUser, 0);
-            assertSpyCall(mockMaybeSingleError, 0);
-            assertSpyCall(mockDeps.createErrorResponse, 0);
-            assertSpyCalls(mockDeps.createSuccessResponse, 0);
-        });
+    const req = new Request(`http://example.com/profile/${targetUserId}`, { 
+        method: "GET", 
+        headers: { 'apikey': defaultEnv.API_KEY } 
+    });
+    const res = await handleProfileRequest(req, mockDeps);
+    
+    assertEquals(res.status, 200);
+    // Check Supabase call chain
+    assertSpyCall(mockDeps.supabaseSpies.mockFrom, 0, { args: ['user_profiles'] });
+    assertSpyCall(mockDeps.supabaseSpies.mockSelect, 0, { args: ['id, first_name, last_name, created_at'] });
+    assertSpyCall(mockDeps.supabaseSpies.mockEq, 0, { args: ['id', targetUserId] });
+    assertSpyCall(mockDeps.supabaseSpies.mockMaybeSingle, 0); 
+    // Check success response
+    assertSpyCall(mockDeps.createSuccessResponse, 0);
+    const body = await res.json();
+    assertEquals(body, mockTargetProfileData); // Check returned data matches mock
+  });
 
-        await t.step("GET: profile fetch exception should return 500", async () => {
-            const mockMaybeSingleThrows = spy(() => Promise.reject(new Error("Network fail")));
-            const mockFrom = spy(() => ({ select: spy(() => ({ eq: spy(() => ({ maybeSingle: mockMaybeSingleThrows })) })) }));
-            const mockClient = { auth: { getUser: spy(async()=>({data:{user:mockUser}, error:null})) }, from: mockFrom };
-            const mockDeps = createMockDeps({ createSupabaseClient: spy(() => mockClient as any) });
+  it("should return 404 if profile for targetUserId is not found", async () => {
+    setupEnvStub(defaultEnv);
+    // Create a mock client that simulates profile not found
+    const mockSupabaseNotFound = createMockSupabaseClient(
+        Promise.resolve({ data: null, error: null }) // maybeSingle returns null data
+    );
+    const mockDeps = createMockDeps({ 
+        createSupabaseClient: spy(() => mockSupabaseNotFound as any)
+    }); 
+    const targetUserId = "non-existent-user";
 
-            const req = new Request('http://example.com/profile', { method: 'GET', headers: { 'apikey': 'test-anon-key', 'Authorization': 'Bearer good-token' } });
-            const res = await handleProfileRequest(req, mockDeps);
+    const req = new Request(`http://example.com/profile/${targetUserId}`, { 
+        method: "GET", 
+        headers: { 'apikey': defaultEnv.API_KEY } 
+    });
+    const res = await handleProfileRequest(req, mockDeps);
+    
+    assertEquals(res.status, 404);
+    // Check Supabase call chain was still executed
+    assertSpyCall(mockDeps.supabaseSpies.mockFrom, 0, { args: ['user_profiles'] });
+    assertSpyCall(mockDeps.supabaseSpies.mockEq, 0, { args: ['id', targetUserId] });
+    assertSpyCall(mockDeps.supabaseSpies.mockMaybeSingle, 0); 
+    // Check error response
+    assertSpyCall(mockDeps.createErrorResponse, 0, { args: ["Profile not found", 404] });
+    assertSpyCalls(mockDeps.createSuccessResponse, 0);
+  });
 
-            assertEquals(res.status, 500);
-            assertSpyCall(mockClient.auth.getUser, 0);
-            assertSpyCall(mockMaybeSingleThrows, 0);
-            assertSpyCall(mockDeps.createErrorResponse, 0, { args: ["Error fetching profile data", 500] });
-        });
+  it("should return 500 if Supabase fetch fails", async () => {
+    setupEnvStub(defaultEnv);
+    const dbError: PostgrestError = { message: "DB connection error", code: "50000", details: "", hint: "" };
+    // Create a mock client that simulates a DB error
+    const mockSupabaseError = createMockSupabaseClient(
+        Promise.resolve({ data: null, error: dbError }) 
+    );
+    const mockDeps = createMockDeps({ 
+        createSupabaseClient: spy(() => mockSupabaseError as any)
+    }); 
+    const targetUserId = "user-target-456";
 
-        // --- PUT Tests ---
-         await t.step("PUT: successful profile upsert should return updated profile", async () => {
-            const mockDeps = createMockDeps(); // Uses default success mocks
-            const req = new Request('http://example.com/profile', { 
-                method: 'PUT', 
-                headers: { 'apikey': 'test-anon-key', 'Authorization': 'Bearer good-token', 'Content-Type': 'application/json' },
-                body: JSON.stringify(mockPutData) 
-            });
-            const res = await handleProfileRequest(req, mockDeps);
-            
-            assertEquals(res.status, 200);
-            const body = await res.json();
-            assertEquals(body, mockUpsertedProfile);
+    const req = new Request(`http://example.com/profile/${targetUserId}`, { 
+        method: "GET", 
+        headers: { 'apikey': defaultEnv.API_KEY } 
+    });
+    const res = await handleProfileRequest(req, mockDeps);
+    
+    assertEquals(res.status, 500);
+    // Check Supabase call chain was still executed
+    assertSpyCall(mockDeps.supabaseSpies.mockFrom, 0, { args: ['user_profiles'] });
+    assertSpyCall(mockDeps.supabaseSpies.mockEq, 0, { args: ['id', targetUserId] });
+    assertSpyCall(mockDeps.supabaseSpies.mockMaybeSingle, 0); 
+    // Check error response
+    assertSpyCall(mockDeps.createErrorResponse, 0, { args: ["Failed to fetch profile", 500] });
+    assertSpyCalls(mockDeps.createSuccessResponse, 0);
+  });
 
-            const client = mockDeps.createSupabaseClient();
-            assertSpyCall(client.auth.getUser, 0);
-            assertSpyCall(client.from, 0, { args: ['user_profiles'] });
-            // Check that upsert was called with id and updated_at, plus the payload data
-            assertSpyCall(client.from().upsert, 0);
-            const upsertArg = client.from().upsert.calls[0].args[0];
-            assertEquals(upsertArg.id, mockUser.id);
-            assertExists(upsertArg.updated_at);
-            assertEquals(upsertArg.first_name, mockPutData.first_name);
-            
-            assertSpyCall(client.from().upsert().select().single, 0);
-            assertSpyCall(mockDeps.createSuccessResponse, 0);
-        });
-
-        await t.step("PUT: invalid JSON body should return 400", async () => {
-            const mockDeps = createMockDeps();
-            const req = new Request('http://example.com/profile', { 
-                method: 'PUT', 
-                headers: { 'apikey': 'test-anon-key', 'Authorization': 'Bearer good-token', 'Content-Type': 'application/json' },
-                body: '{\"invalid json'
-            });
-            const res = await handleProfileRequest(req, mockDeps);
-            assertEquals(res.status, 400);
-            assertSpyCall(mockDeps.createErrorResponse, 0, { args: ["Invalid request body", 400] });
-            assertSpyCall(mockDeps.createSupabaseClient().auth.getUser, 0); // Auth check still happens
-            assertSpyCalls(mockDeps.createSupabaseClient().from, 0); // DB not touched
-        });
-
-        await t.step("PUT: profile upsert DB error should return 500", async () => {
-            const mockErrorResponse: PostgrestSingleResponse<any> = { data: null, error: { message: 'Constraint violation' } as any, status: 409, count: 0, statusText: 'Conflict' };
-            const mockSingleError = spy(() => Promise.resolve(mockErrorResponse));
-            const mockUpsert = spy(() => ({ select: spy(() => ({ single: mockSingleError })) }));
-            const mockFrom = spy(() => ({ upsert: mockUpsert }));
-            const mockClient = { auth: { getUser: spy(async()=>({data:{user:mockUser}, error:null})) }, from: mockFrom };
-            const mockDeps = createMockDeps({ createSupabaseClient: spy(() => mockClient as any) });
-
-            const req = new Request('http://example.com/profile', { 
-                method: 'PUT', 
-                headers: { 'apikey': 'test-anon-key', 'Authorization': 'Bearer good-token', 'Content-Type': 'application/json' },
-                body: JSON.stringify(mockPutData)
-            });
-            const res = await handleProfileRequest(req, mockDeps);
-
-            assertEquals(res.status, 500);
-            assertSpyCall(mockClient.auth.getUser, 0);
-            assertSpyCall(mockSingleError, 0);
-            assertSpyCall(mockDeps.createErrorResponse, 0);
-        });
-
-        await t.step("PUT: profile upsert exception should return 500", async () => {
-            const mockSingleThrows = spy(() => Promise.reject(new Error("DB connection failed")));
-            const mockUpsert = spy(() => ({ select: spy(() => ({ single: mockSingleThrows })) }));
-            const mockFrom = spy(() => ({ upsert: mockUpsert }));
-            const mockClient = { auth: { getUser: spy(async()=>({data:{user:mockUser}, error:null})) }, from: mockFrom };
-            const mockDeps = createMockDeps({ createSupabaseClient: spy(() => mockClient as any) });
-
-            const req = new Request('http://example.com/profile', { 
-                 method: 'PUT', headers: { 'apikey': 'test-anon-key', 'Authorization': 'Bearer good-token', 'Content-Type': 'application/json' },
-                body: JSON.stringify(mockPutData)
-            });
-            const res = await handleProfileRequest(req, mockDeps);
-
-            assertEquals(res.status, 500);
-            assertSpyCall(mockClient.auth.getUser, 0);
-            assertSpyCall(mockSingleThrows, 0);
-            assertSpyCall(mockDeps.createErrorResponse, 0, { args: ["Error saving profile data", 500] });
-        });
-
-        // --- Other Methods ---
-        await t.step("DELETE request should return 405 Method Not Allowed", async () => {
-            const mockDeps = createMockDeps();
-            const req = new Request('http://example.com/profile', { method: 'DELETE', headers: { 'apikey': 'test-anon-key', 'Authorization': 'Bearer good-token' } });
-            const res = await handleProfileRequest(req, mockDeps);
-            assertEquals(res.status, 405);
-            assertSpyCall(mockDeps.createErrorResponse, 0, { args: ["Method not allowed", 405] });
-        });
-
-    } finally {
-        envGetStub.restore(); 
-    }
 }); 

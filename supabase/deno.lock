@@ -1,6 +1,7 @@
 {
   "version": "4",
   "specifiers": {
+    "jsr:@supabase/functions-js@*": "2.4.4",
     "jsr:@supabase/supabase-js@2": "2.49.4",
     "npm:@supabase/auth-js@2.69.1": "2.69.1",
     "npm:@supabase/functions-js@2.4.4": "2.4.4",
@@ -8,17 +9,21 @@
     "npm:@supabase/postgrest-js@1.19.4": "1.19.4",
     "npm:@supabase/realtime-js@2.11.2": "2.11.2",
     "npm:@supabase/storage-js@2.7.1": "2.7.1",
+    "npm:@supabase/supabase-js@*": "2.39.3",
     "npm:@supabase/supabase-js@2": "2.49.4",
     "npm:@supabase/supabase-js@2.39.3": "2.39.3",
     "npm:stripe@*": "18.0.0",
     "npm:stripe@14.11.0": "14.11.0"
   },
   "jsr": {
+    "@supabase/functions-js@2.4.4": {
+      "integrity": "38456509a6e22fb116b118464cbb36357256f9048d3580632b63af91f63769f7"
+    },
     "@supabase/supabase-js@2.49.4": {
       "integrity": "4b785f9cd4a62feb7b3f84606bb923a4ea51e3e000eafff0972bc779240b7592",
       "dependencies": [
         "npm:@supabase/auth-js",
-        "npm:@supabase/functions-js",
+        "npm:@supabase/functions-js@2.4.4",
         "npm:@supabase/node-fetch",
         "npm:@supabase/postgrest-js",
         "npm:@supabase/realtime-js",

@@ -306,3 +306,16 @@ s3_region = "env(S3_REGION)"
 s3_access_key = "env(S3_ACCESS_KEY)"
 # Configures AWS_SECRET_ACCESS_KEY for S3 bucket
 s3_secret_key = "env(S3_SECRET_KEY)"
+
+# --- Function Specific Settings ---
+
+# Disable JWT verification for functions that handle their own auth/public access
+[functions.login]
+  verify_jwt = false
+
+# Example: Add similar blocks if register, reset-password etc. also need no JWT check
+[functions.register]
+ verify_jwt = false
+
+# [functions.reset-password]
+#  verify_jwt = false

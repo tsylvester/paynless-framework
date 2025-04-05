@@ -77,36 +77,28 @@ export const getUserIdFromClient = async (supabase: SupabaseClient): Promise<str
  * This is used for client-side requests that don't need JWT authentication
  */
 export function verifyApiKey(req: Request): boolean {
-  // Log all headers for debugging
-  console.log("All request headers:", Object.fromEntries(req.headers.entries()));
-  
-  // Check for apikey in headers
-  const apiKey = req.headers.get('apikey');
-  console.log("API key from headers:", apiKey ? "present" : "missing");
-  
-  if (apiKey) {
-    // If we have an apikey header, verify it matches the anon key
-    const anonKey = Deno.env.get("SUPABASE_ANON_KEY");
-    if (!anonKey) {
-      console.error("SUPABASE_ANON_KEY not configured");
-      return false;
-    }
-    
-    const isValid = apiKey === anonKey;
-    console.log("API key validation result:", isValid);
-    return isValid;
+  const apiKeyHeader = req.headers.get('apikey');
+  const expectedApiKey = Deno.env.get("SUPABASE_ANON_KEY");
+
+  // ---> Add Detailed Logging <---
+  console.log(`[verifyApiKey] Received apikey header: ${apiKeyHeader}`);
+  console.log(`[verifyApiKey] Expected apikey from env: ${expectedApiKey}`);
+  // ---> End Logging <---
+
+  if (!apiKeyHeader) {
+    console.log("[verifyApiKey] Result: false (header missing)");
+    return false;
   }
 
-  // If no apikey in headers, check Authorization header (might include Bearer token)
-  const authHeader = req.headers.get('Authorization');
-  if (authHeader && authHeader.startsWith('Bearer ')) {
-    console.log("Found Bearer token in Authorization header");
-    // For this endpoint, we're allowing access with any valid Bearer token
-    return true;
+  if (!expectedApiKey) {
+    console.error("[verifyApiKey] CRITICAL: SUPABASE_ANON_KEY not found in function environment!");
+    console.log("[verifyApiKey] Result: false (env var missing)");
+    return false;
   }
 
-  console.log("No valid authentication found");
-  return false;
+  const isValid = apiKeyHeader === expectedApiKey;
+  console.log(`[verifyApiKey] Comparison result: ${isValid}`);
+  return isValid;
 }
 
 /**
