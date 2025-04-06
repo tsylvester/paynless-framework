@@ -55,17 +55,22 @@
             *   [✅] `api-subscriptions/handlers/checkout.ts`
             *   [?] `api-subscriptions/` (Other handlers)
                 *   `[ ]` Implement `handlers/billing-portal.ts`
-                *   `[ ]` Unit Test `handlers/billing-portal.ts`
+                *   [✅] Unit Test `handlers/billing-portal.ts`
                 *   `[?]` Implement/Verify `handlers/subscription.ts` (cancel/resume)
-                *   `[?]` Unit Test `handlers/subscription.ts`
+                *   [✅] Unit Test `handlers/subscription.ts`
                 *   `[?]` Review/Test `handlers/plans.ts`
                 *   `[?]` Review/Test `handlers/current.ts`
                 *   `[?]` Review/Test `handlers/usage.ts`
             *   [ ] `stripe-webhook/` 
-                *   `[ ]` Implement webhook handler logic (`index.ts`)
-                *   `[ ]` Implement robust webhook signature verification
-                *   `[ ]` Implement handling for key events (checkout complete, sub updated, etc.)
+                *   `[ ]` Implement webhook handler logic (`index.ts`) - *Need main router + sig verify*
+                *   `[ ]` Implement robust webhook signature verification - *Partially done in stripe-client, needs use in index.ts*
+                *   `[ ]` Implement handling for key events (checkout complete, sub updated, etc.) 
+                    *   [✅] `handlers/checkout-session.ts`
+                    *   `[ ]` Other event handlers (e.g., invoice paid, sub deleted)
                 *   `[ ]` Unit test webhook handler logic & signature verification
+                    *   [✅] Unit Test `handlers/checkout-session.ts`
+                    *   [✅] Unit Test `index.ts` (router/sig verify)
+                    *   `[ ]` Unit Test other event handlers
             *   [🚫] `sync-stripe-plans/` *(Blocked/Skipped - Needs Implementation? Might be done based on earlier chats)*
             *   [❓] `api-users/` *(Unit tests not verified/created?)*
             *   [✅] `_shared/auth.ts`
@@ -74,7 +79,7 @@
             *   [✅] `_shared/stripe-client.ts` *(Partially tested, webhook verify pending)*
             *   [⏸️] `_shared/test-utils.ts` *(Deferred - implicitly tested via integration tests)*
             *   [❓] `test-auth.ts` *(Purpose unclear, review/remove?)*
-        *   **Task:** `[🚧] Complete implementation and unit tests for [ ] and [?] items above.`
+        *   **Task:** `[🚧] Complete implementation and unit tests for [ ], [?], and [❓] items above.`
     *   **1.2 Integration Tests:**
         *   [✅] **Environment Setup:** Local Supabase environment configured (`config.toml`, `.env.local`). Test utilities created (`_shared/test-utils.ts`).
         *   [✅] **Function Integration (Auth & Profile):**
@@ -201,8 +206,4 @@
 
 **Current Focus / Immediate Next Steps:**
 
-1.  **Integration Testing for `/api-subscriptions`** (`supabase/functions/api-subscriptions/`).
-2.  **Integration Testing for `/profile`** (if necessary, depends on overlap with `/me`).
-3.  **(Parallel Option):** Work on Database Integration tests (`supabase test db`) or Stripe Integration tests.
-4.  **(Later Task):** Review and update affected Unit Tests (Phase 1.1).
-5.  **(Final Backend Task):** Perform Phase 1.3 Validation & Lockdown. 
+1.  **Integration Testing for `/api-subscriptions`** (`supabase/functions/api-subscriptions/`

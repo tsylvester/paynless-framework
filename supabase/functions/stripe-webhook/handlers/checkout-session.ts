@@ -1,165 +1,176 @@
-import { SupabaseClient } from "npm:@supabase/supabase-js@2.39.3"; 
-import Stripe from "npm:stripe@14.11.0";
-// Keep relative path for local types
-import { Database } from "../../types_db.ts"; 
+import { SupabaseClient } from "@supabase/supabase-js";
+import Stripe from "npm:stripe";
+import { Tables, TablesInsert, TablesUpdate } from "../../types_db.ts"; // Assuming types_db.ts is in functions root
+import { logger } from "@paynless/utils";
 
-// Type alias for convenience
-type CheckoutSession = Stripe.Checkout.Session;
+const TRANSACTION_TABLE = "subscription_transactions";
+const SUBSCRIPTION_TABLE = "user_subscriptions";
 
 /**
- * Handle checkout.session.completed event
+ * Handles the 'checkout.session.completed' Stripe webhook event.
+ *
+ * Incorporates transaction logging for idempotency and atomicity.
+ * 1. Checks subscription_transactions for existing successful eventId.
+ * 2. Upserts transaction record with status 'processing'.
+ * 3. Updates the user_subscriptions record to activate.
+ * 4. Updates transaction record status to 'succeeded' or 'failed'.
+ *
+ * @param supabase - The Supabase admin client instance.
+ * @param stripe - The Stripe client instance (might be needed for fetching related objects).
+ * @param session - The Stripe Checkout Session object from the event payload.
+ * @param eventId - The Stripe event ID for idempotency checks/logging.
+ * @param eventType - The Stripe event type ('checkout.session.completed').
  */
-export const handleCheckoutSessionCompleted = async (
-  supabase: SupabaseClient<Database>, // Use Database type
-  _stripe: Stripe, // Stripe client might not be needed if session has all info
-  session: CheckoutSession,
-  eventId: string, // Pass the event ID for idempotency
-  eventType: string // Pass the event type for logging
-): Promise<void> => {
-  const functionName = "handleCheckoutSessionCompleted";
-  console.log(`[${functionName}] Processing event ID: ${eventId}`);
+export async function handleCheckoutSessionCompleted(
+  supabase: SupabaseClient,
+  stripe: Stripe,
+  session: Stripe.Checkout.Session,
+  eventId: string,
+  eventType: string
+): Promise<void> {
+  logger.info(`[handleCheckoutSessionCompleted] Handling ${eventType} for session ${session.id}, Event ID: ${eventId}`);
 
-  // --- 1. Idempotency Check & Transaction Logging (Start) ---
-  // Check if this event has already been processed successfully
-  const { data: existingTransaction, error: transactionError } = await supabase
-    .from('subscription_transactions')
-    .select('id, status')
-    .eq('stripe_event_id', eventId)
-    .maybeSingle();
+  const userId = session.client_reference_id;
+  const subscriptionId = session.subscription;
+  const customerId = session.customer;
+  const mode = session.mode;
 
-  if (transactionError) {
-    console.error(`[${functionName}] Error checking for existing transaction:`, transactionError);
-    throw new Error(`DB error checking transaction: ${transactionError.message}`);
+  if (!userId) {
+    throw new Error("Missing client_reference_id (userId)");
+  }
+  if (mode === "subscription" && !subscriptionId) {
+    throw new Error("Missing subscription ID");
+  }
+  // Customer ID is needed if we have a subscription ID to link things correctly
+  if (subscriptionId && !customerId) {
+     throw new Error("Missing customer ID");
   }
 
-  if (existingTransaction?.status === 'succeeded') {
-    console.log(`[${functionName}] Event ${eventId} already processed successfully. Skipping.`);
-    return; // Successfully processed before
-  }
-  
-  // If transaction exists but failed/processing, or doesn't exist, insert/update status to 'processing'
-  // This reduces race conditions but isn't fully atomic without DB transactions.
-  const { error: upsertProcessingError } = await supabase
-    .from('subscription_transactions')
-    .upsert({
-        stripe_event_id: eventId,
-        event_type: eventType,
-        status: 'processing', // Mark as processing
-        user_id: session.metadata?.userId, // Log user_id early
-        stripe_checkout_session_id: session.id,
-        stripe_customer_id: session.customer as string,
-        stripe_subscription_id: session.subscription as string,
-        amount: session.amount_total,
-        currency: session.currency,
-        stripe_invoice_id: session.invoice as string,
-        stripe_payment_intent_id: session.payment_intent as string
-        // Add event_payload: session if desired
-    }, { onConflict: 'stripe_event_id' });
-    
-   if (upsertProcessingError) {
-        console.error(`[${functionName}] Error upserting transaction as processing:`, upsertProcessingError);
-        // Decide if you should throw or try to continue
-        throw new Error(`DB error starting transaction log: ${upsertProcessingError.message}`);
-    } else {
-        // Explicitly log success of initial upsert
-        console.log(`[${functionName}] Successfully upserted transaction ${eventId} with status 'processing'.`);
-    }
+  let transactionStatus: 'processing' | 'succeeded' | 'failed' = 'processing';
+  let coreLogicError: Error | null = null;
 
   try {
-    // --- 2. Extract Data & Validate ---
-    const customerId = session.customer as string;
-    const subscriptionId = session.subscription as string;
-    const userId = session.metadata?.userId;
-
-    if (!customerId || !subscriptionId || !userId) {
-      throw new Error(`Missing required metadata (userId, customerId, or subscriptionId) in checkout session ${session.id}`);
-    }
-    
-    // We need the subscription details from the session or a separate Stripe retrieve call
-    // If session.subscription is just an ID, you MUST retrieve the subscription from Stripe.
-    // If session.subscription is an expanded object, you might use it directly, BUT retrieving ensures latest state.
-    // Let's assume session.subscription is just an ID as per typical webhook payloads.
-    console.log(`[${functionName}] Retrieving subscription ${subscriptionId} from Stripe.`);
-    // Re-enable stripe client usage if needed for retrieve
-    // const subscription = await stripe.subscriptions.retrieve(subscriptionId); 
-    // For now, assume needed fields are on the checkout session object or will be sent in subscription.updated
-    // This depends heavily on how Stripe sends the checkout.session.completed payload and if subscription is expanded.
-    // SAFEST APPROACH IS TO HANDLE SUB CREATION/UPDATE ON 'customer.subscription.updated/created' events.
-    // Let's simplify this handler to primarily just log the transaction, assuming another event handles DB state.
-    
-    // --- 3. Update User Subscription (Potentially moved to customer.subscription.updated handler) ---
-    // Commenting out the direct update here as it's often better handled by subscription update events
-    /*
-    const priceId = subscription.items.data[0]?.price.id; // Needs subscription retrieve
-    if (!priceId) { throw new Error("Missing price ID in subscription"); }
-    
-    const { data: planData, error: planError } = await supabase
-      .from("subscription_plans")
-      .select("id")
-      .eq("stripe_price_id", priceId)
-      .single();
-    if (planError || !planData) { throw new Error(`Plan not found for priceId ${priceId}: ${planError?.message}`); }
-    
-    const userSubData = {
-      user_id: userId,
-      stripe_customer_id: customerId,
-      stripe_subscription_id: subscriptionId,
-      status: subscription.status,
-      current_period_start: new Date(subscription.current_period_start * 1000).toISOString(),
-      current_period_end: new Date(subscription.current_period_end * 1000).toISOString(),
-      cancel_at_period_end: subscription.cancel_at_period_end,
-      plan_id: planData.id,
-    };
-    
-    const { error: upsertSubError } = await supabase
-      .from('user_subscriptions')
-      .upsert(userSubData, { onConflict: 'stripe_subscription_id' }); // Assuming stripe_subscription_id is unique
-      
-    if (upsertSubError) {
-      throw new Error(`Failed to upsert user subscription: ${upsertSubError.message}`);
-    }
-    console.log(`[${functionName}] Upserted user subscription for user ${userId}, sub ${subscriptionId}`);
-    */
-    console.log(`[${functionName}] Skipping direct user_subscription update - expecting separate subscription event.`);
-
-    // --- 4. Finalize Transaction Log (Mark as Succeeded) ---
-    console.log(`[${functionName}] Attempting to mark transaction ${eventId} as succeeded.`); // Log before update
-    const { data: updateData, error: updateSuccessError, count: updateCount } = await supabase
+    // 1. Idempotency Check & Initial Log
+    logger.info(`[handleCheckoutSessionCompleted] Checking transaction log for event ${eventId}...`);
+    const { data: existingTx, error: transactionCheckError } = await supabase
       .from('subscription_transactions')
-      .update({ status: 'succeeded', updated_at: new Date().toISOString() })
+      .select('status')
       .eq('stripe_event_id', eventId)
-      .select(); // Add select() to get the updated row count or data
+      .maybeSingle();
 
-    if (updateSuccessError) {
-      // Log error AND re-throw to signal failure
-      console.error(`[${functionName}] CRITICAL: Failed to mark transaction ${eventId} as succeeded:`, updateSuccessError);
-      throw new Error(`Failed to update transaction log status: ${updateSuccessError.message}`);
+    if (transactionCheckError) {
+      throw new Error(`Failed to check transaction log: ${transactionCheckError.message}`);
     }
 
-    // Log the result of the update attempt
-    console.log(`[${functionName}] Update result for transaction ${eventId}: Count=${updateCount}, Data=${JSON.stringify(updateData)}`);
-
-    // Add an explicit check for updateCount
-    if (updateCount === 0) {
-        console.error(`[${functionName}] CRITICAL: Update operation affected 0 rows for event ${eventId}. Row might not have existed or match failed.`);
-        // Decide if this should also throw an error
-        throw new Error(`Failed to update transaction log status: Update affected 0 rows.`);
+    if (existingTx?.status === 'succeeded') {
+      logger.info(`[handleCheckoutSessionCompleted] Event ${eventId} already processed successfully. Skipping.`);
+      return; // Already processed
     }
-    
-    console.log(`[${functionName}] Successfully processed event ID: ${eventId}`);
+    // If processing or failed, we might retry or handle accordingly, for now, proceed.
+
+    const transactionInsert: TablesInsert<"subscription_transactions"> = {
+      stripe_event_id: eventId,
+      event_type: eventType,
+      status: 'processing',
+      user_id: userId,
+      stripe_checkout_session_id: session.id,
+      stripe_subscription_id: typeof subscriptionId === 'string' ? subscriptionId : null,
+      stripe_customer_id: typeof customerId === 'string' ? customerId : null,
+      // Add other relevant fields from the session if needed for logging/auditing
+      amount: session.amount_total, 
+      currency: session.currency,
+    };
+
+    logger.info(`[handleCheckoutSessionCompleted] Upserting transaction log for ${eventId} as 'processing'...`);
+    const { error: upsertProcessingError } = await supabase
+      .from('subscription_transactions')
+      .upsert(transactionInsert, { onConflict: 'stripe_event_id' });
+
+    if (upsertProcessingError) {
+      throw new Error(`Failed to upsert processing transaction log: ${upsertProcessingError.message}`);
+    }
+
+    // 2. Core Logic: Update user subscription status (only if it's a subscription type)
+    if (mode === "subscription" && typeof subscriptionId === 'string' && typeof customerId === 'string') {
+      logger.info(`[handleCheckoutSessionCompleted] Activating subscription ${subscriptionId} for user ${userId}...`);
+      const subscriptionUpdate: TablesUpdate<"user_subscriptions"> = {
+        status: "active", // Assuming 'active'. Adjust based on Stripe status if needed.
+        stripe_customer_id: customerId,
+        stripe_subscription_id: subscriptionId,
+        // Potentially update plan_id, current_period_start/end if available & reliable
+        updated_at: new Date().toISOString(),
+      };
+
+      // Activate the subscription in your database
+      const { data: updatedSub, error: subUpdateError } = await supabase
+        .from(SUBSCRIPTION_TABLE)
+        .update(subscriptionUpdate)
+        .eq("user_id", userId)
+        .select("id")
+        .maybeSingle();
+
+      if (subUpdateError) {
+        throw new Error(`Failed to update subscription status: ${subUpdateError.message}`);
+      }
+       if (!updatedSub) {
+        // This might happen if the user_profile/user_subscription row doesn't exist yet.
+        // Consider creating it or handling this case based on application logic.
+        logger.warn(`[handleCheckoutSessionCompleted] No existing subscription found for user ${userId} to update.`);
+        // Depending on requirements, this might be an error or just a warning.
+        // For now, we'll treat it as potentially okay but log it.
+        // throw new Error(`No subscription found for user ${userId} to update.`); 
+      }
+
+      logger.info(`[handleCheckoutSessionCompleted] Successfully activated subscription. DB record ID: ${updatedSub?.id ?? 'N/A'}`);
+      transactionStatus = 'succeeded'; // Mark as succeeded only after core logic passes
+
+    } else {
+       logger.info(`[handleCheckoutSessionCompleted] Skipping subscription activation (mode: ${mode}, subId: ${subscriptionId})`);
+       transactionStatus = 'succeeded'; // If not a subscription action, mark as succeeded
+    }
 
   } catch (error) {
-    console.error(`[${functionName}] Error processing event ${eventId}:`, error);
-    // --- 5. Log Error in Transaction Table ---
-    const { error: updateErrorStatusError } = await supabase
-        .from('subscription_transactions')
-        .update({ status: 'failed', updated_at: new Date().toISOString() })
+    logger.error(`[handleCheckoutSessionCompleted] Error during core logic for ${eventId}: ${error}`);
+    coreLogicError = error; // Store error to re-throw after logging failure
+    transactionStatus = 'failed';
+    // Do not re-throw here; let the finally block handle logging status
+  } finally {
+    // 3. Final Step: Update transaction log status (success or failure)
+    logger.info(`[handleCheckoutSessionCompleted] Attempting to mark transaction ${eventId} as '${transactionStatus}'...`);
+    try {
+      const { error: updateFailureError } = await supabase
+        .from(TRANSACTION_TABLE)
+        .update({ 
+            status: transactionStatus,
+            updated_at: new Date().toISOString()
+         }) 
         .eq('stripe_event_id', eventId);
-        
-    if (updateErrorStatusError) {
-         console.error(`[${functionName}] CRITICAL: Failed to mark transaction ${eventId} as failed after error:`, updateErrorStatusError);
+
+      if (updateFailureError) {
+        logger.error(`[handleCheckoutSessionCompleted] CRITICAL: Failed to update transaction log status for ${eventId} to ${transactionStatus}: ${updateFailureError.message}`);
+        // If the initial logic also failed, prioritize that error
+        if (coreLogicError) {
+           throw coreLogicError; 
+        }
+        // Otherwise, throw the error from failing to update the log
+        throw new Error(`Failed to finalize transaction log: ${updateFailureError.message}`);
+      }
+      logger.info(`[handleCheckoutSessionCompleted] Transaction ${eventId} marked as '${transactionStatus}'.`);
+
+      // If the core logic failed initially, re-throw that error now after successfully logging failure status
+      if (coreLogicError) {
+        throw coreLogicError;
+      }
+
+    } catch (finalError) {
+       // Catch errors during the finally block itself (e.g., the updateFailureError re-throw)
+       logger.error(`[handleCheckoutSessionCompleted] Error during finally block for ${eventId}: ${finalError}`);
+       // If the original core logic had an error, prioritize throwing that one
+       if (coreLogicError) {
+           throw coreLogicError;
+       }
+       // Otherwise, throw the error that occurred within the finally block
+       throw finalError;
     }
-    // Re-throw the original error to signal failure to Stripe (important for retries)
-    throw error; 
   }
-};
+}

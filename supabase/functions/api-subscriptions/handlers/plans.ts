@@ -1,17 +1,25 @@
-import { SupabaseClient } from "../../_shared/auth.ts";
+import { SupabaseClient } from "@shared/auth.ts";
 import { 
-  createErrorResponse, 
-  createSuccessResponse 
-} from "../../_shared/cors-headers.ts";
+  createErrorResponse as CreateErrorResponseType, 
+  createSuccessResponse as CreateSuccessResponseType 
+} from "@shared/responses.ts";
 import { SubscriptionPlan } from "../types.ts";
+
+// Define Dependencies Type
+interface GetPlansDeps {
+  createErrorResponse: typeof CreateErrorResponseType;
+  createSuccessResponse: typeof CreateSuccessResponseType;
+}
 
 /**
  * Get available subscription plans
  */
 export const getSubscriptionPlans = async (
   supabase: SupabaseClient,
-  isTestMode: boolean
+  isTestMode: boolean,
+  deps: GetPlansDeps // Add deps parameter
 ): Promise<Response> => {
+  const { createErrorResponse, createSuccessResponse } = deps; // Destructure deps
   try {
     const { data, error } = await supabase
       .from("subscription_plans")
@@ -20,9 +28,17 @@ export const getSubscriptionPlans = async (
       .order("amount", { ascending: true });
     
     if (error) {
-      return createErrorResponse(error.message, 400);
+      console.error("Error fetching subscription plans:", error);
+      // Return 500 for internal DB error
+      return createErrorResponse("Failed to retrieve subscription plans", 500, error);
     }
     
+    // Handle case where data is null/undefined (shouldn't happen with select * unless error, but good practice)
+    if (!data) {
+        console.warn("No subscription plan data returned, even without error.");
+        return createSuccessResponse({ plans: [] }); // Return empty array
+    }
+
     // Filter plans based on the test_mode field in metadata
     const filteredPlans = data.filter(plan => {
       const metadata = plan.metadata || {};
@@ -49,6 +65,7 @@ export const getSubscriptionPlans = async (
     return createSuccessResponse({ plans: subscriptionPlans });
   } catch (err) {
     console.error("Error getting subscription plans:", err);
-    return createErrorResponse(err.message);
+    // Use deps function and pass error
+    return createErrorResponse(err.message, 500, err);
   }
 };

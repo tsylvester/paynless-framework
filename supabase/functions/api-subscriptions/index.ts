@@ -227,7 +227,12 @@ export async function handleApiSubscriptionsRequest(req: Request, deps: ApiSubsc
       // POST /billing-portal - Create billing portal session
       else if (path === "/billing-portal" && req.method === "POST") {
         if (!stripe) throw new Error("Stripe client not available");
-        return await createBillingPortalSession(supabase, stripe, userId, requestData as any);
+        // Pass the required dependencies (response creators) to the handler
+        const handlerDeps = { 
+          createErrorResponse: deps.createErrorResponse,
+          createSuccessResponse: deps.createSuccessResponse
+        };
+        return await createBillingPortalSession(supabase, stripe, userId, requestData as any, handlerDeps);
       }
 
       // GET /usage/:metric - Get usage metrics

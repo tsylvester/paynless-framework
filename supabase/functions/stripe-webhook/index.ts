@@ -2,24 +2,26 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 
 // Stripe webhook handler
-import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
-import { createClient, SupabaseClient } from "npm:@supabase/supabase-js";
+import { serve } from "std/http/server.ts";
+import { SupabaseClient, createClient as createSupabaseClientReal } from "jsr:@supabase/supabase-js@2";
 import {
   createSupabaseAdminClient as defaultCreateSupabaseAdminClient
-} from "../_shared/auth.ts";
+} from "@shared/auth.ts";
 import {
   verifyWebhookSignature as defaultVerifyWebhookSignature,
   getStripeMode,
   getStripeClient as defaultCreateStripeClient
-} from "../_shared/stripe-client.ts";
+} from "@shared/stripe-client.ts";
 import {
   handleCorsPreflightRequest as defaultHandleCorsPreflightRequest,
   createErrorResponse as defaultCreateErrorResponse,
   createSuccessResponse as defaultCreateSuccessResponse
-} from "../_shared/cors-headers.ts";
+} from "@shared/cors-headers.ts";
 import { handleCheckoutSessionCompleted as defaultHandleCheckoutSessionCompleted } from "./handlers/checkout-session.ts";
 import { handleSubscriptionUpdated as defaultHandleSubscriptionUpdated, handleSubscriptionDeleted as defaultHandleSubscriptionDeleted } from "./handlers/subscription.ts";
 import { handleInvoicePaymentSucceeded as defaultHandleInvoicePaymentSucceeded, handleInvoicePaymentFailed as defaultHandleInvoicePaymentFailed } from "./handlers/invoice.ts";
+import { handleProductCreated as defaultHandleProductCreated, handleProductUpdated as defaultHandleProductUpdated } from "./handlers/product.ts";
+import { handlePriceChange as defaultHandlePriceChange } from "./handlers/price.ts";
 import Stripe from "npm:stripe";
 
 // --- Dependency Injection ---
@@ -42,13 +44,16 @@ interface WebhookDependencies {
   handleSubscriptionDeleted: (supabase: SupabaseClient, stripe: Stripe, subscription: Stripe.Subscription, eventId: string, eventType: string) => Promise<void>;
   handleInvoicePaymentSucceeded: (supabase: SupabaseClient, stripe: Stripe, invoice: Stripe.Invoice, eventId: string, eventType: string) => Promise<void>;
   handleInvoicePaymentFailed: (supabase: SupabaseClient, stripe: Stripe, invoice: Stripe.Invoice, eventId: string, eventType: string) => Promise<void>;
+  handleProductCreated: (supabase: SupabaseClient, stripe: Stripe, product: Stripe.Product, eventId: string, eventType: string, isTestMode: boolean) => Promise<void>;
+  handleProductUpdated: (supabase: SupabaseClient, stripe: Stripe, product: Stripe.Product, eventId: string, eventType: string) => Promise<void>;
+  handlePriceChange: (supabase: SupabaseClient, stripe: Stripe, price: Stripe.Price, eventId: string, eventType: string, isTestMode: boolean) => Promise<void>;
 }
 
 // --- Default Dependencies ---
 
 const defaultDependencies: WebhookDependencies = {
   envGet: Deno.env.get,
-  createStripeClient: (key, options = { apiVersion: "2024-04-10", httpClient: Stripe.createFetchHttpClient() }) => new Stripe(key, options),
+  createStripeClient: defaultCreateStripeClient,
   verifyWebhookSignature: defaultVerifyWebhookSignature,
   createSupabaseAdminClient: defaultCreateSupabaseAdminClient,
   handleCorsPreflightRequest: defaultHandleCorsPreflightRequest,
@@ -60,6 +65,10 @@ const defaultDependencies: WebhookDependencies = {
   handleSubscriptionDeleted: defaultHandleSubscriptionDeleted,
   handleInvoicePaymentSucceeded: defaultHandleInvoicePaymentSucceeded,
   handleInvoicePaymentFailed: defaultHandleInvoicePaymentFailed,
+  // Add new default handlers
+  handleProductCreated: defaultHandleProductCreated,
+  handleProductUpdated: defaultHandleProductUpdated,
+  handlePriceChange: defaultHandlePriceChange,
 };
 
 // --- Core Logic ---
@@ -79,7 +88,11 @@ export async function handleWebhookRequest(req: Request, deps: WebhookDependenci
       handleSubscriptionUpdated,
       handleSubscriptionDeleted,
       handleInvoicePaymentSucceeded,
-      handleInvoicePaymentFailed
+      handleInvoicePaymentFailed,
+      // Add new handlers
+      handleProductCreated,
+      handleProductUpdated,
+      handlePriceChange
   } = deps;
 
   // Handle CORS preflight requests
@@ -92,6 +105,8 @@ export async function handleWebhookRequest(req: Request, deps: WebhookDependenci
 
   let stripeClient: Stripe | undefined;
   let supabase: SupabaseClient | undefined;
+  let event: Stripe.Event | undefined;
+  let isTestMode: boolean;
 
   try {
     console.log("[stripe-webhook] Attempting to read request body...");
@@ -103,7 +118,7 @@ export async function handleWebhookRequest(req: Request, deps: WebhookDependenci
       return createErrorResponse("Missing Stripe signature", 400);
     }
 
-    // Restore logic for getting preliminary key using envGet and getStripeMode
+    // Use getStripeMode for initial key guess, but actual mode comes from verified event
     const isTestModeCheck = getStripeMode(); // Use shared helper
     const preliminaryStripeKey = isTestModeCheck 
         ? envGet("STRIPE_SECRET_TEST_KEY") 
@@ -114,33 +129,25 @@ export async function handleWebhookRequest(req: Request, deps: WebhookDependenci
       return createErrorResponse("Stripe key configuration error.", 500);
     }
 
-    // Initialize Stripe client using dependency (with key)
     try {
         stripeClient = createStripeClient(preliminaryStripeKey);
     } catch(stripeInitError) {
        console.error("[stripe-webhook] CRITICAL: Failed to initialize Stripe client:", stripeInitError);
-       // Use instanceof Error check (already added)
        const message = stripeInitError instanceof Error ? stripeInitError.message : String(stripeInitError);
        return createErrorResponse(message || "Stripe client initialization failed.", 500);
     }
 
-    // Verify signature - verifyWebhookSignature handles secret lookup internally
     console.log("[stripe-webhook] Verifying signature...");
-    let event: Stripe.Event | undefined;
-    
     try {
-        // Call with 3 arguments - stripe-client handles internal secret lookup/error
         event = await verifyWebhookSignature(stripeClient, body, signature); 
     } catch (err) {
-       // Signature verification failed (or secret was missing)
        console.error("[stripe-webhook] Webhook signature verification failed:", err.message);
        return createErrorResponse(err.message || "Signature verification failed", 400); 
     }
 
-    // Event is now verified and available
     console.log(`[stripe-webhook] Webhook signature verified. Event ID: ${event.id}, Livemode: ${event.livemode}`);
+    isTestMode = event.livemode === false; // Determine actual mode from verified event
 
-    // Get Supabase Admin Client
     try {
         supabase = createSupabaseAdminClient();
     } catch (supabaseInitError) {
@@ -148,7 +155,7 @@ export async function handleWebhookRequest(req: Request, deps: WebhookDependenci
        return createErrorResponse("Supabase admin client initialization failed.", 500);
     }
 
-    // Route event (ensure stripeClient is passed to handlers)
+    // Route event
     console.log(`[stripe-webhook] Handling event type: ${event.type}`);
     switch (event.type) {
       case "checkout.session.completed": {
@@ -161,7 +168,6 @@ export async function handleWebhookRequest(req: Request, deps: WebhookDependenci
         );
         break;
       }
-
       case "customer.subscription.updated": {
         await handleSubscriptionUpdated(
           supabase,
@@ -172,7 +178,6 @@ export async function handleWebhookRequest(req: Request, deps: WebhookDependenci
         );
         break;
       }
-
       case "customer.subscription.deleted": {
         await handleSubscriptionDeleted(
           supabase,
@@ -183,7 +188,6 @@ export async function handleWebhookRequest(req: Request, deps: WebhookDependenci
         );
         break;
       }
-
       case "invoice.payment_succeeded": {
         await handleInvoicePaymentSucceeded(
           supabase,
@@ -194,7 +198,6 @@ export async function handleWebhookRequest(req: Request, deps: WebhookDependenci
         );
         break;
       }
-
       case "invoice.payment_failed": {
         await handleInvoicePaymentFailed(
           supabase,
@@ -205,85 +208,64 @@ export async function handleWebhookRequest(req: Request, deps: WebhookDependenci
         );
         break;
       }
-
+      // --- Refactored Cases ---
+      case "product.created": {
+         await handleProductCreated(
+            supabase,
+            stripeClient,
+            event.data.object as Stripe.Product,
+            event.id,
+            event.type,
+            isTestMode // Pass mode
+         );
+         break;
+      }
       case "product.updated": {
-        const product = event.data.object as Stripe.Product;
-        console.log(`[stripe-webhook] Received product.updated for ${product.id}. Active: ${product.active}`);
-        const targetActiveStatus = product.active;
-
-        // Find plans in DB by product ID and update their status
-        const { error: updateError } = await supabase
-          .from('subscription_plans')
-          .update({ active: targetActiveStatus, updated_at: new Date().toISOString() })
-          .eq('stripe_product_id', product.id)
-          .neq('stripe_price_id', 'price_FREE'); // Ensure we don't touch the Free plan row
-
-         if (updateError) {
-            console.error(`[stripe-webhook] Error updating plan status for product ${product.id}:`, updateError);
-            // Potentially return 500 to Stripe if this failure is critical
-            // For now, we log and continue, returning 200 later
-         } else {
-            console.log(`[stripe-webhook] Successfully updated active status to ${targetActiveStatus} for plans linked to product ${product.id}`);
-         }
+         await handleProductUpdated(
+            supabase,
+            stripeClient,
+            event.data.object as Stripe.Product,
+            event.id,
+            event.type
+         );
          break;
       }
-
-      case "price.updated":
-      case "price.deleted": { // price.deleted implies inactive
-        const price = event.data.object as Stripe.Price;
-        const targetActiveStatus = event.type === 'price.deleted' ? false : price.active;
-        console.log(`[stripe-webhook] Received ${event.type} for ${price.id}. Setting active: ${targetActiveStatus}`);
-
-        if (price.id === 'price_FREE') {
-           console.log("[stripe-webhook] Ignoring price event for Free plan ID.");
-           break; // Do nothing for the free plan price ID
-        }
-
-        const { error: updateError } = await supabase
-          .from('subscription_plans')
-          .update({ active: targetActiveStatus, updated_at: new Date().toISOString() })
-          .eq('stripe_price_id', price.id);
-
-         if (updateError) {
-            console.error(`[stripe-webhook] Error updating plan status for price ${price.id}:`, updateError);
-            // Potentially return 500
-         } else {
-            console.log(`[stripe-webhook] Successfully updated active status to ${targetActiveStatus} for plan with price ${price.id}`);
-         }
-        break;
-      }
-
-      case "product.created":
       case "price.created":
-         console.log(`[stripe-webhook] Received ${event.type} event. Triggering full plan sync for reconciliation.`);
-         try {
-           // Restore usage of isTestModeCheck
-           console.log(`[stripe-webhook] Attempting to invoke sync-stripe-plans with mode: ${isTestModeCheck ? 'test' : 'live'}`);
-           const { data: invokeData, error: invokeError } = await supabase.functions.invoke('sync-stripe-plans', {
-             body: JSON.stringify({ isTestMode: isTestModeCheck })
-           });
-           if (invokeError) {
-             console.error(`[stripe-webhook] Error invoking sync-stripe-plans function:`, JSON.stringify(invokeError, null, 2));
-              // Potentially return 500
-           } else {
-             console.log("[stripe-webhook] Successfully invoked sync-stripe-plans. Result:", invokeData);
-           }
-         } catch (invokeCatchError) {
-            console.error(`[stripe-webhook] CRITICAL: Caught exception during function invocation:`, invokeCatchError instanceof Error ? invokeCatchError.message : String(invokeCatchError));
-             // Potentially return 500
-         }
+      case "price.updated":
+      case "price.deleted": {
+         await handlePriceChange(
+            supabase,
+            stripeClient,
+            event.data.object as Stripe.Price,
+            event.id,
+            event.type, // Pass event type
+            isTestMode // Pass mode for sync trigger
+         );
          break;
-
-      default:
-        console.log(`[stripe-webhook] Unhandled event type: ${event.type}`);
+      }
+      // --- End Refactored Cases ---
+      default: {
+        console.warn(`[stripe-webhook] Unhandled event type: ${event.type}`);
+      }
     }
-
-    console.log(`[stripe-webhook] Event ${event.id} handled successfully.`);
-    return createSuccessResponse({ received: true });
+    
+    console.log(`[stripe-webhook] Event ${event.id} processed (or ignored). Returning 200 OK.`);
+    return createSuccessResponse();
 
   } catch (error) {
-    console.error("[stripe-webhook] Uncaught error in handler:", error);
-    return createErrorResponse(error instanceof Error ? error.message : "Internal server error", 500);
+    // Catch top-level errors (e.g., body parsing, critical init failures before routing)
+    console.error("[stripe-webhook] CRITICAL top-level error:", error);
+    // Ensure we don't accidentally expose sensitive details
+    const message = error instanceof Error ? error.message : "Internal server error.";
+    // Avoid returning specific internal errors unless intended (like signature verification)
+    // Check if it's a signature error we already handled and returned from within verifyWebhookSignature try/catch
+    if (error.message?.includes("verification failed") || error.message?.includes("Missing Stripe signature")) {
+         // If somehow signature error bubbled up, return 400
+         // This shouldn't happen due to earlier returns, but as a safeguard
+         return createErrorResponse(error.message, 400); 
+    } 
+    // For other unexpected errors, return 500
+    return createErrorResponse(message, 500);
   }
 }
 
@@ -299,6 +281,7 @@ serve(async (req) => {
       // Use default dependency for error response if available, otherwise basic response
       const createErrResp = defaultDependencies.createErrorResponse || 
                             ((msg, status) => new Response(JSON.stringify({ error: msg }), { status: status, headers: { "Content-Type": "application/json" } }));
+      // Revert the error object passing for the simpler signature
       return createErrResp("Internal Server Error", 500);
   }
 }, {
@@ -315,4 +298,3 @@ console.log("[stripe-webhook] Server setup complete.");
 
 // Export types for testing if needed
 export type { WebhookDependencies };
-// Ensure the core handler is exported for testing

@@ -1,10 +1,12 @@
-import { SupabaseClient } from "../../_shared/auth.ts";
-import Stripe from "npm:stripe@14.11.0";
-import { 
-  createErrorResponse,
-  createSuccessResponse 
-} from "../../_shared/cors-headers.ts";
+import { SupabaseClient } from "@shared/auth.ts";
+import Stripe from "npm:stripe";
+import type { createErrorResponse as CreateErrorResponseType, createSuccessResponse as CreateSuccessResponseType } from "@shared/responses.ts";
 import { BillingPortalRequest, SessionResponse } from "../types.ts";
+
+interface BillingPortalDeps {
+  createErrorResponse: typeof CreateErrorResponseType;
+  createSuccessResponse: typeof CreateSuccessResponseType;
+}
 
 /**
  * Create a billing portal session
@@ -13,8 +15,11 @@ export const createBillingPortalSession = async (
   supabase: SupabaseClient,
   stripe: Stripe,
   userId: string,
-  request: BillingPortalRequest
+  request: BillingPortalRequest,
+  deps: BillingPortalDeps
 ): Promise<Response> => {
+  const { createErrorResponse, createSuccessResponse } = deps;
+
   try {
     const { returnUrl } = request;
     
@@ -32,7 +37,7 @@ export const createBillingPortalSession = async (
     // Check for errors or if the customer ID is missing
     if (subscriptionError) {
         console.error("Error fetching user subscription for portal:", subscriptionError);
-        return createErrorResponse("Failed to retrieve subscription data", 500);
+        return createErrorResponse("Failed to retrieve subscription data", 500, subscriptionError);
     }
     if (!subscriptionData?.stripe_customer_id) {
         console.warn(`No Stripe customer ID found for user ${userId} in user_subscriptions.`);
@@ -54,6 +59,7 @@ export const createBillingPortalSession = async (
     
     return createSuccessResponse(response);
   } catch (err) {
-    return createErrorResponse(err.message);
+    console.error("Error creating billing portal session:", err);
+    return createErrorResponse(err.message, 500, err);
   }
 };
