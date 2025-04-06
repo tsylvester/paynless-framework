@@ -1,0 +1,32 @@
+{
+  "name": "supabase",
+  "$schema": "../../node_modules/nx/schemas/project-schema.json",
+  "root": "supabase",
+  "projectType": "application",
+  "sourceRoot": "supabase/functions",
+  "targets": {
+    "test": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "deno test -A --no-check > supabase.test.output.md 2>&1",
+        "cwd": "supabase"
+      },
+      "cache": true
+    },
+    "lint": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "deno lint",
+        "cwd": "supabase"
+      },
+      "cache": true
+    },
+    "serve": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "supabase functions serve --env-file ./supabase/.env.local",
+        "cwd": "."
+      }
+    }
+  }
+} 

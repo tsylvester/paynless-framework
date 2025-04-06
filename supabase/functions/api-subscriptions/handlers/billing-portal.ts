@@ -22,20 +22,28 @@ export const createBillingPortalSession = async (
       return createErrorResponse("Missing return URL", 400);
     }
     
-    // Get user profile to check for Stripe customer ID
-    const { data: userData, error: userError } = await supabase
-      .from("user_profiles")
+    // Get user subscription data to find the Stripe customer ID
+    const { data: subscriptionData, error: subscriptionError } = await supabase
+      .from("user_subscriptions")
       .select("stripe_customer_id")
-      .eq("id", userId)
-      .single();
+      .eq("user_id", userId)
+      .maybeSingle();
     
-    if (userError || !userData.stripe_customer_id) {
-      return createErrorResponse("No Stripe customer found", 400);
+    // Check for errors or if the customer ID is missing
+    if (subscriptionError) {
+        console.error("Error fetching user subscription for portal:", subscriptionError);
+        return createErrorResponse("Failed to retrieve subscription data", 500);
+    }
+    if (!subscriptionData?.stripe_customer_id) {
+        console.warn(`No Stripe customer ID found for user ${userId} in user_subscriptions.`);
+        return createErrorResponse("No Stripe customer found for this user", 400);
     }
     
+    const stripeCustomerId = subscriptionData.stripe_customer_id;
+
     // Create billing portal session
     const session = await stripe.billingPortal.sessions.create({
-      customer: userData.stripe_customer_id,
+      customer: stripeCustomerId,
       return_url: returnUrl,
     });
     

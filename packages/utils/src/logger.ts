@@ -114,7 +114,12 @@ export class Logger {
     if (!this.shouldLog(LogLevel.DEBUG)) return;
     
     if (this.config.enableConsole) {
-      console.debug(this.formatLog(message, metadata));
+      // Pass metadata object separately if it exists
+      if (metadata) {
+        console.debug(`[${new Date().toISOString()}] ${message}`, metadata);
+      } else {
+        console.debug(`[${new Date().toISOString()}] ${message}`);
+      }
     }
     
     // Here you could add additional logging destinations (e.g., Sentry, server API)
@@ -127,7 +132,12 @@ export class Logger {
     if (!this.shouldLog(LogLevel.INFO)) return;
     
     if (this.config.enableConsole) {
-      console.info(this.formatLog(message, metadata));
+      // Pass metadata object separately if it exists
+      if (metadata) {
+        console.info(`[${new Date().toISOString()}] ${message}`, metadata);
+      } else {
+        console.info(`[${new Date().toISOString()}] ${message}`);
+      }
     }
   }
   
@@ -138,7 +148,12 @@ export class Logger {
     if (!this.shouldLog(LogLevel.WARN)) return;
     
     if (this.config.enableConsole) {
-      console.warn(this.formatLog(message, metadata));
+      // Pass metadata object separately if it exists
+      if (metadata) {
+        console.warn(`[${new Date().toISOString()}] ${message}`, metadata);
+      } else {
+        console.warn(`[${new Date().toISOString()}] ${message}`);
+      }
     }
   }
   
@@ -149,7 +164,12 @@ export class Logger {
     if (!this.shouldLog(LogLevel.ERROR)) return;
     
     if (this.config.enableConsole) {
-      console.error(this.formatLog(message, metadata));
+      // Pass metadata object separately if it exists
+      if (metadata) {
+        console.error(`[${new Date().toISOString()}] ${message}`, metadata);
+      } else {
+        console.error(`[${new Date().toISOString()}] ${message}`);
+      }
     }
   }
 }

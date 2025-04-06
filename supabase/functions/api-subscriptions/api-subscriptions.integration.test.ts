@@ -82,25 +82,126 @@ Deno.test("/api-subscriptions Integration Tests", async (t) => {
         }
     });
 
-    await t.step("Placeholder: Test GET /current", async () => {
-        // TODO: Implement test for fetching the current subscription (should be null/empty initially)
-        assertEquals(true, true); // Placeholder assertion
+    await t.step("Success: GET /current initially returns no subscription", async () => {
+        const targetUrl = `${API_SUBSCRIPTIONS_BASE_URL}/current`;
+        const response = await fetch(targetUrl, {
+            method: "GET",
+            headers: {
+                "Authorization": `Bearer ${userToken}`,
+                "apikey": ANON_KEY ?? ""
+            },
+        });
+        assertEquals(response.status, 200, `GET /current failed: ${response.statusText}`);
+        const body = await response.json();
+        
+        // Expecting null or an empty object/array depending on how the handler returns 'not found'
+        // Let's assert the primary 'subscription' key is null or not present
+        assertEquals(body.subscription === null || body.subscription === undefined, true, "Expected no active subscription initially");
     });
 
-    await t.step("Placeholder: Test POST /checkout", async () => {
-        // TODO: Implement test for creating a checkout session
-        // Requires a Price ID from Stripe Test Dashboard
-        assertEquals(true, true); // Placeholder assertion
+    await t.step("Success: POST /checkout creates a session URL", async () => {
+        const targetUrl = `${API_SUBSCRIPTIONS_BASE_URL}/checkout`;
+        const testPriceId = "price_1RABirIskUlhzlIxSaAQpFe2"; // Price ID from user
+        const requestBody = {
+            priceId: testPriceId,
+            successUrl: "http://localhost:8000/payment/success?session_id={CHECKOUT_SESSION_ID}", // Placeholder URL
+            cancelUrl: "http://localhost:8000/payment/cancel" // Placeholder URL
+        };
+
+        const response = await fetch(targetUrl, {
+            method: "POST",
+            headers: {
+                "Authorization": `Bearer ${userToken}`,
+                "apikey": ANON_KEY ?? "",
+                "Content-Type": "application/json"
+            },
+            body: JSON.stringify(requestBody)
+        });
+
+        assertEquals(response.status, 200, `POST /checkout failed: ${response.status} ${response.statusText}`);
+        const body = await response.json();
+
+        assertExists(body.sessionUrl, "Response should contain a sessionUrl");
+        assertEquals(typeof body.sessionUrl, "string", "sessionUrl should be a string");
+        assertEquals(body.sessionUrl.startsWith("https://checkout.stripe.com/"), true, "sessionUrl should be a Stripe checkout URL");
     });
 
-    await t.step("Placeholder: Test POST /portal", async () => {
-        // TODO: Implement test for creating a billing portal session
-        assertEquals(true, true); // Placeholder assertion
+    await t.step("Success: POST /billing-portal creates a portal session URL", async () => {
+        const targetUrl = `${API_SUBSCRIPTIONS_BASE_URL}/billing-portal`;
+        const requestBody = {
+            // The return URL is where Stripe redirects the user after they finish in the portal
+            returnUrl: "http://localhost:8000/account/billing" // Placeholder URL
+        };
+
+        const response = await fetch(targetUrl, {
+            method: "POST",
+            headers: {
+                "Authorization": `Bearer ${userToken}`,
+                "apikey": ANON_KEY ?? "",
+                "Content-Type": "application/json"
+            },
+            body: JSON.stringify(requestBody)
+        });
+
+        assertEquals(response.status, 200, `POST /billing-portal failed: ${response.status} ${response.statusText}`);
+        const body = await response.json();
+
+        assertExists(body.url, "Response should contain a url"); 
+        assertEquals(typeof body.url, "string", "url should be a string");
+        assertEquals(body.url.startsWith("https://billing.stripe.com/"), true, "url should be a Stripe billing portal session URL"); 
     });
 
-     await t.step("Placeholder: Test Authentication Failures", async () => {
-        // TODO: Test endpoints without token, with invalid token etc.
-        assertEquals(true, true); // Placeholder assertion
+    await t.step("Failure: Test Authentication", async (testCtx) => {
+        const endpointsToTest = [
+            { method: "GET", path: `${API_SUBSCRIPTIONS_BASE_URL}/plans` },
+            { method: "POST", path: `${API_SUBSCRIPTIONS_BASE_URL}/checkout`, body: JSON.stringify({ priceId: "price_1RABirIskUlhzlIxSaAQpFe2", successUrl: "...".repeat(10), cancelUrl: "...".repeat(10) }) }, // Use dummy body for POST
+            // Add other endpoints like /current, /billing-portal if desired
+        ];
+
+        for (const endpoint of endpointsToTest) {
+            await testCtx.step(`Auth Fail ${endpoint.method} ${endpoint.path.split('/').pop()}: No JWT`, async () => {
+                const response = await fetch(endpoint.path, {
+                    method: endpoint.method,
+                    headers: {
+                        "apikey": ANON_KEY ?? "",
+                        ...(endpoint.body && { "Content-Type": "application/json" })
+                    },
+                    ...(endpoint.body && { body: endpoint.body })
+                });
+                assertEquals(response.status, 401, `Expected 401 Unauthorized without JWT for ${endpoint.method} ${endpoint.path}`);
+                await response.body?.cancel(); // Consume body to prevent resource leaks
+            });
+
+            await testCtx.step(`Auth Fail ${endpoint.method} ${endpoint.path.split('/').pop()}: Invalid JWT`, async () => {
+                const response = await fetch(endpoint.path, {
+                    method: endpoint.method,
+                    headers: {
+                        "Authorization": "Bearer invalid-token",
+                        "apikey": ANON_KEY ?? "",
+                        ...(endpoint.body && { "Content-Type": "application/json" })
+                    },
+                    ...(endpoint.body && { body: endpoint.body })
+                });
+                assertEquals(response.status, 401, `Expected 401 Unauthorized with invalid JWT for ${endpoint.method} ${endpoint.path}`);
+                await response.body?.cancel();
+            });
+
+            // NOTE: The shared auth.ts currently doesn't check API key for functions, only for direct DB access.
+            // If API key validation *was* implemented in the function entry (index.ts) like in /profile,
+            // we would add a test case here. For now, it's skipped.
+            // await testCtx.step(`Auth Fail ${endpoint.method} ${endpoint.path.split('/').pop()}: No API Key`, async () => {
+            //     const response = await fetch(endpoint.path, {
+            //         method: endpoint.method,
+            //         headers: {
+            //             "Authorization": `Bearer ${userToken}`,
+            //             ...(endpoint.body && { "Content-Type": "application/json" })
+            //         },
+            //         ...(endpoint.body && { body: endpoint.body })
+            //     });
+            //     assertEquals(response.status, 401, `Expected 401 Unauthorized without API Key for ${endpoint.method} ${endpoint.path}`);
+            //     await response.body?.cancel();
+            // });
+        }
     });
 
     // Cleanup

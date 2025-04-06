@@ -74,13 +74,17 @@ const defaultDependencies: ApiSubscriptionsDependencies = {
 // --- Core Logic ---
 
 export async function handleApiSubscriptionsRequest(req: Request, deps: ApiSubscriptionsDependencies): Promise<Response> {
-  // --- DEBUGGING START ---
-  // console.log("[api-subscriptions-debug] Checking env vars at start of request:");
-  // const testModeEnv = Deno.env.get('STRIPE_TEST_MODE');
-  // const secretTestKeyEnv = Deno.env.get('STRIPE_SECRET_TEST_KEY');
-  // console.log(`[api-subscriptions-debug] Deno.env.get('STRIPE_TEST_MODE') = ${testModeEnv}`);
-  // console.log(`[api-subscriptions-debug] Deno.env.get('STRIPE_SECRET_TEST_KEY') = ${secretTestKeyEnv}`);
-  // --- DEBUGGING END ---
+  // ---> Add EARLY logging <---
+  console.log(`[api-subscriptions] START Request: ${req.method} ${req.url}`);
+  try {
+      // Log environment variables specifically needed for Stripe
+      const testModeEnv = Deno.env.get('STRIPE_TEST_MODE');
+      const secretTestKeyEnv = Deno.env.get('STRIPE_SECRET_TEST_KEY');
+      console.log(`[api-subscriptions] Env Vars Check: STRIPE_TEST_MODE=${testModeEnv}, STRIPE_SECRET_TEST_KEY=${secretTestKeyEnv ? 'Loaded' : 'MISSING!'}`);
+  } catch (envError) {
+      console.error("[api-subscriptions] Error accessing Deno.env at start:", envError);
+  }
+  // ---> End EARLY logging <---
 
   const {
       handleCorsPreflightRequest,
@@ -118,12 +122,12 @@ export async function handleApiSubscriptionsRequest(req: Request, deps: ApiSubsc
             const { data: { user }, error: authError } = await getUser(supabase);
             
             if (authError || !user) {
-                // console.warn("[api-subscriptions] Authentication failed:", authError?.message || 'No user');
+                console.warn("[api-subscriptions] Authentication failed:", authError?.message || 'No user');
                 return createUnauthorizedResponse(authError?.message || "Authentication failed");
             }
             userId = user.id;
         } catch (clientError) {
-             // console.error("[api-subscriptions] Failed to create or use Supabase client:", clientError);
+             console.error("[api-subscriptions] Failed to create or use Supabase client:", clientError);
              return createErrorResponse("Internal configuration error", 500);
         }
     }
@@ -135,7 +139,7 @@ export async function handleApiSubscriptionsRequest(req: Request, deps: ApiSubsc
     // Check if Supabase client is available for routes that require it (most of them)
     // If method is OPTIONS, supabase will be null, but that's handled by the CORS return
     if (req.method !== "OPTIONS" && !supabase) {
-         // console.error("[api-subscriptions] Supabase client unexpectedly null after initial check.");
+         console.error("[api-subscriptions] Supabase client unexpectedly null after initial check.");
          return createErrorResponse("Internal server error", 500);
     }
 
@@ -154,7 +158,7 @@ export async function handleApiSubscriptionsRequest(req: Request, deps: ApiSubsc
       }
     }
     if (parseError) {
-         // console.warn(`[api-subscriptions] Invalid JSON body for ${req.method} ${path}`);
+         console.warn(`[api-subscriptions] Invalid JSON body for ${req.method} ${path}`);
          return createErrorResponse("Invalid JSON body", 400);
     }
 
@@ -162,9 +166,14 @@ export async function handleApiSubscriptionsRequest(req: Request, deps: ApiSubsc
     const isTestMode = getStripeMode(requestData as Record<string, any>);
     let stripe: Stripe | null = null;
     try {
+        // ---> Add logging around Stripe init <---
+        console.log(`[api-subscriptions] Attempting to initialize Stripe client. TestMode=${isTestMode}`);
         stripe = getStripeClient(isTestMode);
+        console.log("[api-subscriptions] Stripe client initialized successfully.");
+        // ---> End logging <---
     } catch (stripeError) {
-        // console.error("[api-subscriptions] Failed to initialize Stripe client:", stripeError);
+        // Existing error log is here
+        console.error("[api-subscriptions] Failed to initialize Stripe client:", stripeError);
         return createErrorResponse("Stripe configuration error", 500);
     }
 
@@ -176,7 +185,7 @@ export async function handleApiSubscriptionsRequest(req: Request, deps: ApiSubsc
            return createErrorResponse("Method Not Allowed", 405);
        }
        if (!userId || !supabase) { // Double-check for safety
-           // console.error("[api-subscriptions] Programming error: userId or supabase null in routing block.");
+           console.error("[api-subscriptions] Programming error: userId or supabase null in routing block.");
            return createErrorResponse("Internal Server Error", 500);
        }
 
@@ -193,7 +202,12 @@ export async function handleApiSubscriptionsRequest(req: Request, deps: ApiSubsc
       // POST /checkout - Create checkout session
       else if (path === "/checkout" && req.method === "POST") {
         if (!stripe) throw new Error("Stripe client not available");
-        return await createCheckoutSession(supabase, stripe, userId, requestData as any, isTestMode);
+        // Pass the required dependencies (response creators) to the handler
+        const handlerDeps = { 
+          createErrorResponse: deps.createErrorResponse,
+          createSuccessResponse: deps.createSuccessResponse
+        };
+        return await createCheckoutSession(supabase, stripe, userId, requestData as any, isTestMode, handlerDeps);
       }
 
       // POST /:id/cancel - Cancel subscription
@@ -228,12 +242,12 @@ export async function handleApiSubscriptionsRequest(req: Request, deps: ApiSubsc
       }
     } catch (routeError) {
       // Catch errors thrown *within* the route handlers
-      // console.error(`[api-subscriptions] Error in route handler for ${req.method} ${path}:`, routeError);
+      console.error(`[api-subscriptions] Error in route handler for ${req.method} ${path}:`, routeError);
       return createErrorResponse(routeError.message || "Handler error", 500);
     }
   } catch (error) {
     // Catch errors during setup (auth, client creation, parsing etc.)
-    // console.error("[api-subscriptions] Unexpected setup error:", error);
+    console.error("[api-subscriptions] Unexpected setup error:", error);
     return createErrorResponse(error.message || "Internal server error", 500);
   }
 }

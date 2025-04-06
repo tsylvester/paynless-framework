@@ -108,7 +108,11 @@ Deno.test("Me Function (/me) Tests", async (t) => {
             
             assertEquals(res.status, 200);
             const body = await res.json();
-            assertEquals(body, mockProfile);
+            assertExists(body.user, "Response should contain user object");
+            assertExists(body.profile, "Response should contain profile object");
+            assertEquals(body.user.id, mockUser.id, "User ID mismatch");
+            assertEquals(body.profile.id, mockProfile.id, "Profile ID mismatch");
+            assertEquals(body.profile.username, mockProfile.username, "Profile username mismatch");
 
             const client = mockDeps.createSupabaseClient();
             assertSpyCall(mockDeps.verifyApiKey, 0);

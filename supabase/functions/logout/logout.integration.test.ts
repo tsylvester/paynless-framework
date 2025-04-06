@@ -42,7 +42,7 @@ Deno.test("/logout Integration Tests", async (t) => {
             method: "POST", // Use POST as per convention/refactor
             headers: {
                 "Authorization": `Bearer ${accessToken}`,
-                // No API key needed now
+                "apikey": ANON_KEY // Add API key header
             },
         });
         

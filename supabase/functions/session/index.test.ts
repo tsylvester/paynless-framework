@@ -31,7 +31,14 @@ Deno.test("Session Function Tests", async (t) => {
             error: null 
         }));
         const mockProfileFetchResult: PostgrestSingleResponse<any> = { data: { id: 'user-123', name: 'Test User' }, error: null, status: 200, statusText: 'OK', count: 1 };
-        const mockFrom = spy(() => ({ select: spy(() => ({ eq: spy(() => ({ single: spy(() => Promise.resolve(mockProfileFetchResult)) })) })) }));
+        const mockMaybeSingle = spy(() => Promise.resolve(mockProfileFetchResult));
+        const mockFrom = spy(() => ({ 
+            select: spy(() => ({ 
+                eq: spy(() => ({ 
+                    maybeSingle: mockMaybeSingle
+                })) 
+            })) 
+        }));
 
         const mockClient = {
             auth: { 
@@ -111,7 +118,7 @@ Deno.test("Session Function Tests", async (t) => {
             const mockProfileRes: PostgrestSingleResponse<any> = { data: mockProfile, error: null, status: 200, count: 1, statusText: "OK" };
             const mockGetUser = spy(async (token?: string) => token === 'valid-access' ? { data: { user: mockUser }, error: null } : { data: { user: null }, error: new Error("Invalid") as AuthError});
             const mockSingle = spy(() => Promise.resolve(mockProfileRes));
-            const mockFrom = spy(() => ({ select: spy(() => ({ eq: spy(() => ({ single: mockSingle })) })) }));
+            const mockFrom = spy(() => ({ select: spy(() => ({ eq: spy(() => ({ maybeSingle: mockSingle })) })) }));
             const mockClient = { auth: { getUser: mockGetUser }, from: mockFrom };
             const mockDeps = createMockDeps({ createSupabaseClient: spy(() => mockClient as any) });
 
@@ -136,7 +143,13 @@ Deno.test("Session Function Tests", async (t) => {
             const mockProfileError: PostgrestSingleResponse<any> = { data: null, error: { message: 'DB error' } as any, status: 500, count: 0, statusText: "Error" };
             const mockGetUser = spy(async () => ({ data: { user: mockUser }, error: null }));
             const mockSingleError = spy(() => Promise.resolve(mockProfileError));
-            const mockFromError = spy(() => ({ select: spy(() => ({ eq: spy(() => ({ single: mockSingleError })) })) }));
+            const mockFromError = spy(() => ({ 
+                select: spy(() => ({ 
+                    eq: spy(() => ({ 
+                        maybeSingle: mockSingleError
+                    })) 
+                })) 
+            }));
             const mockClient = { auth: { getUser: mockGetUser }, from: mockFromError };
             const mockDeps = createMockDeps({ createSupabaseClient: spy(() => mockClient as any) });
 
@@ -150,7 +163,7 @@ Deno.test("Session Function Tests", async (t) => {
             const body = await res.json();
             assertEquals(body, { user: mockUser, profile: null }); // Profile is null
             assertSpyCall(mockGetUser, 0);
-            assertSpyCall(mockSingleError, 0);
+            assertSpyCall(mockFromError, 0);
             assertSpyCall(mockDeps.createSuccessResponse, 0);
         });
 
@@ -162,7 +175,13 @@ Deno.test("Session Function Tests", async (t) => {
             const mockGetUser = spy(async () => ({ data: { user: null }, error: new Error("Invalid token") as AuthError })); // getUser fails
             const mockRefreshSession = spy(async () => ({ data: { user: mockUser, session: mockNewSession }, error: null })); // refresh succeeds
             const mockSingle = spy(() => Promise.resolve(mockProfileRes)); // profile fetch succeeds
-            const mockFrom = spy(() => ({ select: spy(() => ({ eq: spy(() => ({ single: mockSingle })) })) }));
+            const mockFrom = spy(() => ({ 
+                select: spy(() => ({ 
+                    eq: spy(() => ({ 
+                        maybeSingle: mockSingle
+                    })) 
+                })) 
+            }));
             const mockClient = { auth: { getUser: mockGetUser, refreshSession: mockRefreshSession }, from: mockFrom };
             const mockDeps = createMockDeps({ createSupabaseClient: spy(() => mockClient as any) });
             
@@ -189,7 +208,13 @@ Deno.test("Session Function Tests", async (t) => {
             const mockGetUser = spy(async () => ({ data: { user: null }, error: new Error("Invalid token") as AuthError })); 
             const mockRefreshSession = spy(async () => ({ data: { user: mockUser, session: mockNewSession }, error: null })); 
             const mockSingleError = spy(() => Promise.resolve(mockProfileError)); // profile fetch fails
-            const mockFromError = spy(() => ({ select: spy(() => ({ eq: spy(() => ({ single: mockSingleError })) })) }));
+            const mockFromError = spy(() => ({ 
+                select: spy(() => ({ 
+                    eq: spy(() => ({ 
+                        maybeSingle: mockSingleError
+                    })) 
+                })) 
+            }));
             const mockClient = { auth: { getUser: mockGetUser, refreshSession: mockRefreshSession }, from: mockFromError };
             const mockDeps = createMockDeps({ createSupabaseClient: spy(() => mockClient as any) });
 
@@ -204,7 +229,7 @@ Deno.test("Session Function Tests", async (t) => {
             assertEquals(body, { user: mockUser, session: mockNewSession, profile: null }); // Profile is null
             assertSpyCall(mockGetUser, 0);
             assertSpyCall(mockRefreshSession, 0);
-            assertSpyCall(mockSingleError, 0);
+            assertSpyCall(mockFromError, 0);
             assertSpyCall(mockDeps.createSuccessResponse, 0); 
             assertSpyCalls(mockDeps.createErrorResponse, 0);
         });

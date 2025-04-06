@@ -22,7 +22,9 @@ let config: ApiClientConfig | null = null;
 
 export function initializeApiClient(newConfig: ApiClientConfig) {
   if (config) {
-    logger.warn('API Client already initialized. Re-initializing...');
+    // logger.warn('API Client already initialized. Re-initializing...');
+    // Instead of warning, throw an error to enforce singleton initialization
+    throw new Error('API client already initialized');
   }
   // Validate config?
   if (!newConfig.baseUrl || !newConfig.supabaseAnonKey) {
@@ -32,6 +34,12 @@ export function initializeApiClient(newConfig: ApiClientConfig) {
   newConfig.baseUrl = newConfig.baseUrl.replace(/\/$/, '');
   config = newConfig;
   logger.info('API Client Initialized.', { baseUrl: config.baseUrl });
+}
+
+// Exported ONLY for testing purposes to reset the singleton state
+export function _resetApiClient() {
+  config = null;
+  logger.info('API Client reset for testing.');
 }
 
 // --- API Client --- 
@@ -111,11 +119,12 @@ async function apiClient<T = unknown>(
 
     logger.debug(`[apiClient ${endpoint}] Checking response.ok (${response.ok})...`); // Log 7
     if (!response.ok) {
-      const errorMessage = responseBody?.error?.message || `HTTP error ${response.status}`;
-      const errorCode = responseBody?.error?.code;
+      // Fix: Prioritize message/code directly on body, then nested error, then default
+      const errorMessage = responseBody?.message || responseBody?.error?.message || `HTTP error ${response.status}`;
+      const errorCode = responseBody?.code || responseBody?.error?.code; // Check both locations
       logger.error(`[apiClient ${endpoint}] Response not OK`, { status: response.status, errorMessage, errorCode });
       const error = new ApiError(errorMessage);
-      error.code = errorCode || response.status;
+      error.code = errorCode || response.status; // Use code from body if available, otherwise status
       throw error;
     }
 

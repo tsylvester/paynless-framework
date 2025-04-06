@@ -4,10 +4,10 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "vite",
-    "build": "tsc && vite build",
+    "dev": "nx serve",
+    "build": "tsc && nx vite:build",
     "lint": "eslint . --fix",
-    "preview": "vite preview"
+    "preview": "nx vite:preview"
   },
   "dependencies": {
     "@emotion/react": "^11.14.0",

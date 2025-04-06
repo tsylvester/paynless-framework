@@ -5,8 +5,8 @@
   "type": "module",
   "scripts": {
     "dev": "tauri dev",
-    "build": "tsc && vite build",
-    "preview": "vite preview",
+    "build": "tsc && nx vite:build",
+    "preview": "nx vite:preview",
     "tauri": "tauri"
   },
   "dependencies": {

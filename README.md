@@ -39,6 +39,29 @@ The architecture follows these principles:
 - Consistent error handling and response formatting via `apiClient`
 - State management primarily using Zustand stores
 
+Test Incrementally From the Bottom Up
+1. Start with Unit Tests
+- Write unit tests for the file or module you're working on.
+- Run the unit test(s) for that file.
+- Fix the code until all unit tests pass.
+
+2. Move to Integration
+- Once all relevant unit tests pass, run integration tests that depend on those files/modules.
+- If integration tests fail, fix the relevant files — this may require updating multiple modules.
+- Once integration tests pass, review and update your unit tests if the behavior or signatures changed.
+- Rerun affected unit tests to ensure they still pass with the integrated logic.
+
+Why? Integration fixes may change interfaces or logic that your unit tests previously assumed.
+
+3. Stabilize by Layer
+- Ensure all unit tests pass after updates.
+- Ensure all integration tests pass after updates.
+- Only then run the full test suite (unit + integration) across the workspace.
+
+4. End-to-End Validation
+- Once the system passes unit and integration layers, run full end-to-end (E2E) tests.
+- Fix or update E2E tests and supporting mocks if needed.
+
 ## API Endpoints (Supabase Edge Functions)
 
 The application exposes the following primary API endpoints through Supabase Edge Functions:

@@ -1,6 +1,5 @@
 {
   "compilerOptions": {
-    // Type Checking
     "strict": true,
     "noImplicitAny": true,
     "strictNullChecks": true,
@@ -12,51 +11,40 @@
     "alwaysStrict": true,
     "noUnusedLocals": true,
     "noUnusedParameters": true,
-    "exactOptionalPropertyTypes": false, // Consider enabling later
+    "exactOptionalPropertyTypes": false,
     "noImplicitReturns": true,
     "noFallthroughCasesInSwitch": true,
-    "noUncheckedIndexedAccess": false, // Can be noisy, enable if desired
+    "noUncheckedIndexedAccess": false,
     "noImplicitOverride": true,
     "noPropertyAccessFromIndexSignature": true,
-
-    // Modules
     "module": "ESNext",
-    "moduleResolution": "node", // Changed from Bundler to Node for better compatibility
-    "baseUrl": ".", // Needed for path aliases
+    "moduleResolution": "node",
+    "baseUrl": ".",
     "paths": {
-      "@paynless/*": ["packages/*/src"]
+      "@paynless/*": [
+        "packages/*/src"
+      ]
     },
     "resolveJsonModule": true,
-
-    // Emit
     "declaration": true,
     "declarationMap": true,
     "sourceMap": true,
-    "outDir": "dist", // Default output, packages can override
+    "outDir": "dist",
     "removeComments": false,
-    "composite": true, // Enable for project references
-    "incremental": true, // Faster builds in monorepo
-
-    // JavaScript Support
+    "composite": true,
+    "incremental": true,
     "allowJs": false,
     "checkJs": false,
-
-    // Interop Constraints
-    "isolatedModules": true, // Ensures files can be transpiled independently
+    "isolatedModules": true,
     "allowSyntheticDefaultImports": true,
     "esModuleInterop": true,
     "forceConsistentCasingInFileNames": true,
-
-    // Language and Environment
     "target": "ESNext",
-    "lib": ["ESNext"], // Base lib, apps/packages will add more (like "DOM")
-    "jsx": "react-jsx", // Default JSX, apps/packages can override if needed
+    "lib": [
+      "ESNext"
+    ],
+    "jsx": "react-jsx",
     "useDefineForClassFields": true,
-
-    // Completeness
-    "skipLibCheck": true // Skip type checking of declaration files (node_modules)
-  },
-  // Typically, base doesn't include/exclude files directly
-  // "include": [], 
-  // "exclude": ["node_modules"]
-} 
+    "skipLibCheck": true
+  }
+}

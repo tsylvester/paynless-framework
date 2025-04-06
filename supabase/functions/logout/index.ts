@@ -6,11 +6,17 @@ import {
   createSuccessResponse as actualCreateSuccessResponse,
   handleCorsPreflightRequest as actualHandleCorsPreflightRequest 
 } from "../_shared/cors-headers.ts";
-import { createSupabaseClient as actualCreateSupabaseClient } from "../_shared/auth.ts";
+import { 
+    createSupabaseClient as actualCreateSupabaseClient, 
+    verifyApiKey as actualVerifyApiKey, 
+    createUnauthorizedResponse as actualCreateUnauthorizedResponse 
+} from "../_shared/auth.ts";
 
 // Define dependencies
 export interface LogoutHandlerDeps {
     handleCorsPreflightRequest: (req: Request) => Response | null;
+    verifyApiKey: typeof actualVerifyApiKey;
+    createUnauthorizedResponse: typeof actualCreateUnauthorizedResponse;
     createErrorResponse: (message: string, status?: number) => Response;
     createSuccessResponse: (data: unknown, status?: number) => Response;
     createSupabaseClient: typeof actualCreateSupabaseClient;
@@ -20,6 +26,8 @@ export interface LogoutHandlerDeps {
 // Default dependencies
 const defaultDeps: LogoutHandlerDeps = {
     handleCorsPreflightRequest: actualHandleCorsPreflightRequest,
+    verifyApiKey: actualVerifyApiKey,
+    createUnauthorizedResponse: actualCreateUnauthorizedResponse,
     createErrorResponse: actualCreateErrorResponse,
     createSuccessResponse: actualCreateSuccessResponse,
     createSupabaseClient: actualCreateSupabaseClient,
@@ -34,6 +42,11 @@ export async function handleLogoutRequest(
   // Use injected dependencies
   const corsResponse = deps.handleCorsPreflightRequest(req);
   if (corsResponse) return corsResponse;
+
+  // Verify API key first
+  if (!deps.verifyApiKey(req)) {
+      return deps.createUnauthorizedResponse("Invalid or missing apikey");
+  }
 
   if (req.method !== 'POST') {
       return deps.createErrorResponse('Method Not Allowed', 405);
@@ -60,10 +73,9 @@ export async function handleLogoutRequest(
 
   } catch (error) {
     console.error("[logout/index.ts] Error in logout handler:", error);
-    return deps.createErrorResponse(
-        error instanceof Error ? error.message : "Internal server error", 
-        error.message?.includes("Unauthorized") ? 401 : 500
-    );
+    const message = error instanceof Error ? error.message : "Internal server error";
+    const status = error instanceof Error && error.message?.includes("Unauthorized") ? 401 : 500;
+    return deps.createErrorResponse(message, status);
   }
 }
 

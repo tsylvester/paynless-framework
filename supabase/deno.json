@@ -1,4 +1,5 @@
 {
+  "importMap": "./import_map.json",
   "nodeModulesDir": "auto",
   "compilerOptions": {
       "jsx": "react-jsx",

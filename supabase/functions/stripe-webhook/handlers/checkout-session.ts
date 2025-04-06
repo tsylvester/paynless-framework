@@ -60,6 +60,9 @@ export const handleCheckoutSessionCompleted = async (
         console.error(`[${functionName}] Error upserting transaction as processing:`, upsertProcessingError);
         // Decide if you should throw or try to continue
         throw new Error(`DB error starting transaction log: ${upsertProcessingError.message}`);
+    } else {
+        // Explicitly log success of initial upsert
+        console.log(`[${functionName}] Successfully upserted transaction ${eventId} with status 'processing'.`);
     }
 
   try {
@@ -120,14 +123,27 @@ export const handleCheckoutSessionCompleted = async (
     console.log(`[${functionName}] Skipping direct user_subscription update - expecting separate subscription event.`);
 
     // --- 4. Finalize Transaction Log (Mark as Succeeded) ---
-    const { error: updateSuccessError } = await supabase
+    console.log(`[${functionName}] Attempting to mark transaction ${eventId} as succeeded.`); // Log before update
+    const { data: updateData, error: updateSuccessError, count: updateCount } = await supabase
       .from('subscription_transactions')
       .update({ status: 'succeeded', updated_at: new Date().toISOString() })
-      .eq('stripe_event_id', eventId);
+      .eq('stripe_event_id', eventId)
+      .select(); // Add select() to get the updated row count or data
 
     if (updateSuccessError) {
-      // Log error but don't necessarily throw, main logic might be done
-      console.error(`[${functionName}] Failed to mark transaction ${eventId} as succeeded:`, updateSuccessError);
+      // Log error AND re-throw to signal failure
+      console.error(`[${functionName}] CRITICAL: Failed to mark transaction ${eventId} as succeeded:`, updateSuccessError);
+      throw new Error(`Failed to update transaction log status: ${updateSuccessError.message}`);
+    }
+
+    // Log the result of the update attempt
+    console.log(`[${functionName}] Update result for transaction ${eventId}: Count=${updateCount}, Data=${JSON.stringify(updateData)}`);
+
+    // Add an explicit check for updateCount
+    if (updateCount === 0) {
+        console.error(`[${functionName}] CRITICAL: Update operation affected 0 rows for event ${eventId}. Row might not have existed or match failed.`);
+        // Decide if this should also throw an error
+        throw new Error(`Failed to update transaction log status: Update affected 0 rows.`);
     }
     
     console.log(`[${functionName}] Successfully processed event ID: ${eventId}`);

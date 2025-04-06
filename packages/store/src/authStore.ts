@@ -34,7 +34,7 @@ export const useAuthStore = create<AuthStoreType>()(
       login: async (email: string, password: string): Promise<User | null> => {
         set({ isLoading: true, error: null });
         try {
-          const result = await api.post<AuthResponse>('login', { email, password }, { isPublic: true });
+          const result = await api.post<AuthResponse>('/login', { email, password });
           
           set({
             user: result.user,
@@ -60,12 +60,12 @@ export const useAuthStore = create<AuthStoreType>()(
       register: async (email: string, password: string): Promise<User | null> => {
         set({ isLoading: true, error: null });
         try {
-          const result = await api.post<AuthResponse>('register', { email, password }, { isPublic: true });
+          const result = await api.post<AuthResponse>('/register', { email, password });
           
           set({
             user: result.user,
             session: result.session,
-            profile: result.profile,
+            profile: null,
             isLoading: false,
             error: null,
           });
@@ -86,7 +86,7 @@ export const useAuthStore = create<AuthStoreType>()(
       logout: async () => {
         set({ isLoading: true, error: null }); 
         try {
-          await api.post('logout', {}); 
+          await api.post('/logout', {}); 
           logger.info('AuthStore: Logout API call successful.');
         } catch (error) {
           logger.error('Logout error caught in store', { 

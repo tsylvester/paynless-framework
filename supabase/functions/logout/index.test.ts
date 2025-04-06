@@ -5,61 +5,72 @@ import { spy, assertSpyCall, assertSpyCalls, stub } from "jsr:@std/testing@0.225
 import { handleLogoutRequest, type LogoutHandlerDeps } from "./index.ts";
 
 // Import types needed for mocks
-import type { SupabaseClientOptions, SupabaseClient, AuthError } from "@supabase/supabase-js";
+import type { SupabaseClient, AuthError } from "@supabase/supabase-js";
+import { verifyApiKey as actualVerifyApiKey, createUnauthorizedResponse as actualCreateUnauthorizedResponse } from "../_shared/auth.ts"; // Import actuals for type signature
 
 // --- Test Cases ---
 Deno.test("Logout Function Tests", async (t) => {
 
-    // --- Helper to create Mock Dependencies ---
-    const createMockDeps = (overrides: Partial<LogoutHandlerDeps> = {}): LogoutHandlerDeps => {
-        // Default mock client setup
-        const mockSignOut = spy(async (): Promise<{ error: AuthError | null }> => ({ error: null })); // Default: success
-        const mockClient = {
-            auth: { signOut: mockSignOut }
-        };
-        
-        return {
-            handleCorsPreflightRequest: spy((_req: Request) => null), 
-            verifyApiKey: spy((_req: Request) => true), // Default: valid
-            createUnauthorizedResponse: spy((msg: string) => new Response(JSON.stringify({ error: msg }), { status: 401 })),
-            createErrorResponse: spy((msg: string, status?: number) => new Response(JSON.stringify({ error: msg }), { status: status || 500 })),
-            createSuccessResponse: spy((data: unknown, status = 200) => new Response(JSON.stringify(data), { status })),
-            createSupabaseClient: spy(() => mockClient as any), 
-            ...overrides,
-        };
-    };
-    
-    // Mock Deno.env.get once
-    const envGetStub = stub(Deno.env, "get", (key: string): string | undefined => {
-        if (key === 'SUPABASE_URL') return 'http://localhost:54321';
-        if (key === 'SUPABASE_ANON_KEY') return 'test-anon-key';
-        return undefined;
-    });
+    // Mock Deno.env.get once for the whole suite if needed by the module itself (unlikely here)
+    const envGetStub = stub(Deno.env, "get"); // Keep it simple unless needed
 
-    // --- Actual Tests --- 
     try {
+
+        // Helper to create default mocks, easily overridable
+        const createMockDeps = (overrides: Partial<LogoutHandlerDeps> = {}): LogoutHandlerDeps => {
+            const baseDeps: LogoutHandlerDeps = {
+                handleCorsPreflightRequest: spy(() => null), // Default: Not a CORS request
+                verifyApiKey: spy(() => true), // Default: API key is valid
+                createUnauthorizedResponse: spy((message: string) => new Response(JSON.stringify({ error: message }), { status: 401 })),
+                createErrorResponse: spy((message: string, status?: number) => new Response(JSON.stringify({ error: message }), { status: status || 500 })),
+                createSuccessResponse: spy((data: unknown, status?: number) => new Response(JSON.stringify(data), { status: typeof status === 'number' ? status : 200 })),
+                createSupabaseClient: spy(() => ({ auth: { signOut: spy(async () => ({ error: null })) } } as any)), // Default: Creates client successfully, signOut works
+                signOut: spy(async () => ({ error: null })), // Default: signOut works
+                ...overrides, // Apply specific overrides for the test
+            };
+            return baseDeps;
+        };
 
         await t.step("OPTIONS request should handle CORS preflight", async () => {
             const mockResponse = new Response(null, { status: 204, headers: { 'Access-Control-Allow-Origin': '*' } });
-            const mockDeps = createMockDeps({ 
-                handleCorsPreflightRequest: spy(() => mockResponse) 
-            });
+            const handleCorsSpy = spy(() => mockResponse);
+            const mockDeps = createMockDeps({ handleCorsPreflightRequest: handleCorsSpy });
+
             const req = new Request('http://example.com/logout', { method: 'OPTIONS' });
             const res = await handleLogoutRequest(req, mockDeps);
             assertEquals(res, mockResponse);
-            assertSpyCall(mockDeps.handleCorsPreflightRequest, 0);
+            assertSpyCall(handleCorsSpy, 0);
+            // API key check shouldn't happen for OPTIONS
             assertSpyCalls(mockDeps.verifyApiKey, 0);
         });
 
-        await t.step("Request without API key should return 401 Unauthorized", async () => {
-            // Note: Assumes ANY method works if API key is missing, based on original code structure
-            const mockDeps = createMockDeps({ verifyApiKey: spy(() => false) });
-            const req = new Request('http://example.com/logout', { method: 'POST' }); // Use POST or any method
+        await t.step("POST request without API key should return 401 Unauthorized", async () => {
+            const mockDeps = createMockDeps({ 
+                verifyApiKey: spy(() => false) // Mock verifyApiKey to return false
+            });
+            const req = new Request('http://example.com/logout', { method: 'POST' });
             const res = await handleLogoutRequest(req, mockDeps);
             assertEquals(res.status, 401);
+            assertSpyCall(mockDeps.verifyApiKey, 0); // Ensure verifyApiKey was called
             assertSpyCall(mockDeps.createUnauthorizedResponse, 0, { args: ["Invalid or missing apikey"] });
-            assertSpyCall(mockDeps.verifyApiKey, 0);
-            assertSpyCalls(mockDeps.createSupabaseClient, 0); // Client shouldn't be created
+            // Other dependencies should not have been called
+            assertSpyCalls(mockDeps.createSupabaseClient, 0);
+            assertSpyCalls(mockDeps.signOut!, 0);
+        });
+
+        await t.step("Request without valid Authorization header should return 401/500", async () => {
+            const mockError = new Error("Unauthorized - Missing or invalid token");
+            const mockCreateClient = spy(() => { throw mockError; });
+            const mockDeps = createMockDeps({ 
+                createSupabaseClient: mockCreateClient, // Override client creation to throw
+                // verifyApiKey is default true here
+            });
+            const req = new Request('http://example.com/logout', { method: 'POST' });
+            const res = await handleLogoutRequest(req, mockDeps);
+            assertEquals(res.status, 401); // Expecting 401 because createSupabaseClient throws an Unauthorized error
+            assertSpyCall(mockDeps.verifyApiKey, 0); // API key check passed
+            assertSpyCall(mockDeps.createSupabaseClient, 0);
+            assertSpyCall(mockDeps.createErrorResponse, 0, { args: [mockError.message, 401] }); 
         });
 
         await t.step("Supabase signOut error should return 500", async () => {
@@ -67,33 +78,41 @@ Deno.test("Logout Function Tests", async (t) => {
             mockError.name = 'AuthApiError';
             const mockSignOutError = spy(async (): Promise<{ error: AuthError | null }> => ({ error: mockError }));
             const mockClientError = { auth: { signOut: mockSignOutError } };
-            const mockDeps = createMockDeps({ createSupabaseClient: spy(() => mockClientError as any) });
+            const mockCreateClient = spy(() => mockClientError as any);
             
-            const req = new Request('http://example.com/logout', { method: 'POST' }); // Use POST or any method
+            const mockDeps = createMockDeps({ 
+                createSupabaseClient: mockCreateClient, 
+                signOut: mockSignOutError 
+            });
+            
+            const req = new Request('http://example.com/logout', { method: 'POST' }); 
             const res = await handleLogoutRequest(req, mockDeps);
             
             assertEquals(res.status, 500);
+            assertSpyCall(mockDeps.verifyApiKey, 0); // API key check passed
             assertSpyCall(mockDeps.createSupabaseClient, 0);
-            assertSpyCall(mockSignOutError, 0);
+            assertSpyCall(mockDeps.signOut!, 0);
             assertSpyCall(mockDeps.createErrorResponse, 0, { args: [mockError.message, 500] });
-            assertSpyCalls(mockDeps.createSuccessResponse, 0);
         });
         
         await t.step("Successful signOut should return 200 with message", async () => {
-            // Use default mockDeps which mocks successful signOut
-            const mockDeps = createMockDeps(); 
-            const req = new Request('http://example.com/logout', { method: 'POST' }); // Use POST or any method
+            const mockSignOutSuccess = spy(async (): Promise<{ error: AuthError | null }> => ({ error: null }));
+            const mockClientSuccess = { auth: { signOut: mockSignOutSuccess } }; 
+            const mockCreateClient = spy(() => mockClientSuccess as any);
+
+            const mockDeps = createMockDeps({ 
+                createSupabaseClient: mockCreateClient,
+                signOut: mockSignOutSuccess 
+            }); 
+            const req = new Request('http://example.com/logout', { method: 'POST' }); 
             const res = await handleLogoutRequest(req, mockDeps);
 
             assertEquals(res.status, 200);
             const body = await res.json();
             assertEquals(body, { message: "Successfully signed out" });
+            assertSpyCall(mockDeps.verifyApiKey, 0); // API key check passed
             assertSpyCall(mockDeps.createSupabaseClient, 0);
-            // Find the actual signOut spy via the client spy
-            const clientSpy = mockDeps.createSupabaseClient as any; // Get the createClient spy
-            assertSpyCall(clientSpy, 0); // Ensure client was created
-            const clientInstance = clientSpy.calls[0].returned; // Get the returned mock client
-            assertSpyCall(clientInstance.auth.signOut, 0); // Assert signOut was called on the instance
+            assertSpyCall(mockDeps.signOut!, 0);
             assertSpyCall(mockDeps.createSuccessResponse, 0, { args: [{ message: "Successfully signed out" }] });
             assertSpyCalls(mockDeps.createErrorResponse, 0);
         });

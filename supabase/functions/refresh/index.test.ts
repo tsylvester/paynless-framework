@@ -29,12 +29,24 @@ Deno.test("Refresh Function Tests", async (t) => {
             expires_at: Date.now() + 3600 * 1000,
             token_type: 'bearer'
         } as any;
-        const mockRefreshSession = spy(async (_args?: { refresh_token: string }): Promise<AuthResponse> => ({ 
-            data: { user: mockUser, session: mockSession }, 
-            error: null 
-        }));
+        const mockRefreshSession = spy(async (_args?: { refresh_token: string }): Promise<AuthResponse> => {
+            // --> Add logging <--
+            console.log("[Mock refreshSession] Called. Returning mock data.");
+            // --> End logging <--
+            return { 
+                data: { user: mockUser, session: mockSession }, 
+                error: null 
+            }
+        });
         const mockProfileFetchResult: PostgrestSingleResponse<any> = { data: { id: 'user-789', name: 'Refresh User' }, error: null, status: 200, statusText: 'OK', count: 1 };
-        const mockFrom = spy(() => ({ select: spy(() => ({ eq: spy(() => ({ single: spy(() => Promise.resolve(mockProfileFetchResult)) })) })) }));
+        const mockMaybeSingle = spy(() => Promise.resolve(mockProfileFetchResult));
+        const mockFrom = spy(() => ({ 
+            select: spy(() => ({ 
+                eq: spy(() => ({ 
+                    maybeSingle: mockMaybeSingle
+                })) 
+            })) 
+        }));
 
         const mockClient = {
             auth: { refreshSession: mockRefreshSession },
@@ -104,30 +116,60 @@ Deno.test("Refresh Function Tests", async (t) => {
             
             assertEquals(res.status, 200);
             const body = await res.json();
-            const client = mockDeps.createSupabaseClient(); // Get the mock client instance used
-            const expectedSession = client.auth.refreshSession.calls[0].returned.data.session;
-            const expectedUser = client.auth.refreshSession.calls[0].returned.data.user;
-            const expectedProfile = client.from().select().eq().single.calls[0].returned.data;
-            
-            assertEquals(body.user, expectedUser);
-            assertEquals(body.profile, expectedProfile);
-            assertEquals(body.session.access_token, expectedSession.access_token);
-            assertEquals(body.session.refresh_token, expectedSession.refresh_token);
 
+            // Get the spies that were called
+            const actualClientInstanceUsedByHandler = mockDeps.createSupabaseClient.calls[0]?.returned;
+            assertExists(actualClientInstanceUsedByHandler, "createSupabaseClient spy should have been called and returned a value.");
+            const refreshSessionSpyUsedByHandler = actualClientInstanceUsedByHandler.auth.refreshSession;
+            const profileFetchSpyUsedByHandler = actualClientInstanceUsedByHandler.from('user_profiles').select().eq().maybeSingle;
+            
+            // Assert calls happened
+            assertSpyCall(refreshSessionSpyUsedByHandler, 0, { args: [{ refresh_token: 'good-refresh' }] });
+            assertSpyCall(profileFetchSpyUsedByHandler, 0);
+
+            // Directly assert the body content based on mock definitions
+            assertExists(body.user, "Response body should contain user");
+            assertExists(body.session, "Response body should contain session");
+            assertExists(body.profile, "Response body should contain profile");
+
+            // Compare body content to the data defined in the mock setup
+            const expectedMockProfile = { data: { id: 'user-789', name: 'Refresh User' }, error: null, status: 200, statusText: 'OK', count: 1 }; // from mockProfileFetchResult definition
+            const expectedMockUser = { id: 'user-789', email: 'refresh@example.com' }; // from mockUser definition
+            const expectedMockSession = { access_token: 'new-valid-access', refresh_token: 'new-valid-refresh' }; // Key parts from mockSession definition
+            
+            assertEquals(body.user.id, expectedMockUser.id);
+            assertEquals(body.profile.id, expectedMockProfile.data.id);
+            assertEquals(body.profile.name, expectedMockProfile.data.name);
+            assertEquals(body.session.access_token, expectedMockSession.access_token);
+            assertEquals(body.session.refresh_token, expectedMockSession.refresh_token);
+
+            // Check other spies
             assertSpyCall(mockDeps.verifyApiKey, 0);
             assertSpyCall(mockDeps.createSupabaseClient, 0);
-            assertSpyCall(client.auth.refreshSession, 0, { args: [{ refresh_token: 'good-refresh' }] });
-            assertSpyCall(client.from().select().eq().single, 0);
             assertSpyCall(mockDeps.createSuccessResponse, 0);
             assertSpyCalls(mockDeps.createErrorResponse, 0);
         });
 
         await t.step("Successful refresh, profile fetch error", async () => {
+            // Get standard mock user/session for the refresh success part
+            const tempDeps = createMockDeps();
+            const mockUser = tempDeps.createSupabaseClient().auth.refreshSession.calls[0]?.returned?.data?.user || { id: 'temp-user' };
+            const mockSession = tempDeps.createSupabaseClient().auth.refreshSession.calls[0]?.returned?.data?.session || { access_token: 'temp-token' };
+            
             const mockProfileError: PostgrestSingleResponse<any> = { data: null, error: { message: 'DB error' } as any, status: 500, count: 0, statusText: "Error" };
-            const mockSingleError = spy(() => Promise.resolve(mockProfileError));
-            const mockFromError = spy(() => ({ select: spy(() => ({ eq: spy(() => ({ single: mockSingleError })) })) }));
+            const mockMaybeSingleError = spy(() => Promise.resolve(mockProfileError));
+            const mockFromError = spy(() => ({ 
+                select: spy(() => ({ 
+                    eq: spy(() => ({ 
+                        maybeSingle: mockMaybeSingleError
+                    })) 
+                })) 
+            }));
+            // Mock refresh to succeed with valid user/session structure
+            const mockRefreshSuccess = spy(async () => ({ data: { user: mockUser, session: mockSession }, error: null })); 
+            
             const mockClient = {
-                auth: { refreshSession: spy(async () => ({ data: { user: {} as User, session: {} as Session }, error: null })) }, // Simulate successful refresh
+                auth: { refreshSession: mockRefreshSuccess }, // Simulate successful refresh
                 from: mockFromError // Simulate profile fetch failure
             };
             const mockDeps = createMockDeps({ createSupabaseClient: spy(() => mockClient as any) });
@@ -141,8 +183,9 @@ Deno.test("Refresh Function Tests", async (t) => {
             assertEquals(res.status, 200); // Still succeeds
             const body = await res.json();
             assertEquals(body.profile, null); // Profile is null
-            assertSpyCall(mockClient.auth.refreshSession, 0);
-            assertSpyCall(mockSingleError, 0);
+            // Check the correct spies were called
+            assertSpyCall(mockRefreshSuccess, 0);
+            assertSpyCall(mockMaybeSingleError, 0); // Now this should be called
             assertSpyCall(mockDeps.createSuccessResponse, 0);
             assertSpyCalls(mockDeps.createErrorResponse, 0);
         });

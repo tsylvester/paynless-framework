@@ -8,7 +8,8 @@
   "types": "./dist/index.d.ts", 
   "scripts": {
     "build": "tsc",
-    "lint": "eslint . --fix"
+    "lint": "eslint . --ext .ts,.tsx",
+    "test": "vitest run"
   },
   "dependencies": {
     "date-fns": "^3.5.0",

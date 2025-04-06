@@ -1,12 +1,16 @@
+// Add this line to provide Deno/Edge runtime types
+import "jsr:@supabase/functions-js/edge-runtime.d.ts";
+
 // Stripe webhook handler
-import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
-import { createClient, SupabaseClient } from "jsr:@supabase/supabase-js@2"; // Ensure SupabaseClient is imported
+import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
+import { createClient, SupabaseClient } from "npm:@supabase/supabase-js";
 import {
   createSupabaseAdminClient as defaultCreateSupabaseAdminClient
 } from "../_shared/auth.ts";
 import {
-  // getStripeClient, // Not directly used here anymore, verification uses its own
-  verifyWebhookSignature as defaultVerifyWebhookSignature
+  verifyWebhookSignature as defaultVerifyWebhookSignature,
+  getStripeMode,
+  getStripeClient as defaultCreateStripeClient
 } from "../_shared/stripe-client.ts";
 import {
   handleCorsPreflightRequest as defaultHandleCorsPreflightRequest,
@@ -26,19 +30,18 @@ interface WebhookDependencies {
   verifyWebhookSignature: (
     stripe: Stripe,
     payload: string,
-    signature: string,
-    secret: string
+    signature: string
   ) => Promise<Stripe.Event>;
   createSupabaseAdminClient: () => SupabaseClient;
   handleCorsPreflightRequest: (req: Request) => Response | null;
   createErrorResponse: (message: string, status: number) => Response;
   createSuccessResponse: (body?: Record<string, unknown>) => Response;
   // Event Handlers
-  handleCheckoutSessionCompleted: (supabase: SupabaseClient, session: Stripe.Checkout.Session, eventId: string, eventType: string) => Promise<void>;
-  handleSubscriptionUpdated: (supabase: SupabaseClient, subscription: Stripe.Subscription, eventId: string, eventType: string) => Promise<void>;
-  handleSubscriptionDeleted: (supabase: SupabaseClient, subscription: Stripe.Subscription, eventId: string, eventType: string) => Promise<void>;
-  handleInvoicePaymentSucceeded: (supabase: SupabaseClient, invoice: Stripe.Invoice, eventId: string, eventType: string) => Promise<void>;
-  handleInvoicePaymentFailed: (supabase: SupabaseClient, invoice: Stripe.Invoice, eventId: string, eventType: string) => Promise<void>;
+  handleCheckoutSessionCompleted: (supabase: SupabaseClient, stripe: Stripe, session: Stripe.Checkout.Session, eventId: string, eventType: string) => Promise<void>;
+  handleSubscriptionUpdated: (supabase: SupabaseClient, stripe: Stripe, subscription: Stripe.Subscription, eventId: string, eventType: string) => Promise<void>;
+  handleSubscriptionDeleted: (supabase: SupabaseClient, stripe: Stripe, subscription: Stripe.Subscription, eventId: string, eventType: string) => Promise<void>;
+  handleInvoicePaymentSucceeded: (supabase: SupabaseClient, stripe: Stripe, invoice: Stripe.Invoice, eventId: string, eventType: string) => Promise<void>;
+  handleInvoicePaymentFailed: (supabase: SupabaseClient, stripe: Stripe, invoice: Stripe.Invoice, eventId: string, eventType: string) => Promise<void>;
 }
 
 // --- Default Dependencies ---
@@ -87,8 +90,6 @@ export async function handleWebhookRequest(req: Request, deps: WebhookDependenci
     return createErrorResponse("Method not allowed", 405);
   }
 
-  let isTestMode: boolean;
-  let preliminaryStripeKey: string | undefined;
   let stripeClient: Stripe | undefined;
   let supabase: SupabaseClient | undefined;
 
@@ -102,91 +103,58 @@ export async function handleWebhookRequest(req: Request, deps: WebhookDependenci
       return createErrorResponse("Missing Stripe signature", 400);
     }
 
-    console.log("[stripe-webhook] Getting webhook secrets...");
-    const testWebhookSecret = envGet("STRIPE_TEST_WEBHOOK_SECRET");
-    const liveWebhookSecret = envGet("STRIPE_LIVE_WEBHOOK_SECRET");
-    console.log("[stripe-webhook] Test secret found:", !!testWebhookSecret, "Live secret found:", !!liveWebhookSecret);
+    // Restore logic for getting preliminary key using envGet and getStripeMode
+    const isTestModeCheck = getStripeMode(); // Use shared helper
+    const preliminaryStripeKey = isTestModeCheck 
+        ? envGet("STRIPE_SECRET_TEST_KEY") 
+        : envGet("STRIPE_SECRET_LIVE_KEY");
 
-    if (!testWebhookSecret && !liveWebhookSecret) {
-        console.error("[stripe-webhook] Missing both Stripe webhook secrets.");
-        return createErrorResponse("Webhook secrets not configured.", 500);
-    }
-
-    console.log("[stripe-webhook] Getting preliminary Stripe API key...");
-    // Prioritize TEST key if available, otherwise use LIVE key
-    preliminaryStripeKey = envGet("STRIPE_SECRET_TEST_KEY") ?? envGet("STRIPE_SECRET_LIVE_KEY");
-
-    console.log("[stripe-webhook] Preliminary Stripe API key found:", !!preliminaryStripeKey);
     if (!preliminaryStripeKey) {
-      console.error("[stripe-webhook] Missing Stripe Secret Key (TEST or LIVE) for preliminary client.");
+      console.error("[stripe-webhook] Missing Stripe Secret Key env var. Cannot initialize client.");
       return createErrorResponse("Stripe key configuration error.", 500);
     }
 
+    // Initialize Stripe client using dependency (with key)
     try {
-      console.log("[stripe-webhook] Initializing preliminary Stripe client...");
-      stripeClient = createStripeClient(preliminaryStripeKey);
-      console.log("[stripe-webhook] Preliminary Stripe client initialized.");
+        stripeClient = createStripeClient(preliminaryStripeKey);
     } catch(stripeInitError) {
-       console.error("[stripe-webhook] CRITICAL: Failed to initialize preliminary Stripe client:", stripeInitError);
-       return createErrorResponse("Stripe client initialization failed.", 500);
+       console.error("[stripe-webhook] CRITICAL: Failed to initialize Stripe client:", stripeInitError);
+       // Use instanceof Error check (already added)
+       const message = stripeInitError instanceof Error ? stripeInitError.message : String(stripeInitError);
+       return createErrorResponse(message || "Stripe client initialization failed.", 500);
     }
 
-    // 2. Verify signature - try test secret first, then live
+    // Verify signature - verifyWebhookSignature handles secret lookup internally
     console.log("[stripe-webhook] Verifying signature...");
-    let event: Stripe.Event | undefined; // Initialize as undefined
-    let eventError: Error | null = null;
-    let usedLiveSecret = false;
-
-    if (testWebhookSecret) {
-      try {
-        console.log("[stripe-webhook] Attempting verification with TEST secret.");
-        event = await verifyWebhookSignature(stripeClient, body, signature, testWebhookSecret);
-      } catch (err) {
-        console.warn("[stripe-webhook] Verification with TEST secret failed:", err.message);
-        eventError = err;
-      }
-    }
-
-    // If test secret failed or wasn't available, try live secret
-    if (!event && liveWebhookSecret) {
-      eventError = null; // Reset error before trying live
-      usedLiveSecret = true;
-      try {
-        console.log("[stripe-webhook] Attempting verification with LIVE secret.");
-        event = await verifyWebhookSignature(stripeClient, body, signature, liveWebhookSecret);
-      } catch (err) {
-        console.warn("[stripe-webhook] Verification with LIVE secret failed:", err.message);
-        eventError = err;
-      }
-    }
-
-    // If event is still undefined after trying both (or applicable ones), verification failed
-    if (!event) {
-      console.error("[stripe-webhook] Webhook signature verification failed after trying available secrets:", eventError?.message);
-      return createErrorResponse(eventError?.message || "Signature verification failed", 400);
-    }
-
-    console.log(`[stripe-webhook] Webhook signature verified. Event ID: ${event.id}, Livemode: ${event.livemode}, UsedLiveSecret: ${usedLiveSecret}`);
-
-    // 3. Determine actual mode from verified event
-    isTestMode = event.livemode === false;
-
-    // 4. Get Supabase Admin Client
+    let event: Stripe.Event | undefined;
+    
     try {
-      console.log("[stripe-webhook] Initializing Supabase admin client...");
-      supabase = createSupabaseAdminClient();
-      console.log("[stripe-webhook] Supabase admin client initialized.");
+        // Call with 3 arguments - stripe-client handles internal secret lookup/error
+        event = await verifyWebhookSignature(stripeClient, body, signature); 
+    } catch (err) {
+       // Signature verification failed (or secret was missing)
+       console.error("[stripe-webhook] Webhook signature verification failed:", err.message);
+       return createErrorResponse(err.message || "Signature verification failed", 400); 
+    }
+
+    // Event is now verified and available
+    console.log(`[stripe-webhook] Webhook signature verified. Event ID: ${event.id}, Livemode: ${event.livemode}`);
+
+    // Get Supabase Admin Client
+    try {
+        supabase = createSupabaseAdminClient();
     } catch (supabaseInitError) {
        console.error("[stripe-webhook] CRITICAL: Failed to initialize Supabase admin client:", supabaseInitError);
        return createErrorResponse("Supabase admin client initialization failed.", 500);
     }
 
-    // Handle various webhook events
+    // Route event (ensure stripeClient is passed to handlers)
     console.log(`[stripe-webhook] Handling event type: ${event.type}`);
     switch (event.type) {
       case "checkout.session.completed": {
         await handleCheckoutSessionCompleted(
           supabase,
+          stripeClient,
           event.data.object as Stripe.Checkout.Session,
           event.id,
           event.type
@@ -197,6 +165,7 @@ export async function handleWebhookRequest(req: Request, deps: WebhookDependenci
       case "customer.subscription.updated": {
         await handleSubscriptionUpdated(
           supabase,
+          stripeClient,
           event.data.object as Stripe.Subscription,
           event.id,
           event.type
@@ -207,6 +176,7 @@ export async function handleWebhookRequest(req: Request, deps: WebhookDependenci
       case "customer.subscription.deleted": {
         await handleSubscriptionDeleted(
           supabase,
+          stripeClient,
           event.data.object as Stripe.Subscription,
           event.id,
           event.type
@@ -217,6 +187,7 @@ export async function handleWebhookRequest(req: Request, deps: WebhookDependenci
       case "invoice.payment_succeeded": {
         await handleInvoicePaymentSucceeded(
           supabase,
+          stripeClient,
           event.data.object as Stripe.Invoice,
           event.id,
           event.type
@@ -227,6 +198,7 @@ export async function handleWebhookRequest(req: Request, deps: WebhookDependenci
       case "invoice.payment_failed": {
         await handleInvoicePaymentFailed(
           supabase,
+          stripeClient,
           event.data.object as Stripe.Invoice,
           event.id,
           event.type
@@ -285,9 +257,10 @@ export async function handleWebhookRequest(req: Request, deps: WebhookDependenci
       case "price.created":
          console.log(`[stripe-webhook] Received ${event.type} event. Triggering full plan sync for reconciliation.`);
          try {
-           console.log(`[stripe-webhook] Attempting to invoke sync-stripe-plans with mode: ${isTestMode ? 'test' : 'live'}`);
+           // Restore usage of isTestModeCheck
+           console.log(`[stripe-webhook] Attempting to invoke sync-stripe-plans with mode: ${isTestModeCheck ? 'test' : 'live'}`);
            const { data: invokeData, error: invokeError } = await supabase.functions.invoke('sync-stripe-plans', {
-             body: JSON.stringify({ isTestMode: isTestMode })
+             body: JSON.stringify({ isTestMode: isTestModeCheck })
            });
            if (invokeError) {
              console.error(`[stripe-webhook] Error invoking sync-stripe-plans function:`, JSON.stringify(invokeError, null, 2));
@@ -316,10 +289,29 @@ export async function handleWebhookRequest(req: Request, deps: WebhookDependenci
 
 // --- Server Entry Point ---
 
-// Only run the server if this script is the main program
-if (import.meta.main) {
-  serve((req) => handleWebhookRequest(req, defaultDependencies));
-}
+console.log("[stripe-webhook] Setting up server...");
+serve(async (req) => {
+  console.log("[stripe-webhook] Incoming request...");
+  try {
+      return await handleWebhookRequest(req, defaultDependencies);
+  } catch (e) {
+      console.error("[stripe-webhook] UNHANDLED EXCEPTION:", e);
+      // Use default dependency for error response if available, otherwise basic response
+      const createErrResp = defaultDependencies.createErrorResponse || 
+                            ((msg, status) => new Response(JSON.stringify({ error: msg }), { status: status, headers: { "Content-Type": "application/json" } }));
+      return createErrResp("Internal Server Error", 500);
+  }
+}, {
+  onListen({ port, hostname }) {
+      console.log(`[stripe-webhook] Server listening on http://${hostname}:${port}`);
+  },
+  onError(error) {
+    console.error("[stripe-webhook] Server error:", error);
+    return new Response("Internal Server Error", { status: 500 });
+  }
+});
+
+console.log("[stripe-webhook] Server setup complete.");
 
 // Export types for testing if needed
 export type { WebhookDependencies };

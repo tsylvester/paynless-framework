@@ -1,6 +1,12 @@
 {
   "version": "4",
   "specifiers": {
+    "jsr:@std/assert@0.225.3": "0.225.3",
+    "jsr:@std/assert@1.0.0-rc.1": "1.0.0-rc.1",
+    "jsr:@std/assert@~0.225.3": "0.225.3",
+    "jsr:@std/internal@1": "1.0.6",
+    "jsr:@std/testing@*": "0.225.1",
+    "jsr:@std/testing@0.225.1": "0.225.1",
     "jsr:@supabase/functions-js@*": "2.4.4",
     "jsr:@supabase/supabase-js@2": "2.49.4",
     "npm:@supabase/auth-js@2.69.1": "2.69.1",
@@ -9,13 +15,33 @@
     "npm:@supabase/postgrest-js@1.19.4": "1.19.4",
     "npm:@supabase/realtime-js@2.11.2": "2.11.2",
     "npm:@supabase/storage-js@2.7.1": "2.7.1",
-    "npm:@supabase/supabase-js@*": "2.39.3",
+    "npm:@supabase/supabase-js@*": "2.49.4",
     "npm:@supabase/supabase-js@2": "2.49.4",
-    "npm:@supabase/supabase-js@2.39.3": "2.39.3",
-    "npm:stripe@*": "18.0.0",
+    "npm:stripe@*": "14.11.0",
     "npm:stripe@14.11.0": "14.11.0"
   },
   "jsr": {
+    "@std/assert@0.225.3": {
+      "integrity": "b3c2847aecf6955b50644cdb9cf072004ea3d1998dd7579fc0acb99dbb23bd4f",
+      "dependencies": [
+        "jsr:@std/internal"
+      ]
+    },
+    "@std/assert@1.0.0-rc.1": {
+      "integrity": "f2f1f1d5b5eab3a2165744996c42b3c501688d887a015067e12267fe5e6fb804",
+      "dependencies": [
+        "jsr:@std/internal"
+      ]
+    },
+    "@std/internal@1.0.6": {
+      "integrity": "9533b128f230f73bd209408bb07a4b12f8d4255ab2a4d22a1fd6d87304aca9a4"
+    },
+    "@std/testing@0.225.1": {
+      "integrity": "1a11119553fc33410abe8566731ae513c53e73db040cedbf901858fbd7587819",
+      "dependencies": [
+        "jsr:@std/assert@1.0.0-rc.1"
+      ]
+    },
     "@supabase/functions-js@2.4.4": {
       "integrity": "38456509a6e22fb116b118464cbb36357256f9048d3580632b63af91f63769f7"
     },
@@ -40,12 +66,6 @@
     },
     "@supabase/functions-js@2.4.4": {
       "integrity": "sha512-WL2p6r4AXNGwop7iwvul2BvOtuJ1YQy8EbOd0dhG1oN1q8el/BIRSFCFnWAMM/vJJlHWLi4ad22sKbKr9mvjoA==",
-      "dependencies": [
-        "@supabase/node-fetch"
-      ]
-    },
-    "@supabase/gotrue-js@2.69.1": {
-      "integrity": "sha512-8sDoeMQXV2mYlWyeYvkL/m4VdiSlJ9bfBtfvIm1xoIpqp3ILs4ANdVOn33dpOXO2U282A6mRp4W9MVM3twZkfQ==",
       "dependencies": [
         "@supabase/node-fetch"
       ]
@@ -75,17 +95,6 @@
       "integrity": "sha512-asYHcyDR1fKqrMpytAS1zjyEfvxuOIp1CIXX7ji4lHHcJKqyk+sLl/Vxgm4sN6u8zvuUtae9e4kDxQP2qrwWBA==",
       "dependencies": [
         "@supabase/node-fetch"
-      ]
-    },
-    "@supabase/supabase-js@2.39.3": {
-      "integrity": "sha512-NoltJSaJNKDJNutO5sJPAAi5RIWrn1z2XH+ig1+cHDojT6BTN7TvZPNa3Kq3gFQWfO5H1N9El/bCTZJ3iFW2kQ==",
-      "dependencies": [
-        "@supabase/functions-js",
-        "@supabase/gotrue-js",
-        "@supabase/node-fetch",
-        "@supabase/postgrest-js",
-        "@supabase/realtime-js",
-        "@supabase/storage-js"
       ]
     },
     "@supabase/supabase-js@2.49.4": {
@@ -246,13 +255,6 @@
         "qs"
       ]
     },
-    "stripe@18.0.0": {
-      "integrity": "sha512-3Fs33IzKUby//9kCkCa1uRpinAoTvj6rJgQ2jrBEysoxEvfsclvXdna1amyEYbA2EKkjynuB4+L/kleCCaWTpA==",
-      "dependencies": [
-        "@types/node@22.14.0",
-        "qs"
-      ]
-    },
     "tr46@0.0.3": {
       "integrity": "sha512-N3WMsuqV66lT30CrXNbEjx4GEwlow3v6rr4mCcv6prnfwhS01rkgyFdjPNBYd9br7LpXV1+Emh01fHnq2Gdgrw=="
     },
@@ -288,6 +290,10 @@
     "https://deno.land/std@0.168.0/async/retry.ts": "e8e5173623915bbc0ddc537698fa418cf875456c347eda1ed453528645b42e67",
     "https://deno.land/std@0.168.0/async/tee.ts": "3a47cc4e9a940904fd4341f0224907e199121c80b831faa5ec2b054c6d2eff5e",
     "https://deno.land/std@0.168.0/http/server.ts": "e99c1bee8a3f6571ee4cdeb2966efad465b8f6fe62bec1bdb59c1f007cc4d155",
+    "https://deno.land/std@0.192.0/fmt/colors.ts": "d67e3cd9f472535241a8e410d33423980bec45047e343577554d3356e1f0ef4e",
+    "https://deno.land/std@0.192.0/testing/_diff.ts": "1a3c044aedf77647d6cac86b798c6417603361b66b54c53331b312caeb447aea",
+    "https://deno.land/std@0.192.0/testing/_format.ts": "a69126e8a469009adf4cf2a50af889aca364c349797e63174884a52ff75cf4c7",
+    "https://deno.land/std@0.192.0/testing/asserts.ts": "e16d98b4d73ffc4ed498d717307a12500ae4f2cbe668f1a215632d19fcffc22f",
     "https://deno.land/std@0.208.0/assert/_constants.ts": "8a9da298c26750b28b326b297316cdde860bc237533b07e1337c021379e6b2a9",
     "https://deno.land/std@0.208.0/assert/_diff.ts": "58e1461cc61d8eb1eacbf2a010932bf6a05b79344b02ca38095f9b805795dc48",
     "https://deno.land/std@0.208.0/assert/_format.ts": "a69126e8a469009adf4cf2a50af889aca364c349797e63174884a52ff75cf4c7",
@@ -319,14 +325,20 @@
     "https://deno.land/std@0.208.0/assert/mod.ts": "37c49a26aae2b254bbe25723434dc28cd7532e444cf0b481a97c045d110ec085",
     "https://deno.land/std@0.208.0/assert/unimplemented.ts": "d56fbeecb1f108331a380f72e3e010a1f161baa6956fd0f7cf3e095ae1a4c75a",
     "https://deno.land/std@0.208.0/assert/unreachable.ts": "4600dc0baf7d9c15a7f7d234f00c23bca8f3eba8b140286aaca7aa998cf9a536",
+    "https://deno.land/std@0.208.0/dotenv/mod.ts": "039468f5c87d39b69d7ca6c3d68ebca82f206ec0ff5e011d48205eea292ea5a6",
     "https://deno.land/std@0.208.0/fmt/colors.ts": "34b3f77432925eb72cf0bfb351616949746768620b8e5ead66da532f93d10ba2",
     "https://deno.land/std@0.208.0/testing/_test_suite.ts": "30f018feeb3835f12ab198d8a518f9089b1bcb2e8c838a8b615ab10d5005465c",
     "https://deno.land/std@0.208.0/testing/bdd.ts": "c41f019786c4a9112aadb7e5a7bbcc711f58429ac5904b3855fa248ba5fa0ba6",
-    "https://deno.land/std@0.208.0/testing/mock.ts": "3f23573411caf1eacd48d62c5f9a606970648a694ce55132c76b0d2365baa03d"
+    "https://deno.land/std@0.208.0/testing/mock.ts": "3f23573411caf1eacd48d62c5f9a606970648a694ce55132c76b0d2365baa03d",
+    "https://deno.land/std@0.224.0/async/delay.ts": "f90dd685b97c2f142b8069082993e437b1602b8e2561134827eeb7c12b95c499",
+    "https://deno.land/std@0.224.0/http/server.ts": "f9313804bf6467a1704f45f76cb6cd0a3396a3b31c316035e6a4c2035d1ea514"
   },
   "workspace": {
     "dependencies": [
-      "npm:react@*"
+      "jsr:@std/assert@~0.225.3",
+      "jsr:@std/testing@0.225.1",
+      "npm:@supabase/supabase-js@2",
+      "npm:stripe@14.11.0"
     ]
   }
 }
