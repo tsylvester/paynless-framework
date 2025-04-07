@@ -85,13 +85,31 @@ export const useAuthStore = create<AuthStoreType>()(
       
       logout: async () => {
         set({ isLoading: true, error: null }); 
+        const token = get().session?.access_token;
+
+        if (!token) {
+          // If there's no token, we can't really call the backend logout.
+          // Just clear local state.
+          logger.warn('Logout called but no session token found. Clearing local state only.');
+          set({
+            user: null,
+            session: null,
+            profile: null,
+            isLoading: false, 
+            error: null,
+          });
+          return; // Exit early
+        }
+
         try {
-          await api.post('/logout', {}); 
+          // Pass the token in options
+          await api.post('/logout', {}, { token }); 
           logger.info('AuthStore: Logout API call successful.');
         } catch (error) {
           logger.error('Logout error caught in store', { 
              message: error instanceof Error ? error.message : 'Unknown error' 
           });
+          // Even if API fails, clear local state as the user intent is to logout
         } finally {
           logger.info('AuthStore: Clearing state after logout attempt.');
           set({

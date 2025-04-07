@@ -51,8 +51,17 @@ vi.mock('@paynless/api-client', () => ({
 beforeEach(() => {
   vi.clearAllMocks();
   // Reset specific mocks to default implementations if needed
-  // e.g., mockApi.get.mockResolvedValue({ data: null });
-  
+  // Provide default mocks for implicit calls like loadSubscriptionData
+  mockStripeApiClient.getSubscriptionPlans.mockResolvedValue({
+    status: 200,
+    data: [], // Default to empty plans array
+  });
+  mockStripeApiClient.getUserSubscription.mockResolvedValue({
+    status: 200,
+    data: null, // Default to no existing subscription
+  });
+  // Reset other mocks if necessary...
+
   // Remove Deno.env mock - subscriptionStore doesn't use it for initial state
   /*
   vi.stubGlobal('Deno', {

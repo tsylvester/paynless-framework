@@ -71,6 +71,9 @@ async function apiClient<T = unknown>(
     throw new Error('API Client not initialized. Call initializeApiClient first.');
   }
 
+  // *** REMOVE LOGGING HERE ***
+  // logger.debug(`[apiClient ${endpoint}] Received options:`, { options });
+
   // Revert AGAIN to manual URL concatenation. 
   // The URL constructor treats base URLs with paths but no trailing slash 
   // differently than expected, replacing the last path segment.

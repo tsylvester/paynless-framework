@@ -115,20 +115,21 @@
     *   **1.3 Final Validation & Lockdown:**
         *   [ ] **Task:** After Phase 1.1/1.2 items are addressed (acknowledging limitations), add comments to function code indicating validation status.
 
-*   **Phase 2: Shared Packages (`packages/`)** **<-- CURRENT FOCUS**
+*   **Phase 2: Shared Packages (`packages/`)**
     *   **2.1 Unit Tests:**
         *   [✅] `packages/api-client` (Vitest + MSW setup complete, `apiClient.ts` tests passing)
         *   [✅] `packages/api-client/stripe.api.ts` *(All unit tests passing)*
-        *   [✅] `packages/store` (Vitest setup complete, `authStore.ts` passing, `subscriptionStore.ts` partial pass/placeholders)
-            *   [ ] Complete `subscriptionStore.ts` tests (checkout, portal actions)
-        *   [ ] `packages/ui-components` (Vitest + RTL recommended).
+        *   [✅] `packages/store` (Vitest setup complete, `authStore.ts` passing)
+            *   [✅] `subscriptionStore.ts` *(All unit tests passing)*
+        *   [⏭️] `packages/ui-components` *(Skipped - Package empty, components currently in `apps/web`)*.
         *   [✅] `packages/utils` (Vitest setup complete, `logger.ts` tests passing)
-        *   [ ] `packages/types` (Implicitly tested).
+        *   [✅] `packages/types` *(Implicitly tested)*.
 
 *   **Phase 3: Web App (`apps/web/`)**
     *   **3.1 Unit Tests:**
-        *   [ ] `apps/web/src/components/` (Subscription UI components - Plan display, Subscribe buttons, Manage button)
-        *   [ ] `apps/web/src/pages/` (Subscription flow pages - Pricing, Success, Cancel)
+        *   [⏸️] `apps/web/src/App.tsx` *(Basic tests passing; deferred further tests pending child component testing)*
+        *   [ ] `apps/web/src/components/` (Start with layout: Header, Footer, then Subscription UI components)
+        *   [ ] `apps/web/src/pages/` (Start with auth: LoginPage, RegisterPage, then Subscription flow pages)
         *   [ ] `apps/web/src/hooks/` (Any hooks related to subscription flow)
     *   **3.2 Integration Tests:**
         *   [ ] **Component Integration:** Test interactions between subscription-related components.
@@ -174,30 +175,4 @@
 *   Running the same function using `supabase functions serve --env-file supabase/.env.local <function_name>` *does* successfully load the environment variables (confirmed via logs), indicating the function code itself is likely correct but needs the variables provided.
 
 **Consequence:**
-*   Full local integration testing (`supabase start` + `deno test`) of Edge Functions that depend on environment variables defined *only* in local `.env` files is **currently blocked/unreliable**.
-
-**Recommendation:**
-1.  Prioritize thorough **Unit Tests** for Edge Functions, using dependency injection to mock environment-dependent components (like Stripe clients, Supabase clients).
-2.  Perform full **Integration Testing** in deployed **Preview/Staging Environments** where environment variables are managed through the platform's secrets management, ensuring a realistic test environment.
-3.  Acknowledge that local integration tests for affected functions (like `/api-subscriptions`) may remain skipped or failing until Supabase CLI provides a reliable mechanism for environment variable injection via `supabase start`.
-
-**Methodology**: Use Deno test runner with `--allow-all` flag. Tests will involve:
-*   Starting/stopping Supabase services (`_shared/test-utils.ts`).
-*   Making HTTP requests to function endpoints (`fetch`).
-*   Using an admin Supabase client to set up/verify database state.
-*   Using the Stripe CLI (`stripe listen`, `stripe trigger`) for webhook testing (when implemented).
-
-**Scope:** Focus on critical paths and error handling for each function, accepting limitations for local integration testing of env-dependent functions.
-
-**Checklist (Updated Status):**
-*   [✅] **Setup Test Environment:**
-    *   [✅] Create shared test utilities (`_shared/test-utils.ts`).
-    *   [✅] Configure local Supabase environment (`config.toml`, `.env.local`).
-    *   [ ] Set up Stripe CLI for webhook testing *(Pending implementation)*.
-*   [ ] **Review/Run Unit Tests for `_shared/`:** Ensure core utilities (`auth.ts`, `cors-headers.ts`, `stripe-client.ts`) have passing unit tests.
-*   [✅] **Function Integration (Auth & Profile):** `/login`, `/logout`, `/me`, `/profile/<userId>`, `/refresh`, `/register`, `/reset-password`, `/session`, `/ping`
-*   [⏸️] **Function Integration (Stripe):** `/api-subscriptions` *(Blocked Locally - Test in Staging)*
-*   [🚫] **Function Integration (Stripe):** `stripe-webhook` *(Blocked/Skipped Locally)*
-*   [⏸️] **Function Integration (Stripe):** `sync-stripe-plans` *(Blocked Locally - Test in Staging)*
-*   [❓] **Database Integration:** Use `supabase test db` to validate migrations and RLS policies.
-
+*   Full local integration testing (`

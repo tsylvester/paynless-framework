@@ -21,9 +21,11 @@ import {
 } from 'lucide-react';
 
 export function Header() {
-  // Remove explicit types, TS can infer state
-  const user = useAuthStore(state => state.user);
-  const logout = useAuthStore(state => state.logout);
+  const { user, profile, logout } = useAuthStore(state => ({ 
+    user: state.user, 
+    profile: state.profile, 
+    logout: state.logout 
+  }));
   
   const { colorMode, setColorMode } = useTheme();
   const navigate = useNavigate();
@@ -40,7 +42,7 @@ export function Header() {
   const isActive = (path: string) => {
     return location.pathname === path;
   };
-  
+
   return (
     <header className="bg-surface border-b border-border">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -82,10 +84,10 @@ export function Header() {
                   className="flex items-center space-x-2 p-2 rounded-lg hover:bg-surface"
                 >
                   <div className="h-8 w-8 rounded-full bg-primary/10 flex items-center justify-center">
-                    {user.avatarUrl ? (
+                    {profile?.avatarUrl ? (
                       <img
-                        src={user.avatarUrl}
-                        alt={user.first_name || user.email}
+                        src={profile.avatarUrl}
+                        alt={profile.first_name || user.email || 'User Avatar'}
                         className="h-8 w-8 rounded-full object-cover"
                       />
                     ) : (
@@ -93,7 +95,7 @@ export function Header() {
                     )}
                   </div>
                   <span className="text-sm text-textSecondary">
-                    {user.first_name || user.email}
+                    {profile?.first_name || user.email}
                   </span>
                 </button>
                 
@@ -179,7 +181,7 @@ export function Header() {
                 className={`${isActive('/feed') 
                   ? 'bg-primary/10 border-primary text-primary' 
                   : 'border-transparent text-textSecondary hover:bg-surface hover:border-border hover:text-textPrimary'
-                } pl-3 pr-4 py-2 border-l-4 text-base font-medium`}
+                } block pl-3 pr-4 py-2 border-l-4 text-base font-medium`}
               >
                 Feed
               </Link>
@@ -188,7 +190,7 @@ export function Header() {
                 className={`${isActive('/discover') 
                   ? 'bg-primary/10 border-primary text-primary' 
                   : 'border-transparent text-textSecondary hover:bg-surface hover:border-border hover:text-textPrimary'
-                } pl-3 pr-4 py-2 border-l-4 text-base font-medium flex items-center`}
+                } block pl-3 pr-4 py-2 border-l-4 text-base font-medium flex items-center`}
               >
                 <UserPlus className="h-5 w-5 mr-2" />
                 Discover
@@ -198,7 +200,7 @@ export function Header() {
                 className={`${isActive('/notifications') 
                   ? 'bg-primary/10 border-primary text-primary' 
                   : 'border-transparent text-textSecondary hover:bg-surface hover:border-border hover:text-textPrimary'
-                } pl-3 pr-4 py-2 border-l-4 text-base font-medium flex items-center`}
+                } block pl-3 pr-4 py-2 border-l-4 text-base font-medium flex items-center`}
               >
                 <Bell className="h-5 w-5 mr-2" />
                 Notifications
@@ -208,7 +210,7 @@ export function Header() {
                 className={`${location.pathname.startsWith('/messages') 
                   ? 'bg-primary/10 border-primary text-primary' 
                   : 'border-transparent text-textSecondary hover:bg-surface hover:border-border hover:text-textPrimary'
-                } pl-3 pr-4 py-2 border-l-4 text-base font-medium flex items-center`}
+                } block pl-3 pr-4 py-2 border-l-4 text-base font-medium flex items-center`}
               >
                 <MessageCircle className="h-5 w-5 mr-2" />
                 Messages
@@ -218,7 +220,7 @@ export function Header() {
                 className={`${isActive('/calendar') 
                   ? 'bg-primary/10 border-primary text-primary' 
                   : 'border-transparent text-textSecondary hover:bg-surface hover:border-border hover:text-textPrimary'
-                } pl-3 pr-4 py-2 border-l-4 text-base font-medium flex items-center`}
+                } block pl-3 pr-4 py-2 border-l-4 text-base font-medium flex items-center`}
               >
                 <CalendarIcon className="h-5 w-5 mr-2" />
                 Calendar
@@ -228,7 +230,7 @@ export function Header() {
                 className={`${isActive('/events') 
                   ? 'bg-primary/10 border-primary text-primary' 
                   : 'border-transparent text-textSecondary hover:bg-surface hover:border-border hover:text-textPrimary'
-                } pl-3 pr-4 py-2 border-l-4 text-base font-medium flex items-center`}
+                } block pl-3 pr-4 py-2 border-l-4 text-base font-medium flex items-center`}
               >
                 <LayoutIcon className="h-5 w-5 mr-2" />
                 Events
@@ -238,7 +240,7 @@ export function Header() {
                 className={`${isActive('/locations') 
                   ? 'bg-primary/10 border-primary text-primary' 
                   : 'border-transparent text-textSecondary hover:bg-surface hover:border-border hover:text-textPrimary'
-                } pl-3 pr-4 py-2 border-l-4 text-base font-medium flex items-center`}
+                } block pl-3 pr-4 py-2 border-l-4 text-base font-medium flex items-center`}
               >
                 <MapPin className="h-5 w-5 mr-2" />
                 Locations
@@ -248,7 +250,7 @@ export function Header() {
                 className={`${isActive('/my-content') 
                   ? 'bg-primary/10 border-primary text-primary' 
                   : 'border-transparent text-textSecondary hover:bg-surface hover:border-border hover:text-textPrimary'
-                } pl-3 pr-4 py-2 border-l-4 text-base font-medium flex items-center`}
+                } block pl-3 pr-4 py-2 border-l-4 text-base font-medium flex items-center`}
               >
                 <LayoutIcon className="h-5 w-5 mr-2" />
                 My Content
@@ -258,7 +260,7 @@ export function Header() {
                 className={`${isActive('/communities') 
                   ? 'bg-primary/10 border-primary text-primary' 
                   : 'border-transparent text-textSecondary hover:bg-surface hover:border-border hover:text-textPrimary'
-                } pl-3 pr-4 py-2 border-l-4 text-base font-medium flex items-center`}
+                } block pl-3 pr-4 py-2 border-l-4 text-base font-medium flex items-center`}
               >
                 <Building2 className="h-5 w-5 mr-2" />
                 Communities
@@ -282,14 +284,14 @@ export function Header() {
           )}
           
           <div className="pt-4 pb-3 border-t border-border">
-            {user && (
+            {user && profile && (
               <>
                 <div className="flex items-center px-4 mt-4">
                   <div className="flex-shrink-0">
-                    {user.avatarUrl ? (
+                    {profile.avatarUrl ? (
                       <img
-                        src={user.avatarUrl}
-                        alt={user.first_name || user.email}
+                        src={profile.avatarUrl}
+                        alt={profile.first_name || user.email || 'User Avatar'}
                         className="h-10 w-10 rounded-full object-cover"
                       />
                     ) : (
@@ -300,7 +302,7 @@ export function Header() {
                   </div>
                   <div className="ml-3">
                     <div className="text-base font-medium text-textPrimary">
-                      {user.first_name} {user.last_name}
+                      {profile.first_name} {profile.last_name}
                     </div>
                     <div className="text-sm font-medium text-textSecondary">{user.email}</div>
                   </div>
