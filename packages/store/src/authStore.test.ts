@@ -184,7 +184,7 @@ describe('AuthStore', () => {
       });
 
       expect(mockApi.post).toHaveBeenCalledOnce();
-      expect(mockApi.post).toHaveBeenCalledWith('/logout', {}); // Expect empty body
+      expect(mockApi.post).toHaveBeenCalledWith('/logout', {}, { token: mockSession.access_token });
 
       const state = useAuthStore.getState();
       expect(state.isLoading).toBe(false);

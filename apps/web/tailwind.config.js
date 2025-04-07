@@ -1,6 +1,15 @@
+// import path from 'path';
+
 /** @type {import('tailwindcss').Config} */
+
+// Log the CWD to diagnose path issues
+console.log('[tailwind.config.js] CWD:', process.cwd());
+
 export default {
-  content: ['./index.html', './src/**/*.{js,ts,jsx,tsx}'],
+  content: [
+    './index.html', 
+    './src/**/*.{js,ts,jsx,tsx}'
+  ],
   darkMode: 'class',
   theme: {
     extend: {

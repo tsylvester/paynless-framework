@@ -100,7 +100,7 @@ describe("Sync Stripe Plans Handler", { ignore: true }, () => {
 
     it("should handle OPTIONS request", async () => {
         const req = new Request("http://localhost/sync-stripe-plans", { method: "OPTIONS" });
-        const res = await handleSyncPlansRequest(req, mockDeps);
+            const res = await handleSyncPlansRequest(req, mockDeps);
         assertEquals(res.status, 200);
         assertEquals(res.headers.get("access-control-allow-methods"), "POST, OPTIONS");
         assertEquals(await res.text(), "ok");
@@ -130,11 +130,11 @@ describe("Sync Stripe Plans Handler", { ignore: true }, () => {
         const req = new Request("http://localhost/sync-stripe-plans", { method: "POST", body: JSON.stringify({ isTestMode: true }), headers: { 'Content-Type': 'application/json' } });
 
         // Act
-        const res = await handleSyncPlansRequest(req, mockDeps);
+            const res = await handleSyncPlansRequest(req, mockDeps);
         const body = await res.json();
-
+            
         // Assert
-        assertEquals(res.status, 200);
+            assertEquals(res.status, 200);
         assertEquals(body.message, "Stripe plans synced successfully via service.");
         assertEquals(body.syncedCount, 2); // price_active1, price_active2
         

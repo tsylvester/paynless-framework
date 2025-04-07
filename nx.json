@@ -1,11 +1,6 @@
 {
   "$schema": "./node_modules/nx/schemas/nx-schema.json",
   "targetDefaults": {
-    "dev": {
-      "dependsOn": [
-        "^dev"
-      ]
-    },
     "build": {
       "dependsOn": [
         "^build"
@@ -15,16 +10,6 @@
       ],
       "cache": true
     },
-    "preview": {
-      "dependsOn": [
-        "^preview"
-      ]
-    },
-    "tauri": {
-      "dependsOn": [
-        "^tauri"
-      ]
-    },
     "lint": {
       "dependsOn": [
         "^lint"
@@ -32,21 +17,6 @@
       "cache": true
     }
   },
-  "plugins": [
-    {
-      "plugin": "@nx/vite/plugin",
-      "options": {
-        "buildTargetName": "vite:build",
-        "testTargetName": "test",
-        "serveTargetName": "serve",
-        "devTargetName": "vite:dev",
-        "previewTargetName": "vite:preview",
-        "serveStaticTargetName": "serve-static",
-        "typecheckTargetName": "typecheck",
-        "buildDepsTargetName": "build-deps",
-        "watchDepsTargetName": "watch-deps"
-      }
-    }
-  ],
+  "plugins": [],
   "nxCloudId": "67f29f0c17ad73371d9f4f32"
 }

@@ -60,11 +60,11 @@ export function RegisterForm({ onSuccess, redirectPath = '/' }: RegisterFormProp
       {error && (
         <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-md flex items-center gap-2 text-red-700">
           <AlertCircle size={18} />
-          <span>{error}</span>
+          <span data-testid="register-error-message">{error}</span>
         </div>
       )}
       
-      <form onSubmit={handleSubmit}>
+      <form onSubmit={handleSubmit} data-testid="register-form">
         <div className="mb-4">
           <label htmlFor="email" className="block text-sm font-medium text-textSecondary mb-1">
             Email

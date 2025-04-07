@@ -6,21 +6,28 @@ import type { ApiResponse, SubscriptionPlan, UserSubscription, SubscriptionUsage
 import { logger } from '@paynless/utils';
 import { ApiError } from './apiClient';
 
+// Type for options passed to StripeApiClient methods, extending FetchOptions
+// to potentially include the token directly if needed.
+interface StripeApiOptions extends FetchOptions {}
+
 /**
  * API client for Stripe operations
  */
 export class StripeApiClient {
-  private getToken: () => string | undefined;
+  private api = api; // Use the configured base api client
+  private getToken: () => string | undefined; // Store the token getter
   
-  constructor(getToken: () => string | undefined) {
+  constructor(getToken: () => string | undefined) { 
     this.getToken = getToken;
-    logger.info(`Stripe API client initialized.`);
   }
   
-  private getOptions(options: FetchOptions = {}): FetchOptions {
-    // Only get token if the request is NOT public
-    const token = !options.isPublic ? this.getToken() : undefined;
-    return { ...options, token };
+  private getOptions(options: StripeApiOptions = {}): FetchOptions {
+    const token = !options.isPublic ? this.getToken() : undefined; 
+    const finalOptions = { ...options };
+    if (token) {
+        finalOptions.token = token;
+    }
+    return finalOptions;
   }
   
   /**
@@ -31,10 +38,12 @@ export class StripeApiClient {
   async createCheckoutSession(priceId: string, isTestMode: boolean): Promise<ApiResponse<{ sessionId: string }>> {
     try {
       logger.info('Creating Stripe checkout session', { priceId, isTestMode });
-      const resultData = await api.post<{ sessionId: string }>('api-subscriptions/checkout', { 
-        priceId,
-        isTestMode: isTestMode 
-      }, this.getOptions());
+      const fetchOptions = this.getOptions(); 
+      const resultData = await this.api.post<{ sessionId: string }>(
+        'api-subscriptions/checkout',
+        { priceId, isTestMode },
+        fetchOptions
+      );
       return { status: 200, data: resultData }; 
     } catch (error) {
       logger.error('Error creating Stripe checkout session', {
@@ -59,9 +68,12 @@ export class StripeApiClient {
   async createPortalSession(isTestMode: boolean): Promise<ApiResponse<{ url: string }>> {
     try {
       logger.info('Creating portal session', { isTestMode });
-      const resultData = await api.post<{ url: string }>('api-subscriptions/billing-portal', { 
-        isTestMode: isTestMode 
-      }, this.getOptions());
+      const fetchOptions = this.getOptions();
+      const resultData = await this.api.post<{ url: string }>(
+        'api-subscriptions/billing-portal',
+        { isTestMode },
+        fetchOptions
+      );
       return { status: 200, data: resultData };
     } catch (error) {
       logger.error('Error creating portal session', {
@@ -79,12 +91,13 @@ export class StripeApiClient {
   }
   
   /**
-   * Get all available subscription plans
+   * Get all available subscription plans (Assumed Public)
    */
   async getSubscriptionPlans(): Promise<ApiResponse<SubscriptionPlan[]>> {
     try {
-      logger.info('Fetching subscription plans (Backend default mode will be used)');
-      const resultData = await api.get<SubscriptionPlan[]>('api-subscriptions/plans', this.getOptions({ isPublic: true }));
+      logger.info('Fetching subscription plans');
+      const fetchOptions = this.getOptions(); 
+      const resultData = await this.api.get<SubscriptionPlan[]>('api-subscriptions/plans', fetchOptions);
       return { status: 200, data: resultData };
     } catch (error) {
       logger.error('Error fetching subscription plans', {
@@ -106,9 +119,9 @@ export class StripeApiClient {
    */
   async getUserSubscription(userId: string): Promise<ApiResponse<UserSubscription>> {
     try {
-      logger.info('Fetching user subscription (Backend default mode will be used)', { userId });
-      
-      const resultData = await api.get<UserSubscription>(`api-subscriptions/current`, this.getOptions());
+      logger.info('Fetching user subscription', { userId });
+      const fetchOptions = this.getOptions(); 
+      const resultData = await this.api.get<UserSubscription>(`api-subscriptions/current`, fetchOptions);
       return { status: 200, data: resultData };
     } catch (error) {
       logger.error('Error fetching user subscription', {
@@ -129,7 +142,8 @@ export class StripeApiClient {
   async cancelSubscription(subscriptionId: string): Promise<ApiResponse<void>> {
     try {
       logger.info('Cancelling subscription', { subscriptionId });
-      await api.post<void>(`api-subscriptions/${subscriptionId}/cancel`, {}, this.getOptions());
+      const fetchOptions = this.getOptions(); 
+      await this.api.post<void>(`api-subscriptions/${subscriptionId}/cancel`, {}, fetchOptions);
       return { status: 200 };
     } catch (error) {
       logger.error('Error cancelling subscription', {
@@ -150,7 +164,8 @@ export class StripeApiClient {
   async resumeSubscription(subscriptionId: string): Promise<ApiResponse<void>> {
     try {
       logger.info('Resuming subscription', { subscriptionId });
-      await api.post<void>(`api-subscriptions/${subscriptionId}/resume`, {}, this.getOptions());
+      const fetchOptions = this.getOptions(); 
+      await this.api.post<void>(`api-subscriptions/${subscriptionId}/resume`, {}, fetchOptions);
       return { status: 200 };
     } catch (error) {
       logger.error('Error resuming subscription', { 
@@ -170,7 +185,8 @@ export class StripeApiClient {
   async getUsageMetrics(metric: string): Promise<ApiResponse<SubscriptionUsageMetrics>> {
     try {
       logger.info('Fetching usage metrics', { metric });
-      const resultData = await api.get<SubscriptionUsageMetrics>(`api-subscriptions/usage/${metric}`, this.getOptions());
+      const fetchOptions = this.getOptions();
+      const resultData = await this.api.get<SubscriptionUsageMetrics>(`api-subscriptions/usage/${metric}`, fetchOptions);
       return { status: 200, data: resultData };
     } catch (error) {
       logger.error('Error fetching usage metrics', { 

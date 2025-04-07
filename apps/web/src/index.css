@@ -1,7 +1,4 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
-
+/* Define CSS Variables FIRST */
 @layer base {
   :root {
     --color-primary: 0 122 255; /* RGB values for #007AFF */
@@ -22,9 +19,20 @@
     --color-textSecondary: 235 235 245; /* RGB values for #EBEBF5 */
     --color-border: 58 58 60; /* RGB values for #3A3A3C */
   }
-  
+}
+
+/* THEN include Tailwind directives */
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Apply general body styles and border defaults if needed */
+@layer base {
   body {
-    @apply bg-background text-textPrimary transition-colors duration-200;
+    /* @tailwind base already applies bg-background based on :root/dark */
+    /* Apply other base styles if needed, e.g., font smoothing */
+    @apply text-textPrimary transition-colors duration-200;
+    font-feature-settings: "rlig" 1, "calt" 1;
   }
   
   * {
@@ -32,6 +40,7 @@
   }
 }
 
+/* Component utilities */
 @layer components {
   .btn-primary {
     @apply bg-primary text-white hover:bg-opacity-90 transition-colors duration-200;

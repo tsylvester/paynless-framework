@@ -18,6 +18,9 @@
 
 ✅ **How to Test Incrementally and Correctly (Layered Testing Strategy)**
 *This remains our guiding principle.* 
+
+**NOTE:** When running tests, especially suites or complex component tests, pipe the output to `test-output.log` to avoid terminal buffer issues and allow for easier review of results. Example: `pnpm --filter <package> test <file> > test-output.log`.
+
 🧪 **1. Start with Unit Tests**
 - Write unit tests for the file or module you're working on.
 - Run the unit test(s) for that file.
@@ -128,8 +131,16 @@
 *   **Phase 3: Web App (`apps/web/`)**
     *   **3.1 Unit Tests:**
         *   [⏸️] `apps/web/src/App.tsx` *(Basic tests passing; deferred further tests pending child component testing)*
-        *   [ ] `apps/web/src/components/` (Start with layout: Header, Footer, then Subscription UI components)
-        *   [ ] `apps/web/src/pages/` (Start with auth: LoginPage, RegisterPage, then Subscription flow pages)
+        *   [✅] `apps/web/src/components/layout/Header.tsx` 
+        *   [✅] `apps/web/src/components/layout/Footer.tsx` 
+        *   [🚧] `apps/web/src/components/` (Other components, e.g., Subscription UI)
+            *   [✅] `auth/LoginForm.tsx`
+            *   [✅] `auth/RegisterForm.tsx`
+            *   [✅] `auth/AuthenticatedGate.tsx`
+            *   [✅] `auth/ProtectedRoute.tsx`
+        *   [🚧] `apps/web/src/pages/` (Start with auth: LoginPage, RegisterPage, then Subscription flow pages)
+            *   [✅] `LoginPage.tsx` (Basic render test)
+            *   [✅] `RegisterPage.tsx` (Basic render test)
         *   [ ] `apps/web/src/hooks/` (Any hooks related to subscription flow)
     *   **3.2 Integration Tests:**
         *   [ ] **Component Integration:** Test interactions between subscription-related components.

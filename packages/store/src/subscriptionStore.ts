@@ -5,13 +5,11 @@ import { StripeApiClient } from '@paynless/api-client';
 import { logger } from '@paynless/utils';
 import { useAuthStore } from './authStore';
 
-// Helper function to get the token
-const getAuthToken = () => useAuthStore.getState().session?.access_token;
+// Define the function to get the token from the authStore
+const getToken = () => useAuthStore.getState().session?.access_token;
 
-// Create a stripe client instance for the store, passing the token getter
-// isTestMode cannot be determined until store is created/hydrated or from external source.
-// Rely on isTestMode flag passed in individual API calls within StripeApiClient.
-const stripeApiClient = new StripeApiClient(getAuthToken);
+// Instantiate the client, passing the getToken function
+const stripeApiClient = new StripeApiClient(getToken);
 
 interface SubscriptionState {
   userSubscription: UserSubscription | null;
@@ -70,17 +68,30 @@ export const useSubscriptionStore = create<SubscriptionStore>()(
       // API actions
       loadSubscriptionData: async (/* userId: string */) => {
         const user = useAuthStore.getState().user;
+        // Get token INSIDE the action
+        const token = getToken();
+
         if (!user) {
             logger.warn('loadSubscriptionData called but no authenticated user found.');
             set({ isSubscriptionLoading: false }); // Ensure loading state is reset
             return; // Exit if no user
         }
+        if (!token) { // Also exit if no token
+            logger.warn('loadSubscriptionData called but no auth token found.');
+            set({ isSubscriptionLoading: false, error: new Error('Not authenticated') }); 
+            return;
+        }
         
         set({ isSubscriptionLoading: true, error: null });
         
         try {
+          // Pass token explicitly in options
+          const apiOptions = { token };
+          
           // Load plans and subscription in parallel using the API client
           const [plansResponse, subResponse] = await Promise.all([
+            // Plans might be public, check if token is needed?
+            // Assuming protected for now:
             stripeApiClient.getSubscriptionPlans(),
             stripeApiClient.getUserSubscription(user.id),
           ]);
@@ -127,15 +138,15 @@ export const useSubscriptionStore = create<SubscriptionStore>()(
       },
       
       createCheckoutSession: async (priceId: string): Promise<string> => {
-        const { user } = useAuthStore.getState();
-        if (!user?.id) {
+        const { user, session } = useAuthStore.getState();
+        const token = session?.access_token;
+        if (!user?.id || !token) {
           logger.error('User not authenticated for checkout session');
           throw new Error('User not authenticated');
         }
         
         try {
-          const isTestMode = get().isTestMode; // Get current test mode from state
-          // Call API client, passing test mode
+          const isTestMode = get().isTestMode;
           const response = await stripeApiClient.createCheckoutSession(priceId, isTestMode);
           
           if (response.error || !response.data?.sessionId) {
@@ -160,15 +171,16 @@ export const useSubscriptionStore = create<SubscriptionStore>()(
       },
       
       createBillingPortalSession: async (): Promise<string | null> => {
-        const user = useAuthStore.getState().user;
-        if (!user) { 
-           logger.error('Create billing portal session: User not logged in');
+        const { user, session } = useAuthStore.getState();
+        const token = session?.access_token;
+        if (!user || !token) { 
+           logger.error('Create billing portal session: User not logged in or token missing');
            set({ error: new Error('User not logged in')});
            return null;
         }
         
         try {
-          const isTestMode = get().isTestMode; // Get current test mode from state
+          const isTestMode = get().isTestMode;
           const response = await stripeApiClient.createPortalSession(isTestMode);
           if (response.error || !response.data?.url) {
              throw new Error(response.error?.message || 'Failed to get billing portal URL');
@@ -189,15 +201,15 @@ export const useSubscriptionStore = create<SubscriptionStore>()(
       },
       
       cancelSubscription: async (subscriptionId: string): Promise<boolean> => {
-        const user = useAuthStore.getState().user;
-        if (!user) { 
-           logger.error('Cancel subscription: User not logged in');
+        const { user, session } = useAuthStore.getState();
+        const token = session?.access_token;
+        if (!user || !token) { 
+           logger.error('Cancel subscription: User not logged in or token missing');
            set({ error: new Error('User not logged in')});
            return false;
-        } // Add check
+        } 
         
         try {
-          // Call stripeApiClient directly
           const response = await stripeApiClient.cancelSubscription(subscriptionId);
           if (response.error) {
             throw new Error(response.error.message);
@@ -220,15 +232,15 @@ export const useSubscriptionStore = create<SubscriptionStore>()(
       },
       
       resumeSubscription: async (subscriptionId: string): Promise<boolean> => {
-        const user = useAuthStore.getState().user;
-        if (!user) { 
-           logger.error('Resume subscription: User not logged in');
+        const { user, session } = useAuthStore.getState();
+        const token = session?.access_token;
+        if (!user || !token) { 
+           logger.error('Resume subscription: User not logged in or token missing');
            set({ error: new Error('User not logged in')});
            return false;
-        } // Add check
+        } 
         
         try {
-          // Call stripeApiClient directly
           const response = await stripeApiClient.resumeSubscription(subscriptionId);
           if (response.error) {
             throw new Error(response.error.message);
@@ -251,15 +263,14 @@ export const useSubscriptionStore = create<SubscriptionStore>()(
       },
       
       getUsageMetrics: async (metric: string): Promise<SubscriptionUsageMetrics | null> => {
-        const user = useAuthStore.getState().user;
-        if (!user) { 
-           logger.error('Get usage metrics: User not logged in');
-           set({ error: new Error('User not logged in')});
-           return null;
-        } // Add check
-        
+        const { user, session } = useAuthStore.getState();
+        const token = session?.access_token;
+        if (!user || !token) {
+          logger.error('Get usage metrics: User not logged in or token missing');
+          set({ error: new Error('User not logged in') });
+          return null;
+        }
         try {
-          // Call stripeApiClient directly
           const response = await stripeApiClient.getUsageMetrics(metric);
           if (response.error || !response.data) {
             throw new Error(response.error?.message || 'Failed to get usage metrics');
@@ -271,11 +282,7 @@ export const useSubscriptionStore = create<SubscriptionStore>()(
             userId: user.id,
             metric,
           });
-          
-          set({
-            error: error instanceof Error ? error : new Error('Failed to get usage metrics'),
-          });
-          
+          set({ error: error instanceof Error ? error : new Error('Failed to get usage metrics') });
           return null;
         }
       },

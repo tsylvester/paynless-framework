@@ -97,7 +97,7 @@ async function apiClient<T = unknown>(
     headers['Authorization'] = `Bearer ${token}`; // Now allowed by Record<string, string>
   } else if (!token && !options.isPublic) {
     // Only warn about missing token for non-public endpoints
-    logger.warn(`[apiClient ${endpoint}] No access token found for protected call.`);
+    // REMOVED: logger.warn(`[apiClient ${endpoint}] No access token found for protected call.`);
     // Depending on stricter error handling, you might throw an error here:
     // throw new Error(`Authentication required for endpoint: ${endpoint}`);
   }

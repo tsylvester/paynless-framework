@@ -135,8 +135,10 @@ describe('Header Component', () => {
             // 4. Click logout
             await fireEvent.click(logoutButton);
             
-            // 5. Assert mock was called
-            expect(logoutMock).toHaveBeenCalledTimes(1);
+            // 5. Assert mock was called using waitFor
+            await waitFor(() => {
+                expect(logoutMock).toHaveBeenCalledTimes(1);
+            });
         });
     });
 }); 

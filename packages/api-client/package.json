@@ -4,16 +4,16 @@
   "private": true,
   "description": "API client layer for Paynless framework",
   "type": "module",
-  "main": "./dist/index.js",
-  "types": "./dist/index.d.ts",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
   "scripts": {
     "build": "tsc",
     "lint": "eslint . --ext .ts,.tsx",
     "test": "vitest run"
   },
   "dependencies": {
-    "@paynless/types": "0.1.0",
-    "@paynless/utils": "0.1.0",
+    "@paynless/types": "workspace:*",
+    "@paynless/utils": "workspace:*",
     "axios": "^1.6.7",
     "zustand": "^4.5.2"
   },

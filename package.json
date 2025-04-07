@@ -3,19 +3,15 @@
   "version": "0.1.0",
   "private": true,
   "description": "Monorepo for the Paynless framework backend, shared packages, and apps.",
-  "workspaces": [
-    "apps/*",
-    "packages/*"
-  ],
   "scripts": {
-    "dev": "npm run dev --workspace=@paynless/web",
-    "build": "npm run build:clean && tsc -b --verbose",
-    "build:clean": "npm run clean:dist && npm run clean:buildinfo",
-    "clean:dist": "rimraf packages/types/dist packages/utils/dist packages/api-client/dist packages/store/dist packages/ui-components/dist apps/web/dist",
-    "clean:buildinfo": "rimraf packages/types/tsconfig.tsbuildinfo packages/utils/tsconfig.tsbuildinfo packages/api-client/tsconfig.tsbuildinfo packages/store/tsconfig.tsbuildinfo packages/ui-components/tsconfig.tsbuildinfo apps/web/tsconfig.tsbuildinfo tsconfig.tsbuildinfo",
-    "preview": "npm run preview --workspace=@paynless/web",
-    "lint": "npm run lint --workspaces --if-present",
-    "test": "echo \"Error: no root test specified\" && exit 1"
+    "dev": "pnpm --filter @paynless/web dev",
+    "build": "pnpm run build:clean && tsc -b --verbose",
+    "build:clean": "pnpm run clean:dist && pnpm run clean:buildinfo",
+    "clean:dist": "rimraf packages/*/dist apps/*/dist",
+    "clean:buildinfo": "rimraf packages/*/tsconfig.tsbuildinfo apps/*/tsconfig.tsbuildinfo tsconfig.tsbuildinfo",
+    "preview": "pnpm --filter @paynless/web preview",
+    "lint": "pnpm -r run lint --if-present",
+    "test": "pnpm -r test"
   },
   "keywords": [
     "supabase",

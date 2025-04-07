@@ -187,7 +187,7 @@ describe('StripeApiClient', () => {
             expect(result.error).toBeUndefined();
             expect(result.data).toHaveLength(2);
             expect(result.data?.[0].stripePriceId).toBe('price_basic'); 
-            expect(mockGetToken).not.toHaveBeenCalled(); // Public endpoint
+            expect(mockGetToken).toHaveBeenCalledTimes(1);
         });
 
         it('should return ApiError on 500 Internal Server Error', async () => {
@@ -205,8 +205,7 @@ describe('StripeApiClient', () => {
             expect(result.error).toBeDefined();
             expect(result.error?.code).toBe(errorResponse.code);
             expect(result.error?.message).toBe(errorResponse.message);
-            // Still shouldn't call getToken even if API fails internally
-            expect(mockGetToken).not.toHaveBeenCalled(); 
+            expect(mockGetToken).toHaveBeenCalledTimes(1);
         });
     });
 
