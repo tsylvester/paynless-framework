@@ -12,12 +12,8 @@ function hexToRgbString(hex: string): string {
   return `${r} ${g} ${b}`;
 }
 
-export const ThemeContext = createContext<ThemeState>({
-  currentTheme: themes['light'],
-  colorMode: 'light',
-  setColorMode: () => {},
-  setTheme: () => {},
-});
+// Initialize context with null to allow detection in useTheme hook
+export const ThemeContext = createContext<ThemeState | null>(null);
 
 interface ThemeProviderProps {
   children: React.ReactNode;

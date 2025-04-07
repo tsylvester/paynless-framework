@@ -138,10 +138,14 @@
             *   [✅] `auth/RegisterForm.tsx`
             *   [✅] `auth/AuthenticatedGate.tsx`
             *   [✅] `auth/ProtectedRoute.tsx`
+            *   [✅] `profile/ProfileEditor.tsx`
+            *   [✅] `routes/RootRoute.tsx`
         *   [🚧] `apps/web/src/pages/` (Start with auth: LoginPage, RegisterPage, then Subscription flow pages)
             *   [✅] `LoginPage.tsx` (Basic render test)
             *   [✅] `RegisterPage.tsx` (Basic render test)
-        *   [ ] `apps/web/src/hooks/` (Any hooks related to subscription flow)
+        *   [🚧] `apps/web/src/hooks/` (Any hooks related to subscription flow)
+            *   [✅] `useAuthSession.ts`
+            *   [⏭️] `useSubscription.ts` (Skipped - Simple wrapper for store, tested via store tests)
     *   **3.2 Integration Tests:**
         *   [ ] **Component Integration:** Test interactions between subscription-related components.
         *   [ ] **API Integration (Mocked):** Test subscription data fetching and action calls against MSW.

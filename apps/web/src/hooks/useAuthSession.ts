@@ -24,9 +24,10 @@ export const useAuthSession = () => {
   
   // Set up the refresh timer when session changes or when mounted
   useEffect(() => {
+    const existingTimerId = refreshTimerRef.current; // Store current timer ID
     // Clear any existing timer
-    if (refreshTimerRef.current) {
-      clearTimeout(refreshTimerRef.current);
+    if (existingTimerId) {
+      clearTimeout(existingTimerId); // Use the stored ID
       refreshTimerRef.current = null;
     }
     
