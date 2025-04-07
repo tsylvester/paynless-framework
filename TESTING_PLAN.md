@@ -133,16 +133,21 @@
         *   [⏸️] `apps/web/src/App.tsx` *(Basic tests passing; deferred further tests pending child component testing)*
         *   [✅] `apps/web/src/components/layout/Header.tsx` 
         *   [✅] `apps/web/src/components/layout/Footer.tsx` 
-        *   [🚧] `apps/web/src/components/` (Other components, e.g., Subscription UI)
+        *   [🚧] `apps/web/src/components/` (Other components)
             *   [✅] `auth/LoginForm.tsx`
             *   [✅] `auth/RegisterForm.tsx`
             *   [✅] `auth/AuthenticatedGate.tsx`
             *   [✅] `auth/ProtectedRoute.tsx`
             *   [✅] `profile/ProfileEditor.tsx`
             *   [✅] `routes/RootRoute.tsx`
-        *   [🚧] `apps/web/src/pages/` (Start with auth: LoginPage, RegisterPage, then Subscription flow pages)
+            *   [✅] `subscription/PlanCard.tsx`
+            *   [✅] `subscription/CurrentSubscriptionCard.tsx`
+        *   [🚧] `apps/web/src/pages/` (Subscription flow pages)
             *   [✅] `LoginPage.tsx` (Basic render test)
             *   [✅] `RegisterPage.tsx` (Basic render test)
+            *   [✅] `Subscription.tsx`
+            *   [✅] `SubscriptionSuccess.tsx`
+            *   [?] Other pages like Profile, Dashboard...
         *   [🚧] `apps/web/src/hooks/` (Any hooks related to subscription flow)
             *   [✅] `useAuthSession.ts`
             *   [⏭️] `useSubscription.ts` (Skipped - Simple wrapper for store, tested via store tests)

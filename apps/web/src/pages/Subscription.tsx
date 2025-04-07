@@ -4,14 +4,11 @@ import { Layout } from '../components/layout/Layout';
 import { useAuthStore } from '@paynless/store';
 import { Navigate } from 'react-router-dom';
 import { logger } from '@paynless/utils';
-import { Check, AlertCircle, CreditCard, Award, AlertTriangle } from 'lucide-react';
+import { AlertCircle, AlertTriangle } from 'lucide-react';
 import { useSubscriptionStore } from '@paynless/store';
-
-// Define interface for structured description
-interface PlanDescription {
-  subtitle: string | null;
-  features: string[];
-}
+import { CurrentSubscriptionCard } from '../components/subscription/CurrentSubscriptionCard';
+import { PlanCard } from '../components/subscription/PlanCard';
+import type { UserSubscription, SubscriptionPlan } from '@paynless/types';
 
 // Define Props for the component
 interface SubscriptionPageProps {
@@ -27,18 +24,20 @@ export function SubscriptionPage(props: SubscriptionPageProps) {
     isSubscriptionLoading, 
     isTestMode, 
     createBillingPortalSession, 
-    cancelSubscription 
+    cancelSubscription,
+    error: storeError
   } = useSubscriptionStore(state => ({ 
     availablePlans: state.availablePlans, 
     userSubscription: state.userSubscription, 
     isSubscriptionLoading: state.isSubscriptionLoading, 
     isTestMode: state.isTestMode,
     createBillingPortalSession: state.createBillingPortalSession,
-    cancelSubscription: state.cancelSubscription
+    cancelSubscription: state.cancelSubscription,
+    error: state.error
   }));
   
   const [isProcessing, setIsProcessing] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
   
   const { onSubscribe } = props; // Destructure the prop
 
@@ -46,7 +45,7 @@ export function SubscriptionPage(props: SubscriptionPageProps) {
     if (!user) return;
     
     setIsProcessing(true);
-    setError(null);
+    setActionError(null);
     
     try {
       // Call the platform-specific function passed via props
@@ -57,7 +56,7 @@ export function SubscriptionPage(props: SubscriptionPageProps) {
     } catch (err) {
       // Handle errors (e.g., from backend API call failing within onSubscribe)
       const errorMessage = err instanceof Error ? err.message : 'An unexpected error occurred';
-      setError(errorMessage);
+      setActionError(errorMessage);
       logger.error('Error in subscription process', {
         error: errorMessage,
         userId: user.id,
@@ -69,21 +68,27 @@ export function SubscriptionPage(props: SubscriptionPageProps) {
   };
   
   const handleCancelSubscription = async () => {
-    if (!user || !userSubscription?.id) return;
+    if (!user) return;
+    const subscriptionId = userSubscription?.stripeSubscriptionId;
     
+    if (!subscriptionId) {
+        logger.error('Cannot cancel/downgrade: Missing subscription ID.');
+        setActionError('Cannot process cancellation: Subscription ID is missing.');
+        return;
+    }
+
     setIsProcessing(true);
-    setError(null);
-    const subscriptionId = userSubscription.id;
+    setActionError(null);
 
     try {
       const success = await cancelSubscription(subscriptionId);
       if (!success) {
-        setError('Failed to cancel subscription. Please try again or contact support.');
+        setActionError('Failed to cancel subscription. Please try again or contact support.');
       }
       // No redirect needed, store refresh will update UI
     } catch (err) { 
       const errorMessage = err instanceof Error ? err.message : 'An unexpected error occurred';
-      setError(errorMessage);
+      setActionError(errorMessage);
       logger.error('Error initiating subscription cancellation', {
         error: errorMessage,
         userId: user.id,
@@ -98,7 +103,7 @@ export function SubscriptionPage(props: SubscriptionPageProps) {
     if (!user || !userSubscription) return;
     
     setIsProcessing(true);
-    setError(null);
+    setActionError(null);
     
     try {
       const billingPortalUrl = await createBillingPortalSession();
@@ -106,11 +111,11 @@ export function SubscriptionPage(props: SubscriptionPageProps) {
       if (billingPortalUrl) {
         window.location.href = billingPortalUrl;
       } else {
-        setError('Failed to access billing portal. Please try again.');
+        setActionError('Failed to access billing portal. Please try again.');
       }
     } catch (err) { 
       const errorMessage = err instanceof Error ? err.message : 'An unexpected error occurred';
-      setError(errorMessage);
+      setActionError(errorMessage);
       logger.error('Error initiating billing portal session', {
         error: errorMessage,
         userId: user.id,
@@ -137,7 +142,7 @@ export function SubscriptionPage(props: SubscriptionPageProps) {
   if (authLoading || isSubscriptionLoading) {
     return (
       <Layout>
-        <div className="flex justify-center items-center py-12">
+        <div data-testid="loading-spinner-container" className="flex justify-center items-center py-12">
           <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-primary"></div>
         </div>
       </Layout>
@@ -148,6 +153,8 @@ export function SubscriptionPage(props: SubscriptionPageProps) {
     return <Navigate to="/login" />;
   }
   
+  const userIsOnPaidPlan = userSubscription?.status === 'active' || userSubscription?.status === 'trialing';
+
   return (
     <Layout>
       <div className="py-8 px-4 sm:px-6 lg:px-8">
@@ -161,10 +168,10 @@ export function SubscriptionPage(props: SubscriptionPageProps) {
             </p>
           </div>
           
-          {error && (
+          {(storeError || actionError) && (
             <div className="mt-6 mx-auto max-w-lg p-4 bg-red-50 border border-red-200 rounded-md flex items-center gap-3 text-red-700">
               <AlertCircle size={20} />
-              <span>{error}</span>
+              <span>{actionError || storeError?.message || 'An error occurred'}</span>
             </div>
           )}
           
@@ -178,177 +185,33 @@ export function SubscriptionPage(props: SubscriptionPageProps) {
             </div>
           )}
           
-          {userSubscription && userSubscription.status !== 'free' && userSubscription.plan && (
-            <div className="mt-8 mx-auto max-w-2xl bg-primary/10 border border-primary/20 rounded-lg p-6">
-              <div className="flex items-start gap-4">
-                <div className="rounded-full bg-primary/20 p-3">
-                  <Award className="h-8 w-8 text-primary" />
-                </div>
-                <div className="flex-1">
-                  <h3 className="text-lg font-medium text-textPrimary">Current Subscription</h3>
-                  <p className="mt-1 text-textSecondary">
-                    You are currently subscribed to the <span className="font-semibold">{userSubscription.plan.name}</span> plan.
-                  </p>
-                  <div className="mt-2 grid grid-cols-1 sm:grid-cols-2 gap-2">
-                    <div>
-                      <span className="text-sm text-textSecondary">Price: </span>
-                      <span className="font-medium">
-                        {formatAmount(userSubscription.plan.amount, userSubscription.plan.currency)} 
-                        {' '}{formatInterval(userSubscription.plan.interval, userSubscription.plan.intervalCount)}
-                      </span>
-                    </div>
-                    <div>
-                      <span className="text-sm text-textSecondary">Status: </span>
-                      <span className={`font-medium capitalize ${
-                        userSubscription.status === 'active' || userSubscription.status === 'trialing' 
-                          ? 'text-green-600'
-                          : 'text-yellow-600'
-                      }`}>
-                        {userSubscription.status}
-                      </span>
-                    </div>
-                    {userSubscription.currentPeriodEnd && (
-                      <div>
-                        <span className="text-sm text-textSecondary">Current period ends: </span>
-                        <span className="font-medium">
-                          {new Date(userSubscription.currentPeriodEnd).toLocaleDateString()}
-                        </span>
-                      </div>
-                    )}
-                    {userSubscription.cancelAtPeriodEnd && (
-                      <div className="col-span-full mt-1">
-                        <span className="text-sm text-yellow-600">
-                          Your subscription will be canceled at the end of the current billing period.
-                        </span>
-                      </div>
-                    )}
-                  </div>
-                  <div className="mt-4 flex flex-wrap gap-3">
-                    <button
-                      onClick={handleManageSubscription}
-                      disabled={isProcessing}
-                      className={`inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-primary hover:bg-primary/90 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary ${
-                        isProcessing ? 'opacity-75 cursor-not-allowed' : ''
-                      }`}
-                    >
-                      <CreditCard className="mr-2 h-4 w-4" />
-                      Manage Billing / Payment
-                    </button>
-                    {userSubscription.status === 'active' && !userSubscription.cancelAtPeriodEnd && (
-                       <button
-                         onClick={handleCancelSubscription}
-                         disabled={isProcessing}
-                         className={`inline-flex items-center px-4 py-2 border border-border rounded-md shadow-sm text-sm font-medium text-textPrimary hover:bg-surface focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary ${
-                           isProcessing ? 'opacity-75 cursor-not-allowed' : ''
-                         }`}
-                       >
-                         Cancel Subscription
-                       </button>
-                    )}
-                  </div>
-                </div>
-              </div>
-            </div>
+          {userSubscription && userSubscription.plan && userSubscription.status !== 'free' && (
+            <CurrentSubscriptionCard 
+              userSubscription={userSubscription as UserSubscription & { plan: SubscriptionPlan }}
+              isProcessing={isProcessing}
+              handleManageSubscription={handleManageSubscription}
+              handleCancelSubscription={handleCancelSubscription}
+              formatAmount={formatAmount}
+              formatInterval={formatInterval}
+            />
           )}
           
           <div className="mt-12 sm:mt-16 grid gap-8 md:grid-cols-2 lg:grid-cols-3">
-            {/* Loop over ALL available plans fetched from the store */}
             {availablePlans.map((plan) => {
               const isCurrentPlan = userSubscription?.plan?.id === plan.id;
-              const isFreePlan = plan.amount === 0;
-              const userIsOnPaidPlan = userSubscription?.status === 'active' || userSubscription?.status === 'trialing';
-
-              // Attempt to parse description - provide defaults if parsing fails or data is missing
-              let subtitle = plan.name; // Default to plan name
-              let features: string[] = [];
-
-              // Check if description is an object and try to extract properties safely
-              if (plan.description && typeof plan.description === 'object') {
-                const desc = plan.description as Partial<PlanDescription>; // Use Partial for safe access
-                subtitle = (typeof desc.subtitle === 'string' && desc.subtitle) ? desc.subtitle : plan.name;
-                features = Array.isArray(desc.features) ? desc.features : [];
-              } else if (typeof plan.description === 'string' && plan.description) {
-                // Basic fallback if description is still somehow a string after migration
-                subtitle = plan.description;
-              }
-              // Removed try-catch as type checks handle most cases
-
+              
               return (
-                <div 
-                  key={plan.id} // Assuming plan.id is the unique DB identifier
-                  className={`border rounded-lg shadow-sm divide-y bg-surface ${
-                    isCurrentPlan ? 'border-primary ring-2 ring-primary' : 'border-border divide-border'
-                  }`}
-                >
-                  <div className="p-6">
-                    <h2 className="text-xl font-medium text-textPrimary">{plan.name}</h2>
-                    {/* Display subtitle from JSON */}
-                    <p className="mt-2 text-sm text-textSecondary">{subtitle}</p>
-                    <p className="mt-4">
-                      <span className="text-4xl font-extrabold text-textPrimary">
-                        {/* Display $0 for free plan, otherwise format amount */}
-                        {isFreePlan ? '$0' : formatAmount(plan.amount, plan.currency)}
-                      </span>
-                      <span className="text-base font-medium text-textSecondary">
-                        {/* Display /mo for free plan, otherwise format interval */}
-                        {isFreePlan ? '/mo' : `/${formatInterval(plan.interval, plan.intervalCount).replace('ly', '')}`}
-                      </span>
-                    </p>
-                    {/* Display features from JSON */}
-                    <ul className="mt-6 space-y-4">
-                      {features.length > 0 ? (
-                        features.map((feature, index) => (
-                          <li key={index} className="flex items-start">
-                            <div className="flex-shrink-0">
-                              <Check className="h-5 w-5 text-green-500" />
-                            </div>
-                            <p className="ml-3 text-sm text-textSecondary">{feature}</p>
-                          </li>
-                        ))
-                      ) : (
-                        <li className="flex items-start">
-                           <div className="flex-shrink-0">
-                              <Check className="h-5 w-5 text-gray-400" />
-                            </div>
-                          <p className="ml-3 text-sm text-textSecondary italic">No specific features listed.</p>
-                        </li>
-                      )}
-                    </ul>
-                  </div>
-                  <div className="px-6 py-4 bg-background">
-                    {isCurrentPlan ? (
-                      // Button for the CURRENT plan (Free or Paid)
-                      <button
-                        disabled
-                        className="w-full inline-flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-textSecondary/50 bg-surface cursor-not-allowed"
-                      >
-                        Current Plan
-                      </button>
-                    ) : isFreePlan ? (
-                      // Button for the Free plan card (only shown if NOT current)
-                      <button
-                        onClick={handleCancelSubscription} // Downgrade action
-                        disabled={isProcessing || !userIsOnPaidPlan} // Can only downgrade if on a paid plan
-                        className={`w-full inline-flex justify-center py-2 px-4 border border-border rounded-md shadow-sm text-sm font-medium hover:bg-surface focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary ${
-                          (isProcessing || !userIsOnPaidPlan) ? 'text-textSecondary/50 opacity-75 cursor-not-allowed' : 'text-textPrimary'
-                        }`}
-                      >
-                        {isProcessing ? 'Processing...' : 'Downgrade to Free'}
-                      </button>
-                    ) : (
-                      // Button for Paid plan cards (only shown if NOT current)
-                      <button
-                        onClick={() => handleSubscribe(plan.stripePriceId || plan.id)} // Use stripePriceId or plan DB id
-                        disabled={isProcessing}
-                        className={`w-full inline-flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-primary hover:bg-primary/90 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary ${
-                          isProcessing ? 'opacity-75 cursor-not-allowed' : ''
-                        }`}
-                      >
-                        {userIsOnPaidPlan ? 'Change Plan' : 'Subscribe'}
-                      </button>
-                    )}
-                  </div>
-                </div>
+                 <PlanCard 
+                  key={plan.id} 
+                  plan={plan}
+                  isCurrentPlan={isCurrentPlan}
+                  userIsOnPaidPlan={!!userIsOnPaidPlan}
+                  isProcessing={isProcessing}
+                  handleSubscribe={handleSubscribe}
+                  handleCancelSubscription={handleCancelSubscription}
+                  formatAmount={formatAmount}
+                  formatInterval={formatInterval}
+                />
               );
             })}
           </div>
