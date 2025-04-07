@@ -31,20 +31,45 @@ export const handleInvoicePaymentSucceeded = async (
     return; 
   }
   
-  // Log processing attempt
+  // --- Fetch user_id based on stripe_customer_id from invoice ---
+  const customerId = invoice.customer as string;
+  if (!customerId) {
+      console.error(`[${functionName}] Missing customer ID on invoice object: ${invoice.id}`);
+      throw new Error(`Invoice object ${invoice.id} is missing customer ID.`);
+  }
+
+  const { data: userSubData, error: userSubError } = await supabase
+      .from('user_subscriptions') // Assuming the customer ID link is reliable here
+      .select('user_id')
+      .eq('stripe_customer_id', customerId)
+      .maybeSingle();
+      
+  if (userSubError) {
+      console.error(`[${functionName}] Error fetching user_id for customer ${customerId}:`, userSubError);
+      throw new Error(`DB error fetching user_id for customer ${customerId}: ${userSubError.message}`);
+  }
+  
+  if (!userSubData?.user_id) {
+      console.error(`[${functionName}] CRITICAL: user_id not found for stripe_customer_id ${customerId}. Invoice event ${eventId} cannot be processed.`);
+      throw new Error(`User mapping not found for Stripe customer ${customerId}. Cannot process invoice event ${eventId}.`);
+  }
+  
+  const userId = userSubData.user_id;
+
+  // Log processing attempt (now including user_id)
   const { error: upsertProcessingError } = await supabase
     .from('subscription_transactions')
     .upsert({
         stripe_event_id: eventId,
         event_type: eventType,
         status: 'processing',
+        user_id: userId,
         stripe_invoice_id: invoice.id,
         stripe_subscription_id: invoice.subscription as string,
-        stripe_customer_id: invoice.customer as string,
+        stripe_customer_id: customerId,
         stripe_payment_intent_id: invoice.payment_intent as string,
         amount: invoice.amount_paid,
         currency: invoice.currency,
-        // Need user_id if possible - might need to query user_profiles by customer_id
     }, { onConflict: 'stripe_event_id' });
     
    if (upsertProcessingError) {
@@ -130,15 +155,42 @@ export const handleInvoicePaymentFailed = async (
     return; 
   }
   
+  // --- Fetch user_id based on stripe_customer_id from invoice ---
+  const customerId = invoice.customer as string;
+  if (!customerId) {
+      console.error(`[${functionName}] Missing customer ID on invoice object: ${invoice.id}`);
+      throw new Error(`Invoice object ${invoice.id} is missing customer ID.`);
+  }
+
+  const { data: userSubData, error: userSubError } = await supabase
+      .from('user_subscriptions')
+      .select('user_id')
+      .eq('stripe_customer_id', customerId)
+      .maybeSingle();
+      
+  if (userSubError) {
+      console.error(`[${functionName}] Error fetching user_id for customer ${customerId}:`, userSubError);
+      throw new Error(`DB error fetching user_id for customer ${customerId}: ${userSubError.message}`);
+  }
+  
+  if (!userSubData?.user_id) {
+      console.error(`[${functionName}] CRITICAL: user_id not found for stripe_customer_id ${customerId}. Invoice event ${eventId} cannot be processed.`);
+      throw new Error(`User mapping not found for Stripe customer ${customerId}. Cannot process invoice event ${eventId}.`);
+  }
+  
+  const userId = userSubData.user_id;
+
+  // Log processing attempt (now including user_id)
   const { error: upsertProcessingError } = await supabase
     .from('subscription_transactions')
     .upsert({
         stripe_event_id: eventId,
         event_type: eventType,
         status: 'processing',
+        user_id: userId,
         stripe_invoice_id: invoice.id,
         stripe_subscription_id: invoice.subscription as string,
-        stripe_customer_id: invoice.customer as string,
+        stripe_customer_id: customerId,
         stripe_payment_intent_id: invoice.payment_intent as string,
         amount: invoice.amount_due, // amount_due for failed payments
         currency: invoice.currency,

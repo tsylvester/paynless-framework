@@ -1,20 +1,19 @@
-import { SupabaseClient } from "@supabase/supabase-js";
 import Stripe from "npm:stripe";
 import { logger } from "@paynless/utils";
-import { TablesUpdate } from "@supabase/types"; // USE ALIAS
+// Import the service interface
+import { ISupabasePriceWebhookService } from "../services/price_webhook_service.ts"; 
 
 /**
  * Handles price.created, price.updated, price.deleted events:
- * Updates the active status of the corresponding plan in the DB.
- * Triggers sync on price.created.
+ * Uses the injected service to update plan status and trigger sync.
  */
 export async function handlePriceChange(
-  supabase: SupabaseClient,
+  supabaseService: ISupabasePriceWebhookService, // Use the service interface
   _stripe: Stripe,
   price: Stripe.Price,
   _eventId: string,
-  eventType: string, // 'price.created', 'price.updated', 'price.deleted'
-  isTestMode: boolean // Passed down from the main handler
+  eventType: string, 
+  isTestMode: boolean
 ): Promise<void> {
   const targetActiveStatus = eventType === 'price.deleted' ? false : price.active;
   logger.info(`[handlePriceChange] Handling ${eventType} for price ${price.id}. Setting active: ${targetActiveStatus}`);
@@ -24,36 +23,26 @@ export async function handlePriceChange(
      return; // Do nothing for the free plan price ID
   }
 
-  // Update the specific plan linked to this price
-  const { error: updateError } = await supabase
-    .from('subscription_plans')
-    .update({ active: targetActiveStatus, updated_at: new Date().toISOString() } satisfies TablesUpdate<"subscription_plans">)
-    .eq('stripe_price_id', price.id);
+  // Update the specific plan linked to this price via the service
+  const { error: updateError } = await supabaseService.updatePlanStatusByPriceId(price.id, targetActiveStatus);
 
   if (updateError) {
-    logger.error(`[handlePriceChange] Error updating plan status for price ${price.id}: ${updateError.message}`);
-    // throw new Error(...); // Consider if retry needed
+    logger.error(`[handlePriceChange] Service reported error updating plan status for price ${price.id}`);
+    // Original handler doesn't throw, maintain that behavior
   } else {
-    logger.info(`[handlePriceChange] Successfully updated active status to ${targetActiveStatus} for plan with price ${price.id}`);
+    logger.info(`[handlePriceChange] Service successfully updated active status to ${targetActiveStatus} for plan with price ${price.id}`);
   }
 
-  // If a new price was created, trigger sync as well
+  // If a new price was created, trigger sync via the service
   if (eventType === 'price.created') {
-     logger.info(`[handlePriceChange] Price ${price.id} created. Triggering full plan sync.`);
-     try {
-       logger.info(`[handlePriceChange] Attempting to invoke sync-stripe-plans with mode: ${isTestMode ? 'test' : 'live'}`);
-       const { data: invokeData, error: invokeError } = await supabase.functions.invoke('sync-stripe-plans', {
-         body: JSON.stringify({ isTestMode: isTestMode })
-       });
-       if (invokeError) {
-         logger.error(`[handlePriceChange] Error invoking sync-stripe-plans function: ${JSON.stringify(invokeError, null, 2)}`);
-         // throw new Error(...); // Consider if retry needed
-       } else {
-         logger.info("[handlePriceChange] Successfully invoked sync-stripe-plans. Result:", invokeData);
-       }
-     } catch (invokeCatchError) {
-        logger.error(`[handlePriceChange] CRITICAL: Caught exception during function invocation: ${invokeCatchError instanceof Error ? invokeCatchError.message : String(invokeCatchError)}`);
-        // throw invokeCatchError; // Consider if retry needed
+     logger.info(`[handlePriceChange] Price ${price.id} created. Triggering sync via service.`);
+     const { error: invokeError } = await supabaseService.invokeSyncPlans(isTestMode);
+     
+     // Log result of invocation attempt
+     if (invokeError) {
+       logger.error(`[handlePriceChange] Service reported error invoking sync-stripe-plans function.`);
+     } else {
+       logger.info("[handlePriceChange] Service successfully invoked sync-stripe-plans.");
      }
   }
 } 

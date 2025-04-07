@@ -39,6 +39,25 @@ The architecture follows these principles:
 - Consistent error handling and response formatting via `apiClient`
 - State management primarily using Zustand stores
 
+### Testing Strategy: Service Abstraction for Complex Dependencies
+
+**Context:** When unit testing Supabase Edge Functions that depend on the `SupabaseClient`, directly mocking the client can be challenging, especially if the function uses multiple distinct parts of the client (e.g., both database access via `.from()` and function invocation via `.functions.invoke()`).
+
+**Problem Encountered:** We encountered persistent TypeScript errors (specifically TS2345) when trying to pass mock `SupabaseClient` objects (even using casting like `as any` or `as unknown as SupabaseClient`) into handler functions. The type checker flagged mismatches due to the complexity of the real `SupabaseClient` class (including internal/protected properties) compared to our simplified mock objects, particularly when the *shape* of the required mock differed between tests in the same file.
+
+**Solution:** To overcome this and improve testability, we introduced a **Service Abstraction Layer** for handlers dealing with such complex dependencies:
+1.  **Define an Interface:** Create a specific interface (e.g., `ISomeSpecificService`) that declares *only* the high-level methods the handler needs (e.g., `updateRecordStatus(...)`, `invokeAnotherFunction(...)`).
+2.  **Implement the Service:** Create a class (e.g., `SomeSpecificService`) that implements this interface, encapsulating the actual `SupabaseClient` calls (`.from().update()`, `.functions.invoke()`) within its methods.
+3.  **Inject the Service:** Refactor the Edge Function handler to depend on the *interface* (`ISomeSpecificService`) instead of the raw `SupabaseClient`.
+4.  **Mock the Interface:** In the handler's unit test, create a simple mock object that implements the service interface using spy functions (e.g., `{ updateRecordStatus: spy(...), invokeAnotherFunction: spy(...) }`). This mock is easily type-compatible with the interface.
+
+**Benefits:**
+*   **Resolves Type Errors:** Completely bypasses the TS2345 errors related to mocking the complex `SupabaseClient` in the handler's unit test.
+*   **Focuses Tests:** Handler unit tests focus on verifying the handler's logic (calling the correct service method with correct arguments, handling results), while the service implementation's logic (correctly using the `SupabaseClient`) can be tested separately (though its tests might face the original mocking challenge, it's solved in one place).
+*   **Maintainability:** Follows the Dependency Inversion Principle, decoupling handlers from the specific implementation details of the `SupabaseClient`.
+
+**(Example:** See `supabase/functions/stripe-webhook/services/product_webhook_service.ts` and its usage in `supabase/functions/stripe-webhook/handlers/product.ts` and `product.test.ts`.)
+
 Test Incrementally From the Bottom Up
 1. Start with Unit Tests
 - Write unit tests for the file or module you're working on.
@@ -85,9 +104,6 @@ The application exposes the following primary API endpoints through Supabase Edg
   - `POST /:subscriptionId/resume`: Resumes a specific subscription.
   - `GET /usage/:metric`: Fetches usage metrics for a specific metric.
 - `/stripe-webhook`: Handles incoming webhook events from Stripe.
-
-### Users (`/api-users`)
-- Manages user-related operations (details TBD).
 
 *(Note: Endpoint specifics require reading function code. This is based on folder names.)*
 
@@ -215,7 +231,6 @@ supabase/functions/
 ├── _shared/             # Shared Deno utilities (CORS, Auth helpers, etc.)
 │
 ├── api-subscriptions/   # Handles subscription actions (checkout, portal, plans, current, cancel, resume, usage)
-├── api-users/           # Handles user management actions
 ├── login/               # Handles user login
 ├── logout/              # Handles user logout
 ├── me/                  # Handles fetching/updating the current user's profile

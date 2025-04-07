@@ -11,6 +11,8 @@
 *   **Deno Test Leaks:** `fetch` calls in tests must have their response bodies consumed (`await res.json()`, `.text()`) or closed (`await res.body?.cancel()`) to avoid resource leak errors.
 *   **Profile Auto-Creation:** Local Supabase setup automatically creates `user_profiles` rows. Tests modifying profiles must use `update` after initial user creation.
 *   **Back-testing/Regression:** Refactoring or changes require re-running affected unit/integration tests. Unit tests need updating post-integration changes.
+*   **Mocking SupabaseClient (TS2345):** Directly mocking the `SupabaseClient` in unit tests can lead to TS2345 errors (type incompatibility, often due to protected properties like `supabaseUrl`) if the mock object doesn't perfectly match the client's complex type signature. This is especially true if tests in the same file need to mock different *parts* of the client (e.g., `.from()` vs. `.functions.invoke()`), leading to inconsistent mock object shapes.
+    *   **Solution:** Introduce a **Service Abstraction Layer**. Define a simple interface declaring only the methods needed by the handler. Implement the interface using the real `SupabaseClient`. Refactor the handler to depend on the interface. Unit test the handler by mocking the *simple interface*, which avoids the TS2345 error. (See `stripe-webhook/handlers/product.ts` and its service/test for an example). Test the service implementation's direct Supabase calls separately.
 
 ---
 
@@ -54,25 +56,29 @@
             *   [✅] `session/`
             *   [✅] `api-subscriptions/handlers/checkout.ts`
             *   [?] `api-subscriptions/` (Other handlers)
-                *   `[ ]` Implement `handlers/billing-portal.ts`
+                *   [✅] Implement `handlers/billing-portal.ts`
                 *   [✅] Unit Test `handlers/billing-portal.ts`
-                *   `[?]` Implement/Verify `handlers/subscription.ts` (cancel/resume)
+                *   [✅] Implement/Verify `handlers/subscription.ts` (cancel/resume)
                 *   [✅] Unit Test `handlers/subscription.ts`
-                *   `[?]` Review/Test `handlers/plans.ts`
-                *   `[?]` Review/Test `handlers/current.ts`
-                *   `[?]` Review/Test `handlers/usage.ts`
+                *   [✅] Review/Test `handlers/plans.ts`
+                *   [✅] Review/Test `handlers/current.ts`
+                *   [✅] Review/Test `handlers/usage.ts`
             *   [ ] `stripe-webhook/` 
-                *   `[ ]` Implement webhook handler logic (`index.ts`) - *Need main router + sig verify*
-                *   `[ ]` Implement robust webhook signature verification - *Partially done in stripe-client, needs use in index.ts*
                 *   `[ ]` Implement handling for key events (checkout complete, sub updated, etc.) 
                     *   [✅] `handlers/checkout-session.ts`
-                    *   `[ ]` Other event handlers (e.g., invoice paid, sub deleted)
+                    *   [✅] `handlers/subscription.ts` 
+                    *   [✅] `handlers/invoice.ts`
+                    *   [✅] `handlers/product.ts`
+                    *   [✅] `handlers/price.ts`
                 *   `[ ]` Unit test webhook handler logic & signature verification
                     *   [✅] Unit Test `handlers/checkout-session.ts`
                     *   [✅] Unit Test `index.ts` (router/sig verify)
-                    *   `[ ]` Unit Test other event handlers
-            *   [🚫] `sync-stripe-plans/` *(Blocked/Skipped - Needs Implementation? Might be done based on earlier chats)*
-            *   [❓] `api-users/` *(Unit tests not verified/created?)*
+                    *   [✅] Unit Test `handlers/subscription.ts`
+                    *   [✅] Unit Test `handlers/invoice.ts`
+                    *   [✅] Unit Test `handlers/product.ts` 
+                        *   **Note:** Encountered persistent TS2345 errors mocking SupabaseClient directly due to needing both `.from()` and `.functions.invoke()`. Refactored `product.ts` handlers to accept a simpler Service Wrapper interface, moving complex mock to the service layer test.
+                    *   [✅] Unit Test `handlers/price.ts`
+            *   [ ] `sync-stripe-plans/` *(Needs Unit Tests)*
             *   [✅] `_shared/auth.ts`
             *   [✅] `_shared/cors-headers.ts`
             *   [✅] `_shared/responses.ts`
@@ -103,9 +109,7 @@
         *   [ ] **Function Integration (Stripe - Webhook):**
              *   `[ ]` Test `stripe-webhook` handler (Likely requires deployed env or advanced local setup like Stripe CLI tunnel)
              *   `[ ]` Test webhook signature verification
-        *   [🚫] `sync-stripe-plans` *(Integration test likely not needed if it's a manual/infrequent script)*
-        *   [❓] **Function Integration (Other):**
-            *   [❓] `api-users/` *(Integration tests not verified/created?)*
+        *   [?] `sync-stripe-plans` *(Needs Integration Test - Likely requires deployed env)*
         *   [❓] **Database Integration:** Use `supabase test db` to validate migrations and RLS policies.
         *   [❓] **Stripe Integration:** Test against Stripe's test environment API and webhooks.
     *   **1.3 Final Validation & Lockdown:**
@@ -198,12 +202,5 @@
 *   [⏸️] **Function Integration (Stripe):** `/api-subscriptions` *(Blocked Locally - Test in Staging)*
 *   [🚫] **Function Integration (Stripe):** `stripe-webhook` *(Blocked/Skipped)*
 *   [🚫] **Function Integration (Stripe):** `sync-stripe-plans` *(Blocked/Skipped)*
-*   [❓] **Function Integration (Other):** `api-users/` *(Pending)*
-*   [❓] **Database Integration:** Use `supabase test db` *(Pending)*.
-*   [❓] **Stripe Integration:** Test against Stripe test env API *(Pending - Needs deployed env or webhook simulation)*.
+*   [❓] **Database Integration:** Use `supabase test db` to validate migrations and RLS policies.
 
----
-
-**Current Focus / Immediate Next Steps:**
-
-1.  **Integration Testing for `/api-subscriptions`** (`supabase/functions/api-subscriptions/`

@@ -22,6 +22,14 @@ import { handleSubscriptionUpdated as defaultHandleSubscriptionUpdated, handleSu
 import { handleInvoicePaymentSucceeded as defaultHandleInvoicePaymentSucceeded, handleInvoicePaymentFailed as defaultHandleInvoicePaymentFailed } from "./handlers/invoice.ts";
 import { handleProductCreated as defaultHandleProductCreated, handleProductUpdated as defaultHandleProductUpdated } from "./handlers/product.ts";
 import { handlePriceChange as defaultHandlePriceChange } from "./handlers/price.ts";
+import { 
+    ISupabaseProductWebhookService, 
+    SupabaseProductWebhookService 
+} from "./services/product_webhook_service.ts";
+import { 
+    ISupabasePriceWebhookService, 
+    SupabasePriceWebhookService 
+} from "./services/price_webhook_service.ts";
 import Stripe from "npm:stripe";
 
 // --- Dependency Injection ---
@@ -44,12 +52,51 @@ interface WebhookDependencies {
   handleSubscriptionDeleted: (supabase: SupabaseClient, stripe: Stripe, subscription: Stripe.Subscription, eventId: string, eventType: string) => Promise<void>;
   handleInvoicePaymentSucceeded: (supabase: SupabaseClient, stripe: Stripe, invoice: Stripe.Invoice, eventId: string, eventType: string) => Promise<void>;
   handleInvoicePaymentFailed: (supabase: SupabaseClient, stripe: Stripe, invoice: Stripe.Invoice, eventId: string, eventType: string) => Promise<void>;
-  handleProductCreated: (supabase: SupabaseClient, stripe: Stripe, product: Stripe.Product, eventId: string, eventType: string, isTestMode: boolean) => Promise<void>;
-  handleProductUpdated: (supabase: SupabaseClient, stripe: Stripe, product: Stripe.Product, eventId: string, eventType: string) => Promise<void>;
-  handlePriceChange: (supabase: SupabaseClient, stripe: Stripe, price: Stripe.Price, eventId: string, eventType: string, isTestMode: boolean) => Promise<void>;
+  handleProductCreated: (supabaseService: ISupabaseProductWebhookService, stripe: Stripe, product: Stripe.Product, eventId: string, eventType: string, isTestMode: boolean) => Promise<void>;
+  handleProductUpdated: (supabaseService: ISupabaseProductWebhookService, stripe: Stripe, product: Stripe.Product, eventId: string, eventType: string) => Promise<void>;
+  handlePriceChange: (supabaseService: ISupabasePriceWebhookService, stripe: Stripe, price: Stripe.Price, eventId: string, eventType: string, isTestMode: boolean) => Promise<void>;
 }
 
 // --- Default Dependencies ---
+
+// Helper function to create the service and wrap the original handlers
+const createProductHandlersWithService = (supabaseClient: SupabaseClient) => {
+  const service = new SupabaseProductWebhookService(supabaseClient);
+  return {
+    // Wrap the original handler, passing the service instead of the client
+    handleProductCreated: (
+        _service: ISupabaseProductWebhookService, // We pass the created service below
+        stripe: Stripe, 
+        product: Stripe.Product, 
+        eventId: string, 
+        eventType: string, 
+        isTestMode: boolean
+    ) => defaultHandleProductCreated(service, stripe, product, eventId, eventType, isTestMode),
+    // Wrap the original handler
+    handleProductUpdated: (
+        _service: ISupabaseProductWebhookService, // We pass the created service below
+        stripe: Stripe, 
+        product: Stripe.Product, 
+        eventId: string, 
+        eventType: string
+    ) => defaultHandleProductUpdated(service, stripe, product, eventId, eventType),
+  };
+};
+
+// Helper function to create the service and wrap the original price handler
+const createPriceHandlerWithService = (supabaseClient: SupabaseClient) => {
+  const service = new SupabasePriceWebhookService(supabaseClient);
+  return {
+    handlePriceChange: (
+        _service: ISupabasePriceWebhookService,
+        stripe: Stripe, 
+        price: Stripe.Price, 
+        eventId: string, 
+        eventType: string, 
+        isTestMode: boolean
+    ) => defaultHandlePriceChange(service, stripe, price, eventId, eventType, isTestMode),
+  };
+};
 
 const defaultDependencies: WebhookDependencies = {
   envGet: Deno.env.get,
@@ -65,10 +112,10 @@ const defaultDependencies: WebhookDependencies = {
   handleSubscriptionDeleted: defaultHandleSubscriptionDeleted,
   handleInvoicePaymentSucceeded: defaultHandleInvoicePaymentSucceeded,
   handleInvoicePaymentFailed: defaultHandleInvoicePaymentFailed,
-  // Add new default handlers
-  handleProductCreated: defaultHandleProductCreated,
-  handleProductUpdated: defaultHandleProductUpdated,
-  handlePriceChange: defaultHandlePriceChange,
+  // --- Use the wrapped product handlers ---
+  ...createProductHandlersWithService(defaultCreateSupabaseAdminClient()),
+  // --- Use the wrapped price handler ---
+  ...createPriceHandlerWithService(defaultCreateSupabaseAdminClient()),
 };
 
 // --- Core Logic ---
@@ -208,34 +255,35 @@ export async function handleWebhookRequest(req: Request, deps: WebhookDependenci
         );
         break;
       }
-      // --- Refactored Cases ---
+      // --- Refactored Cases Using Service --- 
       case "product.created": {
          await handleProductCreated(
-            supabase,
-            stripeClient,
-            event.data.object as Stripe.Product,
-            event.id,
-            event.type,
-            isTestMode // Pass mode
+            null as any, // Pass null for the service arg
+            stripeClient!, 
+            event.data.object as Stripe.Product, 
+            event.id, 
+            event.type, 
+            isTestMode 
          );
          break;
       }
       case "product.updated": {
          await handleProductUpdated(
-            supabase,
-            stripeClient,
-            event.data.object as Stripe.Product,
-            event.id,
-            event.type
+            null as any, // Pass null for the service arg
+            stripeClient!, 
+            event.data.object as Stripe.Product, 
+            event.id, 
+            event.type 
          );
          break;
       }
       case "price.created":
       case "price.updated":
       case "price.deleted": {
+        // Call handler from deps. Pass null for the service arg to match signature.
          await handlePriceChange(
-            supabase,
-            stripeClient,
+            null as any, // Pass null for the ISupabasePriceWebhookService argument
+            stripeClient!,
             event.data.object as Stripe.Price,
             event.id,
             event.type, // Pass event type
