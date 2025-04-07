@@ -129,7 +129,7 @@ export const useAuthStore = create<AuthStoreType>()(
         if (session?.access_token) {
           logger.info('Verifying token / fetching initial profile...');
           try {
-            const result = await api.get<ProfileResponse>('profile'); 
+            const result = await api.get<ProfileResponse>('profile', { token: session.access_token }); 
             logger.info('Initialize: Profile fetch result:', { result });
 
             if (result?.user && result?.profile) { 
