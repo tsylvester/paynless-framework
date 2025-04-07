@@ -2,12 +2,16 @@
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
     "outDir": "./dist",
-    "rootDir": "./src",
+    "baseUrl": ".",
+    "paths": {
+      "@paynless/types": ["../types/src/index"]
+    },
+    "types": ["node", "vitest/globals"],
     "declarationDir": "./dist",
     "lib": ["ESNext", "DOM"],
     "composite": true
   },
-  "include": ["src/**/*"],
+  "include": ["src/**/*", "vitest.config.ts"],
   "exclude": ["node_modules", "dist"],
   "references": [
     { "path": "../types" },

@@ -3,33 +3,50 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import ActualStripe from "npm:stripe@14.11.0"; // Assuming version from previous files
 import type Stripe from "npm:stripe@14.11.0";
 import { createClient as actualCreateClient } from "jsr:@supabase/supabase-js@2"; // Assuming version from previous files
-import type { SupabaseClient, SupabaseClientOptions, PostgrestResponse } from "@supabase/supabase-js"; // Added PostgrestResponse
+import type { SupabaseClient, SupabaseClientOptions, PostgrestResponse } from "npm:@supabase/supabase-js@2"; // USE NPM SPECIFIER
 import { 
     // corsHeaders, // Keep separate if only used for OPTIONS
     createErrorResponse as actualCreateErrorResponse, 
     createSuccessResponse as actualCreateSuccessResponse, 
     corsHeaders // Import directly for simple OPTIONS response
 } from "../_shared/cors-headers.ts";
+// Import the new service
+import { ISyncPlansService, SyncPlansService } from "./services/sync_plans_service.ts";
 
 // Define dependency types
 type StripeConstructor = new (key: string, config?: Stripe.StripeConfig) => Stripe;
-type CreateClientFn = (url: string, key: string, options?: SupabaseClientOptions<any>) => SupabaseClient<any>;
+// Keep client type for service creation
+type CreateClientFn = (url: string, key: string, options?: SupabaseClientOptions<any>) => SupabaseClient<any>; 
 
 // Define dependencies interface
 export interface SyncPlansHandlerDeps {
     createErrorResponse: typeof actualCreateErrorResponse;
     createSuccessResponse: typeof actualCreateSuccessResponse;
     stripeConstructor: StripeConstructor;
-    createSupabaseClient: CreateClientFn;
-    // Deno.env.get will be stubbed in tests
+    // Remove createSupabaseClient, add service instance
+    // createSupabaseClient: CreateClientFn; 
+    syncPlansService: ISyncPlansService; 
 }
 
 // Default dependencies
+// Create the real client and service here
+const createDefaultSupabaseClient = (): SupabaseClient<any> => { // Add return type
+    const supabaseUrl = Deno.env.get("SUPABASE_URL");
+    const supabaseServiceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+    if (!supabaseUrl || !supabaseServiceRoleKey) {
+      throw new Error("Missing Supabase URL or Service Role Key for default client creation.");
+    }
+    return actualCreateClient(supabaseUrl, supabaseServiceRoleKey, { auth: { persistSession: false } });
+};
+const defaultSupabaseClient = createDefaultSupabaseClient();
+const defaultSyncPlansService = new SyncPlansService(defaultSupabaseClient);
+
 const defaultDeps: SyncPlansHandlerDeps = {
     createErrorResponse: actualCreateErrorResponse,
     createSuccessResponse: actualCreateSuccessResponse,
     stripeConstructor: ActualStripe,
-    createSupabaseClient: actualCreateClient,
+    // Provide the instantiated service
+    syncPlansService: defaultSyncPlansService,
 };
 
 // Export the handler function
@@ -85,18 +102,21 @@ export async function handleSyncPlansRequest(
     console.log(`Stripe client initialized in ${isTestMode ? 'TEST' : 'LIVE'} mode.`);
 
     // 2. Initialize Supabase Admin Client
-    const supabaseUrl = Deno.env.get("SUPABASE_URL");
-    const supabaseServiceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+    // const supabaseUrl = Deno.env.get("SUPABASE_URL");
+    // const supabaseServiceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
 
-    if (!supabaseUrl || !supabaseServiceRoleKey) {
-      console.error("Supabase URL or Service Role Key is not configured.");
-      return deps.createErrorResponse("Supabase connection details missing.", 500);
-    }
+    // if (!supabaseUrl || !supabaseServiceRoleKey) {
+    //   console.error("Supabase URL or Service Role Key is not configured.");
+    //   return deps.createErrorResponse("Supabase connection details missing.", 500);
+    // }
 
-    const supabaseAdmin = deps.createSupabaseClient(supabaseUrl, supabaseServiceRoleKey, {
-        auth: { persistSession: false } // Ensure no session persistence for admin client
-    });
-    console.log("Supabase admin client initialized.");
+    // const supabaseAdmin = deps.createSupabaseClient(supabaseUrl, supabaseServiceRoleKey, {
+    //     auth: { persistSession: false } // Ensure no session persistence for admin client
+    // });
+    // console.log("Supabase admin client initialized.");
+
+    // **** Instantiate the Sync Plans Service ****
+    // const syncService: ISyncPlansService = new SyncPlansService(supabaseAdmin);
 
     // 3. Fetch Active Products and Prices from Stripe
     console.log("Fetching active products and prices from Stripe...");
@@ -145,78 +165,57 @@ export async function handleSyncPlansRequest(
       return deps.createSuccessResponse({ message: "No recurring plans found.", syncedCount: 0 });
     }
 
-    // 5. Upsert data into Supabase
-    console.log("Upserting plans into Supabase...");
-    // Specify return type for clarity
-    const upsertResult: PostgrestResponse<any> = await supabaseAdmin
-      .from('subscription_plans')
-      .upsert(plansToUpsert, { onConflict: 'stripe_price_id' }); 
-
+    // **** Upsert data via the Service ****
+    console.log("Upserting plans via service...");
+    const upsertResult = await deps.syncPlansService.upsertPlans(plansToUpsert);
     if (upsertResult.error) {
-      console.error("Supabase upsert error:", upsertResult.error);
-      // Use injected error response
-      return deps.createErrorResponse(`Supabase upsert failed: ${upsertResult.error.message}`, 500); 
+      return deps.createErrorResponse(`Supabase upsert failed via service: ${upsertResult.error.message}`, 500);
     }
-    console.log(`Upsert successful. ${upsertResult.count ?? 0} rows affected.`); // Use count from result
 
     // --- BEGIN DEACTIVATION LOGIC ---
-    let activePriceIdsFromStripe = new Set<string>();
     try {
-        activePriceIdsFromStripe = new Set(plansToUpsert.map(p => p.stripe_price_id));
-        console.log("[sync-stripe-plans] Active Price IDs from Stripe for deactivation check:", Array.from(activePriceIdsFromStripe));
-
-        console.log("[sync-stripe-plans] Fetching existing plan IDs from database...");
-        const { data: existingPlans, error: fetchError } = await supabaseAdmin
-          .from('subscription_plans')
-          .select('id, stripe_price_id, name, active'); 
+        const activePriceIdsFromStripe = new Set(plansToUpsert.map(p => p.stripe_price_id));
+        console.log("[sync-stripe-plans] Fetching existing plans via service...");
+        // **** Fetch existing plans via the Service ****
+        const { data: existingPlans, error: fetchError } = await deps.syncPlansService.getExistingPlans();
 
         if (fetchError) {
-          console.warn("Could not fetch existing plans to check for deactivation:", fetchError.message);
-        } else if (existingPlans) { // Check if existingPlans is not null
-          console.log(`[sync-stripe-plans] Found ${existingPlans.length} plans in DB.`);
-          
+          console.warn("Service could not fetch existing plans:", fetchError.message);
+        } else if (existingPlans) {
           const plansToDeactivate = existingPlans
-            .filter(p => p.stripe_price_id && p.stripe_price_id !== 'price_FREE') // Ensure ID exists
+            .filter(p => p.stripe_price_id && p.stripe_price_id !== 'price_FREE') 
             .filter(p => p.active === true && !activePriceIdsFromStripe.has(p.stripe_price_id))
-            // No map needed now, just filter
 
           if (plansToDeactivate.length > 0) {
-            console.log(`[sync-stripe-plans] Attempting to deactivate ${plansToDeactivate.length} plans.`);
-            // FIX: Loop and use update().eq()
+            console.log(`[sync-stripe-plans] Attempting to deactivate ${plansToDeactivate.length} plans via service.`);
             for (const plan of plansToDeactivate) {
-                console.log(`[sync-stripe-plans] Deactivating plan: ID=${plan.id}, Name=${plan.name}, StripePriceID=${plan.stripe_price_id}`);
-                const { error: updateError } = await supabaseAdmin
-                    .from('subscription_plans')
-                    .update({ active: false })
-                    .eq('stripe_price_id', plan.stripe_price_id); // Use eq() filter
-
+                console.log(`[sync-stripe-plans] Deactivating plan: ID=${plan.id}, StripePriceID=${plan.stripe_price_id}`);
+                 // **** Deactivate plan via the Service ****
+                 const { error: updateError } = await deps.syncPlansService.deactivatePlan(plan.stripe_price_id);
                 if (updateError) {
-                    console.error(`[sync-stripe-plans] Error deactivating plan ${plan.stripe_price_id}:`, updateError.message);
-                    // Decide if we should continue or stop on error
+                    console.error(`[sync-stripe-plans] Service reported error deactivating plan ${plan.stripe_price_id}:`, updateError.message);
                 }
             }
           } else {
-            console.log("[sync-stripe-plans] No plans found in DB needing deactivation.");
+            console.log("[sync-stripe-plans] No plans found needing deactivation.");
           }
         } else {
-             console.log("[sync-stripe-plans] No existing plans found in DB.");
+             console.log("[sync-stripe-plans] No existing plans found in DB (via service).");
         }
     } catch (deactivationError) {
-        console.error("[sync-stripe-plans] Error during deactivation logic:", deactivationError);
+        console.error("[sync-stripe-plans] Error during service-based deactivation logic:", deactivationError);
     }
     // --- END DEACTIVATION LOGIC ---
 
-    // Use injected success response
-    return deps.createSuccessResponse({ message: "Stripe plans synced successfully.", syncedCount: plansToUpsert.length });
+    return deps.createSuccessResponse({ message: "Stripe plans synced successfully via service.", syncedCount: plansToUpsert.length });
 
   } catch (error) {
     console.error("Error in sync-stripe-plans function:", error);
-    // Use injected error response
     return deps.createErrorResponse(error.message || "Internal server error", 500);
   }
 }
 
 // Only run serve if the module is executed directly
 if (import.meta.main) {
-    serve(handleSyncPlansRequest);
+    serve((req) => handleSyncPlansRequest(req, defaultDeps));
 }

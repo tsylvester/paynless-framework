@@ -401,6 +401,27 @@ The application uses Zustand for global state management:
 3. Components access state and actions using the generated hooks (e.g., `useAuthStore()`, `useSubscriptionStore()`).
 4. The `persist` middleware is used to save parts of the state (like auth session) to `localStorage`.
 
+## URL Handling Convention (Monorepo Standard)
+
+To ensure consistency and prevent subtle bugs when constructing URLs for API calls or routing, the following convention **MUST** be followed throughout the Paynless Framework monorepo:
+
+1.  **Base URLs:**
+    *   Any variable, configuration setting, or function parameter representing a base URL (e.g., `config.baseUrl` in `apiClient`, `VITE_SUPABASE_URL` in `.env`) **MUST NOT** end with a trailing slash (`/`).
+    *   *Correct:* `http://localhost:54321`, `https://api.example.com/v1`
+    *   *Incorrect:* `http://localhost:54321/`, `https://api.example.com/v1/`
+
+2.  **Endpoint Paths / Relative Paths:**
+    *   Any string representing a specific API endpoint path passed to client methods (like `api.get`, `api.post`, etc.) or a relative path used for routing **MUST NOT** start with a leading slash (`/`).
+    *   These paths should represent the route *relative* to the relevant base URL or current path context.
+    *   *Correct:* `auth/login`, `api-subscriptions/checkout`, `users/${userId}/profile`, `details`
+    *   *Incorrect:* `/auth/login`, `/api-subscriptions/checkout`, `/details`
+
+3.  **URL Construction (API Client):**
+    *   When combining a base URL and an endpoint path within API client logic (like `packages/api-client`), use simple string concatenation with a single slash in between: `` `${baseUrl}/${endpoint}` ``.
+    *   This relies on the base URL not having a trailing slash (Rule 1) and the endpoint path not having a leading slash (Rule 2).
+
+**Rationale:** This approach is simple, predictable, and avoids ambiguities encountered with the standard `URL` constructor when base URLs contain paths. It ensures consistency across different packages and environments.
+
 ## Contributing
 
 To contribute to this project:

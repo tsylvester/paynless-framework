@@ -50,9 +50,17 @@ interface ApiResult<T = unknown> {
   error?: { message: string; code?: string };
 }
 
-// Custom Error class
-class ApiError extends Error {
+// Error class for API issues
+export class ApiError extends Error {
   code?: string | number;
+  status?: number; // Add status property
+
+  constructor(message: string, code?: string | number, status?: number) { // Add status to constructor
+    super(message);
+    this.name = 'ApiError';
+    this.code = code;
+    this.status = status; // Assign status
+  }
 }
 
 async function apiClient<T = unknown>(
@@ -63,11 +71,13 @@ async function apiClient<T = unknown>(
     throw new Error('API Client not initialized. Call initializeApiClient first.');
   }
 
-  // Construct URL safely, preventing double slashes
-  // Remove potential leading slash from endpoint before joining
-  const cleanEndpoint = endpoint.replace(/^\//, '');
-  const url = `${config.baseUrl}/${cleanEndpoint}`;
-  logger.debug(`[apiClient ${endpoint}] Starting request.`); // Log 1
+  // Revert AGAIN to manual URL concatenation. 
+  // The URL constructor treats base URLs with paths but no trailing slash 
+  // differently than expected, replacing the last path segment.
+  // Manual concat works reliably IF the convention is followed:
+  // - baseUrl has NO trailing slash
+  // - endpoint has NO leading slash
+  const url = `${config.baseUrl}/${endpoint}`;
 
   // CHANGED: Get token from options instead of Zustand store
   const token = options.token;
@@ -94,6 +104,9 @@ async function apiClient<T = unknown>(
   const method = options.method || (options.body ? 'POST' : 'GET');
   logger.debug(`[apiClient ${endpoint}] Configured`, { method, url, hasToken: !!token, isPublic: !!options.isPublic }); // Log 2
 
+  // Log the final URL right before fetch
+  logger.debug(`>>> [apiClient ${endpoint}] Attempting fetch with FINAL URL: ${url}`);
+
   logger.debug(`API Call: ${method} ${url}`, { hasToken: !!token });
 
   try {
@@ -119,20 +132,17 @@ async function apiClient<T = unknown>(
 
     logger.debug(`[apiClient ${endpoint}] Checking response.ok (${response.ok})...`); // Log 7
     if (!response.ok) {
-      // Fix: Prioritize message/code directly on body, then nested error, then default
       const errorMessage = responseBody?.message || responseBody?.error?.message || `HTTP error ${response.status}`;
-      const errorCode = responseBody?.code || responseBody?.error?.code; // Check both locations
+      const errorCode = responseBody?.code || responseBody?.error?.code;
       logger.error(`[apiClient ${endpoint}] Response not OK`, { status: response.status, errorMessage, errorCode });
-      const error = new ApiError(errorMessage);
-      error.code = errorCode || response.status; // Use code from body if available, otherwise status
+      const error = new ApiError(errorMessage, errorCode, response.status); 
       throw error;
     }
 
     // If response is OK, but maybe there's an app-level error in the body
     if (responseBody.error) {
        logger.warn(`[apiClient ${endpoint}] Response OK but contains error body`, { error: responseBody.error });
-       const error = new ApiError(responseBody.error.message);
-       error.code = responseBody.error.code || 'API_RESPONSE_ERROR';
+       const error = new ApiError(responseBody.error.message, responseBody.error.code, response.status); 
        throw error;
     }
 
@@ -149,17 +159,15 @@ async function apiClient<T = unknown>(
     }
 
   } catch (error) {
-    // Check if it's already our custom ApiError or re-throw
     if (error instanceof ApiError) {
-       logger.error(`API Fetch Error: ${error.message}`, { url, code: error.code });
+       logger.error(`API Fetch Error: ${error.message}`, { url, code: error.code, status: error.status });
        throw error;
     } else if (error instanceof Error) {
        logger.error(`API Fetch Error (Unknown): ${error.message}`, { url });
-       throw error; // Re-throw generic errors
+       throw new ApiError(`Network error: ${error.message}`, 'NETWORK_ERROR', 0); 
     } else {
-       // Handle non-Error throws if necessary, though less common
        logger.error(`[apiClient ${endpoint}] Caught error in outer try/catch`, { error });
-       throw new Error('An unknown fetch error occurred');
+       throw new ApiError('An unknown fetch error occurred', 'UNKNOWN_FETCH_ERROR', 0);
     }
   }
 }

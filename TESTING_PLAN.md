@@ -78,7 +78,7 @@
                     *   [✅] Unit Test `handlers/product.ts` 
                         *   **Note:** Encountered persistent TS2345 errors mocking SupabaseClient directly due to needing both `.from()` and `.functions.invoke()`. Refactored `product.ts` handlers to accept a simpler Service Wrapper interface, moving complex mock to the service layer test.
                     *   [✅] Unit Test `handlers/price.ts`
-            *   [ ] `sync-stripe-plans/` *(Needs Unit Tests)*
+            *   [⏸️] `sync-stripe-plans/` *(Unit tests exist but ignored locally due to Supabase lib type resolution errors. Pending deployed testing.)*
             *   [✅] `_shared/auth.ts`
             *   [✅] `_shared/cors-headers.ts`
             *   [✅] `_shared/responses.ts`
@@ -88,7 +88,7 @@
         *   **Task:** `[🚧] Complete implementation and unit tests for [ ], [?], and [❓] items above.`
     *   **1.2 Integration Tests:**
         *   [✅] **Environment Setup:** Local Supabase environment configured (`config.toml`, `.env.local`). Test utilities created (`_shared/test-utils.ts`).
-        *   [✅] **Function Integration (Auth & Profile):**
+        *   **Function Integration (Auth & Profile):**
             *   [✅] `/login`
             *   [✅] `/logout`
             *   [✅] `/me`
@@ -109,7 +109,7 @@
         *   [ ] **Function Integration (Stripe - Webhook):**
              *   `[ ]` Test `stripe-webhook` handler (Likely requires deployed env or advanced local setup like Stripe CLI tunnel)
              *   `[ ]` Test webhook signature verification
-        *   [?] `sync-stripe-plans` *(Needs Integration Test - Likely requires deployed env)*
+        *   [⏸️] `sync-stripe-plans` *(Needs Integration Test - Requires deployed env due to local type errors & env vars)*
         *   [❓] **Database Integration:** Use `supabase test db` to validate migrations and RLS policies.
         *   [❓] **Stripe Integration:** Test against Stripe's test environment API and webhooks.
     *   **1.3 Final Validation & Lockdown:**
@@ -118,12 +118,9 @@
 *   **Phase 2: Shared Packages (`packages/`)** **<-- CURRENT FOCUS**
     *   **2.1 Unit Tests:**
         *   [✅] `packages/api-client` (Vitest + MSW setup complete, `apiClient.ts` tests passing)
-        *   [ ] `packages/api-client/stripe.api.ts` *(Requires backend handlers to be complete)*
-            *   `[ ]` Test `createCheckoutSession` client method
-            *   `[ ]` Test `createPortalSession` client method
-            *   ... (other methods) ...
+        *   [✅] `packages/api-client/stripe.api.ts` *(All unit tests passing)*
         *   [✅] `packages/store` (Vitest setup complete, `authStore.ts` passing, `subscriptionStore.ts` partial pass/placeholders)
-            *   `[ ]` Complete `subscriptionStore.ts` tests (checkout, portal actions)
+            *   [ ] Complete `subscriptionStore.ts` tests (checkout, portal actions)
         *   [ ] `packages/ui-components` (Vitest + RTL recommended).
         *   [✅] `packages/utils` (Vitest setup complete, `logger.ts` tests passing)
         *   [ ] `packages/types` (Implicitly tested).
@@ -200,7 +197,7 @@
 *   [ ] **Review/Run Unit Tests for `_shared/`:** Ensure core utilities (`auth.ts`, `cors-headers.ts`, `stripe-client.ts`) have passing unit tests.
 *   [✅] **Function Integration (Auth & Profile):** `/login`, `/logout`, `/me`, `/profile/<userId>`, `/refresh`, `/register`, `/reset-password`, `/session`, `/ping`
 *   [⏸️] **Function Integration (Stripe):** `/api-subscriptions` *(Blocked Locally - Test in Staging)*
-*   [🚫] **Function Integration (Stripe):** `stripe-webhook` *(Blocked/Skipped)*
-*   [🚫] **Function Integration (Stripe):** `sync-stripe-plans` *(Blocked/Skipped)*
+*   [🚫] **Function Integration (Stripe):** `stripe-webhook` *(Blocked/Skipped Locally)*
+*   [⏸️] **Function Integration (Stripe):** `sync-stripe-plans` *(Blocked Locally - Test in Staging)*
 *   [❓] **Database Integration:** Use `supabase test db` to validate migrations and RLS policies.
 

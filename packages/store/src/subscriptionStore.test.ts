@@ -101,7 +101,58 @@ describe('SubscriptionStore', () => {
 
   it.todo('refreshSubscription action should re-fetch user subscription');
 
-  it.todo('createCheckoutSession action should call StripeApiClient and return session URL');
+  // --- Test createCheckoutSession ---
+  describe('createCheckoutSession action', () => {
+    const priceId = 'price_abc';
+    const mockSessionId = 'cs_test_session_123';
+
+    it('should set loading state, call API client, and return session ID on success', async () => {
+      // Arrange: Mock successful API response
+      mockStripeApiClient.createCheckoutSession.mockResolvedValueOnce({
+        status: 200,
+        data: { sessionId: mockSessionId },
+      });
+
+      // Act
+      let resultSessionId: string | null = null;
+      await act(async () => {
+        resultSessionId = await useSubscriptionStore.getState().createCheckoutSession(priceId);
+      });
+
+      // Assert
+      const state = useSubscriptionStore.getState();
+      expect(state.isSubscriptionLoading).toBe(false); // Should be reset after completion
+      expect(state.error).toBeNull();
+      expect(mockStripeApiClient.createCheckoutSession).toHaveBeenCalledTimes(1);
+      // Check isTestMode from store state
+      expect(mockStripeApiClient.createCheckoutSession).toHaveBeenCalledWith(priceId, state.isTestMode);
+      expect(resultSessionId).toBe(mockSessionId);
+    });
+
+    it('should set loading and error state if API client fails', async () => {
+      // Arrange: Mock failed API response
+      const apiError = { code: 'CHECKOUT_FAILED', message: 'Could not create session' };
+      mockStripeApiClient.createCheckoutSession.mockResolvedValueOnce({
+        status: 500,
+        error: apiError,
+      });
+
+      // Act
+      let resultSessionId: string | null = null;
+      await act(async () => {
+        resultSessionId = await useSubscriptionStore.getState().createCheckoutSession(priceId);
+      });
+
+      // Assert
+      const state = useSubscriptionStore.getState();
+      expect(state.isSubscriptionLoading).toBe(false);
+      expect(state.error).toBeInstanceOf(Error);
+      expect(state.error?.message).toContain(apiError.message); // Check if message is included
+      expect(mockStripeApiClient.createCheckoutSession).toHaveBeenCalledTimes(1);
+      expect(mockStripeApiClient.createCheckoutSession).toHaveBeenCalledWith(priceId, state.isTestMode);
+      expect(resultSessionId).toBeNull(); // Action should return null on failure
+    });
+  });
 
   it.todo('createBillingPortalSession action should call StripeApiClient and return portal URL');
 
