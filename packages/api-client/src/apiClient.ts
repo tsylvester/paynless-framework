@@ -111,6 +111,15 @@ async function apiClient<T = unknown>(
 
   try {
     logger.debug(`[apiClient ${endpoint}] Attempting fetch...`); // Log 3
+
+    // REVERT: Remove explicit fetchImpl = globalThis.fetch
+    // const fetchImpl = globalThis.fetch;
+    // console.log('[apiClient] Using fetch implementation:', fetchImpl);
+
+    // Restore original diagnostic log if needed for future debugging
+    console.log('[apiClient] globalThis.fetch JUST BEFORE internal fetch:', globalThis.fetch);
+
+    // Use original fetch call
     const response = await fetch(url, {
       ...options,
       method: method,
@@ -123,22 +132,30 @@ async function apiClient<T = unknown>(
     try {
        logger.debug(`[apiClient ${endpoint}] Attempting response.json()...`); // Log 5
        responseBody = await response.json();
-       logger.debug(`[apiClient ${endpoint}] response.json() successful.`); // Log 6
+       logger.debug(`[apiClient ${endpoint}] response.json() successful. Body:`, { body: responseBody }); // Log 6
     } catch (parseError) {
-        // If JSON parsing fails, create a generic error response
         logger.error(`[apiClient ${endpoint}] response.json() FAILED`, { status: response.status, statusText: response.statusText, parseError });
         responseBody = { error: { message: `HTTP ${response.status}: ${response.statusText || 'Server error'}` } };
+        logger.debug(`[apiClient ${endpoint}] Created fallback error body:`, { body: responseBody }); // Log 6.1 (Fallback)
     }
 
-    logger.debug(`[apiClient ${endpoint}] Checking response.ok (${response.ok})...`); // Log 7
+    logger.debug(`[apiClient ${endpoint}] Checking response.ok (${response.ok}). Response body before check:`, { body: responseBody }); // Log 7
     if (!response.ok) {
-      // const errorMessage = responseBody?.message || responseBody?.error?.message || `HTTP error ${response.status}`;
-      // const errorCode = responseBody?.code || responseBody?.error?.code;
-      // FIX: Access error properties correctly via responseBody.error
-      const errorMessage = responseBody?.error?.message || `HTTP error ${response.status}`;
-      const errorCode = responseBody?.error?.code;
+      logger.warn(`[apiClient ${endpoint}] Received non-OK response. Body parsed/created:`, { body: responseBody }); // Log 7.1 (Inside !ok)
+
+      // FIX: Explicitly cast to 'any' before accessing properties
+      const bodyAsAny = responseBody as any;
+      const errorMessage = (bodyAsAny && bodyAsAny.error && bodyAsAny.error.message) || `HTTP error ${response.status}`;
+      const errorCode = (bodyAsAny && bodyAsAny.error) ? bodyAsAny.error.code : undefined; // Apply 'as any' logic here too
+
+      // FIX: Adjust log message to indicate 'as any' was used
+      logger.warn(`[apiClient ${endpoint}] Extracted error details from body (using 'as any')`, { errorMessage, errorCode }); // Log 7.2 adjusted
+
       logger.error(`[apiClient ${endpoint}] Response not OK`, { status: response.status, errorMessage, errorCode });
-      const error = new ApiError(errorMessage, errorCode, response.status); 
+      const error = new ApiError(errorMessage, errorCode, response.status);
+
+      logger.warn(`[apiClient ${endpoint}] Throwing ApiError`, { errorObject: error }); // Log 7.3 (Throwing)
+
       throw error;
     }
 
@@ -167,7 +184,7 @@ async function apiClient<T = unknown>(
        throw error;
     } else if (error instanceof Error) {
        logger.error(`API Fetch Error (Unknown): ${error.message}`, { url });
-       throw new ApiError(`Network error: ${error.message}`, 'NETWORK_ERROR', 0); 
+       throw new ApiError('Network error: ' + error.message, 'NETWORK_ERROR', 0); 
     } else {
        logger.error(`[apiClient ${endpoint}] Caught error in outer try/catch`, { error });
        throw new ApiError('An unknown fetch error occurred', 'UNKNOWN_FETCH_ERROR', 0);

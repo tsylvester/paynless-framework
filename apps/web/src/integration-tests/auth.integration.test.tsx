@@ -34,7 +34,10 @@ const handlers = [
       const response: AuthResponse = { user: mockUser, session: mockSession, profile: mockProfile };
       return HttpResponse.json(response);
     }
-    return new HttpResponse(JSON.stringify({ message: 'Invalid credentials' }), { status: 401 });
+    return new HttpResponse(JSON.stringify({ error: { message: 'Invalid credentials' } }), {
+      status: 401,
+      headers: { 'Content-Type': 'application/json' },
+    });
   }),
 
   http.post('http://test.host/functions/v1/register', async ({ request }) => {
@@ -45,18 +48,27 @@ const handlers = [
     }
     // Simulate email exists using the user from login tests
     if (email === 'test@example.com') {
-        return new HttpResponse(JSON.stringify({ message: 'Email already exists' }), { status: 400 });
+        return new HttpResponse(JSON.stringify({ error: { message: 'Email already exists' } }), {
+          status: 400,
+          headers: { 'Content-Type': 'application/json' },
+        });
     }
     // Generic fallback for other emails in register test
-    return new HttpResponse(JSON.stringify({ message: 'Registration failed unexpectedly' }), { status: 500 });
+    return new HttpResponse(JSON.stringify({ error: { message: 'Registration failed unexpectedly' } }), {
+      status: 500,
+      headers: { 'Content-Type': 'application/json' },
+    });
   }),
 
   http.get('http://test.host/functions/v1/me', ({ request }) => {
     const authHeader = request.headers.get('Authorization');
     if (authHeader === `Bearer ${mockSession.access_token}`) {
-       return HttpResponse.json({ user: mockUser, profile: mockProfile });
+       return HttpResponse.json({ data: { user: mockUser, profile: mockProfile } });
     }
-    return new HttpResponse('Unauthorized', { status: 401 });
+    return new HttpResponse(JSON.stringify({ error: { message: 'Unauthorized' } }), {
+      status: 401,
+      headers: { 'Content-Type': 'application/json' },
+    });
   })
 ];
 
