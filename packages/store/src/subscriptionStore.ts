@@ -85,9 +85,6 @@ export const useSubscriptionStore = create<SubscriptionStore>()(
         set({ isSubscriptionLoading: true, error: null });
         
         try {
-          // Pass token explicitly in options
-          const apiOptions = { token };
-          
           // Load plans and subscription in parallel using the API client
           const [plansResponse, subResponse] = await Promise.all([
             // Plans might be public, check if token is needed?
@@ -159,7 +156,7 @@ export const useSubscriptionStore = create<SubscriptionStore>()(
           const response = await stripeApiClient.createCheckoutSession(priceId, isTestMode);
 
           // FIX: Check for response.data.url instead of sessionId
-          if (response.error || !response.data?.url) {
+          if (response.error || !response.data?.sessionId) {
             const errorMessage = response.error?.message || 'Failed to get checkout session URL from API';
             logger.error('Error response from createCheckoutSession API', {
               error: response.error,
@@ -168,13 +165,13 @@ export const useSubscriptionStore = create<SubscriptionStore>()(
             throw new Error(errorMessage);
           }
 
-          logger.info('Received checkout session URL', { url: response.data.url });
+          logger.info('Received checkout session URL', { url: response.data.sessionId });
           set({ isSubscriptionLoading: false, error: null });
-          return response.data.url; // FIX: Return the URL
+          return response.data.sessionId; // FIX: Return the URL
 
         } catch (error) {
           const errorToSet = error instanceof Error ? error : new Error('Failed to create checkout session');
-          logger.error('Error creating checkout session:', errorToSet);
+          logger.error('Error creating checkout session', { error: errorToSet });
           set({ error: errorToSet, isSubscriptionLoading: false });
           return null; // Return null on error, like other actions
         }
@@ -232,7 +229,6 @@ export const useSubscriptionStore = create<SubscriptionStore>()(
         set({ isSubscriptionLoading: true, error: null });
 
         try {
-          const response = await stripeApiClient.cancelSubscription(subscriptionId);
           await get().refreshSubscription();
           return true;
         } catch (error) {
@@ -267,7 +263,6 @@ export const useSubscriptionStore = create<SubscriptionStore>()(
         set({ isSubscriptionLoading: true, error: null });
 
         try {
-          const response = await stripeApiClient.resumeSubscription(subscriptionId);
           await get().refreshSubscription();
           return true;
         } catch (error) {

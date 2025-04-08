@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { AuthStore as AuthStoreType, AuthResponse, ProfileResponse, User, Session, UserProfile, UserProfileUpdate } from '@paynless/types';
+import { AuthStore as AuthStoreType, AuthResponse, User, Session, UserProfile, UserProfileUpdate } from '@paynless/types';
 import { logger } from '@paynless/utils';
 import { persist } from 'zustand/middleware';
 import { api } from '@paynless/api-client';

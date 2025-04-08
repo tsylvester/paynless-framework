@@ -1,4 +1,4 @@
-import type { SubscriptionPlan, PlanDescription, UserSubscription } from '@paynless/types';
+import type { SubscriptionPlan } from '@paynless/types';
 import { Check } from 'lucide-react';
 
 interface PlanCardProps {
@@ -31,8 +31,7 @@ export function PlanCard({
 
   // Check if description is an object and try to extract properties safely
   if (plan.description && typeof plan.description === 'object') {
-    const desc = plan.description as Partial<PlanDescription>; // Use Partial for safe access
-    subtitle = (typeof desc.subtitle === 'string' && desc.subtitle) ? desc.subtitle : plan.name;
+    const desc = plan.description as Partial<SubscriptionPlan>; // Use Partial for safe access
     features = Array.isArray(desc.features) ? desc.features : [];
   } else if (typeof plan.description === 'string' && plan.description) {
     // Basic fallback if description is still somehow a string after migration
@@ -42,11 +41,11 @@ export function PlanCard({
   return (
     <div
       key={plan.id} // Assuming plan.id is the unique DB identifier
-      className={`border rounded-lg shadow-sm divide-y bg-surface ${
+      className={`flex flex-col h-full border rounded-lg shadow-sm divide-y bg-surface overflow-hidden ${
         isCurrentPlan ? 'border-primary ring-2 ring-primary' : 'border-border divide-border'
       }`}
     >
-      <div className="p-6">
+      <div className="p-6 flex-grow">
         <h2 className="text-xl font-medium text-textPrimary">{plan.name}</h2>
         {/* Display subtitle from JSON */}
         <p className="mt-2 text-sm text-textSecondary">{subtitle}</p>

@@ -35,7 +35,7 @@ export const routes: AppRoute[] = [
   },
   {
     path: '/subscription',
-    element: <ProtectedRoute><SubscriptionPage onSubscribe={async () => { console.warn('onSubscribe not implemented'); }} /></ProtectedRoute>,
+    element: <ProtectedRoute><SubscriptionPage /></ProtectedRoute>,
     requireAuth: true,
     allowedRoles: [UserRole.USER],
   },

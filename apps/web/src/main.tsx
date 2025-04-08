@@ -6,8 +6,8 @@ import { initializeApiClient } from '@paynless/api-client';
 import { logger } from '@paynless/utils';
 
 // --- Initialize API Client --- 
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+const supabaseUrl = import.meta.env['VITE_SUPABASE_URL'];
+const supabaseAnonKey = import.meta.env['VITE_SUPABASE_ANON_KEY'];
 
 if (!supabaseUrl || !supabaseAnonKey) {
   logger.error('CRITICAL: VITE_SUPABASE_URL or VITE_SUPABASE_ANON_KEY is not defined in environment variables.');

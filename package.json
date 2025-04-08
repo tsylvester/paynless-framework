@@ -4,11 +4,12 @@
   "private": true,
   "description": "Monorepo for the Paynless framework backend, shared packages, and apps.",
   "scripts": {
-    "dev": "pnpm --filter @paynless/web dev",
-    "build": "pnpm run build:clean && tsc -b --verbose",
-    "build:clean": "pnpm run clean:dist && pnpm run clean:buildinfo",
-    "clean:dist": "rimraf packages/*/dist apps/*/dist",
-    "clean:buildinfo": "rimraf packages/*/tsconfig.tsbuildinfo apps/*/tsconfig.tsbuildinfo tsconfig.tsbuildinfo",
+    "dev": "pnpm --parallel --filter \"./apps/*\" dev",
+    "build": "pnpm -r --filter @paynless/web... build",
+    "build:clean": "pnpm run clean:buildinfo",
+    "clean": "pnpm run clean:buildinfo && pnpm run clean:node_modules",
+    "clean:buildinfo": "rimraf packages/**/*.tsbuildinfo apps/**/*.tsbuildinfo tsconfig.tsbuildinfo",
+    "clean:node_modules": "rimraf node_modules packages/**/node_modules apps/**/node_modules",
     "preview": "pnpm --filter @paynless/web preview",
     "lint": "pnpm -r run lint --if-present",
     "test": "pnpm -r test"

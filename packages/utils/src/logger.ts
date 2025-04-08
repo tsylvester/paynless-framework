@@ -96,7 +96,7 @@ export class Logger {
     
     return logLevelIndex >= configLevelIndex;
   }
-  
+  /*
   private formatLogWithColor(level: LogLevel, message: string, metadata?: LogMetadata): string {
     const timestamp = new Date().toISOString();
     let logString = `[${timestamp}] [${level.toUpperCase()}] ${message}`;
@@ -109,7 +109,7 @@ export class Logger {
       }
     }
     return logString;
-  }
+  }*/
   
   /**
    * Log a debug message

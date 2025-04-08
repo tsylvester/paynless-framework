@@ -6,16 +6,9 @@ import {
   LogOut, 
   Menu, 
   X, 
-  MessageCircle, 
-  Bell, 
-  Calendar as CalendarIcon,
-  MapPin,
-  Layout as LayoutIcon,
   User,
   CreditCard,
   Home,
-  UserPlus,
-  Building2,
   Sun,
   Moon
 } from 'lucide-react';

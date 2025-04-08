@@ -4,11 +4,7 @@ import { Mail, Lock, AlertCircle } from 'lucide-react';
 import { logger } from '@paynless/utils';
 import { useAuthStore } from '@paynless/store';
 
-interface RegisterFormProps {
-  onSuccess?: () => void;
-}
-
-export function RegisterForm({ onSuccess }: RegisterFormProps) {
+export function RegisterForm() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
 

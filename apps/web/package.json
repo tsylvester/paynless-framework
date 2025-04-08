@@ -15,6 +15,7 @@
     "@emotion/react": "^11.13.0",
     "@emotion/styled": "^11.13.0",
     "@headlessui/react": "^2.1.2",
+    "@hookform/resolvers": "^5.0.1",
     "@mui/material": "^5.16.5",
     "@paynless/api-client": "workspace:*",
     "@paynless/store": "workspace:*",
@@ -33,12 +34,14 @@
     "react-hot-toast": "^2.4.1",
     "react-router-dom": "^6.25.1",
     "tailwind-merge": "^2.4.0",
+    "zod": "^3.24.2",
     "zustand": "^4.5.4"
   },
   "devDependencies": {
     "@testing-library/jest-dom": "^6.4.8",
     "@testing-library/react": "^16.0.0",
     "@testing-library/user-event": "^14.5.2",
+    "@types/node": "^22.14.0",
     "@types/react": "^18.2.64",
     "@types/react-dom": "^18.2.21",
     "@typescript-eslint/eslint-plugin": "^7.1.1",

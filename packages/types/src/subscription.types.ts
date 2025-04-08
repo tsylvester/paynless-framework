@@ -1,8 +1,8 @@
 // src/types/subscription.types.ts
 export interface SubscriptionPlan {
   id: string;
-  priceId: string;
-  stripePriceId: string;
+  price_id: string;
+  stripe_price_id: string;
   name: string;
   description: string | null;
   amount: number;
