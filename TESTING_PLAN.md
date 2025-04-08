@@ -13,6 +13,13 @@
 *   **Back-testing/Regression:** Refactoring or changes require re-running affected unit/integration tests. Unit tests need updating post-integration changes.
 *   **Mocking SupabaseClient (TS2345):** Directly mocking the `SupabaseClient` in unit tests can lead to TS2345 errors (type incompatibility, often due to protected properties like `supabaseUrl`) if the mock object doesn't perfectly match the client's complex type signature. This is especially true if tests in the same file need to mock different *parts* of the client (e.g., `.from()` vs. `.functions.invoke()`), leading to inconsistent mock object shapes.
     *   **Solution:** Introduce a **Service Abstraction Layer**. Define a simple interface declaring only the methods needed by the handler. Implement the interface using the real `SupabaseClient`. Refactor the handler to depend on the interface. Unit test the handler by mocking the *simple interface*, which avoids the TS2345 error. (See `stripe-webhook/handlers/product.ts` and its service/test for an example). Test the service implementation's direct Supabase calls separately.
+*   **Refactoring UI/Store Interaction Pattern:** We identified inconsistencies in how UI components (`LoginForm`, `RegisterForm`, `ProfileEditor`, subscription pages) interact with Zustand stores (`authStore`, `subscriptionStore`) regarding side effects like API calls, loading states, error handling, and navigation. The previous pattern involved components managing local loading/error state and sometimes triggering navigation *after* store actions completed.
+    *   **New Pattern:** To improve separation of concerns, predictability, and testability, we are refactoring towards a pattern where:
+        *   Zustand store actions encapsulate the *entire* flow: initiating the API call, managing the central `isLoading` state, managing the central `error` state, and handling internal app navigation (e.g., `navigate('/dashboard')` after successful login) directly within the action upon success.
+        *   UI components become simpler, primarily dispatching store actions and reacting to the centralized loading and error states provided by the store hooks (`useAuthStore(state => state.isLoading)`, etc.) to render feedback. Local loading/error state in components is removed.
+        *   For actions requiring *external* redirection (like Stripe Checkout/Portal), the store action will still return the necessary URL, and the calling UI component will perform the `window.location.href` redirect.
+    *   **Impact:** This requires refactoring `authStore` (`login`, `register`, `updateProfile`), `subscriptionStore` (checkout, portal, cancel, resume actions), and the corresponding UI components (`LoginForm`, `RegisterForm`, `ProfileEditor`, `SubscriptionPage`).
+    *   **Testing Implication:** Unit tests for affected stores and components, along with MSW integration tests (Phase 3.2) for Login, Register, Profile, and Subscription flows, will require significant updates and re-validation after this refactoring.
 
 ---
 
@@ -122,8 +129,8 @@
     *   **2.1 Unit Tests:**
         *   [✅] `packages/api-client` (Vitest + MSW setup complete, `apiClient.ts` tests passing)
         *   [✅] `packages/api-client/stripe.api.ts` *(All unit tests passing)*
-        *   [✅] `packages/store` (Vitest setup complete, `authStore.ts` passing)
-            *   [✅] `subscriptionStore.ts` *(All unit tests passing)*
+        *   [✅] `packages/store` (Vitest setup complete, `authStore.ts` passing) *(Needs update post-refactor)*
+        *   [✅] `subscriptionStore.ts` *(All unit tests passing)* *(Needs update post-refactor)*
         *   [⏭️] `packages/ui-components` *(Skipped - Package empty, components currently in `apps/web`)*.
         *   [✅] `packages/utils` (Vitest setup complete, `logger.ts` tests passing)
         *   [✅] `packages/types` *(Implicitly tested)*.
@@ -131,29 +138,47 @@
 *   **Phase 3: Web App (`apps/web/`)**
     *   **3.1 Unit Tests:**
         *   [⏸️] `apps/web/src/App.tsx` *(Basic tests passing; deferred further tests pending child component testing)*
-        *   [✅] `apps/web/src/components/layout/Header.tsx` 
-        *   [✅] `apps/web/src/components/layout/Footer.tsx` 
+        *   [✅] `apps/web/src/components/layout/Header.tsx`
+        *   [✅] `apps/web/src/components/layout/Footer.tsx`
         *   [🚧] `apps/web/src/components/` (Other components)
-            *   [✅] `auth/LoginForm.tsx`
-            *   [✅] `auth/RegisterForm.tsx`
+            *   [✅] `auth/LoginForm.tsx` *(Needs update post-refactor)*
+            *   [✅] `auth/RegisterForm.tsx` *(Needs update post-refactor)*
             *   [✅] `auth/AuthenticatedGate.tsx`
             *   [✅] `auth/ProtectedRoute.tsx`
-            *   [✅] `profile/ProfileEditor.tsx`
+            *   [✅] `profile/ProfileEditor.tsx` *(Needs update post-refactor)*
             *   [✅] `routes/RootRoute.tsx`
             *   [✅] `subscription/PlanCard.tsx`
             *   [✅] `subscription/CurrentSubscriptionCard.tsx`
         *   [🚧] `apps/web/src/pages/` (Subscription flow pages)
             *   [✅] `LoginPage.tsx` (Basic render test)
             *   [✅] `RegisterPage.tsx` (Basic render test)
-            *   [✅] `Subscription.tsx`
+            *   [✅] `Subscription.tsx` *(Needs update post-refactor)*
             *   [✅] `SubscriptionSuccess.tsx`
-            *   [?] Other pages like Profile, Dashboard...
+            *   [✅] `Profile.tsx`
+            *   [✅] `Dashboard.tsx`
+            *   [✅] `Home.tsx`
         *   [🚧] `apps/web/src/hooks/` (Any hooks related to subscription flow)
             *   [✅] `useAuthSession.ts`
             *   [⏭️] `useSubscription.ts` (Skipped - Simple wrapper for store, tested via store tests)
     *   **3.2 Integration Tests:**
-        *   [ ] **Component Integration:** Test interactions between subscription-related components.
-        *   [ ] **API Integration (Mocked):** Test subscription data fetching and action calls against MSW.
+        *   [✅] **Component Integration:** Test interactions between subscription-related components.
+        *   [ ] **API Integration (Mocked):** Test key user flows involving API calls using MSW to mock backend responses. *(Note: All MSW tests below require significant updates and re-validation following the UI/Store interaction pattern refactoring.)*
+            *   **Authentication:**
+                *   `[ ]` Login: Test success (redirect), invalid credentials, server error.
+                *   `[ ]` Register: Test success (redirect/state update), email already exists, server error.
+                *   `[ ]` Logout: Test successful state clearing even if API fails.
+                *   `[ ]` Session Load/Refresh: Test initial app load correctly fetches profile/session via `/profile` or `/refresh` mock.
+            *   **Profile Management:**
+                *   `[ ]` Profile Load: Verify `ProfilePage` loads data from `/profile` mock.
+                *   `[ ]` Profile Update: Verify `ProfilePage` save success/error UI based on `/profile` PUT mock responses.
+            *   **Subscription Viewing:**
+                *   `[ ]` Plan Loading: Verify `SubscriptionPage` displays plans from `/api-subscriptions/plans` mock.
+                *   `[ ]` Current Subscription Loading: Verify `SubscriptionPage` displays correct state based on `/api-subscriptions/current` mock (active, none, etc.).
+            *   **Subscription Actions:**
+                *   `[ ]` Create Checkout: Verify loading state and handling of success/error from `/api-subscriptions/checkout` mock (Note: redirect itself won't happen in test).
+                *   `[ ]` Create Portal: Verify loading state and handling of success/error from `/api-subscriptions/billing-portal` mock (Note: redirect itself won't happen in test).
+                *   `[ ]` Cancel/Resume: Verify UI updates/feedback based on `/api-subscriptions/:id/cancel` or `/resume` mocks.
+                *   `[ ]` Usage Metrics: Verify display based on `/api-subscriptions/usage/:metric` mock (if UI exists).
     *   **3.3 End-to-End Tests:**
         *   [ ] **Tooling:** Setup Playwright/Cypress (if not already done).
         *   [✅] **Core User Flows:** Auth cycle, Profile management.

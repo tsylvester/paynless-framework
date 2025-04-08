@@ -53,7 +53,7 @@ export const useAuthStore = create<AuthStoreType>()(
             error: error instanceof Error ? error : new Error('Failed to login'),
             user: null, session: null, profile: null
           });
-          return null;
+          throw error;
         }
       },
       

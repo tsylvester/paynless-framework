@@ -33,16 +33,11 @@ export function LoginForm({ onSuccess, redirectPath = '/' }: LoginFormProps) {
       logger.info('Attempting to login user via form', { email });
       const user = await login(email, password);
       
-      if (user) {
-        logger.info('Login successful, redirecting user');
-        if (onSuccess) {
-          onSuccess();
-        } else {
-          navigate(redirectPath);
-        }
+      logger.info('Login successful, redirecting user');
+      if (onSuccess) {
+        onSuccess();
       } else {
-        setError('Invalid email or password');
-        logger.warn('Login failed, invalid credentials', { email });
+        navigate(redirectPath);
       }
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'An unexpected error occurred';

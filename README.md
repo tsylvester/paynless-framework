@@ -396,10 +396,26 @@ The application follows a clear layered architecture for API interactions:
 ## State Management
 
 The application uses Zustand for global state management:
-1. State slices are defined in stores within `packages/store/src/` (e.g., `authStore.ts`, `subscriptionStore.ts`).
-2. Stores include state variables and actions to modify state or interact with API clients.
-3. Components access state and actions using the generated hooks (e.g., `useAuthStore()`, `useSubscriptionStore()`).
-4. The `persist` middleware is used to save parts of the state (like auth session) to `localStorage`.
+1.  State slices are defined in stores within `packages/store/src/` (e.g., `authStore.ts`, `subscriptionStore.ts`).
+2.  Stores include state variables and actions to modify state or interact with API clients.
+3.  Components access state and actions using the generated hooks (e.g., `useAuthStore()`, `useSubscriptionStore()`).
+4.  The `persist` middleware is used to save parts of the state (like auth session) to `localStorage`.
+
+**Action Handling Pattern:**
+
+To ensure a clear separation of concerns, predictability, and testability, the following pattern is used for handling user interactions that trigger asynchronous operations (like API calls):
+
+*   **Store Actions as Flow Controllers:** Store actions (e.g., `authStore.login`, `subscriptionStore.createCheckoutSession`) are responsible for the entire flow associated with the action. This includes:
+    *   Setting a centralized loading state (e.g., `authStore.isLoading = true`).
+    *   Making the necessary API call via the `api-client`.
+    *   Handling the success case: Updating relevant store state (e.g., setting `user`, `session`), clearing loading/error states. For actions resulting in internal navigation (like login/register), the store action itself triggers the navigation (e.g., using an injected `navigate` function or via effects).
+    *   Handling the error case: Catching errors from the API client, setting a centralized error state (e.g., `authStore.error = caughtError`), and clearing the loading state. Errors are generally *not* re-thrown from the store action unless a specific downstream reaction is needed.
+*   **UI Components as Dispatchers/Viewers:** React components:
+    *   Dispatch the relevant store action when the user interacts (e.g., `onClick={() => login(email, password)}`).
+    *   Subscribe to the centralized loading and error states from the store (e.g., `const isLoading = useAuthStore(state => state.isLoading);`).
+    *   Use these states to render appropriate UI feedback (e.g., disabling buttons, showing spinners, displaying error messages). Components generally do not manage their own local state for loading or errors related to store actions.
+    *   For actions requiring *external* redirection (like Stripe Checkout/Portal), the store action returns the URL, and the component performs the `window.location.href = url` redirect.
+*   **Benefits:** This keeps UI components focused on presentation and user input, centralizes business logic and side-effect handling within the stores, simplifies state management, and makes both unit and integration testing more straightforward.
 
 ## URL Handling Convention (Monorepo Standard)
 
