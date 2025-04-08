@@ -1,58 +1,35 @@
 import React, { useState } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 import { Mail, Lock, AlertCircle } from 'lucide-react';
 import { logger } from '@paynless/utils';
 import { useAuthStore } from '@paynless/store';
 
 interface RegisterFormProps {
   onSuccess?: () => void;
-  redirectPath?: string;
 }
 
-export function RegisterForm({ onSuccess, redirectPath = '/' }: RegisterFormProps) {
+export function RegisterForm({ onSuccess }: RegisterFormProps) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  
-  const register = useAuthStore(state => state.register);
-  const navigate = useNavigate();
-  
+
+  const { register, isLoading, error } = useAuthStore(state => ({
+    register: state.register,
+    isLoading: state.isLoading,
+    error: state.error,
+  }));
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    
+
     if (!email || !password) {
-      setError('Please enter both email and password');
+      logger.warn('Register form submitted with empty fields');
       return;
     }
-    
-    setIsSubmitting(true);
-    setError(null);
-    
-    try {
-      logger.info('Attempting to register user via form', { email });
-      const user = await register(email, password);
-      
-      if (user) {
-        logger.info('Registration successful, redirecting user');
-        if (onSuccess) {
-          onSuccess();
-        } else {
-          navigate(redirectPath);
-        }
-      } else {
-        setError('Registration failed. Please check your information and try again.');
-        logger.warn('Registration failed', { email });
-      }
-    } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : 'An unexpected error occurred';
-      setError(errorMessage);
-      logger.error('Registration form error', { error: errorMessage, email });
-    } finally {
-      setIsSubmitting(false);
-    }
+
+    logger.info('Attempting to register user via form', { email });
+    await register(email, password);
   };
-  
+
   return (
     <div className="w-full max-w-md p-8 bg-surface rounded-lg shadow-md">
       <h2 className="text-2xl font-bold mb-6 text-center text-textPrimary">Create an Account</h2>
@@ -60,7 +37,7 @@ export function RegisterForm({ onSuccess, redirectPath = '/' }: RegisterFormProp
       {error && (
         <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-md flex items-center gap-2 text-red-700">
           <AlertCircle size={18} />
-          <span data-testid="register-error-message">{error}</span>
+          <span data-testid="register-error-message">{error.message}</span>
         </div>
       )}
       
@@ -78,7 +55,8 @@ export function RegisterForm({ onSuccess, redirectPath = '/' }: RegisterFormProp
               type="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              className="block w-full pl-10 pr-3 py-2 border border-border rounded-md shadow-sm bg-background focus:outline-none focus:ring-primary focus:border-primary"
+              disabled={isLoading}
+              className="block w-full pl-10 pr-3 py-2 border border-border rounded-md shadow-sm bg-background focus:outline-none focus:ring-primary focus:border-primary disabled:opacity-75"
               placeholder="you@example.com"
               required
             />
@@ -98,24 +76,22 @@ export function RegisterForm({ onSuccess, redirectPath = '/' }: RegisterFormProp
               type="password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              className="block w-full pl-10 pr-3 py-2 border border-border rounded-md shadow-sm bg-background focus:outline-none focus:ring-primary focus:border-primary"
+              disabled={isLoading}
+              className="block w-full pl-10 pr-3 py-2 border border-border rounded-md shadow-sm bg-background focus:outline-none focus:ring-primary focus:border-primary disabled:opacity-75"
               placeholder="••••••••"
               required
             />
           </div>
-          <p className="mt-1 text-xs text-textSecondary">
-            Must be at least 8 characters and include a number and a special character.
-          </p>
         </div>
         
         <button
           type="submit"
-          disabled={isSubmitting}
+          disabled={isLoading}
           className={`w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-primary hover:bg-primary/90 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary ${
-            isSubmitting ? 'opacity-75 cursor-not-allowed' : ''
+            isLoading ? 'opacity-75 cursor-not-allowed' : ''
           }`}
         >
-          {isSubmitting ? 'Creating account...' : 'Create account'}
+          {isLoading ? 'Creating account...' : 'Create account'}
         </button>
         
         <div className="mt-4 text-center">

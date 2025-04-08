@@ -39,6 +39,25 @@ The architecture follows these principles:
 - Consistent error handling and response formatting via `apiClient`
 - State management primarily using Zustand stores
 
+## Next Features
+- AI Chat integration
+-- OpenAI, Claude, Gemini, Perplexity, DeepSeek, etc
+-- Selectable AI 
+-- Selectable system prompts 
+-- Save chats 
+-- Continue chats
+
+- User interaction detection
+-- Mixpanel endpoints
+
+- User email integration
+-- Feature updates 
+-- Reactivation 
+
+- Change email from within app
+- Change password from within app
+- Add loading skeletons to everything
+
 ### Testing Strategy: Service Abstraction for Complex Dependencies
 
 **Context:** When unit testing Supabase Edge Functions that depend on the `SupabaseClient`, directly mocking the client can be challenging, especially if the function uses multiple distinct parts of the client (e.g., both database access via `.from()` and function invocation via `.functions.invoke()`).

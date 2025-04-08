@@ -1,5 +1,5 @@
 // src/pages/Subscription.tsx
-import { useState } from 'react';
+import { useEffect } from 'react';
 import { Layout } from '../components/layout/Layout';
 import { useAuthStore } from '@paynless/store';
 import { Navigate } from 'react-router-dom';
@@ -10,60 +10,48 @@ import { CurrentSubscriptionCard } from '../components/subscription/CurrentSubsc
 import { PlanCard } from '../components/subscription/PlanCard';
 import type { UserSubscription, SubscriptionPlan } from '@paynless/types';
 
-// Define Props for the component
-interface SubscriptionPageProps {
-  // Add other props if needed, e.g., passed down from router
-  onSubscribe: (priceId: string) => Promise<void>; // Function to handle checkout initiation
-}
-
-export function SubscriptionPage(props: SubscriptionPageProps) {
+export function SubscriptionPage() {
   const { user, isLoading: authLoading } = useAuthStore();
   const { 
     availablePlans, 
     userSubscription, 
     isSubscriptionLoading, 
     isTestMode, 
-    createBillingPortalSession, 
+    error: storeError,
+    loadSubscriptionData,
+    createCheckoutSession,
+    createBillingPortalSession,
     cancelSubscription,
-    error: storeError
   } = useSubscriptionStore(state => ({ 
     availablePlans: state.availablePlans, 
     userSubscription: state.userSubscription, 
     isSubscriptionLoading: state.isSubscriptionLoading, 
     isTestMode: state.isTestMode,
+    error: state.error,
+    loadSubscriptionData: state.loadSubscriptionData,
+    createCheckoutSession: state.createCheckoutSession,
     createBillingPortalSession: state.createBillingPortalSession,
     cancelSubscription: state.cancelSubscription,
-    error: state.error
   }));
   
-  const [isProcessing, setIsProcessing] = useState(false);
-  const [actionError, setActionError] = useState<string | null>(null);
+  useEffect(() => {
+    if (user?.id) {
+      logger.info('SubscriptionPage: User found, loading subscription data.');
+      loadSubscriptionData(user.id);
+    }
+  }, [user?.id, loadSubscriptionData]);
   
-  const { onSubscribe } = props; // Destructure the prop
-
   const handleSubscribe = async (priceId: string) => {
     if (!user) return;
     
-    setIsProcessing(true);
-    setActionError(null);
-    
-    try {
-      // Call the platform-specific function passed via props
-      await onSubscribe(priceId);
-      // If onSubscribe throws, the error will be caught below.
-      // Redirection or native payment sheet is handled by the onSubscribe implementation.
+    logger.info('Initiating checkout process', { userId: user.id, priceId });
+    const checkoutUrl = await createCheckoutSession(priceId);
 
-    } catch (err) {
-      // Handle errors (e.g., from backend API call failing within onSubscribe)
-      const errorMessage = err instanceof Error ? err.message : 'An unexpected error occurred';
-      setActionError(errorMessage);
-      logger.error('Error in subscription process', {
-        error: errorMessage,
-        userId: user.id,
-        priceId,
-      });
-    } finally {
-      setIsProcessing(false);
+    if (checkoutUrl) {
+      logger.info('Redirecting to Stripe Checkout', { url: checkoutUrl });
+      window.location.href = checkoutUrl;
+    } else {
+      logger.error('Failed to get checkout URL from store action');
     }
   };
   
@@ -73,55 +61,24 @@ export function SubscriptionPage(props: SubscriptionPageProps) {
     
     if (!subscriptionId) {
         logger.error('Cannot cancel/downgrade: Missing subscription ID.');
-        setActionError('Cannot process cancellation: Subscription ID is missing.');
         return;
     }
 
-    setIsProcessing(true);
-    setActionError(null);
-
-    try {
-      const success = await cancelSubscription(subscriptionId);
-      if (!success) {
-        setActionError('Failed to cancel subscription. Please try again or contact support.');
-      }
-      // No redirect needed, store refresh will update UI
-    } catch (err) { 
-      const errorMessage = err instanceof Error ? err.message : 'An unexpected error occurred';
-      setActionError(errorMessage);
-      logger.error('Error initiating subscription cancellation', {
-        error: errorMessage,
-        userId: user.id,
-        subscriptionId,
-      });
-    } finally {
-      setIsProcessing(false);
-    }
+    logger.info('Initiating cancel subscription', { userId: user.id, subscriptionId });
+    await cancelSubscription(subscriptionId);
   };
   
   const handleManageSubscription = async () => {
     if (!user || !userSubscription) return;
     
-    setIsProcessing(true);
-    setActionError(null);
-    
-    try {
-      const billingPortalUrl = await createBillingPortalSession();
-      
-      if (billingPortalUrl) {
-        window.location.href = billingPortalUrl;
-      } else {
-        setActionError('Failed to access billing portal. Please try again.');
-      }
-    } catch (err) { 
-      const errorMessage = err instanceof Error ? err.message : 'An unexpected error occurred';
-      setActionError(errorMessage);
-      logger.error('Error initiating billing portal session', {
-        error: errorMessage,
-        userId: user.id,
-      });
-    } finally {
-      setIsProcessing(false);
+    logger.info('Initiating billing portal session', { userId: user.id });
+    const billingPortalUrl = await createBillingPortalSession();
+
+    if (billingPortalUrl) {
+      logger.info('Redirecting to Stripe Billing Portal', { url: billingPortalUrl });
+      window.location.href = billingPortalUrl;
+    } else {
+      logger.error('Failed to get billing portal URL from store action');
     }
   };
   
@@ -139,7 +96,9 @@ export function SubscriptionPage(props: SubscriptionPageProps) {
     return `every ${count} ${interval}s`;
   };
   
-  if (authLoading || isSubscriptionLoading) {
+  const isLoading = authLoading || isSubscriptionLoading;
+
+  if (isLoading && !userSubscription && !availablePlans.length) {
     return (
       <Layout>
         <div data-testid="loading-spinner-container" className="flex justify-center items-center py-12">
@@ -149,7 +108,7 @@ export function SubscriptionPage(props: SubscriptionPageProps) {
     );
   }
   
-  if (!user) {
+  if (!user && !authLoading) {
     return <Navigate to="/login" />;
   }
   
@@ -168,10 +127,10 @@ export function SubscriptionPage(props: SubscriptionPageProps) {
             </p>
           </div>
           
-          {(storeError || actionError) && (
+          {storeError && (
             <div className="mt-6 mx-auto max-w-lg p-4 bg-red-50 border border-red-200 rounded-md flex items-center gap-3 text-red-700">
               <AlertCircle size={20} />
-              <span>{actionError || storeError?.message || 'An error occurred'}</span>
+              <span data-testid="subscription-error-message">{storeError?.message || 'An error occurred'}</span>
             </div>
           )}
           
@@ -188,7 +147,7 @@ export function SubscriptionPage(props: SubscriptionPageProps) {
           {userSubscription && userSubscription.plan && userSubscription.status !== 'free' && (
             <CurrentSubscriptionCard 
               userSubscription={userSubscription as UserSubscription & { plan: SubscriptionPlan }}
-              isProcessing={isProcessing}
+              isProcessing={isSubscriptionLoading}
               handleManageSubscription={handleManageSubscription}
               handleCancelSubscription={handleCancelSubscription}
               formatAmount={formatAmount}
@@ -206,7 +165,7 @@ export function SubscriptionPage(props: SubscriptionPageProps) {
                   plan={plan}
                   isCurrentPlan={isCurrentPlan}
                   userIsOnPaidPlan={!!userIsOnPaidPlan}
-                  isProcessing={isProcessing}
+                  isProcessing={isSubscriptionLoading}
                   handleSubscribe={handleSubscribe}
                   handleCancelSubscription={handleCancelSubscription}
                   formatAmount={formatAmount}

@@ -1,53 +1,35 @@
 import React, { useState } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 import { Mail, Lock, AlertCircle } from 'lucide-react';
 import { logger } from '@paynless/utils';
 import { useAuthStore } from '@paynless/store';
 
 interface LoginFormProps {
   onSuccess?: () => void;
-  redirectPath?: string;
 }
 
-export function LoginForm({ onSuccess, redirectPath = '/' }: LoginFormProps) {
+export function LoginForm({ onSuccess }: LoginFormProps) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  
-  const login = useAuthStore(state => state.login);
-  const navigate = useNavigate();
-  
+
+  const { login, isLoading, error } = useAuthStore(state => ({
+    login: state.login,
+    isLoading: state.isLoading,
+    error: state.error,
+  }));
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    
+
     if (!email || !password) {
-      setError('Please enter both email and password');
+      logger.warn('Login form submitted with empty fields');
       return;
     }
-    
-    setIsSubmitting(true);
-    setError(null);
-    
-    try {
-      logger.info('Attempting to login user via form', { email });
-      const user = await login(email, password);
-      
-      logger.info('Login successful, redirecting user');
-      if (onSuccess) {
-        onSuccess();
-      } else {
-        navigate(redirectPath);
-      }
-    } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : 'An unexpected error occurred';
-      setError(errorMessage);
-      logger.error('Login form error', { error: errorMessage, email });
-    } finally {
-      setIsSubmitting(false);
-    }
+
+    logger.info('Attempting to login user via form', { email });
+    await login(email, password);
   };
-  
+
   return (
     <div className="w-full max-w-md p-8 bg-surface rounded-lg shadow-md">
       <h2 className="text-2xl font-bold mb-6 text-center text-textPrimary">Welcome Back</h2>
@@ -55,7 +37,7 @@ export function LoginForm({ onSuccess, redirectPath = '/' }: LoginFormProps) {
       {error && (
         <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-md flex items-center gap-2 text-red-700">
           <AlertCircle size={18} />
-          <span data-testid="login-error-message">{error}</span>
+          <span data-testid="login-error-message">{error.message}</span>
         </div>
       )}
       
@@ -73,7 +55,8 @@ export function LoginForm({ onSuccess, redirectPath = '/' }: LoginFormProps) {
               type="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              className="block w-full pl-10 pr-3 py-2 border border-border rounded-md shadow-sm bg-background focus:outline-none focus:ring-primary focus:border-primary"
+              disabled={isLoading}
+              className="block w-full pl-10 pr-3 py-2 border border-border rounded-md shadow-sm bg-background focus:outline-none focus:ring-primary focus:border-primary disabled:opacity-75"
               placeholder="you@example.com"
               required
             />
@@ -93,7 +76,8 @@ export function LoginForm({ onSuccess, redirectPath = '/' }: LoginFormProps) {
               type="password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              className="block w-full pl-10 pr-3 py-2 border border-border rounded-md shadow-sm bg-background focus:outline-none focus:ring-primary focus:border-primary"
+              disabled={isLoading}
+              className="block w-full pl-10 pr-3 py-2 border border-border rounded-md shadow-sm bg-background focus:outline-none focus:ring-primary focus:border-primary disabled:opacity-75"
               placeholder="••••••••"
               required
             />
@@ -107,12 +91,12 @@ export function LoginForm({ onSuccess, redirectPath = '/' }: LoginFormProps) {
         
         <button
           type="submit"
-          disabled={isSubmitting}
+          disabled={isLoading}
           className={`w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-primary hover:bg-primary/90 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary ${
-            isSubmitting ? 'opacity-75 cursor-not-allowed' : ''
+            isLoading ? 'opacity-75 cursor-not-allowed' : ''
           }`}
         >
-          {isSubmitting ? 'Signing in...' : 'Sign in'}
+          {isLoading ? 'Signing in...' : 'Sign in'}
         </button>
         
         <div className="mt-4 text-center">

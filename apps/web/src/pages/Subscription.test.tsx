@@ -1,18 +1,17 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { describe, it, expect, vi, beforeEach, type Mock } from 'vitest';
+import { render, screen, act, within } from '@testing-library/react';
 import { SubscriptionPage } from './Subscription';
-import { useAuthStore } from '@paynless/store';
-import { useSubscriptionStore } from '@paynless/store';
+import { useAuthStore, useSubscriptionStore } from '@paynless/store'; // Import actual stores
 import React from 'react';
-import { MemoryRouter } from 'react-router-dom'; // Use MemoryRouter for testing routes/redirects
+import { MemoryRouter } from 'react-router-dom';
+import type { UserProfile, SubscriptionPlan, UserSubscription } from '@paynless/types';
+import userEvent from '@testing-library/user-event';
 
 // --- Mocks --- 
-// Mock child components
+// Mock ONLY external dependencies or layout if needed
 vi.mock('../components/layout/Layout', () => ({ Layout: ({ children }: { children: React.ReactNode }) => <div data-testid="layout">{children}</div> }));
-vi.mock('../components/subscription/CurrentSubscriptionCard', () => ({ CurrentSubscriptionCard: () => <div data-testid="current-sub-card">Current Sub Card</div> }));
-vi.mock('../components/subscription/PlanCard', () => ({ PlanCard: ({ plan }: { plan: { name: string } }) => <div data-testid={`plan-card-${plan.name.toLowerCase().replace(' ', '-')}`}>Plan Card: {plan.name}</div> }));
 
-// Mock react-router-dom Navigate
+// Mock react-router-dom Navigate (Keep this for redirect tests)
 vi.mock('react-router-dom', async (importOriginal) => {
   const actual = await importOriginal<typeof import('react-router-dom')>()
   return {
@@ -21,13 +20,7 @@ vi.mock('react-router-dom', async (importOriginal) => {
   }
 })
 
-// Mock Zustand stores
-vi.mock('@paynless/store', () => ({
-  useAuthStore: vi.fn(),
-  useSubscriptionStore: vi.fn(),
-}));
-
-// Mock logger
+// Mock logger 
 vi.mock('@paynless/utils', () => ({
   logger: {
     info: vi.fn(),
@@ -37,8 +30,73 @@ vi.mock('@paynless/utils', () => ({
   },
 }));
 
-// Mock props
-const mockOnSubscribe = vi.fn();
+// Mock Store Actions
+const mockLoadSubscriptionData = vi.fn();
+const mockCreateCheckoutSession = vi.fn();
+const mockCreateBillingPortalSession = vi.fn();
+const mockCancelSubscription = vi.fn();
+const mockResumeSubscription = vi.fn(); 
+
+// Define Initial States for Stores (ensure stripe_subscription_id is present)
+// Add necessary fields for formatters (amount, currency, interval, intervalCount)
+const authStoreInitialState = {
+  user: { id: 'user-123' } as any, 
+  profile: { id: 'user-123' } as UserProfile, 
+  session: { access_token: 'mock-token' } as any,
+  isLoading: false,
+  error: null,
+  login: vi.fn(), 
+  logout: vi.fn(),
+  initialize: vi.fn(),
+  refreshSession: vi.fn(),
+  register: vi.fn(),
+  updateProfile: vi.fn(), 
+  setUser: vi.fn(),
+  setSession: vi.fn(),
+  setProfile: vi.fn(),
+  setIsLoading: vi.fn(), 
+  setError: vi.fn(),    
+};
+
+const subscriptionStoreInitialState = {
+  availablePlans: [
+      { id: 'plan-1', name: 'Basic Plan', stripe_price_id: 'price_basic', amount: 1000, currency: 'usd', interval: 'month', intervalCount: 1, description: { subtitle: 'Basic Sub', features: ['Feature 1'] } } as SubscriptionPlan,
+      { id: 'plan-2', name: 'Pro Plan', stripe_price_id: 'price_pro', amount: 5000, currency: 'usd', interval: 'month', intervalCount: 1, description: { subtitle: 'Pro Sub', features: ['Feature A', 'Feature B'] } } as SubscriptionPlan
+  ],
+  userSubscription: {
+    id: 'sub-db-id-123', 
+    status: 'active', 
+    stripeSubscriptionId: 'stripe_sub_abc', // Make sure this exists for cancel
+    currentPeriodEnd: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(), // Add date for display
+    cancelAtPeriodEnd: false, // Add for display logic
+    plan: { id: 'plan-1', name: 'Basic Plan', stripe_price_id: 'price_basic', amount: 1000, currency: 'usd', interval: 'month', intervalCount: 1 } 
+  } as UserSubscription,
+  isSubscriptionLoading: false,
+  hasActiveSubscription: true, // This is usually derived state, but set for mock
+  isTestMode: false,
+  error: null as Error | null,
+  loadSubscriptionData: mockLoadSubscriptionData,
+  createCheckoutSession: mockCreateCheckoutSession,
+  createBillingPortalSession: mockCreateBillingPortalSession,
+  cancelSubscription: mockCancelSubscription,
+  resumeSubscription: mockResumeSubscription,
+  setUserSubscription: vi.fn(),
+  setAvailablePlans: vi.fn(),
+  setIsLoading: vi.fn(),
+  setError: vi.fn(), 
+  getUsageMetrics: vi.fn(),
+  refreshSubscription: vi.fn(),
+};
+
+// Mock the store module BUT use the actual hook implementation
+vi.mock('@paynless/store', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@paynless/store')>();
+  return {
+    ...actual,
+    useAuthStore: actual.useAuthStore,
+    useSubscriptionStore: actual.useSubscriptionStore,
+  };
+});
 
 // Helper function for rendering with router
 const renderWithRouter = (ui: React.ReactElement, { route = '/' } = {}) => {
@@ -48,119 +106,207 @@ const renderWithRouter = (ui: React.ReactElement, { route = '/' } = {}) => {
 
 // --- Test Suite --- 
 describe('SubscriptionPage Component', () => {
-  // Reset mocks and default state before each test
+  const user = userEvent.setup(); // Setup userEvent
+
   beforeEach(() => {
-    vi.resetAllMocks();
-    // Default happy path state
-    vi.mocked(useAuthStore).mockReturnValue({
-      user: { id: 'user-123' }, // Mock user object
-      isLoading: false,
+    vi.clearAllMocks();
+    mockLoadSubscriptionData.mockReset();
+    mockCreateCheckoutSession.mockReset();
+    mockCreateBillingPortalSession.mockReset();
+    mockCancelSubscription.mockReset();
+    mockResumeSubscription.mockReset();
+
+    // Set initial store states using direct setState
+    act(() => {
+      useAuthStore.setState({ ...authStoreInitialState }, true);
+      useSubscriptionStore.setState({ ...subscriptionStoreInitialState }, true);
     });
-    vi.mocked(useSubscriptionStore).mockReturnValue({
-      availablePlans: [{ id: 'plan-1', name: 'Basic Plan' }, { id: 'plan-2', name: 'Pro Plan' }],
-      userSubscription: { id: 'sub-1', status: 'active', plan: { id: 'plan-1', name: 'Basic Plan' } }, // Mock subscription object with plan
-      isSubscriptionLoading: false,
-      isTestMode: false,
-      error: null,
-      createBillingPortalSession: vi.fn(),
-      cancelSubscription: vi.fn(),
-    });
+    mockLoadSubscriptionData.mockResolvedValue(); 
   });
 
+  // --- Rendering tests (adjusted for real components) ---
   it('should render loading spinner if auth is loading', () => {
-    vi.mocked(useAuthStore).mockReturnValue({ isLoading: true, user: null });
-    renderWithRouter(<SubscriptionPage onSubscribe={mockOnSubscribe} />);
+    act(() => { useAuthStore.setState({ isLoading: true, user: null }); });
+    renderWithRouter(<SubscriptionPage />); 
     expect(screen.getByTestId('layout')).toBeInTheDocument();
-    expect(screen.getByTestId('loading-spinner-container')).toBeInTheDocument();
+    expect(screen.getByTestId('loading-spinner-container')).toBeInTheDocument(); 
   });
 
   it('should render loading spinner if subscription data is loading', () => {
-    vi.mocked(useAuthStore).mockReturnValue({ user: { id: 'user-123' }, isLoading: false });
-    vi.mocked(useSubscriptionStore).mockReturnValue({
-      isSubscriptionLoading: true,
-      availablePlans: [],
-      userSubscription: null,
-      isTestMode: false,
-      error: null,
-      createBillingPortalSession: vi.fn(),
-      cancelSubscription: vi.fn(),
+    act(() => { 
+        useAuthStore.setState({ isLoading: false, user: authStoreInitialState.user }); 
+        // Match the component's loading logic: isLoading AND no existing sub AND no plans
+        useSubscriptionStore.setState({ 
+            isSubscriptionLoading: true, 
+            userSubscription: null, 
+            availablePlans: [] 
+        });
     });
-    renderWithRouter(<SubscriptionPage onSubscribe={mockOnSubscribe} />);
+    renderWithRouter(<SubscriptionPage />);
     expect(screen.getByTestId('layout')).toBeInTheDocument();
     expect(screen.getByTestId('loading-spinner-container')).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: /Subscription Plans/i })).not.toBeInTheDocument();
   });
 
   it('should redirect to /login if user is not authenticated', () => {
-    vi.mocked(useAuthStore).mockReturnValue({ user: null, isLoading: false });
-    renderWithRouter(<SubscriptionPage onSubscribe={mockOnSubscribe} />);
+    act(() => { useAuthStore.setState({ user: null, isLoading: false }); });
+    renderWithRouter(<SubscriptionPage />);
     expect(screen.getByTestId('navigate')).toHaveTextContent('Redirecting to /login');
   });
 
-  it('should display error message if store has error', () => {
-    vi.mocked(useAuthStore).mockReturnValue({ user: { id: 'user-123' }, isLoading: false });
-    vi.mocked(useSubscriptionStore).mockReturnValue({
-      availablePlans: [],
-      userSubscription: null,
-      isSubscriptionLoading: false,
-      isTestMode: false,
-      error: new Error('Something went wrong from store'),
-      createBillingPortalSession: vi.fn(),
-      cancelSubscription: vi.fn(),
-    });
-    renderWithRouter(<SubscriptionPage onSubscribe={mockOnSubscribe} />);
-    expect(screen.getByText(/Something went wrong from store/i)).toBeInTheDocument();
+  it('should display error message if subscription store has error', () => {
+    const testError = new Error('Something went wrong from store');
+    act(() => { useSubscriptionStore.setState({ error: testError, isSubscriptionLoading: false }); });
+    renderWithRouter(<SubscriptionPage />);
+    expect(screen.getByTestId('subscription-error-message')).toHaveTextContent(testError.message);
   });
 
   it('should display test mode warning if isTestMode is true', () => {
-     vi.mocked(useSubscriptionStore).mockReturnValue({ 
-        ...vi.mocked(useSubscriptionStore)(), // Keep other defaults
-        isTestMode: true 
-    });
-    renderWithRouter(<SubscriptionPage onSubscribe={mockOnSubscribe} />);
+    act(() => { useSubscriptionStore.setState({ isTestMode: true }); });
+    renderWithRouter(<SubscriptionPage />);
     expect(screen.getByText(/Test Mode Active/i)).toBeInTheDocument();
   });
 
-  it('should render page title and description', () => {
-    renderWithRouter(<SubscriptionPage onSubscribe={mockOnSubscribe} />);
+  it('should render page title and description when loaded', () => {
+    renderWithRouter(<SubscriptionPage />);
     expect(screen.getByRole('heading', { name: /Subscription Plans/i })).toBeInTheDocument();
     expect(screen.getByText(/Choose the plan that.s right for you/i)).toBeInTheDocument();
   });
 
-  it('should render CurrentSubscriptionCard if user has an active subscription with a plan', () => {
-    // Default state in beforeEach covers this
-    renderWithRouter(<SubscriptionPage onSubscribe={mockOnSubscribe} />);
-    expect(screen.getByTestId('current-sub-card')).toBeInTheDocument();
+  it('should render CurrentSubscriptionCard content if user has an active subscription with a plan', () => {
+    renderWithRouter(<SubscriptionPage />);
+    // Check for content *inside* the real component
+    const currentSubCard = screen.getByText(/Current Subscription/i).closest('div.bg-primary\\/10'); // Find the card container
+    if (!currentSubCard) throw new Error('CurrentSubscriptionCard container not found');
+    
+    expect(within(currentSubCard).getByText(/Basic Plan/i)).toBeInTheDocument(); // Plan name (scoped)
+    expect(within(currentSubCard).getByRole('button', { name: /Manage Billing/i })).toBeInTheDocument();
+    expect(within(currentSubCard).getByRole('button', { name: /Cancel Subscription/i })).toBeInTheDocument(); 
   });
 
-  it('should NOT render CurrentSubscriptionCard if user subscription is null or has no plan', () => {
-    vi.mocked(useSubscriptionStore).mockReturnValue({ ...vi.mocked(useSubscriptionStore)(), userSubscription: null });
-    renderWithRouter(<SubscriptionPage onSubscribe={mockOnSubscribe} />);
-    expect(screen.queryByTestId('current-sub-card')).not.toBeInTheDocument();
-    
-    // Test with subscription but null plan
-    vi.mocked(useSubscriptionStore).mockReturnValue({ ...vi.mocked(useSubscriptionStore)(), userSubscription: { id: 'sub-1', status: 'active', plan: null } });
-    renderWithRouter(<SubscriptionPage onSubscribe={mockOnSubscribe} />);
-    expect(screen.queryByTestId('current-sub-card')).not.toBeInTheDocument();
+  it('should NOT render CurrentSubscriptionCard content if user subscription is null or has no plan', () => {
+    act(() => { useSubscriptionStore.setState({ userSubscription: null, hasActiveSubscription: false }); });
+    renderWithRouter(<SubscriptionPage />);
+    expect(screen.queryByText(/Current Subscription/i)).not.toBeInTheDocument();
   });
   
-    it('should NOT render CurrentSubscriptionCard if user subscription status is free', () => {
-    vi.mocked(useSubscriptionStore).mockReturnValue({ 
-        ...vi.mocked(useSubscriptionStore)(), 
-        userSubscription: { id: 'sub-free', status: 'free', plan: { id: 'plan-free', name: 'Free Plan' } }
+  it('should NOT render CurrentSubscriptionCard content if user subscription status is free', () => {
+    act(() => { 
+      useSubscriptionStore.setState({ 
+        userSubscription: { id: 'sub-free', status: 'free', plan: { id: 'plan-free', name: 'Free Plan' } } as any, // Cast for simplicity
+        hasActiveSubscription: false 
+      }); 
     });
-    renderWithRouter(<SubscriptionPage onSubscribe={mockOnSubscribe} />);
-    expect(screen.queryByTestId('current-sub-card')).not.toBeInTheDocument();
+    renderWithRouter(<SubscriptionPage />);
+    expect(screen.queryByText(/Current Subscription/i)).not.toBeInTheDocument();
   });
 
-  it('should render PlanCard for each available plan', () => {
-    // Default state has 2 plans
-    renderWithRouter(<SubscriptionPage onSubscribe={mockOnSubscribe} />);
-    expect(screen.getByTestId('plan-card-basic-plan')).toBeInTheDocument();
-    expect(screen.getByTestId('plan-card-pro-plan')).toBeInTheDocument();
-    expect(screen.getAllByText(/Plan Card:/i)).toHaveLength(2);
+  it('should render PlanCard content for each available plan', () => {
+    renderWithRouter(<SubscriptionPage />);
+    // Check for content inside the real component using within for specificity
+    const planCardsContainer = screen.getByRole('heading', { name: /Subscription Plans/i }).parentElement?.parentElement?.querySelector('.grid.gap-8');
+    if (!planCardsContainer) throw new Error('Plan cards container not found');
+
+    const basicPlanCard = within(planCardsContainer).getByText(/Basic Plan/i).closest('div.border');
+    const proPlanCard = within(planCardsContainer).getByText(/Pro Plan/i).closest('div.border');
+
+    if (!basicPlanCard || !proPlanCard) throw new Error('Could not find specific plan card containers');
+
+    expect(within(basicPlanCard).getByText('Basic Plan')).toBeInTheDocument();
+    expect(within(proPlanCard).getByText('Pro Plan')).toBeInTheDocument();
+    expect(within(basicPlanCard).getByText('Basic Sub')).toBeInTheDocument(); // Check subtitle
+    expect(within(proPlanCard).getByText('Feature A')).toBeInTheDocument(); // Check a feature
+    
+    // Check for buttons (might be Subscribe, Change Plan, or Downgrade)
+    expect(within(basicPlanCard).getByRole('button', { name: /Current Plan/i })).toBeInTheDocument();
+    expect(within(proPlanCard).getByRole('button', { name: /Change Plan/i })).toBeInTheDocument();
   });
 
-  // TODO: Add tests for handler functions (handleSubscribe, handleCancel, handleManage)
-  // These might involve interacting with mocked child components or verifying state changes
+  // --- Refactored Interaction Tests --- 
+
+  it('should call createBillingPortalSession when manage button is clicked', async () => {
+    mockCreateBillingPortalSession.mockResolvedValue('mock-portal-url'); 
+    renderWithRouter(<SubscriptionPage />);
+
+    const manageButton = screen.getByRole('button', { name: /Manage Billing/i });
+    expect(manageButton).toBeEnabled(); 
+
+    await user.click(manageButton);
+
+    // Check action called immediately
+    expect(mockCreateBillingPortalSession).toHaveBeenCalledTimes(1);
+
+    // Simulate loading state change AFTER the action is called (as the action itself sets loading)
+    act(() => { useSubscriptionStore.setState({ isSubscriptionLoading: true }); });
+    expect(screen.getByRole('button', { name: /Manage Billing/i })).toBeDisabled();
+
+    // Simulate completion
+    await act(async () => { await mockCreateBillingPortalSession.mock.results[0].value; });
+    act(() => { useSubscriptionStore.setState({ isSubscriptionLoading: false, error: null }); });
+
+    expect(screen.getByRole('button', { name: /Manage Billing/i })).toBeEnabled();
+  });
+
+  it('should call createCheckoutSession when subscribe button on a PlanCard is clicked', async () => {
+    const targetPlan = subscriptionStoreInitialState.availablePlans[1]; // Pro Plan
+    mockCreateCheckoutSession.mockResolvedValue('mock-checkout-session-id');
+    
+    // Ensure user doesn't have an active sub 
+    act(() => { useSubscriptionStore.setState({ userSubscription: null, hasActiveSubscription: false }); });
+    
+    renderWithRouter(<SubscriptionPage />);
+
+    // Find the Pro Plan card (e.g., by finding text within it)
+    const proPlanCard = screen.getByText(targetPlan.name).closest('div.border'); // Find card container by text/class
+    if (!proPlanCard) throw new Error('Could not find Pro Plan card container');
+    
+    // Find the button within that specific card
+    const subscribeButton = within(proPlanCard).getByRole('button', { name: /Subscribe|Change Plan/i });
+    
+    expect(subscribeButton).toBeEnabled();
+
+    await user.click(subscribeButton);
+
+    // Check action called immediately
+    expect(mockCreateCheckoutSession).toHaveBeenCalledTimes(1);
+    expect(mockCreateCheckoutSession).toHaveBeenCalledWith(targetPlan.stripe_price_id);
+
+    // Simulate loading
+    act(() => { useSubscriptionStore.setState({ isSubscriptionLoading: true }); });
+    expect(within(proPlanCard).getByRole('button', { name: /Subscribe|Change Plan/i })).toBeDisabled();
+
+    // Simulate completion
+    await act(async () => { await mockCreateCheckoutSession.mock.results[0].value; });
+    act(() => { useSubscriptionStore.setState({ isSubscriptionLoading: false, error: null }); });
+
+    expect(within(proPlanCard).getByRole('button', { name: /Subscribe|Change Plan/i })).toBeEnabled();
+  });
+
+  it('should call cancelSubscription when cancel button is clicked', async () => {
+    const currentSubscription = subscriptionStoreInitialState.userSubscription;
+    if (!currentSubscription?.stripeSubscriptionId) throw new Error('Initial state missing subscription or stripe ID');
+    mockCancelSubscription.mockResolvedValue(true); 
+    
+    renderWithRouter(<SubscriptionPage />);
+
+    const cancelButton = screen.getByRole('button', { name: /Cancel Subscription/i });
+    expect(cancelButton).toBeEnabled();
+
+    await user.click(cancelButton);
+
+    // Check action called immediately
+    expect(mockCancelSubscription).toHaveBeenCalledTimes(1);
+    expect(mockCancelSubscription).toHaveBeenCalledWith(currentSubscription.stripeSubscriptionId);
+
+    // Simulate loading
+    act(() => { useSubscriptionStore.setState({ isSubscriptionLoading: true }); });
+    expect(screen.getByRole('button', { name: /Cancel Subscription/i })).toBeDisabled();
+
+    // Simulate completion
+    await act(async () => { await mockCancelSubscription.mock.results[0].value; });
+    act(() => { useSubscriptionStore.setState({ isSubscriptionLoading: false, error: null }); });
+
+    expect(screen.getByRole('button', { name: /Cancel Subscription/i })).toBeEnabled();
+  });
 
 }); 

@@ -12,15 +12,22 @@ interface RefreshResponse {
   profile: UserProfile | null;
 }
 
+// Placeholder navigate function type until AuthStoreType is updated
+type NavigateFunction = (path: string) => void;
+
 export const useAuthStore = create<AuthStoreType>()(
   persist(
     (set, get) => ({
       user: null,
       session: null,
       profile: null,
-      isLoading: true,
+      isLoading: true, // Start true until initialize runs
       error: null,
-      
+      navigate: null as NavigateFunction | null, // Added for navigation
+
+      // Action to inject the navigate function from the app
+      setNavigate: (navigateFn: NavigateFunction) => set({ navigate: navigateFn }),
+
       setUser: (user: User | null) => set({ user }),
       
       setSession: (session: Session | null) => set({ session }),
@@ -43,17 +50,27 @@ export const useAuthStore = create<AuthStoreType>()(
             isLoading: false,
             error: null,
           });
+
+          // Navigate on success
+          const navigate = get().navigate;
+          if (navigate) {
+            logger.info('Login successful, navigating to dashboard.');
+            navigate('/dashboard'); // Or appropriate success route
+          } else {
+            logger.warn('Login successful but navigate function not set in store.');
+          }
+
           return result.user ?? null;
         } catch (error) {
-          logger.error('Login error in store', {
-            message: error instanceof Error ? error.message : 'Unknown error',
-          });
+          const errorMessage = error instanceof Error ? error.message : 'Unknown login error';
+          logger.error('Login error in store', { message: errorMessage });
           set({
             isLoading: false,
             error: error instanceof Error ? error : new Error('Failed to login'),
             user: null, session: null, profile: null
           });
-          throw error;
+          // Do NOT re-throw error
+          return null;
         }
       },
       
@@ -65,20 +82,30 @@ export const useAuthStore = create<AuthStoreType>()(
           set({
             user: result.user,
             session: result.session,
-            profile: null,
+            profile: null, // Profile usually created by trigger or needs separate fetch/creation
             isLoading: false,
             error: null,
           });
+
+          // Navigate on success
+          const navigate = get().navigate;
+          if (navigate) {
+             logger.info('Registration successful, navigating to dashboard.');
+             navigate('/dashboard'); // Or '/profile/edit' or other onboarding step
+          } else {
+             logger.warn('Registration successful but navigate function not set in store.');
+          }
+
           return result.user ?? null;
         } catch (error) {
-          logger.error('Registration error in store', {
-             message: error instanceof Error ? error.message : 'Unknown error',
-          });
+          const errorMessage = error instanceof Error ? error.message : 'Unknown registration error';
+          logger.error('Registration error in store', { message: errorMessage });
           set({
             isLoading: false,
             error: error instanceof Error ? error : new Error('Failed to register'),
              user: null, session: null, profile: null
           });
+          // Do NOT re-throw error
           return null;
         }
       },
@@ -124,12 +151,13 @@ export const useAuthStore = create<AuthStoreType>()(
       
       initialize: async () => {
         logger.info('Initializing auth state from persisted data...');
+        set({ isLoading: true }); // Ensure loading is true at start
         const session = get().session;
 
         if (session?.access_token) {
           logger.info('Verifying token / fetching initial profile...');
           try {
-            const result = await api.get<ProfileResponse>('profile', { token: session.access_token }); 
+            const result = await api.get<ProfileResponse>('me', { token: session.access_token });
             logger.info('Initialize: Profile fetch result:', { result });
 
             if (result?.user && result?.profile) { 
@@ -141,11 +169,17 @@ export const useAuthStore = create<AuthStoreType>()(
                 error: null
               });
             } else {
-               logger.warn('Initialize: Profile fetch incomplete/invalid data.', {result});
-               set({ user: null, profile: null, session: null, isLoading: false, error: new Error('Profile fetch failed during init (invalid data)') });
+               logger.warn('Initialize: Profile fetch incomplete/invalid data from /me.', {result});
+               set((currentState) => ({ // Use function form to access current state
+                 user: result?.user || null, // Keep user if it exists
+                 profile: null,
+                 session: currentState.session, // Explicitly keep existing session
+                 isLoading: false,
+                 error: new Error('Profile data not found during initialization')
+               }));
             }
           } catch(e) {
-            logger.error('Initialize: Error during profile fetch.', {e});
+            logger.error('Initialize: Error during profile fetch from /me.', {e});
             set({ user: null, profile: null, session: null, isLoading: false, error: e instanceof Error ? e : new Error('Initialization failed') });
           }
         } else {
@@ -157,17 +191,23 @@ export const useAuthStore = create<AuthStoreType>()(
       refreshSession: async () => {
         const currentSession = get().session;
         if (!currentSession?.refresh_token) {
-          logger.error('Refresh session: No refresh token found.');
+          logger.warn('refreshSession called without a refresh token.');
+          set({ error: new Error('No refresh token available to refresh session.') });
+          set({ isLoading: false }); // Ensure loading is set to false
           return;
         }
 
+        set({ isLoading: true, error: null }); // Set loading state
         try {
           const result = await api.post<RefreshResponse>('refresh', 
             {}, // Empty body
             { 
               headers: { 
                 'Authorization': `Bearer ${currentSession.refresh_token}` 
-              } 
+              },
+              isPublic: true // Refresh might be considered public from client perspective? Check API setup. If not, remove.
+                           // Or maybe it needs the *refresh* token passed differently?
+                           // Let's assume Authorization header is correct for now.
             }
           );
 
@@ -183,23 +223,18 @@ export const useAuthStore = create<AuthStoreType>()(
           } else {
             logger.error('Refresh session: Invalid response from backend.');
             set({
-              session: null,
-              user: null,
-              profile: null,
+              session: null, user: null, profile: null,
               isLoading: false,
-              error: new Error('Failed to refresh session')
+              error: new Error('Failed to refresh session (invalid response)')
             });
           }
         } catch (error) {
-          logger.error('Refresh session: Error during refresh attempt.', {
-            message: error instanceof Error ? error.message : 'Unknown error',
-          });
+          const errorMessage = error instanceof Error ? error.message : 'Unknown refresh error';
+          logger.error('Refresh session: Error during refresh attempt.', { message: errorMessage });
           set({
-            session: null,
-            user: null,
-            profile: null,
+            session: null, user: null, profile: null,
             isLoading: false,
-            error: error instanceof Error ? error : new Error('Failed to refresh session')
+            error: error instanceof Error ? error : new Error('Failed to refresh session (API error)')
           });
         }
       },
@@ -220,7 +255,6 @@ export const useAuthStore = create<AuthStoreType>()(
         
         set({ isLoading: true, error: null });
         try {
-            // Assume your API endpoint for updating profile is 'profile' with PUT/PATCH
             const updatedProfile = await api.put<UserProfile>('profile', profileData, { token });
 
             // Update the local store state with the response from the backend
@@ -232,9 +266,8 @@ export const useAuthStore = create<AuthStoreType>()(
             logger.info('Profile updated successfully.');
             return true;
         } catch (error) {
-            logger.error('updateProfile error in store', {
-                message: error instanceof Error ? error.message : 'Unknown error',
-            });
+            const errorMessage = error instanceof Error ? error.message : 'Unknown profile update error';
+            logger.error('updateProfile error in store', { message: errorMessage });
             set({
                 isLoading: false,
                 error: error instanceof Error ? error : new Error('Failed to update profile'),

@@ -35,6 +35,7 @@ export interface AuthStore {
   setProfile: (profile: UserProfile | null) => void;
   setIsLoading: (isLoading: boolean) => void;
   setError: (error: Error | null) => void;
+  setNavigate: (navigateFn: (path: string) => void) => void;
   login: (email: string, password: string) => Promise<User | null>;
   register: (email: string, password: string) => Promise<User | null>;
   logout: () => Promise<void>;
@@ -46,6 +47,7 @@ export interface AuthStore {
   profile: UserProfile | null;
   isLoading: boolean;
   error: Error | null;
+  navigate: ((path: string) => void) | null;
 }
 
 export interface Session {
@@ -64,13 +66,15 @@ export interface RegisterCredentials {
   password: string;
 }
 
+// Response type for login/register/refresh endpoints
 export interface AuthResponse {
-  user: User;
-  session: Session;
-  profile: UserProfile;
+  user: User | null;
+  session: Session | null;
+  profile: UserProfile | null; // Allow null for cases like registration or failed profile fetch
 }
 
-// Type for successful Profile Edge Function Data Payload
+// Response type specifically for profile fetch (/me)
+// It might include user data again depending on backend implementation
 export interface ProfileResponse {
   user: User;
   profile: UserProfile;
