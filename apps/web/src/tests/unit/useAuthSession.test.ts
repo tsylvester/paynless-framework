@@ -1,6 +1,6 @@
 import { renderHook, act } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { useAuthSession } from './useAuthSession';
+import { useAuthSession } from '../../hooks/useAuthSession';
 import type { Session } from '@paynless/types';
 
 // Mock useAuthStore state and actions

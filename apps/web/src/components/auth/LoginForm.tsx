@@ -35,7 +35,7 @@ export function LoginForm({ onSuccess }: LoginFormProps) {
       <h2 className="text-2xl font-bold mb-6 text-center text-textPrimary">Welcome Back</h2>
       
       {error && (
-        <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-md flex items-center gap-2 text-red-700">
+        <div role="alert" className="mb-4 p-3 bg-red-50 border border-red-200 rounded-md flex items-center gap-2 text-red-700">
           <AlertCircle size={18} />
           <span data-testid="login-error-message">{error.message}</span>
         </div>

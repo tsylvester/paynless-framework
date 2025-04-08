@@ -1,24 +1,35 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
-// Remove vitest type import as test config is removed
-// import type { UserConfig } from 'vitest/config'; 
+// Import vitest types for test config
+import type { UserConfig } from 'vitest/config';
 import path from 'path'; // Keep path for alias
 
 // https://vitejs.dev/config/
 export default defineConfig({
   plugins: [react()],
   optimizeDeps: {
-    // Keep lucide-react excluded, api-client is handled by alias/inline
-    exclude: ['lucide-react'], 
+    // Disable pre-bundling entirely
+    disabled: true,
+    // Keep lucide-react excluded
+    exclude: ['lucide-react'],
   },
   resolve: {
-    // Add alias to src directory
+    // Restore original working configuration
+    preserveSymlinks: true,
     alias: {
       '@paynless/api-client': path.resolve(__dirname, '../../packages/api-client/src'),
     },
-    // Re-enable preserveSymlinks
-    preserveSymlinks: true, 
   },
-  // Remove the conflicting test configuration block
-  // test: { ... } as UserConfig['test'], 
+  // Keep Vitest configuration
+  test: {
+    globals: true,
+    environment: 'jsdom',
+    setupFiles: './src/setupTests.ts', // Ensure setup file is loaded
+    server: {
+      deps: {
+        // Process linked dependencies to ensure MSW patching works
+        inline: [/@paynless\//, /msw/],
+      },
+    },
+  } as UserConfig['test'],
 });

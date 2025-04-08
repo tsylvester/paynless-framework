@@ -193,6 +193,29 @@ The project is organized as a monorepo using npm workspaces:
 /
 ├── apps/                   # Individual applications
 │   ├── web/                # React Web Application (Vite)
+│   │   └── src/
+│   │       ├── components/
+│   │       ├── pages/
+│   │       ├── hooks/
+│   │       ├── context/
+│   │       ├── routes/
+│   │       ├── config/
+│   │       ├── tests/            # Web App Tests
+│   │       │   ├── unit/         # Unit tests (*.unit.test.tsx)
+│   │       │   ├── integration/  # Integration tests (*.integration.test.tsx)
+│   │       │   │   ├── auth.integration.test.tsx
+│   │       │   │   ├── profile.integration.test.tsx
+│   │       │   │   └── Subscription.integration.test.tsx
+│   │       │   ├── e2e/          # End-to-end tests (Placeholder)
+│   │       │   ├── utils/        # Shared test utilities (render, etc.)
+│   │       │   ├── mocks/        # Shared mocks (MSW handlers, components)
+│   │       │   │   ├── handlers.ts # Main MSW request handlers
+│   │       │   │   ├── api/
+│   │       │   │   │   └── server.ts # MSW server setup
+│   │       │   │   ├── components/ # Mock React components
+│   │       │   │   └── stores/     # Mock Zustand stores
+│   │       │   └── setup.ts      # Vitest global setup (MSW server start, etc.)
+│   │       └── ... (other src files: App.tsx, main.tsx, etc.)
 │   ├── ios/                # iOS Application (Details TBD)
 │   └── android/            # Android Application (Details TBD)
 │
