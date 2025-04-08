@@ -30,11 +30,14 @@ function NavigateInjector() {
   return null; // This component doesn't render anything
 }
 
-function App() {
-  const { initialize } = useAuthStore();
+// NEW: Separate App Content component
+export function AppContent() {
+  const { initialize, isLoading } = useAuthStore(state => ({
+    initialize: state.initialize,
+    isLoading: state.isLoading,
+  }));
   const initializedRef = useRef(false);
   
-  // Initialize auth state when app loads, preventing double run in StrictMode
   useEffect(() => {
     if (!initializedRef.current) {
       initializedRef.current = true;
@@ -43,25 +46,37 @@ function App() {
     }
   }, [initialize]);
 
+  if (isLoading) {
+    return <div className="flex justify-center items-center min-h-screen">Loading...</div>;
+  }
+
+  // Return everything that was inside BrowserRouter
+  return (
+    <>
+      <NavigateInjector />
+      <AuthenticatedGate>
+          <></>
+      </AuthenticatedGate>
+      <Routes>
+        {routes.map((route) => (
+          <Route
+            key={route.path}
+            path={route.path}
+            element={route.element}
+          />
+        ))}
+      </Routes>
+    </>
+  );
+}
+
+// Original App component now provides Router and renders AppContent
+function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <ThemeProvider>
         <BrowserRouter>
-          <NavigateInjector />
-
-          <AuthenticatedGate>
-              <></>
-          </AuthenticatedGate>
-
-          <Routes>
-            {routes.map((route) => (
-              <Route
-                key={route.path}
-                path={route.path}
-                element={route.element}
-              />
-            ))}
-          </Routes>
+          <AppContent />
         </BrowserRouter>
       </ThemeProvider>
     </QueryClientProvider>

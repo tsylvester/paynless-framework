@@ -1,5 +1,11 @@
 /// <reference types="vitest" />
-import { defineConfig } from 'vite';
+import { defineConfig, UserConfig } from 'vite';
+import type { InlineConfig } from 'vitest'; // Import Vitest config type
+
+// Define the merged configuration type
+interface VitestConfigExport extends UserConfig {
+  test: InlineConfig;
+}
 
 export default defineConfig({
   test: {
@@ -14,4 +20,4 @@ export default defineConfig({
     //   reporter: ['text', 'json', 'html'],
     // },
   },
-}); 
+} as VitestConfigExport); // Cast to the merged type 

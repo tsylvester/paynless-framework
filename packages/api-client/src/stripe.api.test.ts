@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { http, HttpResponse } from 'msw';
 import { StripeApiClient } from './stripe.api';
-import { initializeApiClient, ApiError, _resetApiClient } from './apiClient';
+import { initializeApiClient, _resetApiClient } from './apiClient';
 import type { ApiResponse, SubscriptionPlan, UserSubscription, SubscriptionUsageMetrics } from '@paynless/types';
 import { server } from './setupTests';
 
@@ -43,7 +43,7 @@ const stripeApiHandlers = [
     http.post(`${BASE_URL}/api-subscriptions/:subId/resume`, async () => { 
         return HttpResponse.json<ApiResponse<void>>({ status: 200, data: undefined });
     }),
-    http.get(`${BASE_URL}/api-subscriptions/usage/:metric`, async ({ params }) => { 
+    http.get(`${BASE_URL}/api-subscriptions/usage/:metric`, async (/* { params } */) => {
         const mockUsage: SubscriptionUsageMetrics = { 
             current: 100, 
             limit: 1000, 

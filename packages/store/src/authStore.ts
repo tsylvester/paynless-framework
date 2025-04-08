@@ -157,32 +157,39 @@ export const useAuthStore = create<AuthStoreType>()(
         if (session?.access_token) {
           logger.info('Verifying token / fetching initial profile...');
           try {
-            const result = await api.get<ProfileResponse>('me', { token: session.access_token });
-            logger.info('Initialize: Profile fetch result:', { result });
+            const result = await api.get<AuthResponse>('me', { token: session.access_token });
+            logger.info('Initialize: /me call result:', { result });
 
-            if (result?.user && result?.profile) { 
-              logger.info('Initialize: Got user and profile data. Setting state.');
-              set({
+            // Refined Logic: If user data is present, update state, profile might be null
+            if (result?.user) {
+              logger.info('Initialize: User data found. Updating state.');
+              set((currentState) => ({ // Use function form to access current session
                 user: result.user,
-                profile: result.profile,
+                profile: result.profile, // Will be null if API returned null
+                session: currentState.session, // Preserve existing session
                 isLoading: false,
                 error: null
-              });
+              }));
             } else {
-               logger.warn('Initialize: Profile fetch incomplete/invalid data from /me.', {result});
-               set((currentState) => ({ // Use function form to access current state
-                 user: result?.user || null, // Keep user if it exists
-                 profile: null,
-                 session: currentState.session, // Explicitly keep existing session
-                 isLoading: false,
-                 error: new Error('Profile data not found during initialization')
-               }));
+              // API succeeded but returned no user data - invalid state
+              logger.error('Initialize: /me call succeeded but returned no user data.');
+              set({
+                user: null, profile: null, session: null,
+                isLoading: false,
+                error: new Error('Initialization failed: Invalid user data received')
+              });
             }
           } catch(e) {
-            logger.error('Initialize: Error during profile fetch from /me.', {e});
-            set({ user: null, profile: null, session: null, isLoading: false, error: e instanceof Error ? e : new Error('Initialization failed') });
+            // API call itself failed
+            logger.error('Initialize: Error during /me API call.', {e});
+            set({ 
+              user: null, profile: null, session: null, 
+              isLoading: false, 
+              error: e instanceof Error ? e : new Error('Initialization failed (API error)') 
+            });
           }
         } else {
+          // No initial session token found
           logger.info('No persisted session token found.');
           set({ user: null, profile: null, session: null, isLoading: false, error: null });
         }

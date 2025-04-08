@@ -97,14 +97,18 @@ export class Logger {
     return logLevelIndex >= configLevelIndex;
   }
   
-  /**
-   * Format a log message with metadata
-   */
-  private formatLog(message: string, metadata?: LogMetadata): string {
+  private formatLogWithColor(level: LogLevel, message: string, metadata?: LogMetadata): string {
     const timestamp = new Date().toISOString();
-    const metadataStr = metadata ? ` ${JSON.stringify(metadata)}` : '';
-    
-    return `[${timestamp}] ${message}${metadataStr}`;
+    let logString = `[${timestamp}] [${level.toUpperCase()}] ${message}`;
+    if (metadata && Object.keys(metadata).length > 0) {
+      try {
+        logString += ` ${JSON.stringify(metadata)}`;
+      } catch (error) {
+        console.error("[Logger] Error stringifying metadata in formatLogWithColor:", error);
+        logString += ` [Metadata unavailable]`;
+      }
+    }
+    return logString;
   }
   
   /**

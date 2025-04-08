@@ -107,9 +107,6 @@ async function apiClient<T = unknown>(
   const method = options.method || (options.body ? 'POST' : 'GET');
   logger.debug(`[apiClient ${endpoint}] Configured`, { method, url, hasToken: !!token, isPublic: !!options.isPublic }); // Log 2
 
-  // Log the final URL right before fetch
-  logger.debug(`>>> [apiClient ${endpoint}] Attempting fetch with FINAL URL: ${url}`);
-
   logger.debug(`API Call: ${method} ${url}`, { hasToken: !!token });
 
   try {
@@ -135,8 +132,11 @@ async function apiClient<T = unknown>(
 
     logger.debug(`[apiClient ${endpoint}] Checking response.ok (${response.ok})...`); // Log 7
     if (!response.ok) {
-      const errorMessage = responseBody?.message || responseBody?.error?.message || `HTTP error ${response.status}`;
-      const errorCode = responseBody?.code || responseBody?.error?.code;
+      // const errorMessage = responseBody?.message || responseBody?.error?.message || `HTTP error ${response.status}`;
+      // const errorCode = responseBody?.code || responseBody?.error?.code;
+      // FIX: Access error properties correctly via responseBody.error
+      const errorMessage = responseBody?.error?.message || `HTTP error ${response.status}`;
+      const errorCode = responseBody?.error?.code;
       logger.error(`[apiClient ${endpoint}] Response not OK`, { status: response.status, errorMessage, errorCode });
       const error = new ApiError(errorMessage, errorCode, response.status); 
       throw error;

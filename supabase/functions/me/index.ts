@@ -106,10 +106,7 @@ export async function handleMeRequest(
 
         console.log(`[me/index.ts] Profile fetch successful for user ${user.id}. Returning combined data.`);
         const responseData = {
-            user: {
-                id: user.id,
-                email: user.email,
-            },
+            user: user,
             profile: profileData || null
         };
         // Use deps again

@@ -2,11 +2,20 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { http, HttpResponse } from 'msw';
 import { setupServer } from 'msw/node';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { ThemeProvider } from '../context/theme.context';
 
-import { App } from '../../App'; // Assuming App sets up context/routing
-import { LoginPage } from '../../pages/LoginPage';
-import { RegisterPage } from '../../pages/RegisterPage';
-import { Dashboard } from '../../pages/Dashboard'; // Target for successful login/register
+// FIX: Import and initialize apiClient BEFORE other imports that might use it
+import { initializeApiClient, api } from '@paynless/api-client';
+initializeApiClient({
+  baseUrl: 'http://test.host/functions/v1', // Match real app path structure
+  supabaseAnonKey: 'test-anon-key' 
+});
+
+import { AppContent } from '../App';
+import { LoginPage } from '../pages/LoginPage';
+import { RegisterPage } from '../pages/RegisterPage';
+import { Dashboard } from '../pages/Dashboard'; // Target for successful login/register
 
 import { useAuthStore } from '@paynless/store';
 import { AuthResponse, UserRole } from '@paynless/types';
@@ -18,8 +27,8 @@ const mockProfile = { id: 'user-123', first_name: 'Test', last_name: 'User', rol
 
 // --- MSW Handlers ---
 const handlers = [
-  // Handler for successful login
-  http.post('/api/login', async ({ request }) => {
+  http.post('http://test.host/functions/v1/login', async ({ request }) => {
+    console.log('[MSW Login Handler] Intercepted URL:', request.url);
     const { email } = await request.json() as { email: string };
     if (email === 'test@example.com') {
       const response: AuthResponse = { user: mockUser, session: mockSession, profile: mockProfile };
@@ -28,19 +37,21 @@ const handlers = [
     return new HttpResponse(JSON.stringify({ message: 'Invalid credentials' }), { status: 401 });
   }),
 
-  // Handler for successful registration
-  http.post('/api/register', async ({ request }) => {
+  http.post('http://test.host/functions/v1/register', async ({ request }) => {
     const { email } = await request.json() as { email: string };
     if (email === 'new@example.com') {
-      // Register might only return user/session, profile fetched later
       const response: AuthResponse = { user: { ...mockUser, email }, session: mockSession, profile: null }; 
       return HttpResponse.json(response);
     }
-    return new HttpResponse(JSON.stringify({ message: 'Email already exists' }), { status: 400 });
+    // Simulate email exists using the user from login tests
+    if (email === 'test@example.com') {
+        return new HttpResponse(JSON.stringify({ message: 'Email already exists' }), { status: 400 });
+    }
+    // Generic fallback for other emails in register test
+    return new HttpResponse(JSON.stringify({ message: 'Registration failed unexpectedly' }), { status: 500 });
   }),
 
-  // Handler for initial profile fetch after login/register completes (via store's initialize/login/register logic)
-  http.get('/api/me', ({ request }) => {
+  http.get('http://test.host/functions/v1/me', ({ request }) => {
     const authHeader = request.headers.get('Authorization');
     if (authHeader === `Bearer ${mockSession.access_token}`) {
        return HttpResponse.json({ user: mockUser, profile: mockProfile });
@@ -51,12 +62,39 @@ const handlers = [
 
 const server = setupServer(...handlers);
 
-// Setup MSW server before tests and clean up after
+// FIX: Create a query client instance for tests
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      retry: false, // Disable retries for tests
+    },
+  },
+});
+
+// Helper function to render with necessary providers
+const renderWithProviders = (ui: React.ReactElement, { route = '/' } = {}) => {
+  window.history.pushState({}, 'Test page', route)
+
+  return render(ui, {
+    wrapper: ({ children }) => (
+      <QueryClientProvider client={queryClient}>
+        <ThemeProvider>
+          <MemoryRouter initialEntries={[route]}>
+            {children}
+          </MemoryRouter>
+        </ThemeProvider>
+      </QueryClientProvider>
+    ),
+  })
+}
+
+// Setup MSW server and reset stores
 beforeAll(() => server.listen());
 afterEach(() => {
   server.resetHandlers();
-  // Reset zustand stores between tests
   useAuthStore.setState(useAuthStore.getInitialState(), true);
+  // Clear query cache between tests
+  queryClient.clear(); 
 });
 afterAll(() => server.close());
 
@@ -65,11 +103,7 @@ describe('Authentication Integration Tests (MSW)', () => {
 
   describe('Login Flow', () => {
     it('should log in successfully, fetch profile, and redirect to dashboard', async () => {
-      render(
-        <MemoryRouter initialEntries={['/login']}>
-          <App /> 
-        </MemoryRouter>
-      );
+      renderWithProviders(<AppContent />, { route: '/login' });
 
       // Check initial state (Login page is rendered)
       expect(screen.getByRole('heading', { name: /welcome back/i })).toBeInTheDocument();
@@ -92,11 +126,7 @@ describe('Authentication Integration Tests (MSW)', () => {
     });
 
     it('should display error message for invalid credentials', async () => {
-      render(
-        <MemoryRouter initialEntries={['/login']}>
-          <App />
-        </MemoryRouter>
-      );
+      renderWithProviders(<AppContent />, { route: '/login' });
 
       fireEvent.change(screen.getByLabelText(/email/i), { target: { value: 'wrong@example.com' } });
       fireEvent.change(screen.getByLabelText(/password/i), { target: { value: 'wrongpassword' } });
@@ -115,16 +145,12 @@ describe('Authentication Integration Tests (MSW)', () => {
     it('should display generic error message for server error', async () => {
       // Override handler for this test
       server.use(
-        http.post('/api/login', () => {
+        http.post('http://test.host/functions/v1/login', () => {
           return new HttpResponse(null, { status: 500, statusText: 'Internal Server Error' });
         })
       );
 
-      render(
-        <MemoryRouter initialEntries={['/login']}>
-          <App />
-        </MemoryRouter>
-      );
+      renderWithProviders(<AppContent />, { route: '/login' });
 
       fireEvent.change(screen.getByLabelText(/email/i), { target: { value: 'test@example.com' } });
       fireEvent.change(screen.getByLabelText(/password/i), { target: { value: 'password' } });
@@ -140,11 +166,7 @@ describe('Authentication Integration Tests (MSW)', () => {
 
   describe('Register Flow', () => {
     it('should register successfully, fetch profile, and redirect to dashboard', async () => {
-       render(
-        <MemoryRouter initialEntries={['/register']}>
-          <App /> 
-        </MemoryRouter>
-      );
+      renderWithProviders(<AppContent />, { route: '/register' });
 
       // Check initial state (Register page is rendered)
       expect(screen.getByRole('heading', { name: /create an account/i })).toBeInTheDocument();
@@ -154,27 +176,23 @@ describe('Authentication Integration Tests (MSW)', () => {
       fireEvent.change(screen.getByLabelText(/password/i), { target: { value: 'newpassword' } });
       fireEvent.click(screen.getByRole('button', { name: /create account/i }));
 
-       // Wait for redirection to dashboard
+      // Wait for redirection to dashboard
       await waitFor(() => {
         expect(screen.getByRole('heading', { name: /dashboard/i })).toBeInTheDocument();
       });
 
-       // Verify store state
+      // Verify store state
       const authState = useAuthStore.getState();
       expect(authState.user?.email).toBe('new@example.com');
       // Profile might be null initially after register, depending on store logic
       // Check if initialize/profile fetch happens automatically
-       await waitFor(() => {
-           expect(useAuthStore.getState().profile?.first_name).toBe('Test');
-       });
+      await waitFor(() => {
+        expect(useAuthStore.getState().profile?.first_name).toBe('Test');
+      });
     });
 
     it('should display error message if email already exists', async () => {
-      render(
-        <MemoryRouter initialEntries={['/register']}>
-          <App />
-        </MemoryRouter>
-      );
+      renderWithProviders(<AppContent />, { route: '/register' });
 
       fireEvent.change(screen.getByLabelText(/email/i), { target: { value: 'test@example.com' } }); // Use an email mocked to exist
       fireEvent.change(screen.getByLabelText(/password/i), { target: { value: 'password' } });
@@ -189,16 +207,12 @@ describe('Authentication Integration Tests (MSW)', () => {
 
     it('should display generic error message for server error', async () => {
       server.use(
-        http.post('/api/register', () => {
+        http.post('http://test.host/functions/v1/register', () => {
           return new HttpResponse(null, { status: 500, statusText: 'Registration Failed' });
         })
       );
 
-       render(
-        <MemoryRouter initialEntries={['/register']}>
-          <App />
-        </MemoryRouter>
-      );
+      renderWithProviders(<AppContent />, { route: '/register' });
 
       fireEvent.change(screen.getByLabelText(/email/i), { target: { value: 'another@example.com' } });
       fireEvent.change(screen.getByLabelText(/password/i), { target: { value: 'password' } });
