@@ -8,16 +8,29 @@ import path from 'path'; // Keep path for alias
 export default defineConfig({
   plugins: [react()],
   optimizeDeps: {
-    // Disable pre-bundling entirely
-    disabled: true,
-    // Keep lucide-react excluded
-    exclude: ['lucide-react'],
+    // Explicitly include problematic transitive dependencies based on errors
+    include: [
+      '@tanstack/query-core',
+      'react-router',
+      'use-sync-external-store/shim/with-selector.js',
+      '@remix-run/router',
+      'scheduler',
+      // Include direct dependencies that require these as well, just in case
+      '@tanstack/react-query',
+      'react-router-dom',
+      'zustand',
+    ],
+    // Add any necessary excludes back if they were part of a working config
+    // exclude: ['lucide-react'],
   },
   resolve: {
-    // Restore original working configuration
-    preserveSymlinks: true,
+    // Setting preserveSymlinks to false might help resolve hoisted deps
+    preserveSymlinks: false,
     alias: {
+      // Keep aliases for local workspace packages
       '@paynless/api-client': path.resolve(__dirname, '../../packages/api-client/src'),
+      '@paynless/store': path.resolve(__dirname, '../../packages/store/src'),
+      // Add aliases for other local packages if needed
     },
   },
   // Keep Vitest configuration
