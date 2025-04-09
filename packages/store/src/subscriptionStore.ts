@@ -145,11 +145,10 @@ export const useSubscriptionStore = create<SubscriptionStore>()(
 
         try {
           const isTestMode = get().isTestMode;
-          // Pass token explicitly
           const response = await api.billing().createCheckoutSession(priceId, isTestMode, { token });
 
-          // FIX: Check for response.data.url instead of sessionId
-          if (response.error || !response.data?.sessionId) {
+          // Check for response.data.url now
+          if (response.error || !response.data?.url) { 
             const errorMessage = response.error?.message || 'Failed to get checkout session URL from API';
             logger.error('Error response from createCheckoutSession API', {
               error: response.error,
@@ -158,9 +157,10 @@ export const useSubscriptionStore = create<SubscriptionStore>()(
             throw new Error(errorMessage);
           }
 
-          logger.info('Received checkout session URL', { url: response.data.sessionId });
+          // Log and return the url
+          logger.info('Received checkout session URL', { url: response.data.url }); 
           set({ isSubscriptionLoading: false, error: null });
-          return response.data.sessionId; // FIX: Return the URL
+          return response.data.url; 
 
         } catch (error) {
           const errorToSet = error instanceof Error ? error : new Error('Failed to create checkout session');

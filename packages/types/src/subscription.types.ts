@@ -59,9 +59,11 @@ export type TransactionStatus =
  * API endpoint request/response types
  */
 export interface SubscriptionUsageMetrics {
-  current: number;
+  metric: string;
+  usage: number;
   limit: number;
-  reset_date?: string | null;
+  period_start: string; // ISO Date string
+  period_end: string; // ISO Date string
 }
 
 export interface CancelSubscriptionRequest {
@@ -70,4 +72,14 @@ export interface CancelSubscriptionRequest {
 
 export interface ResumeSubscriptionRequest {
   subscriptionId: string;
+}
+
+// Define response type for creating a checkout session
+export interface CheckoutSessionResponse {
+  url: string; // Expecting the Stripe Checkout URL
+}
+
+// Define response type for creating a portal session
+export interface PortalSessionResponse {
+  url: string; // Expecting the Stripe Billing Portal URL
 }

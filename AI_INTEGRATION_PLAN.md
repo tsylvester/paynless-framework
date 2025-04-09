@@ -117,7 +117,7 @@
             *   [✅] `loadChatDetails(chatId: string)`: Sets loading, calls API client, updates `currentChatMessages`/`currentChatId` on success, sets error state on failure, clears loading.
             *   [✅] `startNewChat()`: Clears `currentChatMessages`, `currentChatId`. Resets `anonymousMessageCount` if managed here.
             *   [✅] `incrementAnonymousCount()` / `resetAnonymousCount()`: Helper actions if count managed centrally in store.
-        *   [✅] **(TDD):** Unit test store actions (mock API client methods, test state updates for loading/error/data, test anonymous limit check/error throwing).
+        *   [🚧] **(TDD):** Unit test store actions (mock API client methods, test state updates for loading/error/data, test anonymous limit check/error throwing). *(Unit tests passing, Integration tests partially passing, Linter error pending)*
     *   **`authStore.ts`:**
         *   [ ] **Modify `register` Action:** *After* successful API call and state update for user/session, *before* determining navigation:
             *   [ ] Check `sessionStorage.getItem('pendingChatMessage')`.
@@ -159,7 +159,7 @@
         *   Uses `navigate(result.redirectTo)` to perform the navigation.
 3.  **New Pages & Routing:**
     *   (As before: `ChatHistoryPage.tsx`, `ChatDetailsPage.tsx`, add routes `/chat-history`, `/chat/:chatId`). These pages follow the pattern: dispatch loading actions (`loadChatHistory`, `loadChatDetails`) in `useEffect`, subscribe to store state for rendering.
-4.  **(TDD):** Write component/integration tests focusing on: anonymous limit interception and stashing, post-registration message sending, reading loading/error states from store, navigating based on `register` action result.
+4.  [🚧] **(TDD):** Write component/integration tests focusing on: anonymous limit interception and stashing, post-registration message sending, reading loading/error states from store, navigating based on `register` action result. *(Core AI integration tests passing, error/anonymous scenarios pending)*
 
 **Missing Pieces / Needs Consideration (Recap)**
 

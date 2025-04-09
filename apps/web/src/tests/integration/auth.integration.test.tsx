@@ -19,8 +19,13 @@ import type { AuthResponse } from '@paynless/types';
 // Mock Layout? Probably not needed when testing pages directly
 // vi.mock('../../components/layout/Layout', ...) // Path relative to this file
 
-// API URL (Corrected Base URL)
-const API_BASE_URL = 'http://test.host/functions/v1';
+// API URL (Corrected Base URL) - <<< Use Environment Variable >>>
+const supabaseUrlFromEnv = process.env.VITE_SUPABASE_URL;
+if (!supabaseUrlFromEnv) {
+  throw new Error('[Auth Tests] VITE_SUPABASE_URL environment variable not set.');
+}
+const API_BASE_URL = `${supabaseUrlFromEnv.replace(/\/$/, '')}/functions/v1`;
+console.log(`[Auth Tests] Using API_BASE_URL for overrides: ${API_BASE_URL}`);
 
 describe('Auth Integration Tests', () => {
   // --- Test Suite Completeness Tracking ---

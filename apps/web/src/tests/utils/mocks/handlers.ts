@@ -1,8 +1,13 @@
 import { http, HttpResponse } from 'msw';
 import type { AuthResponse, ProfileResponse, UserProfile, SubscriptionPlan, UserSubscription } from '@paynless/types';
 
-// Base URL used in tests
-const API_BASE_URL = 'http://test.host/functions/v1';
+// Base URL used in tests - <<< Use Environment Variable >>>
+const supabaseUrlFromEnv = process.env.VITE_SUPABASE_URL;
+if (!supabaseUrlFromEnv) {
+  throw new Error('[MSW Handlers] VITE_SUPABASE_URL environment variable not set.');
+}
+const API_BASE_URL = `${supabaseUrlFromEnv.replace(/\/$/, '')}/functions/v1`;
+console.log(`[MSW Handlers] Using API_BASE_URL: ${API_BASE_URL}`);
 
 // Mock Data (Can be expanded or imported)
 const mockUserProfile: UserProfile = {
@@ -129,5 +134,30 @@ export const handlers = [
         mockCurrentSubscription = null;
         return HttpResponse.json(null, { status: 200 });
    }),
+
+  // --- AI Chat endpoints ---
+  http.get(`${API_BASE_URL}/ai-providers`, () => {
+    console.log(`[MSW Global] Handling GET ${API_BASE_URL}/ai-providers`);
+    // Use a simplified mock for global handlers, assuming tests might override
+    return HttpResponse.json([{ id: 'p-global', name: 'Global Provider' }], { status: 200 }); 
+  }),
+
+  http.get(`${API_BASE_URL}/system-prompts`, () => {
+    console.log(`[MSW Global] Handling GET ${API_BASE_URL}/system-prompts`);
+    return HttpResponse.json([{ id: 's-global', name: 'Global Prompt' }], { status: 200 });
+  }),
+
+  http.post(`${API_BASE_URL}/chat`, async ({ request }) => {
+    console.log(`[MSW Global] Handling POST ${API_BASE_URL}/chat`);
+    // Return a generic success response
+    const body = await request.json() as any;
+    return HttpResponse.json({ 
+        id: 'm-global', 
+        chat_id: body.chatId || 'new-chat-global', 
+        role: 'assistant', 
+        content: 'Global mock response', 
+        created_at: new Date().toISOString()
+    }, { status: 200 });
+  }),
 
 ]; 

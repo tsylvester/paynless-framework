@@ -11,9 +11,13 @@ import { setupServer } from 'msw/node';
 import { handlers } from './utils/mocks/handlers';
 import { initializeApiClient } from '@paynless/api-client';
 import { cleanup } from '@testing-library/react';
-import { setupMockServer } from './utils/mocks/api';
 
 console.log('Setting up test environment...');
+
+// Load environment variables (ensure this happens early if not handled by Vitest config)
+// Example using dotenv if needed: 
+// import dotenv from 'dotenv';
+// dotenv.config({ path: '.env.test' }); // Adjust path as needed
 
 // Create MSW server instance
 export const server = setupServer(...handlers);
@@ -45,15 +49,21 @@ afterAll(() => {
   server.close();
 });
 
-// Initialize API client with test configuration
-initializeApiClient({
-  baseUrl: 'http://test.host/functions/v1',
-  supabaseAnonKey: 'test-anon-key'
-});
-console.log('[setupTests] API Client Initialized.');
+// Initialize API client using environment variables
+const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
 
-// Setup MSW
-setupMockServer();
+if (!supabaseUrl || !supabaseAnonKey) {
+    console.error('Error: Missing Supabase environment variables (VITE_SUPABASE_URL, VITE_SUPABASE_ANON_KEY) for test setup.');
+    // Optionally throw an error to halt tests if config is essential
+    // throw new Error('Missing Supabase environment variables for test setup.');
+} else {
+    initializeApiClient({
+        supabaseUrl: supabaseUrl,
+        supabaseAnonKey: supabaseAnonKey
+    });
+    console.log('[setupTests] API Client Initialized.');
+}
 
 // Mock window.matchMedia
 Object.defineProperty(window, 'matchMedia', {
