@@ -11,11 +11,12 @@ serve(async (req) => {
   }
 
   try {
-    // Create Supabase client with user's auth context
+    // Create a Supabase client with the Auth context of the logged in user.
     const supabaseClient = createClient(
+      // Supabase API URL - env var exported by default.
       Deno.env.get('SUPABASE_URL') ?? '',
-      Deno.env.get('SUPABASE_ANON_KEY') ?? '',
-      { global: { headers: { Authorization: req.headers.get('Authorization')! } } }
+      // Supabase API ANON KEY - env var exported by default.
+      Deno.env.get('SUPABASE_ANON_KEY') ?? ''
     )
 
     // Fetch active system prompts

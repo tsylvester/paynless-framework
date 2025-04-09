@@ -31,6 +31,7 @@ export default defineConfig({
       '@paynless/api-client': path.resolve(__dirname, '../../packages/api-client/src'),
       '@paynless/store': path.resolve(__dirname, '../../packages/store/src'),
       // Add aliases for other local packages if needed
+      '@': path.resolve(__dirname, './src'),
     },
   },
   // Keep Vitest configuration

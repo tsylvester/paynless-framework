@@ -1,10 +1,70 @@
 import { Layout } from '../components/layout/Layout';
 import { ArrowRight, Database, Lock, Server, CheckCircle } from 'lucide-react';
-import { Link } from 'react-router-dom';
-import { useAuthStore } from '@paynless/store';
+import { Link, useNavigate } from 'react-router-dom';
+import { useAuthStore, useAiStore } from '@paynless/store';
+import React, { useState, useEffect, useCallback } from 'react';
+import { logger } from '@paynless/utils';
+import { ModelSelector } from '../components/ai/ModelSelector';
+import { PromptSelector } from '../components/ai/PromptSelector';
+import { AiChatbox } from '../components/ai/AiChatbox';
 
 export function HomePage() {
-  const { user } = useAuthStore();
+  const { user, session } = useAuthStore();
+  const navigate = useNavigate();
+
+  const { loadAiConfig, sendMessage, startNewChat, setAnonymousCount } = useAiStore();
+  const [selectedProviderId, setSelectedProviderId] = useState<string | null>(null);
+  const [selectedPromptId, setSelectedPromptId] = useState<string | null>(null);
+  const [showLimitDialog, setShowLimitDialog] = useState(false);
+  const [stashedMessage, setStashedMessage] = useState<{ message: string; providerId: string; promptId: string; } | null>(null);
+
+  useEffect(() => {
+    loadAiConfig();
+    startNewChat();
+    setAnonymousCount(0);
+  }, [loadAiConfig, startNewChat, setAnonymousCount]);
+
+  useEffect(() => {
+    if (user && session) {
+      const pendingMessageJson = sessionStorage.getItem('pendingChatMessage');
+      if (pendingMessageJson) {
+        logger.info('[HomePage] Found stashed message, attempting to send...');
+        try {
+          const pendingMessage = JSON.parse(pendingMessageJson);
+          sessionStorage.removeItem('pendingChatMessage');
+          sendMessage({
+            message: pendingMessage.message,
+            providerId: pendingMessage.providerId,
+            promptId: pendingMessage.promptId,
+            isAnonymous: false,
+          });
+        } catch (error) {
+          logger.error('[HomePage] Failed to parse or send stashed message:', { error: String(error) });
+          sessionStorage.removeItem('pendingChatMessage');
+        }
+      }
+    }
+  }, [user, session, sendMessage]);
+
+  const handleLimitReached = useCallback(() => {
+    const pendingMessageJson = sessionStorage.getItem('pendingChatMessage');
+    if (pendingMessageJson) {
+        setShowLimitDialog(true);
+    } else {
+        logger.error('[HomePage] onLimitReached called but no pending message found in sessionStorage.');
+    }
+  }, []);
+
+  const handleRegisterRedirect = () => {
+    setShowLimitDialog(false);
+    navigate('/register');
+  };
+
+  const handleCloseDialog = () => {
+    setShowLimitDialog(false);
+    sessionStorage.removeItem('pendingChatMessage'); 
+    logger.info('[HomePage] User cancelled registration, cleared stashed message.');
+  };
   
   return (
     <Layout>
@@ -49,6 +109,30 @@ export function HomePage() {
               </>
             )}
           </div>
+        </div>
+        
+        {/* AI Chat Section */}
+        <div className="my-12 max-w-4xl mx-auto bg-background p-6 rounded-lg shadow-md">
+          <h2 className="text-2xl font-bold text-center text-textPrimary mb-6">Try Paynless AI</h2>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+            <ModelSelector 
+              selectedProviderId={selectedProviderId}
+              onProviderChange={setSelectedProviderId}
+            />
+            <PromptSelector 
+              selectedPromptId={selectedPromptId}
+              onPromptChange={setSelectedPromptId}
+            />
+          </div>
+          <AiChatbox 
+            providerId={selectedProviderId}
+            promptId={selectedPromptId}
+            isAnonymous={true}
+            onLimitReached={handleLimitReached}
+          />
+          <p className="text-xs text-center text-muted-foreground mt-2">
+            Anonymous users are limited to {useAiStore.getState().anonymousMessageLimit} messages. Sign up for unlimited access.
+          </p>
         </div>
         
         {/* Features section */}
@@ -195,6 +279,33 @@ export function HomePage() {
         </div>
 
       </div>
+
+      {showLimitDialog && (
+        <div className="fixed inset-0 bg-black/50 z-40 flex items-center justify-center p-4">
+          <div className="card bg-[rgb(var(--color-surface))] p-6 rounded-lg shadow-lg max-w-md w-full z-50 border border-[rgb(var(--color-border))] "> 
+            <h3 className="text-lg font-semibold mb-2 text-textPrimary">Message Limit Reached</h3>
+            <p className="text-sm text-textSecondary mb-4">
+              You've reached the message limit for anonymous users. Please register or sign in to continue chatting.
+              Your message will be sent automatically after you sign up.
+            </p>
+            <div className="flex justify-end space-x-2">
+              <button 
+                onClick={handleCloseDialog} 
+                className="btn-secondary inline-flex items-center justify-center whitespace-nowrap rounded-md text-sm font-medium h-10 px-4 py-2 border border-[rgb(var(--color-border))] bg-transparent text-textSecondary hover:bg-[rgb(var(--color-surface))]"
+              >
+                Cancel
+              </button>
+              <button 
+                onClick={handleRegisterRedirect} 
+                className="btn-primary inline-flex items-center justify-center whitespace-nowrap rounded-md text-sm font-medium h-10 px-4 py-2"
+              >
+                Register
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
     </Layout>
   );
 }

@@ -7,7 +7,9 @@ import type {
     ChatMessage,
     ChatApiRequest,
     ApiError,
+    FetchOptions
 } from '@paynless/types';
+import { logger } from '@paynless/utils';
 
 /**
  * API Client for interacting with AI-related Edge Functions.
@@ -23,23 +25,41 @@ export class AiApiClient {
      * Fetches the list of active AI providers.
      */
     async getAiProviders(): Promise<ApiResponse<AiProvider[]>> {
-        return this.apiClient.get<AiProvider[]>('ai-providers');
+        logger.info('Fetching AI providers');
+        const response = await this.apiClient.get<AiProvider[]>('/ai-providers', { isPublic: true });
+        if (response.error) {
+            logger.error('Error fetching AI providers:', { error: response.error });
+        } else {
+            logger.info(`Fetched ${response.data?.length ?? 0} AI providers`);
+        }
+        return response;
     }
 
     /**
      * Fetches the list of active system prompts.
      */
     async getSystemPrompts(): Promise<ApiResponse<SystemPrompt[]>> {
-        return this.apiClient.get<SystemPrompt[]>('system-prompts');
+        logger.info('Fetching system prompts');
+        const response = await this.apiClient.get<SystemPrompt[]>('/system-prompts', { isPublic: true });
+        if (response.error) {
+            logger.error('Error fetching system prompts:', { error: response.error });
+        } else {
+            logger.info(`Fetched ${response.data?.length ?? 0} system prompts`);
+        }
+        return response;
     }
 
     /**
      * Sends a chat message to the backend.
      * @param data - The chat message request data.
+     * @param options - Optional fetch options (e.g., { isPublic: true }).
      */
-    async sendChatMessage(data: ChatApiRequest): Promise<ApiResponse<ChatMessage>> {
+    async sendChatMessage(
+        data: ChatApiRequest,
+        options?: FetchOptions
+    ): Promise<ApiResponse<ChatMessage>> {
         // Assuming the API returns the new ChatMessage object directly
-        return this.apiClient.post<ChatMessage, ChatApiRequest>('chat', data);
+        return this.apiClient.post<ChatMessage, ChatApiRequest>('chat', data, options);
     }
 
     /**

@@ -1,5 +1,5 @@
 import { http, HttpResponse } from 'msw';
-import type { AuthResponse, ProfileResponse, UserProfile, SubscriptionPlan, UserSubscription } from '@paynless/types';
+import type { AuthResponse, ProfileResponse, UserProfile, SubscriptionPlan, UserSubscription, Chat, ChatMessage } from '@paynless/types';
 
 // Base URL used in tests - <<< Use Environment Variable >>>
 const supabaseUrlFromEnv = process.env.VITE_SUPABASE_URL;
@@ -158,6 +158,37 @@ export const handlers = [
         content: 'Global mock response', 
         created_at: new Date().toISOString()
     }, { status: 200 });
+  }),
+
+  http.get(`${API_BASE_URL}/chat-history`, ({ request }) => {
+    console.log(`[MSW Global] Handling GET ${API_BASE_URL}/chat-history`);
+    // Check auth - history requires login
+    const authHeader = request.headers.get('Authorization');
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      return HttpResponse.json({ error: { message: 'Unauthorized' } }, { status: 401 });
+    }
+    // Return mock chat list
+    const mockHistory: Chat[] = [
+      { id: 'chat1', user_id: 'test-user-id', title: 'Chat 1', created_at: new Date().toISOString(), updated_at: new Date().toISOString() },
+      { id: 'chat2', user_id: 'test-user-id', title: 'Chat 2', created_at: new Date().toISOString(), updated_at: new Date().toISOString() },
+    ];
+    return HttpResponse.json(mockHistory, { status: 200 });
+  }),
+
+  http.get(`${API_BASE_URL}/chat-details/:chatId`, ({ request, params }) => {
+    const { chatId } = params;
+    console.log(`[MSW Global] Handling GET ${API_BASE_URL}/chat-details/${chatId}`);
+    // Check auth - details requires login
+    const authHeader = request.headers.get('Authorization');
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      return HttpResponse.json({ error: { message: 'Unauthorized' } }, { status: 401 });
+    }
+    // Return mock messages for a specific chat ID
+    const mockMessages: ChatMessage[] = [
+      { id: 'msg1', chat_id: String(chatId), user_id: 'test-user-id', role: 'user', content: 'Hello from chat ' + chatId, created_at: new Date().toISOString(), ai_provider_id: null, system_prompt_id: null, token_usage: null },
+      { id: 'msg2', chat_id: String(chatId), user_id: null, role: 'assistant', content: 'Hi there! This is chat ' + chatId, created_at: new Date().toISOString(), ai_provider_id: 'p-global', system_prompt_id: 's-global', token_usage: null },
+    ];
+    return HttpResponse.json(mockMessages, { status: 200 });
   }),
 
 ]; 

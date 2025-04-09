@@ -68,6 +68,8 @@ The architecture follows these principles:
 - Change password from within app
 - Add loading skeletons to everything
 
+- ChatWoot user help integration
+
 ### Testing Strategy: Service Abstraction for Complex Dependencies
 
 **Context:** When unit testing Supabase Edge Functions that depend on the `SupabaseClient`, directly mocking the client can be challenging, especially if the function uses multiple distinct parts of the client (e.g., both database access via `.from()` and function invocation via `.functions.invoke()`).

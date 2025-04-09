@@ -50,28 +50,41 @@ export const useAiStore = create<AiState & AiActions>()(
                     let errorMessages: string[] = [];
                     let loadedProviders: AiProvider[] = [];
                     let loadedPrompts: SystemPrompt[] = [];
-                    if (!providersResponse.error && providersResponse.data) {
-                        loadedProviders = providersResponse.data;
-                    } else {
+
+                    // Check if the response has data and the expected nested array exists
+                    if (!providersResponse.error && providersResponse.data && Array.isArray((providersResponse.data as any).providers)) {
+                        loadedProviders = (providersResponse.data as any).providers;
+                    } else if (providersResponse.error) {
                         errorMessages.push(providersResponse.error?.message || 'Failed to load AI providers.');
-                    }
-                    if (!promptsResponse.error && promptsResponse.data) {
-                        loadedPrompts = promptsResponse.data;
-                    } else {
+                    } // If no error but data/array is missing, loadedProviders remains []
+                    
+                    // Check if the response has data and the expected nested array exists
+                    if (!promptsResponse.error && promptsResponse.data && Array.isArray((promptsResponse.data as any).prompts)) {
+                        loadedPrompts = (promptsResponse.data as any).prompts;
+                    } else if (promptsResponse.error) {
                         errorMessages.push(promptsResponse.error?.message || 'Failed to load system prompts.');
-                    }
+                    } // If no error but data/array is missing, loadedPrompts remains []
+                    
                     if (errorMessages.length > 0) {
                         throw new Error(errorMessages.join(' \n'));
                     }
-                    set((state) => { // Use immer set for mutation
-                        state.availableProviders = loadedProviders;
-                        state.availablePrompts = loadedPrompts;
-                        state.isConfigLoading = false;
+                    
+                    // State update remains the same, as loadedProviders/loadedPrompts are now correctly assigned arrays
+                    set({
+                        availableProviders: loadedProviders, // No need for Array.isArray check here now
+                        availablePrompts: loadedPrompts,   // No need for Array.isArray check here now
+                        isConfigLoading: false,
+                        aiError: null // Clear error on success
                     });
-                    logger.info('AI Config loaded successfully:', { providers: loadedProviders.length, prompts: loadedPrompts.length });
+                    
+                    // Log counts explicitly using the correctly assigned arrays
+                    logger.info(`AI Config loaded successfully. Providers: ${loadedProviders.length}, Prompts: ${loadedPrompts.length}`);
                 } catch (error: any) {
                     logger.error('Error loading AI config:', { error: error.message });
                     set(state => { // Use immer set for mutation
+                        // Ensure state is reset to empty arrays on error too
+                        state.availableProviders = [];
+                        state.availablePrompts = []; 
                         state.aiError = error.message || 'An unknown error occurred while loading AI configuration.';
                         state.isConfigLoading = false;
                     });
@@ -99,22 +112,6 @@ export const useAiStore = create<AiState & AiActions>()(
                     logger.info('[sendMessage] Added optimistic user message', { id: tempId });
                     return tempId;
                 };
-                 const _handleSendError = (error: unknown, optimisticMessageId: string | null): null => {
-                    const errorText = error instanceof Error ? error.message : 'An unknown error occurred while sending the message.';
-                    logger.error('Error during send message API call:', { error: errorText, optimisticMessageId });
-                    set(state => {
-                        state.isLoadingAiResponse = false;
-                        state.aiError = errorText;
-                        if (optimisticMessageId) {
-                            const idx = state.currentChatMessages.findIndex(m => m.id === optimisticMessageId);
-                            if (idx > -1) {
-                                state.currentChatMessages.splice(idx, 1);
-                                logger.info('[sendMessage] Removed optimistic message on error', { id: optimisticMessageId });
-                            }
-                        }
-                    });
-                    return null;
-                };
 
                 // Action Logic continues...
                 set(state => { // Use immer set for initial updates
@@ -131,7 +128,7 @@ export const useAiStore = create<AiState & AiActions>()(
                 try {
                     const effectiveChatId = inputChatId ?? currentChatId ?? undefined;
                     const requestData: ChatApiRequest = { message, providerId, promptId, chatId: effectiveChatId };
-                    const response = await api.ai().sendChatMessage(requestData);
+                    const response = await api.ai().sendChatMessage(requestData, { isPublic: isAnonymous });
 
                     if (!response.error && response.data) {
                         const assistantMessage = response.data;
@@ -152,8 +149,27 @@ export const useAiStore = create<AiState & AiActions>()(
                         const errorMsg = typeof response.error === 'string' ? response.error : (response.error?.message || 'Failed to send message');
                         throw new Error(errorMsg);
                     }
-                } catch (error: unknown) {
-                    return _handleSendError(error, tempUserMessageId);
+                } catch (err: any) {
+                    logger.error('Error during send message API call:', {
+                        error: err?.message || err?.error || err,
+                        optimisticMessageId: tempUserMessageId,
+                    });
+                    // Update state using Immer pattern within set
+                    set(state => {
+                        // Remove optimistic message on error
+                        state.currentChatMessages = state.currentChatMessages.filter(
+                            (msg) => msg.id !== tempUserMessageId
+                        );
+                        logger.info('Removed optimistic message on error', { id: tempUserMessageId });
+                        // Update error state
+                        state.aiError = err?.message || err?.error?.message || 'Failed to send message';
+                    });
+                    return null; // Explicitly return null on error
+                } finally {
+                    // Always reset loading state
+                    set(state => {
+                        state.isLoadingAiResponse = false;
+                    });
                 }
             },
             

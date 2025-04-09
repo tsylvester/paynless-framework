@@ -117,7 +117,7 @@
             *   [✅] `loadChatDetails(chatId: string)`: Sets loading, calls API client, updates `currentChatMessages`/`currentChatId` on success, sets error state on failure, clears loading.
             *   [✅] `startNewChat()`: Clears `currentChatMessages`, `currentChatId`. Resets `anonymousMessageCount` if managed here.
             *   [✅] `incrementAnonymousCount()` / `resetAnonymousCount()`: Helper actions if count managed centrally in store.
-        *   [🚧] **(TDD):** Unit test store actions (mock API client methods, test state updates for loading/error/data, test anonymous limit check/error throwing). *(Unit tests passing, Integration tests partially passing, Linter error pending)*
+        *   [✅] **(TDD):** Unit test store actions (mock API client methods, test state updates for loading/error/data, test anonymous limit check/error throwing). *(Unit & Integration tests passing - error cases tested via vi.spyOn)*
     *   **`authStore.ts`:**
         *   [ ] **Modify `register` Action:** *After* successful API call and state update for user/session, *before* determining navigation:
             *   [ ] Check `sessionStorage.getItem('pendingChatMessage')`.
@@ -131,18 +131,14 @@
     *   **(TDD):** Unit test components for rendering based on props/store state, dispatching actions on interaction (using mocks).
 2.  **Page Modifications:**
     *   **`HomePage.tsx` (or a dedicated Chat Container Component):**
-        *   Manages the selected `providerId` and `promptId` (local state).
-        *   Manages the anonymous message count (local state, initialized from/synced with `sessionStorage` for persistence within session).
-        *   **Send Message Handler:**
-            *   Calls `aiStore.sendMessage(...)`, passing necessary data including `isAnonymous: true` and potentially the current count.
-            *   Uses `try...catch` around the `sendMessage` call.
-            *   **`catch (error)` block:**
-                *   If `error instanceof AnonymousLimitReachedError`:
-                    *   Stash message details (`content`, `providerId`, `promptId`) in `sessionStorage.setItem('pendingChatMessage', JSON.stringify(...))`.
-                    *   Display modal/alert: "Limit reached. Sign up to continue?"
-                    *   On confirmation, navigate to `/register`.
-                *   Else (other errors): The `aiStore` will have set the `aiError` state, which the component subscribes to for displaying generic error feedback.
-            *   **No `try...catch` needed for success/loading:** Component subscribes to `isLoadingAiResponse` from `aiStore` to show spinners/disable input.
+        *   Integrate `ModelSelector`, `PromptSelector`, and `AiChatbox` components. 
+        *   Manage the selected `providerId` and `promptId` using local state (`useState`), initialized to null or a sensible default if desired.
+        *   Pass `isAnonymous={true}` to `AiChatbox`.
+        *   Implement the `onLimitReached` callback for `AiChatbox`:
+            *   Stash message details (`content`, current `providerId`, current `promptId`) in `sessionStorage.setItem('pendingChatMessage', JSON.stringify(...))`.
+            *   Display an `AlertDialog` (using `shadcn/ui`): "Limit reached. Sign up to continue?"
+            *   On confirmation ("Register"), navigate to `/register`.
+            *   On cancellation ("Cancel"), close the dialog.
         *   **`useEffect` for Stashed Message:**
             *   Runs on mount/auth state change.
             *   Checks if user is authenticated (`useAuthStore`).
@@ -151,15 +147,21 @@
                 *   Parse stashed data.
                 *   `sessionStorage.removeItem('pendingChatMessage')`.
                 *   Dispatch `aiStore.sendMessage(...)` with the stashed data and `isAnonymous: false`.
-    *   `DashboardPage.tsx`: Integrates chat components. Send handler calls `sendMessage` with `isAnonymous: false`. No limit logic needed.
+    *   `DashboardPage.tsx`: (Will become the new AI Chat Page - see below)
     *   `RegisterPage.tsx` (or component calling `authStore.register`):
         *   Calls `authStore.register(...)`.
         *   Handles the promise resolution.
         *   Reads the `redirectTo` property from the successful result object returned by the action.
         *   Uses `navigate(result.redirectTo)` to perform the navigation.
 3.  **New Pages & Routing:**
-    *   (As before: `ChatHistoryPage.tsx`, `ChatDetailsPage.tsx`, add routes `/chat-history`, `/chat/:chatId`). These pages follow the pattern: dispatch loading actions (`loadChatHistory`, `loadChatDetails`) in `useEffect`, subscribe to store state for rendering.
-4.  [🚧] **(TDD):** Write component/integration tests focusing on: anonymous limit interception and stashing, post-registration message sending, reading loading/error states from store, navigating based on `register` action result. *(Core AI integration tests passing, error/anonymous scenarios pending)*
+    *   **New AI Chat Page (`/chat`):** Create `AiChatPage.tsx`. Add route `/chat`. Add link to Header (visible when logged in).
+        *   Integrate `ModelSelector`, `PromptSelector`, `AiChatbox`.
+        *   Manage selected `providerId`, `promptId` with local state.
+        *   Pass `isAnonymous={false}` to `AiChatbox`.
+        *   Implement Chat History section: fetch history (`loadChatHistory`), display as cards, handle clicks to load details (`loadChatDetails`).
+    *   Remove AI components from `DashboardPage.tsx` if they were planned there.
+    *   (As before: `ChatHistoryPage.tsx`, `ChatDetailsPage.tsx`, add routes `/chat-history`, `/chat/:chatId` - *Redundant? Could Chat History be part of `/chat` page? Re-evaluate routes*).
+4.  [✅] **(TDD):** Write component/integration tests focusing on: anonymous limit interception and stashing, post-registration message sending, reading loading/error states from store, navigating based on `register` action result. *(AI store integration tests passing using global handlers + vi.spyOn for errors)*
 
 **Missing Pieces / Needs Consideration (Recap)**
 
@@ -172,3 +174,13 @@
 7.  **Input Validation/Sanitization:** Backend checks.
 8.  **Chat Titles:** Generation logic.
 9.  **Concurrency:** Frontend state updates.
+
+**Future Enhancements / Considerations**
+
+1.  **Dynamic AI Model Syncing:** Create a backend function (`sync-ai-models`) triggered by cron or manually to:
+    *   Fetch available models from provider APIs (e.g., OpenAI `v1/models`).
+    *   Compare with `ai_providers` table based on `api_identifier`.
+    *   Insert new models and update existing ones (e.g., set `is_active=false` if removed by provider).
+    *   Initial implementation: Synced models default to `is_active=true`. Requires handling multiple providers and secure API key access.
+2.  **Generic Stash/Resume Flow:** Refactor the anonymous message stashing logic into a more generic, reusable function/pattern for handling state persistence across authentication.
+3.  **Streaming Responses:** Implement Server-Sent Events (SSE) or WebSockets for streaming AI responses to the frontend for better UX, instead of waiting for the full response.

@@ -352,6 +352,18 @@ verify_jwt = false
 # [functions.api-subscriptions]
 # # ...
 
+# AI Functions requiring JWT (Default - no explicit setting needed)
+# [functions.chat]
+# [functions.chat-history]
+# [functions.chat-details]
+
+# AI Functions allowing public access
+[functions.ai-providers]
+verify_jwt = false
+
+[functions.system-prompts]
+verify_jwt = false
+
 # -- Removed invalid [auth.jwt] section --
 # [auth.jwt]
 # secret = "super-secret-jwt-token-with-at-least-32-characters-long"

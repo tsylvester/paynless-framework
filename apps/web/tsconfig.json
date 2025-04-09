@@ -18,6 +18,10 @@
     "noEmit": true,
     "jsx": "react-jsx",
     "types": ["vite/client", "node"],
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["./src/*"]
+    },
 
     /* Linting */
     "noUnusedLocals": true,
@@ -39,7 +43,6 @@
     { "path": "../../packages/api-client" },
     { "path": "../../packages/store" },
     { "path": "../../packages/types" },
-    { "path": "../../packages/ui-components" },
     { "path": "../../packages/utils" }
   ]
 } 

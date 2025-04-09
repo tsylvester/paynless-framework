@@ -220,11 +220,11 @@
             *   **AI Chat (`ai.integration.test.tsx` - New File):**
                 *   [✅] Load AI Config (Providers/Prompts): Verify selectors populated.
                 *   [✅] Send Message (Authenticated): Verify message appears, spinner shows, response appears.
-                *   [🚧] Send Message (Error): Verify error message shown. *(Skipped: MSW override issues)*
-                *   [ ]` Load Chat History: Verify history list populates.
-                *   [ ]` Load Chat Details: Select chat, verify messages load.
-                *   [ ]` Anonymous Flow: Send message below limit -> Success.
-                *   [ ]` Anonymous Flow: Send message at limit -> Error thrown/Modal shown.
+                *   [✅] Send Message (Error): Verify error message shown. *(Tested via vi.spyOn)*
+                *   [✅] Load Chat History: Verify history list populates.
+                *   [✅] Load Chat Details: Select chat, verify messages load.
+                *   [✅] Anonymous Flow: Send message below limit -> Success.
+                *   [✅] Anonymous Flow: Send message at limit -> Error object returned.
                 *   [ ]` Anonymous Flow: Stash message -> Register -> Verify message sent automatically.
     *   **3.3 End-to-End Tests:**
         *   [ ] **Tooling:** Setup Playwright/Cypress (if not already done).

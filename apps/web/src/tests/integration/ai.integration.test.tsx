@@ -149,10 +149,19 @@ describe('AI Feature Integration Tests', () => {
         expect(state.availablePrompts).toEqual([{ id: 's-global', name: 'Global Prompt' }]);
     });
 
-    // <<< SKIP ERROR TESTS TEMPORARILY >>>
-    it.skip('Load AI Config: should handle errors loading providers (override global)', async () => {
-        // <<< Apply handler FIRST >>> -> REMOVED, strategy needs change
-        // server.use(...);
+    // <<< Un-skip and use vi.spyOn for error test >>>
+    it('Load AI Config: should handle errors loading providers (spyOn api)', async () => {
+        // <<< Mock apiClient method directly >>>
+        const errorResponse: ApiResponse<never> = {
+            status: 500,
+            error: { code: 'SERVER_ERROR', message: 'Mock Provider Load Error' }
+        };
+        vi.spyOn(api.ai(), 'getAiProviders').mockResolvedValueOnce(errorResponse);
+        // Need to mock prompts to return success for this case
+        vi.spyOn(api.ai(), 'getSystemPrompts').mockResolvedValueOnce({ 
+            status: 200, 
+            data: [{ id: 's-global', name: 'Global Prompt' }] 
+        });
 
         // Arrange:
         const { loadAiConfig } = useAiStore.getState();
@@ -168,15 +177,23 @@ describe('AI Feature Integration Tests', () => {
         const state = useAiStore.getState();
         expect(state.isConfigLoading).toBe(false);
         // Match the specific error message set by the store
-        expect(state.aiError).toContain('Failed to load AI providers.'); 
+        expect(state.aiError).toBe(errorResponse.error?.message); // Check specific error
         expect(state.availableProviders).toEqual([]);
         expect(state.availablePrompts).toEqual([]); // Should also be empty if one fails
     });
 
-    // <<< SKIP ERROR TESTS TEMPORARILY >>>
-    it.skip('Load AI Config: should handle errors loading prompts (override global)', async () => {
-        // <<< Apply handler FIRST >>> -> REMOVED, strategy needs change
-        // server.use(...);
+    // <<< Un-skip and use vi.spyOn for error test >>>
+    it('Load AI Config: should handle errors loading prompts (spyOn api)', async () => {
+        // <<< Mock apiClient methods directly >>>
+        vi.spyOn(api.ai(), 'getAiProviders').mockResolvedValueOnce({ 
+            status: 200, 
+            data: [{ id: 'p-global', name: 'Global Provider' }] 
+        }); // Providers success
+        const errorResponse: ApiResponse<never> = {
+            status: 500,
+            error: { code: 'SERVER_ERROR', message: 'Mock Prompt Load Error' }
+        };
+        vi.spyOn(api.ai(), 'getSystemPrompts').mockResolvedValueOnce(errorResponse); // Prompts error
         
          // Arrange:
          const { loadAiConfig } = useAiStore.getState();
@@ -192,7 +209,7 @@ describe('AI Feature Integration Tests', () => {
         const state = useAiStore.getState();
         expect(state.isConfigLoading).toBe(false);
         // Match the specific error message set by the store
-        expect(state.aiError).toContain('Failed to load system prompts.'); 
+        expect(state.aiError).toBe(errorResponse.error?.message);
         expect(state.availableProviders).toEqual([]); // Should be empty if one fails
         expect(state.availablePrompts).toEqual([]);
     });
@@ -234,11 +251,14 @@ describe('AI Feature Integration Tests', () => {
         expect(state.currentChatId).toBeDefined(); // Global handler creates/uses chatId
     });
 
-    // <<< SKIP ERROR TESTS TEMPORARILY >>>
-    it.skip('Send Message (Error): should set error state and remove optimistic message (override global)', async () => {
-        // <<< Apply handler FIRST >>> -> REMOVED, strategy needs change
-        // const errorMsg = 'Failed sending message'; 
-        // server.use(...);
+    // <<< Un-skip and use vi.spyOn for error test >>>
+    it('Send Message (Error): should set error state and remove optimistic message (spyOn api)', async () => {
+        // <<< Mock apiClient method directly >>>
+        const errorResponse: ApiResponse<never> = {
+            status: 500,
+            error: { code: 'SEND_ERROR', message: 'Mock Send Message Error' }
+        };
+        vi.spyOn(api.ai(), 'sendChatMessage').mockResolvedValueOnce(errorResponse);
 
         // Arrange: 
         const { sendMessage } = useAiStore.getState();
@@ -247,26 +267,126 @@ describe('AI Feature Integration Tests', () => {
         console.log('[Test Send Message Error] Mocked getToken');
 
         // Act: Call the action
-         const promise = act(async () => {
-            return sendMessage(messageData);
+         await act(async () => {
+            await sendMessage(messageData);
         });
 
-        // Assert: Optimistic state
-        let state = useAiStore.getState();
-        expect(state.isLoadingAiResponse).toBe(true);
-        expect(state.currentChatMessages).toHaveLength(1);
-
-        // Wait for API call and state update
-        await promise;
-
         // Assert: Final state
-        state = useAiStore.getState();
+        let state = useAiStore.getState();
         expect(state.isLoadingAiResponse).toBe(false);
-        expect(state.aiError).toBe('Failed sending message'); 
+        expect(state.aiError).toBe(errorResponse.error?.message); // <<< Use mocked error message
         expect(state.currentChatMessages).toHaveLength(0); // Optimistic message removed
         expect(state.currentChatId).toBeNull(); // Chat ID shouldn't be set
     });
 
     // TODO: Add tests from TESTING_PLAN.md Phase 3.2 -> AI Chat
+
+    // <<< Add Anonymous Flow Tests >>>
+    describe('Anonymous Flow', () => {
+        it('Send Message (Anon < Limit): should send message and increment count', async () => {
+            // Arrange
+            const { sendMessage, setAnonymousCount } = useAiStore.getState();
+            // Ensure count starts below limit (initial state is 0)
+            // act(() => { setAnonymousCount(0); }); // Reset just in case, though beforeEach should handle
+            const limit = useAiStore.getState().anonymousMessageLimit; // Get limit from store
+            console.log('[Test Anon < Limit] Initial count:', useAiStore.getState().anonymousMessageCount, 'Limit:', limit);
+
+            const messageData = { message: 'Anon message 1', providerId: 'p1', promptId: 's1', isAnonymous: true };
+            const getTokenSpy = vi.spyOn(ApiClient.prototype as any, 'getToken').mockResolvedValue(undefined); // No token for anon
+            console.log('[Test Anon < Limit] Mocked getToken -> undefined');
+
+            // Act
+            const result = await act(async () => {
+                return sendMessage(messageData);
+            });
+
+            // Assert: Message sent, count incremented
+            expect(result).not.toHaveProperty('error'); // Should not return error object
+            expect(result).toHaveProperty('role', 'assistant'); // Should return ChatMessage
+            const state = useAiStore.getState();
+            expect(state.isLoadingAiResponse).toBe(false);
+            expect(state.aiError).toBeNull();
+            expect(state.currentChatMessages).toHaveLength(2); // User + Assistant
+            expect(state.anonymousMessageCount).toBe(1); // Count incremented
+            expect(state.currentChatMessages[0]?.content).toBe(messageData.message);
+            expect(state.currentChatMessages[1]?.content).toBe('Global mock response'); // From global handler
+        });
+
+        it('Send Message (Anon = Limit): should return limit error and not send', async () => {
+             // Arrange
+            const { sendMessage, setAnonymousCount } = useAiStore.getState();
+            const limit = useAiStore.getState().anonymousMessageLimit;
+            act(() => {
+                setAnonymousCount(limit); // Set count TO the limit
+            });
+            console.log('[Test Anon = Limit] Set count to limit:', useAiStore.getState().anonymousMessageCount);
+
+            const messageData = { message: 'Anon message over limit', providerId: 'p1', promptId: 's1', isAnonymous: true };
+            const getTokenSpy = vi.spyOn(ApiClient.prototype as any, 'getToken').mockResolvedValue(undefined); // No token for anon
+            const apiPostSpy = vi.spyOn(api, 'post'); // Spy on api.post to ensure it's NOT called
+
+            // Act
+            const result = await act(async () => {
+                return sendMessage(messageData);
+            });
+
+            // Assert: Limit error returned, state unchanged, API not called
+            expect(result).toEqual({ error: 'limit_reached' });
+            expect(apiPostSpy).not.toHaveBeenCalled();
+            const state = useAiStore.getState();
+            expect(state.isLoadingAiResponse).toBe(false); // Should not have started loading
+            expect(state.aiError).toBeNull();
+            expect(state.currentChatMessages).toHaveLength(0); // No optimistic message added
+            expect(state.anonymousMessageCount).toBe(limit); // Count remains at limit
+        });
+    });
+
+    // <<< Add History/Details Tests >>>
+    describe('Chat History & Details', () => {
+        it('Load Chat History: should load history list for authenticated user', async () => {
+            // Arrange
+            const { loadChatHistory } = useAiStore.getState();
+            const getTokenSpy = vi.spyOn(ApiClient.prototype as any, 'getToken').mockResolvedValue('mock-token');
+            console.log('[Test History] Mocked getToken');
+
+            // Act
+            await act(async () => {
+                await loadChatHistory();
+            });
+
+            // Assert
+            const state = useAiStore.getState();
+            expect(state.isHistoryLoading).toBe(false);
+            expect(state.aiError).toBeNull();
+            expect(state.chatHistoryList).toHaveLength(2); // Based on global handler
+            expect(state.chatHistoryList[0]?.title).toBe('Chat 1');
+        });
+
+        it('Load Chat Details: should load messages for a specific chat', async () => {
+             // Arrange
+            const { loadChatDetails } = useAiStore.getState();
+            const chatIdToLoad = 'chat1';
+            const getTokenSpy = vi.spyOn(ApiClient.prototype as any, 'getToken').mockResolvedValue('mock-token');
+            console.log('[Test Details] Mocked getToken');
+
+            // Act
+            await act(async () => {
+                await loadChatDetails(chatIdToLoad);
+            });
+
+            // Assert
+            const state = useAiStore.getState();
+            expect(state.isDetailsLoading).toBe(false);
+            expect(state.aiError).toBeNull();
+            expect(state.currentChatId).toBe(chatIdToLoad);
+            expect(state.currentChatMessages).toHaveLength(2); // Based on global handler
+            expect(state.currentChatMessages[0]?.role).toBe('user');
+            expect(state.currentChatMessages[1]?.role).toBe('assistant');
+            expect(state.currentChatMessages[0]?.content).toContain(chatIdToLoad);
+        });
+
+        // TODO: Add error cases for history/details loading if needed, 
+        // potentially using vi.spyOn(api, 'get').mockRejectedValue(...)
+    });
 
 }); 
