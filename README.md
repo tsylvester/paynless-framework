@@ -39,6 +39,16 @@ The architecture follows these principles:
 - Consistent error handling and response formatting via `apiClient`
 - State management primarily using Zustand stores
 
+### Core Pattern: API Client Singleton
+
+**Decision (April 2024):** To ensure consistency and simplify integration across multiple frontend platforms (web, mobile) and shared packages (like Zustand stores), the `@paynless/api-client` package follows a **Singleton pattern**.
+
+*   **Initialization:** The client is configured and initialized *once* per application lifecycle using `initializeApiClient(config)`. Each platform provides the necessary configuration (e.g., how to retrieve auth tokens).
+*   **Access:** All parts of the application (stores, UI components, platform-specific code) access the single, pre-configured client instance by importing the exported `api` object: `import { api } from '@paynless/api-client';`.
+*   **No DI for Stores:** Shared stores (Zustand) should *not* use dependency injection (e.g., an `init` method) to receive the API client. They should import and use the `api` singleton directly.
+*   **Testing:** Unit testing components or stores that use the `api` singleton requires mocking the module import using the test framework's capabilities (e.g., `vi.mock('@paynless/api-client', ...)`).
+*   **Consistency Note:** Older stores (`authStore`, `subscriptionStore`) may still use an outdated DI pattern and require refactoring to align with this singleton approach.
+
 ## Next Features
 - AI Chat integration
 -- OpenAI, Claude, Gemini, Perplexity, DeepSeek, etc

@@ -3,16 +3,13 @@
   "compilerOptions": {
     "outDir": "./dist",
     "baseUrl": ".",
-    "paths": {
-      "@paynless/types": ["../types/src/index"]
-    },
     "types": ["node", "vitest/globals"],
     "declarationDir": "./dist",
     "lib": ["ESNext", "DOM"],
     "composite": true
   },
   "include": ["src/**/*", "vitest.config.ts"],
-  "exclude": ["node_modules", "dist", "src/**/*.test.ts", "src/setupTests.ts", "src/mocks"],
+  "exclude": ["node_modules", "dist", "src/**/*.test.ts", "src/setupTests.ts"],
   "references": [
     { "path": "../types" },
     { "path": "../utils" }

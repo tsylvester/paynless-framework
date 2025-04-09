@@ -1,15 +1,10 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { SubscriptionPlan, UserSubscription, SubscriptionUsageMetrics } from '@paynless/types';
-import { StripeApiClient } from '@paynless/api-client';
+// Import the global api object instead of StripeApiClient directly
+import { api } from '@paynless/api-client'; 
 import { logger } from '@paynless/utils';
 import { useAuthStore } from './authStore';
-
-// Define the function to get the token from the authStore
-const getToken = () => useAuthStore.getState().session?.access_token;
-
-// Instantiate the client, passing the getToken function
-const stripeApiClient = new StripeApiClient(getToken);
 
 interface SubscriptionState {
   userSubscription: UserSubscription | null;
@@ -68,8 +63,7 @@ export const useSubscriptionStore = create<SubscriptionStore>()(
       // API actions
       loadSubscriptionData: async (/* userId: string */) => {
         const user = useAuthStore.getState().user;
-        // Get token INSIDE the action
-        const token = getToken();
+        const token = useAuthStore.getState().session?.access_token;
 
         if (!user) {
             logger.warn('loadSubscriptionData called but no authenticated user found.');
@@ -85,12 +79,10 @@ export const useSubscriptionStore = create<SubscriptionStore>()(
         set({ isSubscriptionLoading: true, error: null });
         
         try {
-          // Load plans and subscription in parallel using the API client
           const [plansResponse, subResponse] = await Promise.all([
-            // Plans might be public, check if token is needed?
-            // Assuming protected for now:
-            stripeApiClient.getSubscriptionPlans(),
-            stripeApiClient.getUserSubscription(user.id),
+            // Pass token explicitly
+            api.billing().getSubscriptionPlans({ token }),
+            api.billing().getUserSubscription({ token })
           ]);
           
           // Handle potential errors from API responses
@@ -134,8 +126,9 @@ export const useSubscriptionStore = create<SubscriptionStore>()(
         const user = useAuthStore.getState().user;
         if (!user) {
           logger.info('refreshSubscription called but user is not logged in.');
-          return; // Don't attempt to load data if no user
+          return; 
         }
+        // Re-add userId argument
         await get().loadSubscriptionData(user.id);
       },
       
@@ -152,8 +145,8 @@ export const useSubscriptionStore = create<SubscriptionStore>()(
 
         try {
           const isTestMode = get().isTestMode;
-          // FIX: Expect response structure containing { url: string } now
-          const response = await stripeApiClient.createCheckoutSession(priceId, isTestMode);
+          // Pass token explicitly
+          const response = await api.billing().createCheckoutSession(priceId, isTestMode, { token });
 
           // FIX: Check for response.data.url instead of sessionId
           if (response.error || !response.data?.sessionId) {
@@ -182,15 +175,16 @@ export const useSubscriptionStore = create<SubscriptionStore>()(
         const token = session?.access_token;
         if (!user || !token) { 
            logger.error('Create billing portal session: User not logged in or token missing');
-           set({ error: new Error('User not logged in'), isSubscriptionLoading: false }); // Set loading false
+           set({ error: new Error('User not authenticated'), isSubscriptionLoading: false }); // Corrected message
            return null;
         }
         
-        set({ isSubscriptionLoading: true, error: null }); // Set loading state
+        set({ isSubscriptionLoading: true, error: null });
         
         try {
           const isTestMode = get().isTestMode;
-          const response = await stripeApiClient.createPortalSession(isTestMode);
+          // Pass token explicitly
+          const response = await api.billing().createPortalSession(isTestMode, { token });
           if (response.error || !response.data?.url) {
              throw new Error(response.error?.message || 'Failed to get billing portal URL');
           }
@@ -216,33 +210,29 @@ export const useSubscriptionStore = create<SubscriptionStore>()(
         const { user, session } = useAuthStore.getState();
         const token = session?.access_token;
         if (!user || !token) {
-           logger.error('Cancel subscription: User not logged in or token missing');
-           set({ error: new Error('User not logged in'), isSubscriptionLoading: false });
-           return false;
+          logger.error('Cancel subscription: User not logged in or token missing');
+          set({ error: new Error('User not authenticated'), isSubscriptionLoading: false }); // Corrected message
+          return false;
         }
         if (!subscriptionId) {
-           logger.error('Cancel subscription: Missing subscription ID.');
-           set({ error: new Error('Cannot cancel: Missing subscription ID'), isSubscriptionLoading: false });
-           return false;
+          logger.error('Cancel subscription: Missing subscription ID');
+          set({ error: new Error('Subscription ID is required'), isSubscriptionLoading: false }); // Corrected message
+          return false;
         }
 
         set({ isSubscriptionLoading: true, error: null });
 
         try {
+          // Pass token explicitly
+          await api.billing().cancelSubscription(subscriptionId, { token });
           await get().refreshSubscription();
+          set({ isSubscriptionLoading: false, error: null }); // Ensure loading/error reset AFTER refresh
           return true;
         } catch (error) {
-          const errorMessage = error instanceof Error ? error.message : 'Unknown error cancelling subscription';
-          logger.error('Error cancelling subscription', {
-            error: errorMessage,
-            userId: user.id,
-            subscriptionId,
-          });
-          set({
-            isSubscriptionLoading: false,
-            error: error instanceof Error ? error : new Error('Failed to cancel subscription'),
-          });
-          return false;
+          const errorToSet = error instanceof Error ? error : new Error('Failed to cancel subscription');
+          logger.error('Error cancelling subscription', { error: errorToSet.message, subscriptionId });
+          set({ error: errorToSet, isSubscriptionLoading: false });
+          return false; // Added missing return false
         }
       },
       
@@ -251,32 +241,28 @@ export const useSubscriptionStore = create<SubscriptionStore>()(
         const token = session?.access_token;
         if (!user || !token) {
            logger.error('Resume subscription: User not logged in or token missing');
-           set({ error: new Error('User not logged in'), isSubscriptionLoading: false });
+           set({ error: new Error('User not authenticated'), isSubscriptionLoading: false }); // Corrected message
            return false;
         }
         if (!subscriptionId) {
-           logger.error('Resume subscription: Missing subscription ID.');
-           set({ error: new Error('Cannot resume: Missing subscription ID'), isSubscriptionLoading: false });
+           logger.error('Resume subscription: Missing subscription ID');
+           set({ error: new Error('Subscription ID is required'), isSubscriptionLoading: false }); // Corrected message
            return false;
         }
 
         set({ isSubscriptionLoading: true, error: null });
 
         try {
+          // Pass token explicitly
+          await api.billing().resumeSubscription(subscriptionId, { token });
           await get().refreshSubscription();
+          set({ isSubscriptionLoading: false, error: null }); // Ensure loading/error reset AFTER refresh
           return true;
         } catch (error) {
-          const errorMessage = error instanceof Error ? error.message : 'Unknown error resuming subscription';
-          logger.error('Error resuming subscription', {
-            error: errorMessage,
-            userId: user.id,
-            subscriptionId,
-          });
-          set({
-            isSubscriptionLoading: false,
-            error: error instanceof Error ? error : new Error('Failed to resume subscription'),
-          });
-          return false;
+          const errorToSet = error instanceof Error ? error : new Error('Failed to resume subscription');
+          logger.error('Error resuming subscription', { error: errorToSet.message, subscriptionId });
+          set({ error: errorToSet, isSubscriptionLoading: false });
+          return false; // Added missing return false
         }
       },
       
@@ -285,13 +271,14 @@ export const useSubscriptionStore = create<SubscriptionStore>()(
         const token = session?.access_token;
         if (!user || !token) {
            logger.error('Get usage metrics: User not logged in or token missing');
-           set({ error: new Error('User not logged in'), isSubscriptionLoading: false });
+           set({ error: new Error('User not authenticated'), isSubscriptionLoading: false }); // Corrected message
            return null;
         }
         set({ isSubscriptionLoading: true, error: null });
         
         try {
-          const response = await stripeApiClient.getUsageMetrics(metric);
+          // Pass token explicitly
+          const response = await api.billing().getUsageMetrics(metric, { token });
           if (response.error || !response.data) {
             throw new Error(response.error?.message || 'Failed to get usage metrics');
           }

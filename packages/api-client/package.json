@@ -10,6 +10,10 @@
     ".": {
       "import": "./dist/src/index.js",
       "types": "./dist/src/index.d.ts"
+    },
+    "./mocks/stripe.mock": {
+      "import": "./dist/src/mocks/stripe.mock.js",
+      "types": "./dist/src/mocks/stripe.mock.d.ts"
     }
   },
   "scripts": {
@@ -20,6 +24,7 @@
   "dependencies": {
     "@paynless/types": "workspace:*",
     "@paynless/utils": "workspace:*",
+    "@supabase/supabase-js": "^2.49.4",
     "axios": "^1.6.7",
     "zustand": "^4.5.2"
   },

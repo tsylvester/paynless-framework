@@ -17,7 +17,7 @@ export default defineConfig({
     // Watch for changes in api-client
     forceRerunTriggers: ['../../packages/api-client/src/**/*'],
     // Explicit setup
-    setupFiles: ['./src/setupTests.ts'],
+    setupFiles: ['./src/tests/setup.ts'],
     environment: 'jsdom',
     globals: true,
     // Disable threads to avoid concurrency issues

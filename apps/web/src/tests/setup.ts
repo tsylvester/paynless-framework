@@ -1,9 +1,5 @@
 console.log('[setupTests] STARTING setupTests.ts EXECUTION');
 
-// Force rebuild import
-import { forceRebuild } from './__forceRebuild__';
-console.log('[setupTests] Force rebuild version:', forceRebuild);
-
 // jest-dom adds custom jest matchers for asserting on DOM nodes.
 // allows you to do things like:
 // expect(element).toHaveTextContent(/react/i)
@@ -12,7 +8,7 @@ console.log('[setupTests] Force rebuild version:', forceRebuild);
 import '@testing-library/jest-dom/vitest';
 import { beforeAll, afterEach, afterAll, vi } from 'vitest';
 import { setupServer } from 'msw/node';
-import { handlers } from './mocks/handlers';
+import { handlers } from './utils/mocks/handlers';
 import { initializeApiClient } from '@paynless/api-client';
 import { cleanup } from '@testing-library/react';
 import { setupMockServer } from './utils/mocks/api';

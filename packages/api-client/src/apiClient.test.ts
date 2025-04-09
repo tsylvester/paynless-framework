@@ -1,109 +1,132 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { http, HttpResponse } from 'msw';
 
-import { api, initializeApiClient, _resetApiClient, ApiError } from './apiClient';
+import { api, initializeApiClient, _resetApiClient, ApiError, ApiClient } from './apiClient';
 import { server } from './setupTests'; // <-- Import the shared server
+// Remove direct SupabaseClient import if no longer needed here
+// import { SupabaseClient } from '@supabase/supabase-js'; // Import SupabaseClient type
+// Import the mock utility
+import { mockSupabaseAuthSession, MOCK_ACCESS_TOKEN } from './mocks/supabase.mock';
 
 // Mock the base URL and key
-const MOCK_BASE_URL = 'http://mock-supabase.co';
+const MOCK_SUPABASE_URL = 'http://mock-supabase.co'; // Renamed for clarity
 const MOCK_ANON_KEY = 'mock-anon-key';
+// Use MOCK_ACCESS_TOKEN from the utility file
+// const MOCK_ACCESS_TOKEN = 'mock-test-access-token';
 
 describe('apiClient', () => {
+  let internalApiClientInstance: ApiClient; // To hold the instance for mocking
+
   beforeEach(() => {
-    // Reset FIRST, then initialize
     _resetApiClient(); 
-    initializeApiClient({ baseUrl: MOCK_BASE_URL, supabaseAnonKey: MOCK_ANON_KEY });
+    initializeApiClient({ supabaseUrl: MOCK_SUPABASE_URL, supabaseAnonKey: MOCK_ANON_KEY });
+    
+    // Get the internal instance AFTER initialization for mocking
+    // Hacky way: access through the exported api object
+    internalApiClientInstance = api.billing().apiClient; 
+
+    // Use the utility function to mock the session
+    mockSupabaseAuthSession(internalApiClientInstance);
   });
 
   afterEach(() => {
     _resetApiClient();
-    server.resetHandlers(); // Also reset MSW handlers (redundant with global setup, but safe)
+    server.resetHandlers();
+    vi.restoreAllMocks(); // Restore mocks after each test
   });
 
   describe('initializeApiClient', () => {
     it('should throw error if called more than once', () => {
-      // Already called in beforeEach
-      expect(() => initializeApiClient({ baseUrl: 'another', supabaseAnonKey: 'key' }))
-        .toThrow('API client already initialized');
+      expect(() => initializeApiClient({ supabaseUrl: 'another-url', supabaseAnonKey: 'key' }))
+        .toThrow('ApiClient already initialized'); // Corrected error message
     });
     
     // Note: Testing if it sets values correctly is implicitly done by other tests
   });
 
   describe('api.get', () => {
+    // Test needs to use MOCK_SUPABASE_URL + /functions/v1 for MSW matching
+    const MOCK_FUNCTIONS_URL = `${MOCK_SUPABASE_URL}/functions/v1`;
+
     it('should perform a GET request to the correct endpoint', async () => {
       const endpoint = 'test-get';
       const mockData = { message: 'Success' };
       server.use(
-        http.get(`${MOCK_BASE_URL}/${endpoint}`, () => HttpResponse.json(mockData))
+        http.get(`${MOCK_FUNCTIONS_URL}/${endpoint}`, () => HttpResponse.json(mockData))
       );
-      const data = await api.get(endpoint);
-      expect(data).toEqual(mockData);
+      const response = await api.get(endpoint);
+      expect(response.error).toBeUndefined();
+      expect(response.data).toEqual(mockData);
+      expect(response.status).toBe(200);
     });
 
-    it('should include Authorization header when token is provided', async () => {
+    it('should include Authorization header when NOT using explicit token option', async () => {
       const endpoint = 'test-auth-get';
-      const mockToken = 'mock-jwt-token';
       server.use(
-        http.get(`${MOCK_BASE_URL}/${endpoint}`, async ({ request }) => {
-          expect(request.headers.get('Authorization')).toBe(`Bearer ${mockToken}`);
+        http.get(`${MOCK_FUNCTIONS_URL}/${endpoint}`, async ({ request }) => {
+          // Expect the token from the mocked getSession
+          expect(request.headers.get('Authorization')).toBe(`Bearer ${MOCK_ACCESS_TOKEN}`); 
           return HttpResponse.json({});
         })
       );
-      await api.get(endpoint, { token: mockToken });
+      // Call without explicit token, should use mocked session
+      await api.get(endpoint); 
     });
     
-    it('should NOT include Authorization header for public requests even if token is provided', async () => {
+    it('should NOT include Authorization header for public requests even if session exists', async () => {
       const endpoint = 'test-public-get';
-      const mockToken = 'mock-jwt-token';
       server.use(
-        http.get(`${MOCK_BASE_URL}/${endpoint}`, async ({ request }) => {
+        http.get(`${MOCK_FUNCTIONS_URL}/${endpoint}`, async ({ request }) => {
           expect(request.headers.get('Authorization')).toBeNull();
           return HttpResponse.json({});
         })
       );
-      await api.get(endpoint, { token: mockToken, isPublic: true });
+       // Call public endpoint, should ignore mocked session
+      await api.get(endpoint, { isPublic: true });
     });
 
-    it('should throw ApiError on network error', async () => {
+    it('should return ApiResponse with network error object on network error', async () => {
       const endpoint = 'test-network-error';
       server.use(
-        http.get(`${MOCK_BASE_URL}/${endpoint}`, () => HttpResponse.error())
+        http.get(`${MOCK_FUNCTIONS_URL}/${endpoint}`, () => HttpResponse.error())
       );
-
-      // Test that it throws the specific ApiError class
-      await expect(api.get(endpoint)).rejects.toThrow(ApiError);
-      // Test that the thrown error message matches the wrapped network error
-      await expect(api.get(endpoint)).rejects.toThrow(/^Network error: Failed to fetch$/);
+      const response = await api.get(endpoint);
+      expect(response.data).toBeUndefined();
+      expect(response.status).toBe(0);
+      expect(response.error).toBeDefined();
+      expect(response.error?.code).toBe('NETWORK_ERROR');
+      expect(response.error?.message).toBe('Failed to fetch');
     });
 
-    it('should throw ApiError with status and message on API error response', async () => {
+    it('should return ApiResponse with API error object on API error response', async () => {
       const endpoint = 'test-api-error';
       const errorResponse = { message: 'Invalid request', code: 'INVALID_INPUT' };
       server.use(
-        http.get(`${MOCK_BASE_URL}/${endpoint}`, () => 
+        http.get(`${MOCK_FUNCTIONS_URL}/${endpoint}`, () => 
           HttpResponse.json(errorResponse, { status: 400 })
         )
       );
-      try {
-        await api.get(endpoint);
-        expect.fail('Expected API call to throw');
-      } catch (error: any) {
-        expect(error).toBeDefined();
-        expect(error.message).toBe(errorResponse.message);
-        expect(error.code).toBe(errorResponse.code);
-      }
+      const response = await api.get(endpoint);
+      expect(response.data).toBeUndefined();
+      expect(response.status).toBe(400);
+      expect(response.error).toBeDefined();
+      expect(response.error?.code).toBe(errorResponse.code);
+      expect(response.error?.message).toBe(errorResponse.message);
     });
     
-    it('should throw ApiError with default message if API error response has no message/code', async () => {
+    it('should return ApiResponse with constructed API error if API error response has no message/code', async () => {
       const endpoint = 'test-empty-error';
       server.use(
-        http.get(`${MOCK_BASE_URL}/${endpoint}`, () => 
+        http.get(`${MOCK_FUNCTIONS_URL}/${endpoint}`, () => 
           HttpResponse.json({}, { status: 500 })
         )
       );
-
-      await expect(api.get(endpoint)).rejects.toThrow(/^HTTP error 500$/);
+      const response = await api.get(endpoint);
+      expect(response.data).toBeUndefined();
+      expect(response.status).toBe(500);
+      expect(response.error).toBeDefined();
+      expect(response.error?.code).toBe('500'); // Status code as string
+      expect(response.error?.message).toMatch(/^Internal Server Error/); // Default status text
     });
 
   });

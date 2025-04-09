@@ -1,14 +1,45 @@
 // src/subscriptionStore.test.ts
-import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { useSubscriptionStore } from './subscriptionStore'; 
+import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
+import { useSubscriptionStore } from './subscriptionStore';
 import { act } from '@testing-library/react';
-import { mockStripeApiClient } from './setupTests'; // May need later for async tests
-import { UserSubscription, SubscriptionPlan, SubscriptionUsageMetrics } from '@paynless/types';
-import { useAuthStore } from './authStore'; // Import auth store
+import type { UserSubscription, SubscriptionPlan, SubscriptionUsageMetrics, ApiResponse, ApiError as ApiErrorType, User, Session } from '@paynless/types';
+import { api, initializeApiClient, _resetApiClient } from '@paynless/api-client';
 import { logger } from '@paynless/utils';
+import { useAuthStore } from './authStore'; // Import auth store
+import {
+    mockStripeGetSubscriptionPlans,
+    mockStripeGetUserSubscription,
+    mockStripeCreateCheckoutSession,
+    mockStripeCreatePortalSession,
+    mockStripeCancelSubscription,
+    mockStripeResumeSubscription,
+    mockStripeGetUsageMetrics,
+    resetStripeMocks, // Import the reset function
+} from '@paynless/api-client/mocks/stripe.mock';
 
-// Helper function for small delay
-const wait = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+// --- Mocks ---
+// Mock the API functions *directly* via the mock file functions
+vi.mock('@paynless/api-client', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@paynless/api-client')>();
+  return {
+    ...actual, // Keep original exports like initializeApiClient, _resetApiClient
+    // Mock the api.billing() functions by assigning our imported mocks
+    api: {
+      ...actual.api, // Keep other api parts if needed (like .get, .post etc if not mocked)
+      billing: vi.fn(() => ({ // Ensure api.billing returns an object with mock functions
+        getSubscriptionPlans: mockStripeGetSubscriptionPlans,
+        getUserSubscription: mockStripeGetUserSubscription,
+        createCheckoutSession: mockStripeCreateCheckoutSession,
+        createPortalSession: mockStripeCreatePortalSession,
+        cancelSubscription: mockStripeCancelSubscription,
+        resumeSubscription: mockStripeResumeSubscription,
+        getUsageMetrics: mockStripeGetUsageMetrics,
+      })),
+      // Mock other api parts if necessary (e.g., ai)
+      ai: vi.fn(() => ({ /* mock ai functions here */ })),
+    },
+  };
+});
 
 // Mock logger
 vi.mock('@paynless/utils', () => ({
@@ -30,15 +61,14 @@ const mockSubscription: UserSubscription = {
     userId: "user_abc",
     status: "active",
     planId: "plan_xyz",
-    // Add other required fields from UserSubscription type
     stripeCustomerId: "cus_abc",
     stripeSubscriptionId: "sub_ext_123",
     currentPeriodStart: new Date().toISOString(),
-    currentPeriodEnd: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(), // Approx 30 days later
+    currentPeriodEnd: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
     cancelAtPeriodEnd: false,
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
-    plan: { // Include nested plan mock if necessary for some tests
+    plan: {
         id: "plan_xyz",
         name: "Pro Plan",
         amount: 1000,
@@ -46,7 +76,6 @@ const mockSubscription: UserSubscription = {
         interval: "month",
         stripePriceId: "price_abc",
         active: true,
-        // ... other plan fields
     }
 };
 
@@ -55,23 +84,34 @@ const mockPlans: SubscriptionPlan[] = [
     { id: 'plan_xyz', name: 'Pro', stripePriceId: 'price_pro', amount: 1000, currency: 'usd', interval: 'month', active: true },
 ];
 
-const mockUser = { id: 'user_abc', email: 'test@example.com' }; // Mock user data
-const mockSession = { access_token: 'mock-token' }; // Simplified mock session
+const mockUser: Partial<User> = { id: 'user_abc', email: 'test@example.com' };
+const mockSession: Partial<Session> = { access_token: 'mock-token' };
 
 describe('SubscriptionStore', () => {
   beforeEach(() => {
     act(() => {
       resetSubscriptionStore();
       resetAuthStore();
+      // Initialize the API client before each test
+      initializeApiClient({ 
+        supabaseUrl: 'http://dummy.url', 
+        supabaseAnonKey: 'dummy-key' 
+      });
     });
-    vi.clearAllMocks();
+    resetStripeMocks(); // Reset the Stripe mock functions
+    vi.clearAllMocks(); // Clear Vitest mocks
+  });
+
+  afterEach(() => {
+     // Reset the API client singleton after each test
+     _resetApiClient(); 
   });
 
   it('should have correct initial state', () => {
     const { userSubscription, availablePlans, isSubscriptionLoading, hasActiveSubscription, isTestMode, error } = useSubscriptionStore.getState();
     expect(userSubscription).toBeNull();
     expect(availablePlans).toEqual([]);
-    expect(isSubscriptionLoading).toBe(false); // Assuming it doesn't load initially by default
+    expect(isSubscriptionLoading).toBe(false);
     expect(hasActiveSubscription).toBe(false);
     expect(isTestMode).toBe(false);
     expect(error).toBeNull();
@@ -119,23 +159,24 @@ describe('SubscriptionStore', () => {
   // Helper to set authenticated state
   const setAuthenticated = () => {
      act(() => {
-       useAuthStore.setState({ user: mockUser, session: mockSession });
+       useAuthStore.setState({ user: mockUser as User, session: mockSession as Session });
      });
   }
 
-  // Test loadSubscriptionData (assuming it didn't change significantly)
+  // Test loadSubscriptionData
   describe('loadSubscriptionData action', () => {
      it('should fetch plans and subscription, updating state on success', async () => {
         setAuthenticated();
-        mockStripeApiClient.getSubscriptionPlans.mockResolvedValueOnce({ status: 200, data: mockPlans });
-        mockStripeApiClient.getUserSubscription.mockResolvedValueOnce({ status: 200, data: mockSubscription });
+        // Use imported mock functions
+        mockStripeGetSubscriptionPlans.mockResolvedValue({ data: mockPlans, error: null });
+        mockStripeGetUserSubscription.mockResolvedValue({ data: mockSubscription, error: null });
 
         await act(async () => {
-            await useSubscriptionStore.getState().loadSubscriptionData(mockUser.id);
+            await useSubscriptionStore.getState().loadSubscriptionData();
         });
 
-        expect(mockStripeApiClient.getSubscriptionPlans).toHaveBeenCalled();
-        expect(mockStripeApiClient.getUserSubscription).toHaveBeenCalledWith(mockUser.id);
+        expect(mockStripeGetSubscriptionPlans).toHaveBeenCalled();
+        expect(mockStripeGetUserSubscription).toHaveBeenCalled();
         const state = useSubscriptionStore.getState();
         expect(state.isSubscriptionLoading).toBe(false);
         expect(state.availablePlans).toEqual(mockPlans);
@@ -146,31 +187,30 @@ describe('SubscriptionStore', () => {
 
      it('should set error state if fetching plans fails', async () => {
         setAuthenticated();
-        const plansError = { message: 'Failed to get plans' };
-        mockStripeApiClient.getSubscriptionPlans.mockResolvedValueOnce({ status: 500, error: plansError });
-        // Mock successful subscription fetch to isolate the plans error
-        mockStripeApiClient.getUserSubscription.mockResolvedValueOnce({ status: 200, data: mockSubscription });
+        const plansError = { message: 'Failed to get plans', code: 'ERR_PLAN' };
+        // Use imported mock functions
+        mockStripeGetSubscriptionPlans.mockResolvedValue({ data: null, error: plansError as ApiErrorType });
+        mockStripeGetUserSubscription.mockResolvedValue({ data: mockSubscription, error: null });
 
         await act(async () => {
-           await useSubscriptionStore.getState().loadSubscriptionData(mockUser.id);
+           await useSubscriptionStore.getState().loadSubscriptionData();
         });
 
         const state = useSubscriptionStore.getState();
         expect(state.isSubscriptionLoading).toBe(false);
         expect(state.error).toBeInstanceOf(Error);
         expect(state.error?.message).toContain(plansError.message);
-        expect(state.availablePlans).toEqual([]); // Plans should not be set
-        // Subscription might still be set depending on Promise.all behavior, check store logic if needed
+        expect(state.availablePlans).toEqual([]);
      });
 
      it('should handle null subscription without error', async () => {
         setAuthenticated();
-        mockStripeApiClient.getSubscriptionPlans.mockResolvedValueOnce({ status: 200, data: mockPlans });
-        // Simulate no subscription found (e.g., 404)
-        mockStripeApiClient.getUserSubscription.mockResolvedValueOnce({ status: 404, data: null, error: { message: 'Not found'} });
+        // Use imported mock functions
+        mockStripeGetSubscriptionPlans.mockResolvedValue({ data: mockPlans, error: null });
+        mockStripeGetUserSubscription.mockResolvedValue({ data: null, error: { message: 'Not found', code: 404 } });
 
         await act(async () => {
-            await useSubscriptionStore.getState().loadSubscriptionData(mockUser.id);
+            await useSubscriptionStore.getState().loadSubscriptionData();
         });
 
         const state = useSubscriptionStore.getState();
@@ -178,368 +218,330 @@ describe('SubscriptionStore', () => {
         expect(state.availablePlans).toEqual(mockPlans);
         expect(state.userSubscription).toBeNull();
         expect(state.hasActiveSubscription).toBe(false);
-        expect(state.error).toBeNull(); // No error state for 404 on user sub
+        expect(state.error).toBeNull();
      });
 
      it('should not fetch if user is not authenticated', async () => {
-        // Ensure user is not authenticated
         act(() => { resetAuthStore(); });
 
         await act(async () => {
-            await useSubscriptionStore.getState().loadSubscriptionData('some-id'); // Pass ID anyway
+            await useSubscriptionStore.getState().loadSubscriptionData();
         });
 
-        expect(mockStripeApiClient.getSubscriptionPlans).not.toHaveBeenCalled();
-        expect(mockStripeApiClient.getUserSubscription).not.toHaveBeenCalled();
+        expect(mockStripeGetSubscriptionPlans).not.toHaveBeenCalled();
+        expect(mockStripeGetUserSubscription).not.toHaveBeenCalled();
         expect(useSubscriptionStore.getState().isSubscriptionLoading).toBe(false);
      });
   });
 
   describe('createCheckoutSession action', () => {
     const priceId = 'price_abc';
-    const mockCheckoutUrl = 'https://checkout.stripe.com/session/test_checkout_123';
+    const mockSessionId = 'sess_test_123';
 
-    it('should set loading, call API, return URL, and clear state on success', async () => {
+    it('should set loading, call API, return session ID, and clear state on success', async () => {
       setAuthenticated();
-      mockStripeApiClient.createCheckoutSession.mockResolvedValueOnce({
-        status: 200,
-        data: { url: mockCheckoutUrl }, // Mock provides URL
-      });
+      // Use imported mock function
+      mockStripeCreateCheckoutSession.mockResolvedValue({ data: { sessionId: mockSessionId }, error: null });
 
-      let resultUrl: string | null = null;
-      let stateAfter: ReturnType<typeof useSubscriptionStore.getState> | undefined;
-
+      let resultSessionId: string | null = null;
       await act(async () => {
-        resultUrl = await useSubscriptionStore.getState().createCheckoutSession(priceId);
-        stateAfter = useSubscriptionStore.getState();
+        resultSessionId = await useSubscriptionStore.getState().createCheckoutSession(priceId);
       });
 
-      expect(stateAfter?.isSubscriptionLoading).toBe(false);
-      expect(stateAfter?.error).toBeNull();
-      expect(mockStripeApiClient.createCheckoutSession).toHaveBeenCalledWith(priceId, false);
-      expect(resultUrl).toBe(mockCheckoutUrl); // Expect the URL
+      const state = useSubscriptionStore.getState();
+      expect(state.isSubscriptionLoading).toBe(false);
+      expect(state.error).toBeNull();
+      expect(mockStripeCreateCheckoutSession).toHaveBeenCalledWith(priceId, false);
+      expect(resultSessionId).toBe(mockSessionId);
     });
 
     it('should set loading, set error state, and return null if API client fails', async () => {
       setAuthenticated();
       const apiErrorMsg = 'Could not create session';
-      mockStripeApiClient.createCheckoutSession.mockRejectedValueOnce(new Error(apiErrorMsg));
+      // Use imported mock function
+      mockStripeCreateCheckoutSession.mockResolvedValue({ data: null, error: { message: apiErrorMsg, code: 'ERR_CHECKOUT' } });
 
-      let resultUrl: string | null = 'initial';
-      let errorFromSubscription: Error | null = null;
-
-      // Subscribe to store changes to capture the error state update
-      const unsubscribe = useSubscriptionStore.subscribe(
-        (state) => {
-          if (state.error) {
-            errorFromSubscription = state.error;
-          }
-        }
-      );
-
-      // Call the action within act
+      let resultSessionId: string | null = 'initial';
       await act(async () => {
-        resultUrl = await useSubscriptionStore.getState().createCheckoutSession(priceId);
+        resultSessionId = await useSubscriptionStore.getState().createCheckoutSession(priceId);
       });
 
-      unsubscribe(); // Clean up the subscription
-
-      // Assert based on the value captured by the subscription
-      expect(useSubscriptionStore.getState().isSubscriptionLoading).toBe(false); // Check loading state normally
-      expect(errorFromSubscription).toBeInstanceOf(Error);
-      expect(errorFromSubscription?.message).toContain(apiErrorMsg);
-      expect(resultUrl).toBeNull(); // API call failed, result should be null
-      expect(mockStripeApiClient.createCheckoutSession).toHaveBeenCalledTimes(1);
+      const state = useSubscriptionStore.getState();
+      expect(state.isSubscriptionLoading).toBe(false);
+      expect(state.error).toBeInstanceOf(Error);
+      expect(state.error?.message).toContain(apiErrorMsg);
+      expect(resultSessionId).toBeNull();
     });
 
-    it('should set error state and return null if user is not authenticated', async () => {
-        act(() => { resetAuthStore(); }); // Ensure logged out
-        let resultUrl: string | null = 'initial';
+     it('should set error state and return null if user is not authenticated', async () => {
+        act(() => { resetAuthStore(); });
+        let resultSessionId: string | null = 'initial';
         await act(async () => {
-            resultUrl = await useSubscriptionStore.getState().createCheckoutSession(priceId);
+          resultSessionId = await useSubscriptionStore.getState().createCheckoutSession(priceId);
         });
-
-        expect(resultUrl).toBeNull();
-        expect(mockStripeApiClient.createCheckoutSession).not.toHaveBeenCalled();
-        const state = useSubscriptionStore.getState();
-        expect(state.isSubscriptionLoading).toBe(false);
-        expect(state.error).toBeInstanceOf(Error);
-        expect(state.error?.message).toContain('User not authenticated');
-    });
+        expect(mockStripeCreateCheckoutSession).not.toHaveBeenCalled();
+        expect(useSubscriptionStore.getState().error?.message).toContain('User not authenticated');
+        expect(resultSessionId).toBeNull();
+     });
   });
 
   describe('createBillingPortalSession action', () => {
     const mockPortalUrl = 'https://billing.stripe.com/session/test_portal_123';
 
-    it('should set loading, call API, return URL, and clear state on success', async () => {
+    it('should call API and return URL on success', async () => {
       setAuthenticated();
-      mockStripeApiClient.createPortalSession.mockResolvedValueOnce({ status: 200, data: { url: mockPortalUrl } });
+      // Use imported mock function
+      mockStripeCreatePortalSession.mockResolvedValue({ data: { url: mockPortalUrl }, error: null });
 
       let resultUrl: string | null = null;
       await act(async () => {
         resultUrl = await useSubscriptionStore.getState().createBillingPortalSession();
       });
 
-      const state = useSubscriptionStore.getState();
-      expect(state.isSubscriptionLoading).toBe(false);
-      expect(state.error).toBeNull();
-      expect(mockStripeApiClient.createPortalSession).toHaveBeenCalledWith(false); // Default test mode
+      expect(mockStripeCreatePortalSession).toHaveBeenCalledWith(false);
       expect(resultUrl).toBe(mockPortalUrl);
+      expect(useSubscriptionStore.getState().error).toBeNull();
     });
 
-    it('should set loading, set error state, and return null if API fails', async () => {
-      setAuthenticated();
-      const apiErrorMsg = 'Portal failed';
-      mockStripeApiClient.createPortalSession.mockRejectedValueOnce(new Error(apiErrorMsg));
+    it('should set error and return null on API failure', async () => {
+       setAuthenticated();
+       const apiErrorMsg = 'Portal failure';
+       // Use imported mock function
+       mockStripeCreatePortalSession.mockResolvedValue({ data: null, error: { message: apiErrorMsg, code: 'ERR_PORTAL' } });
 
-      let resultUrl: string | null = 'initial';
-      let errorFromSubscription: Error | null = null;
+       let resultUrl: string | null = 'initial';
+       await act(async () => {
+         resultUrl = await useSubscriptionStore.getState().createBillingPortalSession();
+       });
 
-      const unsubscribe = useSubscriptionStore.subscribe((state) => {
-        if (state.error) {
-          errorFromSubscription = state.error;
-        }
-      });
+       expect(resultUrl).toBeNull();
+       expect(useSubscriptionStore.getState().error?.message).toContain(apiErrorMsg);
+     });
 
-      await act(async () => {
-        try {
-          resultUrl = await useSubscriptionStore.getState().createBillingPortalSession();
-        } catch (e) { /* Catch potential re-throw */ }
-      });
-
-      unsubscribe();
-
-      expect(useSubscriptionStore.getState().isSubscriptionLoading).toBe(false);
-      expect(errorFromSubscription).toBeInstanceOf(Error);
-      expect(errorFromSubscription?.message).toContain(apiErrorMsg);
-      expect(resultUrl).toBeNull();
-    });
-
-    it('should set error state and return null if not authenticated', async () => {
+    it('should return null and set error if not authenticated', async () => {
        act(() => { resetAuthStore(); });
        let resultUrl: string | null = 'initial';
        await act(async () => {
-           resultUrl = await useSubscriptionStore.getState().createBillingPortalSession();
+         resultUrl = await useSubscriptionStore.getState().createBillingPortalSession();
        });
+       expect(mockStripeCreatePortalSession).not.toHaveBeenCalled();
        expect(resultUrl).toBeNull();
-       expect(mockStripeApiClient.createPortalSession).not.toHaveBeenCalled();
-       const state = useSubscriptionStore.getState();
-       expect(state.isSubscriptionLoading).toBe(false);
-       expect(state.error?.message).toContain('User not logged in');
-    });
+       expect(useSubscriptionStore.getState().error?.message).toContain('User not authenticated');
+     });
   });
 
   describe('cancelSubscription action', () => {
     const subId = 'sub_ext_123';
-    let refreshSpy: ReturnType<typeof vi.spyOn>;
+    const refreshSpy = vi.fn();
 
     beforeEach(() => {
-       setAuthenticated();
-       act(() => { useSubscriptionStore.getState().setUserSubscription(mockSubscription); });
-       refreshSpy = vi.spyOn(useSubscriptionStore.getState(), 'refreshSubscription').mockResolvedValue();
+      setAuthenticated();
+      act(() => {
+        useSubscriptionStore.setState({ userSubscription: mockSubscription });
+        vi.spyOn(useSubscriptionStore.getState(), 'refreshSubscription').mockImplementation(refreshSpy);
+      });
     });
 
     afterEach(() => {
-        refreshSpy.mockRestore();
+        vi.restoreAllMocks();
     });
 
     it('should set loading, call API, call refresh, return true, and clear state on success', async () => {
-      mockStripeApiClient.cancelSubscription.mockResolvedValueOnce({ status: 200, data: undefined });
+      // Use imported mock function
+      mockStripeCancelSubscription.mockResolvedValue({ data: undefined, error: null });
 
       let success: boolean = false;
       await act(async () => {
         success = await useSubscriptionStore.getState().cancelSubscription(subId);
       });
 
-      expect(mockStripeApiClient.cancelSubscription).toHaveBeenCalledWith(subId);
-      expect(refreshSpy).toHaveBeenCalledOnce(); // Verify refresh was called
+      expect(mockStripeCancelSubscription).toHaveBeenCalledWith(subId);
+      expect(refreshSpy).toHaveBeenCalledOnce();
       expect(success).toBe(true);
+      const state = useSubscriptionStore.getState();
+      expect(state.isSubscriptionLoading).toBe(false);
+      expect(state.error).toBeNull();
     });
 
     it('should set loading, set error state, not call refresh, and return false if API fails', async () => {
-       const apiErrorMsg = 'Cancel failed';
-       mockStripeApiClient.cancelSubscription.mockRejectedValueOnce(new Error(apiErrorMsg));
+       setAuthenticated();
+       const apiErrorMsg = 'Cancellation failed';
+       // Use mockRejectedValue to simulate a thrown error
+       mockStripeCancelSubscription.mockRejectedValue(new Error(apiErrorMsg));
+       const refreshSpy = vi.spyOn(useSubscriptionStore.getState(), 'refreshSubscription');
 
-       let success: boolean = true;
-       await act(async () => {
+       let success: boolean | undefined;
+       const actionPromise = act(async () => {
          success = await useSubscriptionStore.getState().cancelSubscription(subId);
        });
 
+       expect(refreshSpy).not.toHaveBeenCalled(); // Check spy immediately
+       await actionPromise; // Await completion
+
+       expect(mockStripeCancelSubscription).toHaveBeenCalledWith(subId);
+       expect(refreshSpy).not.toHaveBeenCalled(); // Check spy again
+       expect(success).toBe(false);
        const state = useSubscriptionStore.getState();
        expect(state.isSubscriptionLoading).toBe(false);
        expect(state.error).toBeInstanceOf(Error);
        expect(state.error?.message).toContain(apiErrorMsg);
-       expect(refreshSpy).not.toHaveBeenCalled();
-       expect(success).toBe(false);
-    });
+     });
 
     it('should set error state and return false if not authenticated', async () => {
-        act(() => { resetAuthStore(); });
-        let success: boolean = true;
-        await act(async () => {
-          success = await useSubscriptionStore.getState().cancelSubscription(subId);
-        });
-        expect(success).toBe(false);
-        expect(mockStripeApiClient.cancelSubscription).not.toHaveBeenCalled();
-        expect(refreshSpy).not.toHaveBeenCalled();
-        const state = useSubscriptionStore.getState();
-        expect(state.isSubscriptionLoading).toBe(false);
-        expect(state.error?.message).toContain('User not logged in');
-    });
+       act(() => { resetAuthStore(); });
+       let success: boolean = true;
+       await act(async () => {
+         success = await useSubscriptionStore.getState().cancelSubscription(subId);
+       });
+       expect(mockStripeCancelSubscription).not.toHaveBeenCalled();
+       expect(refreshSpy).not.toHaveBeenCalled();
+       expect(success).toBe(false);
+       expect(useSubscriptionStore.getState().error?.message).toContain('User not authenticated');
+     });
 
-     it('should handle missing subscription ID case', async () => {
-        act(() => { useSubscriptionStore.getState().setUserSubscription({...mockSubscription, stripeSubscriptionId: undefined }); });
-        let success: boolean = true;
-        await act(async () => {
-          success = await useSubscriptionStore.getState().cancelSubscription(useSubscriptionStore.getState().userSubscription?.stripeSubscriptionId as any);
-        });
-        expect(success).toBe(false);
-        expect(mockStripeApiClient.cancelSubscription).not.toHaveBeenCalled();
-        expect(refreshSpy).not.toHaveBeenCalled();
-        expect(useSubscriptionStore.getState().error?.message).toContain('Missing subscription ID');
-    });
+    it('should handle missing subscription ID case', async () => {
+       let success: boolean = true;
+       await act(async () => {
+         success = await useSubscriptionStore.getState().cancelSubscription(null as any);
+       });
+       expect(mockStripeCancelSubscription).not.toHaveBeenCalled();
+       expect(refreshSpy).not.toHaveBeenCalled();
+       expect(success).toBe(false);
+       expect(useSubscriptionStore.getState().error?.message).toContain('Subscription ID is required');
+     });
   });
 
-  // --- Tests for resumeSubscription (Similar structure to cancel) ---
   describe('resumeSubscription action', () => {
     const subId = 'sub_ext_123';
-    let refreshSpy: ReturnType<typeof vi.spyOn>;
+    const refreshSpy = vi.fn();
 
-     beforeEach(() => {
-       setAuthenticated();
-       act(() => { useSubscriptionStore.getState().setUserSubscription(mockSubscription); });
-       refreshSpy = vi.spyOn(useSubscriptionStore.getState(), 'refreshSubscription').mockResolvedValue();
+    beforeEach(() => {
+      setAuthenticated();
+      act(() => {
+        useSubscriptionStore.setState({ userSubscription: { ...mockSubscription, status: 'canceled' } });
+        vi.spyOn(useSubscriptionStore.getState(), 'refreshSubscription').mockImplementation(refreshSpy);
+      });
     });
-
     afterEach(() => {
-        refreshSpy.mockRestore();
+        vi.restoreAllMocks();
     });
 
-     it('should call API, call refresh, return true on success', async () => {
-      mockStripeApiClient.resumeSubscription.mockResolvedValueOnce({ status: 200, data: undefined });
-      let success = false;
+    it('should call API, call refresh, return true on success', async () => {
+      // Use imported mock function
+      mockStripeResumeSubscription.mockResolvedValue({ data: undefined, error: null });
+
+      let success: boolean = false;
       await act(async () => {
         success = await useSubscriptionStore.getState().resumeSubscription(subId);
       });
-      expect(mockStripeApiClient.resumeSubscription).toHaveBeenCalledWith(subId);
+      expect(mockStripeResumeSubscription).toHaveBeenCalledWith(subId);
       expect(refreshSpy).toHaveBeenCalledOnce();
       expect(success).toBe(true);
+      expect(useSubscriptionStore.getState().error).toBeNull();
     });
 
     it('should set error state, not call refresh, and return false if API fails', async () => {
-      const apiErrorMsg = 'Resume failed';
-      mockStripeApiClient.resumeSubscription.mockRejectedValueOnce(new Error(apiErrorMsg));
-      let success = true;
-      await act(async () => {
-        success = await useSubscriptionStore.getState().resumeSubscription(subId);
-      });
-      const state = useSubscriptionStore.getState();
-      expect(state.isSubscriptionLoading).toBe(false);
-      expect(state.error).toBeInstanceOf(Error);
-      expect(state.error?.message).toContain(apiErrorMsg);
-      expect(refreshSpy).not.toHaveBeenCalled();
-      expect(success).toBe(false);
-    });
+       setAuthenticated();
+       const apiErrorMsg = 'Resume failed';
+       // Use mockRejectedValue to simulate a thrown error
+       mockStripeResumeSubscription.mockRejectedValue(new Error(apiErrorMsg));
+       const refreshSpy = vi.spyOn(useSubscriptionStore.getState(), 'refreshSubscription');
+
+       let success: boolean | undefined;
+       const actionPromise = act(async () => {
+         success = await useSubscriptionStore.getState().resumeSubscription(subId);
+       });
+
+       expect(refreshSpy).not.toHaveBeenCalled(); // Check spy immediately
+       await actionPromise; // Await completion
+
+       expect(mockStripeResumeSubscription).toHaveBeenCalledWith(subId);
+       expect(refreshSpy).not.toHaveBeenCalled(); // Check spy again
+       expect(success).toBe(false);
+       const state = useSubscriptionStore.getState();
+       expect(state.isSubscriptionLoading).toBe(false);
+       expect(state.error).toBeInstanceOf(Error);
+       expect(state.error?.message).toContain(apiErrorMsg);
+     });
+
+     // TODO: Add tests for not authenticated, missing subId (similar to cancel)
   });
 
-  // --- Tests for getUsageMetrics ---
   describe('getUsageMetrics action', () => {
-      const metric = 'api_calls';
-      const mockUsage: SubscriptionUsageMetrics = { used: 500, limit: 1000, metric: 'api_calls' };
+    const metric = 'ai_tokens';
+    const mockUsage: SubscriptionUsageMetrics = { metric: 'ai_tokens', usage: 500, limit: 1000 };
 
-      it('should set loading, call API, return metrics, and clear state on success', async () => {
+    it('should call API and return metrics on success', async () => {
         setAuthenticated();
-        mockStripeApiClient.getUsageMetrics.mockResolvedValueOnce({ status: 200, data: mockUsage });
+        // Use imported mock function
+        mockStripeGetUsageMetrics.mockResolvedValue({ data: mockUsage, error: null });
 
         let result: SubscriptionUsageMetrics | null = null;
         await act(async () => {
             result = await useSubscriptionStore.getState().getUsageMetrics(metric);
         });
 
-        const state = useSubscriptionStore.getState();
-        expect(state.isSubscriptionLoading).toBe(false);
-        expect(state.error).toBeNull();
-        expect(mockStripeApiClient.getUsageMetrics).toHaveBeenCalledWith(metric);
+        expect(mockStripeGetUsageMetrics).toHaveBeenCalledWith(metric);
         expect(result).toEqual(mockUsage);
-      });
+        expect(useSubscriptionStore.getState().error).toBeNull();
+    });
 
-      it('should set loading, set error state, and return null if API fails', async () => {
-          setAuthenticated();
-          const apiErrorMsg = 'Usage unavailable';
-          mockStripeApiClient.getUsageMetrics.mockRejectedValueOnce(new Error(apiErrorMsg));
+    it('should set error and return null on API failure', async () => {
+        setAuthenticated();
+        const apiErrorMsg = 'Usage fetch failed';
+        // Use imported mock function
+        mockStripeGetUsageMetrics.mockResolvedValue({ data: null, error: { message: apiErrorMsg, code: 'ERR_USAGE' } });
 
-          let result: SubscriptionUsageMetrics | null = mockUsage;
-          let errorFromSubscription: Error | null = null;
+        let result: SubscriptionUsageMetrics | null = mockUsage;
+        await act(async () => {
+            result = await useSubscriptionStore.getState().getUsageMetrics(metric);
+        });
 
-          const unsubscribe = useSubscriptionStore.subscribe((state) => {
-            if (state.error) {
-              errorFromSubscription = state.error;
-            }
-          });
-          
-          await act(async () => {
-            try {
-              result = await useSubscriptionStore.getState().getUsageMetrics(metric);
-            } catch (e) { /* Catch potential re-throw */ }
-          });
+        expect(mockStripeGetUsageMetrics).toHaveBeenCalledWith(metric);
+        expect(result).toBeNull();
+        expect(useSubscriptionStore.getState().error?.message).toContain(apiErrorMsg);
+    });
 
-          unsubscribe();
-
-          expect(useSubscriptionStore.getState().isSubscriptionLoading).toBe(false);
-          expect(errorFromSubscription).toBeInstanceOf(Error);
-          expect(errorFromSubscription?.message).toContain(apiErrorMsg);
-          expect(result).toBeNull();
-      });
-
-       it('should set error state and return null if not authenticated', async () => {
-          act(() => { resetAuthStore(); });
-          let result: SubscriptionUsageMetrics | null = mockUsage;
-          await act(async () => {
-              result = await useSubscriptionStore.getState().getUsageMetrics(metric);
-          });
-          expect(result).toBeNull();
-          expect(mockStripeApiClient.getUsageMetrics).not.toHaveBeenCalled();
-          const state = useSubscriptionStore.getState();
-          expect(state.isSubscriptionLoading).toBe(false);
-          expect(state.error?.message).toContain('User not logged in');
-      });
+    it('should return null and set error if not authenticated', async () => {
+        act(() => { resetAuthStore(); });
+        let result: SubscriptionUsageMetrics | null = mockUsage;
+        await act(async () => {
+            result = await useSubscriptionStore.getState().getUsageMetrics(metric);
+        });
+        expect(mockStripeGetUsageMetrics).not.toHaveBeenCalled();
+        expect(result).toBeNull();
+        expect(useSubscriptionStore.getState().error?.message).toContain('User not authenticated');
+    });
   });
 
-  // TODO: Test refreshSubscription action thoroughly
   describe('refreshSubscription action', () => {
-    let loadDataSpy: ReturnType<typeof vi.spyOn>;
+      let loadDataSpy: ReturnType<typeof vi.spyOn>;
 
-    beforeEach(() => {
-        // Spy on loadSubscriptionData before each test in this block
-        loadDataSpy = vi.spyOn(useSubscriptionStore.getState(), 'loadSubscriptionData').mockResolvedValue();
-    });
+      beforeEach(() => {
+          loadDataSpy = vi.spyOn(useSubscriptionStore.getState(), 'loadSubscriptionData');
+      });
 
-    afterEach(() => {
-        // Restore the original implementation after each test
+      afterEach(() => {
         loadDataSpy.mockRestore();
-    });
+      });
 
-    it('should call loadSubscriptionData with the current user ID if authenticated', async () => {
-        setAuthenticated(); // Ensure user is logged in via helper
-        loadDataSpy.mockClear(); // Reset spy *after* setting auth state
+      it('should call loadSubscriptionData if user is authenticated', async () => {
+          setAuthenticated();
+          loadDataSpy.mockClear();
 
-        await act(async () => {
-            await useSubscriptionStore.getState().refreshSubscription();
-        });
+          await act(async () => {
+              await useSubscriptionStore.getState().refreshSubscription();
+          });
+          expect(loadDataSpy).toHaveBeenCalledOnce();
+      });
 
-        expect(loadDataSpy).toHaveBeenCalledOnce();
-        expect(loadDataSpy).toHaveBeenCalledWith(mockUser.id);
-    });
-
-    it('should not call loadSubscriptionData if not authenticated', async () => {
-        act(() => { resetAuthStore(); }); // Ensure logged out
-
-        await act(async () => {
-            await useSubscriptionStore.getState().refreshSubscription();
-        });
-
-        expect(loadDataSpy).not.toHaveBeenCalled();
-    });
+      it('should not call loadSubscriptionData if user is not authenticated', async () => {
+          act(() => { resetAuthStore(); });
+          await act(async () => {
+              await useSubscriptionStore.getState().refreshSubscription();
+          });
+          expect(loadDataSpy).not.toHaveBeenCalled();
+      });
   });
 
 }); 

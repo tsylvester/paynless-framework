@@ -15,6 +15,15 @@ export interface ApiError {
   details?: unknown;
 }
 
+/**
+ * Options for customizing fetch requests in the apiClient.
+ * Extends standard RequestInit.
+ */
+export interface FetchOptions extends RequestInit {
+  isPublic?: boolean; // Indicates if the endpoint requires authentication
+  token?: string;     // Allows passing a specific token, overriding the automatic one
+}
+
 export interface PaginatedResponse<T> {
   data: T[];
   pagination: {

@@ -15,8 +15,7 @@ if (!supabaseUrl || !supabaseAnonKey) {
   // document.getElementById('root')!.innerHTML = 'Application configuration error.';
 } else {
   initializeApiClient({
-    // Construct the Base URL for Edge Functions
-    baseUrl: supabaseUrl.replace(/\/$/, '') + '/functions/v1',
+    supabaseUrl: supabaseUrl, 
     supabaseAnonKey: supabaseAnonKey,
   });
 }

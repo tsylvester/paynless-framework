@@ -1,205 +1,161 @@
 // src/api/clients/stripe.api.ts
 /// <reference types="@paynless/types" />
 
-import { api, FetchOptions } from './apiClient';
-import type { ApiResponse, SubscriptionPlan, UserSubscription, SubscriptionUsageMetrics } from '@paynless/types';
+import type { ApiClient } from './apiClient';
+import type { ApiResponse, SubscriptionPlan, UserSubscription, SubscriptionUsageMetrics, CheckoutSessionResponse, PortalSessionResponse, FetchOptions } from '@paynless/types';
 import { logger } from '@paynless/utils';
-import { ApiError } from './apiClient';
-
-// Type for options passed to StripeApiClient methods, extending FetchOptions
-// to potentially include the token directly if needed.
-interface StripeApiOptions extends FetchOptions {}
 
 /**
  * API client for Stripe operations
  */
 export class StripeApiClient {
-  private api = api; // Use the configured base api client
-  private getToken: () => string | undefined; // Store the token getter
+  private apiClient: ApiClient;
   
-  constructor(getToken: () => string | undefined) { 
-    this.getToken = getToken;
-  }
-  
-  private getOptions(options: StripeApiOptions = {}): FetchOptions {
-    const token = !options.isPublic ? this.getToken() : undefined; 
-    const finalOptions = { ...options };
-    if (token) {
-        finalOptions.token = token;
-    }
-    return finalOptions;
+  constructor(apiClient: ApiClient) { 
+    this.apiClient = apiClient;
   }
   
   /**
    * Create Stripe checkout session
-   * @param priceId - The ID of the Stripe Price object
-   * @param isTestMode - Whether to create session in test mode
    */
-  async createCheckoutSession(priceId: string, isTestMode: boolean): Promise<ApiResponse<{ sessionId: string }>> {
+  async createCheckoutSession(priceId: string, isTestMode: boolean, options?: FetchOptions): Promise<ApiResponse<CheckoutSessionResponse>> {
     try {
       logger.info('Creating Stripe checkout session', { priceId, isTestMode });
-      const fetchOptions = this.getOptions(); 
-      const resultData = await this.api.post<{ sessionId: string }>(
+      const result = await this.apiClient.post<CheckoutSessionResponse, { priceId: string, isTestMode: boolean }>(
         'api-subscriptions/checkout',
         { priceId, isTestMode },
-        fetchOptions
+        options
       );
-      return { status: 200, data: resultData }; 
+      if (result.error) {
+         logger.warn('Checkout session creation API returned an error', { error: result.error });
+         return result;
+      }
+      return result;
     } catch (error) {
-      logger.error('Error creating Stripe checkout session', {
+      logger.error('Unexpected error creating Stripe checkout session', {
         error: error instanceof Error ? error.message : 'Unknown error',
         priceId,
       });
-      
-      return {
-        error: {
-          code: error instanceof ApiError ? String(error.code) : 'STRIPE_CLIENT_ERROR',
-          message: error instanceof Error ? error.message : 'An unknown error occurred',
-        },
-        status: error instanceof ApiError && error.status ? error.status : 500,
-      };
+      const message = error instanceof Error ? error.message : 'An unknown error occurred';
+      return { status: 500, error: { code: 'CLIENT_EXCEPTION', message } };
     }
   }
   
   /**
    * Create Stripe billing portal session
-   * @param isTestMode - Whether to create session in test mode
    */
-  async createPortalSession(isTestMode: boolean): Promise<ApiResponse<{ url: string }>> {
+  async createPortalSession(isTestMode: boolean, options?: FetchOptions): Promise<ApiResponse<PortalSessionResponse>> {
     try {
       logger.info('Creating portal session', { isTestMode });
-      const fetchOptions = this.getOptions();
-      const resultData = await this.api.post<{ url: string }>(
+      const result = await this.apiClient.post<PortalSessionResponse, { isTestMode: boolean }>(
         'api-subscriptions/billing-portal',
         { isTestMode },
-        fetchOptions
+        options
       );
-      return { status: 200, data: resultData };
+      if (result.error) {
+         logger.warn('Portal session creation API returned an error', { error: result.error });
+      }
+      return result;
     } catch (error) {
-      logger.error('Error creating portal session', {
+      logger.error('Unexpected error creating portal session', {
         error: error instanceof Error ? error.message : 'Unknown error',
       });
-      
-      return {
-        error: {
-          code: error instanceof ApiError ? String(error.code) : 'STRIPE_CLIENT_ERROR',
-          message: error instanceof Error ? error.message : 'An unknown error occurred',
-        },
-        status: error instanceof ApiError && error.status ? error.status : 500,
-      };
+      const message = error instanceof Error ? error.message : 'An unknown error occurred';
+      return { status: 500, error: { code: 'CLIENT_EXCEPTION', message } };
     }
   }
   
   /**
-   * Get all available subscription plans (Assumed Public)
+   * Get all available subscription plans (Assumed Public? ApiClient handles token logic)
    */
-  async getSubscriptionPlans(): Promise<ApiResponse<SubscriptionPlan[]>> {
+  async getSubscriptionPlans(options?: FetchOptions): Promise<ApiResponse<SubscriptionPlan[]>> {
     try {
       logger.info('Fetching subscription plans');
-      const fetchOptions = this.getOptions(); 
-      const resultData = await this.api.get<SubscriptionPlan[]>('api-subscriptions/plans', fetchOptions);
-      return { status: 200, data: resultData };
+      const result = await this.apiClient.get<SubscriptionPlan[]>('api-subscriptions/plans', options);
+       if (result.error) {
+         logger.warn('Fetching plans API returned an error', { error: result.error });
+      }
+      return result;
     } catch (error) {
-      logger.error('Error fetching subscription plans', {
+      logger.error('Unexpected error fetching subscription plans', {
         error: error instanceof Error ? error.message : 'Unknown error',
       });
-      
-      return {
-        error: {
-          code: error instanceof ApiError ? String(error.code) : 'STRIPE_CLIENT_ERROR',
-          message: error instanceof Error ? error.message : 'An unknown error occurred',
-        },
-        status: error instanceof ApiError && error.status ? error.status : 500,
-      };
+      const message = error instanceof Error ? error.message : 'An unknown error occurred';
+      return { status: 500, error: { code: 'CLIENT_EXCEPTION', message } };
     }
   }
   
   /**
    * Get user subscription
    */
-  async getUserSubscription(userId: string): Promise<ApiResponse<UserSubscription>> {
+  async getUserSubscription(options?: FetchOptions): Promise<ApiResponse<UserSubscription>> {
     try {
-      logger.info('Fetching user subscription', { userId });
-      const fetchOptions = this.getOptions(); 
-      const resultData = await this.api.get<UserSubscription>(`api-subscriptions/current`, fetchOptions);
-      return { status: 200, data: resultData };
+      logger.info('Fetching user subscription');
+      const result = await this.apiClient.get<UserSubscription>(`api-subscriptions/current`, options);
+       if (result.error) {
+         logger.warn('Fetching user subscription API returned an error', { error: result.error });
+      }
+      return result;
     } catch (error) {
-      logger.error('Error fetching user subscription', {
+      logger.error('Unexpected error fetching user subscription', {
         error: error instanceof Error ? error.message : 'Unknown error',
-        userId,
       });
-      
-      return {
-        error: {
-          code: error instanceof ApiError ? String(error.code) : 'STRIPE_CLIENT_ERROR',
-          message: error instanceof Error ? error.message : 'An unknown error occurred',
-        },
-        status: error instanceof ApiError && error.status ? error.status : 500,
-      };
+      const message = error instanceof Error ? error.message : 'An unknown error occurred';
+      return { status: 500, error: { code: 'CLIENT_EXCEPTION', message } };
     }
   }
 
-  async cancelSubscription(subscriptionId: string): Promise<ApiResponse<void>> {
+  async cancelSubscription(subscriptionId: string, options?: FetchOptions): Promise<ApiResponse<void>> {
     try {
       logger.info('Cancelling subscription', { subscriptionId });
-      const fetchOptions = this.getOptions(); 
-      await this.api.post<void>(`api-subscriptions/${subscriptionId}/cancel`, {}, fetchOptions);
-      return { status: 200 };
+      const result = await this.apiClient.post<void, {}>(`api-subscriptions/${subscriptionId}/cancel`, {}, options);
+       if (result.error) {
+         logger.warn('Cancelling subscription API returned an error', { error: result.error, subscriptionId });
+      }
+      return result;
     } catch (error) {
-      logger.error('Error cancelling subscription', {
+      logger.error('Unexpected error cancelling subscription', {
         error: error instanceof Error ? error.message : 'Unknown error',
         subscriptionId,
       });
-      
-      return {
-        error: {
-          code: error instanceof ApiError ? String(error.code) : 'STRIPE_CLIENT_ERROR',
-          message: error instanceof Error ? error.message : 'An unknown error occurred',
-        },
-        status: error instanceof ApiError && error.status ? error.status : 500,
-      };
+      const message = error instanceof Error ? error.message : 'An unknown error occurred';
+      return { status: 500, error: { code: 'CLIENT_EXCEPTION', message } };
     }
   }
 
-  async resumeSubscription(subscriptionId: string): Promise<ApiResponse<void>> {
+  async resumeSubscription(subscriptionId: string, options?: FetchOptions): Promise<ApiResponse<void>> {
     try {
       logger.info('Resuming subscription', { subscriptionId });
-      const fetchOptions = this.getOptions(); 
-      await this.api.post<void>(`api-subscriptions/${subscriptionId}/resume`, {}, fetchOptions);
-      return { status: 200 };
+      const result = await this.apiClient.post<void, {}>(`api-subscriptions/${subscriptionId}/resume`, {}, options);
+      if (result.error) {
+         logger.warn('Resuming subscription API returned an error', { error: result.error, subscriptionId });
+      }
+      return result;
     } catch (error) {
-      logger.error('Error resuming subscription', { 
+      logger.error('Unexpected error resuming subscription', { 
         error: error instanceof Error ? error.message : 'Unknown error',
         subscriptionId,
       });
-      return {
-        error: {
-          code: error instanceof ApiError ? String(error.code) : 'STRIPE_CLIENT_ERROR',
-          message: error instanceof Error ? error.message : 'An unknown error occurred',
-        },
-        status: error instanceof ApiError && error.status ? error.status : 500,
-      };
+      const message = error instanceof Error ? error.message : 'An unknown error occurred';
+      return { status: 500, error: { code: 'CLIENT_EXCEPTION', message } };
     }
   }
 
-  async getUsageMetrics(metric: string): Promise<ApiResponse<SubscriptionUsageMetrics>> {
+  async getUsageMetrics(metric: string, options?: FetchOptions): Promise<ApiResponse<SubscriptionUsageMetrics>> {
     try {
       logger.info('Fetching usage metrics', { metric });
-      const fetchOptions = this.getOptions();
-      const resultData = await this.api.get<SubscriptionUsageMetrics>(`api-subscriptions/usage/${metric}`, fetchOptions);
-      return { status: 200, data: resultData };
+      const result = await this.apiClient.get<SubscriptionUsageMetrics>(`api-subscriptions/usage/${metric}`, options);
+      if (result.error) {
+         logger.warn('Fetching usage metrics API returned an error', { error: result.error, metric });
+      }
+      return result;
     } catch (error) {
-      logger.error('Error fetching usage metrics', { 
+      logger.error('Unexpected error fetching usage metrics', { 
         error: error instanceof Error ? error.message : 'Unknown error',
         metric 
       });
-      return {
-        error: {
-          code: error instanceof ApiError ? String(error.code) : 'STRIPE_CLIENT_ERROR',
-          message: error instanceof Error ? error.message : 'An unknown error occurred',
-        },
-        status: error instanceof ApiError && error.status ? error.status : 500,
-      };
+      const message = error instanceof Error ? error.message : 'An unknown error occurred';
+      return { status: 500, error: { code: 'CLIENT_EXCEPTION', message } };
     }
   }
 }

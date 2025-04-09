@@ -41,151 +41,176 @@ export const useAuthStore = create<AuthStoreType>()(
       login: async (email: string, password: string): Promise<User | null> => {
         set({ isLoading: true, error: null });
         try {
-          const result = await api.post<AuthResponse>('/login', { email, password });
+          const response = await api.post<AuthResponse, {email: string, password: string}>(
+            '/login', 
+            { email, password }, 
+            { isPublic: true } 
+          );
           
-          set({
-            user: result.user,
-            session: result.session,
-            profile: result.profile,
-            isLoading: false,
-            error: null,
-          });
+          if (!response.error && response.data) {
+              const authData = response.data;
+              set({
+                user: authData.user,
+                session: authData.session,
+                profile: authData.profile,
+                isLoading: false,
+                error: null,
+              });
 
-          // Navigate on success
-          const navigate = get().navigate;
-          if (navigate) {
-            logger.info('Login successful, navigating to dashboard.');
-            navigate('/dashboard'); // Or appropriate success route
+              // Navigate on success
+              const navigate = get().navigate;
+              if (navigate) {
+                logger.info('Login successful, navigating to dashboard.');
+                navigate('/dashboard'); // Or appropriate success route
+              } else {
+                logger.warn('Login successful but navigate function not set in store.');
+              }
+
+              return authData.user ?? null;
           } else {
-            logger.warn('Login successful but navigate function not set in store.');
+              const errorMessage = response.error?.message || 'Login failed without specific error';
+              throw new Error(errorMessage);
           }
-
-          return result.user ?? null;
         } catch (error) {
-          const errorMessage = error instanceof Error ? error.message : 'Unknown login error';
-          logger.error('Login error in store', { message: errorMessage });
+          const finalError = error instanceof Error ? error : new Error('Unknown login error');
+          logger.error('Login error in store', { message: finalError.message });
           set({
             isLoading: false,
-            error: error instanceof Error ? error : new Error('Failed to login'),
+            error: finalError,
             user: null, session: null, profile: null
           });
-          // Do NOT re-throw error
           return null;
         }
       },
       
-      register: async (email: string, password: string): Promise<User | null> => {
+      register: async (email: string, password: string): Promise<{ success: boolean; user: User | null; redirectTo: string | null }> => {
         set({ isLoading: true, error: null });
         try {
-          const result = await api.post<AuthResponse>('/register', { email, password });
+          const response = await api.post<AuthResponse, {email: string, password: string}>(
+            '/register', 
+            { email, password }, 
+            { isPublic: true } 
+          );
           
-          set({
-            user: result.user,
-            session: result.session,
-            profile: null, // Profile usually created by trigger or needs separate fetch/creation
-            isLoading: false,
-            error: null,
-          });
+          if (!response.error && response.data) {
+              const authData = response.data;
+              set({
+                user: authData.user,
+                session: authData.session,
+                profile: null, 
+                isLoading: false,
+                error: null,
+              });
 
-          // Navigate on success
-          const navigate = get().navigate;
-          if (navigate) {
-             logger.info('Registration successful, navigating to dashboard.');
-             navigate('/dashboard'); // Or '/profile/edit' or other onboarding step
+              // --- Post-Registration Logic (as per AI Plan) ---
+              let redirectTo = '/dashboard'; // Default redirect
+              try {
+                  const pendingMessage = sessionStorage.getItem('pendingChatMessage');
+                  if (pendingMessage) {
+                     logger.info('Pending chat message found after registration. Redirecting to chat.');
+                     // Optional: Parse and validate `pendingMessage` if needed before changing redirect
+                     redirectTo = '/'; // Redirect to home/chat page
+                     // Note: The actual sending of the stashed message is handled by the frontend component
+                  } else {
+                     logger.info('No pending chat message found. Redirecting to default dashboard.');
+                  }
+              } catch (e) {
+                  // Handle potential sessionStorage access errors (e.g., in private browsing)
+                  const errorMsg = e instanceof Error ? e.message : String(e);
+                  logger.error('Error accessing sessionStorage after registration:', { error: errorMsg });
+              }
+
+              // Use the navigate function if available (set via setNavigate)
+              const navigate = get().navigate;
+              if (navigate) {
+                 logger.info(`Registration successful, navigating to: ${redirectTo}`);
+                 navigate(redirectTo);
+              } else {
+                 logger.warn('Registration successful but navigate function not set in store.');
+              }
+              
+              // --- Return success indication and redirect target --- 
+              // Modify return value to signal success and target page for components not using navigate function directly
+              return { 
+                  success: true, 
+                  user: authData.user ?? null, 
+                  redirectTo: redirectTo 
+              };
+
           } else {
-             logger.warn('Registration successful but navigate function not set in store.');
+               const errorMessage = response.error?.message || 'Registration failed without specific error';
+               throw new Error(errorMessage);
           }
-
-          return result.user ?? null;
         } catch (error) {
-          const errorMessage = error instanceof Error ? error.message : 'Unknown registration error';
-          logger.error('Registration error in store', { message: errorMessage });
+          const finalError = error instanceof Error ? error : new Error('Unknown registration error');
+          logger.error('Registration error in store', { message: finalError.message });
           set({
             isLoading: false,
-            error: error instanceof Error ? error : new Error('Failed to register'),
+            error: finalError,
              user: null, session: null, profile: null
           });
-          // Do NOT re-throw error
-          return null;
+          // Return failure indication
+          return { success: false, user: null, redirectTo: null };
         }
       },
       
       logout: async () => {
-        set({ isLoading: true, error: null }); 
         const token = get().session?.access_token;
-
-        if (!token) {
-          // If there's no token, we can't really call the backend logout.
-          // Just clear local state.
-          logger.warn('Logout called but no session token found. Clearing local state only.');
-          set({
-            user: null,
-            session: null,
-            profile: null,
-            isLoading: false, 
-            error: null,
-          });
-          return; // Exit early
+        
+        if (token) {
+             set({ isLoading: true, error: null }); 
+             try {
+                await api.post('/logout', {}, { token }); 
+                logger.info('AuthStore: Logout API call successful.');
+             } catch (error) {
+                const finalError = error instanceof Error ? error : new Error('Unknown logout error');
+                logger.error('Logout error caught in store', { message: finalError.message });
+             }
+        } else if (!token) {
+             logger.warn('Logout called but no session token found. Clearing local state only.');
         }
 
-        try {
-          // Pass the token in options
-          await api.post('/logout', {}, { token }); 
-          logger.info('AuthStore: Logout API call successful.');
-        } catch (error) {
-          logger.error('Logout error caught in store', { 
-             message: error instanceof Error ? error.message : 'Unknown error' 
-          });
-          // Even if API fails, clear local state as the user intent is to logout
-        } finally {
-          logger.info('AuthStore: Clearing state after logout attempt.');
-          set({
-            user: null,
-            session: null,
-            profile: null,
-            isLoading: false, 
-            error: null,
-          });
-        }
+        // Always clear local state regardless of API call success/failure or client initialization
+        logger.info('AuthStore: Clearing state after logout attempt.');
+        set({
+          user: null,
+          session: null,
+          profile: null,
+          isLoading: false, 
+          error: null,
+        });
       },
       
       initialize: async () => {
         logger.info('Initializing auth state from persisted data...');
-        set({ isLoading: true }); // Ensure loading is true at start
+        set({ isLoading: true });
         const session = get().session;
 
         if (session?.access_token) {
           logger.info('Verifying token / fetching initial profile...');
           try {
-            const result = await api.get<AuthResponse>('me', { token: session.access_token });
-            logger.info('Initialize: /me call result:', { result });
-
-            // Refined Logic: If user data is present, update state, profile might be null
-            if (result?.user) {
-              logger.info('Initialize: User data found. Updating state.');
-              set((currentState) => ({ // Use function form to access current session
-                user: result.user,
-                profile: result.profile, // Will be null if API returned null
-                session: currentState.session, // Preserve existing session
-                isLoading: false,
-                error: null
-              }));
+            const response = await api.get<AuthResponse>('me', { token: session.access_token });
+            
+            if (!response.error && response.data) {
+                const authData = response.data;
+                if (authData?.user) {
+                    set((currentState) => ({ user: authData.user, profile: authData.profile, session: currentState.session, isLoading: false, error: null }));
+                } else { 
+                    /* handle no user data */ 
+                    set({ user: null, profile: null, session: null, isLoading: false, error: new Error('Initialization failed: Invalid user data received') }); 
+                }
             } else {
-              // API succeeded but returned no user data - invalid state
-              logger.error('Initialize: /me call succeeded but returned no user data.');
-              set({
-                user: null, profile: null, session: null,
-                isLoading: false,
-                error: new Error('Initialization failed: Invalid user data received')
-              });
+                 const errorMessage = response.error?.message || 'Initialization failed: Could not fetch user data';
+                 throw new Error(errorMessage);
             }
           } catch(e) {
             // API call itself failed
-            logger.error('Initialize: Error during /me API call.', {e});
+            const finalError = e instanceof Error ? e : new Error('Initialization failed (API error)');
+            logger.error('Initialize: Error during /me API call.', { message: finalError.message });
             set({ 
               user: null, profile: null, session: null, 
               isLoading: false, 
-              error: e instanceof Error ? e : new Error('Initialization failed (API error)') 
+              error: finalError 
             });
           }
         } else {
@@ -199,89 +224,79 @@ export const useAuthStore = create<AuthStoreType>()(
         const currentSession = get().session;
         if (!currentSession?.refresh_token) {
           logger.warn('refreshSession called without a refresh token.');
-          set({ error: new Error('No refresh token available to refresh session.') });
-          set({ isLoading: false }); // Ensure loading is set to false
+          set({ error: new Error('No refresh token available to refresh session.'), isLoading: false });
           return;
         }
-
-        set({ isLoading: true, error: null }); // Set loading state
+        set({ isLoading: true, error: null });
         try {
-          const result = await api.post<RefreshResponse>('refresh', 
-            {}, // Empty body
-            { 
-              headers: { 
-                'Authorization': `Bearer ${currentSession.refresh_token}` 
-              },
-              isPublic: true // Refresh might be considered public from client perspective? Check API setup. If not, remove.
-                           // Or maybe it needs the *refresh* token passed differently?
-                           // Let's assume Authorization header is correct for now.
-            }
+          const response = await api.post<RefreshResponse, {}>('refresh', 
+            {}, { headers: { 'Authorization': `Bearer ${currentSession.refresh_token}` }, isPublic: true }
           );
-
-          if (result?.session && result?.user && result?.profile) {
-            logger.info('Session refreshed successfully.');
-            set({
-              session: result.session,
-              user: result.user,
-              profile: result.profile,
-              isLoading: false,
-              error: null
-            });
-          } else {
-            logger.error('Refresh session: Invalid response from backend.');
-            set({
-              session: null, user: null, profile: null,
-              isLoading: false,
-              error: new Error('Failed to refresh session (invalid response)')
-            });
-          }
+           
+           if (!response.error && response.data) {
+                const refreshData = response.data;
+                if (refreshData?.session && refreshData?.user) {
+                    set({ session: refreshData.session, user: refreshData.user, profile: refreshData.profile, isLoading: false, error: null });
+                } else { 
+                    /* handle invalid response */ 
+                    set({ session: null, user: null, profile: null, isLoading: false, error: new Error('Failed to refresh session (invalid response)') }); 
+                }
+           } else {
+                const errorMessage = response.error?.message || 'Failed to refresh session';
+                throw new Error(errorMessage);
+           }
         } catch (error) {
-          const errorMessage = error instanceof Error ? error.message : 'Unknown refresh error';
-          logger.error('Refresh session: Error during refresh attempt.', { message: errorMessage });
+          const finalError = error instanceof Error ? error : new Error('Failed to refresh session (API error)');
+          logger.error('Refresh session: Error during refresh attempt.', { message: finalError.message });
           set({
             session: null, user: null, profile: null,
             isLoading: false,
-            error: error instanceof Error ? error : new Error('Failed to refresh session (API error)')
+            error: finalError
           });
         }
       },
       
       updateProfile: async (profileData: UserProfileUpdate): Promise<boolean> => {
-        const currentProfile = get().profile;
+        set({ isLoading: true, error: null });
         const token = get().session?.access_token;
-        if (!currentProfile) {
-            logger.error('updateProfile: Cannot update profile, no current profile loaded.');
-            set({ error: new Error('Cannot update profile: Not loaded') });
-            return false;
-        }
+        const currentProfile = get().profile;
+
+        // Check if authenticated first
         if (!token) {
             logger.error('updateProfile: Cannot update profile, user not authenticated.');
-            set({ error: new Error('Cannot update profile: Not authenticated') });
+            set({ error: new Error('Not authenticated'), isLoading: false });
             return false;
         }
-        
-        set({ isLoading: true, error: null });
-        try {
-            const updatedProfile = await api.put<UserProfile>('profile', profileData, { token });
 
-            // Update the local store state with the response from the backend
-            set({
-                profile: updatedProfile, 
-                isLoading: false, 
-                error: null 
-            });
-            logger.info('Profile updated successfully.');
-            return true;
+        // Then check if profile is loaded
+        if (!currentProfile) {
+            logger.error('updateProfile: Cannot update profile, no current profile loaded.');
+            set({ error: new Error('Profile not loaded'), isLoading: false });
+            return false;
+        }
+
+        // Original try-catch block for API call
+        try {
+            const response = await api.put<UserProfile, UserProfileUpdate>('profile', profileData, { token });
+            
+            if (!response.error && response.data) {
+                 const updatedProfile = response.data;
+                 set({ profile: updatedProfile, isLoading: false, error: null });
+                 logger.info('Profile updated successfully.');
+                 return true;
+            } else {
+                 const errorMessage = response.error?.message || 'Failed to update profile';
+                 throw new Error(errorMessage);
+            }
         } catch (error) {
-            const errorMessage = error instanceof Error ? error.message : 'Unknown profile update error';
-            logger.error('updateProfile error in store', { message: errorMessage });
-            set({
-                isLoading: false,
-                error: error instanceof Error ? error : new Error('Failed to update profile'),
-            });
+            const finalError = error instanceof Error ? error : new Error('Failed to update profile (API error)');
+            logger.error('Update profile: Error during API call.', { message: finalError.message });
+            set({ isLoading: false, error: finalError });
             return false;
         }
       },
+      // Add clearError if missing from original file
+       clearError: () => set({ error: null }),
     }),
     {
       name: 'auth-storage',

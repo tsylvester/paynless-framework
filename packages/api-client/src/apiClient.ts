@@ -1,205 +1,186 @@
-// src/api/apiClient.ts
-/// <reference types="@paynless/types" />
+import { SupabaseClient, createClient } from '@supabase/supabase-js';
+// Import types from @paynless/types
+import type {
+  // UserProfile, UserProfileUpdate, // Removed unused imports
+  ApiResponse, ApiError as ApiErrorType,
+  FetchOptions // Import FetchOptions from types
+} from '@paynless/types';
+import { StripeApiClient } from './stripe.api'; 
+import { AiApiClient } from './ai.api';
+import { logger } from '@paynless/utils';
 
-console.log('🚨 apiClient.ts IS BEING LOADED 🚨');
-
-// No longer need to define import.meta.env here - using central definition from @paynless/types
-
-// REMOVED: Explicit import 
-import { logger } from '@paynless/utils'; // Corrected import
-
-// Define common options - Moved definition here
-interface FetchOptions extends RequestInit {
-  isPublic?: boolean; // Add flag for public endpoints
-  token?: string; 
-}
-
-// --- Configuration --- 
-interface ApiClientConfig {
-  baseUrl: string;
-  supabaseAnonKey: string;
-}
-
-let config: ApiClientConfig | null = null;
-
-export function initializeApiClient(newConfig: ApiClientConfig) {
-  if (config) {
-    // logger.warn('API Client already initialized. Re-initializing...');
-    // Instead of warning, throw an error to enforce singleton initialization
-    throw new Error('API client already initialized');
-  }
-  // Validate config?
-  if (!newConfig.baseUrl || !newConfig.supabaseAnonKey) {
-    throw new Error('Invalid API Client config: baseUrl and supabaseAnonKey are required.');
-  }
-  // Ensure baseUrl does NOT have a trailing slash
-  newConfig.baseUrl = newConfig.baseUrl.replace(/\/$/, '');
-  config = newConfig;
-  logger.info('API Client Initialized.', { baseUrl: config.baseUrl });
-}
-
-// Exported ONLY for testing purposes to reset the singleton state
-export function _resetApiClient() {
-  config = null;
-  logger.info('API Client reset for testing.');
-}
-
-// --- API Client --- 
-
-// Define expected API response structure
-interface ApiResult<T = unknown> {
-  data?: T;
-  error?: { message: string; code?: string };
-}
-
-// Error class for API issues
+// Define ApiError class locally for throwing (can extend the type)
 export class ApiError extends Error {
-  code?: string | number;
-  status?: number; // Add status property
-
-  constructor(message: string, code?: string | number, status?: number) { // Add status to constructor
-    super(message);
-    this.name = 'ApiError';
-    this.code = code;
-    this.status = status; // Assign status
-  }
+    public code?: string | number;
+    constructor(message: string, code?: string | number) {
+        super(message);
+        this.name = 'ApiError';
+        this.code = code;
+    }
 }
 
-async function apiClient<T = unknown>(
-  endpoint: string,
-  options: FetchOptions = {} // Use locally defined FetchOptions
-): Promise<T> { // Return the data directly or throw an error
-  if (!config) {
-    throw new Error('API Client not initialized. Call initializeApiClient first.');
-  }
-
-  // *** REMOVE LOGGING HERE ***
-  // logger.debug(`[apiClient ${endpoint}] Received options:`, { options });
-
-  // Revert AGAIN to manual URL concatenation. 
-  // The URL constructor treats base URLs with paths but no trailing slash 
-  // differently than expected, replacing the last path segment.
-  // Manual concat works reliably IF the convention is followed:
-  // - baseUrl has NO trailing slash
-  // - endpoint has NO leading slash
-  const url = `${config.baseUrl}/${endpoint}`;
-
-  // CHANGED: Get token from options instead of Zustand store
-  const token = options.token;
-
-  // Use Record<string, string> for more flexible header typing
-  const headers: Record<string, string> = {
-    'Content-Type': 'application/json',
-    'apikey': config.supabaseAnonKey, // Use configured key
-    ...(options.headers as Record<string, string> || {}), // Merge incoming headers safely
-  };
-
-  // Add Authorization header ONLY if it exists AND the endpoint is NOT public
-  if (token && !options.isPublic) {
-    headers['Authorization'] = `Bearer ${token}`; // Now allowed by Record<string, string>
-  } else if (!token && !options.isPublic) {
-    // Only warn about missing token for non-public endpoints
-    // REMOVED: logger.warn(`[apiClient ${endpoint}] No access token found for protected call.`);
-    // Depending on stricter error handling, you might throw an error here:
-    // throw new Error(`Authentication required for endpoint: ${endpoint}`);
-  }
-  // If options.isPublic is true, we don't add Authorization and don't warn
-
-  // Ensure method is set, default to GET
-  const method = options.method || (options.body ? 'POST' : 'GET');
-  logger.debug(`[apiClient ${endpoint}] Configured`, { method, url, hasToken: !!token, isPublic: !!options.isPublic }); // Log 2
-
-  logger.debug(`API Call: ${method} ${url}`, { hasToken: !!token });
-
-  try {
-    logger.debug(`[apiClient ${endpoint}] Attempting fetch...`); // Log 3
-
-    // REVERT: Remove explicit fetchImpl = globalThis.fetch
-    // const fetchImpl = globalThis.fetch;
-    // console.log('[apiClient] Using fetch implementation:', fetchImpl);
-
-    // Restore original diagnostic log if needed for future debugging
-    console.log('[apiClient] globalThis.fetch JUST BEFORE internal fetch:', globalThis.fetch);
-
-    // Use original fetch call
-    const response = await fetch(url, {
-      ...options,
-      method: method,
-      headers: headers,
-    });
-    logger.debug(`[apiClient ${endpoint}] Fetch completed. Status: ${response.status}`); // Log 4
-
-    // Attempt to parse JSON regardless of status for potential error messages
-    let responseBody: ApiResult<T>;
-    try {
-       responseBody = await response.json();
-    } catch (parseError) {
-        logger.error(`[apiClient ${endpoint}] response.json() FAILED`, { status: response.status, statusText: response.statusText, parseError });
-        responseBody = { error: { message: `HTTP ${response.status}: ${response.statusText || 'Server error'}` } };
-    }
-
-    if (!response.ok) {
-      // Extract error message from response body
-      const errorMessage = responseBody?.error?.message || `HTTP error ${response.status}`;
-      const errorCode = responseBody?.error?.code;
-
-      logger.error(`[apiClient ${endpoint}] Response not OK`, { status: response.status, errorMessage, errorCode });
-      throw new ApiError(errorMessage, errorCode, response.status);
-    }
-
-    // If response is OK, but maybe there's an app-level error in the body
-    if (responseBody.error) {
-       logger.warn(`[apiClient ${endpoint}] Response OK but contains error body`, { error: responseBody.error });
-       const error = new ApiError(responseBody.error.message, responseBody.error.code, response.status); 
-       throw error;
-    }
-
-    // Assuming successful response has data in `data` field
-    // Adjust if your Edge Functions return data directly at the root
-    if (responseBody.data !== undefined) {
-        logger.debug(`[apiClient ${endpoint}] Returning responseBody.data`); // Log 8a
-        return responseBody.data as T;
-    } else {
-         // Handle cases where response is OK (2xx) but no data field (e.g., 204 No Content)
-         // Or if your functions return data at the root
-         logger.debug(`[apiClient ${endpoint}] Returning full responseBody`); // Log 8b
-         return responseBody as T; // Return the whole body if no 'data' field
-    }
-
-  } catch (error) {
-    // **** SIMPLIFIED FINAL CATCH BLOCK ****
-    const rawErrorMessage = error instanceof Error ? error.message : String(error);
-    logger.error('[apiClient] FINAL CATCH - Raw Error Message:', { rawErrorMessage });
-    logger.error('[apiClient] FINAL CATCH - Raw Error Object:', { error }); // Log raw object
-
-    // Check if this is an ApiError that was thrown earlier
-    if (error instanceof ApiError) {
-      throw error;
-    }
-
-    // For other errors, provide a generic network error message
-    // Catch both standard fetch errors and MSW unhandled request errors
-    const errorMessage = (rawErrorMessage.includes('fetch failed') || rawErrorMessage.includes('[MSW]'))
-      ? 'Network error occurred. Please try again.'
-      : rawErrorMessage;
-
-    throw new ApiError(errorMessage, 'NETWORK_ERROR', 0);
-  }
+// Config interface for the constructor
+interface ApiClientConstructorOptions {
+    supabase: SupabaseClient<any>;
+    supabaseUrl: string; // Pass the URL explicitly
+    supabaseAnonKey: string; // <<< Add anon key here
 }
 
-// Export methods for convenience (GET, POST, etc.)
-// These now expect the token to be passed within the options object if needed.
+export class ApiClient {
+    private supabase: SupabaseClient<any>;
+    private functionsUrl: string;
+    private supabaseAnonKey: string; // <<< Add storage for anon key
+
+    public billing: StripeApiClient;
+    public ai: AiApiClient;
+
+    // Update constructor signature
+    constructor(options: ApiClientConstructorOptions) {
+        this.supabase = options.supabase;
+        // Use the passed supabaseUrl to construct functionsUrl
+        // Ensure it doesn't have a trailing slash before appending /functions/v1
+        const baseUrl = options.supabaseUrl.replace(/\/$/, ''); 
+        this.functionsUrl = `${baseUrl}/functions/v1`; 
+        this.supabaseAnonKey = options.supabaseAnonKey; // <<< Store anon key
+        logger.info('API Client constructed with Functions URL:', { url: this.functionsUrl });
+
+        this.billing = new StripeApiClient(this);
+        this.ai = new AiApiClient(this);
+    }
+
+    private async getToken(): Promise<string | undefined> {
+        const { data, error } = await this.supabase.auth.getSession();
+        if (error) {
+            logger.error('Error fetching session for token:', { error });
+            return undefined;
+        }
+        return data.session?.access_token;
+    }
+
+    // Update request method to use ApiResponse and ApiErrorType from @paynless/types
+    private async request<T>(endpoint: string, options: FetchOptions = {}): Promise<ApiResponse<T>> {
+        const url = `${this.functionsUrl}/${endpoint.startsWith('/') ? endpoint.substring(1) : endpoint}`;
+        const headers = new Headers(options.headers || {});
+        headers.append('Content-Type', 'application/json');
+        headers.append('apikey', this.supabaseAnonKey); // <<< Always add apikey header
+
+        const token = options.token || (await this.getToken());
+
+        if (!options.isPublic && token) {
+            headers.append('Authorization', `Bearer ${token}`);
+        } else if (!options.isPublic && !token) {
+            logger.warn(`API Request: No auth token for non-public endpoint ${endpoint}`); // Use logger, maybe just warn
+            // Return standard ApiResponse format for error
+            return { 
+                status: 401,
+                error: { code: 'UNAUTHENTICATED', message: 'Authentication required' }
+            };
+        }
+
+        try {
+            const response = await fetch(url, { ...options, headers });
+            const responseData = response.headers.get('Content-Type')?.includes('application/json') 
+                                ? await response.json() 
+                                : await response.text(); 
+
+            if (!response.ok) {
+                let errorPayload: ApiErrorType;
+                if (typeof responseData === 'object' && responseData?.code && responseData?.message) {
+                    // Assume the body contains a valid ApiError structure
+                    errorPayload = responseData as ApiErrorType;
+                } else {
+                    // Construct ApiError from status/text
+                    const errorMessage = typeof responseData === 'string' && responseData.trim() !== ''
+                                        ? responseData 
+                                        : response.statusText || 'Unknown API Error';
+                    errorPayload = { code: String(response.status), message: errorMessage };
+                }
+                logger.error(`API Error ${response.status} on ${endpoint}: ${errorPayload.message}`, { code: errorPayload.code, details: errorPayload.details });
+                return { status: response.status, error: errorPayload };
+            }
+            
+            // Return standard ApiResponse format for success
+            return { status: response.status, data: responseData as T };
+
+        } catch (error: any) {
+            logger.error(`Network or fetch error on ${endpoint}:`, { error: error?.message });
+            // Return standard ApiResponse format for network error
+            return { 
+                status: 0, // Use 0 or a specific code for network errors
+                error: { code: 'NETWORK_ERROR', message: error.message || 'Network error' } 
+            };
+        }
+    }
+
+    // Update public methods to reflect the new ApiResponse structure
+    public async get<T>(endpoint: string, options?: FetchOptions): Promise<ApiResponse<T>> {
+        return this.request<T>(endpoint, { ...options, method: 'GET' });
+    }
+
+    public async post<T, U>(endpoint: string, body: U, options?: FetchOptions): Promise<ApiResponse<T>> {
+        return this.request<T>(endpoint, { ...options, method: 'POST', body: JSON.stringify(body) });
+    }
+
+    public async put<T, U>(endpoint: string, body: U, options?: FetchOptions): Promise<ApiResponse<T>> {
+        return this.request<T>(endpoint, { ...options, method: 'PUT', body: JSON.stringify(body) });
+    }
+
+    public async delete<T>(endpoint: string, options?: FetchOptions): Promise<ApiResponse<T>> {
+        return this.request<T>(endpoint, { ...options, method: 'DELETE' });
+    }
+}
+
+// --- Singleton Instance Logic --- 
+let apiClientInstance: ApiClient | null = null;
+
+// Config interface for the initializer
+interface ApiInitializerConfig {
+    supabaseUrl: string;
+    supabaseAnonKey: string;
+}
+
+// Update initializeApiClient signature and implementation
+export function initializeApiClient(config: ApiInitializerConfig) {
+  if (apiClientInstance) {
+    throw new Error('ApiClient already initialized');
+  }
+  if (!config.supabaseUrl || !config.supabaseAnonKey) {
+     throw new Error('Supabase URL and Anon Key are required to initialize ApiClient');
+  }
+  // Create Supabase client inside the initializer
+  const supabase = createClient<any>(config.supabaseUrl, config.supabaseAnonKey);
+  
+  // Pass both client and URL to constructor
+  apiClientInstance = new ApiClient({ 
+      supabase: supabase, 
+      supabaseUrl: config.supabaseUrl,
+      supabaseAnonKey: config.supabaseAnonKey // <<< Pass anon key here
+  });
+  logger.info('ApiClient Singleton Initialized.');
+}
+
+export function _resetApiClient() {
+  apiClientInstance = null;
+  logger.info('ApiClient Singleton reset for testing.');
+}
+
+function getApiClient(): ApiClient {
+    if (!apiClientInstance) {
+        throw new Error('ApiClient not initialized. Call initializeApiClient first.');
+    }
+    return apiClientInstance;
+}
+
+// Export the api object, update methods to match new ApiResponse
 export const api = {
-  get: <T = unknown>(endpoint: string, options: FetchOptions = {}) =>
-    apiClient<T>(endpoint, { ...options, method: 'GET' }),
-  post: <T = unknown>(endpoint: string, body: unknown, options: FetchOptions = {}) =>
-    apiClient<T>(endpoint, { ...options, method: 'POST', body: JSON.stringify(body) }),
-  put: <T = unknown>(endpoint: string, body: unknown, options: FetchOptions = {}) =>
-    apiClient<T>(endpoint, { ...options, method: 'PUT', body: JSON.stringify(body) }),
-  delete: <T = unknown>(endpoint: string, options: FetchOptions = {}) =>
-    apiClient<T>(endpoint, { ...options, method: 'DELETE' }),
-  // Add PATCH etc. if needed
-};
-
-// Export FetchOptions interface for use in calling code (e.g., store)
-export type { FetchOptions }; 
+    get: <T>(endpoint: string, options?: FetchOptions): Promise<ApiResponse<T>> => 
+        getApiClient().get<T>(endpoint, options),
+    post: <T, U>(endpoint: string, body: U, options?: FetchOptions): Promise<ApiResponse<T>> => 
+        getApiClient().post<T, U>(endpoint, body, options),
+    put: <T, U>(endpoint: string, body: U, options?: FetchOptions): Promise<ApiResponse<T>> => 
+        getApiClient().put<T, U>(endpoint, body, options),
+    delete: <T>(endpoint: string, options?: FetchOptions): Promise<ApiResponse<T>> => 
+        getApiClient().delete<T>(endpoint, options),
+    ai: () => getApiClient().ai, 
+    billing: () => getApiClient().billing,
+}; 
