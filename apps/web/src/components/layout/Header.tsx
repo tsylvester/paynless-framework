@@ -10,7 +10,7 @@ import {
   CreditCard,
   Home,
   Sun,
-  Moon
+  Moon,
 } from 'lucide-react';
 
 export function Header() {
@@ -56,6 +56,15 @@ export function Header() {
                   } inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium`}
                 >
                   Dashboard
+                </Link>
+                <Link
+                  to="/chat"
+                  className={`${isActive('/chat') 
+                    ? 'border-primary text-textPrimary' 
+                    : 'border-transparent text-textSecondary hover:border-border hover:text-textPrimary'
+                  } inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium`}
+                >
+                  Chat
                 </Link>
               </nav>
             )}
@@ -169,7 +178,16 @@ export function Header() {
           </div>
           {user ? (
             <div className="pt-2 pb-3 space-y-1">
-
+              <Link
+                to="/chat"
+                className={`${isActive('/chat') 
+                  ? 'bg-primary/10 border-primary text-primary' 
+                  : 'border-transparent text-textSecondary hover:bg-surface hover:border-border hover:text-textPrimary'
+                } block pl-3 pr-4 py-2 border-l-4 text-base font-medium`}
+                onClick={() => setIsMenuOpen(false)}
+              >
+                Chat
+              </Link>
             </div>
           ) : (
             <div className="pt-2 pb-3 space-y-1">

@@ -13,9 +13,9 @@ import { logger } from '@paynless/utils';
 export class ApiError extends Error {
     public code?: string | number;
     constructor(message: string, code?: string | number) {
-        super(message);
-        this.name = 'ApiError';
-        this.code = code;
+    super(message);
+    this.name = 'ApiError';
+    this.code = code;
     }
 }
 
