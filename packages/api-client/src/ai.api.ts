@@ -24,9 +24,10 @@ export class AiApiClient {
     /**
      * Fetches the list of active AI providers.
      */
-    async getAiProviders(): Promise<ApiResponse<AiProvider[]>> {
+    async getAiProviders(token?: string): Promise<ApiResponse<AiProvider[]>> {
+        const options: FetchOptions = token ? { token } : { isPublic: true };
         logger.info('Fetching AI providers');
-        const response = await this.apiClient.get<AiProvider[]>('/ai-providers', { isPublic: true });
+        const response = await this.apiClient.get<AiProvider[]>('/ai-providers', options);
         if (response.error) {
             logger.error('Error fetching AI providers:', { error: response.error });
         } else {
@@ -38,9 +39,10 @@ export class AiApiClient {
     /**
      * Fetches the list of active system prompts.
      */
-    async getSystemPrompts(): Promise<ApiResponse<SystemPrompt[]>> {
+    async getSystemPrompts(token?: string): Promise<ApiResponse<SystemPrompt[]>> {
+        const options: FetchOptions = token ? { token } : { isPublic: true };
         logger.info('Fetching system prompts');
-        const response = await this.apiClient.get<SystemPrompt[]>('/system-prompts', { isPublic: true });
+        const response = await this.apiClient.get<SystemPrompt[]>('/system-prompts', options);
         if (response.error) {
             logger.error('Error fetching system prompts:', { error: response.error });
         } else {
@@ -51,14 +53,16 @@ export class AiApiClient {
 
     /**
      * Sends a chat message to the backend.
-     * @param data - The chat message request data.
-     * @param options - Optional fetch options (e.g., { isPublic: true }).
+     * Handles both anonymous (isPublic: true) and authenticated requests.
      */
-    async sendChatMessage(
-        data: ChatApiRequest,
-        options?: FetchOptions
-    ): Promise<ApiResponse<ChatMessage>> {
-        // Assuming the API returns the new ChatMessage object directly
+    async sendChatMessage(data: ChatApiRequest, options: FetchOptions): Promise<ApiResponse<ChatMessage>> {
+        // Validate essential data (can add more specific checks)
+        if (!data.message || !data.providerId || !data.promptId) {
+            const error: ApiError = { code: 'VALIDATION_ERROR', message: 'Missing required fields in chat message request' };
+            return { error, status: 400 };
+        }
+        // The base apiClient.post will handle adding the token from options if provided
+        // Provide both ResponseType and RequestBodyType
         return this.apiClient.post<ChatMessage, ChatApiRequest>('chat', data, options);
     }
 
@@ -67,22 +71,29 @@ export class AiApiClient {
      * @param token - The user's authentication token.
      */
     async getChatHistory(token: string): Promise<ApiResponse<Chat[]>> {
-        // Pass the token explicitly in FetchOptions
-        return this.apiClient.get<Chat[]>('chat-history', { token: token });
+        if (!token) {
+            const error: ApiError = { code: 'AUTH_ERROR', message: 'Authentication token is required' };
+            return { error, status: 401 };
+        }
+        const options: FetchOptions = { token };
+        return this.apiClient.get<Chat[]>('chat-history', options);
     }
 
     /**
      * Fetches all messages for a specific chat.
      * @param chatId - The ID of the chat to fetch messages for.
      */
-    async getChatMessages(chatId: string): Promise<ApiResponse<ChatMessage[]>> {
+    async getChatMessages(chatId: string, token: string): Promise<ApiResponse<ChatMessage[]>> {
         if (!chatId) {
-            // Return the standard ApiResponse error format
             const error: ApiError = { code: 'VALIDATION_ERROR', message: 'Chat ID is required' };
-            // Remove success: false
             return { error, status: 400 };
         }
-        // Ensure the path is constructed correctly according to URL conventions
-        return this.apiClient.get<ChatMessage[]>(`chat-details/${chatId}`);
+        if (!token) {
+            const error: ApiError = { code: 'AUTH_ERROR', message: 'Authentication token is required' };
+            return { error, status: 401 };
+        }
+        // Pass the token in options
+        const options: FetchOptions = { token };
+        return this.apiClient.get<ChatMessage[]>(`chat-details/${chatId}`, options);
     }
 } 

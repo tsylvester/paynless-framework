@@ -341,9 +341,15 @@ export async function mainHandler(req: Request, deps: ChatHandlerDeps = defaultD
 
     // Create a new chat entry if no chatId was provided or history fetch failed
     if (!finalChatId) {
+        // Generate title from the first part of the user's message
+        const potentialTitle = requestBody.message.substring(0, 100); // Use first 100 chars
+
         const { data: newChatData, error: newChatError } = await supabaseClient
             .from('chats')
-            .insert({ user_id: userId }) // Minimal chat entry
+            .insert({ 
+                user_id: userId,
+                title: potentialTitle // Add the generated title here
+            }) 
             .select('id')
             .single();
 

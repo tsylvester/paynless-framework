@@ -136,7 +136,7 @@
         *   Pass `isAnonymous={true}` to `AiChatbox`.
         *   Implement the `onLimitReached` callback for `AiChatbox`:
             *   Stash message details (`content`, current `providerId`, current `promptId`) in `sessionStorage.setItem('pendingChatMessage', JSON.stringify(...))`.
-            *   Display an `AlertDialog` (using `shadcn/ui`): "Limit reached. Sign up to continue?"
+            *   Display an `AlertDialog`: "Limit reached. Sign up to continue?"
             *   On confirmation ("Register"), navigate to `/register`.
             *   On cancellation ("Cancel"), close the dialog.
         *   **`useEffect` for Stashed Message:**

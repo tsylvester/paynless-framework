@@ -230,15 +230,27 @@ export const useAiStore = create<AiState & AiActions>()(
             loadChatDetails: async (chatId: string) => {
                 if (!chatId) {
                     logger.warn('[loadChatDetails] chatId is required.');
-                    set({ aiError: 'Chat ID is required to load details.', isDetailsLoading: false }); // Simple set
+                    set({ aiError: 'Chat ID is required to load details.', isDetailsLoading: false });
                     return;
                 }
                 logger.info(`Loading chat details for ${chatId}...`);
-                set({ isDetailsLoading: true, aiError: null, currentChatId: chatId, currentChatMessages: [] }); // Simple set
+                set({ isDetailsLoading: true, aiError: null, currentChatId: chatId, currentChatMessages: [] });
+
+                // Get token from authStore state
+                const token = useAuthStore.getState().session?.access_token;
+
+                // Check if token exists
+                if (!token) {
+                    logger.error('Cannot load chat details: No auth token available in authStore state.');
+                    set({ aiError: 'Authentication required', isDetailsLoading: false });
+                    return; // Stop if no token
+                }
+
                 try {
-                    const response = await api.ai().getChatMessages(chatId);
+                    // Pass the chatId AND token to the API call
+                    const response = await api.ai().getChatMessages(chatId, token);
                     if (!response.error && response.data) {
-                        set({ currentChatMessages: response.data, isDetailsLoading: false }); // Simple set
+                        set({ currentChatMessages: response.data, isDetailsLoading: false });
                         logger.info(`Chat details loaded for ${chatId}:`, { count: response.data.length });
                     } else {
                         const errorMsg = typeof response.error === 'string' ? response.error : (response.error?.message || 'Failed to load chat details');
@@ -247,7 +259,7 @@ export const useAiStore = create<AiState & AiActions>()(
                 } catch (error: unknown) {
                      const message = error instanceof Error ? error.message : (typeof error === 'object' && error !== null && 'error' in error ? String(error.error) : 'An unknown error occurred while loading chat details.');
                     logger.error('Error loading chat details:', { error: message, chatId });
-                    set({ aiError: message, isDetailsLoading: false, currentChatMessages: [], currentChatId: null }); // Simple set
+                    set({ aiError: message, isDetailsLoading: false, currentChatMessages: [], currentChatId: null });
                 }
             },
 
