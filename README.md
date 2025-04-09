@@ -51,11 +51,7 @@ The architecture follows these principles:
 
 ## Next Features
 - AI Chat integration
--- OpenAI, Claude, Gemini, Perplexity, DeepSeek, etc
--- Selectable AI 
--- Selectable system prompts 
--- Save chats 
--- Continue chats
+-- Add Claude, Gemini, Perplexity, DeepSeek, etc
 
 - User interaction detection
 -- Mixpanel endpoints
@@ -116,16 +112,18 @@ Why? Integration fixes may change interfaces or logic that your unit tests previ
 
 The application exposes the following primary API endpoints through Supabase Edge Functions:
 
-### Authentication (`/login`, `/register`, `/logout`, `/session`, `/refresh`)
-- Handles user sign-up, login, logout, session validation/refresh.
-- `/reset-password`: Likely handles password reset requests.
-- `/test-auth`: (Internal/debug?) Endpoint for testing auth.
+### Authentication & Core User (`/login`, `/register`, `/logout`, `/session`, `/refresh`, `/me`, `/profile`)
+- `/login`: Handles user sign-up via email/password.
+- `/register`: Handles user registration via email/password.
+- `/logout`: Handles user logout.
+- `/session`: Fetches current session information.
+- `/refresh`: Refreshes the authentication token.
+- `/reset-password`: Handles the password reset flow.
+- `/me`: Fetches the profile for the currently authenticated user.
+- `/profile`: Updates the profile for the currently authenticated user.
+- `/ping`: Simple health check endpoint.
 
-### Profile Management (`/me`, `/profile`)
-- Allows fetching and updating the current user's profile (`/me`).
-- `/profile`: Likely involved in profile operations (specifics TBD).
-
-### Subscriptions & Billing (`/api-subscriptions`, `/stripe-webhook`)
+### Subscriptions & Billing (`/api-subscriptions`, `/stripe-webhook`, `/sync-stripe-plans`)
 - `/api-subscriptions`: Main router for subscription actions.
   - `GET /current`: Fetches the current user's subscription status.
   - `GET /plans`: Fetches available Stripe subscription plans.
@@ -134,9 +132,18 @@ The application exposes the following primary API endpoints through Supabase Edg
   - `POST /:subscriptionId/cancel`: Cancels a specific subscription.
   - `POST /:subscriptionId/resume`: Resumes a specific subscription.
   - `GET /usage/:metric`: Fetches usage metrics for a specific metric.
-- `/stripe-webhook`: Handles incoming webhook events from Stripe.
+- `/stripe-webhook`: Handles incoming webhook events from Stripe (e.g., checkout completed, subscription updates).
+- `/sync-stripe-plans`: (Admin/Internal) Function to synchronize Stripe Products/Prices with the `subscription_plans` table.
 
-*(Note: Endpoint specifics require reading function code. This is based on folder names.)*
+### AI Chat (`/ai-providers`, `/system-prompts`, `/chat`, `/chat-history`, `/chat-details`, `/sync-ai-models`)
+- `/ai-providers`: Fetches the list of available/active AI providers (e.g., OpenAI models).
+- `/system-prompts`: Fetches the list of available/active system prompts for AI chat.
+- `/chat`: Handles sending a user message to an AI provider, managing context, and saving the conversation.
+- `/chat-history`: Fetches the list of chat conversations for the authenticated user.
+- `/chat-details/:chatId`: Fetches all messages for a specific chat conversation.
+- `/sync-ai-models`: (Admin/Internal) Placeholder function intended to synchronize AI models from providers with the `ai_providers` table.
+
+*(Note: This list is based on the `supabase/functions/` directory structure and inferred functionality. Specific HTTP methods and request/response details require reading the function code.)*
 
 ## Database Schema (Simplified)
 
@@ -167,7 +174,7 @@ The core database tables defined in `supabase/migrations/` include:
 
 - **`public.user_subscriptions`** (Stores user subscription information linked to Stripe)
   - `id` (uuid, PK, default `uuid_generate_v4()`)
-  - `user_id` (uuid, NOT NULL, references `public.user_profiles(id) ON DELETE CASCADE`)
+  - `user_id` (uuid, UNIQUE, NOT NULL, references `public.user_profiles(id) ON DELETE CASCADE`) - *Made UNIQUE*
   - `stripe_customer_id` (text, UNIQUE, nullable)
   - `stripe_subscription_id` (text, UNIQUE, nullable)
   - `status` (text, NOT NULL) - *e.g., `'active'`, `'canceled'`, `'trialing'`, `'past_due'`, `'free'`*
@@ -195,62 +202,94 @@ The core database tables defined in `supabase/migrations/` include:
   - `created_at` (timestamp with time zone, NOT NULL, default `now()`)
   - `updated_at` (timestamp with time zone, NOT NULL, default `now()`)
 
-*(Note: This reflects the schema after applying all migrations in `supabase/migrations/`. RLS policies are also applied but not detailed here.)*
+- **`public.ai_providers`** (Stores information about supported AI models/providers)
+  - `id` (uuid, PK)
+  - `name` (text, NOT NULL, e.g., "OpenAI GPT-4o")
+  - `api_identifier` (text, NOT NULL, UNIQUE, e.g., "openai-gpt-4o") - *Internal identifier*
+  - `description` (text, nullable)
+  - `is_active` (boolean, NOT NULL, default `true`)
+  - `config` (jsonb, nullable) - *Non-sensitive config, excludes API keys*
+  - `created_at`, `updated_at` (timestamptz)
+
+- **`public.system_prompts`** (Stores reusable system prompts for AI chat)
+  - `id` (uuid, PK)
+  - `name` (text, NOT NULL, e.g., "Helpful Assistant")
+  - `prompt_text` (text, NOT NULL)
+  - `is_active` (boolean, NOT NULL, default `true`)
+  - `created_at`, `updated_at` (timestamptz)
+
+- **`public.chats`** (Represents a single AI chat conversation thread)
+  - `id` (uuid, PK, default `gen_random_uuid()`)
+  - `user_id` (uuid, nullable, FK references `auth.users(id) ON DELETE SET NULL`) - *Nullable for potential anonymous chats*
+  - `title` (text, nullable) - *e.g., Auto-generated from first message*
+  - `created_at`, `updated_at` (timestamptz)
+
+- **`public.chat_messages`** (Stores individual messages within a chat)
+  - `id` (uuid, PK, default `gen_random_uuid()`)
+  - `chat_id` (uuid, NOT NULL, FK references `chats(id) ON DELETE CASCADE`)
+  - `user_id` (uuid, nullable, FK references `auth.users(id) ON DELETE SET NULL`) - *Tracks sender if needed*
+  - `role` (text, NOT NULL) - *e.g., 'user', 'assistant', 'system'*
+  - `content` (text, NOT NULL) - *The message text*
+  - `ai_provider_id` (uuid, nullable, FK references `ai_providers(id)`) - *Logs which provider generated the response*
+  - `system_prompt_id` (uuid, nullable, FK references `system_prompts(id)`) - *Logs which system prompt was used*
+  - `token_usage` (jsonb, nullable) - *Stores request/response tokens from AI API*
+  - `created_at` (timestamptz)
+
+*(Note: This reflects the schema after applying all migrations in `supabase/migrations/` as of the last update. RLS policies are also applied but not detailed here.)*
 
 ## Project Structure (Monorepo)
 
-The project is organized as a monorepo using npm workspaces:
+The project is organized as a monorepo using pnpm workspaces:
 
 ```
 /
-├── apps/                   # Individual applications
-│   ├── web/                # React Web Application (Vite)
+├── apps/                   # Individual applications / Frontends
+│   ├── web/                # React Web Application (Vite + React Router)
 │   │   └── src/
-│   │       ├── components/
-│   │       ├── pages/
-│   │       ├── hooks/
-│   │       ├── context/
-│   │       ├── routes/
-│   │       ├── config/
-│   │       ├── tests/            # Web App Tests
+│   │       ├── assets/
+│   │       ├── components/     # UI Components specific to web app
+│   │       ├── config/         # App-specific config (e.g., routes)
+│   │       ├── context/        # React context providers
+│   │       ├── hooks/          # Custom React hooks
+│   │       ├── lib/            # Utility functions (e.g., cn)
+│   │       ├── pages/          # Page components (routed via React Router)
+│   │       ├── routes/         # Route definitions and protected routes
+│   │       ├── tests/          # Web App Tests (Vitest)
 │   │       │   ├── unit/         # Unit tests (*.unit.test.tsx)
 │   │       │   ├── integration/  # Integration tests (*.integration.test.tsx)
-│   │       │   │   ├── auth.integration.test.tsx
-│   │       │   │   ├── profile.integration.test.tsx
-│   │       │   │   └── Subscription.integration.test.tsx
 │   │       │   ├── e2e/          # End-to-end tests (Placeholder)
 │   │       │   ├── utils/        # Shared test utilities (render, etc.)
-│   │       │   ├── mocks/        # Shared mocks (MSW handlers, components)
-│   │       │   │   ├── handlers.ts # Main MSW request handlers
-│   │       │   │   ├── api/
-│   │       │   │   │   └── server.ts # MSW server setup
-│   │       │   │   ├── components/ # Mock React components
-│   │       │   │   └── stores/     # Mock Zustand stores
+│   │       │   ├── mocks/        # Shared mocks (MSW handlers, components, stores)
 │   │       │   └── setup.ts      # Vitest global setup (MSW server start, etc.)
-│   │       └── ... (other src files: App.tsx, main.tsx, etc.)
-│   ├── ios/                # iOS Application (Details TBD)
-│   └── android/            # Android Application (Details TBD)
+│   │       ├── App.tsx         # Root application component
+│   │       └── main.tsx        # Application entry point (renders App)
+│   ├── ios/                # iOS Application (Placeholder)
+│   ├── android/            # Android Application (Placeholder)
+│   └── desktop/            # Desktop Application (Placeholder)
 │
 ├── packages/               # Shared libraries/packages
-│   ├── api-client/         # Frontend API client logic
+│   ├── api-client/         # Frontend API client logic (Singleton)
 │   │   └── src/
-│   │       ├── apiClient.ts      # Base API client (fetch wrapper, error handling)
-│   │       └── stripe.api.ts     # Stripe/Subscription specific API client
+│   │       ├── apiClient.ts      # Base API client (fetch wrapper)
+│   │       ├── stripe.api.ts     # Stripe/Subscription specific client methods
+│   │       └── ai.api.ts         # AI Chat specific client methods
 │   ├── store/              # Zustand global state stores
 │   │   └── src/
-│   │       ├── authStore.ts        # Auth state (user, session, profile, actions)
-│   │       └── subscriptionStore.ts # Subscription state (plans, user sub, actions)
+│   │       ├── authStore.ts        # Auth state & actions
+│   │       ├── subscriptionStore.ts # Subscription state & actions
+│   │       └── aiStore.ts          # AI Chat state & actions
 │   ├── types/              # Shared TypeScript types and interfaces
 │   │   └── src/
 │   │       ├── api.types.ts
 │   │       ├── auth.types.ts
 │   │       ├── subscription.types.ts
+│   │       ├── ai.types.ts       # Added AI types
 │   │       ├── theme.types.ts
 │   │       ├── route.types.ts
 │   │       └── index.ts            # Main export for types
 │   ├── ui-components/      # Reusable React UI components (Placeholder)
 │   │   └── src/
-│   │       └── index.ts            # Export point for components
+│   │       └── index.ts
 │   └── utils/              # Shared utility functions
 │       └── src/
 │           └── logger.ts         # Logging utility
@@ -263,17 +302,29 @@ The project is organized as a monorepo using npm workspaces:
 │   │   ├── logout/
 │   │   ├── refresh/
 │   │   ├── session/
-│   │   ├── me/               # User profile fetch/update
-│   │   ├── profile/          # Other profile actions?
+│   │   ├── reset-password/
+│   │   ├── me/               # User profile fetch
+│   │   ├── profile/          # User profile update
+│   │   ├── ping/             # Health check
 │   │   ├── api-subscriptions/ # Subscription management endpoints
 │   │   ├── stripe-webhook/   # Stripe event handler
-│   │   └── ... (other functions)
-│   └── migrations/         # Database migration files
+│   │   ├── sync-stripe-plans/ # Sync Stripe plans to DB
+│   │   ├── ai-providers/     # Fetch AI providers
+│   │   ├── system-prompts/   # Fetch system prompts
+│   │   ├── chat/             # Handle AI chat message exchange
+│   │   ├── chat-history/     # Fetch user's chat list
+│   │   ├── chat-details/     # Fetch messages for a specific chat
+│   │   ├── sync-ai-models/   # Sync AI models to DB (Placeholder)
+│   │   └── ... (other utility/test functions might exist)
+│   └── migrations/         # Database migration files (YYYYMMDDHHMMSS_*.sql)
 │
-├── .env                    # Local environment variables (Supabase keys, etc.)
+├── .env                    # Local environment variables (Supabase/Stripe keys, etc. - UNTRACKED)
 ├── .env.example            # Example environment variables
-├── package.json            # Root package file (workspaces config)
+├── package.json            # Root package file (pnpm workspaces config)
+├── pnpm-lock.yaml          # pnpm lock file
+├── pnpm-workspace.yaml     # pnpm workspace definition
 ├── tsconfig.base.json      # Base TypeScript configuration for the monorepo
+├── tsconfig.json           # Root tsconfig (references base)
 └── README.md               # This file
 ```
 
@@ -303,120 +354,221 @@ This section details the key exports from the shared packages to help AI tools u
 
 ### 1. `packages/api-client` (API Interaction)
 
-#### `src/apiClient.ts` (Base Fetch Wrapper)
-Provides a centralized `fetch` wrapper for interacting with Supabase Edge Functions.
+Manages all frontend interactions with the backend Supabase Edge Functions. It follows a **Singleton pattern**.
 
-- **`initializeApiClient(config: ApiClientConfig): void`**: Initializes the client.
-  - `config: { baseUrl: string; supabaseAnonKey: string; }`
-- **`api` object**: Methods for HTTP requests. Requires token in options if not public.
-  - `api.get<T>(endpoint: string, options?: FetchOptions): Promise<T>`
-  - `api.post<T>(endpoint: string, body: unknown, options?: FetchOptions): Promise<T>`
-  - `api.put<T>(endpoint: string, body: unknown, options?: FetchOptions): Promise<T>`
-  - `api.delete<T>(endpoint: string, options?: FetchOptions): Promise<T>`
-- **`FetchOptions` type**: Extends `RequestInit`.
+- **`initializeApiClient(config: ApiInitializerConfig): void`**: Initializes the singleton instance. Must be called once at application startup.
+  - `config: { supabaseUrl: string; supabaseAnonKey: string; }`
+- **`api` object (Singleton Accessor)**: Provides methods for making API requests. Import and use this object directly: `import { api } from '@paynless/api-client';`
+  - **`api.get<ResponseType>(endpoint: string, options?: FetchOptions): Promise<ApiResponse<ResponseType>>`**: Performs a GET request.
+  - **`api.post<ResponseType, RequestBodyType>(endpoint: string, body: RequestBodyType, options?: FetchOptions): Promise<ApiResponse<ResponseType>>`**: Performs a POST request.
+  - **`api.put<ResponseType, RequestBodyType>(endpoint: string, body: RequestBodyType, options?: FetchOptions): Promise<ApiResponse<ResponseType>>`**: Performs a PUT request.
+  - **`api.delete<ResponseType>(endpoint: string, options?: FetchOptions): Promise<ApiResponse<ResponseType>>`**: Performs a DELETE request.
+  - **`api.billing()`**: Accessor for the `StripeApiClient` instance.
+  - **`api.ai()`**: Accessor for the `AiApiClient` instance.
+
+- **`FetchOptions` type** (defined in `@paynless/types`): Extends standard `RequestInit`.
   - `{ isPublic?: boolean; token?: string; }`
-- **`ApiError` class**: Custom error thrown on API failures.
-  - `message: string`
-  - `code?: string | number`
+    - `isPublic: boolean` (Optional): If true, the request is made without an Authorization header (defaults to false).
+    - `token: string` (Optional): Explicitly provide an auth token to use, otherwise the client attempts to get it from the `authStore`.
 
-#### `src/stripe.api.ts` (Stripe-Related API Client)
-Client for backend endpoints related to Stripe actions.
+- **`ApiResponse<T>` type** (defined in `@paynless/types`): Standard response wrapper.
+  - `{ status: number; data?: T; error?: ApiErrorType; }`
 
-- **`StripeApiClient` class**:
-  - `constructor(getToken: () => string | undefined)`: Needs function to get auth token.
-  - `createCheckoutSession(priceId: string, isTestMode: boolean): Promise<ApiResponse<{ sessionId: string }>>`
-  - `createPortalSession(isTestMode: boolean): Promise<ApiResponse<{ url: string }>>`
-  - `getSubscriptionPlans(): Promise<ApiResponse<SubscriptionPlan[]>>`
-  - `getUserSubscription(userId: string): Promise<ApiResponse<UserSubscription>>`
-  - `cancelSubscription(subscriptionId: string): Promise<ApiResponse<void>>`
-  - `resumeSubscription(subscriptionId: string): Promise<ApiResponse<void>>`
-  - `getUsageMetrics(metric: string): Promise<ApiResponse<SubscriptionUsageMetrics>>`
-  *(Note: Returns `ApiResponse<T>` defined in `@paynless/types`)*
+- **`ApiError` class**: Custom error class used internally by the client.
+  - `constructor(message: string, code?: string | number)`
+
+#### `StripeApiClient` (Accessed via `api.billing()`) 
+Methods for interacting with Stripe/Subscription related Edge Functions.
+
+- `createCheckoutSession(priceId: string, isTestMode: boolean, options?: FetchOptions): Promise<ApiResponse<CheckoutSessionResponse>>`
+  - Creates a Stripe Checkout session.
+  - Returns the session ID or error.
+- `createPortalSession(isTestMode: boolean, options?: FetchOptions): Promise<ApiResponse<PortalSessionResponse>>`
+  - Creates a Stripe Customer Portal session.
+  - Returns the portal URL or error.
+- `getSubscriptionPlans(options?: FetchOptions): Promise<ApiResponse<SubscriptionPlan[]>>`
+  - Fetches available subscription plans (e.g., from `subscription_plans` table).
+- `getUserSubscription(options?: FetchOptions): Promise<ApiResponse<UserSubscription>>`
+  - Fetches the current user's subscription details.
+- `cancelSubscription(subscriptionId: string, options?: FetchOptions): Promise<ApiResponse<void>>`
+  - Cancels an active subscription via the backend.
+- `resumeSubscription(subscriptionId: string, options?: FetchOptions): Promise<ApiResponse<void>>`
+  - Resumes a canceled subscription via the backend.
+- `getUsageMetrics(metric: string, options?: FetchOptions): Promise<ApiResponse<SubscriptionUsageMetrics>>`
+  - Fetches usage metrics for a specific subscription metric.
+
+#### `AiApiClient` (Accessed via `api.ai()`)
+Methods for interacting with AI Chat related Edge Functions.
+
+- `getAiProviders(token?: string): Promise<ApiResponse<AiProvider[]>>`
+  - Fetches the list of active AI providers.
+  - `token` (Optional): Uses token if provided, otherwise assumes public access.
+- `getSystemPrompts(token?: string): Promise<ApiResponse<SystemPrompt[]>>`
+  - Fetches the list of active system prompts.
+  - `token` (Optional): Uses token if provided, otherwise assumes public access.
+- `sendChatMessage(data: ChatApiRequest, options: FetchOptions): Promise<ApiResponse<ChatMessage>>`
+  - Sends a chat message to the backend `/chat` function.
+  - `data: { message: string, providerId: string, promptId: string, chatId?: string }`
+  - `options: FetchOptions` (Must specify `isPublic: true` for anonymous or provide `token` for authenticated).
+- `getChatHistory(token: string): Promise<ApiResponse<Chat[]>>`
+  - Fetches the list of chat conversations for the authenticated user.
+  - `token` (Required): User's auth token.
+- `getChatMessages(chatId: string, token: string): Promise<ApiResponse<ChatMessage[]>>`
+  - Fetches all messages for a specific chat.
+  - `chatId` (Required): ID of the chat.
+  - `token` (Required): User's auth token.
 
 ### 2. `packages/store` (Global State Management)
 
 Uses Zustand for state management with persistence for session data.
 
-#### `src/authStore.ts` (Authentication State)
-Manages user, session, and profile state.
+#### `useAuthStore` (Hook)
+Manages user authentication, session, and profile state.
 
-- **`useAuthStore` hook**: Accesses the store's state and actions.
-  - **State**:
-    - `user: User | null`
-    - `session: Session | null`
-    - `profile: UserProfile | null`
-    - `isLoading: boolean`
-    - `error: Error | null`
-  - **Actions**:
-    - `setUser(user: User | null): void`
-    - `setSession(session: Session | null): void`
-    - `setProfile(profile: UserProfile | null): void`
-    - `setIsLoading(isLoading: boolean): void`
-    - `setError(error: Error | null): void`
-    - `login(email: string, password: string): Promise<User | null>`
-    - `register(email: string, password: string): Promise<User | null>`
-    - `logout(): Promise<void>`
-    - `initialize(): Promise<void>` (Checks persisted session, fetches profile)
-    - `refreshSession(): Promise<void>` (Uses refresh token)
-    - `updateProfile(profileData: UserProfileUpdate): Promise<boolean>`
+- **State Properties** (Access via `useAuthStore(state => state.propertyName)`):
+  - `user: User | null`
+  - `session: Session | null`
+  - `profile: UserProfile | null`
+  - `isLoading: boolean`
+  - `error: Error | null`
+  - `navigate: NavigateFunction | null` (Internal function for routing, set via `setNavigate`)
+- **Actions** (Access via `useAuthStore(state => state.actionName)` or destructure `const { actionName } = useAuthStore();`):
+  - `setNavigate(navigateFn: NavigateFunction): void`
+    - Injects the navigation function from the UI framework (e.g., React Router).
+  - `setUser(user: User | null): void`
+  - `setSession(session: Session | null): void`
+  - `setProfile(profile: UserProfile | null): void`
+  - `setIsLoading(isLoading: boolean): void`
+  - `setError(error: Error | null): void`
+  - `login(email: string, password: string): Promise<User | null>`
+    - Calls `/login` endpoint, updates state, handles internal navigation on success.
+    - Returns user object on success, null on failure.
+  - `register(email: string, password: string): Promise<{ success: boolean; user: User | null; redirectTo: string | null }>`
+    - Calls `/register` endpoint, updates state, handles internal navigation on success (checking for stashed chat messages).
+    - Returns success status, user object, and determined redirect path.
+  - `logout(): Promise<void>`
+    - Calls `/logout` endpoint, clears local state.
+  - `initialize(): Promise<void>`
+    - Checks persisted session, calls `/me` endpoint to verify token and fetch user/profile.
+  - `refreshSession(): Promise<void>`
+    - Calls `/refresh` endpoint using the refresh token, updates state.
+  - `updateProfile(profileData: UserProfileUpdate): Promise<boolean>`
+    - Calls `/profile` endpoint (PUT), updates local profile state on success.
+    - Returns true on success, false on failure.
 
-#### `src/subscriptionStore.ts` (Subscription State)
+#### `useSubscriptionStore` (Hook)
 Manages subscription plans and the user's current subscription status.
 
-- **`useSubscriptionStore` hook**: Accesses the store's state and actions.
-  - **State**:
-    - `userSubscription: UserSubscription | null`
-    - `availablePlans: SubscriptionPlan[]`
-    - `isSubscriptionLoading: boolean`
-    - `hasActiveSubscription: boolean`
-    - `isTestMode: boolean`
-    - `error: Error | null`
-  - **Actions**:
-    - `setUserSubscription(subscription: UserSubscription | null): void`
-    - `setAvailablePlans(plans: SubscriptionPlan[]): void`
-    - `setIsLoading(isLoading: boolean): void`
-    - `setError(error: Error | null): void`
-    - `loadSubscriptionData(userId: string): Promise<void>` (User ID is optional, taken from `authStore` if available)
-    - `refreshSubscription(): Promise<void>`
-    - `createCheckoutSession(priceId: string): Promise<string>` (Returns Stripe Session ID)
-    - `createBillingPortalSession(): Promise<string | null>` (Returns Stripe Portal URL)
-    - `cancelSubscription(subscriptionId: string): Promise<boolean>`
-    - `resumeSubscription(subscriptionId: string): Promise<boolean>`
-    - `getUsageMetrics(metric: string): Promise<SubscriptionUsageMetrics | null>`
+- **State Properties**:
+  - `userSubscription: UserSubscription | null`
+  - `availablePlans: SubscriptionPlan[]`
+  - `isSubscriptionLoading: boolean`
+  - `hasActiveSubscription: boolean` (Derived from `userSubscription.status`)
+  - `isTestMode: boolean` (Currently hardcoded to false in store)
+  - `error: Error | null`
+- **Actions**:
+  - `setUserSubscription(subscription: UserSubscription | null): void`
+  - `setAvailablePlans(plans: SubscriptionPlan[]): void`
+  - `setIsLoading(isLoading: boolean): void`
+  - `setError(error: Error | null): void`
+  - `loadSubscriptionData(userId: string): Promise<void>`
+    - Fetches available plans (`/api-subscriptions/plans`) and current user subscription (`/api-subscriptions/current`).
+    - Requires authenticated user (uses token from `authStore`).
+  - `refreshSubscription(): Promise<void>`
+    - Calls `loadSubscriptionData` again.
+  - `createCheckoutSession(priceId: string): Promise<string | null>`
+    - Calls `api.billing().createCheckoutSession`.
+    - Returns the Stripe Checkout session URL on success, null on failure.
+    - Requires authenticated user.
+  - `createBillingPortalSession(): Promise<string | null>`
+    - Calls `api.billing().createPortalSession`.
+    - Returns the Stripe Customer Portal URL on success, null on failure.
+    - Requires authenticated user.
+  - `cancelSubscription(subscriptionId: string): Promise<boolean>`
+    - Calls `api.billing().cancelSubscription`, then `refreshSubscription`.
+    - Returns true on success, false on failure.
+    - Requires authenticated user.
+  - `resumeSubscription(subscriptionId: string): Promise<boolean>`
+    - Calls `api.billing().resumeSubscription`, then `refreshSubscription`.
+    - Returns true on success, false on failure.
+    - Requires authenticated user.
+  - `getUsageMetrics(metric: string): Promise<SubscriptionUsageMetrics | null>`
+    - Calls `api.billing().getUsageMetrics`.
+    - Returns usage metrics object on success, null on failure.
+    - Requires authenticated user.
+
+#### `useAiStore` (Hook)
+Manages AI chat state, including providers, prompts, messages, and history.
+
+- **State Properties**:
+  - `availableProviders: AiProvider[]`
+  - `availablePrompts: SystemPrompt[]`
+  - `currentChatMessages: ChatMessage[]`
+  - `currentChatId: string | null`
+  - `chatHistoryList: Chat[]`
+  - `isLoadingAiResponse: boolean` (True while waiting for AI message response)
+  - `isConfigLoading: boolean` (True while loading providers/prompts)
+  - `isHistoryLoading: boolean` (True while loading chat history list)
+  - `isDetailsLoading: boolean` (True while loading messages for a specific chat)
+  - `aiError: string | null` (Stores error messages related to AI operations)
+  - `anonymousMessageCount: number`
+  - `anonymousMessageLimit: number` (Constant, e.g., 3)
+- **Actions**:
+  - `loadAiConfig(): Promise<void>`
+    - Fetches AI providers (`/ai-providers`) and system prompts (`/system-prompts`).
+  - `sendMessage(data: { message: string, providerId: string, promptId: string, chatId?: string, isAnonymous: boolean }): Promise<ChatMessage | { error: 'limit_reached' } | null>`
+    - Handles sending a message via `api.ai().sendChatMessage`.
+    - Manages optimistic UI updates for user message.
+    - Updates `currentChatMessages` and `currentChatId`.
+    - Handles anonymous user limit check, returning `{ error: 'limit_reached' }` if exceeded.
+    - Returns the received `ChatMessage` on success, null on API error.
+  - `loadChatHistory(): Promise<void>`
+    - Fetches the user's chat list via `api.ai().getChatHistory`.
+    - Updates `chatHistoryList`.
+    - Requires authenticated user.
+  - `loadChatDetails(chatId: string): Promise<void>`
+    - Fetches messages for a specific chat via `api.ai().getChatMessages`.
+    - Updates `currentChatId` and `currentChatMessages`.
+    - Requires authenticated user.
+  - `startNewChat(): void`
+    - Resets `currentChatId`, `currentChatMessages`, and potentially `anonymousMessageCount`.
+  - `incrementAnonymousCount(): void` (Internal helper, called by `sendMessage`)
+  - `resetAnonymousCount(): void` (Internal helper)
+  - `clearAiError(): void`
+    - Sets `aiError` state to null.
 
 ### 3. `packages/utils` (Shared Utilities)
 
-#### `src/logger.ts` (Logging Utility)
-Provides a singleton logger instance for consistent application logging.
+#### `logger.ts` (Logging Utility)
+Provides a singleton logger instance (`logger`) for consistent application logging.
 
-- **`logger` instance**: Singleton instance of `Logger`.
+- **`logger` instance** (Singleton, import `logger` from `@paynless/utils`):
   - `logger.debug(message: string, metadata?: LogMetadata): void`
   - `logger.info(message: string, metadata?: LogMetadata): void`
   - `logger.warn(message: string, metadata?: LogMetadata): void`
   - `logger.error(message: string, metadata?: LogMetadata): void`
-- **`Logger` class**:
-  - `Logger.getInstance(): Logger`
+- **Configuration**:
   - `logger.configure(config: Partial<LoggerConfig>): void`
+    - `config: { minLevel?: LogLevel; enableConsole?: boolean; captureErrors?: boolean; }`
 - **`LogLevel` enum**: `DEBUG`, `INFO`, `WARN`, `ERROR`
-- **`LoggerConfig` interface**: `{ minLevel: LogLevel; enableConsole: boolean; captureErrors: boolean; }`
-- **`LogMetadata` interface**: `{ [key: string]: unknown; }`
+- **`LogMetadata` interface**: `{ [key: string]: unknown; }` (For structured logging data)
 
 ### 4. `packages/types` (Shared TypeScript Types)
 
-Contains centralized type definitions used across the monorepo.
+Contains centralized type definitions used across the monorepo. Exports all types via `index.ts`.
 
-- **`src/api.types.ts`**: General API response types (`ApiResponse`, etc.).
-- **`src/auth.types.ts`**: Types for authentication (`User`, `Session`, `UserProfile`, `AuthStore`, etc.).
-- **`src/subscription.types.ts`**: Types for subscriptions (`SubscriptionPlan`, `UserSubscription`, `SubscriptionStore`, etc.).
-- **`src/theme.types.ts`**: Types related to theming.
-- **`src/route.types.ts`**: Types related to application routing.
-- **`src/index.ts`**: Exports all types from the package.
+- **`api.types.ts`**: `ApiResponse`, `ApiError`, `FetchOptions`, etc.
+- **`auth.types.ts`**: `User`, `Session`, `UserProfile`, `UserProfileUpdate`, `AuthStore`, `AuthResponse`, etc.
+- **`subscription.types.ts`**: `SubscriptionPlan`, `UserSubscription`, `SubscriptionStore`, `SubscriptionUsageMetrics`, `CheckoutSessionResponse`, `PortalSessionResponse`, etc.
+- **`ai.types.ts`**: `AiProvider`, `SystemPrompt`, `Chat`, `ChatMessage`, `ChatApiRequest`, `AiState`, `AiActions`, etc.
+- **`theme.types.ts`**: Types related to theming.
+- **`route.types.ts`**: Types related to application routing.
 
 ### 5. `packages/ui-components` (Reusable UI Components)
 
-Intended for shared React components.
+Intended for shared React components, but currently **empty** or unused. Components are likely defined within `apps/web/src/components/`.
 
-- **`src/index.ts`**: Currently empty. Add component exports here (e.g., `export * from './Button';`).
+- **`src/index.ts`**: (File not found or empty)
 
 ### 6. `supabase/functions/_shared/` (Backend Shared Utilities)
 

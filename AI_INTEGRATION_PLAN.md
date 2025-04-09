@@ -73,19 +73,19 @@
         *   [✅] Save user message and assistant response to `chat_messages` table, associating with the `chatId` (create a new `chats` entry if `chatId` was null/new conversation). Include `ai_provider_id`, `system_prompt_id`.
         *   [✅] Return the assistant's response message (and potentially the `chatId` if new).
     *   [✅] Auth: Requires JWT or specific logic for anonymous limited access.
-    *   [ ] **(TDD):** Unit test handler logic extensively (mock Supabase client, mock external AI API calls, test history reconstruction, test saving logic, test auth/anonymous checks). *(Testing Pending)*
+    *   [✅] **(TDD):** Unit test handler logic extensively (mock Supabase client, mock external AI API calls, test history reconstruction, test saving logic, test auth/anonymous checks). *(Test file `chat/index.test.ts` exists - Review Needed for full coverage)*
 5.  **[✅] `chat-history` Function:** *(Implementation exists)*
     *   [✅] Purpose: Fetch list of chats for the logged-in user.
     *   [✅] Method: GET
     *   [✅] Logic: Query `chats` table where `user_id` matches the authenticated user ID. Order by `updated_at` DESC. Select relevant fields (`id`, `title`, `updated_at`).
     *   [✅] Auth: Requires user JWT.
-    *   [ ] **(TDD):** Unit test handler logic. *(Testing Pending)*
+    *   [✅] **(TDD):** Unit test handler logic. *(Test file `chat-history/index.test.ts` exists)*
 6.  **[✅] `chat-details` Function:** *(Implementation exists)*
     *   [✅] Purpose: Fetch all messages for a specific chat owned by the user.
     *   [✅] Method: GET (e.g., `/chat-details/:chatId`)
     *   [✅] Logic: Query `chat_messages` where `chat_id` matches the path parameter and the `chat` is owned by the authenticated user (use JOIN or check `chats` table RLS). Order by `created_at` ASC.
     *   [✅] Auth: Requires user JWT.
-    *   [ ] **(TDD):** Unit test handler logic. *(Testing Pending)*
+    *   [✅] **(TDD):** Unit test handler logic. *(Test file `chat-details/index.test.ts` exists)*
 
 **Phase 3: Shared Packages (`@paynless/*`)**
 
@@ -126,42 +126,42 @@
 
 **Phase 4: Frontend (`apps/web`)**
 
-1.  **New Components (`apps/web/src/components/ai/`):**
-    *   `AiChatbox.tsx`, `ModelSelector.tsx`, `PromptSelector.tsx`: (As before) These components primarily **read state** from `aiStore` (`currentChatMessages`, `isLoadingAiResponse`, `aiError`, `availableProviders`, `availablePrompts`) and **dispatch actions** or pass data up to the parent page/component initiating the send. They **do not** manage their own loading/error states related to store actions.
-    *   **(TDD):** Unit test components for rendering based on props/store state, dispatching actions on interaction (using mocks).
-2.  **Page Modifications:**
-    *   **`HomePage.tsx` (or a dedicated Chat Container Component):**
-        *   Integrate `ModelSelector`, `PromptSelector`, and `AiChatbox` components. 
-        *   Manage the selected `providerId` and `promptId` using local state (`useState`), initialized to null or a sensible default if desired.
-        *   Pass `isAnonymous={true}` to `AiChatbox`.
-        *   Implement the `onLimitReached` callback for `AiChatbox`:
-            *   Stash message details (`content`, current `providerId`, current `promptId`) in `sessionStorage.setItem('pendingChatMessage', JSON.stringify(...))`.
-            *   Display an `AlertDialog`: "Limit reached. Sign up to continue?"
-            *   On confirmation ("Register"), navigate to `/register`.
-            *   On cancellation ("Cancel"), close the dialog.
-        *   **`useEffect` for Stashed Message:**
-            *   Runs on mount/auth state change.
-            *   Checks if user is authenticated (`useAuthStore`).
-            *   Checks `sessionStorage.getItem('pendingChatMessage')`.
-            *   If authenticated and message exists:
-                *   Parse stashed data.
-                *   `sessionStorage.removeItem('pendingChatMessage')`.
-                *   Dispatch `aiStore.sendMessage(...)` with the stashed data and `isAnonymous: false`.
-    *   `DashboardPage.tsx`: (Will become the new AI Chat Page - see below)
-    *   `RegisterPage.tsx` (or component calling `authStore.register`):
-        *   Calls `authStore.register(...)`.
-        *   Handles the promise resolution.
-        *   Reads the `redirectTo` property from the successful result object returned by the action.
-        *   Uses `navigate(result.redirectTo)` to perform the navigation.
-3.  **New Pages & Routing:**
-    *   **New AI Chat Page (`/chat`):** Create `AiChatPage.tsx`. Add route `/chat`. Add link to Header (visible when logged in).
-        *   Integrate `ModelSelector`, `PromptSelector`, `AiChatbox`.
-        *   Manage selected `providerId`, `promptId` with local state.
-        *   Pass `isAnonymous={false}` to `AiChatbox`.
-        *   Implement Chat History section: fetch history (`loadChatHistory`), display as cards, handle clicks to load details (`loadChatDetails`). *(Frontend crash `history.map is not a function` resolved by ensuring `aiStore.chatHistoryList` is always an array).*
-    *   Remove AI components from `DashboardPage.tsx` if they were planned there.
-    *   (As before: `ChatHistoryPage.tsx`, `ChatDetailsPage.tsx`, add routes `/chat-history`, `/chat/:chatId` - *Redundant? Could Chat History be part of `/chat` page? Re-evaluate routes*).
-4.  [✅] **(TDD):** Write component/integration tests focusing on: anonymous limit interception and stashing, post-registration message sending, reading loading/error states from store, navigating based on `register` action result. *(AI store integration tests now fully passing after fixes)*
+1.  **[✅] New Components (`apps/web/src/components/ai/`):**
+    *   [✅] `AiChatbox.tsx`, `ModelSelector.tsx`, `PromptSelector.tsx`: (As before) These components primarily **read state** from `aiStore` (`currentChatMessages`, `isLoadingAiResponse`, `aiError`, `availableProviders`, `availablePrompts`) and **dispatch actions** or pass data up to the parent page/component initiating the send. They **do not** manage their own loading/error states related to store actions.
+    *   [ ] **(TDD):** Unit test components for rendering based on props/store state, dispatching actions on interaction (using mocks). *(Tests Pending)*
+2.  **[ ] Page Modifications:**
+    *   **[ ] `Home.tsx` (or a dedicated Chat Container Component):** *(Partially Implemented)*
+        *   [✅] Integrate `ModelSelector`, `PromptSelector`, and `AiChatbox` components. 
+        *   [✅] Manage the selected `providerId` and `promptId` using local state (`useState`).
+        *   [✅] Pass `isAnonymous={true}` to `AiChatbox`.
+        *   [ ] Implement the `onLimitReached` callback for `AiChatbox`:
+            *   [ ] **Stash message details (`content`, current `providerId`, current `promptId`) in `sessionStorage.setItem('pendingChatMessage', JSON.stringify(...))`**. *(Logic to WRITE to sessionStorage is missing)*
+            *   [✅] Display an `AlertDialog`: "Limit reached. Sign up to continue?" *(Dialog state and handlers exist)*
+            *   [✅] On confirmation ("Register"), navigate to `/register`. *(Handler `handleRegisterRedirect` exists)*
+            *   [✅] On cancellation ("Cancel"), close the dialog. *(Handler `handleCloseDialog` exists)*
+        *   **[✅] `useEffect` for Stashed Message:**
+            *   [✅] Runs on mount/auth state change.
+            *   [✅] Checks if user is authenticated (`useAuthStore`).
+            *   [✅] Checks `sessionStorage.getItem('pendingChatMessage')`.
+            *   [✅] If authenticated and message exists:
+                *   [✅] Parse stashed data.
+                *   [✅] `sessionStorage.removeItem('pendingChatMessage')`.
+                *   [✅] Dispatch `aiStore.sendMessage(...)` with the stashed data and `isAnonymous: false`.
+    *   [✅] `DashboardPage.tsx`: AI components removed/relocated to `AiChatPage`. 
+    *   [ ] `RegisterPage.tsx` (or component calling `authStore.register`):
+        *   [ ] Calls `authStore.register(...)`.
+        *   [ ] Handles the promise resolution.
+        *   [ ] Reads the `redirectTo` property from the successful result object returned by the action.
+        *   [ ] Uses `navigate(result.redirectTo)` to perform the navigation.
+3.  **[✅] New Pages & Routing:**
+    *   **[✅] New AI Chat Page (`/chat`):** Create `AiChatPage.tsx`. Add route `/chat`. Add link to Header (visible when logged in).
+        *   [✅] Integrate `ModelSelector`, `PromptSelector`, `AiChatbox`.
+        *   [✅] Manage selected `providerId`, `promptId` with local state.
+        *   [✅] Pass `isAnonymous={false}` to `AiChatbox`.
+        *   [✅] Implement Chat History section: fetch history (`loadChatHistory`), display as cards, handle clicks to load details (`loadChatDetails`). *(Frontend crash `history.map is not a function` resolved by ensuring `aiStore.chatHistoryList` is always an array).*
+    *   [✅] Remove AI components from `DashboardPage.tsx` if they were planned there.
+    *   [✅] (As before: `ChatHistoryPage.tsx`, `ChatDetailsPage.tsx`, add routes `/chat-history`, `/chat/:chatId` - *Redundant? Could Chat History be part of `/chat` page? Re-evaluate routes*). - *Resolved: History is part of `/chat` page.*
+4.  [ ] **(TDD):** Write component/integration tests focusing on: anonymous limit interception and stashing, post-registration message sending, reading loading/error states from store, navigating based on `register` action result. *(AI store integration tests now fully passing after fixes. Integration test file `ai.integration.test.tsx` exists, but specific tests for anon->reg flow are pending implementation of underlying logic.)*
 
 **Missing Pieces / Needs Consideration (Recap)**
 

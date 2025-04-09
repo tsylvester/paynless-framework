@@ -58,7 +58,7 @@
 ---
 
 ✅ **How to Test Incrementally and Correctly (Layered Testing Strategy)**
-*This remains our guiding principle.* 
+*This remains our guiding principle.*
 
 **NOTE:** When running tests, especially suites or complex component tests, pipe the output to `test-output.log` to avoid terminal buffer issues and allow for easier review of results. Example: `pnpm --filter <package> test <file> > test-output.log`.
 
@@ -87,7 +87,7 @@
 
 *   **Phase 1: Backend (`supabase/`)**
     *   **1.1 Unit Tests:**
-        *   **Status:** Most core function unit tests passing.
+        *   **Status:** Most core function unit tests passing. AI function tests added.
         *   **Framework:** Deno Standard Library
         *   **Functions Tested:**
             *   [✅] `login/`
@@ -98,6 +98,7 @@
             *   [✅] `register/`
             *   [✅] `reset-password/`
             *   [✅] `session/`
+            *   [✅] `ping/`
             *   [✅] `api-subscriptions/handlers/checkout.ts`
             *   [?] `api-subscriptions/` (Other handlers)
                 *   [✅] Implement `handlers/billing-portal.ts`
@@ -107,47 +108,27 @@
                 *   [✅] Review/Test `handlers/plans.ts`
                 *   [✅] Review/Test `handlers/current.ts`
                 *   [✅] Review/Test `handlers/usage.ts`
-            *   [ ] `stripe-webhook/`
-                *   `[ ]` Implement handling for key events (checkout complete, sub updated, etc.)
-                    *   [✅] `handlers/checkout-session.ts`
-                    *   [✅] `handlers/subscription.ts`
-                    *   [✅] `handlers/invoice.ts`
-                    *   [✅] `handlers/product.ts`
-                    *   [✅] `handlers/price.ts`
-                *   `[ ]` Unit test webhook handler logic & signature verification
-                    *   [✅] Unit Test `handlers/checkout-session.ts`
-                    *   [✅] Unit Test `index.ts` (router/sig verify)
-                    *   [✅] Unit Test `handlers/subscription.ts`
-                    *   [✅] Unit Test `handlers/invoice.ts`
-                    *   [✅] Unit Test `handlers/product.ts`
-                        *   **Note:** Encountered persistent TS2345 errors mocking SupabaseClient directly due to needing both `.from()` and `.functions.invoke()`. Refactored `product.ts` handlers to accept a simpler Service Wrapper interface, moving complex mock to the service layer test.
-                    *   [✅] Unit Test `handlers/price.ts`
-            *   [ ] **AI Chat Functions:**
-                *   [ ] Unit Test `ai-providers/index.ts` (Mock Supabase client)
-                *   [ ] Unit Test `system-prompts/index.ts` (Mock Supabase client)
-                *   [ ] Unit Test `chat/index.ts` (Extensive: Mock Supabase client, mock external AI fetch, test history logic, saving logic, auth checks, API key retrieval)
-                *   [ ] Unit Test `chat-history/index.ts` (Mock Supabase client)
-                *   [ ] Unit Test `chat-details/index.ts` (Mock Supabase client)
+            *   [✅] `stripe-webhook/`
+                *   [✅] Implement handling for key events (checkout complete, sub updated, etc.)
+                *   [✅] Unit test webhook handler logic & signature verification
+            *   [✅] **AI Chat Functions:**
+                *   [ ] Unit Test `ai-providers/index.ts` (Mock Supabase client) *(Pending)*
+                *   [ ] Unit Test `system-prompts/index.ts` (Mock Supabase client) *(Pending)*
+                *   [✅] Unit Test `chat/index.ts` (Extensive tests exist - Review Needed for full coverage)
+                *   [✅] Unit Test `chat-history/index.ts` (Tests exist)
+                *   [✅] Unit Test `chat-details/index.ts` (Tests exist)
             *   [⏸️] `sync-stripe-plans/` *(Unit tests exist but ignored locally due to Supabase lib type resolution errors. Pending deployed testing.)*
+            *   [⏸️] `sync-ai-models/` *(Placeholder - No tests needed yet)*
             *   [✅] `_shared/auth.ts`
             *   [✅] `_shared/cors-headers.ts`
             *   [✅] `_shared/responses.ts`
             *   [✅] `_shared/stripe-client.ts` *(Partially tested, webhook verify pending)*
             *   [⏸️] `_shared/test-utils.ts` *(Deferred - implicitly tested via integration tests)*
             *   [❓] `test-auth.ts` *(Purpose unclear, review/remove?)*
-        *   **Task:** `[🚧] Complete implementation and unit tests for [ ], [?], and [❓] items above, including new AI function tests.`
+        *   **Task:** `[🚧] Complete implementation and unit tests for [ ], [?], and [❓] items above.`
     *   **1.2 Integration Tests:**
-        *   [✅] **Environment Setup:** Local Supabase environment configured (`config.toml`, `.env.local`). Test utilities created (`_shared/test-utils.ts`).
-        *   **Function Integration (Auth & Profile):**
-            *   [✅] `/login`
-            *   [✅] `/logout`
-            *   [✅] `/me`
-            *   [✅] `/profile/<userId>`
-            *   [✅] `/refresh`
-            *   [✅] `/register`
-            *   [✅] `/reset-password`
-            *   [✅] `/session`
-            *   [✅] `/ping`
+        *   [✅] **Environment Setup:** Local Supabase environment configured (`config.toml`, `.env.local`).
+        *   **Function Integration (Auth & Profile):** (All ✅)
         *   [⏸️] **Function Integration (Stripe - API Endpoints):** *(Local Integration Blocked due to env var issue - Test in deployed env.)*
             *   `[⏸️]` `/api-subscriptions/checkout`
             *   `[ ]` `/api-subscriptions/billing-portal` (Once implemented)
@@ -157,49 +138,37 @@
             *   `[?]` `/api-subscriptions/current`
             *   `[?]` `/api-subscriptions/usage/:metric`
         *   [⏸️] **Function Integration (AI Chat):** *(Local Integration Partially Blocked due to env var issue / external calls - Test core DB interactions locally, full flow in deployed env.)*
-            *   [ ] `/ai-providers` (Should work locally - DB reads only)
-            *   [ ] `/system-prompts` (Should work locally - DB reads only)
+            *   [✅] `/ai-providers` (Verified works locally - DB reads only)
+            *   [✅] `/system-prompts` (Verified works locally - DB reads only)
             *   [⏸️] `/chat` (Requires external AI API keys -> env vars. Test DB save/read logic locally if possible, full flow deployed.)
-            *   [ ] `/chat-history` (Should work locally - DB reads only)
-            *   [ ] `/chat-details/:chatId` (Should work locally - DB reads only)
-        *   [ ] **Function Integration (Stripe - Webhook):**
-             *   `[ ]` Test `stripe-webhook` handler (Likely requires deployed env or advanced local setup like Stripe CLI tunnel)
-             *   `[ ]` Test webhook signature verification
-        *   [⏸️] `sync-stripe-plans` *(Needs Integration Test - Requires deployed env due to local type errors & env vars)*
-        *   [✅] **Database Integration:** Use `supabase test db` to validate migrations and RLS policies. *(New RLS policies for AI tables need verification)*
+            *   [✅] `/chat-history` (Verified works locally - DB reads only)
+            *   [✅] `/chat-details/:chatId` (Verified works locally - DB reads only)
+        *   [⏸️] **Function Integration (Stripe - Webhook):** *(Test in deployed env)*
+        *   [⏸️] `sync-stripe-plans` *(Needs Integration Test - Requires deployed env)*
+        *   [⏸️] `sync-ai-models` *(Needs Integration Test - Requires deployed env)*
+        *   [ ] **Database Integration:** Use `supabase test db` to validate migrations and RLS policies. *(RLS policies for AI tables need verification)*
         *   [❓] **Stripe Integration:** Test against Stripe's test environment API and webhooks.
     *   **1.3 Final Validation & Lockdown:**
-        *   [ ] **Task:** After Phase 1.1/1.2 items are addressed (acknowledging limitations), add comments to function code indicating validation status.
+        *   [ ] **Task:** Add comments to function code indicating validation status.
 
 *   **Phase 2: Shared Packages (`packages/`)**
     *   **2.1 Unit Tests:**
-        *   [✅] `packages/api-client` (Vitest + MSW setup complete, `apiClient.ts` tests passing)
-        *   [✅] `packages/api-client/stripe.api.ts` *(All unit tests passing)*
-        *   [✅] `packages/api-client/ai.api.ts` *(All unit tests passing)*
+        *   [✅] `packages/api-client` (All sub-clients: `apiClient`, `stripe.api`, `ai.api` tests passing)
         *   [✅] `packages/store` (Vitest setup complete)
-            *   [✅] `authStore.ts` *(All unit tests passing, confirmed store follows pattern, `AuthResponse`/`register` type updated)*
-            *   [✅] `subscriptionStore.ts` *(All unit tests passing, confirmed store follows pattern)*
-            *   [🚧] `aiStore.ts` *(Most tests passing. `loadChatHistory` logic verified for empty state. `sendMessage` anonymous limit test needs update after type definition change).*
-        *   [⏭️] `packages/ui-components` *(Skipped - Package empty, components currently in `apps/web`)*.
-        *   [✅] `packages/utils` (Vitest setup complete, `logger.ts` tests passing)
-        *   [✅] `packages/types` *(Implicitly tested, AI types added)*.
-    *   **2.2 Integration Tests:**
-        *   [⏸️] **AI Chat (`ai.integration.test.tsx` - New File):**
-            *   [✅] Load AI Config (Providers/Prompts): Verify selectors populated.
-            *   [✅] Send Message (Authenticated): Verify message appears, spinner shows, response appears.
-            *   [✅] Send Message (Error): Verify error message shown. *(Tested via vi.spyOn)*
-            *   [✅] Load Chat History: Verify history list populates *(verified working for empty list)*.
-            *   [✅] Load Chat Details: Select chat, verify messages load.
-            *   [✅] Anonymous Flow: Send message below limit -> Success.
-            *   [✅] Anonymous Flow: Send message at limit -> Checks for `{ error: 'limit_reached' }` return object.
-            *   [ ] Anonymous Flow: Stash message -> Register -> Verify message sent automatically.
+            *   [✅] `authStore.ts` *(Tests passing. Needs update for `register` modification)*
+            *   [✅] `subscriptionStore.ts` *(Tests passing)*
+            *   [✅] `aiStore.ts` *(Tests passing)*
+        *   [⏭️] `packages/ui-components` *(Skipped - Package empty)*.
+        *   [✅] `packages/utils` (`logger.ts` tests passing)
+        *   [✅] `packages/types` *(Implicitly tested via usage)*.
+    *   **2.2 Integration Tests:** (Frontend MSW-based tests are covered in Phase 3.2)
 
 *   **Phase 3: Web App (`apps/web/`)**
     *   **3.1 Unit Tests:**
-        *   [ℹ️] **Component Review:** `LoginForm`, `RegisterForm`, `ProfileEditor`, `SubscriptionPage` reviewed and confirmed to align with store interaction pattern. Component refactoring not required. *(Note: Existing unit tests for these components may need updating to reflect reliance on store state/actions rather than local state/props)*.
-        *   [🚧] `apps/web/src/` Components/Pages/Hooks: *(Status needs re-evaluation after integration tests pass and unit tests are refactored to use shared utils/mocks)*
-        *   [ ] `apps/web/src/components/ai/` *(Unit test new components: `AiChatbox`, `ModelSelector`, `PromptSelector` - Test rendering based on props/store state, dispatching actions)*
-    *   **3.2 Integration Tests:**
+        *   [✅] **Component Review:** `LoginForm`, `RegisterForm`, `ProfileEditor`, `SubscriptionPage`, `AiChatbox`, `ModelSelector`, `PromptSelector` exist and follow store interaction pattern.
+        *   [ ] `apps/web/src/components/ai/` *(Unit test new AI components)*
+        *   [🚧] Other `apps/web/src/` Components/Pages/Hooks: *(Status needs re-evaluation)*
+    *   **3.2 Integration Tests (MSW):**
         *   [✅] **Refactoring Complete:** Structure standardized, utilities/handlers consolidated.
         *   [🚧] **API Integration (Mocked):** Key user flows tested with MSW.
             *   **Authentication (`auth.integration.test.tsx`):**
@@ -227,17 +196,17 @@
                 *   `[ ]` Usage Metrics: Actions & Handlers.
                 *   `[ ]` Test Mode UI indication.
                 *   `[ ]` Loading states for actions.
-            *   **AI Chat (`ai.integration.test.tsx` - New File):**
+            *   **AI Chat (`ai.integration.test.tsx`):**
                 *   [✅] Load AI Config (Providers/Prompts): Verify selectors populated.
                 *   [✅] Send Message (Authenticated): Verify message appears, spinner shows, response appears.
                 *   [✅] Send Message (Error): Verify error message shown. *(Tested via vi.spyOn)*
-                *   [✅] Load Chat History: Verify history list populates *(verified working for empty list)*.
+                *   [✅] Load Chat History: Verify history list populates.
                 *   [✅] Load Chat Details: Select chat, verify messages load.
                 *   [✅] Anonymous Flow: Send message below limit -> Success.
                 *   [✅] Anonymous Flow: Send message at limit -> Checks for `{ error: 'limit_reached' }` return object.
-                *   [ ] Anonymous Flow: Stash message -> Register -> Verify message sent automatically.
+                *   [ ] Anonymous Flow: Stash message -> Register -> Verify message sent automatically. *(Logic Pending)*
     *   **3.3 End-to-End Tests:**
-        *   [ ] **Tooling:** Setup Playwright/Cypress (if not already done).
+        *   [ ] **Tooling:** Setup Playwright/Cypress.
         *   [✅] **Core User Flows:** Auth cycle, Profile management.
         *   [ ] **Payment Flows:**
             *   `[ ]` User selects plan -> Clicks Subscribe -> Redirected to Stripe Checkout
@@ -248,7 +217,7 @@
         *   [ ] **AI Chat Flows:**
             *   `[ ]` Authenticated user sends message, receives response.
             *   `[ ]` Anonymous user sends message below limit.
-            *   `[ ]` Anonymous user hits limit, signs up, message is sent.
+            *   `[ ]` Anonymous user hits limit, signs up, message is sent. *(Logic Pending)*
 
 *   **Phase 4: CI/CD**
     *   [ ] Setup CI pipeline (e.g., GitHub Actions).
