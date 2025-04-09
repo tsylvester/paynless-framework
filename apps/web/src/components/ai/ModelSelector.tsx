@@ -18,6 +18,7 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({
   onProviderChange,
   disabled = false,
 }) => {
+  logger.debug('ModelSelector rendered');
   const { availableProviders, isConfigLoading } = useAiStore(state => ({
     availableProviders: state.availableProviders,
     isConfigLoading: state.isConfigLoading,
@@ -40,7 +41,7 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({
         <option value="" disabled={!!selectedProviderId}>
           {isConfigLoading ? "Loading models..." : "Select an AI model"}
         </option>
-        {availableProviders && availableProviders.map((provider) => (
+        {availableProviders && availableProviders.map((provider: AiProvider) => (
           <option key={provider.id} value={provider.id}>
             {provider.name}
           </option>

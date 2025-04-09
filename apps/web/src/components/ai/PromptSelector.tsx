@@ -18,6 +18,7 @@ export const PromptSelector: React.FC<PromptSelectorProps> = ({
   onPromptChange,
   disabled = false,
 }) => {
+  logger.debug('PromptSelector rendered');
   const { availablePrompts, isConfigLoading } = useAiStore(state => ({
     availablePrompts: state.availablePrompts,
     isConfigLoading: state.isConfigLoading,
@@ -42,7 +43,7 @@ export const PromptSelector: React.FC<PromptSelectorProps> = ({
         </option>
         {/* Option for no prompt */}
         <option value="__none__">-- None --</option> 
-        {availablePrompts && availablePrompts.map((prompt) => (
+        {availablePrompts && availablePrompts.map((prompt: SystemPrompt) => (
           <option key={prompt.id} value={prompt.id}>
             {prompt.name}
           </option>

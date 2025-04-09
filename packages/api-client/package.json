@@ -2,24 +2,25 @@
   "name": "@paynless/api-client",
   "version": "0.1.0",
   "private": true,
-  "description": "API client layer for Paynless framework",
+  "description": "API client for Paynless applications",
   "type": "module",
-  "main": "./dist/src/index.js",
-  "types": "./dist/src/index.d.ts",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
   "exports": {
     ".": {
-      "import": "./dist/src/index.js",
-      "types": "./dist/src/index.d.ts"
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
     },
     "./mocks/stripe.mock": {
-      "import": "./dist/src/mocks/stripe.mock.js",
-      "types": "./dist/src/mocks/stripe.mock.d.ts"
+      "import": "./dist/mocks/stripe.mock.js",
+      "types": "./dist/mocks/stripe.mock.d.ts"
     }
   },
   "scripts": {
-    "build": "tsc",
-    "lint": "eslint . --ext .ts,.tsx",
-    "test": "vitest run"
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "build": "tsc --build",
+    "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0"
   },
   "dependencies": {
     "@paynless/types": "workspace:*",
@@ -29,11 +30,14 @@
     "zustand": "^4.5.2"
   },
   "devDependencies": {
-    "@types/node": "^20",
+    "@paynless/tsconfig": "workspace:*",
+    "@types/node": "^20.11.20",
     "@typescript-eslint/eslint-plugin": "^7.18.0",
     "@typescript-eslint/parser": "^7.18.0",
     "eslint": "^8.57.0",
-    "typescript": "^5.5.3"
+    "msw": "^2.2.13",
+    "typescript": "^5.2.2",
+    "vitest": "^1.4.0"
   },
   "license": "ISC"
 }

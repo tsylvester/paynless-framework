@@ -2,7 +2,7 @@ import { Layout } from '../components/layout/Layout';
 import { ArrowRight, Database, Lock, Server, CheckCircle } from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuthStore, useAiStore } from '@paynless/store';
-import React, { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { logger } from '@paynless/utils';
 import { ModelSelector } from '../components/ai/ModelSelector';
 import { PromptSelector } from '../components/ai/PromptSelector';
@@ -16,7 +16,9 @@ export function HomePage() {
   const [selectedProviderId, setSelectedProviderId] = useState<string | null>(null);
   const [selectedPromptId, setSelectedPromptId] = useState<string | null>(null);
   const [showLimitDialog, setShowLimitDialog] = useState(false);
-  const [stashedMessage, setStashedMessage] = useState<{ message: string; providerId: string; promptId: string; } | null>(null);
+  // TODO: Implement stashed message logic for post-registration sending (Phase 4)
+  // Prefix with underscore to silence TS6133 until implemented
+  const [_stashedMessage, _setStashedMessage] = useState<{ message: string; providerId: string; promptId: string; } | null>(null);
 
   useEffect(() => {
     loadAiConfig();

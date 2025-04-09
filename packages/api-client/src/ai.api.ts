@@ -64,9 +64,11 @@ export class AiApiClient {
 
     /**
      * Fetches the chat history list for the current user.
+     * @param token - The user's authentication token.
      */
-    async getChatHistory(): Promise<ApiResponse<Chat[]>> {
-        return this.apiClient.get<Chat[]>('chat-history');
+    async getChatHistory(token: string): Promise<ApiResponse<Chat[]>> {
+        // Pass the token explicitly in FetchOptions
+        return this.apiClient.get<Chat[]>('chat-history', { token: token });
     }
 
     /**
@@ -77,6 +79,7 @@ export class AiApiClient {
         if (!chatId) {
             // Return the standard ApiResponse error format
             const error: ApiError = { code: 'VALIDATION_ERROR', message: 'Chat ID is required' };
+            // Remove success: false
             return { error, status: 400 };
         }
         // Ensure the path is constructed correctly according to URL conventions

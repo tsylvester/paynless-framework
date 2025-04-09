@@ -85,10 +85,11 @@ export const AiChatbox: React.FC<AiChatboxProps> = ({
             // setInputMessage(messageToSend);
         }
 
-    } catch (error) {
+    } catch (error: unknown) {
          // Errors should ideally be caught and set in the store's aiError state
          // by the sendMessage action itself.
-         logger.error('[AiChatbox] Unexpected error calling sendMessage:', error);
+         const errorMessage = error instanceof Error ? error.message : String(error);
+         logger.error('[AiChatbox] Unexpected error calling sendMessage:', { error: errorMessage });
           // Restore input message on unexpected error?
           // setInputMessage(messageToSend);
     }
@@ -110,7 +111,7 @@ export const AiChatbox: React.FC<AiChatboxProps> = ({
       {/* Message Display Area */}
       <div className="flex-grow pr-4 overflow-y-auto" ref={scrollAreaRef}>
         <div className="space-y-4">
-          {currentChatMessages.map((msg) => (
+          {currentChatMessages.map((msg: ChatMessage) => (
             <div
               key={msg.id}
               className={cn(

@@ -20,11 +20,6 @@
     "module": "ESNext",
     "moduleResolution": "node",
     "baseUrl": ".",
-    "paths": {
-      "@paynless/*": [
-        "packages/*/src"
-      ]
-    },
     "resolveJsonModule": true,
     "declaration": true,
     "declarationMap": true,

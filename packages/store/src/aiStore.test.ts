@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { useAiStore, AnonymousLimitReachedError } from './aiStore';
+import { useAiStore } from './aiStore';
 // Import the actual api object to be mocked
 import { api } from '@paynless/api-client';
 import {
@@ -8,8 +8,13 @@ import {
     Chat,
     ChatMessage,
     ChatApiRequest,
-    ApiResponse
+    ApiResponse,
+    User,
+    Session,
+    UserProfile
 } from '@paynless/types';
+// Import authStore for mocking
+import { useAuthStore } from './authStore';
 
 // --- Mock the entire @paynless/api-client module ---
 // Define mock functions for the methods we need to control
@@ -53,6 +58,9 @@ vi.mock('@paynless/api-client', () => ({
         }
     },
 }));
+
+// --- Mock the authStore ---
+vi.mock('./authStore');
 
 
 describe('aiStore', () => {
@@ -388,13 +396,38 @@ describe('aiStore', () => {
         */
     });
 
-    // --- Tests for loadChatHistory ---
+    // --- Tests for loadChatHistory (UPDATED) ---
     describe('loadChatHistory', () => {
         const mockChats: Chat[] = [
             { id: 'c1', user_id: 'u1', title: 'Chat 1', created_at: 't1', updated_at: 't2'},
         ];
+        const mockToken = 'valid-token-for-history';
+        const mockUser: User = { id: 'user-123', email: 'test@test.com', role: 'user', created_at: 't', updated_at: 't'};
+        const mockSession: Session = { access_token: mockToken, refresh_token: 'r', expiresAt: Date.now() / 1000 + 3600 };
 
-        it('should set loading state and call api client', async () => {
+        // Mock authStore state before each test in this block
+        beforeEach(() => {
+            vi.mocked(useAuthStore.getState).mockReturnValue({
+                user: mockUser,
+                session: mockSession,
+                profile: {} as UserProfile, // Provide a mock profile object
+                isLoading: false,
+                error: null,
+                navigate: vi.fn(),
+                // Mock actions as needed, likely just need state
+                initialize: vi.fn(),
+                login: vi.fn(),
+                register: vi.fn(),
+                logout: vi.fn(),
+                refreshSession: vi.fn(),
+                updateProfile: vi.fn(),
+                clearError: vi.fn(),
+                setNavigate: vi.fn(),
+                handleSupabaseAuthChange: vi.fn(), // Include the new action
+            });
+        });
+
+        it('should set loading state and call api client with token', async () => {
             // Arrange
             mockGetChatHistory.mockResolvedValue({ success: true, data: mockChats, statusCode: 200 });
 
@@ -406,6 +439,8 @@ describe('aiStore', () => {
             // Assert
             expect(useAiStore.getState().isHistoryLoading).toBe(false);
             expect(mockGetChatHistory).toHaveBeenCalledTimes(1);
+            // Verify it was called with the mockToken from the mocked authStore
+            expect(mockGetChatHistory).toHaveBeenCalledWith(mockToken); 
         });
 
         it('should update chatHistoryList on success', async () => {
@@ -421,9 +456,9 @@ describe('aiStore', () => {
              expect(state.aiError).toBeNull();
         });
 
-         it('should set aiError on failure', async () => {
+         it('should set aiError on API failure', async () => {
              // Arrange
-             const errorMsg = 'Failed to load history'; // Original message from mock
+             const errorMsg = 'Failed to load history';
              mockGetChatHistory.mockResolvedValue({ success: false, error: errorMsg, statusCode: 500 });
 
              // Act
@@ -431,18 +466,33 @@ describe('aiStore', () => {
 
              // Assert
              const state = useAiStore.getState();
-             // Expect the actual error set by the store's catch block
-             expect(state.aiError).toBe(errorMsg); // The store uses the error from the response
-             expect(state.chatHistoryList).toEqual([]); // Should remain empty
+             expect(state.aiError).toBe(errorMsg);
+             expect(state.chatHistoryList).toEqual([]);
              expect(state.isHistoryLoading).toBe(false);
+             // Verify API was still called (with token)
+             expect(mockGetChatHistory).toHaveBeenCalledTimes(1);
+             expect(mockGetChatHistory).toHaveBeenCalledWith(mockToken);
         });
 
-        // REMOVE: Test for uninitialized client is no longer applicable
-        /*
-        it('should set aiError if apiClient is not initialized', async () => {
-           // ... removed ...
+        // NEW Test Case: No token
+        it('should set aiError and not call api client if no token exists', async () => {
+            // Arrange: Override authStore mock for this specific test
+            vi.mocked(useAuthStore.getState).mockReturnValueOnce({
+                 ...useAuthStore.getState(), // Keep other mocked state/functions
+                 session: null, // Explicitly set session to null
+             });
+
+            // Act
+            await useAiStore.getState().loadChatHistory();
+
+            // Assert
+            const state = useAiStore.getState();
+            expect(state.aiError).toBe('Authentication required');
+            expect(state.isHistoryLoading).toBe(false);
+            expect(state.chatHistoryList).toEqual([]);
+            // Verify API was NOT called
+            expect(mockGetChatHistory).not.toHaveBeenCalled(); 
         });
-        */
     });
 
     // --- Tests for loadChatDetails ---

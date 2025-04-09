@@ -11,6 +11,7 @@ import {
 } from '@paynless/types';
 import { api } from '@paynless/api-client'; 
 import { logger } from '@paynless/utils';
+import { useAuthStore } from './authStore';
 // Removed produce import as immer middleware handles it
 
 // --- Constants ---
@@ -175,11 +176,24 @@ export const useAiStore = create<AiState & AiActions>()(
             
             loadChatHistory: async () => {
                 logger.info('Loading chat history...');
-                set({ isHistoryLoading: true, aiError: null }); // Simple set
+                set({ isHistoryLoading: true, aiError: null });
+                
+                // Get token from authStore state
+                const token = useAuthStore.getState().session?.access_token;
+                
+                // Check if token exists
+                if (!token) {
+                    logger.error('Cannot load chat history: No auth token available in authStore state.');
+                    set({ aiError: 'Authentication required', isHistoryLoading: false });
+                    return; // Stop if no token
+                }
+                
                 try {
-                    const response = await api.ai().getChatHistory();
+                    // Pass the token to the API call
+                    // Corrected: Call the function api.ai() to get the client instance
+                    const response = await api.ai().getChatHistory(token);
                     if (!response.error && response.data) {
-                        set({ chatHistoryList: response.data, isHistoryLoading: false }); // Simple set
+                        set({ chatHistoryList: response.data, isHistoryLoading: false });
                         logger.info('Chat history loaded:', { count: response.data.length });
                     } else {
                         const errorMsg = typeof response.error === 'string' ? response.error : (response.error?.message || 'Failed to load chat history');
@@ -188,7 +202,7 @@ export const useAiStore = create<AiState & AiActions>()(
                 } catch (error: unknown) {
                     const message = error instanceof Error ? error.message : (typeof error === 'object' && error !== null && 'error' in error ? String(error.error) : 'An unknown error occurred while loading chat history.');
                     logger.error('Error loading chat history:', { error: message });
-                    set({ aiError: message, isHistoryLoading: false, chatHistoryList: [] }); // Simple set
+                    set({ aiError: message, isHistoryLoading: false, chatHistoryList: [] });
                 }
             },
 

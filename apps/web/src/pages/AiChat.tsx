@@ -46,9 +46,8 @@ function ChatHistoryList({ history, onLoadChat, isLoading }: { history: Chat[], 
 
 export function AiChatPage() {
   // Get user, session, and loading state from auth store
-  const { user, session, isLoading: isAuthLoading } = useAuthStore((state) => ({ 
+  const { user, isLoading: isAuthLoading } = useAuthStore((state) => ({ 
       user: state.user, 
-      session: state.session,
       isLoading: state.isLoading // Get the auth loading state
   }));
   
@@ -149,11 +148,11 @@ export function AiChatPage() {
           <div className="flex items-center space-x-4 p-4 border-b border-border">
              <ModelSelector 
                selectedProviderId={selectedProviderId} 
-               onSelectProvider={setSelectedProviderId} 
+               onProviderChange={setSelectedProviderId} 
              />
              <PromptSelector 
                selectedPromptId={selectedPromptId} 
-               onSelectPrompt={setSelectedPromptId} 
+               onPromptChange={setSelectedPromptId} 
              />
            </div>
            
@@ -161,8 +160,8 @@ export function AiChatPage() {
            <div className="flex-grow overflow-hidden p-4">
              <AiChatbox 
                isAnonymous={false} 
-               selectedProviderId={selectedProviderId}
-               selectedPromptId={selectedPromptId}
+               providerId={selectedProviderId}
+               promptId={selectedPromptId}
                key={currentChatId || 'new'} 
                onLimitReached={() => { /* Not applicable for authenticated */ }}
              />
