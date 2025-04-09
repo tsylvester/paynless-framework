@@ -179,10 +179,20 @@
         *   [✅] `packages/store` (Vitest setup complete)
             *   [✅] `authStore.ts` *(All unit tests passing, confirmed store follows pattern, `AuthResponse`/`register` type updated)*
             *   [✅] `subscriptionStore.ts` *(All unit tests passing, confirmed store follows pattern)*
-            *   [✅] `aiStore.ts` *(All unit tests passing)*
+            *   [🚧] `aiStore.ts` *(Most tests passing. `loadChatHistory` logic verified for empty state. `sendMessage` anonymous limit test needs update after type definition change).*
         *   [⏭️] `packages/ui-components` *(Skipped - Package empty, components currently in `apps/web`)*.
         *   [✅] `packages/utils` (Vitest setup complete, `logger.ts` tests passing)
         *   [✅] `packages/types` *(Implicitly tested, AI types added)*.
+    *   **2.2 Integration Tests:**
+        *   [⏸️] **AI Chat (`ai.integration.test.tsx` - New File):**
+            *   [✅] Load AI Config (Providers/Prompts): Verify selectors populated.
+            *   [✅] Send Message (Authenticated): Verify message appears, spinner shows, response appears.
+            *   [✅] Send Message (Error): Verify error message shown. *(Tested via vi.spyOn)*
+            *   [✅] Load Chat History: Verify history list populates *(verified working for empty list)*.
+            *   [✅] Load Chat Details: Select chat, verify messages load.
+            *   [✅] Anonymous Flow: Send message below limit -> Success.
+            *   [🚧] Anonymous Flow: Send message at limit -> Should check for `{ error: 'limit_reached' }` return object *(pending type definition update)*.
+            *   [ ]` Anonymous Flow: Stash message -> Register -> Verify message sent automatically.
 
 *   **Phase 3: Web App (`apps/web/`)**
     *   **3.1 Unit Tests:**
@@ -221,10 +231,10 @@
                 *   [✅] Load AI Config (Providers/Prompts): Verify selectors populated.
                 *   [✅] Send Message (Authenticated): Verify message appears, spinner shows, response appears.
                 *   [✅] Send Message (Error): Verify error message shown. *(Tested via vi.spyOn)*
-                *   [✅] Load Chat History: Verify history list populates.
+                *   [✅] Load Chat History: Verify history list populates *(verified working for empty list)*.
                 *   [✅] Load Chat Details: Select chat, verify messages load.
                 *   [✅] Anonymous Flow: Send message below limit -> Success.
-                *   [✅] Anonymous Flow: Send message at limit -> Error object returned.
+                *   [🚧] Anonymous Flow: Send message at limit -> Should check for `{ error: 'limit_reached' }` return object *(pending type definition update)*.
                 *   [ ]` Anonymous Flow: Stash message -> Register -> Verify message sent automatically.
     *   **3.3 End-to-End Tests:**
         *   [ ] **Tooling:** Setup Playwright/Cypress (if not already done).

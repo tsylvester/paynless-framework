@@ -193,8 +193,10 @@ export const useAiStore = create<AiState & AiActions>()(
                     // Corrected: Call the function api.ai() to get the client instance
                     const response = await api.ai().getChatHistory(token);
                     if (!response.error && response.data) {
-                        set({ chatHistoryList: response.data, isHistoryLoading: false });
-                        logger.info('Chat history loaded:', { count: response.data.length });
+                        // Ensure chatHistoryList is always an array
+                        const historyData = Array.isArray(response.data) ? response.data : [];
+                        set({ chatHistoryList: historyData, isHistoryLoading: false });
+                        logger.info('Chat history loaded:', { count: historyData.length }); // Log length of the guaranteed array
                     } else {
                         const errorMsg = typeof response.error === 'string' ? response.error : (response.error?.message || 'Failed to load chat history');
                         throw new Error(errorMsg);

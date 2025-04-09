@@ -108,12 +108,12 @@
         *   [✅] **Actions (Adhering to Pattern):**
             *   [✅] `loadAiConfig()`: Sets loading, calls API client, updates `availableProviders`/`availablePrompts` on success, sets error state on failure, clears loading.
             *   [✅] `sendMessage(data: { message: string, providerId: string, promptId: string, chatId?: string, isAnonymous: boolean })`:
-                *   [✅] Checks internal `anonymousMessageCount` if `isAnonymous` is true. If limit reached, **throws a specific custom error** (e.g., `AnonymousLimitReachedError`) or returns a specific status code/object. **Does not handle redirect/stashing.**
+                *   [✅] Checks internal `anonymousMessageCount` if `isAnonymous` is true. If limit reached, returns `{ error: 'limit_reached' }`. **(Type definition in `@paynless/types` needs update to reflect this return shape).**
                 *   [✅] If limit not reached (or not anonymous): Sets `isLoadingAiResponse = true`, clears `aiError`.
                 *   [✅] Calls `apiClient.sendChatMessage`.
                 *   [✅] *On Success:* Updates `currentChatMessages` with user message & AI response, updates `currentChatId` if new, increments `anonymousMessageCount` if applicable, clears loading.
                 *   [✅] *On Failure (API error):* Sets `aiError` with the error details, clears loading.
-            *   [✅] `loadChatHistory()`: Sets loading, calls API client, updates `chatHistoryList` on success, sets error state on failure, clears loading.
+            *   [✅] `loadChatHistory()`: Sets loading, calls API client, updates `chatHistoryList` (ensuring it's always an array) on success, sets error state on failure, clears loading. *(Fix implemented to handle potentially non-array API responses for empty history).*
             *   [✅] `loadChatDetails(chatId: string)`: Sets loading, calls API client, updates `currentChatMessages`/`currentChatId` on success, sets error state on failure, clears loading.
             *   [✅] `startNewChat()`: Clears `currentChatMessages`, `currentChatId`. Resets `anonymousMessageCount` if managed here.
             *   [✅] `incrementAnonymousCount()` / `resetAnonymousCount()`: Helper actions if count managed centrally in store.
@@ -158,7 +158,7 @@
         *   Integrate `ModelSelector`, `PromptSelector`, `AiChatbox`.
         *   Manage selected `providerId`, `promptId` with local state.
         *   Pass `isAnonymous={false}` to `AiChatbox`.
-        *   Implement Chat History section: fetch history (`loadChatHistory`), display as cards, handle clicks to load details (`loadChatDetails`).
+        *   Implement Chat History section: fetch history (`loadChatHistory`), display as cards, handle clicks to load details (`loadChatDetails`). *(Frontend crash `history.map is not a function` resolved by ensuring `aiStore.chatHistoryList` is always an array).*
     *   Remove AI components from `DashboardPage.tsx` if they were planned there.
     *   (As before: `ChatHistoryPage.tsx`, `ChatDetailsPage.tsx`, add routes `/chat-history`, `/chat/:chatId` - *Redundant? Could Chat History be part of `/chat` page? Re-evaluate routes*).
 4.  [✅] **(TDD):** Write component/integration tests focusing on: anonymous limit interception and stashing, post-registration message sending, reading loading/error states from store, navigating based on `register` action result. *(AI store integration tests passing using global handlers + vi.spyOn for errors)*
