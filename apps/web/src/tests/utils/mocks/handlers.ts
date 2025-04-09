@@ -138,13 +138,14 @@ export const handlers = [
   // --- AI Chat endpoints ---
   http.get(`${API_BASE_URL}/ai-providers`, () => {
     console.log(`[MSW Global] Handling GET ${API_BASE_URL}/ai-providers`);
-    // Use a simplified mock for global handlers, assuming tests might override
-    return HttpResponse.json([{ id: 'p-global', name: 'Global Provider' }], { status: 200 }); 
+    // Revert: Return payload directly, ApiClient adds the 'data' wrapper
+    return HttpResponse.json({ providers: [{ id: 'p-global', name: 'Global Provider' }] }, { status: 200 }); 
   }),
 
   http.get(`${API_BASE_URL}/system-prompts`, () => {
     console.log(`[MSW Global] Handling GET ${API_BASE_URL}/system-prompts`);
-    return HttpResponse.json([{ id: 's-global', name: 'Global Prompt' }], { status: 200 });
+    // Revert: Return payload directly, ApiClient adds the 'data' wrapper
+    return HttpResponse.json({ prompts: [{ id: 's-global', name: 'Global Prompt' }] }, { status: 200 });
   }),
 
   http.post(`${API_BASE_URL}/chat`, async ({ request }) => {

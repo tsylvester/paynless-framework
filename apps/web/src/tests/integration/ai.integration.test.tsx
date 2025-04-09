@@ -117,8 +117,8 @@ describe('AI Feature Integration Tests', () => {
             const data = await response.json();
             console.log('[Test MSW Direct] Response Data:', data);
             expect(response.ok).toBe(true);
-            // <<< Check against GLOBAL mock data >>>
-            expect(data).toEqual([{ id: 'p-global', name: 'Global Provider' }]); 
+            // Correct assertion: Check against the direct handler payload
+            expect(data).toEqual({ providers: [{ id: 'p-global', name: 'Global Provider' }] }); 
         } catch (error) {
              console.error('[Test MSW Direct] Fetch failed:', error);
              // Force failure if fetch throws unexpectedly
@@ -344,10 +344,24 @@ describe('AI Feature Integration Tests', () => {
     // <<< Add History/Details Tests >>>
     describe('Chat History & Details', () => {
         it('Load Chat History: should load history list for authenticated user', async () => {
-            // Arrange
+            // Arrange:
+            // <<< MOCK authStore state for this test >>>
+            const mockToken = 'test-auth-token';
+            // Use vi.spyOn to mock the getState method for this specific test
+            vi.spyOn(useAuthStore, 'getState').mockReturnValueOnce({
+                user: { id: 'user-1', email: 'test@example.com', role: 'authenticated', created_at: 't', updated_at: 't' } as any, // Provide mock user
+                session: { access_token: mockToken, refresh_token: 'r', expires_at: Date.now() + 3600000, token_type: 'bearer', user: { id: 'user-1'} } as any, // Provide mock session with token
+                profile: { id: 'user-1', first_name: 'Test', last_name: 'User' } as any,
+                isLoading: false,
+                error: null,
+                navigate: vi.fn(),
+                // Include all actions from the real store signature if needed, mock as vi.fn()
+                setUser: vi.fn(), setSession: vi.fn(), setProfile: vi.fn(), setIsLoading: vi.fn(), setError: vi.fn(),
+                login: vi.fn(), register: vi.fn(), logout: vi.fn(), initialize: vi.fn(), refreshSession: vi.fn(), updateProfile: vi.fn(), clearError: vi.fn(), setNavigate: vi.fn(), handleSupabaseAuthChange: vi.fn(),
+            });
+            console.log('[Test History] Mocked authStore state');
+
             const { loadChatHistory } = useAiStore.getState();
-            const getTokenSpy = vi.spyOn(ApiClient.prototype as any, 'getToken').mockResolvedValue('mock-token');
-            console.log('[Test History] Mocked getToken');
 
             // Act
             await act(async () => {
@@ -357,9 +371,11 @@ describe('AI Feature Integration Tests', () => {
             // Assert
             const state = useAiStore.getState();
             expect(state.isHistoryLoading).toBe(false);
+            // Expect error to be null now
             expect(state.aiError).toBeNull();
-            expect(state.chatHistoryList).toHaveLength(2); // Based on global handler
-            expect(state.chatHistoryList[0]?.title).toBe('Chat 1');
+            // Check history list based on GLOBAL MSW handler
+            expect(state.chatHistoryList).toHaveLength(2); // Assuming global handler returns 2 chats
+            expect(state.chatHistoryList[0]?.title).toBe('Chat 1'); // Assuming global handler returns this
         });
 
         it('Load Chat Details: should load messages for a specific chat', async () => {

@@ -8,6 +8,7 @@ import {
 	ChatMessage,
 	SystemPrompt,
 	ChatApiRequest,
+	FetchOptions,
 } from '@paynless/types';
 import { api } from '@paynless/api-client'; 
 import { logger } from '@paynless/utils';
@@ -100,12 +101,25 @@ export const useAiStore = create<AiState & AiActions>()(
                     logger.warn('Anonymous message limit reached.', { count: anonymousMessageCount });
                     return { error: 'limit_reached' };
                 }
+
+                // --- Get Token for Authenticated requests ---
+                let token: string | undefined;
+                if (!isAnonymous) {
+                    token = useAuthStore.getState().session?.access_token;
+                    if (!token) {
+                        logger.error('Cannot send message: No auth token available for authenticated request.');
+                        // Set error state appropriately
+                        set({ aiError: 'Authentication required to send message.', isLoadingAiResponse: false }); 
+                        return null; // Or handle error as appropriate
+                    }
+                }
+                // --- End Token Check ---
                 
                 // Define helpers inline or move outside create if complex
                 const _addOptimisticUserMessage = (msgContent: string): string => {
                     const tempId = `temp-user-${Date.now()}`;
                     const userMsg: ChatMessage = {
-                         id: tempId, chat_id: currentChatId || 'temp-chat', user_id: 'current-user',
+                         id: tempId, chat_id: currentChatId || 'temp-chat', user_id: 'current-user', // Replace 'current-user' if actual user ID available
                          role: 'user', content: msgContent, ai_provider_id: null, system_prompt_id: null,
                          token_usage: null, created_at: new Date().toISOString(),
                     };
@@ -129,7 +143,12 @@ export const useAiStore = create<AiState & AiActions>()(
                 try {
                     const effectiveChatId = inputChatId ?? currentChatId ?? undefined;
                     const requestData: ChatApiRequest = { message, providerId, promptId, chatId: effectiveChatId };
-                    const response = await api.ai().sendChatMessage(requestData, { isPublic: isAnonymous });
+                    // *** Pass explicit token if available, otherwise rely on isPublic flag ***
+                    const options: FetchOptions = { isPublic: isAnonymous };
+                    if (token) {
+                        options.token = token;
+                    }
+                    const response = await api.ai().sendChatMessage(requestData, options);
 
                     if (!response.error && response.data) {
                         const assistantMessage = response.data;

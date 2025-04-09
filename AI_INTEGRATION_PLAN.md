@@ -161,7 +161,7 @@
         *   Implement Chat History section: fetch history (`loadChatHistory`), display as cards, handle clicks to load details (`loadChatDetails`). *(Frontend crash `history.map is not a function` resolved by ensuring `aiStore.chatHistoryList` is always an array).*
     *   Remove AI components from `DashboardPage.tsx` if they were planned there.
     *   (As before: `ChatHistoryPage.tsx`, `ChatDetailsPage.tsx`, add routes `/chat-history`, `/chat/:chatId` - *Redundant? Could Chat History be part of `/chat` page? Re-evaluate routes*).
-4.  [✅] **(TDD):** Write component/integration tests focusing on: anonymous limit interception and stashing, post-registration message sending, reading loading/error states from store, navigating based on `register` action result. *(AI store integration tests passing using global handlers + vi.spyOn for errors)*
+4.  [✅] **(TDD):** Write component/integration tests focusing on: anonymous limit interception and stashing, post-registration message sending, reading loading/error states from store, navigating based on `register` action result. *(AI store integration tests now fully passing after fixes)*
 
 **Missing Pieces / Needs Consideration (Recap)**
 

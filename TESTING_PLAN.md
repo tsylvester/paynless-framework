@@ -191,8 +191,8 @@
             *   [✅] Load Chat History: Verify history list populates *(verified working for empty list)*.
             *   [✅] Load Chat Details: Select chat, verify messages load.
             *   [✅] Anonymous Flow: Send message below limit -> Success.
-            *   [🚧] Anonymous Flow: Send message at limit -> Should check for `{ error: 'limit_reached' }` return object *(pending type definition update)*.
-            *   [ ]` Anonymous Flow: Stash message -> Register -> Verify message sent automatically.
+            *   [✅] Anonymous Flow: Send message at limit -> Checks for `{ error: 'limit_reached' }` return object.
+            *   [ ] Anonymous Flow: Stash message -> Register -> Verify message sent automatically.
 
 *   **Phase 3: Web App (`apps/web/`)**
     *   **3.1 Unit Tests:**
@@ -234,8 +234,8 @@
                 *   [✅] Load Chat History: Verify history list populates *(verified working for empty list)*.
                 *   [✅] Load Chat Details: Select chat, verify messages load.
                 *   [✅] Anonymous Flow: Send message below limit -> Success.
-                *   [🚧] Anonymous Flow: Send message at limit -> Should check for `{ error: 'limit_reached' }` return object *(pending type definition update)*.
-                *   [ ]` Anonymous Flow: Stash message -> Register -> Verify message sent automatically.
+                *   [✅] Anonymous Flow: Send message at limit -> Checks for `{ error: 'limit_reached' }` return object.
+                *   [ ] Anonymous Flow: Stash message -> Register -> Verify message sent automatically.
     *   **3.3 End-to-End Tests:**
         *   [ ] **Tooling:** Setup Playwright/Cypress (if not already done).
         *   [✅] **Core User Flows:** Auth cycle, Profile management.

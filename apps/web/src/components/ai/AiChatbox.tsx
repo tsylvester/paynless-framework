@@ -111,19 +111,23 @@ export const AiChatbox: React.FC<AiChatboxProps> = ({
       {/* Message Display Area */}
       <div className="flex-grow pr-4 overflow-y-auto" ref={scrollAreaRef}>
         <div className="space-y-4">
-          {currentChatMessages.map((msg: ChatMessage) => (
-            <div
-              key={msg.id}
-              className={cn(
-                'flex w-max max-w-[75%] flex-col gap-2 rounded-lg px-3 py-2 text-sm',
-                msg.role === 'user'
-                  ? 'ml-auto bg-[rgb(var(--color-primary))] text-white'
-                  : 'bg-[rgb(var(--color-surface))] text-textPrimary'
-              )}
-            >
-              {msg.content}
-            </div>
-          ))}
+          {currentChatMessages.map((msg: ChatMessage) => {
+            // Log the ID being used as key
+            console.log('[AiChatbox] Rendering message with key:', msg.id);
+            return (
+              <div
+                key={msg.id}
+                className={cn(
+                  'flex w-max max-w-[75%] flex-col gap-2 rounded-lg px-3 py-2 text-sm',
+                  msg.role === 'user'
+                    ? 'ml-auto bg-[rgb(var(--color-primary))] text-white'
+                    : 'bg-[rgb(var(--color-surface))] text-textPrimary'
+                )}
+              >
+                {msg.content}
+              </div>
+            );
+          })}
           {isLoadingAiResponse && (
              <div className="flex items-center space-x-2 justify-start">
                 <Loader2 className="h-4 w-4 animate-spin text-[rgb(var(--color-textSecondary))]" />
