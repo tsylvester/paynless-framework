@@ -5,6 +5,14 @@ import type { ApiClient } from './apiClient';
 import type { ApiResponse, SubscriptionPlan, UserSubscription, SubscriptionUsageMetrics, CheckoutSessionResponse, PortalSessionResponse, FetchOptions } from '@paynless/types';
 import { logger } from '@paynless/utils';
 
+// Define the request body type for checkout session creation
+interface CreateCheckoutSessionRequest {
+  priceId: string;
+  isTestMode: boolean;
+  successUrl: string;
+  cancelUrl: string;
+}
+
 /**
  * API client for Stripe operations
  */
@@ -18,12 +26,25 @@ export class StripeApiClient {
   /**
    * Create Stripe checkout session
    */
-  async createCheckoutSession(priceId: string, isTestMode: boolean, options?: FetchOptions): Promise<ApiResponse<CheckoutSessionResponse>> {
+  async createCheckoutSession(
+    priceId: string, 
+    isTestMode: boolean,
+    successUrl: string,
+    cancelUrl: string,
+    options?: FetchOptions
+  ): Promise<ApiResponse<CheckoutSessionResponse>> {
     try {
       logger.info('Creating Stripe checkout session', { priceId, isTestMode });
-      const result = await this.apiClient.post<CheckoutSessionResponse, { priceId: string, isTestMode: boolean }>(
+      // Use the new request body type
+      const body: CreateCheckoutSessionRequest = { 
+        priceId, 
+        isTestMode, 
+        successUrl, 
+        cancelUrl 
+      };
+      const result = await this.apiClient.post<CheckoutSessionResponse, CreateCheckoutSessionRequest>(
         'api-subscriptions/checkout',
-        { priceId, isTestMode },
+        body,
         options
       );
       if (result.error) {

@@ -148,10 +148,21 @@ export const useSubscriptionStore = create<SubscriptionStore>()(
 
         try {
           const isTestMode = get().isTestMode;
-          const response = await api.billing().createCheckoutSession(priceId, isTestMode, { token });
+          // Construct success and cancel URLs based on current origin
+          const currentOrigin = window.location.origin;
+          const successUrl = `${currentOrigin}/subscription/success`;
+          const cancelUrl = `${currentOrigin}/`;
+          
+          const response = await api.billing().createCheckoutSession(
+            priceId, 
+            isTestMode, 
+            successUrl,
+            cancelUrl,
+            { token }
+          );
 
-          // Check for response.data.url now
-          if (response.error || !response.data?.url) { 
+          // Check for response.data.url (Corrected property name)
+          if (response.error || !response.data?.sessionUrl) { 
             const errorMessage = response.error?.message || 'Failed to get checkout session URL from API';
             logger.error('Error response from createCheckoutSession API', {
               error: response.error,
@@ -160,10 +171,10 @@ export const useSubscriptionStore = create<SubscriptionStore>()(
             throw new Error(errorMessage);
           }
 
-          // Log and return the url
-          logger.info('Received checkout session URL', { url: response.data.url }); 
+          // Log and return the sessionUrl
+          logger.info('Received checkout session URL', { url: response.data.sessionUrl }); 
           set({ isSubscriptionLoading: false, error: null });
-          return response.data.url; 
+          return response.data.sessionUrl; 
 
         } catch (error) {
           const errorToSet = error instanceof Error ? error : new Error('Failed to create checkout session');

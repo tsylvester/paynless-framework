@@ -75,7 +75,7 @@ export interface ResumeSubscriptionRequest {
 
 // Define response type for creating a checkout session
 export interface CheckoutSessionResponse {
-  url: string; // Expecting the Stripe Checkout URL
+  sessionUrl: string | null; // Ensure this matches the backend response
 }
 
 // Define response type for creating a portal session
