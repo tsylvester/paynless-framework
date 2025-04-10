@@ -64,12 +64,11 @@ export const getSubscriptionPlans = async (
     }));
     
     // ---> Add Logging <---
-    const responsePayload = { plans: subscriptionPlans };
-    console.log('[plans.ts] Handler returning success payload:', JSON.stringify(responsePayload));
+    console.log('[plans.ts] Handler returning success payload (raw array):', JSON.stringify(subscriptionPlans));
     // ---> End Logging <---
 
-    // Return the plans wrapped in an object with a 'plans' key
-    return createSuccessResponse(responsePayload);
+    // Return the raw array using the success helper
+    return createSuccessResponse(subscriptionPlans);
   } catch (err) {
     console.error("Error getting subscription plans:", err);
     // Use deps function and pass error
