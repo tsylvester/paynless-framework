@@ -3,9 +3,7 @@
   "compilerOptions": {
     "outDir": "./dist",
     "rootDir": "./src",
-    "baseUrl": ".",
     "types": ["node", "vitest/globals"],
-    "declarationDir": "./dist",
     "declaration": true,
     "lib": ["ESNext", "DOM"],
     "composite": true
