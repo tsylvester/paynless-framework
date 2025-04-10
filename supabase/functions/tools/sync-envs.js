@@ -54,19 +54,6 @@ async function syncEnvs() {
     }
   }
 
-   // Add Supabase generated keys if they aren't in root .env (common locally)
-   // You might need more robust logic if these can come from the root .env too
-   if (!rootEnv?.['SUPABASE_URL']) {
-       supabaseEnvContent += `SUPABASE_URL=http://localhost:54321\n`; // Default local URL
-   }
-    if (!rootEnv?.['SUPABASE_ANON_KEY']) {
-       supabaseEnvContent += `SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6ImFub24iLCJleHAiOjE5ODM4MTI5OTZ9.CRXP1A7WOeoJeXxjNni43kdQwgnWNReilDMblYTn_I0\n`; // Default local anon key
-   }
-    if (!rootEnv?.['SUPABASE_SERVICE_ROLE_KEY']) {
-       supabaseEnvContent += `SUPABASE_SERVICE_ROLE_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImV4cCI6MTk4MzgxMjk5Nn0.EGIM96RAZx35lJzdJsyH-qQwv8Hdp7fsn3W0YpN81IU\n`; // Default local service key
-   }
-
-
   if (missingKeys.length > 0) {
     console.warn(`Warning: The following required keys were not found in root .env or process.env: ${missingKeys.join(', ')}`);
     // Decide if this is fatal
