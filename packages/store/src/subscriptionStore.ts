@@ -41,8 +41,8 @@ export const useSubscriptionStore = create<SubscriptionStore>()(
       availablePlans: [],
       isSubscriptionLoading: false,
       hasActiveSubscription: false,
-      // Default test mode to false; client app should determine actual mode if needed
-      isTestMode: false, 
+      // Read test mode from environment variable
+      isTestMode: import.meta.env.VITE_STRIPE_TEST_MODE === 'true',
       error: null,
       
       // State setters

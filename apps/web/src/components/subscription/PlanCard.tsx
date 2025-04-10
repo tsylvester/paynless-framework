@@ -103,7 +103,7 @@ export function PlanCard({
         ) : (
           // Button for Paid plan cards (only shown if NOT current)
           <button
-            onClick={() => handleSubscribe(plan.stripe_price_id)} // Use correct stripe_price_id field
+            onClick={() => handleSubscribe(plan.stripePriceId)} // Use correct camelCase field
             disabled={isProcessing}
             className={`w-full inline-flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-primary hover:bg-primary/90 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary ${
               isProcessing ? 'opacity-75 cursor-not-allowed' : ''
