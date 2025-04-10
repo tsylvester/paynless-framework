@@ -1,3 +1,5 @@
+// IMPORTANT: Supabase Edge Functions require relative paths for imports from shared modules.
+// Do not use path aliases (like @shared/) as they will cause deployment failures.
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient as defaultCreateSupabaseClient, SupabaseClient, AuthError } from "jsr:@supabase/supabase-js@2";
 import {

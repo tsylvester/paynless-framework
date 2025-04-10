@@ -1,6 +1,8 @@
-import { SupabaseClient } from "npm:@supabase/supabase-js";
+// IMPORTANT: Supabase Edge Functions require relative paths for imports from shared modules.
+// Do not use path aliases (like @shared/ or @paynless/) as they will cause deployment failures.
+import { SupabaseClient } from "npm:@supabase/supabase-js@2";
 import { Database } from "@supabase/types"; // Use alias from import_map
-import { logger } from "@paynless/utils"; // Use alias from import_map
+import { logger } from "../_shared/logger.ts"; // Use relative path
 
 /**
  * Interface for Supabase interactions needed by product webhook handlers.

@@ -7,7 +7,7 @@ import {
     handleProductCreated 
 } from "./product.ts";
 import { ISupabaseProductWebhookService } from "../services/product_webhook_service.ts";
-import { logger } from "@paynless/utils";
+import { logger } from "../../_shared/logger.ts";
 
 // --- Mocks & Spies ---
 let mockService: ISupabaseProductWebhookService;

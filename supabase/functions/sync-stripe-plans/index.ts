@@ -1,3 +1,5 @@
+// IMPORTANT: Supabase Edge Functions require relative paths for imports from shared modules.
+// Do not use path aliases (like @shared/ or @paynless/) as they will cause deployment failures.
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 // Revert to explicit npm/jsr specifiers
 import ActualStripe from "npm:stripe@14.11.0"; // Assuming version from previous files

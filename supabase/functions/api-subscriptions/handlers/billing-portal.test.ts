@@ -1,4 +1,4 @@
-import { assertEquals } from "jsr:@std/assert";
+import { assertEquals, assertObjectMatch } from "https://deno.land/std/testing/asserts.ts";
 import { describe, it, beforeEach } from "jsr:@std/testing/bdd";
 import { assertSpyCalls, spy, Spy } from "jsr:@std/testing@0.225.1/mock";
 import { SupabaseClient } from "npm:@supabase/supabase-js";
@@ -10,7 +10,7 @@ import {
     createSuccessResponse, 
     type createErrorResponse as CreateErrorResponseType, 
     type createSuccessResponse as CreateSuccessResponseType 
-} from "@shared/responses.ts"; 
+} from "../../_shared/responses.ts"; 
 import { BillingPortalRequest } from "../types.ts";
 
 // --- Mocks & Spies ---

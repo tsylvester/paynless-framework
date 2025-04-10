@@ -12,7 +12,7 @@ import {
     createSuccessResponse, 
     type createErrorResponse as CreateErrorResponseType, 
     type createSuccessResponse as CreateSuccessResponseType 
-} from "@shared/responses.ts";
+} from "../../_shared/responses.ts";
 
 // --- Mocks & Spies ---
 let mockSupabaseClient: SupabaseClient;

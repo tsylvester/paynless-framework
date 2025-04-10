@@ -5,7 +5,7 @@ import Stripe from "npm:stripe";
 import { handlePriceChange } from "./price.ts";
 // Import the SERVICE interface
 import { ISupabasePriceWebhookService } from "../services/price_webhook_service.ts"; 
-import { logger } from "@paynless/utils";
+import { logger } from "../../_shared/logger.ts";
 
 // --- Mocks & Spies ---
 let mockService: ISupabasePriceWebhookService; // Mock the service interface

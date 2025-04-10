@@ -1,8 +1,10 @@
-import { SupabaseClient } from "@shared/auth.ts";
+// IMPORTANT: Supabase Edge Functions require relative paths for imports from shared modules.
+// Do not use path aliases (like @shared/) as they will cause deployment failures.
+import { SupabaseClient } from "../../_shared/auth.ts";
 import { 
   createErrorResponse as CreateErrorResponseType, 
   createSuccessResponse as CreateSuccessResponseType 
-} from "@shared/responses.ts";
+} from "../../_shared/responses.ts";
 import { SubscriptionPlan } from "../types.ts";
 
 // Define Dependencies Type

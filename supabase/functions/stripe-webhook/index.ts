@@ -1,22 +1,23 @@
-// Add this line to provide Deno/Edge runtime types
+// IMPORTANT: Supabase Edge Functions require relative paths for imports from shared modules.
+// Do not use path aliases (like @shared/ or @paynless/) as they will cause deployment failures.
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 
 // Stripe webhook handler
-import { serve } from "std/http/server.ts";
+import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { SupabaseClient, createClient as createSupabaseClientReal } from "jsr:@supabase/supabase-js@2";
 import {
   createSupabaseAdminClient as defaultCreateSupabaseAdminClient
-} from "@shared/auth.ts";
+} from "../_shared/auth.ts";
 import {
   verifyWebhookSignature as defaultVerifyWebhookSignature,
   getStripeMode,
   getStripeClient as defaultCreateStripeClient
-} from "@shared/stripe-client.ts";
+} from "../_shared/stripe-client.ts";
 import {
   handleCorsPreflightRequest as defaultHandleCorsPreflightRequest,
   createErrorResponse as defaultCreateErrorResponse,
   createSuccessResponse as defaultCreateSuccessResponse
-} from "@shared/cors-headers.ts";
+} from "../_shared/cors-headers.ts";
 import { handleCheckoutSessionCompleted as defaultHandleCheckoutSessionCompleted } from "./handlers/checkout-session.ts";
 import { handleSubscriptionUpdated as defaultHandleSubscriptionUpdated, handleSubscriptionDeleted as defaultHandleSubscriptionDeleted } from "./handlers/subscription.ts";
 import { handleInvoicePaymentSucceeded as defaultHandleInvoicePaymentSucceeded, handleInvoicePaymentFailed as defaultHandleInvoicePaymentFailed } from "./handlers/invoice.ts";

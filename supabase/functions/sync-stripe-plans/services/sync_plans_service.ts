@@ -1,8 +1,14 @@
 // supabase/functions/sync-stripe-plans/services/sync_plans_service.ts
 
-import { SupabaseClient, PostgrestResponse } from "npm:@supabase/supabase-js@2";
+// IMPORTANT: Supabase Edge Functions require relative paths for imports from shared modules.
+// Do not use path aliases (like @shared/ or @paynless/) as they will cause deployment failures.
+import Stripe from "npm:stripe";
+import {
+  SupabaseClient,
+  PostgrestResponse
+} from "jsr:@supabase/supabase-js@^2.4";
 import { Database } from "../../types_db.ts"; // Adjust path relative to service file
-import { logger } from "@paynless/utils"; // Use alias from import_map
+import { logger } from "../../_shared/logger.ts"; // Use relative path to shared logger
 
 // Define shape for plan data used in upsert
 // Match the structure created in the original handler

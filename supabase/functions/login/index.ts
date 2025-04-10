@@ -1,3 +1,6 @@
+// IMPORTANT: Supabase Edge Functions require relative paths for imports from shared modules.
+// Do not use path aliases (like @shared/) as they will cause deployment failures.
+
 // DEPLOYMENT NOTE: This function handles user login BEFORE a user JWT exists.
 // It is secured via an API key check (verifyApiKey) within the function body.
 // Deploy using: supabase functions deploy login --no-verify-jwt

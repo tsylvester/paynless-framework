@@ -1,4 +1,4 @@
-import { assertEquals } from "jsr:@std/assert";
+import { assertEquals, assertObjectMatch } from "https://deno.land/std/testing/asserts.ts";
 import { describe, it, beforeEach, afterEach } from "jsr:@std/testing/bdd";
 import { assertSpyCalls, spy, Spy } from "jsr:@std/testing@0.225.1/mock";
 import { SupabaseClient } from "npm:@supabase/supabase-js";
@@ -7,7 +7,7 @@ import { createCheckoutSession } from "./checkout.ts";
 import {
   createErrorResponse,
   createSuccessResponse,
-} from "@shared/responses.ts";
+} from "../../_shared/responses.ts";
 
 // Declare mocks/spies with let
 let mockSupabaseClient: SupabaseClient;

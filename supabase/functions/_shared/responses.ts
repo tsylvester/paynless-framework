@@ -1,4 +1,6 @@
-import { corsHeaders } from "@shared/cors-headers.ts";
+// IMPORTANT: Supabase Edge Functions require relative paths for imports from shared modules.
+// Do not use path aliases (like @shared/) as they will cause deployment failures.
+import { corsHeaders } from "./cors-headers.ts";
 
 /**
  * Creates a standardized success JSON response.

@@ -1,7 +1,10 @@
-import { SupabaseClient } from "@supabase/supabase-js";
+// IMPORTANT: Supabase Edge Functions require relative paths for imports from shared modules.
+// Do not use path aliases (like @shared/) as they will cause deployment failures.
+import { createClient } from "npm:@supabase/supabase-js@2";
+import type { SupabaseClient } from "npm:@supabase/supabase-js@2";
 import Stripe from "npm:stripe";
 import { Tables, TablesInsert, TablesUpdate } from "../../types_db.ts"; // Assuming types_db.ts is in functions root
-import { logger } from "@paynless/utils";
+import { logger } from "../../_shared/logger.ts"; // Use relative path to shared logger
 
 const TRANSACTION_TABLE = "subscription_transactions";
 const SUBSCRIPTION_TABLE = "user_subscriptions";

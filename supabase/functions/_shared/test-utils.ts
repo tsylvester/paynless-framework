@@ -1,3 +1,5 @@
+// IMPORTANT: Supabase Edge Functions require relative paths for imports from shared modules.
+// Do not use path aliases (like @shared/) as they will cause deployment failures.
 import { createClient, SupabaseClient } from "npm:@supabase/supabase-js@^2.0.0";
 
 // Load environment variables from .env.local file manually
