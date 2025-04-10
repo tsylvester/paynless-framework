@@ -147,12 +147,12 @@ export async function handleApiSubscriptionsRequest(req: Request, deps: ApiSubsc
 
     // Parse request body if needed
     let requestData = {};
-    let parseError = null;
+    let parseError: Error | null = null;
     if (req.method !== "GET" && req.headers.get("content-type")?.includes("application/json")) {
       try {
         requestData = await parseJsonBody(req);
       } catch (err) {
-        if (err instanceof SyntaxError) {
+        if (err instanceof SyntaxError || err instanceof Error) {
            parseError = err;
         } else {
            throw err; // Re-throw unexpected parsing errors
@@ -165,7 +165,7 @@ export async function handleApiSubscriptionsRequest(req: Request, deps: ApiSubsc
     }
 
     // Determine test/prod mode and initialize Stripe (might be needed by various handlers)
-    const isTestMode = getStripeMode(requestData as Record<string, any>);
+    const isTestMode = getStripeMode();
     let stripe: Stripe | null = null;
     try {
         // ---> Add logging around Stripe init <---
@@ -191,56 +191,60 @@ export async function handleApiSubscriptionsRequest(req: Request, deps: ApiSubsc
            return createErrorResponse("Internal Server Error", 500);
        }
 
+      // --- Prepare smaller dependency objects for handlers ---
+      const responseDeps = { 
+          createErrorResponse: deps.createErrorResponse,
+          createSuccessResponse: deps.createSuccessResponse
+      };
+      // --- End dependency prep ---
+
       // GET /current - Get current user subscription
       if (path === "/current" && req.method === "GET") {
-        return await getCurrentSubscription(supabase, userId);
+        // Pass the prepared dependencies
+        return await getCurrentSubscription(supabase, userId, responseDeps);
       }
 
       // GET /plans - List available plans (might not strictly need userId, but needs Supabase)
       else if (path === "/plans" && req.method === "GET") {
-        return await getSubscriptionPlans(supabase, isTestMode);
+        // Pass the prepared dependencies
+        return await getSubscriptionPlans(supabase, isTestMode, responseDeps);
       }
 
       // POST /checkout - Create checkout session
       else if (path === "/checkout" && req.method === "POST") {
         if (!stripe) throw new Error("Stripe client not available");
-        // Pass the required dependencies (response creators) to the handler
-        const handlerDeps = { 
-          createErrorResponse: deps.createErrorResponse,
-          createSuccessResponse: deps.createSuccessResponse
-        };
-        return await createCheckoutSession(supabase, stripe, userId, requestData as any, isTestMode, handlerDeps);
+        // Pass the prepared dependencies
+        return await createCheckoutSession(supabase, stripe, userId, requestData as any, isTestMode, responseDeps);
       }
 
       // POST /:id/cancel - Cancel subscription
       else if (path.match(/^\/[^/]+\/cancel$/) && req.method === "POST") {
         if (!stripe) throw new Error("Stripe client not available");
         const subscriptionId = path.split("/")[1];
-        return await cancelSubscription(supabase, stripe, userId, subscriptionId);
+        // Pass the prepared dependencies
+        return await cancelSubscription(supabase, stripe, userId, subscriptionId, responseDeps);
       }
 
       // POST /:id/resume - Resume subscription
       else if (path.match(/^\/[^/]+\/resume$/) && req.method === "POST") {
         if (!stripe) throw new Error("Stripe client not available");
         const subscriptionId = path.split("/")[1];
-        return await resumeSubscription(supabase, stripe, userId, subscriptionId);
+        // Pass the prepared dependencies
+        return await resumeSubscription(supabase, stripe, userId, subscriptionId, responseDeps);
       }
 
       // POST /billing-portal - Create billing portal session
       else if (path === "/billing-portal" && req.method === "POST") {
         if (!stripe) throw new Error("Stripe client not available");
-        // Pass the required dependencies (response creators) to the handler
-        const handlerDeps = { 
-          createErrorResponse: deps.createErrorResponse,
-          createSuccessResponse: deps.createSuccessResponse
-        };
-        return await createBillingPortalSession(supabase, stripe, userId, requestData as any, handlerDeps);
+        // Pass the prepared dependencies
+        return await createBillingPortalSession(supabase, stripe, userId, requestData as any, responseDeps);
       }
 
       // GET /usage/:metric - Get usage metrics
       else if (path.match(/^\/usage\/[^/]+$/) && req.method === "GET") {
         const metric = path.split("/")[2];
-        return await getUsageMetrics(supabase, userId, metric);
+        // Pass the prepared dependencies
+        return await getUsageMetrics(supabase, userId, metric, responseDeps);
       }
 
       // Route not found
@@ -259,10 +263,8 @@ export async function handleApiSubscriptionsRequest(req: Request, deps: ApiSubsc
   }
 }
 
-// --- Server Entry Point ---
-if (import.meta.main) {
-   serve((req) => handleApiSubscriptionsRequest(req, defaultDependencies));
-}
-
 // --- Exports for Testing ---
 export type { ApiSubscriptionsDependencies };
+
+// --- Server Entry Point ---
+serve((req) => handleApiSubscriptionsRequest(req, defaultDependencies));

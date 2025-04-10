@@ -2,7 +2,7 @@
 /// <reference types="@paynless/types" />
 
 import type { ApiClient } from './apiClient';
-import type { ApiResponse, SubscriptionPlan, UserSubscription, SubscriptionUsageMetrics, CheckoutSessionResponse, PortalSessionResponse, FetchOptions } from '@paynless/types';
+import type { ApiResponse, SubscriptionPlan, UserSubscription, SubscriptionUsageMetrics, CheckoutSessionResponse, PortalSessionResponse, FetchOptions, SubscriptionPlansResponse } from '@paynless/types';
 import { logger } from '@paynless/utils';
 
 // Define the request body type for checkout session creation
@@ -89,10 +89,10 @@ export class StripeApiClient {
   /**
    * Get all available subscription plans (Assumed Public? ApiClient handles token logic)
    */
-  async getSubscriptionPlans(options?: FetchOptions): Promise<ApiResponse<SubscriptionPlan[]>> {
+  async getSubscriptionPlans(options?: FetchOptions): Promise<ApiResponse<SubscriptionPlansResponse>> {
     try {
       logger.info('Fetching subscription plans');
-      const result = await this.apiClient.get<SubscriptionPlan[]>('api-subscriptions/plans', options);
+      const result = await this.apiClient.get<SubscriptionPlansResponse>('api-subscriptions/plans', options);
        if (result.error) {
          logger.warn('Fetching plans API returned an error', { error: result.error });
       }

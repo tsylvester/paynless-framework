@@ -82,3 +82,8 @@ export interface CheckoutSessionResponse {
 export interface PortalSessionResponse {
   url: string; // Expecting the Stripe Billing Portal URL
 }
+
+// Define response type for fetching subscription plans
+export interface SubscriptionPlansResponse {
+  plans: SubscriptionPlan[];
+}

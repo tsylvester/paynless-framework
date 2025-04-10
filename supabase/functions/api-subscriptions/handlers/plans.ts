@@ -63,8 +63,13 @@ export const getSubscriptionPlans = async (
       metadata: plan.metadata,
     }));
     
+    // ---> Add Logging <---
+    const responsePayload = { plans: subscriptionPlans };
+    console.log('[plans.ts] Handler returning success payload:', JSON.stringify(responsePayload));
+    // ---> End Logging <---
+
     // Return the plans wrapped in an object with a 'plans' key
-    return createSuccessResponse({ plans: subscriptionPlans });
+    return createSuccessResponse(responsePayload);
   } catch (err) {
     console.error("Error getting subscription plans:", err);
     // Use deps function and pass error

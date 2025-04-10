@@ -88,8 +88,16 @@ export const useSubscriptionStore = create<SubscriptionStore>()(
             api.billing().getUserSubscription({ token })
           ]);
           
+          // ---> Add Logging <---
+          logger.info('API Response - Plans:', { data: plansResponse.data, error: plansResponse.error?.message });
+          logger.info('API Response - Subscription:', { data: subResponse.data, error: subResponse.error?.message });
+          // ---> End Logging <---
+
           // Handle potential errors from API responses
           if (plansResponse.error || !plansResponse.data) {
+            // ---> Log the problematic plan data before throwing <---
+            logger.error('Problematic plansResponse data:', { data: plansResponse.data });
+            // ---> End Logging <---
             throw new Error(plansResponse.error?.message || 'Failed to load plans');
           }
           if (subResponse.error) { // Allow null data for no subscription
@@ -105,9 +113,19 @@ export const useSubscriptionStore = create<SubscriptionStore>()(
             ? userSubscription.status === 'active' || userSubscription.status === 'trialing'
             : false;
           
+          // ---> Add Logging <---
+          // Ensure plansResponse.data.plans is an array before setting state
+          const plansArray = plansResponse.data?.plans;
+          const plansToSet = Array.isArray(plansArray) ? plansArray : []; // Correctly check the .plans property
+          if (!Array.isArray(plansArray)) { // Log if the .plans property wasn't an array
+             logger.warn('Plans data.plans from API was not an array, setting to empty array.', { receivedData: plansResponse.data });
+          }
+          logger.info('Setting subscription store state:', { userSubscription, availablePlans: plansToSet, isLoading: false, hasActiveSubscription });
+          // ---> End Logging <---
+          
           set({
             userSubscription,
-            availablePlans: plansResponse.data,
+            availablePlans: plansToSet, // Use the validated array
             isSubscriptionLoading: false,
             hasActiveSubscription,
             error: null,
