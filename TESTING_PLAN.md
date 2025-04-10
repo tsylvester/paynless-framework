@@ -1,5 +1,18 @@
 **Consolidated Project Testing Plan & Status (v5 - Post Refactoring)**
 
+**Incomplete Features** 
+1. AI Chat on homepage doesn't work
+2. AI Chat signup/login flow
+3. AI model sync automation
+4. Stripe checkout completion 
+5. Mixpanel integration
+6. Chatwoot integration 
+7. Clean up Github history (.env secrets in files)
+8. Set up Github Org flow 
+9. Ensure project builds on Netlify
+10. Test project on Bolt & Lovable 
+11. Loading skeletons for all components 
+
 **Notes & Key Learnings (Summary):**
 
 1. **Incomplete Stripe E2E Flow (IMPORTANT):** While core Stripe API client methods, store actions, and backend functions may exist, the full end-to-end flow involving UI redirection to Stripe Checkout/Portal, handling the return to the application (success/cancel), and confirming subscription status updates via webhooks or direct checks **has not been completed or tested**. This includes the necessary E2E tests (Phase 3.3). This must be addressed before considering Stripe functionality complete.

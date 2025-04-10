@@ -15,7 +15,8 @@
   "scripts": {
     "lint": "eslint . --max-warnings 0",
     "lint:fix": "eslint . --fix",
-    "build": "tsc --build"
+    "build": "tsc --build",
+    "clean": "rm -rf dist"
   },
   "devDependencies": {
     "@types/react": "^18",

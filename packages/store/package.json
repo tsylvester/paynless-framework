@@ -8,6 +8,7 @@
   "types": "./src/index.ts",
   "scripts": {
     "build": "tsc",
+    "clean": "rm -rf dist",
     "lint": "eslint . --ext .ts,.tsx",
     "test": "vitest run"
   },
