@@ -46,7 +46,7 @@ export const routes: AppRoute[] = [
     allowedRoles: [UserRole.USER],
   },
   {
-    path: '/subscription/success',
+    path: '/subscriptionsuccess',
     element: <ProtectedRoute><SubscriptionSuccessPage /></ProtectedRoute>,
     requireAuth: true,
   },
