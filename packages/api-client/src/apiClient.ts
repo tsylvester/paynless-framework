@@ -85,11 +85,20 @@ export class ApiClient {
 
             if (!response.ok) {
                 let errorPayload: ApiErrorType;
-                if (typeof responseData === 'object' && responseData?.code && responseData?.message) {
-                    // Assume the body contains a valid ApiError structure
-                    errorPayload = responseData as ApiErrorType;
+                if (typeof responseData === 'object' && responseData !== null) { // Check if it's an object
+                    if (responseData.code && responseData.message) {
+                         // Handle { code: ..., message: ... }
+                         errorPayload = responseData as ApiErrorType;
+                    } else if (responseData.error && typeof responseData.error === 'string') {
+                         // Handle { error: "..." }
+                         errorPayload = { code: String(response.status), message: responseData.error };
+                    } else {
+                        // Fallback if object structure is unexpected
+                        const errorMessage = response.statusText || 'Unknown API Error';
+                        errorPayload = { code: String(response.status), message: errorMessage };
+                    }
                 } else {
-                    // Construct ApiError from status/text
+                    // Handle non-object responses (e.g., plain text)
                     const errorMessage = typeof responseData === 'string' && responseData.trim() !== ''
                                         ? responseData 
                                         : response.statusText || 'Unknown API Error';

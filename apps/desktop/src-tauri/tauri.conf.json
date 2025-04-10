@@ -6,8 +6,8 @@
   "build": {
     "beforeDevCommand": "cd ../.. && npm run dev -w apps/web",
     "devUrl": "http://localhost:5173",
-    "beforeBuildCommand": "cd ../.. && pnpm --filter @paynless/web build && pnpm exec copyfiles -u 1 \"apps/web/dist/**/*\" apps/desktop/dist",
-    "frontendDist": "../dist"
+    "beforeBuildCommand": "cd ../.. && pnpm --filter @paynless/web build",
+    "frontendDist": "../../web/dist"
   },
   "app": {
     "windows": [
