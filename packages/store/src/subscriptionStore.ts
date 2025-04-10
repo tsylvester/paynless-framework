@@ -115,7 +115,7 @@ export const useSubscriptionStore = create<SubscriptionStore>()(
           
           // ---> Add Logging <---
           // Ensure plansResponse.data.plans is an array before setting state
-          const plansArray = plansResponse.data?.plans;
+          const plansArray = plansResponse.data;
           const plansToSet = Array.isArray(plansArray) ? plansArray : []; // Correctly check the .plans property
           if (!Array.isArray(plansArray)) { // Log if the .plans property wasn't an array
              logger.warn('Plans data.plans from API was not an array, setting to empty array.', { receivedData: plansResponse.data });
