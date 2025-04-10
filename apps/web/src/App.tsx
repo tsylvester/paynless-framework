@@ -6,6 +6,7 @@ import { useAuthStore } from '@paynless/store';
 import { ThemeProvider } from './context/theme.context';
 import { AuthenticatedGate } from './components/auth/AuthenticatedGate';
 import { logger } from '@paynless/utils';
+import { useSubscriptionStore } from '@paynless/store';
 
 // Create a client for React Query
 const queryClient = new QueryClient({
@@ -37,6 +38,7 @@ export function AppContent() {
     isLoading: state.isLoading,
   }));
   const initializedRef = useRef(false);
+  const setTestMode = useSubscriptionStore((state) => state.setTestMode); // Get action
   
   useEffect(() => {
     if (!initializedRef.current) {
@@ -45,6 +47,13 @@ export function AppContent() {
       initialize();
     }
   }, [initialize]);
+
+  // Add useEffect for Test Mode Initialization
+  useEffect(() => {
+    const isStripeTestMode = import.meta.env['VITE_STRIPE_TEST_MODE'] === 'true';
+    setTestMode(isStripeTestMode);
+    logger.info(`Stripe Test Mode initialized via useEffect: ${isStripeTestMode}`);
+  }, [setTestMode]); // Run once on mount
 
   if (isLoading) {
     return <div className="flex justify-center items-center min-h-screen">Loading...</div>;
