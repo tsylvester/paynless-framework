@@ -48,7 +48,7 @@ export default defineConfig({
   } as UserConfig['test'],
   build: {
     // Output directly to a dist folder inside the desktop app project
-    outDir: path.resolve(__dirname, '../desktop/dist'),
+    outDir: 'dist',
     emptyOutDir: true, // Ensure it's clean before building
   },
   // Ensure server settings don't conflict if they exist
