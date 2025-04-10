@@ -1,0 +1,22 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "outDir": "./dist",
+    "rootDir": "./src",
+    "declarationDir": "./dist",
+    "lib": ["ESNext", "DOM"],
+    "composite": true
+  },
+  "include": ["src/**/*"],
+  "exclude": [
+    "node_modules", 
+    "dist", 
+    "src/**/*.test.ts", 
+    "src/**/*.test.tsx"
+  ],
+  "references": [
+    { "path": "../types" },
+    { "path": "../utils" },
+    { "path": "../api-client" }
+  ]
+} 

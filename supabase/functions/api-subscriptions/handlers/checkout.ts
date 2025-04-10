@@ -1,10 +1,15 @@
+// IMPORTANT: Supabase Edge Functions require relative paths for imports from shared modules.
+// Do not use path aliases (like @shared/) as they will cause deployment failures.
 import { SupabaseClient } from "../../_shared/auth.ts";
-import Stripe from "npm:stripe@14.11.0";
-import { 
-  createErrorResponse, 
-  createSuccessResponse 
-} from "../../_shared/cors-headers.ts";
+import Stripe from "npm:stripe";
+import type { createErrorResponse as CreateErrorResponseType, createSuccessResponse as CreateSuccessResponseType } from "../../_shared/responses.ts";
 import { CheckoutSessionRequest, SessionResponse } from "../types.ts";
+
+// Define a dependencies interface
+interface CheckoutDeps {
+  createErrorResponse: typeof CreateErrorResponseType;
+  createSuccessResponse: typeof CreateSuccessResponseType;
+}
 
 /**
  * Create a checkout session for subscription
@@ -14,13 +19,24 @@ export const createCheckoutSession = async (
   stripe: Stripe,
   userId: string,
   request: CheckoutSessionRequest,
-  isTestMode: boolean
+  isTestMode: boolean,
+  deps: CheckoutDeps // Add dependencies argument
 ): Promise<Response> => {
+  // Destructure dependencies for easier use
+  const { createErrorResponse, createSuccessResponse } = deps;
+
   try {
+    // 1. Get parameters directly from the request body
     const { priceId, successUrl, cancelUrl } = request;
     
+    // 2. Validate required parameters from request
     if (!priceId || !successUrl || !cancelUrl) {
-      return createErrorResponse("Missing required parameters", 400);
+      console.error("Missing required parameters in request body for checkout", { 
+          priceId: !!priceId, 
+          successUrl: !!successUrl, 
+          cancelUrl: !!cancelUrl 
+      });
+      return createErrorResponse("Missing required parameters or server config for checkout URLs", 400);
     }
     
     // Get user details
@@ -62,14 +78,26 @@ export const createCheckoutSession = async (
       
       customerId = customer.id;
       
-      // Update user subscription with Stripe customer ID
-      await supabase
+      // Upsert user subscription with Stripe customer ID
+      // Use upsert to handle cases where the user row might not exist yet
+      // Provide a default status, as it's required by the table schema
+      const { error: upsertError } = await supabase
         .from("user_subscriptions")
-        .update({ stripe_customer_id: customerId })
-        .eq("user_id", userId);
+        .upsert({ 
+            user_id: userId, 
+            stripe_customer_id: customerId, 
+            status: "incomplete" // Add required status field 
+        }, { onConflict: 'user_id' });
+
+      if (upsertError) {
+          console.error(`Failed to upsert stripe_customer_id for user ${userId}:`, upsertError);
+          // Decide if this should be a blocking error or just a warning
+          // For now, let's throw to make it clear if saving fails
+          throw new Error("Failed to save Stripe customer ID to user subscription.");
+      }
     }
     
-    // Create checkout session
+    // Create checkout session using URLs from request
     const session = await stripe.checkout.sessions.create({
       customer: customerId,
       line_items: [
@@ -87,13 +115,15 @@ export const createCheckoutSession = async (
       },
     });
     
-    const response: SessionResponse = {
-      sessionId: session.id,
-      url: session.url || '',
+    // 3. Return the full session URL provided by Stripe
+    const response: { sessionUrl: string | null } = {
+      sessionUrl: session.url, // Use the URL from the Stripe session object
     };
     
     return createSuccessResponse(response);
   } catch (err) {
-    return createErrorResponse(err.message);
+    console.error("Error creating checkout session:", err);
+    // Pass the original error object as the third argument
+    return createErrorResponse(err.message, 500, err); 
   }
 };

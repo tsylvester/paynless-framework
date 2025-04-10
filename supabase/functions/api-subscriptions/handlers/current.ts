@@ -1,34 +1,50 @@
+// IMPORTANT: Supabase Edge Functions require relative paths for imports from shared modules.
+// Do not use path aliases (like @shared/) as they will cause deployment failures.
 import { SupabaseClient } from "../../_shared/auth.ts";
 import { 
-  createErrorResponse, 
-  createSuccessResponse 
-} from "../../_shared/cors-headers.ts";
-import { UserSubscription } from "../types.ts";
+  createErrorResponse as CreateErrorResponseType, 
+  createSuccessResponse as CreateSuccessResponseType 
+} from "../../_shared/responses.ts";
+import { UserSubscription, SubscriptionPlan } from "../types.ts";
+
+// Define Dependencies Type
+interface GetCurrentDeps {
+  createErrorResponse: typeof CreateErrorResponseType;
+  createSuccessResponse: typeof CreateSuccessResponseType;
+}
 
 /**
  * Get current user subscription
  */
 export const getCurrentSubscription = async (
   supabase: SupabaseClient,
-  userId: string
+  userId: string,
+  deps: GetCurrentDeps // Add deps parameter
 ): Promise<Response> => {
+  const { createErrorResponse, createSuccessResponse } = deps; // Destructure deps
   try {
+    // Define the select query string
+    const selectQuery = `
+      *,
+      subscription_plans:plan_id (*)
+    `;
+
     const { data, error } = await supabase
       .from("user_subscriptions")
-      .select(`
-        *,
-        subscription_plans:plan_id (*)
-      `)
+      .select(selectQuery)
       .eq("user_id", userId)
       .maybeSingle();
     
     if (error) {
-      return createErrorResponse(error.message, 400);
+      console.error(`Error fetching user subscription for ${userId}:`, error);
+      // Return 500 for internal DB error
+      return createErrorResponse("Failed to retrieve subscription data", 500, error);
     }
     
     // User should always have a subscription record thanks to the database trigger
     // But handle the rare case where they might not
     if (!data) {
+      console.warn(`Subscription record not found for user ${userId}. This might indicate an issue with the profile creation trigger.`);
       return createErrorResponse("Subscription not found", 404);
     }
     
@@ -57,7 +73,8 @@ export const getCurrentSubscription = async (
     
     return createSuccessResponse(userSubscription);
   } catch (err) {
-    console.error("Error getting subscription:", err);
-    return createErrorResponse(err.message);
+    console.error(`Error getting subscription for user ${userId}:`, err);
+    // Use deps function and pass error
+    return createErrorResponse(err.message, 500, err);
   }
 };

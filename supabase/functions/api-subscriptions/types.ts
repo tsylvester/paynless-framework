@@ -1,3 +1,5 @@
+// IMPORTANT: Supabase Edge Functions require relative paths for imports from shared modules.
+// Do not use path aliases (like @shared/) as they will cause deployment failures.
 /**
  * Type definitions for the subscription API endpoints
  */

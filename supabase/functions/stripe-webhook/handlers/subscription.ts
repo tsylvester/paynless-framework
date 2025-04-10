@@ -1,3 +1,5 @@
+// IMPORTANT: Supabase Edge Functions require relative paths for imports from shared modules.
+// Do not use path aliases (like @shared/) as they will cause deployment failures.
 import { SupabaseClient } from "npm:@supabase/supabase-js@2.39.3";
 import Stripe from "npm:stripe@14.11.0";
 import { Database } from "../../types_db.ts";
@@ -32,15 +34,41 @@ export const handleSubscriptionUpdated = async (
     return; 
   }
   
-  // Log processing attempt
+  // --- Fetch user_id based on stripe_customer_id ---
+  const customerId = subscription.customer as string;
+  if (!customerId) {
+      console.error(`[${functionName}] Missing customer ID on subscription object: ${subscription.id}`);
+      throw new Error("Subscription object is missing customer ID.");
+  }
+  
+  const { data: userSubData, error: userSubError } = await supabase
+      .from('user_subscriptions')
+      .select('user_id')
+      .eq('stripe_customer_id', customerId)
+      .maybeSingle();
+      
+  if (userSubError) {
+      console.error(`[${functionName}] Error fetching user_id for customer ${customerId}:`, userSubError);
+      throw new Error(`DB error fetching user_id: ${userSubError.message}`);
+  }
+  
+  if (!userSubData?.user_id) {
+      console.error(`[${functionName}] CRITICAL: user_id not found for stripe_customer_id ${customerId}. Subscription event ${eventId} cannot be processed.`);
+      throw new Error(`User mapping not found for Stripe customer ${customerId}. Cannot process event.`);
+  }
+  
+  const userId = userSubData.user_id;
+  
+  // Log processing attempt (now including user_id)
   const { error: upsertProcessingError } = await supabase
     .from('subscription_transactions')
     .upsert({
         stripe_event_id: eventId,
         event_type: eventType,
         status: 'processing',
+        user_id: userId, // Include the fetched user_id
         stripe_subscription_id: subscription.id,
-        stripe_customer_id: subscription.customer as string,
+        stripe_customer_id: customerId,
         // Note: user_id might not be directly available here, 
         // we might need to fetch it based on customer_id later if needed for the log
     }, { onConflict: 'stripe_event_id' });
@@ -52,7 +80,6 @@ export const handleSubscriptionUpdated = async (
 
   try {
     // --- 2. Extract Data & Find User/Plan ---
-    const customerId = subscription.customer as string;
     const priceId = subscription.items.data[0]?.price.id;
 
     if (!priceId) {
@@ -160,14 +187,41 @@ export const handleSubscriptionDeleted = async (
     return; 
   }
   
+  // --- Fetch user_id based on stripe_customer_id ---
+  const customerId = subscription.customer as string;
+  if (!customerId) {
+      console.error(`[${functionName}] Missing customer ID on subscription object: ${subscription.id}`);
+      throw new Error("Subscription object is missing customer ID.");
+  }
+  
+  const { data: userSubData, error: userSubError } = await supabase
+      .from('user_subscriptions')
+      .select('user_id')
+      .eq('stripe_customer_id', customerId)
+      .maybeSingle();
+      
+  if (userSubError) {
+      console.error(`[${functionName}] Error fetching user_id for customer ${customerId}:`, userSubError);
+      throw new Error(`DB error fetching user_id: ${userSubError.message}`);
+  }
+  
+  if (!userSubData?.user_id) {
+      console.error(`[${functionName}] CRITICAL: user_id not found for stripe_customer_id ${customerId}. Subscription event ${eventId} cannot be processed.`);
+      throw new Error(`User mapping not found for Stripe customer ${customerId}. Cannot process event.`);
+  }
+  
+  const userId = userSubData.user_id;
+  
+  // Log processing attempt (now including user_id)
   const { error: upsertProcessingError } = await supabase
     .from('subscription_transactions')
     .upsert({
         stripe_event_id: eventId,
         event_type: eventType,
         status: 'processing',
+        user_id: userId, // Include the fetched user_id
         stripe_subscription_id: subscription.id,
-        stripe_customer_id: subscription.customer as string,
+        stripe_customer_id: customerId,
     }, { onConflict: 'stripe_event_id' });
     
    if (upsertProcessingError) {

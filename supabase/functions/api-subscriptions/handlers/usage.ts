@@ -1,9 +1,17 @@
+// IMPORTANT: Supabase Edge Functions require relative paths for imports from shared modules.
+// Do not use path aliases (like @shared/) as they will cause deployment failures.
 import { SupabaseClient } from "../../_shared/auth.ts";
 import { 
-  createErrorResponse,
-  createSuccessResponse
-} from "../../_shared/cors-headers.ts";
+  createErrorResponse as CreateErrorResponseType, 
+  createSuccessResponse as CreateSuccessResponseType 
+} from "../../_shared/responses.ts";
 import { SubscriptionUsageMetrics } from "../types.ts";
+
+// Define Dependencies Type
+interface GetUsageDeps {
+  createErrorResponse: typeof CreateErrorResponseType;
+  createSuccessResponse: typeof CreateSuccessResponseType;
+}
 
 /**
  * Get usage metrics for a specific metric type
@@ -11,8 +19,10 @@ import { SubscriptionUsageMetrics } from "../types.ts";
 export const getUsageMetrics = async (
   supabase: SupabaseClient,
   userId: string,
-  metric: string
+  metric: string,
+  deps: GetUsageDeps // Add deps parameter
 ): Promise<Response> => {
+  const { createErrorResponse, createSuccessResponse } = deps; // Destructure deps
   try {
     // Get current subscription
     const { data: subscription, error: subscriptionError } = await supabase
@@ -25,36 +35,47 @@ export const getUsageMetrics = async (
       .maybeSingle();
     
     if (subscriptionError) {
-      return createErrorResponse(subscriptionError.message, 400);
+      console.error(`Error fetching subscription for usage metrics (user: ${userId}):`, subscriptionError);
+      // Return 500 for internal DB error
+      return createErrorResponse("Failed to retrieve subscription data", 500, subscriptionError);
     }
     
+    // Handle case where subscription record might be missing (though unlikely with trigger)
+    if (!subscription) {
+       console.warn(`Subscription record not found for user ${userId} when fetching usage.`);
+       return createErrorResponse("Subscription not found", 404);
+    }
+
     // Handle different metrics
     let usageData: SubscriptionUsageMetrics;
+    const planMetadata = subscription?.subscription_plans?.metadata || {};
     
     switch (metric) {
       case "api-calls":
-        // Simplified example - in a real app, you'd have a usage tracking table
+        // TODO: Implement actual usage tracking lookup
         usageData = {
-          current: 0,
-          limit: subscription?.subscription_plans?.metadata?.api_limit || 0,
+          current: 0, // Placeholder
+          limit: planMetadata?.api_limit ?? 0, // Use plan metadata, default 0
           reset_date: subscription?.current_period_end || null,
         };
         break;
         
       case "storage":
-        // Simplified example - in a real app, you'd calculate actual storage used
+        // TODO: Implement actual usage tracking lookup
         usageData = {
-          current: 0, // MB used
-          limit: subscription?.subscription_plans?.metadata?.storage_limit || 0, // MB allowed
+          current: 0, // Placeholder (MB used)
+          limit: planMetadata?.storage_limit ?? 0, // Placeholder (MB allowed)
         };
         break;
         
       default:
-        return createErrorResponse("Unknown metric", 400);
+        return createErrorResponse(`Unknown usage metric requested: ${metric}`, 400);
     }
     
     return createSuccessResponse(usageData);
   } catch (err) {
-    return createErrorResponse(err.message);
+    console.error(`Error getting usage metric '${metric}' for user ${userId}:`, err);
+    // Use deps function and pass error
+    return createErrorResponse(err.message, 500, err);
   }
 };

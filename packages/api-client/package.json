@@ -1,0 +1,43 @@
+{
+  "name": "@paynless/api-client",
+  "version": "0.1.0",
+  "private": true,
+  "description": "API client for Paynless applications",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    },
+    "./mocks/stripe.mock": {
+      "import": "./dist/mocks/stripe.mock.js",
+      "types": "./dist/mocks/stripe.mock.d.ts"
+    }
+  },
+  "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "build": "tsc --build",
+    "clean": "rm -rf dist",
+    "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0"
+  },
+  "dependencies": {
+    "@paynless/types": "workspace:*",
+    "@paynless/utils": "workspace:*",
+    "@supabase/supabase-js": "^2.49.4",
+    "axios": "^1.6.7",
+    "zustand": "^4.5.2"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.20",
+    "@typescript-eslint/eslint-plugin": "^7.18.0",
+    "@typescript-eslint/parser": "^7.18.0",
+    "eslint": "^8.57.0",
+    "msw": "^2.2.13",
+    "typescript": "^5.2.2",
+    "vitest": "^1.4.0"
+  },
+  "license": "ISC"
+}

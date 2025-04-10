@@ -306,3 +306,65 @@ s3_region = "env(S3_REGION)"
 s3_access_key = "env(S3_ACCESS_KEY)"
 # Configures AWS_SECRET_ACCESS_KEY for S3 bucket
 s3_secret_key = "env(S3_SECRET_KEY)"
+
+# --- Function Specific Settings ---
+
+# Disable JWT verification globally for functions locally
+# [functions]
+# verify_jwt = false
+
+# Disable JWT verification specifically for functions that handle their own auth/public access
+[functions.login]
+verify_jwt = false
+
+# Example: Add similar blocks if register, reset-password etc. also need no JWT check
+[functions.register]
+verify_jwt = false
+
+[functions.reset-password]
+verify_jwt = false
+
+[functions.session]
+verify_jwt = false
+
+[functions.refresh]
+verify_jwt = false
+
+# Add section specifically for stripe-webhook
+[functions.stripe-webhook]
+verify_jwt = false
+
+# Add section for ping
+[functions.ping]
+verify_jwt = false
+
+# Keep function sections below if they exist for other specific settings,
+# otherwise they can be removed if verify_jwt=false is set globally above.
+
+# [functions.hello-world]
+# # ...
+# [functions.logout]
+# # ...
+# [functions.me]
+# # ...
+# [functions.profile]
+# # ...
+# [functions.api-subscriptions]
+# # ...
+
+# AI Functions requiring JWT (Default - no explicit setting needed)
+# [functions.chat]
+# [functions.chat-history]
+# [functions.chat-details]
+
+# AI Functions allowing public access
+[functions.ai-providers]
+verify_jwt = false
+
+[functions.system-prompts]
+verify_jwt = false
+
+# -- Removed invalid [auth.jwt] section --
+# [auth.jwt]
+# secret = "super-secret-jwt-token-with-at-least-32-characters-long"
+# # Set this to the default secret used by the local CLI, or your specific test secret if needed

@@ -1,0 +1,17 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "outDir": "./dist",
+    "rootDir": "./src",
+    "types": ["node", "vitest/globals"],
+    "declaration": true,
+    "lib": ["ESNext", "DOM"],
+    "composite": true
+  },
+  "include": ["src/**/*"],
+  "exclude": ["node_modules", "dist", "src/**/*.test.ts", "src/setupTests.ts"],
+  "references": [
+    { "path": "../types" },
+    { "path": "../utils" }
+  ]
+} 

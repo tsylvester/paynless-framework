@@ -1,0 +1,9 @@
+{
+  "compilerOptions": {
+    "lib": ["deno.window", "dom"]
+  },
+  "tasks": {
+    "test": "deno test --allow-env --allow-net"
+  },
+  "nodeModulesDir": "auto"
+} 

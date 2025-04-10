@@ -1,81 +1,177 @@
+// IMPORTANT: Supabase Edge Functions require relative paths for imports from shared modules.
+// Do not use path aliases (like @shared/) as they will cause deployment failures.
+import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
+// Import types
+import type { 
+    SupabaseClient, 
+    AuthError, 
+    User,
+    PostgrestSingleResponse
+} from "@supabase/supabase-js";
+// Import dependencies and rename
 import { 
-  handleCorsPreflightRequest, 
-  createErrorResponse, 
-  createSuccessResponse 
+  handleCorsPreflightRequest as actualHandleCorsPreflightRequest, 
+  createErrorResponse as actualCreateErrorResponse, 
+  createSuccessResponse as actualCreateSuccessResponse 
 } from '../_shared/cors-headers.ts';
 import { 
-  createSupabaseClient, 
-  verifyApiKey,
-  createUnauthorizedResponse
+  createSupabaseClient as actualCreateSupabaseClient, 
+  verifyApiKey as actualVerifyApiKey,
+  createUnauthorizedResponse as actualCreateUnauthorizedResponse
 } from '../_shared/auth.ts';
 
-// Use Deno.serve for Edge Function
-Deno.serve(async (req) => {
-  // Handle CORS preflight requests
-  const corsResponse = handleCorsPreflightRequest(req);
+// Define dependencies interface (Restoring)
+export interface MeHandlerDeps {
+    handleCorsPreflightRequest: typeof actualHandleCorsPreflightRequest;
+    verifyApiKey: typeof actualVerifyApiKey;
+    createUnauthorizedResponse: typeof actualCreateUnauthorizedResponse;
+    createErrorResponse: typeof actualCreateErrorResponse;
+    createSuccessResponse: typeof actualCreateSuccessResponse;
+    createSupabaseClient: typeof actualCreateSupabaseClient;
+}
+
+// Default dependencies (Restoring)
+const defaultDeps: MeHandlerDeps = {
+    handleCorsPreflightRequest: actualHandleCorsPreflightRequest,
+    verifyApiKey: actualVerifyApiKey,
+    createUnauthorizedResponse: actualCreateUnauthorizedResponse,
+    createErrorResponse: actualCreateErrorResponse,
+    createSuccessResponse: actualCreateSuccessResponse,
+    createSupabaseClient: actualCreateSupabaseClient,
+};
+
+// Export the handler with deps parameter (Restoring)
+export async function handleMeRequest(
+    req: Request,
+    deps: MeHandlerDeps = defaultDeps // Restore default parameter
+): Promise<Response> {
+  console.log("[me/index.ts] Handling request:", req.method, req.url);
+  // Use deps again
+  const corsResponse = deps.handleCorsPreflightRequest(req); 
   if (corsResponse) return corsResponse;
 
-  // Verify API key for all non-OPTIONS requests
-  const isValid = verifyApiKey(req);
-  if (!isValid) {
-    return createUnauthorizedResponse("Invalid or missing apikey");
+  console.log("[me/index.ts] Verifying API key...");
+  // Use deps again
+  const isValidApiKey = deps.verifyApiKey(req); 
+  if (!isValidApiKey) {
+    console.log("[me/index.ts] API key verification failed.");
+    // Use deps again
+    return deps.createUnauthorizedResponse("Invalid or missing apikey"); 
   }
+  console.log("[me/index.ts] API key verified.");
 
   try {
-    const supabase = createSupabaseClient(req);
+    console.log("[me/index.ts] Creating Supabase client...");
+    // Use deps again
+    const supabase = deps.createSupabaseClient(req); 
+    console.log("[me/index.ts] Supabase client created.");
     
-    // Get the current user
+    console.log("[me/index.ts] Calling supabase.auth.getUser()...");
     const { data: { user }, error: userError } = await supabase.auth.getUser();
-    
+    console.log(`[me/index.ts] supabase.auth.getUser() result: user=${!!user}, error=${userError?.message}`);
+
     if (userError || !user) {
-      return createUnauthorizedResponse("Not authenticated");
+      console.error("[me/index.ts] Auth error or no user:", userError);
+      // Use deps again
+      return deps.createUnauthorizedResponse("Not authenticated"); 
     }
+    console.log(`[me/index.ts] User authenticated: ${user.id}`);
 
     // Handle different HTTP methods
     switch (req.method) {
       case 'GET': {
-        // Get the user's profile
-        const { data: profile, error: profileError } = await supabase
-          .from('user_profiles')
-          .select('*')
-          .eq('id', user.id)
-          .single();
-
-        if (profileError) {
-          console.error('Error fetching profile:', profileError);
-          return createErrorResponse("Failed to fetch profile", 500);
+        console.log(`[me/index.ts] Handling GET for user ${user.id}`);
+        let profileData = null;
+        let profileError = null;
+        try {
+            console.log(`[me/index.ts] Fetching profile for user ${user.id}...`);
+            const { data, error } = await supabase // supabase client is fine
+              .from('user_profiles')
+              .select('*')
+              .eq('id', user.id)
+              .single();
+            profileData = data;
+            profileError = error;
+             console.log(`[me/index.ts] Profile fetch result: data=${!!profileData}, error=${profileError?.message}`);
+        } catch (fetchErr) {
+            console.error('[me/index.ts] Exception during profile fetch:', fetchErr);
+            // Use deps again
+            return deps.createErrorResponse("Error fetching profile data", 500); 
         }
 
-        return createSuccessResponse(profile || null);
+        if (profileError) {
+          console.error('[me/index.ts] Error fetching profile:', profileError);
+          // Use deps again
+          return deps.createErrorResponse("Failed to fetch profile", 500); 
+        }
+
+        console.log(`[me/index.ts] Profile fetch successful for user ${user.id}. Returning combined data.`);
+        const responseData = {
+            user: user,
+            profile: profileData || null
+        };
+        // Use deps again
+        return deps.createSuccessResponse(responseData); 
       }
 
       case 'PUT': {
-        const updates = await req.json();
+        console.log(`[me/index.ts] Handling PUT for user ${user.id}`);
+        let updates: any;
+        try {
+            updates = await req.json();
+        } catch (jsonError) {
+            console.error("Failed to parse PUT body:", jsonError);
+            // Use deps again
+            return deps.createErrorResponse("Invalid JSON body for update", 400);
+        }
         
-        const { data: profile, error: updateError } = await supabase
-          .from('user_profiles')
-          .update(updates)
-          .eq('id', user.id)
-          .select()
-          .single();
+        let updatedProfile = null;
+        let updateError = null;
+        try {
+            const { data, error } = await supabase // supabase client is fine
+              .from('user_profiles')
+              .update(updates)
+              .eq('id', user.id)
+              .select()
+              .single();
+            updatedProfile = data;
+            updateError = error;
+        } catch (updateCatchErr) {
+            console.error('Exception during profile update:', updateCatchErr);
+             // Use deps again
+            return deps.createErrorResponse("Error updating profile data", 500);
+        }
 
         if (updateError) {
           console.error('Error updating profile:', updateError);
-          return createErrorResponse("Failed to update profile", 500);
+          // Use deps again
+          return deps.createErrorResponse("Failed to update profile", 500);
         }
-
-        return createSuccessResponse(profile);
+        // Use deps again
+        return deps.createSuccessResponse(updatedProfile);
       }
 
       default:
-        return createErrorResponse("Method not allowed", 405);
+        console.log(`[me/index.ts] Method ${req.method} not allowed.`);
+        // Use deps again
+        return deps.createErrorResponse("Method not allowed", 405);
     }
   } catch (err) {
-    console.error("Unexpected error:", err);
-    return createErrorResponse(
+    console.error("[me/index.ts] FATAL UNEXPECTED ERROR in handler:", err);
+    console.error("Error Name:", err?.name);
+    console.error("Error Message:", err?.message);
+    console.error("Error Stack:", err?.stack);
+     // Use deps again
+    return deps.createErrorResponse(
       err instanceof Error ? err.message : "An unexpected error occurred",
       500
     );
   }
-}); 
+}
+
+// Only run serve if the module is executed directly
+if (import.meta.main) {
+    // Update serve call to explicitly pass defaultDeps
+    serve((req) => handleMeRequest(req, defaultDeps));
+} 
