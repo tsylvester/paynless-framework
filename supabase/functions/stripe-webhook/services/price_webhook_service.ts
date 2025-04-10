@@ -4,8 +4,8 @@
 // Do not use path aliases (like @shared/ or @paynless/) as they will cause deployment failures.
 import { Tables } from "../../types_db.ts"; 
 import { SupabaseClient } from "npm:@supabase/supabase-js@2";
-import { logger } from "../_shared/logger.ts"; // Use relative path
-import { Database } from "@supabase/types"; // Use alias from import_map
+import { logger } from "../../_shared/logger.ts"; // Use relative path
+import { Database } from "../../types_db.ts";
 
 /**
  * Interface for Supabase interactions needed by the price change webhook handler.

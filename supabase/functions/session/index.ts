@@ -11,7 +11,7 @@ import type {
     User, 
     Session, // Needed for refresh response
     PostgrestSingleResponse // For profile fetch return type
-} from "@supabase/supabase-js";
+} from "npm:@supabase/supabase-js";
 import { 
   createErrorResponse as actualCreateErrorResponse, 
   createSuccessResponse as actualCreateSuccessResponse,
