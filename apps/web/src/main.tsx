@@ -1,28 +1,49 @@
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
-import App from './App';
+import App from './App.tsx';
 import './index.css';
+import { ThemeProvider } from './context/theme.context';
 import { initializeApiClient } from '@paynless/api-client';
-import { logger } from '@paynless/utils';
+import { logger, LogLevel } from '@paynless/utils';
+import { Toaster } from 'react-hot-toast';
+import { BrowserRouter as Router } from 'react-router-dom';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { ReactQueryDevtools } from '@tanstack/react-query-devtools';
+import { useSubscriptionStore } from '@paynless/store';
 
-// --- Initialize API Client --- 
+// Initialize Logger
+logger.configure({ minLevel: LogLevel.DEBUG, enableConsole: true });
+logger.info('Application starting...');
+
+// Initialize API Client
 const supabaseUrl = import.meta.env['VITE_SUPABASE_URL'];
 const supabaseAnonKey = import.meta.env['VITE_SUPABASE_ANON_KEY'];
 
 if (!supabaseUrl || !supabaseAnonKey) {
-  logger.error('CRITICAL: VITE_SUPABASE_URL or VITE_SUPABASE_ANON_KEY is not defined in environment variables.');
-  // Optionally, render an error message to the user
-  // document.getElementById('root')!.innerHTML = 'Application configuration error.';
+  console.error('Error: Supabase URL or Anon Key is missing. Check your .env file.');
 } else {
-  initializeApiClient({
-    supabaseUrl: supabaseUrl, 
-    supabaseAnonKey: supabaseAnonKey,
-  });
+    logger.info('Initializing API client with URL:', { url: supabaseUrl });
+    initializeApiClient({ supabaseUrl, supabaseAnonKey });
+    logger.info('API client initialized.');
 }
-// --- End Initialization ---
+
+// Initialize React Query Client
+const queryClient = new QueryClient();
+
+// Initialize Stripe Test Mode from Env Var
+const isStripeTestMode = import.meta.env['VITE_STRIPE_TEST_MODE'] === 'true';
+useSubscriptionStore.getState().setTestMode(isStripeTestMode);
+logger.info(`Stripe Test Mode initialized: ${isStripeTestMode}`);
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <App />
+    <ThemeProvider>
+      <Router>
+        <QueryClientProvider client={queryClient}>
+          <App />
+          <ReactQueryDevtools initialIsOpen={false} />
+        </QueryClientProvider>
+      </Router>
+    </ThemeProvider>
   </StrictMode>
 );

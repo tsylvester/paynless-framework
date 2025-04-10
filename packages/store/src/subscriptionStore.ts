@@ -21,6 +21,7 @@ export interface SubscriptionStore extends SubscriptionState {
   setUserSubscription: (subscription: UserSubscription | null) => void;
   setAvailablePlans: (plans: SubscriptionPlan[]) => void;
   setIsLoading: (isLoading: boolean) => void;
+  setTestMode: (isTestMode: boolean) => void;
   setError: (error: Error | null) => void;
   
   // API actions
@@ -41,8 +42,8 @@ export const useSubscriptionStore = create<SubscriptionStore>()(
       availablePlans: [],
       isSubscriptionLoading: false,
       hasActiveSubscription: false,
-      // Read test mode from environment variable
-      isTestMode: import.meta.env.VITE_STRIPE_TEST_MODE === 'true',
+      // Revert to default, app will set it
+      isTestMode: false,
       error: null,
       
       // State setters
@@ -57,6 +58,8 @@ export const useSubscriptionStore = create<SubscriptionStore>()(
       setAvailablePlans: (plans) => set({ availablePlans: plans }),
       
       setIsLoading: (isLoading) => set({ isSubscriptionLoading: isLoading }),
+      
+      setTestMode: (isTestMode) => set({ isTestMode }),
       
       setError: (error) => set({ error }),
       
