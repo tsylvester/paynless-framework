@@ -49,22 +49,6 @@ The architecture follows these principles:
 *   **Testing:** Unit testing components or stores that use the `api` singleton requires mocking the module import using the test framework's capabilities (e.g., `vi.mock('@paynless/api-client', ...)`).
 *   **Consistency Note:** Older stores (`authStore`, `subscriptionStore`) may still use an outdated DI pattern and require refactoring to align with this singleton approach.
 
-## Next Features
-- AI Chat integration
--- Add Claude, Gemini, Perplexity, DeepSeek, etc
-
-- User interaction detection
--- Mixpanel endpoints
-
-- User email integration
--- Feature updates 
--- Reactivation 
-
-- Change email from within app
-- Change password from within app
-- Add loading skeletons to everything
-
-- ChatWoot user help integration
 
 ### Testing Strategy: Service Abstraction for Complex Dependencies
 
@@ -297,29 +281,31 @@ The project is organized as a monorepo using pnpm workspaces:
 ├── supabase/
 │   ├── functions/          # Supabase Edge Functions (Backend API)
 │   │   ├── _shared/          # Shared Deno utilities for functions
-│   │   ├── login/
-│   │   ├── register/
-│   │   ├── logout/
-│   │   ├── refresh/
-│   │   ├── session/
-│   │   ├── reset-password/
-│   │   ├── me/               # User profile fetch
-│   │   ├── profile/          # User profile update
-│   │   ├── ping/             # Health check
 │   │   ├── api-subscriptions/ # Subscription management endpoints
-│   │   ├── stripe-webhook/   # Stripe event handler
-│   │   ├── sync-stripe-plans/ # Sync Stripe plans to DB
 │   │   ├── ai-providers/     # Fetch AI providers
-│   │   ├── system-prompts/   # Fetch system prompts
 │   │   ├── chat/             # Handle AI chat message exchange
-│   │   ├── chat-history/     # Fetch user's chat list
 │   │   ├── chat-details/     # Fetch messages for a specific chat
+│   │   ├── chat-history/     # Fetch user's chat list
+│   │   ├── login/
+│   │   ├── logout/
+│   │   ├── me/               # User profile fetch
+│   │   ├── ping/             # Health check
+│   │   ├── profile/          # User profile update
+│   │   ├── refresh/
+│   │   ├── register/
+│   │   ├── reset-password/
+│   │   ├── session/
+│   │   ├── stripe-webhook/   # Stripe event handler
 │   │   ├── sync-ai-models/   # Sync AI models to DB (Placeholder)
-│   │   └── ... (other utility/test functions might exist)
+│   │   ├── sync-stripe-plans/ # Sync Stripe plans to DB
+│   │   ├── system-prompts/   # Fetch system prompts
+│   │   ├── tools/            # Internal tooling scripts (e.g., env sync)
+│   │   └── ... (other utility/config files like deno.jsonc, types_db.ts)
 │   └── migrations/         # Database migration files (YYYYMMDDHHMMSS_*.sql)
 │
 ├── .env                    # Local environment variables (Supabase/Stripe keys, etc. - UNTRACKED)
 ├── .env.example            # Example environment variables
+├── netlify.toml            # Netlify deployment configuration
 ├── package.json            # Root package file (pnpm workspaces config)
 ├── pnpm-lock.yaml          # pnpm lock file
 ├── pnpm-workspace.yaml     # pnpm workspace definition
@@ -336,16 +322,23 @@ supabase/functions/
 ├── _shared/             # Shared Deno utilities (CORS, Auth helpers, etc.)
 │
 ├── api-subscriptions/   # Handles subscription actions (checkout, portal, plans, current, cancel, resume, usage)
+├── ai-providers/        # Fetches active AI providers
+├── chat/                # Handles AI chat message exchange, context management, history saving
+├── chat-details/        # Fetches messages for a specific chat ID
+├── chat-history/        # Fetches the list of chats for the authenticated user
 ├── login/               # Handles user login
 ├── logout/              # Handles user logout
-├── me/                  # Handles fetching/updating the current user's profile
-├── profile/             # Handles profile-related actions (details TBD)
+├── me/                  # Handles fetching the current user's profile
+├── ping/                # Simple health check endpoint
+├── profile/             # Handles updating the current user's profile
 ├── refresh/             # Handles session token refresh
 ├── register/            # Handles user registration
 ├── reset-password/      # Handles password reset flow
 ├── session/             # Handles session validation/information
 ├── stripe-webhook/      # Handles incoming Stripe events
-└── test-auth.ts         # Standalone test script for auth?
+├── sync-ai-models/      # [Admin/Internal] Syncs AI models from providers to DB (Placeholder)
+├── sync-stripe-plans/   # [Admin/Internal] Syncs Stripe Products/Prices to DB
+└── system-prompts/      # Fetches active system prompts
 ```
 
 ## Core Packages & Exports (For AI Assistants)
@@ -380,14 +373,16 @@ Manages all frontend interactions with the backend Supabase Edge Functions. It f
 #### `StripeApiClient` (Accessed via `api.billing()`) 
 Methods for interacting with Stripe/Subscription related Edge Functions.
 
-- `createCheckoutSession(priceId: string, isTestMode: boolean, options?: FetchOptions): Promise<ApiResponse<CheckoutSessionResponse>>`
+- `createCheckoutSession(priceId: string, isTestMode: boolean, successUrl: string, cancelUrl: string, options?: FetchOptions): Promise<ApiResponse<CheckoutSessionResponse>>`
   - Creates a Stripe Checkout session.
-  - Returns the session ID or error.
+  - Requires `successUrl` and `cancelUrl` for redirection.
+  - Returns the session URL (in `data.sessionUrl`) or error.
 - `createPortalSession(isTestMode: boolean, options?: FetchOptions): Promise<ApiResponse<PortalSessionResponse>>`
   - Creates a Stripe Customer Portal session.
   - Returns the portal URL or error.
-- `getSubscriptionPlans(options?: FetchOptions): Promise<ApiResponse<SubscriptionPlan[]>>`
+- `getSubscriptionPlans(options?: FetchOptions): Promise<ApiResponse<SubscriptionPlansResponse>>`
   - Fetches available subscription plans (e.g., from `subscription_plans` table).
+  - Returns `{ plans: SubscriptionPlan[] }` in the `data` field.
 - `getUserSubscription(options?: FetchOptions): Promise<ApiResponse<UserSubscription>>`
   - Fetches the current user's subscription details.
 - `cancelSubscription(subscriptionId: string, options?: FetchOptions): Promise<ApiResponse<void>>`
@@ -464,16 +459,16 @@ Manages subscription plans and the user's current subscription status.
   - `availablePlans: SubscriptionPlan[]`
   - `isSubscriptionLoading: boolean`
   - `hasActiveSubscription: boolean` (Derived from `userSubscription.status`)
-  - `isTestMode: boolean` (Currently hardcoded to false in store)
+  - `isTestMode: boolean` (Initialized from `VITE_STRIPE_TEST_MODE` env var)
   - `error: Error | null`
 - **Actions**:
   - `setUserSubscription(subscription: UserSubscription | null): void`
   - `setAvailablePlans(plans: SubscriptionPlan[]): void`
   - `setIsLoading(isLoading: boolean): void`
   - `setError(error: Error | null): void`
-  - `loadSubscriptionData(userId: string): Promise<void>`
+  - `loadSubscriptionData(): Promise<void>`
     - Fetches available plans (`/api-subscriptions/plans`) and current user subscription (`/api-subscriptions/current`).
-    - Requires authenticated user (uses token from `authStore`).
+    - Requires authenticated user (uses token from `authStore`). (Note: `userId` param is currently unused in implementation).
   - `refreshSubscription(): Promise<void>`
     - Calls `loadSubscriptionData` again.
   - `createCheckoutSession(priceId: string): Promise<string | null>`
@@ -559,7 +554,7 @@ Contains centralized type definitions used across the monorepo. Exports all type
 
 - **`api.types.ts`**: `ApiResponse`, `ApiError`, `FetchOptions`, etc.
 - **`auth.types.ts`**: `User`, `Session`, `UserProfile`, `UserProfileUpdate`, `AuthStore`, `AuthResponse`, etc.
-- **`subscription.types.ts`**: `SubscriptionPlan`, `UserSubscription`, `SubscriptionStore`, `SubscriptionUsageMetrics`, `CheckoutSessionResponse`, `PortalSessionResponse`, etc.
+- **`subscription.types.ts`**: `SubscriptionPlan`, `UserSubscription`, `SubscriptionStore`, `SubscriptionUsageMetrics`, `CheckoutSessionResponse`, `PortalSessionResponse`, `SubscriptionPlansResponse`, etc.
 - **`ai.types.ts`**: `AiProvider`, `SystemPrompt`, `Chat`, `ChatMessage`, `ChatApiRequest`, `AiState`, `AiActions`, etc.
 - **`theme.types.ts`**: Types related to theming.
 - **`route.types.ts`**: Types related to application routing.

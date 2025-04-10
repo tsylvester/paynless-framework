@@ -4,7 +4,6 @@
 1. AI Chat on homepage doesn't work
 2. AI Chat signup/login flow
 3. AI model sync automation
-4. Stripe checkout completion 
 5. Mixpanel integration
 6. Chatwoot integration 
 7. Clean up Github history (.env secrets in files)
@@ -12,6 +11,12 @@
 9. Ensure project builds on Netlify
 10. Test project on Bolt & Lovable 
 11. Loading skeletons for all components 
+12. User email automation
+13. Change email from within app
+14. Change password from within app
+15. Add loading skeletons to everything
+16. See about switching to shadcn? 
+
 
 **Notes & Key Learnings (Summary):**
 
