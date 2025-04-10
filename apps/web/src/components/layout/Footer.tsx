@@ -9,7 +9,10 @@ export function Footer() {
         <div className="flex flex-col md:flex-row justify-between items-center">
           <div className="mb-4 md:mb-0">
             <p className="text-textSecondary text-sm">
-              &copy; {year} API App. All rights reserved.
+                &copy; {year} 
+              <Link to="https://paynless.app" className="mx-2 text-textSecondary hover:text-textPrimary text-sm">
+                 Paynless Framework. All rights reserved.
+              </Link>
             </p>
           </div>
           
