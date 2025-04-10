@@ -168,7 +168,7 @@ export const useSubscriptionStore = create<SubscriptionStore>()(
           const isTestMode = get().isTestMode;
           // Construct success and cancel URLs based on current origin
           const currentOrigin = window.location.origin;
-          const successUrl = `${currentOrigin}/subscription/success`;
+          const successUrl = `${currentOrigin}/subscriptionsuccess`;
           const cancelUrl = `${currentOrigin}/`;
           
           const response = await api.billing().createCheckoutSession(
