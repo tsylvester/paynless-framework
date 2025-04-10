@@ -26,7 +26,7 @@ dist-ssr
 # env files
 .env
 
-
+tsconfig.tsbuildinfo
 .nx/cache
 .nx/workspace-data
 vite.config.*.timestamp*
