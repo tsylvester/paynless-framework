@@ -19,8 +19,8 @@
   "scripts": {
     "test": "vitest run",
     "test:watch": "vitest",
-    "build": "tsc --build",
-    "clean": "rm -rf dist",
+    "build": "tsc -b --verbose",
+    "clean": "rm -rf dist tsconfig.tsbuildinfo",
     "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0"
   },
   "dependencies": {

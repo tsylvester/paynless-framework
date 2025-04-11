@@ -7,8 +7,8 @@
   "main": "./src/index.ts",
   "types": "./src/index.ts",
   "scripts": {
-    "build": "tsc",
-    "clean": "rm -rf dist",
+    "build": "tsc -b --verbose",
+    "clean": "rm -rf dist tsconfig.tsbuildinfo",
     "lint": "eslint . --ext .ts,.tsx",
     "test": "vitest run"
   },
