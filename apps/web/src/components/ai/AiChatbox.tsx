@@ -55,12 +55,10 @@ export const AiChatbox: React.FC<AiChatboxProps> = ({
     if (!inputMessage.trim() || isLoadingAiResponse) return;
     if (!providerId) {
         logger.error('[AiChatbox] Cannot send message: Provider ID is missing.');
-        // TODO: Potentially set an error state or show a toast
         return;
     }
      if (!promptId) {
         logger.error('[AiChatbox] Cannot send message: Prompt ID is missing.');
-        // TODO: Potentially set an error state or show a toast
         return;
     }
 
@@ -83,6 +81,8 @@ export const AiChatbox: React.FC<AiChatboxProps> = ({
             onLimitReached?.();
              // TODO: Restore input message if needed, or handle in parent
             // setInputMessage(messageToSend);
+        } else if (result && typeof result === 'object' && 'error' in result) {
+           // Handle other potential errors returned from sendMessage
         }
 
     } catch (error: unknown) {

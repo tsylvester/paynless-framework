@@ -1,6 +1,6 @@
 // IMPORTANT: Supabase Edge Functions require relative paths for imports from shared modules.
 // Do not use path aliases (like @shared/) as they will cause deployment failures.
-import { SupabaseClient } from "npm:@supabase/supabase-js@2.39.3";
+import { type SupabaseClient } from 'npm:@supabase/supabase-js@2';
 import Stripe from "npm:stripe@14.11.0";
 import { Database } from "../../types_db.ts";
 

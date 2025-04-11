@@ -1,6 +1,6 @@
 import { assertEquals, assertObjectMatch } from "https://deno.land/std/testing/asserts.ts";
 import { describe, it, beforeEach, afterEach } from "jsr:@std/testing/bdd";
-import { assertSpyCalls, spy, Spy } from "jsr:@std/testing@0.225.1/mock";
+import { assertSpyCalls, spy, Spy, assertSpyCall } from "jsr:@std/testing@0.225.1/mock";
 import { SupabaseClient } from "npm:@supabase/supabase-js";
 import Stripe from "npm:stripe";
 import { createCheckoutSession } from "./checkout.ts";
@@ -8,6 +8,7 @@ import {
   createErrorResponse,
   createSuccessResponse,
 } from "../../_shared/responses.ts";
+import { TablesInsert } from "../../types_db.ts";
 
 // Declare mocks/spies with let
 let mockSupabaseClient: SupabaseClient;
@@ -131,7 +132,10 @@ describe("createCheckoutSession Handler", () => {
   it("should create a new Stripe customer and session if none exists", async () => {
     // Mock DB calls for this specific flow
     const profileData = { first_name: 'Test', last_name: 'User' };
-    const mockUpsertSpy = spy(() => Promise.resolve({ error: null })); // Separate spy for upsert
+    // Define type for upsert args
+    type UpsertArgs = [TablesInsert<"user_subscriptions">, { onConflict: string }?];
+    // Add type annotation to the specific upsert spy
+    const mockUpsertSpy = spy<unknown, UpsertArgs, Promise<{ error: any }>>(() => Promise.resolve({ error: null })); 
     mockSupabaseClient.from = spy((tableName: string) => {
         if (tableName === 'user_profiles') {
              return { 
@@ -173,7 +177,7 @@ describe("createCheckoutSession Handler", () => {
     assertSpyCalls(mockUpsertSpy, 1); // Check the dedicated upsert spy
     assertSpyCalls(mockStripeInstance.checkout.sessions.create as Spy, 1);
 
-    // Verify upsert arguments
+    // Verify upsert arguments (should now type-check)
     assertEquals(mockUpsertSpy.calls[0].args[0], {
       user_id: "user-123",
       stripe_customer_id: "cus_new",
@@ -188,7 +192,8 @@ describe("createCheckoutSession Handler", () => {
     assertEquals(sessionArgs.mode, "subscription");
     assertEquals(sessionArgs.success_url, "/success");
     assertEquals(sessionArgs.cancel_url, "/cancel");
-    assertEquals(sessionArgs.metadata?.userId, "user-123");
+    // Assert userId is NOT in metadata
+    assertEquals(sessionArgs.metadata?.userId, undefined);
     assertEquals(sessionArgs.metadata?.isTestMode, "false"); // Note: handler converts boolean to string
   });
 
@@ -245,6 +250,9 @@ describe("createCheckoutSession Handler", () => {
     assertEquals(sessionArgs.customer, existingCustomerId);
     assertEquals(sessionArgs.line_items[0].price, "price_prod_456");
      assertEquals(sessionArgs.metadata?.isTestMode, "false"); 
+    // Assert userId is NOT in metadata
+    assertEquals(sessionArgs.metadata?.userId, undefined);
+    assertEquals(sessionArgs.metadata?.isTestMode, "false"); 
   });
 
   it("should return 500 if database upsert fails", async () => {
@@ -329,7 +337,8 @@ describe("createCheckoutSession Handler", () => {
     assertEquals(sessionArgs.line_items[0].price, "price_test_123");
     assertEquals(sessionArgs.success_url, "/success-test");
     assertEquals(sessionArgs.cancel_url, "/cancel-test");
-    assertEquals(sessionArgs.metadata?.userId, "user-123");
+    // Assert userId is NOT in metadata
+    assertEquals(sessionArgs.metadata?.userId, undefined);
     assertEquals(sessionArgs.metadata?.isTestMode, "true"); // Check the flag (handler converts to string)
   });
 
@@ -406,6 +415,37 @@ describe("createCheckoutSession Handler", () => {
      const upsertSpy = (mockSupabaseClient.from as Spy).calls.find(c => c.args[0] === 'user_subscriptions')?.returned?.upsert as Spy | undefined;
      assertEquals(upsertSpy, undefined); // Not called
     assertSpyCalls(mockStripeInstance.checkout.sessions.create as Spy, 1);
+  });
+
+  it("should include client_reference_id and not userId in metadata", async () => {
+    const mockUserId = "user-for-client-ref-test";
+    const existingCustomerId = "cus_for_client_ref";
+    // Mock DB to simulate existing customer
+    mockSupabaseClient.from = spy((tableName: string) => {
+        if (tableName === 'user_profiles') {
+            return { select: spy(() => ({ eq: spy(() => ({ single: spy(() => Promise.resolve({ data: {}, error: null })) })) })) } as any;
+        }
+        if (tableName === 'user_subscriptions') {
+            return { select: spy(() => ({ eq: spy(() => ({ single: spy(() => Promise.resolve({ data: { stripe_customer_id: existingCustomerId }, error: null })) })) })) } as any;
+        }
+        return defaultFromSpy()(); 
+    });
+    
+    const requestBody = { priceId: "price_client_ref", successUrl: "/success", cancelUrl: "/cancel" };
+    const isTestMode = true;
+
+    await createCheckoutSession(mockSupabaseClient, mockStripeInstance, mockUserId, requestBody as any, isTestMode, mockDeps());
+
+    // Assert Stripe session create was called
+    const sessionCreateSpy = mockStripeInstance.checkout.sessions.create as Spy;
+    assertSpyCall(sessionCreateSpy, 0);
+
+    // Assert arguments passed to Stripe
+    const sessionArgs = sessionCreateSpy.calls[0].args[0];
+    assertEquals(sessionArgs.client_reference_id, mockUserId, "client_reference_id should match userId");
+    assertEquals(sessionArgs.customer, existingCustomerId, "customer should be existing ID");
+    assertEquals(sessionArgs.line_items[0].price, "price_client_ref");
+    assertEquals(sessionArgs.metadata?.isTestMode, "true");
   });
 
 }); 

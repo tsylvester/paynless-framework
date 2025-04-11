@@ -338,6 +338,10 @@ verify_jwt = false
 [functions.ping]
 verify_jwt = false
 
+# Add section for on-user-created
+[functions.on-user-created]
+verify_jwt = false
+
 # Keep function sections below if they exist for other specific settings,
 # otherwise they can be removed if verify_jwt=false is set globally above.
 

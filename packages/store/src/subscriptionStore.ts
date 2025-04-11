@@ -215,8 +215,10 @@ export const useSubscriptionStore = create<SubscriptionStore>()(
         
         try {
           const isTestMode = get().isTestMode;
-          // Pass token explicitly
-          const response = await api.billing().createPortalSession(isTestMode, { token });
+          // Construct the return URL from the current location
+          const returnUrl = window.location.origin;
+          // Pass token explicitly and the returnUrl
+          const response = await api.billing().createPortalSession(isTestMode, returnUrl, { token });
           if (response.error || !response.data?.url) {
              throw new Error(response.error?.message || 'Failed to get billing portal URL');
           }
@@ -243,28 +245,34 @@ export const useSubscriptionStore = create<SubscriptionStore>()(
         const token = session?.access_token;
         if (!user || !token) {
           logger.error('Cancel subscription: User not logged in or token missing');
-          set({ error: new Error('User not authenticated'), isSubscriptionLoading: false }); // Corrected message
+          set({ error: new Error('User not authenticated'), isSubscriptionLoading: false });
           return false;
         }
         if (!subscriptionId) {
           logger.error('Cancel subscription: Missing subscription ID');
-          set({ error: new Error('Subscription ID is required'), isSubscriptionLoading: false }); // Corrected message
+          set({ error: new Error('Subscription ID is required'), isSubscriptionLoading: false });
           return false;
         }
 
         set({ isSubscriptionLoading: true, error: null });
 
         try {
-          // Pass token explicitly
-          await api.billing().cancelSubscription(subscriptionId, { token });
+          const response = await api.billing().cancelSubscription(subscriptionId, { token });
+          if (response.error) {
+            throw new Error(response.error.message || 'Failed to cancel subscription');
+          }
+          // Only call refresh if the API call was successful
           await get().refreshSubscription();
-          set({ isSubscriptionLoading: false, error: null }); // Ensure loading/error reset AFTER refresh
+          set({ isSubscriptionLoading: false, error: null });
           return true;
         } catch (error) {
-          const errorToSet = error instanceof Error ? error : new Error('Failed to cancel subscription');
-          logger.error('Error cancelling subscription', { error: errorToSet.message, subscriptionId });
-          set({ error: errorToSet, isSubscriptionLoading: false });
-          return false; // Added missing return false
+          const errorMessage = error instanceof Error ? error.message : 'Unknown error cancelling subscription';
+          logger.error('Error cancelling subscription', { error: errorMessage, userId: user.id, subscriptionId });
+          set({
+            isSubscriptionLoading: false,
+            error: error instanceof Error ? error : new Error('Failed to cancel subscription'),
+          });
+          return false;
         }
       },
       
@@ -272,29 +280,35 @@ export const useSubscriptionStore = create<SubscriptionStore>()(
         const { user, session } = useAuthStore.getState();
         const token = session?.access_token;
         if (!user || !token) {
-           logger.error('Resume subscription: User not logged in or token missing');
-           set({ error: new Error('User not authenticated'), isSubscriptionLoading: false }); // Corrected message
-           return false;
+          logger.error('Resume subscription: User not logged in or token missing');
+          set({ error: new Error('User not authenticated'), isSubscriptionLoading: false });
+          return false;
         }
         if (!subscriptionId) {
-           logger.error('Resume subscription: Missing subscription ID');
-           set({ error: new Error('Subscription ID is required'), isSubscriptionLoading: false }); // Corrected message
-           return false;
+          logger.error('Resume subscription: Missing subscription ID');
+          set({ error: new Error('Subscription ID is required'), isSubscriptionLoading: false });
+          return false;
         }
 
         set({ isSubscriptionLoading: true, error: null });
 
         try {
-          // Pass token explicitly
-          await api.billing().resumeSubscription(subscriptionId, { token });
-          await get().refreshSubscription();
-          set({ isSubscriptionLoading: false, error: null }); // Ensure loading/error reset AFTER refresh
+          const response = await api.billing().resumeSubscription(subscriptionId, { token });
+          if (response.error) {
+            throw new Error(response.error.message || 'Failed to resume subscription');
+          }
+          // Only call refresh if the API call was successful
+          await get().refreshSubscription(); 
+          set({ isSubscriptionLoading: false, error: null });
           return true;
         } catch (error) {
-          const errorToSet = error instanceof Error ? error : new Error('Failed to resume subscription');
-          logger.error('Error resuming subscription', { error: errorToSet.message, subscriptionId });
-          set({ error: errorToSet, isSubscriptionLoading: false });
-          return false; // Added missing return false
+          const errorMessage = error instanceof Error ? error.message : 'Unknown error resuming subscription';
+          logger.error('Error resuming subscription', { error: errorMessage, userId: user.id, subscriptionId });
+          set({
+            isSubscriptionLoading: false,
+            error: error instanceof Error ? error : new Error('Failed to resume subscription'),
+          });
+          return false;
         }
       },
       

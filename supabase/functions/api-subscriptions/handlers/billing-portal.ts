@@ -1,9 +1,10 @@
 // IMPORTANT: Supabase Edge Functions require relative paths for imports from shared modules.
 // Do not use path aliases (like @shared/) as they will cause deployment failures.
-import { SupabaseClient } from "../../_shared/auth.ts";
+import { SupabaseClient } from "npm:@supabase/supabase-js";
 import Stripe from "npm:stripe";
+import { type BillingPortalRequest, type SessionResponse } from "../../_shared/types.ts";
 import type { createErrorResponse as CreateErrorResponseType, createSuccessResponse as CreateSuccessResponseType } from "../../_shared/responses.ts";
-import { BillingPortalRequest, SessionResponse } from "../types.ts";
+import { corsHeaders } from "../../_shared/cors-headers.ts";
 
 interface BillingPortalDeps {
   createErrorResponse: typeof CreateErrorResponseType;

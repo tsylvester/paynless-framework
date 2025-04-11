@@ -1,17 +1,19 @@
 // IMPORTANT: Supabase Edge Functions require relative paths for imports from shared modules.
 // Do not use path aliases (like @shared/) as they will cause deployment failures.
+import { type SupabaseClient } from 'npm:@supabase/supabase-js@2';
 import Stripe from "npm:stripe";
 import { ISyncPlansService } from "../../sync-stripe-plans/services/sync_plans_service.ts";
-import { IProductWebhookService } from "../services/product_webhook_service.ts";
+import { ISupabaseProductWebhookService } from "../services/product_webhook_service.ts";
 // IMPORTANT: Supabase Edge Functions require relative paths for imports from shared modules.
 // Do not use path aliases (like @shared/ or @paynless/) as they will cause deployment failures.
 import { logger } from "../../_shared/logger.ts"; // Use relative path
+import { Database, TablesInsert, TablesUpdate } from "../../types_db.ts";
 
 /**
  * Handles product.updated events: Uses the injected service to update plan status.
  */
 export async function handleProductUpdated(
-  supabaseService: IProductWebhookService, // Use the service interface
+  supabaseService: ISupabaseProductWebhookService, // Use the correct type
   _stripe: Stripe,
   product: Stripe.Product,
   _eventId: string,
@@ -36,7 +38,7 @@ export async function handleProductUpdated(
  * Handles product.created events: Uses the injected service to trigger a plan sync.
  */
 export async function handleProductCreated(
-  supabaseService: IProductWebhookService, // Use the service interface
+  supabaseService: ISupabaseProductWebhookService, // Use the correct type
   _stripe: Stripe,
   _product: Stripe.Product,
   _eventId: string,

@@ -1,7 +1,7 @@
 import { assertEquals, assertExists, assertRejects } from "jsr:@std/assert";
 import { describe, it, beforeEach } from "jsr:@std/testing/bdd";
 import { spy, assertSpyCalls, assertSpyCall, type Spy } from "jsr:@std/testing/mock";
-import { SupabaseClient } from "npm:@supabase/supabase-js";
+import { type SupabaseClient } from 'npm:@supabase/supabase-js@2';
 import Stripe from "npm:stripe";
 import { 
     handleInvoicePaymentSucceeded, 

@@ -65,12 +65,17 @@ export class StripeApiClient {
   /**
    * Create Stripe billing portal session
    */
-  async createPortalSession(isTestMode: boolean, options?: FetchOptions): Promise<ApiResponse<PortalSessionResponse>> {
+  async createPortalSession(
+    isTestMode: boolean, 
+    returnUrl: string,
+    options?: FetchOptions
+  ): Promise<ApiResponse<PortalSessionResponse>> {
     try {
-      logger.info('Creating portal session', { isTestMode });
-      const result = await this.apiClient.post<PortalSessionResponse, { isTestMode: boolean }>(
+      logger.info('Creating portal session', { isTestMode, returnUrl });
+      const body = { isTestMode, returnUrl };
+      const result = await this.apiClient.post<PortalSessionResponse, typeof body>(
         'api-subscriptions/billing-portal',
-        { isTestMode },
+        body,
         options
       );
       if (result.error) {

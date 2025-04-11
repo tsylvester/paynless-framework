@@ -1,6 +1,6 @@
 // IMPORTANT: Supabase Edge Functions require relative paths for imports from shared modules.
 // Do not use path aliases (like @shared/) as they will cause deployment failures.
-import { SupabaseClient } from "npm:@supabase/supabase-js@2.39.3";
+import { type SupabaseClient } from 'npm:@supabase/supabase-js@2';
 import Stripe from "npm:stripe@14.11.0";
 import { Database } from "../../types_db.ts";
 
@@ -33,12 +33,22 @@ export const handleInvoicePaymentSucceeded = async (
     return; 
   }
   
-  // --- Fetch user_id based on stripe_customer_id from invoice ---
-  const customerId = invoice.customer as string;
-  if (!customerId) {
-      console.error(`[${functionName}] Missing customer ID on invoice object: ${invoice.id}`);
-      throw new Error(`Invoice object ${invoice.id} is missing customer ID.`);
+  // --- Check if customer ID exists on the invoice ---
+  if (!invoice.customer) {
+    // If invoice.customer is null, it might be for a one-off payment not tied to a customer record.
+    // We can't link this to a user_subscription, so log and exit gracefully.
+    console.warn(`[${functionName}] Invoice ${invoice.id} (Event ${eventId}) does not have a customer ID. Skipping user subscription lookup.`);
+    // Return successfully to Stripe to acknowledge receipt without erroring.
+    // If transaction logging is desired even for non-customer invoices, you could add it here before returning.
+    return;
   }
+
+  // --- Fetch user_id based on stripe_customer_id from invoice ---
+  // We know invoice.customer exists here, but it can be an ID (string) or an expanded Customer object.
+  // Handle both cases to get the ID string.
+  const customerId = typeof invoice.customer === 'string'
+    ? invoice.customer
+    : invoice.customer.id; // If it's an expanded object, get the id property
 
   const { data: userSubData, error: userSubError } = await supabase
       .from('user_subscriptions') // Assuming the customer ID link is reliable here
@@ -157,12 +167,22 @@ export const handleInvoicePaymentFailed = async (
     return; 
   }
   
-  // --- Fetch user_id based on stripe_customer_id from invoice ---
-  const customerId = invoice.customer as string;
-  if (!customerId) {
-      console.error(`[${functionName}] Missing customer ID on invoice object: ${invoice.id}`);
-      throw new Error(`Invoice object ${invoice.id} is missing customer ID.`);
+  // --- Check if customer ID exists on the invoice ---
+  if (!invoice.customer) {
+    // If invoice.customer is null, it might be for a one-off payment not tied to a customer record.
+    // We can't link this to a user_subscription, so log and exit gracefully.
+    console.warn(`[${functionName}] Invoice ${invoice.id} (Event ${eventId}) does not have a customer ID. Skipping user subscription lookup.`);
+    // Return successfully to Stripe to acknowledge receipt without erroring.
+    // If transaction logging is desired even for non-customer invoices, you could add it here before returning.
+    return;
   }
+
+  // --- Fetch user_id based on stripe_customer_id from invoice ---
+  // We know invoice.customer exists here, but it can be an ID (string) or an expanded Customer object.
+  // Handle both cases to get the ID string.
+  const customerId = typeof invoice.customer === 'string'
+    ? invoice.customer
+    : invoice.customer.id; // If it's an expanded object, get the id property
 
   const { data: userSubData, error: userSubError } = await supabase
       .from('user_subscriptions')

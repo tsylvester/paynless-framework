@@ -20,6 +20,7 @@
     "npm:@supabase/supabase-js@2.39.3": "2.39.3",
     "npm:@supabase/supabase-js@^2.43.4": "2.49.4",
     "npm:openai@^4.52.5": "4.91.1",
+    "npm:react@*": "19.1.0",
     "npm:stripe@*": "18.0.0",
     "npm:stripe@14.11.0": "14.11.0"
   },
@@ -341,6 +342,9 @@
       "dependencies": [
         "side-channel"
       ]
+    },
+    "react@19.1.0": {
+      "integrity": "sha512-FS+XFBNvn3GTAWq26joslQgWNoFu08F4kl0J4CgdNKADkdSGXQyTCnKteIAJy96Br6YbpEU1LSzV5dYtjMkMDg=="
     },
     "side-channel-list@1.0.0": {
       "integrity": "sha512-FCLHtRD/gnpCiCHEiJLOwdmFP+wzCmDEkc9y7NsYxeF4u7Btsn1ZuwgwJGxImImHicJArLP4R0yX4c2KCrMrTA==",

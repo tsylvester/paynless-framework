@@ -26,6 +26,7 @@ import { createCheckoutSession as defaultCreateCheckoutSession } from "./handler
 import { cancelSubscription as defaultCancelSubscription, resumeSubscription as defaultResumeSubscription } from "./handlers/subscription.ts";
 import { createBillingPortalSession as defaultCreateBillingPortalSession } from "./handlers/billing-portal.ts";
 import { getUsageMetrics as defaultGetUsageMetrics } from "./handlers/usage.ts";
+import { logger } from "../_shared/logger.ts";
 
 // --- Dependency Injection ---
 
@@ -76,17 +77,7 @@ const defaultDependencies: ApiSubscriptionsDependencies = {
 // --- Core Logic ---
 
 export async function handleApiSubscriptionsRequest(req: Request, deps: ApiSubscriptionsDependencies): Promise<Response> {
-  // ---> Add EARLY logging <---
-  console.log(`[api-subscriptions] START Request: ${req.method} ${req.url}`);
-  try {
-      // Log environment variables specifically needed for Stripe
-      const testModeEnv = Deno.env.get('STRIPE_TEST_MODE');
-      const secretTestKeyEnv = Deno.env.get('STRIPE_SECRET_TEST_KEY');
-      console.log(`[api-subscriptions] Env Vars Check: STRIPE_TEST_MODE=${testModeEnv}, STRIPE_SECRET_TEST_KEY=${secretTestKeyEnv ? 'Loaded' : 'MISSING!'}`);
-  } catch (envError) {
-      console.error("[api-subscriptions] Error accessing Deno.env at start:", envError);
-  }
-  // ---> End EARLY logging <---
+  logger.info('api-subscriptions function starting up.');
 
   const {
       handleCorsPreflightRequest,

@@ -1,7 +1,6 @@
 // IMPORTANT: Supabase Edge Functions require relative paths for imports from shared modules.
 // Do not use path aliases (like @shared/) as they will cause deployment failures.
-import { createClient } from "npm:@supabase/supabase-js@2";
-import type { SupabaseClient } from "npm:@supabase/supabase-js@2";
+import { type SupabaseClient } from 'npm:@supabase/supabase-js@2';
 import Stripe from "npm:stripe";
 import { Tables, TablesInsert, TablesUpdate } from "../../types_db.ts"; // Assuming types_db.ts is in functions root
 import { logger } from "../../_shared/logger.ts"; // Use relative path to shared logger
@@ -32,6 +31,8 @@ export async function handleCheckoutSessionCompleted(
   eventType: string
 ): Promise<void> {
   logger.info(`[handleCheckoutSessionCompleted] Handling ${eventType} for session ${session.id}, Event ID: ${eventId}`);
+  // Log the incoming session object as structured metadata
+  logger.debug(`[handleCheckoutSessionCompleted] Received session object details.`, { sessionData: session });
 
   const userId = session.client_reference_id;
   const subscriptionId = session.subscription;
@@ -51,6 +52,7 @@ export async function handleCheckoutSessionCompleted(
 
   let transactionStatus: 'processing' | 'succeeded' | 'failed' = 'processing';
   let coreLogicError: Error | null = null;
+  let upsertedSubId: string | null = null; // Variable to store the user_subscription ID
 
   try {
     // 1. Idempotency Check & Initial Log
@@ -95,36 +97,81 @@ export async function handleCheckoutSessionCompleted(
 
     // 2. Core Logic: Update user subscription status (only if it's a subscription type)
     if (mode === "subscription" && typeof subscriptionId === 'string' && typeof customerId === 'string') {
-      logger.info(`[handleCheckoutSessionCompleted] Activating subscription ${subscriptionId} for user ${userId}...`);
+      logger.info(`[handleCheckoutSessionCompleted] Retrieving full subscription details for ${subscriptionId}...`);
+      
+      // Retrieve the full Stripe Subscription object
+      const stripeSubscription = await stripe.subscriptions.retrieve(subscriptionId, {
+        expand: ['items.data.price.product'], // Expand price and product details if needed later
+      });
+
+      if (!stripeSubscription) {
+        throw new Error(`Failed to retrieve subscription details from Stripe for ID: ${subscriptionId}`);
+      }
+      logger.debug(`[handleCheckoutSessionCompleted] Retrieved Stripe subscription details.`, { stripeSubscription });
+
+      // Extract necessary details
+      const stripePriceId = stripeSubscription.items.data[0]?.price?.id; // Assuming single item subscription
+      const currentPeriodStart = stripeSubscription.current_period_start ? new Date(stripeSubscription.current_period_start * 1000).toISOString() : null;
+      const currentPeriodEnd = stripeSubscription.current_period_end ? new Date(stripeSubscription.current_period_end * 1000).toISOString() : null;
+
+      if (!stripePriceId) {
+        throw new Error(`Could not find price ID on Stripe subscription ${subscriptionId}`);
+      }
+
+      // Find the corresponding plan_id in your database
+      logger.info(`[handleCheckoutSessionCompleted] Fetching internal plan ID for Stripe price ${stripePriceId}...`);
+      const { data: planData, error: planError } = await supabase
+        .from('subscription_plans')
+        .select('id')
+        .eq('stripe_price_id', stripePriceId)
+        .maybeSingle();
+
+      if (planError) {
+        throw new Error(`Database error fetching plan ID for stripe_price_id ${stripePriceId}: ${planError.message}`);
+      }
+      if (!planData) {
+        // Log a warning but proceed? Or throw error? Depends on business logic.
+        // If a checkout happened, the plan *should* exist. Throwing error might be safer.
+        logger.error(`[handleCheckoutSessionCompleted] CRITICAL: Subscription plan with stripe_price_id ${stripePriceId} not found in the database.`);
+        throw new Error(`Subscription plan with stripe_price_id ${stripePriceId} not found.`);
+      }
+      const internalPlanId = planData.id;
+      logger.info(`[handleCheckoutSessionCompleted] Found internal plan ID: ${internalPlanId}`);
+
+      logger.info(`[handleCheckoutSessionCompleted] Upserting subscription ${subscriptionId} for user ${userId}...`);
       const subscriptionUpdate: TablesUpdate<"user_subscriptions"> = {
-        status: "active", // Assuming 'active'. Adjust based on Stripe status if needed.
+        user_id: userId,
+        status: stripeSubscription.status, // Use status directly from Stripe subscription object
         stripe_customer_id: customerId,
         stripe_subscription_id: subscriptionId,
-        // Potentially update plan_id, current_period_start/end if available & reliable
+        plan_id: internalPlanId, // Add the internal plan ID
+        current_period_start: currentPeriodStart,
+        current_period_end: currentPeriodEnd,
+        cancel_at_period_end: stripeSubscription.cancel_at_period_end,
         updated_at: new Date().toISOString(),
       };
 
-      // Activate the subscription in your database
-      const { data: updatedSub, error: subUpdateError } = await supabase
+      // Activate the subscription in your database - Use upsert for robustness
+      const { data: upsertedSub, error: subUpsertError } = await supabase
         .from(SUBSCRIPTION_TABLE)
-        .update(subscriptionUpdate)
-        .eq("user_id", userId)
-        .select("id")
-        .maybeSingle();
+        // Use upsert based on user_id
+        .upsert(subscriptionUpdate, { onConflict: 'user_id' }) 
+        .select("id") // Ensure we select the ID
+        .maybeSingle(); // Expect one record back
 
-      if (subUpdateError) {
-        throw new Error(`Failed to update subscription status: ${subUpdateError.message}`);
+      if (subUpsertError) {
+        throw new Error(`Failed to upsert subscription status: ${subUpsertError.message}`);
       }
-       if (!updatedSub) {
-        // This might happen if the user_profile/user_subscription row doesn't exist yet.
-        // Consider creating it or handling this case based on application logic.
-        logger.warn(`[handleCheckoutSessionCompleted] No existing subscription found for user ${userId} to update.`);
-        // Depending on requirements, this might be an error or just a warning.
-        // For now, we'll treat it as potentially okay but log it.
-        // throw new Error(`No subscription found for user ${userId} to update.`); 
+       // Log warning if upsert didn't return data (shouldn't happen with upsert unless select fails)
+       if (!upsertedSub || !upsertedSub.id) {
+        logger.error(`[handleCheckoutSessionCompleted] CRITICAL: Upsert operation for user ${userId} did not return the expected record ID.`);
+        // Depending on requirements, might need to throw here as linking transaction will fail
+         throw new Error(`Failed to retrieve ID after upserting user subscription for user ${userId}.`);
+      } else {
+         upsertedSubId = upsertedSub.id; // Store the ID for the transaction log update
+         logger.info(`[handleCheckoutSessionCompleted] Successfully activated/updated subscription. DB record ID: ${upsertedSubId}`);
       }
 
-      logger.info(`[handleCheckoutSessionCompleted] Successfully activated subscription. DB record ID: ${updatedSub?.id ?? 'N/A'}`);
       transactionStatus = 'succeeded'; // Mark as succeeded only after core logic passes
 
     } else {
@@ -134,7 +181,7 @@ export async function handleCheckoutSessionCompleted(
 
   } catch (error) {
     logger.error(`[handleCheckoutSessionCompleted] Error during core logic for ${eventId}: ${error}`);
-    coreLogicError = error; // Store error to re-throw after logging failure
+    coreLogicError = error instanceof Error ? error : new Error(String(error)); // Store error to re-throw after logging failure
     transactionStatus = 'failed';
     // Do not re-throw here; let the finally block handle logging status
   } finally {
@@ -145,6 +192,7 @@ export async function handleCheckoutSessionCompleted(
         .from(TRANSACTION_TABLE)
         .update({ 
             status: transactionStatus,
+            user_subscription_id: upsertedSubId, // Add the user_subscription_id link
             updated_at: new Date().toISOString()
          }) 
         .eq('stripe_event_id', eventId);
@@ -173,7 +221,7 @@ export async function handleCheckoutSessionCompleted(
            throw coreLogicError;
        }
        // Otherwise, throw the error that occurred within the finally block
-       throw finalError;
+       throw finalError instanceof Error ? finalError : new Error(String(finalError));
     }
   }
 }
