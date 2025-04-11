@@ -1,7 +1,6 @@
 import { Layout } from '../components/layout/Layout';
 import { Navigate } from 'react-router-dom';
 import { useAuthStore } from '@paynless/store';
-import { Link } from 'react-router-dom';
 
 export function DashboardPage() {
   // Get user AND profile from the store
@@ -135,43 +134,14 @@ export function DashboardPage() {
               </ol>
             </div>
 
-            {/* --- NEW STEP 2: Load into Bolt or Lovable --- */}
+            {/* Setup Your Project Manually */}
             <div>
-              <h3 className="text-lg font-medium text-textPrimary mb-2">2. Load into Bolt or Lovable</h3>
-              <ol className="list-decimal list-inside space-y-1 text-textSecondary">
-                <li>
-                  <strong>Using <Link to="https://bolt.new" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">bolt.new</Link>:</strong>
-                  <ul className="list-disc list-inside ml-4 mt-1">
-                    <li>Go to <code>bolt.new/~/[YOUR GITHUB ROUTE without https://]</code> (replace with your forked repo path).</li>
-                    <li>Click "Connect to Supabase" and follow the authentication flow.</li>
-                    <li>Click "Deploy" and follow the Netlify deployment flow.</li>
-                    <li>To save progress: Click "Export" then "Download", open the .zip locally, sync changes to your GitHub fork, then reopen the bolt.new URL.</li>
-                    <li>Your project is deployed on Netlify via Bolt!</li>
-                  </ul>
-                </li>
-                <li className="mt-2">
-                  <strong>Using <Link to="https://lovable.dev" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">Lovable.dev</Link>:</strong>
-                  <ul className="list-disc list-inside ml-4 mt-1">
-                    <li>Start an empty project.</li>
-                    <li>Click "Sync your project to github" and connect your forked repository.</li>
-                    <li>Click "Connect to Supabase" and follow the authentication flow.</li>
-                    <li>Click "Publish" and follow the Netlify deployment flow.</li>
-                    <li>Your project is deployed on Netlify via Lovable!</li>
-                  </ul>
-                </li>
-              </ol>
-              <p className="mt-2 text-sm text-textSecondary">Note: Using Bolt or Lovable often handles Supabase/Netlify connection and initial deployment for you, simplifying the manual steps below.</p>
-            </div>
-
-            {/* --- STEP 3: Manual Setup (Combined Supabase + Netlify) --- */}
-            <div>
-              {/* Renamed from 2. Connect to Supabase */}
-              <h3 className="text-lg font-medium text-textPrimary mb-2">3. Setup Your Project Manually</h3>
+              <h3 className="text-lg font-medium text-textPrimary mb-2">2. Setup Your Project Manually</h3>
               
-              {/* Supabase Instructions (Existing) */}
-              <h4 className="text-md font-medium text-textPrimary mt-3 mb-1">3a. Connect to Supabase</h4>
+              {/* Supabase Connection */}
+              <h4 className="text-md font-medium text-textPrimary mt-3 mb-1">2a. Connect to Supabase</h4>
               <ol className="list-decimal list-inside space-y-1 text-textSecondary">
-                <li>Sign in to your <Link to="https://supabase.com/" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">Supabase</Link> account.</li>
+                <li>Sign in to your <a href="https://supabase.com/" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">Supabase</a> account.</li>
                 <li>Create a new project or use an existing one.</li>
                 <li>Navigate to your Project Settings &gt; Integrations &gt; GitHub.</li>
                 <li>Follow the instructions to connect your GitHub account and select your forked repository.</li>
@@ -179,15 +149,15 @@ export function DashboardPage() {
                 <li>Run the database migrations from the <code>supabase/migrations</code> folder using the Supabase CLI or dashboard SQL editor to set up your schema.</li>
                 <li><strong>How to Set up Supabase CLI and Deploy:</strong>
                   <ul className="list-disc list-inside ml-4 mt-1">
-                    <li>Install the Supabase CLI globally: <code>npm install -g supabase</code></li>
+                    <li>Install the Supabase CLI globally: <code>pnpm install -g supabase</code></li>
                     <li>Log in to the CLI: <code>supabase login</code></li>
                     <li>Link your local project to your Supabase project: <code>supabase link --project-ref &lt;your-project-ref&gt; --password &lt;your-database-password&gt;</code> 
                     <br/>(Find your project ref in your Supabase dashboard URL).</li>
                     <li>Push local database changes (like migrations) to your Supabase project: <code>supabase db push</code></li>
                     <li>Deploy all Edge Functions: <code>supabase functions deploy</code>
                       <ul className="list-circle list-inside ml-4 mt-1">
-                         <li>The config.toml in the Supabase directory already turns off JWT for the public functions. </li>
-                         <li>The <code>--no-verify-jwt</code> flag is important here because functions like `login` and `register` need to be accessed without a pre-existing user JWT.</li>
+                         <li>The config.toml in the Supabase directory already turns off JWT for the public functions.</li>
+                         <li>The <code>--no-verify-jwt</code> flag is important here because functions like <code>login</code> and <code>register</code> need to be accessed without a pre-existing user JWT.</li>
                          <li>If you need to deploy functions individually, use the flag only for public ones:</li>
                          <li className="ml-4"><code>supabase functions deploy login --no-verify-jwt</code></li>
                          <li className="ml-4"><code>supabase functions deploy register --no-verify-jwt</code></li>
@@ -198,17 +168,17 @@ export function DashboardPage() {
                 </li>
               </ol>
               
-              {/* Netlify Instructions (Moved from old step 3) */}
-              <h4 className="text-md font-medium text-textPrimary mt-3 mb-1">3b. Connect to Netlify (for Web App)</h4>
+              {/* Netlify Connection */}
+              <h4 className="text-md font-medium text-textPrimary mt-3 mb-1">2b. Connect to Netlify (for Web App)</h4>
               <ol className="list-decimal list-inside space-y-1 text-textSecondary">
-                <li>Sign in to your <Link to="https://netlify.com/" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">Netlify</Link> account.</li>
+                <li>Sign in to your <a href="https://netlify.com/" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">Netlify</a> account.</li>
                 <li>Click "Add new site" &gt; "Import an existing project".</li>
                 <li>Connect to GitHub and authorize Netlify.</li>
                 <li>Select your forked Paynless Framework repository.</li>
                 <li>Configure the build settings:
                   <ul className="list-disc list-inside ml-4 mt-1">
                     <li>Base directory: <code>apps/web</code></li>
-                    <li>Build command: <code>npm run build</code> (or <code>pnpm run build</code> if you adjusted package managers)</li>
+                    <li>Build command: <code>pnpm run build</code></li>
                     <li>Publish directory: <code>apps/web/dist</code></li>
                   </ul>
                 </li>
@@ -216,17 +186,18 @@ export function DashboardPage() {
                   <ul className="list-disc list-inside ml-4 mt-1">
                     <li>To ensure direct links or refreshes work correctly with React Router, create a file named <code>_redirects</code> in the <code>apps/web/public</code> directory with:</li>
                     <pre className="bg-gray-100 dark:bg-gray-800 p-2 rounded text-xs my-1"><code>/*    /index.html    200</code></pre> 
-                    <li>This is all set up in your netlify.toml file already.</li></ul></li>
+                    <li>This is all set up in your netlify.toml file already.</li>
+                  </ul>
+                </li>
                 <li>Once you have Netlify connected to your Github account, it'll automatically deploy with each commit.</li>
               </ol>
             </div>
 
-            {/* --- STEP 4: Stripe Setup (Renumbered from 3) --- */}
+            {/* Stripe Setup */}
             <div>
-              {/* Renumbered */}
-              <h3 className="text-lg font-medium text-textPrimary mb-2">4. Set Up Stripe Products & Webhooks</h3>
+              <h3 className="text-lg font-medium text-textPrimary mb-2">3. Set Up Stripe Products & Webhooks</h3>
               <ol className="list-decimal list-inside space-y-1 text-textSecondary">
-                 <li>In your <Link to="https://stripe.com/" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">Stripe</Link> dashboard, create Products and corresponding Prices that match the plans you want to offer.</li>
+                 <li>In your <a href="https://stripe.com/" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">Stripe</a> dashboard, create Products and corresponding Prices that match the plans you want to offer.</li>
                  <li>Set up a Stripe Webhook endpoint:
                    <ul className="list-disc list-inside ml-4 mt-1">
                      <li>Go to Developers &gt; Webhooks &gt; Add endpoint.</li>
@@ -243,65 +214,49 @@ export function DashboardPage() {
                    </ul>
                  </li>
                  <li>After creating the webhook, copy the Webhook Signing Secret.</li>
-                 <li>Add this secret as an environment variable named <code>STRIPE_WEBHOOK_SECRET</code> to your Supabase project (in the `.env` file for local development via `supabase start`, and in the Supabase Dashboard under Project Settings &gt; Functions for deployed functions).</li>
+                 <li>Add this secret as an environment variable named <code>STRIPE_WEBHOOK_SECRET</code> to your Supabase project (in the <code>.env</code> file for local development via <code>supabase start</code>, and in the Supabase Dashboard under Project Settings &gt; Functions for deployed functions).</li>
               </ol>
             </div>
 
-            {/* --- NEW STEP 5: Set Up OpenAI --- */}
+            {/* OpenAI Setup */}
             <div>
-              <h3 className="text-lg font-medium text-textPrimary mb-2">5. Set Up OpenAI API Key</h3>
+              <h3 className="text-lg font-medium text-textPrimary mb-2">4. Set Up OpenAI API Key</h3>
               <ol className="list-decimal list-inside space-y-1 text-textSecondary">
-                 <li>If you plan to use the AI Chat features, you'll need an API key from OpenAI (or another supported provider).</li>
-                 <li>Visit <Link to="https://openai.com/" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">OpenAI</Link> and create an account or sign in.</li>
-                 <li>Navigate to the API Keys section of your OpenAI account settings.</li>
-                 <li>Create a new secret key.</li>
-                 <li>Add this key as an environment variable named <code>OPENAI_API_KEY</code>:
-                    <ul className="list-disc list-inside ml-4 mt-1">
-                        <li>For local development: Add it to your root <code>.env</code> file (and optionally sync to <code>supabase/.env.local</code> using the sync script).</li>
-                        <li>For deployed functions: Add it to your Supabase Project Settings &gt; Functions &gt; Secrets.</li>
-                     </ul>
-                 </li>
-                 <li>Other AI providers (like Anthropic, Gemini) will require similar steps with their respective keys (e.g., <code>ANTHROPIC_API_KEY</code>).</li>
+                <li>If you plan to use the AI Chat features, you'll need an API key from OpenAI (or another supported provider).</li>
+                <li>Visit <a href="https://openai.com/" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">OpenAI</a> and create an account or sign in.</li>
+                <li>Navigate to the API Keys section of your OpenAI account settings.</li>
+                <li>Create a new secret key.</li>
+                <li>Add this key as an environment variable named <code>OPENAI_API_KEY</code>:
+                  <ul className="list-disc list-inside ml-4 mt-1">
+                    <li>For local development: Add it to your root <code>.env</code> file (and optionally sync to <code>supabase/.env.local</code> using the sync script).</li>
+                    <li>For deployed functions: Add it to your Supabase Project Settings &gt; Functions &gt; Secrets.</li>
+                  </ul>
+                </li>
+                <li>Other AI providers (like Anthropic, Gemini) will require similar steps with their respective keys (e.g., <code>ANTHROPIC_API_KEY</code>).</li>
               </ol>
             </div>
 
-            {/* --- STEP 6: Loading into Dev Env (Renumbered from 5) --- */}
+            {/* Dev Environment Setup */}
             <div>
-              {/* Renumbered */}
-              <h3 className="text-lg font-medium text-textPrimary mb-2">6. Load into Your Dev Environment</h3>
+              <h3 className="text-lg font-medium text-textPrimary mb-2">5. Load into Your Dev Environment</h3>
               <ol className="list-decimal list-inside space-y-1 text-textSecondary">
-                <li>
-                  <strong>Using <Link to="https://bolt.new" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">Bolt.new</Link>:</strong>
-                  <ul className="list-disc list-inside ml-4 mt-1">
-                    <li>See above.</li>
-                  </ul>
-                </li>
-                <li className="mt-2">
-                  <strong>Using <Link to="https://lovable.dev" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">Lovable.dev</Link>:</strong>
-                  <ul className="list-disc list-inside ml-4 mt-1">
-                     <li>See above.</li>
-                  </ul>
-                </li>
-                 <li className="mt-2">
-                  <strong>Using <Link to="https://cursor.sh" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">Cursor</Link> or Local Dev:</strong>
-                   <ul className="list-disc list-inside ml-4 mt-1">
-                     <li>Ensure you have Git and Node.js (with pnpm) installed.</li>
-                     <li>Clone your forked repository to your local machine (<code>git clone &lt;your-fork-url&gt;</code>).</li>
-                     <li>Open the cloned repository folder in your preferred editor (like Cursor).</li>
-                     <li>Install dependencies: Run <code>pnpm install</code> in the integrated terminal at the project root.</li>
-                     <li>Copy <code>.env.example</code> to <code>.env</code> (at the root) and fill in your Supabase/Stripe keys.</li>
-                     <li>(Optional) Sync env vars to <code>supabase/.env.local</code> by running: <code>node supabase/functions/tools/sync-envs.js</code></li>
-                     <li>Start the local Supabase stack: <code>supabase start</code></li>
-                     <li>Apply migrations: <code>supabase db reset</code> (if first time) or <code>supabase migration up</code></li>
-                     <li>Deploy functions locally: <code>supabase functions deploy</code>. The config.toml is set up to disable JWT on the public functions.</li>
-                     <li>Start the web app dev server: <code>pnpm --filter web dev</code>.</li>
-                  </ul>
-                </li>
+                <li>Ensure you have Git and Node.js (with pnpm) installed.</li>
+                <li>Clone your forked repository to your local machine (<code>git clone &lt;your-fork-url&gt;</code>).</li>
+                <li>Open the cloned repository folder in your preferred editor (like Cursor).</li>
+                <li>Install dependencies: Run <code>pnpm install</code> in the integrated terminal at the project root.</li>
+                <li>Copy <code>.env.example</code> to <code>.env</code> (at the root) and fill in your Supabase/Stripe keys.</li>
+                <li>(Optional) Sync env vars to <code>supabase/.env.local</code> by running: <code>node supabase/functions/tools/sync-envs.js</code></li>
+                <li>Start the local Supabase stack: <code>supabase start</code></li>
+                <li>Apply migrations: <code>supabase db reset</code> (if first time) or <code>supabase migration up</code></li>
+                <li>Deploy functions locally: <code>supabase functions deploy</code>. The config.toml is set up to disable JWT on the public functions.</li>
+                <li>Start the web app dev server: <code>pnpm --filter web dev</code>.</li>
               </ol>
             </div>
+
+            <p className="text-center text-lg font-semibold text-green-600 dark:text-green-400 mt-8">
+              Congratulations, you now have a working app with user auth, profiles, database, and subscriptions ready to go!
+            </p>
           </div>
-          <br/>
-          <h2 className="text-lg font-medium text-textPrimary mb-2">Congratulations, you now have a working app with user auth, profiles, database, and subscriptions ready to go!</h2>
         </div>
       </div>
     </Layout>
