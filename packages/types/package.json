@@ -15,7 +15,7 @@
   "scripts": {
     "lint": "eslint . --max-warnings 0",
     "lint:fix": "eslint . --fix",
-    "build": "tsc -b --verbose",
+    "build": "tsc -b",
     "clean": "rm -rf dist tsconfig.tsbuildinfo"
   },
   "devDependencies": {
