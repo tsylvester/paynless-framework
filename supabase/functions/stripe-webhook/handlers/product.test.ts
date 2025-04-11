@@ -1,6 +1,7 @@
-import { assertEquals, assertExists } from "jsr:@std/assert";
+import { assertEquals, assertExists } from "https://deno.land/std@0.208.0/assert/mod.ts";
 import { describe, it, beforeEach, afterEach } from "jsr:@std/testing/bdd";
 import { spy, assertSpyCalls, assertSpyCall, type Spy } from "jsr:@std/testing/mock";
+import { type SupabaseClient } from 'npm:@supabase/supabase-js@2';
 import Stripe from "npm:stripe";
 import { 
     handleProductUpdated,

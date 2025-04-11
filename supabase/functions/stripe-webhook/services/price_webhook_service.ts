@@ -2,10 +2,9 @@
 
 // IMPORTANT: Supabase Edge Functions require relative paths for imports from shared modules.
 // Do not use path aliases (like @shared/ or @paynless/) as they will cause deployment failures.
-import { Tables } from "../../types_db.ts"; 
-import { SupabaseClient } from "npm:@supabase/supabase-js@2";
+import { type SupabaseClient } from 'npm:@supabase/supabase-js@2';
+import { Database, TablesInsert, TablesUpdate } from "../../types_db.ts";
 import { logger } from "../../_shared/logger.ts"; // Use relative path
-import { Database } from "../../types_db.ts";
 
 /**
  * Interface for Supabase interactions needed by the price change webhook handler.

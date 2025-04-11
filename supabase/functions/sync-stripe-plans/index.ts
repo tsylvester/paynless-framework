@@ -151,12 +151,12 @@ export async function handleSyncPlansRequest(
           stripe_product_id: product.id,
           name: product.name,
           description: descriptionJson,
-          amount: price.unit_amount,
+          amount: price.unit_amount ?? 0,
           currency: price.currency,
           interval: price.recurring?.interval,
-          interval_count: price.recurring?.interval_count,
-          metadata: price.metadata,
-          active: true 
+          interval_count: price.recurring?.interval_count ?? 1,
+          active: price.active,
+          metadata: price.metadata ?? null,
         };
       });
 
