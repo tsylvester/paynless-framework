@@ -141,7 +141,7 @@ export function HomePage() {
         <div className="py-12 bg-surface">
           <div className="max-w-xl mx-auto px-4 sm:px-6 lg:max-w-7xl lg:px-8">
             <h2 className="sr-only">Our features</h2>
-            <dl className="space-y-10 lg:space-y-0 lg:grid lg:grid-cols-1 lg:gap-8 md:grid-cols-2 lg:grid-cols-4">
+            <dl className="space-y-10 lg:space-y-0 lg:grid lg:gap-8 md:grid-cols-2 lg:grid-cols-4">
               <div className="relative">
                 <dt>
                   <div className="absolute flex items-center justify-center h-12 w-12 rounded-md bg-primary text-white">

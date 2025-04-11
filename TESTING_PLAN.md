@@ -4,19 +4,21 @@
 1. AI Chat on homepage doesn't work
 2. AI Chat signup/login flow
 3. AI model sync automation
-5. Mixpanel integration
-6. Chatwoot integration 
-7. Clean up Github history (.env secrets in files)
-8. Set up Github Org flow 
-9. Ensure project builds on Netlify
+2. Mixpanel integration
+DONE Chatwoot integration 
+DONE Clean up Github history (.env secrets in files)
+DONE Set up Github Org flow 
+DONE Ensure project builds on Netlify
 10. Test project on Bolt & Lovable 
 11. Loading skeletons for all components 
-12. User email automation
+DONE User email automation - abstract for generic but specific implementation with Kit 
 13. Change email from within app
 14. Change password from within app
 15. Add loading skeletons to everything
 16. See about switching to shadcn? 
-
+17. Change payment method doesn't register site
+DONE Add Analytics as .env var 
+19. Run SEO scan 
 
 **Notes & Key Learnings (Summary):**
 
@@ -107,7 +109,7 @@
     *   **1.1 Unit Tests:**
         *   **Status:** Most core function unit tests passing. AI function tests added.
         *   **Framework:** Deno Standard Library
-        *   **Functions Tested:**
+        *   **Functions/Modules Tested:**
             *   [✅] `login/`
             *   [✅] `logout/`
             *   [✅] `me/`
@@ -135,6 +137,11 @@
                 *   [✅] Unit Test `chat/index.ts` (Extensive tests exist - Review Needed for full coverage)
                 *   [✅] Unit Test `chat-history/index.ts` (Tests exist)
                 *   [✅] Unit Test `chat-details/index.ts` (Tests exist)
+            *   **[NEW] Email Marketing Sync:**
+                *   [ ] `_shared/email_service/kit_service.ts`
+                *   [ ] `_shared/email_service/no_op_service.ts`
+                *   [ ] `_shared/email_service/factory.ts`
+                *   [ ] `on-user-created/index.ts`
             *   [⏸️] `sync-stripe-plans/` *(Unit tests exist but ignored locally due to Supabase lib type resolution errors. Pending deployed testing.)*
             *   [⏸️] `sync-ai-models/` *(Placeholder - No tests needed yet)*
             *   [✅] `_shared/auth.ts`
@@ -166,7 +173,11 @@
         *   [⏸️] `sync-ai-models` *(Needs Integration Test - Requires deployed env)*
         *   [ ] **Database Integration:** Use `supabase test db` to validate migrations and RLS policies. *(RLS policies for AI tables need verification)*
         *   [❓] **Stripe Integration:** Test against Stripe's test environment API and webhooks.
-    *   **1.3 Final Validation & Lockdown:**
+        *   [ ] **Email Marketing Sync:**
+            *   [ ] Deploy `on-user-created` function and manually configure Auth Hook for initial E2E test.
+    *   **1.3 Automation:**
+        *   [ ] Implement script (`create-hooks.ts`?) using Supabase Management API to automate Auth Hook creation based on a config file.
+    *   **1.4 Final Validation & Lockdown:**
         *   [ ] **Task:** Add comments to function code indicating validation status.
 
 *   **Phase 2: Shared Packages (`packages/`)**

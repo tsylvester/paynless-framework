@@ -7,6 +7,7 @@ import { ThemeProvider } from './context/theme.context';
 import { AuthenticatedGate } from './components/auth/AuthenticatedGate';
 import { logger } from '@paynless/utils';
 import { useSubscriptionStore } from '@paynless/store';
+import { ChatwootIntegration } from './components/integrations/ChatwootIntegration';
 
 // Create a client for React Query
 const queryClient = new QueryClient({
@@ -75,6 +76,7 @@ export function AppContent() {
           />
         ))}
       </Routes>
+      <ChatwootIntegration />
     </>
   );
 }
