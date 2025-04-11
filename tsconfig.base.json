@@ -20,6 +20,12 @@
     "module": "ESNext",
     "moduleResolution": "node",
     "baseUrl": ".",
+    "paths": {
+      "@paynless/api-client": ["packages/api-client/src"],
+      "@paynless/store": ["packages/store/src"],
+      "@paynless/types": ["packages/types/src"],
+      "@paynless/utils": ["packages/utils/src"]
+    },
     "resolveJsonModule": true,
     "declaration": true,
     "declarationMap": true,
