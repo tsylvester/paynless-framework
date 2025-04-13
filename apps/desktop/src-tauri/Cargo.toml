@@ -23,3 +23,7 @@ tauri-plugin-opener = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 
+# Added for unit testing file operations
+[dev-dependencies]
+tempfile = "3"
+

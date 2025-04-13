@@ -5,6 +5,7 @@ import './index.css';
 import { initializeApiClient } from '@paynless/api-client';
 import { logger } from '@paynless/utils';
 import ReactGA from 'react-ga4';
+import { PlatformCapabilitiesProvider } from '@paynless/platform-capabilities';
 
 // --- Initialize API Client --- 
 const supabaseUrl = import.meta.env['VITE_SUPABASE_URL'];
@@ -30,6 +31,8 @@ if (gaMeasurementId) {
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <App />
+    <PlatformCapabilitiesProvider>
+      <App />
+    </PlatformCapabilitiesProvider>
   </StrictMode>
 );

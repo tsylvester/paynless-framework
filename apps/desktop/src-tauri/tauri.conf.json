@@ -4,7 +4,6 @@
   "version": "0.1.0",
   "identifier": "com.paynless.desktop",
   "build": {
-    "beforeDevCommand": "cd ../.. && npm run dev -w apps/web",
     "devUrl": "http://localhost:5173",
     "beforeBuildCommand": "cd ../.. && pnpm --filter @paynless/web build",
     "frontendDist": "../../web/dist"
