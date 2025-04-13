@@ -1,13 +1,14 @@
-import { BrowserRouter, Routes, Route, useNavigate } from 'react-router-dom'
-import { routes } from './routes/routes'
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { useEffect, useRef } from 'react'
-import { useAuthStore } from '@paynless/store'
-import { ThemeProvider } from './context/theme.context'
-import { AuthenticatedGate } from './components/auth/AuthenticatedGate'
-import { logger } from '@paynless/utils'
-import { useSubscriptionStore } from '@paynless/store'
-import { ChatwootIntegration } from './components/integrations/ChatwootIntegration'
+import { BrowserRouter, Routes, Route, useNavigate } from 'react-router-dom';
+import { routes } from './routes/routes';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { useEffect, useRef } from 'react';
+import { useAuthStore } from '@paynless/store';
+import { ThemeProvider } from './context/theme.context';
+import { AuthenticatedGate } from './components/auth/AuthenticatedGate';
+import { logger } from '@paynless/utils';
+import { useSubscriptionStore } from '@paynless/store';
+import { ChatwootIntegration } from './components/integrations/ChatwootIntegration';
+import { PlatformFeatureTester } from './components/debug/PlatformFeatureTester';
 
 // Create a client for React Query
 const queryClient = new QueryClient({
@@ -96,7 +97,8 @@ export function AppContent() {
           <Route key={route.path} path={route.path} element={route.element} />
         ))}
       </Routes>
-        <ChatwootIntegration />
+      <ChatwootIntegration />
+      <PlatformFeatureTester />
     </>
   )
 }

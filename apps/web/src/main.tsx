@@ -11,6 +11,7 @@ import { analytics } from '@paynless/analytics-client'
 // Only show errors in the console for now to reduce noise
 //logger.configure({ minLevel: LogLevel.ERROR });
 //logger.info("Logger configured to minimum level: ERROR"); // This line itself won't show now
+import { PlatformCapabilitiesProvider } from '@paynless/platform-capabilities';
 
 // --- Initialize API Client ---
 const supabaseUrl = import.meta.env['VITE_SUPABASE_URL']
@@ -36,6 +37,8 @@ if (gaMeasurementId) {
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <App />
+    <PlatformCapabilitiesProvider>
+      <App />
+    </PlatformCapabilitiesProvider>
   </StrictMode>
 )

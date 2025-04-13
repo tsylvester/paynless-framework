@@ -1,0 +1,24 @@
+{
+  "name": "@paynless/platform-capabilities",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "scripts": {
+    "test": "vitest run",
+    "lint": "eslint ."
+  },
+  "dependencies": {
+    "@paynless/types": "workspace:*"
+  },
+  "devDependencies": {
+    "@tauri-apps/api": "^1.5.3",
+    "@types/node": "^20.12.12",
+    "@vitejs/plugin-react": "^4.3.4",
+    "eslint": "^8.57.0",
+    "typescript": "^5.4.5",
+    "vite-tsconfig-paths": "^5.1.4",
+    "vitest": "^1.6.0"
+  }
+}

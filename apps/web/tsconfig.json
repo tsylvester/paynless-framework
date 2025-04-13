@@ -44,6 +44,7 @@
     { "path": "../../packages/api-client" },
     { "path": "../../packages/store" },
     { "path": "../../packages/types" },
-    { "path": "../../packages/utils" }
+    { "path": "../../packages/utils" },
+    { "path": "../../packages/platform-capabilities" },
   ]
 } 
