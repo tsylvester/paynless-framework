@@ -4,25 +4,20 @@
 1. AI Chat on homepage doesn't work
 2. AI Chat signup/login flow
 3. AI model sync automation
-2. Mixpanel integration
-DONE Chatwoot integration 
-DONE Clean up Github history (.env secrets in files)
-DONE Set up Github Org flow 
-DONE Ensure project builds on Netlify
+4. Mixpanel integration
 10. Test project on Bolt & Lovable 
 11. Loading skeletons for all components 
-DONE User email automation - abstract for generic but specific implementation with Kit 
+12. User email automation - abstract for generic but specific implementation with Kit 
 13. Change email from within app
 14. Change password from within app
 15. Add loading skeletons to everything
 16. See about switching to shadcn? 
 17. Change payment method doesn't register site
-DONE Add Analytics as .env var 
 19. Run SEO scan 
 
 **Notes & Key Learnings (Summary):**
 
-1. **Incomplete Stripe E2E Flow (IMPORTANT):** While core Stripe API client methods, store actions, and backend functions may exist, the full end-to-end flow involving UI redirection to Stripe Checkout/Portal, handling the return to the application (success/cancel), and confirming subscription status updates via webhooks or direct checks **has not been completed or tested**. This includes the necessary E2E tests (Phase 3.3). This must be addressed before considering Stripe functionality complete.
+1. **Incomplete Stripe E2E Flow (IMPORTANT):** Stripe has been tested in Test Mode but not confirmed live Live Mode with real transactions. 
 2. **Chosen Pattern for `apiClient` Consumption & Testing (April 2024):**
     *   **Pattern:** The `@paynless/api-client` package utilizes a **Singleton pattern**. It is initialized once per application run (`initializeApiClient`) and accessed via the exported `api` object (`import { api } from '@paynless/api-client';`).
     *   **Rationale:** This approach is preferred for this multi-platform architecture as it simplifies client consumption across shared code (stores) and different frontend platforms (web, mobile), centralizes configuration, and guarantees a single instance for managing state like auth tokens.
@@ -134,7 +129,7 @@ DONE Add Analytics as .env var
             *   [✅] **AI Chat Functions:**
                 *   [ ] Unit Test `ai-providers/index.ts` (Mock Supabase client) *(Pending)*
                 *   [ ] Unit Test `system-prompts/index.ts` (Mock Supabase client) *(Pending)*
-                *   [✅] Unit Test `chat/index.ts` (Extensive tests exist - Review Needed for full coverage)
+                *   [🚧] Unit Test `chat/index.ts` (Extensive tests exist - Needs update for Auth/Anon Secret Check & Rate Limiting)
                 *   [✅] Unit Test `chat-history/index.ts` (Tests exist)
                 *   [✅] Unit Test `chat-details/index.ts` (Tests exist)
             *   **[NEW] Email Marketing Sync:**
@@ -156,16 +151,16 @@ DONE Add Analytics as .env var
         *   **Function Integration (Auth & Profile):** (All ✅)
         *   [⏸️] **Function Integration (Stripe - API Endpoints):** *(Local Integration Blocked due to env var issue - Test in deployed env.)*
             *   `[⏸️]` `/api-subscriptions/checkout`
-            *   `[ ]` `/api-subscriptions/billing-portal` (Once implemented)
-            *   `[ ]` `/api-subscriptions/.../cancel` (If implemented)
-            *   `[ ]` `/api-subscriptions/.../resume` (If implemented)
+            *   `[ ]` `/api-subscriptions/billing-portal` 
+            *   `[ ]` `/api-subscriptions/.../cancel` 
+            *   `[ ]` `/api-subscriptions/.../resume` 
             *   `[?]` `/api-subscriptions/plans`
             *   `[?]` `/api-subscriptions/current`
             *   `[?]` `/api-subscriptions/usage/:metric`
-        *   [⏸️] **Function Integration (AI Chat):** *(Local Integration Partially Blocked due to env var issue / external calls - Test core DB interactions locally, full flow in deployed env.)*
+        *   [🚧] **Function Integration (AI Chat):** *(Local Integration Partially Blocked due to env var issue / external calls. Test core DB interactions locally, full flow in deployed env. Needs verification for Anon Secret Check.)*
             *   [✅] `/ai-providers` (Verified works locally - DB reads only)
             *   [✅] `/system-prompts` (Verified works locally - DB reads only)
-            *   [⏸️] `/chat` (Requires external AI API keys -> env vars. Test DB save/read logic locally if possible, full flow deployed.)
+            *   [🚧] `/chat` (Requires external AI API keys -> env vars. Needs API tests for Auth/Anon Secret logic.)
             *   [✅] `/chat-history` (Verified works locally - DB reads only)
             *   [✅] `/chat-details/:chatId` (Verified works locally - DB reads only)
         *   [⏸️] **Function Integration (Stripe - Webhook):** *(Test in deployed env)*
@@ -203,9 +198,9 @@ DONE Add Analytics as .env var
             *   **Authentication (`auth.integration.test.tsx`):**
                 *   `[✅]` Login: Success, Invalid Credentials, Server Error.
                 *   `[✅]` Register: Success, Email Exists, Server Error.
-                *   `[ ]` Logout
-                *   `[ ]` Session Load/Refresh
-                *   `[ ]` Password Reset
+                *   `[ ]` Logout (Manually tested as working, integration test not implemented)
+                *   `[ ]` Session Load/Refresh (Manually tested as working, integration test not implemented)
+                *   `[ ]` Password Reset 
                 *   `[ ]` Register -> Redirect to Chat (Test handling of `redirectTo` from `authStore`)
             *   **Profile Management (`profile.integration.test.tsx`):**
                 *   `[✅]` Profile Load: Data displayed in editor.
@@ -218,12 +213,12 @@ DONE Add Analytics as .env var
                 *   `[✅]` Create Checkout: Calls `onSubscribe` prop correctly.
                 *   `[✅]` Create Checkout: Handles `onSubscribe` prop rejection.
                 *   `[✅]` Create Portal: Calls store action & attempts redirect.
-                *   `[ ]` Create Portal: Handles store action failure.
+                *   `[ ]` Create Portal: Handles store action failure. (Manually tested as working, integration test not implemented)
                 *   `[✅]` Cancel Subscription: Calls store action.
-                *   `[ ]` Cancel Subscription: Handles store action failure.
-                *   `[ ]` Resume Subscription: Actions & Handlers.
+                *   `[ ]` Cancel Subscription: Handles store action failure. (Manually tested as working, integration test not implemented)
+                *   `[ ]` Resume Subscription: Actions & Handlers. (Manually tested as working, integration test not implemented)
                 *   `[ ]` Usage Metrics: Actions & Handlers.
-                *   `[ ]` Test Mode UI indication.
+                *   `[✅]` Test Mode UI indication.
                 *   `[ ]` Loading states for actions.
             *   **AI Chat (`ai.integration.test.tsx`):**
                 *   [✅] Load AI Config (Providers/Prompts): Verify selectors populated.
@@ -231,21 +226,22 @@ DONE Add Analytics as .env var
                 *   [✅] Send Message (Error): Verify error message shown. *(Tested via vi.spyOn)*
                 *   [✅] Load Chat History: Verify history list populates.
                 *   [✅] Load Chat Details: Select chat, verify messages load.
-                *   [✅] Anonymous Flow: Send message below limit -> Success.
+                *   [🚧] Anonymous Flow: Send message below limit -> Success (Needs update to verify secret header sent).
                 *   [✅] Anonymous Flow: Send message at limit -> Checks for `{ error: 'limit_reached' }` return object.
+                *   [🚧] Anonymous Flow: Verify default provider/prompt are selected on load.
                 *   [ ] Anonymous Flow: Stash message -> Register -> Verify message sent automatically. *(Logic Pending)*
     *   **3.3 End-to-End Tests:**
         *   [ ] **Tooling:** Setup Playwright/Cypress.
         *   [✅] **Core User Flows:** Auth cycle, Profile management.
         *   [ ] **Payment Flows:**
-            *   `[ ]` User selects plan -> Clicks Subscribe -> Redirected to Stripe Checkout
-            *   `[ ]` User completes checkout -> Redirected to Success URL -> Verify UI update / subscription state
-            *   `[ ]` User cancels checkout -> Redirected to Cancel URL -> Verify UI state
-            *   `[ ]` Subscribed user clicks Manage Billing -> Redirected to Stripe Portal
-            *   `[ ]` User manages subscription in Portal -> Returns to app -> Verify UI update / subscription state (May depend on webhook processing delay)
-        *   [ ] **AI Chat Flows:**
-            *   `[ ]` Authenticated user sends message, receives response.
-            *   `[ ]` Anonymous user sends message below limit.
+            *   `[ ]` User selects plan -> Clicks Subscribe -> Redirected to Stripe Checkout (Manually tested as working, E2E test not implemented)
+            *   `[ ]` User completes checkout -> Redirected to Success URL -> Verify UI update / subscription state (Manually tested as working, E2E test not implemented)
+            *   `[ ]` User cancels checkout -> Redirected to Cancel URL -> Verify UI state (Manually tested as working, E2E test not implemented)
+            *   `[ ]` Subscribed user clicks Manage Billing -> Redirected to Stripe Portal (Manually tested as working, E2E test not implemented)
+            *   `[ ]` User manages subscription in Portal -> Returns to app -> Verify UI update / subscription state (Manually tested as working, E2E test not implemented)
+        *   [🚧] **AI Chat Flows:**
+            *   `[✅]` Authenticated user sends message, receives response.
+            *   `[🚧]` Anonymous user sends message below limit (Verify default selections, sending, response).
             *   `[ ]` Anonymous user hits limit, signs up, message is sent. *(Logic Pending)*
 
 *   **Phase 4: CI/CD**
