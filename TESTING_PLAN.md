@@ -69,6 +69,12 @@
     *   **Impact:** This requires refactoring `authStore` (`login`, `register`, `updateProfile`), `subscriptionStore` (checkout, portal, cancel, resume actions), and the corresponding UI components (`LoginForm`, `RegisterForm`, `ProfileEditor`, `SubscriptionPage`). *(Note: Some progress made on testing strategy refactor for LoginForm/SubscriptionPage by mocking stores, but full pattern implementation pending).*
     *   **Testing Implication:** Unit tests for affected stores and components, along with MSW integration tests (Phase 3.2) for Login, Register, Profile, and Subscription flows, will require significant updates and re-validation after this refactoring.
 18. **Vitest Unhandled Rejections (Component Tests):** When testing React components that interact with mocked asynchronous actions that *reject* (e.g., simulating API errors in `LoginForm.test.tsx`), Vitest consistently reports "Unhandled Rejection" errors and causes the test suite to exit with an error code, *even when the tests correctly assert the rejection and pass all assertions*. Multiple handling strategies (`expect().rejects`, `try/catch` within `act`, `try/catch` outside `act`, explicit `.catch()`) failed to suppress these specific runner errors. For now, we accept this as a Vitest runner artifact; the relevant tests (like `LoginForm.test.tsx`) are considered functionally correct despite the runner's error code.
+19. **Multi-Platform Capability Abstraction & Testing:** To support platform-specific features (like filesystem access on Desktop via Tauri/Rust) across Web, Mobile (React Native), and Desktop targets, a **Capability Abstraction** pattern is adopted.
+    *   **Architecture:** A central service (`platformCapabilitiesService` in a shared package) detects the runtime platform and exposes a consistent interface (e.g., `{ fileSystem: FileSystemCapabilities | null, ... }`). Platform-specific providers (TypeScript wrappers calling Tauri `invoke`, Web APIs, RN Modules) implement these interfaces. Shared UI components check for capability availability (`if (capabilities.fileSystem)`) before using features.
+    *   **Testing Implications:**
+        *   **Unit Tests:** The capability service itself needs unit testing with mocked platform detection. Shared components using the service must be tested by mocking the service to simulate different platforms (capabilities available vs. unavailable) and verifying conditional logic/rendering and calls to the correct service methods. TypeScript capability providers should be unit tested, mocking underlying APIs/modules (`invoke`, Web APIs, RN modules). Rust command handlers require Rust unit tests (`#[test]`).
+        *   **Integration Tests:** Crucially require *platform-specific* integration testing. For Tauri, this means testing the TS -> `invoke` -> Rust -> Native API flow within a Tauri environment (e.g., using `tauri-driver`). For Web/RN, test interaction with Web APIs or Native Modules in their respective environments.
+        *   **E2E Tests:** Must be run on each target platform (Web, Windows Desktop, Mac Desktop, Linux Desktop, iOS, Android) to validate the full user flow involving platform-specific features. Requires appropriate E2E tooling for each platform (Playwright/Cypress for Web, Tauri-specific tooling, Detox/Appium for Mobile).
 
 ---
 
@@ -185,6 +191,8 @@
         *   [⏭️] `packages/ui-components` *(Skipped - Package empty)*.
         *   [✅] `packages/utils` (`logger.ts` tests passing)
         *   [✅] `packages/types` *(Implicitly tested via usage)*.
+        *   [ ] `packages/utils` or `packages/platform-capabilities`: Unit test `platformCapabilitiesService` (mock platform detection).
+        *   [ ] Unit test TypeScript capability providers (mock underlying APIs like `invoke`, Web APIs, RN Modules).
     *   **2.2 Integration Tests:** (Frontend MSW-based tests are covered in Phase 3.2)
 
 *   **Phase 3: Web App (`apps/web/`)**
@@ -192,6 +200,7 @@
         *   [✅] **Component Review:** `LoginForm`, `RegisterForm`, `ProfileEditor`, `SubscriptionPage`, `AiChatbox`, `ModelSelector`, `PromptSelector` exist and follow store interaction pattern.
         *   [ ] `apps/web/src/components/ai/` *(Unit test new AI components)*
         *   [🚧] Other `apps/web/src/` Components/Pages/Hooks: *(Status needs re-evaluation)*
+        *   [ ] Components using `platformCapabilitiesService`: Mock the service to test conditional rendering and logic for different platforms/capabilities.
     *   **3.2 Integration Tests (MSW):**
         *   [✅] **Refactoring Complete:** Structure standardized, utilities/handlers consolidated.
         *   [🚧] **API Integration (Mocked):** Key user flows tested with MSW.
@@ -243,6 +252,7 @@
             *   `[✅]` Authenticated user sends message, receives response.
             *   `[🚧]` Anonymous user sends message below limit (Verify default selections, sending, response).
             *   `[ ]` Anonymous user hits limit, signs up, message is sent. *(Logic Pending)*
+        *   [ ] **Platform Capabilities:** Verify graceful degradation/alternative UI for features unavailable in the web environment. Test features using Web APIs (if any implemented via capabilities).
 
 *   **Phase 4: CI/CD**
     *   [ ] Setup CI pipeline (e.g., GitHub Actions).
@@ -252,6 +262,16 @@
     *   [ ] (Optional): Configure Phase 1.2 tests (consider env var limitations).
     *   [ ] (Optional): Configure Phase 3.3 tests.
     *   [ ] Configure deployment steps.
+*   **Phase 5: Desktop & Mobile Apps (`apps/desktop/`, `apps/ios/`, `apps/android/`)**
+    *   **5.1 Unit Tests (Rust/Native Modules):**
+        *   [ ] Tauri Rust Commands: Unit test native logic (`#[test]`).
+        *   [ ] React Native Modules: Unit test native module logic if applicable.
+    *   **5.2 Integration Tests (Platform-Specific):**
+        *   [ ] **Tauri:** Set up Tauri integration testing (e.g., `tauri-driver`) to test TS-Rust bridge (`invoke`) and native interactions on target OS (Windows, Mac, Linux).
+        *   [ ] **React Native:** Set up RN integration testing (e.g., Detox/Appium) to test interactions with native modules on simulators/devices.
+    *   **5.3 End-to-End Tests (Platform-Specific):**
+        *   [ ] **Tooling:** Setup E2E tools for Tauri (e.g., Playwright with tauri-driver?) and React Native (Detox/Appium).
+        *   [ ] **Flows:** Test user flows involving platform-specific capabilities (filesystem, registry, etc.) on each target platform build (Windows, Mac, Linux, iOS, Android).
 ---
 
 ## Testing Plan: Phase 1 - Backend Integration Details
@@ -331,3 +351,90 @@ Conclusion: The MSW handlers defined in apps/web/src/mocks/handlers.ts are still
     *   **Action:** Mark plan complete, update all status indicators.
 
 ---
+
+## Testing Strategy: Service Abstraction for Complex Dependencies
+
+**Context:** When unit testing Supabase Edge Functions that depend on the `SupabaseClient`, directly mocking the client can be challenging, especially if the function uses multiple distinct parts of the client (e.g., both database access via `.from()` and function invocation via `.functions.invoke()`).
+
+**Problem Encountered:** We encountered persistent TypeScript errors (specifically TS2345) when trying to pass mock `SupabaseClient` objects (even using casting like `as any` or `as unknown as SupabaseClient`) into handler functions. The type checker flagged mismatches due to the complexity of the real `SupabaseClient` class (including internal/protected properties) compared to our simplified mock objects, particularly when the *shape* of the required mock differed between tests in the same file.
+
+**Solution:** To overcome this and improve testability, we introduced a **Service Abstraction Layer** for handlers dealing with such complex dependencies:
+1.  **Define an Interface:** Create a specific interface (e.g., `ISomeSpecificService`) that declares *only* the high-level methods the handler needs (e.g., `updateRecordStatus(...)`, `invokeAnotherFunction(...)`).
+2.  **Implement the Service:** Create a class (e.g., `SomeSpecificService`) that implements this interface, encapsulating the actual `SupabaseClient` calls (`.from().update()`, `.functions.invoke()`) within its methods.
+3.  **Inject the Service:** Refactor the Edge Function handler to depend on the *interface* (`ISomeSpecificService`) instead of the raw `SupabaseClient`.
+4.  **Mock the Interface:** In the handler's unit test, create a simple mock object that implements the service interface using spy functions (e.g., `{ updateRecordStatus: spy(...), invokeAnotherFunction: spy(...) }`). This mock is easily type-compatible with the interface.
+
+**Benefits:**
+*   **Resolves Type Errors:** Completely bypasses the TS2345 errors related to mocking the complex `SupabaseClient` in the handler's unit test.
+*   **Focuses Tests:** Handler unit tests focus on verifying the handler's logic (calling the correct service method with correct arguments, handling results), while the service implementation's logic (correctly using the `SupabaseClient`) can be tested separately (though its tests might face the original mocking challenge, it's solved in one place).
+*   **Maintainability:** Follows the Dependency Inversion Principle, decoupling handlers from the specific implementation details of the `SupabaseClient`.
+
+**(Example:** See `supabase/functions/stripe-webhook/services/product_webhook_service.ts` and its usage in `supabase/functions/stripe-webhook/handlers/product.ts` and `product.test.ts`.)
+
+## Test Incrementally From the Bottom Up
+1. Start with Unit Tests
+- Write unit tests for the file or module you're working on.
+- Run the unit test(s) for that file.
+- Fix the code until all unit tests pass.
+
+2. Move to Integration
+- Once all relevant unit tests pass, run integration tests that depend on those files/modules.
+- If integration tests fail, fix the relevant files — this may require updating multiple modules.
+- Once integration tests pass, review and update your unit tests if the behavior or signatures changed.
+- Rerun affected unit tests to ensure they still pass with the integrated logic.
+
+Why? Integration fixes may change interfaces or logic that your unit tests previously assumed.
+
+3. Stabilize by Layer
+- Ensure all unit tests pass after updates.
+- Ensure all integration tests pass after updates.
+- Only then run the full test suite (unit + integration) across the workspace.
+
+4. End-to-End Validation
+- Once the system passes unit and integration layers, run full end-to-end (E2E) tests.
+- Fix or update E2E tests and supporting mocks if needed.
+
+## Multi-Platform Architecture: Capability Abstraction
+
+Given the requirement to support multiple frontends (Web, React Native for iOS/Android, Tauri for Desktop - Windows/Mac/Linux) with platform-specific capabilities (especially filesystem access on Desktop), the following architectural pattern should be adopted:
+
+### 1. Feature Detection & Capability Abstraction Service
+
+- **Concept:** Create a central service (e.g., `platformCapabilitiesService`) that abstracts away platform-specific functionalities. This service will expose a consistent interface for various capabilities (e.g., `fileSystem`, `notifications`, `registryAccess`).
+- **Implementation:**
+    - Define TypeScript interfaces for each capability group (e.g., `FileSystemCapabilities`, `WindowsRegistryCapabilities`).
+    - The service will have a function (e.g., `getPlatformCapabilities()`) that detects the current runtime environment (Web, Tauri, React Native, specific OS).
+    - Based on the detected platform, the service returns an object implementing the capability interfaces. If a capability is not available on the current platform, the corresponding property in the returned object will be `null`.
+- **Location:** This service could reside in a shared package (e.g., `packages/utils` or a new `packages/platform-capabilities`).
+
+### 2. Platform-Specific Providers
+
+- **Tauri/Rust (Desktop):**
+    - Implement the capability interfaces using Tauri's JavaScript API (`@tauri-apps/api`) for standard features (dialogs, basic FS).
+    - For more complex or OS-specific features (e.g., Windows Registry), create custom Rust commands (`#[tauri::command]`).
+    - These Rust commands implement the native logic using appropriate crates (e.g., `winreg` for Windows registry).
+    - Expose these commands to the TypeScript layer via Tauri's `invoke` function. The TypeScript provider will call `invoke` to execute the Rust backend code.
+    - Use Rust's conditional compilation (`#[cfg(target_os = "windows")]`, etc.) to include OS-specific native code only when building for that target.
+- **Web:**
+    - Implement capabilities using standard Web APIs where available (e.g., `navigator.clipboard`, potentially Web File System Access API).
+    - Return `null` for capabilities not supported in the browser.
+- **React Native (iOS/Android):**
+    - Implement capabilities using React Native modules and platform APIs (e.g., `react-native-fs`, specific native modules if needed).
+    - Return `null` for capabilities not applicable to mobile.
+
+### 3. UI Component Integration
+
+- **Feature Detection:** Shared UI components (in `apps/web/src/components` or potentially a shared `packages/ui-components` if created later) should import and use the `getPlatformCapabilities()` service.
+- **Conditional Logic/Rendering:** Before attempting to use a platform-specific feature, components must check if the capability is available (i.e., not `null`) on the current platform via the service.
+    - Render UI elements (e.g., buttons for "Open File") conditionally based on capability availability.
+    - Provide alternative UI or messages for platforms where a feature is unavailable (graceful degradation).
+- **TypeScript Logic:** The TypeScript code handles the control flow ("*if* on Windows Desktop, *then* try to read registry key via capability service"). The actual native interaction is delegated through the capability service to the platform-specific provider (Tauri/Rust, Web API, RN Module).
+
+### Benefits
+
+- **Maintainability:** Keeps the bulk of the UI and application logic in a shared TypeScript codebase.
+- **Code Reuse:** Maximizes reuse of components and logic across platforms.
+- **Consistency:** Provides a consistent way to access platform features.
+- **Testability:** Allows mocking the capabilities service for unit testing shared components.
+- **Extensibility:** Simplifies adding new platforms or capabilities later.
+- **Platform-Specific Power:** Leverages native capabilities (via Tauri/Rust or React Native modules) where needed without polluting the shared codebase.
