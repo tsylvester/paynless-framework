@@ -260,7 +260,7 @@ export function HomePage() {
             <div className="mt-8 flex justify-center">
                <div className="rounded-md shadow">
                  <Link
-                   to="https://github.com/paynless/paynless-framework"
+                   to="https://github.com/tsylvester/paynless-framework"
                    target="_blank" 
                    rel="noopener noreferrer"
                    className="w-full flex items-center justify-center px-8 py-3 border border-transparent text-base font-medium rounded-md text-primary bg-white hover:bg-gray-50 md:py-4 md:text-lg md:px-10"
