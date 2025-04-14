@@ -5,7 +5,8 @@
   "description": "Monorepo for the Paynless framework backend, shared packages, and apps.",
   "scripts": {
     "dev": "pnpm --parallel --filter \"./apps/*\" dev",
-    "build": "pnpm -r --filter=!./apps/desktop run build",
+    "dev:web": "pnpm --filter ./apps/web dev",
+    "build": "pnpm -r --filter @paynless/web... build",
     "build:clean": "pnpm run clean:buildinfo",
     "clean": "pnpm run clean:buildinfo && pnpm run clean:node_modules",
     "clean:buildinfo": "rimraf packages/**/*.tsbuildinfo apps/**/*.tsbuildinfo tsconfig.tsbuildinfo",

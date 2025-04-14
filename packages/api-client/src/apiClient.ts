@@ -150,6 +150,8 @@ interface ApiInitializerConfig {
 
 // Update initializeApiClient signature and implementation
 export function initializeApiClient(config: ApiInitializerConfig) {
+
+    console.log('initializeApiClientinitializeApiClientinitializeApiClientinitializeApiClientinitializeApiClientinitializeApiClientinitializeApiClient')
   if (apiClientInstance) {
     throw new Error('ApiClient already initialized');
   }
