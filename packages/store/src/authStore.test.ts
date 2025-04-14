@@ -18,6 +18,23 @@ const mockUser: User = { id: 'user-123', email: 'test@example.com', role: 'user'
 const mockSession: Session = { access_token: 'abc', refresh_token: 'def', expires_at: Date.now() + 3600 * 1000 }; // FIX: Use expires_at from type
 const mockProfile: UserProfile = { id: 'user-123', first_name: 'Test', last_name: 'User', role: 'user' as UserRole, created_at: 'now', updated_at: 'now' };
 
+// +++ Add missing mock data +++
+const mockLoginData = {
+  email: 'test@example.com',
+  password: 'password123',
+  user: mockUser,
+  session: mockSession,
+  profile: mockProfile // Assuming login might return profile
+};
+
+const mockRegisterData = {
+  email: 'new@example.com',
+  password: 'newpassword',
+  user: { ...mockUser, id: 'user-new', email: 'new@example.com' }, // Slightly different user for register
+  session: { ...mockSession, access_token: 'xyz', refresh_token: '123' } // Different tokens for register
+};
+// +++ End added mock data +++
+
 // Mock the logger to prevent console noise during tests
 vi.mock('@paynless/utils', () => ({
   logger: {
@@ -109,115 +126,93 @@ describe('AuthStore', () => {
 
   describe('login action', () => {
     it('should update state, call navigate, and return user on success', async () => {
-      const email = 'test@example.com';
-      const password = 'password';
-      // FIX: Mock the ApiResponse structure
-      const apiResponse: ApiResponse<AuthResponse> = { data: { user: mockUser, session: mockSession, profile: mockProfile }, error: null };
-      // Use vi.spyOn for the actual api object
-      const postSpy = vi.spyOn(api, 'post').mockResolvedValue(apiResponse);
+      const { email, password, user, session } = mockLoginData;
+      const postSpy = vi.spyOn(api, 'post').mockResolvedValue({ data: { user, session, profile: mockProfile }, error: null });
+      const navigate = vi.fn();
+      useAuthStore.setState({ navigate });
 
-      let result: User | null = null;
-      await act(async () => {
-        result = await useAuthStore.getState().login(email, password);
-      });
+      const result = await useAuthStore.getState().login(email, password);
 
+      // Expect postSpy to be called with URL and body ONLY
       expect(postSpy).toHaveBeenCalledWith('/login', { email, password });
       const state = useAuthStore.getState();
       expect(state.isLoading).toBe(false);
-      expect(state.user).toEqual(mockUser);
-      expect(state.session).toEqual(mockSession);
+      expect(state.user).toEqual(user);
+      expect(state.session).toEqual(session);
       expect(state.profile).toEqual(mockProfile);
       expect(state.error).toBeNull();
-      // FIX: The action returns the user object on success
-      expect(result).toEqual(mockUser);
-      // Verify navigation was called
-      expect(mockNavigate).toHaveBeenCalledOnce();
-      expect(mockNavigate).toHaveBeenCalledWith('/dashboard');
+      expect(result).toEqual(user);
+      expect(navigate).toHaveBeenCalledOnce();
+      expect(navigate).toHaveBeenCalledWith('/dashboard');
     });
 
     it('should set error state, clear user data, not navigate, and return null on API failure', async () => {
-      const email = 'test@example.com';
-      const password = 'password';
-      const apiError = { message: 'Invalid credentials', code: 'INVALID_CREDENTIALS' };
-      // FIX: Mock the ApiResponse structure for error
-      const errorResponse: ApiResponse<AuthResponse> = { data: null, error: apiError as ApiErrorType };
-      // Use vi.spyOn for the actual api object
-      const postSpy = vi.spyOn(api, 'post').mockResolvedValue(errorResponse); // Mock API returning error object
+      const { email, password } = mockLoginData;
+      const apiError = { message: 'Invalid credentials' };
+      const postSpy = vi.spyOn(api, 'post').mockResolvedValue({ data: null, error: apiError });
+      const navigate = vi.fn();
+      useAuthStore.setState({ navigate });
+      useAuthStore.setState({ user: { id: 'old-user' } as any, session: { access_token: 'old_token' } as any }); // Pre-set user/session
 
-      let result: User | null = mockUser; // Set to non-null initial value
-      await act(async () => {
-         result = await useAuthStore.getState().login(email, password);
-      });
+      const result = await useAuthStore.getState().login(email, password);
 
+      // Expect postSpy to be called with URL and body ONLY
       expect(postSpy).toHaveBeenCalledWith('/login', { email, password });
       const state = useAuthStore.getState();
       expect(state.isLoading).toBe(false);
-      expect(state.user).toBeNull();
+      expect(state.user).toBeNull(); // User should be cleared
       expect(state.session).toBeNull();
       expect(state.profile).toBeNull();
-      // FIX: Check for the error message or code
       expect(state.error).toBeInstanceOf(Error);
       expect(state.error?.message).toContain(apiError.message);
-      expect(result).toBeNull(); // Check return value on error
-      // Verify navigation was NOT called
-      expect(mockNavigate).not.toHaveBeenCalled();
+      expect(result).toBeNull();
+      expect(navigate).not.toHaveBeenCalled();
     });
   });
 
   describe('register action', () => {
     it('should update state, call navigate, and return success object on success', async () => {
-      const email = 'new@example.com';
-      const password = 'newpassword';
-      // FIX: Mock the ApiResponse structure
-      const apiResponse: ApiResponse<AuthResponse> = { data: { user: mockUser, session: mockSession, profile: null }, error: null }; // Profile is null on register
-      // Use vi.spyOn
-      const postSpy = vi.spyOn(api, 'post').mockResolvedValue(apiResponse);
+      const { email, password, user, session } = mockRegisterData;
+      const postSpy = vi.spyOn(api, 'post').mockResolvedValue({ data: { user, session }, error: null });
+      const navigate = vi.fn();
+      useAuthStore.setState({ navigate });
 
-      let result: { success: boolean; user: User | null; redirectTo: string | null } | null = null;
-      await act(async () => {
-        result = await useAuthStore.getState().register(email, password);
-      });
+      const result = await useAuthStore.getState().register(email, password);
 
+      // Expect postSpy to be called with URL and body ONLY
       expect(postSpy).toHaveBeenCalledWith('/register', { email, password });
       const state = useAuthStore.getState();
       expect(state.isLoading).toBe(false);
-      expect(state.user).toEqual(mockUser);
-      expect(state.session).toEqual(mockSession);
+      expect(state.user).toEqual(user);
+      expect(state.session).toEqual(session);
       expect(state.profile).toBeNull(); // Profile not set immediately on register
       expect(state.error).toBeNull();
-      // FIX: Check the structure returned by the register action
-      expect(result).toEqual({ success: true, user: mockUser, redirectTo: '/dashboard' });
-      expect(mockNavigate).toHaveBeenCalledOnce();
-      expect(mockNavigate).toHaveBeenCalledWith('/dashboard');
+      expect(result).toEqual({ success: true, user: user, redirectTo: '/dashboard' });
+      expect(navigate).toHaveBeenCalledOnce();
+      expect(navigate).toHaveBeenCalledWith('/dashboard');
     });
 
     it('should set error state, not navigate, and return failure object on API failure', async () => {
-      const email = 'new@example.com';
-      const password = 'newpassword';
-      const apiError = { message: 'Email already exists', code: 'EMAIL_EXISTS' };
-      // FIX: Mock the ApiResponse structure for error
-      const errorResponse: ApiResponse<AuthResponse> = { data: null, error: apiError as ApiErrorType };
-      // Use vi.spyOn
-      const postSpy = vi.spyOn(api, 'post').mockResolvedValue(errorResponse);
+      const { email, password } = mockRegisterData;
+      const apiError = { message: 'Email already exists' };
+      const postSpy = vi.spyOn(api, 'post').mockResolvedValue({ data: null, error: apiError });
+      const navigate = vi.fn();
+      useAuthStore.setState({ navigate });
+      useAuthStore.setState({ user: { id: 'old-user' } as any, session: { access_token: 'old_token' } as any }); // Pre-set user/session
 
-      let result: { success: boolean; user: User | null; redirectTo: string | null } | null = null;
-      await act(async () => {
-        result = await useAuthStore.getState().register(email, password);
-      });
+      const result = await useAuthStore.getState().register(email, password);
 
+      // Expect postSpy to be called with URL and body ONLY
       expect(postSpy).toHaveBeenCalledWith('/register', { email, password });
       const state = useAuthStore.getState();
       expect(state.isLoading).toBe(false);
-      expect(state.user).toBeNull();
+      expect(state.user).toBeNull(); // User should be cleared on registration failure too
       expect(state.session).toBeNull();
       expect(state.profile).toBeNull();
-      // FIX: Check for the error message or code
       expect(state.error).toBeInstanceOf(Error);
       expect(state.error?.message).toContain(apiError.message);
-      // FIX: Check the structure returned by the register action on failure
       expect(result).toEqual({ success: false, user: null, redirectTo: null });
-      // Verify navigation NOT called
-      expect(mockNavigate).not.toHaveBeenCalled();
+      expect(navigate).not.toHaveBeenCalled();
     });
   });
 
@@ -526,8 +521,8 @@ describe('AuthStore', () => {
          await useAuthStore.getState().refreshSession();
        });
 
-       // FIX: Check call args, including header
-       expect(postSpy).toHaveBeenCalledWith('refresh', {}, { headers: { 'Authorization': `Bearer ${mockSession.refresh_token}` }, isPublic: true });
+       // FIX: Check call args, including header, removing isPublic
+       expect(postSpy).toHaveBeenCalledWith('refresh', {}, { headers: { 'Authorization': `Bearer ${mockSession.refresh_token}` } });
        const state = useAuthStore.getState();
        expect(state.isLoading).toBe(false);
        expect(state.user).toEqual(mockUser);

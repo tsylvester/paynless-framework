@@ -68,13 +68,6 @@ export class ApiClient {
 
         if (!options.isPublic && token) {
             headers.append('Authorization', `Bearer ${token}`);
-        } else if (!options.isPublic && !token) {
-            logger.warn(`API Request: No auth token for non-public endpoint ${endpoint}`); // Use logger, maybe just warn
-            // Return standard ApiResponse format for error
-            return { 
-                status: 401,
-                error: { code: 'UNAUTHENTICATED', message: 'Authentication required' }
-            };
         }
 
         try {

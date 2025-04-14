@@ -16,7 +16,7 @@ import { useAuthStore } from './authStore';
 // Removed produce import as immer middleware handles it
 
 // --- Constants ---
-const ANONYMOUS_MESSAGE_LIMIT = 3; 
+// --- Removed ANONYMOUS_MESSAGE_LIMIT ---
 
 // --- Initial State Values (for direct use in create) ---
 const initialAiStateValues: AiState = {
@@ -30,8 +30,7 @@ const initialAiStateValues: AiState = {
     isHistoryLoading: false,
     isDetailsLoading: false,
     aiError: null,
-    anonymousMessageCount: 0,
-    anonymousMessageLimit: ANONYMOUS_MESSAGE_LIMIT,
+    // --- Removed anonymousMessageCount and anonymousMessageLimit ---
 };
 
 export const useAiStore = create<AiState & AiActions>()(
@@ -94,27 +93,24 @@ export const useAiStore = create<AiState & AiActions>()(
             },
 
             sendMessage: async (data) => {
-                const { message, providerId, promptId, chatId: inputChatId, isAnonymous } = data;
-                const { anonymousMessageCount, anonymousMessageLimit, currentChatId } = get();
-                
-                if (isAnonymous && anonymousMessageCount >= anonymousMessageLimit) {
-                    logger.warn('Anonymous message limit reached.', { count: anonymousMessageCount });
-                    return { error: 'limit_reached' };
-                }
+                // --- Removed isAnonymous from destructuring ---
+                const { message, providerId, promptId, chatId: inputChatId } = data;
+                const { currentChatId } = get(); // Removed anonymous count/limit from get()
+
+                // --- Removed anonymous limit check ---
 
                 // --- Get Token for Authenticated requests ---
                 let token: string | undefined;
-                if (!isAnonymous) {
-                    token = useAuthStore.getState().session?.access_token;
-                    if (!token) {
-                        logger.error('Cannot send message: No auth token available for authenticated request.');
-                        // Set error state appropriately
-                        set({ aiError: 'Authentication required to send message.', isLoadingAiResponse: false }); 
-                        return null; // Or handle error as appropriate
-                    }
+                // --- Removed !isAnonymous check ---
+                token = useAuthStore.getState().session?.access_token;
+                if (!token) {
+                    logger.error('Cannot send message: No auth token available.');
+                    // Set error state appropriately
+                    set({ aiError: 'Authentication required to send message.', isLoadingAiResponse: false });
+                    return null; // Or handle error as appropriate
                 }
                 // --- End Token Check ---
-                
+
                 // Define helpers inline or move outside create if complex
                 const _addOptimisticUserMessage = (msgContent: string): string => {
                     const tempId = `temp-user-${Date.now()}`;
@@ -132,10 +128,7 @@ export const useAiStore = create<AiState & AiActions>()(
                 set(state => { // Use immer set for initial updates
                     state.isLoadingAiResponse = true;
                     state.aiError = null;
-                    if (isAnonymous) {
-                        state.anonymousMessageCount = Number(state.anonymousMessageCount || 0) + 1;
-                        logger.info('[sendMessage] Incremented anonymous count to:', { count: state.anonymousMessageCount });
-                    }
+                    // --- Removed anonymous count increment ---
                 });
 
                 const tempUserMessageId = _addOptimisticUserMessage(message);
@@ -143,30 +136,71 @@ export const useAiStore = create<AiState & AiActions>()(
                 try {
                     const effectiveChatId = inputChatId ?? currentChatId ?? undefined;
                     const requestData: ChatApiRequest = { message, providerId, promptId, chatId: effectiveChatId };
-                    // *** Pass explicit token if available, otherwise rely on isPublic flag ***
-                    const options: FetchOptions = { isPublic: isAnonymous };
-                    if (token) {
-                        options.token = token;
-                    }
+                    // *** Pass token directly, remove isPublic/anon header logic ***
+                    const options: FetchOptions = { token }; // Only token is needed now
 
-                    // Add anonymous secret header if isAnonymous is true
-                    if (isAnonymous) {
-                        const anonSecret = import.meta.env.VITE_ANON_FUNCTION_SECRET;
-                        if (!anonSecret) {
-                             logger.error('VITE_ANON_FUNCTION_SECRET is not set in environment variables.');
-                             throw new Error('Client configuration error: Missing anonymous function secret.');
-                        }
-                        // Initialize headers if they don't exist
-                        if (!options.headers) {
-                            options.headers = {};
-                        }
-                        // Add the secret header (using HeadersInit type for compatibility)
-                        (options.headers as Record<string, string>)['X-Paynless-Anon-Secret'] = anonSecret;
-                         logger.info('Added anonymous secret header to request options.');
-                    }
+                    // --- Removed anonymous secret header logic ---
 
                     const response = await api.ai().sendChatMessage(requestData, options);
 
+                    // ---> Check for AUTH_REQUIRED error BEFORE assuming success <--- 
+                    if (response.status === 401 && response.error?.message === 'Authentication required') {
+                        // Inferring code='AUTH_REQUIRED' from the message based on apiClient logic
+                        logger.warn('Authentication required detected in sendMessage response. Storing pending action...');
+                        
+                        // ---> Step 2.2: Store pending action in sessionStorage <--- 
+                        try {
+                            // ---> Get current path BEFORE navigating <--- 
+                            const returnPath = window.location.pathname + window.location.search;
+
+                            const actionDetails = {
+                                endpoint: '/chat', // TODO: Generalize this endpoint later (Phase 4)
+                                method: 'POST',   // TODO: Generalize this method later (Phase 4)
+                                body: requestData, // The original request data
+                                returnPath: returnPath // Store the path to return to after login
+                            };
+                            sessionStorage.setItem('pendingAction', JSON.stringify(actionDetails));
+                            logger.info('Stored pending action in sessionStorage.', { key: 'pendingAction', details: actionDetails });
+                        } catch (storageError) {
+                            const errMsg = storageError instanceof Error ? storageError.message : String(storageError);
+                            logger.error('Failed to store pending action in sessionStorage:', { error: errMsg });
+                            // If storage fails, we probably can't proceed with the replay logic.
+                            // Set a generic error for the user.
+                             set(state => {
+                                state.aiError = 'An error occurred. Please try logging in and sending your message again.';
+                                state.isLoadingAiResponse = false;
+                                state.currentChatMessages = state.currentChatMessages.filter(
+                                    (msg) => msg.id !== tempUserMessageId
+                                );
+                             });
+                            return null;
+                        }
+
+                        // ---> Step 2.3: Trigger authentication flow (redirect/modal) <--- 
+                        const navigate = useAuthStore.getState().navigate;
+                        if (navigate) {
+                            logger.info('Navigating to login page for pending action.');
+                            // Navigate to login, potentially adding returnTo later if needed
+                            // navigate(`/login?returnTo=${encodeURIComponent(returnPath)}`); 
+                            navigate('/login'); 
+                        } else {
+                            logger.error('Navigate function not found in authStore. Cannot redirect for login.');
+                            // Fallback: Ensure user sees the error message set below
+                        }
+
+                        // Set specific error and clear optimistic message
+                        set(state => {
+                            state.currentChatMessages = state.currentChatMessages.filter(
+                                (msg) => msg.id !== tempUserMessageId
+                            );
+                            logger.info('Removed optimistic message for AUTH_REQUIRED', { id: tempUserMessageId });
+                            state.aiError = 'Authentication required. Please log in.';
+                            state.isLoadingAiResponse = false; // Ensure loading is stopped
+                        });
+                        return null; // Stop processing this response
+                    }
+
+                    // ---> Original success/error handling <---
                     if (!response.error && response.data) {
                         const assistantMessage = response.data;
                         set((state) => { // Immer set for success update
@@ -183,23 +217,27 @@ export const useAiStore = create<AiState & AiActions>()(
                         logger.info('Message sent and response received:', { messageId: assistantMessage.id });
                         return assistantMessage;
                     } else {
-                        const errorMsg = typeof response.error === 'string' ? response.error : (response.error?.message || 'Failed to send message');
-                        throw new Error(errorMsg);
+                        // Handle other API errors (non-401 or different body)
+                        const errorMsg = typeof response.error === 'string' 
+                            ? response.error 
+                            : (response.error?.message || 'Failed to send message');
+                        throw new Error(errorMsg); // Throw to be caught by the generic catch block below
                     }
-                } catch (err: any) {
-                    logger.error('Error during send message API call:', {
-                        error: err?.message || err?.error || err,
+                } catch (err: any) { // Catches network errors or errors thrown from the 'else' block above
+                    // --- Original Generic Error Handling (Now primarily for network errors) ---
+                    const errorMessage = err?.message || String(err) || 'Unknown error during send message API call';
+                    logger.error('Error during send message API call (catch block):', {
+                        errorMessage: errorMessage,
                         optimisticMessageId: tempUserMessageId,
+                        errorDetails: err 
                     });
-                    // Update state using Immer pattern within set
+
                     set(state => {
-                        // Remove optimistic message on error
                         state.currentChatMessages = state.currentChatMessages.filter(
                             (msg) => msg.id !== tempUserMessageId
                         );
-                        logger.info('Removed optimistic message on error', { id: tempUserMessageId });
-                        // Update error state
-                        state.aiError = err?.message || err?.error?.message || 'Failed to send message';
+                        logger.info('Removed optimistic message on generic error/network error', { id: tempUserMessageId });
+                        state.aiError = errorMessage;
                     });
                     return null; // Explicitly return null on error
                 } finally {
@@ -287,37 +325,14 @@ export const useAiStore = create<AiState & AiActions>()(
                     state.currentChatId = null;
                     state.isLoadingAiResponse = false;
                     state.aiError = null;
-                    state.anonymousMessageCount = 0;
                 });
             },
 
-            incrementAnonymousCount: () => {
-                 set((state) => { // Immer set
-                    state.anonymousMessageCount = (state.anonymousMessageCount || 0) + 1;
-                 });
-                 logger.info('Manually incremented anonymous count', { count: get().anonymousMessageCount });
-             },
-
-            resetAnonymousCount: () => {
-                 set((state) => { // Immer set
-                     state.anonymousMessageCount = 0;
-                 });
-                 logger.info('Reset anonymous count.');
-             },
-            
-            setAnonymousCount: (count) => {
-                 if (typeof count === 'number' && count >= 0) {
-                     set({ anonymousMessageCount: count }); // Simple set
-                     logger.info('Set anonymous count', { count });
-                 } else {
-                     logger.warn('Invalid count provided to setAnonymousCount', { count });
-                 }
-             },
-             clearAiError: () => {
+            clearAiError: () => {
                 logger.info('Clearing AI error state.');
                 set({ aiError: null }); // Simple set
              },
         })),
-        { name: 'aiStore' }
+        { name: 'ai-storage' } // persist middleware configuration
     )
 );

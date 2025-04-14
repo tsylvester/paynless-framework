@@ -47,7 +47,7 @@ This plan assumes we'll start by implementing the core service and then focus on
 *   **Goal:** Implement the logic within the service to detect the current platform (Web, Tauri, future RN) and OS.
 *   **Location:** `packages/platform-capabilities/src/index.ts`
 *   **Checklist:**
-    *   [ ] **(TDD) Write Unit Tests for Platform Detection:**
+    *   [x] **(TDD) Write Unit Tests for Platform Detection:**
         *   [ ] Test case for detecting standard web browser environment.
         *   [ ] Test case for detecting Tauri environment (e.g., checking for `window.__TAURI__`).
         *   [ ] Test case for detecting React Native environment (placeholder for future).
@@ -183,15 +183,15 @@ This file tracks major features or refactoring efforts.
 - [x] Improve mock Supabase client for accurate DB simulations.
 - [x] Add comprehensive test cases covering success paths and error conditions.
 
-## Auth Interception for Anonymous Users
+## Auth Interception for Anonymous Users 
 
 Implement a pattern to handle anonymous users attempting actions that require authentication (like submitting a chat). The goal is to interrupt the action, guide the user through login/signup, and resume the action afterwards.
 
 ### Phase 1: Backend Modification (Chat Function)
 
-*   [ ] **Goal:** Modify the `chat` function (`supabase/functions/chat/index.ts`) to return a distinct signal for anonymous users instead of a generic 401.
-*   [ ] **Action:** Inside the `mainHandler`, locate the `Authorization` header check.
-*   [ ] **Action:** If the header is missing: return `401 Unauthorized` with a specific JSON body: `{ "error": "Authentication required", "code": "AUTH_REQUIRED" }`.
+*   [x] **Goal:** Modify the `chat` function (`supabase/functions/chat/index.ts`) to return a distinct signal for anonymous users instead of a generic 401.
+*   [x] **Action:** Inside the `mainHandler`, locate the `Authorization` header check.
+*   [x] **Action:** If the header is missing: return `401 Unauthorized` with a specific JSON body: `{ "error": "Authentication required", "code": "AUTH_REQUIRED" }`.
 
 ### Phase 2: Frontend Interception & State Storage
 
@@ -224,6 +224,8 @@ Implement a pattern to handle anonymous users attempting actions that require au
 
 *   [ ] **Goal:** Refactor the frontend interception and replay logic into a reusable component/hook/service.
 *   [ ] **Action:** Abstract logic from Phases 2 & 3 (e.g., `useProtectedApiCall` or API client interceptors).
+*   [ ] **Action:** Ensure the abstracted solution receives endpoint, method, and body dynamically instead of hardcoding (Ref: `aiStore.ts` TODOs).
+*   [ ] **Action:** Ensure the abstracted solution correctly handles the `returnPath` stored in `pendingAction` during replay (Phase 3).
 *   [ ] **Action:** Ensure refactored solution still works for chat. Consider applying to another feature if available.
 
 ### Phase 5: Backend Security (Optional but Recommended)

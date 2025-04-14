@@ -42,9 +42,8 @@ export const useAuthStore = create<AuthStoreType>()(
         set({ isLoading: true, error: null });
         try {
           const response = await api.post<AuthResponse, {email: string, password: string}>(
-            '/login', 
-            { email, password }, 
-            { isPublic: true } 
+            '/login',
+            { email, password } 
           );
           
           if (!response.error && response.data) {
@@ -88,8 +87,7 @@ export const useAuthStore = create<AuthStoreType>()(
         try {
           const response = await api.post<AuthResponse, {email: string, password: string}>(
             '/register', 
-            { email, password }, 
-            { isPublic: true } 
+            { email, password }
           );
           
           if (!response.error && response.data) {
@@ -230,7 +228,7 @@ export const useAuthStore = create<AuthStoreType>()(
         set({ isLoading: true, error: null });
         try {
           const response = await api.post<RefreshResponse, {}>('refresh', 
-            {}, { headers: { 'Authorization': `Bearer ${currentSession.refresh_token}` }, isPublic: true }
+            {}, { headers: { 'Authorization': `Bearer ${currentSession.refresh_token}` } }
           );
            
            if (!response.error && response.data) {

@@ -15,7 +15,6 @@ export function HomePage() {
   const loadAiConfig = useAiStore(state => state.loadAiConfig);
   const sendMessage = useAiStore(state => state.sendMessage);
   const startNewChat = useAiStore(state => state.startNewChat);
-  const setAnonymousCount = useAiStore(state => state.setAnonymousCount);
   const availableProviders = useAiStore(state => state.availableProviders);
   const availablePrompts = useAiStore(state => state.availablePrompts);
 
@@ -31,9 +30,8 @@ export function HomePage() {
   useEffect(() => {
     loadAiConfig();
     startNewChat();
-    setAnonymousCount(0);
     hasSetDefaults.current = false;
-  }, [loadAiConfig, startNewChat, setAnonymousCount]);
+  }, [loadAiConfig, startNewChat]);
 
   useEffect(() => {
     if (!hasSetDefaults.current && availableProviders.length > 0) {
@@ -71,7 +69,6 @@ export function HomePage() {
             message: pendingMessage.message,
             providerId: pendingMessage.providerId,
             promptId: pendingMessage.promptId,
-            isAnonymous: false,
           });
         } catch (error) {
           logger.error('[HomePage] Failed to parse or send stashed message:', { error: String(error) });
@@ -165,9 +162,6 @@ export function HomePage() {
             isAnonymous={true}
             onLimitReached={handleLimitReached}
           />
-          <p className="text-xs text-center text-muted-foreground mt-2">
-            Anonymous users are limited to {useAiStore.getState().anonymousMessageLimit} messages. Sign up for unlimited access.
-          </p>
         </div>
         
         {/* Features section */}

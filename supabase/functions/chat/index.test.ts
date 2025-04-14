@@ -225,13 +225,13 @@ Deno.test("Chat Function Tests", async (t) => {
         });
 
         // Get the spied-on factory BEFORE calling mainHandler
-        const clientFactorySpy = deps.createSupabaseClient as Spy<typeof createClient>;
+            const clientFactorySpy = deps.createSupabaseClient as Spy<typeof createClient>;
 
         // Pass only req and deps to mainHandler
         const response = await mainHandler(req, deps);
-        console.log("Auth POST test mainHandler completed.");
+            console.log("Auth POST test mainHandler completed.");
 
-        assertEquals(response.status, 200, `Expected status 200 but got ${response.status}`);
+            assertEquals(response.status, 200, `Expected status 200 but got ${response.status}`);
         const json = await response.json() as ChatMessage; // Assert response body is the assistant message
 
         // Assert AI response content (adjust based on actual payload structure)
@@ -418,7 +418,7 @@ Deno.test("Chat Function Tests", async (t) => {
         });
         const response = await mainHandler(req, deps);
         assertEquals(response.status, 400);
-        const json = await response.json();
+            const json = await response.json();
         assertEquals(json.error, "Test: Prompt not found");
         console.log("--- Invalid promptId POST test passed ---");
     });
@@ -609,7 +609,7 @@ Deno.test("Chat Function Tests", async (t) => {
         });
         const response = await mainHandler(req, deps);
         assertEquals(response.status, 400);
-        const json = await response.json();
+            const json = await response.json();
         assertEquals(json.error, 'Missing or invalid "message" in request body');
         console.log("--- Whitespace Message POST test passed ---");
     });
