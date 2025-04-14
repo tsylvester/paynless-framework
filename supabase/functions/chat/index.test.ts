@@ -354,8 +354,6 @@ Deno.test("Chat Function Tests", async (t) => {
         console.log("--- Finished Anon Secret POST test --- ");
     });
 
-    // - POST request with valid Anon Secret (above rate limit)
-    // - POST request with invalid Anon Secret
     // - POST request with invalid JWT
     // - POST request with missing/invalid body fields (e.g., no message)
     // - POST request where provider/prompt lookup fails (simulate error in mockSupaConfig)

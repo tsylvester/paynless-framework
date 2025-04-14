@@ -1,4 +1,4 @@
-**Consolidated Project Testing Plan & Status (v5 - Post Refactoring)**
+**Consolidated Project Testing Plan & Status (v6 - Anonymous Auth Refactor)**
 
 **Incomplete Features** 
 *   [ ] AI Chat on homepage doesn't work
@@ -76,6 +76,8 @@
         *   **Integration Tests:** Crucially require *platform-specific* integration testing. For Tauri, this means testing the TS -> `invoke` -> Rust -> Native API flow within a Tauri environment (e.g., using `tauri-driver`). For Web/RN, test interaction with Web APIs or Native Modules in their respective environments.
         *   **E2E Tests:** Must be run on each target platform (Web, Windows Desktop, Mac Desktop, Linux Desktop, iOS, Android) to validate the full user flow involving platform-specific features. Requires appropriate E2E tooling for each platform (Playwright/Cypress for Web, Tauri-specific tooling, Detox/Appium for Mobile).
 
+*   **[NEW] Phase 5: Anonymous Chat Auth Refactor Verification:** Added specific backend and E2E test cases for the anonymous secret header and related flows.
+
 ---
 
 ✅ **How to Test Incrementally and Correctly (Layered Testing Strategy)**
@@ -135,9 +137,9 @@
             *   [✅] **AI Chat Functions:**
                 *   [ ] Unit Test `ai-providers/index.ts` (Mock Supabase client) *(Pending)*
                 *   [ ] Unit Test `system-prompts/index.ts` (Mock Supabase client) *(Pending)*
-                *   [🚧] Unit Test `chat/index.ts` (Extensive tests exist - Needs update for Auth/Anon Secret Check & Rate Limiting)
-                *   [✅] Unit Test `chat-history/index.ts` (Tests exist)
-                *   [✅] Unit Test `chat-details/index.ts` (Tests exist)
+                *   [🚧] **Unit Test `chat/index.ts`:**
+                *   [✅] Unit Test `chat-history/index.ts`
+                *   [✅] Unit Test `chat-details/index.ts`
             *   **[NEW] Email Marketing Sync:**
                 *   [ ] `_shared/email_service/kit_service.ts`
                 *   [ ] `_shared/email_service/no_op_service.ts`
@@ -163,12 +165,12 @@
             *   `[?]` `/api-subscriptions/plans`
             *   `[?]` `/api-subscriptions/current`
             *   `[?]` `/api-subscriptions/usage/:metric`
-        *   [🚧] **Function Integration (AI Chat):** *(Local Integration Partially Blocked due to env var issue / external calls. Test core DB interactions locally, full flow in deployed env. Needs verification for Anon Secret Check.)*
-            *   [✅] `/ai-providers` (Verified works locally - DB reads only)
-            *   [✅] `/system-prompts` (Verified works locally - DB reads only)
-            *   [🚧] `/chat` (Requires external AI API keys -> env vars. Needs API tests for Auth/Anon Secret logic.)
-            *   [✅] `/chat-history` (Verified works locally - DB reads only)
-            *   [✅] `/chat-details/:chatId` (Verified works locally - DB reads only)
+        *   [🚧] **Function Integration (AI Chat):**
+            *   [✅] `/ai-providers`
+            *   [✅] `/system-prompts`
+            *   [🚧] `/chat`: (Existing issues remain) **Add manual `curl`/Postman tests** for:
+            *   [✅] `/chat-history`
+            *   [✅] `/chat-details/:chatId`
         *   [⏸️] **Function Integration (Stripe - Webhook):** *(Test in deployed env)*
         *   [⏸️] `sync-stripe-plans` *(Needs Integration Test - Requires deployed env)*
         *   [⏸️] `sync-ai-models` *(Needs Integration Test - Requires deployed env)*
@@ -230,15 +232,11 @@
                 *   `[✅]` Test Mode UI indication.
                 *   `[ ]` Loading states for actions.
             *   **AI Chat (`ai.integration.test.tsx`):**
-                *   [✅] Load AI Config (Providers/Prompts): Verify selectors populated.
-                *   [✅] Send Message (Authenticated): Verify message appears, spinner shows, response appears.
-                *   [✅] Send Message (Error): Verify error message shown. *(Tested via vi.spyOn)*
-                *   [✅] Load Chat History: Verify history list populates.
-                *   [✅] Load Chat Details: Select chat, verify messages load.
-                *   [🚧] Anonymous Flow: Send message below limit -> Success (Needs update to verify secret header sent).
-                *   [✅] Anonymous Flow: Send message at limit -> Checks for `{ error: 'limit_reached' }` return object.
-                *   [🚧] Anonymous Flow: Verify default provider/prompt are selected on load.
-                *   [ ] Anonymous Flow: Stash message -> Register -> Verify message sent automatically. *(Logic Pending)*
+                *   [✅] Load AI Config (Providers/Prompts)
+                *   [✅] Send Message (Authenticated): Verify success, check *only* `Authorization` header is sent.
+                *   [✅] Send Message (Error)
+                *   [✅] Load Chat History
+                *   [✅] Load Chat Details
     *   **3.3 End-to-End Tests:**
         *   [ ] **Tooling:** Setup Playwright/Cypress.
         *   [✅] **Core User Flows:** Auth cycle, Profile management.
@@ -248,10 +246,6 @@
             *   `[ ]` User cancels checkout -> Redirected to Cancel URL -> Verify UI state (Manually tested as working, E2E test not implemented)
             *   `[ ]` Subscribed user clicks Manage Billing -> Redirected to Stripe Portal (Manually tested as working, E2E test not implemented)
             *   `[ ]` User manages subscription in Portal -> Returns to app -> Verify UI update / subscription state (Manually tested as working, E2E test not implemented)
-        *   [🚧] **AI Chat Flows:**
-            *   `[✅]` Authenticated user sends message, receives response.
-            *   `[🚧]` Anonymous user sends message below limit (Verify default selections, sending, response).
-            *   `[ ]` Anonymous user hits limit, signs up, message is sent. *(Logic Pending)*
         *   [ ] **Platform Capabilities:** Verify graceful degradation/alternative UI for features unavailable in the web environment. Test features using Web APIs (if any implemented via capabilities).
 
 *   **Phase 4: CI/CD**
