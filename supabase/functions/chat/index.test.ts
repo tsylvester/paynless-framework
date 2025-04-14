@@ -200,7 +200,7 @@ Deno.test("Chat Function Tests", async (t) => {
         const response = await mainHandler(req, deps);
         assertEquals(response.status, 401);
         const json = await response.json();
-        assertEquals(json.error, 'Missing Authorization header');
+        assertObjectMatch(json, { error: "Authentication required", code: "AUTH_REQUIRED" });
     });
 
     await t.step("POST request with valid Auth header should succeed", async () => {

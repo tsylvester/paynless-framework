@@ -165,3 +165,71 @@ This plan assumes we'll start by implementing the core service and then focus on
     *   **Shared Logic:** The core UI logic, API data fetching (via `api-client`), and state management (via stores) remain shared within `apps/web`. The capability service allows this shared code to *conditionally access* platform features.
 
 This plan provides a structured, testable way to introduce platform-specific functionality incrementally while maintaining a high degree of code sharing and compatibility with your existing architecture.
+
+# Implementation Plan
+
+This file tracks major features or refactoring efforts.
+
+## Testing Framework
+
+- [x] Set up Deno testing environment.
+- [x] Add basic tests for core utility functions.
+- [x] Integrate Supabase local development environment for integration tests.
+
+## Chat Function Tests
+
+- [x] Refactor `chat/index.test.ts` to use shared utilities.
+- [x] Fix environment variable handling for tests (`--env` flag).
+- [x] Improve mock Supabase client for accurate DB simulations.
+- [x] Add comprehensive test cases covering success paths and error conditions.
+
+## Auth Interception for Anonymous Users
+
+Implement a pattern to handle anonymous users attempting actions that require authentication (like submitting a chat). The goal is to interrupt the action, guide the user through login/signup, and resume the action afterwards.
+
+### Phase 1: Backend Modification (Chat Function)
+
+*   [ ] **Goal:** Modify the `chat` function (`supabase/functions/chat/index.ts`) to return a distinct signal for anonymous users instead of a generic 401.
+*   [ ] **Action:** Inside the `mainHandler`, locate the `Authorization` header check.
+*   [ ] **Action:** If the header is missing: return `401 Unauthorized` with a specific JSON body: `{ "error": "Authentication required", "code": "AUTH_REQUIRED" }`.
+
+### Phase 2: Frontend Interception & State Storage
+
+*   [ ] **Goal:** Intercept anonymous attempts on the frontend, store the intended action, and initiate the auth flow.
+*   [ ] **Action:** Locate the frontend code that calls the `/chat` API endpoint.
+*   [ ] **Action:** Modify this calling code (or create a wrapper/hook):
+    *   When the API call promise *rejects*: check if the error response is `401` with `{ code: "AUTH_REQUIRED" }`.
+    *   If it matches:
+        *   Retrieve original request details (endpoint, method, body).
+        *   Retrieve current page URL/route.
+        *   Store these details securely in **session storage** (key: `pendingAction`).
+        *   Clear any existing `pendingAction` before storing a new one.
+        *   Trigger the authentication flow (e.g., redirect to `/login?redirect_uri=/current/page` or show login modal).
+    *   If any other error, handle normally.
+
+### Phase 3: Frontend Post-Authentication Action Replay
+
+*   [ ] **Goal:** After successful login/signup, check for and execute the stored action.
+*   [ ] **Action:** Locate the code that runs immediately after successful login/signup.
+*   [ ] **Action:** In this post-auth code:
+    *   Check session storage for `pendingAction`.
+    *   If found:
+        *   Retrieve stored action details.
+        *   **Clear** `pendingAction` from session storage.
+        *   Re-execute the API call using retrieved details and the user's new auth token.
+        *   Handle success/error of the retry.
+        *   If needed, redirect the user back to the original URL stored earlier.
+
+### Phase 4: Generalization (Refactoring)
+
+*   [ ] **Goal:** Refactor the frontend interception and replay logic into a reusable component/hook/service.
+*   [ ] **Action:** Abstract logic from Phases 2 & 3 (e.g., `useProtectedApiCall` or API client interceptors).
+*   [ ] **Action:** Ensure refactored solution still works for chat. Consider applying to another feature if available.
+
+### Phase 5: Backend Security (Optional but Recommended)
+
+*   [ ] **Goal:** Consider server-side storage for pending actions for higher security/reliability.
+*   [ ] **Action (If Implementing):**
+    *   Backend: Create temporary storage (e.g., `pending_actions` table) linked to an anonymous session identifier/token. Return token in the "AUTH_REQUIRED" response.
+    *   Frontend: Store only the token.
+    *   Backend (Post-Auth): Add endpoint for frontend to submit token post-login. Endpoint retrieves/executes action, clears storage.

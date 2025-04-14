@@ -446,3 +446,39 @@ When testing Supabase Edge Functions (Deno):
     *   `--allow-env`: Grants permission for the test process to read environment variables. Can be restricted (e.g., `--allow-env=VAR1,VAR2`).
 3.  **No Manual Loading:** Avoid manually reading/parsing `.env` files within test utility code (`test-utils.ts`). Rely on the `--env` flag.
 4.  **Use Real `Deno.env.get`:** Do not mock `Deno.env.get` within test helpers like `createTestDeps`. The function code should use the real `Deno.env.get`, which will read variables provided by the `--env` flag during testing.
+
+## Testing Auth Interception Flow
+
+Verify the implementation that handles anonymous users attempting protected actions (starting with the chat function).
+
+**Unit Tests (`supabase/functions/chat/index.test.ts`):**
+
+*   [ ] **Anonymous Request:** Test that a request to `/chat` without an `Authorization` header returns:
+    *   Status: `401 Unauthorized`.
+    *   Body: `{ "error": "Authentication required", "code": "AUTH_REQUIRED" }`.
+*   [ ] **Authenticated Request:** Ensure existing tests for authenticated users (valid JWT, etc.) still pass after backend changes.
+
+**Manual / End-to-End (E2E) Tests:**
+
+*   [ ] **Anonymous Chat Attempt -> Login -> Success:**
+    1.  Log out / use an incognito window.
+    2.  Navigate to where the chat feature is available.
+    3.  Attempt to send a chat message.
+    4.  **Verify:** User is prompted to log in (redirect or modal).
+    5.  **Verify (DevTools):** `pendingAction` with correct chat details is stored in session storage.
+    6.  Log in as an existing user.
+    7.  **Verify:** User is returned to the original context (e.g., chat interface).
+    8.  **Verify:** The chat message originally attempted is automatically submitted successfully.
+    9.  **Verify (DevTools):** `pendingAction` is cleared from session storage.
+*   [ ] **Anonymous Chat Attempt -> Sign Up -> Success:**
+    1.  Repeat steps 1-5 above.
+    2.  Sign up as a *new* user.
+    3.  **Verify:** User is returned to the original context.
+    4.  **Verify:** The chat message originally attempted is automatically submitted successfully.
+    5.  **Verify (DevTools):** `pendingAction` is cleared from session storage.
+*   [ ] **Authenticated User Chat:** Verify that a normally logged-in user can still use the chat feature without any interception.
+*   [ ] **Login Without Pending Action:** Log out, navigate directly to login, log in. Verify no errors occur and no unexpected actions are triggered.
+*   [ ] **Retry Failure:** Manually simulate a scenario where the replayed action (post-login) fails (e.g., by mocking a temporary server error for the `/chat` endpoint *only* during the replay). Verify that a user-friendly error message is shown and the system doesn't get stuck.
+*   [ ] **Multiple Interceptions (Optional):** If possible, attempt action A, get intercepted, *before* logging in, attempt action B, get intercepted again. Verify only the *last* action (B) is stored in `pendingAction`.
+*   [ ] **Refactoring Test (Phase 4):** Ensure the primary E2E flow (Anonymous Chat -> Login -> Success) still works after refactoring the logic into reusable components/hooks. If another feature uses the refactored hook, test its interception flow as well.
+*   [ ] **Server-Side State Test (Phase 5, If Implemented):** Test the E2E flow using the server-side token mechanism. Verify temporary storage is created and cleared correctly.
