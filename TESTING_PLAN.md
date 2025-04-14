@@ -187,9 +187,9 @@
     *   **2.1 Unit Tests:**
         *   [✅] `packages/api-client` (All sub-clients: `apiClient`, `stripe.api`, `ai.api` tests passing)
         *   [✅] `packages/store` (Vitest setup complete)
-            *   [✅] `authStore.ts` *(Tests passing. Needs update for `register` modification)*
-            *   [✅] `subscriptionStore.ts` *(Tests passing)*
-            *   [✅] `aiStore.ts` *(Tests passing)*
+            *   [✅] `authStore.ts` *(Tests passing, including logout, initialize, refresh, replay logic)*
+            *   [✅] `subscriptionStore.ts` *(Tests passing, including refresh failures in cancel/resume)*
+            *   [✅] `aiStore.ts` *(Tests passing, including config/details edge cases)*
         *   [⏭️] `packages/ui-components` *(Skipped - Package empty)*.
         *   [✅] `packages/utils` (`logger.ts` tests passing)
         *   [✅] `packages/types` *(Implicitly tested via usage)*.

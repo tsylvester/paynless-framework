@@ -192,6 +192,28 @@ describe('aiStore', () => {
             expect(state.isConfigLoading).toBe(false);
         });
 
+        // --- NEW Test Case: Both API calls fail ---
+        it('should set combined aiError if both getAiProviders and getSystemPrompts fail', async () => {
+            // Arrange
+            const providersErrorMsg = 'Providers down';
+            const promptsErrorMsg = 'Prompts MIA';
+            mockGetAiProviders.mockResolvedValue({ success: false, error: providersErrorMsg, statusCode: 500 });
+            mockGetSystemPrompts.mockResolvedValue({ success: false, error: promptsErrorMsg, statusCode: 500 });
+
+            // Act
+            await useAiStore.getState().loadAiConfig();
+
+            // Assert
+            const state = useAiStore.getState();
+            // ---> Check for the actual error messages set by the store <--- 
+            expect(state.aiError).toContain('Failed to load AI providers.');
+            expect(state.aiError).toContain('Failed to load system prompts.');
+            expect(state.availableProviders).toEqual([]);
+            expect(state.availablePrompts).toEqual([]);
+            expect(state.isConfigLoading).toBe(false);
+        });
+        // --- End NEW Test Case ---
+
         // REMOVE: Test for uninitialized client is no longer applicable with singleton import
         /*
         it('should set aiError if apiClient is not initialized', async () => {
@@ -766,12 +788,35 @@ describe('aiStore', () => {
             expect(state.isDetailsLoading).toBe(false);
         });
 
-        // REMOVE: Test for uninitialized client is no longer applicable
-        /*
-         it('should set aiError if apiClient is not initialized', async () => {
-           // ... removed ...
+        // --- NEW Test Case: Invalid chatId --- 
+        it.each([
+            [null, 'Chat ID is required'], 
+            ['', 'Chat ID is required'],
+            [undefined, 'Chat ID is required']
+        ])('should set error and not call API if chatId is %s', async (invalidChatId, expectedError) => {
+            // Arrange
+            // Ensure authStore is mocked with a token, otherwise that error takes precedence
+             if (vi.isMockFunction(useAuthStore)) {
+                vi.mocked(useAuthStore).getState.mockReturnValueOnce({
+                    user: { id: 'user-1' } as User, 
+                    session: { access_token: 'mock-token' } as Session, 
+                    // ... other necessary mocked state ...
+                    isLoading: false,
+                    error: null,
+                } as any);
+            }
+            // Act
+            // @ts-ignore - Allow passing invalid types for testing
+            await useAiStore.getState().loadChatDetails(invalidChatId);
+ 
+            // Assert
+            expect(mockGetChatMessages).not.toHaveBeenCalled();
+            const state = useAiStore.getState();
+            expect(state.isDetailsLoading).toBe(false);
+            expect(state.aiError).toContain(expectedError);
         });
-        */
+        // --- End NEW Test Case ---
+
     });
 
     // --- Tests for startNewChat ---

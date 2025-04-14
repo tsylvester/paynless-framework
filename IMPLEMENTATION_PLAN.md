@@ -195,30 +195,30 @@ Implement a pattern to handle anonymous users attempting actions that require au
 
 ### Phase 2: Frontend Interception & State Storage
 
-*   [ ] **Goal:** Intercept anonymous attempts on the frontend, store the intended action, and initiate the auth flow.
-*   [ ] **Action:** Locate the frontend code that calls the `/chat` API endpoint.
-*   [ ] **Action:** Modify this calling code (or create a wrapper/hook):
-    *   When the API call promise *rejects*: check if the error response is `401` with `{ code: "AUTH_REQUIRED" }`.
-    *   If it matches:
-        *   Retrieve original request details (endpoint, method, body).
-        *   Retrieve current page URL/route.
-        *   Store these details securely in **session storage** (key: `pendingAction`).
-        *   Clear any existing `pendingAction` before storing a new one.
-        *   Trigger the authentication flow (e.g., redirect to `/login?redirect_uri=/current/page` or show login modal).
-    *   If any other error, handle normally.
+*   [x] **Goal:** Intercept anonymous attempts on the frontend, store the intended action, and initiate the auth flow.
+*   [x] **Action:** Locate the frontend code that calls the `/chat` API endpoint (`aiStore.sendMessage`).
+*   [x] **Action:** Modify this calling code:
+    *   [x] When the API call promise *resolves* with `status: 401` and the specific error message/code.
+    *   [x] If it matches:
+        *   [x] Retrieve original request details (endpoint, method, body) - *Currently hardcoded for chat*. 
+        *   [x] Retrieve current page URL/route (`window.location`).
+        *   [x] Store these details securely in **session storage** (key: `pendingAction`).
+        *   [-] Clear any existing `pendingAction` before storing a new one. - *Implicitly handled by overwriting.*
+        *   [x] Trigger the authentication flow (using `navigate('/login')` from `authStore`).
+    *   [x] If any other error, handle normally.
 
 ### Phase 3: Frontend Post-Authentication Action Replay
 
-*   [ ] **Goal:** After successful login/signup, check for and execute the stored action.
-*   [ ] **Action:** Locate the code that runs immediately after successful login/signup.
-*   [ ] **Action:** In this post-auth code:
-    *   Check session storage for `pendingAction`.
-    *   If found:
-        *   Retrieve stored action details.
-        *   **Clear** `pendingAction` from session storage.
-        *   Re-execute the API call using retrieved details and the user's new auth token.
-        *   Handle success/error of the retry.
-        *   If needed, redirect the user back to the original URL stored earlier.
+*   [x] **Goal:** After successful login/signup, check for and execute the stored action.
+*   [x] **Action:** Locate the code that runs immediately after successful login/signup (`authStore` login/register actions).
+*   [x] **Action:** In this post-auth code:
+    *   [x] Check session storage for `pendingAction`.
+    *   [x] If found:
+        *   [x] Retrieve stored action details.
+        *   [x] **Clear** `pendingAction` from session storage (after successful parse).
+        *   [x] Re-execute the API call using retrieved details and the user's new auth token (using `api` client methods).
+        *   [x] Handle success/error of the retry (logging only for now).
+        *   [x] If needed, redirect the user back to the original URL stored earlier (`returnPath`).
 
 ### Phase 4: Generalization (Refactoring)
 
