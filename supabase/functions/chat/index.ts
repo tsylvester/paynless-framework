@@ -26,7 +26,7 @@ export interface ChatHandlerDeps {
 }
 
 // Create default dependencies using actual implementations
-const defaultDeps: ChatHandlerDeps = {
+export const defaultDeps: ChatHandlerDeps = {
   createSupabaseClient: createClient,
   getEnv: Deno.env.get,
   fetch: fetch,

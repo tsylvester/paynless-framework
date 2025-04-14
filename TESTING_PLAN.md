@@ -432,3 +432,17 @@ Given the requirement to support multiple frontends (Web, React Native for iOS/A
 - **Testability:** Allows mocking the capabilities service for unit testing shared components.
 - **Extensibility:** Simplifies adding new platforms or capabilities later.
 - **Platform-Specific Power:** Leverages native capabilities (via Tauri/Rust or React Native modules) where needed without polluting the shared codebase.
+
+## Environment Variables in Tests
+
+When testing Supabase Edge Functions (Deno):
+
+1.  **Use `.env` Files:** Store secrets and configuration (like Supabase keys, API keys) in a `.env` file (e.g., `supabase/.env.local`). Do not commit this file to version control if it contains secrets.
+2.  **Run with Flags:** Execute tests using the `deno test` command with the `--env` and `--allow-env` flags:
+    ```bash
+    deno test --allow-env --env=supabase/.env.local [other permissions] path/to/test.ts
+    ```
+    *   `--env=<path>`: Loads variables from the specified file into the test environment.
+    *   `--allow-env`: Grants permission for the test process to read environment variables. Can be restricted (e.g., `--allow-env=VAR1,VAR2`).
+3.  **No Manual Loading:** Avoid manually reading/parsing `.env` files within test utility code (`test-utils.ts`). Rely on the `--env` flag.
+4.  **Use Real `Deno.env.get`:** Do not mock `Deno.env.get` within test helpers like `createTestDeps`. The function code should use the real `Deno.env.get`, which will read variables provided by the `--env` flag during testing.
