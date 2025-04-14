@@ -7,3 +7,4 @@ Whether hand-coding or vibe coding, with the Paynless Framework your user authen
 (Refer to `DEV_PLAN.md` for development guidelines, getting started, and contribution information.)
 (Refer to `STRUCTURE.md` for architecture details, API endpoints, database schema, project structure, and core package information.)
 (Refer to `TESTING_PLAN.md` for the testing strategy, current status, and known limitations.)
+(Refer to `IMPLEMENTATION_PLAN.md` for the current work-in-progress and planned features.)

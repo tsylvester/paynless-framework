@@ -2,6 +2,10 @@
 // Do not use path aliases (like @shared/) as they will cause deployment failures.
 import { createClient, SupabaseClient } from "npm:@supabase/supabase-js@^2.0.0";
 import { spy, stub, type Spy } from "jsr:@std/testing/mock"; // Add Deno mock imports
+// Add Deno KV types if not already present (might need unstable flag in files using this)
+/// <reference lib="deno.unstable" />
+// Import ChatMessage type
+import type { ChatMessage } from "../../../packages/types/src/ai.types.ts";
 
 // Load environment variables from .env.local file manually
 // Assuming CWD is the project root (paynless-framework)
@@ -176,43 +180,242 @@ export async function cleanupUser(email: string, adminClient?: SupabaseClient): 
     }
 }
 
-// --- Fetch Mocking Utilities ---
+// --- Rate Limit Mock Store (for Deno KV Mock) ---
+type RateLimitStore = {
+  [ip: string]: { count: number; expiresAt: number };
+};
+let rateLimitStore: RateLimitStore = {};
 
-// Can hold a single response, a promise, or an array for sequences
-let _mockFetchResponse: Response | Promise<Response> | Array<Response | Promise<Response>> = new Response(null, { status: 200 });
-let _responseSequenceIndex = 0;
-
-// Setter function for tests to configure the mock response(s)
-export function setMockFetchResponse(response: Response | Promise<Response> | Array<Response | Promise<Response>>) {
-    _mockFetchResponse = response;
-    _responseSequenceIndex = 0; // Reset sequence index when setting new response(s)
+/** Resets the in-memory store used by the KV mock. Call before tests needing a clean slate. */
+export function resetRateLimitStore() {
+    rateLimitStore = {};
+    console.log("[Test Utils] Reset in-memory rate limit store.");
 }
 
-// Base fetch implementation function (used by per-test spies)
-async function baseFetchImplementation(/*url: string | URL, options?: RequestInit*/): Promise<Response> {
-    let responseToUse: Response | Promise<Response>;
+/**
+ * Creates a basic in-memory mock for Deno.Kv specifically for IP-based rate limiting tests.
+ * Assumes keys are in the format ["prefix", ipAddress].
+ */
+export function createRateLimitKvMock(): Promise<Deno.Kv> {
+    const mockKv = {
+      get: spy(async (key: Deno.KvKey) => {
+        const ip = key[1] as string;
+        const entry = rateLimitStore[ip];
+        return Promise.resolve({ key, value: entry || null, versionstamp: entry ? String(entry.expiresAt) : null });
+      }),
+      atomic: spy(() => {
+        let _check: Deno.AtomicCheck | null = null;
+        let _setKey: Deno.KvKey | null = null;
+        let _setValue: any = null;
+        let _expireIn: number | undefined = undefined;
 
-    if (Array.isArray(_mockFetchResponse)) {
-        if (_responseSequenceIndex >= _mockFetchResponse.length) {
-            throw new Error(`Mock fetch sequence exhausted. Called more than ${_mockFetchResponse.length} times.`);
-        }
-        responseToUse = _mockFetchResponse[_responseSequenceIndex++];
+        const op = {
+          check: (check: Deno.AtomicCheck) => { _check = check; return op; },
+          set: (key: Deno.KvKey, value: unknown, options?: { expireIn?: number }) => {
+            _setKey = key; _setValue = value; _expireIn = options?.expireIn; return op;
+          },
+          sum: (_key: Deno.KvKey, _n: bigint) => op, // Basic sum mock
+          commit: spy(async () => {
+            const ip = _setKey?.[1] as string;
+            const existingEntry = rateLimitStore[ip];
+            const existingVersionstamp = existingEntry ? String(existingEntry.expiresAt) : null;
+            if (_check && _check.versionstamp !== existingVersionstamp) {
+              console.log(`[Mock KV Commit] Check failed for IP ${ip}`);
+              return Promise.resolve({ ok: false });
+            }
+            if (_setKey && _setValue) {
+              console.log(`[Mock KV Commit] Committing set for IP ${ip}`, _setValue);
+              rateLimitStore[ip] = {
+                ..._setValue,
+                expiresAt: _setValue.expiresAt || (Date.now() + (_expireIn || 60 * 60 * 1000)),
+              };
+              return Promise.resolve({ ok: true, versionstamp: String(rateLimitStore[ip].expiresAt) });
+            }
+            return Promise.resolve({ ok: false });
+          }),
+        };
+        return op;
+      }),
+    } as unknown as Deno.Kv;
+    return Promise.resolve(mockKv);
+}
+
+// --- Supabase Client Mocking Utilities ---
+
+/** Configurable data/handlers for the mock Supabase client (Revised) */
+export interface MockSupabaseDataConfig {
+    // Expected results for specific operations
+    getUserResult?: { data: { user: { id: string } | null }; error: any };
+    selectPromptResult?: { data: { id: string; prompt_text: string } | null; error: any };
+    selectProviderResult?: { data: { id: string; api_identifier: string } | null; error: any };
+    selectChatHistoryResult?: { data: Array<{ role: string; content: string }> | null; error: any };
+    insertChatResult?: { data: { id: string } | null; error: any };
+    insertUserMessageResult?: { data: ChatMessage | null; error: any }; // Use ChatMessage type
+    insertAssistantMessageResult?: { data: ChatMessage | null; error: any }; // Use ChatMessage type
+    // User for auth mock (if not providing full getUserResult)
+    mockUser?: { id: string };
+    // Error simulation (simplified)
+    simulateDbError?: Error | null; // General DB error
+    simulateAuthError?: Error | null;
+}
+
+/** Creates a mocked Supabase client instance for unit testing (Revised) */
+export function createMockSupabaseClient(
+    config: MockSupabaseDataConfig = {}
+): {
+    client: SupabaseClient;
+    spies: { getUserSpy: Spy<any>; fromSpy: Spy<any>; /* Add more if needed */ };
+} {
+    const mockAuth = {
+      getUser: spy(async (_options?: any) => {
+         if (config.simulateAuthError) return { data: { user: null }, error: config.simulateAuthError };
+         if (config.getUserResult) return config.getUserResult;
+         // Fallback based on mockUser
+         const user = config.mockUser;
+         if (user) {
+             console.log("[Mock Supa Client Auth] Returning mock user", user.id);
+             return Promise.resolve({ data: { user }, error: null });
+         } else {
+            console.log("[Mock Supa Client Auth] Returning no user");
+            return Promise.resolve({ data: { user: null }, error: { message: "No session", status: 401 } });
+         }
+      })
+    };
+
+    // State to track chat message insertions for the current mock instance
+    let userMessageInserted = false;
+
+    // Simplified mock for the builder chain
+    const fromSpy = spy((tableName: string) => {
+        // Explicitly type mockBuilder as any to resolve inference issues
+        const mockBuilder: any = {
+            select: spy(() => mockBuilder),
+            insert: spy(() => mockBuilder),
+            eq: spy(() => mockBuilder),
+            order: spy(() => mockBuilder),
+            single: spy(async () => {
+                // Revert: Remove the setTimeout and Promise wrapper
+                if (config.simulateDbError) {
+                    return { data: null, error: config.simulateDbError };
+                }
+                console.log(`[Mock QB ${tableName}] .single() resolving`);
+                let result: { data: any, error: any };
+                switch (tableName) {
+                    case 'system_prompts':
+                        result = config.selectPromptResult ?? { data: null, error: null };
+                        break;
+                    case 'ai_providers':
+                        result = config.selectProviderResult ?? { data: null, error: null };
+                        break;
+                    case 'chats':
+                        result = config.insertChatResult ?? { data: { id: 'mock-chat-id' }, error: null };
+                        break;
+                    case 'chat_messages':
+                        if (!userMessageInserted) {
+                            console.log("[Mock QB chat_messages] single() resolving for USER message");
+                            userMessageInserted = true;
+                            result = config.insertUserMessageResult ?? { data: null, error: null };
+                        } else {
+                            console.log("[Mock QB chat_messages] single() resolving for ASSISTANT message");
+                            result = config.insertAssistantMessageResult ?? { data: null, error: null };
+                        }
+                        break;
+                    default:
+                        result = { data: null, error: null };
+                }
+                return result; // Directly return the result object
+            }),
+            then: async (onfulfilled: (value: { data: any; error: any; }) => any) => {
+                 if (config.simulateDbError) return onfulfilled({ data: null, error: config.simulateDbError });
+                 console.log(`[Mock QB ${tableName}] .then() resolving`);
+                 if (tableName === 'chat_messages') { // History fetch
+                    return onfulfilled(config.selectChatHistoryResult ?? { data: [], error: null });
+                 }
+                 return onfulfilled({ data: null, error: null }); // Default
+            }
+        };
+        return mockBuilder;
+    });
+
+    const mockClient = {
+      auth: mockAuth,
+      from: fromSpy,
+    } as unknown as SupabaseClient;
+
+    return {
+        client: mockClient,
+        spies: { getUserSpy: mockAuth.getUser, fromSpy: fromSpy },
+    };
+}
+
+// --- Fetch Mocking Utilities ---
+
+// Type for setting mock response
+interface MockResponseConfig {
+    response: Response | Promise<Response>;
+    jsonData?: any; // Optional pre-parsed JSON data
+}
+
+// Store can hold a single config or an array for sequences
+let _mockFetchResponseConfig: MockResponseConfig | Array<MockResponseConfig> = {
+    response: new Response(null, { status: 200 })
+};
+let _responseSequenceIndex = 0;
+
+// Update setter function signature
+export function setMockFetchResponse(
+    config: Response | Promise<Response> | MockResponseConfig | Array<Response | Promise<Response> | MockResponseConfig>
+) {
+    if (Array.isArray(config)) {
+        // Convert array elements to MockResponseConfig if they are just Response objects
+        _mockFetchResponseConfig = config.map(item => 
+            item instanceof Response || item instanceof Promise ? { response: item } : item
+        );
+    } else if (config instanceof Response || config instanceof Promise) {
+        // Wrap single Response/Promise in MockResponseConfig
+        _mockFetchResponseConfig = { response: config };
     } else {
-        responseToUse = _mockFetchResponse;
+        // Assume it's already a MockResponseConfig
+        _mockFetchResponseConfig = config;
     }
-    
-    // Clone/cancel logic remains the same
-    if (responseToUse instanceof Response && responseToUse.body) {
-        const clonedResponse = responseToUse.clone(); 
-        if (clonedResponse.body) {
-            await clonedResponse.body.cancel(); 
+    _responseSequenceIndex = 0; 
+}
+
+// Base fetch implementation function
+async function baseFetchImplementation(/*url: string | URL, options?: RequestInit*/): Promise<Response> {
+    let configToUse: MockResponseConfig;
+
+    if (Array.isArray(_mockFetchResponseConfig)) {
+        if (_responseSequenceIndex >= _mockFetchResponseConfig.length) {
+            throw new Error(`Mock fetch sequence exhausted.`);
+        }
+        configToUse = _mockFetchResponseConfig[_responseSequenceIndex++];
+    } else {
+        configToUse = _mockFetchResponseConfig;
+    }
+
+    const responseToReturn = configToUse.response instanceof Promise
+        ? await configToUse.response
+        : configToUse.response;
+
+    // Clone the response before modifying/returning
+    const clonedResponse = responseToReturn.clone();
+
+    // Stub the .json() method if jsonData was provided in the config
+    if (configToUse.jsonData !== undefined) {
+        stub(clonedResponse, "json", () => Promise.resolve(configToUse.jsonData));
+        console.log("[Mock Fetch] Stubbed .json() method on response clone.");
+    }
+
+    // Cancel original body if needed (on a separate clone)
+    if (responseToReturn.body) {
+        const cancelClone = responseToReturn.clone();
+        if (cancelClone.body) {
+           await cancelClone.body.cancel().catch(e => console.warn("[Mock Fetch] Error cancelling body:", e));
         }
     }
-    if (responseToUse instanceof Response) {
-        return responseToUse.clone(); 
-    } else {
-        return await responseToUse; 
-    }
+
+    return clonedResponse; // Return the clone with potentially stubbed .json()
 }
 
 // Global spy 
@@ -239,14 +442,15 @@ export function withMockEnv(envVars: Record<string, string>, testFn: () => Promi
 
 /**
  * Creates a NEW spy and stubs globalThis.fetch with it for a specific test scope.
- * Returns the new spy instance for assertions and the disposable stub.
- * Use with `await using` to ensure the stub is disposed.
+ * Returns the new spy instance and the disposable stub.
+ * Use with `try...finally` and `stub[Symbol.dispose]()`.
  */
-export function stubFetchForTestScope(): { spy: Spy<typeof baseFetchImplementation>, stub: Disposable } {
-    const newSpy: Spy<typeof baseFetchImplementation> = spy(baseFetchImplementation);
-    // Cast newSpy to any to bypass complex stub signature checks
-    const fetchStub = stub(globalThis, "fetch", newSpy as any);
-    return { spy: newSpy, stub: fetchStub };
+export function stubFetchForTestScope(): { spy: Spy<any>, stub: Disposable } {
+    // Ensure baseFetchImplementation is wrapped in spy *before* stubbing
+    const fetchSpy = spy(baseFetchImplementation);
+    const fetchStub = stub(globalThis, "fetch", fetchSpy as any);
+    // Return with simplified spy type
+    return { spy: fetchSpy as Spy<any>, stub: fetchStub };
 }
 
 // --- End of Fetch Mocking Utilities --- 

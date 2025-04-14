@@ -148,6 +148,23 @@ export const useAiStore = create<AiState & AiActions>()(
                     if (token) {
                         options.token = token;
                     }
+
+                    // Add anonymous secret header if isAnonymous is true
+                    if (isAnonymous) {
+                        const anonSecret = import.meta.env.VITE_ANON_FUNCTION_SECRET;
+                        if (!anonSecret) {
+                             logger.error('VITE_ANON_FUNCTION_SECRET is not set in environment variables.');
+                             throw new Error('Client configuration error: Missing anonymous function secret.');
+                        }
+                        // Initialize headers if they don't exist
+                        if (!options.headers) {
+                            options.headers = {};
+                        }
+                        // Add the secret header (using HeadersInit type for compatibility)
+                        (options.headers as Record<string, string>)['X-Paynless-Anon-Secret'] = anonSecret;
+                         logger.info('Added anonymous secret header to request options.');
+                    }
+
                     const response = await api.ai().sendChatMessage(requestData, options);
 
                     if (!response.error && response.data) {

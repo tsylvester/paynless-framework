@@ -1,19 +1,19 @@
 **Consolidated Project Testing Plan & Status (v5 - Post Refactoring)**
 
 **Incomplete Features** 
-1. AI Chat on homepage doesn't work
-2. AI Chat signup/login flow
-3. AI model sync automation
-4. Mixpanel integration
-10. Test project on Bolt & Lovable 
-11. Loading skeletons for all components 
-12. User email automation - abstract for generic but specific implementation with Kit 
-13. Change email from within app
-14. Change password from within app
-15. Add loading skeletons to everything
-16. See about switching to shadcn? 
-17. Change payment method doesn't register site
-19. Run SEO scan 
+*   [ ] AI Chat on homepage doesn't work
+*   [ ] AI Chat signup/login flow
+*   [ ] AI model sync automation
+*   [ ] Mixpanel or Posthog integration
+*   [🚧] Test project on Bolt & Lovable 
+    *   [ ] Bolt & Lovable don't support pnpm monorepos well atm 
+*   [ ] User email automation - abstract for generic but specific implementation with Kit 
+*   [ ] Change email from within app
+*   [ ] Change password from within app
+*   [ ] shadcn
+*   [ ] Loading skeletons for all components 
+*   [ ] Change payment method doesn't register site
+*   [ ] Run SEO scan 
 
 **Notes & Key Learnings (Summary):**
 

@@ -2,7 +2,7 @@ import { Layout } from '../components/layout/Layout';
 import { ArrowRight, Database, Lock, Server, CheckCircle } from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuthStore, useAiStore } from '@paynless/store';
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { logger } from '@paynless/utils';
 import { ModelSelector } from '../components/ai/ModelSelector';
 import { PromptSelector } from '../components/ai/PromptSelector';
@@ -12,7 +12,13 @@ export function HomePage() {
   const { user, session } = useAuthStore();
   const navigate = useNavigate();
 
-  const { loadAiConfig, sendMessage, startNewChat, setAnonymousCount } = useAiStore();
+  const loadAiConfig = useAiStore(state => state.loadAiConfig);
+  const sendMessage = useAiStore(state => state.sendMessage);
+  const startNewChat = useAiStore(state => state.startNewChat);
+  const setAnonymousCount = useAiStore(state => state.setAnonymousCount);
+  const availableProviders = useAiStore(state => state.availableProviders);
+  const availablePrompts = useAiStore(state => state.availablePrompts);
+
   const [selectedProviderId, setSelectedProviderId] = useState<string | null>(null);
   const [selectedPromptId, setSelectedPromptId] = useState<string | null>(null);
   const [showLimitDialog, setShowLimitDialog] = useState(false);
@@ -20,11 +26,38 @@ export function HomePage() {
   // Prefix with underscore to silence TS6133 until implemented
   const [_stashedMessage, _setStashedMessage] = useState<{ message: string; providerId: string; promptId: string; } | null>(null);
 
+  const hasSetDefaults = useRef(false);
+
   useEffect(() => {
     loadAiConfig();
     startNewChat();
     setAnonymousCount(0);
+    hasSetDefaults.current = false;
   }, [loadAiConfig, startNewChat, setAnonymousCount]);
+
+  useEffect(() => {
+    if (!hasSetDefaults.current && availableProviders.length > 0) {
+      logger.info('[HomePage] Attempting to set default AI selections...');
+      const defaultProvider = availableProviders.find(p => p.name === 'OpenAI GPT-4o');
+
+      const defaultPromptId = '__none__';
+
+      if (defaultProvider) {
+        setSelectedProviderId(defaultProvider.id);
+        setSelectedPromptId(defaultPromptId);
+        hasSetDefaults.current = true;
+        logger.info('[HomePage] Default provider and prompt selected.', { 
+          providerId: defaultProvider.id, 
+          promptId: defaultPromptId 
+        });
+      } else {
+        logger.warn("[HomePage] Could not find default provider by name ('OpenAI GPT-4o').", {
+            foundProvider: !!defaultProvider,
+            providerCount: availableProviders.length,
+        });
+      }
+    }
+  }, [availableProviders]);
 
   useEffect(() => {
     if (user && session) {
