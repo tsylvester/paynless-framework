@@ -23,7 +23,7 @@ serve(async (req) => {
 
     const { data: providers, error } = await supabaseClient
       .from('ai_providers')
-      .select('id, name, description')
+      .select('id, name, description, api_identifier')
       .eq('is_active', true)
 
     if (error) {
@@ -42,10 +42,29 @@ serve(async (req) => {
       status: 200,
     })
   } catch (error) {
-    console.error(error)
-    return new Response(JSON.stringify({ error: error.message }), {
+    console.error('Error in ai-providers function:', error) // Log the raw error
+    let errorMessage = 'An unexpected error occurred';
+    let errorStatus = 500;
+
+    if (error instanceof Error) {
+      errorMessage = error.message;
+      // Attempt to get status if it exists (less common on standard Errors)
+      if (typeof (error as any).status === 'number') {
+         errorStatus = (error as any).status;
+      } 
+    } else if (typeof error === 'object' && error !== null && 'message' in error) {
+       // Handle cases where error might be a plain object with a message
+       errorMessage = String(error.message);
+       if (typeof (error as any).status === 'number') {
+          errorStatus = (error as any).status;
+       }
+    } else if (typeof error === 'string') {
+       errorMessage = error;
+    }
+
+    return new Response(JSON.stringify({ error: errorMessage }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      status: error.status || 500,
+      status: errorStatus,
     })
   }
 }) 

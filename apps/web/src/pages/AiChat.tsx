@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useAiStore, useAuthStore } from '@paynless/store';
 import { logger } from '@paynless/utils';
 import { ModelSelector } from '../components/ai/ModelSelector';
@@ -108,6 +108,20 @@ export function AiChatPage() {
       setSelectedPromptId(availablePrompts[0].id);
     }
   }, [availablePrompts, selectedPromptId]);
+
+  // ---> START MODIFICATION: Check for redirect ID on mount <---
+  useEffect(() => {
+    const chatIdToLoad = sessionStorage.getItem('loadChatIdOnRedirect');
+    if (chatIdToLoad) {
+      // If an ID is found, remove it and load that specific chat
+      sessionStorage.removeItem('loadChatIdOnRedirect');
+      logger.info(`[AiChatPage] Found chatId ${chatIdToLoad} in sessionStorage, loading details...`);
+      loadChatDetails(chatIdToLoad);
+    } 
+    // Run only once on mount
+    // eslint-disable-next-line react-hooks/exhaustive-deps 
+  }, []); 
+  // ---> END MODIFICATION <---
 
   const handleNewChat = () => {
     logger.info('[AiChatPage] Starting new chat...');

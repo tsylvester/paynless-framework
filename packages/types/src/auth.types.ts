@@ -30,12 +30,8 @@ export type UserProfileUpdate = {
   last_name?: string;
 };
 
+// Uncomment and modify this interface
 export interface AuthStore {
-  // REMOVE apiClient state property and init action signature
-  // apiClient: any | null; 
-  // init: (apiClient: any) => void; 
-
-  // Existing actions and state...
   setUser: (user: User | null) => void;
   setSession: (session: Session | null) => void;
   setProfile: (profile: UserProfile | null) => void;
@@ -43,13 +39,15 @@ export interface AuthStore {
   setError: (error: Error | null) => void;
   setNavigate: (navigateFn: (path: string) => void) => void;
   login: (email: string, password: string) => Promise<User | null>;
-  // Ensure register signature is correct based on its implementation
-  register: (email: string, password: string) => Promise<{ success: boolean; user: User | null; redirectTo: string | null }>; 
+  // Update register signature
+  register: (email: string, password: string) => Promise<User | null>; 
   logout: () => Promise<void>;
   initialize: () => Promise<void>;
   refreshSession: () => Promise<void>;
-  updateProfile: (profileData: UserProfileUpdate) => Promise<boolean>;
-  clearError: () => void; // Ensure clearError is defined here if needed
+  // Update updateProfile signature
+  updateProfile: (profileData: UserProfileUpdate) => Promise<UserProfile | null>;
+  clearError: () => void;
+  // State properties
   session: Session | null;
   user: User | null;
   profile: UserProfile | null;

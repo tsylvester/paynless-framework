@@ -1,3 +1,21 @@
+
+**Incomplete Features** 
+*   [⏸️] AI Chat on homepage doesn't work
+*   [✅] AI Chat signup/login flow
+*   [ ] AI model sync automation
+*   [ ] Mixpanel or Posthog integration
+*   [🚧] Test project on Bolt & Lovable 
+    *   [ ] Bolt & Lovable don't support pnpm monorepos well atm 
+*   [ ] User email automation - abstract for generic but specific implementation with Kit 
+*   [ ] Change email from within app
+*   [ ] Change password from within app
+*   [✅] shadcn implemented
+    *   [ ] Convert all pages / components to shadcn
+    *   [ ] Loading skeletons for all components 
+*   [ ] Change payment method doesn't register site
+*   [ ] Run SEO scan 
+
+
 Okay, let's break down the implementation of the Platform Capability Abstraction layer using a TDD-inspired approach, focusing on compatibility and minimal disruption to your existing structure.
 
 **Goal:** Integrate platform-specific features (starting with Desktop filesystem access via Tauri) into the shared UI codebase (`apps/web`) without altering the backend API, existing stores, or unrelated frontend components significantly.
@@ -156,7 +174,7 @@ This plan assumes we'll start by implementing the core service and then focus on
 
 **How This Minimizes Changes & Ensures Compatibility:**
 
-1.  **No Backend/API Changes:** This entire architecture lives within the frontend monorepo (`apps` and `packages`). The backend Supabase functions are untouched.
+1.  **No Backend/API changes:** This entire architecture lives within the frontend monorepo (`apps` and `packages`). The backend Supabase functions are untouched.
 2.  **No API Client Changes:** The `@paynless/api-client` is not involved in platform-specific UI capabilities like filesystem access. It remains focused on HTTP communication with the backend.
 3.  **Minimal Store Changes (Likely None Initially):** Global state related to *backend* data (auth, subscriptions, AI chats) remains in the existing Zustand stores. State directly related to platform capabilities (like the path of a currently opened file *on desktop*) might eventually warrant its own store or context *if* it needs to be shared widely, but initially, it can often be managed within the components using the capability service. We avoid polluting existing stores.
 4.  **Localized Frontend Changes:**
@@ -185,53 +203,68 @@ This file tracks major features or refactoring efforts.
 
 ## Auth Interception for Anonymous Users 
 
-Implement a pattern to handle anonymous users attempting actions that require authentication (like submitting a chat). The goal is to interrupt the action, guide the user through login/signup, and resume the action afterwards.
+Implement a pattern to handle anonymous users attempting actions that require authentication (like submitting a chat). The goal is to interrupt the action, guide the user through login/signup, execute the action, and then land the user on the `/chat` page displaying the newly created chat.
 
-### Phase 1: Backend Modification (Chat Function)
+### Auth Interception Flow (Revised: Redirect to /chat)
 
-*   [x] **Goal:** Modify the `chat` function (`supabase/functions/chat/index.ts`) to return a distinct signal for anonymous users instead of a generic 401.
-*   [x] **Action:** Inside the `mainHandler`, locate the `Authorization` header check.
-*   [x] **Action:** If the header is missing: return `401 Unauthorized` with a specific JSON body: `{ "error": "Authentication required", "code": "AUTH_REQUIRED" }`.
+**Phase 1: Implement New Logic & Flow**
 
-### Phase 2: Frontend Interception & State Storage
+1.  **Modify `aiStore.sendMessage`:**
+    *   [✅] Located section for anonymous users.
+    *   [✅] Ensured `returnPath: '/chat'` stored in `pendingAction`.
 
-*   [x] **Goal:** Intercept anonymous attempts on the frontend, store the intended action, and initiate the auth flow.
-*   [x] **Action:** Locate the frontend code that calls the `/chat` API endpoint (`aiStore.sendMessage`).
-*   [x] **Action:** Modify this calling code:
-    *   [x] When the API call promise *resolves* with `status: 401` and the specific error message/code.
-    *   [x] If it matches:
-        *   [x] Retrieve original request details (endpoint, method, body) - *Currently hardcoded for chat*. 
-        *   [x] Retrieve current page URL/route (`window.location`).
-        *   [x] Store these details securely in **session storage** (key: `pendingAction`).
-        *   [-] Clear any existing `pendingAction` before storing a new one. - *Implicitly handled by overwriting.*
-        *   [x] Trigger the authentication flow (using `navigate('/login')` from `authStore`).
-    *   [x] If any other error, handle normally.
+2.  **Use `loadChatDetails` Action in `aiStore`:**
+    *   [✅] Confirmed `loadChatDetails(chatId: string)` exists and fetches messages.
+    *   [✅] Confirmed necessary API client method (`api.ai().getChatMessages(chatId)`) exists or is handled.
 
-### Phase 3: Frontend Post-Authentication Action Replay
+3.  **Modify `authStore._checkAndReplayPendingAction`:**
+    *   [✅] Located success handler after API replay.
+    *   [✅] Checked if replayed action was `POST /chat`.
+    *   [✅] Extracted `chat_id` from response.
+    *   [✅] Stored `chat_id` in `sessionStorage` key `loadChatIdOnRedirect`.
+    *   [✅] Navigated user to `/chat` using stored `navigate` function.
+    *   [✅] Ensured `pendingAction` is cleared.
 
-*   [x] **Goal:** After successful login/signup, check for and execute the stored action.
-*   [x] **Action:** Locate the code that runs immediately after successful login/signup (`authStore` login/register actions).
-*   [x] **Action:** In this post-auth code:
-    *   [x] Check session storage for `pendingAction`.
-    *   [x] If found:
-        *   [x] Retrieve stored action details.
-        *   [x] **Clear** `pendingAction` from session storage (after successful parse).
-        *   [x] Re-execute the API call using retrieved details and the user's new auth token (using `api` client methods).
-        *   [x] Handle success/error of the retry (logging only for now).
-        *   [x] If needed, redirect the user back to the original URL stored earlier (`returnPath`).
+4.  **Modify `/chat` Page Component (`ChatPage.tsx`):**
+    *   [✅] Identified `apps/web/src/pages/aichat.tsx`.
+    *   [✅] Added `useEffect` hook on mount.
+    *   [✅] Inside `useEffect`, checked for `loadChatIdOnRedirect` key.
+    *   [✅] If key exists: Retrieved `chatId`, called `aiStore.loadChatDetails(chatId)`, removed key from session storage.
+    *   [✅] If key doesn't exist, normal history loading proceeds.
 
-### Phase 4: Generalization (Refactoring)
+**Phase 2: Cleanup Remnants of Previous Attempt**
 
-*   [ ] **Goal:** Refactor the frontend interception and replay logic into a reusable component/hook/service.
-*   [ ] **Action:** Abstract logic from Phases 2 & 3 (e.g., `useProtectedApiCall` or API client interceptors).
-*   [ ] **Action:** Ensure the abstracted solution receives endpoint, method, and body dynamically instead of hardcoding (Ref: `aiStore.ts` TODOs).
-*   [ ] **Action:** Ensure the abstracted solution correctly handles the `returnPath` stored in `pendingAction` during replay (Phase 3).
-*   [ ] **Action:** Ensure refactored solution still works for chat. Consider applying to another feature if available.
+1.  **Review `authStore._checkAndReplayPendingAction`:**
+    *   [✅] Removed conflicting logic related to homepage chat.
+2.  **Review `HomePage` Component:**
+    *   [✅] Removed conflicting `useEffect` checking for `pendingChatMessage`.
 
-### Phase 5: Backend Security (Optional but Recommended)
+**Phase 3: Update Unit Tests**
 
-*   [ ] **Goal:** Consider server-side storage for pending actions for higher security/reliability.
-*   [ ] **Action (If Implementing):**
-    *   Backend: Create temporary storage (e.g., `pending_actions` table) linked to an anonymous session identifier/token. Return token in the "AUTH_REQUIRED" response.
-    *   Frontend: Store only the token.
-    *   Backend (Post-Auth): Add endpoint for frontend to submit token post-login. Endpoint retrieves/executes action, clears storage.
+1.  **`aiStore.*.test.ts` (Refactored):**
+    *   [✅] **`sendMessage` Tests:** Verified `pendingAction` stored correctly (including `returnPath: '/chat'`).
+    *   [✅] **`loadChatDetails` Tests:** Added/verified tests for loading state, error states (invalid ID, missing token), successful API call, API error, and thrown errors.
+2.  **`authStore.test.ts`:**
+    *   [✅] Updated tests for `_checkAndReplayPendingAction` (or callers):
+        *   [✅] Verified `sessionStorage.setItem('loadChatIdOnRedirect', ...)` called on successful chat replay.
+        *   [✅] Verified `navigate('/chat')` called on successful replay.
+        *   [✅] Tested failure cases (replay API fails, non-chat action).
+3.  **`/chat` Page Component Tests (e.g., `apps/web/src/pages/aichat.test.tsx`):**
+    *   [✅] Tested component mount with `loadChatIdOnRedirect` present (verified `loadChatDetails` called, storage cleared).
+    *   [✅] Tested component mount without `loadChatIdOnRedirect` present (verified normal history loading called).
+
+**Phase 4: Manual Verification**
+
+1.  [ ] Test the end-to-end flow:
+    *   Log out.
+    *   Go to the homepage.
+    *   Type a message and send.
+    *   Verify redirection to `/login`.
+    *   Log in.
+    *   Verify redirection to `/chat`.
+    *   Verify the chat conversation you just initiated is loaded and displayed correctly.
+    *   Refresh the `/chat` page and verify it loads the chat history list as normal.
+
+## Potential Future Refactors
+
+*   **aiStore Getter/Setter Pattern:** Consider refactoring `aiStore` to use a more explicit getter/setter pattern for state access and updates. This could improve traceability and encapsulation but would increase boilerplate. Evaluate based on future store complexity. (Decision deferred as of [current date/context]).

@@ -53,27 +53,6 @@ export function HomePage() {
     }
   }, [availableProviders]);
 
-  useEffect(() => {
-    if (user && session) {
-      const pendingMessageJson = sessionStorage.getItem('pendingChatMessage');
-      if (pendingMessageJson) {
-        logger.info('[HomePage] Found stashed message, attempting to send...');
-        try {
-          const pendingMessage = JSON.parse(pendingMessageJson);
-          sessionStorage.removeItem('pendingChatMessage');
-          sendMessage({
-            message: pendingMessage.message,
-            providerId: pendingMessage.providerId,
-            promptId: pendingMessage.promptId,
-          });
-        } catch (error) {
-          logger.error('[HomePage] Failed to parse or send stashed message:', { error: String(error) });
-          sessionStorage.removeItem('pendingChatMessage');
-        }
-      }
-    }
-  }, [user, session, sendMessage]);
-
   const handleLimitReached = useCallback(() => {
     const pendingMessageJson = sessionStorage.getItem('pendingChatMessage');
     if (pendingMessageJson) {
