@@ -71,6 +71,11 @@ export class ApiClient {
         if (!options.isPublic && token) {
             headers.append('Authorization', `Bearer ${token}`);
         }
+        
+        // ---> Log headers right before fetch (Revised) <--- 
+        const headersObject: Record<string, string> = {};
+        headers.forEach((value, key) => { headersObject[key] = value; });
+        logger.info(`[apiClient] Requesting ${options.method || 'GET'} ${url}`, { headers: headersObject });
 
         try {
             const response = await fetch(url, { ...options, headers });
@@ -92,28 +97,13 @@ export class ApiClient {
                 throw new ApiError(parseError.message || 'Failed to parse response body', response.status);
             }
 
-            // ---> NEW: Handle 401 AUTH_REQUIRED immediately after successful parse <--- 
+            // ---> Handle 401 AUTH_REQUIRED immediately after successful parse <--- 
             if (response.status === 401 && typeof responseData === 'object' && responseData?.code === 'AUTH_REQUIRED') {
-                 logger.warn('AuthRequiredError detected immediately after parse. Storing pending action...');
-                 try {
-                     const returnPath = window.location.pathname + window.location.search;
-                     let requestBody = null;
-                     if (options.body && typeof options.body === 'string') {
-                         try { requestBody = JSON.parse(options.body); } catch (e) { 
-                            logger.warn('Could not parse request body for pending action storage.', { body: options.body });
-                         } 
-                     }
-                     const actionDetails = { endpoint, method: options.method || 'GET', body: requestBody, returnPath };
-                     sessionStorage.setItem('pendingAction', JSON.stringify(actionDetails));
-                     logger.info('Stored pending action details.', actionDetails);
-                 } catch (storageError: any) {
-                     logger.error('Failed to store pending action:', { error: storageError.message });
-                 }
-                 // Throw the specific error
+                 logger.warn('AuthRequiredError detected. Throwing error for caller to handle...');
                  throw new AuthRequiredError(responseData.message || 'Authentication required');
             }
 
-            // ---> Original check for any non-OK response (including other 401s) <---
+            // ---> Original check for any non-OK response <--- 
             if (!response.ok) {
                 // Log the response data for debugging NON-AUTH_REQUIRED errors
                 if (response.status === 401) { // Log if it's 401 but NOT the specific AUTH_REQUIRED case
@@ -147,14 +137,14 @@ export class ApiClient {
                 return { status: response.status, error: errorPayload };
             }
             
-            // Return standard ApiResponse format for success
+            // Success case
             return { status: response.status, data: responseData as T };
 
         } catch (error: any) {
-            // ---> Check if it's the AuthRequiredError we threw <--- 
-            if (error instanceof AuthRequiredError) {
+             // ---> Check if it's the AuthRequiredError we threw <--- 
+            if (error instanceof AuthRequiredError || error?.name === 'AuthRequiredError') { // Check name too for safety
                 logger.info("AuthRequiredError caught in apiClient, re-throwing...");
-                throw error; // Re-throw it so the caller (aiStore) can catch it by type/name
+                throw error; // Re-throw it so the caller (aiStore) can catch it
             }
             
             // ---> Otherwise, handle as a network/unexpected error <--- 

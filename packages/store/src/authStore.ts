@@ -1,8 +1,9 @@
 import { create } from 'zustand';
-import { AuthStore as AuthStoreType, AuthResponse, User, Session, UserProfile, UserProfileUpdate, ApiResponse } from '@paynless/types';
-import { logger } from '@paynless/utils';
+import { AuthStore as AuthStoreType, AuthResponse, User, Session, UserProfile, UserProfileUpdate, ApiResponse, ChatMessage } from '@paynless/types';
+import { logger, parseAssistantContent } from '@paynless/utils';
 import { persist } from 'zustand/middleware';
 import { api } from '@paynless/api-client';
+import { useAiStore } from './aiStore';
 
 // Define the structure of the response from the refresh endpoint
 // Updated to include user and profile, matching the backend
@@ -15,7 +16,10 @@ interface RefreshResponse {
 // Placeholder navigate function type until AuthStoreType is updated
 type NavigateFunction = (path: string) => void;
 
-export const useAuthStore = create<AuthStoreType>()(
+// --- Helper function type for replay logic ---
+type CheckAndReplayFunction = (token: string, specifiedReturnPath?: string) => Promise<boolean>; // Returns true if navigation occurred
+
+export const useAuthStore = create<AuthStoreType & { _checkAndReplayPendingAction: CheckAndReplayFunction }>()(
   persist(
     (set, get) => ({
       user: null,
@@ -99,7 +103,27 @@ export const useAuthStore = create<AuthStoreType>()(
                                });
                                // TODO: Decide how to handle replay error (e.g., notify user?)
                            } else {
-                               logger.info('Successfully replayed pending action.', { status: replayResponse.status });
+                               logger.info('[AuthStore] Successfully replayed pending action.', { status: replayResponse.status });
+                               // ---> START Log Replay Data <---
+                               logger.info('[AuthStore] Inspecting replayResponse.data:', { 
+                                   data: replayResponse.data, 
+                                   dataType: typeof replayResponse.data, 
+                                   hasChatId: replayResponse.data ? (replayResponse.data as any).chat_id !== undefined : false,
+                                   chatIdType: replayResponse.data ? typeof (replayResponse.data as any).chat_id : 'N/A'
+                               });
+                               // ---> END Log Replay Data <---
+                               // Check if it was the chat endpoint and data has chat_id
+                               if (endpoint === '/chat' && method.toUpperCase() === 'POST' && replayResponse.data && typeof (replayResponse.data as any).chat_id === 'string') {
+                                   const chatId = (replayResponse.data as any).chat_id;
+                                   logger.info(`Chat action replayed successfully, storing chatId ${chatId} for redirect.`);
+                                   try {
+                                       sessionStorage.setItem('loadChatIdOnRedirect', chatId);
+                                   } catch (e: unknown) {
+                                       logger.error('Failed to set loadChatIdOnRedirect in sessionStorage:', { 
+                                           error: e instanceof Error ? e.message : String(e) 
+                                       });
+                                   }
+                               }
                            }
 
                            // Navigate to original path if possible
@@ -150,7 +174,7 @@ export const useAuthStore = create<AuthStoreType>()(
         }
       },
       
-      register: async (email: string, password: string): Promise<{ success: boolean; user: User | null; redirectTo: string | null }> => {
+      register: async (email: string, password: string): Promise<User | null> => {
         set({ isLoading: true, error: null });
         try {
           const response = await api.post<AuthResponse, {email: string, password: string}>(
@@ -163,14 +187,13 @@ export const useAuthStore = create<AuthStoreType>()(
               set({
                 user: authData.user,
                 session: authData.session,
-                profile: null, 
+                profile: authData.profile,
                 isLoading: false,
                 error: null,
               });
 
               // ---> Phase 3: Check for and replay pending action (Register) <---
               let navigated = false; // Flag to track if we navigated due to pending action
-              let finalRedirectTo = '/dashboard'; // Default redirect target
               try {
                   const pendingActionJson = sessionStorage.getItem('pendingAction');
                   if (pendingActionJson) {
@@ -184,30 +207,42 @@ export const useAuthStore = create<AuthStoreType>()(
 
                       if (endpoint && method && newToken) {
                            logger.info(`Replaying action: ${method} ${endpoint}`, { body });
-                           let replayResponse: ApiResponse<unknown>;
-                           
-                           switch (method.toUpperCase()) {
-                                case 'POST':
-                                    replayResponse = await api.post(endpoint, body ?? {}, { token: newToken });
-                                    break;
-                                case 'PUT':
-                                    replayResponse = await api.put(endpoint, body ?? {}, { token: newToken });
-                                    break;
-                                case 'DELETE':
-                                    replayResponse = await api.delete(endpoint, { token: newToken });
-                                    break;
-                                case 'GET':
-                                    replayResponse = await api.get(endpoint, { token: newToken });
-                                    break;
-                                default:
-                                    logger.error('Unsupported method in pending action replay:', { method });
-                                    replayResponse = { status: 0, error: { code: 'UNSUPPORTED_METHOD', message: 'Unsupported replay method' } }; 
-                            }
+                           let replayResponse: ApiResponse<unknown> = await (async () => {
+                               switch (method.toUpperCase()) {
+                                   case 'POST': return await api.post(endpoint, body ?? {}, { token: newToken });
+                                   case 'PUT': return await api.put(endpoint, body ?? {}, { token: newToken });
+                                   case 'DELETE': return await api.delete(endpoint, { token: newToken });
+                                   case 'GET': return await api.get(endpoint, { token: newToken });
+                                   default:
+                                       logger.error('Unsupported method in pending action replay:', { method });
+                                       return { status: 0, error: { code: 'UNSUPPORTED_METHOD', message: 'Unsupported replay method' } }; 
+                               }
+                           })();
 
                            if (replayResponse.error) {
                                logger.error('Error replaying pending action:', { status: replayResponse.status, error: replayResponse.error });
                            } else {
-                               logger.info('Successfully replayed pending action.', { status: replayResponse.status });
+                               logger.info('[AuthStore] Successfully replayed pending action.', { status: replayResponse.status });
+                               // ---> START Log Replay Data <---
+                               logger.info('[AuthStore] Inspecting replayResponse.data:', { 
+                                   data: replayResponse.data, 
+                                   dataType: typeof replayResponse.data, 
+                                   hasChatId: replayResponse.data ? (replayResponse.data as any).chat_id !== undefined : false,
+                                   chatIdType: replayResponse.data ? typeof (replayResponse.data as any).chat_id : 'N/A'
+                               });
+                               // ---> END Log Replay Data <---
+                               // Check if it was the chat endpoint and data has chat_id
+                               if (endpoint === '/chat' && method.toUpperCase() === 'POST' && replayResponse.data && typeof (replayResponse.data as any).chat_id === 'string') {
+                                   const chatId = (replayResponse.data as any).chat_id;
+                                   logger.info(`Chat action replayed successfully, storing chatId ${chatId} for redirect.`);
+                                   try {
+                                       sessionStorage.setItem('loadChatIdOnRedirect', chatId);
+                                   } catch (e: unknown) {
+                                       logger.error('Failed to set loadChatIdOnRedirect in sessionStorage:', { 
+                                           error: e instanceof Error ? e.message : String(e) 
+                                       });
+                                   }
+                               }
                            }
 
                            const navigate = get().navigate;
@@ -215,10 +250,8 @@ export const useAuthStore = create<AuthStoreType>()(
                                logger.info(`Replay complete, navigating to original path: ${returnPath}`);
                                navigate(returnPath);
                                navigated = true;
-                               finalRedirectTo = returnPath; // Update final redirect target
                            } else {
                                logger.warn('Could not navigate to returnPath after replay.', { hasNavigate: !!navigate, returnPath });
-                               // If navigation fails, keep finalRedirectTo as /dashboard
                            }
                       } else {
                           logger.error('Invalid pending action data found:', { pendingAction });
@@ -236,34 +269,26 @@ export const useAuthStore = create<AuthStoreType>()(
               if (!navigated) {
                  const navigate = get().navigate;
                  if (navigate) {
-                     logger.info(`Registration successful (no pending action/navigation), navigating to: ${finalRedirectTo}`);
-                     navigate(finalRedirectTo);
+                     logger.info('Registration successful (no pending action/navigation), navigating to dashboard.');
+                     navigate('/dashboard');
                  } else {
                      logger.warn('Registration successful but navigate function not set in store.');
                  }
               }
               
-              // Return success indication and final redirect target
-              return { 
-                  success: true, 
-                  user: authData.user ?? null, 
-                  redirectTo: finalRedirectTo // Return the actual target
-              };
+              // Return the user object consistent with login
+              return authData.user ?? null;
 
           } else {
-               const errorMessage = response.error?.message || 'Registration failed without specific error';
+               const errorMessage = response.error?.message || 'Registration failed';
                throw new Error(errorMessage);
           }
         } catch (error) {
           const finalError = error instanceof Error ? error : new Error('Unknown registration error');
-          logger.error('Registration error in store', { message: finalError.message });
-          set({
-            isLoading: false,
-            error: finalError,
-             user: null, session: null, profile: null
-          });
-          // Return failure indication
-          return { success: false, user: null, redirectTo: null };
+          logger.error('Register error in store', { message: finalError.message });
+          set({ isLoading: false, error: finalError, user: null, session: null, profile: null });
+          // Return null on error, consistent with login
+          return null;
         }
       },
       
@@ -276,60 +301,95 @@ export const useAuthStore = create<AuthStoreType>()(
                 await api.post('/logout', {}, { token }); 
                 logger.info('AuthStore: Logout API call successful.');
              } catch (error) {
-                const finalError = error instanceof Error ? error : new Error('Unknown logout error');
-                logger.error('Logout error caught in store', { message: finalError.message });
+                logger.error('Logout API call failed, proceeding with local cleanup.', { error: error instanceof Error ? error.message : String(error) });
+             } finally {
+               // Always clear local state and navigate regardless of API call success/failure
+               set({ user: null, session: null, profile: null, isLoading: false, error: null });
+               sessionStorage.removeItem('auth-session'); // Clear stored session
+               sessionStorage.removeItem('pendingAction'); // Clear any pending action too
              }
         } else if (!token) {
              logger.warn('Logout called but no session token found. Clearing local state only.');
         }
-
-        // Always clear local state regardless of API call success/failure or client initialization
-        logger.info('AuthStore: Clearing state after logout attempt.');
-        set({
-          user: null,
-          session: null,
-          profile: null,
-          isLoading: false, 
-          error: null,
-        });
+        
+        // Move navigation call outside finally block
+        const navigate = get().navigate; // Retrieve navigate function
+        if (navigate) {
+          navigate('/login');
+          logger.info('Cleared local state and navigated to /login.');
+        } else {
+          logger.error('Logout cleanup complete but navigate function not available in store.');
+        }
       },
       
       initialize: async () => {
-        logger.info('Initializing auth state from persisted data...');
         set({ isLoading: true });
-        const session = get().session;
-
-        if (session?.access_token) {
-          logger.info('Verifying token / fetching initial profile...');
-          try {
-            const response = await api.get<AuthResponse>('me', { token: session.access_token });
-            
-            if (!response.error && response.data) {
-                const authData = response.data;
-                if (authData?.user) {
-                    set((currentState) => ({ user: authData.user, profile: authData.profile, session: currentState.session, isLoading: false, error: null }));
-                } else { 
-                    /* handle no user data */ 
-                    set({ user: null, profile: null, session: null, isLoading: false, error: new Error('Initialization failed: Invalid user data received') }); 
+        let session: Session | null = null;
+        try {
+          const sessionJson = sessionStorage.getItem('auth-session');
+          if (sessionJson) {
+             try {
+                session = JSON.parse(sessionJson) as Session;
+                // Validate structure slightly
+                if (!session || typeof session.access_token !== 'string' || typeof session.expiresAt !== 'number') {
+                  logger.warn('Stored session JSON is invalid or missing required fields.');
+                  session = null;
+                  sessionStorage.removeItem('auth-session');
                 }
-            } else {
-                 const errorMessage = response.error?.message || 'Initialization failed: Could not fetch user data';
-                 throw new Error(errorMessage);
-            }
-          } catch(e) {
-            // API call itself failed
-            const finalError = e instanceof Error ? e : new Error('Initialization failed (API error)');
-            logger.error('Initialize: Error during /me API call.', { message: finalError.message });
-            set({ 
-              user: null, profile: null, session: null, 
-              isLoading: false, 
-              error: finalError 
-            });
+             } catch (parseError) {
+                logger.error('Failed to parse stored session JSON.', { error: parseError instanceof Error ? parseError.message : String(parseError) });
+                session = null;
+                sessionStorage.removeItem('auth-session'); 
+             }
+          } else {
+             logger.info('No session found in sessionStorage.');
           }
-        } else {
-          // No initial session token found
-          logger.info('No persisted session token found.');
-          set({ user: null, profile: null, session: null, isLoading: false, error: null });
+
+          // Check if session is expired (only if valid session was parsed)
+          if (session && session.expiresAt * 1000 < Date.now()) {
+            logger.info('Stored session is expired.');
+            session = null;
+            sessionStorage.removeItem('auth-session');
+          }
+
+          if (session?.access_token) {
+            // Session exists and is not expired, try calling /me
+            logger.info('Valid session found, verifying token / fetching initial profile...');
+            set({ session }); // Optimistically set the session
+            const response = await api.get<AuthResponse>('/me', { token: session.access_token });
+
+            if (response.error || !response.data || !response.data.user) {
+              const errMsg = response.error?.message || 'Failed to validate session or get user data';
+              logger.error('/me call failed after restoring session.', { error: response.error });
+              sessionStorage.removeItem('auth-session'); // Clear session on failure
+              set({ isLoading: false, user: null, session: null, profile: null, error: new Error(errMsg) });
+              return; // Stop initialization
+            }
+
+            // /me successful, update user/profile
+            logger.info('/me call successful, user authenticated.');
+            set({ user: response.data.user, profile: response.data.profile, isLoading: false, error: null });
+
+            // Check for pending action and replay
+            await get()._checkAndReplayPendingAction(session.access_token);
+
+          } else {
+            // No valid session token found after checks
+            logger.info('No valid session token available after checks.');
+            set({ user: null, profile: null, session: null, isLoading: false, error: null });
+          }
+
+        } catch (error) {
+          // Catch errors from api.get or _checkAndReplayPendingAction
+          logger.error('Error during initialization process', { error: error instanceof Error ? error.message : String(error) });
+          sessionStorage.removeItem('auth-session'); // Ensure removal on any unexpected error
+          set({
+            isLoading: false,
+            user: null,
+            session: null,
+            profile: null,
+            error: new Error('Error during initialization', { cause: error instanceof Error ? error : undefined }),
+          });
         }
       },
       
@@ -350,66 +410,176 @@ export const useAuthStore = create<AuthStoreType>()(
                 const refreshData = response.data;
                 if (refreshData?.session && refreshData?.user) {
                     set({ session: refreshData.session, user: refreshData.user, profile: refreshData.profile, isLoading: false, error: null });
+                    // Call replay after successful refresh and state update
+                    await get()._checkAndReplayPendingAction(refreshData.session.access_token);
                 } else { 
                     /* handle invalid response */ 
                     set({ session: null, user: null, profile: null, isLoading: false, error: new Error('Failed to refresh session (invalid response)') }); 
+                    sessionStorage.removeItem('auth-session'); // <-- Add removal for invalid data
                 }
            } else {
                 const errorMessage = response.error?.message || 'Failed to refresh session';
+                // Remove session if API resolves with an error structure
+                sessionStorage.removeItem('auth-session'); // <-- Add removal for resolved API error
                 throw new Error(errorMessage);
            }
         } catch (error) {
-          const finalError = error instanceof Error ? error : new Error('Failed to refresh session (API error)');
+          // Fix: Use original error message, similar to login/register
+          const finalError = error instanceof Error ? error : new Error('Error refreshing session');
           logger.error('Refresh session: Error during refresh attempt.', { message: finalError.message });
+          // Remove session if API call throws
+          sessionStorage.removeItem('auth-session'); // <-- Add removal for caught error
           set({
             session: null, user: null, profile: null,
             isLoading: false,
-            error: finalError
+            error: finalError // Set the new error object
           });
         }
       },
       
-      updateProfile: async (profileData: UserProfileUpdate): Promise<boolean> => {
-        set({ isLoading: true, error: null });
-        const token = get().session?.access_token;
-        const currentProfile = get().profile;
+      updateProfile: async (profileData: UserProfileUpdate): Promise<UserProfile | null> => {
+        set({ isLoading: true });
+        const { session, profile } = get(); // Get current session and profile
 
-        // Check if authenticated first
-        if (!token) {
-            logger.error('updateProfile: Cannot update profile, user not authenticated.');
-            set({ error: new Error('Not authenticated'), isLoading: false });
-            return false;
+        if (!session?.access_token) {
+          set({ isLoading: false, error: new Error('Authentication required to update profile') });
+          return null;
         }
 
-        // Then check if profile is loaded
-        if (!currentProfile) {
-            logger.error('updateProfile: Cannot update profile, no current profile loaded.');
-            set({ error: new Error('Profile not loaded'), isLoading: false });
-            return false;
+        if (!profile) {
+           set({ isLoading: false, error: new Error('Profile not loaded') });
+           return null;
         }
 
-        // Original try-catch block for API call
         try {
-            const response = await api.put<UserProfile, UserProfileUpdate>('profile', profileData, { token });
-            
-            if (!response.error && response.data) {
-                 const updatedProfile = response.data;
-                 set({ profile: updatedProfile, isLoading: false, error: null });
-                 logger.info('Profile updated successfully.');
-                 return true;
-            } else {
-                 const errorMessage = response.error?.message || 'Failed to update profile';
-                 throw new Error(errorMessage);
-            }
+          const payload: Partial<UserProfileUpdate> = {};
+          if (profileData.first_name !== undefined) payload.first_name = profileData.first_name;
+          if (profileData.last_name !== undefined) payload.last_name = profileData.last_name;
+
+          const response = await api.put<UserProfile, Partial<UserProfileUpdate>>('/profile', payload, { token: session.access_token });
+
+          if (response.error || !response.data) {
+            const errMsg = response.error?.message || 'Failed to update profile';
+            logger.error('Profile update failed:', { error: response.error });
+            set({ isLoading: false, error: new Error(errMsg) });
+            return null;
+          }
+
+          logger.info('Profile updated successfully.');
+          set({ profile: response.data, isLoading: false, error: null });
+          return response.data;
+
         } catch (error) {
-            const finalError = error instanceof Error ? error : new Error('Failed to update profile (API error)');
-            logger.error('Update profile: Error during API call.', { message: finalError.message });
-            set({ isLoading: false, error: finalError });
-            return false;
+          logger.error('Error during profile update:', { error });
+          set({
+            isLoading: false,
+            error: new Error('Failed to update profile'),
+          });
+          return null;
         }
       },
-      // Add clearError if missing from original file
-       clearError: () => set({ error: null }),
+      clearError: () => set({ error: null }),
+
+      _checkAndReplayPendingAction: async (token: string, specifiedReturnPath?: string): Promise<boolean> => {
+        let navigated = false;
+        const navigate = get().navigate;
+        const pendingActionJson = sessionStorage.getItem('pendingAction');
+        // Ensure item is removed regardless of whether it existed or was valid
+        sessionStorage.removeItem('pendingAction');
+        try {
+            if (pendingActionJson) {
+                logger.info('Found pending action. Attempting replay...');
+                const pendingAction = JSON.parse(pendingActionJson);
+                // Destructure needed properties, including providerId
+                const { endpoint, method, body, returnPath, providerId } = pendingAction;
+                const effectiveReturnPath = specifiedReturnPath || returnPath; // Keep effective path logic
+                
+                if (endpoint && method && token) {
+                     logger.info(`Replaying action: ${method} ${endpoint}`, { body });
+                     
+                     let replayResponse: ApiResponse<unknown> | null = null;
+                     
+                     switch (method.toUpperCase()) {
+                         case 'POST':
+                             replayResponse = await api.post(endpoint, body ?? {}, { token });
+                             break;
+                         case 'PUT':
+                             replayResponse = await api.put(endpoint, body ?? {}, { token });
+                             break;
+                         case 'DELETE':
+                             replayResponse = await api.delete(endpoint, { token });
+                             break;
+                         case 'GET':
+                             replayResponse = await api.get(endpoint, { token });
+                             break;
+                         default:
+                             logger.error('Unsupported method in pending action replay:', { method });
+                             replayResponse = { status: 0, error: { code: 'UNSUPPORTED_METHOD', message: 'Unsupported replay method' } }; 
+                     }
+
+                     if (replayResponse && !replayResponse.error) { 
+                         logger.info('Successfully replayed pending action.', { status: replayResponse.status });
+                         
+                         if (endpoint === 'chat' && method.toUpperCase() === 'POST' && replayResponse.data) {
+                            try {
+                                const rawData = replayResponse.data as any;
+                                const aiStoreState = useAiStore.getState();
+                                
+                                const provider = aiStoreState.availableProviders.find(p => p.id === providerId);
+                                const apiIdentifier = provider?.api_identifier;
+                                
+                                if (!apiIdentifier) {
+                                     logger.error('Could not find apiIdentifier for replayed providerId:', { providerId });
+                                } else {
+                                     const assistantContent = parseAssistantContent(rawData, apiIdentifier);
+    
+                                     if (assistantContent) {
+                                         const constructedMessage: Partial<ChatMessage> = {
+                                             id: `replayed-assistant-${Date.now()}`,
+                                             role: 'assistant',
+                                             content: assistantContent,
+                                             created_at: new Date().toISOString(),
+                                             ai_provider_id: providerId || null,
+                                         };
+    
+                                         // Ensure state is updated appropriately after replay
+                                         // For chat, we primarily rely on the redirect and ChatPage loading logic
+                                         // No direct aiStore state update needed here anymore.
+                                     }
+                                }
+                            } catch (aiUpdateError: any) { 
+                                logger.error('Error processing replayed chat response or updating aiStore:', { error: aiUpdateError?.message || aiUpdateError });
+                            }
+                         }
+                     } else if (replayResponse?.error) { 
+                         logger.error('Error replaying pending action:', { 
+                             status: replayResponse.status,
+                             error: replayResponse.error 
+                         });
+                         // TODO: Decide how to handle replay error (e.g., notify user?)
+                     } else {
+                        logger.error('Pending action replay failed: Unsupported method or other issue.', { method });
+                     }
+
+                     if (navigate && effectiveReturnPath) {
+                         logger.info(`Replay complete, navigating to original path: ${effectiveReturnPath}`);
+                         navigate(effectiveReturnPath);
+                         navigated = true;
+                     } else {
+                         logger.warn('Could not navigate to returnPath after replay.', { hasNavigate: !!navigated, returnPath: effectiveReturnPath });
+                     }
+                } else {
+                    logger.error('Invalid pending action data found:', { pendingAction });
+                }
+            } else {
+                logger.info('No pending action found in sessionStorage.');
+            }
+        } catch (e) {
+            const errorMsg = e instanceof Error ? e.message : String(e);
+            logger.error('Error processing pending action:', { error: errorMsg });
+        }
+        return navigated;
+      },
     }),
     {
       name: 'auth-storage',

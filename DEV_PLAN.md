@@ -95,6 +95,32 @@ To ensure consistency and prevent subtle bugs when constructing URLs for API cal
 
 **Rationale:** This approach is simple, predictable, and avoids ambiguities encountered with the standard `URL` constructor when base URLs contain paths. It ensures consistency across different packages and environments.
 
+## Branch Hygiene
+
+- Main is the prod branch
+-- This deploys to paynless.app
+-- This branch must always be fully tested, stable, and working
+-- No broken or incomplete features or functions
+-- Main has test-mode set to false
+-- Main has logging set to Error
+-- Main has all relevant API keys inserted & integrations working 
+
+- Development is the development branch. 
+-- This branch is in testing for feature addition, bug fixes, etc. 
+-- May have broken or incomplete features or functions
+-- Dev has test-mode set to true
+-- Dev has logging configured to your local prefs 
+-- Dev may be missing relevant API keys 
+
+- For new features, bug fixes, etc
+-- Branch development
+-- Use a folder structure that identifies your work
+-- e.g. development/feature/add-[feature_name]
+-- Write all unit and integration tests and run them in your branch
+-- Only merge to development once your tests pass locally
+-- Once the work is merged to development with working tests, we'll do E2E testing
+-- Once the work passes E2E we'll merge to main (prod) and it'll be deployed
+
 ## Contributing
 
 To contribute to this project:

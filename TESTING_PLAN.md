@@ -1,21 +1,5 @@
 **Consolidated Project Testing Plan & Status (v6 - Anonymous Auth Refactor)**
 
-**Incomplete Features** 
-*   [⏸️] AI Chat on homepage doesn't work
-*   [✅] AI Chat signup/login flow
-*   [ ] AI model sync automation
-*   [ ] Mixpanel or Posthog integration
-*   [🚧] Test project on Bolt & Lovable 
-    *   [ ] Bolt & Lovable don't support pnpm monorepos well atm 
-*   [ ] User email automation - abstract for generic but specific implementation with Kit 
-*   [ ] Change email from within app
-*   [ ] Change password from within app
-*   [✅] shadcn implemented
-    *   [ ] Convert all pages / components to shadcn
-    *   [ ] Loading skeletons for all components 
-*   [ ] Change payment method doesn't register site
-*   [ ] Run SEO scan 
-
 **Notes & Key Learnings (Summary):**
 
 1. **Incomplete Stripe E2E Flow (IMPORTANT):** Stripe has been tested in Test Mode but not confirmed live Live Mode with real transactions. 
@@ -188,9 +172,21 @@
     *   **2.1 Unit Tests:**
         *   [✅] `packages/api-client` (All sub-clients: `apiClient`, `stripe.api`, `ai.api` tests passing)
         *   [✅] `packages/store` (Vitest setup complete)
-            *   [✅] `authStore.ts` *(Tests passing, including logout, initialize, refresh, replay logic)*
+            *   [✅] `authStore.ts` (Base actions tested via `authStore.base.test.ts`)
+            *   [✅] `authStore.ts` (`initialize` tested via `authStore.initialize.test.ts`)
+            *   [✅] `authStore.ts` (`login` tested via `authStore.login.test.ts`)
+            *   [✅] `authStore.ts` (`register` tested via `authStore.register.test.ts`)
+            *   [✅] `authStore.ts` (`logout` tested via `authStore.logout.test.ts`)
+            *   [✅] `authStore.ts` (`updateProfile` tested via `authStore.profile.test.ts`)
+            *   [✅] `authStore.ts` (`refreshSession` - Add tests via `authStore.refresh.test.ts`)
             *   [✅] `subscriptionStore.ts` *(Tests passing, including refresh failures in cancel/resume)*
-            *   [✅] `aiStore.ts` *(Tests passing, including config/details edge cases)*
+            *   [🚧] `aiStore.ts` *(Status: Reverted to state with 19 passing, 5 failing tests)*
+                *   **Current State:** File reverted to commit `[Specify Commit Hash or Date if known]` where 19 tests passed. 5 tests are failing.
+                *   **Root Cause Analysis:** Failures likely stem from outdated API mocking (`vi.mock` of module vs. `vi.spyOn` on imported singleton) and incorrect API response structure mocks (missing nested `data` object).
+                *   **Revised Testing Plan (2024-05-17):**
+                    *   [ ] **1. Fix API Mocking:** Remove `vi.mock('@paynless/api-client', ...)`. Use global `beforeEach`/`afterEach` with `vi.spyOn(api.ai(), '<method>')` for needed methods, assigning to global spy variables. Update first passing test to validate this core strategy.
+                    *   [ ] **2. Add Missing Tests:** Implement test suites for `startNewChat` and `clearAiError` using the validated mocking strategy.
+                    *   [ ] **3. Update Failing/Outdated Tests:** Incrementally fix the 5 failing tests and any others affected by the mocking changes, ensuring correct spy usage and API response structure mocks (`{ data: { ... } }`).
         *   [⏭️] `packages/ui-components` *(Skipped - Package empty)*.
         *   [✅] `packages/utils` (`logger.ts` tests passing)
         *   [✅] `packages/types` *(Implicitly tested via usage)*.
@@ -459,27 +455,75 @@ Verify the implementation that handles anonymous users attempting protected acti
     *   Body: `{ "error": "Authentication required", "code": "AUTH_REQUIRED" }`.
 *   [ ] **Authenticated Request:** Ensure existing tests for authenticated users (valid JWT, etc.) still pass after backend changes.
 
-**Manual / End-to-End (E2E) Tests:**
 
-*   [ ] **Anonymous Chat Attempt -> Login -> Success:**
-    1.  Log out / use an incognito window.
-    2.  Navigate to where the chat feature is available.
-    3.  Attempt to send a chat message.
-    4.  **Verify:** User is prompted to log in (redirect or modal).
-    5.  **Verify (DevTools):** `pendingAction` with correct chat details is stored in session storage.
-    6.  Log in as an existing user.
-    7.  **Verify:** User is returned to the original context (e.g., chat interface).
-    8.  **Verify:** The chat message originally attempted is automatically submitted successfully.
-    9.  **Verify (DevTools):** `pendingAction` is cleared from session storage.
-*   [ ] **Anonymous Chat Attempt -> Sign Up -> Success:**
-    1.  Repeat steps 1-5 above.
-    2.  Sign up as a *new* user.
-    3.  **Verify:** User is returned to the original context.
-    4.  **Verify:** The chat message originally attempted is automatically submitted successfully.
-    5.  **Verify (DevTools):** `pendingAction` is cleared from session storage.
-*   [ ] **Authenticated User Chat:** Verify that a normally logged-in user can still use the chat feature without any interception.
-*   [ ] **Login Without Pending Action:** Log out, navigate directly to login, log in. Verify no errors occur and no unexpected actions are triggered.
-*   [ ] **Retry Failure:** Manually simulate a scenario where the replayed action (post-login) fails (e.g., by mocking a temporary server error for the `/chat` endpoint *only* during the replay). Verify that a user-friendly error message is shown and the system doesn't get stuck.
-*   [ ] **Multiple Interceptions (Optional):** If possible, attempt action A, get intercepted, *before* logging in, attempt action B, get intercepted again. Verify only the *last* action (B) is stored in `pendingAction`.
-*   [ ] **Refactoring Test (Phase 4):** Ensure the primary E2E flow (Anonymous Chat -> Login -> Success) still works after refactoring the logic into reusable components/hooks. If another feature uses the refactored hook, test its interception flow as well.
-*   [ ] **Server-Side State Test (Phase 5, If Implemented):** Test the E2E flow using the server-side token mechanism. Verify temporary storage is created and cleared correctly.
+## Auth Interception Flow (Redirect to /chat) - Testing Checklist
+
+When implementing the revised authentication interception flow (redirecting to `/chat` after login and replay):
+
+1.  **`packages/store/src/aiStore.test.ts`**
+    *   [ ] **`sendMessage` Action:**
+        *   [ ] Locate test case for `AuthRequiredError`.
+        *   [ ] Verify `sessionStorage.setItem` is called 1x with key `'pendingAction'`.
+        *   [ ] Verify the stored `pendingAction` string, when parsed, matches: `{ endpoint: '/chat', method: 'POST', body: /* original requestData */, returnPath: '/chat' }`.
+        *   [ ] Verify `navigate('/login')` is called.
+        *   [ ] Verify optimistic message is removed.
+        *   [ ] Verify `aiError` remains `null` (if navigation succeeded).
+    *   [ ] **`loadChatDetails` Action:** (Add if missing)
+        *   [ ] Test loading state (`isDetailsLoading`) is set correctly during the action.
+        *   [ ] Test error state (`aiError`) is set if `chatId` argument is empty/invalid.
+        *   [ ] Test error state (`aiError`) is set if `useAuthStore` provides no token.
+        *   [ ] Test successful API call:
+            *   Mock `api.ai().getChatMessages` returns `ApiResponse<ChatMessage[]>` successfully.
+            *   Verify `api.ai().getChatMessages` called with correct `chatId` and token.
+            *   Verify store state updated: `currentChatId`, `currentChatMessages` set, `aiError` null, `isDetailsLoading` false.
+        *   [ ] Test API error response:
+            *   Mock `api.ai().getChatMessages` returns `ApiResponse` with an `error` object.
+            *   Verify store state updated: `aiError` set, `currentChatMessages` empty, `currentChatId` null, `isDetailsLoading` false.
+        *   [ ] Test thrown error during API call:
+            *   Mock `api.ai().getChatMessages` rejects/throws.
+            *   Verify store state updated: `aiError` set, `currentChatMessages` empty, `currentChatId` null, `isDetailsLoading` false.
+
+2.  **`packages/store/src/authStore.test.ts`**
+    *   [✅] **`login` Action (Replay Logic Tests):**
+        *   [✅] Test successful `POST /chat` replay:
+            *   Mock `sessionStorage.getItem('pendingAction')` returns chat action JSON (`returnPath: '/chat'`).
+            *   Mock `api.post('/chat', ...)` returns successful `ApiResponse<ChatMessage>` (with `chat_id`).
+            *   Verify `sessionStorage.removeItem('pendingAction')` called.
+            *   Verify `api.post` called for replay with correct args.
+            *   Verify `sessionStorage.setItem('loadChatIdOnRedirect', chatId)` called with correct `chat_id`.
+            *   Verify `navigate('/chat')` called.
+        *   [✅] Test failed `POST /chat` replay:
+            *   Mock `sessionStorage.getItem('pendingAction')` returns chat action JSON (`returnPath: '/chat'`).
+            *   Mock `api.post('/chat', ...)` returns `ApiResponse` with error.
+            *   Verify `sessionStorage.removeItem('pendingAction')` called.
+            *   Verify `sessionStorage.setItem('loadChatIdOnRedirect', ...)` is **not** called.
+            *   Verify `navigate('/chat')` is still called.
+            *   Verify error logged.
+        *   [✅] Test non-chat replay (e.g., GET): Verify `sessionStorage.setItem('loadChatIdOnRedirect', ...)` is **not** called.
+    *   [✅] **`register` Action (Replay Logic Tests):**
+        *   [✅] Repeat the same three test cases (`success POST /chat`, `failed POST /chat`, `non-chat replay`) as for the `login` action replay logic.
+
+3.  **`apps/web/src/pages/aichat.test.tsx` (or similar)**
+    *   [✅] Test component mount with `'loadChatIdOnRedirect'` **present** in `sessionStorage`:
+        *   Mock `sessionStorage.getItem` to return a test `chatId`.
+        *   Verify `aiStore.loadChatDetails` is called with the test `chatId`.
+        *   Verify `sessionStorage.removeItem` is called with `'loadChatIdOnRedirect'`.
+        *   Verify `aiStore.loadChatHistory` is **not** called by the redirect-checking effect.
+    *   [✅] Test component mount with `'loadChatIdOnRedirect'` **absent** in `sessionStorage`:
+        *   Mock `sessionStorage.getItem` to return `null`.
+        *   Verify `aiStore.loadChatDetails` is **not** called by the redirect-checking effect.
+        *   (Ensure separate tests verify that `aiStore.loadChatHistory` *is* eventually called by the *other* effect based on auth state).
+
+4.  **`apps/web/src/pages/Home.test.tsx` (or similar)**
+    *   [✅] Review existing tests.
+    *   [✅] Remove any tests specifically validating the old `useEffect` hook that checked `sessionStorage.getItem('pendingChatMessage')`.
+
+5.  **`supabase/functions/chat/index.test.ts` (or similar)**
+    *   [✅] Review tests for the main handler (`mainHandler`).
+    *   [✅] In tests simulating successful execution (after AI call and DB insert):
+        *   Verify the function returns a `200 OK` status.
+        *   Verify the **response body** is the correctly structured `ChatMessage` object (representing the saved assistant message).
+        *   Verify the `chat_id` in the returned `ChatMessage` is correct.
+        *   Verify the response body is **not** the raw `aiApiResponse` object.
+
+**End-to-End Manual Testing:** Crucial for this feature. Follow the steps outlined in the `IMPLEMENTATION_PLAN.md`.

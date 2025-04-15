@@ -34,44 +34,165 @@ export type Database = {
   }
   public: {
     Tables: {
+      ai_providers: {
+        Row: {
+          api_identifier: string
+          config: Json | null
+          created_at: string
+          description: string | null
+          id: string
+          is_active: boolean
+          name: string
+          updated_at: string
+        }
+        Insert: {
+          api_identifier: string
+          config?: Json | null
+          created_at?: string
+          description?: string | null
+          id?: string
+          is_active?: boolean
+          name: string
+          updated_at?: string
+        }
+        Update: {
+          api_identifier?: string
+          config?: Json | null
+          created_at?: string
+          description?: string | null
+          id?: string
+          is_active?: boolean
+          name?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      chat_messages: {
+        Row: {
+          ai_provider_id: string | null
+          chat_id: string
+          content: string
+          created_at: string
+          id: string
+          role: string
+          system_prompt_id: string | null
+          token_usage: Json | null
+          user_id: string | null
+        }
+        Insert: {
+          ai_provider_id?: string | null
+          chat_id: string
+          content: string
+          created_at?: string
+          id?: string
+          role: string
+          system_prompt_id?: string | null
+          token_usage?: Json | null
+          user_id?: string | null
+        }
+        Update: {
+          ai_provider_id?: string | null
+          chat_id?: string
+          content?: string
+          created_at?: string
+          id?: string
+          role?: string
+          system_prompt_id?: string | null
+          token_usage?: Json | null
+          user_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "chat_messages_ai_provider_id_fkey"
+            columns: ["ai_provider_id"]
+            isOneToOne: false
+            referencedRelation: "ai_providers"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "chat_messages_chat_id_fkey"
+            columns: ["chat_id"]
+            isOneToOne: false
+            referencedRelation: "chats"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "chat_messages_system_prompt_id_fkey"
+            columns: ["system_prompt_id"]
+            isOneToOne: false
+            referencedRelation: "system_prompts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      chats: {
+        Row: {
+          created_at: string
+          id: string
+          title: string | null
+          updated_at: string
+          user_id: string | null
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          title?: string | null
+          updated_at?: string
+          user_id?: string | null
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          title?: string | null
+          updated_at?: string
+          user_id?: string | null
+        }
+        Relationships: []
+      }
       subscription_plans: {
         Row: {
+          active: boolean
           amount: number
           created_at: string
           currency: string
-          description: string | null
+          description: Json | null
           id: string
           interval: string
           interval_count: number
           metadata: Json | null
           name: string
           stripe_price_id: string
+          stripe_product_id: string | null
           updated_at: string
         }
         Insert: {
+          active?: boolean
           amount: number
           created_at?: string
           currency: string
-          description?: string | null
+          description?: Json | null
           id?: string
           interval: string
           interval_count?: number
           metadata?: Json | null
           name: string
           stripe_price_id: string
+          stripe_product_id?: string | null
           updated_at?: string
         }
         Update: {
+          active?: boolean
           amount?: number
           created_at?: string
           currency?: string
-          description?: string | null
+          description?: Json | null
           id?: string
           interval?: string
           interval_count?: number
           metadata?: Json | null
           name?: string
           stripe_price_id?: string
+          stripe_product_id?: string | null
           updated_at?: string
         }
         Relationships: []
@@ -137,6 +258,33 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      system_prompts: {
+        Row: {
+          created_at: string
+          id: string
+          is_active: boolean
+          name: string
+          prompt_text: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          name: string
+          prompt_text: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          name?: string
+          prompt_text?: string
+          updated_at?: string
+        }
+        Relationships: []
       }
       user_profiles: {
         Row: {
@@ -216,7 +364,7 @@ export type Database = {
           {
             foreignKeyName: "user_subscriptions_user_id_fkey"
             columns: ["user_id"]
-            isOneToOne: false
+            isOneToOne: true
             referencedRelation: "user_profiles"
             referencedColumns: ["id"]
           },

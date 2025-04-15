@@ -6,7 +6,8 @@ export interface AiProvider {
   id: string; // uuid
   name: string;
   description: string | null;
-  // Note: api_identifier and is_active are used server-side/admin,
+  api_identifier: string; // Add the identifier needed for parsing
+  // Note: is_active is used server-side/admin,
   // not typically exposed directly to the frontend via the standard fetch.
 }
 
@@ -137,6 +138,7 @@ export interface AiActions {
     loadChatHistory: () => Promise<void>;
     loadChatDetails: (chatId: string) => Promise<void>;
     startNewChat: () => void;
+    addAssistantMessage: (message: ChatMessage) => void;
 
     // Clear error state
     clearAiError: () => void;

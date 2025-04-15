@@ -410,8 +410,11 @@ export async function mainHandler(req: Request, deps: ChatHandlerDeps = defaultD
     console.log('Final assistant message to return:', JSON.stringify(finalAssistantMessage, null, 2));
     console.log('Explicitly checking finalAssistantMessage.id:', finalAssistantMessage?.id);
 
-    // --- Return Success Response ---
-    return createJsonResponse(finalAssistantMessage, 200);
+    // --- Return Success Response --- 
+    console.log('Chat interaction successful. Returning SAVED assistant message.'); // Updated log
+    // Use injected createJsonResponse
+    // ---> Return the SAVED finalAssistantMessage object <--- 
+    return createJsonResponse(finalAssistantMessage, 200); // Corrected to return the saved message
 
   } catch (error) {
     console.error('Unhandled error in chat handler:', error);

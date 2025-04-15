@@ -12,8 +12,3 @@ export {};
 
 // This file serves as a reference to vite-env.d.ts which provides ambient declarations
 // for import.meta.env across all packages
-
-// REMOVED: Dummy export is likely no longer needed
-
-// Restore explicit export type for subscription types
-export type { UserSubscription, SubscriptionPlan, SubscriptionUsageMetrics, CheckoutSessionResponse, PortalSessionResponse } from './subscription.types';
