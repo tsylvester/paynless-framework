@@ -26,7 +26,7 @@ export interface SubscriptionStore extends SubscriptionState {
   
   // API actions
   loadSubscriptionData: (userId: string) => Promise<void>;
-  refreshSubscription: () => Promise<void>;
+  refreshSubscription: () => Promise<boolean>;
   createCheckoutSession: (priceId: string) => Promise<string | null>;
   createBillingPortalSession: () => Promise<string | null>;
   cancelSubscription: (subscriptionId: string) => Promise<boolean>;
@@ -143,14 +143,23 @@ export const useSubscriptionStore = create<SubscriptionStore>()(
         }
       },
       
-      refreshSubscription: async () => {
+      refreshSubscription: async (): Promise<boolean> => {
         const user = useAuthStore.getState().user;
         if (!user) {
           logger.info('refreshSubscription called but user is not logged in.');
-          return; 
+          return false; // <-- Return false if not logged in
         }
-        // Re-add userId argument
-        await get().loadSubscriptionData(user.id);
+        try {
+            // Re-add userId argument and await the call
+            await get().loadSubscriptionData(user.id);
+            // If loadSubscriptionData throws, the catch block below handles it.
+            // If it succeeds without throwing, assume success.
+            return true; // <-- Return true on success
+        } catch (error) {
+            // Error is already logged by loadSubscriptionData, just return false
+            logger.error('refreshSubscription failed due to error in loadSubscriptionData.', { error: error instanceof Error ? error.message : error });
+            return false; // <-- Return false on error
+        }
       },
       
       createCheckoutSession: async (priceId: string): Promise<string | null> => {
@@ -261,10 +270,14 @@ export const useSubscriptionStore = create<SubscriptionStore>()(
           if (response.error) {
             throw new Error(response.error.message || 'Failed to cancel subscription');
           }
-          // Only call refresh if the API call was successful
-          await get().refreshSubscription();
-          set({ isSubscriptionLoading: false, error: null });
-          return true;
+          // ---> Capture refresh result <--- 
+          const refreshSuccessful = await get().refreshSubscription();
+          // ---> Conditionally set error based on refresh result <--- 
+          set({ 
+              isSubscriptionLoading: false, 
+              error: refreshSuccessful ? null : get().error // Keep existing error if refresh failed
+          }); 
+          return refreshSuccessful; // <-- Return result of refresh
         } catch (error) {
           const errorMessage = error instanceof Error ? error.message : 'Unknown error cancelling subscription';
           logger.error('Error cancelling subscription', { error: errorMessage, userId: user.id, subscriptionId });
@@ -297,10 +310,14 @@ export const useSubscriptionStore = create<SubscriptionStore>()(
           if (response.error) {
             throw new Error(response.error.message || 'Failed to resume subscription');
           }
-          // Only call refresh if the API call was successful
-          await get().refreshSubscription(); 
-          set({ isSubscriptionLoading: false, error: null });
-          return true;
+          // ---> Capture refresh result <--- 
+          const refreshSuccessful = await get().refreshSubscription(); 
+          // ---> Conditionally set error based on refresh result <--- 
+          set({ 
+              isSubscriptionLoading: false, 
+              error: refreshSuccessful ? null : get().error // Keep existing error if refresh failed
+          });
+          return refreshSuccessful; // <-- Return result of refresh
         } catch (error) {
           const errorMessage = error instanceof Error ? error.message : 'Unknown error resuming subscription';
           logger.error('Error resuming subscription', { error: errorMessage, userId: user.id, subscriptionId });

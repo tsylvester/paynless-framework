@@ -120,10 +120,6 @@ export interface AiState {
 
     // Error state
     aiError: string | null;
-
-    // Anonymous usage tracking (client-side estimate)
-    anonymousMessageCount: number;
-    readonly anonymousMessageLimit: number; // Make limit configurable if needed
 }
 
 /**
@@ -137,16 +133,10 @@ export interface AiActions {
         providerId: string;
         promptId: string;
         chatId?: string;
-        isAnonymous: boolean;
-    }) => Promise<ChatMessage | { error: 'limit_reached' } | null>;
+    }) => Promise<ChatMessage | null>;
     loadChatHistory: () => Promise<void>;
     loadChatDetails: (chatId: string) => Promise<void>;
     startNewChat: () => void;
-
-    // Internal helpers for anonymous count
-    incrementAnonymousCount: () => void;
-    resetAnonymousCount: () => void;
-    setAnonymousCount: (count: number) => void; // For potentially restoring from storage
 
     // Clear error state
     clearAiError: () => void;

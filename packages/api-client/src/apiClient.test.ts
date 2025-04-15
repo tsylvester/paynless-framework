@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { http, HttpResponse } from 'msw';
 
-import { api, initializeApiClient, _resetApiClient, ApiError, ApiClient } from './apiClient';
+import { api, initializeApiClient, _resetApiClient, ApiError, ApiClient, AuthRequiredError } from './apiClient';
 import { server } from './setupTests'; // <-- Import the shared server
 // Remove direct SupabaseClient import if no longer needed here
 // import { SupabaseClient } from '@supabase/supabase-js'; // Import SupabaseClient type
@@ -87,19 +87,20 @@ describe('apiClient', () => {
 
     it('should return ApiResponse with network error object on network error', async () => {
       const endpoint = 'test-network-error';
+      // Use http.error() to simulate network failure
       server.use(
-        http.get(`${MOCK_FUNCTIONS_URL}/${endpoint}`, () => HttpResponse.error())
+        http.get(`${MOCK_FUNCTIONS_URL}/${endpoint}`, () => http.error())
       );
       const response = await api.get(endpoint);
       expect(response.data).toBeUndefined();
       expect(response.status).toBe(0);
       expect(response.error).toBeDefined();
       expect(response.error?.code).toBe('NETWORK_ERROR');
-      expect(response.error?.message).toBe('Failed to fetch');
+      expect(response.error?.message).toMatch(/Network error|Failed to fetch/); // Allow fetch specific message
     });
 
-    it('should return ApiResponse with API error object on API error response', async () => {
-      const endpoint = 'test-api-error';
+    it('should return ApiResponse with API error object on 400 API error response', async () => {
+      const endpoint = 'test-api-error-400';
       const errorResponse = { message: 'Invalid request', code: 'INVALID_INPUT' };
       server.use(
         http.get(`${MOCK_FUNCTIONS_URL}/${endpoint}`, () => 
@@ -113,12 +114,13 @@ describe('apiClient', () => {
       expect(response.error?.code).toBe(errorResponse.code);
       expect(response.error?.message).toBe(errorResponse.message);
     });
-    
-    it('should return ApiResponse with constructed API error if API error response has no message/code', async () => {
-      const endpoint = 'test-empty-error';
+
+    it('should return ApiResponse with API error object on 500 API error response', async () => {
+      const endpoint = 'test-api-error-500';
+      const errorResponse = { message: 'Server exploded' }; // No code provided
       server.use(
         http.get(`${MOCK_FUNCTIONS_URL}/${endpoint}`, () => 
-          HttpResponse.json({}, { status: 500 })
+          HttpResponse.json(errorResponse, { status: 500 })
         )
       );
       const response = await api.get(endpoint);
@@ -126,7 +128,64 @@ describe('apiClient', () => {
       expect(response.status).toBe(500);
       expect(response.error).toBeDefined();
       expect(response.error?.code).toBe('500'); // Status code as string
-      expect(response.error?.message).toMatch(/^Internal Server Error/); // Default status text
+      expect(response.error?.message).toBe(errorResponse.message); // Extracts message correctly
+    });
+    
+    // --- NEW Test for AuthRequiredError ---
+    it('should THROW AuthRequiredError and store pending action on 401 with code AUTH_REQUIRED', async () => {
+        const endpoint = 'test-auth-required';
+        const errorResponse = { message: 'Please log in', code: 'AUTH_REQUIRED' };
+        server.use(
+            http.get(`${MOCK_FUNCTIONS_URL}/${endpoint}`, () => 
+                HttpResponse.json(errorResponse, { status: 401 })
+            )
+        );
+
+        const setItemSpy = vi.spyOn(Storage.prototype, 'setItem');
+        // Mock window.location for returnPath
+        const originalLocation = window.location;
+        delete window.location;
+        window.location = { ...originalLocation, pathname: '/protected/resource', search: '?a=1' } as Location;
+        const expectedReturnPath = '/protected/resource?a=1';
+
+        // Use expect().rejects to catch the thrown error
+        await expect(api.get(endpoint)).rejects.toThrowError(AuthRequiredError);
+        // Can also check the message if needed
+        // await expect(api.get(endpoint)).rejects.toThrow(errorResponse.message);
+
+        // Verify sessionStorage call
+        expect(setItemSpy).toHaveBeenCalledTimes(1);
+        expect(setItemSpy).toHaveBeenCalledWith('pendingAction', expect.any(String));
+        const storedAction = JSON.parse(setItemSpy.mock.calls[0][1]);
+        expect(storedAction).toEqual({
+            endpoint: endpoint,
+            method: 'GET',
+            body: null, // No body for GET
+            returnPath: expectedReturnPath
+        });
+
+        // Restore mocks
+        setItemSpy.mockRestore();
+        window.location = originalLocation;
+    });
+    // --- End NEW Test ---
+
+    it('should return ApiResponse with standard error for 401 WITHOUT code AUTH_REQUIRED', async () => {
+        const endpoint = 'test-standard-401';
+        const errorResponse = { message: 'Invalid token' }; // No code: AUTH_REQUIRED
+        server.use(
+            http.get(`${MOCK_FUNCTIONS_URL}/${endpoint}`, () => 
+                HttpResponse.json(errorResponse, { status: 401 })
+            )
+        );
+
+        const response = await api.get(endpoint);
+        expect(response.data).toBeUndefined();
+        expect(response.status).toBe(401);
+        expect(response.error).toBeDefined();
+        expect(response.error?.code).toBe('401'); // Just status code
+        expect(response.error?.message).toBe(errorResponse.message);
+        // IMPORTANT: Should NOT throw AuthRequiredError
     });
 
   });

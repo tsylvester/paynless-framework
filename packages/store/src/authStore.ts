@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { AuthStore as AuthStoreType, AuthResponse, User, Session, UserProfile, UserProfileUpdate } from '@paynless/types';
+import { AuthStore as AuthStoreType, AuthResponse, User, Session, UserProfile, UserProfileUpdate, ApiResponse } from '@paynless/types';
 import { logger } from '@paynless/utils';
 import { persist } from 'zustand/middleware';
 import { api } from '@paynless/api-client';
@@ -42,9 +42,8 @@ export const useAuthStore = create<AuthStoreType>()(
         set({ isLoading: true, error: null });
         try {
           const response = await api.post<AuthResponse, {email: string, password: string}>(
-            '/login', 
-            { email, password }, 
-            { isPublic: true } 
+            '/login',
+            { email, password } 
           );
           
           if (!response.error && response.data) {
@@ -57,13 +56,81 @@ export const useAuthStore = create<AuthStoreType>()(
                 error: null,
               });
 
-              // Navigate on success
-              const navigate = get().navigate;
-              if (navigate) {
-                logger.info('Login successful, navigating to dashboard.');
-                navigate('/dashboard'); // Or appropriate success route
-              } else {
-                logger.warn('Login successful but navigate function not set in store.');
+              // ---> Phase 3: Check for and replay pending action <---
+              let navigated = false; // Flag to track if we navigated due to pending action
+              try {
+                  const pendingActionJson = sessionStorage.getItem('pendingAction');
+                  if (pendingActionJson) {
+                      logger.info('Found pending action after login. Attempting replay...');
+                      
+                      const pendingAction = JSON.parse(pendingActionJson);
+                      sessionStorage.removeItem('pendingAction'); // <-- Clear AFTER parse
+                      
+                      const { endpoint, method, body, returnPath } = pendingAction;
+                      const newToken = authData.session?.access_token;
+
+                      if (endpoint && method && newToken) {
+                           logger.info(`Replaying action: ${method} ${endpoint}`, { body });
+                           let replayResponse: ApiResponse<unknown>; // Use unknown for generic replay
+                           
+                           // TODO: Use a more robust way to call the correct api method (Phase 4)
+                           switch (method.toUpperCase()) {
+                               case 'POST':
+                                   replayResponse = await api.post(endpoint, body ?? {}, { token: newToken });
+                                   break;
+                               case 'PUT':
+                                   replayResponse = await api.put(endpoint, body ?? {}, { token: newToken });
+                                   break;
+                               case 'DELETE':
+                                   replayResponse = await api.delete(endpoint, { token: newToken });
+                                   break;
+                               case 'GET':
+                                   replayResponse = await api.get(endpoint, { token: newToken });
+                                   break;
+                               default:
+                                   logger.error('Unsupported method in pending action replay:', { method });
+                                   replayResponse = { status: 0, error: { code: 'UNSUPPORTED_METHOD', message: 'Unsupported replay method' } }; 
+                           }
+
+                           if (replayResponse.error) {
+                               logger.error('Error replaying pending action:', { 
+                                   status: replayResponse.status,
+                                   error: replayResponse.error 
+                               });
+                               // TODO: Decide how to handle replay error (e.g., notify user?)
+                           } else {
+                               logger.info('Successfully replayed pending action.', { status: replayResponse.status });
+                           }
+
+                           // Navigate to original path if possible
+                           const navigate = get().navigate;
+                           if (navigate && returnPath) {
+                               logger.info(`Replay complete, navigating to original path: ${returnPath}`);
+                               navigate(returnPath);
+                               navigated = true;
+                           } else {
+                               logger.warn('Could not navigate to returnPath after replay.', { hasNavigate: !!navigate, returnPath });
+                           }
+                      } else {
+                          logger.error('Invalid pending action data found:', { pendingAction });
+                      }
+                  }
+              } catch (e) {
+                  const errorMsg = e instanceof Error ? e.message : String(e);
+                  logger.error('Error processing pending action after login:', { error: errorMsg });
+                  // Continue with default navigation if processing fails
+              }
+              // --- End Phase 3 ---
+
+              // Navigate to dashboard only if we didn't navigate based on returnPath
+              if (!navigated) {
+                  const navigate = get().navigate;
+                  if (navigate) {
+                    logger.info('Login successful (no pending action/navigation), navigating to dashboard.');
+                    navigate('/dashboard');
+                  } else {
+                    logger.warn('Login successful but navigate function not set in store.');
+                  }
               }
 
               return authData.user ?? null;
@@ -88,8 +155,7 @@ export const useAuthStore = create<AuthStoreType>()(
         try {
           const response = await api.post<AuthResponse, {email: string, password: string}>(
             '/register', 
-            { email, password }, 
-            { isPublic: true } 
+            { email, password }
           );
           
           if (!response.error && response.data) {
@@ -102,39 +168,86 @@ export const useAuthStore = create<AuthStoreType>()(
                 error: null,
               });
 
-              // --- Post-Registration Logic (as per AI Plan) ---
-              let redirectTo = '/dashboard'; // Default redirect
+              // ---> Phase 3: Check for and replay pending action (Register) <---
+              let navigated = false; // Flag to track if we navigated due to pending action
+              let finalRedirectTo = '/dashboard'; // Default redirect target
               try {
-                  const pendingMessage = sessionStorage.getItem('pendingChatMessage');
-                  if (pendingMessage) {
-                     logger.info('Pending chat message found after registration. Redirecting to chat.');
-                     // Optional: Parse and validate `pendingMessage` if needed before changing redirect
-                     redirectTo = '/'; // Redirect to home/chat page
-                     // Note: The actual sending of the stashed message is handled by the frontend component
+                  const pendingActionJson = sessionStorage.getItem('pendingAction');
+                  if (pendingActionJson) {
+                      logger.info('Found pending action after registration. Attempting replay...');
+                      
+                      const pendingAction = JSON.parse(pendingActionJson);
+                      sessionStorage.removeItem('pendingAction'); // <-- Clear AFTER parse
+                      
+                      const { endpoint, method, body, returnPath } = pendingAction;
+                      const newToken = authData.session?.access_token;
+
+                      if (endpoint && method && newToken) {
+                           logger.info(`Replaying action: ${method} ${endpoint}`, { body });
+                           let replayResponse: ApiResponse<unknown>;
+                           
+                           switch (method.toUpperCase()) {
+                                case 'POST':
+                                    replayResponse = await api.post(endpoint, body ?? {}, { token: newToken });
+                                    break;
+                                case 'PUT':
+                                    replayResponse = await api.put(endpoint, body ?? {}, { token: newToken });
+                                    break;
+                                case 'DELETE':
+                                    replayResponse = await api.delete(endpoint, { token: newToken });
+                                    break;
+                                case 'GET':
+                                    replayResponse = await api.get(endpoint, { token: newToken });
+                                    break;
+                                default:
+                                    logger.error('Unsupported method in pending action replay:', { method });
+                                    replayResponse = { status: 0, error: { code: 'UNSUPPORTED_METHOD', message: 'Unsupported replay method' } }; 
+                            }
+
+                           if (replayResponse.error) {
+                               logger.error('Error replaying pending action:', { status: replayResponse.status, error: replayResponse.error });
+                           } else {
+                               logger.info('Successfully replayed pending action.', { status: replayResponse.status });
+                           }
+
+                           const navigate = get().navigate;
+                           if (navigate && returnPath) {
+                               logger.info(`Replay complete, navigating to original path: ${returnPath}`);
+                               navigate(returnPath);
+                               navigated = true;
+                               finalRedirectTo = returnPath; // Update final redirect target
+                           } else {
+                               logger.warn('Could not navigate to returnPath after replay.', { hasNavigate: !!navigate, returnPath });
+                               // If navigation fails, keep finalRedirectTo as /dashboard
+                           }
+                      } else {
+                          logger.error('Invalid pending action data found:', { pendingAction });
+                      }
                   } else {
-                     logger.info('No pending chat message found. Redirecting to default dashboard.');
+                     logger.info('No pending action found after registration.');
                   }
               } catch (e) {
-                  // Handle potential sessionStorage access errors (e.g., in private browsing)
                   const errorMsg = e instanceof Error ? e.message : String(e);
-                  logger.error('Error accessing sessionStorage after registration:', { error: errorMsg });
+                  logger.error('Error processing pending action after registration:', { error: errorMsg });
               }
+              // --- End Phase 3 (Register) ---
 
-              // Use the navigate function if available (set via setNavigate)
-              const navigate = get().navigate;
-              if (navigate) {
-                 logger.info(`Registration successful, navigating to: ${redirectTo}`);
-                 navigate(redirectTo);
-              } else {
-                 logger.warn('Registration successful but navigate function not set in store.');
+              // Use the navigate function if available AND if we didn't navigate via returnPath
+              if (!navigated) {
+                 const navigate = get().navigate;
+                 if (navigate) {
+                     logger.info(`Registration successful (no pending action/navigation), navigating to: ${finalRedirectTo}`);
+                     navigate(finalRedirectTo);
+                 } else {
+                     logger.warn('Registration successful but navigate function not set in store.');
+                 }
               }
               
-              // --- Return success indication and redirect target --- 
-              // Modify return value to signal success and target page for components not using navigate function directly
+              // Return success indication and final redirect target
               return { 
                   success: true, 
                   user: authData.user ?? null, 
-                  redirectTo: redirectTo 
+                  redirectTo: finalRedirectTo // Return the actual target
               };
 
           } else {
@@ -230,7 +343,7 @@ export const useAuthStore = create<AuthStoreType>()(
         set({ isLoading: true, error: null });
         try {
           const response = await api.post<RefreshResponse, {}>('refresh', 
-            {}, { headers: { 'Authorization': `Bearer ${currentSession.refresh_token}` }, isPublic: true }
+            {}, { headers: { 'Authorization': `Bearer ${currentSession.refresh_token}` } }
           );
            
            if (!response.error && response.data) {

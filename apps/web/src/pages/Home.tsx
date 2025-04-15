@@ -2,7 +2,7 @@ import { Layout } from '../components/layout/Layout';
 import { ArrowRight, Database, Lock, Server, CheckCircle } from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuthStore, useAiStore } from '@paynless/store';
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { logger } from '@paynless/utils';
 import { ModelSelector } from '../components/ai/ModelSelector';
 import { PromptSelector } from '../components/ai/PromptSelector';
@@ -12,19 +12,46 @@ export function HomePage() {
   const { user, session } = useAuthStore();
   const navigate = useNavigate();
 
-  const { loadAiConfig, sendMessage, startNewChat, setAnonymousCount } = useAiStore();
+  const loadAiConfig = useAiStore(state => state.loadAiConfig);
+  const sendMessage = useAiStore(state => state.sendMessage);
+  const startNewChat = useAiStore(state => state.startNewChat);
+  const availableProviders = useAiStore(state => state.availableProviders);
+
   const [selectedProviderId, setSelectedProviderId] = useState<string | null>(null);
   const [selectedPromptId, setSelectedPromptId] = useState<string | null>(null);
   const [showLimitDialog, setShowLimitDialog] = useState(false);
-  // TODO: Implement stashed message logic for post-registration sending (Phase 4)
-  // Prefix with underscore to silence TS6133 until implemented
-  const [_stashedMessage, _setStashedMessage] = useState<{ message: string; providerId: string; promptId: string; } | null>(null);
+
+  const hasSetDefaults = useRef(false);
 
   useEffect(() => {
     loadAiConfig();
     startNewChat();
-    setAnonymousCount(0);
-  }, [loadAiConfig, startNewChat, setAnonymousCount]);
+    hasSetDefaults.current = false;
+  }, [loadAiConfig, startNewChat]);
+
+  useEffect(() => {
+    if (!hasSetDefaults.current && availableProviders.length > 0) {
+      logger.info('[HomePage] Attempting to set default AI selections...');
+      const defaultProvider = availableProviders.find(p => p.name === 'OpenAI GPT-4o');
+
+      const defaultPromptId = '__none__';
+
+      if (defaultProvider) {
+        setSelectedProviderId(defaultProvider.id);
+        setSelectedPromptId(defaultPromptId);
+        hasSetDefaults.current = true;
+        logger.info('[HomePage] Default provider and prompt selected.', { 
+          providerId: defaultProvider.id, 
+          promptId: defaultPromptId 
+        });
+      } else {
+        logger.warn("[HomePage] Could not find default provider by name 'OpenAI GPT-4o'.", {
+            foundProvider: !!defaultProvider,
+            providerCount: availableProviders.length,
+        });
+      }
+    }
+  }, [availableProviders]);
 
   useEffect(() => {
     if (user && session) {
@@ -38,7 +65,6 @@ export function HomePage() {
             message: pendingMessage.message,
             providerId: pendingMessage.providerId,
             promptId: pendingMessage.promptId,
-            isAnonymous: false,
           });
         } catch (error) {
           logger.error('[HomePage] Failed to parse or send stashed message:', { error: String(error) });
@@ -79,7 +105,7 @@ export function HomePage() {
           <p className="mt-3 max-w-md mx-auto text-base text-textSecondary sm:text-lg md:mt-5 md:text-xl md:max-w-3xl">
             Get your app up and running in seconds without burning a single token. 
             <br/><br/> 
-            A production-ready, multi-platform (Web, iOS, Android, desktop) app foundation. 
+            A production-ready Web, iOS, Android, and Desktop app foundation. 
             <br/> <br/>
             <Link to="https://pnpm.io/" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">pnpm</Link> API monorepo using <Link to="https://react.dev/" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">React</Link>, <Link to="https://vitejs.dev/" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">Vite</Link>, <Link to="https://supabase.com/" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">Supabase</Link>, and <Link to="https://stripe.com/" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">Stripe</Link>.
             <br/> <br/>
@@ -132,9 +158,6 @@ export function HomePage() {
             isAnonymous={true}
             onLimitReached={handleLimitReached}
           />
-          <p className="text-xs text-center text-muted-foreground mt-2">
-            Anonymous users are limited to {useAiStore.getState().anonymousMessageLimit} messages. Sign up for unlimited access.
-          </p>
         </div>
         
         {/* Features section */}
@@ -150,12 +173,12 @@ export function HomePage() {
                   <p className="ml-16 text-lg leading-6 font-medium text-textPrimary">Multi-Platform API</p>
                 </dt>
                 <dd className="mt-2 ml-16 text-base text-textSecondary">
-                  Designed for multi-platform deployment.
-                  <ul>
-                  <li>- Web</li>
-                  <li>- iOS</li>
-                  <li>- Android</li>
-                  <li>- Desktop</li>
+                  Built to deploy on
+                  <ul className="list-disc list-inside">
+                  <li>Web</li>
+                  <li>iOS</li>
+                  <li>Android</li>
+                  <li>Desktop</li>
                   </ul>
                 </dd>
               </div>
@@ -168,7 +191,7 @@ export function HomePage() {
                   <p className="ml-16 text-lg leading-6 font-medium text-textPrimary">Supabase Backend</p>
                 </dt>
                 <dd className="mt-2 ml-16 text-base text-textSecondary">
-                  Powered by Supabase for database, authentication, storage, and real-time functionality
+                  Powered by Supabase for database, authentication, storage, and edge functions
                   with PostgreSQL under the hood.
                 </dd>
               </div>
@@ -205,13 +228,13 @@ export function HomePage() {
         {/* Problem Section */}
         <div className="py-16 bg-background">
           <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
-            <h2 className="text-3xl font-extrabold text-textPrimary">Stop Reinventing the Wheel (Painfully)</h2>
+            <h2 className="text-3xl font-extrabold text-textPrimary">Stop Painfully Reinventing the Wheel</h2>
             <p className="mt-4 text-lg text-textSecondary">
-              You'd burn more in tokens wiring up boilerplate than you'll spend on the Paynless Framework. 
+              You'll burn more tokens wiring up boilerplate than you'll spend on the Paynless Framework. 
               <br/><br/>              
-              Reliable user authentication, database connections, subscription billing, and a multi-platform API structure takes days even if you know what you're doing. 
+              User authentication, state and session management,database connections, subscription billing, and a multi-platform API structure takes days even if you know what you're doing. 
               <br/><br/>
-              Building your core features instead of wasting time and money getting stalled setting up the basics.
+              Build your features instead of wasting time and money setting up the basics.
             </p>
           </div>
         </div>
@@ -219,9 +242,9 @@ export function HomePage() {
         {/* Solution Section */}
         <div className="py-16 bg-surface">
           <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
-            <h2 className="text-3xl font-extrabold text-textPrimary">The Paynless Solution: Launch Instantly</h2>
+            <h2 className="text-3xl font-extrabold text-textPrimary">The Paynless Framework Launches Instantly</h2>
             <p className="mt-4 text-lg text-textSecondary">
-              The Paynless Framework provides a production-ready foundation with everything pre-configured. Get secure Supabase authentication, PostgreSQL database, Stripe subscriptions, and a robust API structure out-of-the-box. Focus on your unique application logic from minute one.
+              A production-ready foundation with everything pre-configured. Get secure Supabase authentication, PostgreSQL database, Stripe subscriptions, and a robust API structure out-of-the-box. Focus on your unique application logic from minute one.
             </p>
              <ul className="mt-6 text-left inline-block space-y-2 text-textSecondary">
                 <li className="flex items-start">
@@ -260,7 +283,7 @@ export function HomePage() {
             <div className="mt-8 flex justify-center">
                <div className="rounded-md shadow">
                  <Link
-                   to="https://github.com/paynless/paynless-framework"
+                   to="https://github.com/tsylvester/paynless-framework"
                    target="_blank" 
                    rel="noopener noreferrer"
                    className="w-full flex items-center justify-center px-8 py-3 border border-transparent text-base font-medium rounded-md text-primary bg-white hover:bg-gray-50 md:py-4 md:text-lg md:px-10"

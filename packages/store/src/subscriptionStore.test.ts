@@ -232,6 +232,30 @@ describe('SubscriptionStore', () => {
         expect(mockStripeGetUserSubscription).not.toHaveBeenCalled();
         expect(useSubscriptionStore.getState().isSubscriptionLoading).toBe(false);
      });
+
+    // --- NEW: Test for loadSubscriptionData when both API calls fail ---
+    it('should set error state if both fetching plans and subscription fail', async () => {
+      setAuthenticated();
+      const plansError = { message: 'Failed to get plans' };
+      const subError = { message: 'Failed to get subscription' };
+      mockStripeGetSubscriptionPlans.mockResolvedValue({ data: null, error: plansError as ApiErrorType });
+      mockStripeGetUserSubscription.mockResolvedValue({ data: null, error: subError as ApiErrorType });
+
+      await act(async () => {
+         await useSubscriptionStore.getState().loadSubscriptionData();
+      });
+
+      const state = useSubscriptionStore.getState();
+      expect(state.isSubscriptionLoading).toBe(false);
+      expect(state.error).toBeInstanceOf(Error);
+      // Check if error message combines both or prioritizes one (based on implementation)
+      // Assuming Promise.allSettled or similar, it might contain both
+      expect(state.error?.message).toContain(plansError.message);
+      // OR check for a combined message if the store does that.
+      expect(state.availablePlans).toEqual([]);
+      expect(state.userSubscription).toBeNull();
+   });
+   // --- End NEW test ---
   });
 
   describe('createCheckoutSession action', () => {
@@ -383,8 +407,10 @@ describe('SubscriptionStore', () => {
     });
 
     it('should set loading, call API, call refresh, return true, and clear state on success', async () => {
-      // Use imported mock function
+      // Arrange
       mockStripeCancelSubscription.mockResolvedValue({ data: undefined, error: null });
+      // ---> Explicitly mock refreshSubscription to return true <--- 
+      const refreshSpy = vi.spyOn(useSubscriptionStore.getState(), 'refreshSubscription').mockResolvedValue(true); 
 
       let success: boolean = false;
       await act(async () => {
@@ -447,6 +473,31 @@ describe('SubscriptionStore', () => {
        expect(success).toBe(false);
        expect(useSubscriptionStore.getState().error?.message).toContain('Subscription ID is required');
      });
+
+    // --- NEW Test Case: cancelSubscription with refresh failure ---
+    it('should set error and return false if refreshSubscription fails after successful API call', async () => {
+        // Arrange
+        mockStripeCancelSubscription.mockResolvedValue({ data: undefined, error: null }); // API Success
+        const refreshError = new Error('Failed to refresh after cancel');
+        vi.spyOn(useSubscriptionStore.getState(), 'refreshSubscription').mockImplementation(async () => {
+             // Simulate refresh failure by setting error state directly or throwing
+             useSubscriptionStore.setState({ error: refreshError });
+             return false; // Indicate refresh failure
+         });
+
+        let success: boolean = true;
+        await act(async () => {
+            success = await useSubscriptionStore.getState().cancelSubscription(subId);
+        });
+
+        // Assert
+        expect(mockStripeCancelSubscription).toHaveBeenCalledWith(subId, { token: mockSession.access_token });
+        expect(success).toBe(false); // Should return false as refresh failed
+        const state = useSubscriptionStore.getState();
+        expect(state.isSubscriptionLoading).toBe(false);
+        expect(state.error).toEqual(refreshError); // Error from refresh should be set
+    });
+    // --- End NEW Test Case ---
   });
 
   describe('resumeSubscription action', () => {
@@ -465,8 +516,10 @@ describe('SubscriptionStore', () => {
     });
 
     it('should call API, call refresh, return true on success', async () => {
-      // Use imported mock function
+      // Arrange
       mockStripeResumeSubscription.mockResolvedValue({ data: undefined, error: null });
+      // ---> Explicitly mock refreshSubscription to return true <--- 
+      const refreshSpy = vi.spyOn(useSubscriptionStore.getState(), 'refreshSubscription').mockResolvedValue(true); 
 
       let success: boolean = false;
       await act(async () => {
@@ -505,6 +558,30 @@ describe('SubscriptionStore', () => {
     });
 
      // TODO: Add tests for not authenticated, missing subId (similar to cancel)
+
+    // --- NEW Test Case: resumeSubscription with refresh failure ---
+    it('should set error and return false if refreshSubscription fails after successful API call', async () => {
+        // Arrange
+        mockStripeResumeSubscription.mockResolvedValue({ data: undefined, error: null }); // API Success
+        const refreshError = new Error('Failed to refresh after resume');
+        vi.spyOn(useSubscriptionStore.getState(), 'refreshSubscription').mockImplementation(async () => {
+             useSubscriptionStore.setState({ error: refreshError });
+             return false; // Indicate refresh failure
+         });
+
+        let success: boolean = true;
+        await act(async () => {
+            success = await useSubscriptionStore.getState().resumeSubscription(subId);
+        });
+
+        // Assert
+        expect(mockStripeResumeSubscription).toHaveBeenCalledWith(subId, { token: mockSession.access_token });
+        expect(success).toBe(false); // Should return false as refresh failed
+        const state = useSubscriptionStore.getState();
+        expect(state.isSubscriptionLoading).toBe(false);
+        expect(state.error).toEqual(refreshError); // Error from refresh should be set
+    });
+    // --- End NEW Test Case ---
   });
 
   describe('getUsageMetrics action', () => {

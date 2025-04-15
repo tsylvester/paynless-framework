@@ -5,6 +5,8 @@ import type {
   ApiResponse, ApiError as ApiErrorType,
   FetchOptions // Import FetchOptions from types
 } from '@paynless/types';
+// ---> Import AuthRequiredError from types <--- 
+import { AuthRequiredError } from '@paynless/types'; 
 import { StripeApiClient } from './stripe.api'; 
 import { AiApiClient } from './ai.api';
 import { logger } from '@paynless/utils';
@@ -68,22 +70,59 @@ export class ApiClient {
 
         if (!options.isPublic && token) {
             headers.append('Authorization', `Bearer ${token}`);
-        } else if (!options.isPublic && !token) {
-            logger.warn(`API Request: No auth token for non-public endpoint ${endpoint}`); // Use logger, maybe just warn
-            // Return standard ApiResponse format for error
-            return { 
-                status: 401,
-                error: { code: 'UNAUTHENTICATED', message: 'Authentication required' }
-            };
         }
 
         try {
             const response = await fetch(url, { ...options, headers });
-            const responseData = response.headers.get('Content-Type')?.includes('application/json') 
-                                ? await response.json() 
-                                : await response.text(); 
+            
+            // ---> Log right after fetch, before parsing body <--- 
+            logger.info('[apiClient] Fetch completed', { status: response.status, ok: response.ok, url: response.url });
+            
+            // ---> Log content-type and wrap parsing in try/catch <--- 
+            const contentType = response.headers.get('Content-Type');
+            logger.info('[apiClient] Response Content-Type:', { contentType });
+            
+            let responseData: any;
+            try {
+                responseData = contentType?.includes('application/json') 
+                                    ? await response.json() 
+                                    : await response.text(); 
+            } catch (parseError: any) {
+                logger.error('[apiClient] Failed to parse response body:', { error: parseError.message });
+                throw new ApiError(parseError.message || 'Failed to parse response body', response.status);
+            }
 
+            // ---> NEW: Handle 401 AUTH_REQUIRED immediately after successful parse <--- 
+            if (response.status === 401 && typeof responseData === 'object' && responseData?.code === 'AUTH_REQUIRED') {
+                 logger.warn('AuthRequiredError detected immediately after parse. Storing pending action...');
+                 try {
+                     const returnPath = window.location.pathname + window.location.search;
+                     let requestBody = null;
+                     if (options.body && typeof options.body === 'string') {
+                         try { requestBody = JSON.parse(options.body); } catch (e) { 
+                            logger.warn('Could not parse request body for pending action storage.', { body: options.body });
+                         } 
+                     }
+                     const actionDetails = { endpoint, method: options.method || 'GET', body: requestBody, returnPath };
+                     sessionStorage.setItem('pendingAction', JSON.stringify(actionDetails));
+                     logger.info('Stored pending action details.', actionDetails);
+                 } catch (storageError: any) {
+                     logger.error('Failed to store pending action:', { error: storageError.message });
+                 }
+                 // Throw the specific error
+                 throw new AuthRequiredError(responseData.message || 'Authentication required');
+            }
+
+            // ---> Original check for any non-OK response (including other 401s) <---
             if (!response.ok) {
+                // Log the response data for debugging NON-AUTH_REQUIRED errors
+                if (response.status === 401) { // Log if it's 401 but NOT the specific AUTH_REQUIRED case
+                     logger.warn('[apiClient] Received 401 response body (but not AUTH_REQUIRED code): ', { responseData });
+                } else {
+                     logger.warn(`[apiClient] Received non-OK (${response.status}) response body:`, { responseData });
+                }
+                
+                // --- Original error handling for other non-OK responses ---
                 let errorPayload: ApiErrorType;
                 if (typeof responseData === 'object' && responseData !== null) { // Check if it's an object
                     if (responseData.code && responseData.message) {
@@ -112,10 +151,16 @@ export class ApiClient {
             return { status: response.status, data: responseData as T };
 
         } catch (error: any) {
+            // ---> Check if it's the AuthRequiredError we threw <--- 
+            if (error instanceof AuthRequiredError) {
+                logger.info("AuthRequiredError caught in apiClient, re-throwing...");
+                throw error; // Re-throw it so the caller (aiStore) can catch it by type/name
+            }
+            
+            // ---> Otherwise, handle as a network/unexpected error <--- 
             logger.error(`Network or fetch error on ${endpoint}:`, { error: error?.message });
-            // Return standard ApiResponse format for network error
             return { 
-                status: 0, // Use 0 or a specific code for network errors
+                status: 0, 
                 error: { code: 'NETWORK_ERROR', message: error.message || 'Network error' } 
             };
         }
@@ -150,6 +195,8 @@ interface ApiInitializerConfig {
 
 // Update initializeApiClient signature and implementation
 export function initializeApiClient(config: ApiInitializerConfig) {
+
+    //console.log('initializeApiClientinitializeApiClientinitializeApiClientinitializeApiClientinitializeApiClientinitializeApiClientinitializeApiClient')
   if (apiClientInstance) {
     throw new Error('ApiClient already initialized');
   }

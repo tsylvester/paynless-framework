@@ -1,370 +1,684 @@
+import { assert, assertEquals, assertExists, assertObjectMatch } from "jsr:@std/assert@0.225.3";
+// Correctly import spy, Spy type, AND assertSpyCalls from testing/mock
+import { spy, type Spy, assertSpyCalls } from "jsr:@std/testing@0.225.1/mock";
+// Import real createClient
+import { createClient, type SupabaseClient } from "npm:@supabase/supabase-js";
+// NOTE: ServeHandlerInfo is part of the Deno namespace, no import needed for the type
+// Use ConnInfo from std/http/server.ts as expected by mainHandler
+import type { ConnInfo } from "https://deno.land/std@0.177.0/http/server.ts";
+
+// Import main handler and deps type
+import { mainHandler, type ChatHandlerDeps, defaultDeps as realDefaultDeps } from './index.ts';
+// Import the Supabase mock utility and its config type
 import {
-  assertSpyCall,
-  assertSpyCalls,
-  spy,
-  stub,
-  type Spy,
-  type Stub,
-} from "jsr:@std/testing@0.225.1/mock"; // Use same version as login test
-import { assert, assertEquals, assertExists } from "jsr:@std/assert@0.225.3";
-import type { SupabaseClient } from "npm:@supabase/supabase-js";
+  createMockSupabaseClient,
+  type MockSupabaseDataConfig,
+  withMockEnv // Import withMockEnv
+} from "../_shared/test-utils.ts";
+// Import ChatMessage type (adjust path if necessary)
+import type { ChatMessage } from '../../../packages/types/src/ai.types.ts';
 
-// Import the handler and dependency interface
-import { mainHandler as dynamicallyImportedHandler, type ChatHandlerDeps } from "./index.ts";
-// Import from the compiled definition file in dist
-import type { ChatMessage } from '../../../packages/types/dist/ai.types.d.ts';
+// --- Mock Data ---
+const mockSupabaseUrl = 'http://localhost:54321';
+const mockAnonKey = 'test-anon-key';
+const mockOpenAiKey = 'test-openai-key';
+const mockAnonSecret = 'test-secret-123';
+const mockIpAddress = "127.0.0.1"; // Define IP for ConnInfo
 
-// --- Test Setup ---
-let mainHandler: (req: Request, deps?: Partial<ChatHandlerDeps>) => Promise<Response>;
-let envStub: Stub | undefined;
+// Define mockConnInfo using ConnInfo type from std/http/server.ts
+const mockConnInfo: ConnInfo = {
+  // Provide required fields for ConnInfo
+  localAddr: { transport: "tcp", hostname: "localhost", port: 8000 },
+  remoteAddr: { transport: "tcp", hostname: mockIpAddress, port: 12345 },
+  // completed: Promise.resolve(), // Removed - Not part of ConnInfo
+};
 
-const mockSupabaseUrl = "http://mock-supabase.co";
-const mockAnonKey = "mock-anon-key";
-const mockOpenAiKey = "sk-mock-openai-key";
+// Define mockEnvVars BEFORE createTestDeps with explicit type
+const mockEnvVars: Record<string, string> = {
+    SUPABASE_URL: mockSupabaseUrl,
+    SUPABASE_ANON_KEY: mockAnonKey,
+    OPENAI_API_KEY: mockOpenAiKey,
+};
 
-const setup = async () => {
-  console.log("[Test Setup] Stubbing Deno.env.get for chat/index.ts module load");
-  envStub = stub(Deno.env, "get", (key) => {
-    if (key === 'SUPABASE_URL') return mockSupabaseUrl;
-    if (key === 'SUPABASE_ANON_KEY') return mockAnonKey;
-    if (key === 'OPENAI_API_KEY') return mockOpenAiKey;
-    // Add other env vars if needed by the handler (e.g., ANTHROPIC_API_KEY)
-    return undefined;
+// --- Mock Implementations (Local to test file) ---
+
+// Define a simple type for fetch config
+interface MockFetchConfig {
+    responseData: any; 
+    status?: number; 
+    // Add optional flag to simulate network error
+    shouldThrow?: Error; 
+}
+
+// Mock fetch function (Define locally)
+const createMockFetch = (config: MockFetchConfig) => {
+  return spy(async (_url: string | URL | Request, _options?: RequestInit): Promise<Response> => {
+    // Check if we should simulate a network error
+    if (config.shouldThrow) {
+        console.log(`[Mock Fetch] Simulating network error:`, config.shouldThrow);
+        throw config.shouldThrow;
+    }
+    
+    // Original logic: return a successful response
+    const mockResponse = new Response(JSON.stringify(config.responseData), {
+      status: config.status ?? 200, // Use status from config or default to 200
+      headers: { 'Content-Type': 'application/json' },
+    });
+    // Add a simple mock .json() method directly
+    (mockResponse as any).json = async () => config.responseData;
+    console.log(`[Mock Fetch] Returning mocked response (Status: ${config.status ?? 200}).`);
+    return mockResponse;
+  });
+};
+
+// --- Helper to create COMPLETE Test Dependencies ---
+const createTestDeps = (
+  supaConfig: MockSupabaseDataConfig = {},
+  fetchConfig: MockFetchConfig = { responseData: {} },
+  // Add envVars parameter back for scoped environment mocking
+  envVars: Record<string, string | undefined> = {},
+  depOverrides: Partial<ChatHandlerDeps> = {}
+): ChatHandlerDeps => {
+
+  const { client: mockSupabaseClient } = createMockSupabaseClient(supaConfig);
+  const mockFetch = createMockFetch(fetchConfig);
+
+  // Create a mock getEnv that ONLY uses the passed envVars
+  const mockGetEnv = spy((key: string): string | undefined => {
+    // Return value from the scoped envVars if present, otherwise undefined
+    // No fallback to global mockEnvVars or Deno.env.get here!
+    return envVars[key]; 
   });
 
-  // Dynamically import the handler *after* stubbing env vars
-  // Add random query string to bust Deno's module cache
-  const module = await import(`./index.ts?id=${Math.random()}`);
-  mainHandler = module.mainHandler;
-  console.log("[Test Setup] mainHandler imported dynamically.");
-};
-
-const teardown = () => {
-  if (envStub) {
-    envStub.restore();
-    console.log("[Test Teardown] Restored Deno.env.get");
-  }
-};
-
-// --- Test Suite ---
-Deno.test("Chat Function Tests", {
-  sanitizeOps: false, // Prevent errors related to fetch/async ops in tests
-  sanitizeResources: false,
-}, async (t) => {
-  await setup();
-
-  // --- Mock Dependencies Helper ---
-  const createMockDeps = (overrides: Partial<ChatHandlerDeps> = {}): ChatHandlerDeps => {
-    // Mock Data specific to this test suite
-    const mockUserId = 'user-123';
-    const mockChatId = 'chat-abc';
-    const mockProviderId = 'provider-openai-xyz'; // Make distinct
-    const mockPromptId = 'prompt-def';
-    const mockAiResponseContent = 'Hello from mock AI!';
-    const mockAssistantMessageId = 'msg-assistant-789';
-
-    // Define the shape of the message to be returned by insert().select()
-    const assistantMessageResult = {
-      id: mockAssistantMessageId,
-      chat_id: mockChatId,
-      user_id: null,
-      role: 'assistant',
-      content: mockAiResponseContent,
-      ai_provider_id: mockProviderId,
-      system_prompt_id: mockPromptId,
-      token_usage: { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15 },
-      created_at: new Date().toISOString(),
-    } as unknown as ChatMessage; // Use type assertion
-
-    const userMessageResult = {
-        id: 'msg-user-temp', // temp id
-        chat_id: mockChatId,
-        user_id: mockUserId,
-        role: 'user',
-        content: 'User message content', // Note: Actual content comes from request
-        ai_provider_id: mockProviderId,
-        system_prompt_id: mockPromptId,
-        token_usage: null,
-        created_at: new Date().toISOString(),
-    } as unknown as ChatMessage;
-
-    // Mock the query builder chain
-    // Use a factory to create a fresh builder mock for each `from` call
-    const createMockQueryBuilder = (tableName: string) => {
-        let insertCalled = false;
-        let selectAfterInsertShouldReturn = false;
-        let insertedData: any[] | null = null; // Store data passed to insert
-
-        const builder = {
-            select: spy((query: string = '*') => {
-                console.log(`[Mock QB ${tableName}] .select(${query}) called`);
-                // If select follows an insert on chat_messages, prepare to return mock data
-                if (tableName === 'chat_messages' && insertCalled) {
-                    console.log(`[Mock QB ${tableName}] .select() will return inserted data`);
-                    selectAfterInsertShouldReturn = true;
-                    insertCalled = false; // Reset flag
-                }
-                // For chats insert, make select return the ID
-                if (tableName === 'chats' && insertCalled) {
-                    console.log(`[Mock QB ${tableName}] .select() will return new chat ID`);
-                    selectAfterInsertShouldReturn = true; // Need single() to resolve it
-                    insertCalled = false;
-                }
-                return builder;
-            }),
-            insert: spy((values: any[]) => {
-                console.log(`[Mock QB ${tableName}] .insert() called with:`, values);
-                insertedData = values; // Capture the inserted data
-                insertCalled = true; // Set flag for subsequent select
-                return builder;
-            }),
-            eq: spy((column: string, value: any) => {
-                console.log(`[Mock QB ${tableName}] .eq(${column}, ${value}) called`);
-                return builder;
-            }),
-            order: spy((column: string, options?: any) => {
-                console.log(`[Mock QB ${tableName}] .order(${column}, ${JSON.stringify(options)}) called`);
-                return builder;
-            }),
-            single: spy(async () => {
-                console.log(`[Mock QB ${tableName}] .single() called`);
-                if (tableName === 'system_prompts') {
-                    return { data: { id: mockPromptId, prompt_text: 'Mock system prompt' }, error: null };
-                }
-                if (tableName === 'ai_providers') {
-                    return { data: { id: mockProviderId, api_identifier: 'openai-gpt-4o' }, error: null };
-                }
-                if (tableName === 'chats' && selectAfterInsertShouldReturn) {
-                    selectAfterInsertShouldReturn = false; // Reset flag
-                    return { data: { id: mockChatId }, error: null }; // Return newly created chat ID
-                }
-                // Default case for single()
-                return { data: null, error: null };
-            }),
-            // Add `then` handler for promises originating from `select` without `single`
-            then: async (onfulfilled: (value: { data: any; error: any; }) => any) => {
-                console.log(`[Mock QB ${tableName}] .then() called (resolving select promise)`);
-                if (tableName === 'chat_messages' && selectAfterInsertShouldReturn) {
-                    selectAfterInsertShouldReturn = false; // Reset flag
-                    console.log(`[Mock QB ${tableName}] .then() resolving insert().select() with captured data`);
-                    // Construct result based on the *captured* insertedData
-                    const resolvedData = insertedData ? insertedData.map(item => ({
-                        ...item,
-                        id: item.role === 'assistant' ? mockAssistantMessageId : `mock-user-id-${Date.now()}`,
-                        created_at: new Date().toISOString(),
-                        // Add other DB defaults if needed
-                    })) : [];
-                    insertedData = null; // Clear captured data
-                    return onfulfilled({ data: resolvedData, error: null });
-                }
-                if (tableName === 'chat_messages') { // History fetch
-                    console.log(`[Mock QB ${tableName}] .then() resolving history select`);
-                    return onfulfilled({ data: [], error: null }); // Return empty history
-                }
-                // Default resolution for other selects
-                 console.log(`[Mock QB ${tableName}] .then() resolving with default`);
-                return onfulfilled({ data: null, error: null });
-            }
-        } as any; // Use `any` to simplify complex builder type
-        return builder;
-    };
-
-    // Base Mocks
-    const baseDeps: ChatHandlerDeps = {
-      // Mock fetch for AI API calls
-      fetch: spy(async (url: string | URL | Request, _options?: RequestInit) => {
-        const urlString = url.toString();
-        if (urlString.includes('api.openai.com')) {
-          console.log('[Mock Fetch] Intercepted OpenAI call');
-          return Promise.resolve(
-            new Response(JSON.stringify({
-              choices: [{ message: { role: 'assistant', content: mockAiResponseContent } }],
-              usage: { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15 },
-            }), { status: 200, headers: { 'Content-Type': 'application/json' } })
-          );
-        }
-        // Add mock for Anthropic if needed, or default to error/passthrough
-        console.warn(`[Mock Fetch] Unhandled fetch call to: ${urlString}`);
-        return Promise.resolve(new Response('Mock fetch error: Unhandled URL', { status: 500 }));
-      }),
-      // Mock environment variable access
-      getEnv: spy((key: string) => {
-        if (key === 'SUPABASE_URL') return mockSupabaseUrl;
-        if (key === 'SUPABASE_ANON_KEY') return mockAnonKey;
-        if (key === 'OPENAI_API_KEY') return mockOpenAiKey;
-        // Add others as needed
-        return undefined;
-      }),
-      // Mock Response creators
-      createJsonResponse: spy((data: unknown, status: number = 200, headers = {}) => new Response(JSON.stringify(data), { status: status, headers: { 'Content-Type': 'application/json', ...baseDeps.corsHeaders, ...headers } })),
-      createErrorResponse: spy((message: string, status: number = 500, headers = {}) => new Response(JSON.stringify({ error: message }), { status: status, headers: { 'Content-Type': 'application/json', ...baseDeps.corsHeaders, ...headers } })),
-      corsHeaders: { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type' },
-      // Mock Supabase client creation and its methods
-      createSupabaseClient: spy((_url, _key, _options) => {
-        const mockAuth = {
-          // Return a mock user successfully
-          getUser: spy(() => Promise.resolve({ data: { user: { id: mockUserId } }, error: null }))
-        };
-
-        const mockClient = {
-          auth: mockAuth,
-          from: spy((tableName: string) => {
-            console.log(`[Mock Supa Client] .from(${tableName}) called`);
-            return createMockQueryBuilder(tableName);
-          }),
-        } as unknown as SupabaseClient;
-
-        return mockClient;
-      }),
-      // Allow overrides
-      ...overrides,
-    };
-    return baseDeps;
+  // Use a real response creation function but log errors
+  const createErrorResponse = (message: string, status = 500, headers = {}) => {
+      console.error(`API Error (${status}): ${message}`); // Log errors during tests
+      // Ensure we use realDefaultDeps.corsHeaders here for consistency
+      const actualHeaders = { ...realDefaultDeps.corsHeaders, 'Content-Type': 'application/json', ...headers };
+      return new Response(JSON.stringify({ error: message }), {
+          headers: actualHeaders,
+          status: status,
+      });
   };
 
-  // --- Test Cases ---
-
-  await t.step("OPTIONS request should return CORS headers", async () => {
-    const mockDeps = createMockDeps();
-    const req = new Request("http://localhost/chat", { method: "OPTIONS" });
-    const res = await mainHandler(req, mockDeps);
-    assertEquals(res.status, 204);
-    // CORS headers are added directly in the handler for OPTIONS
-    assert(res.headers.has('access-control-allow-origin'));
-  });
-
-   await t.step("GET request should return 405 Method Not Allowed", async () => {
-      const mockDeps = createMockDeps();
-      const req = new Request('http://localhost/chat', { method: 'GET' });
-      const res = await mainHandler(req, mockDeps);
-      assertEquals(res.status, 405);
-      assertSpyCall(mockDeps.createErrorResponse as Spy, 0, { args: ["Method Not Allowed", 405] });
-    });
-
-   await t.step("POST request missing Auth header should return 401", async () => {
-      const mockDeps = createMockDeps();
-      const req = new Request('http://localhost/chat', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ message: 'test', providerId: 'p', promptId: 'pr' })
+   // Use a real response creation function
+  const createJsonResponse = (data: unknown, status = 200, headers = {}) => {
+      const actualHeaders = { ...realDefaultDeps.corsHeaders, 'Content-Type': 'application/json', ...headers };
+      return new Response(JSON.stringify(data), {
+        headers: actualHeaders,
+        status: status,
       });
-      const res = await mainHandler(req, mockDeps);
-      assertEquals(res.status, 401);
-      assertSpyCall(mockDeps.createErrorResponse as Spy, 0, { args: ["Missing Authorization header", 401] });
-    });
+  };
 
-  await t.step("POST request with valid data should return assistant message with ID", async () => {
-    const mockDeps = createMockDeps();
 
-    // Mock Data for this specific test
-    const mockUserMessage = 'Hello, test assistant!';
-    const mockProviderId = 'provider-openai-xyz'; // Use ID that matches mock setup
-    const mockPromptId = 'prompt-def';
-    const mockChatId = 'chat-abc';
-    const mockAssistantMessageId = 'msg-assistant-789'; // Expected ID
+  const deps: ChatHandlerDeps = {
+    // Start with real defaults (which should now be imported)
+    ...realDefaultDeps,
+    createSupabaseClient: spy(() => mockSupabaseClient), // Use the mock client
+    getEnv: mockGetEnv, // Use the new scoped mock getEnv
+    fetch: mockFetch,
+    // Use the locally defined error/json response creators that use real corsHeaders
+    createErrorResponse: createErrorResponse,
+    createJsonResponse: createJsonResponse,
+    ...depOverrides, // Apply any specific overrides for a test
+  };
+  return deps;
+};
 
-    // Request
-    const requestBody = {
-      message: mockUserMessage,
-      providerId: mockProviderId,
-      promptId: mockPromptId,
-      chatId: mockChatId, // Assume existing chat
+
+// --- Test Suite ---
+// Note: Removed sanitizeOps/Resources as they can sometimes interfere with async mocks
+Deno.test("Chat Function Tests", async (t) => {
+    // --- Shared Mock Configurations ---
+    // Use specific IDs for clarity in tests
+    const testProviderId = 'provider-id-123';
+    const testPromptId = 'prompt-id-abc';
+    const testUserId = 'user-auth-xyz';
+    const testChatId = 'chat-new-789';
+    const testUserMsgId = 'msg-user-aaa';
+    const testAsstMsgId = 'msg-asst-bbb';
+    const testAiContent = 'Mock AI response content';
+    const now = new Date().toISOString(); // Consistent timestamp for mocks
+
+    const mockSupaConfig: MockSupabaseDataConfig = {
+        getUserResult: { data: { user: { id: testUserId } }, error: null }, // Needed for auth check
+        selectPromptResult: { data: { id: testPromptId, prompt_text: 'Test system prompt' }, error: null },
+        selectProviderResult: { data: { id: testProviderId, api_identifier: 'openai-gpt-4o' }, error: null },
+        insertChatResult: { data: { id: testChatId }, error: null },
+        // Provide full valid ChatMessage structure for the *assistant* message insert result
+        // This is what mainHandler returns in the response body via createJsonResponse
+        // The select('*') in index.ts returns the inserted assistant message
+        insertAssistantMessageResult: { data: { id: testAsstMsgId, chat_id: testChatId, role: 'assistant', content: testAiContent, created_at: now, user_id: null, ai_provider_id: testProviderId, system_prompt_id: testPromptId, token_usage: { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15 }, updated_at: now } as ChatMessage, error: null },
+        // We don't mock the user message insert result directly anymore, as it's not returned.
+        // The mock client just needs to handle the insert call without error.
+        // Assume createMockSupabaseClient handles generic inserts if not specified.
+        selectChatHistoryResult: { data: [], error: null },
+        // Only mockUser is needed if getUserResult is provided
+        mockUser: { id: testUserId } // Keep this for direct client calls if needed, but getUserResult is primary
     };
-    const request = new Request('http://localhost/chat', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer fake-jwt-token`,
-      },
-      body: JSON.stringify(requestBody),
-    });
 
-    // Execute
-    const response = await mainHandler(request, mockDeps);
-    console.log('[Test] Handler returned response status:', response?.status);
-
-    // Assertions
-    assertEquals(response.status, 200, `Expected status 200, got ${response.status}`);
-    assertExists(response.body, 'Response body should exist');
-
-    const contentType = response.headers.get('content-type');
-    assertEquals(contentType?.includes('application/json'), true, `Expected JSON response, got ${contentType}`);
-
-    const result = await response.json() as ChatMessage;
-    console.log('[Test] Parsed response body:', result);
-
-    assertEquals(result.role, 'assistant', `Expected role 'assistant', got ${result.role}`);
-    assertExists(result.id, 'Assistant message ID should exist');
-    assertEquals(result.id, mockAssistantMessageId, `Expected ID ${mockAssistantMessageId}, got ${result.id}`);
-    assertEquals(result.chat_id, mockChatId, `Expected chat_id ${mockChatId}, got ${result.chat_id}`);
-    assertEquals(result.content, 'Hello from mock AI!', `Expected content didn't match`);
-
-    // Verify mocks were called
-    assertSpyCall(mockDeps.getEnv as Spy, 0, { args: ['SUPABASE_URL'] });
-    assertSpyCall(mockDeps.createSupabaseClient as Spy, 0);
-    // Spy calls on the client returned by createSupabaseClient
-    // This requires accessing the *instance* returned by the spy
-    const clientSpy = mockDeps.createSupabaseClient as any;
-    const mockClientInstance = clientSpy.calls[0]?.returned;
-    assertExists(mockClientInstance, "Mock client instance should have been created");
-    assertSpyCall(mockClientInstance.auth.getUser as Spy, 0);
-    // More detailed spy call checks on .from(), .select(), .insert() if needed
-    assertSpyCall(mockDeps.fetch as Spy, 0); // Check AI API call
-    assertSpyCall(mockDeps.createJsonResponse as Spy, 0); // Check success response
-
-  });
-
-    await t.step("POST request with __none__ prompt should succeed", async () => {
-      const mockDeps = createMockDeps();
-      const requestBody = {
-        message: "No prompt test",
-        providerId: 'provider-openai-xyz',
-        promptId: '__none__',
-        chatId: 'chat-none-prompt',
-      };
-      const request = new Request('http://localhost/chat', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer fake-jwt-token`,
+    const mockFetchConfig: MockFetchConfig = {
+        responseData: {
+            choices: [{ message: { content: testAiContent } }],
+            usage: { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15 }
         },
-        body: JSON.stringify(requestBody),
-      });
-      const response = await mainHandler(request, mockDeps);
-      assertEquals(response.status, 200);
-      const result = await response.json() as ChatMessage;
-      assertEquals(result.role, 'assistant');
-      assertEquals(result.system_prompt_id, null); // Check null prompt ID
-      assertSpyCall(mockDeps.createJsonResponse as Spy, 0);
-      // Verify system_prompts table was NOT queried
-      const clientSpy = mockDeps.createSupabaseClient as any;
-      const mockClientInstance = clientSpy.calls[0]?.returned;
-      const fromSpy = mockClientInstance.from as any;
-      // Check that from('system_prompts') was never called
-      const systemPromptCall = fromSpy.calls.some((call: any) => call.args[0] === 'system_prompts');
-      assertEquals(systemPromptCall, false, "Should not have called from('system_prompts')");
+        status: 200,
+    };
+
+    // --- Individual Tests ---
+
+    await t.step("OPTIONS request should return CORS headers", async () => {
+        // No specific env needed
+        // Pass mockFetchConfig as 2nd arg, empty {} as 3rd (envVars)
+        const deps = createTestDeps({}, mockFetchConfig, {}); 
+        const req = new Request('http://localhost/chat', { method: 'OPTIONS' });
+        const response = await mainHandler(req, deps);
+        assertEquals(response.status, 204);
+        assertExists(response.headers.get('Access-Control-Allow-Origin'));
+        assertExists(response.headers.get('Access-Control-Allow-Headers'));
     });
 
-    // Add more test cases: Invalid providerId, promptId not found, AI API error, DB insert error, etc.
+    await t.step("GET request should return 405 Method Not Allowed", async () => {
+        // No specific env needed
+        // Pass mockFetchConfig as 2nd arg, empty {} as 3rd (envVars)
+        const deps = createTestDeps({}, mockFetchConfig, {}); 
+        const req = new Request('http://localhost/chat', { method: 'GET' });
+        const response = await mainHandler(req, deps);
+        assertEquals(response.status, 405);
+        const json = await response.json();
+        assertEquals(json.error, 'Method Not Allowed');
+    });
 
-  // --- Teardown after all tests ---
-  teardown();
-});
+    await t.step("POST request missing Auth header should return 401", async () => {
+        // Needs Supabase URL/Key for initial check
+        const deps = createTestDeps({}, mockFetchConfig, mockEnvVars);
+        const req = new Request('http://localhost/chat', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' }, // Missing Auth
+            body: JSON.stringify({ message: "test", providerId: "p", promptId: "pr" }),
+        });
+        const response = await mainHandler(req, deps);
+        assertEquals(response.status, 401);
+        const json = await response.json();
+        assertObjectMatch(json, { error: "Authentication required", code: "AUTH_REQUIRED" });
+    });
 
-// Remove the old test code that used prototype stubbing
-/*
-// --- Old Test Case (using prototype stubbing - remove) ---
-Deno.test('OLD Chat handler should return assistant message with an ID', async (t) => {
-  // ... keep mock data ...
-  // --- Mock Implementations (Old Style) ---
-  // ... remove Deno.env stub ...
-  // ... remove global fetch stub ...
-  // ... remove SupabaseClient prototype stub ...
-  // ... remove getUser stub ...
-  // --- Request (same) ---
-  // --- Execute (call handler directly) ---
-  // let response = await OldHandler(request); // Assume OldHandler is the original export
-  // --- Assertions (same) ---
-  // --- Cleanup (remove stub.restore()) ---
-});
-*/ 
+    await t.step("POST request with valid Auth header should succeed", async () => {
+        console.log("--- Running Auth POST test --- ");
+        // Needs full env vars
+        const deps = createTestDeps(mockSupaConfig, mockFetchConfig, mockEnvVars);
+
+        const requestBody = {
+            // Match the structure expected by ChatRequest interface
+            message: "Hello there AI!",
+            providerId: testProviderId,
+            promptId: testPromptId,
+            // chatId: undefined // Test starting a new chat
+        };
+        const req = new Request('http://localhost/chat', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': 'Bearer test-jwt-token', // Mock token
+            },
+            body: JSON.stringify(requestBody),
+        });
+
+        // Get the spied-on factory BEFORE calling mainHandler
+            const clientFactorySpy = deps.createSupabaseClient as Spy<typeof createClient>;
+
+        // Pass only req and deps to mainHandler
+        const response = await mainHandler(req, deps);
+            console.log("Auth POST test mainHandler completed.");
+
+            assertEquals(response.status, 200, `Expected status 200 but got ${response.status}`);
+        const json = await response.json() as ChatMessage; // Assert response body is the assistant message
+
+        // Assert AI response content (adjust based on actual payload structure)
+        // The response body IS the assistant ChatMessage object
+        assertEquals(json.content, testAiContent);
+        assertEquals(json.role, 'assistant');
+        assertEquals(json.id, testAsstMsgId);
+        assertEquals(json.chat_id, testChatId); // Assert chatId is part of the message object
+        // Check token usage if necessary
+        assertObjectMatch(json.token_usage ?? {}, { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15 });
+
+
+        // Verify Supabase client factory was called (implicitly checks getEnv was used for keys)
+        assertSpyCalls(clientFactorySpy, 1);
+
+        // Verify fetch was called once with expected parameters
+        const fetchSpy = deps.fetch as Spy<typeof fetch>;
+        assertSpyCalls(fetchSpy, 1);
+        const fetchArgUrl = fetchSpy.calls[0].args[0] as string;
+        const fetchArgOptions = fetchSpy.calls[0].args[1] as RequestInit;
+        assertEquals(fetchArgUrl, 'https://api.openai.com/v1/chat/completions');
+        assertObjectMatch(JSON.parse(fetchArgOptions.body as string), {
+            model: 'gpt-4o',
+            messages: [
+                { role: 'system', content: mockSupaConfig.selectPromptResult?.data?.prompt_text },
+                { role: 'user', content: requestBody.message }
+                // History is empty in this specific mock config
+            ]
+        });
+
+        // Verify Supabase interactions
+        // Get the *mocked* client instance returned by the factory spy
+        const mockClientInstance = clientFactorySpy.calls[0].returned as SupabaseClient;
+         // Get the 'from' spy attached to the *mocked* client instance
+        const fromSpy = mockClientInstance.from as Spy<any>;
+
+        // Check specific table interactions
+        // Auth: getUser (implicit, check client factory call)
+        // Prompt: from('system_prompts').select().eq().eq().single() -> 1 call
+        // Provider: from('ai_providers').select().eq().eq().single() -> 1 call
+        // New Chat ID: from('chats').insert().select().single() -> 1 call
+        // Insert User+Asst Msg: from('chat_messages').insert().select() -> 1 call (inserting array)
+        // History: Not called in this specific test case (no initial chatId)
+        // Expected 'from' calls = 4
+        const fromCalls = fromSpy.calls.map(call => call.args[0]); // Get table names called with 'from'
+        console.log("Supabase 'from' calls:", fromCalls);
+        assertEquals(fromCalls.length, 4, `Expected 4 'from' calls, got ${fromCalls.length}`);
+        assert(fromCalls.includes('system_prompts'), "Expected call to 'system_prompts'");
+        assert(fromCalls.includes('ai_providers'), "Expected call to 'ai_providers'");
+        assert(fromCalls.includes('chats'), "Expected call to 'chats' (for insert)");
+        assert(fromCalls.includes('chat_messages'), "Expected call to 'chat_messages' (for insert)");
+
+        // You could add more detailed checks on the .select(), .insert() spies if needed,
+        // assuming createMockSupabaseClient provides access to those deeper spies.
+
+        console.log("Auth POST test passed assertions.");
+    }); // End Auth POST test step
+
+
+    // Removed Anonymous POST test step
+
+    // Implement the previously commented-out tests one by one
+    // Test Case: Invalid JWT
+    await t.step("POST request with invalid JWT returns 401", async () => {
+         console.log("--- Running Invalid JWT POST test ---");
+         // Needs Supabase URL/Key for initial check
+         const deps = createTestDeps({
+             getUserResult: { data: { user: null }, error: new Error("Simulated invalid JWT") }
+         }, 
+         mockFetchConfig, // Pass default fetch config
+         mockEnvVars // Pass full env vars
+         );
+         const req = new Request('http://localhost/chat', {
+             method: 'POST',
+             headers: {
+                 'Content-Type': 'application/json',
+                 'Authorization': 'Bearer invalid-token'
+             },
+             body: JSON.stringify({ message: "test", providerId: testProviderId, promptId: testPromptId }),
+         });
+         const response = await mainHandler(req, deps);
+         assertEquals(response.status, 401);
+         const json = await response.json();
+         assertEquals(json.error, 'Invalid authentication credentials');
+         console.log("--- Invalid JWT POST test passed ---");
+    });
+
+    // Test Case: Missing API Key for a SUPPORTED provider
+    await t.step("POST request with missing API key env var returns 500", async () => {
+         console.log("--- Running Missing API Key POST test ---");
+         // Use the standard supaConfig (which uses openai-gpt-4o)
+         const missingKeyEnv = { ...mockEnvVars, OPENAI_API_KEY: undefined };
+         // Pass the modified env vars
+         const deps = createTestDeps(mockSupaConfig, mockFetchConfig, missingKeyEnv);
+         const req = new Request('http://localhost/chat', {
+             method: 'POST',
+             headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer test-jwt-token' },
+             // Body uses the standard testProviderId which maps to openai-gpt-4o in mockSupaConfig
+             body: JSON.stringify({ message: "test", providerId: testProviderId, promptId: testPromptId }),
+         });
+         const response = await mainHandler(req, deps);
+         assertEquals(response.status, 500);
+         const json = await response.json();
+         assertEquals(json.error, 'AI provider configuration error on server.');
+         console.log("--- Missing API Key POST test passed ---");
+    });
+
+    // Activate the next test: Existing Chat History
+    await t.step("POST request with existing chat history", async () => {
+         console.log("--- Running Existing History POST test ---");
+         const history: Pick<ChatMessage, 'role' | 'content'>[] = [
+             // Only need role and content for the history array sent to AI
+             // and returned by the mock DB select
+             { role: 'user', content: 'Previous user message' },
+             { role: 'assistant', content: 'Previous assistant response' }
+         ];
+         const historySupaConfig = {
+             ...mockSupaConfig,
+             // Mock the DB response for history lookup
+             selectChatHistoryResult: { data: history, error: null }
+         };
+         // Needs full env vars
+         const deps = createTestDeps(historySupaConfig, mockFetchConfig, mockEnvVars);
+         const requestBody = { message: "Follow up question", providerId: testProviderId, promptId: testPromptId, chatId: testChatId }; // Provide chatId
+         const req = new Request('http://localhost/chat', {
+             method: 'POST',
+             headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer test-jwt-token' },
+             body: JSON.stringify(requestBody),
+         });
+         const response = await mainHandler(req, deps);
+         assertEquals(response.status, 200);
+         const json = await response.json() as ChatMessage;
+         assertEquals(json.content, testAiContent);
+         assertEquals(json.chat_id, testChatId);
+
+         // Verify history was included in fetch payload
+         const fetchSpy = deps.fetch as Spy<typeof fetch>;
+         assertSpyCalls(fetchSpy, 1);
+         const fetchPayload = JSON.parse(fetchSpy.calls[0].args[1]?.body as string);
+         // Expect System + History User + History Asst + New User
+         assertEquals(fetchPayload.messages.length, 4, "Payload should include system, history, and new user messages");
+         assertEquals(fetchPayload.messages[1].content, history[0].content);
+         assertEquals(fetchPayload.messages[2].content, history[1].content);
+         assertEquals(fetchPayload.messages[3].content, requestBody.message);
+         console.log("--- Existing History POST test passed ---");
+    });
+
+    // Test Case: Invalid providerId
+    await t.step("POST request with invalid providerId returns 400", async () => {
+        console.log("--- Running Invalid providerId POST test ---");
+        const invalidProviderSupaConfig = {
+            ...mockSupaConfig,
+            // Simulate provider lookup failure
+            selectProviderResult: { data: null, error: new Error("Test: Provider not found") }
+        };
+        const deps = createTestDeps(invalidProviderSupaConfig, mockFetchConfig, mockEnvVars);
+        const req = new Request('http://localhost/chat', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer test-jwt-token' },
+            // Use a providerId that will trigger the mocked error
+            body: JSON.stringify({ message: "test", providerId: testProviderId, promptId: testPromptId }),
+        });
+        const response = await mainHandler(req, deps);
+        assertEquals(response.status, 400);
+        const json = await response.json();
+        assertEquals(json.error, "Test: Provider not found");
+        console.log("--- Invalid providerId POST test passed ---");
+    });
+
+    // Test Case: Invalid promptId
+    await t.step("POST request with invalid promptId returns 400", async () => {
+        console.log("--- Running Invalid promptId POST test ---");
+        const invalidPromptSupaConfig = {
+            ...mockSupaConfig,
+            // Simulate prompt lookup failure
+            selectPromptResult: { data: null, error: new Error("Test: Prompt not found") }
+        };
+        const deps = createTestDeps(invalidPromptSupaConfig, mockFetchConfig, mockEnvVars);
+        const req = new Request('http://localhost/chat', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer test-jwt-token' },
+            // Use a promptId that will trigger the mocked error
+            body: JSON.stringify({ message: "test", providerId: testProviderId, promptId: testPromptId }),
+        });
+        const response = await mainHandler(req, deps);
+        assertEquals(response.status, 400);
+            const json = await response.json();
+        assertEquals(json.error, "Test: Prompt not found");
+        console.log("--- Invalid promptId POST test passed ---");
+    });
+
+    // Test Case: promptId = '__none__'
+    await t.step("POST request with promptId __none__ succeeds", async () => {
+        console.log("--- Running promptId __none__ POST test ---");
+        // Use standard successful config
+        const deps = createTestDeps(mockSupaConfig, mockFetchConfig, mockEnvVars);
+        const req = new Request('http://localhost/chat', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer test-jwt-token' },
+            body: JSON.stringify({ message: "test no prompt", providerId: testProviderId, promptId: '__none__' }),
+        });
+        const response = await mainHandler(req, deps);
+        assertEquals(response.status, 200);
+        // Verify the fetch call payload had no system message
+        const fetchSpy = deps.fetch as Spy<typeof fetch>;
+        assertSpyCalls(fetchSpy, 1);
+        const fetchPayload = JSON.parse(fetchSpy.calls[0].args[1]?.body as string);
+        // Should only contain the user message
+        assertEquals(fetchPayload.messages.length, 1);
+        assertEquals(fetchPayload.messages[0].role, 'user');
+        assertEquals(fetchPayload.messages[0].content, 'test no prompt');
+        console.log("--- promptId __none__ POST test passed ---");
+    });
+
+    // Test Case: Database error during insert
+    await t.step("POST request with DB insert error returns 500", async () => {
+        console.log("--- Running DB Insert Error POST test ---");
+        const dbErrorSupaConfig: MockSupabaseDataConfig = {
+            ...mockSupaConfig,
+            // Simulate the error specifically on the chat insertion result
+            // Remove the global simulateDbError flag
+            // simulateDbError: new Error("Test: DB Insert Failed") 
+            insertChatResult: { data: null, error: new Error("Test: Chat Insert Failed") } 
+        };
+        const deps = createTestDeps(dbErrorSupaConfig, mockFetchConfig, mockEnvVars);
+        const req = new Request('http://localhost/chat', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer test-jwt-token' },
+            // Send request without chatId to trigger the 'chats' insert path
+            body: JSON.stringify({ message: "trigger db error", providerId: testProviderId, promptId: testPromptId }),
+        });
+        const response = await mainHandler(req, deps);
+        assertEquals(response.status, 500);
+        const json = await response.json();
+        // Check error message based on where the error occurs (chats insert first)
+        assertEquals(json.error, "Failed to initiate new chat session."); 
+        console.log("--- DB Insert Error POST test passed ---");
+    });
+
+    // Test Case: Fetch error calling AI Provider
+    await t.step("POST request with AI provider fetch error returns 502", async () => {
+        console.log("--- Running AI Fetch Error POST test ---");
+        // Create a fetch config that simulates an error response from the AI API
+        const fetchErrorConfig: MockFetchConfig = {
+            responseData: { error: { message: "AI provider unavailable" } }, // Example error payload
+            status: 503 // Simulate a server error from the AI provider
+        };
+        // Use standard supa config, but override fetch config
+        const deps = createTestDeps(mockSupaConfig, fetchErrorConfig, mockEnvVars);
+        const req = new Request('http://localhost/chat', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer test-jwt-token' },
+            body: JSON.stringify({ message: "trigger fetch error", providerId: testProviderId, promptId: testPromptId }),
+        });
+        const response = await mainHandler(req, deps);
+        assertEquals(response.status, 502); // Expect Bad Gateway from our function
+        const json = await response.json();
+        // Trim both strings to avoid hidden whitespace issues
+        assertEquals(json.error?.trim(), "Failed to get response from AI provider: AI API request failed:".trim());
+        console.log("--- AI Fetch Error POST test passed ---");
+    });
+
+    // Test Cases: Input Validation Errors
+    await t.step("POST request with missing message returns 400", async () => {
+        console.log("--- Running Missing Message POST test ---");
+        const deps = createTestDeps({}, mockFetchConfig, mockEnvVars);
+        const req = new Request('http://localhost/chat', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer test-jwt-token' },
+            body: JSON.stringify({ providerId: testProviderId, promptId: testPromptId }), // Missing message
+        });
+        const response = await mainHandler(req, deps);
+        assertEquals(response.status, 400);
+        const json = await response.json();
+        assertEquals(json.error, 'Missing or invalid "message" in request body');
+        console.log("--- Missing Message POST test passed ---");
+    });
+
+    await t.step("POST request with missing providerId returns 400", async () => {
+        console.log("--- Running Missing providerId POST test ---");
+        const deps = createTestDeps({}, mockFetchConfig, mockEnvVars);
+        const req = new Request('http://localhost/chat', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer test-jwt-token' },
+            body: JSON.stringify({ message: "test", promptId: testPromptId }), // Missing providerId
+        });
+        const response = await mainHandler(req, deps);
+        assertEquals(response.status, 400);
+        const json = await response.json();
+        assertEquals(json.error, 'Missing or invalid "providerId" in request body');
+        console.log("--- Missing providerId POST test passed ---");
+    });
+
+    await t.step("POST request with missing promptId returns 400", async () => {
+        console.log("--- Running Missing promptId POST test ---");
+        const deps = createTestDeps({}, mockFetchConfig, mockEnvVars);
+        const req = new Request('http://localhost/chat', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer test-jwt-token' },
+            body: JSON.stringify({ message: "test", providerId: testProviderId }), // Missing promptId
+        });
+        const response = await mainHandler(req, deps);
+        assertEquals(response.status, 400);
+        const json = await response.json();
+        assertEquals(json.error, 'Missing or invalid "promptId" in request body');
+        console.log("--- Missing promptId POST test passed ---");
+    });
+
+    // Test Case: Error fetching chat history
+    await t.step("POST request with history fetch error proceeds as new chat", async () => {
+        console.log("--- Running History Fetch Error POST test ---");
+        const historyErrorSupaConfig = {
+            ...mockSupaConfig,
+            // Simulate history lookup failure
+            selectChatHistoryResult: { data: null, error: new Error("Test: History fetch failed") }
+        };
+        const deps = createTestDeps(historyErrorSupaConfig, mockFetchConfig, mockEnvVars);
+        // Send request *with* a chatId that will fail during lookup
+        const requestBody = { message: "initiate with bad history chatid", providerId: testProviderId, promptId: testPromptId, chatId: 'some-id-that-will-fail-lookup' }; 
+        const req = new Request('http://localhost/chat', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer test-jwt-token' },
+            body: JSON.stringify(requestBody),
+        });
+        const response = await mainHandler(req, deps);
+        // Should recover and succeed by creating a new chat
+        assertEquals(response.status, 200);
+        const json = await response.json() as ChatMessage;
+        // Assert the chatId in the response is the NEW id from insertChatResult, not the failed one
+        assertEquals(json.chat_id, testChatId); 
+
+        // Verify the fetch call payload had no history messages
+        const fetchSpy = deps.fetch as Spy<typeof fetch>;
+        assertSpyCalls(fetchSpy, 1);
+        const fetchPayload = JSON.parse(fetchSpy.calls[0].args[1]?.body as string);
+        // Should include system + user message only
+        assertEquals(fetchPayload.messages.length, 2); 
+        assertEquals(fetchPayload.messages[0].role, 'system');
+        assertEquals(fetchPayload.messages[1].role, 'user');
+        console.log("--- History Fetch Error POST test passed ---");
+    });
+
+    // Test Case: Error inserting chat_messages
+    await t.step("POST request with message insert error returns 500", async () => {
+        console.log("--- Running Message Insert Error POST test ---");
+        const messageInsertErrorSupaConfig = {
+            ...mockSupaConfig,
+            // Simulate message insert failure
+            // Keep insertChatResult successful
+            insertUserMessageResult: { data: { id: testUserMsgId } as any, error: null }, // Assume user msg insert okay
+            insertAssistantMessageResult: { data: null, error: new Error("Test: Message insert failed") }
+        };
+        const deps = createTestDeps(messageInsertErrorSupaConfig, mockFetchConfig, mockEnvVars);
+        // Send request without chatId to trigger full insert flow
+        const req = new Request('http://localhost/chat', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer test-jwt-token' },
+            body: JSON.stringify({ message: "trigger message insert error", providerId: testProviderId, promptId: testPromptId }),
+        });
+        const response = await mainHandler(req, deps);
+        assertEquals(response.status, 500);
+        const json = await response.json();
+        assertEquals(json.error, "Failed to save chat messages.");
+        console.log("--- Message Insert Error POST test passed ---");
+    });
+
+    // Test Case: Whitespace-only message
+    await t.step("POST request with whitespace-only message returns 400", async () => {
+        console.log("--- Running Whitespace Message POST test ---");
+        const deps = createTestDeps({}, mockFetchConfig, mockEnvVars);
+        const req = new Request('http://localhost/chat', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer test-jwt-token' },
+            body: JSON.stringify({ message: "   ", providerId: testProviderId, promptId: testPromptId }), // Whitespace message
+        });
+        const response = await mainHandler(req, deps);
+        assertEquals(response.status, 400);
+            const json = await response.json();
+        assertEquals(json.error, 'Missing or invalid "message" in request body');
+        console.log("--- Whitespace Message POST test passed ---");
+    });
+
+    // Test Case: Inactive Prompt
+    await t.step("POST request with inactive prompt returns 400", async () => {
+        console.log("--- Running Inactive Prompt POST test ---");
+        const inactivePromptSupaConfig = {
+            ...mockSupaConfig,
+            // Simulate prompt lookup returning null (as if is_active=false filter excluded it)
+            selectPromptResult: { data: null, error: null } 
+        };
+        const deps = createTestDeps(inactivePromptSupaConfig, mockFetchConfig, mockEnvVars);
+        const req = new Request('http://localhost/chat', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer test-jwt-token' },
+            // Use a promptId that will trigger the mocked null result
+            body: JSON.stringify({ message: "test inactive prompt", providerId: testProviderId, promptId: testPromptId }),
+        });
+        const response = await mainHandler(req, deps);
+        assertEquals(response.status, 400);
+        const json = await response.json();
+        assertEquals(json.error, "System prompt not found or inactive.");
+        console.log("--- Inactive Prompt POST test passed ---");
+    });
+
+    // Test Case: Malformed AI Response (200 OK, but bad body)
+    await t.step("POST request with malformed AI response returns 500", async () => {
+        console.log("--- Running Malformed AI Response POST test ---");
+        const malformedFetchConfig: MockFetchConfig = {
+            responseData: { wrong_key: "no choices here" }, // Payload missing choices[0].message.content
+            status: 200 // Status is OK, but body is wrong
+        };
+        const deps = createTestDeps(mockSupaConfig, malformedFetchConfig, mockEnvVars);
+        const req = new Request('http://localhost/chat', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer test-jwt-token' },
+            body: JSON.stringify({ message: "trigger malformed response", providerId: testProviderId, promptId: testPromptId }),
+        });
+        const response = await mainHandler(req, deps);
+        assertEquals(response.status, 500);
+        const json = await response.json();
+        assertEquals(json.error, "Error processing AI response: Invalid response structure from AI provider.");
+        console.log("--- Malformed AI Response POST test passed ---");
+    });
+
+    // Test Case: Network error during fetch
+    await t.step("POST request with fetch network error returns 502", async () => {
+        console.log("--- Running Fetch Network Error POST test ---");
+        const networkErrorFetchConfig: MockFetchConfig = {
+            responseData: null, // Not relevant as it will throw
+            shouldThrow: new Error("Simulated ECONNREFUSED") // Simulate a network error
+        };
+        const deps = createTestDeps(mockSupaConfig, networkErrorFetchConfig, mockEnvVars);
+        const req = new Request('http://localhost/chat', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer test-jwt-token' },
+            body: JSON.stringify({ message: "trigger network error", providerId: testProviderId, promptId: testPromptId }),
+        });
+        const response = await mainHandler(req, deps);
+        assertEquals(response.status, 502); // Expect Bad Gateway
+        const json = await response.json();
+        assertEquals(json.error, "Failed to get response from AI provider: Simulated ECONNREFUSED");
+        console.log("--- Fetch Network Error POST test passed ---");
+    });
+
+    /* TODO: Consider other edge cases? 
+       - Add is_active check for providers in index.ts?
+       - Specific provider failures (e.g., Anthropic if added)?
+    */
+
+}); // End Test Suite

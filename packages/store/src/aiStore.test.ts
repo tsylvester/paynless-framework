@@ -15,6 +15,8 @@ import {
 } from '@paynless/types';
 // Import authStore for mocking
 import { useAuthStore } from './authStore';
+// ---> Import AuthRequiredError from types <--- 
+import { AuthRequiredError } from '@paynless/types';
 
 // --- Mock the entire @paynless/api-client module ---
 // Define mock functions for the methods we need to control
@@ -24,40 +26,38 @@ const mockSendChatMessage = vi.fn();
 const mockGetChatHistory = vi.fn();
 const mockGetChatMessages = vi.fn();
 
-vi.mock('@paynless/api-client', () => ({
-    // Mock the 'api' export
-    api: {
-        // Mock the 'ai' method to return our mock functions
-        ai: () => ({
-            getAiProviders: mockGetAiProviders,
-            getSystemPrompts: mockGetSystemPrompts,
-            sendChatMessage: mockSendChatMessage,
-            getChatHistory: mockGetChatHistory,
-            getChatMessages: mockGetChatMessages,
-        }),
-        // Add mocks for other parts of 'api' if needed, otherwise empty objects/functions
-        // These might be needed if the store indirectly uses them, though unlikely for aiStore
-        auth: () => ({}),
-        billing: () => ({}),
-        // Mock base methods if the store somehow bypasses the sub-clients
-        get: vi.fn(),
-        post: vi.fn(),
-        put: vi.fn(),
-        delete: vi.fn(),
-    },
-    // Mock other exports from the module if necessary
-    initializeApiClient: vi.fn(),
-    getApiClient: vi.fn(),
-    // Keep ApiError if it's used (it likely isn't directly in the store)
-    ApiError: class MockApiError extends Error {
-        code?: string | number;
-        constructor(message: string, code?: string | number) {
-            super(message);
-            this.code = code;
-            this.name = 'MockApiError';
-        }
-    },
-}));
+vi.mock('@paynless/api-client', async (importOriginal) => {
+    // ---> Import the original module <--- 
+    const actual = await importOriginal<typeof import('@paynless/api-client')>();
+    return {
+        // ---> Spread actual exports to keep non-mocked things like AuthRequiredError <--- 
+        ...actual, 
+        // Mock the 'api' export (overwriting the original)
+        api: {
+            // ---> Keep existing api mock structure <--- 
+            ...actual.api, // Include other parts of api if needed
+            ai: () => ({
+                getAiProviders: mockGetAiProviders,
+                getSystemPrompts: mockGetSystemPrompts,
+                sendChatMessage: mockSendChatMessage,
+                getChatHistory: mockGetChatHistory,
+                getChatMessages: mockGetChatMessages,
+            }),
+            // Add mocks for other parts of 'api' if needed
+            auth: () => ({}),
+            billing: () => ({}),
+            // Mock base methods if the store somehow bypasses the sub-clients
+            get: vi.fn(),
+            post: vi.fn(),
+            put: vi.fn(),
+            delete: vi.fn(),
+        },
+        // Mock other specific exports if necessary (overwriting originals)
+        initializeApiClient: vi.fn(), 
+        // getApiClient: vi.fn(), // Example if needed
+        // ApiError: actual.ApiError, // Keep original ApiError if needed, but we defined a mock below?
+    };
+});
 
 // --- Mock the authStore ---
 vi.mock('./authStore');
@@ -81,9 +81,6 @@ describe('aiStore', () => {
             isDetailsLoading: false,
             chatHistoryList: [],
             aiError: null,
-            anonymousMessageCount: 0,
-            // Keep anonymousMessageLimit as it's not typically reset
-            // anonymousMessageLimit: useAiStore.getState().anonymousMessageLimit,
          }); // REMOVED 'true' argument - perform merge instead of replace
     });
 
@@ -195,6 +192,28 @@ describe('aiStore', () => {
             expect(state.isConfigLoading).toBe(false);
         });
 
+        // --- NEW Test Case: Both API calls fail ---
+        it('should set combined aiError if both getAiProviders and getSystemPrompts fail', async () => {
+            // Arrange
+            const providersErrorMsg = 'Providers down';
+            const promptsErrorMsg = 'Prompts MIA';
+            mockGetAiProviders.mockResolvedValue({ success: false, error: providersErrorMsg, statusCode: 500 });
+            mockGetSystemPrompts.mockResolvedValue({ success: false, error: promptsErrorMsg, statusCode: 500 });
+
+            // Act
+            await useAiStore.getState().loadAiConfig();
+
+            // Assert
+            const state = useAiStore.getState();
+            // ---> Check for the actual error messages set by the store <--- 
+            expect(state.aiError).toContain('Failed to load AI providers.');
+            expect(state.aiError).toContain('Failed to load system prompts.');
+            expect(state.availableProviders).toEqual([]);
+            expect(state.availablePrompts).toEqual([]);
+            expect(state.isConfigLoading).toBe(false);
+        });
+        // --- End NEW Test Case ---
+
         // REMOVE: Test for uninitialized client is no longer applicable with singleton import
         /*
         it('should set aiError if apiClient is not initialized', async () => {
@@ -205,13 +224,13 @@ describe('aiStore', () => {
 
     // --- Tests for sendMessage ---
     describe('sendMessage', () => {
+        let setItemSpy: ReturnType<typeof vi.spyOn>;
+
         const messageData = {
             message: 'Hello',
             providerId: 'p1',
             promptId: 's1',
-            isAnonymous: false,
         };
-        const anonMessageData = { ...messageData, isAnonymous: true };
 
         const mockAssistantResponse: ChatMessage = {
             id: 'm2',
@@ -225,192 +244,256 @@ describe('aiStore', () => {
             created_at: '2024-01-01T12:00:00.000Z', // Use fixed date
         };
 
-        it('should set loading state, add optimistic message, and call api client', async () => {
-            // Arrange
-            // Use the correctly mocked function
-            mockSendChatMessage.mockResolvedValue({ 
-                success: true, 
-                data: mockAssistantResponse, 
-                statusCode: 200 
-            });
-
-            // Act
-            const promise = useAiStore.getState().sendMessage(messageData);
-
-            // Assert (during call)
-            const stateBeforeAwait = useAiStore.getState();
-            expect(stateBeforeAwait.isLoadingAiResponse).toBe(true);
-            expect(stateBeforeAwait.aiError).toBeNull();
-            expect(stateBeforeAwait.currentChatMessages).toHaveLength(1);
-            expect(stateBeforeAwait.currentChatMessages[0].role).toBe('user');
-            expect(stateBeforeAwait.currentChatMessages[0].content).toBe(messageData.message);
-            expect(stateBeforeAwait.currentChatMessages[0].id).toContain('temp-user-');
-
-            await promise; // Wait for completion
-
-            // Assert (after call)
-            // Use the correctly mocked function
-            expect(mockSendChatMessage).toHaveBeenCalledTimes(1);
-            expect(mockSendChatMessage).toHaveBeenCalledWith({
-                message: messageData.message,
-                providerId: messageData.providerId,
-                promptId: messageData.promptId,
-                chatId: undefined, // No initial chatId provided
-            }, { isPublic: false });
-             expect(useAiStore.getState().isLoadingAiResponse).toBe(false);
+        beforeEach(() => {
+            // Mock sessionStorage before each test in this describe block
+            setItemSpy = vi.spyOn(Storage.prototype, 'setItem');
+            // Mock navigate from authStore
+            const mockNavigate = vi.fn();
+            // Ensure useAuthStore is mocked correctly before accessing getState
+            if (vi.isMockFunction(useAuthStore)) {
+                vi.mocked(useAuthStore).getState.mockReturnValue({
+                    user: { id: 'user1' } as User, // Mock a user
+                    session: { access_token: 'test-token' } as Session, // Provide token
+                    profile: null,
+                    isLoading: false,
+                    error: null,
+                    navigate: mockNavigate,
+                    setNavigate: vi.fn(),
+                    login: vi.fn(),
+                    logout: vi.fn(),
+                    register: vi.fn(),
+                    setProfile: vi.fn(),
+                    setUser: vi.fn(),
+                    setSession: vi.fn(),
+                    setIsLoading: vi.fn(),
+                    setError: vi.fn(),
+                    initialize: vi.fn(),
+                    refreshSession: vi.fn(),
+                    updateProfile: vi.fn(),
+                    clearError: vi.fn(),
+                } as any); // Use 'as any' for simplicity if type matching is complex
+            }
         });
 
-        it('should update messages and chatId on successful response (new chat)', async () => {
-             // Arrange
-             // Use the correctly mocked function
-             mockSendChatMessage.mockResolvedValue({ 
-                success: true, 
+        afterEach(() => {
+            // Restore the spy after each test
+            setItemSpy.mockRestore();
+            // Restore other spies or mocks if necessary
+            vi.restoreAllMocks();
+        });
+
+        it('should set loading state, add optimistic message, call API, and update state on success', async () => {
+            // Arrange
+            // ---> Mock API to return successful ApiResponse object <--- 
+            mockSendChatMessage.mockResolvedValue({ 
                 data: mockAssistantResponse, 
-                statusCode: 200 
+                error: null,
+                status: 200 
             });
+            const initialMessages = useAiStore.getState().currentChatMessages.length;
 
             // Act
-            await useAiStore.getState().sendMessage(messageData);
+            const promise = useAiStore.getState().sendMessage(messageData); // Use updated messageData
+            // Check optimistic update
+            expect(useAiStore.getState().isLoadingAiResponse).toBe(true);
+            expect(useAiStore.getState().currentChatMessages.length).toBe(initialMessages + 1);
+            const optimisticMessage = useAiStore.getState().currentChatMessages[initialMessages];
+            expect(optimisticMessage.role).toBe('user');
+            expect(optimisticMessage.content).toBe(messageData.message);
+            expect(optimisticMessage.id.startsWith('temp-user-')).toBe(true);
+
+            await promise;
 
             // Assert
+            const expectedRequestData: ChatApiRequest = { 
+                message: messageData.message, 
+                providerId: messageData.providerId, 
+                promptId: messageData.promptId, 
+                chatId: undefined // Or null, depending on initial state
+            };
+            const expectedOptions = { token: 'test-token' }; // Token from mocked authStore
+
+            expect(mockSendChatMessage).toHaveBeenCalledTimes(1);
+            // Updated Assertion: Expect only requestData and options
+            expect(mockSendChatMessage).toHaveBeenCalledWith(expectedRequestData, expectedOptions);
+            
             const state = useAiStore.getState();
             expect(state.isLoadingAiResponse).toBe(false);
-            expect(state.currentChatMessages).toHaveLength(2); // User + Assistant
-            // Check the assistant message details
-            const assistantMsg = state.currentChatMessages.find(m => m.role === 'assistant');
-            expect(assistantMsg?.id).toBe(mockAssistantResponse.id);
-            expect(assistantMsg?.content).toBe(mockAssistantResponse.content);
-            // REMOVE: Incorrect assertion - optimistic message is updated, not removed initially.
-            // expect(state.currentChatMessages.find(m => m.id.startsWith('temp-user-'))).toBeUndefined();
+            expect(state.currentChatMessages.length).toBe(initialMessages + 2); // Optimistic + Assistant
+            expect(state.currentChatMessages[initialMessages + 1]).toEqual(mockAssistantResponse);
             expect(state.currentChatId).toBe(mockAssistantResponse.chat_id);
             expect(state.aiError).toBeNull();
         });
 
-        it('should update messages on successful response (existing chat)', async () => {
+        it('should update existing chatId in optimistic message when response contains chatId', async () => {
              // Arrange
-            const existingChatId = 'c-existing';
-            const existingMessages: ChatMessage[] = [
-                { id: 'm0', chat_id: existingChatId, role: 'user', content: 'Previous Q', /*...other fields*/ created_at: 't0' },
-            ];
-            useAiStore.setState({ currentChatId: existingChatId, currentChatMessages: existingMessages });
+             const newChatId = 'new-chat-id-123';
+             const responseWithChatId = { ...mockAssistantResponse, chat_id: newChatId };
+             // ---> Mock API to return successful ApiResponse object <--- 
+             mockSendChatMessage.mockResolvedValue({ 
+                 data: responseWithChatId, 
+                 error: null, 
+                 status: 200 
+             });
+             useAiStore.setState({ currentChatId: null }); // Start with no chatId
+ 
+             // Act
+             await useAiStore.getState().sendMessage(messageData);
+ 
+             // Assert
+             const state = useAiStore.getState();
+             expect(state.currentChatId).toBe(newChatId);
+             // Find the user message (should be the first one added in this test)
+             const userMessage = state.currentChatMessages.find(m => m.role === 'user' && m.content === messageData.message);
+             expect(userMessage).toBeDefined();
+             expect(userMessage?.chat_id).toBe(newChatId); // Check if its chatId was updated
+         });
 
-            // Mock response with the existing chat ID
-            const responseInExistingChat = { ...mockAssistantResponse, chat_id: existingChatId };
+        it('should handle API error, remove optimistic message, and set aiError', async () => {
+            // Arrange
+            const errorMsg = 'AI failed to respond';
+            // ---> Mock API to return ApiResponse with error <--- 
             mockSendChatMessage.mockResolvedValue({ 
-                success: true, 
-                data: responseInExistingChat, 
-                statusCode: 200 
+                data: null, 
+                error: { code: '500', message: errorMsg }, 
+                status: 500 
             });
+            const initialMessages = useAiStore.getState().currentChatMessages.length;
 
             // Act
-            await useAiStore.getState().sendMessage({...messageData, chatId: existingChatId});
+            const promise = useAiStore.getState().sendMessage(messageData);
+            const optimisticMessageCount = useAiStore.getState().currentChatMessages.length;
+            expect(optimisticMessageCount).toBe(initialMessages + 1); // Optimistic added
+
+            await promise;
 
             // Assert
+            const expectedRequestData: ChatApiRequest = { 
+                message: messageData.message, 
+                providerId: messageData.providerId, 
+                promptId: messageData.promptId, 
+                chatId: undefined 
+            };
+            const expectedOptions = { token: 'test-token' };
+            expect(mockSendChatMessage).toHaveBeenCalledWith(expectedRequestData, expectedOptions);
+
             const state = useAiStore.getState();
             expect(state.isLoadingAiResponse).toBe(false);
-            // Previous message + new user optimistic + new assistant
-            expect(state.currentChatMessages).toHaveLength(3); 
-            expect(state.currentChatMessages[0].id).toBe('m0'); // Previous message
-            expect(state.currentChatMessages[1].role).toBe('user'); // New optimistic/replaced user message
-            expect(state.currentChatMessages[2].id).toBe(responseInExistingChat.id); // New assistant message
-            expect(state.currentChatId).toBe(existingChatId); // Chat ID should remain the same
-             expect(mockSendChatMessage).toHaveBeenCalledWith({
-                message: messageData.message,
-                providerId: messageData.providerId,
-                promptId: messageData.promptId,
-                chatId: existingChatId, // Expecting existing chatId
-             }, { isPublic: false });
+            expect(state.currentChatMessages.length).toBe(initialMessages); // Optimistic removed
+            expect(state.aiError).toBe(errorMsg);
         });
 
-        it('should set aiError and remove optimistic message on failed response', async () => {
-             // Arrange
-            const errorMsg = 'AI failed'; // Original message from mock
-            mockSendChatMessage.mockResolvedValue({ success: false, error: errorMsg, statusCode: 500 });
+        it('should handle thrown error during API call (network error)', async () => {
+            // Arrange
+            const errorMsg = 'Network connection failed';
+            // ---> Mock API to reject (simulates network error) <--- 
+            mockSendChatMessage.mockRejectedValue(new Error(errorMsg));
+            const initialMessages = useAiStore.getState().currentChatMessages.length;
 
             // Act
             await useAiStore.getState().sendMessage(messageData);
 
+             // Assert
+            const state = useAiStore.getState();
+            expect(state.isLoadingAiResponse).toBe(false);
+            expect(state.currentChatMessages.length).toBe(initialMessages); // Optimistic removed
+            expect(state.aiError).toBe(errorMsg);
+        });
+        
+        // --- REMOVED Test: 'should return null and set error if no auth token is available' ---
+        // The behavior changed: We now attempt the API call even without a token
+        // and expect the apiClient to throw AuthRequiredError, which is tested elsewhere.
+
+        // Test for 401 AUTH_REQUIRED needs updating
+        it('should handle AuthRequiredError, remove optimistic msg, trigger navigation', async () => {
+            // Arrange
+            // ---> Mock API to THROW AuthRequiredError by NAME <--- 
+            const authError = new Error('Please log in first'); // Use standard Error
+            authError.name = 'AuthRequiredError';             // Set the name
+            mockSendChatMessage.mockRejectedValue(authError);
+    
+            const mockNavigate = vi.fn();
+            if (vi.isMockFunction(useAuthStore)) {
+                vi.mocked(useAuthStore).getState.mockReturnValue({
+                    ...(useAuthStore.getState()), 
+                    navigate: mockNavigate,
+                });
+            }
+    
+            // Spying on sessionStorage is NO LONGER needed here, apiClient handles it
+            // const setItemSpy = vi.spyOn(Storage.prototype, 'setItem');
+            
+            const initialMessages = useAiStore.getState().currentChatMessages.length;
+    
+            // Act
+            const promise = useAiStore.getState().sendMessage(messageData);
+            expect(useAiStore.getState().isLoadingAiResponse).toBe(true);
+            expect(useAiStore.getState().currentChatMessages.length).toBe(initialMessages + 1);
+            await promise; // Await the action completion
+    
             // Assert
             const state = useAiStore.getState();
             expect(state.isLoadingAiResponse).toBe(false);
-            // Expect the actual error set by the store's catch block
-            expect(state.aiError).toBe(errorMsg); // The store now uses the error from the response
-            // Checking it's removed:
-            expect(state.currentChatMessages).toHaveLength(0);
-            expect(state.currentChatId).toBeNull(); // Chat ID shouldn't be set on failure
+            expect(state.currentChatMessages.length).toBe(initialMessages); // Optimistic message removed
+            // ---> Error state should NOT be set if navigation is triggered <--- 
+            expect(state.aiError).toBeNull(); 
+            
+            // Assert sessionStorage was NOT called by the store action
+            // expect(setItemSpy).not.toHaveBeenCalled(); 
+    
+            // Assert navigation
+            expect(mockNavigate).toHaveBeenCalledTimes(1);
+            expect(mockNavigate).toHaveBeenCalledWith('/login');
+    
+            // Restore mocks
+            // setItemSpy.mockRestore(); 
         });
 
-        it('should return { error: \'limit_reached\' } if anonymous count is >= limit', async () => {
+        // Test for sessionStorage failure during AUTH_REQUIRED is NO LONGER relevant here
+        // it('should handle 401 AUTH_REQUIRED but fail gracefully if sessionStorage write fails', ...) 
+
+        // Test for navigate unavailable during AUTH_REQUIRED needs updating
+        it('should handle AuthRequiredError and set error state if navigate is unavailable', async () => {
             // Arrange
-            // const limit = useAiStore.getState().anonymousMessageLimit; // OLD
-            const knownLimit = 3; // Use the known constant value
-            useAiStore.setState({ anonymousMessageCount: knownLimit }); // Set count to the known limit
-
-            // *** Keep Logs for now ***
-            console.log(`[Test Setup] Limit Used: ${knownLimit}, Count Set To: ${useAiStore.getState().anonymousMessageCount}`);
-
+            // ---> Mock API to THROW AuthRequiredError by NAME <--- 
+            const authError = new Error('Log in required'); // Use standard Error
+            authError.name = 'AuthRequiredError';          // Set the name
+            mockSendChatMessage.mockRejectedValue(authError);
+    
+            // Mock authStore to return navigate as null
+             if (vi.isMockFunction(useAuthStore)) {
+                vi.mocked(useAuthStore).getState.mockReturnValue({
+                    ...(useAuthStore.getState()),
+                    navigate: null, 
+                });
+            }
+    
+            // No need to spy on sessionStorage here
+            // const setItemSpy = vi.spyOn(Storage.prototype, 'setItem');
+            
+            const initialMessages = useAiStore.getState().currentChatMessages.length;
+    
             // Act
-            const result = await useAiStore.getState().sendMessage(anonMessageData);
-
-            // *** Keep Logs for now ***
-            console.log(`[Test Result] sendMessage returned:`, result);
-
-            // Assert: Check for the specific return object
-            expect(result).toEqual({ error: 'limit_reached' });
-
-            // Ensure API was not called and state is unchanged
-            expect(mockSendChatMessage).not.toHaveBeenCalled();
+            const promise = useAiStore.getState().sendMessage(messageData);
+             expect(useAiStore.getState().isLoadingAiResponse).toBe(true);
+             expect(useAiStore.getState().currentChatMessages.length).toBe(initialMessages + 1);
+             await promise;
+    
+            // Assert
             const state = useAiStore.getState();
             expect(state.isLoadingAiResponse).toBe(false);
-            expect(state.currentChatMessages).toHaveLength(0);
-            expect(state.anonymousMessageCount).toBe(knownLimit); // Count shouldn't change
+            expect(state.currentChatMessages.length).toBe(initialMessages); // Optimistic removed
+            // ---> Error state SHOULD be set in this fallback case <--- 
+            expect(state.aiError).toBe(authError.message);
+            
+            // Assert sessionStorage was NOT called by store
+            // expect(setItemSpy).not.toHaveBeenCalled();
+    
+             // Assert navigation was NOT called (implicitly checked by error state being set)
+    
+            // Restore mocks
+            // setItemSpy.mockRestore();
         });
-
-        it('should increment anonymous count for anonymous messages below limit', async () => {
-            // Arrange
-            const limit = useAiStore.getState().ANONYMOUS_MESSAGE_LIMIT;
-            useAiStore.setState({ anonymousMessageCount: limit - 1 }); // Start at 2 (assuming limit is 3)
-            console.log(`[Test Setup] Limit: ${limit}, Initial Count Set To: ${useAiStore.getState().anonymousMessageCount}`); // Log setup
-            mockSendChatMessage.mockResolvedValue({ 
-                success: true, 
-                data: mockAssistantResponse, 
-                statusCode: 200 
-            });
-
-            // Act
-            await useAiStore.getState().sendMessage(anonMessageData);
-
-            // Assert
-            const finalCount = useAiStore.getState().anonymousMessageCount;
-            console.log(`[Test Assertion] Final Count: ${finalCount}, Expected Limit: ${limit}`); // Log before assertion
-            // Corrected Assertion: Check if count is incremented to 1
-            expect(finalCount).toBe(1);
-            expect(mockSendChatMessage).toHaveBeenCalledTimes(1); // API should be called
-        });
-
-        it('should NOT increment anonymous count for non-anonymous messages', async () => {
-             // Arrange
-            useAiStore.setState({ anonymousMessageCount: 1 }); // Set some count
-            mockSendChatMessage.mockResolvedValue({ 
-                success: true, 
-                data: mockAssistantResponse, 
-                statusCode: 200 
-            });
-
-            // Act
-            await useAiStore.getState().sendMessage(messageData); // isAnonymous: false
-
-            // Assert
-            expect(useAiStore.getState().anonymousMessageCount).toBe(1); // Count should remain unchanged
-            expect(mockSendChatMessage).toHaveBeenCalledTimes(1); 
-        });
-
-        // REMOVE: Test for uninitialized client is no longer applicable
-        /*
-        it('should set aiError if apiClient is not initialized', async () => {
-            // ... removed ...
-        });
-        */
     });
 
     // --- Tests for loadChatHistory (UPDATED) ---
@@ -514,13 +597,39 @@ describe('aiStore', () => {
 
     // --- Tests for loadChatDetails ---
     describe('loadChatDetails', () => {
+        // +++ Add missing constants +++
         const chatId = 'c123';
         const mockMessages: ChatMessage[] = [
-             { id: 'm1', chat_id: chatId, role: 'user', content: 'Q', /* other fields */ created_at: 't1' },
-             { id: 'm2', chat_id: chatId, role: 'assistant', content: 'A', /* other fields */ created_at: 't2' },
+             { id: 'm1', chat_id: chatId, user_id: 'user1', role: 'user', content: 'Q', ai_provider_id: null, system_prompt_id: null, token_usage: null, created_at: 't1' },
+             { id: 'm2', chat_id: chatId, user_id: null, role: 'assistant', content: 'A', ai_provider_id: 'p1', system_prompt_id: 's1', token_usage: null, created_at: 't2' },
         ];
+        // +++ End added constants +++
+
+        // Add a beforeEach specific to this describe block to ensure auth state
+        beforeEach(() => {
+            // Reset mocks if necessary (if not handled globally)
+            vi.clearAllMocks();
+            // --- Mock authStore.getState() for this suite --- 
+            if (vi.isMockFunction(useAuthStore)) {
+                vi.mocked(useAuthStore.getState).mockReturnValue({
+                    user: { id: 'user-123' } as User,
+                    session: { access_token: 'mock-token' } as Session, // Ensure session is defined
+                    profile: null,
+                    isLoading: false,
+                    error: null,
+                    navigate: vi.fn(),
+                    // Add other necessary mocked functions/state from AuthStore if needed
+                    // ... (add mocks for other functions used by loadChatDetails if any) ...
+                } as any); // Use 'as any' or define a more complete mock type
+            } else {
+                console.warn("useAuthStore was not properly mocked for loadChatDetails tests.")
+            }
+            // Reset aiStore state if needed (keep this)
+            useAiStore.setState({ isLoadingAiResponse: false, aiError: null, currentChatMessages: [], currentChatId: null, isDetailsLoading: false });
+        });
 
         it('should set loading state and call api client with chatId', async () => {
+            // const chatId = 'c123'; // Now defined above
             // Arrange
             mockGetChatMessages.mockResolvedValue({ success: true, data: mockMessages, statusCode: 200 });
 
@@ -532,7 +641,8 @@ describe('aiStore', () => {
             // Assert
             expect(useAiStore.getState().isDetailsLoading).toBe(false);
             expect(mockGetChatMessages).toHaveBeenCalledTimes(1);
-            expect(mockGetChatMessages).toHaveBeenCalledWith(chatId);
+            // Updated assertion: Expect chatId AND token
+            expect(mockGetChatMessages).toHaveBeenCalledWith(chatId, 'mock-token');
         });
 
         it('should update currentChatMessages and currentChatId on success', async () => {
@@ -566,12 +676,35 @@ describe('aiStore', () => {
             expect(state.isDetailsLoading).toBe(false);
         });
 
-        // REMOVE: Test for uninitialized client is no longer applicable
-        /*
-         it('should set aiError if apiClient is not initialized', async () => {
-           // ... removed ...
+        // --- NEW Test Case: Invalid chatId --- 
+        it.each([
+            [null, 'Chat ID is required'], 
+            ['', 'Chat ID is required'],
+            [undefined, 'Chat ID is required']
+        ])('should set error and not call API if chatId is %s', async (invalidChatId, expectedError) => {
+            // Arrange
+            // Ensure authStore is mocked with a token, otherwise that error takes precedence
+             if (vi.isMockFunction(useAuthStore)) {
+                vi.mocked(useAuthStore).getState.mockReturnValueOnce({
+                    user: { id: 'user-1' } as User, 
+                    session: { access_token: 'mock-token' } as Session, 
+                    // ... other necessary mocked state ...
+                    isLoading: false,
+                    error: null,
+                } as any);
+            }
+            // Act
+            // @ts-ignore - Allow passing invalid types for testing
+            await useAiStore.getState().loadChatDetails(invalidChatId);
+ 
+            // Assert
+            expect(mockGetChatMessages).not.toHaveBeenCalled();
+            const state = useAiStore.getState();
+            expect(state.isDetailsLoading).toBe(false);
+            expect(state.aiError).toContain(expectedError);
         });
-        */
+        // --- End NEW Test Case ---
+
     });
 
     // --- Tests for startNewChat ---
@@ -581,7 +714,6 @@ describe('aiStore', () => {
             useAiStore.setState({
                 currentChatId: 'c123',
                 currentChatMessages: [{ id: 'm1', /* ... */ } as ChatMessage],
-                anonymousMessageCount: 2,
             });
 
             // Act
@@ -591,37 +723,6 @@ describe('aiStore', () => {
             const state = useAiStore.getState();
             expect(state.currentChatMessages).toEqual([]);
             expect(state.currentChatId).toBeNull();
-            expect(state.anonymousMessageCount).toBe(0); // This should pass if the action is correct
-        });
-    });
-
-    // --- Tests for anonymous count helpers ---
-    describe('anonymous count helpers', () => {
-        it('incrementAnonymousCount should increment the count', () => {
-            // Arrange
-            useAiStore.setState({ anonymousMessageCount: 1 });
-            // Act
-            useAiStore.getState().incrementAnonymousCount();
-            // Assert
-            expect(useAiStore.getState().anonymousMessageCount).toBe(2);
-        });
-
-         it('resetAnonymousCount should set the count to 0', () => {
-            // Arrange
-            useAiStore.setState({ anonymousMessageCount: 5 });
-            // Act
-            useAiStore.getState().resetAnonymousCount();
-            // Assert
-            expect(useAiStore.getState().anonymousMessageCount).toBe(0);
-        });
-
-        it('setAnonymousCount should set the count to the specified value', () => {
-            // Arrange
-            useAiStore.setState({ anonymousMessageCount: 0 });
-            // Act
-            useAiStore.getState().setAnonymousCount(10);
-            // Assert
-            expect(useAiStore.getState().anonymousMessageCount).toBe(10);
         });
     });
 

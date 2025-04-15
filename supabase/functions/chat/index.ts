@@ -26,7 +26,7 @@ export interface ChatHandlerDeps {
 }
 
 // Create default dependencies using actual implementations
-const defaultDeps: ChatHandlerDeps = {
+export const defaultDeps: ChatHandlerDeps = {
   createSupabaseClient: createClient,
   getEnv: Deno.env.get,
   fetch: fetch,
@@ -90,7 +90,11 @@ export async function mainHandler(req: Request, deps: ChatHandlerDeps = defaultD
     // --- Auth and Client Initialization ---
     const authHeader = req.headers.get('Authorization');
     if (!authHeader) {
-       return createErrorResponse('Missing Authorization header', 401);
+       console.log("Chat function called without Authorization header. Returning AUTH_REQUIRED signal.")
+       return createJsonResponse(
+           { error: "Authentication required", code: "AUTH_REQUIRED" },
+           401 // Set status to 401 Unauthorized
+       );
     }
 
     // Use injected createSupabaseClient and getEnv
