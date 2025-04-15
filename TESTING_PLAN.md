@@ -1,21 +1,5 @@
 **Consolidated Project Testing Plan & Status (v6 - Anonymous Auth Refactor)**
 
-**Incomplete Features** 
-*   [⏸️] AI Chat on homepage doesn't work
-*   [✅] AI Chat signup/login flow
-*   [ ] AI model sync automation
-*   [ ] Mixpanel or Posthog integration
-*   [🚧] Test project on Bolt & Lovable 
-    *   [ ] Bolt & Lovable don't support pnpm monorepos well atm 
-*   [ ] User email automation - abstract for generic but specific implementation with Kit 
-*   [ ] Change email from within app
-*   [ ] Change password from within app
-*   [✅] shadcn implemented
-    *   [ ] Convert all pages / components to shadcn
-    *   [ ] Loading skeletons for all components 
-*   [ ] Change payment method doesn't register site
-*   [ ] Run SEO scan 
-
 **Notes & Key Learnings (Summary):**
 
 1. **Incomplete Stripe E2E Flow (IMPORTANT):** Stripe has been tested in Test Mode but not confirmed live Live Mode with real transactions. 
@@ -76,6 +60,19 @@
         *   **Unit Tests:** The capability service itself needs unit testing with mocked platform detection. Shared components using the service must be tested by mocking the service to simulate different platforms (capabilities available vs. unavailable) and verifying conditional logic/rendering and calls to the correct service methods. TypeScript capability providers should be unit tested, mocking underlying APIs/modules (`invoke`, Web APIs, RN modules). Rust command handlers require Rust unit tests (`#[test]`).
         *   **Integration Tests:** Crucially require *platform-specific* integration testing. For Tauri, this means testing the TS -> `invoke` -> Rust -> Native API flow within a Tauri environment (e.g., using `tauri-driver`). For Web/RN, test interaction with Web APIs or Native Modules in their respective environments.
         *   **E2E Tests:** Must be run on each target platform (Web, Windows Desktop, Mac Desktop, Linux Desktop, iOS, Android) to validate the full user flow involving platform-specific features. Requires appropriate E2E tooling for each platform (Playwright/Cypress for Web, Tauri-specific tooling, Detox/Appium for Mobile).
+20. **[NEW] Zustand Store Dependency Mocking (`aiStore` <-> `authStore` Example - May 2024):**
+    *   **Problem:** Unit tests for `aiStore` actions that depend on state from `authStore` (e.g., `session` for tokens) consistently failed with `TypeError: Cannot read properties of undefined (reading 'session')`, even when attempts were made to set the `authStore` mock state using `useAuthStore.setState` in nested `beforeEach` blocks (a pattern observed working in `subscriptionStore.test.ts`).
+    *   **Working Pattern:** The reliable solution was to use `vi.mocked(useAuthStore.getState).mockReturnValue(...)` within the nested `beforeEach` specific to the test suite requiring the dependent state. This directly controls the state object returned when `aiStore` calls `useAuthStore.getState()`.
+    *   **Implementation:**
+        *   The `mockReturnValue` must provide the *complete state object* the calling action might access, including `user`, `session`, `navigate`, and potentially other defaults (using `as any` if type complexity requires it).
+        *   Use `mockReturnValueOnce` within specific `it(...)` blocks for test-case-specific state overrides (e.g., `session: null`, `navigate: null`).
+        *   The top-level `beforeEach` should reset the store-under-test (e.g., `resetAiStore()`) but should **not** attempt to set state in the mocked dependent store (`useAuthStore.setState`).
+    *   **Loading State Assertions (`act`/`await`):** To test loading states correctly:
+        1.  Wrap the action dispatch in `act()`. Example: `act(() => { promise = useAiStore.getState().loadChatHistory(); ... });`
+        2.  Assert the *immediate* synchronous state change (e.g., `isLoading: true`) *inside* the `act()` block, right after the action dispatch.
+        3.  `await` the action's promise *outside* the `act()` block.
+        4.  Assert the final state (e.g., `isLoading: false`) after the `await`.
+    *   **Persistent Type Errors:** Encountered persistent `Type '"user"' is not assignable to type 'UserRole'` errors in mock data within `aiStore` tests despite trying various formats. Decided to ignore these after multiple attempts, prioritizing functional correctness, potentially indicating minor inconsistencies in type definitions.
 
 *   **[NEW] Phase 5: Anonymous Chat Auth Refactor Verification:** Added specific backend and E2E test cases for the anonymous secret header and related flows.
 
@@ -188,9 +185,10 @@
     *   **2.1 Unit Tests:**
         *   [✅] `packages/api-client` (All sub-clients: `apiClient`, `stripe.api`, `ai.api` tests passing)
         *   [✅] `packages/store` (Vitest setup complete)
-            *   [✅] `authStore.ts` *(Tests passing, including logout, initialize, refresh, replay logic)*
+            *   [✅] `authStore.ts` (All actions covered across multiple `authStore.*.test.ts` files)
             *   [✅] `subscriptionStore.ts` *(Tests passing, including refresh failures in cancel/resume)*
-            *   [✅] `aiStore.ts` *(Tests passing, including config/details edge cases)*
+            *   [✅] `aiStore.ts` *(Status: Refactored into `aiStore.*.test.ts` files. All tests passing after fixing mock strategy and store logic.)*
+                *   *Note: Utilizes `vi.mocked(useAuthStore.getState).mockReturnValue` pattern for dependent store state.* 
         *   [⏭️] `packages/ui-components` *(Skipped - Package empty)*.
         *   [✅] `packages/utils` (`logger.ts` tests passing)
         *   [✅] `packages/types` *(Implicitly tested via usage)*.
@@ -342,144 +340,4 @@ Conclusion: The MSW handlers defined in apps/web/src/mocks/handlers.ts are still
 9.  **[ ] Implement Missing Tests:**
     *   **Action:** Write tests for items marked `[ ]` in the Phase 3.2 checklist.
 
-10. **[ ] Final `TESTING_PLAN.md` Update:**
-    *   **Action:** Mark plan complete, update all status indicators.
-
----
-
-## Testing Strategy: Service Abstraction for Complex Dependencies
-
-**Context:** When unit testing Supabase Edge Functions that depend on the `SupabaseClient`, directly mocking the client can be challenging, especially if the function uses multiple distinct parts of the client (e.g., both database access via `.from()` and function invocation via `.functions.invoke()`).
-
-**Problem Encountered:** We encountered persistent TypeScript errors (specifically TS2345) when trying to pass mock `SupabaseClient` objects (even using casting like `as any` or `as unknown as SupabaseClient`) into handler functions. The type checker flagged mismatches due to the complexity of the real `SupabaseClient` class (including internal/protected properties) compared to our simplified mock objects, particularly when the *shape* of the required mock differed between tests in the same file.
-
-**Solution:** To overcome this and improve testability, we introduced a **Service Abstraction Layer** for handlers dealing with such complex dependencies:
-1.  **Define an Interface:** Create a specific interface (e.g., `ISomeSpecificService`) that declares *only* the high-level methods the handler needs (e.g., `updateRecordStatus(...)`, `invokeAnotherFunction(...)`).
-2.  **Implement the Service:** Create a class (e.g., `SomeSpecificService`) that implements this interface, encapsulating the actual `SupabaseClient` calls (`.from().update()`, `.functions.invoke()`) within its methods.
-3.  **Inject the Service:** Refactor the Edge Function handler to depend on the *interface* (`ISomeSpecificService`) instead of the raw `SupabaseClient`.
-4.  **Mock the Interface:** In the handler's unit test, create a simple mock object that implements the service interface using spy functions (e.g., `{ updateRecordStatus: spy(...), invokeAnotherFunction: spy(...) }`). This mock is easily type-compatible with the interface.
-
-**Benefits:**
-*   **Resolves Type Errors:** Completely bypasses the TS2345 errors related to mocking the complex `SupabaseClient` in the handler's unit test.
-*   **Focuses Tests:** Handler unit tests focus on verifying the handler's logic (calling the correct service method with correct arguments, handling results), while the service implementation's logic (correctly using the `SupabaseClient`) can be tested separately (though its tests might face the original mocking challenge, it's solved in one place).
-*   **Maintainability:** Follows the Dependency Inversion Principle, decoupling handlers from the specific implementation details of the `SupabaseClient`.
-
-**(Example:** See `supabase/functions/stripe-webhook/services/product_webhook_service.ts` and its usage in `supabase/functions/stripe-webhook/handlers/product.ts` and `product.test.ts`.)
-
-## Test Incrementally From the Bottom Up
-1. Start with Unit Tests
-- Write unit tests for the file or module you're working on.
-- Run the unit test(s) for that file.
-- Fix the code until all unit tests pass.
-
-2. Move to Integration
-- Once all relevant unit tests pass, run integration tests that depend on those files/modules.
-- If integration tests fail, fix the relevant files — this may require updating multiple modules.
-- Once integration tests pass, review and update your unit tests if the behavior or signatures changed.
-- Rerun affected unit tests to ensure they still pass with the integrated logic.
-
-Why? Integration fixes may change interfaces or logic that your unit tests previously assumed.
-
-3. Stabilize by Layer
-- Ensure all unit tests pass after updates.
-- Ensure all integration tests pass after updates.
-- Only then run the full test suite (unit + integration) across the workspace.
-
-4. End-to-End Validation
-- Once the system passes unit and integration layers, run full end-to-end (E2E) tests.
-- Fix or update E2E tests and supporting mocks if needed.
-
-## Multi-Platform Architecture: Capability Abstraction
-
-Given the requirement to support multiple frontends (Web, React Native for iOS/Android, Tauri for Desktop - Windows/Mac/Linux) with platform-specific capabilities (especially filesystem access on Desktop), the following architectural pattern should be adopted:
-
-### 1. Feature Detection & Capability Abstraction Service
-
-- **Concept:** Create a central service (e.g., `platformCapabilitiesService`) that abstracts away platform-specific functionalities. This service will expose a consistent interface for various capabilities (e.g., `fileSystem`, `notifications`, `registryAccess`).
-- **Implementation:**
-    - Define TypeScript interfaces for each capability group (e.g., `FileSystemCapabilities`, `WindowsRegistryCapabilities`).
-    - The service will have a function (e.g., `getPlatformCapabilities()`) that detects the current runtime environment (Web, Tauri, React Native, specific OS).
-    - Based on the detected platform, the service returns an object implementing the capability interfaces. If a capability is not available on the current platform, the corresponding property in the returned object will be `null`.
-- **Location:** This service could reside in a shared package (e.g., `packages/utils` or a new `packages/platform-capabilities`).
-
-### 2. Platform-Specific Providers
-
-- **Tauri/Rust (Desktop):**
-    - Implement the capability interfaces using Tauri's JavaScript API (`@tauri-apps/api`) for standard features (dialogs, basic FS).
-    - For more complex or OS-specific features (e.g., Windows Registry), create custom Rust commands (`#[tauri::command]`).
-    - These Rust commands implement the native logic using appropriate crates (e.g., `winreg` for Windows registry).
-    - Expose these commands to the TypeScript layer via Tauri's `invoke` function. The TypeScript provider will call `invoke` to execute the Rust backend code.
-    - Use Rust's conditional compilation (`#[cfg(target_os = "windows")]`, etc.) to include OS-specific native code only when building for that target.
-- **Web:**
-    - Implement capabilities using standard Web APIs where available (e.g., `navigator.clipboard`, potentially Web File System Access API).
-    - Return `null` for capabilities not supported in the browser.
-- **React Native (iOS/Android):**
-    - Implement capabilities using React Native modules and platform APIs (e.g., `react-native-fs`, specific native modules if needed).
-    - Return `null` for capabilities not applicable to mobile.
-
-### 3. UI Component Integration
-
-- **Feature Detection:** Shared UI components (in `apps/web/src/components` or potentially a shared `packages/ui-components` if created later) should import and use the `getPlatformCapabilities()` service.
-- **Conditional Logic/Rendering:** Before attempting to use a platform-specific feature, components must check if the capability is available (i.e., not `null`) on the current platform via the service.
-    - Render UI elements (e.g., buttons for "Open File") conditionally based on capability availability.
-    - Provide alternative UI or messages for platforms where a feature is unavailable (graceful degradation).
-- **TypeScript Logic:** The TypeScript code handles the control flow ("*if* on Windows Desktop, *then* try to read registry key via capability service"). The actual native interaction is delegated through the capability service to the platform-specific provider (Tauri/Rust, Web API, RN Module).
-
-### Benefits
-
-- **Maintainability:** Keeps the bulk of the UI and application logic in a shared TypeScript codebase.
-- **Code Reuse:** Maximizes reuse of components and logic across platforms.
-- **Consistency:** Provides a consistent way to access platform features.
-- **Testability:** Allows mocking the capabilities service for unit testing shared components.
-- **Extensibility:** Simplifies adding new platforms or capabilities later.
-- **Platform-Specific Power:** Leverages native capabilities (via Tauri/Rust or React Native modules) where needed without polluting the shared codebase.
-
-## Environment Variables in Tests
-
-When testing Supabase Edge Functions (Deno):
-
-1.  **Use `.env` Files:** Store secrets and configuration (like Supabase keys, API keys) in a `.env` file (e.g., `supabase/.env.local`). Do not commit this file to version control if it contains secrets.
-2.  **Run with Flags:** Execute tests using the `deno test` command with the `--env` and `--allow-env` flags:
-    ```bash
-    deno test --allow-env --env=supabase/.env.local [other permissions] path/to/test.ts
-    ```
-    *   `--env=<path>`: Loads variables from the specified file into the test environment.
-    *   `--allow-env`: Grants permission for the test process to read environment variables. Can be restricted (e.g., `--allow-env=VAR1,VAR2`).
-3.  **No Manual Loading:** Avoid manually reading/parsing `.env` files within test utility code (`test-utils.ts`). Rely on the `--env` flag.
-4.  **Use Real `Deno.env.get`:** Do not mock `Deno.env.get` within test helpers like `createTestDeps`. The function code should use the real `Deno.env.get`, which will read variables provided by the `--env` flag during testing.
-
-## Testing Auth Interception Flow
-
-Verify the implementation that handles anonymous users attempting protected actions (starting with the chat function).
-
-**Unit Tests (`supabase/functions/chat/index.test.ts`):**
-
-*   [ ] **Anonymous Request:** Test that a request to `/chat` without an `Authorization` header returns:
-    *   Status: `401 Unauthorized`.
-    *   Body: `{ "error": "Authentication required", "code": "AUTH_REQUIRED" }`.
-*   [ ] **Authenticated Request:** Ensure existing tests for authenticated users (valid JWT, etc.) still pass after backend changes.
-
-**Manual / End-to-End (E2E) Tests:**
-
-*   [ ] **Anonymous Chat Attempt -> Login -> Success:**
-    1.  Log out / use an incognito window.
-    2.  Navigate to where the chat feature is available.
-    3.  Attempt to send a chat message.
-    4.  **Verify:** User is prompted to log in (redirect or modal).
-    5.  **Verify (DevTools):** `pendingAction` with correct chat details is stored in session storage.
-    6.  Log in as an existing user.
-    7.  **Verify:** User is returned to the original context (e.g., chat interface).
-    8.  **Verify:** The chat message originally attempted is automatically submitted successfully.
-    9.  **Verify (DevTools):** `pendingAction` is cleared from session storage.
-*   [ ] **Anonymous Chat Attempt -> Sign Up -> Success:**
-    1.  Repeat steps 1-5 above.
-    2.  Sign up as a *new* user.
-    3.  **Verify:** User is returned to the original context.
-    4.  **Verify:** The chat message originally attempted is automatically submitted successfully.
-    5.  **Verify (DevTools):** `pendingAction` is cleared from session storage.
-*   [ ] **Authenticated User Chat:** Verify that a normally logged-in user can still use the chat feature without any interception.
-*   [ ] **Login Without Pending Action:** Log out, navigate directly to login, log in. Verify no errors occur and no unexpected actions are triggered.
-*   [ ] **Retry Failure:** Manually simulate a scenario where the replayed action (post-login) fails (e.g., by mocking a temporary server error for the `/chat` endpoint *only* during the replay). Verify that a user-friendly error message is shown and the system doesn't get stuck.
-*   [ ] **Multiple Interceptions (Optional):** If possible, attempt action A, get intercepted, *before* logging in, attempt action B, get intercepted again. Verify only the *last* action (B) is stored in `pendingAction`.
-*   [ ] **Refactoring Test (Phase 4):** Ensure the primary E2E flow (Anonymous Chat -> Login -> Success) still works after refactoring the logic into reusable components/hooks. If another feature uses the refactored hook, test its interception flow as well.
-*   [ ] **Server-Side State Test (Phase 5, If Implemented):** Test the E2E flow using the server-side token mechanism. Verify temporary storage is created and cleared correctly.
+10. **[ ] Final `

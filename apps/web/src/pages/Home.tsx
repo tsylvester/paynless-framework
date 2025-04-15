@@ -54,57 +54,27 @@ export function HomePage() {
 
   useEffect(() => {
     if (!hasSetDefaults.current && availableProviders.length > 0) {
-      logger.info('[HomePage] Attempting to set default AI selections...')
-      const defaultProvider = availableProviders.find(
-        (p) => p.name === 'OpenAI GPT-4o'
-      )
-      const defaultPromptId = '__none__'
+      logger.info('[HomePage] Attempting to set default AI selections...');
+      const defaultProvider = availableProviders.find(p => p.name === 'OpenAI GPT-4o');
+
+      const defaultPromptId = '__none__';
 
       if (defaultProvider) {
-        setSelectedProviderId(defaultProvider.id)
-        setSelectedPromptId(defaultPromptId)
-        hasSetDefaults.current = true
-        logger.info('[HomePage] Default provider and prompt selected.', {
-          providerId: defaultProvider.id,
-          promptId: defaultPromptId,
-        })
+        setSelectedProviderId(defaultProvider.id);
+        setSelectedPromptId(defaultPromptId);
+        hasSetDefaults.current = true;
+        logger.info('[HomePage] Default provider and prompt selected.', { 
+          providerId: defaultProvider.id, 
+          promptId: defaultPromptId 
+        });
+      } else {
+        logger.warn("[HomePage] Could not find default provider by name 'OpenAI GPT-4o'.", {
+            foundProvider: !!defaultProvider,
+            providerCount: availableProviders.length,
+        });
       }
     }
-  }, [availableProviders])
-
-  useEffect(() => {
-    if (user && session) {
-      const pendingMessageJson = sessionStorage.getItem('pendingChatMessage')
-      if (pendingMessageJson) {
-        logger.info('[HomePage] Found stashed message, attempting to send...')
-        try {
-          const pendingMessage = JSON.parse(pendingMessageJson)
-          sessionStorage.removeItem('pendingChatMessage')
-          sendMessage({
-            message: pendingMessage.message,
-            providerId: pendingMessage.providerId,
-            promptId: pendingMessage.promptId,
-          })
-        } catch (error) {
-          logger.error('[HomePage] Failed to parse or send stashed message:', {
-            error: String(error),
-          })
-          sessionStorage.removeItem('pendingChatMessage')
-        }
-      }
-    }
-  }, [user, session, sendMessage])
-
-  const handleLimitReached = useCallback(() => {
-    const pendingMessageJson = sessionStorage.getItem('pendingChatMessage')
-    if (pendingMessageJson) {
-      setShowLimitDialog(true)
-    } else {
-      logger.error(
-        '[HomePage] onLimitReached called but no pending message found in sessionStorage.'
-      )
-    }
-  }, [])
+  }, [availableProviders]);
 
   const handleRegisterRedirect = () => {
     setShowLimitDialog(false)

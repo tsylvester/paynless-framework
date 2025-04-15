@@ -76,7 +76,7 @@ export function AppContent() {
           />
         ))}
       </Routes>
-      <ChatwootIntegration />
+      {/* <ChatwootIntegration /> */}{/* Temporarily commented out */}
     </>
   );
 }

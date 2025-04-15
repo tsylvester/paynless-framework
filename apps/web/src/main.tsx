@@ -3,13 +3,13 @@ import { createRoot } from 'react-dom/client'
 import App from './App'
 import './index.css'
 import { initializeApiClient } from '@paynless/api-client'
-import { logger, LogLevel } from '@paynless/utils'
+import { logger/*, LogLevel*/ } from '@paynless/utils'
 import ReactGA from 'react-ga4'
 
 // --- Configure Logger Early ---
 // Only show errors in the console for now to reduce noise
-logger.configure({ minLevel: LogLevel.ERROR });
-logger.info("Logger configured to minimum level: ERROR"); // This line itself won't show now
+//logger.configure({ minLevel: LogLevel.ERROR });
+//logger.info("Logger configured to minimum level: ERROR"); // This line itself won't show now
 
 // --- Initialize API Client ---
 const supabaseUrl = import.meta.env['VITE_SUPABASE_URL']
