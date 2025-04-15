@@ -56,12 +56,15 @@ export const PromptSelector: React.FC<PromptSelectorProps> = ({
           />
         </SelectTrigger>
         <SelectContent>
+          <SelectItem key="__none__" value="__none__">
+            -- None --
+          </SelectItem>
+
           {availablePrompts &&
             availablePrompts.map((prompt: SystemPrompt) => (
               <SelectItem
                 key={prompt.id}
                 value={prompt.id}
-                disabled={!!selectedPromptId}
               >
                 {prompt.name}
               </SelectItem>

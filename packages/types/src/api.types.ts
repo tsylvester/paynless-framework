@@ -1,14 +1,3 @@
-export interface ApiResponse<T> {
-  data?: T;
-  error?: ApiError;
-  status: number;
-  rateLimit?: {
-    limit: number;
-    remaining: number;
-    reset: number;
-  };
-}
-
 export interface ApiError {
   code: string;
   message: string;
@@ -62,4 +51,19 @@ export interface ApiEndpoint {
       schema: Record<string, unknown>;
     };
   };
+}
+
+/**
+ * Utility type for responses from API endpoints
+ */
+export type ApiResponse<T> = 
+  | { status: number; data: T; error?: ApiError }
+  | { status: number; data?: never; error: ApiError };
+
+// ---> Define custom error for auth requirement <---
+export class AuthRequiredError extends Error {
+    constructor(message: string = 'Authentication required') {
+        super(message);
+        this.name = 'AuthRequiredError';
+    }
 }

@@ -16,14 +16,10 @@ export function HomePage() {
   const sendMessage = useAiStore(state => state.sendMessage);
   const startNewChat = useAiStore(state => state.startNewChat);
   const availableProviders = useAiStore(state => state.availableProviders);
-  const availablePrompts = useAiStore(state => state.availablePrompts);
 
   const [selectedProviderId, setSelectedProviderId] = useState<string | null>(null);
   const [selectedPromptId, setSelectedPromptId] = useState<string | null>(null);
   const [showLimitDialog, setShowLimitDialog] = useState(false);
-  // TODO: Implement stashed message logic for post-registration sending (Phase 4)
-  // Prefix with underscore to silence TS6133 until implemented
-  const [_stashedMessage, _setStashedMessage] = useState<{ message: string; providerId: string; promptId: string; } | null>(null);
 
   const hasSetDefaults = useRef(false);
 
@@ -49,7 +45,7 @@ export function HomePage() {
           promptId: defaultPromptId 
         });
       } else {
-        logger.warn("[HomePage] Could not find default provider by name ('OpenAI GPT-4o').", {
+        logger.warn("[HomePage] Could not find default provider by name 'OpenAI GPT-4o'.", {
             foundProvider: !!defaultProvider,
             providerCount: availableProviders.length,
         });

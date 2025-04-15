@@ -15,6 +15,8 @@ import {
 } from '@paynless/types';
 // Import authStore for mocking
 import { useAuthStore } from './authStore';
+// ---> Import AuthRequiredError from types <--- 
+import { AuthRequiredError } from '@paynless/types';
 
 // --- Mock the entire @paynless/api-client module ---
 // Define mock functions for the methods we need to control
@@ -24,40 +26,38 @@ const mockSendChatMessage = vi.fn();
 const mockGetChatHistory = vi.fn();
 const mockGetChatMessages = vi.fn();
 
-vi.mock('@paynless/api-client', () => ({
-    // Mock the 'api' export
-    api: {
-        // Mock the 'ai' method to return our mock functions
-        ai: () => ({
-            getAiProviders: mockGetAiProviders,
-            getSystemPrompts: mockGetSystemPrompts,
-            sendChatMessage: mockSendChatMessage,
-            getChatHistory: mockGetChatHistory,
-            getChatMessages: mockGetChatMessages,
-        }),
-        // Add mocks for other parts of 'api' if needed, otherwise empty objects/functions
-        // These might be needed if the store indirectly uses them, though unlikely for aiStore
-        auth: () => ({}),
-        billing: () => ({}),
-        // Mock base methods if the store somehow bypasses the sub-clients
-        get: vi.fn(),
-        post: vi.fn(),
-        put: vi.fn(),
-        delete: vi.fn(),
-    },
-    // Mock other exports from the module if necessary
-    initializeApiClient: vi.fn(),
-    getApiClient: vi.fn(),
-    // Keep ApiError if it's used (it likely isn't directly in the store)
-    ApiError: class MockApiError extends Error {
-        code?: string | number;
-        constructor(message: string, code?: string | number) {
-            super(message);
-            this.code = code;
-            this.name = 'MockApiError';
-        }
-    },
-}));
+vi.mock('@paynless/api-client', async (importOriginal) => {
+    // ---> Import the original module <--- 
+    const actual = await importOriginal<typeof import('@paynless/api-client')>();
+    return {
+        // ---> Spread actual exports to keep non-mocked things like AuthRequiredError <--- 
+        ...actual, 
+        // Mock the 'api' export (overwriting the original)
+        api: {
+            // ---> Keep existing api mock structure <--- 
+            ...actual.api, // Include other parts of api if needed
+            ai: () => ({
+                getAiProviders: mockGetAiProviders,
+                getSystemPrompts: mockGetSystemPrompts,
+                sendChatMessage: mockSendChatMessage,
+                getChatHistory: mockGetChatHistory,
+                getChatMessages: mockGetChatMessages,
+            }),
+            // Add mocks for other parts of 'api' if needed
+            auth: () => ({}),
+            billing: () => ({}),
+            // Mock base methods if the store somehow bypasses the sub-clients
+            get: vi.fn(),
+            post: vi.fn(),
+            put: vi.fn(),
+            delete: vi.fn(),
+        },
+        // Mock other specific exports if necessary (overwriting originals)
+        initializeApiClient: vi.fn(), 
+        // getApiClient: vi.fn(), // Example if needed
+        // ApiError: actual.ApiError, // Keep original ApiError if needed, but we defined a mock below?
+    };
+});
 
 // --- Mock the authStore ---
 vi.mock('./authStore');
@@ -284,10 +284,11 @@ describe('aiStore', () => {
 
         it('should set loading state, add optimistic message, call API, and update state on success', async () => {
             // Arrange
+            // ---> Mock API to return successful ApiResponse object <--- 
             mockSendChatMessage.mockResolvedValue({ 
-                success: true, 
                 data: mockAssistantResponse, 
-                statusCode: 200 
+                error: null,
+                status: 200 
             });
             const initialMessages = useAiStore.getState().currentChatMessages.length;
 
@@ -328,10 +329,11 @@ describe('aiStore', () => {
              // Arrange
              const newChatId = 'new-chat-id-123';
              const responseWithChatId = { ...mockAssistantResponse, chat_id: newChatId };
+             // ---> Mock API to return successful ApiResponse object <--- 
              mockSendChatMessage.mockResolvedValue({ 
-                 success: true, 
                  data: responseWithChatId, 
-                 statusCode: 200 
+                 error: null, 
+                 status: 200 
              });
              useAiStore.setState({ currentChatId: null }); // Start with no chatId
  
@@ -350,7 +352,12 @@ describe('aiStore', () => {
         it('should handle API error, remove optimistic message, and set aiError', async () => {
             // Arrange
             const errorMsg = 'AI failed to respond';
-            mockSendChatMessage.mockResolvedValue({ success: false, error: errorMsg, statusCode: 500 });
+            // ---> Mock API to return ApiResponse with error <--- 
+            mockSendChatMessage.mockResolvedValue({ 
+                data: null, 
+                error: { code: '500', message: errorMsg }, 
+                status: 500 
+            });
             const initialMessages = useAiStore.getState().currentChatMessages.length;
 
             // Act
@@ -376,9 +383,10 @@ describe('aiStore', () => {
             expect(state.aiError).toBe(errorMsg);
         });
 
-        it('should handle thrown error during API call', async () => {
+        it('should handle thrown error during API call (network error)', async () => {
             // Arrange
             const errorMsg = 'Network connection failed';
+            // ---> Mock API to reject (simulates network error) <--- 
             mockSendChatMessage.mockRejectedValue(new Error(errorMsg));
             const initialMessages = useAiStore.getState().currentChatMessages.length;
 
@@ -392,220 +400,100 @@ describe('aiStore', () => {
             expect(state.aiError).toBe(errorMsg);
         });
         
-        it('should return null and set error if no auth token is available', async () => {
-             // Arrange
-             // Mock authStore to return no session/token
-             if (vi.isMockFunction(useAuthStore)) {
-                vi.mocked(useAuthStore).getState.mockReturnValueOnce({
-                    user: null, 
-                    session: null, // No session
-                    profile: null,
-                    isLoading: false,
-                    error: null,
-                    navigate: vi.fn(),
-                    setNavigate: vi.fn(),
-                    login: vi.fn(),
-                    logout: vi.fn(),
-                    register: vi.fn(),
-                    setProfile: vi.fn(),
-                    setUser: vi.fn(),
-                    setSession: vi.fn(),
-                    setIsLoading: vi.fn(),
-                    setError: vi.fn(),
-                    initialize: vi.fn(),
-                    refreshSession: vi.fn(),
-                    updateProfile: vi.fn(),
-                    clearError: vi.fn(),
-                } as any);
-            }
-            
-             // Act
-             const result = await useAiStore.getState().sendMessage(messageData);
- 
-             // Assert
-             expect(result).toBeNull();
-             expect(useAiStore.getState().aiError).toBe('Authentication required to send message.');
-             expect(mockSendChatMessage).not.toHaveBeenCalled();
-             expect(useAiStore.getState().isLoadingAiResponse).toBe(false);
-         });
+        // --- REMOVED Test: 'should return null and set error if no auth token is available' ---
+        // The behavior changed: We now attempt the API call even without a token
+        // and expect the apiClient to throw AuthRequiredError, which is tested elsewhere.
 
-        // +++ NEW Test Case: Handle 401 AUTH_REQUIRED error +++
-        it('should handle 401 AUTH_REQUIRED, store action, and navigate to login', async () => {
+        // Test for 401 AUTH_REQUIRED needs updating
+        it('should handle AuthRequiredError, remove optimistic msg, trigger navigation', async () => {
             // Arrange
-            const errorResponse = { 
-                status: 401, 
-                error: { code: '401', message: 'Authentication required' } 
-            };
-            mockSendChatMessage.mockResolvedValue(errorResponse);
-
+            // ---> Mock API to THROW AuthRequiredError by NAME <--- 
+            const authError = new Error('Please log in first'); // Use standard Error
+            authError.name = 'AuthRequiredError';             // Set the name
+            mockSendChatMessage.mockRejectedValue(authError);
+    
             const mockNavigate = vi.fn();
-            // Ensure useAuthStore mock provides our spy navigate function
             if (vi.isMockFunction(useAuthStore)) {
                 vi.mocked(useAuthStore).getState.mockReturnValue({
-                    // Keep existing mocked state but override navigate
-                    ...(useAuthStore.getState()), // Spread existing mocks
-                    navigate: mockNavigate, // Use our spy
+                    ...(useAuthStore.getState()), 
+                    navigate: mockNavigate,
                 });
             }
-
-            const setItemSpy = vi.spyOn(Storage.prototype, 'setItem');
+    
+            // Spying on sessionStorage is NO LONGER needed here, apiClient handles it
+            // const setItemSpy = vi.spyOn(Storage.prototype, 'setItem');
             
-            // Mock window.location for returnPath
-            const originalLocation = window.location;
-            // @ts-ignore - Need to ignore TS complaining about replacing location
-            delete window.location;
-            window.location = { 
-                ...originalLocation, // Keep existing properties like origin, host etc.
-                pathname: '/some/chat/page', 
-                search: '?query=param' 
-            } as Location;
-            const expectedReturnPath = '/some/chat/page?query=param';
-
             const initialMessages = useAiStore.getState().currentChatMessages.length;
-
-            // Act
-            const promise = useAiStore.getState().sendMessage(messageData);
-            
-            // Check optimistic state before awaiting
-            expect(useAiStore.getState().isLoadingAiResponse).toBe(true);
-            expect(useAiStore.getState().currentChatMessages.length).toBe(initialMessages + 1);
-            
-            // Await the action completion
-            await promise;
-
-            // Assert
-            const state = useAiStore.getState();
-            expect(state.isLoadingAiResponse).toBe(false); // Should be false after handling
-            expect(state.currentChatMessages.length).toBe(initialMessages); // Optimistic message removed
-            expect(state.aiError).toBe('Authentication required. Please log in.');
-            
-            // Assert sessionStorage call
-            expect(setItemSpy).toHaveBeenCalledTimes(1);
-            expect(setItemSpy).toHaveBeenCalledWith('pendingAction', expect.any(String));
-            
-            // Parse the stored data to check its contents
-            const storedActionString = setItemSpy.mock.calls[0][1];
-            const storedAction = JSON.parse(storedActionString);
-            expect(storedAction).toEqual({
-                endpoint: '/chat',
-                method: 'POST',
-                body: { // Ensure body matches the input messageData
-                    message: messageData.message,
-                    providerId: messageData.providerId,
-                    promptId: messageData.promptId,
-                },
-                returnPath: expectedReturnPath
-            });
-
-            // Assert navigation
-            expect(mockNavigate).toHaveBeenCalledTimes(1);
-            expect(mockNavigate).toHaveBeenCalledWith('/login');
-
-            // Restore window.location
-            window.location = originalLocation;
-        });
-
-        // +++ NEW Test Case: Handle 401 AUTH_REQUIRED with sessionStorage failure +++
-        it('should handle 401 AUTH_REQUIRED but fail gracefully if sessionStorage write fails', async () => {
-            // Arrange
-            const errorResponse = { 
-                status: 401, 
-                error: { code: '401', message: 'Authentication required' } 
-            };
-            mockSendChatMessage.mockResolvedValue(errorResponse);
-
-            const mockNavigate = vi.fn();
-            if (vi.isMockFunction(useAuthStore)) {
-                 vi.mocked(useAuthStore).getState.mockReturnValue({
-                    ...(useAuthStore.getState()),
-                    navigate: mockNavigate,
-                 });
-             }
-
-            // Mock sessionStorage.setItem to throw an error
-            const setItemSpy = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
-                throw new Error('Session storage is disabled');
-            });
-            
-            // Mock window.location needed for the try block
-            const originalLocation = window.location;
-            delete window.location;
-            window.location = { ...originalLocation, pathname: '/some/path', search: '' } as Location;
-
-            const initialMessages = useAiStore.getState().currentChatMessages.length;
-
+    
             // Act
             const promise = useAiStore.getState().sendMessage(messageData);
             expect(useAiStore.getState().isLoadingAiResponse).toBe(true);
             expect(useAiStore.getState().currentChatMessages.length).toBe(initialMessages + 1);
-            await promise;
-
+            await promise; // Await the action completion
+    
             // Assert
             const state = useAiStore.getState();
             expect(state.isLoadingAiResponse).toBe(false);
-            expect(state.currentChatMessages.length).toBe(initialMessages); // Optimistic removed
-            expect(state.aiError).toBe('An error occurred. Please try logging in and sending your message again.');
-            expect(setItemSpy).toHaveBeenCalledTimes(1); // Attempted to set
-            expect(mockNavigate).not.toHaveBeenCalled(); // Should not navigate
-
+            expect(state.currentChatMessages.length).toBe(initialMessages); // Optimistic message removed
+            // ---> Error state should NOT be set if navigation is triggered <--- 
+            expect(state.aiError).toBeNull(); 
+            
+            // Assert sessionStorage was NOT called by the store action
+            // expect(setItemSpy).not.toHaveBeenCalled(); 
+    
+            // Assert navigation
+            expect(mockNavigate).toHaveBeenCalledTimes(1);
+            expect(mockNavigate).toHaveBeenCalledWith('/login');
+    
             // Restore mocks
-            setItemSpy.mockRestore();
-            window.location = originalLocation;
+            // setItemSpy.mockRestore(); 
         });
 
-         // +++ NEW Test Case: Handle 401 AUTH_REQUIRED with navigate unavailable +++
-         it('should handle 401 AUTH_REQUIRED and set error if navigate is unavailable', async () => {
-            // Arrange
-            const errorResponse = { 
-                status: 401, 
-                error: { code: '401', message: 'Authentication required' } 
-            };
-            mockSendChatMessage.mockResolvedValue(errorResponse);
+        // Test for sessionStorage failure during AUTH_REQUIRED is NO LONGER relevant here
+        // it('should handle 401 AUTH_REQUIRED but fail gracefully if sessionStorage write fails', ...) 
 
+        // Test for navigate unavailable during AUTH_REQUIRED needs updating
+        it('should handle AuthRequiredError and set error state if navigate is unavailable', async () => {
+            // Arrange
+            // ---> Mock API to THROW AuthRequiredError by NAME <--- 
+            const authError = new Error('Log in required'); // Use standard Error
+            authError.name = 'AuthRequiredError';          // Set the name
+            mockSendChatMessage.mockRejectedValue(authError);
+    
             // Mock authStore to return navigate as null
              if (vi.isMockFunction(useAuthStore)) {
                 vi.mocked(useAuthStore).getState.mockReturnValue({
                     ...(useAuthStore.getState()),
-                    navigate: null, // <<< Simulate navigate not being ready/set
+                    navigate: null, 
                 });
             }
-
-            const setItemSpy = vi.spyOn(Storage.prototype, 'setItem');
+    
+            // No need to spy on sessionStorage here
+            // const setItemSpy = vi.spyOn(Storage.prototype, 'setItem');
             
-            const originalLocation = window.location;
-            delete window.location;
-            window.location = { ...originalLocation, pathname: '/another/page', search: '' } as Location;
-            const expectedReturnPath = '/another/page';
-
             const initialMessages = useAiStore.getState().currentChatMessages.length;
-
+    
             // Act
             const promise = useAiStore.getState().sendMessage(messageData);
              expect(useAiStore.getState().isLoadingAiResponse).toBe(true);
              expect(useAiStore.getState().currentChatMessages.length).toBe(initialMessages + 1);
              await promise;
-
+    
             // Assert
             const state = useAiStore.getState();
             expect(state.isLoadingAiResponse).toBe(false);
             expect(state.currentChatMessages.length).toBe(initialMessages); // Optimistic removed
-            // Should still set the standard auth error, as storage succeeded but navigation couldn't happen
-            expect(state.aiError).toBe('Authentication required. Please log in.');
+            // ---> Error state SHOULD be set in this fallback case <--- 
+            expect(state.aiError).toBe(authError.message);
             
-            // Assert sessionStorage call (should have succeeded)
-             expect(setItemSpy).toHaveBeenCalledTimes(1);
-             expect(setItemSpy).toHaveBeenCalledWith('pendingAction', expect.stringContaining(expectedReturnPath));
-
-             // Assert navigation was NOT called
-             // (We don't have access to the specific mockNavigate here, but can check via authStore mock if needed,
-             // or just rely on the logged error and the correct error state being set)
-
+            // Assert sessionStorage was NOT called by store
+            // expect(setItemSpy).not.toHaveBeenCalled();
+    
+             // Assert navigation was NOT called (implicitly checked by error state being set)
+    
             // Restore mocks
-            setItemSpy.mockRestore();
-            window.location = originalLocation;
+            // setItemSpy.mockRestore();
         });
-        // +++ End NEW Test Cases +++
-
     });
 
     // --- Tests for loadChatHistory (UPDATED) ---

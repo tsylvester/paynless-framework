@@ -1,8 +1,8 @@
 **Consolidated Project Testing Plan & Status (v6 - Anonymous Auth Refactor)**
 
 **Incomplete Features** 
-*   [ ] AI Chat on homepage doesn't work
-*   [ ] AI Chat signup/login flow
+*   [⏸️] AI Chat on homepage doesn't work
+*   [✅] AI Chat signup/login flow
 *   [ ] AI model sync automation
 *   [ ] Mixpanel or Posthog integration
 *   [🚧] Test project on Bolt & Lovable 
@@ -10,8 +10,9 @@
 *   [ ] User email automation - abstract for generic but specific implementation with Kit 
 *   [ ] Change email from within app
 *   [ ] Change password from within app
-*   [ ] shadcn
-*   [ ] Loading skeletons for all components 
+*   [✅] shadcn implemented
+    *   [ ] Convert all pages / components to shadcn
+    *   [ ] Loading skeletons for all components 
 *   [ ] Change payment method doesn't register site
 *   [ ] Run SEO scan 
 

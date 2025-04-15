@@ -9,8 +9,9 @@ import {
 	SystemPrompt,
 	ChatApiRequest,
 	FetchOptions,
+    ApiResponse,
 } from '@paynless/types';
-import { api } from '@paynless/api-client'; 
+import { api } from '@paynless/api-client';
 import { logger } from '@paynless/utils';
 import { useAuthStore } from './authStore';
 // Removed produce import as immer middleware handles it
@@ -93,23 +94,11 @@ export const useAiStore = create<AiState & AiActions>()(
             },
 
             sendMessage: async (data) => {
-                // --- Removed isAnonymous from destructuring ---
                 const { message, providerId, promptId, chatId: inputChatId } = data;
-                const { currentChatId } = get(); // Removed anonymous count/limit from get()
+                const { currentChatId } = get(); 
 
-                // --- Removed anonymous limit check ---
-
-                // --- Get Token for Authenticated requests ---
-                let token: string | undefined;
-                // --- Removed !isAnonymous check ---
-                token = useAuthStore.getState().session?.access_token;
-                if (!token) {
-                    logger.error('Cannot send message: No auth token available.');
-                    // Set error state appropriately
-                    set({ aiError: 'Authentication required to send message.', isLoadingAiResponse: false });
-                    return null; // Or handle error as appropriate
-                }
-                // --- End Token Check ---
+                // Let the API call proceed, and handle potential 401 via AuthRequiredError
+                const token = useAuthStore.getState().session?.access_token; // Still need token for options if logged in
 
                 // Define helpers inline or move outside create if complex
                 const _addOptimisticUserMessage = (msgContent: string): string => {
@@ -136,74 +125,22 @@ export const useAiStore = create<AiState & AiActions>()(
                 try {
                     const effectiveChatId = inputChatId ?? currentChatId ?? undefined;
                     const requestData: ChatApiRequest = { message, providerId, promptId, chatId: effectiveChatId };
-                    // *** Pass token directly, remove isPublic/anon header logic ***
-                    const options: FetchOptions = { token }; // Only token is needed now
+                    const options: FetchOptions = { token }; 
 
-                    // --- Removed anonymous secret header logic ---
+                    // ---> Call API and get the full response object <--- 
+                    const response: ApiResponse<ChatMessage> = await api.ai().sendChatMessage(requestData, options);
 
-                    const response = await api.ai().sendChatMessage(requestData, options);
-
-                    // ---> Check for AUTH_REQUIRED error BEFORE assuming success <--- 
-                    if (response.status === 401 && response.error?.message === 'Authentication required') {
-                        // Inferring code='AUTH_REQUIRED' from the message based on apiClient logic
-                        logger.warn('Authentication required detected in sendMessage response. Storing pending action...');
-                        
-                        // ---> Step 2.2: Store pending action in sessionStorage <--- 
-                        try {
-                            // ---> Get current path BEFORE navigating <--- 
-                            const returnPath = window.location.pathname + window.location.search;
-
-                            const actionDetails = {
-                                endpoint: '/chat', // TODO: Generalize this endpoint later (Phase 4)
-                                method: 'POST',   // TODO: Generalize this method later (Phase 4)
-                                body: requestData, // The original request data
-                                returnPath: returnPath // Store the path to return to after login
-                            };
-                            sessionStorage.setItem('pendingAction', JSON.stringify(actionDetails));
-                            logger.info('Stored pending action in sessionStorage.', { key: 'pendingAction', details: actionDetails });
-                        } catch (storageError) {
-                            const errMsg = storageError instanceof Error ? storageError.message : String(storageError);
-                            logger.error('Failed to store pending action in sessionStorage:', { error: errMsg });
-                            // If storage fails, we probably can't proceed with the replay logic.
-                            // Set a generic error for the user.
-                             set(state => {
-                                state.aiError = 'An error occurred. Please try logging in and sending your message again.';
-                                state.isLoadingAiResponse = false;
-                                state.currentChatMessages = state.currentChatMessages.filter(
-                                    (msg) => msg.id !== tempUserMessageId
-                                );
-                             });
-                            return null;
-                        }
-
-                        // ---> Step 2.3: Trigger authentication flow (redirect/modal) <--- 
-                        const navigate = useAuthStore.getState().navigate;
-                        if (navigate) {
-                            logger.info('Navigating to login page for pending action.');
-                            // Navigate to login, potentially adding returnTo later if needed
-                            // navigate(`/login?returnTo=${encodeURIComponent(returnPath)}`); 
-                            navigate('/login'); 
-                        } else {
-                            logger.error('Navigate function not found in authStore. Cannot redirect for login.');
-                            // Fallback: Ensure user sees the error message set below
-                        }
-
-                        // Set specific error and clear optimistic message
-                        set(state => {
-                            state.currentChatMessages = state.currentChatMessages.filter(
-                                (msg) => msg.id !== tempUserMessageId
-                            );
-                            logger.info('Removed optimistic message for AUTH_REQUIRED', { id: tempUserMessageId });
-                            state.aiError = 'Authentication required. Please log in.';
-                            state.isLoadingAiResponse = false; // Ensure loading is stopped
-                        });
-                        return null; // Stop processing this response
+                    // ---> Check for errors returned in the response object <--- 
+                    if (response.error) {
+                        // Throw the error to be caught by the outer catch block
+                        throw new Error(response.error.message || 'API returned an error');
                     }
 
-                    // ---> Original success/error handling <---
-                    if (!response.error && response.data) {
-                        const assistantMessage = response.data;
-                        set((state) => { // Immer set for success update
+                    // ---> Success Handling (requires response.data) <--- 
+                    // Ensure data exists (type guard)
+                    if (response.data) {
+                        const assistantMessage = response.data; // Now we have the ChatMessage
+                        set((state) => {
                             if (!state.currentChatId && assistantMessage.chat_id) {
                                 state.currentChatId = assistantMessage.chat_id;
                                 const userMsgIndex = state.currentChatMessages.findIndex((m: ChatMessage) => m.id === tempUserMessageId);
@@ -217,29 +154,47 @@ export const useAiStore = create<AiState & AiActions>()(
                         logger.info('Message sent and response received:', { messageId: assistantMessage.id });
                         return assistantMessage;
                     } else {
-                        // Handle other API errors (non-401 or different body)
-                        const errorMsg = typeof response.error === 'string' 
-                            ? response.error 
-                            : (response.error?.message || 'Failed to send message');
-                        throw new Error(errorMsg); // Throw to be caught by the generic catch block below
+                        // Should not happen if error is null, but handle defensively
+                        throw new Error('API returned success status but no data.');
                     }
-                } catch (err: any) { // Catches network errors or errors thrown from the 'else' block above
-                    // --- Original Generic Error Handling (Now primarily for network errors) ---
-                    const errorMessage = err?.message || String(err) || 'Unknown error during send message API call';
-                    logger.error('Error during send message API call (catch block):', {
-                        errorMessage: errorMessage,
-                        optimisticMessageId: tempUserMessageId,
-                        errorDetails: err 
-                    });
 
-                    set(state => {
-                        state.currentChatMessages = state.currentChatMessages.filter(
-                            (msg) => msg.id !== tempUserMessageId
-                        );
-                        logger.info('Removed optimistic message on generic error/network error', { id: tempUserMessageId });
-                        state.aiError = errorMessage;
-                    });
-                    return null; // Explicitly return null on error
+                } catch (err: any) { // Catches AuthRequiredError, network errors, or errors thrown from above
+                    // ---> Check error name instead of instanceof <--- 
+                    if (err?.name === 'AuthRequiredError') { 
+                        logger.warn('sendMessage caught AuthRequiredError. Triggering login flow...');
+                        const navigate = useAuthStore.getState().navigate;
+                        if (navigate) {
+                            navigate('/login');
+                        } else {
+                            logger.error('Navigate function not found in authStore. Cannot redirect for login.');
+                            // Fallback: Set error state if navigation fails
+                             set(state => {
+                                state.aiError = err.message || 'Authentication required. Please log in.'; 
+                             });
+                        }
+                        // Ensure optimistic message is removed even if navigation fails
+                        set(state => {
+                            state.currentChatMessages = state.currentChatMessages.filter(
+                                (msg) => msg.id !== tempUserMessageId
+                            );
+                        });
+                    } else {
+                        // ---> Handle other errors (network, non-401 API errors) <--- 
+                        const errorMessage = err?.message || String(err) || 'Unknown error during send message API call';
+                        logger.error('Error during send message API call (catch block):', {
+                            errorMessage: errorMessage,
+                            optimisticMessageId: tempUserMessageId,
+                            errorDetails: err 
+                        });
+                        set(state => {
+                            state.currentChatMessages = state.currentChatMessages.filter(
+                                (msg) => msg.id !== tempUserMessageId
+                            );
+                            logger.info('Removed optimistic message on generic error/network error', { id: tempUserMessageId });
+                            state.aiError = errorMessage;
+                        });
+                    }
+                    return null; // Return null on any error
                 } finally {
                     // Always reset loading state
                     set(state => {
