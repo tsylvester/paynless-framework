@@ -63,7 +63,7 @@ export interface AiActions {
 }
 
 // Combine state and actions for the store type
-type AiStoreType = AiState & AiActions;
+export type AiStoreType = AiState & AiActions;
 
 export const useAiStore = create<AiStoreType>()(
     // devtools(
@@ -169,8 +169,9 @@ export const useAiStore = create<AiStoreType>()(
                         set(state => {
                             const newChatId = assistantMessage.chat_id;
                             let updatedMessages = state.currentChatMessages;
-                            // Update chat_id of the user message if it was a new chat
-                            if (!existingChatId && newChatId) {
+                            // Fix: Update chat_id of the user message if a newChatId is received,
+                            // regardless of whether existingChatId was present.
+                            if (newChatId) { 
                                 updatedMessages = updatedMessages.map(msg => 
                                     msg.id === tempUserMessageId ? { ...msg, chat_id: newChatId } : msg
                                 );
@@ -179,7 +180,7 @@ export const useAiStore = create<AiStoreType>()(
                             updatedMessages.push(assistantMessage);
 
                             return {
-                                currentChatId: existingChatId ? existingChatId : (newChatId || null),
+                                currentChatId: newChatId || existingChatId || null,
                                 currentChatMessages: updatedMessages,
                                 isLoadingAiResponse: false,
                             };
@@ -192,39 +193,55 @@ export const useAiStore = create<AiStoreType>()(
 
                 } catch (err: any) {
                     let errorHandled = false;
+                    let authErrorMessage: string | null = null; // Store original auth error message
+
                     if (err?.name === 'AuthRequiredError') { 
                         logger.warn('sendMessage caught AuthRequiredError...');
+                        authErrorMessage = err.message || 'Authentication required'; // Capture the message
+                        let storageSuccess = false; 
                         try {
-                            const pendingAction = { /* ... omitted for brevity ... */ }; 
+                            const pendingAction = { 
+                                endpoint: 'chat', 
+                                method: 'POST',
+                                body: { ...requestData, chatId: effectiveChatId ?? null }, 
+                                returnPath: '/chat'
+                            };
                             sessionStorage.setItem('pendingAction', JSON.stringify(pendingAction));
                             logger.info('Stored pending chat action:', pendingAction);
+                            storageSuccess = true; 
                         } catch (storageError: unknown) {
-                           /* ... omitted for brevity ... */
+                           logger.error('Failed to store pending action in sessionStorage:', { 
+                                error: storageError instanceof Error ? storageError.message : String(storageError)
+                           });
                         }
-                        const navigate = useAuthStore.getState().navigate;
-                        if (navigate) {
-                            navigate('/login');
-                            errorHandled = true; // Prevent setting generic error
-                        } else {
-                            logger.error('Navigate function not found...');
-                            // Error will be set below if navigation fails
+                        
+                        if (storageSuccess) {
+                            const navigate = useAuthStore.getState().navigate;
+                            if (navigate) {
+                                navigate('/login');
+                                errorHandled = true; // Set only if navigation occurs
+                            } else {
+                                logger.error('Navigate function not found after successful storage...');
+                            }
                         }
                     }
 
                     // Use plain set without immer for error/cleanup
                     set(state => {
-                        // Filter out optimistic message regardless of error type
                         const finalMessages = state.currentChatMessages.filter(
                             (msg) => msg.id !== tempUserMessageId
                         );
-                        const finalError = errorHandled ? null : (err?.message || String(err) || 'Unknown error');
+                        const finalError = errorHandled 
+                            ? null 
+                            : (authErrorMessage || err?.message || String(err) || 'Unknown error');
+                            
                         if (!errorHandled) {
-                            logger.error('Error during send message API call (catch block):', { /*...*/});
+                             logger.error('Error during send message API call (catch block):', { error: finalError });
                         }
                         return { 
                             currentChatMessages: finalMessages,
                             aiError: finalError,
-                            isLoadingAiResponse: false, // Ensure loading is always false after error/completion
+                            isLoadingAiResponse: false, 
                          };
                     });
                     return null;

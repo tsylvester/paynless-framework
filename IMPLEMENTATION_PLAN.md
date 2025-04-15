@@ -210,69 +210,48 @@ Implement a pattern to handle anonymous users attempting actions that require au
 **Phase 1: Implement New Logic & Flow**
 
 1.  **Modify `aiStore.sendMessage`:**
-    *   [x] Locate the section where `pendingAction` is stored in session storage for anonymous users.
-    *   [x] Ensure the `returnPath` stored within the `pendingAction` object is explicitly set to `'/chat'`. 
-        *   *Note: Done by adding logic to `aiStore.sendMessage` catch block to create and store the full `pendingAction` including `returnPath: '/chat'`.*
+    *   [✅] Located section for anonymous users.
+    *   [✅] Ensured `returnPath: '/chat'` stored in `pendingAction`.
 
-2.  **Add `loadSpecificChat` Action to `aiStore` (if it doesn't exist):**
-    *   [x] Define a new action, e.g., `loadSpecificChat(chatId: string): Promise<void>`.
-        *   *Note: Existing action `loadChatDetails` fulfills this requirement.*
-    *   [x] This action should:
-        *   Set loading states (`isDetailsLoading: true`).
-        *   Call a new API client method (e.g., `api.ai().getChatMessages(chatId)`) to fetch messages for the given `chatId`.
-        *   On success:
-            *   Update the store state: `set({ currentChatId: chatId, currentChatMessages: messages, isDetailsLoading: false, aiError: null })`.
-            *   Consider fetching chat details (like title, if separate) if necessary.
-        *   On failure:
-            *   Set error state (`aiError`) and loading state (`isDetailsLoading: false`).
-    *   [x] **Add corresponding API client method:** If `api.ai().getChatMessages(chatId)` doesn't exist, add it to `@paynless/api-client` to call the appropriate backend endpoint (likely needs a new Supabase function or modifies the existing chat history one).
-        *   *Note: Assumed to exist as `loadChatDetails` uses it.*
+2.  **Use `loadChatDetails` Action in `aiStore`:**
+    *   [✅] Confirmed `loadChatDetails(chatId: string)` exists and fetches messages.
+    *   [✅] Confirmed necessary API client method (`api.ai().getChatMessages(chatId)`) exists or is handled.
 
 3.  **Modify `authStore._checkAndReplayPendingAction`:**
-    *   [x] Locate the success handler *after* the API call within the replay logic (in `login`/`register`).
-    *   [x] Check if the replayed action was indeed a chat message (`endpoint === '/chat'`, `method === 'POST'`).
-    *   [x] If it was a successful chat replay:
-        *   [x] Extract the `chat_id` from the API response (`replayResponse.data.chat_id`).
-        *   [x] **Store** this `chat_id` in **session storage** (`sessionStorage.setItem('loadChatIdOnRedirect', chatId)`).
-        *   [x] **Navigate** the user to the `returnPath` retrieved from the `pendingAction` object (which should be `/chat`). Use the `navigate` function from the store.
-        *   [x] Ensure the `pendingAction` is still cleared from session storage.
+    *   [✅] Located success handler after API replay.
+    *   [✅] Checked if replayed action was `POST /chat`.
+    *   [✅] Extracted `chat_id` from response.
+    *   [✅] Stored `chat_id` in `sessionStorage` key `loadChatIdOnRedirect`.
+    *   [✅] Navigated user to `/chat` using stored `navigate` function.
+    *   [✅] Ensured `pendingAction` is cleared.
 
-4.  **Modify `/chat` Page Component (e.g., `ChatPage.tsx`):**
-    *   [x] Identify the main component file for the `/chat` page (`apps/web/src/pages/aichat.tsx`).
-    *   [x] Add a `useEffect` hook that runs once on component mount (`[]` dependency array).
-    *   [x] Inside the `useEffect`:
-        *   [x] Check session storage for the `loadChatIdOnRedirect` key.
-        *   [x] If the key exists:
-            *   Retrieve the `chatId`.
-            *   Call the new `aiStore.loadSpecificChat(chatId)` action (using `loadChatDetails`).
-            *   **Remove** the `loadChatIdOnRedirect` key from session storage.
-        *   [x] If the key *doesn't* exist, ensure the component proceeds with its normal loading logic (e.g., loading chat history list via `aiStore.loadChatHistory()`).
+4.  **Modify `/chat` Page Component (`ChatPage.tsx`):**
+    *   [✅] Identified `apps/web/src/pages/aichat.tsx`.
+    *   [✅] Added `useEffect` hook on mount.
+    *   [✅] Inside `useEffect`, checked for `loadChatIdOnRedirect` key.
+    *   [✅] If key exists: Retrieved `chatId`, called `aiStore.loadChatDetails(chatId)`, removed key from session storage.
+    *   [✅] If key doesn't exist, normal history loading proceeds.
 
 **Phase 2: Cleanup Remnants of Previous Attempt**
 
 1.  **Review `authStore._checkAndReplayPendingAction`:**
-    *   [x] Remove any logic that attempted to directly update `aiStore` state related to the *homepage* chat after a successful replay. The only actions after success should be storing the redirect ID and navigating.
-        *   *Note: Confirmed no conflicting logic remained.*
+    *   [✅] Removed conflicting logic related to homepage chat.
 2.  **Review `HomePage` Component:**
-    *   [x] Remove any `useEffect` hooks or other logic added specifically to react to a chat message being replayed after login. The homepage should no longer be involved in this flow directly.
-        *   *Note: Removed conflicting `useEffect` checking for `pendingChatMessage`.*
+    *   [✅] Removed conflicting `useEffect` checking for `pendingChatMessage`.
 
 **Phase 3: Update Unit Tests**
 
-1.  **`aiStore.test.ts`:**
-    *   [ ] Update tests for `sendMessage` to verify that `pendingAction` (when stored in mocked session storage) contains `returnPath: '/chat'`.
-    *   [ ] Add tests for the new `loadSpecificChat` action, mocking the API call and verifying state updates.
+1.  **`aiStore.*.test.ts` (Refactored):**
+    *   [✅] **`sendMessage` Tests:** Verified `pendingAction` stored correctly (including `returnPath: '/chat'`).
+    *   [✅] **`loadChatDetails` Tests:** Added/verified tests for loading state, error states (invalid ID, missing token), successful API call, API error, and thrown errors.
 2.  **`authStore.test.ts`:**
-    *   [ ] Update tests for `_checkAndReplayPendingAction` (or the functions calling it):
-        *   Mock the chat API call to return a successful response with a specific `chat_id`.
-        *   Verify that `sessionStorage.setItem` is called with `loadChatIdOnRedirect` and the correct `chat_id`.
-        *   Verify that the `navigate` function is called with `'/chat'`.
-        *   Verify that no attempts are made to directly update `aiStore` state for the homepage chat.
-        *   Test the failure case where the API replay fails (ensure no ID is stored, no navigation occurs).
-3.  **`/chat` Page Component Tests (e.g., `apps/web/src/pages/ChatPage.test.tsx`):**
-    *   [ ] Add test cases for the component's mount behaviour:
-        *   Simulate session storage *having* the `loadChatIdOnRedirect` key. Verify `aiStore.loadSpecificChat` is called (mocked) and session storage is cleared (mocked).
-        *   Simulate session storage *not* having the key. Verify the normal chat history loading logic is called (e.g., `aiStore.loadChatHistory` is called).
+    *   [✅] Updated tests for `_checkAndReplayPendingAction` (or callers):
+        *   [✅] Verified `sessionStorage.setItem('loadChatIdOnRedirect', ...)` called on successful chat replay.
+        *   [✅] Verified `navigate('/chat')` called on successful replay.
+        *   [✅] Tested failure cases (replay API fails, non-chat action).
+3.  **`/chat` Page Component Tests (e.g., `apps/web/src/pages/aichat.test.tsx`):**
+    *   [✅] Tested component mount with `loadChatIdOnRedirect` present (verified `loadChatDetails` called, storage cleared).
+    *   [✅] Tested component mount without `loadChatIdOnRedirect` present (verified normal history loading called).
 
 **Phase 4: Manual Verification**
 
@@ -284,7 +263,7 @@ Implement a pattern to handle anonymous users attempting actions that require au
     *   Log in.
     *   Verify redirection to `/chat`.
     *   Verify the chat conversation you just initiated is loaded and displayed correctly.
-    *   Refresh the `/chat` page and verify it loads the chat history list as normal (doesn't reload the specific chat again).
+    *   Refresh the `/chat` page and verify it loads the chat history list as normal.
 
 ## Potential Future Refactors
 
