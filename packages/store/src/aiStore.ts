@@ -1,5 +1,3 @@
-import { devtools } from 'zustand/middleware';
-import { immer } from 'zustand/middleware/immer';
 import { create } from 'zustand';
 import {
 	AiProvider,
@@ -8,12 +6,12 @@ import {
 	ChatApiRequest,
 	FetchOptions,
     ApiResponse,
-    Chat,
+    AiState, 
+    AiStore // Import the combined type
 } from '@paynless/types';
 import { api } from '@paynless/api-client';
-import { logger, parseAssistantContent } from '@paynless/utils';
+import { logger } from '@paynless/utils';
 import { useAuthStore } from './authStore';
-import type { User, Session, UserProfile, AuthRequiredError as ApiAuthRequiredError } from '@paynless/types'; // Avoid naming conflict
 
 // --- Constants ---
 // --- Removed ANONYMOUS_MESSAGE_LIMIT ---
@@ -30,42 +28,10 @@ const initialAiStateValues: AiState = {
     isHistoryLoading: false,
     isDetailsLoading: false,
     aiError: null,
-    // --- Removed anonymousMessageCount and anonymousMessageLimit ---
 };
 
-// Define interfaces for state and actions *and export them*
-export interface AiState {
-  availableProviders: AiProvider[];
-  availablePrompts: SystemPrompt[];
-  currentChatMessages: ChatMessage[];
-  currentChatId: string | null;
-  isLoadingAiResponse: boolean;
-  isConfigLoading: boolean;
-  isHistoryLoading: boolean;
-  isDetailsLoading: boolean;
-  chatHistoryList: Chat[];
-  aiError: string | null;
-}
-
-export interface AiActions {
-  loadAiConfig: () => Promise<void>;
-  sendMessage: (data: {
-    message: string; 
-    providerId: string; 
-    promptId: string; 
-    chatId?: string | null; // Add optional chatId
-  }) => Promise<ChatMessage | null>; // Return ChatMessage or null
-  loadChatHistory: () => Promise<void>;
-  loadChatDetails: (chatId: string) => Promise<void>; 
-  startNewChat: () => void;
-  clearAiError: () => void;
-  // clearCurrentChat is NOT defined here
-}
-
-// Combine state and actions for the store type
-export type AiStoreType = AiState & AiActions;
-
-export const useAiStore = create<AiStoreType>()(
+// Use the imported AiStore type
+export const useAiStore = create<AiStore>()(
     // devtools(
         // immer(
             (set, get) => ({

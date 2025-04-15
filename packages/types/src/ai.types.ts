@@ -124,24 +124,20 @@ export interface AiState {
 }
 
 /**
- * Defines the actions available in the AI feature store.
+ * Represents the actions available in the AI store.
  */
 export interface AiActions {
-    // Action definitions based on plan
-    loadAiConfig: () => Promise<void>;
-    sendMessage: (data: {
-        message: string;
-        providerId: string;
-        promptId: string;
-        chatId?: string;
-    }) => Promise<ChatMessage | null>;
-    loadChatHistory: () => Promise<void>;
-    loadChatDetails: (chatId: string) => Promise<void>;
-    startNewChat: () => void;
-    addAssistantMessage: (message: ChatMessage) => void;
-
-    // Clear error state
-    clearAiError: () => void;
+  loadAiConfig: () => Promise<void>;
+  sendMessage: (data: {
+    message: string; 
+    providerId: string; 
+    promptId: string; 
+    chatId?: string | null; 
+  }) => Promise<ChatMessage | null>;
+  loadChatHistory: () => Promise<void>;
+  loadChatDetails: (chatId: string) => Promise<void>; 
+  startNewChat: () => void;
+  clearAiError: () => void;
 }
 
 // Combined type for the store
