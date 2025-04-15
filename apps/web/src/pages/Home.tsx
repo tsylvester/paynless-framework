@@ -6,7 +6,6 @@ import {
   CheckCircle,
   Sparkles,
   CreditCard,
-  Code2,
   Cpu,
   Shield,
   Zap,
@@ -21,7 +20,7 @@ import {
 } from 'lucide-react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useAuthStore, useAiStore } from '@paynless/store'
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { logger } from '@paynless/utils'
 import { ModelSelector } from '../components/ai/ModelSelector'
 import { PromptSelector } from '../components/ai/PromptSelector'
@@ -177,7 +176,6 @@ export function HomePage() {
               providerId={selectedProviderId}
               promptId={selectedPromptId}
               isAnonymous={true}
-              onLimitReached={handleLimitReached}
             />
           </div>
         </div>
