@@ -163,7 +163,7 @@ The project is organized as a monorepo using pnpm workspaces:
 ├── apps/                   # Individual applications / Frontends
 │   ├── web/                # React Web Application (Vite + React Router)
 │   │   └── src/
-│   │       ├── assets/         # (May contain static assets like images, fonts) - *Verify if used*
+│   │       ├── assets/         # Static assets (images, fonts, etc.) - *Verify usage*
 │   │       ├── components/     # UI Components specific to web app
 │   │       ├── config/         # App-specific config (e.g., routes)
 │   │       ├── context/        # React context providers
@@ -183,8 +183,8 @@ The project is organized as a monorepo using pnpm workspaces:
 │   │       └── main.tsx        # Application entry point (renders App)
 │   ├── ios/                # iOS Application (Placeholder) //do not remove
 │   ├── android/            # Android Application (Placeholder) //do not remove
-│   └── desktop/            # Desktop Application (Tauri/Rust) 
-│   └── linux/              # Desktop Application (Placeholder) //do not remove
+│   ├── desktop/            # Desktop Application (Tauri/Rust)
+│   ├── linux/              # Desktop Application (Placeholder) //do not remove
 │   └── macos/              # Desktop Application (Placeholder) //do not remove
 │
 ├── packages/               # Shared libraries/packages
@@ -203,13 +203,16 @@ The project is organized as a monorepo using pnpm workspaces:
 │   │       ├── api.types.ts
 │   │       ├── auth.types.ts
 │   │       ├── subscription.types.ts
-│   │       ├── ai.types.ts       # Added AI types
+│   │       ├── ai.types.ts
 │   │       ├── theme.types.ts
 │   │       ├── route.types.ts
+│   │       ├── platform.types.ts # Added Platform capability types
 │   │       └── index.ts            # Main export for types
-│   ├── ui-components/      # Reusable React UI components (Placeholder)
+│   ├── platform-capabilities/ # Service for abstracting platform-specific APIs (FS, etc.)
 │   │   └── src/
-│   │       └── index.ts
+│   │       ├── index.ts          # Main service export
+│   │       ├── webPlatformCapabilities.ts # Web provider
+│   │       └── tauriPlatformCapabilities.ts # Tauri provider
 │   └── utils/              # Shared utility functions
 │       └── src/
 │           └── logger.ts         # Logging utility
@@ -217,6 +220,7 @@ The project is organized as a monorepo using pnpm workspaces:
 ├── supabase/
 │   ├── functions/          # Supabase Edge Functions (Backend API)
 │   │   ├── _shared/          # Shared Deno utilities for functions
+│   │   ├── node_modules/     # Function dependencies (managed by Deno/npm)
 │   │   ├── api-subscriptions/ # Subscription management endpoints
 │   │   ├── ai-providers/     # Fetch AI providers
 │   │   ├── chat/             # Handle AI chat message exchange
@@ -225,7 +229,7 @@ The project is organized as a monorepo using pnpm workspaces:
 │   │   ├── login/
 │   │   ├── logout/
 │   │   ├── me/               # User profile fetch
-│   │   ├── on-user-created/  # Auth Hook: Triggered after user signs up (e.g., create profile)
+│   │   ├── on-user-created/  # Auth Hook: Triggered after user signs up
 │   │   ├── ping/             # Health check
 │   │   ├── profile/          # User profile update
 │   │   ├── refresh/
@@ -301,9 +305,9 @@ Manages all frontend interactions with the backend Supabase Edge Functions. It f
   - **`api.ai()`**: Accessor for the `AiApiClient` instance.
 
 - **`FetchOptions` type** (defined in `@paynless/types`): Extends standard `RequestInit`.
-  - `{ isPublic?: boolean; token?: string; }`
-    - `isPublic: boolean` (Optional): If true, the request is made without an Authorization header (defaults to false).
-    - `token: string` (Optional): Explicitly provide an auth token to use, otherwise the client attempts to get it from the `authStore`.
+  - `{ isPublic?: boolean; token?: string; }` (Plus standard `RequestInit` properties like `headers`, `method`, `body`)
+    - `isPublic: boolean` (Optional): If true, the request is made without an Authorization header (defaults to false). The API client *always* includes the `apikey` header.
+    - `token: string` (Optional): Explicitly provide an auth token to use, otherwise the client attempts to get it from the `authStore` if `isPublic` is false.
 
 - **`ApiResponse<T>` type** (defined in `@paynless/types`): Standard response wrapper.
   - `{ status: number; data?: T; error?: ApiErrorType; }`
@@ -311,19 +315,20 @@ Manages all frontend interactions with the backend Supabase Edge Functions. It f
 - **`ApiError` class**: Custom error class used internally by the client.
   - `constructor(message: string, code?: string | number)`
 
-#### `StripeApiClient` (Accessed via `api.billing()`) 
+#### `StripeApiClient` (Accessed via `api.billing()`)
 Methods for interacting with Stripe/Subscription related Edge Functions.
 
 - `createCheckoutSession(priceId: string, isTestMode: boolean, successUrl: string, cancelUrl: string, options?: FetchOptions): Promise<ApiResponse<CheckoutSessionResponse>>`
   - Creates a Stripe Checkout session.
   - Requires `successUrl` and `cancelUrl` for redirection.
   - Returns the session URL (in `data.sessionUrl`) or error.
-- `createPortalSession(isTestMode: boolean, options?: FetchOptions): Promise<ApiResponse<PortalSessionResponse>>`
+- `createPortalSession(isTestMode: boolean, returnUrl: string, options?: FetchOptions): Promise<ApiResponse<PortalSessionResponse>>`
   - Creates a Stripe Customer Portal session.
-  - Returns the portal URL or error.
-- `getSubscriptionPlans(options?: FetchOptions): Promise<ApiResponse<SubscriptionPlansResponse>>`
+  - Requires `returnUrl` for redirection after portal usage.
+  - Returns the portal URL (in `data.url`) or error.
+- `getSubscriptionPlans(options?: FetchOptions): Promise<ApiResponse<SubscriptionPlan[]>>`
   - Fetches available subscription plans (e.g., from `subscription_plans` table).
-  - Returns `{ plans: SubscriptionPlan[] }` in the `data` field.
+  - Returns `{ plans: SubscriptionPlan[] }` in the `data` field (Note: API returns array directly, type adjusted for clarity).
 - `getUserSubscription(options?: FetchOptions): Promise<ApiResponse<UserSubscription>>`
   - Fetches the current user's subscription details.
 - `cancelSubscription(subscriptionId: string, options?: FetchOptions): Promise<ApiResponse<void>>`
@@ -338,14 +343,14 @@ Methods for interacting with AI Chat related Edge Functions.
 
 - `getAiProviders(token?: string): Promise<ApiResponse<AiProvider[]>>`
   - Fetches the list of active AI providers.
-  - `token` (Optional): Uses token if provided, otherwise assumes public access.
+  - `token` (Optional): Uses token if provided, otherwise assumes public access (`isPublic: true` in options).
 - `getSystemPrompts(token?: string): Promise<ApiResponse<SystemPrompt[]>>`
   - Fetches the list of active system prompts.
-  - `token` (Optional): Uses token if provided, otherwise assumes public access.
+  - `token` (Optional): Uses token if provided, otherwise assumes public access (`isPublic: true` in options).
 - `sendChatMessage(data: ChatApiRequest, options: FetchOptions): Promise<ApiResponse<ChatMessage>>`
   - Sends a chat message to the backend `/chat` function.
-  - `data: { message: string, providerId: string, promptId: string, chatId?: string }`
-  - `options: FetchOptions` (Must specify `isPublic: true` for anonymous or provide `token` for authenticated).
+  - `data: ChatApiRequest ({ message: string, providerId: string, promptId: string, chatId?: string })`
+  - `options: FetchOptions` (Must include `token` for authenticated user).
 - `getChatHistory(token: string): Promise<ApiResponse<Chat[]>>`
   - Fetches the list of chat conversations for the authenticated user.
   - `token` (Required): User's auth token.
@@ -377,11 +382,11 @@ Manages user authentication, session, and profile state.
   - `setIsLoading(isLoading: boolean): void`
   - `setError(error: Error | null): void`
   - `login(email: string, password: string): Promise<User | null>`
-    - Calls `/login` endpoint, updates state, handles internal navigation on success.
+    - Calls `/login` endpoint, updates state, handles internal navigation on success (including potential action replay).
     - Returns user object on success, null on failure.
-  - `register(email: string, password: string): Promise<{ success: boolean; user: User | null; redirectTo: string | null }>`
-    - Calls `/register` endpoint, updates state, handles internal navigation on success (checking for stashed chat messages).
-    - Returns success status, user object, and determined redirect path.
+  - `register(email: string, password: string): Promise<User | null>`
+    - Calls `/register` endpoint, updates state, handles internal navigation on success (including potential action replay).
+    - Returns user object on success, null on failure.
   - `logout(): Promise<void>`
     - Calls `/logout` endpoint, clears local state.
   - `initialize(): Promise<void>`
@@ -400,37 +405,35 @@ Manages subscription plans and the user's current subscription status.
   - `availablePlans: SubscriptionPlan[]`
   - `isSubscriptionLoading: boolean`
   - `hasActiveSubscription: boolean` (Derived from `userSubscription.status`)
-  - `isTestMode: boolean` (Initialized from `VITE_STRIPE_TEST_MODE` env var)
+  - `isTestMode: boolean` (Set via `setTestMode` action, typically from env var)
   - `error: Error | null`
 - **Actions**:
   - `setUserSubscription(subscription: UserSubscription | null): void`
   - `setAvailablePlans(plans: SubscriptionPlan[]): void`
   - `setIsLoading(isLoading: boolean): void`
+  - `setTestMode(isTestMode: boolean): void`
   - `setError(error: Error | null): void`
   - `loadSubscriptionData(): Promise<void>`
     - Fetches available plans (`/api-subscriptions/plans`) and current user subscription (`/api-subscriptions/current`).
-    - Requires authenticated user (uses token from `authStore`). (Note: `userId` param is currently unused in implementation).
-  - `refreshSubscription(): Promise<void>`
-    - Calls `loadSubscriptionData` again.
+    - Requires authenticated user (uses token from `authStore`).
+  - `refreshSubscription(): Promise<boolean>`
+    - Calls `loadSubscriptionData` again. Returns true on success, false on failure.
   - `createCheckoutSession(priceId: string): Promise<string | null>`
-    - Calls `api.billing().createCheckoutSession`.
+    - Calls `api.billing().createCheckoutSession`. Requires success/cancel URLs derived from `window.location`.
     - Returns the Stripe Checkout session URL on success, null on failure.
     - Requires authenticated user.
   - `createBillingPortalSession(): Promise<string | null>`
-    - Calls `api.billing().createPortalSession`.
+    - Calls `api.billing().createPortalSession`. Requires return URL derived from `window.location`.
     - Returns the Stripe Customer Portal URL on success, null on failure.
     - Requires authenticated user.
   - `cancelSubscription(subscriptionId: string): Promise<boolean>`
-    - Calls `api.billing().cancelSubscription`, then `refreshSubscription`.
-    - Returns true on success, false on failure.
+    - Calls `api.billing().cancelSubscription`, then `refreshSubscription`. Returns true on success, false on failure.
     - Requires authenticated user.
   - `resumeSubscription(subscriptionId: string): Promise<boolean>`
-    - Calls `api.billing().resumeSubscription`, then `refreshSubscription`.
-    - Returns true on success, false on failure.
+    - Calls `api.billing().resumeSubscription`, then `refreshSubscription`. Returns true on success, false on failure.
     - Requires authenticated user.
   - `getUsageMetrics(metric: string): Promise<SubscriptionUsageMetrics | null>`
-    - Calls `api.billing().getUsageMetrics`.
-    - Returns usage metrics object on success, null on failure.
+    - Calls `api.billing().getUsageMetrics`. Returns usage metrics object on success, null on failure.
     - Requires authenticated user.
 
 #### `useAiStore` (Hook)
@@ -447,29 +450,25 @@ Manages AI chat state, including providers, prompts, messages, and history.
   - `isHistoryLoading: boolean` (True while loading chat history list)
   - `isDetailsLoading: boolean` (True while loading messages for a specific chat)
   - `aiError: string | null` (Stores error messages related to AI operations)
-  - `anonymousMessageCount: number`
-  - `anonymousMessageLimit: number` (Constant, e.g., 3)
 - **Actions**:
   - `loadAiConfig(): Promise<void>`
     - Fetches AI providers (`/ai-providers`) and system prompts (`/system-prompts`).
-  - `sendMessage(data: { message: string, providerId: string, promptId: string, chatId?: string, isAnonymous: boolean }): Promise<ChatMessage | { error: 'limit_reached' } | null>`
-    - Handles sending a message via `api.ai().sendChatMessage`.
+  - `sendMessage(data: ChatApiRequest): Promise<ChatMessage | null>`
+    - Handles sending a message via `api.ai().sendChatMessage`. Requires `token` in `FetchOptions` provided to API client.
     - Manages optimistic UI updates for user message.
     - Updates `currentChatMessages` and `currentChatId`.
-    - Handles anonymous user limit check, returning `{ error: 'limit_reached' }` if exceeded.
-    - Returns the received `ChatMessage` on success, null on API error.
+    - If `AuthRequiredError` is caught, attempts to store pending action and navigate to `/login`.
+    - Returns the received `ChatMessage` on success, null on API error or if auth redirect occurs.
   - `loadChatHistory(): Promise<void>`
     - Fetches the user's chat list via `api.ai().getChatHistory`.
     - Updates `chatHistoryList`.
-    - Requires authenticated user.
+    - Requires authenticated user (token obtained from `authStore`).
   - `loadChatDetails(chatId: string): Promise<void>`
     - Fetches messages for a specific chat via `api.ai().getChatMessages`.
     - Updates `currentChatId` and `currentChatMessages`.
-    - Requires authenticated user.
+    - Requires authenticated user (token obtained from `authStore`).
   - `startNewChat(): void`
-    - Resets `currentChatId`, `currentChatMessages`, and potentially `anonymousMessageCount`.
-  - `incrementAnonymousCount(): void` (Internal helper, called by `sendMessage`)
-  - `resetAnonymousCount(): void` (Internal helper)
+    - Resets `currentChatId` and `currentChatMessages`.
   - `clearAiError(): void`
     - Sets `aiError` state to null.
 
@@ -499,8 +498,19 @@ Contains centralized type definitions used across the monorepo. Exports all type
 - **`ai.types.ts`**: `AiProvider`, `SystemPrompt`, `Chat`, `ChatMessage`, `ChatApiRequest`, `AiState`, `AiActions`, etc.
 - **`theme.types.ts`**: Types related to theming.
 - **`route.types.ts`**: Types related to application routing.
+- **`platform.types.ts`**: `PlatformCapabilities`, `FileSystemCapabilities`, etc.
 
+### 5. `packages/platform-capabilities` (Platform Abstraction)
 
-### 5. `supabase/functions/_shared/` (Backend Shared Utilities)
+Provides a service to abstract platform-specific functionalities (like filesystem access) for use in shared UI code.
+
+- **`getPlatformCapabilities(): PlatformCapabilities`**: Detects the current platform (web, tauri, etc.) and returns an object describing available capabilities. Result is memoized.
+  - Consumers check `capabilities.fileSystem.isAvailable` before attempting to use filesystem methods.
+- **Providers (Internal):**
+  - `webPlatformCapabilities.ts`: Implements capabilities available in a standard web browser.
+  - `tauriPlatformCapabilities.ts`: Implements capabilities available in the Tauri desktop environment, often by calling Rust backend functions via `invoke`.
+- **`resetMemoizedCapabilities(): void`**: Clears the cached capabilities result (useful for testing).
+
+### 6. `supabase/functions/_shared/` (Backend Shared Utilities)
 
 Contains shared Deno code used by multiple Edge Functions (CORS handling, Supabase client creation, auth helpers, Stripe client initialization). Refer to the files within this directory for specific utilities. 
