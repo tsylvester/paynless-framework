@@ -1,10 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { NullAnalyticsAdapter } from './nullAdapter';
-import type { AnalyticsClient } from '@paynless/types';
-
-// Type check: Ensure NullAnalyticsAdapter satisfies the AnalyticsClient interface
-const _adapterCheck: AnalyticsClient = new NullAnalyticsAdapter();
-
 
 describe('NullAnalyticsAdapter', () => {
   let adapter: NullAnalyticsAdapter;

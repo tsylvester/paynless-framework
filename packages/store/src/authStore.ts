@@ -3,6 +3,7 @@ import { AuthStore as AuthStoreType, AuthResponse, User, Session, UserProfile, U
 import { logger } from '@paynless/utils';
 import { persist } from 'zustand/middleware';
 import { api } from '@paynless/api-client';
+import { analytics } from '@paynless/analytics-client';
 
 // Define the structure of the response from the refresh endpoint
 // Updated to include user and profile, matching the backend
@@ -58,6 +59,16 @@ export const useAuthStore = create<AuthStoreType & { _checkAndReplayPendingActio
                 isLoading: false,
                 error: null,
               });
+
+              // ---> Identify user for analytics <---
+              if (authData.user?.id) {
+                  analytics.identify(authData.user.id, {
+                      email: authData.user.email,
+                      // Add other relevant traits from profile if needed
+                      // firstName: authData.profile?.first_name,
+                      // lastName: authData.profile?.last_name,
+                  });
+              }
 
               // ---> Phase 3: Check for and replay pending action <---
               let navigated = false; // Flag to track if we navigated due to pending action
@@ -191,6 +202,16 @@ export const useAuthStore = create<AuthStoreType & { _checkAndReplayPendingActio
                 error: null,
               });
 
+              // ---> Identify user for analytics <---
+              if (authData.user?.id) {
+                  analytics.identify(authData.user.id, {
+                      email: authData.user.email,
+                      // Add other relevant traits from profile if needed
+                      // firstName: authData.profile?.first_name,
+                      // lastName: authData.profile?.last_name,
+                  });
+              }
+
               // ---> Phase 3: Check for and replay pending action (Register) <---
               let navigated = false; // Flag to track if we navigated due to pending action
               try {
@@ -292,6 +313,9 @@ export const useAuthStore = create<AuthStoreType & { _checkAndReplayPendingActio
       },
       
       logout: async () => {
+        // ---> Reset analytics user <---
+        analytics.reset(); 
+        
         const token = get().session?.access_token;
         
         if (token) {
@@ -322,7 +346,6 @@ export const useAuthStore = create<AuthStoreType & { _checkAndReplayPendingActio
       },
       
       initialize: async () => {
-        set({ isLoading: true });
         let session: Session | null = null;
         try {
           const sessionJson = sessionStorage.getItem('auth-session');
@@ -351,27 +374,42 @@ export const useAuthStore = create<AuthStoreType & { _checkAndReplayPendingActio
             sessionStorage.removeItem('auth-session');
           }
 
-          if (session?.access_token) {
-            // Session exists and is not expired, try calling /me
-            logger.info('Valid session found, verifying token / fetching initial profile...');
-            set({ session }); // Optimistically set the session
-            const response = await api.get<AuthResponse>('/me', { token: session.access_token });
+          if (session) {
+            // Verify token with backend and fetch profile
+            const profileResponse = await api.get<UserProfile>('/me', { token: session.access_token });
 
-            if (response.error || !response.data || !response.data.user) {
-              const errMsg = response.error?.message || 'Failed to validate session or get user data';
-              logger.error('/me call failed after restoring session.', { error: response.error });
-              sessionStorage.removeItem('auth-session'); // Clear session on failure
-              set({ isLoading: false, user: null, session: null, profile: null, error: new Error(errMsg) });
-              return; // Stop initialization
+            if (profileResponse.error || !profileResponse.data) {
+              // Token might be invalid or expired, try refreshing
+              logger.warn('Initial /me check failed or returned no data. Trying refresh...', { error: profileResponse.error });
+              set({ user: null, session: null, profile: null }); // Clear potentially invalid data
+              // Attempt refresh (refreshSession handles its own state updates)
+              await get().refreshSession();
+            } else {
+              // Session valid, profile fetched
+              const fetchedSession = session;
+              const fetchedProfile = profileResponse.data;
+              // Get the user from the current state, as the session is confirmed valid
+              const currentUser = get().user; 
+
+              set({
+                // If currentUser is null here, something is inconsistent, but proceed
+                user: currentUser, 
+                session: fetchedSession,
+                profile: fetchedProfile,
+                isLoading: false,
+                error: null,
+              });
+              // ---> Identify user for analytics <---
+              // Use the user object from the state
+              if (currentUser?.id) {
+                  analytics.identify(currentUser.id, {
+                      email: currentUser.email,
+                      // Add traits from profile if available
+                      firstName: fetchedProfile?.first_name,
+                      lastName: fetchedProfile?.last_name,
+                  });
+              }
             }
-
-            // /me successful, update user/profile
-            logger.info('/me call successful, user authenticated.');
-            set({ user: response.data.user, profile: response.data.profile, isLoading: false, error: null });
-
-            // Check for pending action and replay
-            await get()._checkAndReplayPendingAction(session.access_token);
-
           } else {
             // No valid session token found after checks
             logger.info('No valid session token available after checks.');

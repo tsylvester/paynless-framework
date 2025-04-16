@@ -1,5 +1,5 @@
 import { AnalyticsClient } from '@paynless/types';
-import { logger } from '@paynless/utils';
+// import { logger } from '@paynless/utils'; // Removed unused import
 
 /**
  * A no-operation implementation of the AnalyticsClient interface.
@@ -12,12 +12,12 @@ export class NullAnalyticsAdapter implements AnalyticsClient {
   }
 
   // eslint-disable-next-line @typescript-eslint/no-empty-function, @typescript-eslint/no-unused-vars
-  identify(userId: string, traits?: Record<string, any>): void {
+  identify(_userId: string, _traits?: Record<string, any>): void {
     // No operation
   }
 
   // eslint-disable-next-line @typescript-eslint/no-empty-function, @typescript-eslint/no-unused-vars
-  track(eventName: string, properties?: Record<string, any>): void {
+  track(_eventName: string, _properties?: Record<string, any>): void {
     // No operation
   }
 
@@ -37,7 +37,7 @@ export class NullAnalyticsAdapter implements AnalyticsClient {
   }
 
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  isFeatureEnabled?(key: string): boolean {
+  isFeatureEnabled?(_key: string): boolean {
     // Default to false or handle as needed if feature flags are used without a provider
     return false;
   }

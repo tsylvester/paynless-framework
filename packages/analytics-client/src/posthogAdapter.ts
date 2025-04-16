@@ -29,7 +29,7 @@ export class PostHogAdapter implements AnalyticsClient {
           // blockAllMedia: false,
         },
         capture_pageview: true, // Automatically capture page views
-        loaded: (ph) => {
+        loaded: (_ph) => {
           logger.info('[PostHogAdapter] PostHog loaded successfully.');
           this.isInitialized = true;
           // You could potentially call identify here if user info is available early,

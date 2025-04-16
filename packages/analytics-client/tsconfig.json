@@ -3,7 +3,8 @@
   "compilerOptions": {
     "outDir": "dist",
     "rootDir": "src",
-    "baseUrl": "."
+    "baseUrl": ".",
+    "types": ["vitest/globals", "vite/client"]
   },
   "include": ["src/**/*.ts"],
   "exclude": ["node_modules", "dist"]

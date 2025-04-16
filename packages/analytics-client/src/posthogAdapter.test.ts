@@ -1,6 +1,5 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { PostHogAdapter } from './posthogAdapter';
-import type { AnalyticsClient } from '@paynless/types';
 
 // Mock the entire posthog-js library
 vi.mock('posthog-js', () => {
@@ -42,7 +41,7 @@ describe('PostHogAdapter', () => {
     vi.clearAllMocks(); // Clear mocks before each test
     adapter = new PostHogAdapter();
     // Simulate successful initialization for most tests
-    mockPosthog.init.mockImplementation((key: any, config: any) => {
+    mockPosthog.init.mockImplementation((_key: any, config: any) => {
         if (config && config.loaded) {
             config.loaded(mockPosthog); // Simulate the loaded callback
         }
@@ -75,7 +74,7 @@ describe('PostHogAdapter', () => {
       });
     });
 
-    it('should set isInitialized flag on successful load within init', async () => { // Make test async
+    it('should set isInitialized flag on successful load within init', async () => {
        // Need to access internal state or test behavior dependent on it
        const { logger } = await import('@paynless/utils'); // <-- Use dynamic import
        // Test behavior: identify should warn before init completes
@@ -84,9 +83,9 @@ describe('PostHogAdapter', () => {
        expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining('identify called before initialization'));
        vi.clearAllMocks(); // Clear warn call
 
-       mockPosthog.init.mockImplementationOnce((key, config) => {
-           if (config?.loaded) {
-               config.loaded(mockPosthog); // Simulate loaded callback
+       mockPosthog.init.mockImplementationOnce((_key: any, _config: any) => {
+           if (_config?.loaded) {
+               _config.loaded(mockPosthog); // Simulate loaded callback
            }
        });
        initAdapter.init(apiKey, apiHost);

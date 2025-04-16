@@ -46,7 +46,7 @@ describe('Analytics Service Initialization (index.ts)', () => {
         // Reset env variables
         for (const key in import.meta.env) {
             if (key.startsWith('VITE_')) { // Be careful not to delete other env vars
-                delete import.meta.env[key];
+                delete (import.meta.env as any)[key];
             }
         }
         Object.assign(import.meta.env, originalEnv); // Restore originals just in case
@@ -62,8 +62,8 @@ describe('Analytics Service Initialization (index.ts)', () => {
     // --- Null Adapter Tests (Phase 1) ---
     it('should initialize NullAnalyticsAdapter when no provider is specified', async () => {
         // Explicitly unset relevant env vars
-        delete import.meta.env.VITE_ANALYTICS_PROVIDER;
-        delete import.meta.env.VITE_POSTHOG_KEY;
+        delete (import.meta.env as any)['VITE_ANALYTICS_PROVIDER'];
+        delete (import.meta.env as any)['VITE_POSTHOG_KEY'];
 
         const { analytics } = await import('./index');
         // Check constructor calls
@@ -74,8 +74,8 @@ describe('Analytics Service Initialization (index.ts)', () => {
     });
 
     it('should initialize NullAnalyticsAdapter when provider is "none" ', async () => {
-        import.meta.env.VITE_ANALYTICS_PROVIDER = 'none';
-        delete import.meta.env.VITE_POSTHOG_KEY;
+        (import.meta.env as any)['VITE_ANALYTICS_PROVIDER'] = 'none';
+        delete (import.meta.env as any)['VITE_POSTHOG_KEY'];
 
         const { analytics } = await import('./index');
         expect(mockNullAnalyticsAdapterConstructor).toHaveBeenCalledTimes(1);
@@ -84,8 +84,8 @@ describe('Analytics Service Initialization (index.ts)', () => {
     });
 
     it('should initialize NullAnalyticsAdapter when provider is "posthog" but key is missing', async () => {
-        import.meta.env.VITE_ANALYTICS_PROVIDER = 'posthog';
-        delete import.meta.env.VITE_POSTHOG_KEY;
+        (import.meta.env as any)['VITE_ANALYTICS_PROVIDER'] = 'posthog';
+        delete (import.meta.env as any)['VITE_POSTHOG_KEY'];
 
         const { analytics } = await import('./index');
         expect(mockNullAnalyticsAdapterConstructor).toHaveBeenCalledTimes(1);
@@ -94,8 +94,8 @@ describe('Analytics Service Initialization (index.ts)', () => {
     });
 
      it('should initialize NullAnalyticsAdapter when provider is unsupported', async () => {
-        import.meta.env.VITE_ANALYTICS_PROVIDER = 'mixpanel';
-        import.meta.env.VITE_POSTHOG_KEY = posthogKey;
+        (import.meta.env as any)['VITE_ANALYTICS_PROVIDER'] = 'mixpanel';
+        (import.meta.env as any)['VITE_POSTHOG_KEY'] = posthogKey;
 
         const { analytics } = await import('./index');
         expect(mockNullAnalyticsAdapterConstructor).toHaveBeenCalledTimes(1);
@@ -105,9 +105,9 @@ describe('Analytics Service Initialization (index.ts)', () => {
 
     // --- PostHog Adapter Tests (Phase 2) ---
     it('should initialize PostHogAdapter when provider is "posthog" and key is present', async () => {
-        import.meta.env.VITE_ANALYTICS_PROVIDER = 'posthog';
-        import.meta.env.VITE_POSTHOG_KEY = posthogKey;
-        import.meta.env.VITE_POSTHOG_HOST = posthogHost;
+        (import.meta.env as any)['VITE_ANALYTICS_PROVIDER'] = 'posthog';
+        (import.meta.env as any)['VITE_POSTHOG_KEY'] = posthogKey;
+        (import.meta.env as any)['VITE_POSTHOG_HOST'] = posthogHost;
 
         const { analytics } = await import('./index');
 
@@ -124,9 +124,9 @@ describe('Analytics Service Initialization (index.ts)', () => {
     });
 
     it('should use default PostHog host if VITE_POSTHOG_HOST is not set', async () => {
-        import.meta.env.VITE_ANALYTICS_PROVIDER = 'posthog';
-        import.meta.env.VITE_POSTHOG_KEY = posthogKey;
-        delete import.meta.env.VITE_POSTHOG_HOST; // Ensure it's unset
+        (import.meta.env as any)['VITE_ANALYTICS_PROVIDER'] = 'posthog';
+        (import.meta.env as any)['VITE_POSTHOG_KEY'] = posthogKey;
+        delete (import.meta.env as any)['VITE_POSTHOG_HOST']; // Ensure it's unset
 
         await import('./index');
 
@@ -137,9 +137,9 @@ describe('Analytics Service Initialization (index.ts)', () => {
     });
     
     it('should fall back to NullAnalyticsAdapter if PostHogAdapter init throws', async () => {
-        import.meta.env.VITE_ANALYTICS_PROVIDER = 'posthog';
-        import.meta.env.VITE_POSTHOG_KEY = posthogKey;
-        import.meta.env.VITE_POSTHOG_HOST = posthogHost;
+        (import.meta.env as any)['VITE_ANALYTICS_PROVIDER'] = 'posthog';
+        (import.meta.env as any)['VITE_POSTHOG_KEY'] = posthogKey;
+        (import.meta.env as any)['VITE_POSTHOG_HOST'] = posthogHost;
         
         // Make the mocked PostHogAdapter constructor throw an error during init
         const initError = new Error('Initialization failed');

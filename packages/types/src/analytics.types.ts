@@ -7,7 +7,7 @@ export interface AnalyticsClient {
    * Initializes the analytics provider if needed (some may init on import).
    * Configuration should typically be handled via environment variables read during service instantiation.
    */
-  init?(): void;
+  // init?(): void; // REMOVED - Initialization is internal to the service
 
   /**
    * Associates the current user with a unique ID and sets user properties (traits).

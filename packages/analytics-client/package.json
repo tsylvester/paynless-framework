@@ -4,6 +4,12 @@
   "private": true,
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
   "scripts": {
     "build": "tsc",
     "dev": "tsc -w",
@@ -21,7 +27,8 @@
     "typescript": "^5.2.2",
     "vite": "^5.2.0",
     "vitest": "^1.6.0",
-    "eslint": "^8.57.0"
+    "eslint": "^8.57.0",
+    "@types/node": "^20.11.20"
   },
   "peerDependencies": {
   }
