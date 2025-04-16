@@ -1,0 +1,35 @@
+{
+  "name": "@paynless/analytics-client",
+  "version": "0.0.1",
+  "private": true,
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc -w",
+    "clean": "rm -rf dist",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "lint": "eslint . --ext .ts,.tsx"
+  },
+  "dependencies": {
+    "@paynless/types": "workspace:*",
+    "@paynless/utils": "workspace:*",
+    "posthog-js": "^1.140.1" 
+  },
+  "devDependencies": {
+    "typescript": "^5.2.2",
+    "vite": "^5.2.0",
+    "vitest": "^1.6.0",
+    "eslint": "^8.57.0",
+    "@types/node": "^20.11.20"
+  },
+  "peerDependencies": {
+  }
+} 

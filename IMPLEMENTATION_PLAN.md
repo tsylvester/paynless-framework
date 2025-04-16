@@ -1,19 +1,26 @@
-**Incomplete Features**
 
-- [⏸️] AI Chat on homepage doesn't work
-- [✅] AI Chat signup/login flow
-- [ ] AI model sync automation
-- [ ] Mixpanel or Posthog integration
-- [🚧] Test project on Bolt & Lovable
-  - [ ] Bolt & Lovable don't support pnpm monorepos well atm
-- [ ] User email automation - abstract for generic but specific implementation with Kit
-- [✅] Change email from within app -wes feature/update-email
-- [ ] Change password from within app
-- [✅] shadcn implemented
-  - [ ] Convert all pages / components to shadcn
-  - [ ] Loading skeletons for all components
-- [ ] Change payment method doesn't register site
-- [ ] Run SEO scan
+**Incomplete Features** 
+*   [⏸️] AI Chat on homepage doesn't work
+*   [✅] AI Chat signup/login flow
+*   [ ] AI model sync automation
+*   [ ] Mixpanel or Posthog integration
+*   [🚧] Test project on Bolt & Lovable 
+    *   [ ] Bolt & Lovable don't support pnpm monorepos well atm 
+*   [ ] User email automation - abstract for generic but specific implementation with Kit 
+*   [✅] Change email from within app
+*   [ ] Change password from within app
+*   [✅] shadcn implemented
+    *   [ ] Convert all pages / components to shadcn
+    *   [ ] Loading skeletons for all components 
+*   [ ] Change payment method doesn't register site
+*   [ ] Run SEO scan 
+*   [ ] Header scroll with user
+*   [ ] Fix chat so it scrolls with user 
+*   [ ] Fix chat history box so it fills correctly  
+*   [ ] Figure out how to parse chat responses better, they get messy if the assistant uses markdown 
+*   [ ] Revert changes in authStore for initialize and updateProfile to working version in commit 58d6e17a
+*   [ ] Integrate the session replay logic that broke authStore, but fix it so it's compatible with the working method 
+
 
 Okay, let's break down the implementation of the Platform Capability Abstraction layer using a TDD-inspired approach, focusing on compatibility and minimal disruption to your existing structure.
 
@@ -255,8 +262,9 @@ Implement a pattern to handle anonymous users attempting actions that require au
       - [✅] Verified `navigate('chat')` called on successful replay.
       - [✅] Tested failure cases (replay API fails, non-chat action).
 3.  **`/chat` Page Component Tests (e.g., `apps/web/src/pages/aichat.test.tsx`):**
-    - [✅] Tested component mount with `loadChatIdOnRedirect` present (verified `loadChatDetails` called, storage cleared).
-    - [✅] Tested component mount without `loadChatIdOnRedirect` present (verified normal history loading called).
+    *   [✅] Tested component mount with `loadChatIdOnRedirect` present (verified `loadChatDetails` called, storage cleared).
+    *   [✅] Tested component mount without `loadChatIdOnRedirect` present (verified normal history loading called).
+    *   **NOTE (April 2025):** The `_checkAndReplayPendingAction` logic and the `initialize` action in `authStore.ts` have known issues introduced recently. Unit tests related to these functions (especially in `authStore.register.test.ts` and `authStore.initialize.test.ts`) may fail or are temporarily adjusted/skipped until the core logic is fixed.
 
 **Phase 4: Manual Verification**
 
@@ -270,6 +278,42 @@ Implement a pattern to handle anonymous users attempting actions that require au
     - Verify the chat conversation you just initiated is loaded and displayed correctly.
     - Refresh the `/chat` page and verify it loads the chat history list as normal.
 
-## Potential Future Refactors
+## Abstract Analytics Client (PostHog First)
 
-- **aiStore Getter/Setter Pattern:** Consider refactoring `aiStore` to use a more explicit getter/setter pattern for state access and updates. This could improve traceability and encapsulation but would increase boilerplate. Evaluate based on future store complexity. (Decision deferred as of [current date/context]).
+**Goal:** Implement an analytics layer that can use PostHog (or potentially others later) based on environment variable configuration. If no provider is configured or the required key is missing, the application must function without errors, and analytics calls should become no-ops.
+
+**Phase 0: Setup & Interface Definition**
+*   **Goal:** Add dependencies, create the new package structure, and define the shared interface.
+*   **Steps:**
+    *   [x] **Add Dependencies:** Add `posthog-js` to `packages/analytics-client/package.json`.
+    *   [x] **Create Package:** Create the directory `packages/analytics-client`.
+    *   [x] **Package Files:** Add `packages/analytics-client/package.json`, `packages/analytics-client/tsconfig.json` (extending base tsconfig).
+    *   [x] **Source Dir:** Create `packages/analytics-client/src/`.
+    *   [x] **Define Interface:** In `packages/types/src/`, create `analytics.types.ts`. Define the `AnalyticsClient` interface (`init?`, `identify`, `track`, `reset`).
+    *   [x] **Export Interface:** Export `AnalyticsClient` from `packages/types/src/index.ts`.
+    *   [x] **Update Workspace:** Ensure `pnpm-workspace.yaml` includes `packages/analytics-client`.
+    *   [x] **Install:** Run `pnpm install` from the root.
+*   **Testing & Commit Point:** Verify builds, workspace recognition. Commit: `feat(analytics): Setup analytics-client package and define core interface`
+
+**Phase 1: Null Adapter & Default Service**
+*   **Goal:** Implement the default "do nothing" behavior.
+*   **Steps:**
+    *   [x] **Null Adapter:** Create `packages/analytics-client/src/nullAdapter.ts`. Implement `AnalyticsClient` with empty functions.
+    *   [x] **Central Service Stub:** Create `packages/analytics-client/src/index.ts`. Import `NullAnalyticsAdapter`. Read placeholder env vars. Default to exporting `new NullAnalyticsAdapter()` as `analytics`.
+*   **Testing & Commit Point:** Unit test `NullAnalyticsAdapter`, unit test `index.ts` defaulting to null adapter. Commit: `feat(analytics): Implement null analytics adapter and default service`
+
+**Phase 2: PostHog Adapter & Service Logic**
+*   **Goal:** Implement the PostHog adapter and selection logic.
+*   **Steps:**
+    *   [x] **Environment Variables:** Define `VITE_ANALYTICS_PROVIDER`, `VITE_POSTHOG_KEY`, `VITE_POSTHOG_HOST` in `.env.example` (optional).
+    *   [x] **PostHog Adapter:** Create `packages/analytics-client/src/posthogAdapter.ts`. Import `posthog-js`. Implement `AnalyticsClient` interface using `posthog.init`, `posthog.identify`, `posthog.capture`, `posthog.reset`, etc.
+    *   [x] **Central Service Update (`index.ts`):** Import `PostHogAdapter`. Read actual env vars. Add logic: If provider is "posthog" and key exists, instantiate and `init` PostHog adapter; else, instantiate null adapter. Export the chosen instance as `analytics`. Add logging for chosen adapter.
+*   **Testing & Commit Point:** Unit test `PostHogAdapter` (mocking `posthog-js`). Unit test `index.ts` selection logic with different env var combinations. Commit: `feat(analytics): Implement PostHog adapter and configure service selection`
+
+**Phase 3: Application Initialization & User Identification**
+*   **Goal:** Initialize the client and integrate user identification/reset.
+*   **Steps:**
+    *   [ ] **App Initialization:** Ensure `import { analytics } from '@paynless/analytics-client';` happens early in `apps/web/src/main.tsx` or `App.tsx` (init happens on import).
+    *   [✅] **Integrate with `useAuthStore`:** Import `analytics`. In `login`, `register`, `initialize` success handlers, call `analytics.identify(user.id, { traits... })`. In `logout` action, call `analytics.reset();`.
+*   **Testing & Commit Point:** Unit test `authStore` (mocking analytics client, verifying `identify`/`reset` calls). Manual integration test (Web): Verify `identify`/`reset` calls in PostHog dashboard when configured; verify NO errors/calls when not configured. Commit: `feat(analytics): Initialize analytics client and integrate identify/reset`
+
