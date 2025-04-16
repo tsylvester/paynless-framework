@@ -6,7 +6,6 @@ import {
   CheckCircle,
   Sparkles,
   CreditCard,
-  Code2,
   Cpu,
   Shield,
   Zap,
@@ -21,7 +20,7 @@ import {
 } from 'lucide-react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useAuthStore, useAiStore } from '@paynless/store'
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { logger } from '@paynless/utils'
 import { ModelSelector } from '../components/ai/ModelSelector'
 import { PromptSelector } from '../components/ai/PromptSelector'
@@ -42,7 +41,6 @@ export function HomePage() {
     null
   )
   const [selectedPromptId, setSelectedPromptId] = useState<string | null>(null)
-  const [showLimitDialog, setShowLimitDialog] = useState(false)
 
   const hasSetDefaults = useRef(false)
 
@@ -75,19 +73,6 @@ export function HomePage() {
       }
     }
   }, [availableProviders]);
-
-  const handleRegisterRedirect = () => {
-    setShowLimitDialog(false)
-    navigate('/register')
-  }
-
-  const handleCloseDialog = () => {
-    setShowLimitDialog(false)
-    sessionStorage.removeItem('pendingChatMessage')
-    logger.info(
-      '[HomePage] User cancelled registration, cleared stashed message.'
-    )
-  }
 
   return (
     <Layout>
@@ -135,7 +120,7 @@ export function HomePage() {
                   >
                     Get Started
                     <ArrowRight
-                      className="ml-2 opacity-0 group-hover:opacity-100 group-hover:translate-x-1 transition-all duration-300"
+                      className="ml-2 opacity-100 group-hover:opacity-100 group-hover:translate-x-1 transition-all duration-300"
                       size={20}
                     />
                   </Link>
@@ -177,7 +162,6 @@ export function HomePage() {
               providerId={selectedProviderId}
               promptId={selectedPromptId}
               isAnonymous={true}
-              onLimitReached={handleLimitReached}
             />
           </div>
         </div>
@@ -425,39 +409,6 @@ export function HomePage() {
           </div>
         </div>
       </div>
-
-      {/* Limit Dialog */}
-      {showLimitDialog && (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-40 flex items-center justify-center p-4">
-          <div className="bg-surface p-8 rounded-xl shadow-xl max-w-md w-full border border-border transform transition-all duration-300 scale-100 animate-fadeIn">
-            <div className="flex items-center justify-center h-12 w-12 rounded-xl bg-primary/10 text-primary mb-6 mx-auto">
-              <Lock className="h-6 w-6" />
-            </div>
-            <h3 className="text-xl font-semibold text-textPrimary text-center mb-2">
-              Message Limit Reached
-            </h3>
-            <p className="mt-2 text-textSecondary text-center leading-relaxed mb-6">
-              You've reached the message limit for anonymous users. Please
-              register or sign in to continue chatting. Your message will be
-              sent automatically after you sign up.
-            </p>
-            <div className="flex justify-center gap-4">
-              <button
-                onClick={handleCloseDialog}
-                className="px-6 py-2.5 text-sm font-medium text-textSecondary hover:text-textPrimary border border-border rounded-lg transition-all duration-300 hover:bg-background/60"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleRegisterRedirect}
-                className="px-6 py-2.5 text-sm font-medium text-white bg-primary hover:bg-primary/90 rounded-lg transition-all duration-300 shadow-sm hover:shadow"
-              >
-                Register
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </Layout>
   )
 }

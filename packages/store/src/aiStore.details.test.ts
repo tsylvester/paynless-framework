@@ -90,7 +90,7 @@ describe('aiStore - loadChatDetails', () => {
         // Define constants for mock data
         const mockChatId = 'c123';
         const mockToken = 'valid-token-for-details';
-        const mockUser: User = { id: 'user-123', email: 'test@test.com', created_at: 't', updated_at: 't', role: 'user' }; // Use 'user' for role
+        const mockUser: User = { id: 'user-123', email: 'test@test.com', created_at: 't', updated_at: 't', role: UserRole.USER };
         const mockSession: Session = { access_token: mockToken, refresh_token: 'r', expiresAt: Date.now() / 1000 + 3600 };
         const mockMessages: ChatMessage[] = [
             { id: 'm1', chat_id: mockChatId, user_id: mockUser.id, role: 'user', content: 'Q', ai_provider_id: null, system_prompt_id: null, token_usage: null, created_at: 't1' },
@@ -129,7 +129,7 @@ describe('aiStore - loadChatDetails', () => {
         it('should set isDetailsLoading to true initially and false on completion (success)', async () => {
             // Arrange
             mockGetChatMessages.mockResolvedValue({
-                data: { messages: mockMessages },
+                data: { mockMessages },
                 status: 200,
                 error: null
             });
@@ -226,7 +226,7 @@ describe('aiStore - loadChatDetails', () => {
         it('should update state correctly on successful API call', async () => {
             // Arrange
             mockGetChatMessages.mockResolvedValue({
-                data: { messages: mockMessages },
+                data: mockMessages,
                 status: 200,
                 error: null
             });

@@ -1,9 +1,8 @@
 import { create } from 'zustand';
-import { AuthStore as AuthStoreType, AuthResponse, User, Session, UserProfile, UserProfileUpdate, ApiResponse, ChatMessage } from '@paynless/types';
-import { logger, parseAssistantContent } from '@paynless/utils';
+import { AuthStore as AuthStoreType, AuthResponse, User, Session, UserProfile, UserProfileUpdate, ApiResponse } from '@paynless/types';
+import { logger } from '@paynless/utils';
 import { persist } from 'zustand/middleware';
 import { api } from '@paynless/api-client';
-import { useAiStore } from './aiStore';
 
 // Define the structure of the response from the refresh endpoint
 // Updated to include user and profile, matching the backend
@@ -113,7 +112,7 @@ export const useAuthStore = create<AuthStoreType & { _checkAndReplayPendingActio
                                });
                                // ---> END Log Replay Data <---
                                // Check if it was the chat endpoint and data has chat_id
-                               if (endpoint === '/chat' && method.toUpperCase() === 'POST' && replayResponse.data && typeof (replayResponse.data as any).chat_id === 'string') {
+                               if (endpoint === 'chat' && method.toUpperCase() === 'POST' && replayResponse.data && typeof (replayResponse.data as any).chat_id === 'string') {
                                    const chatId = (replayResponse.data as any).chat_id;
                                    logger.info(`Chat action replayed successfully, storing chatId ${chatId} for redirect.`);
                                    try {
@@ -491,7 +490,7 @@ export const useAuthStore = create<AuthStoreType & { _checkAndReplayPendingActio
                 logger.info('Found pending action. Attempting replay...');
                 const pendingAction = JSON.parse(pendingActionJson);
                 // Destructure needed properties, including providerId
-                const { endpoint, method, body, returnPath, providerId } = pendingAction;
+                const { endpoint, method, body, returnPath } = pendingAction;
                 const effectiveReturnPath = specifiedReturnPath || returnPath; // Keep effective path logic
                 
                 if (endpoint && method && token) {
@@ -521,34 +520,19 @@ export const useAuthStore = create<AuthStoreType & { _checkAndReplayPendingActio
                          logger.info('Successfully replayed pending action.', { status: replayResponse.status });
                          
                          if (endpoint === 'chat' && method.toUpperCase() === 'POST' && replayResponse.data) {
-                            try {
-                                const rawData = replayResponse.data as any;
-                                const aiStoreState = useAiStore.getState();
-                                
-                                const provider = aiStoreState.availableProviders.find(p => p.id === providerId);
-                                const apiIdentifier = provider?.api_identifier;
-                                
-                                if (!apiIdentifier) {
-                                     logger.error('Could not find apiIdentifier for replayed providerId:', { providerId });
-                                } else {
-                                     const assistantContent = parseAssistantContent(rawData, apiIdentifier);
-    
-                                     if (assistantContent) {
-                                         const constructedMessage: Partial<ChatMessage> = {
-                                             id: `replayed-assistant-${Date.now()}`,
-                                             role: 'assistant',
-                                             content: assistantContent,
-                                             created_at: new Date().toISOString(),
-                                             ai_provider_id: providerId || null,
-                                         };
-    
-                                         // Ensure state is updated appropriately after replay
-                                         // For chat, we primarily rely on the redirect and ChatPage loading logic
-                                         // No direct aiStore state update needed here anymore.
-                                     }
+                            // Keep the essential logic: Store chatId for redirect
+                            const chatId = (replayResponse.data as any)?.chat_id;
+                            if (typeof chatId === 'string') {
+                                logger.info(`Chat action replayed successfully, storing chatId ${chatId} for redirect.`);
+                                try {
+                                    sessionStorage.setItem('loadChatIdOnRedirect', chatId);
+                                } catch (e: unknown) {
+                                    logger.error('Failed to set loadChatIdOnRedirect in sessionStorage:', { 
+                                        error: e instanceof Error ? e.message : String(e) 
+                                    });
                                 }
-                            } catch (aiUpdateError: any) { 
-                                logger.error('Error processing replayed chat response or updating aiStore:', { error: aiUpdateError?.message || aiUpdateError });
+                            } else {
+                                 logger.warn('[AuthStore] Replayed chat response missing string chat_id', { data: replayResponse.data });
                             }
                          }
                      } else if (replayResponse?.error) { 

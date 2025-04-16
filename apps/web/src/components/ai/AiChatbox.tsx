@@ -21,14 +21,11 @@ interface AiChatboxProps {
   promptId: string | null
   isAnonymous: boolean
   // Optional callback for when limit is reached, handled by parent
-  onLimitReached?: () => void
 }
 
 export const AiChatbox: React.FC<AiChatboxProps> = ({
   providerId,
   promptId,
-  isAnonymous,
-  onLimitReached,
 }) => {
   const [inputMessage, setInputMessage] = useState('')
   const scrollAreaRef = useRef<HTMLDivElement>(null)
@@ -76,7 +73,6 @@ export const AiChatbox: React.FC<AiChatboxProps> = ({
         providerId,
         promptId,
         chatId: currentChatId ?? undefined,
-        isAnonymous,
       })
 
       if (
@@ -87,7 +83,6 @@ export const AiChatbox: React.FC<AiChatboxProps> = ({
       ) {
         logger.warn('[AiChatbox] Anonymous limit reached.')
         // Optionally call parent handler
-        onLimitReached?.()
         // TODO: Restore input message if needed, or handle in parent
         // setInputMessage(messageToSend);
       } else if (result && typeof result === 'object' && 'error' in result) {
