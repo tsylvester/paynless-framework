@@ -91,7 +91,7 @@ describe('aiStore - loadChatHistory', () => {
             { id: 'c1', user_id: 'u1', title: 'Chat 1', created_at: 't1', updated_at: 't2'},
         ];
         const mockToken = 'valid-token-for-history';
-        const mockUser: User = { id: 'user-123', email: 'test@test.com', created_at: 't', updated_at: 't', role: 'user' };
+        const mockUser: User = { id: 'user-123', email: 'test@test.com', created_at: 't', updated_at: 't', role: UserRole.USER };
         const mockSession: Session = { access_token: mockToken, refresh_token: 'r', expiresAt: Date.now() / 1000 + 3600 };
 
         // Nested beforeEach using mockReturnValue for authStore.getState
@@ -131,7 +131,7 @@ describe('aiStore - loadChatHistory', () => {
         it('should set loading state and call API client', async () => {
             // Arrange
             mockGetChatHistory.mockResolvedValue({
-                data: { history: mockChats }, 
+                data: mockChats,
                 status: 200,
                 error: null
             });
@@ -154,12 +154,12 @@ describe('aiStore - loadChatHistory', () => {
         it('should update chatHistoryList on success', async () => {
              // Arrange
              mockGetChatHistory.mockResolvedValue({
-                 data: { history: mockChats },
+                 data: mockChats,
                  status: 200,
                  error: null
              });
 
-             // Act: Wrap async action
+             // Act
              await act(async () => { 
                 await useAiStore.getState().loadChatHistory();
              });

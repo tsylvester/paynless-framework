@@ -112,7 +112,7 @@ export const useAuthStore = create<AuthStoreType & { _checkAndReplayPendingActio
                                });
                                // ---> END Log Replay Data <---
                                // Check if it was the chat endpoint and data has chat_id
-                               if (endpoint === '/chat' && method.toUpperCase() === 'POST' && replayResponse.data && typeof (replayResponse.data as any).chat_id === 'string') {
+                               if (endpoint === 'chat' && method.toUpperCase() === 'POST' && replayResponse.data && typeof (replayResponse.data as any).chat_id === 'string') {
                                    const chatId = (replayResponse.data as any).chat_id;
                                    logger.info(`Chat action replayed successfully, storing chatId ${chatId} for redirect.`);
                                    try {

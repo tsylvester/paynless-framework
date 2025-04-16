@@ -229,7 +229,7 @@ export const useAiStore = create<AiStore>()(
                     }
                     // Use plain set without immer
                     set({
-                        chatHistoryList: (response.data as any)?.history || [], // Handle potentially missing history key
+                        chatHistoryList: response.data || [], // Handle potentially missing history key
                         isHistoryLoading: false,
                         aiError: null,
                     });
@@ -263,7 +263,7 @@ export const useAiStore = create<AiStore>()(
                     }
                     // Use plain set without immer
                      set({
-                        currentChatMessages: (response.data as any)?.messages || [], // Handle potentially missing messages key
+                        currentChatMessages: response.data || [], // Handle potentially missing messages key
                         isDetailsLoading: false,
                         currentChatId: chatId, // Confirm chatId
                         aiError: null,
