@@ -4,6 +4,7 @@ import { api } from '@paynless/api-client';
 import { act } from '@testing-library/react';
 import type { User, Session, UserProfile, UserRole, UserProfileUpdate, ApiError } from '@paynless/types';
 import { logger } from '@paynless/utils'; 
+import { analytics } from '@paynless/analytics-client';
 
 // Helper to reset Zustand store state between tests
 const resetStore = () => {
@@ -153,5 +154,39 @@ describe('AuthStore - Update Profile Action', () => {
              expect(state.isLoading).toBe(false);
              expect(result).toBeNull();
              expect(logErrorSpy).toHaveBeenCalledWith('Update profile: Error during API call.', { message: thrownError.message });
+          });
+
+          it('should call analytics.track("Profile Updated") on successful update', async () => {
+             // Arrange: Set initial state and mock successful API response
+             useAuthStore.setState({ session: mockSession, profile: mockProfile });
+             const profileUpdate: UserProfileUpdate = { first_name: 'Updated' };
+             const updatedProfile: UserProfile = { ...mockProfile, ...profileUpdate };
+             vi.spyOn(api, 'put').mockResolvedValue({ data: updatedProfile, error: undefined, status: 200 });
+             const trackSpy = vi.spyOn(analytics, 'track');
+
+             // Act
+             await useAuthStore.getState().updateProfile(profileUpdate);
+
+             // Assert
+             expect(trackSpy).toHaveBeenCalledWith('Profile Updated');
+          });
+
+          it('should set error state and return null if API fails', async () => {
+             // Arrange: Set initial state
+             useAuthStore.setState({ session: mockSession, profile: mockProfile });
+             const apiError: ApiError = { code: 'UPDATE_FAILED', message: 'Update failed' };
+             const putSpy = vi.spyOn(api, 'put').mockResolvedValue({ data: null, error: apiError, status: 500 });
+
+             // Act
+             const result = await useAuthStore.getState().updateProfile(profileUpdate);
+
+             // Assert
+             expect(putSpy).toHaveBeenCalledWith('me', profileUpdate, { token: mockSession.access_token });
+             const state = useAuthStore.getState();
+             expect(state.profile).toEqual(mockProfile);
+             expect(state.error).toBeInstanceOf(Error);
+             expect(state.error?.message).toContain(apiError.message);
+             expect(state.isLoading).toBe(false);
+             expect(result).toBeNull();
           });
 }); 

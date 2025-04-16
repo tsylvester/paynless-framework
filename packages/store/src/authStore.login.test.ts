@@ -103,6 +103,20 @@ describe('AuthStore - Login Action', () => {
       expect(mockIdentify).toHaveBeenCalledWith(user.id, { email: user.email });
     });
 
+    it('should call analytics.track("Logged In") on successful login', async () => {
+        const { email, password, user, session, profile } = mockLoginData;
+        // Mock successful login
+        vi.spyOn(api, 'post').mockResolvedValue({ data: { user, session, profile }, error: undefined, status: 200 });
+        // Mock localStorage to return null for pendingAction
+        vi.spyOn(Storage.prototype, 'getItem').mockReturnValue(null);
+        // Mock analytics track
+        const trackSpy = vi.spyOn(analyticsClient.analytics, 'track');
+
+        await useAuthStore.getState().login(email, password);
+
+        expect(trackSpy).toHaveBeenCalledWith('Logged In');
+    });
+
     it('should set error state, clear user data, not navigate, and return null on API failure', async () => {
       const { email, password } = mockLoginData;
       const apiError = { code: 'INVALID_CREDENTIALS', message: 'Invalid credentials' };

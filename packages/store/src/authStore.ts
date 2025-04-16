@@ -64,6 +64,9 @@ export const useAuthStore = create<AuthStoreType & { _checkAndReplayPendingActio
                   analytics.identify(authData.user.id, { email: authData.user.email });
               }
 
+              // ---> Track successful login event <---
+              analytics.track('Logged In');
+
               // ---> Phase 3: Check for and replay pending action <---
               let navigated = false; // Flag to track if we navigated due to pending action
               try {
@@ -192,6 +195,9 @@ export const useAuthStore = create<AuthStoreType & { _checkAndReplayPendingActio
               if (authData.user?.id) {
                   analytics.identify(authData.user.id, { email: authData.user.email });
               }
+
+              // ---> Track successful signup event <---
+              analytics.track('Signed Up');
 
               // ---> Phase 3: Check for and replay pending action (Register) <---
               let navigated = false; // Flag to track if we navigated due to pending action
@@ -496,6 +502,8 @@ export const useAuthStore = create<AuthStoreType & { _checkAndReplayPendingActio
                  const updatedProfile = response.data;
                  set({ profile: updatedProfile, isLoading: false, error: null });
                  logger.info('Profile updated successfully.');
+                 // ---> Track successful profile update <---
+                 analytics.track('Profile Updated');
                  return updatedProfile;
             } else {
                  const errorMessage = response.error?.message || 'Failed to update profile';

@@ -4,6 +4,7 @@ import { api } from '@paynless/api-client';
 import { act } from '@testing-library/react';
 import type { User, Session, UserProfile, UserRole, ChatMessage, ApiResponse, FetchOptions } from '@paynless/types';
 import { logger } from '@paynless/utils'; 
+import { analytics } from '@paynless/analytics-client';
 
 // Enable fake timers for testing async waits
 vi.useFakeTimers();
@@ -79,6 +80,20 @@ describe('AuthStore - Register Action', () => {
          expect(result).toEqual(user); // Should return the user object on success
          expect(localMockNavigate).toHaveBeenCalledOnce();
          expect(localMockNavigate).toHaveBeenCalledWith('dashboard'); // Correct path
+     });
+
+     it('should call analytics.track("Signed Up") on successful registration', async () => {
+         const { email, password, user, session } = mockRegisterData;
+         // Mock successful registration
+         vi.spyOn(api, 'post').mockResolvedValue({ data: { user, session, profile: null }, error: undefined, status: 201 });
+         // Mock localStorage to return null for pendingAction
+         vi.spyOn(Storage.prototype, 'getItem').mockReturnValue(null);
+         // Mock analytics track
+         const trackSpy = vi.spyOn(analytics, 'track');
+
+         await useAuthStore.getState().register(email, password);
+
+         expect(trackSpy).toHaveBeenCalledWith('Signed Up');
      });
 
      it('should set error state, clear user data, not navigate, and return null on API failure', async () => {

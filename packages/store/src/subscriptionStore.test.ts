@@ -16,6 +16,7 @@ import {
     mockStripeGetUsageMetrics,
     resetStripeMocks, // Import the reset function
 } from '@paynless/api-client/mocks/stripe.mock';
+import { analytics } from '@paynless/analytics-client';
 
 // --- Mocks ---
 // Mock the API functions *directly* via the mock file functions
@@ -258,7 +259,21 @@ describe('SubscriptionStore', () => {
    // --- End NEW test ---
   });
 
+  // --- NEW: Mock window.location for checkout session tests ---
   describe('createCheckoutSession action', () => {
+    const originalLocation = window.location;
+    beforeEach(() => {
+        vi.stubGlobal('window', {
+            location: {
+                ...originalLocation, 
+                origin: 'http://localhost:3000' // Mock origin
+            }
+        });
+    });
+    afterEach(() => {
+        vi.unstubAllGlobals();
+    });
+
     const priceId = 'price_abc';
     const mockSessionUrl = 'http://localhost/checkout/sess_test_123'; // Define mock URL
 
@@ -314,7 +329,26 @@ describe('SubscriptionStore', () => {
         expect(useSubscriptionStore.getState().error?.message).toContain('User not authenticated');
         expect(resultSessionUrl).toBeNull();
      });
+
+    it('should call analytics.track("Subscription Checkout Started") on successful session creation', async () => {
+      // Arrange
+      useAuthStore.setState({ session: mockSession }); // Set authenticated state
+      const priceId = 'price_123';
+      const mockSessionUrl = 'https://checkout.stripe.com/session_123';
+      // Ensure the API call is mocked to succeed for this test using the imported mock
+      mockStripeCreateCheckoutSession.mockResolvedValue({ data: { sessionUrl: mockSessionUrl }, error: null });
+      const trackSpy = vi.spyOn(analytics, 'track');
+
+      // Act
+      await act(async () => {
+        await useSubscriptionStore.getState().createCheckoutSession(priceId);
+      });
+
+      // Assert
+      expect(trackSpy).toHaveBeenCalledWith('Subscription Checkout Started');
+    });
   });
+  // --- Close the describe block added for mocking ---
 
   describe('createBillingPortalSession action', () => {
     const mockPortalUrl = 'https://stripe.com/portal/test';

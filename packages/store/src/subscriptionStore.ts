@@ -5,6 +5,7 @@ import { SubscriptionPlan, UserSubscription, SubscriptionUsageMetrics } from '@p
 import { api } from '@paynless/api-client'; 
 import { logger } from '@paynless/utils';
 import { useAuthStore } from './authStore';
+import { analytics } from '@paynless/analytics-client';
 
 interface SubscriptionState {
   userSubscription: UserSubscription | null;
@@ -201,6 +202,8 @@ export const useSubscriptionStore = create<SubscriptionStore>()(
           // Log and return the sessionUrl
           logger.info('Received checkout session URL', { url: response.data.sessionUrl }); 
           set({ isSubscriptionLoading: false, error: null });
+          // ---> Track successful checkout initiation <---
+          analytics.track('Subscription Checkout Started');
           return response.data.sessionUrl; 
 
         } catch (error) {
