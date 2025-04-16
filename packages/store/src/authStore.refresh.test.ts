@@ -45,12 +45,12 @@ describe('AuthStore - refreshSession Action', () => {
     localMockNavigate = vi.fn();
     useAuthStore.getState().setNavigate(localMockNavigate);
 
-    // Mock sessionStorage globally for this describe block
+    // Mock localStorage globally for this describe block
     const storageCache: Record<string, string> = {};
     mockSessionGetItem = vi.fn((key: string) => storageCache[key] || null);
     mockSessionSetItem = vi.fn((key: string, value: string) => { storageCache[key] = value; });
     mockSessionRemoveItem = vi.fn((key: string) => { delete storageCache[key]; });
-    vi.stubGlobal('sessionStorage', {
+    vi.stubGlobal('localStorage', {
         getItem: mockSessionGetItem,
         setItem: mockSessionSetItem,
         removeItem: mockSessionRemoveItem,
@@ -75,7 +75,7 @@ describe('AuthStore - refreshSession Action', () => {
     // Also set a pending action to test replay
     useAuthStore.setState({ session: mockInitialSession, user: mockUser, profile: mockProfile });
     const pendingAction = { endpoint: '/replay-me', method: 'POST', body: { test: 1 }, returnPath: '/destination' };
-    sessionStorage.setItem('pendingAction', JSON.stringify(pendingAction));
+    localStorage.setItem('pendingAction', JSON.stringify(pendingAction));
 
     const mockRefreshResponse: RefreshResponse = {
       session: mockRefreshedSession,
@@ -102,7 +102,7 @@ describe('AuthStore - refreshSession Action', () => {
 
     // Assert: Check replay logic
     // FIXME: Logic error in _checkAndReplayPendingAction - item not removed
-    // expect(sessionStorage.getItem('pendingAction')).toBeNull(); 
+    // expect(localStorage.getItem('pendingAction')).toBeNull(); 
     // Fix: Check the Nth call for the replay arguments
     expect(apiPostSpy).toHaveBeenNthCalledWith(2, pendingAction.endpoint, pendingAction.body, { token: mockRefreshedSession.access_token });
     expect(localMockNavigate).toHaveBeenCalledWith(pendingAction.returnPath);
@@ -113,7 +113,7 @@ describe('AuthStore - refreshSession Action', () => {
     useAuthStore.setState({ session: mockInitialSession, user: mockUser, profile: mockProfile });
     const mockApiError: ApiError = { code: 'REFRESH_FAILED', message: 'Token validation failed' };
     apiPostSpy.mockResolvedValue({ data: null, error: mockApiError, status: 500 });
-    // const removeItemSpy = vi.spyOn(sessionStorage, 'removeItem'); // REMOVE local spy
+    // const removeItemSpy = vi.spyOn(localStorage, 'removeItem'); // REMOVE local spy
 
     // Act
     await useAuthStore.getState().refreshSession();
@@ -160,7 +160,7 @@ describe('AuthStore - refreshSession Action', () => {
     // Mock API response with null data
     const mockInvalidResponse: RefreshResponse = { session: null, user: null, profile: null };
     apiPostSpy.mockResolvedValue({ data: mockInvalidResponse, error: undefined, status: 200 });
-    // const removeItemSpy = vi.spyOn(sessionStorage, 'removeItem'); // REMOVE local spy
+    // const removeItemSpy = vi.spyOn(localStorage, 'removeItem'); // REMOVE local spy
 
     // Act
     await useAuthStore.getState().refreshSession();
@@ -186,7 +186,7 @@ describe('AuthStore - refreshSession Action', () => {
     useAuthStore.setState({ session: mockInitialSession, user: mockUser, profile: mockProfile });
     const thrownError = new Error('Network failed horribly');
     apiPostSpy.mockRejectedValue(thrownError);
-    // const removeItemSpy = vi.spyOn(sessionStorage, 'removeItem'); // REMOVE local spy
+    // const removeItemSpy = vi.spyOn(localStorage, 'removeItem'); // REMOVE local spy
 
     // Act
     await useAuthStore.getState().refreshSession();

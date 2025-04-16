@@ -55,7 +55,7 @@ describe('AuthStore - Login Action', () => {
   it('should update state, call navigate, and return user on success (no replay)', async () => {
       const { email, password, user, session } = mockLoginData;
       const postSpy = vi.spyOn(api, 'post').mockResolvedValue({ data: { user, session, profile: mockProfile }, error: undefined, status: 200 });
-      // Spy on sessionStorage getItem to ensure it's checked but returns null
+      // Spy on localStorage getItem to ensure it's checked but returns null
       const getItemSpy = vi.spyOn(Storage.prototype, 'getItem').mockReturnValue(null);
       const localMockNavigate = vi.fn(); // Use local mock for this specific test
       useAuthStore.setState({ navigate: localMockNavigate });
@@ -142,7 +142,7 @@ describe('AuthStore - Login Action', () => {
 
 
         beforeEach(() => {
-            // Mock sessionStorage
+            // Mock localStorage
             getItemSpy = vi.spyOn(Storage.prototype, 'getItem');
             removeItemSpy = vi.spyOn(Storage.prototype, 'removeItem');
             setItemSpy = vi.spyOn(Storage.prototype, 'setItem');
@@ -171,11 +171,11 @@ describe('AuthStore - Login Action', () => {
                 body: { message: 'pending message' },
                 returnPath: '/chat'
             };
-            // Mock sessionStorage getItem & removeItem
-            const getItemSpy = vi.spyOn(window.sessionStorage, 'getItem').mockReturnValue(JSON.stringify(mockPendingAction));
-            const removeItemSpy = vi.spyOn(window.sessionStorage, 'removeItem');
-            // Spy directly on sessionStorage.setItem
-            const setItemSpy = vi.spyOn(window.sessionStorage, 'setItem'); 
+            // Mock localStorage getItem & removeItem
+            const getItemSpy = vi.spyOn(window.localStorage, 'getItem').mockReturnValue(JSON.stringify(mockPendingAction));
+            const removeItemSpy = vi.spyOn(window.localStorage, 'removeItem');
+            // Spy directly on localStorage.setItem
+            const setItemSpy = vi.spyOn(window.localStorage, 'setItem'); 
 
             // Mock API response for initial login
             const mockLoginResponse: AuthResponse = {
@@ -209,7 +209,7 @@ describe('AuthStore - Login Action', () => {
             // Debug: Log the calls made to setItem
             console.log('setItemSpy calls:', setItemSpy.mock.calls);
 
-            // Assert sessionStorage.setItem for redirect ID
+            // Assert localStorage.setItem for redirect ID
             expect(setItemSpy).toHaveBeenCalledWith('loadChatIdOnRedirect', mockChatId);
 
             // Assert navigation to specific path from pending action
@@ -250,7 +250,7 @@ describe('AuthStore - Login Action', () => {
                 chatPendingActionData.body,
                 { token: mockLoginData.session.access_token }
             );
-            // Assert sessionStorage.setItem for redirect ID was NOT called
+            // Assert localStorage.setItem for redirect ID was NOT called
             expect(setItemSpy).not.toHaveBeenCalledWith('loadChatIdOnRedirect', expect.anything());
 
             // Assert navigation still goes to the returnPath from pending action
@@ -290,7 +290,7 @@ describe('AuthStore - Login Action', () => {
                  nonChatPendingActionData.body,
                  { token: mockLoginData.session.access_token }
              );
-             // Assert sessionStorage.setItem for redirect ID was NOT called
+             // Assert localStorage.setItem for redirect ID was NOT called
              expect(setItemSpy).not.toHaveBeenCalledWith('loadChatIdOnRedirect', expect.anything());
 
              // Assert navigation to specific path from non-chat pending action
@@ -311,7 +311,7 @@ describe('AuthStore - Login Action', () => {
              expect(getItemSpy).toHaveBeenCalled();
              expect(removeItemSpy).not.toHaveBeenCalled(); // Should not remove if parse fails
              expect(apiPostSpy).toHaveBeenCalledTimes(1); // Only login call
-             // Assert sessionStorage.setItem was NOT called for redirect ID
+             // Assert localStorage.setItem was NOT called for redirect ID
              expect(setItemSpy).not.toHaveBeenCalledWith('loadChatIdOnRedirect', expect.anything());
              // Should navigate to default dashboard path
              expect(localMockNavigate).toHaveBeenCalledTimes(1);
