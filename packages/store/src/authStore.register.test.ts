@@ -103,9 +103,11 @@ describe('AuthStore - Register Action', () => {
 
       // --- Tests for Register Replay Logic ---
     describe('register action - replay logic', () => {
-        let getItemSpy: MockInstance<[key: string], string | null>;
-        let removeItemSpy: MockInstance<[key: string], void>;
-        let setItemSpy: MockInstance<[key: string, value: string], void>;
+        // FIX: Use stubGlobal mocks for sessionStorage
+        let mockSessionGetItem: Mock<[key: string], string | null>;
+        let mockSessionSetItem: Mock<[key: string, value: string], void>;
+        let mockSessionRemoveItem: Mock<[key: string], void>;
+        // Keep API spy
         let apiPostSpy: MockInstance<[endpoint: string, body: unknown, options?: FetchOptions], Promise<ApiResponse<unknown>>>;
         let localMockNavigate: Mock<[], void>;
 
@@ -141,6 +143,7 @@ describe('AuthStore - Register Action', () => {
             getItemSpy = vi.spyOn(Storage.prototype, 'getItem');
             removeItemSpy = vi.spyOn(Storage.prototype, 'removeItem');
             setItemSpy = vi.spyOn(Storage.prototype, 'setItem');
+
             // Mock api.post
             apiPostSpy = vi.spyOn(api, 'post');
              // Use a local mock for navigation
@@ -157,16 +160,29 @@ describe('AuthStore - Register Action', () => {
 
          it('should replay chat action, store chatId, navigate to /chat, and skip default nav on success', async () => {
             // Arrange
-            getItemSpy.mockReturnValue(chatPendingActionJson); // Provide pending chat action
+            mockSessionGetItem.mockReturnValue(chatPendingActionJson); 
             // Mock successful replay response (SECOND api.post call)
-            apiPostSpy.mockResolvedValueOnce({ data: mockReplayChatMessage, error: undefined, status: 200 });
+            // apiPostSpy.mockResolvedValueOnce({ data: mockReplayChatMessage, error: undefined, status: 200 });
+            
+            // FIX: Use mockImplementationOnce for clearer sequence control
+            const mockRegisterResponse = { data: { user: mockRegisterData.user, session: mockRegisterData.session, profile: mockRegisterData.profile }, error: undefined, status: 201 };
+            const mockReplayResponse = { data: mockReplayChatMessage, error: undefined, status: 200 };
+            
+            vi.mocked(api.post)
+              .mockImplementationOnce(() => Promise.resolve(mockRegisterResponse)) // 1st call (register)
+              .mockImplementationOnce(() => Promise.resolve(mockReplayResponse)); // 2nd call (replay)
 
             // Act
-            await useAuthStore.getState().register(mockRegisterData.email, mockRegisterData.password);
+            let promise;
+            await act(async () => { 
+              promise = useAuthStore.getState().register(mockRegisterData.email, mockRegisterData.password);
+            });
+            // Ensure the promise resolves fully
+            await promise;
 
             // Assert
-            expect(getItemSpy).toHaveBeenCalledWith('pendingAction');
-            expect(removeItemSpy).toHaveBeenCalledWith('pendingAction');
+            expect(mockSessionGetItem).toHaveBeenCalledWith('pendingAction');
+            expect(mockSessionRemoveItem).toHaveBeenCalledWith('pendingAction');
             // Check register call (1st call)
             expect(apiPostSpy).toHaveBeenNthCalledWith(1, '/register', { email: mockRegisterData.email, password: mockRegisterData.password });
             // Check replay call (2nd call)
@@ -178,6 +194,7 @@ describe('AuthStore - Register Action', () => {
             // Assert localStorage.setItem for redirect ID
             expect(setItemSpy).toHaveBeenCalledWith('loadChatIdOnRedirect', mockChatId);
 
+
             // Assert navigation to specific path from pending action
             expect(localMockNavigate).toHaveBeenCalledTimes(1);
             expect(localMockNavigate).toHaveBeenCalledWith(chatPendingActionData.returnPath); // Should be '/chat'
@@ -185,7 +202,7 @@ describe('AuthStore - Register Action', () => {
 
          it('should navigate to /chat and NOT store chatId if chat replay fails', async () => {
              // Arrange
-            getItemSpy.mockReturnValue(chatPendingActionJson); // Provide pending chat action
+            mockSessionGetItem.mockReturnValue(chatPendingActionJson); 
             // Redefine replayError to include status and nested error
             const replayError = { 
               error: { code: 'REPLAY_FAILED', message: 'Chat replay failed after register' }, 
@@ -199,8 +216,8 @@ describe('AuthStore - Register Action', () => {
             await useAuthStore.getState().register(mockRegisterData.email, mockRegisterData.password);
 
             // Assert
-            expect(getItemSpy).toHaveBeenCalledWith('pendingAction');
-            expect(removeItemSpy).toHaveBeenCalledWith('pendingAction'); // Action should still be removed
+            expect(mockSessionGetItem).toHaveBeenCalledWith('pendingAction');
+            expect(mockSessionRemoveItem).toHaveBeenCalledWith('pendingAction'); 
             // Check register call (1st call)
             expect(apiPostSpy).toHaveBeenNthCalledWith(1, '/register', { email: mockRegisterData.email, password: mockRegisterData.password });
             // Check replay call (2nd call)
@@ -211,7 +228,7 @@ describe('AuthStore - Register Action', () => {
             );
             // Assert localStorage.setItem for redirect ID was NOT called
             expect(setItemSpy).not.toHaveBeenCalledWith('loadChatIdOnRedirect', expect.anything());
-
+           
             // Assert navigation still goes to the returnPath from pending action
             expect(localMockNavigate).toHaveBeenCalledTimes(1);
             expect(localMockNavigate).toHaveBeenCalledWith(chatPendingActionData.returnPath); // Should still be '/chat'
@@ -229,7 +246,7 @@ describe('AuthStore - Register Action', () => {
 
          it('should replay non-chat action, navigate to returnPath, and NOT store chatId', async () => {
             // Arrange
-            getItemSpy.mockReturnValue(nonChatPendingActionJson); // Provide pending NON-chat action
+            mockSessionGetItem.mockReturnValue(nonChatPendingActionJson); 
              // Mock successful non-chat replay response - assumes POST for /settings (SECOND api.post call)
              apiPostSpy.mockResolvedValueOnce({ data: { success: true }, error: undefined, status: 200 });
 
@@ -238,8 +255,8 @@ describe('AuthStore - Register Action', () => {
              await useAuthStore.getState().register(mockRegisterData.email, mockRegisterData.password);
 
              // Assert
-             expect(getItemSpy).toHaveBeenCalledWith('pendingAction');
-             expect(removeItemSpy).toHaveBeenCalledWith('pendingAction');
+             expect(mockSessionGetItem).toHaveBeenCalledWith('pendingAction');
+             expect(mockSessionRemoveItem).toHaveBeenCalledWith('pendingAction');
              // Check register call (api.post - 1st call)
              expect(apiPostSpy).toHaveBeenNthCalledWith(1, 'register', { email: mockRegisterData.email, password: mockRegisterData.password });
              // Check replay call (api.post - 2nd call)
@@ -257,13 +274,13 @@ describe('AuthStore - Register Action', () => {
          });
 
          it('should navigate to dashboard if pendingAction JSON is invalid', async () => {
-            // Arrange
-            getItemSpy.mockReturnValue('{invalid json'); // Invalid JSON
-            const logErrorSpy = vi.spyOn(logger, 'error');
-            const expectedError = expect.any(SyntaxError);
+              // Arrange
+             mockSessionGetItem.mockReturnValue('{invalid json');
+             const logErrorSpy = vi.spyOn(logger, 'error');
+             const expectedError = expect.any(SyntaxError);
 
-            // Act
-            await useAuthStore.getState().register(mockRegisterData.email, mockRegisterData.password);
+             // Act
+             await useAuthStore.getState().register(mockRegisterData.email, mockRegisterData.password);
 
             // Assert
             expect(getItemSpy).toHaveBeenCalledWith('pendingAction');

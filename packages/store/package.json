@@ -22,6 +22,7 @@
     "@paynless/api-client": "workspace:*",
     "@paynless/types": "workspace:*",
     "@paynless/utils": "workspace:*",
+    "@paynless/analytics-client": "workspace:*",
     "jwt-decode": "^4.0.0",
     "zustand": "^4.5.2",
     "immer": "^10.1.1"

@@ -3,6 +3,7 @@ import { AuthStore as AuthStoreType, AuthResponse, User, Session, UserProfile, U
 import { logger } from '@paynless/utils';
 import { persist } from 'zustand/middleware';
 import { api } from '@paynless/api-client';
+import { analytics } from '@paynless/analytics-client';
 
 // Define the structure of the response from the refresh endpoint
 interface RefreshResponse {
@@ -57,9 +58,14 @@ export const useAuthStore = create<AuthStoreType & { _checkAndReplayPendingActio
                 isLoading: false,
                 error: null,
               });
-      
-              // Check for and replay pending action
-              let navigated = false;
+
+              // ---> Identify user for analytics <---
+              if (authData.user?.id) {
+                  analytics.identify(authData.user.id, { email: authData.user.email });
+              }
+
+              // ---> Phase 3: Check for and replay pending action <---
+              let navigated = false; // Flag to track if we navigated due to pending action
               try {
                   const pendingActionJson = localStorage.getItem('pendingAction');
                   if (pendingActionJson) {
@@ -181,9 +187,14 @@ export const useAuthStore = create<AuthStoreType & { _checkAndReplayPendingActio
                 isLoading: false,
                 error: null,
               });
-      
-              // Check for and replay pending action
-              let navigated = false;
+
+              // ---> Identify user for analytics <---
+              if (authData.user?.id) {
+                  analytics.identify(authData.user.id, { email: authData.user.email });
+              }
+
+              // ---> Phase 3: Check for and replay pending action (Register) <---
+              let navigated = false; // Flag to track if we navigated due to pending action
               try {
                   const pendingActionJson = localStorage.getItem('pendingAction');
                   if (pendingActionJson) {
@@ -215,11 +226,13 @@ export const useAuthStore = create<AuthStoreType & { _checkAndReplayPendingActio
                                logger.info('[AuthStore] Successfully replayed pending action.', { status: replayResponse.status });
                                
                                // Check if it was the chat endpoint and data has chat_id
+
                                if ((endpoint === 'chat') && 
                                    method.toUpperCase() === 'POST' && 
                                    replayResponse.data && 
                                    typeof (replayResponse.data as any).chat_id === 'string') {
-                                   const chatId = (replayResponse.data as any).chat_id;
+
+                                 const chatId = (replayResponse.data as any).chat_id;
                                    logger.info(`Chat action replayed successfully, storing chatId ${chatId} for redirect.`);
                                    try {
                                        localStorage.setItem('loadChatIdOnRedirect', chatId);
@@ -275,6 +288,9 @@ export const useAuthStore = create<AuthStoreType & { _checkAndReplayPendingActio
       },
             
       logout: async () => {
+        // ---> Reset analytics user <---
+        analytics.reset(); 
+        
         const token = get().session?.access_token;
         
         if (token) {
@@ -312,7 +328,7 @@ export const useAuthStore = create<AuthStoreType & { _checkAndReplayPendingActio
       },
       
       initialize: async () => {
-        set({ isLoading: true });
+        
         try {
           // Get session from Zustand's persisted state
           const session = get().session;
@@ -329,32 +345,29 @@ export const useAuthStore = create<AuthStoreType & { _checkAndReplayPendingActio
           if (session.expiresAt * 1000 < Date.now()) {
             logger.info('Stored session is expired.');
             
-            // Try to refresh if we have a refresh token
-            if (session.refresh_token) {
-              logger.info('Attempting to refresh expired token...');
-              await get().refreshSession();
-            } else {
-              // No refresh token, clear state
-              set({ user: null, profile: null, session: null, isLoading: false, error: null });
-              localStorage.removeItem('auth-storage');
-            }
-            return;
+          // Try to refresh if we have a refresh token
+          if (session.refresh_token) {
+            logger.info('Attempting to refresh expired token...');
+            await get().refreshSession();
+          } else {
+            // No refresh token, clear state
+            set({ user: null, profile: null, session: null, isLoading: false, error: null });
+            localStorage.removeItem('auth-storage');
           }
-
+          return;
+          }
           // Session exists and is not expired, verify with backend
           logger.info('Valid session found, verifying token / fetching initial profile...');
           const response = await api.get<AuthResponse>('me', { token: session.access_token });
-
           if (response.error || !response.data || !response.data.user) {
             // Token invalid or expired
             logger.error('/me call failed after restoring session.', { error: response.error });
-            
+
             // Try refreshing the token
             logger.info('Attempting to refresh token after failed /me call...');
             await get().refreshSession();
             return;
           }
-
           // /me successful, update user/profile
           logger.info('/me call successful, user authenticated.');
           set({ 
@@ -364,11 +377,21 @@ export const useAuthStore = create<AuthStoreType & { _checkAndReplayPendingActio
             error: null 
           });
 
+          // ---> Identify user for analytics <---
+          if (response.data.user?.id) {
+            analytics.identify(response.data.user.id, {
+              email: response.data.user.email,
+              // Add traits from profile if available
+              firstName: response.data.profile?.first_name,
+              lastName: response.data.profile?.last_name,
+            });
+          }
+
           // Refresh token if it expires soon (within 10 minutes)
           const expiresAt = session.expiresAt * 1000;
           const now = Date.now();
           const timeUntilExpiry = expiresAt - now;
-          
+
           if (timeUntilExpiry < 10 * 60 * 1000) {
             logger.info('Token expires soon, refreshing...');
             await get().refreshSession();

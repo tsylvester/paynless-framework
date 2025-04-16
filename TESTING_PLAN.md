@@ -186,12 +186,26 @@
         *   [✅] `packages/api-client` (All sub-clients: `apiClient`, `stripe.api`, `ai.api` tests passing)
         *   [✅] `packages/store` (Vitest setup complete)
             *   [✅] `authStore.ts` (All actions covered across multiple `authStore.*.test.ts` files)
+                *   **NOTE:** Replay logic tests (in `register.test.ts`, `login.test.ts`) and session/state restoration tests (in `initialize.test.ts`) related to `_checkAndReplayPendingAction` and the `initialize` action are currently unreliable/skipped/adjusted due to known issues in the underlying store functions. These tests need revisiting after the functions are fixed.
+                *   [✅] *(Analytics)* Verify `analytics.identify` called on login/init success.
+                *   [✅] *(Analytics)* Verify `analytics.reset` called on logout.
+                *   [ ] *(Analytics)* Verify `analytics.track('Signed Up')` called on register success.
+                *   [ ] *(Analytics)* Verify `analytics.track('Logged In')` called on login success.
+                *   [ ] *(Analytics)* Verify `analytics.track('Profile Updated')` called on updateProfile success.
             *   [✅] `subscriptionStore.ts` *(Tests passing, including refresh failures in cancel/resume)*
+                *   [ ] *(Analytics)* Verify `analytics.track('Subscription Checkout Started')` called on createCheckoutSession success.
+                *   [ ] *(Analytics)* Verify `analytics.track('Billing Portal Opened')` called on createBillingPortalSession success.
             *   [✅] `aiStore.ts` *(Status: Refactored into `aiStore.*.test.ts` files. All tests passing after fixing mock strategy and store logic.)*
-                *   *Note: Utilizes `vi.mocked(useAuthStore.getState).mockReturnValue` pattern for dependent store state.* 
+                *   [ ] *(Analytics)* Verify `analytics.track('Message Sent')` called on sendMessage success.
+                *   *Note: Utilizes `vi.mocked(useAuthStore.getState).mockReturnValue` pattern for dependent store state.*
         *   [⏭️] `packages/ui-components` *(Skipped - Package empty)*.
         *   [✅] `packages/utils` (`logger.ts` tests passing)
         *   [✅] `packages/types` *(Implicitly tested via usage)*.
+            *   [✅] *(Analytics)* Verify `AnalyticsClient` interface exists in `analytics.types.ts`.
+        *   [✅] `packages/analytics-client` *(Setup Complete)*
+            *   [✅] Unit Test `nullAdapter.ts` (interface compliance, callable methods).
+            *   [✅] Unit Test `posthogAdapter.ts` (mock `posthog-js`, verify calls to `init`, `identify`, `capture`, `reset`, etc.).
+            *   [✅] Unit Test `index.ts` (service logic: verify null adapter default [✅], verify PostHog selection [✅]).
         *   [ ] `packages/utils` or `packages/platform-capabilities`: Unit test `platformCapabilitiesService` (mock platform detection).
         *   [ ] Unit test TypeScript capability providers (mock underlying APIs like `invoke`, Web APIs, RN Modules).
     *   **2.2 Integration Tests:** (Frontend MSW-based tests are covered in Phase 3.2)
@@ -214,130 +228,4 @@
                 *   `[ ]` Register -> Redirect to Chat (Test handling of `redirectTo` from `authStore`)
             *   **Profile Management (`profile.integration.test.tsx`):**
                 *   `[✅]` Profile Load: Data displayed in editor.
-                *   `[✅]` Profile Update: Success case updates UI/store.
-                *   `[✅]` Profile Update: Error case displays message.
-                *   `[ ]` Profile Update: Loading state.
-            *   **Subscription Viewing & Actions (`Subscription.integration.test.tsx`):**
-                *   `[✅]` Plan Loading: Displays plans from API.
-                *   `[✅]` Current Subscription Loading: Displays current sub details.
-                *   `[✅]` Create Checkout: Calls `onSubscribe` prop correctly.
-                *   `[✅]` Create Checkout: Handles `onSubscribe` prop rejection.
-                *   `[✅]` Create Portal: Calls store action & attempts redirect.
-                *   `[ ]` Create Portal: Handles store action failure. (Manually tested as working, integration test not implemented)
-                *   `[✅]` Cancel Subscription: Calls store action.
-                *   `[ ]` Cancel Subscription: Handles store action failure. (Manually tested as working, integration test not implemented)
-                *   `[ ]` Resume Subscription: Actions & Handlers. (Manually tested as working, integration test not implemented)
-                *   `[ ]` Usage Metrics: Actions & Handlers.
-                *   `[✅]` Test Mode UI indication.
-                *   `[ ]` Loading states for actions.
-            *   **AI Chat (`ai.integration.test.tsx`):**
-                *   [✅] Load AI Config (Providers/Prompts)
-                *   [✅] Send Message (Authenticated): Verify success, check *only* `Authorization` header is sent.
-                *   [✅] Send Message (Error)
-                *   [✅] Load Chat History
-                *   [✅] Load Chat Details
-    *   **3.3 End-to-End Tests:**
-        *   [ ] **Tooling:** Setup Playwright/Cypress.
-        *   [✅] **Core User Flows:** Auth cycle, Profile management.
-        *   [ ] **Payment Flows:**
-            *   `[ ]` User selects plan -> Clicks Subscribe -> Redirected to Stripe Checkout (Manually tested as working, E2E test not implemented)
-            *   `[ ]` User completes checkout -> Redirected to Success URL -> Verify UI update / subscription state (Manually tested as working, E2E test not implemented)
-            *   `[ ]` User cancels checkout -> Redirected to Cancel URL -> Verify UI state (Manually tested as working, E2E test not implemented)
-            *   `[ ]` Subscribed user clicks Manage Billing -> Redirected to Stripe Portal (Manually tested as working, E2E test not implemented)
-            *   `[ ]` User manages subscription in Portal -> Returns to app -> Verify UI update / subscription state (Manually tested as working, E2E test not implemented)
-        *   [ ] **Platform Capabilities:** Verify graceful degradation/alternative UI for features unavailable in the web environment. Test features using Web APIs (if any implemented via capabilities).
-
-*   **Phase 4: CI/CD**
-    *   [ ] Setup CI pipeline (e.g., GitHub Actions).
-    *   [ ] Configure pipeline for Phase 1.1 tests.
-    *   [ ] Configure pipeline for Phase 2.1 tests.
-    *   [ ] Configure pipeline for Phase 3.1 tests.
-    *   [ ] (Optional): Configure Phase 1.2 tests (consider env var limitations).
-    *   [ ] (Optional): Configure Phase 3.3 tests.
-    *   [ ] Configure deployment steps.
-*   **Phase 5: Desktop & Mobile Apps (`apps/desktop/`, `apps/ios/`, `apps/android/`)**
-    *   **5.1 Unit Tests (Rust/Native Modules):**
-        *   [ ] Tauri Rust Commands: Unit test native logic (`#[test]`).
-        *   [ ] React Native Modules: Unit test native module logic if applicable.
-    *   **5.2 Integration Tests (Platform-Specific):**
-        *   [ ] **Tauri:** Set up Tauri integration testing (e.g., `tauri-driver`) to test TS-Rust bridge (`invoke`) and native interactions on target OS (Windows, Mac, Linux).
-        *   [ ] **React Native:** Set up RN integration testing (e.g., Detox/Appium) to test interactions with native modules on simulators/devices.
-    *   **5.3 End-to-End Tests (Platform-Specific):**
-        *   [ ] **Tooling:** Setup E2E tools for Tauri (e.g., Playwright with tauri-driver?) and React Native (Detox/Appium).
-        *   [ ] **Flows:** Test user flows involving platform-specific capabilities (filesystem, registry, etc.) on each target platform build (Windows, Mac, Linux, iOS, Android).
----
-
-## Testing Plan: Phase 1 - Backend Integration Details
-
-**Goal**: Ensure backend functions (Supabase Edge Functions) integrate correctly with each other, the database (including RLS), and external services (Stripe test mode) in the local development environment *where possible*, and in deployed environments otherwise.
-
-### Known Limitations: Local Integration Testing with `supabase start`
-*(This section remains as added previously)*
-
-**Context:** Integration tests involving Supabase Edge Functions are designed to run against a local Supabase stack launched via `supabase start`.
-
-**Issue Encountered:** As of Supabase CLI v2.20.5, `supabase start` does **not** reliably load environment variables from `.env` files (e.g., `supabase/.env.local`, `supabase/functions/.env`) into the Edge Function runtime environment, even when those files exist and contain the necessary variables (like Stripe API keys).
-
-*   The `--env-file` flag, while functional with `supabase functions serve`, is **not** recognized by `supabase start`.
-*   Manual loading attempts within shared function code (e.g., `_shared/stripe-client.ts` attempting to read `.env.local`) fail, likely due to the Deno runtime's default permission restrictions (missing `--allow-read` or `--allow-env`) within the sandbox created by `supabase start`. Diagnostic logs added to these loading attempts do not appear, suggesting the code block fails or is suppressed before logging can occur.
-
-**Symptoms:**
-*   Edge Functions that depend on environment variables set via `.env` files (e.g., `api-subscriptions` needing `STRIPE_SECRET_TEST_KEY`) fail during integration tests when run against `supabase start`.
-*   These failures often manifest as `500 Internal Server Error` responses, originating from the function's inability to initialize dependencies (like the Stripe client) due to missing API keys/secrets.
-*   Using `supabase functions logs --source <function_name>` confirms that `Deno.env.get()` returns `undefined` for the expected variables within the function runtime.
-*   Running the same function using `supabase functions serve --env-file supabase/.env.local <function_name>` *does* successfully load the environment variables (confirmed via logs), indicating the function code itself is likely correct but needs the variables provided.
-
-**Auth integration problems:**
-Login Flow > should log in successfully...: Failed because the store state didn't update (authState.user?.email was undefined, expected 'test@example.com'). The UI displayed the generic "Network error occurred..." message.
-Login Flow > should display error message for invalid credentials: Failed because the UI showed the generic "Network error occurred..." message instead of the expected "Invalid credentials".
-Register Flow > should register successfully...: Failed because the store state didn't update (authState.user?.email was undefined, expected 'new@example.com'). The UI displayed the generic "Network error occurred..." message.
-Register Flow > should display error message if email already exists: Failed because the UI showed the generic "Network error occurred..." message instead of the expected "Email already exists".
-The two tests that passed were the ones specifically designed to test server errors (should display generic error message for server error for both Login and Register), where we overrode the MSW handlers within the test to force a 500 error.
-Conclusion: The MSW handlers defined in apps/web/src/mocks/handlers.ts are still not correctly intercepting the requests or are not returning the expected responses for the success and specific error cases (invalid credentials, email exists). The changes to the test file itself were correct in focusing on store state, but the underlying mock handler issue persists, causing the apiClient to fall back to the generic network error.
-
----
-
-## Test Suite Refactoring and Completion Plan (April 2024)
-
-**Goal:** Standardize the structure, naming, and implementation of tests within `apps/web/`, consolidate utilities and mocks, ensure comprehensive coverage according to the original testing goals, and resolve inconsistencies identified during previous phases.
-
-**Steps:**
-
-1.  **[✅] Standardize File Naming and Location:**
-    *   Integration test files moved/merged into `tests/integration/` (`auth`, `profile`, `Subscription`).
-    *   Redundant `*.msw.test.tsx` files removed.
-
-2.  **[✅] Consolidate Test Utilities:**
-    *   Shared `render` utility in `utils/render.tsx` simplified (removed `AuthProvider`).
-    *   Redundant `utils/providers.tsx` removed.
-
-3.  **[✅] Consolidate MSW Handlers:**
-    *   Standardized on `utils/mocks/handlers.ts`.
-    *   Redundant handler file removed.
-    *   Server import path updated.
-    *   Handlers updated with correct API paths (`/login`, `/register`, `/me`, `/api-subscriptions/...`).
-
-4.  **[✅] Centralize Mocks:**
-    *   Shared mocks created for `Layout` and `react-router.mock.ts` (`useNavigate`).
-
-5.  **[✅] Refactor Existing Integration Tests for Consistency:**
-    *   Core integration tests (`auth`, `profile`, `Subscription`) updated to use shared `render`, shared mocks, real stores, and correct API paths.
-    *   Removed local helper functions and mocks.
-
-6.  **[🚧] Coverage Review & Gap Analysis:**
-    *   **Action:** Re-evaluate the test status checklist in `TESTING_PLAN.md` (Phase 3.2) against the refactored test suite.
-    *   **Goal:** Identify remaining gaps.
-    *   *(Next Step)*
-
-7.  **[🚧] Full Suite Run & Fix:**
-    *   **Action:** Execute the integration test suite for `apps/web` (`pnpm --filter web test tests/integration/`).
-    *   **Goal:** Ensure refactored tests pass. Debug and fix failures.
-    *   *(Next Step)*
-
-8.  **[🚧] Refactor Unit Tests:**
-    *   **Action:** Update unit tests in `tests/unit/` to use shared `render` and mocks.
-
-9.  **[ ] Implement Missing Tests:**
-    *   **Action:** Write tests for items marked `[ ]` in the Phase 3.2 checklist.
-
-10. **[ ] Final `
+                *   `[✅]`
