@@ -186,7 +186,7 @@ export const useAuthStore = create<AuthStoreType & { _checkAndReplayPendingActio
               set({
                 user: authData.user,
                 session: authData.session,
-                profile: authData.profile,
+                profile: null,
                 isLoading: false,
                 error: null,
               });
@@ -269,7 +269,7 @@ export const useAuthStore = create<AuthStoreType & { _checkAndReplayPendingActio
                  const navigate = get().navigate;
                  if (navigate) {
                      logger.info('Registration successful (no pending action/navigation), navigating to dashboard.');
-                     navigate('/dashboard');
+                     navigate('dashboard');
                  } else {
                      logger.warn('Registration successful but navigate function not set in store.');
                  }
@@ -323,7 +323,7 @@ export const useAuthStore = create<AuthStoreType & { _checkAndReplayPendingActio
       
       initialize: async () => {
         set({ isLoading: true });
-        let session: Session | null = null;
+        let session = get().session;
         try {
           const sessionJson = sessionStorage.getItem('auth-session');
           if (sessionJson) {
