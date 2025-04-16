@@ -4,6 +4,8 @@ import { api } from '@paynless/api-client';
 import { act } from '@testing-library/react';
 import type { User, Session, UserProfile, UserRole, ChatMessage, ApiResponse, FetchOptions, AuthResponse } from '@paynless/types';
 import { logger } from '@paynless/utils'; 
+// Import the module to access the mocked version later
+import * as analyticsClient from '@paynless/analytics-client';
 
 // Helper to reset Zustand store state between tests
 const resetStore = () => {
@@ -36,11 +38,30 @@ vi.mock('@paynless/utils', () => ({
   },
 }));
 
+// Declare variables to hold mock functions
+let mockIdentify: Mock;
+let mockReset: Mock;
+let mockTrack: Mock;
+
+// Mock the analytics client module factory (Creates NEW vi.fn() instances)
+vi.mock('@paynless/analytics-client', () => ({ 
+  analytics: { 
+    identify: vi.fn(), 
+    reset: vi.fn(), 
+    track: vi.fn() 
+  } 
+}));
+
 // Mock navigate function (will be injected into store state)
 const mockNavigateGlobal = vi.fn(); 
 
 describe('AuthStore - Login Action', () => {
   beforeEach(() => {
+    // Assign the actual mock functions from the mocked module to the variables
+    mockIdentify = vi.mocked(analyticsClient.analytics.identify);
+    mockReset = vi.mocked(analyticsClient.analytics.reset);
+    mockTrack = vi.mocked(analyticsClient.analytics.track);
+
     act(() => {
       resetStore();
       // Inject the mock navigate function before relevant tests
@@ -74,6 +95,10 @@ describe('AuthStore - Login Action', () => {
       expect(result).toEqual(user);
       expect(localMockNavigate).toHaveBeenCalledOnce();
       expect(localMockNavigate).toHaveBeenCalledWith('/dashboard'); // Default navigation
+
+      // Assert: Analytics identify call (using the assigned mock variable)
+      expect(mockIdentify).toHaveBeenCalledTimes(1);
+      expect(mockIdentify).toHaveBeenCalledWith(user.id, { email: user.email });
     });
 
     it('should set error state, clear user data, not navigate, and return null on API failure', async () => {
@@ -97,13 +122,18 @@ describe('AuthStore - Login Action', () => {
       expect(state.error?.message).toContain(apiError.message);
       expect(result).toBeNull();
       expect(localMockNavigate).not.toHaveBeenCalled();
+
+      // Assert: Analytics NOT called (using the assigned mock variable)
+      expect(mockIdentify).not.toHaveBeenCalled();
     });
 
     // --- Tests for Login Replay Logic ---
     describe('login action - replay logic', () => {
-        let getItemSpy: MockInstance<[key: string], string | null>;
-        let removeItemSpy: MockInstance<[key: string], void>;
-        let setItemSpy: MockInstance<[key: string, value: string], void>;
+        // Use let for mock function references, consistent with initialize.test.ts
+        let mockSessionGetItem: Mock<[key: string], string | null>;
+        let mockSessionSetItem: Mock<[key: string, value: string], void>;
+        let mockSessionRemoveItem: Mock<[key: string], void>;
+        // Keep spies for api and logger if needed specifically here
         let apiPostSpy: MockInstance<[endpoint: string, body: unknown, options?: FetchOptions], Promise<ApiResponse<unknown>>>;
         let apiPutSpy: MockInstance<[endpoint: string, body: unknown, options?: FetchOptions], Promise<ApiResponse<unknown>>>;
         let localMockNavigate: Mock<[], void>;
@@ -142,10 +172,18 @@ describe('AuthStore - Login Action', () => {
 
 
         beforeEach(() => {
-            // Mock sessionStorage
-            getItemSpy = vi.spyOn(Storage.prototype, 'getItem');
-            removeItemSpy = vi.spyOn(Storage.prototype, 'removeItem');
-            setItemSpy = vi.spyOn(Storage.prototype, 'setItem');
+            // Use vi.stubGlobal for sessionStorage in this block
+            const storageCache: Record<string, string> = {};
+            mockSessionGetItem = vi.fn((key: string) => storageCache[key] || null);
+            mockSessionSetItem = vi.fn((key: string, value: string) => { storageCache[key] = value; });
+            mockSessionRemoveItem = vi.fn((key: string) => { delete storageCache[key]; });
+            vi.stubGlobal('sessionStorage', {
+                getItem: mockSessionGetItem,
+                setItem: mockSessionSetItem,
+                removeItem: mockSessionRemoveItem,
+                clear: vi.fn(() => { Object.keys(storageCache).forEach(key => delete storageCache[key]); }),
+            });
+
             // Mock api methods needed for replay tests
             apiPostSpy = vi.spyOn(api, 'post'); 
             apiPutSpy = vi.spyOn(api, 'put');
@@ -166,67 +204,38 @@ describe('AuthStore - Login Action', () => {
             // Arrange
             const mockChatId = 'replay-chat-123';
             const mockPendingAction = {
-                endpoint: 'chat', // Correct endpoint (no slash)
+                endpoint: 'chat', 
                 method: 'POST',
                 body: { message: 'pending message' },
                 returnPath: '/chat'
             };
-            // Mock sessionStorage getItem & removeItem
-            const getItemSpy = vi.spyOn(window.sessionStorage, 'getItem').mockReturnValue(JSON.stringify(mockPendingAction));
-            const removeItemSpy = vi.spyOn(window.sessionStorage, 'removeItem');
-            // Spy directly on sessionStorage.setItem
-            const setItemSpy = vi.spyOn(window.sessionStorage, 'setItem'); 
+            mockSessionGetItem.mockReturnValue(JSON.stringify(mockPendingAction));
 
-            // Mock API response for initial login
-            const mockLoginResponse: AuthResponse = {
-                user: mockUser,
-                session: mockSession,
-                profile: mockProfile,
-            };
-            (api.post as Mock).mockResolvedValueOnce({ data: mockLoginResponse, error: null, status: 200 }); // Login success
-
-            // Mock API response for the replayed POST /chat action
-            const mockReplayResponse = { 
-                data: { chat_id: mockChatId }, // Contains chat_id!
-                error: null, 
-                status: 200 
-            }; 
-            (api.post as Mock).mockResolvedValueOnce(mockReplayResponse); // Replay success
+            // FIX: Explicitly mock ONLY the REPLAY api.post call for this specific test
+            // Rely on the beforeEach mock for the initial login call.
+            const mockReplayResponse = { data: { chat_id: mockChatId }, error: undefined, status: 200 }; 
+            // REMOVE THIS LINE: vi.mocked(api.post).mockReset(); 
+            // REMOVE THIS LINE: vi.mocked(api.post).mockResolvedValueOnce(mockLoginResponse) // Login success
+            // KEEP THIS LINE:
+            vi.mocked(api.post).mockResolvedValueOnce(mockReplayResponse); // Replay success
 
             // Act
-            await act(async () => {
+            await act(async () => { 
                 await useAuthStore.getState().login('test@example.com', 'password');
             });
 
-            // Debug: Check if getItem was called AT ALL
-            expect(getItemSpy).toHaveBeenCalled();
-            // expect(getItemSpy).toHaveBeenCalledWith('pendingAction'); // <-- Keep original commented out for now
-            
-            // Assert API replay call
-            expect(api.post).toHaveBeenCalledTimes(2); // login + replay
-            expect(api.post).toHaveBeenCalledWith('chat', mockPendingAction.body, { token: mockSession.access_token });
-
-            // Debug: Log the calls made to setItem
-            console.log('setItemSpy calls:', setItemSpy.mock.calls);
-
-            // Assert sessionStorage.setItem for redirect ID
-            expect(setItemSpy).toHaveBeenCalledWith('loadChatIdOnRedirect', mockChatId);
-
-            // Assert navigation to specific path from pending action
-            expect(mockNavigateGlobal).toHaveBeenCalledWith('/chat');
-
-            // Assert removeItem was called for pendingAction
-            expect(removeItemSpy).toHaveBeenCalledWith('pendingAction');
-
-            // Cleanup spies
-            getItemSpy.mockRestore();
-            removeItemSpy.mockRestore();
-            setItemSpy.mockRestore();
+            // Assert
+            expect(mockSessionGetItem).toHaveBeenCalled();
+            expect(mockSessionRemoveItem).toHaveBeenCalledWith('pendingAction');
+            expect(apiPostSpy).toHaveBeenCalledTimes(2);
+            expect(apiPostSpy).toHaveBeenCalledWith('chat', mockPendingAction.body, { token: mockSession.access_token });
+            expect(mockSessionSetItem).toHaveBeenCalledWith('loadChatIdOnRedirect', mockChatId);
+            expect(localMockNavigate).toHaveBeenCalledWith('/chat');
         });
 
         it('should navigate to /chat and NOT store chatId if chat replay fails', async () => {
              // Arrange
-            getItemSpy.mockReturnValue(chatPendingActionJson); // Provide pending chat action
+            mockSessionGetItem.mockReturnValue(chatPendingActionJson); 
             // Redefine replayError to include status and nested error
             const replayError = { 
               error: { code: 'REPLAY_FAILED', message: 'Chat replay failed' }, 
@@ -240,8 +249,8 @@ describe('AuthStore - Login Action', () => {
             await useAuthStore.getState().login(mockLoginData.email, mockLoginData.password);
 
             // Assert
-            expect(getItemSpy).toHaveBeenCalled();
-            expect(removeItemSpy).toHaveBeenCalledWith('pendingAction'); // Action should still be removed
+            expect(mockSessionGetItem).toHaveBeenCalled();
+            expect(mockSessionRemoveItem).toHaveBeenCalledWith('pendingAction'); 
             // Check login call (1st call)
             expect(apiPostSpy).toHaveBeenNthCalledWith(1, '/login', { email: mockLoginData.email, password: mockLoginData.password });
             // Check replay call (2nd call)
@@ -251,7 +260,7 @@ describe('AuthStore - Login Action', () => {
                 { token: mockLoginData.session.access_token }
             );
             // Assert sessionStorage.setItem for redirect ID was NOT called
-            expect(setItemSpy).not.toHaveBeenCalledWith('loadChatIdOnRedirect', expect.anything());
+            expect(mockSessionSetItem).not.toHaveBeenCalledWith('loadChatIdOnRedirect', expect.anything());
 
             // Assert navigation still goes to the returnPath from pending action
             expect(localMockNavigate).toHaveBeenCalledTimes(1);
@@ -270,7 +279,7 @@ describe('AuthStore - Login Action', () => {
 
          it('should replay non-chat action, navigate to returnPath, and NOT store chatId', async () => {
             // Arrange
-            getItemSpy.mockReturnValue(nonChatPendingActionJson); // Provide pending NON-chat action
+            mockSessionGetItem.mockReturnValue(nonChatPendingActionJson); 
              // Mock successful non-chat replay response (e.g., profile update OK) - needs PUT mock
              const apiPutSpy = vi.spyOn(api, 'put').mockResolvedValueOnce({ data: { success: true }, error: undefined, status: 200 });
 
@@ -278,8 +287,8 @@ describe('AuthStore - Login Action', () => {
              await useAuthStore.getState().login(mockLoginData.email, mockLoginData.password);
 
              // Assert
-             expect(getItemSpy).toHaveBeenCalled();
-             expect(removeItemSpy).toHaveBeenCalledWith('pendingAction');
+             expect(mockSessionGetItem).toHaveBeenCalled();
+             expect(mockSessionRemoveItem).toHaveBeenCalledWith('pendingAction');
              // Check login call (api.post - 1st call overall)
              expect(apiPostSpy).toHaveBeenCalledTimes(1);
              expect(apiPostSpy).toHaveBeenNthCalledWith(1, '/login', { email: mockLoginData.email, password: mockLoginData.password });
@@ -291,7 +300,7 @@ describe('AuthStore - Login Action', () => {
                  { token: mockLoginData.session.access_token }
              );
              // Assert sessionStorage.setItem for redirect ID was NOT called
-             expect(setItemSpy).not.toHaveBeenCalledWith('loadChatIdOnRedirect', expect.anything());
+             expect(mockSessionSetItem).not.toHaveBeenCalledWith('loadChatIdOnRedirect', expect.anything());
 
              // Assert navigation to specific path from non-chat pending action
              expect(localMockNavigate).toHaveBeenCalledTimes(1);
@@ -300,7 +309,7 @@ describe('AuthStore - Login Action', () => {
 
          it('should navigate to dashboard if pendingAction JSON is invalid', async () => {
               // Arrange
-             getItemSpy.mockReturnValue('{invalid json');
+             mockSessionGetItem.mockReturnValue('{invalid json');
              const logErrorSpy = vi.spyOn(logger, 'error');
              const expectedError = expect.any(SyntaxError); // Keep this expectation
 
@@ -308,11 +317,11 @@ describe('AuthStore - Login Action', () => {
              await useAuthStore.getState().login(mockLoginData.email, mockLoginData.password);
 
              // Assert
-             expect(getItemSpy).toHaveBeenCalled();
-             expect(removeItemSpy).not.toHaveBeenCalled(); // Should not remove if parse fails
+             expect(mockSessionGetItem).toHaveBeenCalled();
+             expect(mockSessionRemoveItem).not.toHaveBeenCalled(); // Should not remove if parse fails
              expect(apiPostSpy).toHaveBeenCalledTimes(1); // Only login call
              // Assert sessionStorage.setItem was NOT called for redirect ID
-             expect(setItemSpy).not.toHaveBeenCalledWith('loadChatIdOnRedirect', expect.anything());
+             expect(mockSessionSetItem).not.toHaveBeenCalledWith('loadChatIdOnRedirect', expect.anything());
              // Should navigate to default dashboard path
              expect(localMockNavigate).toHaveBeenCalledTimes(1);
              expect(localMockNavigate).toHaveBeenCalledWith('/dashboard');

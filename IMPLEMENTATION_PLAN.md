@@ -1,4 +1,3 @@
-
 **Incomplete Features** 
 *   [⏸️] AI Chat on homepage doesn't work
 *   [✅] AI Chat signup/login flow
@@ -18,7 +17,8 @@
 *   [ ] Fix chat so it scrolls with user 
 *   [ ] Fix chat history box so it fills correctly  
 *   [ ] Figure out how to parse chat responses better, they get messy if the assistant uses markdown 
-
+*   [ ] Revert changes in authStore for initialize and updateProfile to working version in commit 58d6e17a
+*   [ ] Integrate the session replay logic that broke authStore, but fix it so it's compatible with the working method 
 
 Okay, let's break down the implementation of the Platform Capability Abstraction layer using a TDD-inspired approach, focusing on compatibility and minimal disruption to your existing structure.
 
@@ -256,6 +256,7 @@ Implement a pattern to handle anonymous users attempting actions that require au
 3.  **`/chat` Page Component Tests (e.g., `apps/web/src/pages/aichat.test.tsx`):**
     *   [✅] Tested component mount with `loadChatIdOnRedirect` present (verified `loadChatDetails` called, storage cleared).
     *   [✅] Tested component mount without `loadChatIdOnRedirect` present (verified normal history loading called).
+    *   **NOTE (April 2025):** The `_checkAndReplayPendingAction` logic and the `initialize` action in `authStore.ts` have known issues introduced recently. Unit tests related to these functions (especially in `authStore.register.test.ts` and `authStore.initialize.test.ts`) may fail or are temporarily adjusted/skipped until the core logic is fixed.
 
 **Phase 4: Manual Verification**
 
@@ -305,26 +306,5 @@ Implement a pattern to handle anonymous users attempting actions that require au
 *   **Goal:** Initialize the client and integrate user identification/reset.
 *   **Steps:**
     *   [ ] **App Initialization:** Ensure `import { analytics } from '@paynless/analytics-client';` happens early in `apps/web/src/main.tsx` or `App.tsx` (init happens on import).
-    *   [ ] **Integrate with `useAuthStore`:** Import `analytics`. In `login`, `register`, `initialize` success handlers, call `analytics.identify(user.id, { traits... })`. In `logout` action, call `analytics.reset();`.
+    *   [✅] **Integrate with `useAuthStore`:** Import `analytics`. In `login`, `register`, `initialize` success handlers, call `analytics.identify(user.id, { traits... })`. In `logout` action, call `analytics.reset();`.
 *   **Testing & Commit Point:** Unit test `authStore` (mocking analytics client, verifying `identify`/`reset` calls). Manual integration test (Web): Verify `identify`/`reset` calls in PostHog dashboard when configured; verify NO errors/calls when not configured. Commit: `feat(analytics): Initialize analytics client and integrate identify/reset`
-
-**Phase 4: Core Event Tracking**
-*   **Goal:** Track key user actions using `analytics.track`.
-*   **Steps:**
-    *   [ ] **Identify Events:** Define list (`Signed Up`, `Logged In`, `Subscription Checkout Started`, `Billing Portal Opened`, `Message Sent`, `Profile Updated`).
-    *   [ ] **Implement Tracking:** Add `analytics.track('Event Name', { properties... });` calls in relevant store actions (`authStore`, `subscriptionStore`, `aiStore`) on success.
-*   **Testing & Commit Point:** Unit test store actions (mocking analytics, verifying `track` calls). Manual integration test (Web): Perform actions, verify events/properties in PostHog when configured; verify NO errors/calls when not configured. Commit: `feat(analytics): Add tracking for key user events`
-
-**Phase 5: Documentation & Final Review**
-*   **Goal:** Document the new system for developers.
-*   **Steps:**
-    *   [ ] **Documentation (`DEV_PLAN.md`/`README.md`):** Add section explaining analytics setup, env vars (optionality, providers).
-    *   [ ] **Documentation (`STRUCTURE.md`):** Add `packages/analytics-client`, `analytics.types.ts`, and describe the exported generic `analytics` client.
-    *   [ ] **Environment (`.env.example`):** Ensure vars are present and commented.
-    *   [ ] **Code Review:** Review all changes.
-    *   [ ] **Final Test:** Run full test suite for affected packages and root.
-*   **Commit Point:** Documentation updated, final review complete, all tests passing. Commit: `docs(analytics): Document analytics configuration and usage`
-
-## Potential Future Refactors
-
-*   **aiStore Getter/Setter Pattern:** Consider refactoring `aiStore` to use a more explicit getter/setter pattern for state access and updates. This could improve traceability and encapsulation but would increase boilerplate. Evaluate based on future store complexity. (Decision deferred as of [current date/context]).

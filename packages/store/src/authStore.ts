@@ -62,12 +62,7 @@ export const useAuthStore = create<AuthStoreType & { _checkAndReplayPendingActio
 
               // ---> Identify user for analytics <---
               if (authData.user?.id) {
-                  analytics.identify(authData.user.id, {
-                      email: authData.user.email,
-                      // Add other relevant traits from profile if needed
-                      // firstName: authData.profile?.first_name,
-                      // lastName: authData.profile?.last_name,
-                  });
+                  analytics.identify(authData.user.id, { email: authData.user.email });
               }
 
               // ---> Phase 3: Check for and replay pending action <---
@@ -204,12 +199,7 @@ export const useAuthStore = create<AuthStoreType & { _checkAndReplayPendingActio
 
               // ---> Identify user for analytics <---
               if (authData.user?.id) {
-                  analytics.identify(authData.user.id, {
-                      email: authData.user.email,
-                      // Add other relevant traits from profile if needed
-                      // firstName: authData.profile?.first_name,
-                      // lastName: authData.profile?.last_name,
-                  });
+                  analytics.identify(authData.user.id, { email: authData.user.email });
               }
 
               // ---> Phase 3: Check for and replay pending action (Register) <---
@@ -252,7 +242,7 @@ export const useAuthStore = create<AuthStoreType & { _checkAndReplayPendingActio
                                });
                                // ---> END Log Replay Data <---
                                // Check if it was the chat endpoint and data has chat_id
-                               if (endpoint === '/chat' && method.toUpperCase() === 'POST' && replayResponse.data && typeof (replayResponse.data as any).chat_id === 'string') {
+                               if (endpoint === 'chat' && method.toUpperCase() === 'POST' && replayResponse.data && typeof (replayResponse.data as any).chat_id === 'string') {
                                    const chatId = (replayResponse.data as any).chat_id;
                                    logger.info(`Chat action replayed successfully, storing chatId ${chatId} for redirect.`);
                                    try {
@@ -400,7 +390,6 @@ export const useAuthStore = create<AuthStoreType & { _checkAndReplayPendingActio
                 error: null,
               });
               // ---> Identify user for analytics <---
-              // Use the user object from the state
               if (currentUser?.id) {
                   analytics.identify(currentUser.id, {
                       email: currentUser.email,
