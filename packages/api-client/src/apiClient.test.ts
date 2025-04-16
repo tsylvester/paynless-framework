@@ -153,7 +153,7 @@ describe('apiClient', () => {
         // Can also check the message if needed
         // await expect(api.get(endpoint)).rejects.toThrow(errorResponse.message);
 
-        // Verify sessionStorage call
+        // Verify localStorage call
         expect(setItemSpy).toHaveBeenCalledTimes(1);
         expect(setItemSpy).toHaveBeenCalledWith('pendingAction', expect.any(String));
         const storedAction = JSON.parse(setItemSpy.mock.calls[0][1]);

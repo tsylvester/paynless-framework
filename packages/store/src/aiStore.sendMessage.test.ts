@@ -289,7 +289,7 @@ describe('aiStore - sendMessage', () => {
             });
         });
 
-        it('should set error state if sessionStorage write fails when AuthRequiredError is caught', async () => {
+        it('should set error state if localStorage write fails when AuthRequiredError is caught', async () => {
              // Arrange
             mockSendChatMessage.mockRejectedValue(authError);
             const storageErrorMsg = 'Session storage is full';
