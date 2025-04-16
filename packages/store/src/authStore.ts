@@ -436,47 +436,48 @@ export const useAuthStore = create<AuthStoreType & { _checkAndReplayPendingActio
         }
       },
       
+      
+      // We may need to change the promise back to a bool again
       updateProfile: async (profileData: UserProfileUpdate): Promise<UserProfile | null> => {
-        set({ isLoading: true });
-        const { session, profile } = get(); // Get current session and profile
+        set({ isLoading: true, error: null });
+        const token = get().session?.access_token;
+        const currentProfile = get().profile;
 
-        if (!session?.access_token) {
-          set({ isLoading: false, error: new Error('Authentication required to update profile') });
-          return null;
-        }
-
-        if (!profile) {
-           set({ isLoading: false, error: new Error('Profile not loaded') });
-           return null;
-        }
-
-        try {
-          const payload: Partial<UserProfileUpdate> = {};
-          if (profileData.first_name !== undefined) payload.first_name = profileData.first_name;
-          if (profileData.last_name !== undefined) payload.last_name = profileData.last_name;
-
-          const response = await api.put<UserProfile, Partial<UserProfileUpdate>>('/profile', payload, { token: session.access_token });
-
-          if (response.error || !response.data) {
-            const errMsg = response.error?.message || 'Failed to update profile';
-            logger.error('Profile update failed:', { error: response.error });
-            set({ isLoading: false, error: new Error(errMsg) });
+        // Check if authenticated first
+        if (!token) {
+            logger.error('updateProfile: Cannot update profile, user not authenticated.');
+            set({ error: new Error('Not authenticated'), isLoading: false });
             return null;
-          }
+        }
 
-          logger.info('Profile updated successfully.');
-          set({ profile: response.data, isLoading: false, error: null });
-          return response.data;
+        // Then check if profile is loaded
+        if (!currentProfile) {
+            logger.error('updateProfile: Cannot update profile, no current profile loaded.');
+            set({ error: new Error('Profile not loaded'), isLoading: false });
+            return null;
+        }
 
+        // Original try-catch block for API call
+        try {
+            const response = await api.put<UserProfile, UserProfileUpdate>('me', profileData, { token });
+            
+            if (!response.error && response.data) {
+                 const updatedProfile = response.data;
+                 set({ profile: updatedProfile, isLoading: false, error: null });
+                 logger.info('Profile updated successfully.');
+                 return updatedProfile;
+            } else {
+                 const errorMessage = response.error?.message || 'Failed to update profile';
+                 throw new Error(errorMessage);
+            }
         } catch (error) {
-          logger.error('Error during profile update:', { error });
-          set({
-            isLoading: false,
-            error: new Error('Failed to update profile'),
-          });
-          return null;
+            const finalError = error instanceof Error ? error : new Error('Failed to update profile (API error)');
+            logger.error('Update profile: Error during API call.', { message: finalError.message });
+            set({ isLoading: false, error: finalError });
+            return null;
         }
       },
+
       clearError: () => set({ error: null }),
 
       _checkAndReplayPendingAction: async (token: string, specifiedReturnPath?: string): Promise<boolean> => {
