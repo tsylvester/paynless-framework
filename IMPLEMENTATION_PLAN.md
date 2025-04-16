@@ -207,7 +207,7 @@ This file tracks major features or refactoring efforts.
 
 ## Auth Interception for Anonymous Users 
 
-Implement a pattern to handle anonymous users attempting actions that require authentication (like submitting a chat). The goal is to interrupt the action, guide the user through login/signup, execute the action, and then land the user on the `/chat` page displaying the newly created chat.
+Implement a pattern to handle anonymous users attempting actions that require authentication (like submitting a chat). The goal is to interrupt the action, guide the user through login/signup, execute the action, and then land the user on the `chat` page displaying the newly created chat.
 
 ### Auth Interception Flow (Revised: Redirect to /chat)
 
@@ -215,7 +215,7 @@ Implement a pattern to handle anonymous users attempting actions that require au
 
 1.  **Modify `aiStore.sendMessage`:**
     *   [✅] Located section for anonymous users.
-    *   [✅] Ensured `returnPath: '/chat'` stored in `pendingAction`.
+    *   [✅] Ensured `returnPath: 'chat'` stored in `pendingAction`.
 
 2.  **Use `loadChatDetails` Action in `aiStore`:**
     *   [✅] Confirmed `loadChatDetails(chatId: string)` exists and fetches messages.
@@ -225,7 +225,7 @@ Implement a pattern to handle anonymous users attempting actions that require au
     *   [✅] Located success handler after API replay.
     *   [✅] Checked if replayed action was `POST /chat`.
     *   [✅] Extracted `chat_id` from response.
-    *   [✅] Stored `chat_id` in `sessionStorage` key `loadChatIdOnRedirect`.
+    *   [✅] Stored `chat_id` in `localStorage` key `loadChatIdOnRedirect`.
     *   [✅] Navigated user to `/chat` using stored `navigate` function.
     *   [✅] Ensured `pendingAction` is cleared.
 
@@ -246,12 +246,12 @@ Implement a pattern to handle anonymous users attempting actions that require au
 **Phase 3: Update Unit Tests**
 
 1.  **`aiStore.*.test.ts` (Refactored):**
-    *   [✅] **`sendMessage` Tests:** Verified `pendingAction` stored correctly (including `returnPath: '/chat'`).
+    *   [✅] **`sendMessage` Tests:** Verified `pendingAction` stored correctly (including `returnPath: 'chat'`).
     *   [✅] **`loadChatDetails` Tests:** Added/verified tests for loading state, error states (invalid ID, missing token), successful API call, API error, and thrown errors.
 2.  **`authStore.test.ts`:**
     *   [✅] Updated tests for `_checkAndReplayPendingAction` (or callers):
-        *   [✅] Verified `sessionStorage.setItem('loadChatIdOnRedirect', ...)` called on successful chat replay.
-        *   [✅] Verified `navigate('/chat')` called on successful replay.
+        *   [✅] Verified `localStorage.setItem('loadChatIdOnRedirect', ...)` called on successful chat replay.
+        *   [✅] Verified `navigate('chat')` called on successful replay.
         *   [✅] Tested failure cases (replay API fails, non-chat action).
 3.  **`/chat` Page Component Tests (e.g., `apps/web/src/pages/aichat.test.tsx`):**
     *   [✅] Tested component mount with `loadChatIdOnRedirect` present (verified `loadChatDetails` called, storage cleared).

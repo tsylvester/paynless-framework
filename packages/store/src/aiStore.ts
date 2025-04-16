@@ -172,11 +172,11 @@ export const useAiStore = create<AiStore>()(
                                 body: { ...requestData, chatId: effectiveChatId ?? null }, 
                                 returnPath: '/chat'
                             };
-                            sessionStorage.setItem('pendingAction', JSON.stringify(pendingAction));
+                            localStorage.setItem('pendingAction', JSON.stringify(pendingAction));
                             logger.info('Stored pending chat action:', pendingAction);
                             storageSuccess = true; 
                         } catch (storageError: unknown) {
-                           logger.error('Failed to store pending action in sessionStorage:', { 
+                           logger.error('Failed to store pending action in localStorage:', { 
                                 error: storageError instanceof Error ? storageError.message : String(storageError)
                            });
                         }
