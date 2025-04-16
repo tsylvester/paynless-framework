@@ -14,6 +14,10 @@
     *   [ ] Loading skeletons for all components 
 *   [ ] Change payment method doesn't register site
 *   [ ] Run SEO scan 
+*   [ ] Header scroll with user
+*   [ ] Fix chat so it scrolls with user 
+*   [ ] Fix chat history box so it fills correctly  
+*   [ ] Figure out how to parse chat responses better, they get messy if the assistant uses markdown 
 
 
 Okay, let's break down the implementation of the Platform Capability Abstraction layer using a TDD-inspired approach, focusing on compatibility and minimal disruption to your existing structure.
@@ -292,9 +296,9 @@ Implement a pattern to handle anonymous users attempting actions that require au
 **Phase 2: PostHog Adapter & Service Logic**
 *   **Goal:** Implement the PostHog adapter and selection logic.
 *   **Steps:**
-    *   [ ] **Environment Variables:** Define `VITE_ANALYTICS_PROVIDER`, `VITE_POSTHOG_KEY`, `VITE_POSTHOG_HOST` in `.env.example` (optional).
-    *   [ ] **PostHog Adapter:** Create `packages/analytics-client/src/posthogAdapter.ts`. Import `posthog-js`. Implement `AnalyticsClient` interface using `posthog.init`, `posthog.identify`, `posthog.capture`, `posthog.reset`, etc.
-    *   [ ] **Central Service Update (`index.ts`):** Import `PostHogAdapter`. Read actual env vars. Add logic: If provider is "posthog" and key exists, instantiate and `init` PostHog adapter; else, instantiate null adapter. Export the chosen instance as `analytics`. Add logging for chosen adapter.
+    *   [x] **Environment Variables:** Define `VITE_ANALYTICS_PROVIDER`, `VITE_POSTHOG_KEY`, `VITE_POSTHOG_HOST` in `.env.example` (optional).
+    *   [x] **PostHog Adapter:** Create `packages/analytics-client/src/posthogAdapter.ts`. Import `posthog-js`. Implement `AnalyticsClient` interface using `posthog.init`, `posthog.identify`, `posthog.capture`, `posthog.reset`, etc.
+    *   [x] **Central Service Update (`index.ts`):** Import `PostHogAdapter`. Read actual env vars. Add logic: If provider is "posthog" and key exists, instantiate and `init` PostHog adapter; else, instantiate null adapter. Export the chosen instance as `analytics`. Add logging for chosen adapter.
 *   **Testing & Commit Point:** Unit test `PostHogAdapter` (mocking `posthog-js`). Unit test `index.ts` selection logic with different env var combinations. Commit: `feat(analytics): Implement PostHog adapter and configure service selection`
 
 **Phase 3: Application Initialization & User Identification**
