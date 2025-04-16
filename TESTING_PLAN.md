@@ -197,11 +197,11 @@
                 *   **UPDATE (May 2024):** While `login`, `register`, `logout`, `refresh`, `profile` tests are now passing after fixing assertions and mock data, `initialize.test.ts` still has ~8 failures. These seem related to complex interactions between `initialize` logic, Zustand `persist` hydration, and `localStorage` mocking in Vitest. Fixing these is **DEFERRED** to focus on feature completion. The core analytics integration points (`identify`/`reset`) are covered by the passing tests.
                 *   [✅] *(Analytics)* Verify `analytics.identify` called on login/init success.
                 *   [✅] *(Analytics)* Verify `analytics.reset` called on logout.
-                *   [ ] *(Analytics)* Verify `analytics.track('Signed Up')` called on register success.
-                *   [ ] *(Analytics)* Verify `analytics.track('Logged In')` called on login success.
-                *   [ ] *(Analytics)* Verify `analytics.track('Profile Updated')` called on updateProfile success.
+                *   [✅] *(Analytics)* Verify `analytics.track('Signed Up')` called on register success.
+                *   [✅] *(Analytics)* Verify `analytics.track('Logged In')` called on login success.
+                *   [✅] *(Analytics)* Verify `analytics.track('Profile Updated')` called on updateProfile success.
             *   [✅] `subscriptionStore.ts` *(Tests passing, including refresh failures in cancel/resume)*
-                *   [ ] *(Analytics)* Verify `analytics.track('Subscription Checkout Started')` called on createCheckoutSession success.
+                *   [🚧] *(Analytics)* Verify `analytics.track('Subscription Checkout Started')` called on createCheckoutSession success. (Test exists but is failing - `analytics.track` not called despite mocking. Added `window.location` mock)
                 *   [ ] *(Analytics)* Verify `analytics.track('Billing Portal Opened')` called on createBillingPortalSession success.
             *   [✅] `aiStore.ts` *(Status: Refactored into `aiStore.*.test.ts` files. All tests passing after fixing mock strategy and store logic.)*
                 *   [ ] *(Analytics)* Verify `analytics.track('Message Sent')` called on sendMessage success.

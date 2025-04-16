@@ -343,4 +343,22 @@ Refactor `authStore` to manage `pendingAction` and `loadChatIdOnRedirect` within
 *   **Steps:**
     *   [ ] **App Initialization:** Ensure `import { analytics } from '@paynless/analytics-client';` happens early in `apps/web/src/main.tsx` or `App.tsx` (init happens on import).
     *   [✅] **Integrate with `useAuthStore`:** Import `analytics`. In `login`, `register`, `initialize` success handlers, call `analytics.identify(user.id, { traits... })`. In `logout` action, call `analytics.reset();`.
-*   **Testing & Commit Point:** Unit test `authStore` (mocking analytics client, verifying `identify`
+*   **Testing & Commit Point:** Unit test `authStore` (mocking analytics client, verifying `identify` and `reset` calls).
+
+**Phase 4: Event Tracking Implementation**
+*   **Goal:** Add `analytics.track` calls for key user actions.
+*   **Steps:**
+    *   [✅] Add `analytics.track('Signed Up')` to `authStore.register` success path.
+    *   [✅] Add corresponding unit test to `authStore.register.test.ts`.
+    *   [✅] Add `analytics.track('Logged In')` to `authStore.login` success path.
+    *   [✅] Add corresponding unit test to `authStore.login.test.ts`.
+    *   [✅] Add `analytics.track('Profile Updated')` to `authStore.updateProfile` success path.
+    *   [✅] Add corresponding unit test to `authStore.profile.test.ts`.
+    *   [✅] Add `analytics.track('Subscription Checkout Started')` to `subscriptionStore.createCheckoutSession` success path.
+    *   [🚧] Add corresponding unit test to `subscriptionStore.test.ts`. (Test currently failing - `analytics.track` mock not called. Last attempt involved adding `window.location` mock for this test block).
+    *   [ ] Add `analytics.track('Billing Portal Opened')` to `subscriptionStore.createBillingPortalSession` success path.
+    *   [ ] Add corresponding unit test to `subscriptionStore.test.ts`.
+    *   [ ] Add `analytics.track('Message Sent')` to `aiStore.sendMessage` success path.
+    *   [ ] Add corresponding unit test to `aiStore.test.ts`.
+    *   [ ] Add other desired tracking events.
+*   **Testing & Commit Point:** Add tests for each tracking call. Commit incrementally: `feat(analytics): Track [Event Name]`
