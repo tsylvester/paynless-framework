@@ -5,7 +5,7 @@ import './index.css'
 import { initializeApiClient } from '@paynless/api-client'
 import { logger/*, LogLevel*/ } from '@paynless/utils'
 import ReactGA from 'react-ga4'
-import { analytics } from '@paynless/analytics-client'
+import '@paynless/analytics-client'
 
 // --- Configure Logger Early ---
 // Only show errors in the console for now to reduce noise

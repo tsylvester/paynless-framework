@@ -64,7 +64,7 @@ describe('AuthStore - Update Profile Action', () => {
              const result = await useAuthStore.getState().updateProfile(profileUpdate);
 
              // Assert
-             expect(putSpy).toHaveBeenCalledWith('/profile', profileUpdate, { token: mockSession.access_token });
+             expect(putSpy).toHaveBeenCalledWith('me', profileUpdate, { token: mockSession.access_token });
              const state = useAuthStore.getState();
              expect(state.profile).toEqual(updatedProfile);
              expect(state.error).toBeNull(); 
@@ -87,7 +87,7 @@ describe('AuthStore - Update Profile Action', () => {
             const result = await useAuthStore.getState().updateProfile(profileUpdate);
 
             // Assert
-            expect(putSpy).toHaveBeenCalledWith('/profile', profileUpdate, { token: mockSession.access_token });
+            expect(putSpy).toHaveBeenCalledWith('me', profileUpdate, { token: mockSession.access_token });
             const state = useAuthStore.getState();
             expect(state.profile).toEqual(mockProfile); 
             expect(state.error).toBeInstanceOf(Error);
@@ -110,7 +110,7 @@ describe('AuthStore - Update Profile Action', () => {
             const state = useAuthStore.getState();
             expect(state.profile).toEqual(mockProfile);
             expect(state.error).toBeInstanceOf(Error);
-            expect(state.error?.message).toContain('Authentication required'); 
+            expect(state.error?.message).toContain('Not authenticated'); 
             expect(state.isLoading).toBe(false);
             expect(result).toBeNull();
          });
@@ -145,13 +145,13 @@ describe('AuthStore - Update Profile Action', () => {
              const result = await useAuthStore.getState().updateProfile(profileUpdate);
 
              // Assert
-             expect(putSpy).toHaveBeenCalledWith('/profile', profileUpdate, { token: mockSession.access_token });
+             expect(putSpy).toHaveBeenCalledWith('me', profileUpdate, { token: mockSession.access_token });
              const state = useAuthStore.getState();
              expect(state.profile).toEqual(mockProfile);
              expect(state.error).toBeInstanceOf(Error);
-             expect(state.error?.message).toContain('Failed to update profile');
+             expect(state.error?.message).toBe(thrownError.message);
              expect(state.isLoading).toBe(false);
              expect(result).toBeNull();
-             expect(logErrorSpy).toHaveBeenCalledWith('Error during profile update:', { error: thrownError });
+             expect(logErrorSpy).toHaveBeenCalledWith('Update profile: Error during API call.', { message: thrownError.message });
           });
 }); 

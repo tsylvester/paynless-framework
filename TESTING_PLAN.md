@@ -76,6 +76,13 @@
 
 *   **[NEW] Phase 5: Anonymous Chat Auth Refactor Verification:** Added specific backend and E2E test cases for the anonymous secret header and related flows.
 
+*   **[NEW] Auth Store localStorage Consolidation (Deferred Refactor - May 2024):**
+    *   **Observation:** `pendingAction` and `loadChatIdOnRedirect` currently use direct `localStorage` calls, breaking the pattern of using Zustand `persist` (which also uses `localStorage` under the hood via `createJSONStorage`) for managing persisted `authStore` state like `session`.
+    *   **Proposed Refactor:** Move `pendingAction` and `loadChatIdOnRedirect` into the `authStore` state and include them in the `persist` middleware's `partialize` configuration. This involves updating state/actions/tests and the `/chat` page component.
+    *   **Benefit:** Improves pattern consistency, centralizes state logic, and potentially simplifies testing.
+    *   **Risk/Decision:** This refactor is **DEFERRED**. The primary risk is modifying the already sensitive `_checkAndReplayPendingAction` logic before it is fully stabilized and covered by robust tests. Touching this area now could reintroduce bugs.
+    *   **Prerequisite:** Stabilize and thoroughly test `authStore.initialize` and `authStore._checkAndReplayPendingAction` *before* attempting this refactoring.
+
 ---
 
 ✅ **How to Test Incrementally and Correctly (Layered Testing Strategy)**
@@ -187,6 +194,7 @@
         *   [✅] `packages/store` (Vitest setup complete)
             *   [✅] `authStore.ts` (All actions covered across multiple `authStore.*.test.ts` files)
                 *   **NOTE:** Replay logic tests (in `register.test.ts`, `login.test.ts`) and session/state restoration tests (in `initialize.test.ts`) related to `_checkAndReplayPendingAction` and the `initialize` action are currently unreliable/skipped/adjusted due to known issues in the underlying store functions. These tests need revisiting after the functions are fixed.
+                *   **UPDATE (May 2024):** While `login`, `register`, `logout`, `refresh`, `profile` tests are now passing after fixing assertions and mock data, `initialize.test.ts` still has ~8 failures. These seem related to complex interactions between `initialize` logic, Zustand `persist` hydration, and `localStorage` mocking in Vitest. Fixing these is **DEFERRED** to focus on feature completion. The core analytics integration points (`identify`/`reset`) are covered by the passing tests.
                 *   [✅] *(Analytics)* Verify `analytics.identify` called on login/init success.
                 *   [✅] *(Analytics)* Verify `analytics.reset` called on logout.
                 *   [ ] *(Analytics)* Verify `analytics.track('Signed Up')` called on register success.

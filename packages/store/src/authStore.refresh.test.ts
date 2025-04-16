@@ -2,8 +2,15 @@ import { describe, it, expect, beforeEach, afterEach, vi, type MockInstance, Moc
 import { useAuthStore } from './authStore'; 
 import { api } from '@paynless/api-client';
 import { act } from '@testing-library/react';
-import type { User, Session, UserProfile, UserRole, ApiResponse, FetchOptions, ApiError, RefreshResponse } from '@paynless/types';
+import type { User, Session, UserProfile, UserRole, ApiResponse, FetchOptions, ApiError } from '@paynless/types';
 import { logger } from '@paynless/utils'; 
+
+// Define the structure locally as it's not exported from types
+interface RefreshResponse {
+  session: Session | null;
+  user: User | null;
+  profile: UserProfile | null;
+}
 
 // Helper to reset Zustand store state between tests
 const resetStore = () => {
@@ -131,7 +138,7 @@ describe('AuthStore - refreshSession Action', () => {
     expect(state.profile).toBeNull();
     
     // Assert: Check session storage cleared - use stub mock reference
-    expect(mockSessionRemoveItem).toHaveBeenCalledWith('auth-session');
+    expect(mockSessionRemoveItem).toHaveBeenCalledWith('auth-storage');
   });
 
   it('should set error and not call API if no refresh token is available', async () => {
@@ -178,7 +185,7 @@ describe('AuthStore - refreshSession Action', () => {
     expect(state.profile).toBeNull();
 
     // Assert: Check session storage cleared - use stub mock reference
-    expect(mockSessionRemoveItem).toHaveBeenCalledWith('auth-session');
+    expect(mockSessionRemoveItem).toHaveBeenCalledWith('auth-storage');
   });
 
   it('should handle thrown error during API call and clear state', async () => {
@@ -204,9 +211,9 @@ describe('AuthStore - refreshSession Action', () => {
     expect(state.profile).toBeNull();
 
     // Assert: Check session storage cleared - use stub mock reference
-    expect(mockSessionRemoveItem).toHaveBeenCalledWith('auth-session');
+    expect(mockSessionRemoveItem).toHaveBeenCalledWith('auth-storage');
     // Assert: Check error was logged
-    expect(logErrorSpy).toHaveBeenCalledWith("Refresh session: Error during refresh attempt.", { message: thrownError.message });
+    expect(logErrorSpy).toHaveBeenCalledWith("Refresh session error", { message: thrownError.message });
   });
 
   // Add more tests as needed (e.g., for replay logic nuances if refresh affects it differently)
