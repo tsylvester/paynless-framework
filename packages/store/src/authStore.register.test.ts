@@ -58,7 +58,7 @@ describe('AuthStore - Register Action', () => {
          const { email, password } = mockRegisterData;
          const { user, session, profile } = mockRegisterData; // Use the register-specific mock data
          const postSpy = vi.spyOn(api, 'post').mockResolvedValue({ data: { user, session, profile }, error: undefined, status: 201 });
-         // Spy on sessionStorage getItem to ensure it's checked but returns null
+         // Spy on localStorage getItem to ensure it's checked but returns null
          const getItemSpy = vi.spyOn(Storage.prototype, 'getItem').mockReturnValue(null);
          const localMockNavigate = vi.fn(); // Use local mock for this test
          useAuthStore.setState({ navigate: localMockNavigate });
@@ -139,17 +139,10 @@ describe('AuthStore - Register Action', () => {
          const nonChatPendingActionJson = JSON.stringify(nonChatPendingActionData);
 
           beforeEach(() => {
-            // FIX: Use vi.stubGlobal for sessionStorage in this block
-            const storageCache: Record<string, string> = {};
-            mockSessionGetItem = vi.fn((key: string) => storageCache[key] || null);
-            mockSessionSetItem = vi.fn((key: string, value: string) => { storageCache[key] = value; });
-            mockSessionRemoveItem = vi.fn((key: string) => { delete storageCache[key]; });
-            vi.stubGlobal('sessionStorage', {
-                getItem: mockSessionGetItem,
-                setItem: mockSessionSetItem,
-                removeItem: mockSessionRemoveItem,
-                clear: vi.fn(() => { Object.keys(storageCache).forEach(key => delete storageCache[key]); }),
-            });
+            // Mock localStorage
+            getItemSpy = vi.spyOn(Storage.prototype, 'getItem');
+            removeItemSpy = vi.spyOn(Storage.prototype, 'removeItem');
+            setItemSpy = vi.spyOn(Storage.prototype, 'setItem');
 
             // Mock api.post
             apiPostSpy = vi.spyOn(api, 'post');
@@ -198,8 +191,9 @@ describe('AuthStore - Register Action', () => {
                 chatPendingActionData.body,
                 { token: mockRegisterData.session.access_token } // Use token from register response
             );
-            // Assert sessionStorage.setItem for redirect ID
-            expect(mockSessionSetItem).toHaveBeenCalledWith('loadChatIdOnRedirect', mockChatId);
+            // Assert localStorage.setItem for redirect ID
+            expect(setItemSpy).toHaveBeenCalledWith('loadChatIdOnRedirect', mockChatId);
+
 
             // Assert navigation to specific path from pending action
             expect(localMockNavigate).toHaveBeenCalledTimes(1);
@@ -232,9 +226,9 @@ describe('AuthStore - Register Action', () => {
                 chatPendingActionData.body,
                 { token: mockRegisterData.session.access_token }
             );
-            // Assert sessionStorage.setItem for redirect ID was NOT called
-            expect(mockSessionSetItem).not.toHaveBeenCalledWith('loadChatIdOnRedirect', expect.anything());
-
+            // Assert localStorage.setItem for redirect ID was NOT called
+            expect(setItemSpy).not.toHaveBeenCalledWith('loadChatIdOnRedirect', expect.anything());
+           
             // Assert navigation still goes to the returnPath from pending action
             expect(localMockNavigate).toHaveBeenCalledTimes(1);
             expect(localMockNavigate).toHaveBeenCalledWith(chatPendingActionData.returnPath); // Should still be '/chat'
@@ -264,15 +258,15 @@ describe('AuthStore - Register Action', () => {
              expect(mockSessionGetItem).toHaveBeenCalledWith('pendingAction');
              expect(mockSessionRemoveItem).toHaveBeenCalledWith('pendingAction');
              // Check register call (api.post - 1st call)
-             expect(apiPostSpy).toHaveBeenNthCalledWith(1, '/register', { email: mockRegisterData.email, password: mockRegisterData.password });
+             expect(apiPostSpy).toHaveBeenNthCalledWith(1, 'register', { email: mockRegisterData.email, password: mockRegisterData.password });
              // Check replay call (api.post - 2nd call)
              expect(apiPostSpy).toHaveBeenNthCalledWith(2,
                  nonChatPendingActionData.endpoint, // /settings
                  nonChatPendingActionData.body,
                  { token: mockRegisterData.session.access_token }
              );
-             // Assert sessionStorage.setItem for redirect ID was NOT called
-             expect(mockSessionSetItem).not.toHaveBeenCalledWith('loadChatIdOnRedirect', expect.anything());
+             // Assert localStorage.setItem for redirect ID was NOT called
+             expect(setItemSpy).not.toHaveBeenCalledWith('loadChatIdOnRedirect', expect.anything());
 
              // Assert navigation to specific path from non-chat pending action
              expect(localMockNavigate).toHaveBeenCalledTimes(1);
@@ -288,17 +282,17 @@ describe('AuthStore - Register Action', () => {
              // Act
              await useAuthStore.getState().register(mockRegisterData.email, mockRegisterData.password);
 
-             // Assert
-             expect(mockSessionGetItem).toHaveBeenCalledWith('pendingAction');
-             expect(mockSessionRemoveItem).not.toHaveBeenCalled(); // Should not remove if parse fails
-             expect(apiPostSpy).toHaveBeenCalledTimes(1); // Only register call
-             // Assert sessionStorage.setItem was NOT called for redirect ID
-             expect(mockSessionSetItem).not.toHaveBeenCalledWith('loadChatIdOnRedirect', expect.anything());
-             // Should navigate to default dashboard path
-             expect(localMockNavigate).toHaveBeenCalledTimes(1);
-             expect(localMockNavigate).toHaveBeenCalledWith('/dashboard');
-             // Should log an error
-             expect(logErrorSpy).toHaveBeenCalledWith("Error processing pending action after registration:", expect.objectContaining({
+            // Assert
+            expect(getItemSpy).toHaveBeenCalledWith('pendingAction');
+            expect(removeItemSpy).not.toHaveBeenCalled(); // Should not remove if parse fails
+            expect(apiPostSpy).toHaveBeenCalledTimes(1); // Only register call
+            // Assert localStorage.setItem was NOT called for redirect ID
+            expect(setItemSpy).not.toHaveBeenCalledWith('loadChatIdOnRedirect', expect.anything());
+            // Should navigate to default dashboard path
+            expect(localMockNavigate).toHaveBeenCalledTimes(1);
+            expect(localMockNavigate).toHaveBeenCalledWith('dashboard');
+            // Should log an error
+            expect(logErrorSpy).toHaveBeenCalledWith("Error processing pending action after registration:", expect.objectContaining({
                 error: expect.any(String) // Check if error property is a string
              }));
          });

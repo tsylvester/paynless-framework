@@ -111,11 +111,11 @@ export function AiChatPage() {
 
   // ---> START MODIFICATION: Check for redirect ID on mount <---
   useEffect(() => {
-    const chatIdToLoad = sessionStorage.getItem('loadChatIdOnRedirect');
+    const chatIdToLoad = localStorage.getItem('loadChatIdOnRedirect');
     if (chatIdToLoad) {
       // If an ID is found, remove it and load that specific chat
-      sessionStorage.removeItem('loadChatIdOnRedirect');
-      logger.info(`[AiChatPage] Found chatId ${chatIdToLoad} in sessionStorage, loading details...`);
+      localStorage.removeItem('loadChatIdOnRedirect');
+      logger.info(`[AiChatPage] Found chatId ${chatIdToLoad} in localStorage, loading details...`);
       loadChatDetails(chatIdToLoad);
     } 
     // Run only once on mount

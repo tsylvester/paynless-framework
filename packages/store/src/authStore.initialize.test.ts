@@ -88,12 +88,12 @@ describe('AuthStore - Initialize Action', () => {
     replaySpy = vi.spyOn(useAuthStore.getState(), '_checkAndReplayPendingAction'); 
 
     // Setup spies FIRST
-    // Mock sessionStorage globally for this describe block
+    // Mock localStorage globally for this describe block
     const storageCache: Record<string, string> = {};
     mockSessionGetItem = vi.fn((key: string) => storageCache[key] || null);
     mockSessionSetItem = vi.fn((key: string, value: string) => { storageCache[key] = value; });
     mockSessionRemoveItem = vi.fn((key: string) => { delete storageCache[key]; });
-    vi.stubGlobal('sessionStorage', {
+    vi.stubGlobal('localStorage', {
         getItem: mockSessionGetItem,
         setItem: mockSessionSetItem,
         removeItem: mockSessionRemoveItem,
@@ -116,13 +116,13 @@ describe('AuthStore - Initialize Action', () => {
 
   // ADD afterEach for cleanup
   afterEach(() => {
-    // vi.unstubAllGlobals(); // Restore original sessionStorage if stubbed globally
+    // vi.unstubAllGlobals(); // Restore original localStorage if stubbed globally
     vi.clearAllMocks(); // Clear mocks/spies (includes call counts for stubbed functions)
     vi.restoreAllMocks(); // Restore original implementations (api, logger)
   });
 
-  // Minimal test to isolate sessionStorage.getItem call
-  it('[Minimal] should call sessionStorage.getItem when initialized', async () => {
+  // Minimal test to isolate localStorage.getItem call
+  it('[Minimal] should call localStorage.getItem when initialized', async () => {
     // Arrange - Minimal setup, only need the mock function reference
     mockSessionGetItem.mockReturnValue(null); // Ensure it returns null
     
@@ -132,13 +132,13 @@ describe('AuthStore - Initialize Action', () => {
     // Assert - Only check if getItem was called
   });
 
-  // Basic sanity check for sessionStorage mocking
-  it('[Sanity Check] Mocked sessionStorage.getItem should be called', () => {
+  // Basic sanity check for localStorage mocking
+  it('[Sanity Check] Mocked localStorage.getItem should be called', () => {
     // Arrange
     const key = 'sanity-check-key';
         
     // Act
-    sessionStorage.getItem(key); // Direct call to the mocked global
+    localStorage.getItem(key); // Direct call to the mocked global
     
     // Assert - Use the mock function reference
     expect(mockSessionGetItem).toHaveBeenCalledWith(key);
