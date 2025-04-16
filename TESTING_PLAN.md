@@ -200,11 +200,11 @@
         *   [⏭️] `packages/ui-components` *(Skipped - Package empty)*.
         *   [✅] `packages/utils` (`logger.ts` tests passing)
         *   [✅] `packages/types` *(Implicitly tested via usage)*.
-            *   [ ] *(Analytics)* Verify `AnalyticsClient` interface exists in `analytics.types.ts`.
-        *   [ ] `packages/analytics-client` *(New package)*
-            *   [ ] Unit Test `nullAdapter.ts` (interface compliance, callable methods).
+            *   [✅] *(Analytics)* Verify `AnalyticsClient` interface exists in `analytics.types.ts`.
+        *   [✅] `packages/analytics-client` *(Setup Complete)*
+            *   [✅] Unit Test `nullAdapter.ts` (interface compliance, callable methods).
             *   [ ] Unit Test `posthogAdapter.ts` (mock `posthog-js`, verify calls to `init`, `identify`, `capture`, `reset`, etc.).
-            *   [ ] Unit Test `index.ts` (service logic: verify correct adapter selection based on env vars, verify init call for PostHog adapter).
+            *   [✅] Unit Test `index.ts` (service logic: verify null adapter default [✅], verify PostHog selection [ ]).
         *   [ ] `packages/utils` or `packages/platform-capabilities`: Unit test `platformCapabilitiesService` (mock platform detection).
         *   [ ] Unit test TypeScript capability providers (mock underlying APIs like `invoke`, Web APIs, RN Modules).
     *   **2.2 Integration Tests:** (Frontend MSW-based tests are covered in Phase 3.2)

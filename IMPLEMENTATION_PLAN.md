@@ -272,21 +272,21 @@ Implement a pattern to handle anonymous users attempting actions that require au
 **Phase 0: Setup & Interface Definition**
 *   **Goal:** Add dependencies, create the new package structure, and define the shared interface.
 *   **Steps:**
-    *   [ ] **Add Dependencies:** Add `posthog-js` to `packages/analytics-client/package.json`.
-    *   [ ] **Create Package:** Create the directory `packages/analytics-client`.
-    *   [ ] **Package Files:** Add `packages/analytics-client/package.json`, `packages/analytics-client/tsconfig.json` (extending base tsconfig).
-    *   [ ] **Source Dir:** Create `packages/analytics-client/src/`.
-    *   [ ] **Define Interface:** In `packages/types/src/`, create `analytics.types.ts`. Define the `AnalyticsClient` interface (`init?`, `identify`, `track`, `reset`).
-    *   [ ] **Export Interface:** Export `AnalyticsClient` from `packages/types/src/index.ts`.
-    *   [ ] **Update Workspace:** Ensure `pnpm-workspace.yaml` includes `packages/analytics-client`.
-    *   [ ] **Install:** Run `pnpm install` from the root.
+    *   [x] **Add Dependencies:** Add `posthog-js` to `packages/analytics-client/package.json`.
+    *   [x] **Create Package:** Create the directory `packages/analytics-client`.
+    *   [x] **Package Files:** Add `packages/analytics-client/package.json`, `packages/analytics-client/tsconfig.json` (extending base tsconfig).
+    *   [x] **Source Dir:** Create `packages/analytics-client/src/`.
+    *   [x] **Define Interface:** In `packages/types/src/`, create `analytics.types.ts`. Define the `AnalyticsClient` interface (`init?`, `identify`, `track`, `reset`).
+    *   [x] **Export Interface:** Export `AnalyticsClient` from `packages/types/src/index.ts`.
+    *   [x] **Update Workspace:** Ensure `pnpm-workspace.yaml` includes `packages/analytics-client`.
+    *   [x] **Install:** Run `pnpm install` from the root.
 *   **Testing & Commit Point:** Verify builds, workspace recognition. Commit: `feat(analytics): Setup analytics-client package and define core interface`
 
 **Phase 1: Null Adapter & Default Service**
 *   **Goal:** Implement the default "do nothing" behavior.
 *   **Steps:**
-    *   [ ] **Null Adapter:** Create `packages/analytics-client/src/nullAdapter.ts`. Implement `AnalyticsClient` with empty functions.
-    *   [ ] **Central Service Stub:** Create `packages/analytics-client/src/index.ts`. Import `NullAnalyticsAdapter`. Read placeholder env vars. Default to exporting `new NullAnalyticsAdapter()` as `analytics`.
+    *   [x] **Null Adapter:** Create `packages/analytics-client/src/nullAdapter.ts`. Implement `AnalyticsClient` with empty functions.
+    *   [x] **Central Service Stub:** Create `packages/analytics-client/src/index.ts`. Import `NullAnalyticsAdapter`. Read placeholder env vars. Default to exporting `new NullAnalyticsAdapter()` as `analytics`.
 *   **Testing & Commit Point:** Unit test `NullAnalyticsAdapter`, unit test `index.ts` defaulting to null adapter. Commit: `feat(analytics): Implement null analytics adapter and default service`
 
 **Phase 2: PostHog Adapter & Service Logic**
