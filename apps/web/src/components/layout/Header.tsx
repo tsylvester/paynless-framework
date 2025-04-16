@@ -28,7 +28,7 @@ export function Header() {
   
   const handleLogout = async () => {
     await logout();
-    navigate('/login');
+    navigate('login');
   };
 
   // Check if a route is active
@@ -50,7 +50,7 @@ export function Header() {
               <nav className="hidden sm:ml-6 sm:flex sm:space-x-4">
                 <Link
                   to="/dashboard"
-                  className={`${isActive('/dashboard') 
+                  className={`${isActive('dashboard') 
                     ? 'border-primary text-textPrimary' 
                     : 'border-transparent text-textSecondary hover:border-border hover:text-textPrimary'
                   } inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium`}
@@ -59,7 +59,7 @@ export function Header() {
                 </Link>
                 <Link
                   to="/chat"
-                  className={`${isActive('/chat') 
+                  className={`${isActive('chat') 
                     ? 'border-primary text-textPrimary' 
                     : 'border-transparent text-textSecondary hover:border-border hover:text-textPrimary'
                   } inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium`}
