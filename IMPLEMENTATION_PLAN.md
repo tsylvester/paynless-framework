@@ -265,6 +265,62 @@ Implement a pattern to handle anonymous users attempting actions that require au
     *   Verify the chat conversation you just initiated is loaded and displayed correctly.
     *   Refresh the `/chat` page and verify it loads the chat history list as normal.
 
+## Abstract Analytics Client (PostHog First)
+
+**Goal:** Implement an analytics layer that can use PostHog (or potentially others later) based on environment variable configuration. If no provider is configured or the required key is missing, the application must function without errors, and analytics calls should become no-ops.
+
+**Phase 0: Setup & Interface Definition**
+*   **Goal:** Add dependencies, create the new package structure, and define the shared interface.
+*   **Steps:**
+    *   [ ] **Add Dependencies:** Add `posthog-js` to `packages/analytics-client/package.json`.
+    *   [ ] **Create Package:** Create the directory `packages/analytics-client`.
+    *   [ ] **Package Files:** Add `packages/analytics-client/package.json`, `packages/analytics-client/tsconfig.json` (extending base tsconfig).
+    *   [ ] **Source Dir:** Create `packages/analytics-client/src/`.
+    *   [ ] **Define Interface:** In `packages/types/src/`, create `analytics.types.ts`. Define the `AnalyticsClient` interface (`init?`, `identify`, `track`, `reset`).
+    *   [ ] **Export Interface:** Export `AnalyticsClient` from `packages/types/src/index.ts`.
+    *   [ ] **Update Workspace:** Ensure `pnpm-workspace.yaml` includes `packages/analytics-client`.
+    *   [ ] **Install:** Run `pnpm install` from the root.
+*   **Testing & Commit Point:** Verify builds, workspace recognition. Commit: `feat(analytics): Setup analytics-client package and define core interface`
+
+**Phase 1: Null Adapter & Default Service**
+*   **Goal:** Implement the default "do nothing" behavior.
+*   **Steps:**
+    *   [ ] **Null Adapter:** Create `packages/analytics-client/src/nullAdapter.ts`. Implement `AnalyticsClient` with empty functions.
+    *   [ ] **Central Service Stub:** Create `packages/analytics-client/src/index.ts`. Import `NullAnalyticsAdapter`. Read placeholder env vars. Default to exporting `new NullAnalyticsAdapter()` as `analytics`.
+*   **Testing & Commit Point:** Unit test `NullAnalyticsAdapter`, unit test `index.ts` defaulting to null adapter. Commit: `feat(analytics): Implement null analytics adapter and default service`
+
+**Phase 2: PostHog Adapter & Service Logic**
+*   **Goal:** Implement the PostHog adapter and selection logic.
+*   **Steps:**
+    *   [ ] **Environment Variables:** Define `VITE_ANALYTICS_PROVIDER`, `VITE_POSTHOG_KEY`, `VITE_POSTHOG_HOST` in `.env.example` (optional).
+    *   [ ] **PostHog Adapter:** Create `packages/analytics-client/src/posthogAdapter.ts`. Import `posthog-js`. Implement `AnalyticsClient` interface using `posthog.init`, `posthog.identify`, `posthog.capture`, `posthog.reset`, etc.
+    *   [ ] **Central Service Update (`index.ts`):** Import `PostHogAdapter`. Read actual env vars. Add logic: If provider is "posthog" and key exists, instantiate and `init` PostHog adapter; else, instantiate null adapter. Export the chosen instance as `analytics`. Add logging for chosen adapter.
+*   **Testing & Commit Point:** Unit test `PostHogAdapter` (mocking `posthog-js`). Unit test `index.ts` selection logic with different env var combinations. Commit: `feat(analytics): Implement PostHog adapter and configure service selection`
+
+**Phase 3: Application Initialization & User Identification**
+*   **Goal:** Initialize the client and integrate user identification/reset.
+*   **Steps:**
+    *   [ ] **App Initialization:** Ensure `import { analytics } from '@paynless/analytics-client';` happens early in `apps/web/src/main.tsx` or `App.tsx` (init happens on import).
+    *   [ ] **Integrate with `useAuthStore`:** Import `analytics`. In `login`, `register`, `initialize` success handlers, call `analytics.identify(user.id, { traits... })`. In `logout` action, call `analytics.reset();`.
+*   **Testing & Commit Point:** Unit test `authStore` (mocking analytics client, verifying `identify`/`reset` calls). Manual integration test (Web): Verify `identify`/`reset` calls in PostHog dashboard when configured; verify NO errors/calls when not configured. Commit: `feat(analytics): Initialize analytics client and integrate identify/reset`
+
+**Phase 4: Core Event Tracking**
+*   **Goal:** Track key user actions using `analytics.track`.
+*   **Steps:**
+    *   [ ] **Identify Events:** Define list (`Signed Up`, `Logged In`, `Subscription Checkout Started`, `Billing Portal Opened`, `Message Sent`, `Profile Updated`).
+    *   [ ] **Implement Tracking:** Add `analytics.track('Event Name', { properties... });` calls in relevant store actions (`authStore`, `subscriptionStore`, `aiStore`) on success.
+*   **Testing & Commit Point:** Unit test store actions (mocking analytics, verifying `track` calls). Manual integration test (Web): Perform actions, verify events/properties in PostHog when configured; verify NO errors/calls when not configured. Commit: `feat(analytics): Add tracking for key user events`
+
+**Phase 5: Documentation & Final Review**
+*   **Goal:** Document the new system for developers.
+*   **Steps:**
+    *   [ ] **Documentation (`DEV_PLAN.md`/`README.md`):** Add section explaining analytics setup, env vars (optionality, providers).
+    *   [ ] **Documentation (`STRUCTURE.md`):** Add `packages/analytics-client`, `analytics.types.ts`, and describe the exported generic `analytics` client.
+    *   [ ] **Environment (`.env.example`):** Ensure vars are present and commented.
+    *   [ ] **Code Review:** Review all changes.
+    *   [ ] **Final Test:** Run full test suite for affected packages and root.
+*   **Commit Point:** Documentation updated, final review complete, all tests passing. Commit: `docs(analytics): Document analytics configuration and usage`
+
 ## Potential Future Refactors
 
 *   **aiStore Getter/Setter Pattern:** Consider refactoring `aiStore` to use a more explicit getter/setter pattern for state access and updates. This could improve traceability and encapsulation but would increase boilerplate. Evaluate based on future store complexity. (Decision deferred as of [current date/context]).

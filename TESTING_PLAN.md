@@ -186,12 +186,25 @@
         *   [✅] `packages/api-client` (All sub-clients: `apiClient`, `stripe.api`, `ai.api` tests passing)
         *   [✅] `packages/store` (Vitest setup complete)
             *   [✅] `authStore.ts` (All actions covered across multiple `authStore.*.test.ts` files)
+                *   [ ] *(Analytics)* Verify `analytics.identify` called on login/register/init success.
+                *   [ ] *(Analytics)* Verify `analytics.reset` called on logout.
+                *   [ ] *(Analytics)* Verify `analytics.track('Signed Up')` called on register success.
+                *   [ ] *(Analytics)* Verify `analytics.track('Logged In')` called on login success.
+                *   [ ] *(Analytics)* Verify `analytics.track('Profile Updated')` called on updateProfile success.
             *   [✅] `subscriptionStore.ts` *(Tests passing, including refresh failures in cancel/resume)*
+                *   [ ] *(Analytics)* Verify `analytics.track('Subscription Checkout Started')` called on createCheckoutSession success.
+                *   [ ] *(Analytics)* Verify `analytics.track('Billing Portal Opened')` called on createBillingPortalSession success.
             *   [✅] `aiStore.ts` *(Status: Refactored into `aiStore.*.test.ts` files. All tests passing after fixing mock strategy and store logic.)*
-                *   *Note: Utilizes `vi.mocked(useAuthStore.getState).mockReturnValue` pattern for dependent store state.* 
+                *   [ ] *(Analytics)* Verify `analytics.track('Message Sent')` called on sendMessage success.
+                *   *Note: Utilizes `vi.mocked(useAuthStore.getState).mockReturnValue` pattern for dependent store state.*
         *   [⏭️] `packages/ui-components` *(Skipped - Package empty)*.
         *   [✅] `packages/utils` (`logger.ts` tests passing)
         *   [✅] `packages/types` *(Implicitly tested via usage)*.
+            *   [ ] *(Analytics)* Verify `AnalyticsClient` interface exists in `analytics.types.ts`.
+        *   [ ] `packages/analytics-client` *(New package)*
+            *   [ ] Unit Test `nullAdapter.ts` (interface compliance, callable methods).
+            *   [ ] Unit Test `posthogAdapter.ts` (mock `posthog-js`, verify calls to `init`, `identify`, `capture`, `reset`, etc.).
+            *   [ ] Unit Test `index.ts` (service logic: verify correct adapter selection based on env vars, verify init call for PostHog adapter).
         *   [ ] `packages/utils` or `packages/platform-capabilities`: Unit test `platformCapabilitiesService` (mock platform detection).
         *   [ ] Unit test TypeScript capability providers (mock underlying APIs like `invoke`, Web APIs, RN Modules).
     *   **2.2 Integration Tests:** (Frontend MSW-based tests are covered in Phase 3.2)
@@ -236,6 +249,10 @@
                 *   [✅] Send Message (Error)
                 *   [✅] Load Chat History
                 *   [✅] Load Chat Details
+            *   **Analytics Integration (Manual/E2E Check):**
+                *   `[ ]` With PostHog configured: Verify `identify`/`reset` calls appear on login/logout/init.
+                *   `[ ]` With PostHog configured: Verify `track` calls for Sign Up, Log In, Checkout Started, Billing Portal Opened, Message Sent, Profile Updated appear with correct properties.
+                *   `[ ]` With PostHog *not* configured: Verify NO console errors and NO network calls to PostHog during auth, subscription actions, or chat usage.
     *   **3.3 End-to-End Tests:**
         *   [ ] **Tooling:** Setup Playwright/Cypress.
         *   [✅] **Core User Flows:** Auth cycle, Profile management.
@@ -282,62 +299,4 @@
 *   Manual loading attempts within shared function code (e.g., `_shared/stripe-client.ts` attempting to read `.env.local`) fail, likely due to the Deno runtime's default permission restrictions (missing `--allow-read` or `--allow-env`) within the sandbox created by `supabase start`. Diagnostic logs added to these loading attempts do not appear, suggesting the code block fails or is suppressed before logging can occur.
 
 **Symptoms:**
-*   Edge Functions that depend on environment variables set via `.env` files (e.g., `api-subscriptions` needing `STRIPE_SECRET_TEST_KEY`) fail during integration tests when run against `supabase start`.
-*   These failures often manifest as `500 Internal Server Error` responses, originating from the function's inability to initialize dependencies (like the Stripe client) due to missing API keys/secrets.
-*   Using `supabase functions logs --source <function_name>` confirms that `Deno.env.get()` returns `undefined` for the expected variables within the function runtime.
-*   Running the same function using `supabase functions serve --env-file supabase/.env.local <function_name>` *does* successfully load the environment variables (confirmed via logs), indicating the function code itself is likely correct but needs the variables provided.
-
-**Auth integration problems:**
-Login Flow > should log in successfully...: Failed because the store state didn't update (authState.user?.email was undefined, expected 'test@example.com'). The UI displayed the generic "Network error occurred..." message.
-Login Flow > should display error message for invalid credentials: Failed because the UI showed the generic "Network error occurred..." message instead of the expected "Invalid credentials".
-Register Flow > should register successfully...: Failed because the store state didn't update (authState.user?.email was undefined, expected 'new@example.com'). The UI displayed the generic "Network error occurred..." message.
-Register Flow > should display error message if email already exists: Failed because the UI showed the generic "Network error occurred..." message instead of the expected "Email already exists".
-The two tests that passed were the ones specifically designed to test server errors (should display generic error message for server error for both Login and Register), where we overrode the MSW handlers within the test to force a 500 error.
-Conclusion: The MSW handlers defined in apps/web/src/mocks/handlers.ts are still not correctly intercepting the requests or are not returning the expected responses for the success and specific error cases (invalid credentials, email exists). The changes to the test file itself were correct in focusing on store state, but the underlying mock handler issue persists, causing the apiClient to fall back to the generic network error.
-
----
-
-## Test Suite Refactoring and Completion Plan (April 2024)
-
-**Goal:** Standardize the structure, naming, and implementation of tests within `apps/web/`, consolidate utilities and mocks, ensure comprehensive coverage according to the original testing goals, and resolve inconsistencies identified during previous phases.
-
-**Steps:**
-
-1.  **[✅] Standardize File Naming and Location:**
-    *   Integration test files moved/merged into `tests/integration/` (`auth`, `profile`, `Subscription`).
-    *   Redundant `*.msw.test.tsx` files removed.
-
-2.  **[✅] Consolidate Test Utilities:**
-    *   Shared `render` utility in `utils/render.tsx` simplified (removed `AuthProvider`).
-    *   Redundant `utils/providers.tsx` removed.
-
-3.  **[✅] Consolidate MSW Handlers:**
-    *   Standardized on `utils/mocks/handlers.ts`.
-    *   Redundant handler file removed.
-    *   Server import path updated.
-    *   Handlers updated with correct API paths (`/login`, `/register`, `/me`, `/api-subscriptions/...`).
-
-4.  **[✅] Centralize Mocks:**
-    *   Shared mocks created for `Layout` and `react-router.mock.ts` (`useNavigate`).
-
-5.  **[✅] Refactor Existing Integration Tests for Consistency:**
-    *   Core integration tests (`auth`, `profile`, `Subscription`) updated to use shared `render`, shared mocks, real stores, and correct API paths.
-    *   Removed local helper functions and mocks.
-
-6.  **[🚧] Coverage Review & Gap Analysis:**
-    *   **Action:** Re-evaluate the test status checklist in `TESTING_PLAN.md` (Phase 3.2) against the refactored test suite.
-    *   **Goal:** Identify remaining gaps.
-    *   *(Next Step)*
-
-7.  **[🚧] Full Suite Run & Fix:**
-    *   **Action:** Execute the integration test suite for `apps/web` (`pnpm --filter web test tests/integration/`).
-    *   **Goal:** Ensure refactored tests pass. Debug and fix failures.
-    *   *(Next Step)*
-
-8.  **[🚧] Refactor Unit Tests:**
-    *   **Action:** Update unit tests in `tests/unit/` to use shared `render` and mocks.
-
-9.  **[ ] Implement Missing Tests:**
-    *   **Action:** Write tests for items marked `[ ]` in the Phase 3.2 checklist.
-
-10. **[ ] Final `
+*   Edge Functions that depend on environment variables set via `.env` files (e.g., `
