@@ -46,7 +46,7 @@ export interface AuthStore {
   refreshSession: () => Promise<void>
   // Update updateProfile signature
   updateProfile: (profileData: UserProfileUpdate) => Promise<UserProfile | null>
-  updateEmail: (email: string) => Promise<User | null>
+  updateEmail: (email: string) => Promise<boolean>
   clearError: () => void
   // State properties
   session: Session | null

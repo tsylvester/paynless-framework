@@ -661,7 +661,7 @@ export const useAuthStore = create<
       updateProfile: async (
         profileData: UserProfileUpdate
       ): Promise<UserProfile | null> => {
-        set({ isLoading: true, error: null })
+        set({ error: null })
         const token = get().session?.access_token
         const currentProfile = get().profile
 
@@ -670,7 +670,7 @@ export const useAuthStore = create<
           logger.error(
             'updateProfile: Cannot update profile, user not authenticated.'
           )
-          set({ error: new Error('Not authenticated'), isLoading: false })
+          set({ error: new Error('Not authenticated') })
           return null
         }
 
@@ -679,7 +679,9 @@ export const useAuthStore = create<
           logger.error(
             'updateProfile: Cannot update profile, no current profile loaded.'
           )
-          set({ error: new Error('Profile not loaded'), isLoading: false })
+          set({
+            error: new Error('Profile not loaded'),
+          })
           return null
         }
 
@@ -692,7 +694,10 @@ export const useAuthStore = create<
 
           if (!response.error && response.data) {
             const updatedProfile = response.data
-            set({ profile: updatedProfile, isLoading: false, error: null })
+            set({
+              profile: updatedProfile,
+              error: null,
+            })
             logger.info('Profile updated successfully.')
             return updatedProfile
           } else {
@@ -708,18 +713,18 @@ export const useAuthStore = create<
           logger.error('Update profile: Error during API call.', {
             message: finalError.message,
           })
-          set({ isLoading: false, error: finalError })
+          set({ error: finalError })
           return null
         }
       },
 
       updateEmail: async (newEmail: string): Promise<boolean> => {
-        set({ isLoading: true, error: null })
+        set({ error: null })
         const token = get().session?.access_token
 
         if (!token) {
           const error = new Error('Authentication required to update email.')
-          set({ isLoading: false, error })
+          set({ error })
           return false // Indicate failure
         }
 
@@ -742,7 +747,7 @@ export const useAuthStore = create<
             logger.info(
               '[AuthStore] Email update request successful. Verification email likely sent.'
             )
-            set({ isLoading: false, error: null })
+            set({ error: null })
             // Note: The user object in the store might not reflect the change immediately.
             // Supabase Auth handles the email change flow (verification).
             // We might need to fetch the user again or rely on Supabase listeners if immediate UI update is needed.
@@ -764,7 +769,7 @@ export const useAuthStore = create<
           logger.error('[AuthStore] updateEmail action failed:', {
             message: finalError.message,
           })
-          set({ isLoading: false, error: finalError })
+          set({ error: finalError })
           return false // Indicate failure
         }
       },
