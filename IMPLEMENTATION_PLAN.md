@@ -19,6 +19,8 @@
 *   [ ] Figure out how to parse chat responses better, they get messy if the assistant uses markdown 
 *   [ ] Revert changes in authStore for initialize and updateProfile to working version in commit 58d6e17a
 *   [ ] Integrate the session replay logic that broke authStore, but fix it so it's compatible with the working method 
+*   [ ] Cancel Subscription doesn't work, API error
+*   [ ] Manage Billing sends user to portal but doesn't return user after action. 
 
 Okay, let's break down the implementation of the Platform Capability Abstraction layer using a TDD-inspired approach, focusing on compatibility and minimal disruption to your existing structure.
 
@@ -272,7 +274,7 @@ Implement a pattern to handle anonymous users attempting actions that require au
 
 ## Proposed Refactoring: Consolidate localStorage Usage in authStore (Deferred)
 
-**Context (May 2024):** During work on stabilizing `authStore` tests, it was noted that while Zustand's `persist` middleware (using `localStorage` via `createJSONStorage`) is the standard pattern for persisting session state (`authStore.session`), two related pieces of state are handled differently:
+**Context (April 2025):** During work on stabilizing `authStore` tests, it was noted that while Zustand's `persist` middleware (using `localStorage` via `createJSONStorage`) is the standard pattern for persisting session state (`authStore.session`), two related pieces of state are handled differently:
     *   `pendingAction`: Stored directly in `localStorage` via `localStorage.setItem('pendingAction', ...)` when an action needs to be replayed after login (e.g., anonymous chat attempt).
     *   `loadChatIdOnRedirect`: Stored directly in `localStorage` via `localStorage.setItem('loadChatIdOnRedirect', ...)` by `_checkAndReplayPendingAction` to tell the `/chat` page which specific chat to load after a successful replay and redirect.
 

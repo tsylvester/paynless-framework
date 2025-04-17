@@ -1,5 +1,5 @@
 import { vi } from 'vitest';
-import { ApiClient } from '../apiClient'; // Adjust path as needed
+import { ApiClient } from '@paynless/api-client/src/apiClient'; // Adjust path as needed
 
 export const MOCK_ACCESS_TOKEN = 'mock-test-access-token-from-util';
 

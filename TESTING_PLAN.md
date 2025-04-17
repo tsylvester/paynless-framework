@@ -9,7 +9,7 @@
     *   **Consumption:** All consumers (stores, UI components, etc.) should import and use the `api` singleton directly rather than relying on dependency injection (DI) via props or `init` methods for the API client.
     *   **Testing:** Unit testing consumers that depend on the `apiClient` requires mocking the module import using the test runner's capabilities (e.g., `vi.mock('@paynless/api-client', ...)` in Vitest). This allows replacing the singleton with a mock during tests.
     *   **Consistency Task:** Older stores (`authStore`, `subscriptionStore`) currently use an outdated DI (`init`) pattern. They **must** be refactored to align with the singleton import pattern and `vi.mock` testing strategy for consistency.
-3. **Test Structure Refactor (April 2024):** Standardized `apps/web/src/tests/` structure:
+3. **Test Structure Refactor (April 2025):** Standardized `apps/web/src/tests/` structure:
     *   `unit/`: Pure unit tests only (`*.unit.test.tsx`).
     *   `integration/`: MSW-based integration tests (`*.integration.test.tsx`), consolidating tests by feature (Auth, Profile, Subscription).
     *   `utils/`: Centralized test utilities (`render.tsx`).
@@ -60,7 +60,7 @@
         *   **Unit Tests:** The capability service itself needs unit testing with mocked platform detection. Shared components using the service must be tested by mocking the service to simulate different platforms (capabilities available vs. unavailable) and verifying conditional logic/rendering and calls to the correct service methods. TypeScript capability providers should be unit tested, mocking underlying APIs/modules (`invoke`, Web APIs, RN modules). Rust command handlers require Rust unit tests (`#[test]`).
         *   **Integration Tests:** Crucially require *platform-specific* integration testing. For Tauri, this means testing the TS -> `invoke` -> Rust -> Native API flow within a Tauri environment (e.g., using `tauri-driver`). For Web/RN, test interaction with Web APIs or Native Modules in their respective environments.
         *   **E2E Tests:** Must be run on each target platform (Web, Windows Desktop, Mac Desktop, Linux Desktop, iOS, Android) to validate the full user flow involving platform-specific features. Requires appropriate E2E tooling for each platform (Playwright/Cypress for Web, Tauri-specific tooling, Detox/Appium for Mobile).
-20. **[NEW] Zustand Store Dependency Mocking (`aiStore` <-> `authStore` Example - May 2024):**
+20. **Zustand Store Dependency Mocking (`aiStore` <-> `authStore` Example - April 2025):**
     *   **Problem:** Unit tests for `aiStore` actions that depend on state from `authStore` (e.g., `session` for tokens) consistently failed with `TypeError: Cannot read properties of undefined (reading 'session')`, even when attempts were made to set the `authStore` mock state using `useAuthStore.setState` in nested `beforeEach` blocks (a pattern observed working in `subscriptionStore.test.ts`).
     *   **Working Pattern:** The reliable solution was to use `vi.mocked(useAuthStore.getState).mockReturnValue(...)` within the nested `beforeEach` specific to the test suite requiring the dependent state. This directly controls the state object returned when `aiStore` calls `useAuthStore.getState()`.
     *   **Implementation:**
@@ -74,9 +74,7 @@
         4.  Assert the final state (e.g., `isLoading: false`) after the `await`.
     *   **Persistent Type Errors:** Encountered persistent `Type '"user"' is not assignable to type 'UserRole'` errors in mock data within `aiStore` tests despite trying various formats. Decided to ignore these after multiple attempts, prioritizing functional correctness, potentially indicating minor inconsistencies in type definitions.
 
-*   **[NEW] Phase 5: Anonymous Chat Auth Refactor Verification:** Added specific backend and E2E test cases for the anonymous secret header and related flows.
-
-*   **[NEW] Auth Store localStorage Consolidation (Deferred Refactor - May 2024):**
+*   **Auth Store localStorage Consolidation (Deferred Refactor - April 2025):**
     *   **Observation:** `pendingAction` and `loadChatIdOnRedirect` currently use direct `localStorage` calls, breaking the pattern of using Zustand `persist` (which also uses `localStorage` under the hood via `createJSONStorage`) for managing persisted `authStore` state like `session`.
     *   **Proposed Refactor:** Move `pendingAction` and `loadChatIdOnRedirect` into the `authStore` state and include them in the `persist` middleware's `partialize` configuration. This involves updating state/actions/tests and the `/chat` page component.
     *   **Benefit:** Improves pattern consistency, centralizes state logic, and potentially simplifies testing.
@@ -140,12 +138,12 @@
                 *   [✅] Implement handling for key events (checkout complete, sub updated, etc.)
                 *   [✅] Unit test webhook handler logic & signature verification
             *   [✅] **AI Chat Functions:**
-                *   [ ] Unit Test `ai-providers/index.ts` (Mock Supabase client) *(Pending)*
-                *   [ ] Unit Test `system-prompts/index.ts` (Mock Supabase client) *(Pending)*
+                *   [ ] Unit Test `ai-providers/index.ts` (Mock Supabase client) 
+                *   [ ] Unit Test `system-prompts/index.ts` (Mock Supabase client) 
                 *   [🚧] **Unit Test `chat/index.ts`:**
                 *   [✅] Unit Test `chat-history/index.ts`
                 *   [✅] Unit Test `chat-details/index.ts`
-            *   **[NEW] Email Marketing Sync:**
+            *   **Email Marketing Sync:**
                 *   [ ] `_shared/email_service/kit_service.ts`
                 *   [ ] `_shared/email_service/no_op_service.ts`
                 *   [ ] `_shared/email_service/factory.ts`
@@ -194,7 +192,7 @@
         *   [✅] `packages/store` (Vitest setup complete)
             *   [✅] `authStore.ts` (All actions covered across multiple `authStore.*.test.ts` files)
                 *   **NOTE:** Replay logic tests (in `register.test.ts`, `login.test.ts`) and session/state restoration tests (in `initialize.test.ts`) related to `_checkAndReplayPendingAction` and the `initialize` action are currently unreliable/skipped/adjusted due to known issues in the underlying store functions. These tests need revisiting after the functions are fixed.
-                *   **UPDATE (May 2024):** While `login`, `register`, `logout`, `refresh`, `profile` tests are now passing after fixing assertions and mock data, `initialize.test.ts` still has ~8 failures. These seem related to complex interactions between `initialize` logic, Zustand `persist` hydration, and `localStorage` mocking in Vitest. Fixing these is **DEFERRED** to focus on feature completion. The core analytics integration points (`identify`/`reset`) are covered by the passing tests.
+                *   **UPDATE (April 2025):** While `login`, `register`, `logout`, `refresh`, `profile` tests are now passing after fixing assertions and mock data, `initialize.test.ts` still has ~8 failures. These seem related to complex interactions between `initialize` logic, Zustand `persist` hydration, and `localStorage` mocking in Vitest. Fixing these is **DEFERRED** to focus on feature completion. The core analytics integration points (`identify`/`reset`) are covered by the passing tests.
                 *   [✅] *(Analytics)* Verify `analytics.identify` called on login/init success.
                 *   [✅] *(Analytics)* Verify `analytics.reset` called on logout.
                 *   [✅] *(Analytics)* Verify `analytics.track('Signed Up')` called on register success.
@@ -227,13 +225,4 @@
     *   **3.2 Integration Tests (MSW):**
         *   [✅] **Refactoring Complete:** Structure standardized, utilities/handlers consolidated.
         *   [🚧] **API Integration (Mocked):** Key user flows tested with MSW.
-            *   **Authentication (`auth.integration.test.tsx`):**
-                *   `[✅]` Login: Success, Invalid Credentials, Server Error.
-                *   `[✅]` Register: Success, Email Exists, Server Error.
-                *   `[ ]` Logout (Manually tested as working, integration test not implemented)
-                *   `[ ]` Session Load/Refresh (Manually tested as working, integration test not implemented)
-                *   `[ ]` Password Reset 
-                *   `[ ]` Register -> Redirect to Chat (Test handling of `redirectTo` from `authStore`)
-            *   **Profile Management (`profile.integration.test.tsx`):**
-                *   `[✅]` Profile Load: Data displayed in editor.
-                *   `[✅]`
+            *   **Authentication (`auth.integration.test.tsx`

@@ -65,7 +65,7 @@ export const useSubscriptionStore = create<SubscriptionStore>()(
       setError: (error) => set({ error }),
       
       // API actions
-      loadSubscriptionData: async (/* userId: string */) => {
+      loadSubscriptionData: async (userId: string) => {
         const user = useAuthStore.getState().user;
         const token = useAuthStore.getState().session?.access_token;
 

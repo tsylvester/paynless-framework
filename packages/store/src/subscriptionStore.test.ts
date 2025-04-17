@@ -262,6 +262,8 @@ describe('SubscriptionStore', () => {
   // --- NEW: Mock window.location for checkout session tests ---
   describe('createCheckoutSession action', () => {
     const originalLocation = window.location;
+    let trackSpy: ReturnType<typeof vi.spyOn> | undefined;
+
     beforeEach(() => {
         vi.stubGlobal('window', {
             location: {
@@ -269,9 +271,11 @@ describe('SubscriptionStore', () => {
                 origin: 'http://localhost:3000' // Mock origin
             }
         });
+        trackSpy = vi.spyOn(analytics, 'track').mockImplementation(() => {}); 
     });
     afterEach(() => {
         vi.unstubAllGlobals();
+        trackSpy?.mockRestore(); 
     });
 
     const priceId = 'price_abc';
@@ -299,24 +303,47 @@ describe('SubscriptionStore', () => {
           { token: mockSession.access_token } // Expected options
       );
       expect(resultSessionUrl).toBe(mockSessionUrl);
+      expect(trackSpy).toHaveBeenCalledWith('Subscription Checkout Started');
     });
 
     it('should set loading, set error state, and return null if API client fails', async () => {
       setAuthenticated();
       const apiErrorMsg = 'Could not create session';
-      // Use imported mock function
-      mockStripeCreateCheckoutSession.mockResolvedValue({ data: null, error: { message: apiErrorMsg, code: 'ERR_CHECKOUT' } });
+      // *** USE mockRejectedValue again ***
+      mockStripeCreateCheckoutSession.mockRejectedValue(new Error(apiErrorMsg));
 
-      let resultSessionUrl: string | null = 'initial';
-      await act(async () => {
-        resultSessionUrl = await useSubscriptionStore.getState().createCheckoutSession(priceId);
+      let actionPromise: Promise<string | null> | null = null;
+
+      // Dispatch synchronously within act
+      act(() => {
+        actionPromise = useSubscriptionStore.getState().createCheckoutSession(priceId);
       });
 
+      // Await the promise OUTSIDE act, expecting it to resolve (to null because the action catches the rejection)
+      // Use try/catch here in the test to see if the promise itself rejects unexpectedly
+      let resultSessionUrl: string | null = 'initial';
+      let testCatchError: any = null;
+      try {
+          resultSessionUrl = await actionPromise;
+      } catch(err) {
+          testCatchError = err;
+          console.log("DEBUG: Test caught unexpected rejection:", err);
+      }
+
+      // Assertions AFTER awaiting the promise
+      console.log("DEBUG: Result after await:", resultSessionUrl);
+       console.log("DEBUG: Test catch block error:", testCatchError);
       const state = useSubscriptionStore.getState();
+      console.log("DEBUG: Final state in error test:", JSON.stringify(state, null, 2));
+
+      // Expectations: The action catches its own error, returns null, and sets state.error
+      expect(testCatchError).toBeNull(); // The test itself shouldn't catch an error
+      expect(resultSessionUrl).toBeNull(); // The action should return null
       expect(state.isSubscriptionLoading).toBe(false);
-      expect(state.error).toBeInstanceOf(Error);
-      expect(state.error?.message).toContain(apiErrorMsg);
-      expect(resultSessionUrl).toBeNull();
+      expect(state.error).toBeInstanceOf(Error); // *** The core failing assertion ***
+      if (state.error) { // Guard the message check
+          expect(state.error.message).toContain(apiErrorMsg);
+      }
     });
 
      it('should set error state and return null if user is not authenticated', async () => {
@@ -332,19 +359,36 @@ describe('SubscriptionStore', () => {
 
     it('should call analytics.track("Subscription Checkout Started") on successful session creation', async () => {
       // Arrange
-      useAuthStore.setState({ session: mockSession }); // Set authenticated state
+      setAuthenticated(); // Ensure auth state is set correctly
       const priceId = 'price_123';
       const mockSessionUrl = 'https://checkout.stripe.com/session_123';
-      // Ensure the API call is mocked to succeed for this test using the imported mock
-      mockStripeCreateCheckoutSession.mockResolvedValue({ data: { sessionUrl: mockSessionUrl }, error: null });
-      const trackSpy = vi.spyOn(analytics, 'track');
+      const mockResponse = { data: { sessionUrl: mockSessionUrl }, error: null, status: 200 };
+      mockStripeCreateCheckoutSession.mockResolvedValue(mockResponse);
+
+      // ---> Add Logging <---
+      console.log('DEBUG: Mock response being used:', JSON.stringify(mockResponse));
+      // ---> End Logging <---
 
       // Act
+      let returnedUrl: string | null = null;
       await act(async () => {
-        await useSubscriptionStore.getState().createCheckoutSession(priceId);
+        // ---> Add Logging Inside Action Call (Optional but potentially helpful) <---
+        // This requires modifying the mock slightly to log what it returns
+        // mockStripeCreateCheckoutSession.mockResolvedValueOnce(mockResponse).mockImplementation(async () => {
+        //   console.log('DEBUG: mockStripeCreateCheckoutSession resolving with:', JSON.stringify(mockResponse));
+        //   return mockResponse;
+        // });
+        // ---> End Logging <---
+        returnedUrl = await useSubscriptionStore.getState().createCheckoutSession(priceId);
+        // ---> Add Logging <---
+        console.log('DEBUG: Result from createCheckoutSession:', returnedUrl);
+        console.log('DEBUG: Store state after action:', JSON.stringify(useSubscriptionStore.getState(), null, 2));
+         // ---> End Logging <---
       });
 
       // Assert
+      expect(returnedUrl).toBe(mockSessionUrl); // This is failing (returns null)
+      // ... other assertions ...
       expect(trackSpy).toHaveBeenCalledWith('Subscription Checkout Started');
     });
   });

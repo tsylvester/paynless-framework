@@ -5,6 +5,8 @@
     { "path": "packages/utils" },
     { "path": "packages/api-client" },
     { "path": "packages/store" },
+    { "path": "packages/analytics-client" },
+    //{"path": "packages/platform-capabilities" }, TODO: Needs a package.json, tsconfig.json, vitest.config.ts, index.ts, etc.
     { "path": "apps/web" }
   ]
 }

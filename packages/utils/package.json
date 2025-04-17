@@ -10,7 +10,8 @@
     ".": {
       "import": "./dist/index.js",
       "types": "./dist/index.d.ts"
-    }
+    },
+    "./src/mocks/*": "./src/mocks/*.ts"
   },
   "scripts": {
     "test": "vitest run",
