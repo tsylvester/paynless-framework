@@ -17,12 +17,10 @@ import { Button } from '@/components/ui/button'
 function ProfileNameEditor() {
   const {
     profile,
-    isLoading, // Use store's loading state
     error, // Use store's error state
     updateProfile, // Use store's update action
   } = useAuthStore((state) => ({
     profile: state.profile,
-    isLoading: state.isLoading,
     error: state.error,
     updateProfile: state.updateProfile,
   }))
@@ -30,6 +28,8 @@ function ProfileNameEditor() {
   // Local state for form inputs
   const [firstName, setFirstName] = useState('')
   const [lastName, setLastName] = useState('')
+
+  const [saving, setSaving] = useState(false)
 
   // Effect to initialize form state when profile loads from store
   useEffect(() => {
@@ -41,7 +41,9 @@ function ProfileNameEditor() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (isLoading) return // Prevent submit while already saving
+    if (saving) return // Prevent submit while already saving
+
+    setSaving(true)
 
     let profileUpdateError = false
 
@@ -59,10 +61,7 @@ function ProfileNameEditor() {
       }
     }
 
-    // Optionally: Add success message logic here if needed,
-    // checking if profileUpdateError is false
-
-    // isLoading and error states are handled by observing the store
+    setSaving(false)
   }
 
   // Removed user check as it's not needed for name editing
@@ -108,7 +107,7 @@ function ProfileNameEditor() {
             onChange={(e) => setFirstName(e.target.value)}
             className="block w-full"
             placeholder="Enter first name"
-            disabled={isLoading} // Disable based on store state
+            disabled={saving} // Disable based on store state
           />
         </div>
 
@@ -127,7 +126,7 @@ function ProfileNameEditor() {
             onChange={(e) => setLastName(e.target.value)}
             className="block w-full"
             placeholder="Enter last name"
-            disabled={isLoading} // Disable based on store state
+            disabled={saving} // Disable based on store state
           />
         </div>
 
@@ -135,15 +134,15 @@ function ProfileNameEditor() {
         <Button
           type="submit"
           disabled={
-            isLoading ||
+            saving ||
             (firstName === profile?.first_name &&
               lastName === profile?.last_name)
           } // Also disable if no changes
           className={`w-full flex justify-center py-2 px-4 text-sm font-medium ${
-            isLoading ? 'opacity-75 cursor-not-allowed' : ''
+            saving ? 'opacity-75 cursor-not-allowed' : ''
           }`}
         >
-          {isLoading ? 'Saving...' : 'Save Name Changes'}
+          {saving ? 'Saving...' : 'Save'}
         </Button>
       </form>
     </div>
@@ -154,13 +153,11 @@ function ProfileNameEditor() {
 function EmailEditor() {
   const {
     user, // Get user object for email
-    isLoading, // Use store's loading state
     error, // Use store's error state
     updateEmail, // Use store's update action
     refreshSession,
   } = useAuthStore((state) => ({
     user: state.user, // Add user to selector
-    isLoading: state.isLoading,
     error: state.error,
     updateEmail: state.updateEmail, // <-- Add the new action
     refreshSession: state.refreshSession,
@@ -168,6 +165,7 @@ function EmailEditor() {
 
   // Local state for form inputs
   const [email, setEmail] = useState('')
+  const [saving, setSaving] = useState(false)
 
   // Effect to initialize form state when user loads from store
   useEffect(() => {
@@ -179,13 +177,16 @@ function EmailEditor() {
 
   const handleEmailSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (isLoading || email === user?.email) return // Prevent submit while already saving or if no change
 
-    // --- Update Email ---
+    if (saving || email === user?.email) return // Prevent submit while already saving or if no change
+
+    setSaving(true)
 
     await updateEmail(email)
 
     refreshSession()
+
+    setSaving(false)
   }
 
   if (!user) {
@@ -228,11 +229,11 @@ function EmailEditor() {
             onChange={(e) => setEmail(e.target.value)}
             className="block w-full"
             placeholder="Enter email"
-            disabled={isLoading} // Disable based on store state
+            disabled={saving} // Disable based on store state
           />
           {/* Use user.email for comparison */}
           {email !== user?.email && (
-            <p className="mt-2 text-sm text-yellow-600">
+            <p className="mt-2 text-xs text-gray-400">
               Changing your email requires re-verification.
             </p>
           )}
@@ -241,14 +242,14 @@ function EmailEditor() {
         {/* Submit Button */}
         <Button
           type="submit"
-          disabled={isLoading || email === user?.email} // Also disable if no changes
+          disabled={saving || email === user?.email} // Also disable if no changes
           className={`w-full flex justify-center py-2 px-4 text-sm font-medium ${
-            isLoading || email === user?.email
+            saving || email === user?.email
               ? 'opacity-75 cursor-not-allowed'
               : ''
           }`}
         >
-          {isLoading ? 'Saving...' : 'Update Email'}
+          {saving ? 'Saving...' : 'Save'}
         </Button>
       </form>
     </div>
