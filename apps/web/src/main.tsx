@@ -3,17 +3,26 @@ import { createRoot } from 'react-dom/client'
 import App from './App'
 import './index.css'
 import { initializeApiClient } from '@paynless/api-client'
-import { logger/*, LogLevel*/ } from '@paynless/utils'
+import { logger, LogLevel } from '@paynless/utils'
 import ReactGA from 'react-ga4'
-import '@paynless/analytics-client'
+
+// ---> Remove previous debug log <---
+// logger.error('[DEBUG] Attempting to log imported analytics object:', analytics);
+
+// Keep the explicit import (or revert to side-effect import if preferred now)
+// import { analytics } from '@paynless/analytics-client'; 
+import '@paynless/analytics-client' // <-- Revert to side-effect import
 
 // --- Configure Logger Early ---
 // Only show errors in the console for now to reduce noise
-//logger.configure({ minLevel: LogLevel.ERROR });
-//logger.info("Logger configured to minimum level: ERROR"); // This line itself won't show now
+const logLevel = LogLevel.INFO;
+logger.configure({ minLevel: logLevel });
+// ---> Correct the logger call syntax <---
+logger.info("Logger configured to minimum level", { level: logLevel }); 
 
 // --- Initialize API Client ---
 const supabaseUrl = import.meta.env['VITE_SUPABASE_URL']
+// ---> Correct the logger call syntax <---
 const supabaseAnonKey = import.meta.env['VITE_SUPABASE_ANON_KEY']
 //console.log('supabaseUrl', supabaseUrl)
 //console.log('supabaseAnonKey', supabaseAnonKey)

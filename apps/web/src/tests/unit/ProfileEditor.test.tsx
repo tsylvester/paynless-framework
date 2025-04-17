@@ -1,9 +1,10 @@
-import { render, screen, fireEvent, act } from '@testing-library/react';
+import { render, screen, fireEvent, act, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { useAuthStore } from '@paynless/store'; // Import actual store
 import type { UserProfile, UserProfileUpdate } from '@paynless/types';
 import { ProfileEditor } from './ProfileEditor';
+import { analytics } from '@paynless/analytics-client'; // Import analytics
 
 // Mock the updateProfile function
 const mockUpdateProfile = vi.fn();
@@ -58,6 +59,18 @@ vi.mock('@paynless/utils', () => ({
   }
 }));
 
+// Mock analytics
+vi.mock('@paynless/analytics-client', () => ({
+  analytics: {
+    track: vi.fn(),
+    identify: vi.fn(),
+    reset: vi.fn(),
+  },
+}));
+
+// Keep refs to mock store functions
+let mockAnalyticsTrack: vi.Mock;
+
 describe('ProfileEditor Component', () => {
   const user = userEvent.setup();
 
@@ -79,6 +92,13 @@ describe('ProfileEditor Component', () => {
         updateProfile: mockUpdateProfile // Re-inject mock
       }, true);
     });
+
+    // Get a reference to the mocked track function
+    mockAnalyticsTrack = vi.mocked(analytics.track);
+  });
+
+  afterEach(() => {
+    vi.clearAllMocks(); // Clear mocks between tests
   });
 
   it('should render initial profile data from store and form elements', () => {
@@ -192,6 +212,30 @@ describe('ProfileEditor Component', () => {
     expect(errorMessage).toBeInTheDocument();
     expect(errorMessage).toHaveTextContent('Failed to save profile');
   });
+
+  it('should call analytics.track when form is submitted', async () => {
+    render(<ProfileEditor />)
+
+    const firstNameInput = screen.getByLabelText(/first name/i)
+    const lastNameInput = screen.getByLabelText(/last name/i)
+    const submitButton = screen.getByRole('button', { name: /save changes/i })
+
+    // Change form values (optional, but good practice)
+    await fireEvent.change(firstNameInput, { target: { value: 'Updated' } })
+    await fireEvent.change(lastNameInput, { target: { value: 'Name' } })
+
+    // Submit form
+    await fireEvent.click(submitButton)
+
+    // Assert analytics track was called BEFORE updateProfile attempt
+    expect(mockAnalyticsTrack).toHaveBeenCalledWith('Profile: Submit Profile Update Form')
+    expect(mockAnalyticsTrack).toHaveBeenCalledTimes(1)
+
+    // Optional: Verify updateProfile was still called afterwards
+    await waitFor(() => {
+      expect(mockUpdateProfile).toHaveBeenCalledWith({ first_name: 'Updated', last_name: 'Name' })
+    })
+  })
 
   // Test for Basic Info tab removed as the tab is gone
 

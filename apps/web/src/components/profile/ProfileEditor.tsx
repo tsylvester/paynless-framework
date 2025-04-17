@@ -5,6 +5,7 @@ import type { UserProfileUpdate } from '@paynless/types'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Button } from '@/components/ui/button'
+import { analytics } from '@paynless/analytics-client'; // Import analytics
 
 // Props are removed as component now relies on the store
 // interface ProfileEditorProps {
@@ -40,6 +41,10 @@ export function ProfileEditor(/* Props removed */) {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
+
+    // Add tracking call HERE
+    analytics.track('Profile: Submit Profile Update Form');
+
     if (isLoading) return // Prevent submit while already saving
 
     const updatedProfileData: UserProfileUpdate = {

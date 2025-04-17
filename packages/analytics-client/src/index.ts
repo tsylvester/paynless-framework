@@ -7,10 +7,11 @@ import { PostHogAdapter } from './posthogAdapter';
 let analyticsInstance: AnalyticsClient;
 
 const initializeAnalytics = (): AnalyticsClient => {
+
   // Read config from environment variables
   const provider = import.meta.env['VITE_ANALYTICS_PROVIDER']?.toLowerCase() || 'none';
   const posthogApiKey = import.meta.env['VITE_POSTHOG_KEY'];
-  const posthogApiHost = import.meta.env['VITE_POSTHOG_HOST'] || 'https://app.posthog.com';
+  const posthogApiHost = import.meta.env['VITE_POSTHOG_HOST'];
   // Add other provider keys here (e.g., mixpanelToken)
 
   logger.debug('[Analytics] Initializing analytics service...', { provider, hasPosthogKey: !!posthogApiKey });

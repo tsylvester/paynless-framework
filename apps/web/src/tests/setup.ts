@@ -65,6 +65,26 @@ if (!supabaseUrl || !supabaseAnonKey) {
     console.log('[setupTests] API Client Initialized.');
 }
 
+// Mock localStorage
+let store: Record<string, string> = {};
+const localStorageMock = {
+  getItem: vi.fn((key: string) => store[key] || null),
+  setItem: vi.fn((key: string, value: string) => {
+    store[key] = value.toString();
+  }),
+  clear: vi.fn(() => {
+    store = {};
+  }),
+  removeItem: vi.fn((key: string) => {
+    delete store[key];
+  }),
+  key: vi.fn((index: number) => Object.keys(store)[index] || null),
+  get length() {
+    return Object.keys(store).length;
+  }
+};
+vi.stubGlobal('localStorage', localStorageMock);
+
 // Mock window.matchMedia
 Object.defineProperty(window, 'matchMedia', {
   writable: true,

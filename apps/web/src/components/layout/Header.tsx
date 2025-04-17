@@ -12,6 +12,7 @@ import {
   Sun,
   Moon,
 } from 'lucide-react';
+import { analytics } from '@paynless/analytics-client';
 
 export function Header() {
   const { user, profile, logout } = useAuthStore(state => ({ 
@@ -122,6 +123,7 @@ export function Header() {
                       </Link>
                       <button
                         onClick={() => {
+                          analytics.track('Auth: Clicked Logout');
                           setIsUserMenuOpen(false);
                           handleLogout();
                         }}
@@ -249,6 +251,7 @@ export function Header() {
                   </Link>
                   <button
                     onClick={() => {
+                      analytics.track('Auth: Clicked Logout');
                       setIsMenuOpen(false);
                       handleLogout();
                     }}

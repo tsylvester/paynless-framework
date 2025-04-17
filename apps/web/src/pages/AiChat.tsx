@@ -1,48 +1,12 @@
-import React, { useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useAiStore, useAuthStore } from '@paynless/store';
 import { logger } from '@paynless/utils';
+import { analytics } from '@paynless/analytics-client';
 import { ModelSelector } from '../components/ai/ModelSelector';
 import { PromptSelector } from '../components/ai/PromptSelector';
 import { AiChatbox } from '../components/ai/AiChatbox';
 import { Layout } from '../components/layout/Layout';
-import { Chat } from '@paynless/types';
-
-// Chat History component using plain elements and Tailwind
-function ChatHistoryList({ history, onLoadChat, isLoading }: { history: Chat[], onLoadChat: (chatId: string) => void, isLoading: boolean }) {
-  if (isLoading) {
-    return (
-      <div className="p-4 text-center text-muted-foreground">
-        Loading chat history...
-      </div>
-    );
-  }
-  
-  if (!history || history.length === 0) {
-      return (
-          <div className="p-4 text-center text-muted-foreground">
-              No chat history found.
-          </div>
-      );
-  }
-
-  return (
-    <div className="max-h-[400px] overflow-y-auto space-y-2 p-1">
-      {history.map((chat) => (
-        <div 
-          key={chat.id} 
-          className="p-3 border border-border rounded-md hover:bg-muted cursor-pointer transition-colors duration-150"
-          onClick={() => onLoadChat(chat.id)}
-          role="button"
-          tabIndex={0}
-          onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') onLoadChat(chat.id); }}
-        >
-          <p className="font-medium text-sm text-foreground truncate">{chat.title || `Chat ${chat.id.substring(0, 8)}`}</p>
-          <p className="text-xs text-muted-foreground mt-1">{new Date(chat.updated_at).toLocaleString()}</p>
-        </div>
-      ))}
-    </div>
-  );
-}
+import { ChatHistoryList } from '../components/ai/ChatHistoryList';
 
 export function AiChatPage() {
   // Get user, session, and loading state from auth store
@@ -123,8 +87,19 @@ export function AiChatPage() {
   }, []); 
   // ---> END MODIFICATION <---
 
+  const handleProviderChange = (providerId: string | null) => {
+    setSelectedProviderId(providerId);
+    analytics.track('Chat: Provider Selected', { providerId }); // Track provider change
+  };
+
+  const handlePromptChange = (promptId: string | null) => {
+    setSelectedPromptId(promptId);
+    analytics.track('Chat: Prompt Selected', { promptId }); // Track prompt change
+  };
+
   const handleNewChat = () => {
-    logger.info('[AiChatPage] Starting new chat...');
+    logger.info('[AiChat] Starting new chat...');
+    analytics.track('Chat: Clicked New Chat');
     startNewChat();
     // Reset selections to defaults
     setSelectedProviderId(availableProviders && availableProviders.length > 0 ? availableProviders[0].id : null);
@@ -134,6 +109,7 @@ export function AiChatPage() {
   const handleLoadChat = (chatId: string) => {
     if (chatId === currentChatId) return; // Avoid reloading the same chat
     logger.info(`[AiChatPage] Loading chat details for: ${chatId}`);
+    analytics.track('Chat: History Item Selected', { chatId });
     loadChatDetails(chatId);
     // TODO: Determine how to set provider/prompt when loading history.
     // Maybe store last used provider/prompt with the chat?
@@ -144,54 +120,53 @@ export function AiChatPage() {
 
   return (
     <Layout>
-      <div className="container mx-auto p-4 grid grid-cols-1 md:grid-cols-3 gap-6">
-        {/* Left Column: Chat Interface */}
-        <div className="md:col-span-2 flex flex-col h-[calc(100vh-10rem)] border border-border rounded-lg bg-card shadow-sm">
-          {/* Header Area */}
-          <div className="p-4 border-b border-border flex justify-between items-center">
-            <h2 className="text-lg font-semibold text-card-foreground">AI Chat</h2>
+      {/* Make grid container grow vertically and respect parent height */}
+      <div className="container mx-auto p-4 grid grid-cols-1 md:grid-cols-3 gap-6 flex-grow min-h-0"> 
+        {/* Left Column: Make COLUMN scrollable */}
+        <div className="md:col-span-2 flex flex-col border border-border rounded-lg bg-card shadow-sm overflow-y-auto min-h-0"> 
+          {/* Header is sticky within the column */} 
+          <div className="p-4 border-b border-border flex flex-wrap items-center gap-4 sticky top-0 bg-card z-10"> 
+            <h2 className="text-lg font-semibold text-card-foreground mr-auto">AI Chat</h2> 
+            
+            {/* Controls */}
+            <ModelSelector 
+              selectedProviderId={selectedProviderId} 
+              onProviderChange={handleProviderChange}
+            />
+            <PromptSelector 
+              selectedPromptId={selectedPromptId} 
+              onPromptChange={handlePromptChange}
+            />
             <button 
               onClick={handleNewChat} 
-              className="px-3 py-1.5 text-sm font-medium rounded-md border border-input bg-transparent hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50"
+              className="px-3 py-1.5 text-sm font-medium rounded-md border border-input bg-transparent hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 whitespace-nowrap"
             >
               New Chat
             </button>
           </div>
-          
-          {/* Selectors Area */}
-          <div className="flex items-center space-x-4 p-4 border-b border-border">
-             <ModelSelector 
-               selectedProviderId={selectedProviderId} 
-               onProviderChange={setSelectedProviderId} 
-             />
-             <PromptSelector 
-               selectedPromptId={selectedPromptId} 
-               onPromptChange={setSelectedPromptId} 
-             />
-           </div>
            
-           {/* Chatbox Area - Takes remaining space */}
-           <div className="flex-grow overflow-hidden p-4">
+           {/* Chatbox Container - Grows but relies on column scroll */} 
+           <div className="flex-grow min-h-0"> 
              <AiChatbox 
                isAnonymous={false} 
                providerId={selectedProviderId}
                promptId={selectedPromptId}
                key={currentChatId || 'new'} 
-               onLimitReached={() => { /* Not applicable for authenticated */ }}
              />
            </div>
         </div>
 
-        {/* Right Column: Chat History */}
-        <div className="md:col-span-1 border border-border rounded-lg bg-card shadow-sm">
-          <div className="p-4 border-b border-border">
+        {/* Right Column: Make COLUMN scrollable */} 
+        <div className="md:col-span-1 border border-border rounded-lg bg-card shadow-sm flex flex-col overflow-y-auto min-h-0"> 
+           {/* Header is sticky within the column */} 
+           <div className="p-4 border-b border-border sticky top-0 bg-card z-10"> 
              <h2 className="text-lg font-semibold text-card-foreground">Chat History</h2>
            </div>
-           {/* Pass auth loading state to history list */}
+           {/* History List - Grows but relies on column scroll */} 
           <ChatHistoryList 
-            history={chatHistoryList}
-            onLoadChat={handleLoadChat}
-            isLoading={isAuthLoading || isHistoryLoading} // Show loading if auth OR history is loading
+             history={chatHistoryList}
+             onLoadChat={handleLoadChat}
+             isLoading={isAuthLoading || isHistoryLoading} 
           />
         </div>
       </div>

@@ -10,7 +10,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { Label } from '@/components/ui/label'
+//import { Label } from '@/components/ui/label'
 import { logger } from '@paynless/utils'
 
 interface ModelSelectorProps {
@@ -36,7 +36,7 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({
 
   return (
     <div className="space-y-2">
-      <Label>AI Model</Label>
+      {/* <Label>AI Model</Label> */}
       <Select
         value={selectedProviderId ?? ''}
         onValueChange={handleChange}

@@ -81,6 +81,20 @@
     *   **Risk/Decision:** This refactor is **DEFERRED**. The primary risk is modifying the already sensitive `_checkAndReplayPendingAction` logic before it is fully stabilized and covered by robust tests. Touching this area now could reintroduce bugs.
     *   **Prerequisite:** Stabilize and thoroughly test `authStore.initialize` and `authStore._checkAndReplayPendingAction` *before* attempting this refactoring.
 
+21. **Component Testing with Hook Dependencies (`Header.test.tsx` Example - April 2025):**
+    *   **Problem:** Unit testing React components (like `Header`) that rely on multiple custom hooks (`useTheme`, `useAuthStore`) and library hooks (`useNavigate`, `useLocation` from `react-router-dom`), especially when those hooks interact with context providers or browser APIs (`localStorage`, `matchMedia`), can be challenging.
+    *   **Initial Attempts & Failures:**
+        *   Using a shared render utility (`utils/render.tsx`) providing necessary context providers (`ThemeProvider`, `MemoryRouter`) failed, initially with `useTheme` context errors, then with `react-router-dom` context errors (`useNavigate` or `basename` errors), suggesting provider context wasn't reliably propagating in the test environment.
+        *   Mocking browser APIs (`localStorage`, `matchMedia`) in global setup (`setup.ts`) didn't resolve the context issues.
+        *   Attempts to mock `react-router-dom` partially (using `importOriginal`) while relying on `<MemoryRouter>` also failed to provide context consistently to both hooks and `<Link>` components.
+        *   Mocking `<Link>` components to pass through `data-testid` attributes proved unreliable in the test environment.
+    *   **Working Pattern:**
+        1.  **Mock Custom Hooks:** Directly mock custom hooks used by the component (e.g., `vi.mock('../../hooks/useTheme', ...)`), providing necessary state and mock functions. This isolates the component from the hook's internal logic and context dependencies.
+        2.  **Mock Library Hooks/Components:** Fully mock library modules like `react-router-dom` if context propagation is problematic (`vi.mock('react-router-dom', ...)`). Provide simple functional mocks for *all* exports used by the component (e.g., mock `useNavigate`, `useLocation`, and provide a mock `Link` that renders a basic `<a>` tag).
+        3.  **Use Shared Render Utility:** Continue using the shared utility (`render` from `utils/render.tsx`) for consistency and any other providers it offers (like `QueryClientProvider`), even if some contexts are bypassed by mocks.
+        4.  **Robust Selectors:** Rely on standard Testing Library selectors (`getByRole`, `getByText`, etc.) rather than potentially unreliable attributes like `data-testid` when interacting with elements rendered by mocked components.
+    *   **Benefit:** This combination isolates the component under test effectively, ensuring tests focus on the component's own logic rather than the complex interactions of its dependencies' contexts in the test environment.
+
 ---
 
 ✅ **How to Test Incrementally and Correctly (Layered Testing Strategy)**
@@ -226,3 +240,142 @@
         *   [✅] **Refactoring Complete:** Structure standardized, utilities/handlers consolidated.
         *   [🚧] **API Integration (Mocked):** Key user flows tested with MSW.
             *   **Authentication (`auth.integration.test.tsx`
+            *   [ ] **Mobile Menu:**
+                *   [ ] **Analytics:**
+                    *   [✅] Logout click analytics (`analytics.track('Auth: Clicked Logout')`) is already tested.
+                    *   [✅] Implement `analytics.track()` calls in `Header.tsx` for:
+                        *   [✅] All navigation link clicks (Home, Dashboard, Chat, Profile, Subscription, Login, Register) - Event: e.g., 'Clicked Header Link', Properties: `{ destination: '/' }`
+                        *   [✅] Theme toggle button click - Event: e.g., 'Changed Theme', Properties: `{ theme: 'dark' | 'light' }`
+                    *   [✅] Add corresponding `vi.spyOn(analytics, 'track')` assertions in `Header.test.tsx` for these new events.
+                *   [✅] **Mocks:**
+                     // ... mock details ...
+            *   [🚧] Other `apps/web/src/` Components/Pages/Hooks: *(Status needs re-evaluation)*
+
+---
+
+*   **Phase 4: Mobile App (`apps/mobile/`)**
+    *   **4.1 Unit Tests:**
+        *   [ ] `apps/mobile/src/components/ai/` *(Unit test new AI components)*
+        *   [ ] Other `apps/mobile/src/` Components/Pages/Hooks: *(Status needs re-evaluation)*
+        *   [ ] Components using `platformCapabilitiesService`: Mock the service to test conditional rendering and logic for different platforms/capabilities.
+    *   **4.2 Integration Tests:**
+        *   [ ] **API Integration (Mocked):** Key user flows tested with MSW.
+        *   [ ] Other `apps/mobile/src/` Components/Pages/Hooks: *(Status needs re-evaluation)*
+
+*   **Phase 5: Desktop App (`apps/desktop/`)**
+    *   **5.1 Unit Tests:**
+        *   [ ] `apps/desktop/src/components/ai/` *(Unit test new AI components)*
+        *   [ ] Other `apps/desktop/src/` Components/Pages/Hooks: *(Status needs re-evaluation)*
+        *   [ ] Components using `platformCapabilitiesService`: Mock the service to test conditional rendering and logic for different platforms/capabilities.
+    *   **5.2 Integration Tests:**
+        *   [ ] **API Integration (Mocked):** Key user flows tested with MSW.
+        *   [ ] Other `apps/desktop/src/` Components/Pages/Hooks: *(Status needs re-evaluation)*
+
+*   **Phase 6: End-to-End Tests (`e2e/`)**
+    *   **6.1 Platform-Specific E2E Tests:**
+        *   [ ] **Web:** Run Playwright tests on Web (Chrome, Firefox, Safari).
+        *   [ ] **Mobile:** Run Detox/Appium tests on iOS and Android.
+        *   [ ] **Desktop:** Run Tauri-specific tests on Windows, Mac, and Linux.
+    *   **6.2 Cross-Platform E2E Tests:**
+        *   [ ] Run Cypress tests on Web, Mobile (iOS and Android), and Desktop (Windows, Mac, and Linux) to validate platform-agnostic user flows.
+
+---
+
+*   **Phase 7: Manual Testing & User Acceptance**
+    *   [ ] **Manual Testing:** Perform manual testing on various devices, browsers, and platforms to ensure full functionality and compatibility.
+    *   [ ] **User Acceptance:** Gather feedback from users and stakeholders to validate the system's usability, performance, and alignment with requirements.
+
+---
+
+*   **Phase 8: Deployment & Monitoring**
+    *   [ ] **Deployment:** Deploy the system to production environments (Web, Mobile, Desktop).
+    *   [ ] **Monitoring:** Set up monitoring and alerting for the deployed system to ensure availability, performance, and security.
+
+---
+
+*   **Phase 9: Maintenance & Enhancement**
+    *   [ ] **Maintenance:** Regularly update and maintain the system to address bugs, security vulnerabilities, and performance issues.
+    *   [ ] **Enhancement:** Continuously improve the system based on user feedback, new requirements, and technological advancements.
+
+---
+
+*   **Phase 10: Documentation & Knowledge Transfer**
+    *   [ ] **Documentation:** Document the system's architecture, design, and implementation for future reference and knowledge transfer.
+    *   [ ] **Knowledge Transfer:** Transfer knowledge to the team and stakeholders to ensure long-term sustainability and ownership of the system.
+
+---
+
+*   **Phase 11: Retrospective & Improvement**
+    *   [ ] **Retrospective:** Reflect on the project's successes, challenges, and lessons learned.
+    *   [ ] **Improvement:** Identify areas for improvement and plan for future projects.
+
+---
+
+*   **Phase 12: Archive & Close**
+    *   [ ] **Archive:** Archive project documentation, artifacts, and resources for future reference.
+    *   [ ] **Close:** Close the project and any related tasks or issues.
+
+---
+
+*   **Known Limitations:**
+    *   **Local Supabase Environment:** `supabase start` (even CLI v2.20.5) does **not** reliably inject environment variables from `.env` files into the function runtime for local integration testing. `--env-file` is not supported by `start`. Manual loading attempts fail due to permissions.
+    *   **Stripe Integration:** Local integration tests for Stripe-related functions (`api-subscriptions`, `stripe-webhook`) may need to be performed primarily in deployed Preview/Staging environments due to the local environment limitation.
+    *   **Email Marketing Sync:** Manual configuration and E2E testing of the `on-user-created` function may be required in deployed environments.
+    *   **Auth Hook Automation:** Automating Auth Hook creation using the Supabase Management API may be necessary to streamline the deployment process.
+    *   **Function Validation:** Adding comments to function code indicating validation status can help ensure all functions are properly tested and validated.
+    *   **Database Integration:** Using `supabase test db` to validate migrations and RLS policies is essential, especially for AI-related tables.
+    *   **Stripe Testing:** Testing against Stripe's test environment API and webhooks is crucial to ensure Stripe integration works as expected.
+    *   **Platform-Specific Testing:** Crucially require *platform-specific* integration testing for Tauri, Web/RN, and E2E tests on each target platform (Web, Windows Desktop, Mac Desktop, Linux Desktop, iOS, Android).
+    *   **Manual Testing & User Acceptance:** Performing manual testing on various devices, browsers, and platforms is necessary to ensure full functionality and compatibility. Gathering feedback from users and stakeholders is essential for validating the system's usability, performance, and alignment with requirements.
+    *   **Deployment & Monitoring:** Setting up monitoring and alerting for the deployed system is crucial for ensuring availability, performance, and security.
+    *   **Maintenance & Enhancement:** Regularly updating and maintaining the system to address bugs, security vulnerabilities, and performance issues is necessary. Continuously improving the system based on user feedback, new requirements, and technological advancements is essential for long-term success.
+    *   **Documentation & Knowledge Transfer:** Documenting the system's architecture, design, and implementation for future reference and knowledge transfer is crucial for long-term sustainability and ownership of the system. Transferring knowledge to the team and stakeholders is essential for ensuring long-term success.
+    *   **Retrospective & Improvement:** Reflecting on the project's successes, challenges, and lessons learned is necessary for identifying areas for improvement and planning for future projects.
+    *   **Archive & Close:** Archiving project documentation, artifacts, and resources for future reference is essential for long-term sustainability and ownership of the system. Closing the project and any related tasks or issues is necessary for moving on to new projects.
+
+---
+
+*   **Future Work:**
+    *   [ ] **AI Chat Functions:**
+        *   [ ] Unit Test `ai-providers/index.ts` (Mock Supabase client)
+        *   [ ] Unit Test `system-prompts/index.ts` (Mock Supabase client)
+        *   [🚧] **Unit Test `chat/index.ts`:**
+    *   **Email Marketing Sync:**
+        *   [ ] `_shared/email_service/kit_service.ts`
+        *   [ ] `_shared/email_service/no_op_service.ts`
+        *   [ ] `_shared/email_service/factory.ts`
+        *   [ ] `on-user-created/index.ts`
+    *   [⏸️] `sync-stripe-plans/` *(Unit tests exist but ignored locally due to Supabase lib type resolution errors. Pending deployed testing.)*
+    *   [⏸️] `sync-ai-models/` *(Placeholder - No tests needed yet)*
+    *   [⏸️] `_shared/test-utils.ts` *(Deferred - implicitly tested via integration tests)*
+    *   [❓] `test-auth.ts` *(Purpose unclear, review/remove?)*
+    *   [ ] Implement script (`create-hooks.ts`?) using Supabase Management API to automate Auth Hook creation based on a config file.
+    *   [ ] Add comments to function code indicating validation status.
+    *   [ ] Deploy `on-user-created` function and manually configure Auth Hook for initial E2E test.
+    *   [ ] Unit test `platformCapabilitiesService` (mock platform detection).
+    *   [ ] Unit test TypeScript capability providers (mock underlying APIs like `invoke`, Web APIs, RN Modules).
+    *   [ ] Run Playwright tests on Web (Chrome, Firefox, Safari).
+    *   [ ] Run Detox/Appium tests on iOS and Android.
+    *   [ ] Run Tauri-specific tests on Windows, Mac, and Linux.
+    *   [ ] Run Cypress tests on Web, Mobile (iOS and Android), and Desktop (Windows, Mac, and Linux) to validate platform-agnostic user flows.
+    *   [ ] Perform manual testing on various devices, browsers, and platforms to ensure full functionality and compatibility.
+    *   [ ] Gather feedback from users and stakeholders to validate the system's usability, performance, and alignment with requirements.
+    *   [ ] Deploy the system to production environments (Web, Mobile, Desktop).
+    *   [ ] Set up monitoring and alerting for the deployed system to ensure availability, performance, and security.
+    *   [ ] Regularly update and maintain the system to address bugs, security vulnerabilities, and performance issues.
+    *   [ ] Continuously improve the system based on user feedback, new requirements, and technological advancements.
+    *   [ ] Document the system's architecture, design, and implementation for future reference and knowledge transfer.
+    *   [ ] Transfer knowledge to the team and stakeholders to ensure long-term sustainability and ownership of the system.
+    *   [ ] Reflect on the project's successes, challenges, and lessons learned.
+    *   [ ] Identify areas for improvement and plan for future projects.
+    *   [ ] Archive project documentation, artifacts, and resources for future reference.
+    *   [ ] Close the project and any related tasks or issues.
+
+---
+
+*   **Conclusion:**
+    *   This testing plan outlines a comprehensive approach to testing the project's backend, shared packages, web app, mobile app, desktop app, and end-to-end tests. It emphasizes incremental testing, starting with unit tests, moving to integration tests, and then stabilizing by layer. The plan also acknowledges local limitations and known issues, such as the environment variable issue with `supabase start` and the need for deployed testing for certain features.
+    *   The plan guides the team through the testing process, from writing tests to running them, fixing issues, and documenting the results. It also highlights the importance of manual testing, user acceptance, deployment, monitoring, maintenance, documentation, knowledge transfer, retrospective, and improvement.
+    *   The plan serves as a living document that can be updated as the project progresses and new testing needs arise. It provides a clear roadmap for ensuring the project's success and long-term sustainability.
+
+---

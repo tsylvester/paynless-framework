@@ -21,6 +21,7 @@
 *   [ ] Integrate the session replay logic that broke authStore, but fix it so it's compatible with the working method 
 *   [ ] Cancel Subscription doesn't work, API error
 *   [ ] Manage Billing sends user to portal but doesn't return user after action. 
+*   [ ] Fix dark mode for last card on homepage
 
 Okay, let's break down the implementation of the Platform Capability Abstraction layer using a TDD-inspired approach, focusing on compatibility and minimal disruption to your existing structure.
 
@@ -343,7 +344,7 @@ Refactor `authStore` to manage `pendingAction` and `loadChatIdOnRedirect` within
 **Phase 3: Application Initialization & User Identification**
 *   **Goal:** Initialize the client and integrate user identification/reset.
 *   **Steps:**
-    *   [ ] **App Initialization:** Ensure `import { analytics } from '@paynless/analytics-client';` happens early in `apps/web/src/main.tsx` or `App.tsx` (init happens on import).
+    *   [✅] **App Initialization:** Ensure `import { analytics } from '@paynless/analytics-client';` happens early in `apps/web/src/main.tsx` or `App.tsx` (init happens on import).
     *   [✅] **Integrate with `useAuthStore`:** Import `analytics`. In `login`, `register`, `initialize` success handlers, call `analytics.identify(user.id, { traits... })`. In `logout` action, call `analytics.reset();`.
 *   **Testing & Commit Point:** Unit test `authStore` (mocking analytics client, verifying `identify` and `reset` calls).
 
@@ -357,10 +358,28 @@ Refactor `authStore` to manage `pendingAction` and `loadChatIdOnRedirect` within
     *   [✅] Add `analytics.track('Profile Updated')` to `authStore.updateProfile` success path.
     *   [✅] Add corresponding unit test to `authStore.profile.test.ts`.
     *   [✅] Add `analytics.track('Subscription Checkout Started')` to `subscriptionStore.createCheckoutSession` success path.
-    *   [✅] Add corresponding unit test to `subscriptionStore.test.ts`. (Test currently failing - `analytics.track` mock not called. Last attempt involved adding `window.location` mock for this test block).
+    *   [✅] Add corresponding unit test to `subscriptionStore.test.ts`.
     *   [✅] Add `analytics.track('Billing Portal Opened')` to `subscriptionStore.createBillingPortalSession` success path.
     *   [✅] Add corresponding unit test to `subscriptionStore.test.ts`.
     *   [✅] Add `analytics.track('Message Sent')` to `aiStore.sendMessage` success path.
     *   [✅] Add corresponding unit test to `aiStore.test.ts`.
-    *   [ ] Add other desired tracking events.
+    *   [✅] Add other desired tracking events:
+        *   [✅] `Auth: Submit Login Form`
+        *   [✅] `Auth: Submit Register Form`
+        *   [✅] `Auth: Clicked Register Link`
+        *   [✅] `Auth: Clicked Login Link`
+        *   [✅] `Auth: Clicked Logout`
+        *   [✅] `Profile: Submit Profile Update Form`
+        *   [✅] `Chat: Clicked New Chat`
+        *   [✅] `Chat: Provider Selected`
+        *   [✅] `Chat: Prompt Selected`
+        *   [✅] `Chat: History Item Selected`
+        *   [✅] `Subscription: Clicked Subscribe`
+        *   [✅] `Subscription: Clicked Cancel Subscription`
+        *   [✅] `Subscription: Clicked Manage Billing`
+        *   [✅] `Settings: Theme Changed`
+        *   [✅] `Navigation: Clicked Header Link`
+        *   [✅] `Navigation: Clicked Footer Link`
+        *   [⏭️] `Navigation: User Menu Opened`
+        *   [⏭️] `Navigation: Mobile Menu Opened`
 *   **Testing & Commit Point:** Add tests for each tracking call. Commit incrementally: `feat(analytics): Track [Event Name]`

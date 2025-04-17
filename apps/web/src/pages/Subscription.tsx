@@ -9,6 +9,7 @@ import { useSubscriptionStore } from '@paynless/store';
 import { CurrentSubscriptionCard } from '../components/subscription/CurrentSubscriptionCard';
 import { PlanCard } from '../components/subscription/PlanCard';
 import type { UserSubscription, SubscriptionPlan } from '@paynless/types';
+import { analytics } from '@paynless/analytics-client';
 
 export function SubscriptionPage() {
   const { user, isLoading: authLoading } = useAuthStore();
@@ -44,6 +45,12 @@ export function SubscriptionPage() {
   const handleSubscribe = async (priceId: string) => {
     if (!user) return;
     
+    const plan = availablePlans.find(p => p.stripePriceId === priceId);
+    analytics.track('Subscription: Clicked Subscribe', { 
+      planId: plan?.id, 
+      priceId: priceId 
+    });
+
     logger.info('Initiating checkout process', { userId: user.id, priceId });
     const checkoutUrl = await createCheckoutSession(priceId);
 
@@ -58,11 +65,17 @@ export function SubscriptionPage() {
   const handleCancelSubscription = async () => {
     if (!user) return;
     const subscriptionId = userSubscription?.stripeSubscriptionId;
+    const planId = userSubscription?.plan?.id;
     
     if (!subscriptionId) {
         logger.error('Cannot cancel/downgrade: Missing subscription ID.');
         return;
     }
+
+    analytics.track('Subscription: Clicked Cancel Subscription', { 
+      subscriptionId: subscriptionId,
+      currentPlanId: planId
+    });
 
     logger.info('Initiating cancel subscription', { userId: user.id, subscriptionId });
     await cancelSubscription(subscriptionId);
@@ -71,6 +84,8 @@ export function SubscriptionPage() {
   const handleManageSubscription = async () => {
     if (!user || !userSubscription) return;
     
+    analytics.track('Subscription: Clicked Manage Billing');
+
     logger.info('Initiating billing portal session', { userId: user.id });
     const billingPortalUrl = await createBillingPortalSession();
 

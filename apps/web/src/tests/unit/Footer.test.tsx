@@ -1,10 +1,28 @@
-import { render, screen } from '@testing-library/react';
+import { render, screen, fireEvent } from '@testing-library/react';
 import { BrowserRouter } from 'react-router-dom';
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { Footer } from './Footer';
+import { analytics } from '@paynless/analytics-client';
+
+// Mock analytics
+vi.mock('@paynless/analytics-client', () => ({
+  analytics: {
+    track: vi.fn(),
+    identify: vi.fn(),
+    reset: vi.fn(),
+  },
+}));
+
+// Keep ref to mock function
+let mockAnalyticsTrack: vi.Mock;
 
 // Basic test suite for the Footer component
 describe('Footer Component', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockAnalyticsTrack = vi.mocked(analytics.track);
+  });
+
   // Helper function to render the Footer within a Router context
   const renderFooter = () => {
     return render(
@@ -43,4 +61,18 @@ describe('Footer Component', () => {
     expect(screen.getByRole('link', { name: /contact us/i })).toHaveAttribute('href', '/contact');
   });
 
+  it.each([
+    { linkName: /privacy policy/i, destination: '/privacy' },
+    { linkName: /terms of service/i, destination: '/terms' },
+    { linkName: /contact us/i, destination: '/contact' },
+    { linkName: /Paynless Framework. All rights reserved./i, destination: 'https://paynless.app' },
+  ])('should call analytics.track when link "$linkName" is clicked', async ({ linkName, destination }) => {
+    renderFooter();
+    
+    const link = screen.getByRole('link', { name: linkName });
+    await fireEvent.click(link);
+
+    expect(mockAnalyticsTrack).toHaveBeenCalledWith('Navigation: Clicked Footer Link', { destination });
+    expect(mockAnalyticsTrack).toHaveBeenCalledTimes(1);
+  });
 }); 

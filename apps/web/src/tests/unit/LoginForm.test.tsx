@@ -1,9 +1,10 @@
 import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { BrowserRouter } from 'react-router-dom';
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { useAuthStore } from '@paynless/store'; // Import the actual store
 import { LoginForm } from './LoginForm';
+import { analytics } from '@paynless/analytics-client'; // Import analytics
 
 // Mock the login function that will be injected into the store's state
 const mockLogin = vi.fn();
@@ -52,6 +53,19 @@ vi.mock('@paynless/utils', () => ({
   }
 }));
 
+// Mock analytics
+vi.mock('@paynless/analytics-client', () => ({
+  analytics: {
+    track: vi.fn(),
+    identify: vi.fn(),
+    reset: vi.fn(),
+  },
+}));
+
+// Keep refs to mock store functions
+let mockLogin: vi.Mock;
+let mockAnalyticsTrack: vi.Mock;
+
 describe('LoginForm Component', () => {
   const user = userEvent.setup();
 
@@ -73,6 +87,35 @@ describe('LoginForm Component', () => {
         login: mockLogin // Ensure the mock function is in the state
       }, true); // 'true' replaces the entire state
     });
+
+    // Provide fresh mock impls for each test
+    mockLogin = vi.fn().mockResolvedValue(null); // Default to resolving successfully
+    vi.mocked(useAuthStore).mockReturnValue({
+      login: mockLogin,
+      isLoading: false,
+      error: null,
+      // Add other necessary state/functions if LoginForm uses them
+      user: null,
+      session: null,
+      profile: null,
+      setNavigate: vi.fn(),
+      setUser: vi.fn(),
+      setSession: vi.fn(),
+      setProfile: vi.fn(),
+      setIsLoading: vi.fn(),
+      setError: vi.fn(),
+      logout: vi.fn(),
+      initialize: vi.fn(),
+      refreshSession: vi.fn(),
+      updateProfile: vi.fn(),
+    });
+
+    // Get a reference to the mocked track function
+    mockAnalyticsTrack = vi.mocked(analytics.track);
+  });
+
+  afterEach(() => {
+    vi.clearAllMocks(); // Clear mocks between tests
   });
 
   it('should render all form elements correctly', () => {
@@ -298,6 +341,42 @@ describe('LoginForm Component', () => {
     expect(screen.getByRole('link', { name: /sign up/i })).toHaveAttribute('href', '/register');
   });
 
+  it('should call analytics.track when form is submitted', async () => {
+    render(<LoginForm />)
+    
+    const emailInput = screen.getByLabelText(/email/i)
+    const passwordInput = screen.getByLabelText(/password/i)
+    const submitButton = screen.getByRole('button', { name: /sign in/i })
+
+    // Fill form
+    await fireEvent.change(emailInput, { target: { value: 'test@example.com' } })
+    await fireEvent.change(passwordInput, { target: { value: 'password123' } })
+
+    // Submit form
+    await fireEvent.click(submitButton)
+
+    // Assert analytics track was called BEFORE login attempt
+    expect(mockAnalyticsTrack).toHaveBeenCalledWith('Auth: Submit Login Form')
+    expect(mockAnalyticsTrack).toHaveBeenCalledTimes(1)
+
+    // Optional: Verify login was still called afterwards
+    await waitFor(() => {
+      expect(mockLogin).toHaveBeenCalledWith('test@example.com', 'password123')
+    })
+  })
+
+  it('should call analytics.track when the "Sign up" link is clicked', async () => {
+    render(<LoginForm />, { wrapper: BrowserRouter }); // Ensure router context
+    
+    const signUpLink = screen.getByRole('link', { name: /sign up/i });
+
+    // Click the link
+    await fireEvent.click(signUpLink);
+
+    // Assert analytics track was called
+    expect(mockAnalyticsTrack).toHaveBeenCalledWith('Auth: Clicked Register Link');
+    expect(mockAnalyticsTrack).toHaveBeenCalledTimes(1);
+  });
 });
 
 // Helper function for delays

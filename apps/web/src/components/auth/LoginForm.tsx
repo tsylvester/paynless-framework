@@ -6,6 +6,7 @@ import { useAuthStore } from '@paynless/store'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Button } from '@/components/ui/button'
+import { analytics } from '@paynless/analytics-client'
 
 export function LoginForm() {
   const [email, setEmail] = useState('')
@@ -19,6 +20,8 @@ export function LoginForm() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
+
+    analytics.track('Auth: Submit Login Form')
 
     if (!email || !password) {
       logger.warn('Login form submitted with empty fields')
@@ -109,7 +112,11 @@ export function LoginForm() {
         <div className="mt-4 text-center">
           <span className="text-sm text-textSecondary">
             Don't have an account?{' '}
-            <Link to="/register" className="text-primary hover:text-primary/90">
+            <Link 
+              to="/register" 
+              className="text-primary hover:text-primary/90"
+              onClick={() => analytics.track('Auth: Clicked Register Link')}
+            >
               Sign up
             </Link>
           </span>
