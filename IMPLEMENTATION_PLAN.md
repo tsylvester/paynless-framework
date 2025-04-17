@@ -357,7 +357,7 @@ Refactor `authStore` to manage `pendingAction` and `loadChatIdOnRedirect` within
     *   [✅] Add `analytics.track('Profile Updated')` to `authStore.updateProfile` success path.
     *   [✅] Add corresponding unit test to `authStore.profile.test.ts`.
     *   [✅] Add `analytics.track('Subscription Checkout Started')` to `subscriptionStore.createCheckoutSession` success path.
-    *   [🚧] Add corresponding unit test to `subscriptionStore.test.ts`. (Test currently failing - `analytics.track` mock not called. Last attempt involved adding `window.location` mock for this test block).
+    *   [✅] Add corresponding unit test to `subscriptionStore.test.ts`. (Test currently failing - `analytics.track` mock not called. Last attempt involved adding `window.location` mock for this test block).
     *   [ ] Add `analytics.track('Billing Portal Opened')` to `subscriptionStore.createBillingPortalSession` success path.
     *   [ ] Add corresponding unit test to `subscriptionStore.test.ts`.
     *   [ ] Add `analytics.track('Message Sent')` to `aiStore.sendMessage` success path.
