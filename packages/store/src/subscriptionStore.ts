@@ -235,6 +235,8 @@ export const useSubscriptionStore = create<SubscriptionStore>()(
              throw new Error(response.error?.message || 'Failed to get billing portal URL');
           }
           set({ isSubscriptionLoading: false, error: null }); // Clear loading on success
+          // ---> Add analytics tracking call <---
+          analytics.track('Billing Portal Opened');
           return response.data.url;
         } catch (error) {
           const errorMessage = error instanceof Error ? error.message : 'Unknown error creating billing portal';

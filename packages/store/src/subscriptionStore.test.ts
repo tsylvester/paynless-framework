@@ -466,7 +466,29 @@ describe('SubscriptionStore', () => {
       expect(useSubscriptionStore.getState().isSubscriptionLoading).toBe(false);
       expect(useSubscriptionStore.getState().error?.message).toContain('User not authenticated');
     });
-  });
+
+    // ---> ADD NEW DEDICATED TEST FOR ANALYTICS <---
+    it('should call analytics.track("Billing Portal Opened") on successful session creation', async () => {
+      // Arrange
+      setAuthenticated();
+      mockStripeCreatePortalSession.mockResolvedValue({ data: { url: mockPortalUrl }, error: null });
+      // Setup spy for analytics.track within the describe block's beforeEach/afterEach
+      const trackSpy = vi.spyOn(analytics, 'track').mockImplementation(() => {});
+
+      // Act
+      await act(async () => {
+        await useSubscriptionStore.getState().createBillingPortalSession();
+      });
+
+      // Assert
+      expect(trackSpy).toHaveBeenCalledWith('Billing Portal Opened');
+
+      // Restore spy
+      trackSpy.mockRestore();
+    });
+    // --- END ADDED TEST ---
+
+  }); // <-- This closes describe('createBillingPortalSession action', ...) 
 
   describe('cancelSubscription action', () => {
     const subId = 'sub_ext_123';
