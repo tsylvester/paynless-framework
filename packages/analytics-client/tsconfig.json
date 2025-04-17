@@ -7,5 +7,14 @@
     "types": ["vitest/globals", "vite/client"]
   },
   "include": ["src/**/*.ts"],
-  "exclude": ["node_modules", "dist"]
+  "exclude": [
+    "node_modules", 
+    "dist", 
+    "src/tests", 
+    "src/**/*.test.ts", 
+    "src/**/*.test.tsx", 
+    "src/setupTests.ts",
+    "vite.config.ts",
+    "vitest.config.ts"
+  ],
 } 

@@ -41,5 +41,15 @@
     "jsx": "react-jsx",
     "useDefineForClassFields": true,
     "skipLibCheck": true
-  }
+  },
+  "exclude": [
+    "node_modules", 
+    "dist", 
+    "src/tests", 
+    "src/**/*.test.ts", 
+    "src/**/*.test.tsx", 
+    "src/setupTests.ts",
+    "vite.config.ts",
+    "vitest.config.ts"
+  ],
 }

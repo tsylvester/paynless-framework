@@ -9,7 +9,16 @@
     "composite": true
   },
   "include": ["src/**/*"],
-  "exclude": ["node_modules", "dist", "src/**/*.test.ts", "src/setupTests.ts"],
+  "exclude": [
+    "node_modules", 
+    "dist", 
+    "src/tests", 
+    "src/**/*.test.ts", 
+    "src/**/*.test.tsx", 
+    "src/setupTests.ts",
+    "vite.config.ts",
+    "vitest.config.ts"
+  ],
   "references": [
     { "path": "../types" },
     { "path": "../utils" }
