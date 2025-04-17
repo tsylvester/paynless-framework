@@ -12,6 +12,7 @@ import {
 import { api } from '@paynless/api-client';
 import { logger } from '@paynless/utils';
 import { useAuthStore } from './authStore';
+import { analytics } from '@paynless/analytics-client';
 
 // --- Constants ---
 // --- Removed ANONYMOUS_MESSAGE_LIMIT ---
@@ -152,6 +153,8 @@ export const useAiStore = create<AiStore>()(
                             };
                         });
                         logger.info('Message sent and response received:', { messageId: assistantMessage.id });
+                        // ---> Add analytics tracking <---
+                        analytics.track('Message Sent');
                         return assistantMessage;
                     } else {
                         throw new Error('API returned success status but no data.');

@@ -16,6 +16,7 @@ import {
     AuthRequiredError
 } from '@paynless/types';
 import { useAuthStore } from './authStore';
+import { analytics } from '@paynless/analytics-client';
 
 // --- Restore API Client Factory Mock --- 
 // Define mock functions for the methods we need to control
@@ -205,6 +206,26 @@ describe('aiStore - sendMessage', () => {
             expect(state.currentChatMessages.length).toBe(initialMessagesLength);
             expect(state.aiError).toBe(errorMsg);
         });
+
+        // ---> ADD TEST FOR ANALYTICS TRACKING <---
+        it('should call analytics.track("Message Sent") on successful API response', async () => {
+          // Arrange
+          mockSendChatMessage.mockResolvedValue({ data: mockAssistantResponse, status: 200, error: null });
+          const trackSpy = vi.spyOn(analytics, 'track').mockImplementation(() => {});
+
+          // Act
+          await act(async () => {
+            await useAiStore.getState().sendMessage(messageData);
+          });
+
+          // Assert
+          expect(trackSpy).toHaveBeenCalledTimes(1);
+          expect(trackSpy).toHaveBeenCalledWith('Message Sent');
+
+          // Cleanup
+          trackSpy.mockRestore();
+        });
+        // --- END ADDED TEST ---
     }); // End Authenticated describe
 
     describe('sendMessage (Anonymous Flow - Pending Action)', () => {
