@@ -358,9 +358,9 @@ Refactor `authStore` to manage `pendingAction` and `loadChatIdOnRedirect` within
     *   [✅] Add corresponding unit test to `authStore.profile.test.ts`.
     *   [✅] Add `analytics.track('Subscription Checkout Started')` to `subscriptionStore.createCheckoutSession` success path.
     *   [✅] Add corresponding unit test to `subscriptionStore.test.ts`. (Test currently failing - `analytics.track` mock not called. Last attempt involved adding `window.location` mock for this test block).
-    *   [ ] Add `analytics.track('Billing Portal Opened')` to `subscriptionStore.createBillingPortalSession` success path.
-    *   [ ] Add corresponding unit test to `subscriptionStore.test.ts`.
-    *   [ ] Add `analytics.track('Message Sent')` to `aiStore.sendMessage` success path.
-    *   [ ] Add corresponding unit test to `aiStore.test.ts`.
+    *   [✅] Add `analytics.track('Billing Portal Opened')` to `subscriptionStore.createBillingPortalSession` success path.
+    *   [✅] Add corresponding unit test to `subscriptionStore.test.ts`.
+    *   [✅] Add `analytics.track('Message Sent')` to `aiStore.sendMessage` success path.
+    *   [✅] Add corresponding unit test to `aiStore.test.ts`.
     *   [ ] Add other desired tracking events.
 *   **Testing & Commit Point:** Add tests for each tracking call. Commit incrementally: `feat(analytics): Track [Event Name]`

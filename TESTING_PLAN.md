@@ -200,9 +200,9 @@
                 *   [✅] *(Analytics)* Verify `analytics.track('Profile Updated')` called on updateProfile success.
             *   [✅] `subscriptionStore.ts` *(Tests passing, including refresh failures in cancel/resume)*
                 *   [✅] *(Analytics)* Verify `analytics.track('Subscription Checkout Started')` called on createCheckoutSession success. (Test exists but is failing - `analytics.track` not called despite mocking. Added `window.location` mock)
-                *   [ ] *(Analytics)* Verify `analytics.track('Billing Portal Opened')` called on createBillingPortalSession success.
+                *   [✅] *(Analytics)* Verify `analytics.track('Billing Portal Opened')` called on createBillingPortalSession success.
             *   [✅] `aiStore.ts` *(Status: Refactored into `aiStore.*.test.ts` files. All tests passing after fixing mock strategy and store logic.)*
-                *   [ ] *(Analytics)* Verify `analytics.track('Message Sent')` called on sendMessage success.
+                *   [✅] *(Analytics)* Verify `analytics.track('Message Sent')` called on sendMessage success.
                 *   *Note: Utilizes `vi.mocked(useAuthStore.getState).mockReturnValue` pattern for dependent store state.*
         *   [⏭️] `packages/ui-components` *(Skipped - Package empty)*.
         *   [✅] `packages/utils` (`logger.ts` tests passing)
