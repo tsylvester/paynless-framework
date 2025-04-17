@@ -52,27 +52,32 @@ export function HomePage() {
 
   useEffect(() => {
     if (!hasSetDefaults.current && availableProviders.length > 0) {
-      logger.info('[HomePage] Attempting to set default AI selections...');
-      const defaultProvider = availableProviders.find(p => p.name === 'OpenAI GPT-4o');
+      logger.info('[HomePage] Attempting to set default AI selections...')
+      const defaultProvider = availableProviders.find(
+        (p) => p.name === 'OpenAI GPT-4o'
+      )
 
-      const defaultPromptId = '__none__';
+      const defaultPromptId = '__none__'
 
       if (defaultProvider) {
-        setSelectedProviderId(defaultProvider.id);
-        setSelectedPromptId(defaultPromptId);
-        hasSetDefaults.current = true;
-        logger.info('[HomePage] Default provider and prompt selected.', { 
-          providerId: defaultProvider.id, 
-          promptId: defaultPromptId 
-        });
+        setSelectedProviderId(defaultProvider.id)
+        setSelectedPromptId(defaultPromptId)
+        hasSetDefaults.current = true
+        logger.info('[HomePage] Default provider and prompt selected.', {
+          providerId: defaultProvider.id,
+          promptId: defaultPromptId,
+        })
       } else {
-        logger.warn("[HomePage] Could not find default provider by name 'OpenAI GPT-4o'.", {
+        logger.warn(
+          "[HomePage] Could not find default provider by name 'OpenAI GPT-4o'.",
+          {
             foundProvider: !!defaultProvider,
             providerCount: availableProviders.length,
-        });
+          }
+        )
       }
     }
-  }, [availableProviders]);
+  }, [availableProviders])
 
   return (
     <Layout>
@@ -217,7 +222,7 @@ export function HomePage() {
                 <img
                   src="/logos/supabase.svg"
                   alt="Supabase logo"
-                  className="h-10 w-32 dark:visible hidden"
+                  className="h-10 w-32 hidden dark:block"
                 />
               </div>
               <span className="mt-3 text-sm font-medium text-textSecondary group-hover:text-textPrimary transition-colors">
