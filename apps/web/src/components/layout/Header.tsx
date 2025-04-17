@@ -1,40 +1,40 @@
-import { useState } from 'react';
-import { Link, useNavigate, useLocation } from 'react-router-dom';
-import { useAuthStore } from '@paynless/store';
-import { useTheme } from '../../hooks/useTheme';
-import { 
-  LogOut, 
-  Menu, 
-  X, 
+import { useState } from 'react'
+import { Link, useNavigate, useLocation } from 'react-router-dom'
+import { useAuthStore } from '@paynless/store'
+import { useTheme } from '../../hooks/useTheme'
+import {
+  LogOut,
+  Menu,
+  X,
   User,
   CreditCard,
   Home,
   Sun,
   Moon,
-} from 'lucide-react';
+} from 'lucide-react'
 
 export function Header() {
-  const { user, profile, logout } = useAuthStore(state => ({ 
-    user: state.user, 
-    profile: state.profile, 
-    logout: state.logout 
-  }));
-  
-  const { colorMode, setColorMode } = useTheme();
-  const navigate = useNavigate();
-  const location = useLocation();
-  const [isMenuOpen, setIsMenuOpen] = useState(false);
-  const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
-  
+  const { user, profile, logout } = useAuthStore((state) => ({
+    user: state.user,
+    profile: state.profile,
+    logout: state.logout,
+  }))
+
+  const { colorMode, setColorMode } = useTheme()
+  const navigate = useNavigate()
+  const location = useLocation()
+  const [isMenuOpen, setIsMenuOpen] = useState(false)
+  const [isUserMenuOpen, setIsUserMenuOpen] = useState(false)
+
   const handleLogout = async () => {
-    await logout();
-    navigate('login');
-  };
+    await logout()
+    navigate('login')
+  }
 
   // Check if a route is active
   const isActive = (path: string) => {
-    return location.pathname === path;
-  };
+    return location.pathname === path
+  }
 
   return (
     <header className="bg-surface border-b border-border">
@@ -50,18 +50,20 @@ export function Header() {
               <nav className="hidden sm:ml-6 sm:flex sm:space-x-4">
                 <Link
                   to="/dashboard"
-                  className={`${isActive('dashboard') 
-                    ? 'border-primary text-textPrimary' 
-                    : 'border-transparent text-textSecondary hover:border-border hover:text-textPrimary'
+                  className={`${
+                    isActive('dashboard')
+                      ? 'border-primary text-textPrimary'
+                      : 'border-transparent text-textSecondary hover:border-border hover:text-textPrimary'
                   } inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium`}
                 >
                   Dashboard
                 </Link>
                 <Link
                   to="/chat"
-                  className={`${isActive('chat') 
-                    ? 'border-primary text-textPrimary' 
-                    : 'border-transparent text-textSecondary hover:border-border hover:text-textPrimary'
+                  className={`${
+                    isActive('chat')
+                      ? 'border-primary text-textPrimary'
+                      : 'border-transparent text-textSecondary hover:border-border hover:text-textPrimary'
                   } inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium`}
                 >
                   Chat
@@ -69,16 +71,22 @@ export function Header() {
               </nav>
             )}
           </div>
-          
+
           <div className="hidden sm:ml-6 sm:flex sm:items-center space-x-4">
             <button
-              onClick={() => setColorMode(colorMode === 'light' ? 'dark' : 'light')}
+              onClick={() =>
+                setColorMode(colorMode === 'light' ? 'dark' : 'light')
+              }
               className="p-2 rounded-lg text-textSecondary hover:bg-surface hover:text-textPrimary"
-              aria-label={colorMode === 'light' ? 'Switch to dark mode' : 'Switch to light mode'}
+              aria-label={
+                colorMode === 'light'
+                  ? 'Switch to dark mode'
+                  : 'Switch to light mode'
+              }
             >
               {colorMode === 'light' ? <Moon size={20} /> : <Sun size={20} />}
             </button>
-            
+
             {user ? (
               <div className="relative">
                 <button
@@ -100,7 +108,7 @@ export function Header() {
                     {profile?.first_name || user.email}
                   </span>
                 </button>
-                
+
                 {isUserMenuOpen && (
                   <div className="absolute right-0 mt-2 w-48 bg-surface rounded-lg shadow-xl border border-border z-50">
                     <div className="py-1">
@@ -122,8 +130,8 @@ export function Header() {
                       </Link>
                       <button
                         onClick={() => {
-                          setIsUserMenuOpen(false);
-                          handleLogout();
+                          setIsUserMenuOpen(false)
+                          handleLogout()
                         }}
                         className="block w-full text-left px-4 py-2 text-sm text-textSecondary hover:bg-primary/10 hover:text-primary"
                       >
@@ -144,14 +152,14 @@ export function Header() {
                 </Link>
                 <Link
                   to="/register"
-                  className="bg-primary text-white hover:bg-opacity-90 px-3 py-2 rounded-md text-sm font-medium"
+                  className="bg-primary text-white dark:text-black hover:bg-opacity-90 px-3 py-2 rounded-md text-sm font-medium"
                 >
                   Register
                 </Link>
               </div>
             )}
           </div>
-          
+
           <div className="-mr-2 flex items-center sm:hidden">
             <button
               onClick={() => setIsMenuOpen(!isMenuOpen)}
@@ -163,15 +171,21 @@ export function Header() {
           </div>
         </div>
       </div>
-      
+
       {/* Mobile menu */}
       {isMenuOpen && (
         <div className="sm:hidden bg-surface border-t border-border">
           <div className="flex justify-end px-4 pt-2">
             <button
-              onClick={() => setColorMode(colorMode === 'light' ? 'dark' : 'light')}
+              onClick={() =>
+                setColorMode(colorMode === 'light' ? 'dark' : 'light')
+              }
               className="p-2 rounded-lg text-textSecondary hover:bg-surface hover:text-textPrimary"
-              aria-label={colorMode === 'light' ? 'Switch to dark mode' : 'Switch to light mode'}
+              aria-label={
+                colorMode === 'light'
+                  ? 'Switch to dark mode'
+                  : 'Switch to light mode'
+              }
             >
               {colorMode === 'light' ? <Moon size={20} /> : <Sun size={20} />}
             </button>
@@ -180,9 +194,10 @@ export function Header() {
             <div className="pt-2 pb-3 space-y-1">
               <Link
                 to="/chat"
-                className={`${isActive('/chat') 
-                  ? 'bg-primary/10 border-primary text-primary' 
-                  : 'border-transparent text-textSecondary hover:bg-surface hover:border-border hover:text-textPrimary'
+                className={`${
+                  isActive('/chat')
+                    ? 'bg-primary/10 border-primary text-primary'
+                    : 'border-transparent text-textSecondary hover:bg-surface hover:border-border hover:text-textPrimary'
                 } block pl-3 pr-4 py-2 border-l-4 text-base font-medium`}
                 onClick={() => setIsMenuOpen(false)}
               >
@@ -205,7 +220,7 @@ export function Header() {
               </Link>
             </div>
           )}
-          
+
           <div className="pt-4 pb-3 border-t border-border">
             {user && profile && (
               <>
@@ -227,7 +242,9 @@ export function Header() {
                     <div className="text-base font-medium text-textPrimary">
                       {profile.first_name} {profile.last_name}
                     </div>
-                    <div className="text-sm font-medium text-textSecondary">{user.email}</div>
+                    <div className="text-sm font-medium text-textSecondary">
+                      {user.email}
+                    </div>
                   </div>
                 </div>
                 <div className="mt-3 space-y-1">
@@ -249,8 +266,8 @@ export function Header() {
                   </Link>
                   <button
                     onClick={() => {
-                      setIsMenuOpen(false);
-                      handleLogout();
+                      setIsMenuOpen(false)
+                      handleLogout()
                     }}
                     className="block w-full text-left px-4 py-2 text-base font-medium text-textSecondary hover:text-textPrimary hover:bg-surface"
                   >
@@ -263,7 +280,7 @@ export function Header() {
           </div>
         </div>
       )}
-      
+
       {/* Backdrop for user menu */}
       {isUserMenuOpen && (
         <div
@@ -272,5 +289,5 @@ export function Header() {
         />
       )}
     </header>
-  );
+  )
 }
