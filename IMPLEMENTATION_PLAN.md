@@ -35,6 +35,94 @@
 *   [ ] User email automation - abstract for generic but specific implementation with Kit 
 *   [ ] Groups & organizations 
 *   [ ] Notifications 
+*   [ ] Consolidate authStore with Zustand, remove the direct localSession interactions. 
+
+## Optional Email Marketing Sync on User Creation (Kit First)
+
+**Goal:** Automatically add new users to a configured email marketing list (starting with Kit) if the corresponding API key is present in the environment variables. If not configured, the system should proceed without error.
+
+**Phase 0: Service Definition & Setup**
+*   **Goal:** Define the interface for an email marketing service and set up the basic file structure.
+*   **Steps:**
+    *   [✅] **Define Interface (`packages/types/src/email.types.ts`):**
+        *   [✅] Create a new file `email.types.ts`.
+        *   [✅] Define `EmailMarketingService` and `UserData` interfaces:
+            ```typescript
+            export interface UserData {
+                id: string;
+                email: string;
+                firstName?: string;
+                lastName?: string;
+                createdAt: string; // ISO string format recommended
+                lastSignInAt?: string; // ISO string format
+                [key: string]: any;
+            }
+
+            export interface EmailMarketingService {
+              addUserToList(userData: UserData): Promise<void>;
+              updateUserAttributes(email: string, attributes: Partial<UserData>): Promise<void>;
+              trackEvent?(email: string, eventName: string, properties?: Record<string, any>): Promise<void>;
+              removeUser?(email: string): Promise<void>;
+            }
+            ```
+        *   [✅] Export types from `packages/types/src/index.ts`.
+    *   [✅] **Create Shared Service Directory (`supabase/functions/_shared/email_service/`):**
+        *   [✅] Create the directory `supabase/functions/_shared/email_service/`.
+    *   [✅] **Add Dependencies:** (Decision: Use standard `fetch` initially for simplicity).
+
+**Phase 1: Null Adapter Implementation**
+*   **Goal:** Implement the default "do nothing" behavior when no provider is configured.
+*   **Location:** `supabase/functions/_shared/email_service/`
+*   **Steps:**
+    *   [✅] **Create `no_op_service.ts`:** Implement `EmailMarketingService` interface (`addUserToList`, `updateUserAttributes`, optional stubs) using `UserData`.
+    *   [✅] **Write Unit Test (`no_op_service.test.ts`):** Verify methods exist and return resolved promises.
+
+**Phase 2: Kit Adapter Implementation**
+*   **Goal:** Implement the service logic for interacting with the Kit API.
+*   **Location:** `supabase/functions/_shared/email_service/`
+*   **Steps:**
+    *   [ ] **Environment Variables:** Define `KIT_API_KEY` and `KIT_FORM_ID` in `.env.example`.
+    *   [ ] **Create `kit_service.ts`:**
+        *   [ ] Implement `EmailMarketingService` interface.
+        *   [ ] Constructor or init method should read `KIT_API_KEY` and `KIT_FORM_ID`.
+        *   [ ] Implement `addUserToList` method:
+            *   [ ] Check if API key/form ID are valid. Log warning/return if not.
+            *   [ ] Map `UserData` (email, firstName, potentially createdAt/lastSignInAt to custom fields) to Kit API request payload (e.g., add subscriber to form).
+            *   [ ] Use `fetch` to call the Kit API.
+            *   [ ] Handle API response/errors.
+        *   [ ] Implement `updateUserAttributes` (Optional/Deferred): Decide if needed initially. If so, map `UserData` attributes to Kit custom fields and call appropriate Kit API.
+        *   [ ] Implement `trackEvent` / `removeUser` (Optional/Deferred): Implement if needed later.
+    *   [ ] **Write Unit Test (`kit_service.test.ts`):**
+        *   [ ] Mock environment variables.
+        *   [ ] Mock `fetch` for Kit API endpoints.
+        *   [ ] Test `addUserToList` with different `UserData` and API responses (success, errors).
+        *   [ ] Test other implemented methods.
+
+**Phase 3: Service Factory & Integration**
+*   **Goal:** Create a factory to provide the correct service instance based on configuration and integrate it into the user creation flow.
+*   **Location:** `supabase/functions/_shared/email_service/` and `supabase/functions/on-user-created/`
+*   **Steps:**
+    *   [ ] **Create `factory.ts` (`supabase/functions/_shared/email_service/`):**
+        *   [ ] Import `NoOpEmailService` and `KitEmailService`.
+        *   [ ] Create function `getEmailMarketingService(): EmailMarketingService`.
+        *   [ ] Inside, check for `KIT_API_KEY` and `KIT_FORM_ID`.
+        *   [ ] Return `KitEmailService` instance if valid, else `NoOpEmailService`.
+    *   [ ] **Write Unit Test (`factory.test.ts`):**
+        *   [ ] Mock environment variables.
+        *   [ ] Verify correct service type is returned.
+    *   [ ] **Modify `on-user-created/index.ts`:**
+        *   [ ] Import `getEmailMarketingService`.
+        *   [ ] Import `UserData` type.
+        *   [ ] Inside the handler:
+            *   [ ] Get `emailService` instance.
+            *   [ ] Create `UserData` object from the auth hook record (email, id, createdAt, maybe name/lastSignInAt if available).
+            *   [ ] Call `await emailService.addUserToList(userData);`.
+            *   [ ] Wrap in try/catch for graceful error handling.
+    *   [ ] **Write/Update Unit Test (`on-user-created.test.ts`):**
+        *   [ ] Mock `getEmailMarketingService` factory.
+        *   [ ] Test Case 1 (NoOp): Verify `addUserToList` called on mock `NoOp`.
+        *   [ ] Test Case 2 (Kit): Verify `addUserToList` called on mock `Kit` with correct `UserData`.
+        *   [ ] Test Case 3: Verify function continues if `addUserToList` throws.
 
 Okay, let's break down the implementation of the Platform Capability Abstraction layer using a TDD-inspired approach, focusing on compatibility and minimal disruption to your existing structure.
 

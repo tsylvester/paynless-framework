@@ -1,5 +1,36 @@
 **Consolidated Project Testing Plan & Status (v6 - Anonymous Auth Refactor)**
 
+## Core Testing Philosophy: Test-Driven Development (TDD)
+
+To ensure features are built correctly and integrated reliably the first time, we adhere to the Test-Driven Development (TDD) cycle:
+
+1.  **RED:** Write a *failing* test case for the *smallest* piece of functionality you intend to add next. This could be a unit test for a specific function, an integration test for an API endpoint interaction, or a component test for a UI behavior.
+    *   Run the test and watch it fail (e.g., compilation error because the function/class doesn't exist, assertion failure because the logic isn't implemented).
+    *   This step confirms the test is correctly set up and tests the right thing.
+
+2.  **GREEN:** Write the *minimum* amount of production code necessary to make the failing test pass. Avoid adding extra features, optimizations, or handling edge cases not covered by the current test.
+    *   Run *all* tests in the relevant suite and ensure they now pass.
+
+3.  **REFACTOR:** With the safety net of passing tests, improve the production code you just wrote. This includes:
+    *   Improving clarity and readability.
+    *   Removing duplication.
+    *   Enhancing efficiency (if necessary and measurable).
+    *   Ensure the code adheres to project patterns and guidelines (`DEV_PLAN.md`).
+    *   Run the tests again frequently during refactoring to ensure you haven't broken anything.
+
+4.  **REPEAT:** Select the next small piece of functionality and return to the **RED** step.
+
+**Applying TDD in this Project:**
+
+*   **Supabase Functions (`supabase/functions/`):** Start by testing the core handler logic. Mock dependencies like the Supabase client (`supabase/functions/_shared/supabase-client.ts`), external services (like Stripe or the future Kit service), and environment variables (`Deno.env`). Test success paths, error handling (e.g., invalid input, failed service calls), and response formatting.
+*   **Shared Packages (`packages/`):
+    *   `api-client` / `analytics-client` / `platform-capabilities` / `email_service` Adapters: Test adapter methods individually. Mock external dependencies (e.g., `fetch`, `posthog-js`, `@tauri-apps/api`, environment variables). Cover happy paths, configuration errors (missing keys), and API error responses.
+    *   `store` (Zustand): Test actions by mocking the API client (`@paynless/api-client`) calls they make. Assert correct state changes (`isLoading`, `error`, data properties) before, during (optimistic UI), and after the mocked async operations resolve or reject.
+    *   `utils` / `types`: Primarily tested implicitly through their usage, but core utilities (`logger`) should have dedicated unit tests.
+*   **UI Components (`apps/web/`):** Use Vitest with Testing Library. Test rendering based on different props and states. Mock imported hooks (stores, router) and services (`platformCapabilitiesService`, `analytics`). Simulate user events (`fireEvent`) and assert that the correct actions are dispatched or UI changes occur.
+
+Following this cycle helps catch errors early, ensures comprehensive test coverage naturally evolves with the code, and makes the codebase more maintainable and reliable.
+
 **Notes & Key Learnings (Summary):**
 
 1. **Incomplete Stripe E2E Flow (IMPORTANT):** Stripe has been tested in Test Mode but not confirmed live Live Mode with real transactions. 
@@ -139,10 +170,10 @@
                 *   [✅] Unit Test `chat-history/index.ts`
                 *   [✅] Unit Test `chat-details/index.ts`
             *   **[NEW] Email Marketing Sync:**
-                *   [ ] `_shared/email_service/kit_service.ts`
+                *   [ ] `_shared/email_service/kit_service.ts` (Mock fetch, env vars)
                 *   [ ] `_shared/email_service/no_op_service.ts`
-                *   [ ] `_shared/email_service/factory.ts`
-                *   [ ] `on-user-created/index.ts`
+                *   [ ] `_shared/email_service/factory.ts` (Mock env vars)
+                *   [ ] `on-user-created/index.ts` (Mock email service factory)
             *   [⏸️] `sync-stripe-plans/` *(Unit tests exist but ignored locally due to Supabase lib type resolution errors. Pending deployed testing.)*
             *   [⏸️] `sync-ai-models/` *(Placeholder - No tests needed yet)*
             *   [✅] `_shared/auth.ts`
@@ -175,7 +206,11 @@
         *   [ ] **Database Integration:** Use `supabase test db` to validate migrations and RLS policies. *(RLS policies for AI tables need verification)*
         *   [❓] **Stripe Integration:** Test against Stripe's test environment API and webhooks.
         *   [ ] **Email Marketing Sync:**
-            *   [ ] Deploy `on-user-created` function and manually configure Auth Hook for initial E2E test.
+            *   [ ] **`on-user-created` Function Integration:**
+                *   [ ] Test user registration flow triggering the hook.
+                *   [ ] Case 1 (Kit Disabled): Verify no attempt to call Kit API is made (check logs).
+                *   [ ] Case 2 (Kit Enabled): Verify the Kit API *is* called (requires test Kit account/API key/form ID, or mock endpoint). Check for subscriber in Kit.
+            *   [ ] **Supabase Auth Hook Configuration:** Verify `on-user-created` is configured as an Auth Hook in `config.toml` and functions in deployed env.
     *   **1.3 Automation:**
         *   [ ] Implement script (`create-hooks.ts`?) using Supabase Management API to automate Auth Hook creation based on a config file.
     *   **1.4 Final Validation & Lockdown:**
@@ -229,3 +264,39 @@
             *   **Profile Management (`profile.integration.test.tsx`):**
                 *   `[✅]` Profile Load: Data displayed in editor.
                 *   `[✅]`
+
+*   **Phase 4: End-to-End Validation**
+    *   **[NEW] User Registration with Email Sync:**
+        *   [ ] Case 1 (Kit Disabled): Register via UI. Verify user created, NO user added to Kit list.
+        *   [ ] Case 2 (Kit Enabled): Configure E2E env with Kit credentials. Register via UI. Verify user created AND user appears in Kit list/form.
+
+---
+
+*   **Phase 1: Backend (`supabase/`)**
+    *   **1.1 Unit Tests:**
+        *   **Status:** Most core function unit tests passing. AI function tests added.
+        *   **Framework:** Deno Standard Library
+        *   **Functions/Modules Tested:**
+            *   [...] *(Existing items)*
+            *   **[NEW] Email Marketing Sync:**
+                *   [ ] `_shared/email_service/kit_service.ts` (Mock fetch, env vars)
+                *   [ ] `_shared/email_service/no_op_service.ts`
+                *   [ ] `_shared/email_service/factory.ts` (Mock env vars)
+                *   [ ] `on-user-created/index.ts` (Mock email service factory)
+            *   [...] *(Existing items)*
+        *   **Task:** `[ ] Complete unit tests for [NEW] items above.`
+    *   **1.2 Integration Tests:**
+        *   [...] *(Existing items)*
+        *   **[NEW] Email Marketing Sync:**
+            *   [ ] **`on-user-created` Function Integration:**
+                *   [ ] Test user registration flow triggering the hook.
+                *   [ ] Case 1 (Kit Disabled): Verify no attempt to call Kit API is made (check logs).
+                *   [ ] Case 2 (Kit Enabled): Verify the Kit API *is* called (requires test Kit account/API key/form ID, or mock endpoint). Check for subscriber in Kit.
+            *   [ ] **Supabase Auth Hook Configuration:** Verify `on-user-created` is configured as an Auth Hook in `config.toml` and functions in deployed env.
+        *   [...] *(Existing items)*
+
+*   **Phase 4: End-to-End Validation**
+    *   [...] *(Existing items)*
+    *   **[NEW] User Registration with Email Sync:**
+        *   [ ] Case 1 (Kit Disabled): Register via UI. Verify user created, NO user added to Kit list.
+        *   [ ] Case 2 (Kit Enabled): Configure E2E env with Kit credentials. Register via UI. Verify user created AND user appears in Kit list/form.

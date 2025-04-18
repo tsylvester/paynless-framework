@@ -96,8 +96,7 @@ export function AppContent() {
           <Route key={route.path} path={route.path} element={route.element} />
         ))}
       </Routes>
-      {/* <ChatwootIntegration /> */}
-      {/* Temporarily commented out */}
+        <ChatwootIntegration />
     </>
   )
 }
