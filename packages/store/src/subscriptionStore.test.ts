@@ -347,8 +347,8 @@ describe('SubscriptionStore', () => {
 
       expect(resultUrl).toBe(mockPortalUrl);
       expect(mockStripeCreatePortalSession).toHaveBeenCalledOnce();
-      // Verify the mock was called with the origin from the mocked window.location
-      expect(mockStripeCreatePortalSession).toHaveBeenCalledWith(false, 'http://localhost:3000', { token: mockSession.access_token });
+      // Verify the mock was called with the origin + path from the mocked window.location
+      expect(mockStripeCreatePortalSession).toHaveBeenCalledWith(false, 'http://localhost:3000/subscription', { token: mockSession.access_token });
       const state = useSubscriptionStore.getState();
       expect(state.isSubscriptionLoading).toBe(false);
       expect(state.error).toBeNull();
@@ -367,8 +367,8 @@ describe('SubscriptionStore', () => {
 
       expect(resultUrl).toBeNull();
       expect(mockStripeCreatePortalSession).toHaveBeenCalledOnce();
-       // Verify the mock was called with the origin from the mocked window.location
-      expect(mockStripeCreatePortalSession).toHaveBeenCalledWith(false, 'http://localhost:3000', { token: mockSession.access_token });
+       // Verify the mock was called with the origin + path from the mocked window.location
+      expect(mockStripeCreatePortalSession).toHaveBeenCalledWith(false, 'http://localhost:3000/subscription', { token: mockSession.access_token });
       const state = useSubscriptionStore.getState();
       expect(state.isSubscriptionLoading).toBe(false);
       expect(state.error).toBeInstanceOf(Error);

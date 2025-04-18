@@ -225,7 +225,8 @@ export const useSubscriptionStore = create<SubscriptionStore>()(
         try {
           const isTestMode = get().isTestMode;
           // Construct the return URL from the current location
-          const returnUrl = window.location.origin;
+          // TODO: Replace with platform-aware URL (e.g., custom scheme for desktop/mobile) using platform-capabilities service
+          const returnUrl = `${window.location.origin}/subscription`; // Stripe needs the full absolute URL
           // Pass token explicitly and the returnUrl
           const response = await api.billing().createPortalSession(isTestMode, returnUrl, { token });
           if (response.error || !response.data?.url) {

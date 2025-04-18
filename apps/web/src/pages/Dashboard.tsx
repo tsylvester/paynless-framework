@@ -31,11 +31,7 @@ export function DashboardPage() {
 
   return (
     <Layout>
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        <h1 className="text-2xl font-semibold text-textPrimary mb-6">
-          Dashboard
-        </h1>
-
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="mt-8 bg-surface shadow overflow-hidden sm:rounded-lg">
           <div className="px-6 py-6 sm:px-8">
             <h2 className="text-lg leading-6 font-medium text-textPrimary">
