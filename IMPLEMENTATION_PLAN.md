@@ -25,7 +25,6 @@
 *   [ ] AI model sync automation
 *   [🚧] Test project on Bolt & Lovable 
     *   [ ] Bolt & Lovable don't support pnpm monorepos well atm 
-*   [ ] User email automation - abstract for generic but specific implementation with Kit 
 *   [ ] Change password from within app
 *   [✅] shadcn implemented
     *   [ ] Convert all pages / components to shadcn
@@ -33,6 +32,9 @@
 *   [ ] Run SEO scan 
 *   [ ] Figure out how to parse chat responses better, they get messy if the assistant uses markdown 
 *   [ ] Fix super long login delay on chat flow 
+*   [ ] User email automation - abstract for generic but specific implementation with Kit 
+*   [ ] Groups & organizations 
+*   [ ] Notifications 
 
 Okay, let's break down the implementation of the Platform Capability Abstraction layer using a TDD-inspired approach, focusing on compatibility and minimal disruption to your existing structure.
 
