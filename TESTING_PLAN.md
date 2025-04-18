@@ -272,12 +272,12 @@ Following this cycle helps catch errors early, ensures comprehensive test covera
 ## Testing Plan: Multi-Provider AI Integration
 
 *   **Phase 1: Backend Unit Tests**
-    *   [ ] **DB Migration:** Test `YYYYMMDDHHMMSS_add_provider_to_ai_providers.sql` using `supabase test db`.
-    *   [ ] **Adapters (`_shared/ai_service/*_adapter.ts`):**
-        *   Mock underlying API clients/`fetch`.
-        *   Test `sendMessage` success/error paths (API calls, response parsing).
-        *   Test `listModels` success/error paths (API calls, model list parsing).
-    *   [ ] **Factory (`_shared/ai_service/factory.ts`):** Test correct adapter returned; test null return.
+    *   [✅] **DB Migration:** Test `YYYYMMDDHHMMSS_add_provider_to_ai_providers.sql` using `supabase test db`.
+    *   [✅] **Adapters (`_shared/ai_service/*_adapter.ts`):**
+        *   [✅] OpenAI (`openai_adapter.test.ts`): Tests passing.
+        *   [🚧] Anthropic (`anthropic_adapter.test.ts`): Most tests passing. `History Ends With Assistant (Invalid Format)` case deferred due to complex interaction between test data and validation logic (failsafe error not triggering as expected). Needs revisit.
+        *   [✅] Google (`google_adapter.test.ts`): Tests passing.
+    *   [✅] **Factory (`_shared/ai_service/factory.ts`):** Tests passing.
     *   [ ] **`/chat/index.ts`:**
         *   Mock factory, DB client, env vars.
         *   Test routing to correct adapter based on fetched provider.

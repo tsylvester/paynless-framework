@@ -473,24 +473,25 @@ Refactor `authStore` to manage `pendingAction` and `loadChatIdOnRedirect` within
 *   **Goal:** Create reusable adapters for interacting with provider APIs and a factory to select the correct one.
 *   **Location:** `supabase/functions/_shared/ai_service/` (new directory)
 *   **Checklist:**
-    *   [ ] **Define `AiProviderAdapter` Interface (`packages/types/src/ai.types.ts`):**
-        *   [ ] Define methods: `sendMessage(...)`, `listModels(...)`. Define `ProviderModelInfo`. Update `ChatMessage` if needed.
-    *   [ ] **Create `_shared/ai_service/openai_adapter.ts`:**
-        *   [ ] Refactor existing OpenAI chat logic into adapter, implementing `AiProviderAdapter`.
-        *   [ ] Implement `listModels`.
-        *   [ ] **TEST:** Write/pass unit tests (mock `fetch`/client).
-    *   [ ] **Create `_shared/ai_service/anthropic_adapter.ts`:**
-        *   [ ] Implement `AiProviderAdapter` using Anthropic API. Read `ANTHROPIC_API_KEY`.
-        *   [ ] **TEST:** Write/pass unit tests (mock `fetch`/client).
-    *   [ ] **Create `_shared/ai_service/google_adapter.ts`:**
-        *   [ ] Implement `AiProviderAdapter` using Google Gemini API. Read `GOOGLE_API_KEY`.
-        *   [ ] **TEST:** Write/pass unit tests (mock `fetch`/client).
-    *   [ ] **Create `_shared/ai_service/factory.ts`:**
-        *   [ ] Create `getAiProviderAdapter(provider: string)`. Return correct adapter instance based on string or null.
-        *   [ ] **TEST:** Write/pass unit tests.
-    *   [ ] **Build & Commit:**
-        *   [ ] **BUILD:** Ensure backend (`supabase functions build <func_name>`) or relevant packages build successfully.
-        *   [ ] **COMMIT:** `feat(backend): Implement AI provider adapters and factory`
+    *   [✅] **Define `AiProviderAdapter` Interface (`packages/types/src/ai.types.ts`):**
+        *   [✅] Define methods: `sendMessage(...)`, `listModels(...)`. Define `ProviderModelInfo`. Update `ChatMessage` if needed.
+    *   [✅] **Create `_shared/ai_service/openai_adapter.ts`:**
+        *   [✅] Refactor existing OpenAI chat logic into adapter, implementing `AiProviderAdapter`.
+        *   [✅] Implement `listModels`.
+        *   [✅] **TEST:** Unit tests written, passing. (`openai_adapter.test.ts`)
+    *   [✅] **Create `_shared/ai_service/anthropic_adapter.ts`:**
+        *   [✅] Implement `AiProviderAdapter` using Anthropic API. Read `ANTHROPIC_API_KEY`. (Note: `listModels` is hardcoded).
+        *   [🚧] **TEST:** Unit tests written. Most pass, but `History Ends With Assistant (Invalid Format)` case needs revisit due to complex interaction between test data and validation logic. (`anthropic_adapter.test.ts`) *(Decision: Defer final fix)*.
+    *   [✅] **Create `_shared/ai_service/google_adapter.ts`:**
+        *   [✅] Implement `AiProviderAdapter` using Google Gemini API. Read `GOOGLE_API_KEY`.
+        *   [✅] **TEST:** Unit tests written, passing. (`google_adapter.test.ts`)
+    *   [✅] **Create `_shared/ai_service/factory.ts`:**
+        *   [✅] Create `getAiProviderAdapter(provider: string)`. Return correct adapter instance based on string or null.
+        *   [✅] **TEST:** Unit tests written, passing. (`factory.test.ts`) *
+    *   [✅] **Build & Commit:** *(Pending test resolution/deferral)*
+        *   [✅] **BUILD:** Ensure backend (`supabase functions build <func_name>`) or relevant packages build successfully.
+        *   [✅] **COMMIT:** `feat(backend): Implement AI provider adapters and factory`
+    *   *Lesson Learned:* Testing pre-flight validation logic requires careful test case design to ensure the intended code path is triggered before mocked API calls are made, especially when input data might interact with the validation logic itself.
 
 **Phase 3: Backend - Refactor Core Functions**
 
