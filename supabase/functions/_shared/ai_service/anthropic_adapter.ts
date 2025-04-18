@@ -132,7 +132,8 @@ export class AnthropicAdapter implements AiProviderAdapter {
       system_prompt_id: request.promptId !== '__none__' ? request.promptId : null,
       token_usage: tokenUsage,
       created_at: new Date().toISOString(),
-      // id, chat_id, user_id are set by the calling function (/chat)
+      user_id: null, // Explicitly set user_id to null for assistant messages
+      // id, chat_id are set by the calling function (/chat)
     };
 
     return assistantResponse;

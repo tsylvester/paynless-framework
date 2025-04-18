@@ -162,9 +162,9 @@ Following this cycle helps catch errors early, ensures comprehensive test covera
                 *   [✅] Implement handling for key events (checkout complete, sub updated, etc.)
                 *   [✅] Unit test webhook handler logic & signature verification
             *   [✅] **AI Chat Functions:**
-                *   [ ] Unit Test `ai-providers/index.ts` (Mock Supabase client) *(Pending)*
+                *   [✅] Unit Test `ai-providers/index.ts` (Mock Supabase client)
                 *   [ ] Unit Test `system-prompts/index.ts` (Mock Supabase client) *(Pending)*
-                *   [🚧] **Unit Test `chat/index.ts`:**
+                *   [✅] **Unit Test `chat/index.ts`:**
                 *   [✅] Unit Test `chat-history/index.ts`
                 *   [✅] Unit Test `chat-details/index.ts`
             *   **[NEW] Email Marketing Sync:**
@@ -278,11 +278,11 @@ Following this cycle helps catch errors early, ensures comprehensive test covera
         *   [🚧] Anthropic (`anthropic_adapter.test.ts`): Most tests passing. `History Ends With Assistant (Invalid Format)` case deferred due to complex interaction between test data and validation logic (failsafe error not triggering as expected). Needs revisit.
         *   [✅] Google (`google_adapter.test.ts`): Tests passing.
     *   [✅] **Factory (`_shared/ai_service/factory.ts`):** Tests passing.
-    *   [ ] **`/chat/index.ts`:**
+    *   [✅] **`/chat/index.ts`:**
         *   Mock factory, DB client, env vars.
         *   Test routing to correct adapter based on fetched provider.
         *   Test error handling (model not found, adapter error, etc.).
-    *   [ ] **`/ai-providers/index.ts`:**
+    *   [✅] **`/ai-providers/index.ts`:**
         *   Mock DB client, env vars.
         *   Test filtering logic (models returned only if API key env var set).
         *   Test empty list if no keys set.

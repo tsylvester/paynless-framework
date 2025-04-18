@@ -49,14 +49,14 @@ export interface Chat {
  * Matches the chat_messages table structure.
  */
 export interface ChatMessage {
-  id: string; // uuid
-  chat_id: string; // uuid
+  id?: string; // uuid - Optional as it's assigned by DB
+  chat_id?: string; // uuid - Optional as it's assigned by DB
   user_id: string | null; // uuid (null for assistant/system)
   role: 'user' | 'assistant' | 'system';
   content: string;
   ai_provider_id: string | null; // uuid
   system_prompt_id: string | null; // uuid
-  token_usage: Record<string, number> | null; // e.g., { prompt_tokens: number, completion_tokens: number, total_tokens: number }
+  token_usage: Json | null; // Use defined Json type
   created_at: string; // ISO 8601 timestamp string
 }
 

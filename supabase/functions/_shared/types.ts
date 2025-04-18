@@ -117,17 +117,18 @@ export type Json =
 /**
  * Represents a single message within a Chat.
  * Matches the chat_messages table structure.
+ * id/chat_id are optional as they aren't present before DB save.
  */
 export interface ChatMessage {
-  id?: string; // Optional during creation, assigned by DB
-  chat_id?: string; // Optional during creation, assigned by /chat
-  user_id?: string | null; // uuid (null for assistant/system)
+  id?: string; // Optional before DB save
+  chat_id?: string; // Optional before DB save (for new chats)
+  user_id: string | null;
   role: 'user' | 'assistant' | 'system';
   content: string;
-  ai_provider_id: string | null; // uuid
-  system_prompt_id: string | null; // uuid
-  token_usage: Json | null; // e.g., { prompt_tokens: number, completion_tokens: number, total_tokens: number }
-  created_at: string; // ISO 8601 timestamp string
+  ai_provider_id: string | null;
+  system_prompt_id: string | null;
+  token_usage: Json | null;
+  created_at: string; // This might also be optional pre-save, but adapters add it.
 }
 
 /**

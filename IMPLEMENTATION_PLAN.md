@@ -497,12 +497,12 @@ Refactor `authStore` to manage `pendingAction` and `loadChatIdOnRedirect` within
 
 *   **Goal:** Update existing Edge Functions to use the new adapters and filtering logic.
 *   **Checklist:**
-    *   [ ] **Refactor `/chat/index.ts`:**
-        *   [ ] Fetch model details (incl. `provider`). Use factory to get adapter. Get API key based on provider. Call `adapter.sendMessage`.
-        *   [ ] **TEST:** Update/pass unit & integration tests.
-    *   [ ] **Refactor `/ai-providers/index.ts`:**
-        *   [ ] Fetch `is_active` models. Check env vars (`OPENAI_API_KEY`, etc.). Filter models based on `provider` and corresponding set API key. Return filtered list.
-        *   [ ] **TEST:** Update/pass unit & integration tests.
+    *   [✅] **Refactor `/chat/index.ts`:**
+        *   [✅] Fetch model details (incl. `provider`). Use factory to get adapter. Get API key based on provider. Call `adapter.sendMessage`.
+        *   [✅] **TEST:** Update/pass unit tests.
+    *   [✅] **Refactor `/ai-providers/index.ts`:**
+        *   [✅] Fetch `is_active` models. Check env vars (`OPENAI_API_KEY`, etc.). Filter models based on `provider` and corresponding set API key. Return filtered list.
+        *   [✅] **TEST:** Update/pass unit tests.
     *   [ ] **Build, Run & Commit:**
         *   [ ] **BUILD:** Ensure backend functions build.
         *   [ ] **RUN:** Manually test `/chat` and `/ai-providers` locally with relevant API keys set.

@@ -158,7 +158,8 @@ export class GoogleAdapter implements AiProviderAdapter {
       system_prompt_id: request.promptId !== '__none__' ? request.promptId : null,
       token_usage: tokenUsage,
       created_at: new Date().toISOString(),
-      // id, chat_id, user_id set by /chat function
+      user_id: null, // Explicitly set user_id to null for assistant messages
+      // id, chat_id set by /chat function
     };
 
     return assistantResponse;

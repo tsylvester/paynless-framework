@@ -78,7 +78,7 @@ export class OpenAiAdapter implements AiProviderAdapter {
       system_prompt_id: request.promptId !== '__none__' ? request.promptId : null,
       token_usage: tokenUsage,
       created_at: new Date().toISOString(), // Use current time for response timestamp
-      // user_id: null, // Only user messages have user_id
+      user_id: null, // Explicitly set user_id to null for assistant messages
     };
 
     return assistantResponse;
