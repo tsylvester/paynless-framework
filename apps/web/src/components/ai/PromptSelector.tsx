@@ -55,8 +55,8 @@ export const PromptSelector: React.FC<PromptSelectorProps> = ({
             }
           />
         </SelectTrigger>
-        <SelectContent>
-          <SelectItem key="__none__" value="__none__">
+        <SelectContent className="bg-background/70 backdrop-blur-md border border-border">
+        <SelectItem key="__none__" value="__none__">
             -- None --
           </SelectItem>
 

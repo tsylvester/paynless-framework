@@ -54,8 +54,8 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({
             }
           />
         </SelectTrigger>
-        <SelectContent>
-          {availableProviders &&
+        <SelectContent className="bg-background/70 backdrop-blur-md border border-border">
+        {availableProviders &&
             availableProviders.map((provider: AiProvider) => (
               <SelectItem key={provider.id} value={provider.id}>
                 {provider.name}

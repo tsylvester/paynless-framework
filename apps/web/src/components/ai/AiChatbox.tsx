@@ -133,7 +133,7 @@ export const AiChatbox: React.FC<AiChatboxProps> = ({
     <div className="flex flex-col h-full border rounded-md p-4 space-y-4">
       {/* Message Display Area */}
       <div 
-        className="flex-grow pr-4 overflow-y-auto min-h-0"
+        className="flex-grow pr-4 overflow-y-auto min-h-[200px]"
         ref={scrollContainerRef}
       >
         <div className="space-y-4">
