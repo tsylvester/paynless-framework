@@ -24,7 +24,7 @@ export function ThemeProvider({ children }: ThemeProviderProps) {
   const initialColorMode = localStorage.getItem('colorMode') as ColorMode || 
     (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
   
-  const initialThemeName = localStorage.getItem('themeName') as ThemeName || 'dark';
+  const initialThemeName = localStorage.getItem('themeName') as ThemeName || 'light';
   
   const [colorMode, setColorMode] = useState<ColorMode>(initialColorMode);
   const [themeName, setThemeName] = useState<ThemeName>(initialThemeName);

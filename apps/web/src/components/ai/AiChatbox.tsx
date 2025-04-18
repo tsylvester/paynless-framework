@@ -28,7 +28,7 @@ export const AiChatbox: React.FC<AiChatboxProps> = ({
   promptId,
 }) => {
   const [inputMessage, setInputMessage] = useState('')
-  const scrollAreaRef = useRef<HTMLDivElement>(null)
+  const scrollContainerRef = useRef<HTMLDivElement>(null); // Ref for the scrollable container
 
   // Fetch state and actions from the store
   const {
@@ -40,17 +40,34 @@ export const AiChatbox: React.FC<AiChatboxProps> = ({
     clearAiError,
   } = useAiStore()
 
-  // Scroll to bottom when messages change
+  // Scroll to new messages
   useEffect(() => {
-    if (scrollAreaRef.current) {
-      // TODO: Fix this type error
-      // Property 'scrollViewport' does not exist on type 'HTMLDivElement'.ts(2339)
-      // const viewport = scrollAreaRef.current.scrollViewport;
-      // if (viewport) {
-      // viewport.scrollTop = viewport.scrollHeight;
-      // }
+    const latestMessage = currentChatMessages[currentChatMessages.length - 1];
+    if (latestMessage && latestMessage.role === 'assistant') { 
+      console.log('[ScrollEffect] Assistant message detected:', latestMessage.id);
+      const container = scrollContainerRef.current;
+      if (!container) {
+        console.log('[ScrollEffect] Scroll container ref not found.');
+        return;
+      }
+
+      const messageElements = container.querySelectorAll('[data-message-id]');
+      const lastMessageElement = messageElements?.[messageElements.length - 1] as HTMLElement | undefined;
+
+      if (lastMessageElement) {
+        // Calculate target scroll position: top of the message element relative to the container's top
+        const targetScrollTop = lastMessageElement.offsetTop - container.offsetTop; 
+        console.log(`[ScrollEffect] Calculated targetScrollTop: ${targetScrollTop}`);
+        // Use requestAnimationFrame for smoother scroll updates
+        requestAnimationFrame(() => {
+           container.scrollTop = targetScrollTop;
+           console.log(`[ScrollEffect] Set container scrollTop to: ${container.scrollTop}`);
+        });
+      } else {
+        console.log('[ScrollEffect] Could not find last message element.');
+      }
     }
-  }, [currentChatMessages])
+  }, [currentChatMessages]); 
 
   const handleSend = async () => {
     if (!inputMessage.trim() || isLoadingAiResponse) return
@@ -113,27 +130,27 @@ export const AiChatbox: React.FC<AiChatboxProps> = ({
   }
 
   return (
-    <div className="flex flex-col h-[500px] border rounded-md p-4 space-y-4">
+    <div className="flex flex-col h-full border rounded-md p-4 space-y-4">
       {/* Message Display Area */}
-      <div className="flex-grow pr-4 overflow-y-auto" ref={scrollAreaRef}>
+      <div 
+        className="flex-grow pr-4 overflow-y-auto min-h-[200px]"
+        ref={scrollContainerRef}
+      >
         <div className="space-y-4">
-          {currentChatMessages.map((msg: ChatMessage) => {
-            // Log the ID being used as key
-            console.log('[AiChatbox] Rendering message with key:', msg.id)
-            return (
-              <div
-                key={msg.id}
-                className={cn(
-                  'flex w-max max-w-[75%] flex-col gap-2 rounded-lg px-3 py-2 text-sm',
-                  msg.role === 'user'
-                    ? 'ml-auto bg-[rgb(var(--color-primary))] text-white'
-                    : 'bg-[rgb(var(--color-surface))] text-textPrimary'
-                )}
-              >
-                {msg.content}
-              </div>
-            )
-          })}
+          {currentChatMessages.map((msg: ChatMessage) => (
+            <div
+              key={msg.id}
+              data-message-id={msg.id}
+              className={cn(
+                'flex w-max max-w-[75%] flex-col gap-2 rounded-lg px-3 py-2 text-sm',
+                msg.role === 'user'
+                  ? 'ml-auto bg-[rgb(var(--color-primary))] text-white'
+                  : 'bg-[rgb(var(--color-surface))] text-textPrimary'
+              )}
+            >
+              {msg.content}
+            </div>
+          ))}
           {isLoadingAiResponse && (
             <div className="flex items-center space-x-2 justify-start">
               <Loader2 className="h-4 w-4 animate-spin text-[rgb(var(--color-textSecondary))]" />
