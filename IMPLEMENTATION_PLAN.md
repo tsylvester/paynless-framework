@@ -33,6 +33,7 @@
 *   [ ] Figure out how to parse chat responses better, they get messy if the assistant uses markdown 
 *   [ ] Fix super long login delay on chat flow 
 *   [🚧] User email automation - abstract for generic but specific implementation with Kit 
+    *   [ ] Everything works EXCEPT the email_sync_trigger for on_user_created, the current form breaks registration
 *   [ ] Connect frontend analytics events (PostHog) to email marketing service (Kit) for behavioral triggers (IFTTT)
 *   [ ] Groups & organizations 
 *   [ ] Notifications 
@@ -451,3 +452,97 @@ Refactor `authStore` to manage `pendingAction` and `loadChatIdOnRedirect` within
     *   [✅] **App Initialization:** Ensure `import { analytics } from '@paynless/analytics-client';` happens early in `apps/web/src/main.tsx` or `App.tsx` (init happens on import).
     *   [✅] **Integrate with `useAuthStore`:** Import `analytics`. In `login`, `register`, `initialize` success handlers, call `analytics.identify(user.id, { traits... })`. In `logout` action, call `analytics.reset();`.
 *   **Testing & Commit Point:** Unit test `authStore` (mocking analytics client, verifying `identify`
+
+## Multi-Provider AI Integration (Anthropic, Google First)
+
+**Goal:** Extend the AI chat functionality to support multiple providers (starting with Anthropic and Google) and automatically sync their available models to the database, ensuring the frontend only displays usable models.
+
+**Phase 1: Database Schema Update**
+
+*   [ ] **Add `provider` Column:**
+    *   [ ] Create migration file (`supabase/migrations/YYYYMMDDHHMMSS_add_provider_to_ai_providers.sql`) adding `provider` (text, nullable initially) and index to `public.ai_providers`.
+    *   [ ] Add SQL to backfill existing rows (e.g., `provider = 'openai'`). Consider making column `NOT NULL` after backfill.
+*   [ ] **Apply & Test:**
+    *   [ ] Apply migration (`supabase db reset` local).
+    *   [ ] **TEST:** Verify schema change with `supabase test db`.
+    *   [ ] Update DB types (`supabase gen types typescript --local > supabase/functions/types_db.ts`).
+    *   [ ] **COMMIT:** `feat(db): Add provider column to ai_providers table`
+
+**Phase 2: Backend - Shared Adapters & Factory**
+
+*   **Goal:** Create reusable adapters for interacting with provider APIs and a factory to select the correct one.
+*   **Location:** `supabase/functions/_shared/ai_service/` (new directory)
+*   **Checklist:**
+    *   [ ] **Define `AiProviderAdapter` Interface (`packages/types/src/ai.types.ts`):**
+        *   [ ] Define methods: `sendMessage(...)`, `listModels(...)`. Define `ProviderModelInfo`. Update `ChatMessage` if needed.
+    *   [ ] **Create `_shared/ai_service/openai_adapter.ts`:**
+        *   [ ] Refactor existing OpenAI chat logic into adapter, implementing `AiProviderAdapter`.
+        *   [ ] Implement `listModels`.
+        *   [ ] **TEST:** Write/pass unit tests (mock `fetch`/client).
+    *   [ ] **Create `_shared/ai_service/anthropic_adapter.ts`:**
+        *   [ ] Implement `AiProviderAdapter` using Anthropic API. Read `ANTHROPIC_API_KEY`.
+        *   [ ] **TEST:** Write/pass unit tests (mock `fetch`/client).
+    *   [ ] **Create `_shared/ai_service/google_adapter.ts`:**
+        *   [ ] Implement `AiProviderAdapter` using Google Gemini API. Read `GOOGLE_API_KEY`.
+        *   [ ] **TEST:** Write/pass unit tests (mock `fetch`/client).
+    *   [ ] **Create `_shared/ai_service/factory.ts`:**
+        *   [ ] Create `getAiProviderAdapter(provider: string)`. Return correct adapter instance based on string or null.
+        *   [ ] **TEST:** Write/pass unit tests.
+    *   [ ] **Build & Commit:**
+        *   [ ] **BUILD:** Ensure backend (`supabase functions build <func_name>`) or relevant packages build successfully.
+        *   [ ] **COMMIT:** `feat(backend): Implement AI provider adapters and factory`
+
+**Phase 3: Backend - Refactor Core Functions**
+
+*   **Goal:** Update existing Edge Functions to use the new adapters and filtering logic.
+*   **Checklist:**
+    *   [ ] **Refactor `/chat/index.ts`:**
+        *   [ ] Fetch model details (incl. `provider`). Use factory to get adapter. Get API key based on provider. Call `adapter.sendMessage`.
+        *   [ ] **TEST:** Update/pass unit & integration tests.
+    *   [ ] **Refactor `/ai-providers/index.ts`:**
+        *   [ ] Fetch `is_active` models. Check env vars (`OPENAI_API_KEY`, etc.). Filter models based on `provider` and corresponding set API key. Return filtered list.
+        *   [ ] **TEST:** Update/pass unit & integration tests.
+    *   [ ] **Build, Run & Commit:**
+        *   [ ] **BUILD:** Ensure backend functions build.
+        *   [ ] **RUN:** Manually test `/chat` and `/ai-providers` locally with relevant API keys set.
+        *   [ ] **COMMIT:** `refactor(backend): Update chat and ai-providers functions to use adapters`
+
+**Phase 4: Backend - Refactor & Implement Model Sync Function**
+
+*   **Goal:** Refactor `sync-ai-models` to use a router pattern and implement sync logic for new providers.
+*   **Location:** `supabase/functions/sync-ai-models/`
+*   **Checklist:**
+    *   [ ] **Create Provider Subfolders:** `openai/`, `anthropic/`, `google/`.
+    *   [ ] **Move/Create Provider Logic:**
+        *   [ ] Move existing OpenAI sync logic to `openai/sync.ts`. Export a `syncOpenAIModels(supabaseClient, apiKey)` function.
+        *   [ ] Create `anthropic/sync.ts`. Export `syncAnthropicModels(supabaseClient, apiKey)`. Implement logic using `anthropic_adapter.listModels` to compare/update DB.
+        *   [ ] Create `google/sync.ts`. Export `syncGoogleModels(supabaseClient, apiKey)`. Implement logic using `google_adapter.listModels` to compare/update DB.
+        *   [ ] **TEST:** Write/pass unit tests for each provider's `sync<Provider>Models` function (mock adapter, Supabase client).
+    *   [ ] **Refactor `sync-ai-models/index.ts` (Router):**
+        *   [ ] Define supported providers & keys (e.g., `[{ provider: 'openai', key: 'OPENAI_API_KEY', syncFunc: syncOpenAIModels }, ...]`).
+        *   [ ] Import `sync<Provider>Models` functions.
+        *   [ ] In handler, iterate through providers: check if key is set, if so, call the corresponding `syncFunc`. Handle errors per provider.
+        *   [ ] **TEST:** Write/pass unit tests for the router logic (mock env vars, sync funcs).
+    *   [ ] **Add Env Vars:** Add `ANTHROPIC_API_KEY`, `GOOGLE_API_KEY` to `.env.example`.
+    *   [ ] **Build, Run & Commit:**
+        *   [ ] **BUILD:** Ensure `sync-ai-models` function builds.
+        *   [ ] **RUN:** Invoke function locally (`supabase functions invoke sync-ai-models`) with keys set. Verify DB updates for all configured providers. Test idempotency.
+        *   [ ] **COMMIT:** `refactor(backend): Refactor sync-ai-models with provider logic and add Anthropic/Google sync`
+    *   [ ] **Schedule Function:** Configure Supabase Cron Job (`supabase/config.toml` or dashboard) to run `sync-ai-models` periodically (e.g., daily).
+
+**Phase 5: Frontend Integration & Testing**
+
+*   **Goal:** Ensure the frontend correctly displays and uses the new providers/models.
+*   **Checklist:**
+    *   [ ] **Verify `ModelSelector.tsx`:** Confirm it displays the filtered list from updated `/ai-providers` endpoint. (Should require no changes).
+    *   [ ] **Manual Testing:**
+        *   Add Anthropic/Google API keys to `.env`. Restart backend/frontend.
+        *   Run `sync-ai-models`. Verify new models appear in `ModelSelector`.
+        *   Test sending messages using OpenAI, Anthropic, and Google models.
+    *   [ ] **Build, Run & Commit:**
+        *   [ ] **BUILD:** Ensure frontend (`apps/web`) builds successfully.
+        *   [ ] **RUN:** Verify manual tests pass in running application.
+        *   [ ] **COMMIT:** `feat(ai): Integrate multi-provider support in frontend`
+    *   [ ] **Update E2E Tests:** Add tests covering model selection and chat interaction with the new providers.
+    *   [ ] **Test E2E:** Run and pass E2E tests.
+    *   [ ] **Final Commit:** `test(e2e): Add multi-provider AI tests`

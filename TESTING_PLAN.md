@@ -107,8 +107,6 @@ Following this cycle helps catch errors early, ensures comprehensive test covera
 
 *   **[NEW] Phase 5: Anonymous Chat Auth Refactor Verification:** Added specific backend and E2E test cases for the anonymous secret header and related flows.
 
----
-
 ✅ **How to Test Incrementally and Correctly (Layered Testing Strategy)**
 *This remains our guiding principle.*
 
@@ -269,3 +267,53 @@ Following this cycle helps catch errors early, ensures comprehensive test covera
     *   **[NEW] User Registration with Email Sync:**
         *   [ ] Case 1 (Kit Disabled): Register via UI. Verify user created, NO user added to Kit list.
         *   [ ] Case 2 (Kit Enabled): Configure E2E env with Kit credentials. Register via UI. Verify user created AND user appears in Kit list/form.
+
+        
+## Testing Plan: Multi-Provider AI Integration
+
+*   **Phase 1: Backend Unit Tests**
+    *   [ ] **DB Migration:** Test `YYYYMMDDHHMMSS_add_provider_to_ai_providers.sql` using `supabase test db`.
+    *   [ ] **Adapters (`_shared/ai_service/*_adapter.ts`):**
+        *   Mock underlying API clients/`fetch`.
+        *   Test `sendMessage` success/error paths (API calls, response parsing).
+        *   Test `listModels` success/error paths (API calls, model list parsing).
+    *   [ ] **Factory (`_shared/ai_service/factory.ts`):** Test correct adapter returned; test null return.
+    *   [ ] **`/chat/index.ts`:**
+        *   Mock factory, DB client, env vars.
+        *   Test routing to correct adapter based on fetched provider.
+        *   Test error handling (model not found, adapter error, etc.).
+    *   [ ] **`/ai-providers/index.ts`:**
+        *   Mock DB client, env vars.
+        *   Test filtering logic (models returned only if API key env var set).
+        *   Test empty list if no keys set.
+    *   [ ] **`sync-ai-models/` (Provider Logic - e.g., `openai/sync.ts`):**
+        *   Mock provider adapter, Supabase client.
+        *   Test sync logic: INSERT new, UPDATE existing, DEACTIVATE missing models.
+    *   [ ] **`sync-ai-models/index.ts` (Router):**
+        *   Mock provider `sync<Provider>Models` functions, env vars.
+        *   Test calling correct sync functions based on set keys.
+        *   Test error handling per provider.
+
+*   **Phase 2: Backend Integration Tests (Local & Deployed)**
+    *   [ ] **`/ai-providers`:** Test endpoint returns correctly filtered list based on local `.env` keys.
+    *   [ ] **`/chat`:** Test sending messages via different configured providers (requires API keys in local `.env`).
+    *   [ ] **`sync-ai-models`:**
+        *   Invoke function locally (`supabase functions invoke...`, requires API keys).
+        *   Verify database changes (new/updated/deactivated models).
+        *   Test idempotency.
+    *   [ ] **Cron Job:** Verify scheduled execution in deployed environment triggers the function (check logs).
+
+*   **Phase 3: Frontend Integration Tests (MSW)**
+    *   [ ] **`ModelSelector.tsx`:** Mock `/ai-providers` response. Test component renders the correct list.
+    *   [ ] **`AiChatbox.tsx` / `aichat.tsx`:** Mock `/chat` response. Test sending message results in correct API call (verify payload).
+
+*   **Phase 4: End-to-End Validation**
+    *   [ ] Manually configure API keys (OpenAI, Anthropic, Google).
+    *   [ ] Run `sync-ai-models`.
+    *   [ ] Start web app.
+    *   [ ] Verify `ModelSelector` shows models from all configured providers.
+    *   [ ] Send messages using models from each provider; verify success.
+    *   [ ] Remove an API key, restart backend, refresh frontend. Verify corresponding models disappear.
+    *   [ ] Add E2E tests (Playwright/Cypress) covering model selection and chat for each provider.
+
+---
