@@ -1,54 +1,64 @@
 import { logger } from "../logger.ts";
+import { type EmailMarketingService } from "../types.ts";
 import { KitService, type KitServiceConfig } from "./kit_service.ts";
-import { NoOpService } from "./no_op_service.ts";
-import { type IEmailMarketingService } from "../types.ts";
+import { NoOpEmailService } from "./no_op_service.ts";
 import { DummyEmailService } from './dummy_service.ts';
 
-// Define the configuration structure expected by the factory
+// Interface for the configuration object passed to the factory
 export interface EmailFactoryConfig {
-    provider?: string | null;
-    // Include all Kit config options, explicitly marking them as potentially undefined
-    kitApiKey?: string | null;
-    kitBaseUrl?: string | null;
-    kitTagId?: string | null;
-    kitCustomUserIdField?: string | null;
-    kitCustomCreatedAtField?: string | null;
+  provider?: string;
+  kitApiKey?: string;
+  kitBaseUrl?: string;
+  kitTagId?: string;
+  kitCustomUserIdField?: string;
+  kitCustomCreatedAtField?: string;
+  // Add fields for other potential providers here
 }
 
 /**
- * Gets the configured email marketing service instance based on provided config.
+ * Factory function to get the appropriate email marketing service based on config.
+ * Reads configuration values from the passed config object.
  * 
- * @param config The configuration object containing provider and service-specific settings.
- * @returns An instance implementing IEmailMarketingService, or null if configuration is invalid.
+ * @param config Configuration object containing provider info and API keys/settings.
+ * @returns An instance of EmailMarketingService (either KitService or NoOpEmailService).
  */
-export function getEmailMarketingService(config: EmailFactoryConfig): IEmailMarketingService | null {
-    const provider = config.provider?.toLowerCase();
-    logger.info(`Attempting to initialize email marketing service for provider: ${provider || 'None'}`);
+export function getEmailMarketingService(config: EmailFactoryConfig): EmailMarketingService {
+  logger.debug("getEmailMarketingService called with config:", { provider: config.provider });
 
-    try {
-        if (provider === "kit") {
-            // Create Kit config from the factory config
-            const kitConfig: KitServiceConfig = {
-                apiKey: config.kitApiKey || "", // Pass empty string if null/undefined
-                baseUrl: config.kitBaseUrl || "",
-                tagId: config.kitTagId || undefined,
-                customUserIdField: config.kitCustomUserIdField || undefined,
-                customCreatedAtField: config.kitCustomCreatedAtField || undefined,
-            };
-            // Pass extracted config to constructor
-            return new KitService(kitConfig); 
-        } else if (provider === "none") {
-            return new NoOpService();
-        } else if (!provider || provider === "dummy") {
-            logger.warn(`Email marketing provider is '${provider || 'undefined'}'. Using DummyEmailService.`);
-            return new DummyEmailService();
-        } else {
-             logger.warn(`Unsupported email marketing provider: ${provider}. Email marketing disabled.`);
-             return null; // Unsupported provider explicitly returns null
-        }
-    } catch (error) {
-        const errorMessage = error instanceof Error ? error.message : String(error);
-        logger.error("Failed to initialize email marketing service:", { provider, error: errorMessage });
-        return null; // Return null if initialization fails
+  if (config.provider?.toLowerCase() === 'kit') {
+    logger.info("Attempting to configure KitService...");
+    // Check for required fields for KitService
+    if (
+      config.kitApiKey &&
+      config.kitBaseUrl &&
+      config.kitTagId && // Tag ID is required by addUserToList
+      config.kitCustomUserIdField && 
+      config.kitCustomCreatedAtField
+    ) {
+      const kitConfig: KitServiceConfig = {
+        apiKey: config.kitApiKey,
+        baseUrl: config.kitBaseUrl,
+        tagId: config.kitTagId,
+        customUserIdField: config.kitCustomUserIdField,
+        customCreatedAtField: config.kitCustomCreatedAtField,
+      };
+      try {
+        logger.info("KitService configured successfully. Returning instance.");
+        return new KitService(kitConfig);
+      } catch (error) {
+        // Catch potential constructor errors (though we pre-validated required fields)
+        logger.error("Error instantiating KitService even with valid config check", { 
+            error: error instanceof Error ? error.message : String(error) 
+        });
+      }
+    } else {
+      logger.warn("Kit provider configured, but missing required settings (apiKey, baseUrl, tagId, custom fields). Falling back to NoOpService.");
     }
+  } else if (config.provider && config.provider.toLowerCase() !== 'none') {
+      logger.warn(`Unknown EMAIL_MARKETING_PROVIDER specified: '${config.provider}'. Falling back to NoOpService.`);
+  }
+
+  // Default to NoOpService if provider is not 'kit', is 'none', or Kit config is incomplete
+  logger.info("Returning NoOpEmailService instance.");
+  return new NoOpEmailService();
 } 

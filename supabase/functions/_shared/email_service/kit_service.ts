@@ -1,5 +1,5 @@
 import { logger } from "../logger.ts";
-import { type UserData, type IEmailMarketingService } from "../types.ts";
+import { type UserData, type EmailMarketingService } from "../types.ts";
 
 // Export the interface
 export interface KitServiceConfig {
@@ -10,7 +10,7 @@ export interface KitServiceConfig {
     customCreatedAtField?: string;
 }
 
-export class KitService implements IEmailMarketingService {
+export class KitService implements EmailMarketingService {
     private config: KitServiceConfig;
 
     // Constructor accepts configuration object
@@ -19,15 +19,14 @@ export class KitService implements IEmailMarketingService {
         if (!config.apiKey || !config.baseUrl) {
             throw new Error("Missing required configuration for KitService (apiKey, baseUrl)");
         }
-        // Add validation for custom fields if they are *required* by your logic
-        if (!config.customUserIdField || !config.customCreatedAtField) {
-             throw new Error("Missing required custom field configuration for KitService (customUserIdField, customCreatedAtField)");
-        }
         this.config = config;
 
-        logger.info(`KitService initialized. Base URL: ${this.config.baseUrl}, Tag ID: ${this.config.tagId || 'Not Set'}, UserID Field: ${this.config.customUserIdField}, CreatedAt Field: ${this.config.customCreatedAtField}`);
+        logger.info(`KitService initialized. Base URL: ${this.config.baseUrl}, Tag ID: ${this.config.tagId || 'Not Set'}, UserID Field: ${this.config.customUserIdField || 'Not Set'}, CreatedAt Field: ${this.config.customCreatedAtField || 'Not Set'}`);
         if (!this.config.tagId) {
             logger.warn("KitService initialized without a Tag ID. addUserToList requires a configured Tag ID.");
+        }
+        if (!this.config.customUserIdField || !this.config.customCreatedAtField) {
+            logger.warn("KitService initialized without custom field names. addUserToList and updateUserAttributes require these.");
         }
     }
 
@@ -157,17 +156,19 @@ export class KitService implements IEmailMarketingService {
     }
 
     private async findSubscriberIdByEmail(email: string): Promise<number | null> {
-        const endpoint = `/v1/subscribers`; // GET request, apiKey added by makeApiRequest
+        // Construct endpoint with query parameters for email filtering
+        const endpoint = `/v1/subscribers?email_address=${encodeURIComponent(email)}`;
         try {
              // Specify expected response structure for makeApiRequest
-            const data = await this.makeApiRequest<{ subscribers: Array<{id: number}> }>(endpoint, { method: 'GET', /* Pass email in query params if needed, or handle in makeApiRequest */ });
-            // TODO: Adjust API call if email needs to be a query param explicitly
-            // Modify makeApiRequest or add params here: 
-            // const url = new URL(...); url.searchParams.set('email_address', email);
+             // The GET request will include api_key automatically via makeApiRequest
+            const data = await this.makeApiRequest<{ subscribers: Array<{id: number}> }>(endpoint, { method: 'GET' });
+            // Removed TODO as email is now passed in endpoint query string
             
             if (data.subscribers && data.subscribers.length > 0) {
+                // Assuming the first result is the correct one if multiple match (unlikely for email)
                 return data.subscribers[0].id; 
             }
+            logger.debug(`Kit subscriber not found for email: ${email}`);
             return null;
         } catch (error) {
             const errorMessage = error instanceof Error ? error.message : String(error);

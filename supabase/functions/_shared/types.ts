@@ -65,13 +65,12 @@ export interface SubscriptionUsageMetrics {
   reset_date?: string | null;
 }
 
-// --- Email Marketing Service Interface ---
-// Copied from packages/types/src/email.marketing.types.ts
+// --- Email Marketing Service Types (Mirrored from packages/types/src/email.types.ts) ---
 
 /**
  * Defines the common contract for interacting with different email marketing platforms.
  */
-export interface IEmailMarketingService {
+export interface EmailMarketingService {
   /**
    * Adds a new user/subscriber to the primary list/audience/tag.
    * @param userData - The user's details.
