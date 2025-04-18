@@ -172,7 +172,7 @@ Following this cycle helps catch errors early, ensures comprehensive test covera
             *   **[NEW] Email Marketing Sync:**
                 *   [✅] `_shared/email_service/kit_service.ts` (Mock fetch, env vars)
                 *   [✅] `_shared/email_service/no_op_service.ts`
-                *   [ ] `_shared/email_service/factory.ts` (Mock env vars)
+                *   [✅] `_shared/email_service/factory.ts` (Checked type returns)
                 *   [✅] `on-user-created/index.ts` (Tested handler logic via DI)
             *   [⏸️] `sync-stripe-plans/` *(Unit tests exist but ignored locally due to Supabase lib type resolution errors. Pending deployed testing.)*
             *   [⏸️] `sync-ai-models/` *(Placeholder - No tests needed yet)*

@@ -101,31 +101,31 @@
 *   **Goal:** Create a factory to provide the correct service instance based on configuration and integrate it into the user creation flow.
 *   **Location:** `supabase/functions/_shared/email_service/` and `supabase/functions/on-user-created/`
 *   **Steps:**
-    *   [ ] **Create `factory.ts` (`supabase/functions/_shared/email_service/`):**
-        *   [ ] Import `NoOpEmailService` and `KitEmailService`.
-        *   [ ] Create function `getEmailMarketingService(): EmailMarketingService`.
-        *   [ ] Inside, read `EMAIL_MARKETING_PROVIDER`, `EMAIL_MARKETING_API_KEY`, etc. from `Deno.env`.
-        *   [ ] If provider is 'kit' and required keys/fields are present:
-            *   [ ] Construct `KitServiceConfig` object.
-            *   [ ] Return `new KitEmailService(config)`.
-        *   [ ] Else, return `new NoOpEmailService()`.
-    *   [ ] **Write Unit Test (`factory.test.ts`):**
-        *   [ ] Mock environment variables for different scenarios (Kit configured, not configured).
-        *   [ ] Verify correct service type (`KitEmailService` or `NoOpEmailService`) is returned.
-        *   [ ] Verify `KitEmailService` constructor is called with correct config object.
-    *   [ ] **Modify `on-user-created/index.ts`:**
-        *   [ ] Import `getEmailMarketingService`.
-        *   [ ] Import `UserData` type.
-        *   [ ] Inside the handler:
-            *   [ ] Get `emailService` instance. (Currently done in defaultDeps, refactor to use factory directly)
-            *   [ ] Create `UserData` object from the auth hook record (email, id, createdAt, maybe name/lastSignInAt if available). (✅ Done)
-            *   [ ] Call `await emailService.addUserToList(userData);`. (✅ Done)
-            *   [ ] Wrap in try/catch for graceful error handling. (✅ Done)
+    *   [✅] **Create `factory.ts` (`supabase/functions/_shared/email_service/`):**
+        *   [✅] Import `NoOpEmailService` and `KitEmailService`.
+        *   [✅] Create function `getEmailMarketingService(config: EmailFactoryConfig): EmailMarketingService`.
+        *   [✅] Inside, read `config.provider`.
+        *   [✅] If provider is 'kit' and required keys/fields are present in config:
+            *   [✅] Construct `KitServiceConfig` object.
+            *   [✅] Return `new KitEmailService(config)`.
+        *   [✅] Else, return `new NoOpEmailService()`.
+    *   [✅] **Write Unit Test (`factory.test.ts`):**
+        *   [✅] Test scenarios: Kit configured, not configured, 'none', incomplete Kit, unknown provider.
+        *   [✅] Verify correct service type (`KitService` or `NoOpEmailService`) is returned.
+        *   [ ] Verify `KitService` constructor is called with correct config object. (Optional - Skipped for now)
+    *   [✅] **Modify `on-user-created/index.ts`:** (Refactored to use factory via defaultDeps)
+        *   [✅] Import `getEmailMarketingService`.
+        *   [✅] Import `UserData` type.
+        *   [✅] Inside the handler:
+            *   [✅] Get `emailService` instance from deps. (Factory called within defaultDeps)
+            *   [✅] Create `UserData` object from the auth hook record. (✅ Done)
+            *   [✅] Call `await emailService.addUserToList(userData);`. (✅ Done)
+            *   [✅] Wrap in try/catch for graceful error handling. (✅ Done)
     *   [✅] **Write/Update Unit Test (`on-user-created.test.ts`):** (Tests updated for DI)
-        *   [ ] Mock `getEmailMarketingService` factory. (Pending Phase 3 implementation)
-        *   [✅] Test Case 1 (NoOp): Verify handler skips correctly when `NoOpEmailService` injected.
-        *   [✅] Test Case 2 (Kit): Verify handler calls `addUserToList` on mock `Kit` with correct `UserData` when injected.
-        *   [✅] Test Case 3: Verify function continues (returns 200 OK) if `addUserToList` throws when injected.
+        *   [✅] Mock service injection tests covering Kit, NoOp, and error cases.
+        *   [✅] Test Case 1 (NoOp): Handler skips correctly when `NoOpEmailService` injected.
+        *   [✅] Test Case 2 (Kit): Handler calls `addUserToList` on mock `Kit` with correct `UserData` when injected.
+        *   [✅] Test Case 3: Handler continues (returns 200 OK) if `addUserToList` throws when injected.
 
 Okay, let's break down the implementation of the Platform Capability Abstraction layer using a TDD-inspired approach, focusing on compatibility and minimal disruption to your existing structure.
 
@@ -450,40 +450,4 @@ Refactor `authStore` to manage `pendingAction` and `loadChatIdOnRedirect` within
 *   **Steps:**
     *   [✅] **App Initialization:** Ensure `import { analytics } from '@paynless/analytics-client';` happens early in `apps/web/src/main.tsx` or `App.tsx` (init happens on import).
     *   [✅] **Integrate with `useAuthStore`:** Import `analytics`. In `login`, `register`, `initialize` success handlers, call `analytics.identify(user.id, { traits... })`. In `logout` action, call `analytics.reset();`.
-*   **Testing & Commit Point:** Unit test `authStore` (mocking analytics client, verifying `identify` and `reset` calls).
-
-**Phase 4: Event Tracking Implementation**
-*   **Goal:** Add `analytics.track` calls for key user actions.
-*   **Steps:**
-    *   [✅] Add `analytics.track('Signed Up')` to `authStore.register` success path.
-    *   [✅] Add corresponding unit test to `authStore.register.test.ts`.
-    *   [✅] Add `analytics.track('Logged In')` to `authStore.login` success path.
-    *   [✅] Add corresponding unit test to `authStore.login.test.ts`.
-    *   [✅] Add `analytics.track('Profile Updated')` to `authStore.updateProfile` success path.
-    *   [✅] Add corresponding unit test to `authStore.profile.test.ts`.
-    *   [✅] Add `analytics.track('Subscription Checkout Started')` to `subscriptionStore.createCheckoutSession` success path.
-    *   [✅] Add corresponding unit test to `subscriptionStore.test.ts`.
-    *   [✅] Add `analytics.track('Billing Portal Opened')` to `subscriptionStore.createBillingPortalSession` success path.
-    *   [✅] Add corresponding unit test to `subscriptionStore.test.ts`.
-    *   [✅] Add `analytics.track('Message Sent')` to `aiStore.sendMessage` success path.
-    *   [✅] Add corresponding unit test to `aiStore.test.ts`.
-    *   [✅] Add other desired tracking events:
-        *   [✅] `Auth: Submit Login Form`
-        *   [✅] `Auth: Submit Register Form`
-        *   [✅] `Auth: Clicked Register Link`
-        *   [✅] `Auth: Clicked Login Link`
-        *   [✅] `Auth: Clicked Logout`
-        *   [✅] `Profile: Submit Profile Update Form`
-        *   [✅] `Chat: Clicked New Chat`
-        *   [✅] `Chat: Provider Selected`
-        *   [✅] `Chat: Prompt Selected`
-        *   [✅] `Chat: History Item Selected`
-        *   [✅] `Subscription: Clicked Subscribe`
-        *   [✅] `Subscription: Clicked Cancel Subscription`
-        *   [✅] `Subscription: Clicked Manage Billing`
-        *   [✅] `Settings: Theme Changed`
-        *   [✅] `Navigation: Clicked Header Link`
-        *   [✅] `Navigation: Clicked Footer Link`
-        *   [⏭️] `Navigation: User Menu Opened`
-        *   [⏭️] `Navigation: Mobile Menu Opened`
-*   **Testing & Commit Point:** Add tests for each tracking call. Commit incrementally: `feat(analytics): Track [Event Name]`
+*   **Testing & Commit Point:** Unit test `authStore` (mocking analytics client, verifying `identify`

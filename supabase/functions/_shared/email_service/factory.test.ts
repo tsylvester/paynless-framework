@@ -1,9 +1,8 @@
 import { assertEquals, assertExists, assertInstanceOf, assertStrictEquals } from "jsr:@std/assert";
 import { getEmailMarketingService, type EmailFactoryConfig } from "./factory.ts";
 import { KitService } from "./kit_service.ts";
-import { NoOpService } from "./no_op_service.ts";
-import { DummyEmailService } from "./dummy_service.ts";
-import { type IEmailMarketingService } from "../types.ts";
+import { NoOpEmailService } from "./no_op_service.ts";
+import { type EmailMarketingService } from "../types.ts";
 
 // Define mock Kit config values
 const mockKitApiKey = "fake-key";
@@ -22,81 +21,90 @@ const baseKitConfig: EmailFactoryConfig = {
     kitCustomCreatedAtField: mockKitCreatedAtField,
 };
 
-Deno.test("Email Marketing Service Factory Tests (DI)", async (t) => {
+// Define a base valid config for Kit for reuse
+const validKitConfig: EmailFactoryConfig = {
+    provider: "kit",
+    kitApiKey: "test-key",
+    kitBaseUrl: "https://test.kit.api",
+    kitTagId: "12345",
+    kitCustomUserIdField: "cf_user_id",
+    kitCustomCreatedAtField: "cf_created_at",
+};
 
-  await t.step("`getEmailMarketingService` returns KitService when provider='kit' with valid config", async () => {
-    // Call factory directly with full Kit config
-    const service = getEmailMarketingService(baseKitConfig);
-    assertExists(service);
-    assertInstanceOf(service, KitService, "Service should be KitService");
-  });
+// Removed the outdated "Email Marketing Service Factory Tests (DI)" suite
 
-  await t.step("`getEmailMarketingService` returns NoOpService when provider='none'", async () => {
-    // Call factory directly with provider set to 'none'
-    const service = getEmailMarketingService({ provider: 'none' });
-    assertExists(service);
-    assertInstanceOf(service, NoOpService, "Service should be NoOpService");
-  });
+// Correct and passing test suite
+Deno.test("Email Marketing Service Factory Tests", async (t) => {
 
-  await t.step("`getEmailMarketingService` returns DummyEmailService for default cases", async (innerT) => {
-    await innerT.step("Provider undefined", async () => { 
-        // Call factory with provider explicitly undefined
-        const service = getEmailMarketingService({ provider: undefined });
-        assertExists(service);
-        assertInstanceOf(service, DummyEmailService, "Service should be DummyEmailService (undefined)"); 
+    await t.step("should return KitService when provider is 'kit' and config is valid", () => {
+        const service: EmailMarketingService = getEmailMarketingService(validKitConfig);
+        assertInstanceOf(service, KitService, "Service should be an instance of KitService");
     });
-    await innerT.step("Provider null", async () => { 
-        // Call factory with provider explicitly null
-        const service = getEmailMarketingService({ provider: null });
-        assertExists(service);
-        assertInstanceOf(service, DummyEmailService, "Service should be DummyEmailService (null)"); 
-    });
-    await innerT.step("Provider empty string", async () => {
-        // Call factory with provider as empty string
-        const service = getEmailMarketingService({ provider: '' });
-        assertExists(service);
-        assertInstanceOf(service, DummyEmailService, "Service should be DummyEmailService (empty string)");
-    });
-    await innerT.step("Provider 'dummy'", async () => {
-        // Call factory with provider explicitly 'dummy'
-        const service = getEmailMarketingService({ provider: 'dummy' });
-        assertExists(service);
-        assertInstanceOf(service, DummyEmailService, "Service should be DummyEmailService ('dummy')");
-    });
-  });
 
-  await t.step("`getEmailMarketingService` returns null for unknown provider", async () => {
-    // Call factory with an unsupported provider string
-    const service = getEmailMarketingService({ provider: 'mailchimp' }); 
-    assertStrictEquals(service, null, "Service should be null for unknown provider");
-   });
+    await t.step("should return NoOpEmailService when provider is not specified (undefined)", () => {
+        const config: EmailFactoryConfig = { provider: undefined }; // Explicitly undefined
+        const service: EmailMarketingService = getEmailMarketingService(config);
+        assertInstanceOf(service, NoOpEmailService, "Service should be an instance of NoOpEmailService");
+    });
 
-  await t.step("`getEmailMarketingService` returns null if 'kit' provider config is incomplete", async (innerT) => {
-    // Test various missing required fields for Kit
-    await innerT.step("Missing kitApiKey", async () => {
-        const service = getEmailMarketingService({ ...baseKitConfig, kitApiKey: undefined });
-        assertStrictEquals(service, null, "Service should be null if Kit API key is missing");
+     await t.step("should return NoOpEmailService when provider is empty string", () => {
+        const config: EmailFactoryConfig = { provider: '' }; // Empty string
+        const service: EmailMarketingService = getEmailMarketingService(config);
+        assertInstanceOf(service, NoOpEmailService, "Service should be an instance of NoOpEmailService");
     });
-    await innerT.step("Missing kitBaseUrl", async () => {
-        const service = getEmailMarketingService({ ...baseKitConfig, kitBaseUrl: null });
-        assertStrictEquals(service, null, "Service should be null if Kit Base URL is missing");
+
+    await t.step("should return NoOpEmailService when provider is 'none'", () => {
+        const config: EmailFactoryConfig = { provider: "none" };
+        const service: EmailMarketingService = getEmailMarketingService(config);
+        assertInstanceOf(service, NoOpEmailService, "Service should be an instance of NoOpEmailService");
     });
-    await innerT.step("Missing kitCustomUserIdField", async () => {
-        // Constructor throws if custom fields are missing
-        const service = getEmailMarketingService({ ...baseKitConfig, kitCustomUserIdField: undefined });
-        assertStrictEquals(service, null, "Service should be null if Kit User ID Field is missing");
+
+    await t.step("should return NoOpEmailService when provider is 'kit' but apiKey is missing", () => {
+        const config: EmailFactoryConfig = { ...validKitConfig, kitApiKey: undefined }; 
+        const service: EmailMarketingService = getEmailMarketingService(config);
+        assertInstanceOf(service, NoOpEmailService, "Fallback to NoOpService expected");
     });
-     await innerT.step("Missing kitCustomCreatedAtField", async () => {
-        // Constructor throws if custom fields are missing
-        const service = getEmailMarketingService({ ...baseKitConfig, kitCustomCreatedAtField: undefined });
-        assertStrictEquals(service, null, "Service should be null if Kit Created At Field is missing");
+
+    await t.step("should return NoOpEmailService when provider is 'kit' but baseUrl is missing", () => {
+        const config: EmailFactoryConfig = { ...validKitConfig, kitBaseUrl: undefined };
+        const service: EmailMarketingService = getEmailMarketingService(config);
+        assertInstanceOf(service, NoOpEmailService, "Fallback to NoOpService expected");
     });
-    // Note: tagId is optional for the KitService constructor, so missing it doesn't return null here
-     await innerT.step("Missing optional kitTagId (should still return KitService)", async () => {
-        const service = getEmailMarketingService({ ...baseKitConfig, kitTagId: undefined });
-        assertExists(service);
-        assertInstanceOf(service, KitService, "Service should still be KitService even if optional Tag ID is missing");
+
+    await t.step("should return NoOpEmailService when provider is 'kit' but tagId is missing", () => {
+        const config: EmailFactoryConfig = { ...validKitConfig, kitTagId: undefined };
+        const service: EmailMarketingService = getEmailMarketingService(config);
+        assertInstanceOf(service, NoOpEmailService, "Fallback to NoOpService expected");
     });
-  });
+
+    await t.step("should return NoOpEmailService when provider is 'kit' but customUserIdField is missing", () => {
+        const config: EmailFactoryConfig = { ...validKitConfig, kitCustomUserIdField: undefined };
+        const service: EmailMarketingService = getEmailMarketingService(config);
+        assertInstanceOf(service, NoOpEmailService, "Fallback to NoOpService expected");
+    });
+
+     await t.step("should return NoOpEmailService when provider is 'kit' but customCreatedAtField is missing", () => {
+        const config: EmailFactoryConfig = { ...validKitConfig, kitCustomCreatedAtField: undefined };
+        const service: EmailMarketingService = getEmailMarketingService(config);
+        assertInstanceOf(service, NoOpEmailService, "Fallback to NoOpService expected");
+    });
+
+    await t.step("should return NoOpEmailService for an unknown provider", () => {
+        const config: EmailFactoryConfig = { provider: "mailchimp" }; // Unknown provider
+        const service: EmailMarketingService = getEmailMarketingService(config);
+        assertInstanceOf(service, NoOpEmailService, "Fallback to NoOpService expected for unknown provider");
+    });
+
+    await t.step("should be case-insensitive for 'kit' provider", () => {
+        const config: EmailFactoryConfig = { ...validKitConfig, provider: "KiT" }; // Different case
+        const service: EmailMarketingService = getEmailMarketingService(config);
+        assertInstanceOf(service, KitService, "Provider check should be case-insensitive");
+    });
+
+    await t.step("should be case-insensitive for 'none' provider", () => {
+        const config: EmailFactoryConfig = { provider: "NoNe" }; // Different case
+        const service: EmailMarketingService = getEmailMarketingService(config);
+        assertInstanceOf(service, NoOpEmailService, "Provider check should be case-insensitive");
+    });
 
 }); 
