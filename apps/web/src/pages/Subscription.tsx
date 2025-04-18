@@ -116,7 +116,7 @@ export function SubscriptionPage() {
 
   return (
     <Layout>
-      <div className="py-8 px-4 sm:px-6 lg:px-8">
+      <div className="py-8 px-4 pt-6 sm:px-6 lg:px-8">
         <div className="max-w-7xl mx-auto">
           <div className="text-center">
             <h1 className="text-3xl font-extrabold text-textPrimary sm:text-4xl">

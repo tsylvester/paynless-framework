@@ -37,7 +37,7 @@ export function Header() {
   }
 
   return (
-    <header className="bg-surface border-b border-border">
+    <header className="fixed top-0 left-0 right-0 z-50 bg-surface border-b border-border">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex justify-between h-16">
           <div className="flex">
@@ -51,7 +51,7 @@ export function Header() {
                 <Link
                   to="/dashboard"
                   className={`${
-                    isActive('dashboard')
+                    isActive('/dashboard')
                       ? 'border-primary text-textPrimary'
                       : 'border-transparent text-textSecondary hover:border-border hover:text-textPrimary'
                   } inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium`}
@@ -61,7 +61,7 @@ export function Header() {
                 <Link
                   to="/chat"
                   className={`${
-                    isActive('chat')
+                    isActive('/chat')
                       ? 'border-primary text-textPrimary'
                       : 'border-transparent text-textSecondary hover:border-border hover:text-textPrimary'
                   } inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium`}

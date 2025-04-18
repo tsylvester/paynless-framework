@@ -35,7 +35,7 @@ export function ProfilePage() {
 
   return (
     <Layout>
-      <div className="py-20">
+      <div className="py-20 pt-6">
         <ProfileEditor />
       </div>
       {/* Feedback moved inside ProfileEditor or handled via store state globally */}

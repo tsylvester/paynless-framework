@@ -1,24 +1,38 @@
 **Incomplete Features** 
-*   [⏸️] AI Chat on homepage doesn't work
+*   [✅] AI Chat on homepage doesn't work **Now pushes through login flow**
 *   [✅] AI Chat signup/login flow
+*   [✅] Mixpanel or Posthog integration
+*   [✅] Change email from within app
+*   [✅] Fix chat history box so it fills correctly  
+*   [✅] Integrate the session replay logic that broke authStore, but fix it so it's compatible with the working method 
+*   [✅] Fix dark mode for last card on homepage **It actually works, it's just way blue-er than anything else.**
+*   [✅] Constrain AI Chatbox and Chat History to viewport size 
+*   [✅] Fix chat so it scrolls with user **I //think// this works now, needs better testing**
+*   [✅] Revert changes in authStore for initialize and updateProfile to working version in commit 58d6e17a
+*   [✅] Cancel Subscription doesn't work, API error
+*   [✅] Header scroll with user
+*   [ ] Manage Billing sends user to portal but doesn't return user after action.
+    *   **Status:** Verified the `return_url` (`<app-origin>/subscription`) is correctly passed to Stripe via the `createBillingPortalSession` backend handler. Stripe logs confirm it receives the correct `return_url`. The general "Return to..." link in the portal works.
+    *   **Issue:** Users are not automatically redirected back to the `return_url` after completing specific actions like cancelling a subscription or updating payment methods; they remain on the Stripe portal page.
+    *   **Investigation:**
+        *   This seems related to Stripe's portal configuration or the need for more specific API parameters, not the basic `return_url` itself.
+        *   Stripe documentation mentions using `flow_data[after_completion][redirect][return_url]` within the `billingPortal.sessions.create` call to configure automatic redirects after specific flows (e.g., `payment_method_update`, `subscription_cancel`).
+        *   However, configuring this requires knowing the `flow_data.type` upfront, which is difficult for a generic "Manage Billing" button.
+    *   **Next Steps:**
+        *   **Required:** Investigate Stripe Customer Portal settings in the dashboard for options to enable automatic redirects after specific actions (like cancellation or payment method update). This is the preferred solution if available.
+        *   **If Dashboard Settings Insufficient:** Research further into using the `flow_data` parameter, potentially requiring changes to how the portal session is initiated or handling multiple flow types.
+    *   https://docs.stripe.com/api/customer_portal/sessions/create
 *   [ ] AI model sync automation
-*   [ ] Mixpanel or Posthog integration
 *   [🚧] Test project on Bolt & Lovable 
     *   [ ] Bolt & Lovable don't support pnpm monorepos well atm 
 *   [ ] User email automation - abstract for generic but specific implementation with Kit 
-*   [ ] Change email from within app
 *   [ ] Change password from within app
 *   [✅] shadcn implemented
     *   [ ] Convert all pages / components to shadcn
     *   [ ] Loading skeletons for all components 
-*   [ ] Change payment method doesn't register site
 *   [ ] Run SEO scan 
-*   [ ] Header scroll with user
-*   [ ] Fix chat so it scrolls with user 
-*   [ ] Fix chat history box so it fills correctly  
 *   [ ] Figure out how to parse chat responses better, they get messy if the assistant uses markdown 
-*   [ ] Revert changes in authStore for initialize and updateProfile to working version in commit 58d6e17a
-*   [ ] Integrate the session replay logic that broke authStore, but fix it so it's compatible with the working method 
+*   [ ] Fix super long login delay on chat flow 
 
 Okay, let's break down the implementation of the Platform Capability Abstraction layer using a TDD-inspired approach, focusing on compatibility and minimal disruption to your existing structure.
 
@@ -270,6 +284,42 @@ Implement a pattern to handle anonymous users attempting actions that require au
     *   Verify the chat conversation you just initiated is loaded and displayed correctly.
     *   Refresh the `/chat` page and verify it loads the chat history list as normal.
 
+## Proposed Refactoring: Consolidate localStorage Usage in authStore (Deferred)
+
+**Context (April 2025):** During work on stabilizing `authStore` tests, it was noted that while Zustand's `persist` middleware (using `localStorage` via `createJSONStorage`) is the standard pattern for persisting session state (`authStore.session`), two related pieces of state are handled differently:
+    *   `pendingAction`: Stored directly in `localStorage` via `localStorage.setItem('pendingAction', ...)` when an action needs to be replayed after login (e.g., anonymous chat attempt).
+    *   `loadChatIdOnRedirect`: Stored directly in `localStorage` via `localStorage.setItem('loadChatIdOnRedirect', ...)` by `_checkAndReplayPendingAction` to tell the `/chat` page which specific chat to load after a successful replay and redirect.
+
+This direct usage of `localStorage` breaks the established pattern of using `persist` for managing potentially sensitive or session-related state that needs to survive page loads/redirects.
+
+**Proposed Solution:**
+Refactor `authStore` to manage `pendingAction` and `loadChatIdOnRedirect` within its own state, persisted via the existing `persist` middleware configuration.
+
+**High-Level Steps:**
+1.  **Modify `AuthStore` State:** Add `pendingAction: PendingAction | null` and `loadChatIdOnRedirect: string | null` properties to the store's state interface and initial state.
+2.  **Update `persist` Configuration:** Modify the `partialize` function within the `persist` middleware options to include `pendingAction` and `loadChatIdOnRedirect` alongside `session`.
+3.  **Add Actions:** Create new actions like `setPendingAction(action)` and `clearLoadChatIdOnRedirect()` to manage these state properties.
+4.  **Refactor `_checkAndReplayPendingAction`:** Modify this function to read `pendingAction` from `get()` and write `loadChatIdOnRedirect` using `set()` or the new action, instead of direct `localStorage` calls.
+5.  **Refactor Consumers:**
+    *   Update code that currently sets `pendingAction` in `localStorage` (e.g., in `aiStore` error handling) to call `useAuthStore.getState().setPendingAction(...)`.
+    *   Update the `/chat` page component (`apps/web/src/pages/aichat.tsx`) to read `loadChatIdOnRedirect` from the `useAuthStore` hook and clear it using the new `clearLoadChatIdOnRedirect` action, instead of direct `localStorage` calls.
+6.  **Update Tests:** Adjust `authStore` unit tests to assert against store state changes instead of `localStorage` mocks for these items.
+
+**Rationale:**
+*   **Consistency:** Aligns all persisted auth-related state management under the standard `persist` pattern.
+*   **Centralization:** Consolidates logic related to this temporary state within the `authStore`.
+*   **Maintainability & Testability:** Simplifies reasoning about state persistence and makes testing easier by focusing on Zustand state manipulation rather than direct `localStorage` mocking for these specific keys.
+
+**Risks:**
+1.  **Modifying Fragile Logic:** The primary risk involves changing the `_checkAndReplayPendingAction` and related `initialize` logic, which are known to be complex, have had recent issues, and may have testing gaps (as noted in `TESTING_PLAN.md`). Introducing changes here, even for pattern improvement, could inadvertently break the replay flow.
+2.  **Implementation Errors:** Standard risk of introducing bugs during the refactoring of state access and action calls.
+3.  **Hydration Interaction:** While integrating these into the existing `persist` config seems compatible with the current `skipHydration`/`rehydrate` pattern, any mistake could affect how state is restored on load.
+
+**Decision (May 2024): DEFERRED**
+*   While architecturally desirable, this refactoring should **not** be performed immediately.
+*   **Prerequisite:** The core `authStore` functions (`initialize`, `_checkAndReplayPendingAction`) must first be fully stabilized, their logic confirmed correct, and robust unit tests implemented to cover all known edge cases and replay scenarios.
+*   **Future Action:** Once the core auth logic is stable and well-tested, revisit this refactoring as a cleanup task to improve pattern consistency.
+
 ## Abstract Analytics Client (PostHog First)
 
 **Goal:** Implement an analytics layer that can use PostHog (or potentially others later) based on environment variable configuration. If no provider is configured or the required key is missing, the application must function without errors, and analytics calls should become no-ops.
@@ -305,6 +355,42 @@ Implement a pattern to handle anonymous users attempting actions that require au
 **Phase 3: Application Initialization & User Identification**
 *   **Goal:** Initialize the client and integrate user identification/reset.
 *   **Steps:**
-    *   [ ] **App Initialization:** Ensure `import { analytics } from '@paynless/analytics-client';` happens early in `apps/web/src/main.tsx` or `App.tsx` (init happens on import).
+    *   [✅] **App Initialization:** Ensure `import { analytics } from '@paynless/analytics-client';` happens early in `apps/web/src/main.tsx` or `App.tsx` (init happens on import).
     *   [✅] **Integrate with `useAuthStore`:** Import `analytics`. In `login`, `register`, `initialize` success handlers, call `analytics.identify(user.id, { traits... })`. In `logout` action, call `analytics.reset();`.
-*   **Testing & Commit Point:** Unit test `authStore` (mocking analytics client, verifying `identify`/`reset` calls). Manual integration test (Web): Verify `identify`/`reset` calls in PostHog dashboard when configured; verify NO errors/calls when not configured. Commit: `feat(analytics): Initialize analytics client and integrate identify/reset`
+*   **Testing & Commit Point:** Unit test `authStore` (mocking analytics client, verifying `identify` and `reset` calls).
+
+**Phase 4: Event Tracking Implementation**
+*   **Goal:** Add `analytics.track` calls for key user actions.
+*   **Steps:**
+    *   [✅] Add `analytics.track('Signed Up')` to `authStore.register` success path.
+    *   [✅] Add corresponding unit test to `authStore.register.test.ts`.
+    *   [✅] Add `analytics.track('Logged In')` to `authStore.login` success path.
+    *   [✅] Add corresponding unit test to `authStore.login.test.ts`.
+    *   [✅] Add `analytics.track('Profile Updated')` to `authStore.updateProfile` success path.
+    *   [✅] Add corresponding unit test to `authStore.profile.test.ts`.
+    *   [✅] Add `analytics.track('Subscription Checkout Started')` to `subscriptionStore.createCheckoutSession` success path.
+    *   [✅] Add corresponding unit test to `subscriptionStore.test.ts`.
+    *   [✅] Add `analytics.track('Billing Portal Opened')` to `subscriptionStore.createBillingPortalSession` success path.
+    *   [✅] Add corresponding unit test to `subscriptionStore.test.ts`.
+    *   [✅] Add `analytics.track('Message Sent')` to `aiStore.sendMessage` success path.
+    *   [✅] Add corresponding unit test to `aiStore.test.ts`.
+    *   [✅] Add other desired tracking events:
+        *   [✅] `Auth: Submit Login Form`
+        *   [✅] `Auth: Submit Register Form`
+        *   [✅] `Auth: Clicked Register Link`
+        *   [✅] `Auth: Clicked Login Link`
+        *   [✅] `Auth: Clicked Logout`
+        *   [✅] `Profile: Submit Profile Update Form`
+        *   [✅] `Chat: Clicked New Chat`
+        *   [✅] `Chat: Provider Selected`
+        *   [✅] `Chat: Prompt Selected`
+        *   [✅] `Chat: History Item Selected`
+        *   [✅] `Subscription: Clicked Subscribe`
+        *   [✅] `Subscription: Clicked Cancel Subscription`
+        *   [✅] `Subscription: Clicked Manage Billing`
+        *   [✅] `Settings: Theme Changed`
+        *   [✅] `Navigation: Clicked Header Link`
+        *   [✅] `Navigation: Clicked Footer Link`
+        *   [⏭️] `Navigation: User Menu Opened`
+        *   [⏭️] `Navigation: Mobile Menu Opened`
+*   **Testing & Commit Point:** Add tests for each tracking call. Commit incrementally: `feat(analytics): Track [Event Name]`
