@@ -8,7 +8,6 @@ import {
   createErrorResponse as CreateErrorResponseType, 
   createSuccessResponse as CreateSuccessResponseType 
 } from "../../_shared/responses.ts";
-import { SubscriptionCancelResumeRequest } from "../types.ts";
 
 // Define Dependencies Type
 interface SubscriptionActionDeps {
@@ -32,7 +31,7 @@ export const cancelSubscription = async (
     const { data: subscription, error: subscriptionError } = await supabase
       .from("user_subscriptions")
       .select("*, plans:subscription_plans(*)")
-      .eq("id", subscriptionId)
+      .eq("stripe_subscription_id", subscriptionId)
       .eq("user_id", userId)
       .single();
     
@@ -60,7 +59,7 @@ export const cancelSubscription = async (
           cancel_at_period_end: updatedStripeSub.cancel_at_period_end,
           status: updatedStripeSub.status
        })
-      .eq("id", subscriptionId)
+      .eq("id", subscription.id)
       .select("*, plans:subscription_plans(*)")
       .single();
       
@@ -71,7 +70,8 @@ export const cancelSubscription = async (
     return createSuccessResponse(updatedLocalSub ?? { success: true }); 
   } catch (err) {
     console.error("Error cancelling subscription:", err);
-    return createErrorResponse(err.message, 500, err);
+    const message = err instanceof Error ? err.message : "An unknown error occurred during cancellation.";
+    return createErrorResponse(message, 500, err instanceof Error ? err : undefined);
   }
 };
 
@@ -91,7 +91,7 @@ export const resumeSubscription = async (
     const { data: subscription, error: subscriptionError } = await supabase
       .from("user_subscriptions")
       .select("*, plans:subscription_plans(*)")
-      .eq("id", subscriptionId)
+      .eq("stripe_subscription_id", subscriptionId)
       .eq("user_id", userId)
       .single();
     
@@ -119,7 +119,7 @@ export const resumeSubscription = async (
           cancel_at_period_end: updatedStripeSub.cancel_at_period_end,
           status: updatedStripeSub.status
       })
-      .eq("id", subscriptionId)
+      .eq("id", subscription.id)
       .select("*, plans:subscription_plans(*)")
       .single();
       
@@ -130,6 +130,7 @@ export const resumeSubscription = async (
     return createSuccessResponse(updatedLocalSub ?? { success: true });
   } catch (err) {
     console.error("Error resuming subscription:", err);
-    return createErrorResponse(err.message, 500, err);
+    const message = err instanceof Error ? err.message : "An unknown error occurred during resumption.";
+    return createErrorResponse(message, 500, err instanceof Error ? err : undefined);
   }
 };

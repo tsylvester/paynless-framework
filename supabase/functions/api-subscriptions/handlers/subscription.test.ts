@@ -17,8 +17,8 @@ import {
 // --- Mocks & Spies ---
 let mockSupabaseClient: SupabaseClient;
 let mockStripeInstance: Stripe;
-let mockCreateErrorResponse: Spy<CreateErrorResponseType>;
-let mockCreateSuccessResponse: Spy<CreateSuccessResponseType>;
+let mockCreateErrorResponse: Spy<typeof createErrorResponse>;
+let mockCreateSuccessResponse: Spy<typeof createSuccessResponse>;
 
 // --- Mock Setup Helpers ---
 
@@ -121,24 +121,31 @@ describe("Subscription Handlers", () => {
 
         it("should successfully cancel a subscription", async () => {
             const deps = mockDeps();
-            const response = await cancelSubscription(mockSupabaseClient, mockStripeInstance, userId, subscriptionId, deps);
+            const response = await cancelSubscription(mockSupabaseClient, mockStripeInstance, userId, stripeSubId, deps);
             const body = await response.json();
 
             assertEquals(response.status, 200);
             assertSpyCalls(mockCreateSuccessResponse, 1);
-            // Initial select
+            // Initial select - Check for stripe_subscription_id
             assertSpyCalls(selectSpies.selectSpy, 1);
-            assertSpyCalls(selectSpies.eqSubIdSpy, 1, { args: ["id", subscriptionId] });
-            assertSpyCalls(selectSpies.eqUserSpy, 1, { args: ["user_id", userId] });
+            assertSpyCalls(selectSpies.eqSubIdSpy, 1);
+            assertEquals(selectSpies.eqSubIdSpy.calls[0]!.args, ["stripe_subscription_id", stripeSubId]);
+            assertSpyCalls(selectSpies.eqUserSpy, 1);
+            assertEquals(selectSpies.eqUserSpy.calls[0]!.args, ["user_id", userId]);
             assertSpyCalls(selectSpies.singleSpy, 1);
             // Stripe update
             assertSpyCalls(stripeUpdateSpy, 1);
-            assertEquals(stripeUpdateSpy.calls[0].args[0], stripeSubId);
-            assertEquals(stripeUpdateSpy.calls[0].args[1], { cancel_at_period_end: true });
-            // Local DB update
+            assertEquals(stripeUpdateSpy.calls[0]!.args[0], stripeSubId);
+            assertEquals(stripeUpdateSpy.calls[0]!.args[1], { cancel_at_period_end: true });
+            // Local DB update - Check for local id (subscriptionId in test setup)
             assertSpyCalls(updateSpies.updateSpy, 1);
-            assertEquals(updateSpies.updateSpy.calls[0].args[0], { cancel_at_period_end: true, status: 'active' });
-            assertSpyCalls(updateSpies.eqSpy, 1, { args: ["id", subscriptionId] });
+            if (updateSpies.updateSpy.calls.length > 0) {
+                const firstCallArgs = updateSpies.updateSpy.calls[0]?.args;
+                assertExists(firstCallArgs, "Update spy call arguments should exist");
+                assertEquals((firstCallArgs as unknown as [Record<string, unknown>])[0], { cancel_at_period_end: true, status: 'active' });
+            }
+            assertSpyCalls(updateSpies.eqSpy, 1);
+            assertEquals(updateSpies.eqSpy.calls[0]!.args, ["id", subscriptionId]);
             assertSpyCalls(updateSpies.selectSpy, 1);
             assertSpyCalls(updateSpies.singleSpy, 1);
             // Response body
@@ -152,11 +159,13 @@ describe("Subscription Handlers", () => {
             selectSpies = createSelectSpies(null, dbError); // Re-assign error spies
             mockSupabaseClient.from = spy(() => ({ select: selectSpies.selectSpy })) as any;
             const deps = mockDeps();
-            const response = await cancelSubscription(mockSupabaseClient, mockStripeInstance, userId, subscriptionId, deps);
+            const response = await cancelSubscription(mockSupabaseClient, mockStripeInstance, userId, stripeSubId, deps);
             
             assertEquals(response.status, 404);
             assertSpyCalls(mockCreateErrorResponse, 1);
-            assertEquals(mockCreateErrorResponse.calls[0].args, ["Subscription not found or access denied", 404, dbError]);
+            if (mockCreateErrorResponse.calls.length > 0) {
+                assertEquals(mockCreateErrorResponse.calls[0]!.args, ["Subscription not found or access denied", 404, dbError]);
+            }
             assertSpyCalls(stripeUpdateSpy, 0);
             assertSpyCalls(updateSpies.updateSpy, 0);
             assertSpyCalls(mockCreateSuccessResponse, 0);
@@ -166,11 +175,13 @@ describe("Subscription Handlers", () => {
             selectSpies = createSelectSpies(null, null); // Simulate no data found
             mockSupabaseClient.from = spy(() => ({ select: selectSpies.selectSpy })) as any;
             const deps = mockDeps();
-            const response = await cancelSubscription(mockSupabaseClient, mockStripeInstance, userId, subscriptionId, deps);
+            const response = await cancelSubscription(mockSupabaseClient, mockStripeInstance, userId, stripeSubId, deps);
 
             assertEquals(response.status, 404);
             assertSpyCalls(mockCreateErrorResponse, 1);
-            assertEquals(mockCreateErrorResponse.calls[0].args, ["Subscription not found or access denied", 404]);
+            if (mockCreateErrorResponse.calls.length > 0) {
+                assertEquals(mockCreateErrorResponse.calls[0]!.args, ["Subscription not found or access denied", 404]);
+            }
             assertSpyCalls(stripeUpdateSpy, 0);
             assertSpyCalls(updateSpies.updateSpy, 0);
             assertSpyCalls(mockCreateSuccessResponse, 0);
@@ -181,11 +192,13 @@ describe("Subscription Handlers", () => {
             selectSpies = createSelectSpies(subWithoutStripeId);
             mockSupabaseClient.from = spy(() => ({ select: selectSpies.selectSpy })) as any;
             const deps = mockDeps();
-            const response = await cancelSubscription(mockSupabaseClient, mockStripeInstance, userId, subscriptionId, deps);
+            const response = await cancelSubscription(mockSupabaseClient, mockStripeInstance, userId, stripeSubId, deps);
 
             assertEquals(response.status, 400);
             assertSpyCalls(mockCreateErrorResponse, 1);
-            assertEquals(mockCreateErrorResponse.calls[0].args, ["No active Stripe subscription found", 400]);
+            if (mockCreateErrorResponse.calls.length > 0) {
+                assertEquals(mockCreateErrorResponse.calls[0]!.args, ["No active Stripe subscription found", 400]);
+            }
             assertSpyCalls(stripeUpdateSpy, 0);
             assertSpyCalls(updateSpies.updateSpy, 0);
             assertSpyCalls(mockCreateSuccessResponse, 0);
@@ -196,11 +209,13 @@ describe("Subscription Handlers", () => {
             stripeUpdateSpy = createStripeUpdateSpy(null, stripeError); // Re-assign error spy
             mockStripeInstance.subscriptions.update = stripeUpdateSpy;
             const deps = mockDeps();
-            const response = await cancelSubscription(mockSupabaseClient, mockStripeInstance, userId, subscriptionId, deps);
+            const response = await cancelSubscription(mockSupabaseClient, mockStripeInstance, userId, stripeSubId, deps);
 
             assertEquals(response.status, 500);
             assertSpyCalls(mockCreateErrorResponse, 1);
-            assertEquals(mockCreateErrorResponse.calls[0].args, [stripeError.message, 500, stripeError]);
+            if (mockCreateErrorResponse.calls.length > 0) {
+                assertEquals(mockCreateErrorResponse.calls[0]!.args, [stripeError.message, 500, stripeError]);
+            }
             // Initial select should have happened
             assertSpyCalls(selectSpies.singleSpy, 1);
             // Stripe update was called
@@ -221,7 +236,7 @@ describe("Subscription Handlers", () => {
                 throw new Error(`Unexpected table: ${tableName}`);
             }) as any;
             const deps = mockDeps();
-            const response = await cancelSubscription(mockSupabaseClient, mockStripeInstance, userId, subscriptionId, deps);
+            const response = await cancelSubscription(mockSupabaseClient, mockStripeInstance, userId, stripeSubId, deps);
             const body = await response.json();
 
             assertEquals(response.status, 200); 
@@ -268,24 +283,31 @@ describe("Subscription Handlers", () => {
 
         it("should successfully resume a subscription", async () => {
             const deps = mockDeps();
-            const response = await resumeSubscription(mockSupabaseClient, mockStripeInstance, userId, subscriptionId, deps);
+            const response = await resumeSubscription(mockSupabaseClient, mockStripeInstance, userId, stripeSubId, deps);
             const body = await response.json();
 
             assertEquals(response.status, 200);
             assertSpyCalls(mockCreateSuccessResponse, 1);
-            // Initial select
+            // Initial select - Check for stripe_subscription_id
             assertSpyCalls(selectSpies.selectSpy, 1);
-            assertSpyCalls(selectSpies.eqSubIdSpy, 1, { args: ["id", subscriptionId] });
-            assertSpyCalls(selectSpies.eqUserSpy, 1, { args: ["user_id", userId] });
+            assertSpyCalls(selectSpies.eqSubIdSpy, 1);
+            assertEquals(selectSpies.eqSubIdSpy.calls[0]!.args, ["stripe_subscription_id", stripeSubId]);
+            assertSpyCalls(selectSpies.eqUserSpy, 1);
+            assertEquals(selectSpies.eqUserSpy.calls[0]!.args, ["user_id", userId]);
             assertSpyCalls(selectSpies.singleSpy, 1);
             // Stripe update
             assertSpyCalls(stripeUpdateSpy, 1);
-            assertEquals(stripeUpdateSpy.calls[0].args[0], stripeSubId);
-            assertEquals(stripeUpdateSpy.calls[0].args[1], { cancel_at_period_end: false });
-            // Local DB update
+            assertEquals(stripeUpdateSpy.calls[0]!.args[0], stripeSubId);
+            assertEquals(stripeUpdateSpy.calls[0]!.args[1], { cancel_at_period_end: false });
+            // Local DB update - Check for local id (subscriptionId in test setup)
             assertSpyCalls(updateSpies.updateSpy, 1);
-            assertEquals(updateSpies.updateSpy.calls[0].args[0], { cancel_at_period_end: false, status: 'active' });
-            assertSpyCalls(updateSpies.eqSpy, 1, { args: ["id", subscriptionId] });
+            if (updateSpies.updateSpy.calls.length > 0) {
+                const firstCallArgs = updateSpies.updateSpy.calls[0]?.args;
+                assertExists(firstCallArgs, "Update spy call arguments should exist");
+                assertEquals((firstCallArgs as unknown as [Record<string, unknown>])[0], { cancel_at_period_end: false, status: 'active' });
+            }
+            assertSpyCalls(updateSpies.eqSpy, 1);
+            assertEquals(updateSpies.eqSpy.calls[0]!.args, ["id", subscriptionId]);
             assertSpyCalls(updateSpies.selectSpy, 1);
             assertSpyCalls(updateSpies.singleSpy, 1);
             // Response body
@@ -299,11 +321,13 @@ describe("Subscription Handlers", () => {
             selectSpies = createSelectSpies(null, dbError); 
             mockSupabaseClient.from = spy(() => ({ select: selectSpies.selectSpy })) as any;
             const deps = mockDeps();
-            const response = await resumeSubscription(mockSupabaseClient, mockStripeInstance, userId, subscriptionId, deps);
+            const response = await resumeSubscription(mockSupabaseClient, mockStripeInstance, userId, stripeSubId, deps);
             
             assertEquals(response.status, 404);
             assertSpyCalls(mockCreateErrorResponse, 1);
-            assertEquals(mockCreateErrorResponse.calls[0].args, ["Subscription not found or access denied", 404, dbError]);
+            if (mockCreateErrorResponse.calls.length > 0) {
+                assertEquals(mockCreateErrorResponse.calls[0]!.args, ["Subscription not found or access denied", 404, dbError]);
+            }
             assertSpyCalls(stripeUpdateSpy, 0);
             assertSpyCalls(updateSpies.updateSpy, 0);
             assertSpyCalls(mockCreateSuccessResponse, 0);
@@ -313,11 +337,13 @@ describe("Subscription Handlers", () => {
             selectSpies = createSelectSpies(null, null); 
             mockSupabaseClient.from = spy(() => ({ select: selectSpies.selectSpy })) as any;
             const deps = mockDeps();
-            const response = await resumeSubscription(mockSupabaseClient, mockStripeInstance, userId, subscriptionId, deps);
+            const response = await resumeSubscription(mockSupabaseClient, mockStripeInstance, userId, stripeSubId, deps);
 
             assertEquals(response.status, 404);
             assertSpyCalls(mockCreateErrorResponse, 1);
-            assertEquals(mockCreateErrorResponse.calls[0].args, ["Subscription not found or access denied", 404]);
+            if (mockCreateErrorResponse.calls.length > 0) {
+                assertEquals(mockCreateErrorResponse.calls[0]!.args, ["Subscription not found or access denied", 404]);
+            }
             assertSpyCalls(stripeUpdateSpy, 0);
             assertSpyCalls(updateSpies.updateSpy, 0);
             assertSpyCalls(mockCreateSuccessResponse, 0);
@@ -328,11 +354,13 @@ describe("Subscription Handlers", () => {
             selectSpies = createSelectSpies(subWithoutStripeId);
             mockSupabaseClient.from = spy(() => ({ select: selectSpies.selectSpy })) as any;
             const deps = mockDeps();
-            const response = await resumeSubscription(mockSupabaseClient, mockStripeInstance, userId, subscriptionId, deps);
+            const response = await resumeSubscription(mockSupabaseClient, mockStripeInstance, userId, stripeSubId, deps);
 
             assertEquals(response.status, 400);
             assertSpyCalls(mockCreateErrorResponse, 1);
-            assertEquals(mockCreateErrorResponse.calls[0].args, ["No active Stripe subscription found", 400]);
+            if (mockCreateErrorResponse.calls.length > 0) {
+                assertEquals(mockCreateErrorResponse.calls[0]!.args, ["No active Stripe subscription found", 400]);
+            }
             assertSpyCalls(stripeUpdateSpy, 0);
             assertSpyCalls(updateSpies.updateSpy, 0);
             assertSpyCalls(mockCreateSuccessResponse, 0);
@@ -343,11 +371,13 @@ describe("Subscription Handlers", () => {
             stripeUpdateSpy = createStripeUpdateSpy(null, stripeError); 
             mockStripeInstance.subscriptions.update = stripeUpdateSpy;
             const deps = mockDeps();
-            const response = await resumeSubscription(mockSupabaseClient, mockStripeInstance, userId, subscriptionId, deps);
+            const response = await resumeSubscription(mockSupabaseClient, mockStripeInstance, userId, stripeSubId, deps);
 
             assertEquals(response.status, 500);
             assertSpyCalls(mockCreateErrorResponse, 1);
-            assertEquals(mockCreateErrorResponse.calls[0].args, [stripeError.message, 500, stripeError]);
+            if (mockCreateErrorResponse.calls.length > 0) {
+                assertEquals(mockCreateErrorResponse.calls[0]!.args, [stripeError.message, 500, stripeError]);
+            }
             assertSpyCalls(selectSpies.singleSpy, 1);
             assertSpyCalls(stripeUpdateSpy, 1);
             assertSpyCalls(updateSpies.updateSpy, 0);
@@ -364,7 +394,7 @@ describe("Subscription Handlers", () => {
                 throw new Error(`Unexpected table: ${tableName}`);
             }) as any;
             const deps = mockDeps();
-            const response = await resumeSubscription(mockSupabaseClient, mockStripeInstance, userId, subscriptionId, deps);
+            const response = await resumeSubscription(mockSupabaseClient, mockStripeInstance, userId, stripeSubId, deps);
             const body = await response.json();
 
             assertEquals(response.status, 200); 
