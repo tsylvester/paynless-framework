@@ -32,7 +32,8 @@
 *   [ ] Run SEO scan 
 *   [ ] Figure out how to parse chat responses better, they get messy if the assistant uses markdown 
 *   [ ] Fix super long login delay on chat flow 
-*   [ ] User email automation - abstract for generic but specific implementation with Kit 
+*   [🚧] User email automation - abstract for generic but specific implementation with Kit 
+*   [ ] Connect frontend analytics events (PostHog) to email marketing service (Kit) for behavioral triggers (IFTTT)
 *   [ ] Groups & organizations 
 *   [ ] Notifications 
 *   [ ] Consolidate authStore with Zustand, remove the direct localSession interactions. 
@@ -81,22 +82,20 @@
 *   **Goal:** Implement the service logic for interacting with the Kit API.
 *   **Location:** `supabase/functions/_shared/email_service/`
 *   **Steps:**
-    *   [ ] **Environment Variables:** Define `KIT_API_KEY` and `KIT_FORM_ID` in `.env.example`.
-    *   [ ] **Create `kit_service.ts`:**
-        *   [ ] Implement `EmailMarketingService` interface.
-        *   [ ] Constructor or init method should read `KIT_API_KEY` and `KIT_FORM_ID`.
-        *   [ ] Implement `addUserToList` method:
-            *   [ ] Check if API key/form ID are valid. Log warning/return if not.
-            *   [ ] Map `UserData` (email, firstName, potentially createdAt/lastSignInAt to custom fields) to Kit API request payload (e.g., add subscriber to form).
-            *   [ ] Use `fetch` to call the Kit API.
-            *   [ ] Handle API response/errors.
-        *   [ ] Implement `updateUserAttributes` (Optional/Deferred): Decide if needed initially. If so, map `UserData` attributes to Kit custom fields and call appropriate Kit API.
-        *   [ ] Implement `trackEvent` / `removeUser` (Optional/Deferred): Implement if needed later.
-    *   [ ] **Write Unit Test (`kit_service.test.ts`):**
-        *   [ ] Mock environment variables.
-        *   [ ] Mock `fetch` for Kit API endpoints.
-        *   [ ] Test `addUserToList` with different `UserData` and API responses (success, errors).
-        *   [ ] Test other implemented methods.
+    *   [✅] **Environment Variables:** Define `EMAIL_MARKETING_API_KEY`, `EMAIL_MARKETING_TAG_ID`, `KIT_CUSTOM_USER_ID_FIELD`, `KIT_CUSTOM_CREATED_AT_FIELD` in `.env.example`.
+    *   [✅] **Create `kit_service.ts`:** (File exists with implementation)
+        *   [✅] Implements `EmailMarketingService` interface.
+        *   [✅] Constructor accepts `KitServiceConfig` object (to be populated from env vars by factory).
+        *   [✅] Implements `addUserToList` method (maps `UserData`, calls Kit API).
+        *   [✅] Implements `updateUserAttributes` (maps attributes, calls Kit API).
+        *   [✅] Implements `removeUser` (calls Kit API).
+        *   [❓] Needs review: `trackEvent` stub exists but might not be applicable to Kit.
+    *   [✅] **Write Unit Test (`kit_service.test.ts`):**
+        *   [✅] Test constructor with valid and invalid `KitServiceConfig` (warns, doesn't throw for optional).
+        *   [✅] Mock `fetch` for Kit API endpoints.
+        *   [✅] Test `addUserToList` (success, API error, missing config cases).
+        *   [✅] Test `updateUserAttributes` (success, user not found, API error cases, find error cases).
+        *   [✅] Test `removeUser` (success, user not found, API error cases, find error cases).
 
 **Phase 3: Service Factory & Integration**
 *   **Goal:** Create a factory to provide the correct service instance based on configuration and integrate it into the user creation flow.
@@ -105,24 +104,28 @@
     *   [ ] **Create `factory.ts` (`supabase/functions/_shared/email_service/`):**
         *   [ ] Import `NoOpEmailService` and `KitEmailService`.
         *   [ ] Create function `getEmailMarketingService(): EmailMarketingService`.
-        *   [ ] Inside, check for `KIT_API_KEY` and `KIT_FORM_ID`.
-        *   [ ] Return `KitEmailService` instance if valid, else `NoOpEmailService`.
+        *   [ ] Inside, read `EMAIL_MARKETING_PROVIDER`, `EMAIL_MARKETING_API_KEY`, etc. from `Deno.env`.
+        *   [ ] If provider is 'kit' and required keys/fields are present:
+            *   [ ] Construct `KitServiceConfig` object.
+            *   [ ] Return `new KitEmailService(config)`.
+        *   [ ] Else, return `new NoOpEmailService()`.
     *   [ ] **Write Unit Test (`factory.test.ts`):**
-        *   [ ] Mock environment variables.
-        *   [ ] Verify correct service type is returned.
+        *   [ ] Mock environment variables for different scenarios (Kit configured, not configured).
+        *   [ ] Verify correct service type (`KitEmailService` or `NoOpEmailService`) is returned.
+        *   [ ] Verify `KitEmailService` constructor is called with correct config object.
     *   [ ] **Modify `on-user-created/index.ts`:**
         *   [ ] Import `getEmailMarketingService`.
         *   [ ] Import `UserData` type.
         *   [ ] Inside the handler:
-            *   [ ] Get `emailService` instance.
-            *   [ ] Create `UserData` object from the auth hook record (email, id, createdAt, maybe name/lastSignInAt if available).
-            *   [ ] Call `await emailService.addUserToList(userData);`.
-            *   [ ] Wrap in try/catch for graceful error handling.
-    *   [ ] **Write/Update Unit Test (`on-user-created.test.ts`):**
-        *   [ ] Mock `getEmailMarketingService` factory.
-        *   [ ] Test Case 1 (NoOp): Verify `addUserToList` called on mock `NoOp`.
-        *   [ ] Test Case 2 (Kit): Verify `addUserToList` called on mock `Kit` with correct `UserData`.
-        *   [ ] Test Case 3: Verify function continues if `addUserToList` throws.
+            *   [ ] Get `emailService` instance. (Currently done in defaultDeps, refactor to use factory directly)
+            *   [ ] Create `UserData` object from the auth hook record (email, id, createdAt, maybe name/lastSignInAt if available). (✅ Done)
+            *   [ ] Call `await emailService.addUserToList(userData);`. (✅ Done)
+            *   [ ] Wrap in try/catch for graceful error handling. (✅ Done)
+    *   [✅] **Write/Update Unit Test (`on-user-created.test.ts`):** (Tests updated for DI)
+        *   [ ] Mock `getEmailMarketingService` factory. (Pending Phase 3 implementation)
+        *   [✅] Test Case 1 (NoOp): Verify handler skips correctly when `NoOpEmailService` injected.
+        *   [✅] Test Case 2 (Kit): Verify handler calls `addUserToList` on mock `Kit` with correct `UserData` when injected.
+        *   [✅] Test Case 3: Verify function continues (returns 200 OK) if `addUserToList` throws when injected.
 
 Okay, let's break down the implementation of the Platform Capability Abstraction layer using a TDD-inspired approach, focusing on compatibility and minimal disruption to your existing structure.
 

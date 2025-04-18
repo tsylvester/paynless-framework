@@ -1,7 +1,7 @@
 import { logger } from "../logger.ts";
 import { KitService, type KitServiceConfig } from "./kit_service.ts";
-import { NoOpService } from "./no_op_service.ts";
-import { type IEmailMarketingService } from "../types.ts";
+import { NoOpEmailService } from "./no_op_service.ts";
+import { type EmailMarketingService } from "../types.ts";
 import { DummyEmailService } from './dummy_service.ts';
 
 // Define the configuration structure expected by the factory
@@ -21,7 +21,7 @@ export interface EmailFactoryConfig {
  * @param config The configuration object containing provider and service-specific settings.
  * @returns An instance implementing IEmailMarketingService, or null if configuration is invalid.
  */
-export function getEmailMarketingService(config: EmailFactoryConfig): IEmailMarketingService | null {
+export function getEmailMarketingService(config: EmailFactoryConfig): EmailMarketingService | null {
     const provider = config.provider?.toLowerCase();
     logger.info(`Attempting to initialize email marketing service for provider: ${provider || 'None'}`);
 
@@ -38,7 +38,7 @@ export function getEmailMarketingService(config: EmailFactoryConfig): IEmailMark
             // Pass extracted config to constructor
             return new KitService(kitConfig); 
         } else if (provider === "none") {
-            return new NoOpService();
+            return new NoOpEmailService();
         } else if (!provider || provider === "dummy") {
             logger.warn(`Email marketing provider is '${provider || 'undefined'}'. Using DummyEmailService.`);
             return new DummyEmailService();

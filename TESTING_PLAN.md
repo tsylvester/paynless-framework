@@ -170,10 +170,10 @@ Following this cycle helps catch errors early, ensures comprehensive test covera
                 *   [✅] Unit Test `chat-history/index.ts`
                 *   [✅] Unit Test `chat-details/index.ts`
             *   **[NEW] Email Marketing Sync:**
-                *   [ ] `_shared/email_service/kit_service.ts` (Mock fetch, env vars)
-                *   [ ] `_shared/email_service/no_op_service.ts`
+                *   [✅] `_shared/email_service/kit_service.ts` (Mock fetch, env vars)
+                *   [✅] `_shared/email_service/no_op_service.ts`
                 *   [ ] `_shared/email_service/factory.ts` (Mock env vars)
-                *   [ ] `on-user-created/index.ts` (Mock email service factory)
+                *   [✅] `on-user-created/index.ts` (Tested handler logic via DI)
             *   [⏸️] `sync-stripe-plans/` *(Unit tests exist but ignored locally due to Supabase lib type resolution errors. Pending deployed testing.)*
             *   [⏸️] `sync-ai-models/` *(Placeholder - No tests needed yet)*
             *   [✅] `_shared/auth.ts`
@@ -266,37 +266,6 @@ Following this cycle helps catch errors early, ensures comprehensive test covera
                 *   `[✅]`
 
 *   **Phase 4: End-to-End Validation**
-    *   **[NEW] User Registration with Email Sync:**
-        *   [ ] Case 1 (Kit Disabled): Register via UI. Verify user created, NO user added to Kit list.
-        *   [ ] Case 2 (Kit Enabled): Configure E2E env with Kit credentials. Register via UI. Verify user created AND user appears in Kit list/form.
-
----
-
-*   **Phase 1: Backend (`supabase/`)**
-    *   **1.1 Unit Tests:**
-        *   **Status:** Most core function unit tests passing. AI function tests added.
-        *   **Framework:** Deno Standard Library
-        *   **Functions/Modules Tested:**
-            *   [...] *(Existing items)*
-            *   **[NEW] Email Marketing Sync:**
-                *   [ ] `_shared/email_service/kit_service.ts` (Mock fetch, env vars)
-                *   [ ] `_shared/email_service/no_op_service.ts`
-                *   [ ] `_shared/email_service/factory.ts` (Mock env vars)
-                *   [ ] `on-user-created/index.ts` (Mock email service factory)
-            *   [...] *(Existing items)*
-        *   **Task:** `[ ] Complete unit tests for [NEW] items above.`
-    *   **1.2 Integration Tests:**
-        *   [...] *(Existing items)*
-        *   **[NEW] Email Marketing Sync:**
-            *   [ ] **`on-user-created` Function Integration:**
-                *   [ ] Test user registration flow triggering the hook.
-                *   [ ] Case 1 (Kit Disabled): Verify no attempt to call Kit API is made (check logs).
-                *   [ ] Case 2 (Kit Enabled): Verify the Kit API *is* called (requires test Kit account/API key/form ID, or mock endpoint). Check for subscriber in Kit.
-            *   [ ] **Supabase Auth Hook Configuration:** Verify `on-user-created` is configured as an Auth Hook in `config.toml` and functions in deployed env.
-        *   [...] *(Existing items)*
-
-*   **Phase 4: End-to-End Validation**
-    *   [...] *(Existing items)*
     *   **[NEW] User Registration with Email Sync:**
         *   [ ] Case 1 (Kit Disabled): Register via UI. Verify user created, NO user added to Kit list.
         *   [ ] Case 2 (Kit Enabled): Configure E2E env with Kit credentials. Register via UI. Verify user created AND user appears in Kit list/form.

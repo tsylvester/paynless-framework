@@ -2,14 +2,14 @@ import { serve } from "https://deno.land/std@0.224.0/http/server.ts"; // Use std
 import { type User } from "npm:@supabase/supabase-js@^2.0.0"; // Use npm: prefix
 import { logger } from "../_shared/logger.ts";
 import { getEmailMarketingService, type EmailFactoryConfig } from "../_shared/email_service/factory.ts";
-import { DummyEmailService } from "../_shared/email_service/dummy_service.ts"; // Import DummyEmailService
-import { type IEmailMarketingService, type UserData } from "../_shared/types.ts"; // Need IEmailMarketingService type
+import { NoOpEmailService } from "../_shared/email_service/no_op_service.ts"; // Import NoOpEmailService
+import { type EmailMarketingService, type UserData } from "../_shared/types.ts"; // Need IEmailMarketingService type
 
 logger.info('`on-user-created` function starting up.');
 
 // Define the dependencies structure
 interface HandlerDependencies {
-  emailService: IEmailMarketingService | null;
+  emailService: EmailMarketingService | null;
 }
 
 // Export the main handler logic for testing, accepting dependencies
@@ -49,9 +49,9 @@ export async function handler(req: Request, deps: HandlerDependencies): Promise<
     // 2. Get the email marketing service *from dependencies*
     const { emailService } = deps; 
 
-    // Check if service is null OR the Dummy implementation
-    if (!emailService || emailService instanceof DummyEmailService) { 
-        const reason = !emailService ? "service not configured" : "service is DummyEmailService";
+    // Check if service is null OR the NoOp implementation
+    if (!emailService || emailService instanceof NoOpEmailService) { 
+        const reason = !emailService ? "service not configured" : "service is NoOpEmailService";
         logger.warn(`Email marketing sync skipped (${reason}).`, { userId: userRecord.id });
         return new Response(JSON.stringify({ message: `User processed, email sync skipped (${reason}).` }), {
             status: 200,

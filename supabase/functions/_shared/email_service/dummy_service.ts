@@ -1,11 +1,11 @@
-import { type UserData, type IEmailMarketingService } from "../types.ts";
+import { type UserData, type EmailMarketingService } from "../types.ts";
 import { logger } from "../logger.ts";
 
 /**
  * A no-operation email marketing service implementation.
  * Used when no provider is configured or for local testing.
  */
-export class DummyEmailService implements IEmailMarketingService {
+export class DummyEmailService implements EmailMarketingService {
   constructor() {
     logger.info('DummyEmailService initialized (no email marketing operations will occur).');
   }

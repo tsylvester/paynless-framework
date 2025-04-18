@@ -1,8 +1,8 @@
 import { assert, assertEquals, assertExists, assertInstanceOf, assertNotStrictEquals } from "jsr:@std/assert";
 import { spy, type Spy } from "jsr:@std/testing/mock";
-import { type IEmailMarketingService, type UserData } from "../_shared/types.ts";
+import { type EmailMarketingService, type UserData } from "../_shared/types.ts";
 import { type User } from "npm:@supabase/supabase-js";
-import { DummyEmailService } from "../_shared/email_service/dummy_service.ts";
+import { NoOpEmailService } from "../_shared/email_service/no_op_service.ts";
 
 // We need to simulate the `serve` function or how the handler is invoked.
 // For simplicity, we can extract the core handler logic into a separate function
@@ -43,31 +43,39 @@ Deno.test("on-user-created Edge Function Tests", async (t) => {
         user_metadata: { firstName: "HookDI", lastName: "TestDI" }, 
     };
 
+    // New test record without user_metadata
+    const testUserRecordWithoutMetadata: Partial<User> = {
+        id: "test-uuid-no-meta-123",
+        email: "hooktest-no-meta@example.com",
+        created_at: new Date().toISOString(),
+        last_sign_in_at: new Date().toISOString(),
+        // No user_metadata field here
+    };
+
     // --- Define Mock Services with Spies ---
     let kitAddUserSpy = spy(async (_userData: UserData) => {});
-    const mockKitService: IEmailMarketingService = {
+    const mockKitService: EmailMarketingService = {
         addUserToList: kitAddUserSpy,
-        // Other methods aren't used by this handler, but define for type correctness
         updateUserAttributes: spy(async () => {}),
         removeUser: spy(async () => {}),
     };
 
-    let noOpAddUserSpy = spy(async (_userData: UserData) => {});
-    const mockNoOpService: IEmailMarketingService = {
-        addUserToList: noOpAddUserSpy,
+    let mockNoOpServiceAddUserSpy = spy(async (_userData: UserData) => {});
+    const mockNoOpService: EmailMarketingService = {
+        addUserToList: mockNoOpServiceAddUserSpy,
         updateUserAttributes: spy(async () => {}),
         removeUser: spy(async () => {}),
     };
     
     let erroringAddUserSpy = spy(async (_userData: UserData) => { throw new Error("Internal service error"); });
-    const erroringKitService: IEmailMarketingService = {
+    const erroringKitService: EmailMarketingService = {
         addUserToList: erroringAddUserSpy,
         updateUserAttributes: spy(async () => {}),
         removeUser: spy(async () => {}),
     };
 
-    const dummyService = new DummyEmailService(); // Real instance for instanceof check
-    let dummyAddUserSpy = spy(dummyService, "addUserToList"); // Spy on its method
+    const noOpServiceInstance = new NoOpEmailService();
+    let noOpInstanceAddUserSpy = spy(noOpServiceInstance, "addUserToList");
 
     // --- Test Steps using Dependency Injection ---
 
@@ -75,23 +83,21 @@ Deno.test("on-user-created Edge Function Tests", async (t) => {
     const resetSpies = () => {
         kitAddUserSpy = spy(async (_userData: UserData) => {});
         mockKitService.addUserToList = kitAddUserSpy;
-        noOpAddUserSpy = spy(async (_userData: UserData) => {});
-        mockNoOpService.addUserToList = noOpAddUserSpy;
+        mockNoOpServiceAddUserSpy = spy(async (_userData: UserData) => {});
+        mockNoOpService.addUserToList = mockNoOpServiceAddUserSpy;
         erroringAddUserSpy = spy(async (_userData: UserData) => { throw new Error("Internal service error"); });
         erroringKitService.addUserToList = erroringAddUserSpy;
-        dummyAddUserSpy.restore(); // Restore previous spy before creating new one
-        dummyAddUserSpy = spy(dummyService, "addUserToList");
+        noOpInstanceAddUserSpy.restore();
+        noOpInstanceAddUserSpy = spy(noOpServiceInstance, "addUserToList");
     };
 
     await t.step("should call injected KitService.addUserToList", async () => {
         resetSpies();
         const request = createMockRequest(testUserRecord);
-        // Call handler with the mock KitService dependency
         const response = await handler(request, { emailService: mockKitService }); 
 
         assertEquals(response.status, 200);
         assertEquals(await response.json(), { message: "User processed for email marketing." });
-        // Assert the spy on the injected mock service was called
         assertEquals(kitAddUserSpy.calls.length, 1);
         const calledWith = kitAddUserSpy.calls[0].args[0];
         assertExists(calledWith);
@@ -100,15 +106,35 @@ Deno.test("on-user-created Edge Function Tests", async (t) => {
         assertEquals(calledWith.firstName, testUserRecord.user_metadata?.firstName);
     });
 
-    await t.step("should call injected NoOpService.addUserToList", async () => {
+    await t.step("should call injected NoOpService mock's addUserToList", async () => {
         resetSpies();
         const request = createMockRequest(testUserRecord);
-        // Call handler with the mock NoOpService dependency
         const response = await handler(request, { emailService: mockNoOpService }); 
 
         assertEquals(response.status, 200);
-        assertEquals(await response.json(), { message: "User processed for email marketing." }); // NoOp still runs
-        assertEquals(noOpAddUserSpy.calls.length, 1);
+        assertEquals(await response.json(), { message: "User processed for email marketing." }); 
+        assertEquals(mockNoOpServiceAddUserSpy.calls.length, 1);
+    });
+
+    // New test step for missing metadata
+    await t.step("should handle missing user_metadata correctly", async () => {
+        resetSpies();
+        const request = createMockRequest(testUserRecordWithoutMetadata);
+        // Inject the mock KitService to see what data it receives
+        const response = await handler(request, { emailService: mockKitService });
+
+        assertEquals(response.status, 200);
+        assertEquals(await response.json(), { message: "User processed for email marketing." });
+        // Assert the spy was called
+        assertEquals(kitAddUserSpy.calls.length, 1);
+        const calledWith = kitAddUserSpy.calls[0].args[0];
+        assertExists(calledWith);
+        // Verify essential fields are present
+        assertEquals(calledWith.id, testUserRecordWithoutMetadata.id);
+        assertEquals(calledWith.email, testUserRecordWithoutMetadata.email);
+        // Crucially, verify optional fields are undefined
+        assertEquals(calledWith.firstName, undefined, "firstName should be undefined");
+        assertEquals(calledWith.lastName, undefined, "lastName should be undefined");
     });
 
     // Invalid body/record tests remain the same - they don't need deps
@@ -132,39 +158,34 @@ Deno.test("on-user-created Edge Function Tests", async (t) => {
     await t.step("should return 200 even if injected service.addUserToList fails", async () => {
         resetSpies();
         const request = createMockRequest(testUserRecord);
-        // Call handler with the erroring service dependency
         const response = await handler(request, { emailService: erroringKitService });
 
-        assertEquals(response.status, 200, "Handler should return 200 OK despite internal error");
+        assertEquals(response.status, 200);
         assertEquals(await response.json(), { message: "Webhook received, but failed to process user for email marketing." });
-        // Check the spy on the erroring mock was called
         assertEquals(erroringAddUserSpy.calls.length, 1);
     });
 
     await t.step("should return 200 and 'skipped (not configured)' if null service injected", async () => {
         resetSpies();
         const request = createMockRequest(testUserRecord);
-        // Call handler passing null for the service dependency
         const response = await handler(request, { emailService: null });
 
         assertEquals(response.status, 200);
         assertEquals(await response.json(), { message: "User processed, email sync skipped (service not configured)." }); 
     });
 
-    await t.step("should return 200 and 'skipped (Dummy)' if DummyEmailService injected", async () => {
+    await t.step("should return 200 and 'skipped (NoOp)' if NoOpEmailService injected", async () => {
         resetSpies();
         const request = createMockRequest(testUserRecord);
-        // Call handler passing the Dummy service instance
-        const response = await handler(request, { emailService: dummyService });
+        const response = await handler(request, { emailService: noOpServiceInstance }); 
 
         assertEquals(response.status, 200);
-        assertEquals(await response.json(), { message: "User processed, email sync skipped (service is DummyEmailService)." });
-        // Verify the dummy service's spied method was NOT called
-        assertEquals(dummyAddUserSpy.calls.length, 0);
+        assertEquals(await response.json(), { message: "User processed, email sync skipped (service is NoOpEmailService)." });
+        assertEquals(noOpInstanceAddUserSpy.calls.length, 0);
     });
 
-    // Cleanup spies on dummy service after all tests
-    dummyAddUserSpy.restore(); 
+    // Cleanup spies on the real NoOp instance
+    noOpInstanceAddUserSpy.restore();
 
 });
 
