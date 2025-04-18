@@ -77,6 +77,41 @@ To contribute to this project:
 3. Set up required environment variables in `.env` (`VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`, `STRIPE_SECRET_KEY`, etc.). Refer to `.env.example`.
 4. Ensure database migrations in `supabase/migrations` define the necessary tables (`user_profiles`, `subscription_plans`, `user_subscriptions`) and the trigger to create user profiles.
 
+### Activating Email Marketing Sync Trigger (Manual Step)
+
+This project uses an optional feature to sync new users to an email marketing provider (like Kit) immediately after they sign up. This is achieved via a database trigger on `auth.users` that calls a helper SQL function (`handle_user_created`), which in turn invokes the `on-user-created` Edge Function.
+
+**Prerequisites:**
+*   Ensure the `on-user-created` Edge Function has been deployed (`supabase functions deploy on-user-created`).
+*   Ensure your root `.env` file contains the following variables with their correct values:
+    *   `VITE_SUPABASE_URL` (Your Supabase project URL, e.g., `https://<project-ref>.supabase.co`)
+    *   `VITE_SUPABASE_SERVICE_ROLE_KEY` (Your Supabase service role key)
+    *   Email marketing provider credentials (e.g., `EMAIL_MARKETING_PROVIDER`, `EMAIL_MARKETING_API_KEY`, `EMAIL_MARKETING_TAG_ID`, etc., as defined in `.env.example`)
+
+**To generate and apply the necessary SQL:**
+
+1.  Navigate to the scripts directory in your terminal:
+    `cd supabase/scripts`
+2.  Run the Deno script to *generate* the SQL:
+    `deno run --allow-env --allow-read apply_email_sync_trigger.ts`
+3.  The script will print a multi-part SQL command block to your console.
+4.  **Copy** the entire SQL block (starting from `DROP TRIGGER...` down to the `COMMENT ON TRIGGER...`).
+5.  Go to your **Supabase Project Dashboard** (for the environment you want to apply this to - local or remote).
+6.  Navigate to the **SQL Editor**.
+7.  **Paste** the copied SQL block into the editor.
+8.  Click **Run**.
+
+This will create the necessary `handle_user_created` SQL function and the `on_user_created_hook` trigger in your database.
+
+**To deactivate the trigger and function (if needed):**
+
+Run the following SQL commands directly in your Supabase project's SQL Editor:
+```sql
+DROP TRIGGER IF EXISTS on_user_created_hook ON auth.users;
+DROP FUNCTION IF EXISTS handle_user_created();
+```
+You can also delete the trigger manually through the Supabase GUI under the Database -> Triggers menu (and the function under Database -> Functions).
+
 ## API Implementation Layering
 
 The application follows a clear layered architecture for API interactions:
