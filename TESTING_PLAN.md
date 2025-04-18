@@ -107,6 +107,13 @@ Following this cycle helps catch errors early, ensures comprehensive test covera
 
 *   **[NEW] Phase 5: Anonymous Chat Auth Refactor Verification:** Added specific backend and E2E test cases for the anonymous secret header and related flows.
 
+*   **[NEW] Deno Function Testing Learnings (May 2024 - sync-ai-models):**
+    *   **Mocking Supabase Client Chaining:** Accurately mocking the Supabase JS client requires mimicking the synchronous return of the query builder object for chaining methods like `.select()`, `.eq()`, `.in()` before the final asynchronous resolution (`await`, `.then()`, `.single()`). The successful refactor in `test-utils.ts` implements this by having modifier methods return the mock builder instance and resolving configured mock results only within terminal methods (`.then()`, `.single()`). Initial attempts where modifier methods were `async` failed.
+    *   **Mocking Fetch:** Using shared helpers like `stubFetchForTestScope` (which returns a disposable stub) and `setMockFetchResponse` (which configures the response) from `test-utils.ts` is more robust than manual stubbing within test files. Attempting to manually cancel the original response body within the fetch mock (`baseFetchImplementation`) can cause tests to hang and should be avoided.
+    *   **Spy Assertions:** Checking spy call counts (`assertEquals(spy.calls.length, 1)`) can sometimes be more reliable than asserting specific call arguments (`assertSpyCall`) immediately after the invocation, especially across `await` boundaries or when dealing with complex mock object interactions.
+    *   **Mock Error Propagation:** When a mocked promise rejects (e.g., simulating a DB error), the way the error propagates through subsequent `catch` blocks in the code under test might differ slightly from live execution. Assertions may need to check for the stringified original mock error (`String(mockErrorObject)`) instead of the message from a potentially re-thrown `new Error("...")` if the re-throw doesn't occur as expected in the test context.
+    *   **Test Data Consistency:** Ensure mock data used in tests (e.g., mock database records) aligns with data conventions established by other parts of the system (e.g., provider prefixes like `openai-` added to identifiers by adapters). Inconsistent test data can lead to misleading failures.
+
 ✅ **How to Test Incrementally and Correctly (Layered Testing Strategy)**
 *This remains our guiding principle.*
 

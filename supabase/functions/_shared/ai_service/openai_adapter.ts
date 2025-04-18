@@ -86,22 +86,26 @@ export class OpenAiAdapter implements AiProviderAdapter {
 
   async listModels(apiKey: string): Promise<ProviderModelInfo[]> {
     const modelsUrl = `${OPENAI_API_BASE}/models`;
-    console.log("Fetching models from OpenAI...");
+    console.log("[openai_adapter] Fetching models from OpenAI...");
 
+    console.log("[openai_adapter] Before fetch call");
     const response = await fetch(modelsUrl, {
       method: 'GET',
       headers: {
         'Authorization': `Bearer ${apiKey}`,
       },
     });
+    console.log(`[openai_adapter] After fetch call (Status: ${response.status})`);
 
     if (!response.ok) {
       const errorBody = await response.text();
-      console.error(`OpenAI API error fetching models (${response.status}): ${errorBody}`);
+      console.error(`[openai_adapter] OpenAI API error fetching models (${response.status}): ${errorBody}`);
       throw new Error(`OpenAI API request failed fetching models: ${response.status} ${response.statusText}`);
     }
 
+    console.log("[openai_adapter] Before response.json() call");
     const jsonResponse = await response.json();
+    console.log("[openai_adapter] After response.json() call");
     const models: ProviderModelInfo[] = [];
 
     if (jsonResponse.data && Array.isArray(jsonResponse.data)) {
