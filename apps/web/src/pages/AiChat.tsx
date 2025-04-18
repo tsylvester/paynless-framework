@@ -123,7 +123,7 @@ export function AiChatPage() {
       {/* Make grid container grow vertically and respect parent height */}
       <div className="container mx-auto p-4 grid grid-cols-1 md:grid-cols-3 gap-6 flex-grow min-h-0"> 
         {/* Left Column: Make COLUMN scrollable */}
-        <div className="md:col-span-2 flex flex-col border border-border rounded-lg bg-card shadow-sm overflow-y-auto min-h-0"> 
+        <div className="md:col-span-2 flex flex-col border border-border rounded-lg bg-card shadow-sm overflow-y-auto min-h-0 max-h-[calc(100vh-12rem)]"> 
           {/* Header is sticky within the column */} 
           <div className="p-4 border-b border-border flex flex-wrap items-center gap-4 sticky top-0 bg-card z-10"> 
             <h2 className="text-lg font-semibold text-card-foreground mr-auto">AI Chat</h2> 
@@ -157,9 +157,10 @@ export function AiChatPage() {
         </div>
 
         {/* Right Column: Make COLUMN scrollable */} 
-        <div className="md:col-span-1 border border-border rounded-lg bg-card shadow-sm flex flex-col overflow-y-auto min-h-0"> 
+        <div className="md:col-span-1 border border-border rounded-lg bg-card shadow-sm flex flex-col overflow-y-auto min-h-0 max-h-[calc(100vh-12rem)]"> 
            {/* Header is sticky within the column */} 
-           <div className="p-4 border-b border-border sticky top-0 bg-card z-10"> 
+           <div className="p-4 border-b border-border sticky top-0 bg-card/80 backdrop-blur-md z-10">
+ 
              <h2 className="text-lg font-semibold text-card-foreground">Chat History</h2>
            </div>
            {/* History List - Grows but relies on column scroll */} 

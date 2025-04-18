@@ -1,12 +1,12 @@
 **Incomplete Features** 
-*   [⏸️] AI Chat on homepage doesn't work
+*   [✅] AI Chat on homepage doesn't work
 *   [✅] AI Chat signup/login flow
 *   [ ] AI model sync automation
-*   [ ] Mixpanel or Posthog integration
+*   [✅] Mixpanel or Posthog integration
 *   [🚧] Test project on Bolt & Lovable 
     *   [ ] Bolt & Lovable don't support pnpm monorepos well atm 
 *   [ ] User email automation - abstract for generic but specific implementation with Kit 
-*   [ ] Change email from within app
+*   [✅] Change email from within app
 *   [ ] Change password from within app
 *   [✅] shadcn implemented
     *   [ ] Convert all pages / components to shadcn
@@ -15,13 +15,14 @@
 *   [ ] Run SEO scan 
 *   [ ] Header scroll with user
 *   [ ] Fix chat so it scrolls with user 
-*   [ ] Fix chat history box so it fills correctly  
+*   [✅] Fix chat history box so it fills correctly  
 *   [ ] Figure out how to parse chat responses better, they get messy if the assistant uses markdown 
 *   [ ] Revert changes in authStore for initialize and updateProfile to working version in commit 58d6e17a
-*   [ ] Integrate the session replay logic that broke authStore, but fix it so it's compatible with the working method 
+*   [✅] Integrate the session replay logic that broke authStore, but fix it so it's compatible with the working method 
 *   [ ] Cancel Subscription doesn't work, API error
 *   [ ] Manage Billing sends user to portal but doesn't return user after action. 
 *   [ ] Fix dark mode for last card on homepage
+*   [ ] Constrain AI Chatbox and Chat History to viewport size 
 
 Okay, let's break down the implementation of the Platform Capability Abstraction layer using a TDD-inspired approach, focusing on compatibility and minimal disruption to your existing structure.
 
