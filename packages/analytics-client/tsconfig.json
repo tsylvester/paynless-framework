@@ -4,6 +4,7 @@
     "outDir": "dist",
     "rootDir": "src",
     "baseUrl": ".",
+    "lib": ["ESNext", "DOM"],
     "types": ["vitest/globals", "vite/client"]
   },
   "include": ["src/**/*.ts"],

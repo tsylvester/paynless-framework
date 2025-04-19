@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "tauri dev",
-    "build": "tsc",
+    "build": "tauri build",
     "preview": "nx vite:preview",
     "tauri": "tauri"
   },

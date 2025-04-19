@@ -32,8 +32,6 @@ export default defineConfig({
       '@paynless/platform-capabilities': path.resolve(__dirname, '../../packages/platform-capabilities/src'),
       // Add aliases for other local packages if needed
       '@': path.resolve(__dirname, './src'),
-      // Add alias for tauri api core to mock
-      '@tauri-apps/api/core': path.resolve(__dirname, 'src/mocks/tauri-api-core.mock.ts'),
     },
   },
   // Keep Vitest configuration

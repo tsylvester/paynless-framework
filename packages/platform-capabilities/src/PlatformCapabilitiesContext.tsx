@@ -1,6 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import type { PlatformCapabilities } from '@paynless/types';
-import { isTauri } from '@tauri-apps/api/core'; // Restore reliable check
 // NOTE: Removed event listener imports
 
 // Import static web provider
@@ -22,56 +21,64 @@ interface PlatformCapabilitiesProviderProps {
   children: ReactNode;
 }
 
+declare global {
+  interface Window {
+    __TAURI_IPC__?: (message: unknown) => void;
+    // __TAURI_METADATA__ could also be added here if used
+  }
+}
+
 export const PlatformCapabilitiesProvider: React.FC<PlatformCapabilitiesProviderProps> = ({ children }) => {
   const [capabilities, setCapabilities] = useState<CapabilitiesContextType>(null);
 
   useEffect(() => {
     let isMounted = true;
 
-    // Use the reliable synchronous check
-    const currentPlatform = isTauri ? 'tauri' : (typeof window !== 'undefined' ? 'web' : 'unknown');
-    console.log(`PlatformCapabilitiesProvider: isTauri check indicates platform: ${currentPlatform}`);
+    // Simplified detection logic: Use synchronous global check only
+    const isTauriPlatform = typeof window !== 'undefined' && !!window.__TAURI_IPC__;
+    const currentPlatform = isTauriPlatform ? 'tauri' : 'web';
+    console.log(`PlatformCapabilitiesProvider: Platform detected via global check as: ${currentPlatform}`);
 
-    const initializeCapabilities = async () => {
+    // Use an async IIFE to handle the dynamic import of the capabilities module
+    (async () => {
         let os: PlatformCapabilities['os'] = undefined;
         // TODO: Add OS detection
 
         const baseCaps: PlatformCapabilities = {
-          platform: currentPlatform,
-          os,
-          fileSystem: { isAvailable: false }, // Start unavailable
+            platform: currentPlatform,
+            os,
+            fileSystem: { isAvailable: false }, // Start unavailable
         };
 
         try {
-          if (currentPlatform === 'web') {
-            baseCaps.fileSystem = webFileSystemCapabilities;
-            console.log('PlatformCapabilitiesProvider: Using static Web capabilities.');
-          } else if (currentPlatform === 'tauri') {
-            console.log('PlatformCapabilitiesProvider: Dynamically importing LOCAL Tauri capabilities module...');
-            const tauriModule = await import('./tauriPlatformCapabilities');
-            baseCaps.fileSystem = tauriModule.tauriFileSystemCapabilities;
-            console.log('PlatformCapabilitiesProvider: Local Tauri capabilities loaded and assigned.');
-          }
+            if (currentPlatform === 'web') {
+                baseCaps.fileSystem = webFileSystemCapabilities;
+                console.log('PlatformCapabilitiesProvider: Using static Web capabilities.');
+            } else if (currentPlatform === 'tauri') {
+                console.log('PlatformCapabilitiesProvider: Dynamically importing LOCAL Tauri capabilities module...');
+                // Dynamic import of the *specific capabilities implementation*
+                const tauriModule = await import('./tauriPlatformCapabilities');
+                baseCaps.fileSystem = tauriModule.tauriFileSystemCapabilities;
+                console.log('PlatformCapabilitiesProvider: Local Tauri capabilities loaded and assigned.');
+            }
 
-          if (isMounted) {
-            console.log('PlatformCapabilitiesProvider: Setting final capabilities state:', baseCaps);
-            setCapabilities(baseCaps);
-          }
+            if (isMounted) {
+                console.log('PlatformCapabilitiesProvider: Setting final capabilities state:', baseCaps);
+                setCapabilities(baseCaps);
+            }
         } catch (loadError) {
-          console.error('Error loading specific platform capabilities module:', loadError);
-          if (isMounted) {
-            console.log('PlatformCapabilitiesProvider: Setting base capabilities state after load error:', baseCaps);
-            setCapabilities(baseCaps);
-          }
+            console.error('Error loading specific platform capabilities module:', loadError);
+            if (isMounted) {
+                console.log('PlatformCapabilitiesProvider: Setting base capabilities state after load error:', baseCaps);
+                setCapabilities(baseCaps); // Set base caps even if specific load fails
+            }
         }
-      };
-
-      initializeCapabilities();
+    })(); // Immediately invoke the async function
 
     return () => {
-      isMounted = false;
+        isMounted = false;
     };
-  }, []);
+}, []); // Empty dependency array ensures this runs once on mount
 
   return (
     <PlatformCapabilitiesContext.Provider value={capabilities}>

@@ -7,12 +7,12 @@ import {
   UserProfile,
   UserProfileUpdate,
   ApiResponse,
+  AuthRequiredError
 } from '@paynless/types'
 import { logger } from '@paynless/utils'
 import { persist } from 'zustand/middleware'
 import { api } from '@paynless/api-client'
 import { analytics } from '@paynless/analytics-client'
-
 // Define the structure of the response from the refresh endpoint
 interface RefreshResponse {
   session: Session | null
@@ -57,168 +57,167 @@ export const useAuthStore = create<
 
       login: async (email: string, password: string): Promise<User | null> => {
         set({ isLoading: true, error: null })
+        logger.info('Attempting to login user via form', { email: email })
         try {
           const response = await api.post<
             AuthResponse,
             { email: string; password: string }
-          >('login', { email, password })
+          >('login', { email, password }, { isPublic: true })
 
-          if (!response.error && response.data) {
-            const authData = response.data
-            set({
-              user: authData.user,
-              session: authData.session,
-              profile: authData.profile,
-              isLoading: false,
-              error: null,
+          if (response.error || !response.data?.user || !response.data?.session) {
+            throw new Error(response.error?.message || 'Login failed: Invalid response from server')
+          }
+
+          const authData = response.data
+          set({
+            user: authData.user,
+            session: authData.session,
+            profile: authData.profile,
+            isLoading: false,
+            error: null,
+          })
+
+          // ---> Identify user for analytics <---
+          if (authData.user?.id) {
+            analytics.identify(authData.user.id, {
+              email: authData.user.email,
             })
+          }
 
-            // ---> Identify user for analytics <---
-            if (authData.user?.id) {
-              analytics.identify(authData.user.id, {
-                email: authData.user.email,
-              })
-            }
+          // ---> Phase 3: Check for and replay pending action <---
+          let navigated = false // Flag to track if we navigated due to pending action
+          try {
+            const pendingActionJson = localStorage.getItem('pendingAction')
+            if (pendingActionJson) {
+              logger.info(
+                'Found pending action after login. Attempting replay...'
+              )
 
-            // ---> Phase 3: Check for and replay pending action <---
-            let navigated = false // Flag to track if we navigated due to pending action
-            try {
-              const pendingActionJson = localStorage.getItem('pendingAction')
-              if (pendingActionJson) {
-                logger.info(
-                  'Found pending action after login. Attempting replay...'
-                )
+              const pendingAction = JSON.parse(pendingActionJson)
+              localStorage.removeItem('pendingAction') // Clear AFTER parse
 
-                const pendingAction = JSON.parse(pendingActionJson)
-                localStorage.removeItem('pendingAction') // Clear AFTER parse
+              const { endpoint, method, body, returnPath } = pendingAction
+              const newToken = authData.session?.access_token
 
-                const { endpoint, method, body, returnPath } = pendingAction
-                const newToken = authData.session?.access_token
+              if (endpoint && method && newToken) {
+                logger.info(`Replaying action: ${method} ${endpoint}`, {
+                  body,
+                })
+                let replayResponse: ApiResponse<unknown> // Use unknown for generic replay
 
-                if (endpoint && method && newToken) {
-                  logger.info(`Replaying action: ${method} ${endpoint}`, {
-                    body,
-                  })
-                  let replayResponse: ApiResponse<unknown> // Use unknown for generic replay
-
-                  switch (method.toUpperCase()) {
-                    case 'POST':
-                      replayResponse = await api.post(endpoint, body ?? {}, {
-                        token: newToken,
-                      })
-                      break
-                    case 'PUT':
-                      replayResponse = await api.put(endpoint, body ?? {}, {
-                        token: newToken,
-                      })
-                      break
-                    case 'DELETE':
-                      replayResponse = await api.delete(endpoint, {
-                        token: newToken,
-                      })
-                      break
-                    case 'GET':
-                      replayResponse = await api.get(endpoint, {
-                        token: newToken,
-                      })
-                      break
-                    default:
-                      logger.error(
-                        'Unsupported method in pending action replay:',
-                        { method }
-                      )
-                      replayResponse = {
-                        status: 0,
-                        error: {
-                          code: 'UNSUPPORTED_METHOD',
-                          message: 'Unsupported replay method',
-                        },
-                      }
-                  }
-
-                  if (replayResponse.error) {
-                    logger.error('Error replaying pending action:', {
-                      status: replayResponse.status,
-                      error: replayResponse.error,
+                switch (method.toUpperCase()) {
+                  case 'POST':
+                    replayResponse = await api.post(endpoint, body ?? {}, {
+                      token: newToken,
                     })
-                  } else {
-                    logger.info(
-                      '[AuthStore] Successfully replayed pending action.',
-                      { status: replayResponse.status }
+                    break
+                  case 'PUT':
+                    replayResponse = await api.put(endpoint, body ?? {}, {
+                      token: newToken,
+                    })
+                    break
+                  case 'DELETE':
+                    replayResponse = await api.delete(endpoint, {
+                      token: newToken,
+                    })
+                    break
+                  case 'GET':
+                    replayResponse = await api.get(endpoint, {
+                      token: newToken,
+                    })
+                    break
+                  default:
+                    logger.error(
+                      'Unsupported method in pending action replay:',
+                      { method }
                     )
+                    replayResponse = {
+                      status: 0,
+                      error: {
+                        code: 'UNSUPPORTED_METHOD',
+                        message: 'Unsupported replay method',
+                      },
+                    }
+                }
 
-                    // Check if it was the chat endpoint and data has chat_id
-                    if (
-                      endpoint === 'chat' &&
-                      method.toUpperCase() === 'POST' &&
-                      replayResponse.data &&
-                      typeof (replayResponse.data as any).chat_id === 'string'
-                    ) {
-                      const chatId = (replayResponse.data as any).chat_id
-                      logger.info(
-                        `Chat action replayed successfully, storing chatId ${chatId} for redirect.`
+                if (replayResponse.error) {
+                  logger.error('Error replaying pending action:', {
+                    status: replayResponse.status,
+                    error: replayResponse.error,
+                  })
+                } else {
+                  logger.info(
+                    '[AuthStore] Successfully replayed pending action.',
+                    { status: replayResponse.status }
+                  )
+
+                  // Check if it was the chat endpoint and data has chat_id
+                  if (
+                    endpoint === 'chat' &&
+                    method.toUpperCase() === 'POST' &&
+                    replayResponse.data &&
+                    typeof (replayResponse.data as any).chat_id === 'string'
+                  ) {
+                    const chatId = (replayResponse.data as any).chat_id
+                    logger.info(
+                      `Chat action replayed successfully, storing chatId ${chatId} for redirect.`
+                    )
+                    try {
+                      localStorage.setItem('loadChatIdOnRedirect', chatId)
+                    } catch (e: unknown) {
+                      logger.error(
+                        'Failed to set loadChatIdOnRedirect in localStorage:',
+                        {
+                          error: e instanceof Error ? e.message : String(e),
+                        }
                       )
-                      try {
-                        localStorage.setItem('loadChatIdOnRedirect', chatId)
-                      } catch (e: unknown) {
-                        logger.error(
-                          'Failed to set loadChatIdOnRedirect in localStorage:',
-                          {
-                            error: e instanceof Error ? e.message : String(e),
-                          }
-                        )
-                      }
                     }
                   }
-
-                  // Navigate to original path if possible
-                  const navigate = get().navigate
-                  if (navigate && returnPath) {
-                    logger.info(
-                      `Replay complete, navigating to original path: ${returnPath}`
-                    )
-                    navigate(returnPath)
-                    navigated = true
-                  } else {
-                    logger.warn(
-                      'Could not navigate to returnPath after replay.',
-                      { hasNavigate: !!navigate, returnPath }
-                    )
-                  }
-                } else {
-                  logger.error('Invalid pending action data found:', {
-                    pendingAction,
-                  })
                 }
-              }
-            } catch (e) {
-              const errorMsg = e instanceof Error ? e.message : String(e)
-              logger.error('Error processing pending action after login:', {
-                error: errorMsg,
-              })
-            }
 
-            // Navigate to dashboard only if we didn't navigate based on returnPath
-            if (!navigated) {
-              const navigate = get().navigate
-              if (navigate) {
-                logger.info(
-                  'Login successful (no pending action/navigation), navigating to dashboard.'
-                )
-                navigate('dashboard')
+                // Navigate to original path if possible
+                const navigate = get().navigate
+                if (navigate && returnPath) {
+                  logger.info(
+                    `Replay complete, navigating to original path: ${returnPath}`
+                  )
+                  navigate(returnPath)
+                  navigated = true
+                } else {
+                  logger.warn(
+                    'Could not navigate to returnPath after replay.',
+                    { hasNavigate: !!navigate, returnPath }
+                  )
+                }
               } else {
-                logger.warn(
-                  'Login successful but navigate function not set in store.'
-                )
+                logger.error('Invalid pending action data found:', {
+                  pendingAction,
+                })
               }
             }
-
-            return authData.user ?? null
-          } else {
-            const errorMessage =
-              response.error?.message || 'Login failed without specific error'
-            throw new Error(errorMessage)
+          } catch (e) {
+            const errorMsg = e instanceof Error ? e.message : String(e)
+            logger.error('Error processing pending action after login:', {
+              error: errorMsg,
+            })
           }
+
+          // Navigate to dashboard only if we didn't navigate based on returnPath
+          if (!navigated) {
+            const navigate = get().navigate
+            if (navigate) {
+              logger.info(
+                'Login successful (no pending action/navigation), navigating to dashboard.'
+              )
+              navigate('dashboard')
+            } else {
+              logger.warn(
+                'Login successful but navigate function not set in store.'
+              )
+            }
+          }
+
+          return authData.user ?? null
         } catch (error) {
           const finalError =
             error instanceof Error ? error : new Error('Unknown login error')
@@ -243,160 +242,158 @@ export const useAuthStore = create<
           const response = await api.post<
             AuthResponse,
             { email: string; password: string }
-          >('register', { email, password })
+          >('register', { email, password }, { isPublic: true })
 
-          if (!response.error && response.data) {
-            const authData = response.data
-            set({
-              user: authData.user,
-              session: authData.session,
-              profile: null,
-              isLoading: false,
-              error: null,
+          if (response.error || !response.data?.user || !response.data?.session) {
+            throw new Error(response.error?.message || 'Registration failed: Invalid response from server')
+          }
+
+          const authData = response.data
+          set({
+            user: authData.user,
+            session: authData.session,
+            profile: null,
+            isLoading: false,
+            error: null,
+          })
+
+          // ---> Identify user for analytics <---
+          if (authData.user?.id) {
+            analytics.identify(authData.user.id, {
+              email: authData.user.email,
             })
+          }
 
-            // ---> Identify user for analytics <---
-            if (authData.user?.id) {
-              analytics.identify(authData.user.id, {
-                email: authData.user.email,
-              })
-            }
+          // ---> Phase 3: Check for and replay pending action (Register) <---
+          let navigated = false // Flag to track if we navigated due to pending action
+          try {
+            const pendingActionJson = localStorage.getItem('pendingAction')
+            if (pendingActionJson) {
+              logger.info(
+                'Found pending action after registration. Attempting replay...'
+              )
 
-            // ---> Phase 3: Check for and replay pending action (Register) <---
-            let navigated = false // Flag to track if we navigated due to pending action
-            try {
-              const pendingActionJson = localStorage.getItem('pendingAction')
-              if (pendingActionJson) {
-                logger.info(
-                  'Found pending action after registration. Attempting replay...'
-                )
+              const pendingAction = JSON.parse(pendingActionJson)
+              localStorage.removeItem('pendingAction')
 
-                const pendingAction = JSON.parse(pendingActionJson)
-                localStorage.removeItem('pendingAction')
+              const { endpoint, method, body, returnPath } = pendingAction
+              const newToken = authData.session?.access_token
 
-                const { endpoint, method, body, returnPath } = pendingAction
-                const newToken = authData.session?.access_token
-
-                if (endpoint && method && newToken) {
-                  logger.info(`Replaying action: ${method} ${endpoint}`, {
-                    body,
-                  })
-                  let replayResponse: ApiResponse<unknown> =
-                    await (async () => {
-                      switch (method.toUpperCase()) {
-                        case 'POST':
-                          return await api.post(endpoint, body ?? {}, {
-                            token: newToken,
-                          })
-                        case 'PUT':
-                          return await api.put(endpoint, body ?? {}, {
-                            token: newToken,
-                          })
-                        case 'DELETE':
-                          return await api.delete(endpoint, { token: newToken })
-                        case 'GET':
-                          return await api.get(endpoint, { token: newToken })
-                        default:
-                          logger.error(
-                            'Unsupported method in pending action replay:',
-                            { method }
-                          )
-                          return {
-                            status: 0,
-                            error: {
-                              code: 'UNSUPPORTED_METHOD',
-                              message: 'Unsupported replay method',
-                            },
-                          }
-                      }
-                    })()
-
-                  if (replayResponse.error) {
-                    logger.error('Error replaying pending action:', {
-                      status: replayResponse.status,
-                      error: replayResponse.error,
-                    })
-                  } else {
-                    logger.info(
-                      '[AuthStore] Successfully replayed pending action.',
-                      { status: replayResponse.status }
-                    )
-
-                    // Check if it was the chat endpoint and data has chat_id
-
-                    if (
-                      endpoint === 'chat' &&
-                      method.toUpperCase() === 'POST' &&
-                      replayResponse.data &&
-                      typeof (replayResponse.data as any).chat_id === 'string'
-                    ) {
-                      const chatId = (replayResponse.data as any).chat_id
-                      logger.info(
-                        `Chat action replayed successfully, storing chatId ${chatId} for redirect.`
-                      )
-                      try {
-                        localStorage.setItem('loadChatIdOnRedirect', chatId)
-                      } catch (e: unknown) {
+              if (endpoint && method && newToken) {
+                logger.info(`Replaying action: ${method} ${endpoint}`, {
+                  body,
+                })
+                let replayResponse: ApiResponse<unknown> =
+                  await (async () => {
+                    switch (method.toUpperCase()) {
+                      case 'POST':
+                        return await api.post(endpoint, body ?? {}, {
+                          token: newToken,
+                        })
+                      case 'PUT':
+                        return await api.put(endpoint, body ?? {}, {
+                          token: newToken,
+                        })
+                      case 'DELETE':
+                        return await api.delete(endpoint, { token: newToken })
+                      case 'GET':
+                        return await api.get(endpoint, { token: newToken })
+                      default:
                         logger.error(
-                          'Failed to set loadChatIdOnRedirect in localStorage:',
-                          {
-                            error: e instanceof Error ? e.message : String(e),
-                          }
+                          'Unsupported method in pending action replay:',
+                          { method }
                         )
-                      }
+                        return {
+                          status: 0,
+                          error: {
+                            code: 'UNSUPPORTED_METHOD',
+                            message: 'Unsupported replay method',
+                          },
+                        }
+                    }
+                  })()
+
+                if (replayResponse.error) {
+                  logger.error('Error replaying pending action:', {
+                    status: replayResponse.status,
+                    error: replayResponse.error,
+                  })
+                } else {
+                  logger.info(
+                    '[AuthStore] Successfully replayed pending action.',
+                    { status: replayResponse.status }
+                  )
+
+                  // Check if it was the chat endpoint and data has chat_id
+
+                  if (
+                    endpoint === 'chat' &&
+                    method.toUpperCase() === 'POST' &&
+                    replayResponse.data &&
+                    typeof (replayResponse.data as any).chat_id === 'string'
+                  ) {
+                    const chatId = (replayResponse.data as any).chat_id
+                    logger.info(
+                      `Chat action replayed successfully, storing chatId ${chatId} for redirect.`
+                    )
+                    try {
+                      localStorage.setItem('loadChatIdOnRedirect', chatId)
+                    } catch (e: unknown) {
+                      logger.error(
+                        'Failed to set loadChatIdOnRedirect in localStorage:',
+                        {
+                          error: e instanceof Error ? e.message : String(e),
+                        }
+                      )
                     }
                   }
+                }
 
-                  const navigate = get().navigate
-                  if (navigate && returnPath) {
-                    logger.info(
-                      `Replay complete, navigating to original path: ${returnPath}`
-                    )
-                    navigate(returnPath)
-                    navigated = true
-                  } else {
-                    logger.warn(
-                      'Could not navigate to returnPath after replay.',
-                      { hasNavigate: !!navigate, returnPath }
-                    )
-                  }
+                const navigate = get().navigate
+                if (navigate && returnPath) {
+                  logger.info(
+                    `Replay complete, navigating to original path: ${returnPath}`
+                  )
+                  navigate(returnPath)
+                  navigated = true
                 } else {
-                  logger.error('Invalid pending action data found:', {
-                    pendingAction,
-                  })
+                  logger.warn(
+                    'Could not navigate to returnPath after replay.',
+                    { hasNavigate: !!navigate, returnPath }
+                  )
                 }
               } else {
-                logger.info('No pending action found after registration.')
+                logger.error('Invalid pending action data found:', {
+                  pendingAction,
+                })
               }
-            } catch (e) {
-              const errorMsg = e instanceof Error ? e.message : String(e)
-              logger.error(
-                'Error processing pending action after registration:',
-                { error: errorMsg }
+            } else {
+              logger.info('No pending action found after registration.')
+            }
+          } catch (e) {
+            const errorMsg = e instanceof Error ? e.message : String(e)
+            logger.error(
+              'Error processing pending action after registration:',
+              { error: errorMsg }
+            )
+          }
+
+          // Use the navigate function if available AND if we didn't navigate via returnPath
+          if (!navigated) {
+            const navigate = get().navigate
+            if (navigate) {
+              logger.info(
+                'Registration successful (no pending action/navigation), navigating to dashboard.'
+              )
+              navigate('dashboard')
+            } else {
+              logger.warn(
+                'Registration successful but navigate function not set in store.'
               )
             }
-
-            // Use the navigate function if available AND if we didn't navigate via returnPath
-            if (!navigated) {
-              const navigate = get().navigate
-              if (navigate) {
-                logger.info(
-                  'Registration successful (no pending action/navigation), navigating to dashboard.'
-                )
-                navigate('dashboard')
-              } else {
-                logger.warn(
-                  'Registration successful but navigate function not set in store.'
-                )
-              }
-            }
-
-            return authData.user ?? null
-          } else {
-            const errorMessage =
-              response.error?.message || 'Registration failed'
-            throw new Error(errorMessage)
           }
+
+          return authData.user ?? null
         } catch (error) {
           const finalError =
             error instanceof Error
@@ -423,9 +420,9 @@ export const useAuthStore = create<
         const token = get().session?.access_token
 
         if (token) {
-          set({ isLoading: true, error: null })
+          set({ isLoading: true })
           try {
-            await api.post('logout', {}, { token })
+            await api.post('logout', {})
             logger.info('AuthStore: Logout API call successful.')
           } catch (error) {
             logger.error(
@@ -476,14 +473,30 @@ export const useAuthStore = create<
       },
 
       initialize: async () => {
-        try {
-          // Get session from Zustand's persisted state
-          const session = get().session
-          //const user = get().user;
+        logger.info('App initializing auth store...')
+        const storedSession = get().session
+        if (!storedSession) {
+          logger.info('No session found in store.')
+          set({
+            user: null,
+            profile: null,
+            session: null,
+            isLoading: false,
+            error: null,
+          })
+          return
+        }
 
-          // If no session or expired session, clear state and return
-          if (!session || !session.access_token) {
-            logger.info('No session found in store.')
+        // Check for expired session
+        if (storedSession.expiresAt * 1000 < Date.now()) {
+          logger.info('Stored session is expired.')
+
+          // Try to refresh if we have a refresh token
+          if (storedSession.refresh_token) {
+            logger.info('Attempting to refresh expired token...')
+            await get().refreshSession()
+          } else {
+            // No refresh token, clear state
             set({
               user: null,
               profile: null,
@@ -491,36 +504,18 @@ export const useAuthStore = create<
               isLoading: false,
               error: null,
             })
-            return
+            localStorage.removeItem('auth-storage')
           }
-
-          // Check for expired session
-          if (session.expiresAt * 1000 < Date.now()) {
-            logger.info('Stored session is expired.')
-
-            // Try to refresh if we have a refresh token
-            if (session.refresh_token) {
-              logger.info('Attempting to refresh expired token...')
-              await get().refreshSession()
-            } else {
-              // No refresh token, clear state
-              set({
-                user: null,
-                profile: null,
-                session: null,
-                isLoading: false,
-                error: null,
-              })
-              localStorage.removeItem('auth-storage')
-            }
-            return
-          }
-          // Session exists and is not expired, verify with backend
-          logger.info(
-            'Valid session found, verifying token / fetching initial profile...'
-          )
+          return
+        }
+        // Session exists and is not expired, verify with backend
+        logger.info(
+          'Valid session found, verifying token / fetching initial profile...'
+        )
+        set({ isLoading: true })
+        try {
           const response = await api.get<AuthResponse>('me', {
-            token: session.access_token,
+            token: storedSession.access_token,
           })
           if (response.error || !response.data || !response.data.user) {
             // Token invalid or expired
@@ -553,7 +548,7 @@ export const useAuthStore = create<
           }
 
           // Refresh token if it expires soon (within 10 minutes)
-          const expiresAt = session.expiresAt * 1000
+          const expiresAt = storedSession.expiresAt * 1000
           const now = Date.now()
           const timeUntilExpiry = expiresAt - now
 
@@ -563,7 +558,7 @@ export const useAuthStore = create<
           }
 
           // Check for pending action and replay
-          await get()._checkAndReplayPendingAction(session.access_token)
+          await get()._checkAndReplayPendingAction(storedSession.access_token)
         } catch (error) {
           logger.error('Error during initialization process', {
             error: error instanceof Error ? error.message : String(error),
@@ -661,35 +656,17 @@ export const useAuthStore = create<
       updateProfile: async (
         profileData: UserProfileUpdate
       ): Promise<UserProfile | null> => {
-        set({ error: null })
-        const token = get().session?.access_token
-        const currentProfile = get().profile
-
-        // Check if authenticated first
-        if (!token) {
-          logger.error(
-            'updateProfile: Cannot update profile, user not authenticated.'
-          )
-          set({ error: new Error('Not authenticated') })
+        const userId = get().user?.id
+        if (!userId) {
+          set({ error: new AuthRequiredError('User must be logged in to update profile') })
           return null
         }
-
-        // Then check if profile is loaded
-        if (!currentProfile) {
-          logger.error(
-            'updateProfile: Cannot update profile, no current profile loaded.'
-          )
-          set({
-            error: new Error('Profile not loaded'),
-          })
-          return null
-        }
-
+        set({ isLoading: true, error: null })
         try {
           const response = await api.put<UserProfile, UserProfileUpdate>(
             'me',
             profileData,
-            { token }
+            { token: get().session?.access_token }
           )
 
           if (!response.error && response.data) {

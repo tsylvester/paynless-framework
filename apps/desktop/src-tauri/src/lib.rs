@@ -1,7 +1,7 @@
 // Declare the new module
 mod capabilities;
 
-use tauri::{Manager, Emitter}; // Remove Runtime, Add Emitter
+use tauri::{Emitter, Manager}; // Re-added Manager for get_webview_window
 
 // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
 #[tauri::command]
