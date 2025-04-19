@@ -208,33 +208,33 @@ This plan assumes we'll start by implementing the core service and then focus on
 *   **Goal:** Implement the TypeScript part of the Tauri provider, defining functions that will call the Rust backend via `invoke`.
 *   **Location:** `packages/platform-capabilities/src/tauriPlatformCapabilities.ts` (Created)
 *   **Checklist:**
-    *   [x] **Create Tauri Provider File:** `tauriPlatformCapabilities.ts`.
-    *   [x] **Import Tauri API:** Added `@tauri-apps/api` as a dependency. Imported relevant functions.
-    *   [x] **Implement `fileSystem` for Tauri:**
-        *   [x] Define `tauriFileSystemCapabilities` object implementing `FileSystemCapabilities`.
-        *   [x] Set `isAvailable: true`.
-        *   [x] Implement `pickFile`: Use Tauri's `open()` dialog API.
-        *   [x] Implement `pickSaveFile`: Use Tauri's `save()` dialog API (Stubbed/Mocked in tests, assume basic impl exists).
-        *   [x] Implement `readFile`: Define function calling `invoke('plugin:capabilities|read_file', { path })`.
-        *   [x] Implement `writeFile`: Define function calling `invoke('plugin:capabilities|write_file', { path, data })`. (Stubbed/Mocked in tests, assume basic impl exists).
+    *   [ ] **Create Tauri Provider File:** `tauriPlatformCapabilities.ts`.
+    *   [ ] **Import Tauri API:** Added `@tauri-apps/api` as a dependency. Imported relevant functions.
+    *   [ ] **Implement `fileSystem` for Tauri:**
+        *   [ ] Define `tauriFileSystemCapabilities` object implementing `FileSystemCapabilities`.
+        *   [ ] Set `isAvailable: true`.
+        *   [ ] Implement `pickFile`: Use Tauri's `open()` dialog API.
+        *   [ ] Implement `pickSaveFile`: Use Tauri's `save()` dialog API (Stubbed/Mocked in tests, assume basic impl exists).
+        *   [ ] Implement `readFile`: Define function calling `invoke('plugin:capabilities|read_file', { path })`.
+        *   [ ] Implement `writeFile`: Define function calling `invoke('plugin:capabilities|write_file', { path, data })`. (Stubbed/Mocked in tests, assume basic impl exists).
     *   [ ] **(TDD) Write Unit Tests for Tauri Provider (TS Layer):** (Component test covers basic interaction)
         *   [ ] Mock the `@tauri-apps/api` module (`vi.mock` or `jest.mock`).
         *   [ ] Test that `pickFile`/`pickSaveFile` call the mocked `open`/`save` functions correctly.
         *   [ ] Test that `readFile`/`writeFile` call the mocked `invoke` function with the correct command name and arguments. Test argument serialization if necessary (e.g., data conversion).
-    *   [x] **Integrate Tauri Provider:** (Done in main provider logic)
+    *   [ ] **Integrate Tauri Provider:** (Done in main provider logic)
 
 **Phase 4: Tauri Desktop Backend (Rust Layer)**
 
 *   **Goal:** Implement the Rust functions that perform the actual native operations for Tauri.
 *   **Location:** `apps/desktop/src-tauri/src/`
 *   **Checklist:**
-    *   [x] **Create Rust Module:** Created `apps/desktop/src-tauri/src/capabilities.rs`.
-    *   [x] **Add Crates:** Added `tempfile` dev-dependency. `serde` likely present.
-    *   [x] **Implement Rust Commands (`capabilities.rs`):**
-        *   [x] Define `#[tauri::command] fn read_file(path: String) -> Result<Vec<u8>, String> { ... }`.
-        *   [x] Define `#[tauri::command] fn write_file(path: String, data: Vec<u8>) -> Result<(), String> { ... }`.
-    *   [x] **(TDD) Write Rust Unit Tests (`capabilities.rs`):** Added basic tests.
-    *   [x] **Register Commands (`apps/desktop/src-tauri/src/lib.rs`):** (Note: Likely `lib.rs` or `main.rs` depending on structure) Added invoke handler.
+    *   [ ] **Create Rust Module:** Created `apps/desktop/src-tauri/src/capabilities.rs`.
+    *   [ ] **Add Crates:** Added `tempfile` dev-dependency. `serde` likely present.
+    *   [ ] **Implement Rust Commands (`capabilities.rs`):**
+        *   [ ] Define `#[tauri::command] fn read_file(path: String) -> Result<Vec<u8>, String> { ... }`.
+        *   [ ] Define `#[tauri::command] fn write_file(path: String, data: Vec<u8>) -> Result<(), String> { ... }`.
+    *   [ ] **(TDD) Write Rust Unit Tests (`capabilities.rs`):** Added basic tests.
+    *   [ ] **Register Commands (`apps/desktop/src-tauri/src/lib.rs`):** (Note: Likely `lib.rs` or `main.rs` depending on structure) Added invoke handler.
     *   [ ] **Build & Verify:** Build the Tauri app (`pnpm --filter desktop tauri build`) and manually test if the TS->Rust bridge works for the implemented commands. This serves as initial integration verification.
 
 **Phase 5: UI Component Integration (Web App)**

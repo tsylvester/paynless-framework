@@ -107,6 +107,16 @@ Following this cycle helps catch errors early, ensures comprehensive test covera
 
 *   **[NEW] Phase 5: Anonymous Chat Auth Refactor Verification:** Added specific backend and E2E test cases for the anonymous secret header and related flows.
 
+21. **Testing Tauri APIs (`@tauri-apps/api`) in Vitest (May 2024):**
+    *   **Problem:** Simultaneously mocking different parts of the `@tauri-apps/api` module within the same Vitest test file proved highly problematic. Specifically, testing components/functions using both `dialog.open/save` (best mocked with `vi.mock`) and `tauri.invoke` (documented to be mocked with Tauri's `mockIPC`) led to persistent conflicts and unreliable tests. Attempts to use `vi.mock` to provide the real `invoke` while mocking `dialog` often failed to make `invoke` available to the implementation code, while `mockIPC` couldn't reliably intercept calls when `vi.mock` was involved.
+    *   **Solution 1 (Preferred - DI):** Refactoring the capability implementation (`tauriPlatformCapabilities.ts`) to use Dependency Injection was the most effective solution. By injecting `invoke`, `open`, and `save` functions, unit tests could pass simple `vi.fn()` mocks, completely bypassing the complex module/IPC mocking interactions. This aligns with general testing best practices and point #16 (Service Abstraction).
+    *   **Solution 2 (Test Separation):** If DI refactoring isn't feasible, strictly separating tests is required. Create one test file using *only* `vi.mock` for `dialog` functions and another test file using *only* `mockIPC` for `invoke` functions. Do not mix these mocking strategies for `@tauri-apps/api` within the same test file.
+    *   **Mocking Flags (`isTauri`):** Reliably controlling the mocked value of simple exported constants like `isTauri` (from `@tauri-apps/api/core`) per-test proved difficult. Dynamic mocks (`vi.doMock`) conflicted with other static mocks. The most reliable method found was:
+        1.  Use a static `vi.mock` at the top level to set the default value (`isTauri: false`).
+        2.  In specific tests requiring the non-default value, import the mocked module (`import * as core from '@tauri-apps/api/core';`).
+        3.  Directly assign the desired value to the property on the imported mock object *before* rendering the component under test (`(core as any).isTauri = true;`).
+        4.  Ensure the value is reset in `afterEach` (`(core as any).isTauri = false;`) along with calling `vi.restoreAllMocks()`.
+
 ---
 
 ✅ **How to Test Incrementally and Correctly (Layered Testing Strategy)**

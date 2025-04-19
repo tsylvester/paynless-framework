@@ -6,32 +6,48 @@ import {
   usePlatformCapabilities,
 } from './PlatformCapabilitiesContext'; // Assuming this is the correct path
 import type { PlatformCapabilities } from '@paynless/types';
+// Import the specific module we need to modify
+import * as core from '@tauri-apps/api/core';
 
-// Mock the tauriPlatformCapabilities module
-vi.mock('./tauriPlatformCapabilities', () => ({
-  tauriFileSystemCapabilities: {
-    isAvailable: true,
-    readFile: vi.fn(),
-    writeFile: vi.fn(),
-    pickFile: vi.fn(),
-    pickSaveFile: vi.fn(),
+// --- Mocks Setup ---
+
+// Static mock for isTauri (defaulting to false)
+vi.mock('@tauri-apps/api/core', () => ({
+  isTauri: false,
+}));
+
+// Mock @tauri-apps/api (dummy DI functions)
+vi.mock('@tauri-apps/api', () => ({
+  dialog: {
+    open: vi.fn(),
+    save: vi.fn(),
+  },
+  tauri: {
+    invoke: vi.fn(),
   },
 }));
+
+// Mock the factory function from ./tauriPlatformCapabilities
+const mockTauriCapabilities = {
+  isAvailable: true as const, 
+  readFile: vi.fn(),
+  writeFile: vi.fn(),
+  pickFile: vi.fn(),
+  pickSaveFile: vi.fn(),
+};
+vi.mock('./tauriPlatformCapabilities', () => ({
+  createTauriFileSystemCapabilities: vi.fn(() => mockTauriCapabilities),
+}));
+
+// --- Test Component & Helper ---
 
 // Helper component to consume the context
 const TestConsumer = () => {
   const capabilities = usePlatformCapabilities();
   if (capabilities === null) {
-    return <div>Loading capabilities...</div>;
+    return <div>Loading...</div>;
   }
-  return (
-    <div>
-      <div data-testid="platform">{capabilities.platform}</div>
-      <div data-testid="fs-available">
-        {String(capabilities.fileSystem.isAvailable)}
-      </div>
-    </div>
-  );
+  return <div data-testid="capabilities">{JSON.stringify(capabilities)}</div>;
 };
 
 // Helper to render with provider
@@ -43,142 +59,122 @@ const renderWithProvider = (ui: ReactNode) => {
 
 describe('PlatformCapabilitiesProvider', () => {
   beforeEach(() => {
-    vi.resetModules();
-    // Ensure __TAURI_IPC__ is undefined by default using globalThis
-    // Delete first in case it persists from a previous test run
-    try {
-      delete (globalThis as any).__TAURI_IPC__;
-    } catch (e) {}
-    Object.defineProperty(globalThis, '__TAURI_IPC__', {
-        value: undefined,
-        writable: true,
-        configurable: true,
-    });
+    vi.clearAllMocks();
   });
 
   afterEach(() => {
-    // Restore any mocks created with vi.spyOn or vi.fn
-    vi.restoreAllMocks();
+    // Reset the mocked value explicitly
+    try {
+        (core as any).isTauri = false;
+    } catch (e) {
+        // May fail if module wasn't loaded in a test, ignore
+    }
+    vi.restoreAllMocks(); 
   });
 
-  /*
-  // Test Skipped/Commented Out (YYYY-MM-DD) - Reason:
-  // This test verifies the initial state *before* the useEffect hook completes its first asynchronous update cycle.
-  // With the current synchronous detection logic (checking window.__TAURI_IPC__ directly),
-  // the state updates almost immediately after the initial render.
-  // By the time Testing Library queries the DOM, the loading state is already replaced,
-  // causing the test to fail by not finding "Loading capabilities...".
-  // While the initial null state is technically correct for a brief moment,
-  // the subsequent passing tests for 'web' and 'tauri' environments provide
-  // sufficient confidence that the component reaches its correct final states.
-  // Fixing this test might require complex mocking or asserting on pre-effect states,
-  // which is deemed less valuable than focusing on the core logic verified by other tests.
-  it('should return null initially while loading', () => {
-    renderWithProvider(<TestConsumer />);
-    expect(screen.getByText('Loading capabilities...')).toBeInTheDocument();
-  });
-  */
-
-  it('should detect web environment when __TAURI_IPC__ is not present', async () => {
-    // Ensure it's undefined (should be handled by beforeEach)
-    expect((globalThis as any).__TAURI_IPC__).toBeUndefined();
-    renderWithProvider(<TestConsumer />);
-
-    // Wait for the useEffect and state update
-    await waitFor(() => {
-      expect(screen.getByTestId('platform')).toHaveTextContent('web');
-    });
-
-    // Also check filesystem state
-    expect(screen.getByTestId('fs-available')).toHaveTextContent('false');
-  });
-
-  it('should detect Tauri environment when __TAURI_IPC__ is present', async () => {
-    // Set up the Tauri global using globalThis *before* rendering
-    Object.defineProperty(globalThis, '__TAURI_IPC__', {
-      value: () => { console.log('Mock __TAURI_IPC__ called'); },
-      writable: true,
-      configurable: true,
-    });
-
-    renderWithProvider(<TestConsumer />);
-
-    // Wait for the useEffect and state update
-    await waitFor(() => {
-      expect(screen.getByTestId('platform')).toHaveTextContent('tauri');
-    });
-
-    // Also check filesystem state (should be true because detection succeeded and module is mocked)
-    expect(screen.getByTestId('fs-available')).toHaveTextContent('true');
-  });
-
-  // Test for environments that have window but not Tauri IPC (should resolve as web)
-  it('should detect web environment when window is defined but __TAURI_IPC__ is not', async () => {
-    // beforeEach already ensures __TAURI_IPC__ is undefined
+  // Test for the default (web) case
+  it('should eventually provide web capabilities when isTauri is false', async () => {
+    // No spy needed, relies on default static mock
     renderWithProvider(<TestConsumer />);
     await waitFor(() => {
-      expect(screen.getByTestId('platform')).toHaveTextContent('web');
+      const capsElement = screen.getByTestId('capabilities');
+      const capabilities = JSON.parse(capsElement.textContent || '') as PlatformCapabilities;
+      expect(capabilities.platform).toBe('web');
+      expect(capabilities.fileSystem.isAvailable).toBe(false);
     });
-    expect(screen.getByTestId('fs-available')).toHaveTextContent('false');
   });
 
-  it('should handle errors when loading Tauri capabilities module', async () => {
-    // Simulate Tauri environment
-    Object.defineProperty(globalThis, '__TAURI_IPC__', {
-      value: () => { console.log('Mock __TAURI_IPC__ called'); },
-      writable: true,
-      configurable: true,
+  // Test for the default (web) case - explicit
+  it('should detect web environment (window defined, isTauri is false)', async () => {
+    // No spy needed, relies on default static mock
+    renderWithProvider(<TestConsumer />);
+    await waitFor(() => {
+      const capsElement = screen.getByTestId('capabilities');
+      const capabilities = JSON.parse(capsElement.textContent || '') as PlatformCapabilities;
+      expect(capabilities.platform).toBe('web');
+      expect(capabilities.fileSystem.isAvailable).toBe(false);
+    });
+  });
+
+  // Test for Tauri case - Directly modify the mocked property
+  it('should detect Tauri environment when isTauri is true', async () => {
+    // Directly set the property on the imported mock object
+    (core as any).isTauri = true;
+
+    // Mock the factory return value
+    const { createTauriFileSystemCapabilities } = await import('./tauriPlatformCapabilities');
+    vi.mocked(createTauriFileSystemCapabilities).mockReturnValue(mockTauriCapabilities);
+
+    renderWithProvider(<TestConsumer />);
+
+    await waitFor(() => {
+      const capsElement = screen.getByTestId('capabilities');
+      const capabilities = JSON.parse(capsElement.textContent || '') as PlatformCapabilities;
+      expect(capabilities.platform).toBe('tauri');
+      expect(capabilities.fileSystem.isAvailable).toBe(true);
+      expect(createTauriFileSystemCapabilities).toHaveBeenCalled();
     });
 
-    // Mock the dynamic import to throw an error
-    vi.doMock('./tauriPlatformCapabilities', () => {
-        throw new Error('Test: Failed to load module');
+    // Optional: Verify the value was changed (implicitly tested by behavior)
+    expect((core as any).isTauri).toBe(true);
+  });
+
+  // Test for error handling in Tauri case - Directly modify the mocked property
+  it('should handle errors when loading Tauri capabilities module (when isTauri is true)', async () => {
+    // Directly set the property on the imported mock object
+    (core as any).isTauri = true;
+
+    // Mock the factory function to throw an error
+    const loadError = new Error('Failed to create Tauri capabilities');
+    const { createTauriFileSystemCapabilities } = await import('./tauriPlatformCapabilities');
+    vi.mocked(createTauriFileSystemCapabilities).mockImplementation(() => {
+      throw loadError;
     });
 
-    // Spy on console.error
     const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
 
     renderWithProvider(<TestConsumer />);
 
-    // Wait for the useEffect and state update (including error handling)
     await waitFor(() => {
-      // Platform should still be detected as Tauri initially
-      expect(screen.getByTestId('platform')).toHaveTextContent('tauri');
+      const capsElement = screen.getByTestId('capabilities');
+      const capabilities = JSON.parse(capsElement.textContent || '') as PlatformCapabilities;
+      expect(capabilities.platform).toBe('tauri');
+      expect(capabilities.fileSystem.isAvailable).toBe(false);
+      expect(consoleErrorSpy).toHaveBeenCalledWith('Error loading specific platform capabilities module:', loadError);
     });
 
-    // Filesystem should fallback to unavailable due to the load error
-    expect(screen.getByTestId('fs-available')).toHaveTextContent('false');
-
-    // Check that the error was logged
-    expect(consoleErrorSpy).toHaveBeenCalledWith(
-      expect.stringContaining('Error loading specific platform capabilities module'),
-      expect.any(Error) // Check that an Error object was logged
-    );
-
-    // Restore mocks
-    vi.doUnmock('./tauriPlatformCapabilities');
+    // Optional: Verify the value was changed
+    expect((core as any).isTauri).toBe(true);
     consoleErrorSpy.mockRestore();
   });
 
-  // Placeholder test for React Native (should behave like web currently)
-  it('should detect web environment for simulated React Native (placeholder)', async () => {
-    // This is identical to the 'web' test case now
+  // --- Placeholder Tests (Implementing first one) ---
+
+  // This test might be redundant if the first 'web' test covers it.
+  // Purpose: Explicitly test non-Tauri path in a browser-like JSDOM env.
+  it('should explicitly detect web environment (window defined, isTauri is false)', async () => {
+    // Relies on the default static mock (isTauri: false)
+    // JSDOM environment provides a window object by default.
+
     renderWithProvider(<TestConsumer />);
+
     await waitFor(() => {
-      expect(screen.getByTestId('platform')).toHaveTextContent('web');
+      const capsElement = screen.getByTestId('capabilities');
+      expect(capsElement).toBeInTheDocument();
+      const capabilities = JSON.parse(capsElement.textContent || '') as PlatformCapabilities;
+      expect(capabilities.platform).toBe('web');
+      expect(capabilities.fileSystem.isAvailable).toBe(false);
     });
-    expect(screen.getByTestId('fs-available')).toHaveTextContent('false');
   });
 
-  // Placeholder test for Node/Headless (should also behave like web in JSDOM)
-  it('should detect web environment for Node/Headless (JSDOM simulation)', async () => {
-     // This is identical to the 'web' test case now
-    renderWithProvider(<TestConsumer />);
-    await waitFor(() => {
-      expect(screen.getByTestId('platform')).toHaveTextContent('web');
-    });
-    expect(screen.getByTestId('fs-available')).toHaveTextContent('false');
+  it('should fallback to web for React Native (placeholder)', () => {
+    // TODO: Mock environment for React Native (e.g., navigator.product)
+    expect(true).toBe(false); // Placeholder
   });
 
-  // Add more tests later for error handling, specific capability functions etc.
+  it('should fallback to web for Node/Headless (JSDOM simulation - placeholder)', () => {
+    // TODO: Mock environment for Node (e.g., ensure window is undefined?)
+    expect(true).toBe(false); // Placeholder
+  });
+
 });

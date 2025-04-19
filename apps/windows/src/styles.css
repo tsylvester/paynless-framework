@@ -2,8 +2,8 @@
   filter: drop-shadow(0 0 2em #747bff);
 }
 
-.logo.react:hover {
-  filter: drop-shadow(0 0 2em #61dafb);
+.logo.typescript:hover {
+  filter: drop-shadow(0 0 2em #2d79c7);
 }
 :root {
   font-family: Inter, Avenir, Helvetica, Arial, sans-serif;
