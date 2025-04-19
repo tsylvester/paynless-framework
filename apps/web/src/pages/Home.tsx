@@ -52,27 +52,32 @@ export function HomePage() {
 
   useEffect(() => {
     if (!hasSetDefaults.current && availableProviders.length > 0) {
-      logger.info('[HomePage] Attempting to set default AI selections...');
-      const defaultProvider = availableProviders.find(p => p.name === 'OpenAI GPT-4o');
+      logger.info('[HomePage] Attempting to set default AI selections...')
+      const defaultProvider = availableProviders.find(
+        (p) => p.name === 'OpenAI GPT-4o'
+      )
 
-      const defaultPromptId = '__none__';
+      const defaultPromptId = '__none__'
 
       if (defaultProvider) {
-        setSelectedProviderId(defaultProvider.id);
-        setSelectedPromptId(defaultPromptId);
-        hasSetDefaults.current = true;
-        logger.info('[HomePage] Default provider and prompt selected.', { 
-          providerId: defaultProvider.id, 
-          promptId: defaultPromptId 
-        });
+        setSelectedProviderId(defaultProvider.id)
+        setSelectedPromptId(defaultPromptId)
+        hasSetDefaults.current = true
+        logger.info('[HomePage] Default provider and prompt selected.', {
+          providerId: defaultProvider.id,
+          promptId: defaultPromptId,
+        })
       } else {
-        logger.warn("[HomePage] Could not find default provider by name 'OpenAI GPT-4o'.", {
+        logger.warn(
+          "[HomePage] Could not find default provider by name 'OpenAI GPT-4o'.",
+          {
             foundProvider: !!defaultProvider,
             providerCount: availableProviders.length,
-        });
+          }
+        )
       }
     }
-  }, [availableProviders]);
+  }, [availableProviders])
 
   return (
     <Layout>
@@ -105,7 +110,7 @@ export function HomePage() {
                 {user ? (
                   <Link
                     to="/dashboard"
-                    className="inline-flex items-center px-8 py-3 border border-transparent text-base font-medium rounded-md text-white bg-primary hover:bg-primary/90 transition-all duration-300 shadow-md hover:shadow-lg"
+                    className="inline-flex items-center px-8 py-3 border border-transparent text-base font-medium rounded-md text-white dark:text-black bg-primary hover:bg-primary/90 transition-all duration-300 shadow-md hover:shadow-lg"
                   >
                     Go to Dashboard
                     <ArrowRight
@@ -116,7 +121,7 @@ export function HomePage() {
                 ) : (
                   <Link
                     to="/register"
-                    className="inline-flex items-center px-8 py-3 border border-transparent text-base font-medium rounded-md text-white bg-primary hover:bg-primary/90 transition-all duration-300 shadow-md hover:shadow-lg"
+                    className="inline-flex items-center px-8 py-3 border border-transparent text-base font-medium rounded-md text-white dark:text-black bg-primary hover:bg-primary/90 transition-all duration-300 shadow-md hover:shadow-lg"
                   >
                     Get Started
                     <ArrowRight
@@ -217,7 +222,7 @@ export function HomePage() {
                 <img
                   src="/logos/supabase.svg"
                   alt="Supabase logo"
-                  className="h-10 w-32 dark:visible hidden"
+                  className="h-10 w-32 hidden dark:block"
                 />
               </div>
               <span className="mt-3 text-sm font-medium text-textSecondary group-hover:text-textPrimary transition-colors">
@@ -371,7 +376,7 @@ export function HomePage() {
           <div className="absolute inset-0 bg-[url('data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjAwIiBoZWlnaHQ9IjIwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48ZGVmcz48cGF0dGVybiBpZD0iZ3JpZCIgd2lkdGg9IjQwIiBoZWlnaHQ9IjQwIiBwYXR0ZXJuVW5pdHM9InVzZXJTcGFjZU9uVXNlIj48cGF0aCBkPSJNIDQwIDAgTCAwIDAgMCA0MCIgZmlsbD0ibm9uZSIgc3Ryb2tlPSJjdXJyZW50Q29sb3IiIHN0cm9rZS13aWR0aD0iMC41IiBzdHJva2Utb3BhY2l0eT0iMC4xIi8+PC9wYXR0ZXJuPjwvZGVmcz48cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIiBmaWxsPSJ1cmwoI2dyaWQpIiAvPjwvc3ZnPg==')] opacity-30" />
         </div>
         <div className="relative py-20 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
-          <div className="inline-flex items-center px-4 py-2 rounded-full bg-white/20 text-white text-sm font-medium mb-8 shadow-sm backdrop-blur-sm">
+          <div className="inline-flex items-center px-4 py-2 rounded-full bg-white/20 text-white dark:text-black text-sm font-medium mb-8 shadow-sm backdrop-blur-sm">
             <Zap className="h-4 w-4 mr-2" />
             <span>Get Started Today</span>
           </div>
@@ -387,7 +392,7 @@ export function HomePage() {
               to="https://github.com/tsylvester/paynless-framework"
               target="_blank"
               rel="noopener noreferrer"
-              className="group inline-flex items-center justify-center px-8 py-3.5 border-2 border-white/30 text-base font-medium rounded-lg text-white bg-white/10 hover:bg-white/20 backdrop-blur-sm transition-all duration-300 shadow-md hover:shadow-lg"
+              className="group inline-flex items-center justify-center px-8 py-3.5 border-2 border-white/30 text-base font-medium rounded-lg text-white dark:text-black bg-white/10 hover:bg-white/20 backdrop-blur-sm transition-all duration-300 shadow-md hover:shadow-lg"
             >
               <GitBranch className="h-5 w-5 mr-2" />
               Fork on GitHub

@@ -71,6 +71,7 @@ export function RegisterForm() {
             <Input
               id="password"
               type="password"
+              autoComplete="new-password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               disabled={isLoading}

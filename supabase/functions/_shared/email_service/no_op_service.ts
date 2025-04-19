@@ -1,38 +1,81 @@
-import { logger } from "../logger.ts";
-import { type UserData, type IEmailMarketingService } from "../types.ts";
+import type {
+  EmailMarketingService,
+  UserData,
+} from "../types.ts"; // Updated import path
+// Note: Adjust the relative path based on your final structure if needed
+import { logger } from "../logger.ts"; // Assuming logger is in the _shared root
 
 /**
- * A service implementation that performs no actual operations.
- * Useful when email marketing is disabled or for testing.
+ * A no-operation implementation of the EmailMarketingService.
+ * Used when no specific email provider is configured.
+ * Implements the multi-method interface.
  */
-export class NoOpService implements IEmailMarketingService {
-    constructor() {
-        logger.info("Initialized NoOpEmailService.");
-    }
+export class NoOpEmailService implements EmailMarketingService {
+  constructor() {
+    logger.info(
+      "[EmailService] No email provider configured. Using NoOpEmailService.",
+    );
+  }
 
-    async addUserToList(userData: UserData): Promise<void> {
-        logger.info(`NoOpService: addUserToList called for ${userData.email}. Doing nothing.`);
-        // No operation
-        return Promise.resolve();
-    }
+  /**
+   * Logs the intention to add a user but performs no action.
+   * @param userData The user data (ignored).
+   * @returns A resolved promise.
+   */
+  async addUserToList(userData: UserData): Promise<void> {
+    logger.debug("[NoOpEmailService] Skipping addUserToList call.", {
+      email: userData.email,
+      id: userData.id,
+    });
+    await Promise.resolve();
+  }
 
-    // TODO: Implement updateUser based on IEmailMarketingService definition
-    async updateUserAttributes(email: string, attributes: Partial<UserData>): Promise<void> {
-         logger.info(`NoOpService: updateUserAttributes called for ${email} with attributes:`, attributes);
-        // No operation
-        return Promise.resolve();
-    }
+  /**
+   * Logs the intention to update user attributes but performs no action.
+   * @param email The user's email (ignored).
+   * @param attributes The attributes to update (ignored).
+   * @returns A resolved promise.
+   */
+  async updateUserAttributes(
+    email: string,
+    attributes: Partial<UserData>,
+  ): Promise<void> {
+    logger.debug("[NoOpEmailService] Skipping updateUserAttributes call.", {
+      email: email,
+      attributes: Object.keys(attributes), // Log which keys were attempted
+    });
+    await Promise.resolve();
+  }
 
-    // TODO: Implement removeUser based on IEmailMarketingService definition
-    async removeUser(email: string): Promise<void> { // Match interface definition (email only)
-        logger.info(`NoOpService: removeUser called for ${email}. Doing nothing.`);
-        // No operation
-        return Promise.resolve();
-    }
-    
-    // Optional: Implement trackEvent if needed
-    // async trackEvent(email: string, eventName: string, properties?: Record<string, any>): Promise<void> {
-    //     logger.info(`NoOpService: trackEvent called for ${email}, event: ${eventName}. Doing nothing.`);
-    //     return Promise.resolve();
-    // }
+  // Optional methods - provide empty implementations
+
+  /**
+   * Logs the intention to track an event but performs no action.
+   * @param email The user's email (ignored).
+   * @param eventName The event name (ignored).
+   * @param properties Event properties (ignored).
+   * @returns A resolved promise.
+   */
+  async trackEvent?(
+    email: string,
+    eventName: string,
+    properties?: Record<string, any>,
+  ): Promise<void> {
+    logger.debug("[NoOpEmailService] Skipping trackEvent call.", {
+      email,
+      eventName,
+      hasProperties: !!properties,
+    });
+    await Promise.resolve();
+  }
+
+  /**
+   * Logs the intention to remove a user but performs no action.
+   * @param email The user's email (ignored).
+   * @returns A resolved promise.
+   */
+  async removeUser?(email: string): Promise<void> {
+    logger.debug("[NoOpEmailService] Skipping removeUser call.", { email });
+    await Promise.resolve();
+  }
 } 

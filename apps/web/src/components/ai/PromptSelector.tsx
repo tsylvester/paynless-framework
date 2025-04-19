@@ -10,7 +10,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { Label } from '@/components/ui/label'
+//import { Label } from '@/components/ui/label'
 import { logger } from '@paynless/utils'
 
 interface PromptSelectorProps {
@@ -36,7 +36,7 @@ export const PromptSelector: React.FC<PromptSelectorProps> = ({
 
   return (
     <div className="space-y-2">
-      <Label>System Prompt</Label>
+      {/* <Label>System Prompt</Label> */}
 
       <Select
         value={selectedPromptId ?? ''}
@@ -55,8 +55,8 @@ export const PromptSelector: React.FC<PromptSelectorProps> = ({
             }
           />
         </SelectTrigger>
-        <SelectContent>
-          <SelectItem key="__none__" value="__none__">
+        <SelectContent className="bg-background/70 backdrop-blur-md border border-border">
+        <SelectItem key="__none__" value="__none__">
             -- None --
           </SelectItem>
 

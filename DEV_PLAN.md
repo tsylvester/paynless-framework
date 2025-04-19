@@ -25,6 +25,41 @@ When implementing features:
 - Scan the codebase to prevent duplication of functionality
 - Follow established patterns and conventions consistently
 
+## Branch Hygiene
+
+- Main is the prod branch
+-- This deploys to paynless.app
+-- This branch must always be fully tested, stable, and working
+-- No broken or incomplete features or functions
+-- Main has test-mode set to false
+-- Main has logging set to Error
+-- Main has all relevant API keys inserted & integrations working 
+
+- Development is the development branch. 
+-- This branch is in testing for feature addition, bug fixes, etc. 
+-- May have broken or incomplete features or functions
+-- Dev has test-mode set to true
+-- Dev has logging configured to your local prefs 
+-- Dev may be missing relevant API keys 
+
+- For new features, bug fixes, etc
+-- Branch development
+-- Use a folder structure that identifies your work
+-- e.g. development/feature/add-[feature_name]
+-- Write all unit and integration tests and run them in your branch
+-- Only merge to development once your tests pass locally
+-- Once the work is merged to development with working tests, we'll do E2E testing
+-- Once the work passes E2E we'll merge to main (prod) and it'll be deployed
+
+## Contributing
+
+To contribute to this project:
+1. Ensure you understand the architecture and follow the established patterns.
+2. Avoid duplicating existing functionality; utilize services and stores.
+3. Use proper TypeScript types for all data structures.
+4. Document new components, services, functions, and complex logic.
+5. Test changes thoroughly, considering edge cases. 
+
 ## Getting Started
 
 1. Clone this repository
@@ -41,6 +76,41 @@ When implementing features:
 2. Link your local repository: `supabase link --project-ref YOUR_PROJECT_REF --password YOUR_PASSWORD`
 3. Set up required environment variables in `.env` (`VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`, `STRIPE_SECRET_KEY`, etc.). Refer to `.env.example`.
 4. Ensure database migrations in `supabase/migrations` define the necessary tables (`user_profiles`, `subscription_plans`, `user_subscriptions`) and the trigger to create user profiles.
+
+### Activating Email Marketing Sync Trigger (Manual Step)
+
+This project uses an optional feature to sync new users to an email marketing provider (like Kit) immediately after they sign up. This is achieved via a database trigger on `auth.users` that calls a helper SQL function (`handle_user_created`), which in turn invokes the `on-user-created` Edge Function.
+
+**Prerequisites:**
+*   Ensure the `on-user-created` Edge Function has been deployed (`supabase functions deploy on-user-created`).
+*   Ensure your root `.env` file contains the following variables with their correct values:
+    *   `VITE_SUPABASE_URL` (Your Supabase project URL, e.g., `https://<project-ref>.supabase.co`)
+    *   `VITE_SUPABASE_SERVICE_ROLE_KEY` (Your Supabase service role key)
+    *   Email marketing provider credentials (e.g., `EMAIL_MARKETING_PROVIDER`, `EMAIL_MARKETING_API_KEY`, `EMAIL_MARKETING_TAG_ID`, etc., as defined in `.env.example`)
+
+**To generate and apply the necessary SQL:**
+
+1.  Navigate to the scripts directory in your terminal:
+    `cd supabase/scripts`
+2.  Run the Deno script to *generate* the SQL:
+    `deno run --allow-env --allow-read apply_email_sync_trigger.ts`
+3.  The script will print a multi-part SQL command block to your console.
+4.  **Copy** the entire SQL block (starting from `DROP TRIGGER...` down to the `COMMENT ON TRIGGER...`).
+5.  Go to your **Supabase Project Dashboard** (for the environment you want to apply this to - local or remote).
+6.  Navigate to the **SQL Editor**.
+7.  **Paste** the copied SQL block into the editor.
+8.  Click **Run**.
+
+This will create the necessary `handle_user_created` SQL function and the `on_user_created_hook` trigger in your database.
+
+**To deactivate the trigger and function (if needed):**
+
+Run the following SQL commands directly in your Supabase project's SQL Editor:
+```sql
+DROP TRIGGER IF EXISTS on_user_created_hook ON auth.users;
+DROP FUNCTION IF EXISTS handle_user_created();
+```
+You can also delete the trigger manually through the Supabase GUI under the Database -> Triggers menu (and the function under Database -> Functions).
 
 ## API Implementation Layering
 
@@ -95,37 +165,69 @@ To ensure consistency and prevent subtle bugs when constructing URLs for API cal
 
 **Rationale:** This approach is simple, predictable, and avoids ambiguities encountered with the standard `URL` constructor when base URLs contain paths. It ensures consistency across different packages and environments.
 
-## Branch Hygiene
+## Handling External Service Integrations & API Keys (Backend/Functions)
 
-- Main is the prod branch
--- This deploys to paynless.app
--- This branch must always be fully tested, stable, and working
--- No broken or incomplete features or functions
--- Main has test-mode set to false
--- Main has logging set to Error
--- Main has all relevant API keys inserted & integrations working 
+When integrating optional, third-party services (like email marketing - Kit) that rely on API keys within Supabase Edge Functions:
 
-- Development is the development branch. 
--- This branch is in testing for feature addition, bug fixes, etc. 
--- May have broken or incomplete features or functions
--- Dev has test-mode set to true
--- Dev has logging configured to your local prefs 
--- Dev may be missing relevant API keys 
+1.  **API Key Management:**
+    *   API keys **MUST** be stored in the local `.env` file for development and configured as secure environment variables in deployment environments (e.g., Supabase Function settings).
+    *   Placeholders for these keys **MUST** be added to `.env.example` (e.g., `KIT_API_KEY=""`, `KIT_FORM_ID=""`).
+    *   API keys **MUST NEVER** be committed directly into the codebase or version control.
 
-- For new features, bug fixes, etc
--- Branch development
--- Use a folder structure that identifies your work
--- e.g. development/feature/add-[feature_name]
--- Write all unit and integration tests and run them in your branch
--- Only merge to development once your tests pass locally
--- Once the work is merged to development with working tests, we'll do E2E testing
--- Once the work passes E2E we'll merge to main (prod) and it'll be deployed
+2.  **Conditional Activation:**
+    *   The functionality associated with the external service **MUST** be activated *only* if the required API key(s) and any other necessary configuration (like a Form ID) are present in the environment variables (`Deno.env.get('KEY_NAME')`).
+    *   The code responsible for initializing or using the service (typically a factory or the service adapter itself) **MUST** check for the existence and validity (if possible) of these environment variables.
 
-## Contributing
+3.  **Graceful Degradation Pattern:**
+    *   Follow the established pattern using a shared service directory (e.g., `supabase/functions/_shared/email_service/`) and shared types (`packages/types`):
+        *   **Interface:** Define a common TypeScript interface for the service's capabilities (e.g., `EmailMarketingService` with `addSubscriber`).
+        *   **No-Op Adapter:** Implement a `NoOp` adapter (e.g., `no_op_service.ts`) that fulfills the interface but performs no actions (or logs that it's skipping). This is the default behavior.
+        *   **Specific Adapter(s):** Implement adapters for each actual service (e.g., `kit_service.ts`). These adapters read the necessary API keys from environment variables in their constructor or relevant methods. If keys are missing, they should ideally log a warning and behave like the `NoOp` adapter or handle the situation gracefully without throwing errors that break the calling flow.
+        *   **Factory:** Create a factory function (e.g., `getEmailMarketingService` in `factory.ts`) that checks for the presence of API keys in environment variables. It returns an instance of the *specific adapter* if the keys are found, otherwise it returns an instance of the *`NoOp` adapter*.
+        *   **Consumer:** The code using the service (e.g., the `on-user-created` function) imports only the factory and the interface type. It calls the factory to get *an* implementation and interacts with it purely through the interface methods (`await emailService.addSubscriber(...)`).
 
-To contribute to this project:
-1. Ensure you understand the architecture and follow the established patterns.
-2. Avoid duplicating existing functionality; utilize services and stores.
-3. Use proper TypeScript types for all data structures.
-4. Document new components, services, functions, and complex logic.
-5. Test changes thoroughly, considering edge cases. 
+4.  **Extensibility:**
+    *   To add a new provider (e.g., Mailchimp):
+        *   Add `MAILCHIMP_API_KEY`, etc., to `.env.example`.
+        *   Create `mailchimp_service.ts` implementing the shared interface.
+        *   Update the `factory.ts` to check for Mailchimp keys and return a `MailchimpEmailService` instance if present.
+        *   The consuming code (e.g., `on-user-created`) does not need to change.
+
+**Benefits:** This approach ensures the application remains functional even if optional services aren't configured, provides a clear and consistent pattern for developers, and makes adding new backend integrations straightforward.
+
+## Handling Frontend Analytics Integration (`packages/analytics-client`)
+
+The frontend analytics integration (`packages/analytics-client`) follows a similar pattern to ensure graceful degradation and extensibility:
+
+1.  **Environment Variables:** Configuration relies on Vite environment variables (prefixed with `VITE_`):
+    *   `VITE_ANALYTICS_PROVIDER`: Specifies the provider (e.g., `'posthog'`, `'none'`).
+    *   `VITE_POSTHOG_KEY`: PostHog API key (required if provider is `posthog`).
+    *   `VITE_POSTHOG_HOST`: PostHog instance host (defaults to `https://app.posthog.com`).
+    *   Add corresponding entries to `.env.example`.
+
+2.  **Singleton Export:** The package initializes *once* on import and exports a single `analytics` object conforming to the `AnalyticsClient` interface (defined in `packages/types`).
+
+3.  **Usage:** Components and stores should import and use this singleton directly:
+    ```typescript
+    import { analytics } from '@paynless/analytics-client';
+
+    // Example usage:
+    analytics.identify(userId, { email });
+    analytics.track('Button Clicked', { buttonName: 'Submit' });
+    ```
+
+4.  **Pattern Implementation:**
+    *   **Interface:** `AnalyticsClient` (in `packages/types`) defines the standard methods (`init`, `identify`, `track`, `reset`).
+    *   **Null Adapter (`nullAdapter.ts`):** Implements `AnalyticsClient` with empty methods. This is the default if no provider is configured or if configuration is invalid.
+    *   **Specific Adapter(s) (`posthogAdapter.ts`):** Implements `AnalyticsClient` using a specific library (e.g., `posthog-js`). It includes an `init` method called by the factory.
+    *   **Factory Logic (in `index.ts`):** Reads environment variables. If `VITE_ANALYTICS_PROVIDER` is `posthog` and `VITE_POSTHOG_KEY` is present, it instantiates and initializes `PostHogAdapter`. Otherwise, it instantiates `NullAnalyticsAdapter`.
+    *   The resulting instance is exported as the `analytics` singleton.
+
+5.  **Extensibility:**
+    *   To add a new frontend analytics provider (e.g., Mixpanel):
+        *   Add required `VITE_MIXPANEL_TOKEN`, etc., to `.env.example`.
+        *   Create `mixpanelAdapter.ts` implementing `AnalyticsClient` and its `init` method.
+        *   Update the factory logic in `packages/analytics-client/src/index.ts` to check for `VITE_ANALYTICS_PROVIDER === 'mixpanel'` and the required key, then instantiate and initialize the `MixpanelAdapter`.
+        *   Consuming code (`analytics.track(...)`) remains unchanged.
+
+**Benefits:** This ensures analytics calls are seamlessly ignored if not configured, simplifies usage across the frontend, and provides a clear path for adding other analytics providers.

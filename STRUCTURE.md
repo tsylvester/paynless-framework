@@ -12,9 +12,9 @@ The architecture follows these principles:
 
 ### Core Pattern: API Client Singleton
 
-**Decision (April 2024):** To ensure consistency and simplify integration across multiple frontend platforms (web, mobile) and shared packages (like Zustand stores), the `@paynless/api-client` package follows a **Singleton pattern**.
+**Decision (April 2025):** To ensure consistency and simplify integration across multiple frontend platforms (web, mobile) and shared packages (like Zustand stores), the `@paynless/api-client` package follows a **Singleton pattern**.
 
-*   **Initialization:** The client is configured and initialized *once* per application lifecycle using `initializeApiClient(config)`. Each platform provides the necessary configuration (e.g., how to retrieve auth tokens).
+*   **Initialization:** The client is configured and initialized *once* per application lifecycle using `initializeApiClient(config)`. Each platform provides the necessary configuration.
 *   **Access:** All parts of the application (stores, UI components, platform-specific code) access the single, pre-configured client instance by importing the exported `api` object: `import { api } from '@paynless/api-client';`.
 *   **No DI for Stores:** Shared stores (Zustand) should *not* use dependency injection (e.g., an `init` method) to receive the API client. They should import and use the `api` singleton directly.
 *   **Testing:** Unit testing components or stores that use the `api` singleton requires mocking the module import using the test framework's capabilities (e.g., `vi.mock('@paynless/api-client', ...)`).
@@ -26,10 +26,10 @@ The architecture follows these principles:
 The application exposes the following primary API endpoints through Supabase Edge Functions:
 
 ### Authentication & Core User
-- `/login`: Handles user sign-up via email/password.
+- `/login`: Handles user sign-in via email/password.
 - `/register`: Handles user registration via email/password.
 - `/logout`: Handles user logout.
-- `/session`: Fetches current session information.
+- `/session`: Fetches current session information. *(Needs verification if still used)*
 - `/refresh`: Refreshes the authentication token.
 - `/reset-password`: Handles the password reset flow.
 - `/me`: Fetches the profile for the currently authenticated user.
@@ -57,15 +57,15 @@ The application exposes the following primary API endpoints through Supabase Edg
 - `/sync-ai-models`: (Admin/Internal) Placeholder function intended to synchronize AI models from providers with the `ai_providers` table.
 
 ### Internal / Triggers
-- `/on-user-created`: Function triggered by Supabase Auth on new user creation (likely for profile creation or sync).
+- `/on-user-created`: Function triggered by Supabase Auth on new user creation (handles profile creation and **optional email marketing sync**).
 
-*(Note: This list is based on the `supabase/functions/` directory structure and inferred functionality. Specific HTTP methods and request/response details require reading the function code.)*
+*(Note: This list is based on the `supabase/functions/` directory structure and inferred functionality. Specific HTTP methods and request/response details require inspecting function code or the `api-client` package.)*
 
 ## Database Schema (Simplified)
 
 The core database tables defined in `supabase/migrations/` include:
 
-*(Note: This schema description was copied from the previous README and is marked as simplified. It reflects the state when last updated and may require verification against the actual migration files for complete accuracy. RLS policies are also applied but not detailed here.)*
+*(Note: This schema description is based on previous documentation and may require verification against the actual migration files (`supabase/migrations/`) for complete accuracy, especially regarding constraints, defaults, and RLS policies.)*
 
 - **`public.user_profiles`** (Stores public profile information for users)
   - `id` (uuid, PK, references `auth.users(id) ON DELETE CASCADE`)
@@ -163,8 +163,8 @@ The project is organized as a monorepo using pnpm workspaces:
 ├── apps/                   # Individual applications / Frontends
 │   ├── web/                # React Web Application (Vite + React Router)
 │   │   └── src/
-│   │       ├── assets/         # Static assets (images, fonts, etc.) - *Verify usage*
-│   │       ├── components/     # UI Components specific to web app
+│   │       ├── assets/         # Static assets (images, fonts, etc.)
+│   │       ├── components/     # UI Components specific to web app (e.g., ai/, core/, layout/)
 │   │       ├── config/         # App-specific config (e.g., routes)
 │   │       ├── context/        # React context providers
 │   │       ├── hooks/          # Custom React hooks
@@ -190,9 +190,14 @@ The project is organized as a monorepo using pnpm workspaces:
 ├── packages/               # Shared libraries/packages
 │   ├── api-client/         # Frontend API client logic (Singleton)
 │   │   └── src/
-│   │       ├── apiClient.ts      # Base API client (fetch wrapper)
+│   │       ├── apiClient.ts      # Base API client (fetch wrapper, singleton)
 │   │       ├── stripe.api.ts     # Stripe/Subscription specific client methods
 │   │       └── ai.api.ts         # AI Chat specific client methods
+│   ├── analytics-client/   # Frontend analytics client logic (PostHog, Null adapter)
+│   │   └── src/
+│   │       ├── index.ts          # Main service export & factory
+│   │       ├── nullAdapter.ts    # No-op analytics implementation
+│   │       └── posthogAdapter.ts # PostHog implementation
 │   ├── store/              # Zustand global state stores
 │   │   └── src/
 │   │       ├── authStore.ts        # Auth state & actions
@@ -204,22 +209,33 @@ The project is organized as a monorepo using pnpm workspaces:
 │   │       ├── auth.types.ts
 │   │       ├── subscription.types.ts
 │   │       ├── ai.types.ts
+│   │       ├── analytics.types.ts
+│   │       ├── platform.types.ts
+│   │       ├── email.types.ts    # [NEW] Email marketing types
 │   │       ├── theme.types.ts
 │   │       ├── route.types.ts
-│   │       ├── platform.types.ts # Added Platform capability types
+│   │       ├── vite-env.d.ts
 │   │       └── index.ts            # Main export for types
 │   ├── platform-capabilities/ # Service for abstracting platform-specific APIs (FS, etc.)
 │   │   └── src/
-│   │       ├── index.ts          # Main service export
-│   │       ├── webPlatformCapabilities.ts # Web provider
-│   │       └── tauriPlatformCapabilities.ts # Tauri provider
+│   │       ├── index.ts          # Main service export & detection
+│   │       ├── webPlatformCapabilities.ts # Web provider (stub)
+│   │       └── tauriPlatformCapabilities.ts # Tauri provider (stub)
 │   └── utils/              # Shared utility functions
 │       └── src/
-│           └── logger.ts         # Logging utility
+│           └── logger.ts         # Logging utility (singleton)
 │
 ├── supabase/
 │   ├── functions/          # Supabase Edge Functions (Backend API)
 │   │   ├── _shared/          # Shared Deno utilities for functions
+│   │   │   ├── auth.ts           # Auth helpers
+│   │   │   ├── cors-headers.ts   # CORS header generation
+│   │   │   ├── email_service/    # [NEW] Email marketing service
+│   │   │   │   ├── factory.ts      # [NEW] Selects email service implementation
+│   │   │   │   ├── kit_service.ts  # [NEW] Kit implementation (planned)
+│   │   │   │   └── no_op_service.ts # [NEW] No-op implementation (planned)
+│   │   │   ├── responses.ts      # Standardized response helpers
+│   │   │   └── stripe-client.ts  # Stripe client initialization
 │   │   ├── node_modules/     # Function dependencies (managed by Deno/npm)
 │   │   ├── api-subscriptions/ # Subscription management endpoints
 │   │   ├── ai-providers/     # Fetch AI providers
@@ -247,7 +263,7 @@ The project is organized as a monorepo using pnpm workspaces:
 │   │   └── types_db.ts       # Generated DB types
 │   └── migrations/         # Database migration files (YYYYMMDDHHMMSS_*.sql)
 │
-├── .env                    # Local environment variables (Supabase/Stripe keys, etc. - UNTRACKED)
+├── .env                    # Local environment variables (Supabase/Stripe/Kit keys, etc. - UNTRACKED)
 ├── .env.example            # Example environment variables
 ├── netlify.toml            # Netlify deployment configuration
 ├── package.json            # Root package file (pnpm workspaces config)
@@ -255,7 +271,7 @@ The project is organized as a monorepo using pnpm workspaces:
 ├── pnpm-workspace.yaml     # pnpm workspace definition
 ├── tsconfig.base.json      # Base TypeScript configuration for the monorepo
 ├── tsconfig.json           # Root tsconfig (references base)
-└── README.md               # This file
+└── README.md               # Project root README (often minimal, points here)
 ```
 
 ## Edge Functions (`supabase/functions/`)
@@ -263,7 +279,15 @@ The project is organized as a monorepo using pnpm workspaces:
 ```
 supabase/functions/
 │
-├── _shared/             # Shared Deno utilities (CORS, Auth helpers, etc.)
+├── _shared/             # Shared Deno utilities
+│   ├── auth.ts
+│   ├── cors-headers.ts
+│   ├── email_service/   # [NEW] Email marketing service
+│   │   ├── factory.ts
+│   │   ├── kit_service.ts
+│   │   └── no_op_service.ts
+│   ├── responses.ts
+│   └── stripe-client.ts
 │
 ├── api-subscriptions/   # Handles subscription actions (checkout, portal, plans, current, cancel, resume, usage)
 ├── ai-providers/        # Fetches active AI providers
@@ -273,13 +297,13 @@ supabase/functions/
 ├── login/               # Handles user login
 ├── logout/              # Handles user logout
 ├── me/                  # Handles fetching the current user's profile
-├── on-user-created/     # Auth Hook: Triggered after user signs up (e.g., create profile)
+├── on-user-created/     # Auth Hook: Triggered after user signs up (e.g., create profile, **email sync**)
 ├── ping/                # Simple health check endpoint
 ├── profile/             # Handles updating the current user's profile
 ├── refresh/             # Handles session token refresh
 ├── register/            # Handles user registration
 ├── reset-password/      # Handles password reset flow
-├── session/             # Handles session validation/information
+├── session/             # Handles session validation/information (needs verification)
 ├── stripe-webhook/      # Handles incoming Stripe events
 ├── sync-ai-models/      # [Admin/Internal] Syncs AI models from providers to DB (Placeholder/Inactive?)
 ├── sync-stripe-plans/   # [Admin/Internal] Syncs Stripe Products/Prices to DB
@@ -312,8 +336,8 @@ Manages all frontend interactions with the backend Supabase Edge Functions. It f
 - **`ApiResponse<T>` type** (defined in `@paynless/types`): Standard response wrapper.
   - `{ status: number; data?: T; error?: ApiErrorType; }`
 
-- **`ApiError` class**: Custom error class used internally by the client.
-  - `constructor(message: string, code?: string | number)`
+- **`ApiError` class** (defined in `@paynless/api-client`): Custom error class used internally by the client.
+- **`AuthRequiredError` class** (defined in `@paynless/types`): Specific error for auth failures detected by the client.
 
 #### `StripeApiClient` (Accessed via `api.billing()`)
 Methods for interacting with Stripe/Subscription related Edge Functions.
@@ -373,7 +397,7 @@ Manages user authentication, session, and profile state.
   - `isLoading: boolean`
   - `error: Error | null`
   - `navigate: NavigateFunction | null` (Internal function for routing, set via `setNavigate`)
-- **Actions** (Access via `useAuthStore(state => state.actionName)` or destructure `const { actionName } = useAuthStore();`):
+- **Actions** (Access via `useAuthStore.getState().actionName` or destructure `const { actionName } = useAuthStore();`):
   - `setNavigate(navigateFn: NavigateFunction): void`
     - Injects the navigation function from the UI framework (e.g., React Router).
   - `setUser(user: User | null): void`
@@ -492,13 +516,16 @@ Provides a singleton logger instance (`logger`) for consistent application loggi
 
 Contains centralized type definitions used across the monorepo. Exports all types via `index.ts`.
 
-- **`api.types.ts`**: `ApiResponse`, `ApiError`, `FetchOptions`, etc.
+- **`api.types.ts`**: `ApiResponse`, `ApiErrorType`, `FetchOptions`, `AuthRequiredError`, etc.
 - **`auth.types.ts`**: `User`, `Session`, `UserProfile`, `UserProfileUpdate`, `AuthStore`, `AuthResponse`, etc.
 - **`subscription.types.ts`**: `SubscriptionPlan`, `UserSubscription`, `SubscriptionStore`, `SubscriptionUsageMetrics`, `CheckoutSessionResponse`, `PortalSessionResponse`, `SubscriptionPlansResponse`, etc.
-- **`ai.types.ts`**: `AiProvider`, `SystemPrompt`, `Chat`, `ChatMessage`, `ChatApiRequest`, `AiState`, `AiActions`, etc.
+- **`ai.types.ts`**: `AiProvider`, `SystemPrompt`, `Chat`, `ChatMessage`, `ChatApiRequest`, `AiState`, `AiStore`, etc.
+- **`analytics.types.ts`**: `AnalyticsClient`, `AnalyticsEvent`, `AnalyticsUserTraits`.
+- **`platform.types.ts`**: `PlatformCapabilities`, `FileSystemCapabilities`.
+- **`email.types.ts`**: `SubscriberInfo`, `EmailMarketingService`. **[NEW]**
 - **`theme.types.ts`**: Types related to theming.
 - **`route.types.ts`**: Types related to application routing.
-- **`platform.types.ts`**: `PlatformCapabilities`, `FileSystemCapabilities`, etc.
+- **`vite-env.d.ts`**: Vite environment types.
 
 ### 5. `packages/platform-capabilities` (Platform Abstraction)
 
@@ -507,10 +534,10 @@ Provides a service to abstract platform-specific functionalities (like filesyste
 - **`getPlatformCapabilities(): PlatformCapabilities`**: Detects the current platform (web, tauri, etc.) and returns an object describing available capabilities. Result is memoized.
   - Consumers check `capabilities.fileSystem.isAvailable` before attempting to use filesystem methods.
 - **Providers (Internal):**
-  - `webPlatformCapabilities.ts`: Implements capabilities available in a standard web browser.
-  - `tauriPlatformCapabilities.ts`: Implements capabilities available in the Tauri desktop environment, often by calling Rust backend functions via `invoke`.
+  - `webPlatformCapabilities.ts`: Implements capabilities available in a standard web browser (currently FS is `isAvailable: false`).
+  - `tauriPlatformCapabilities.ts`: Implements capabilities available in the Tauri desktop environment (currently FS is `isAvailable: false`, planned to call Rust backend).
 - **`resetMemoizedCapabilities(): void`**: Clears the cached capabilities result (useful for testing).
 
 ### 6. `supabase/functions/_shared/` (Backend Shared Utilities)
 
-Contains shared Deno code used by multiple Edge Functions (CORS handling, Supabase client creation, auth helpers, Stripe client initialization). Refer to the files within this directory for specific utilities. 
+Contains shared Deno code used by multiple Edge Functions (CORS handling, Supabase client creation, auth helpers, Stripe client initialization, **email marketing service**). Refer to the files within this directory for specific utilities. 

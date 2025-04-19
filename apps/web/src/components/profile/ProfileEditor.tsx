@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react'
+import React, { Suspense, useState, useEffect } from 'react'
 import { AlertCircle } from 'lucide-react'
 import { useAuthStore } from '@paynless/store'
 import type { UserProfileUpdate } from '@paynless/types'
@@ -13,15 +13,14 @@ import { Button } from '@/components/ui/button'
 //   isSaving: boolean;
 // }
 
-export function ProfileEditor(/* Props removed */) {
+// Renamed the component that handles Profile (First/Last Name)
+function ProfileNameEditor() {
   const {
     profile,
-    isLoading, // Use store's loading state
     error, // Use store's error state
     updateProfile, // Use store's update action
   } = useAuthStore((state) => ({
     profile: state.profile,
-    isLoading: state.isLoading,
     error: state.error,
     updateProfile: state.updateProfile,
   }))
@@ -30,28 +29,42 @@ export function ProfileEditor(/* Props removed */) {
   const [firstName, setFirstName] = useState('')
   const [lastName, setLastName] = useState('')
 
+  const [saving, setSaving] = useState(false)
+
   // Effect to initialize form state when profile loads from store
   useEffect(() => {
     if (profile) {
       setFirstName(profile.first_name || '')
       setLastName(profile.last_name || '')
     }
-  }, [profile]) // Dependency array ensures this runs when profile changes
+  }, [profile]) // Only depends on profile now
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (isLoading) return // Prevent submit while already saving
+    if (saving) return // Prevent submit while already saving
 
-    const updatedProfileData: UserProfileUpdate = {
-      first_name: firstName,
-      last_name: lastName,
+    setSaving(true)
+
+    let profileUpdateError = false
+
+    // --- Update Profile (First/Last Name) ---
+    // Only update if names have changed
+    if (firstName !== profile?.first_name || lastName !== profile?.last_name) {
+      const profileUpdateData: UserProfileUpdate = {
+        first_name: firstName,
+        last_name: lastName,
+      }
+      const profileResult = await updateProfile(profileUpdateData)
+      if (!profileResult) {
+        profileUpdateError = true
+        // Error is already set in the store by updateProfile
+      }
     }
 
-    // Call the store action to update the profile
-    await updateProfile(updatedProfileData)
-    // Success/error feedback is handled by observing store's isLoading/error states
+    setSaving(false)
   }
 
+  // Removed user check as it's not needed for name editing
   if (!profile) {
     // Handle case where profile is still null after initial load attempt
     return (
@@ -62,12 +75,13 @@ export function ProfileEditor(/* Props removed */) {
   }
 
   return (
-    <div className="w-full max-w-lg p-8 bg-surface rounded-lg shadow-md mx-auto">
+    <div className="w-full max-w-lg p-8 bg-surface rounded-lg shadow-md mx-auto mb-8">
+      {' '}
+      {/* Added margin bottom */}
       <h2 className="text-2xl font-bold mb-6 text-center text-textPrimary">
-        Edit Profile
+        Edit Name
       </h2>
-
-      {/* Display error from the store */}
+      {/* Shared error display logic - might need refinement if granular errors are desired */}
       {error && (
         <div
           className="mb-4 p-3 bg-red-50 border border-red-200 rounded-md flex items-center gap-2 text-red-700"
@@ -77,9 +91,6 @@ export function ProfileEditor(/* Props removed */) {
           <span>{error.message}</span>
         </div>
       )}
-
-      {/* TODO: Add success message display (e.g., using local state timed out) */}
-
       <form onSubmit={handleSubmit} className="space-y-6">
         {/* First Name Input */}
         <div className="mb-4">
@@ -96,7 +107,7 @@ export function ProfileEditor(/* Props removed */) {
             onChange={(e) => setFirstName(e.target.value)}
             className="block w-full"
             placeholder="Enter first name"
-            disabled={isLoading} // Disable based on store state
+            disabled={saving} // Disable based on store state
           />
         </div>
 
@@ -115,21 +126,145 @@ export function ProfileEditor(/* Props removed */) {
             onChange={(e) => setLastName(e.target.value)}
             className="block w-full"
             placeholder="Enter last name"
-            disabled={isLoading} // Disable based on store state
+            disabled={saving} // Disable based on store state
           />
         </div>
 
         {/* Submit Button */}
         <Button
           type="submit"
-          disabled={isLoading} // Disable based on store state
+          disabled={
+            saving ||
+            (firstName === profile?.first_name &&
+              lastName === profile?.last_name)
+          } // Also disable if no changes
           className={`w-full flex justify-center py-2 px-4 text-sm font-medium ${
-            isLoading ? 'opacity-75 cursor-not-allowed' : ''
+            saving ? 'opacity-75 cursor-not-allowed' : ''
           }`}
         >
-          {isLoading ? 'Saving...' : 'Save Changes'}
+          {saving ? 'Saving...' : 'Save'}
         </Button>
       </form>
     </div>
+  )
+}
+
+// --- New Component for Email Editing ---
+function EmailEditor() {
+  const {
+    user, // Get user object for email
+    error, // Use store's error state
+    updateEmail, // Use store's update action
+    refreshSession,
+  } = useAuthStore((state) => ({
+    user: state.user, // Add user to selector
+    error: state.error,
+    updateEmail: state.updateEmail, // <-- Add the new action
+    refreshSession: state.refreshSession,
+  }))
+
+  // Local state for form inputs
+  const [email, setEmail] = useState('')
+  const [saving, setSaving] = useState(false)
+
+  // Effect to initialize form state when user loads from store
+  useEffect(() => {
+    // Initialize email from user object
+    if (user) {
+      setEmail(user.email || '')
+    }
+  }, [user]) // Add user to dependency array
+
+  const handleEmailSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+
+    if (saving || email === user?.email) return // Prevent submit while already saving or if no change
+
+    setSaving(true)
+
+    await updateEmail(email)
+
+    refreshSession()
+
+    setSaving(false)
+  }
+
+  if (!user) {
+    // Handle case where user is still null
+    return (
+      <div className="text-center text-textSecondary">
+        User data not available for email editing.
+      </div>
+    )
+  }
+
+  return (
+    <div className="w-full max-w-lg p-8 bg-surface rounded-lg shadow-md mx-auto">
+      <h2 className="text-2xl font-bold mb-6 text-center text-textPrimary">
+        Edit Email
+      </h2>
+      {/* Shared error display logic - might need refinement */}
+      {error && (
+        <div
+          className="mb-4 p-3 bg-red-50 border border-red-200 rounded-md flex items-center gap-2 text-red-700"
+          data-testid="email-error-message" // Changed test id
+        >
+          <AlertCircle size={18} />
+          <span>{error.message}</span>
+        </div>
+      )}
+      <form onSubmit={handleEmailSubmit} className="space-y-6">
+        {/* Email Input */}
+        <div className="mb-6">
+          <Label
+            htmlFor="email"
+            className="block text-sm font-medium text-textSecondary mb-1"
+          >
+            Email
+          </Label>
+          <Input
+            id="email"
+            type="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            className="block w-full"
+            placeholder="Enter email"
+            disabled={saving} // Disable based on store state
+          />
+          {/* Use user.email for comparison */}
+          {email !== user?.email && (
+            <p className="mt-2 text-xs text-gray-400">
+              Changing your email requires re-verification.
+            </p>
+          )}
+        </div>
+
+        {/* Submit Button */}
+        <Button
+          type="submit"
+          disabled={saving || email === user?.email} // Also disable if no changes
+          className={`w-full flex justify-center py-2 px-4 text-sm font-medium ${
+            saving || email === user?.email
+              ? 'opacity-75 cursor-not-allowed'
+              : ''
+          }`}
+        >
+          {saving ? 'Saving...' : 'Save'}
+        </Button>
+      </form>
+    </div>
+  )
+}
+
+// --- Main Export Component ---
+// Renders both editors
+export function ProfileEditor() {
+  // Potentially add shared loading/error logic display here if needed
+  // Or use the store's loading/error state directly in child components as done now.
+  return (
+    <>
+      <ProfileNameEditor />
+      <EmailEditor />
+    </>
   )
 }

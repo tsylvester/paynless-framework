@@ -4,6 +4,8 @@ import { api } from '@paynless/api-client';
 import { act } from '@testing-library/react';
 import type { User, Session, UserProfile, UserRole, ApiError } from '@paynless/types';
 import { logger } from '@paynless/utils'; 
+// Import the module to access the mocked version later
+import * as analyticsClient from '@paynless/analytics-client';
 
 // Helper to reset Zustand store state between tests
 const resetStore = () => {
@@ -28,6 +30,20 @@ vi.mock('@paynless/utils', () => ({
   },
 }));
 
+// Declare variables to hold mock functions
+let mockIdentify: Mock;
+let mockReset: Mock;
+let mockTrack: Mock;
+
+// Mock the analytics client module factory (Creates NEW vi.fn() instances)
+vi.mock('@paynless/analytics-client', () => ({ 
+  analytics: { 
+    identify: vi.fn(), 
+    reset: vi.fn(), 
+    track: vi.fn() 
+  } 
+}));
+
 // Mock navigate function (will be injected into store state)
 const mockNavigateGlobal = vi.fn(); 
 
@@ -39,6 +55,11 @@ describe('AuthStore - Logout Action', () => {
   let localMockNavigate: Mock<[], void>; // Use local mock for navigation tests
 
   beforeEach(() => {
+    // Assign the actual mock functions from the mocked module to the variables
+    mockIdentify = vi.mocked(analyticsClient.analytics.identify);
+    mockReset = vi.mocked(analyticsClient.analytics.reset);
+    mockTrack = vi.mocked(analyticsClient.analytics.track);
+
     resetStore();
     // Inject the mock navigate function before relevant tests
     localMockNavigate = vi.fn(); // Initialize local mock here
@@ -84,6 +105,9 @@ describe('AuthStore - Logout Action', () => {
       expect(useAuthStore.getState().navigate).toBe(localMockNavigate);
       expect(localMockNavigate).toHaveBeenCalledTimes(1);
       expect(localMockNavigate).toHaveBeenCalledWith('/login');
+
+      // Assert: Analytics reset call (using the assigned mock variable)
+      expect(mockReset).toHaveBeenCalledTimes(1);
     });
 
     it('should clear state and navigate even if API call fails', async () => {
@@ -110,6 +134,8 @@ describe('AuthStore - Logout Action', () => {
          expect(localMockNavigate).toHaveBeenCalledTimes(1); // Navigation should still happen
          expect(localMockNavigate).toHaveBeenCalledWith('/login');
 
+         // Assert: Analytics reset call (state is cleared, using the assigned mock variable)
+         expect(mockReset).toHaveBeenCalledTimes(1);
     });
     
      it('should clear state and navigate without calling API if no session exists', async () => {
@@ -135,5 +161,8 @@ describe('AuthStore - Logout Action', () => {
         expect(logWarnSpy).toHaveBeenCalledWith('Logout called but no session token found. Clearing local state only.');
         expect(localMockNavigate).toHaveBeenCalledTimes(1); 
         expect(localMockNavigate).toHaveBeenCalledWith('/login');
+
+        // Assert: Analytics reset call (state is cleared, using the assigned mock variable)
+        expect(mockReset).toHaveBeenCalledTimes(1);
     });
 }); 

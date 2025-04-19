@@ -4,7 +4,7 @@
 import { type SupabaseClient } from "npm:@supabase/supabase-js@2";
 import Stripe from "npm:stripe";
 import type { createErrorResponse as CreateErrorResponseType, createSuccessResponse as CreateSuccessResponseType } from "../../_shared/responses.ts";
-import { CheckoutSessionRequest, SessionResponse } from "../types.ts";
+import { CheckoutSessionRequest, SessionResponse } from "../../_shared/types.ts";
 
 // Define a dependencies interface
 interface CheckoutDeps {
