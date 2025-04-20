@@ -1,13 +1,15 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
-import { isTauri } from '@tauri-apps/api/core'; // Import isTauri
-import { dialog, tauri } from '@tauri-apps/api'; // Import real APIs for injection
+import { isTauri } from '@tauri-apps/api/core'; // Only import isTauri
+// REMOVED direct imports for dialog and tauri namespaces
+// import { dialog } from '@tauri-apps/api/dialog';
+// import { tauri } from '@tauri-apps/api/tauri';
 import type { PlatformCapabilities } from '@paynless/types';
 // NOTE: Removed event listener imports
 
 // Import static web provider
 import { webFileSystemCapabilities } from './webPlatformCapabilities';
 // Import the *factory function* for Tauri capabilities
-import { createTauriFileSystemCapabilities } from './tauriPlatformCapabilities';
+// import { createTauriFileSystemCapabilities } from './tauriPlatformCapabilities';
 
 // --- Context Definition ---
 
@@ -31,41 +33,39 @@ interface PlatformCapabilitiesProviderProps {
 //   }
 // }
 
+// Component function MUST be synchronous
 export const PlatformCapabilitiesProvider: React.FC<PlatformCapabilitiesProviderProps> = ({ children }) => {
   const [capabilities, setCapabilities] = useState<CapabilitiesContextType>(null);
 
   useEffect(() => {
     let isMounted = true;
 
-    // Refined detection logic using isTauri
-    let detectedPlatform: 'tauri' | 'web' | 'unknown';
-    if (isTauri) { // Check the imported flag
-      detectedPlatform = 'tauri';
-    } else if (typeof window !== 'undefined') {
-      // Future: Could add checks for React Native navigator.product === 'ReactNative' here
-      detectedPlatform = 'web';
-    } else {
-      detectedPlatform = 'unknown'; // Handle non-browser (SSR, Node?)
-    }
-
-    const currentPlatform = detectedPlatform;
-    console.log(`PlatformCapabilitiesProvider: Platform detected via isTauri as: ${currentPlatform}`);
-
+    // Use an async IIFE inside useEffect to handle the async import
     (async () => {
-      let os: PlatformCapabilities['os'] = undefined;
-      // TODO: Add OS detection (potentially using tauri-apps/api/os)
+      // --- Platform Detection Logic --- (as before)
+      let detectedPlatform: 'tauri' | 'web' | 'unknown';
+      if (isTauri()) {
+        detectedPlatform = 'tauri';
+      } else if (typeof window !== 'undefined') {
+        detectedPlatform = 'web';
+      } else {
+        detectedPlatform = 'unknown';
+      }
+      const currentPlatform = detectedPlatform;
+      console.log(`PlatformCapabilitiesProvider: Platform detected via isTauri as: ${currentPlatform}`);
+      // -------------------------------
 
+      let os: PlatformCapabilities['os'] = undefined;
       const baseCaps: PlatformCapabilities = {
         platform: currentPlatform,
         os,
-        fileSystem: { isAvailable: false }, // Start unavailable
+        fileSystem: { isAvailable: false },
       };
 
-      // Add a special check for 'unknown' platform
       if (currentPlatform === 'unknown') {
         console.log('PlatformCapabilitiesProvider: Unknown platform, setting base capabilities only.');
         if (isMounted) setCapabilities(baseCaps);
-        return; // Skip capability loading for unknown
+        return;
       }
 
       try {
@@ -73,18 +73,13 @@ export const PlatformCapabilitiesProvider: React.FC<PlatformCapabilitiesProvider
           baseCaps.fileSystem = webFileSystemCapabilities;
           console.log('PlatformCapabilitiesProvider: Using static Web capabilities.');
         } else if (currentPlatform === 'tauri') {
-          // Use the factory function with real Tauri dependencies
-          console.log('PlatformCapabilitiesProvider: Creating Tauri capabilities using factory...');
-          const tauriDeps = {
-            invoke: tauri.invoke,
-            open: dialog.open,
-            save: dialog.save,
-          };
-          const tauriCaps = createTauriFileSystemCapabilities(tauriDeps);
+          console.log('PlatformCapabilitiesProvider: Dynamically importing Tauri capabilities factory...');
+          // Dynamic import stays here inside the async IIFE
+          const { createTauriFileSystemCapabilities } = await import('./tauriPlatformCapabilities');
+          const tauriCaps = createTauriFileSystemCapabilities();
           baseCaps.fileSystem = tauriCaps;
           console.log('PlatformCapabilitiesProvider: Tauri capabilities created and assigned.');
         }
-        // Future: Add else if for 'react-native' here
 
         if (isMounted) {
           console.log('PlatformCapabilitiesProvider: Setting final capabilities state:', baseCaps);
@@ -92,19 +87,18 @@ export const PlatformCapabilitiesProvider: React.FC<PlatformCapabilitiesProvider
         }
       } catch (loadError) {
         console.error('Error loading specific platform capabilities module:', loadError);
-        // Fallback: Set base capabilities even if specific module fails
         const fallbackCaps = { ...baseCaps, fileSystem: { isAvailable: false } };
         if (isMounted) {
           console.log('PlatformCapabilitiesProvider: Setting base capabilities state after load error:', fallbackCaps);
           setCapabilities(fallbackCaps);
         }
       }
-    })();
+    })(); // End of async IIFE
 
     return () => {
       isMounted = false;
     };
-  }, []);
+  }, []); // End of useEffect
 
   return (
     <PlatformCapabilitiesContext.Provider value={capabilities}>

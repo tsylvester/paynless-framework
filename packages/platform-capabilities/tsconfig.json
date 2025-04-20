@@ -12,7 +12,7 @@
     // Specify types needed for testing environment
     "types": ["node", "vitest/globals", "@testing-library/jest-dom"]
   },
-  "include": ["src/**/*"],
+  "include": ["src/**/*"], // Restore original broad include
   "exclude": ["node_modules", "dist"],
   "references": [
     // Add references to other workspace packages this one depends on

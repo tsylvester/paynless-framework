@@ -19,17 +19,29 @@ export default defineConfig({
       'react-router-dom',
       'zustand',
       '@paynless/store',
+      // No longer include platform-capabilities source
+      // Include necessary Tauri APIs (may be needed by other deps? Keep exclude too)
+      // '@tauri-apps/api/core',
+      // '@tauri-apps/api/dialog',
+      // '@tauri-apps/api/tauri',
+      // '@tauri-apps/api',
+    ],
+    // Keep exclude for Tauri APIs
+    exclude: [
+      '@tauri-apps/api',
+      '@tauri-apps/api/core',
+      '@tauri-apps/api/dialog',
+      '@tauri-apps/api/tauri',
     ],
   },
   resolve: {
-    // Setting preserveSymlinks to false might help resolve hoisted deps
     preserveSymlinks: false,
+    // Restore explicit aliases for workspace packages
     alias: {
-      // Keep aliases for local workspace packages
       '@paynless/api-client': path.resolve(__dirname, '../../packages/api-client/src'),
       '@paynless/store': path.resolve(__dirname, '../../packages/store/src'),
-      // Add the alias for the new package
-      '@paynless/platform-capabilities': path.resolve(__dirname, '../../packages/platform-capabilities/src'),
+      // Point alias directly to the index.ts file
+      '@paynless/platform-capabilities': path.resolve(__dirname, '../../packages/platform-capabilities/src/index.ts'),
       // Add aliases for other local packages if needed
       '@': path.resolve(__dirname, './src'),
     },
@@ -53,9 +65,9 @@ export default defineConfig({
     sourcemap: true, // Enable sourcemaps for easier debugging
     rollupOptions: {
       external: [
-        // Prevent bundling Tauri APIs in the web build
-        /^@tauri-apps\/api\/.*$/,
-        /^@tauri-apps\/api/,
+        // Explicitly mark Tauri API imports as external for the web build
+        // This prevents Rollup from trying to resolve them.
+        /^@tauri-apps\/api(\/.*)?$/,
       ],
     },
   },
@@ -64,5 +76,9 @@ export default defineConfig({
     port: 5173, // Example, keep your original port
     strictPort: true,
     host: true, // Allow external access in dev (e.g., for Tauri)
+    // Add fs.allow for accessing the shared package source
+    fs: {
+      allow: ['../../'],
+    },
   },
 });

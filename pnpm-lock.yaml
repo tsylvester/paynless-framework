@@ -228,6 +228,9 @@ importers:
 
   apps/windows:
     dependencies:
+      '@paynless/platform-capabilities':
+        specifier: workspace:*
+        version: link:../../packages/platform-capabilities
       '@tauri-apps/api':
         specifier: ^2
         version: 2.4.1
@@ -244,6 +247,9 @@ importers:
       vite:
         specifier: ^6.0.3
         version: 6.2.6(@types/node@22.14.0)(jiti@2.4.2)(yaml@2.7.1)
+      vite-tsconfig-paths:
+        specifier: ^4.3.2
+        version: 4.3.2(typescript@5.6.3)(vite@6.2.6(@types/node@22.14.0)(jiti@2.4.2)(yaml@2.7.1))
 
   packages/analytics-client:
     dependencies:
@@ -318,10 +324,10 @@ importers:
       '@paynless/types':
         specifier: workspace:*
         version: link:../types
-    devDependencies:
       '@tauri-apps/api':
         specifier: ^2.4.1
         version: 2.4.1
+    devDependencies:
       '@testing-library/jest-dom':
         specifier: ^6.4.2
         version: 6.6.3
@@ -4681,6 +4687,14 @@ packages:
     resolution: {integrity: sha512-YAXkfvGtuTzwWbDSACdJSg4A4DZiAqckWe90Zapc/sEX3XvHcw1NdurM/6od8J207tSDqNbSsgdCacBgvJKFuA==}
     engines: {node: ^18.0.0 || >=20.0.0}
     hasBin: true
+
+  vite-tsconfig-paths@4.3.2:
+    resolution: {integrity: sha512-0Vd/a6po6Q+86rPlntHye7F31zA2URZMbH8M3saAZ/xR9QoGN/L21bxEGfXdWmFdNkqPpRdxFT7nmNe12e9/uA==}
+    peerDependencies:
+      vite: '*'
+    peerDependenciesMeta:
+      vite:
+        optional: true
 
   vite-tsconfig-paths@5.1.4:
     resolution: {integrity: sha512-cYj0LRuLV2c2sMqhqhGpaO3LretdtMn/BVX4cPLanIZuwwrkVl+lK84E/miEXkCHWXuq65rhNN4rXsBcOB3S4w==}
@@ -9427,6 +9441,17 @@ snapshots:
       - sugarss
       - supports-color
       - terser
+
+  vite-tsconfig-paths@4.3.2(typescript@5.6.3)(vite@6.2.6(@types/node@22.14.0)(jiti@2.4.2)(yaml@2.7.1)):
+    dependencies:
+      debug: 4.4.0
+      globrex: 0.1.2
+      tsconfck: 3.1.5(typescript@5.6.3)
+    optionalDependencies:
+      vite: 6.2.6(@types/node@22.14.0)(jiti@2.4.2)(yaml@2.7.1)
+    transitivePeerDependencies:
+      - supports-color
+      - typescript
 
   vite-tsconfig-paths@5.1.4(typescript@5.6.3)(vite@5.4.18(@types/node@22.14.0)):
     dependencies:

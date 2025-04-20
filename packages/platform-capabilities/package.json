@@ -2,17 +2,15 @@
   "name": "@paynless/platform-capabilities",
   "version": "0.1.0",
   "private": true,
-  "main": "./dist/index.js",
-  "module": "./dist/index.mjs",
-  "types": "./dist/index.d.ts",
+  "main": "./src/index.ts",
+  "module": "./src/index.ts",
+  "types": "./src/index.ts",
   "files": [
-    "dist/**"
+    "src/**"
   ],
   "scripts": {
-    "build": "tsup src/index.ts --format esm,cjs --dts --external react",
-    "dev": "tsup src/index.ts --format esm,cjs --dts --external react --watch",
     "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
-    "clean": "rm -rf dist node_modules",
+    "clean": "rm -rf dist node_modules .turbo",
     "test": "vitest run --passWithNoTests",
     "test:watch": "vitest"
   },
@@ -20,7 +18,6 @@
     "react": "^18.2.0"
   },
   "devDependencies": {
-    "@tauri-apps/api": "^2.4.1",
     "@testing-library/jest-dom": "^6.4.2",
     "@testing-library/react": "^16.0.0",
     "@types/node": "^20.11.24",
@@ -34,6 +31,7 @@
     "vitest": "^1.3.1"
   },
   "dependencies": {
-    "@paynless/types": "workspace:*"
+    "@paynless/types": "workspace:*",
+    "@tauri-apps/api": "^2.4.1"
   }
 }

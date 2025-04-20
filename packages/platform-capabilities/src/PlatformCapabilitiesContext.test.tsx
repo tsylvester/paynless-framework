@@ -11,9 +11,9 @@ import * as core from '@tauri-apps/api/core';
 
 // --- Mocks Setup ---
 
-// Static mock for isTauri (defaulting to false)
+// Static mock for isTauri - Now a function returning false
 vi.mock('@tauri-apps/api/core', () => ({
-  isTauri: false,
+  isTauri: vi.fn(() => false),
 }));
 
 // Mock @tauri-apps/api (dummy DI functions)
@@ -63,13 +63,9 @@ describe('PlatformCapabilitiesProvider', () => {
   });
 
   afterEach(() => {
-    // Reset the mocked value explicitly
-    try {
-        (core as any).isTauri = false;
-    } catch (e) {
-        // May fail if module wasn't loaded in a test, ignore
-    }
-    vi.restoreAllMocks(); 
+    // Remove the attempt to reset the property directly
+    // try { (core as any).isTauri = false; } catch (e) {}
+    vi.restoreAllMocks(); // This will reset the mock function's implementation
   });
 
   // Test for the default (web) case
@@ -96,10 +92,10 @@ describe('PlatformCapabilitiesProvider', () => {
     });
   });
 
-  // Test for Tauri case - Directly modify the mocked property
+  // Test for Tauri case - Change the mock function's return value
   it('should detect Tauri environment when isTauri is true', async () => {
-    // Directly set the property on the imported mock object
-    (core as any).isTauri = true;
+    // Change the mock function's return value for this test
+    vi.mocked(core.isTauri).mockReturnValue(true);
 
     // Mock the factory return value
     const { createTauriFileSystemCapabilities } = await import('./tauriPlatformCapabilities');
@@ -115,14 +111,14 @@ describe('PlatformCapabilitiesProvider', () => {
       expect(createTauriFileSystemCapabilities).toHaveBeenCalled();
     });
 
-    // Optional: Verify the value was changed (implicitly tested by behavior)
-    expect((core as any).isTauri).toBe(true);
+    // Verify the mock function was called
+    expect(core.isTauri).toHaveBeenCalled();
   });
 
-  // Test for error handling in Tauri case - Directly modify the mocked property
+  // Test for error handling in Tauri case - Change the mock function's return value
   it('should handle errors when loading Tauri capabilities module (when isTauri is true)', async () => {
-    // Directly set the property on the imported mock object
-    (core as any).isTauri = true;
+    // Change the mock function's return value for this test
+    vi.mocked(core.isTauri).mockReturnValue(true);
 
     // Mock the factory function to throw an error
     const loadError = new Error('Failed to create Tauri capabilities');
@@ -143,8 +139,8 @@ describe('PlatformCapabilitiesProvider', () => {
       expect(consoleErrorSpy).toHaveBeenCalledWith('Error loading specific platform capabilities module:', loadError);
     });
 
-    // Optional: Verify the value was changed
-    expect((core as any).isTauri).toBe(true);
+    // Verify the mock function was called
+    expect(core.isTauri).toHaveBeenCalled();
     consoleErrorSpy.mockRestore();
   });
 

@@ -168,7 +168,7 @@ This plan assumes we'll start by implementing the core service and then focus on
     *   [x] **Create Service Stub (`packages/platform-capabilities/src/index.ts`):** (Context/Provider pattern implemented)
         *   [x] Create the basic service file.
         *   [x] Define the main export function signature: (Via `usePlatformCapabilities` hook)
-        *   [ ] Write initial *failing* unit test (`*.test.ts`) asserting the basic structure/return type.
+        *   [x] Write initial *failing* unit test (`*.test.ts`) asserting the basic structure/return type. (Tests implemented in Context tests)
         *   [x] Implement a basic stub: (Returning null initially, then capabilities)
 
 **Phase 1: Platform Detection & Basic Service Implementation (Shared Package)**
@@ -177,14 +177,14 @@ This plan assumes we'll start by implementing the core service and then focus on
 *   **Location:** `packages/platform-capabilities/src/index.ts` (and provider logic)
 *   **Checklist:**
     *   [x] **(TDD) Write Unit Tests for Platform Detection:**
-        *   [ ] Test case for detecting standard web browser environment.
-        *   [ ] Test case for detecting Tauri environment (e.g., checking for `window.__TAURI__`).
+        *   [x] Test case for detecting standard web browser environment.
+        *   [x] Test case for detecting Tauri environment (e.g., checking for `window.__TAURI__`).
         *   [ ] Test case for detecting React Native environment (placeholder for future).
         *   [ ] Test case for detecting OS (if needed, might leverage Tauri API later).
     *   [x] **Implement Platform/OS Detection Logic:** (Done within provider logic)
-    *   [ ] **(TDD) Write Unit Tests for Capability Dispatching:**
-        *   [ ] Test that `getPlatformCapabilities` returns the correct `platform` string.
-        *   [ ] Test that `getPlatformCapabilities` initially returns `{ isAvailable: false }` for `fileSystem` on *all* detected platforms (as providers aren't implemented yet).
+    *   [x] **(TDD) Write Unit Tests for Capability Dispatching:**
+        *   [x] Test that `getPlatformCapabilities` returns the correct `platform` string.
+        *   [x] Test that `getPlatformCapabilities` initially returns `{ isAvailable: false }` for `fileSystem` on *all* detected platforms (as providers aren't implemented yet).
     *   [x] **Refine `getPlatformCapabilities`:** (Implemented via hook/provider pattern)
         *   [x] Ensure it returns the detected `platform` and potentially `os`.
         *   [x] Ensure it returns the default `{ isAvailable: false }` stubs for capabilities. Make tests pass.
@@ -200,7 +200,7 @@ This plan assumes we'll start by implementing the core service and then focus on
         *   [x] Define a `webFileSystemCapabilities` object.
         *   [x] Set `isAvailable: false`. For now, we won't implement Web File System Access API to keep it simple. If needed later, this could be enhanced.
         *   *Rationale:* Web file access is significantly different (user-prompted, sandboxed) and often handled by standard `<input type="file">` elements. Abstracting it fully might be complex or unnecessary initially compared to just using standard web patterns where the capability service indicates FS isn't available in the *same way* as Desktop.
-    *   [ ] **(TDD) Write Unit Tests for Web Provider:** Test that `webFileSystemCapabilities.isAvailable` is `false`.
+    *   [x] **(TDD) Write Unit Tests for Web Provider:** Test that `webFileSystemCapabilities.isAvailable` is `false`. (Done via Context test)
     *   [x] **Integrate Web Provider:** (Done in main provider logic)
 
 **Phase 3: Tauri Desktop Platform Provider (TypeScript Layer)**
@@ -208,20 +208,20 @@ This plan assumes we'll start by implementing the core service and then focus on
 *   **Goal:** Implement the TypeScript part of the Tauri provider, defining functions that will call the Rust backend via `invoke`.
 *   **Location:** `packages/platform-capabilities/src/tauriPlatformCapabilities.ts` (Created)
 *   **Checklist:**
-    *   [ ] **Create Tauri Provider File:** `tauriPlatformCapabilities.ts`.
-    *   [ ] **Import Tauri API:** Added `@tauri-apps/api` as a dependency. Imported relevant functions.
-    *   [ ] **Implement `fileSystem` for Tauri:**
-        *   [ ] Define `tauriFileSystemCapabilities` object implementing `FileSystemCapabilities`.
-        *   [ ] Set `isAvailable: true`.
-        *   [ ] Implement `pickFile`: Use Tauri's `open()` dialog API.
-        *   [ ] Implement `pickSaveFile`: Use Tauri's `save()` dialog API (Stubbed/Mocked in tests, assume basic impl exists).
-        *   [ ] Implement `readFile`: Define function calling `invoke('plugin:capabilities|read_file', { path })`.
-        *   [ ] Implement `writeFile`: Define function calling `invoke('plugin:capabilities|write_file', { path, data })`. (Stubbed/Mocked in tests, assume basic impl exists).
-    *   [ ] **(TDD) Write Unit Tests for Tauri Provider (TS Layer):** (Component test covers basic interaction)
-        *   [ ] Mock the `@tauri-apps/api` module (`vi.mock` or `jest.mock`).
-        *   [ ] Test that `pickFile`/`pickSaveFile` call the mocked `open`/`save` functions correctly.
-        *   [ ] Test that `readFile`/`writeFile` call the mocked `invoke` function with the correct command name and arguments. Test argument serialization if necessary (e.g., data conversion).
-    *   [ ] **Integrate Tauri Provider:** (Done in main provider logic)
+    *   [x] **Create Tauri Provider File:** `tauriPlatformCapabilities.ts`. (Refactored to DI factory)
+    *   [x] **Import Tauri API:** Added `@tauri-apps/api` as a dependency. Imported relevant functions (Types imported for DI).
+    *   [x] **Implement `fileSystem` for Tauri:**
+        *   [x] Define `tauriFileSystemCapabilities` object implementing `FileSystemCapabilities`. (Via factory)
+        *   [x] Set `isAvailable: true`. (Via factory)
+        *   [x] Implement `pickFile`: Use Tauri's `open()` dialog API. (Via DI)
+        *   [x] Implement `pickSaveFile`: Use Tauri's `save()` dialog API. (Via DI)
+        *   [x] Implement `readFile`: Define function calling `invoke('plugin:capabilities|read_file', { path })`. (Via DI)
+        *   [x] Implement `writeFile`: Define function calling `invoke('plugin:capabilities|write_file', { path, data })`. (Via DI)
+    *   [x] **(TDD) Write Unit Tests for Tauri Provider (TS Layer):** (Done: split files, using DI mocks)
+        *   [x] Mock the `@tauri-apps/api` module (`vi.mock` or `jest.mock`). (Used standard `vi.fn()` mocks via DI)
+        *   [x] Test that `pickFile`/`pickSaveFile` call the mocked `open`/`save` functions correctly.
+        *   [x] Test that `readFile`/`writeFile` call the mocked `invoke` function with the correct command name and arguments. Test argument serialization if necessary (e.g., data conversion).
+    *   [x] **Integrate Tauri Provider:** (Done in main provider logic via factory)
 
 **Phase 4: Tauri Desktop Backend (Rust Layer)**
 
@@ -408,34 +408,4 @@ Refactor `authStore` to manage `pendingAction` and `loadChatIdOnRedirect` within
 **Phase 0: Setup & Interface Definition**
 *   **Goal:** Add dependencies, create the new package structure, and define the shared interface.
 *   **Steps:**
-    *   [x] **Add Dependencies:** Add `posthog-js` to `packages/analytics-client/package.json`.
-    *   [x] **Create Package:** Create the directory `packages/analytics-client`.
-    *   [x] **Package Files:** Add `packages/analytics-client/package.json`, `packages/analytics-client/tsconfig.json` (extending base tsconfig).
-    *   [x] **Source Dir:** Create `packages/analytics-client/src/`.
-    *   [x] **Define Interface:** In `packages/types/src/`, create `analytics.types.ts`. Define the `AnalyticsClient` interface (`init?`, `identify`, `track`, `reset`).
-    *   [x] **Export Interface:** Export `AnalyticsClient` from `packages/types/src/index.ts`.
-    *   [x] **Update Workspace:** Ensure `pnpm-workspace.yaml` includes `packages/analytics-client`.
-    *   [x] **Install:** Run `pnpm install` from the root.
-*   **Testing & Commit Point:** Verify builds, workspace recognition. Commit: `feat(analytics): Setup analytics-client package and define core interface`
-
-**Phase 1: Null Adapter & Default Service**
-*   **Goal:** Implement the default "do nothing" behavior.
-*   **Steps:**
-    *   [x] **Null Adapter:** Create `packages/analytics-client/src/nullAdapter.ts`. Implement `AnalyticsClient` with empty functions.
-    *   [x] **Central Service Stub:** Create `packages/analytics-client/src/index.ts`. Import `NullAnalyticsAdapter`. Read placeholder env vars. Default to exporting `new NullAnalyticsAdapter()` as `analytics`.
-*   **Testing & Commit Point:** Unit test `NullAnalyticsAdapter`, unit test `index.ts` defaulting to null adapter. Commit: `feat(analytics): Implement null analytics adapter and default service`
-
-**Phase 2: PostHog Adapter & Service Logic**
-*   **Goal:** Implement the PostHog adapter and selection logic.
-*   **Steps:**
-    *   [x] **Environment Variables:** Define `VITE_ANALYTICS_PROVIDER`, `VITE_POSTHOG_KEY`, `VITE_POSTHOG_HOST` in `.env.example` (optional).
-    *   [x] **PostHog Adapter:** Create `packages/analytics-client/src/posthogAdapter.ts`. Import `posthog-js`. Implement `AnalyticsClient` interface using `posthog.init`, `posthog.identify`, `posthog.capture`, `posthog.reset`, etc.
-    *   [x] **Central Service Update (`index.ts`):** Import `PostHogAdapter`. Read actual env vars. Add logic: If provider is "posthog" and key exists, instantiate and `init` PostHog adapter; else, instantiate null adapter. Export the chosen instance as `analytics`. Add logging for chosen adapter.
-*   **Testing & Commit Point:** Unit test `PostHogAdapter` (mocking `posthog-js`). Unit test `index.ts` selection logic with different env var combinations. Commit: `feat(analytics): Implement PostHog adapter and configure service selection`
-
-**Phase 3: Application Initialization & User Identification**
-*   **Goal:** Initialize the client and integrate user identification/reset.
-*   **Steps:**
-    *   [✅] **App Initialization:** Ensure `import { analytics } from '@paynless/analytics-client';` happens early in `apps/web/src/main.tsx` or `App.tsx` (init happens on import).
-    *   [✅] **Integrate with `useAuthStore`:** Import `analytics`. In `login`, `register`, `initialize` success handlers, call `analytics.identify(user.id, { traits... })`. In `logout` action, call `analytics.reset();`.
-*   **Testing & Commit Point:** Unit test `authStore` (mocking analytics client, verifying `identify`
+    *   [x] **Add Dependencies:** Add `
