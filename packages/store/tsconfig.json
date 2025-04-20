@@ -17,6 +17,7 @@
   "references": [
     { "path": "../types" },
     { "path": "../utils" },
-    { "path": "../api-client" }
+    { "path": "../api-client" },
+    { "path": "../analytics-client" }
   ]
 } 

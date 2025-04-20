@@ -5,8 +5,15 @@
     "rootDir": "src",
     "baseUrl": ".",
     "lib": ["ESNext", "DOM"],
-    "types": ["vitest/globals", "vite/client"]
+    "types": ["vitest/globals", "vite/client"],
+    "composite": true,
+    "declaration": true,
+    "declarationMap": true,
+    "declarationDir": "./dist"
   },
   "include": ["src/**/*.ts"],
-  "exclude": ["node_modules", "dist"]
+  "exclude": ["node_modules", "dist"],
+  "references": [
+    { "path": "../types" }
+  ]
 } 
