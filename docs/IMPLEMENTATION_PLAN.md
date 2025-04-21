@@ -40,7 +40,7 @@
     *   [ ] Convert all pages / components to shadcn
     *   [ ] Loading skeletons for all components 
 *   [ ] Run SEO scan 
-*   [ ] Figure out how to parse chat responses better, they get messy if the assistant uses markdown 
+*   [✅] Figure out how to parse chat responses better, they get messy if the assistant uses markdown 
 *   [ ] Fix super long login delay on chat flow 
 *   [🚧] User email automation - abstract for generic but specific implementation with Kit 
     *   [ ] Everything works EXCEPT the email_sync_trigger for on_user_created, the current form breaks registration
