@@ -112,6 +112,36 @@ DROP FUNCTION IF EXISTS handle_user_created();
 ```
 You can also delete the trigger manually through the Supabase GUI under the Database -> Triggers menu (and the function under Database -> Functions).
 
+### Manually Invoking `sync-ai-models`
+
+This project includes an Edge Function (`sync-ai-models`) responsible for fetching the latest available AI models from configured providers (like OpenAI, Anthropic, Google) and updating the `ai_models` table in the database.
+
+**Currently, there is no automated scheduling (like a cron job) set up for this function.** To update the AI models in your database, you need to invoke this function manually using the Supabase CLI.
+
+**Prerequisites:**
+
+1.  **Link Project:** Ensure your local CLI is linked to your Supabase project:
+    ```bash
+    supabase link --project-ref YOUR_PROJECT_REF
+    ```
+2.  **Deploy Function:** Ensure the `sync-ai-models` Edge Function has been deployed:
+    ```bash
+    supabase functions deploy sync-ai-models
+    ```
+3.  **(Optional) Set API Keys:** For the function to fetch models from providers, ensure the relevant API keys (e.g., `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GOOGLE_API_KEY`) are set as environment variables for the function in your Supabase project settings (or locally in `.env.local` if invoking locally, though local invocation might have limitations). Go to Project Settings -> Edge Functions -> `sync-ai-models` -> Secrets.
+
+**To Manually Invoke:**
+
+*   Run the following command from your project's root directory:
+    ```bash
+    supabase functions invoke sync-ai-models
+    ```
+
+*   *(Note: You might need to add `--project-ref YOUR_PROJECT_REF` if you have multiple linked projects or are not in the root directory).* 
+*   Check the command output and your Supabase function logs for success or errors.
+
+*(Future Work: Set up automated scheduling, likely via a manual Cron Function Hook in the Supabase Dashboard UI, once that process is fully verified or alternative automation becomes available).* 
+
 ## API Implementation Layering
 
 The application follows a clear layered architecture for API interactions:

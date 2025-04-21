@@ -103,4 +103,70 @@ export interface EmailMarketingService {
   removeUser?(email: string): Promise<void>;
 }
 
+// --- AI Types (Copied from packages/types) ---
+
+// Basic JSON type alias
+export type Json =
+  | string
+  | number
+  | boolean
+  | null
+  | { [key: string]: Json | undefined }
+  | Json[];
+
+/**
+ * Represents a single message within a Chat.
+ * Matches the chat_messages table structure.
+ * id/chat_id are optional as they aren't present before DB save.
+ */
+export interface ChatMessage {
+  id?: string; // Optional before DB save
+  chat_id?: string; // Optional before DB save (for new chats)
+  user_id: string | null;
+  role: 'user' | 'assistant' | 'system';
+  content: string;
+  ai_provider_id: string | null;
+  system_prompt_id: string | null;
+  token_usage: Json | null;
+  created_at: string; // This might also be optional pre-save, but adapters add it.
+}
+
+/**
+ * Structure for sending a message via the 'chat' Edge Function.
+ * Includes message history needed by adapters.
+ */
+export interface ChatApiRequest {
+  message: string;
+  providerId: string; // AiProvider['id'] (ID from ai_providers table)
+  promptId: string;   // SystemPrompt['id'] or '__none__'
+  chatId?: string;   // Chat['id'] (optional for new chats)
+  messages: { role: 'user' | 'assistant' | 'system'; content: string }[]; // History + System Prompt
+}
+
+/**
+ * Represents the standardized information returned by a provider's listModels method.
+ */
+export interface ProviderModelInfo {
+  api_identifier: string; // The specific ID the provider uses for this model in API calls
+  name: string;           // A user-friendly name for the model
+  description?: string;    // Optional description
+  config?: Json;         // Optional non-sensitive configuration details
+}
+
+/**
+ * Interface for AI provider adapters.
+ * Defines the common methods required for interacting with different AI provider APIs.
+ */
+export interface AiProviderAdapter {
+  sendMessage(
+    request: ChatApiRequest,
+    modelIdentifier: string, // The specific API identifier for the model (e.g., 'gpt-4o')
+    apiKey: string
+  ): Promise<ChatMessage>;
+
+  listModels(apiKey: string): Promise<ProviderModelInfo[]>;
+}
+
+// --- End AI Types ---
+
 // --- Add other shared types below --- 
