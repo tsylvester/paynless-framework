@@ -121,9 +121,9 @@ export function AiChatPage() {
   return (
     <Layout>
       {/* Make grid container grow vertically and respect parent height */}
-      <div className="container mx-auto p-6 grid grid-cols-1 md:grid-cols-3 gap-6 flex-grow min-h-0"> 
+      <div className="container mx-auto p-6 grid grid-cols-1 md:grid-cols-3 gap-6"> 
         {/* Left Column: Make COLUMN scrollable */}
-        <div className="md:col-span-2 flex flex-col border border-border rounded-lg bg-card shadow-sm overflow-y-auto min-h-0 max-h-[calc(100vh-6rem)]"> 
+        <div className="md:col-span-2 flex flex-col border border-border rounded-lg bg-card shadow-sm overflow-y-auto min-h-0 max-h-[calc(100vh-12rem)]"> 
           {/* Header is sticky within the column */} 
           <div className="p-4 border-b border-border flex flex-wrap items-center gap-4 sticky top-0 bg-card z-10"> 
             <h2 className="text-lg font-semibold text-card-foreground mr-auto">AI Chat</h2> 

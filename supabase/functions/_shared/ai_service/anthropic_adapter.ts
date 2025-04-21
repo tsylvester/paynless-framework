@@ -36,44 +36,48 @@ export class AnthropicAdapter implements AiProviderAdapter {
     // It uses a separate 'system' parameter for the system prompt.
     let systemPrompt = '';
     const anthropicMessages: { role: 'user' | 'assistant'; content: string }[] = [];
-
-    // Assuming request.messages contains history + system prompt if applicable
-    // We need to filter and structure correctly.
-    // A more robust implementation might fetch history separately.
     let combinedMessages = [...request.messages];
     if (request.message) {
         combinedMessages.push({ role: 'user', content: request.message });
     }
 
-    let lastRole: 'user' | 'assistant' | 'system' | null = null;
+    // 1. First pass: Extract system prompt and gather user/assistant messages
+    const preliminaryMessages: { role: 'user' | 'assistant'; content: string }[] = [];
     for (const message of combinedMessages) {
         if (message.role === 'system' && message.content) {
-            // Anthropic uses a top-level system parameter
-            systemPrompt = message.content;
-            lastRole = 'system';
-        } else if (message.role === 'user') {
-            // Ensure alternating roles - skip consecutive user messages if needed
-            if (lastRole !== 'user') {
-                anthropicMessages.push({ role: 'user', content: message.content });
-                lastRole = 'user';
-            }
-            // else { console.warn('Skipping consecutive user message for Anthropic format.'); }
-        } else if (message.role === 'assistant') {
-             // Ensure alternating roles - skip consecutive assistant messages if needed
-            if (lastRole !== 'assistant') {
-                anthropicMessages.push({ role: 'assistant', content: message.content });
-                lastRole = 'assistant';
-            }
-             // else { console.warn('Skipping consecutive assistant message for Anthropic format.'); }
+            systemPrompt = message.content; // Capture the last system message if multiple exist
+        } else if (message.role === 'user' || message.role === 'assistant') {
+            preliminaryMessages.push({ role: message.role, content: message.content });
         }
     }
 
-    // Anthropic API requires the last message to be from the user.
-    // If the last message in history wasn't 'user', this might need adjustment
-    // or the filtering logic above should guarantee it.
-    if (lastRole !== 'user') {
-        console.error('Anthropic request format error: Last message must be from user.', anthropicMessages);
-        throw new Error('Cannot send request to Anthropic: message history format invalid.');
+    // 2. Second pass: Ensure strict alternation starting with 'user'
+    let expectedRole: 'user' | 'assistant' = 'user';
+    for (const message of preliminaryMessages) {
+        if (message.role === expectedRole) {
+            anthropicMessages.push(message);
+            expectedRole = (expectedRole === 'user') ? 'assistant' : 'user';
+        } else {
+            // If the current message's role doesn't match the expected role,
+            // skip it and potentially subsequent messages until the expected role is found.
+            // This enforces the strict alternation.
+            // Example: [user, user, assistant] -> process first user, skip second user, process assistant.
+            // Example: [assistant, user] -> skip assistant, process user.
+             console.warn(`Skipping message with role '${message.role}' because '${expectedRole}' was expected.`);
+        }
+    }
+
+    // 3. Validation: Check if the filtered list is empty or ends with 'assistant'
+     if (anthropicMessages.length === 0) {
+        console.error('Anthropic request format error: No valid user/assistant messages found after filtering.', preliminaryMessages);
+        throw new Error('Cannot send request to Anthropic: No valid messages to send.');
+     }
+
+    if (anthropicMessages[anthropicMessages.length - 1].role !== 'user') {
+        console.error('Anthropic request format error: Last message must be from user after filtering.', anthropicMessages);
+        // Depending on the desired behavior, we could potentially remove the last assistant message.
+        // For now, throwing an error is safer as it indicates a potential issue upstream.
+        throw new Error('Cannot send request to Anthropic: message history format invalid after filtering.');
     }
 
     const anthropicPayload = {
@@ -85,7 +89,8 @@ export class AnthropicAdapter implements AiProviderAdapter {
     };
 
     console.log(`Sending request to Anthropic model: ${modelApiName}`);
-    // console.debug('Anthropic Payload:', JSON.stringify(anthropicPayload));
+    // Uncomment for detailed debugging:
+    console.debug('Anthropic Payload:', JSON.stringify(anthropicPayload, null, 2));
 
     const response = await fetch(messagesUrl, {
       method: 'POST',
@@ -140,41 +145,8 @@ export class AnthropicAdapter implements AiProviderAdapter {
   }
 
   async listModels(apiKey: string): Promise<ProviderModelInfo[]> {
-    // NOTE: As of late 2023/early 2024, Anthropic doesn't have a public /v1/models endpoint.
-    // Model availability might need to be hardcoded or managed differently until they provide one.
-    // For now, returning a hardcoded list based on known models.
-    // This should be updated if/when Anthropic provides a model listing API.
-    console.warn('Anthropic adapter using hardcoded model list - update if API becomes available.');
-
-    // Example hardcoded list (update with actual current models)
-    const hardcodedModels: ProviderModelInfo[] = [
-      {
-        api_identifier: 'anthropic-claude-3-opus-20240229',
-        name: 'Anthropic Claude 3 Opus',
-        description: 'Most powerful model for highly complex tasks.',
-      },
-      {
-        api_identifier: 'anthropic-claude-3-sonnet-20240229',
-        name: 'Anthropic Claude 3 Sonnet',
-        description: 'Ideal balance of intelligence and speed for enterprise workloads.'
-      },
-      {
-        api_identifier: 'anthropic-claude-3-haiku-20240307',
-        name: 'Anthropic Claude 3 Haiku',
-        description: 'Fastest and most compact model for near-instant responsiveness.'
-      },
-      // Add older models if needed, e.g.:
-      // { api_identifier: 'anthropic-claude-2.1', name: 'Anthropic Claude 2.1' },
-      // { api_identifier: 'anthropic-claude-2.0', name: 'Anthropic Claude 2.0' },
-      // { api_identifier: 'anthropic-claude-instant-1.2', name: 'Anthropic Claude Instant 1.2' }
-    ];
-
-    // Simulate API call success
-    return Promise.resolve(hardcodedModels);
-
-    /* --- Placeholder for actual API call if endpoint becomes available --- 
-    const modelsUrl = `${ANTHROPIC_API_BASE}/models`; // Hypothetical endpoint
-    console.log("Fetching models from Anthropic...");
+    const modelsUrl = `${ANTHROPIC_API_BASE}/models`; // Correct endpoint
+    console.log("Fetching models dynamically from Anthropic...");
 
     try {
       const response = await fetch(modelsUrl, {
@@ -192,17 +164,28 @@ export class AnthropicAdapter implements AiProviderAdapter {
       }
 
       const jsonResponse = await response.json();
-      const models: ProviderModelInfo[] = [];
-      // ... Parse jsonResponse.data (assuming similar structure to OpenAI) ...
-      // Remember to prepend 'anthropic-' to api_identifier
+      
+      // Assuming response structure has a 'data' array based on docs
+      if (!jsonResponse?.data || !Array.isArray(jsonResponse.data)) {
+          console.error("Anthropic listModels response missing or invalid 'data' array:", jsonResponse);
+          throw new Error("Invalid response format received from Anthropic models API.");
+      }
+
+      const models: ProviderModelInfo[] = jsonResponse.data.map((item: any) => ({
+          // Prepend 'anthropic-' for consistency with other adapters/DB entries
+          api_identifier: `anthropic-${item.id}`, 
+          name: item.display_name || item.id, // Use display_name, fallback to id
+          description: null // API does not provide description
+      }));
 
       console.log(`Found ${models.length} models from Anthropic.`);
       return models;
     } catch (error) {
-        console.error("Failed to fetch models from Anthropic (or endpoint doesn't exist):", error);
-        return []; // Return empty list on failure
+        console.error("Failed to fetch or parse models from Anthropic:", error);
+        // Decide on behavior: throw error or return empty list?
+        // Throwing might be better to signal a sync failure clearly.
+        throw error; // Re-throw the caught error 
     }
-    */
   }
 }
 

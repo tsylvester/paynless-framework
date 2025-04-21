@@ -304,15 +304,15 @@ Following this cycle helps catch errors early, ensures comprehensive test covera
 *   **Phase 2: Backend Integration Tests (Local & Deployed)**
     *   [ ] **`/ai-providers`:** Test endpoint returns correctly filtered list based on local `.env` keys.
     *   [ ] **`/chat`:** Test sending messages via different configured providers (requires API keys in local `.env`).
-    *   [ ] **`sync-ai-models`:**
-        *   Invoke function locally (`supabase functions invoke...`, requires API keys).
+    *   [ ] **`sync-ai-models` (Manual Invocation):**
+        *   Manually invoke function (`supabase functions invoke sync-ai-models`, requires API keys configured in Supabase project secrets).
         *   Verify database changes (new/updated/deactivated models).
-        *   Test idempotency.
-    *   [ ] **Cron Job:** Verify scheduled execution in deployed environment triggers the function (check logs).
+        *   Test idempotency (running again should ideally result in no changes or expected updates).
+    *   [ ] **Cron Job (Manual Setup / Deferred):** *(No automated cron setup currently. Verification requires manual setup via Dashboard or is deferred until automation is possible).* 
 
 *   **Phase 3: Frontend Integration Tests (MSW)**
-    *   [ ] **`ModelSelector.tsx`:** Mock `/ai-providers` response. Test component renders the correct list.
-    *   [ ] **`AiChatbox.tsx` / `aichat.tsx`:** Mock `/chat` response. Test sending message results in correct API call (verify payload).
+    *   [✅] **`ModelSelector.tsx`:** Mock `/ai-providers` response. Test component renders the correct list.
+    *   [✅] **`AiChatbox.tsx` / `aichat.tsx`:** Mock `/chat` response. Test sending message results in correct API call (verify payload).
 
 *   **Phase 4: End-to-End Validation**
     *   [ ] Manually configure API keys (OpenAI, Anthropic, Google).

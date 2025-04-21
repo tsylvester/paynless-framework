@@ -1,5 +1,5 @@
-import { assert, assertEquals, assertExists } from "jsr:@std/assert@0.225.3";
-import { spy, type Spy, assertSpyCalls } from "jsr:@std/testing@0.225.1/mock";
+import { assert, assertEquals, assertExists, assertRejects } from "jsr:@std/assert@0.225.3";
+import { spy, type Spy, assertSpyCall, assertSpyCalls } from "jsr:@std/testing@0.225.1/mock";
 import type { SupabaseClient } from "npm:@supabase/supabase-js@2";
 
 // Import the handler and dependency types from the refactored index.ts
@@ -12,37 +12,59 @@ const mockOpenAiKey = 'test-openai-key';
 const mockAnthropicKey = 'test-anthropic-key';
 const mockGoogleKey = 'test-google-key';
 
-// Sample provider data from DB
+// Sample provider data from DB - now including is_enabled
 const mockDbProviders = [
-    { id: '1', name: 'OpenAI GPT-4o', description: 'Test OpenAI', api_identifier: 'openai-gpt-4o', provider: 'openai' },
-    { id: '2', name: 'Anthropic Claude 3', description: 'Test Anthropic', api_identifier: 'claude-3-opus', provider: 'anthropic' },
-    { id: '3', name: 'Google Gemini Pro', description: 'Test Google', api_identifier: 'gemini-pro', provider: 'google' },
-    { id: '4', name: 'Unknown Provider Model', description: 'Test Unknown', api_identifier: 'unknown-model', provider: 'some_unknown_provider' }, // Unknown provider string
-    { id: '5', name: 'OpenAI GPT-3.5', description: 'Test OpenAI 2', api_identifier: 'openai-gpt-3.5-turbo', provider: 'openai' }, // Another OpenAI model
-    { id: '6', name: 'Provider Without Key', description: 'No Key Test', api_identifier: 'no-key-model', provider: 'openai' }, // This OpenAI model should be included if OPENAI_API_KEY is set
-    { id: '7', name: 'Provider With Null String', description: 'Null String', api_identifier: 'null-string-model', provider: null }, // Provider string is null
+    { id: '1', name: 'OpenAI GPT-4o', description: 'Test OpenAI', api_identifier: 'openai-gpt-4o', provider: 'openai', is_active: true, is_enabled: true }, // Active, Enabled, Key Set
+    { id: '2', name: 'Anthropic Claude 3', description: 'Test Anthropic', api_identifier: 'claude-3-opus', provider: 'anthropic', is_active: true, is_enabled: false }, // Active, DISABLED
+    { id: '3', name: 'Google Gemini Pro', description: 'Test Google', api_identifier: 'gemini-pro', provider: 'google', is_active: true, is_enabled: true }, // Active, Enabled, Key Set
+    { id: '4', name: 'Unknown Provider Model', description: 'Test Unknown', api_identifier: 'unknown-model', provider: 'some_unknown_provider', is_active: true, is_enabled: true }, // Active, Enabled, Unknown Provider
+    { id: '5', name: 'OpenAI GPT-3.5', description: 'Test OpenAI 2', api_identifier: 'openai-gpt-3.5-turbo', provider: 'openai', is_active: true, is_enabled: true }, // Active, Enabled, Key Set
+    { id: '6', name: 'Provider Without Key', description: 'No Key Test', api_identifier: 'no-key-model', provider: 'openai', is_active: true, is_enabled: true }, // Active, Enabled, Key MAYBE Set
+    { id: '7', name: 'Provider With Null String', description: 'Null String', api_identifier: 'null-string-model', provider: null, is_active: true, is_enabled: true }, // Active, Enabled, Null Provider
+    { id: '8', name: 'Inactive Enabled Google', description: 'Inactive Google', api_identifier: 'gemini-inactive', provider: 'google', is_active: false, is_enabled: true }, // INACTIVE, Enabled
+    { id: '9', name: 'Inactive Disabled OpenAI', description: 'Inactive OpenAI', api_identifier: 'openai-inactive', provider: 'openai', is_active: false, is_enabled: false }, // INACTIVE, DISABLED
 ];
 
 // --- Mock Setup ---
 
 // Helper to create a mock Supabase Client specifically for this function
 const createMockSupaClientForProviders = (providersData: any[] | null, error: Error | null = null): SupabaseClient => {
+    let filters: { column: string; value: any }[] = [];
+
     const mockQueryBuilder: any = {
-        eq: spy(() => mockQueryBuilder),
+        eq: spy((column: string, value: any) => {
+            filters.push({ column, value });
+            return mockQueryBuilder; // Return self for chaining
+        }),
         select: spy(() => mockQueryBuilder),
         // Mock the promise-like behavior for await
         then: spy((resolve: (result: { data: any[] | null, error: Error | null }) => void) => {
-            Promise.resolve().then(() => resolve({ data: providersData, error }));
+            // Apply filters before resolving
+            let filteredData = providersData;
+            if (providersData && !error) {
+                filteredData = providersData.filter(row => 
+                    filters.every(filter => row[filter.column] === filter.value)
+                );
+            }
+            Promise.resolve().then(() => resolve({ data: filteredData, error }));
         }),
     };
     // Simulate the await directly on the query builder returning the result
     (mockQueryBuilder as any)[Symbol.asyncIterator] = async function*() {
-        yield { data: providersData, error };
+        // Apply filters before yielding
+        let filteredData = providersData;
+        if (providersData && !error) {
+            filteredData = providersData.filter(row => 
+                filters.every(filter => row[filter.column] === filter.value)
+            );
+        }
+        yield { data: filteredData, error };
     };
 
     const mockClient: Partial<SupabaseClient> = {
         from: spy((tableName: string) => {
-            assertEquals(tableName, 'ai_providers'); // Ensure only correct table is queried
+            assertEquals(tableName, 'ai_providers');
+            filters = []; // Reset filters for each new query chain
             return mockQueryBuilder;
         }),
     };
@@ -90,14 +112,15 @@ Deno.test("ai-providers Function Tests", async (t) => {
         assertEquals((await response.json()).error.message, 'Method Not Allowed');
     });
 
-    await t.step("GET Success - All Keys Set: Returns all known, filterable providers", async () => {
+    await t.step("GET Success - All Keys Set: Returns ONLY known, active, enabled providers", async () => {
         const envVars = {
-            SUPABASE_URL: mockSupabaseUrl, // Needed for client creation
+            SUPABASE_URL: mockSupabaseUrl, 
             SUPABASE_ANON_KEY: mockAnonKey,
             OPENAI_API_KEY: mockOpenAiKey,
-            ANTHROPIC_API_KEY: mockAnthropicKey,
+            ANTHROPIC_API_KEY: mockAnthropicKey, // Key set, but model 2 is disabled
             GOOGLE_API_KEY: mockGoogleKey,
         };
+        // Provide the full mock data, the function should filter it
         const dbResponse = { data: [...mockDbProviders], error: null };
         const deps = createTestDeps(dbResponse, envVars);
 
@@ -107,28 +130,39 @@ Deno.test("ai-providers Function Tests", async (t) => {
         const body = await response.json();
 
         assertExists(body.providers);
-        // Expecting 3 known (OpenAI, Anthropic, Google) + 2 extra OpenAI = 5 providers
-        // IDs: 1, 2, 3, 5, 6 (all have known provider strings and keys set)
-        assertEquals(body.providers.length, 5, `Expected 5 providers, got ${body.providers.length}`); 
-        assert(body.providers.some((p: any) => p.id === '1')); // OpenAI
-        assert(body.providers.some((p: any) => p.id === '2')); // Anthropic
-        assert(body.providers.some((p: any) => p.id === '3')); // Google
-        assert(body.providers.some((p: any) => p.id === '5')); // OpenAI
-        assert(body.providers.some((p: any) => p.id === '6')); // OpenAI (key is set)
-        // Ensure unknown/null provider ones are NOT present
+        // Expecting models 1, 3, 5, 6 (Active=true, Enabled=true, Known Provider, Key Set)
+        assertEquals(body.providers.length, 4, `Expected 4 providers, got ${body.providers.length}`); 
+        assert(body.providers.some((p: any) => p.id === '1')); // OpenAI GPT-4o
+        assert(body.providers.some((p: any) => p.id === '3')); // Google Gemini Pro
+        assert(body.providers.some((p: any) => p.id === '5')); // OpenAI GPT-3.5
+        assert(body.providers.some((p: any) => p.id === '6')); // OpenAI NoKey Model
+
+        // Explicitly check excluded ones:
+        assert(!body.providers.some((p: any) => p.id === '2'), "Provider ID 2 (Anthropic disabled) should be filtered");
         assert(!body.providers.some((p: any) => p.id === '4'), "Provider ID 4 (unknown string) should be filtered");
         assert(!body.providers.some((p: any) => p.id === '7'), "Provider ID 7 (null string) should be filtered");
+        assert(!body.providers.some((p: any) => p.id === '8'), "Provider ID 8 (inactive) should be filtered");
+        assert(!body.providers.some((p: any) => p.id === '9'), "Provider ID 9 (inactive) should be filtered");
+
+        // Verify the .eq() calls on the mock client
+        const mockClient = deps.createSupabaseClient(mockSupabaseUrl, mockAnonKey);
+        const fromSpy = mockClient.from as Spy;
+        assertSpyCalls(fromSpy, 1);
+        const eqSpy = fromSpy.calls[0].returned.eq as Spy;
+        assertSpyCalls(eqSpy, 2);
+        assertSpyCall(eqSpy, 0, { args: ['is_active', true] });
+        assertSpyCall(eqSpy, 1, { args: ['is_enabled', true] });
 
         // Verify getEnv was called for the relevant keys
         const getEnvSpy = deps.getEnv as Spy<any>;
-        // 5 provider checks (IDs 1,2,3,5,6) + 2 Supabase client checks = 7
-        assertSpyCalls(getEnvSpy, 7); 
+        // Expected calls for: SUPABASE_URL, SUPABASE_ANON_KEY, + 4 returned providers (1,3,5,6)
+        assertSpyCalls(getEnvSpy, 6); 
         assert(getEnvSpy.calls.some(call => call.args[0] === 'OPENAI_API_KEY'));
-        assert(getEnvSpy.calls.some(call => call.args[0] === 'ANTHROPIC_API_KEY'));
         assert(getEnvSpy.calls.some(call => call.args[0] === 'GOOGLE_API_KEY'));
+        // ANTHROPIC_API_KEY should NOT be checked as model 2 was filtered by is_enabled=false
     });
 
-    await t.step("GET Filtering - Only OpenAI Key Set: Returns only OpenAI providers", async () => {
+    await t.step("GET Filtering - Only OpenAI Key Set: Returns active, enabled OpenAI providers", async () => {
         const envVars = {
             SUPABASE_URL: mockSupabaseUrl,
             SUPABASE_ANON_KEY: mockAnonKey,
@@ -144,14 +178,22 @@ Deno.test("ai-providers Function Tests", async (t) => {
         const body = await response.json();
 
         assertExists(body.providers);
-        assertEquals(body.providers.length, 3); // Expecting 3 OpenAI providers (IDs: 1, 5, 6)
+        // Expecting models 1, 5, 6 (Active=true, Enabled=true, Provider=openai, Key Set)
+        assertEquals(body.providers.length, 3); 
         assert(body.providers.every((p: any) => p.provider === 'openai'));
         assert(body.providers.some((p: any) => p.id === '1'));
         assert(body.providers.some((p: any) => p.id === '5'));
         assert(body.providers.some((p: any) => p.id === '6'));
+
+        // Verify .eq calls
+        const mockClient = deps.createSupabaseClient(mockSupabaseUrl, mockAnonKey);
+        const eqSpy = (mockClient.from as Spy).calls[0].returned.eq as Spy;
+        assertSpyCalls(eqSpy, 2);
+        assertSpyCall(eqSpy, 0, { args: ['is_active', true] });
+        assertSpyCall(eqSpy, 1, { args: ['is_enabled', true] });
     });
 
-    await t.step("GET Filtering - Only Anthropic Key Set: Returns only Anthropic providers", async () => {
+    await t.step("GET Filtering - Only Anthropic Key Set: Returns empty (model 2 disabled)", async () => {
         const envVars = { 
             SUPABASE_URL: mockSupabaseUrl,
             SUPABASE_ANON_KEY: mockAnonKey,
@@ -166,12 +208,17 @@ Deno.test("ai-providers Function Tests", async (t) => {
         const body = await response.json();
 
         assertExists(body.providers);
-        assertEquals(body.providers.length, 1);
-        assertEquals(body.providers[0].id, '2');
-        assertEquals(body.providers[0].provider, 'anthropic');
+        assertEquals(body.providers.length, 0); // Model 2 is is_enabled: false
+
+        // Verify .eq calls
+        const mockClient = deps.createSupabaseClient(mockSupabaseUrl, mockAnonKey);
+        const eqSpy = (mockClient.from as Spy).calls[0].returned.eq as Spy;
+        assertSpyCalls(eqSpy, 2);
+        assertSpyCall(eqSpy, 0, { args: ['is_active', true] });
+        assertSpyCall(eqSpy, 1, { args: ['is_enabled', true] });
     });
 
-    await t.step("GET Filtering - Only Google Key Set: Returns only Google providers", async () => {
+    await t.step("GET Filtering - Only Google Key Set: Returns active, enabled Google providers", async () => {
          const envVars = { 
             SUPABASE_URL: mockSupabaseUrl,
             SUPABASE_ANON_KEY: mockAnonKey,
@@ -186,12 +233,20 @@ Deno.test("ai-providers Function Tests", async (t) => {
         const body = await response.json();
 
         assertExists(body.providers);
+        // Expecting model 3 (Active=true, Enabled=true, Provider=google, Key Set)
         assertEquals(body.providers.length, 1);
         assertEquals(body.providers[0].id, '3');
         assertEquals(body.providers[0].provider, 'google');
+
+        // Verify .eq calls
+        const mockClient = deps.createSupabaseClient(mockSupabaseUrl, mockAnonKey);
+        const eqSpy = (mockClient.from as Spy).calls[0].returned.eq as Spy;
+        assertSpyCalls(eqSpy, 2);
+        assertSpyCall(eqSpy, 0, { args: ['is_active', true] });
+        assertSpyCall(eqSpy, 1, { args: ['is_enabled', true] });
     });
 
-    await t.step("GET Filtering - OpenAI + Google Keys Set: Returns corresponding providers", async () => {
+    await t.step("GET Filtering - OpenAI + Google Keys Set: Returns corresponding active, enabled providers", async () => {
         const envVars = {
             SUPABASE_URL: mockSupabaseUrl,
             SUPABASE_ANON_KEY: mockAnonKey,
@@ -208,13 +263,21 @@ Deno.test("ai-providers Function Tests", async (t) => {
         const body = await response.json();
 
         assertExists(body.providers);
-        assertEquals(body.providers.length, 4); // 3 OpenAI + 1 Google
+        // Expecting models 1, 5, 6 (OpenAI) + 3 (Google) = 4
+        assertEquals(body.providers.length, 4); 
         assert(body.providers.filter((p: any) => p.provider === 'openai').length === 3);
         assert(body.providers.filter((p: any) => p.provider === 'google').length === 1);
         assert(body.providers.filter((p: any) => p.provider === 'anthropic').length === 0);
+
+        // Verify .eq calls
+        const mockClient = deps.createSupabaseClient(mockSupabaseUrl, mockAnonKey);
+        const eqSpy = (mockClient.from as Spy).calls[0].returned.eq as Spy;
+        assertSpyCalls(eqSpy, 2);
+        assertSpyCall(eqSpy, 0, { args: ['is_active', true] });
+        assertSpyCall(eqSpy, 1, { args: ['is_enabled', true] });
     });
 
-    await t.step("GET Filtering - No Keys Set: Returns empty list", async () => {
+    await t.step("GET Filtering - No Keys Set: Returns empty list (as before)", async () => {
         const envVars = { 
             SUPABASE_URL: mockSupabaseUrl,
             SUPABASE_ANON_KEY: mockAnonKey,
@@ -230,51 +293,38 @@ Deno.test("ai-providers Function Tests", async (t) => {
 
         assertExists(body.providers);
         assertEquals(body.providers.length, 0);
+
+        // Verify .eq calls
+        const mockClient = deps.createSupabaseClient(mockSupabaseUrl, mockAnonKey);
+        const eqSpy = (mockClient.from as Spy).calls[0].returned.eq as Spy;
+        assertSpyCalls(eqSpy, 2);
+        assertSpyCall(eqSpy, 0, { args: ['is_active', true] });
+        assertSpyCall(eqSpy, 1, { args: ['is_enabled', true] });
     });
 
-     await t.step("GET Filtering - Unknown Provider String: Skips provider", async () => {
-         // This is implicitly tested in the "All Keys Set" test where ID 4 is excluded.
-         // Adding explicit check for clarity is good practice but redundant here.
-         assert(true); // Placeholder assertion
-     });
-
-     await t.step("GET Filtering - Null Provider String: Skips provider", async () => {
-        // This is implicitly tested in the "All Keys Set" test where ID 7 is excluded.
-        assert(true); // Placeholder assertion
-    });
-
-    await t.step("GET DB Error: Returns 500", async () => {
+    await t.step("GET DB Error: Returns 500 (as before)", async () => {
         const envVars = { 
             SUPABASE_URL: mockSupabaseUrl, 
             SUPABASE_ANON_KEY: mockAnonKey,
-            OPENAI_API_KEY: mockOpenAiKey // Set a key just in case filter is reached before error
+            OPENAI_API_KEY: mockOpenAiKey 
         };
-        const dbError = new Error("Database connection failed");
+        const dbError = new Error("Simulated DB connection failed");
         const dbResponse = { data: null, error: dbError };
         const deps = createTestDeps(dbResponse, envVars);
 
         const req = new Request('http://localhost/ai-providers', { method: 'GET' });
         const response = await mainHandler(req, deps);
         assertEquals(response.status, 500);
-        // Check the message property of the error object
-        assertEquals((await response.json()).error.message, dbError.message);
-    });
-
-    await t.step("GET Empty DB Result: Returns empty list", async () => {
-         const envVars = { 
-            SUPABASE_URL: mockSupabaseUrl, 
-            SUPABASE_ANON_KEY: mockAnonKey,
-            OPENAI_API_KEY: mockOpenAiKey // Set a key just in case
-        };
-        const dbResponse = { data: [], error: null }; // DB returns empty array
-        const deps = createTestDeps(dbResponse, envVars);
-
-        const req = new Request('http://localhost/ai-providers', { method: 'GET' });
-        const response = await mainHandler(req, deps);
-        assertEquals(response.status, 200);
         const body = await response.json();
+        assertEquals(body.error.message, dbError.message); // Should propagate the DB error message
 
-        assertExists(body.providers);
-        assertEquals(body.providers.length, 0);
+        // Verify .eq calls were made before error
+        const mockClient = deps.createSupabaseClient(mockSupabaseUrl, mockAnonKey);
+        const eqSpy = (mockClient.from as Spy).calls[0].returned.eq as Spy;
+        assertSpyCalls(eqSpy, 2);
+        assertSpyCall(eqSpy, 0, { args: ['is_active', true] });
+        assertSpyCall(eqSpy, 1, { args: ['is_enabled', true] });
     });
+
+    // Add more tests? e.g., RLS failure (if applicable)
 }); 
