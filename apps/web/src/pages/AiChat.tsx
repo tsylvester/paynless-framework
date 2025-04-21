@@ -168,6 +168,7 @@ export function AiChatPage() {
              history={chatHistoryList}
              onLoadChat={handleLoadChat}
              isLoading={isAuthLoading || isHistoryLoading} 
+             currentChatId={currentChatId}
           />
         </div>
       </div>
