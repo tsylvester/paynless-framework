@@ -186,9 +186,15 @@ interface ApiInitializerConfig {
 // Update initializeApiClient signature and implementation
 export function initializeApiClient(config: ApiInitializerConfig) {
 
-    //console.log('initializeApiClientinitializeApiClientinitializeApiClientinitializeApiClientinitializeApiClientinitializeApiClientinitializeApiClient')
+  //console.log('initializeApiClientinitializeApiClientinitializeApiClientinitializeApiClientinitializeApiClientinitializeApiClientinitializeApiClient')
   if (apiClientInstance) {
-    throw new Error('ApiClient already initialized');
+    // Allow re-initialization in development with HMR, maybe warn?
+    logger.warn('ApiClient already initialized. Re-initializing (possibly due to HMR).');
+    // Optional: Clean up old instance if needed (e.g., remove listeners)
+    // Resetting instance to allow recreation
+    // apiClientInstance = null; 
+    // Keep throwing error for now to ensure we catch non-HMR issues
+     throw new Error('ApiClient already initialized');
   }
   if (!config.supabaseUrl || !config.supabaseAnonKey) {
      throw new Error('Supabase URL and Anon Key are required to initialize ApiClient');
@@ -202,7 +208,10 @@ export function initializeApiClient(config: ApiInitializerConfig) {
       supabaseUrl: config.supabaseUrl,
       supabaseAnonKey: config.supabaseAnonKey // <<< Pass anon key here
   });
-  logger.info('ApiClient Singleton Initialized.');
+   // Corrected log: Remove access to private property
+  logger.info('ApiClient Singleton Initialized. Instance Check:', { 
+      isInstanceNull: apiClientInstance === null 
+  }); 
 }
 
 export function _resetApiClient() {
@@ -211,7 +220,10 @@ export function _resetApiClient() {
 }
 
 function getApiClient(): ApiClient {
+    // Add log here
+    logger.info(`[getApiClient] Called. Instance is currently: ${apiClientInstance ? 'INITIALIZED' : 'NULL'}`); 
     if (!apiClientInstance) {
+        // Keep the original error
         throw new Error('ApiClient not initialized. Call initializeApiClient first.');
     }
     return apiClientInstance;

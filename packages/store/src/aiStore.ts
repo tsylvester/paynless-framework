@@ -41,9 +41,13 @@ export const useAiStore = create<AiStore>()(
             // --- Action Definitions ---
             loadAiConfig: async () => {
                 logger.info('Loading AI config...');
-                // Use plain set without immer
                 set({ isConfigLoading: true, aiError: null }); 
                 try {
+                    logger.info('[aiStore] Checking api object before call:', { 
+                        apiObjectExists: !!api, 
+                        apiAiExists: !!api?.ai,
+                    }); 
+                    
                     const [providersResponse, promptsResponse] = await Promise.all([
                         api.ai().getAiProviders(),
                         api.ai().getSystemPrompts(),
@@ -67,22 +71,24 @@ export const useAiStore = create<AiStore>()(
                     }
                     
                     if (errorMessages.length > 0) {
-                        // Combine errors properly
                         throw new Error(errorMessages.join(' \n'));
                     }
                     
-                    // Use plain set without immer
                     set({
                         availableProviders: loadedProviders, 
                         availablePrompts: loadedPrompts,   
                         isConfigLoading: false,
-                        aiError: null // Clear error on success
+                        aiError: null
                     });
                     
                     logger.info(`AI Config loaded successfully. Providers: ${loadedProviders.length}, Prompts: ${loadedPrompts.length}`);
+
                 } catch (error: any) {
-                    logger.error('Error loading AI config:', { error: error.message });
-                    // Use plain set without immer
+                    logger.error('Error loading AI config:', { 
+                        error: error.message, 
+                        apiObjectExists: !!api, 
+                        apiAiExists: !!api?.ai 
+                    });
                     set({
                         availableProviders: [], 
                         availablePrompts: [],  

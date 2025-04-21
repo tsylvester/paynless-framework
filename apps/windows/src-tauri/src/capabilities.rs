@@ -1,5 +1,4 @@
 use std::fs;
-use std::io::{self, Read, Write};
 
 // --- Command Implementations ---
 
@@ -27,7 +26,7 @@ pub fn write_file(path: String, data: Vec<u8>) -> Result<(), String> {
 mod tests {
     use super::*; // Import functions from outer module
     use tempfile::NamedTempFile;
-    use std::io::{Read, Write}; // Keep these for test setup
+    use std::io::Write; // Keep this for test setup
 
     #[test]
     fn test_read_file_non_existent() {

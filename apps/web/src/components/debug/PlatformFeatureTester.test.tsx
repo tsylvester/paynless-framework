@@ -1,1 +1,161 @@
-import React from \'react\';\nimport { render, screen, fireEvent, act } from \'@testing-library/react\';\nimport { describe, it, expect, vi } from \'vitest\';\nimport { PlatformFeatureTester } from \'./PlatformFeatureTester\';\nimport { PlatformCapabilitiesProvider } from \'@paynless/platform-capabilities\'; // Need provider for context\nimport type { PlatformCapabilities, FileSystemCapabilities } from \'@paynless/types\';\nimport { logger } from \'@paynless/utils\'; // Import logger to potentially spy on it\n\n// Mock the logger to prevent console noise during tests\nvi.mock(\'@paynless/utils\', () => ({\n    logger: {\n        info: vi.fn(),\n        warn: vi.fn(),\n        error: vi.fn(),\n        debug: vi.fn(),\n    }\n}));\n\n// Helper to render the component within the provider with specific capabilities\nconst renderWithCapabilities = (capabilities: PlatformCapabilities | null) => {\n  return render(\n    <PlatformCapabilitiesProvider>\n      {/* Override context value by nesting another provider - simplified approach */}\n      {/* A more robust mock might involve mocking the hook directly or the context module */}\n      {/* For now, we inject a simple context value for testing */} \n      <PlatformCapabilitiesContext.Provider value={capabilities}>\n          <PlatformFeatureTester />\n      </PlatformCapabilitiesContext.Provider>\n    </PlatformCapabilitiesProvider>\n  );\n};\n\n// Mock context directly for simpler testing without full provider logic\nconst MockCapabilitiesContext = React.createContext<PlatformCapabilities | null>(null);\nvi.mock(\'@paynless/platform-capabilities\', async (importOriginal) => {\n    const original = await importOriginal<any>();\n    return {\n        ...original, // Keep original exports like the actual Provider if needed elsewhere\n        usePlatformCapabilities: () => React.useContext(MockCapabilitiesContext), // Override the hook\n    };\n});\n\n// Helper to render with the mocked hook\nconst renderWithMockedHook = (capabilities: PlatformCapabilities | null) => {\n    return render(\n        <MockCapabilitiesContext.Provider value={capabilities}>\n            <PlatformFeatureTester />\n        </MockCapabilitiesContext.Provider>\n    );\n};\n\ndescribe(\'PlatformFeatureTester\', () => {\n\n  it(\'should display loading state initially\', () => {\n    renderWithMockedHook(null);\n    expect(screen.getByText(\'Loading platform capabilities...\')).toBeInTheDocument();\n  });\n\n  it(\'should display web platform info and hide desktop button in web environment\', () => {\n    const webCaps: PlatformCapabilities = {\n      platform: \'web\',\n      fileSystem: { isAvailable: false },\n    };\n    renderWithMockedHook(webCaps);\n\n    expect(screen.getByText(/Detected Platform:/)).toHaveTextContent(\'web\');\n    expect(screen.getByText(/File System Available:/)).toHaveTextContent(\'false\');\n    expect(screen.queryByRole(\'button\', { name: /Pick Text File/ })).not.toBeInTheDocument();\n    expect(screen.getByLabelText(/Choose file \(Web standard\):/)).toBeInTheDocument();\n  });\n\n  it(\'should display tauri platform info and show desktop button in tauri environment\', () => {\n    const tauriCaps: PlatformCapabilities = {\n      platform: \'tauri\',\n      fileSystem: {\n        isAvailable: true,\n        pickFile: vi.fn().mockResolvedValue(null), // Mock implementation needed\n        pickSaveFile: vi.fn(),\n        readFile: vi.fn(),\n        writeFile: vi.fn(),\n      },\n    };\n    renderWithMockedHook(tauriCaps);\n\n    expect(screen.getByText(/Detected Platform:/)).toHaveTextContent(\'tauri\');\n    expect(screen.getByText(/File System Available:/)).toHaveTextContent(\'true\');\n    expect(screen.getByRole(\'button\', { name: /Pick Text File/ })).toBeInTheDocument();\n    // Standard web input should NOT be shown\n    expect(screen.queryByLabelText(/Choose file \(Web standard\):/)).not.toBeInTheDocument();\n  });\n\n  it(\'should call fileSystem.pickFile when desktop button is clicked (Tauri env)\', async () => {\n    const mockPickFile = vi.fn().mockResolvedValue(\'/some/picked/file.txt\');\n    const mockReadFile = vi.fn().mockResolvedValue(new Uint8Array([65, 66, 67])); // ABC\n    const tauriCaps: PlatformCapabilities = {\n      platform: \'tauri\',\n      fileSystem: {\n        isAvailable: true,\n        pickFile: mockPickFile,\n        pickSaveFile: vi.fn(),\n        readFile: mockReadFile,\n        writeFile: vi.fn(),\n      },\n    };\n    renderWithMockedHook(tauriCaps);\n\n    const button = screen.getByRole(\'button\', { name: /Pick Text File/ });\n    await act(async () => {\n       fireEvent.click(button);\n    });\n\n    expect(mockPickFile).toHaveBeenCalledTimes(1);\n    expect(mockPickFile).toHaveBeenCalledWith({ accept: \'.txt\' });\n\n    // Check if readFile was called subsequently in the handler\n     await act(async () => {\n        await new Promise(resolve => setTimeout(resolve, 0)); // Allow promise to resolve\n     });\n    expect(mockReadFile).toHaveBeenCalledTimes(1);\n    expect(mockReadFile).toHaveBeenCalledWith(\'/some/picked/file.txt\');\n  });\n\n   it(\'should log warning if trying to pick file when capability is unavailable\', async () => {\n     const loggerSpy = vi.spyOn(logger, \'warn\');\n     const webCaps: PlatformCapabilities = {\n      platform: \'web\',\n      fileSystem: { isAvailable: false },\n    };\n    renderWithMockedHook(webCaps);\n\n    // Attempt to call the handler manually even though button isn\'t there\n    // We need to get the component instance or manually trigger the handler logic\n    // This is harder with functional components. Instead, let\'s verify the button\n    // isn\'t rendered, which prevents the call.\n    expect(screen.queryByRole(\'button\', { name: /Pick Text File/ })).not.toBeInTheDocument();\n\n    // If we *could* click it, we\'d check the log:\n    // const button = screen.getByRole(...);\n    // fireEvent.click(button);\n    // expect(loggerSpy).toHaveBeenCalledWith(\'File picking not available on this platform.\');\n    loggerSpy.mockRestore();\n  });\n\n}); 
+import React from 'react';
+import { render, screen, fireEvent, act } from '@testing-library/react';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { PlatformFeatureTester } from './PlatformFeatureTester';
+import { PlatformCapabilitiesProvider, usePlatformCapabilities } from '@paynless/platform-capabilities';
+import type { PlatformCapabilities } from '@paynless/types';
+import { logger } from '@paynless/utils';
+
+// Mock the logger
+vi.mock('@paynless/utils', () => ({
+    logger: {
+        info: vi.fn(),
+        warn: vi.fn(),
+        error: vi.fn(),
+        debug: vi.fn(),
+    }
+}));
+
+// Mock the hook directly
+const MockCapabilitiesContext = React.createContext<PlatformCapabilities | null>(null);
+vi.mock('@paynless/platform-capabilities', async (importOriginal) => {
+    const original = await importOriginal<any>();
+    return {
+        ...original,
+        usePlatformCapabilities: () => React.useContext(MockCapabilitiesContext),
+    };
+});
+
+// Helper to render with the mocked hook
+const renderWithMockedHook = (capabilities: PlatformCapabilities | null) => {
+    return render(
+        <MockCapabilitiesContext.Provider value={capabilities}>
+            <PlatformFeatureTester />
+        </MockCapabilitiesContext.Provider>
+    );
+};
+
+describe('PlatformFeatureTester', () => {
+
+  it('should display loading state initially', () => {
+    renderWithMockedHook(null);
+    expect(screen.getByText('Loading platform capabilities...')).toBeInTheDocument();
+  });
+
+  it('should display web platform info and hide desktop button in web environment', () => {
+    const webCaps: PlatformCapabilities = {
+      platform: 'web',
+      fileSystem: { isAvailable: false },
+    };
+    renderWithMockedHook(webCaps);
+
+    expect(screen.getByText(/Detected Platform:/)).toHaveTextContent('web');
+    expect(screen.getByText(/File System Available:/)).toHaveTextContent('false');
+    expect(screen.queryByRole('button', { name: /Pick Text File/ })).not.toBeInTheDocument();
+    expect(screen.getByLabelText(/Choose file \(Web standard\):/)).toBeInTheDocument();
+  });
+
+  it('should display tauri platform info and show desktop button in tauri environment', () => {
+    const tauriCaps: PlatformCapabilities = {
+      platform: 'tauri',
+      fileSystem: {
+        isAvailable: true,
+        pickFile: vi.fn(),
+        pickSaveFile: vi.fn(),
+        readFile: vi.fn(),
+        writeFile: vi.fn(),
+      },
+    };
+    renderWithMockedHook(tauriCaps);
+
+    expect(screen.getByText(/Detected Platform:/)).toHaveTextContent('tauri');
+    expect(screen.getByText(/File System Available:/)).toHaveTextContent('true');
+    expect(screen.getByRole('button', { name: /Pick & Load Text File/ })).toBeInTheDocument();
+    expect(screen.queryByLabelText(/Choose file \(Web standard\):/)).not.toBeInTheDocument();
+  });
+
+  // --- Tests specifically for Tauri File System Interactions ---
+  describe('when running in Tauri environment', () => {
+    let mockPickFile: ReturnType<typeof vi.fn>;
+    let mockReadFile: ReturnType<typeof vi.fn>;
+    let mockPickSaveFile: ReturnType<typeof vi.fn>;
+    let mockWriteFile: ReturnType<typeof vi.fn>;
+    let tauriCaps: PlatformCapabilities;
+
+    beforeEach(() => {
+      mockPickFile = vi.fn();
+      mockReadFile = vi.fn();
+      mockPickSaveFile = vi.fn();
+      mockWriteFile = vi.fn();
+
+      tauriCaps = {
+        platform: 'tauri',
+        fileSystem: {
+          isAvailable: true,
+          pickFile: mockPickFile,
+          readFile: mockReadFile,
+          pickSaveFile: mockPickSaveFile,
+          writeFile: mockWriteFile,
+        },
+      };
+    });
+
+    it('should call pickFile and readFile when pick button is clicked', async () => {
+      mockPickFile.mockResolvedValue('/picked/file.txt');
+      mockReadFile.mockResolvedValue(new Uint8Array([1]));
+      renderWithMockedHook(tauriCaps);
+
+      const button = screen.getByRole('button', { name: /Pick & Load Text File/ });
+      await act(async () => {
+        fireEvent.click(button);
+      });
+      await act(async () => { await new Promise(res => setTimeout(res,0)); });
+
+      expect(mockPickFile).toHaveBeenCalledWith({ accept: '.txt' });
+      expect(mockReadFile).toHaveBeenCalledWith('/picked/file.txt');
+    });
+
+    it('should render a save button', () => {
+      renderWithMockedHook(tauriCaps);
+      expect(screen.getByRole('button', { name: /Save Text File/ })).toBeInTheDocument();
+    });
+
+    it('should call pickSaveFile and writeFile when save button is clicked', async () => {
+      mockPickSaveFile.mockResolvedValue('/chosen/save/path.txt');
+      renderWithMockedHook(tauriCaps);
+
+      const expectedContent = 'Test content to save';
+      const expectedData = new TextEncoder().encode(expectedContent);
+      const saveButton = screen.getByRole('button', { name: /Save Text File/ });
+      
+      await act(async () => {
+        fireEvent.click(saveButton);
+      });
+      await act(async () => { await new Promise(res => setTimeout(res,0)); });
+
+      expect(mockPickSaveFile).toHaveBeenCalledTimes(1);
+      expect(mockPickSaveFile).toHaveBeenCalledWith({ accept: '.txt' });
+      expect(mockWriteFile).toHaveBeenCalledTimes(1);
+      expect(mockWriteFile).toHaveBeenCalledWith('/chosen/save/path.txt', expectedData);
+    });
+
+    it('should handle cancellation of save dialog', async () => {
+      mockPickSaveFile.mockResolvedValue(null);
+      renderWithMockedHook(tauriCaps);
+      const loggerSpy = vi.spyOn(logger, 'info');
+      const saveButton = screen.getByRole('button', { name: /Save Text File/ });
+      
+      await act(async () => {
+        fireEvent.click(saveButton);
+      });
+      await act(async () => { await new Promise(res => setTimeout(res,0)); });
+      
+      expect(mockPickSaveFile).toHaveBeenCalledTimes(1);
+      expect(mockWriteFile).not.toHaveBeenCalled();
+      expect(loggerSpy).toHaveBeenCalledWith(expect.stringContaining('File saving cancelled'));
+      loggerSpy.mockRestore();
+    });
+
+  }); // end describe('when running in Tauri environment')
+
+}); // end describe('PlatformFeatureTester') 

@@ -11,13 +11,23 @@ import { webFileSystemCapabilities } from './webPlatformCapabilities';
 // Import the *factory function* for Tauri capabilities
 // import { createTauriFileSystemCapabilities } from './tauriPlatformCapabilities';
 
+// --- Define Default Initial State ---
+// Exporting this might be useful for consumers or tests
+export const DEFAULT_INITIAL_CAPABILITIES: PlatformCapabilities = {
+  platform: 'unknown', // Start as unknown
+  os: undefined,
+  fileSystem: { isAvailable: false },
+  // Initialize other capability groups here if they exist
+  // e.g., notifications: { isAvailable: false },
+};
+
 // --- Context Definition ---
+// The context type remains the same, but it should never actually be null now.
+// However, keeping the type allows flexibility if we revert or change strategy.
+type CapabilitiesContextType = PlatformCapabilities | null; 
 
-// Define the initial state / value type
-// We use null to indicate that capabilities haven't been determined yet.
-type CapabilitiesContextType = PlatformCapabilities | null;
-
-const PlatformCapabilitiesContext = createContext<CapabilitiesContextType>(null);
+// Initialize context with the default non-null state
+const PlatformCapabilitiesContext = createContext<CapabilitiesContextType>(DEFAULT_INITIAL_CAPABILITIES);
 
 // --- Provider Component ---
 
@@ -35,14 +45,14 @@ interface PlatformCapabilitiesProviderProps {
 
 // Component function MUST be synchronous
 export const PlatformCapabilitiesProvider: React.FC<PlatformCapabilitiesProviderProps> = ({ children }) => {
-  const [capabilities, setCapabilities] = useState<CapabilitiesContextType>(null);
+  // Initialize state with the default non-null object
+  const [capabilities, setCapabilities] = useState<PlatformCapabilities>(DEFAULT_INITIAL_CAPABILITIES);
 
   useEffect(() => {
     let isMounted = true;
 
-    // Use an async IIFE inside useEffect to handle the async import
     (async () => {
-      // --- Platform Detection Logic --- (as before)
+      // --- Platform Detection Logic --- (Keep existing detection)
       let detectedPlatform: 'tauri' | 'web' | 'unknown';
       if (isTauri()) {
         detectedPlatform = 'tauri';
@@ -55,41 +65,54 @@ export const PlatformCapabilitiesProvider: React.FC<PlatformCapabilitiesProvider
       console.log(`PlatformCapabilitiesProvider: Platform detected via isTauri as: ${currentPlatform}`);
       // -------------------------------
 
-      let os: PlatformCapabilities['os'] = undefined;
-      const baseCaps: PlatformCapabilities = {
-        platform: currentPlatform,
-        os,
-        fileSystem: { isAvailable: false },
+      // Start building the final capabilities state based on detection
+      // Use a temporary variable to build the state before setting it
+      let finalCaps: PlatformCapabilities = {
+        ...DEFAULT_INITIAL_CAPABILITIES, // Start with defaults
+        platform: currentPlatform, 
+        os: undefined, // Reset OS, determine if needed later
       };
 
+
       if (currentPlatform === 'unknown') {
-        console.log('PlatformCapabilitiesProvider: Unknown platform, setting base capabilities only.');
-        if (isMounted) setCapabilities(baseCaps);
-        return;
+        console.log('PlatformCapabilitiesProvider: Unknown platform, keeping base capabilities.');
+        // No state update needed if it remains the same as default initial
+        // if (isMounted) setCapabilities(finalCaps); // Only set if different or needed
+        return; 
       }
 
       try {
         if (currentPlatform === 'web') {
-          baseCaps.fileSystem = webFileSystemCapabilities;
+          finalCaps.fileSystem = webFileSystemCapabilities; 
           console.log('PlatformCapabilitiesProvider: Using static Web capabilities.');
         } else if (currentPlatform === 'tauri') {
           console.log('PlatformCapabilitiesProvider: Dynamically importing Tauri capabilities factory...');
-          // Dynamic import stays here inside the async IIFE
+          // Dynamic import for Tauri capabilities
           const { createTauriFileSystemCapabilities } = await import('./tauriPlatformCapabilities');
-          const tauriCaps = createTauriFileSystemCapabilities();
-          baseCaps.fileSystem = tauriCaps;
+          const tauriCaps = createTauriFileSystemCapabilities(); // Assuming this is sync after import
+          finalCaps.fileSystem = tauriCaps;
+          // Potentially detect OS here if needed using tauri API
+          // const { type } = await import('@tauri-apps/api/os');
+          // finalCaps.os = await type(); // Example OS detection
           console.log('PlatformCapabilitiesProvider: Tauri capabilities created and assigned.');
         }
-
+        
+        // Set the final determined state
         if (isMounted) {
-          console.log('PlatformCapabilitiesProvider: Setting final capabilities state:', baseCaps);
-          setCapabilities(baseCaps);
+          console.log('PlatformCapabilitiesProvider: Setting final capabilities state:', finalCaps);
+          setCapabilities(finalCaps);
         }
       } catch (loadError) {
-        console.error('Error loading specific platform capabilities module:', loadError);
-        const fallbackCaps = { ...baseCaps, fileSystem: { isAvailable: false } };
+        console.error('Error loading or determining specific platform capabilities:', loadError);
+        // Fallback: Keep the detected platform but ensure capabilities are marked unavailable
+        const fallbackCaps: PlatformCapabilities = {
+           ...DEFAULT_INITIAL_CAPABILITIES, // Start with defaults
+           platform: currentPlatform, // Keep detected platform
+           // Ensure filesystem is marked as unavailable on error
+           fileSystem: { isAvailable: false }, 
+        };
         if (isMounted) {
-          console.log('PlatformCapabilitiesProvider: Setting base capabilities state after load error:', fallbackCaps);
+          console.log('PlatformCapabilitiesProvider: Setting fallback capabilities state after error:', fallbackCaps);
           setCapabilities(fallbackCaps);
         }
       }
@@ -108,10 +131,12 @@ export const PlatformCapabilitiesProvider: React.FC<PlatformCapabilitiesProvider
 };
 
 // --- Hook Definition ---
-
-export const usePlatformCapabilities = (): CapabilitiesContextType => {
+export const usePlatformCapabilities = (): PlatformCapabilities => {
   const context = useContext(PlatformCapabilitiesContext);
-  // We don't throw an error if context is null, because null indicates loading state.
-  // Consumers of the hook should handle the null case.
+  // Since we initialize with a non-null default, context should ideally never be null.
+  // Throwing an error here helps catch provider setup issues early.
+  if (context === null) {
+    throw new Error('usePlatformCapabilities must be used within a PlatformCapabilitiesProvider');
+  }
   return context;
 }; 
