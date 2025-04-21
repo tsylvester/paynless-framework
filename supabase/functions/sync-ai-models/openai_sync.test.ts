@@ -2,10 +2,11 @@ import { assertSpyCall, assertSpyCalls, spy, stub, type Stub, type Spy } from "j
 import { assert, assertEquals, assertExists, assertRejects } from "jsr:@std/assert@0.225.3";
 import type { SupabaseClient, PostgrestResponse, PostgrestSingleResponse, PostgrestMaybeSingleResponse } from "npm:@supabase/supabase-js@2";
 
-// Import the function to test
-import { syncOpenAIModels } from "./openai_sync.ts";
+// Import the function to test AND the dependency interface
+import { syncOpenAIModels, type SyncOpenAIDeps } from "./openai_sync.ts"; 
 // Import shared types potentially used
-import type { DbAiProvider, SyncResult } from "./index.ts"; // Import from index.ts where they are defined
+// NOTE: getCurrentDbModels is now mocked via deps, but keep types
+import { type SyncResult, type DbAiProvider } from "./index.ts"; 
 // Import type for OpenAI API response simulation
 import type { ProviderModelInfo } from "../_shared/types.ts";
 
@@ -13,114 +14,83 @@ import type { ProviderModelInfo } from "../_shared/types.ts";
 import { 
     createMockSupabaseClient, 
     type MockSupabaseDataConfig,
-    setMockFetchResponse, // Use the shared fetch response configurer
-    stubFetchForTestScope, // Use the shared fetch stubber
+    // No longer need fetch helpers directly in this test file
+    // setMockFetchResponse, 
+    // stubFetchForTestScope, 
     type MockQueryBuilderState
 } from "../_shared/test-utils.ts";
 
-// --- Test Setup & Mocks ---
-
-// Mock fetch if openai_sync.ts uses it directly
-/* // REMOVE - Replaced by shared utility 
-let fetchStub: Stub<[Request | URL | string, RequestInit?], Promise<Response>> | undefined;
-*/
-
-/* // REMOVE - Replaced by shared utility 
-const setup = () => {
-    // Reset fetch stub before each test
-    fetchStub = undefined; 
-};
-*/
-
-/* // REMOVE - Replaced by shared utility 
-const teardown = () => {
-    fetchStub?.restore();
-};
-*/
-
-// Helper to easily mock fetch responses
-/* // REMOVE - Replaced by shared utility 
-const mockFetch = (status: number, body: any) => {
-     fetchStub = stub(globalThis, "fetch", () => 
-        Promise.resolve(new Response(JSON.stringify(body), { status }))
-    );
-};
-*/
-/* // REMOVE - Replaced by shared utility 
-const mockFetchError = (errorMsg: string = "Fetch Failed") => {
-    fetchStub = stub(globalThis, "fetch", () => Promise.reject(new Error(errorMsg)));
-};
-*/
+// Helper to create mock dependencies
+const createMockSyncDeps = (overrides: Partial<SyncOpenAIDeps> = {}): SyncOpenAIDeps => ({
+    listProviderModels: spy(async (_apiKey: string): Promise<ProviderModelInfo[]> => []), // Default: empty models
+    getCurrentDbModels: spy(async (_client: SupabaseClient, _provider: string): Promise<DbAiProvider[]> => []), // Default: empty DB
+    log: spy(() => {}), // Default: no-op spy
+    error: spy(() => {}), // Default: no-op spy
+    ...overrides,
+});
 
 // --- Test Suite ---
 
 Deno.test("syncOpenAIModels", { 
     sanitizeOps: false, // Allow async ops
-    sanitizeResources: false, // Allow network/file ops (like fetch)
+    sanitizeResources: false, // Allow network/file ops (supabase mock might still need this)
 }, async (t) => {
 
     // --- Test Cases ---
 
+    // UNCOMMENTING this test case
     await t.step("should insert new models when DB is empty and API returns models", async () => {
         const mockApiKey = "test-api-key";
-        let fetchStubDisposable: Disposable | undefined;
+        // let fetchStubDisposable: Disposable | undefined; // No longer needed
         try {
-            // Stub fetch for this test scope
-            fetchStubDisposable = stubFetchForTestScope().stub;
+            // Mock the API response via deps
+            const mockApiModelsData: ProviderModelInfo[] = [
+                // Use the adapter's expected output structure
+                { api_identifier: "openai-gpt-4", name: "OpenAI gpt-4", description: undefined }, // Use undefined for null description
+                { api_identifier: "openai-gpt-3.5-turbo", name: "OpenAI gpt-3.5-turbo", description: undefined }
+            ];
+            const mockDeps = createMockSyncDeps({
+                listProviderModels: spy(async () => mockApiModelsData), // Mock API return
+                getCurrentDbModels: spy(async () => []), // Mock empty DB return
+            });
 
-            // Mock the OpenAI API response using the shared helper
-            const mockApiModels = { 
-                data: [
-                    { id: "gpt-4", object: "model", created: 1, owned_by: "openai", permission: [], root: "gpt-4", parent: null },
-                    { id: "gpt-3.5-turbo", object: "model", created: 2, owned_by: "openai", permission: [], root: "gpt-3.5-turbo", parent: null }
-                ] 
-            };
-            // Configure the fetch mock
-            setMockFetchResponse(new Response(JSON.stringify(mockApiModels), { status: 200 }));
-
-            // Configure the Supabase mock using generic results
+            // Configure the Supabase mock for the expected INSERT operation
             const mockSupabaseConfig: MockSupabaseDataConfig = {
                 genericMockResults: {
                     ai_providers: {
-                        select: { data: [], error: null, count: 0 }, // DB is empty
+                        // select is handled by mockDeps.getCurrentDbModels
                         // We expect an insert, provide a mock success response for it
-                        insert: { data: mockApiModels.data.map(m => ({ ...m, provider: 'openai', is_active: true })), error: null, count: 2 }
+                        insert: { data: mockApiModelsData.map(m => ({ ...m, id: crypto.randomUUID(), is_active: true, provider: 'openai' })), error: null, count: 2 } // Ensure provider is added for mock data
                     }
                 }
             };
             const { client: mockClient, spies } = createMockSupabaseClient(mockSupabaseConfig);
 
-            // Call the function
-            const result = await syncOpenAIModels(mockClient as any, mockApiKey);
+            // Call the function with mock deps
+            const result = await syncOpenAIModels(mockClient as any, mockApiKey, mockDeps);
             
-            // Assertions (fetch call is implicitly checked by DB operations occurring)
+            // Assertions
+            assertSpyCall(mockDeps.listProviderModels as Spy, 0, { args: [mockApiKey] });
+            assertSpyCall(mockDeps.getCurrentDbModels as Spy, 0, { args: [mockClient as any, 'openai'] });
             
-            // Check Supabase interactions via spies
+            // Check Supabase INSERT interactions via spies
             const fromSpy = spies.fromSpy;
-            assertSpyCall(fromSpy, 0, { args: ['ai_providers'] }); 
+            // Should only be called ONCE now (for the insert)
+            assertEquals(fromSpy.calls.length, 1, "from('ai_providers') should be called once (for insert)"); 
 
-            // Access spies on the returned builder from the first call to from()
-            const queryBuilderSpies = fromSpy.calls[0].returned;
-            assert(queryBuilderSpies.select, "Select spy should exist");
-            assert(queryBuilderSpies.insert, "Insert spy should exist");
-            
-            assertSpyCall(queryBuilderSpies.select, 0); // select called once
-            assertEquals(queryBuilderSpies.eq.calls.length, 1, "eq should be called once for select"); // Check count first
-            
-            // Check insert on the spies returned by the *second* from() call
-            assertEquals(fromSpy.calls.length, 2, "from() should be called twice (select, insert)");
-            const insertBuilderSpies = fromSpy.calls[1].returned;
-            assert(insertBuilderSpies.insert, "Insert spy should exist on second builder");
+            // Check insert on the spies returned by the first from() call
+            const insertBuilderSpies = fromSpy.calls[0].returned;
+            assertExists(insertBuilderSpies.insert, "Insert spy should exist on builder");
             assertEquals(insertBuilderSpies.insert.calls.length, 1, "insert should be called once"); // Check count on correct builder
             
-            // Check the arguments passed to insert (using the correct spy)
-            const insertArgs = insertBuilderSpies.insert.calls[0].args[0];
+            // Check the arguments passed to insert 
+            const insertArgs = insertBuilderSpies.insert.calls[0].args[0] as any[]; // Cast for easier access
             assertEquals(insertArgs.length, 2); // Inserted 2 models
             assertEquals(insertArgs[0].api_identifier, "openai-gpt-4");
-            assertEquals(insertArgs[0].name, "OpenAI gpt-4"); // Match adapter naming
+            assertEquals(insertArgs[0].name, "OpenAI gpt-4"); 
             assertEquals(insertArgs[0].provider, "openai");
             assertEquals(insertArgs[1].api_identifier, "openai-gpt-3.5-turbo");
-            assertEquals(insertArgs[1].name, "OpenAI gpt-3.5-turbo"); // Match adapter naming
+            assertEquals(insertArgs[1].name, "OpenAI gpt-3.5-turbo"); 
             assertEquals(insertArgs[1].provider, "openai");
 
             // Check the SyncResult
@@ -130,26 +100,34 @@ Deno.test("syncOpenAIModels", {
             assertEquals(result.deactivated, 0);
             assertEquals(result.error, undefined);
         } finally {
-            // Dispose of the fetch stub
-            fetchStubDisposable?.[Symbol.dispose]();
+            // No cleanup needed for fetch stub
         }
     });
 
-    await t.step("should return error result if API call fails", async () => {
+    // UNCOMMENTING this test case - Updated for DI
+    await t.step("should return error result if listProviderModels fails", async () => {
         const mockApiKey = "test-api-key";
-        let fetchStubDisposable: Disposable | undefined;
+        const apiError = new Error("API Auth Error");
+        // let fetchStubDisposable: Disposable | undefined; // No longer needed
          try {
-            fetchStubDisposable = stubFetchForTestScope().stub;
-
-            // Mock fetch to return an error
-            setMockFetchResponse(new Response(JSON.stringify({ error: { message: "Auth Error" } }), { status: 401 }));
+            // Mock listProviderModels to reject via deps
+            const mockDeps = createMockSyncDeps({
+                listProviderModels: spy(() => Promise.reject(apiError)),
+            });
 
             // No specific DB config needed as it shouldn't be called
             const { client: mockClient, spies } = createMockSupabaseClient();
 
-            const result = await syncOpenAIModels(mockClient as any, mockApiKey);
+            // Call the function with mock deps
+            const result = await syncOpenAIModels(mockClient as any, mockApiKey, mockDeps);
 
-            // Assert fetch was called (implicitly assumed if error is correct)
+            // Assert listProviderModels was called
+            assertSpyCall(mockDeps.listProviderModels as Spy, 0, { args: [mockApiKey] });
+            // Ensure getCurrentDbModels was NOT called
+            assertSpyCalls(mockDeps.getCurrentDbModels as Spy, 0);
+            // Error should have been logged by the catch block
+            assertSpyCall(mockDeps.error as Spy, 0);
+            assert((mockDeps.error as Spy).calls[0].args[1] === apiError); 
             
             // Ensure Supabase was NOT called
             assertEquals(spies.fromSpy.calls.length, 0);
@@ -159,441 +137,615 @@ Deno.test("syncOpenAIModels", {
             assertEquals(result.inserted, 0);
             assertEquals(result.updated, 0);
             assertEquals(result.deactivated, 0);
-            assert(result.error?.includes("OpenAI API request failed fetching models: 401"), `Error message mismatch: ${result.error}`);
+            // The outer catch block should catch the error from listProviderModels
+            assertEquals(result.error, apiError.message); 
         } finally {
-             fetchStubDisposable?.[Symbol.dispose]();
+             // No cleanup needed
         }
     });
     
-    await t.step("should return error result if DB select fails", async () => {
+    // --- KEEP THIS TEST ACTIVE --- - Updated for DI 
+    await t.step("should return error result if getCurrentDbModels fails", async () => {
         const mockApiKey = "test-api-key";
-        const dbError = { message: "Connection refused", code: "500", details: "", hint: "" };
-        let fetchStubDisposable: Disposable | undefined;
+        const dbSelectError = new Error("DB Connection refused"); 
+        // let fetchStubDisposable: Disposable | undefined; // No longer needed
+        // let caughtError: any = null; // Not needed with assertRejects
         try {
-             fetchStubDisposable = stubFetchForTestScope().stub;
+             // Mock successful API call via deps
+             const mockApiModelsData: ProviderModelInfo[] = [
+                 // Use undefined for description instead of null
+                 { api_identifier: "openai-gpt-4", name: "OpenAI gpt-4", description: undefined } 
+             ];
+             // Mock getCurrentDbModels to reject via deps
+             const mockDeps = createMockSyncDeps({
+                 listProviderModels: spy(async () => mockApiModelsData),
+                 getCurrentDbModels: spy(() => Promise.reject(dbSelectError))
+             });
 
-            // Mock a successful API call 
-            setMockFetchResponse(new Response(JSON.stringify({ data: [{ id: "gpt-4" }] }), { status: 200 }));
+            // No specific DB config needed as mutations shouldn't be called
+            const { client: mockClient, spies } = createMockSupabaseClient();
 
-            // Configure Supabase mock to simulate DB error on select
-            const mockSupabaseConfig: MockSupabaseDataConfig = {
-                 genericMockResults: {
-                    ai_providers: {
-                        select: { data: null, error: dbError }
-                    }
-                }
-            };
-            const { client: mockClient, spies } = createMockSupabaseClient(mockSupabaseConfig);
+            // Call the function - it should catch the rejection from getCurrentDbModels
+            const result = await syncOpenAIModels(mockClient as any, mockApiKey, mockDeps);
 
-            const result = await syncOpenAIModels(mockClient as any, mockApiKey);
+            // Assertions
+            assertSpyCall(mockDeps.listProviderModels as Spy, 0, { args: [mockApiKey] });
+            assertSpyCall(mockDeps.getCurrentDbModels as Spy, 0, { args: [mockClient as any, 'openai'] });
+            assertSpyCall(mockDeps.error as Spy, 0); // Check that error was logged
+            assert( (mockDeps.error as Spy).calls[0].args[1] === dbSelectError); // Check the logged error object
 
-            // Assert fetch was called (implicitly assumed)
+            // Ensure Supabase mutation functions were NOT called
+            assertEquals(spies.fromSpy.calls.length, 0); // from() shouldn't be called directly by syncOpenAIModels anymore
 
-            // Check DB call
-            assertSpyCall(spies.fromSpy, 0, { args: ['ai_providers'] });
-            const queryBuilderSpies = spies.fromSpy.calls[0].returned;
-            assertSpyCall(queryBuilderSpies.select, 0); 
-            assertSpyCall(queryBuilderSpies.eq, 0, { args: ['provider', 'openai'] });
-            // Insert/Update should not be called
-            assertEquals(queryBuilderSpies.insert?.calls.length ?? 0, 0); 
-            assertEquals(queryBuilderSpies.update?.calls.length ?? 0, 0); 
-
-            // Check SyncResult
+            // Check the SyncResult - error should be caught and returned
             assertEquals(result.provider, "openai");
             assertEquals(result.inserted, 0);
             assertEquals(result.updated, 0);
             assertEquals(result.deactivated, 0);
-            assertEquals(result.error, String(dbError), "Error should be stringified original DB error object");
+            assertEquals(result.error, dbSelectError.message); 
+
         } finally {
-            fetchStubDisposable?.[Symbol.dispose]();
+            // No cleanup needed
         }
     });
+
+    // --- ISOLATED TEST FOR getCurrentDbModels --- 
+    // This test remains valid as it tests the actual getCurrentDbModels function 
+    // imported from index.ts, not the one mocked in SyncOpenAIDeps for the main tests.
+    // Need to import the actual function for this isolated test.
+    const { getCurrentDbModels: actualGetCurrentDbModelsForTest } = await import("./index.ts");
+    
+    await t.step("ISOLATED_getCurrentDbModels should throw when select fails", async () => {
+        const providerName = 'test_provider'; 
+        const dbError = { message: "Isolated select failed", code: "500", details: "", hint: "" };
+        
+        // Configure mock client for select error
+        const mockSupabaseConfig: MockSupabaseDataConfig = {
+            genericMockResults: {
+                ai_providers: {
+                    select: { data: null, error: dbError }
+                }
+            }
+        };
+        const { client: mockClient, spies } = createMockSupabaseClient(mockSupabaseConfig);
+
+        // Call the *actual* getCurrentDbModels directly using assertRejects
+        await assertRejects(
+            async () => {
+                 await actualGetCurrentDbModelsForTest(mockClient as any, providerName);
+            },
+            Error, // Expect an Error object
+            // Check the specific error message thrown by getCurrentDbModels
+            `Database error fetching models for ${providerName}: ${dbError.message}`
+        );
+
+        // Verify the underlying select and eq calls were made
+        assertSpyCall(spies.fromSpy, 0, { args: ['ai_providers'] });
+        const queryBuilderSpies = spies.fromSpy.calls[0].returned;
+        assertSpyCall(queryBuilderSpies.select, 0);
+        assertSpyCall(queryBuilderSpies.eq, 0, { args: ['provider', providerName] }); 
+    });
+    // --- END ISOLATED TEST ---
+
 
     // --- Add More Test Cases Here (Update, Deactivate, Mix, DB Insert/Update Errors) ---
     
+    // UNCOMMENTING update/deactivate test - Updated for DI
     await t.step("should update existing models and deactivate missing ones", async () => {
         const mockApiKey = "test-api-key";
-        let fetchStubDisposable: Disposable | undefined;
+        // let fetchStubDisposable: Disposable | undefined; // No longer needed
         try {
-             fetchStubDisposable = stubFetchForTestScope().stub;
-
-            // API returns gpt-4 (updated) and gpt-new, but NOT gpt-old
-            const mockApiModels = { 
-                data: [
-                    { id: "gpt-4", object: "model", created: 1, owned_by: "openai-updated", permission: [], root: "gpt-4", parent: null }, // owned_by changed
-                    { id: "gpt-new", object: "model", created: 3, owned_by: "openai", permission: [], root: "gpt-new", parent: null },
-                ] 
-            };
-            setMockFetchResponse(new Response(JSON.stringify(mockApiModels), { status: 200 }));
+             // API returns gpt-4 (updated) and gpt-new, but NOT gpt-old
+            const mockApiModelsData: ProviderModelInfo[] = [
+                { api_identifier: "openai-gpt-4", name: "OpenAI gpt-4 v2", description: "Updated desc" }, // Changed name/desc
+                { api_identifier: "openai-gpt-new", name: "OpenAI gpt-new", description: undefined }, // Use undefined instead of null
+            ]; 
 
             // DB contains gpt-4 (old version) and gpt-old
             const existingDbModels: DbAiProvider[] = [
-                 { id: 'db-id-1', api_identifier: 'openai-gpt-4', name: 'gpt-4', description: null, is_active: true, provider: 'openai' }, 
-                 { id: 'db-id-2', api_identifier: 'openai-gpt-old', name: 'gpt-old', description: null, is_active: true, provider: 'openai' },
+                 { id: 'db-id-1', api_identifier: 'openai-gpt-4', name: 'OpenAI gpt-4', description: null, is_active: true, provider: 'openai' }, 
+                 { id: 'db-id-2', api_identifier: 'openai-gpt-old', name: 'OpenAI gpt-old', description: null, is_active: true, provider: 'openai' },
             ]; 
+            
+            // Mock dependencies
+            const mockDeps = createMockSyncDeps({
+                listProviderModels: spy(async () => mockApiModelsData),
+                getCurrentDbModels: spy(async () => existingDbModels),
+            });
 
+            // Configure Supabase mock for expected UPDATE (for gpt-4), INSERT (for gpt-new) and UPDATE (for deactivate gpt-old)
             const mockSupabaseConfig: MockSupabaseDataConfig = {
                 genericMockResults: {
                     ai_providers: {
-                        select: { data: existingDbModels, error: null, count: existingDbModels.length },
-                        insert: { data: [{ id: 'db-id-3', api_identifier: 'gpt-new', name: 'gpt-new', description: null, is_active: true, provider: 'openai' }], error: null, count: 1 }, 
-                        update: (state: MockQueryBuilderState): Promise<{ data: any[] | null; error?: any | null; count?: number | null; status?: number; statusText?: string }> => {
-                            // Access the update data from the state
-                            const updateData = state.updateData as { is_active: boolean } | null;
-                            
-                            if (updateData && updateData.is_active === false) { // Deactivation
-                                // Check filters to ensure we're deactivating the right ID(s)
-                                const inFilter = state.filters.find((f: { column: string; value: any; type: 'eq' | 'in' }) => f.type === 'in' && f.column === 'id');
-                                const idToDeactivate = inFilter?.value?.[0]; // Assuming single ID deactivate for this test
-                                console.log(`[Test Mock Update] Deactivating ID: ${idToDeactivate}`);
-                                return Promise.resolve({ data: [{ id: idToDeactivate ?? 'mock-deactivated-id', is_active: false }], error: null, count: 1, status: 200, statusText: 'OK' });
-                            } else { // Update existing model (e.g., owned_by change)
-                                 // Check filters to ensure we're updating the right ID
-                                 const eqFilter = state.filters.find((f: { column: string; value: any; type: 'eq' | 'in' }) => f.type === 'eq' && f.column === 'id');
-                                 const idToUpdate = eqFilter?.value;
-                                 console.log(`[Test Mock Update] Updating ID: ${idToUpdate} with data:`, state.updateData);
-                                 // Return data matching the expected change
-                                 return Promise.resolve({ data: [{ id: idToUpdate ?? 'mock-updated-id', owned_by: (state.updateData as any)?.owned_by ?? 'unknown' }], error: null, count: 1, status: 200, statusText: 'OK' });
-                            }
-                        }
+                        // Mock the UPDATE for gpt-4 (db-id-1) - Simplified data for syntax fix
+                        // Needs to handle multiple operations. The mock client might need adjustment if 
+                        // it returns the same result for all updates/inserts regardless of filters/data.
+                        // For now, provide a generic success for update/insert.
+                        update: { data: [{ id: 'mock-updated-id' }], error: null, count: 1 }, 
+                        insert: { data: [{ id: 'mock-inserted-id' }], error: null, count: 1 },
                     }
                 }
             };
             const { client: mockClient, spies } = createMockSupabaseClient(mockSupabaseConfig);
-            
-            const result = await syncOpenAIModels(mockClient as any, mockApiKey);
+
+            // Call the function with mock deps
+            const result = await syncOpenAIModels(mockClient as any, mockApiKey, mockDeps);
 
             // Assertions
+            assertSpyCall(mockDeps.listProviderModels as Spy, 0, { args: [mockApiKey] });
+            assertSpyCall(mockDeps.getCurrentDbModels as Spy, 0, { args: [mockClient as any, 'openai'] });
+
+            // Check Supabase operations
             const fromSpy = spies.fromSpy;
-            assertSpyCall(fromSpy, 0, { args: ['ai_providers'] }); // Select
-            assertSpyCall(fromSpy, 1, { args: ['ai_providers'] }); // Insert (gpt-new)
-            assertSpyCall(fromSpy, 2, { args: ['ai_providers'] }); // Update (gpt-4)
-            assertSpyCall(fromSpy, 3, { args: ['ai_providers'] }); // Update (deactivate gpt-old)
+            // Expect from() calls for: INSERT (gpt-new), UPDATE (gpt-4), UPDATE (deactivate gpt-old)
+            assertEquals(fromSpy.calls.length, 3, "from('ai_providers') should be called 3 times (insert, update, deactivate)"); 
+            
+            // NOTE: The order of insert/update/deactivate calls isn't strictly guaranteed
+            // unless the code enforces it. We check that *each* expected operation happened.
+            
+            // Find the INSERT call (for gpt-new)
+            const insertCall = fromSpy.calls.find(call => call.returned.insert?.calls.length > 0);
+            assertExists(insertCall, "Expected an insert call");
+            assertSpyCall(insertCall.returned.insert, 0); // Called once
+            assertEquals(insertCall.returned.insert.calls[0].args[0][0].api_identifier, 'openai-gpt-new');
 
-            const selectSpies = fromSpy.calls[0].returned;
-            assertSpyCall(selectSpies.select, 0);
-            // assertSpyCall(selectSpies.eq, 0, { args: ['provider', 'openai'] }); 
-            // Revert to count check for stability
-            assertEquals(selectSpies.eq.calls.length, 1, "eq should be called once for select"); 
+            // Find the UPDATE call for gpt-4 (id: db-id-1)
+            const updateCall = fromSpy.calls.find(call => 
+                call.returned.update?.calls.length > 0 && 
+                call.returned.eq?.calls.some((eqCall: any) => eqCall.args[0] === 'id' && eqCall.args[1] === 'db-id-1')
+            );
+            assertExists(updateCall, "Expected an update call for db-id-1");
+            assertSpyCall(updateCall.returned.update, 0); // Called once
+            assertEquals(updateCall.returned.update.calls[0].args[0].name, 'OpenAI gpt-4 v2');
+            assertEquals(updateCall.returned.update.calls[0].args[0].description, 'Updated desc');
+            assertSpyCall(updateCall.returned.eq, 0, { args: ['id', 'db-id-1'] });
 
-            const insertSpies = fromSpy.calls[1].returned;
-            assertSpyCall(insertSpies.insert, 0);
-            assertEquals(insertSpies.insert.calls[0].args[0][0].api_identifier, 'openai-gpt-new'); // Check correct API identifier
+            // Find the UPDATE call for deactivation (for gpt-old, id: db-id-2)
+             const deactivateCall = fromSpy.calls.find(call => 
+                call.returned.update?.calls.length > 0 && 
+                call.returned.in?.calls.some((inCall: any) => inCall.args[0] === 'id' && inCall.args[1]?.includes('db-id-2')) &&
+                call.returned.update?.calls[0].args[0].is_active === false
+            );
+            assertExists(deactivateCall, "Expected a deactivate update call for db-id-2");
+            assertSpyCall(deactivateCall.returned.update, 0); // Called once
+            assertEquals(deactivateCall.returned.update.calls[0].args[0].is_active, false);
+            assertSpyCall(deactivateCall.returned.in, 0, { args: ['id', ['db-id-2']] });
 
-            const updateSpies = fromSpy.calls[2].returned;
-            assertSpyCall(updateSpies.update, 0);
-            // Check name from API model, not hardcoded
-            assertEquals(updateSpies.update.calls[0].args[0].name, 'OpenAI gpt-4'); // Check correct name
-            assertEquals(updateSpies.eq.calls.length, 1, "eq should be called once for update"); // Check count first
-
-            const deactivateSpies = fromSpy.calls[3].returned;
-            assertSpyCall(deactivateSpies.update, 0, { args: [{ is_active: false }] }); // Check the update payload
-            assertEquals(deactivateSpies.in.calls.length, 1, "in should be called once for deactivate"); // Check count first
-            assertEquals(deactivateSpies.in.calls[0].args[0], 'id'); // Column is 'id'
-            assertEquals(deactivateSpies.in.calls[0].args[1], ['db-id-2']); // ID to deactivate (openai-gpt-old)
-
-            // Check SyncResult
+            // Check the SyncResult
             assertEquals(result.provider, "openai");
-            assertEquals(result.inserted, 1); // gpt-new
-            assertEquals(result.updated, 1); // gpt-4 updated
-            assertEquals(result.deactivated, 1); // gpt-old deactivated
+            assertEquals(result.inserted, 1);
+            assertEquals(result.updated, 1);
+            assertEquals(result.deactivated, 1);
             assertEquals(result.error, undefined);
+
         } finally {
-            fetchStubDisposable?.[Symbol.dispose]();
-        }
-    });
-
-    await t.step("should do nothing if API and DB models match", async () => {
-        const mockApiKey = "test-api-key";
-        let fetchStubDisposable: Disposable | undefined;
-        try {
-            fetchStubDisposable = stubFetchForTestScope().stub;
-
-            const commonModel = { id: "gpt-4", object: "model", created: 1, owned_by: "openai", permission: [], root: "gpt-4", parent: null };
-            const mockApiModels = { data: [commonModel] }; 
-            setMockFetchResponse(new Response(JSON.stringify(mockApiModels), { status: 200 }));
-
-            const existingDbModels: DbAiProvider[] = [
-                { id: 'db-id-1', api_identifier: 'openai-gpt-4', name: 'OpenAI gpt-4', description: 'Owned by: openai', is_active: true, provider: 'openai' },
-            ];
-
-            const mockSupabaseConfig: MockSupabaseDataConfig = {
-                genericMockResults: {
-                    ai_providers: {
-                        select: { data: existingDbModels, error: null, count: 1 }
-                        // No insert/update/delete expected
-                    }
-                }
-            };
-            const { client: mockClient, spies } = createMockSupabaseClient(mockSupabaseConfig);
-            
-            const result = await syncOpenAIModels(mockClient as any, mockApiKey);
-
-            // Assertions
-            const fromSpy = spies.fromSpy;
-            assertSpyCall(fromSpy, 0, { args: ['ai_providers'] }); // Select called
-            assertEquals(fromSpy.calls.length, 1, "Only select should happen"); // No other from calls
-            
-            const selectSpies = fromSpy.calls[0].returned;
-            assertSpyCall(selectSpies.select, 0);
-            assertSpyCall(selectSpies.eq, 0, { args: ['provider', 'openai'] });
-            assertEquals(selectSpies.insert?.calls.length ?? 0, 0, "Insert should not be called");
-            assertEquals(selectSpies.update?.calls.length ?? 0, 0, "Update should not be called");
-
-            // Check SyncResult
-            assertEquals(result.provider, "openai");
-            assertEquals(result.inserted, 0);
-            assertEquals(result.updated, 0);
-            assertEquals(result.deactivated, 0);
-            assertEquals(result.error, undefined);
-        } finally {
-            fetchStubDisposable?.[Symbol.dispose]();
-        }
-    });
-
-    await t.step("should return error result if DB insert fails", async () => {
-        const mockApiKey = "test-api-key";
-        const dbError = { message: "Insert failed", code: "23505", details: "", hint: "" }; // Example unique constraint error
-        let fetchStubDisposable: Disposable | undefined;
-        try {
-            fetchStubDisposable = stubFetchForTestScope().stub;
-            const mockApiModels = { data: [{ id: "gpt-new", object: "model", created: 1, owned_by: "openai", permission: [], root: "gpt-new", parent: null }] };
-            setMockFetchResponse(new Response(JSON.stringify(mockApiModels), { status: 200 }));
-
-            const mockSupabaseConfig: MockSupabaseDataConfig = {
-                genericMockResults: {
-                    ai_providers: {
-                        select: { data: [], error: null, count: 0 }, // DB is empty
-                        insert: { data: null, error: dbError } // Simulate insert error
-                    }
-                }
-            };
-            const { client: mockClient, spies } = createMockSupabaseClient(mockSupabaseConfig);
-            
-            const result = await syncOpenAIModels(mockClient as any, mockApiKey);
-
-            // Assertions
-            const fromSpy = spies.fromSpy;
-            assertSpyCall(fromSpy, 0, { args: ['ai_providers'] }); // Select
-            assertSpyCall(fromSpy, 1, { args: ['ai_providers'] }); // Insert attempt
-            assertEquals(fromSpy.calls.length, 2);
-
-            const selectSpies = fromSpy.calls[0].returned;
-            assertSpyCall(selectSpies.select, 0);
-            assertSpyCall(selectSpies.eq, 0, { args: ['provider', 'openai'] });
-
-            const insertSpies = fromSpy.calls[1].returned;
-            assertSpyCall(insertSpies.insert, 0);
-
-            // Check SyncResult
-            assertEquals(result.provider, "openai");
-            assertEquals(result.inserted, 0);
-            assertEquals(result.updated, 0);
-            assertEquals(result.deactivated, 0);
-            assertEquals(result.error, "[object Object]", "Error message should be '[object Object]' due to error propagation");
-        } finally {
-            fetchStubDisposable?.[Symbol.dispose]();
-        }
-    });
-
-     await t.step("should return error result if DB update fails", async () => {
-        const mockApiKey = "test-api-key";
-        const dbError = { message: "Update failed", code: "xxxxx", details: "", hint: "" };
-        let fetchStubDisposable: Disposable | undefined;
-        try {
-            fetchStubDisposable = stubFetchForTestScope().stub;
-            const mockApiModels = { data: [{ id: "gpt-4", object: "model", created: 1, owned_by: "openai-updated", permission: [], root: "gpt-4", parent: null }] }; // owned_by changed
-            setMockFetchResponse(new Response(JSON.stringify(mockApiModels), { status: 200 }));
-
-            const existingDbModels: DbAiProvider[] = [
-                { id: 'db-id-1', api_identifier: 'openai-gpt-4', name: 'OpenAI gpt-4', description: 'Owned by: openai', is_active: true, provider: 'openai' },
-            ];
-
-            const mockSupabaseConfig: MockSupabaseDataConfig = {
-                genericMockResults: {
-                    ai_providers: {
-                        select: { data: existingDbModels, error: null, count: 1 },
-                        update: { data: null, error: dbError } // Simulate update error
-                    }
-                }
-            };
-            const { client: mockClient, spies } = createMockSupabaseClient(mockSupabaseConfig);
-            
-            const result = await syncOpenAIModels(mockClient as any, mockApiKey);
-
-            // Assertions
-            const fromSpy = spies.fromSpy;
-            assertSpyCall(fromSpy, 0, { args: ['ai_providers'] }); // Select
-            assertSpyCall(fromSpy, 1, { args: ['ai_providers'] }); // Update attempt
-            assertEquals(fromSpy.calls.length, 2);
-
-            const selectSpies = fromSpy.calls[0].returned;
-            assertSpyCall(selectSpies.select, 0);
-            assertSpyCall(selectSpies.eq, 0, { args: ['provider', 'openai'] });
-
-            const updateSpies = fromSpy.calls[1].returned;
-            assertSpyCall(updateSpies.update, 0);
-            assertSpyCall(updateSpies.eq, 0, { args: ['id', 'db-id-1'] });
-
-            // Check SyncResult
-            assertEquals(result.provider, "openai");
-            assertEquals(result.inserted, 0);
-            assertEquals(result.updated, 0); // Update failed
-            assertEquals(result.deactivated, 0);
-            assertEquals(result.error, "[object Object]", "Error message should be '[object Object]' due to error propagation");
-        } finally {
-            fetchStubDisposable?.[Symbol.dispose]();
+             // No cleanup needed
         }
     });
     
-     await t.step("should return error result if DB deactivate fails", async () => {
+
+    // UNCOMMENTING DB Insert Error test
+    await t.step("should return error result if DB insert fails", async () => {
         const mockApiKey = "test-api-key";
-        const dbError = { message: "Deactivation failed", code: "xxxxx", details: "", hint: "" };
-        let fetchStubDisposable: Disposable | undefined;
+        const dbInsertError = { message: "Insert constraint violation", code: "23505" };
+
         try {
-            fetchStubDisposable = stubFetchForTestScope().stub;
-            const mockApiModels = { data: [] }; // API returns no models
-            setMockFetchResponse(new Response(JSON.stringify(mockApiModels), { status: 200 }));
-
-            const existingDbModels: DbAiProvider[] = [
-                { id: 'db-id-1', api_identifier: 'openai-gpt-old', name: 'OpenAI gpt-old', description: null, is_active: true, provider: 'openai' },
+            // Mock API returns one new model
+            const mockApiModelsData: ProviderModelInfo[] = [
+                { api_identifier: "openai-gpt-new", name: "OpenAI gpt-new", description: undefined } // Use undefined
             ];
+            // Mock DB is empty
+            const mockDeps = createMockSyncDeps({
+                listProviderModels: spy(async () => mockApiModelsData),
+                getCurrentDbModels: spy(async () => []),
+            });
 
+            // Configure Supabase mock for INSERT failure
             const mockSupabaseConfig: MockSupabaseDataConfig = {
                 genericMockResults: {
                     ai_providers: {
-                        select: { data: existingDbModels, error: null, count: 1 },
-                        update: { data: null, error: dbError } // Simulate update error on the deactivation call
+                        insert: { data: null, error: dbInsertError }
                     }
                 }
             };
             const { client: mockClient, spies } = createMockSupabaseClient(mockSupabaseConfig);
-            
-            const result = await syncOpenAIModels(mockClient as any, mockApiKey);
+
+            // Call the function - expect error to be caught and returned in result
+            const result = await syncOpenAIModels(mockClient as any, mockApiKey, mockDeps);
 
             // Assertions
+            assertSpyCall(mockDeps.listProviderModels as Spy, 0);
+            assertSpyCall(mockDeps.getCurrentDbModels as Spy, 0);
+            assertSpyCall(mockDeps.error as Spy, 0); // Error should be logged from the failed insert
+            
+            // Check the logged error object and message - Should log the raw error object
+            const loggedErrorArg = (mockDeps.error as Spy).calls[0].args[1];
+            // assert(loggedErrorArg instanceof Error, "Logged error should be an Error instance"); // Incorrect: Logs the raw error obj
+            assertEquals(loggedErrorArg, dbInsertError, "Logged error object mismatch"); // Check if the logged object matches the mock error
+            // assertEquals(loggedErrorArg.message, `Insert failed for openai: ${dbInsertError.message}`, "Logged error message mismatch");
+
+            // Check Supabase insert attempt
             const fromSpy = spies.fromSpy;
-            assertSpyCall(fromSpy, 0, { args: ['ai_providers'] }); // Select
-            assertSpyCall(fromSpy, 1, { args: ['ai_providers'] }); // Deactivate attempt
-            assertEquals(fromSpy.calls.length, 2);
+            assertEquals(fromSpy.calls.length, 1);
+            const insertBuilderSpies = fromSpy.calls[0].returned;
+            assertSpyCall(insertBuilderSpies.insert, 0); 
 
-            const selectSpies = fromSpy.calls[0].returned;
-            assertSpyCall(selectSpies.select, 0);
-            assertSpyCall(selectSpies.eq, 0, { args: ['provider', 'openai'] });
-
-            const deactivateSpies = fromSpy.calls[1].returned;
-            assertSpyCall(deactivateSpies.update, 0, { args: [{ is_active: false }] });
-            assertSpyCall(deactivateSpies.in, 0, { args: ['id', ['db-id-1']] });
-
-            // Check SyncResult
+            // Check the SyncResult
             assertEquals(result.provider, "openai");
-            assertEquals(result.inserted, 0);
+            assertEquals(result.inserted, 0); // Failed
             assertEquals(result.updated, 0);
-            assertEquals(result.deactivated, 0); // Deactivation failed
-            assertEquals(result.error, "[object Object]", "Error message should be '[object Object]' due to error propagation");
-        } finally {
-            fetchStubDisposable?.[Symbol.dispose]();
-        }
+            assertEquals(result.deactivated, 0);
+            assertEquals(result.error, `Insert failed for openai: ${dbInsertError.message}`);
+
+        } finally { }
     });
 
-     await t.step("should reactivate inactive model if it reappears in API", async () => {
+    // --- NEW TEST: No Change Scenario ---
+    await t.step("should do nothing if API and DB models match", async () => {
         const mockApiKey = "test-api-key";
-        let fetchStubDisposable: Disposable | undefined;
         try {
-            fetchStubDisposable = stubFetchForTestScope().stub;
-            const mockApiModels = { data: [{ id: "gpt-4", object: "model", created: 1, owned_by: "openai", permission: [], root: "gpt-4", parent: null }] }; 
-            setMockFetchResponse(new Response(JSON.stringify(mockApiModels), { status: 200 }));
-
-            // DB model is inactive
-            const existingDbModels: DbAiProvider[] = [
-                { id: 'db-id-1', api_identifier: 'openai-gpt-4', name: 'OpenAI gpt-4', description: 'Owned by: openai', is_active: false, provider: 'openai' },
-            ];
-
-            const mockSupabaseConfig: MockSupabaseDataConfig = {
-                genericMockResults: {
-                    ai_providers: {
-                        select: { data: existingDbModels, error: null, count: 1 },
-                        update: { data: [{ id: 'db-id-1', is_active: true }], error: null, count: 1 } // Expect successful update
-                    }
-                }
+            // Define a common model structure that exists in both API and DB
+            const commonApiModel: ProviderModelInfo = { 
+                api_identifier: "openai-gpt-4", 
+                name: "OpenAI gpt-4", 
+                description: "Test description" 
             };
-            const { client: mockClient, spies } = createMockSupabaseClient(mockSupabaseConfig);
+            const commonDbModel: DbAiProvider = {
+                id: 'db-id-1',
+                api_identifier: commonApiModel.api_identifier,
+                name: commonApiModel.name,
+                description: commonApiModel.description ?? null,
+                is_active: true, // Ensure it's active
+                provider: 'openai'
+            };
             
-            const result = await syncOpenAIModels(mockClient as any, mockApiKey);
+            // Mock dependencies
+            const mockDeps = createMockSyncDeps({
+                listProviderModels: spy(async () => [commonApiModel]), // API returns the model
+                getCurrentDbModels: spy(async () => [commonDbModel]), // DB returns the exact same model (active)
+            });
+
+            // Configure Supabase mock (no DB ops expected)
+            const { client: mockClient, spies } = createMockSupabaseClient();
+            
+            // Call function with mock deps
+            const result = await syncOpenAIModels(mockClient as any, mockApiKey, mockDeps);
 
             // Assertions
+            assertSpyCall(mockDeps.listProviderModels as Spy, 0, { args: [mockApiKey] });
+            assertSpyCall(mockDeps.getCurrentDbModels as Spy, 0, { args: [mockClient as any, 'openai'] });
+
+            // No Supabase calls expected
             const fromSpy = spies.fromSpy;
-            assertSpyCall(fromSpy, 0, { args: ['ai_providers'] }); // Select
-            assertSpyCall(fromSpy, 1, { args: ['ai_providers'] }); // Update (reactivation)
-            assertEquals(fromSpy.calls.length, 2);
-
-            const updateSpies = fromSpy.calls[1].returned;
-            assertSpyCall(updateSpies.update, 0);
-            assertEquals(updateSpies.update.calls[0].args[0], { is_active: true }); // Verify reactivation payload
-            assertSpyCall(updateSpies.eq, 0, { args: ['id', 'db-id-1'] });
-
+            assertEquals(fromSpy.calls.length, 0, "No Supabase calls should happen");
+            
             // Check SyncResult
-            assertEquals(result.provider, "openai");
             assertEquals(result.inserted, 0);
-            assertEquals(result.updated, 1); // Reactivation counts as update
+            assertEquals(result.updated, 0);
             assertEquals(result.deactivated, 0);
             assertEquals(result.error, undefined);
         } finally {
-            fetchStubDisposable?.[Symbol.dispose]();
+            // No cleanup needed
         }
     });
 
-    await t.step("should deactivate all active models if API returns empty", async () => {
+    // --- NEW TEST: Reactivation Scenario ---
+    await t.step("should reactivate inactive model if it reappears in API", async () => {
         const mockApiKey = "test-api-key";
-        let fetchStubDisposable: Disposable | undefined;
+        const modelId = 'db-reactivate-id';
         try {
-            fetchStubDisposable = stubFetchForTestScope().stub;
-            const mockApiModels = { data: [] }; // Empty API response
-            setMockFetchResponse(new Response(JSON.stringify(mockApiModels), { status: 200 }));
+            // Define the model that appears in the API
+            const apiModel: ProviderModelInfo = { 
+                api_identifier: "openai-gpt-reactivate", 
+                name: "OpenAI Reactivate", 
+                description: "Should be reactivated" 
+            };
+            // Define the same model as existing in the DB but inactive
+            const existingInactiveDbModel: DbAiProvider = {
+                id: modelId,
+                api_identifier: apiModel.api_identifier,
+                name: apiModel.name, // Assume name/desc might also be updated
+                description: "Old description", // Simulate description update too
+                is_active: false, // Key part: it's inactive
+                provider: 'openai'
+            };
+            
+            // Mock dependencies
+            const mockDeps = createMockSyncDeps({
+                listProviderModels: spy(async () => [apiModel]), // API returns the model
+                getCurrentDbModels: spy(async () => [existingInactiveDbModel]), // DB has it, but inactive
+            });
 
-            const existingDbModels: DbAiProvider[] = [
-                { id: 'db-id-1', api_identifier: 'openai-gpt-4', name: 'OpenAI gpt-4', description: null, is_active: true, provider: 'openai' },
-                { id: 'db-id-2', api_identifier: 'openai-gpt-old', name: 'OpenAI gpt-old', description: null, is_active: true, provider: 'openai' },
-                { id: 'db-id-3', api_identifier: 'openai-gpt-inactive', name: 'OpenAI gpt-inactive', description: null, is_active: false, provider: 'openai' },
-            ];
-
+            // Configure Supabase mock for the expected UPDATE operation
             const mockSupabaseConfig: MockSupabaseDataConfig = {
                 genericMockResults: {
                     ai_providers: {
-                        select: { data: existingDbModels, error: null, count: existingDbModels.length },
-                        // Expect successful deactivation update call
-                        update: { data: [{ id: 'db-id-1', is_active: false }, { id: 'db-id-2', is_active: false }], error: null, count: 2 } 
+                        update: { data: [{ id: modelId, is_active: true }], error: null, count: 1 } // Expect successful update
                     }
                 }
             };
             const { client: mockClient, spies } = createMockSupabaseClient(mockSupabaseConfig);
             
-            const result = await syncOpenAIModels(mockClient as any, mockApiKey);
+            // Call function with mock deps
+            const result = await syncOpenAIModels(mockClient as any, mockApiKey, mockDeps);
 
             // Assertions
+            assertSpyCall(mockDeps.listProviderModels as Spy, 0, { args: [mockApiKey] });
+            assertSpyCall(mockDeps.getCurrentDbModels as Spy, 0, { args: [mockClient as any, 'openai'] });
+
+            // Check Supabase UPDATE call
             const fromSpy = spies.fromSpy;
-            assertSpyCall(fromSpy, 0, { args: ['ai_providers'] }); // Select
-            assertSpyCall(fromSpy, 1, { args: ['ai_providers'] }); // Update (deactivation)
-            assertEquals(fromSpy.calls.length, 2);
+            assertEquals(fromSpy.calls.length, 1, "Only one Supabase call (update) should happen");
+            
+            const updateCall = fromSpy.calls[0];
+            assertExists(updateCall.returned.update, "Update spy should exist");
+            assertSpyCall(updateCall.returned.update, 0); // Update called once
+            
+            // Check the payload sent to update
+            const updatePayload = updateCall.returned.update.calls[0].args[0];
+            assertEquals(updatePayload.is_active, true, "is_active should be set to true");
+            assertEquals(updatePayload.description, apiModel.description, "Description should be updated"); 
 
-            const deactivateSpies = fromSpy.calls[1].returned;
-            assertSpyCall(deactivateSpies.update, 0, { args: [{ is_active: false }] });
-            assertSpyCall(deactivateSpies.in, 0);
-            // Check that only initially active models are in the 'in' filter
-            assertEquals(deactivateSpies.in.calls[0].args[0], 'id'); 
-            assertEquals(deactivateSpies.in.calls[0].args[1]?.length, 2);
-            assert(deactivateSpies.in.calls[0].args[1]?.includes('db-id-1'));
-            assert(deactivateSpies.in.calls[0].args[1]?.includes('db-id-2'));
-
+            // Check that the correct model ID was targeted
+            assertExists(updateCall.returned.eq, "eq spy should exist");
+            assertSpyCall(updateCall.returned.eq, 0, { args: ['id', modelId] });
+            
             // Check SyncResult
-            assertEquals(result.provider, "openai");
             assertEquals(result.inserted, 0);
-            assertEquals(result.updated, 0);
-            assertEquals(result.deactivated, 2); // Only the 2 initially active models
+            assertEquals(result.updated, 1); // Reactivation counts as an update
+            assertEquals(result.deactivated, 0);
             assertEquals(result.error, undefined);
         } finally {
-            fetchStubDisposable?.[Symbol.dispose]();
+            // No cleanup needed
         }
     });
 
-}); 
+    // --- NEW TEST: Deactivate All Scenario ---
+    await t.step("should deactivate all active models if API returns empty", async () => {
+        const mockApiKey = "test-api-key";
+        try {
+            // Mock API returns empty list
+            const apiModels: ProviderModelInfo[] = []; 
+
+            // Mock DB returns active and inactive models
+            const existingDbModels: DbAiProvider[] = [
+                { id: 'db-id-active1', api_identifier: 'openai-active1', name: 'Active 1', description: null, is_active: true, provider: 'openai' },
+                { id: 'db-id-active2', api_identifier: 'openai-active2', name: 'Active 2', description: null, is_active: true, provider: 'openai' },
+                { id: 'db-id-inactive', api_identifier: 'openai-inactive', name: 'Inactive', description: null, is_active: false, provider: 'openai' },
+            ];
+            const activeModelIds = ['db-id-active1', 'db-id-active2'];
+            
+            // Mock dependencies
+            const mockDeps = createMockSyncDeps({
+                listProviderModels: spy(async () => apiModels), // API is empty
+                getCurrentDbModels: spy(async () => existingDbModels), // DB has models
+            });
+
+            // Configure Supabase mock for the expected DEACTIVATE update operation
+            const mockSupabaseConfig: MockSupabaseDataConfig = {
+                genericMockResults: {
+                    ai_providers: {
+                        // Expect successful deactivation update call
+                        update: { data: activeModelIds.map(id => ({ id, is_active: false })), error: null, count: activeModelIds.length } 
+                    }
+                }
+            };
+            const { client: mockClient, spies } = createMockSupabaseClient(mockSupabaseConfig);
+            
+            // Call function with mock deps
+            const result = await syncOpenAIModels(mockClient as any, mockApiKey, mockDeps);
+
+            // Assertions
+            assertSpyCall(mockDeps.listProviderModels as Spy, 0, { args: [mockApiKey] });
+            assertSpyCall(mockDeps.getCurrentDbModels as Spy, 0, { args: [mockClient as any, 'openai'] });
+
+            // Check Supabase DEACTIVATE update call
+            const fromSpy = spies.fromSpy;
+            assertEquals(fromSpy.calls.length, 1, "Only one Supabase call (deactivate update) should happen");
+            
+            const deactivateCall = fromSpy.calls[0];
+            assertExists(deactivateCall.returned.update, "Update spy should exist");
+            assertSpyCall(deactivateCall.returned.update, 0, { args: [{ is_active: false }] }); // Check the payload
+            
+            // Check that the .in() filter targeted the correct IDs
+            assertExists(deactivateCall.returned.in, "in spy should exist");
+            assertSpyCall(deactivateCall.returned.in, 0);
+            const inArgs = deactivateCall.returned.in.calls[0].args;
+            assertEquals(inArgs[0], 'id');
+            // Use assertArrayIncludes or similar for set comparison if order isn't guaranteed
+            assertEquals(inArgs[1]?.length, activeModelIds.length, "Should target only initially active models");
+            assert(inArgs[1]?.includes('db-id-active1'));
+            assert(inArgs[1]?.includes('db-id-active2'));
+            
+            // Check SyncResult
+            assertEquals(result.inserted, 0);
+            assertEquals(result.updated, 0);
+            assertEquals(result.deactivated, activeModelIds.length); // Only the initially active models
+            assertEquals(result.error, undefined);
+        } finally {
+            // No cleanup needed
+        }
+    });
+
+    // --- NEW TEST: DB Update Failure ---
+    await t.step("should return error result if DB update fails", async () => {
+        const mockApiKey = "test-api-key";
+        const modelIdToUpdate = 'db-update-fail-id';
+        const dbUpdateError = { message: "Update conflict error", code: "23503" }; // Example error
+
+        try {
+            // API model requires an update (e.g., new description)
+            const apiModel: ProviderModelInfo = { 
+                api_identifier: "openai-update-fail", 
+                name: "Update Fail Model", 
+                description: "New description causing update" 
+            };
+            // Existing DB model (active)
+            const existingDbModel: DbAiProvider = {
+                id: modelIdToUpdate,
+                api_identifier: apiModel.api_identifier,
+                name: apiModel.name,
+                description: "Old description",
+                is_active: true, 
+                provider: 'openai'
+            };
+            
+            // Mock dependencies
+            const mockDeps = createMockSyncDeps({
+                listProviderModels: spy(async () => [apiModel]),
+                getCurrentDbModels: spy(async () => [existingDbModel]),
+            });
+
+            // Configure Supabase mock for UPDATE failure
+            const mockSupabaseConfig: MockSupabaseDataConfig = {
+                genericMockResults: {
+                    ai_providers: {
+                        update: { data: null, error: dbUpdateError } // Simulate update failure
+                    }
+                }
+            };
+            const { client: mockClient, spies } = createMockSupabaseClient(mockSupabaseConfig);
+            
+            // Call function - expect error to be caught and returned in result
+            const result = await syncOpenAIModels(mockClient as any, mockApiKey, mockDeps);
+
+            // Assertions
+            assertSpyCall(mockDeps.listProviderModels as Spy, 0);
+            assertSpyCall(mockDeps.getCurrentDbModels as Spy, 0);
+            
+            // Check Supabase update attempt
+            const fromSpy = spies.fromSpy;
+            assertEquals(fromSpy.calls.length, 1, "Only one Supabase call (update attempt) should happen");
+            const updateCall = fromSpy.calls[0];
+            assertExists(updateCall.returned.update, "Update spy should exist");
+            assertSpyCall(updateCall.returned.update, 0); // Update called once
+            assertExists(updateCall.returned.eq, "eq spy should exist");
+            assertSpyCall(updateCall.returned.eq, 0, { args: ['id', modelIdToUpdate] }); // Correct model targeted
+
+            // Check that the error was logged by the outer catch block
+            assertSpyCall(mockDeps.error as Spy, 0); 
+            const loggedErrorArg = (mockDeps.error as Spy).calls[0].args[1];
+            // assert(loggedErrorArg instanceof Error, "Logged error should be an Error instance"); // Incorrect: Logs the raw error obj
+            assertEquals(loggedErrorArg, dbUpdateError, "Logged error object should match the mock DB error"); // Check the raw object
+            // Check the error message contained within the result, which *is* formatted
+            // assertEquals(loggedErrorArg.message, `Update failed for model ID ${modelIdToUpdate} (openai): ${dbUpdateError.message}`); // This would fail as loggedErrorArg is not Error
+            
+            // Check SyncResult
+            assertEquals(result.inserted, 0);
+            assertEquals(result.updated, 0); // Update failed
+            assertEquals(result.deactivated, 0);
+            // Check the error message formatted by the *outer* catch block
+            assertEquals(result.error, `Update failed for model ID ${modelIdToUpdate} (openai): ${dbUpdateError.message}`);
+
+        } finally { }
+    });
+
+    // --- NEW TEST: DB Deactivate Failure ---
+    await t.step("should return error result if DB deactivate fails", async () => {
+        const mockApiKey = "test-api-key";
+        const activeModelIds = ['db-deactivate-fail1', 'db-deactivate-fail2'];
+        const dbDeactivateError = { message: "Deactivation constraint violation", code: "23504" }; // Example error
+
+        try {
+            // Mock API returns empty list
+            const apiModels: ProviderModelInfo[] = []; 
+
+            // Mock DB returns active models that need deactivation
+            const existingDbModels: DbAiProvider[] = [
+                { id: activeModelIds[0], api_identifier: 'openai-deactivate-fail1', name: 'Deactivate Fail 1', description: null, is_active: true, provider: 'openai' },
+                { id: activeModelIds[1], api_identifier: 'openai-deactivate-fail2', name: 'Deactivate Fail 2', description: null, is_active: true, provider: 'openai' },
+            ];
+            
+            // Mock dependencies
+            const mockDeps = createMockSyncDeps({
+                listProviderModels: spy(async () => apiModels), // API is empty
+                getCurrentDbModels: spy(async () => existingDbModels), // DB has active models
+            });
+
+            // Configure Supabase mock for UPDATE failure during deactivation
+            const mockSupabaseConfig: MockSupabaseDataConfig = {
+                genericMockResults: {
+                    ai_providers: {
+                        update: { data: null, error: dbDeactivateError } // Simulate deactivation failure
+                    }
+                }
+            };
+            const { client: mockClient, spies } = createMockSupabaseClient(mockSupabaseConfig);
+            
+            // Call function - expect error to be caught and returned in result
+            const result = await syncOpenAIModels(mockClient as any, mockApiKey, mockDeps);
+
+            // Assertions
+            assertSpyCall(mockDeps.listProviderModels as Spy, 0);
+            assertSpyCall(mockDeps.getCurrentDbModels as Spy, 0);
+            
+            // Check Supabase deactivate update attempt
+            const fromSpy = spies.fromSpy;
+            assertEquals(fromSpy.calls.length, 1, "Only one Supabase call (deactivate attempt) should happen");
+            const deactivateCall = fromSpy.calls[0];
+            assertExists(deactivateCall.returned.update, "Update spy should exist");
+            assertSpyCall(deactivateCall.returned.update, 0, { args: [{ is_active: false }] }); // Correct payload
+            assertExists(deactivateCall.returned.in, "in spy should exist");
+            assertSpyCall(deactivateCall.returned.in, 0); // .in was called
+             // Check the IDs passed to .in()
+            const inArgs = deactivateCall.returned.in.calls[0].args;
+            assertEquals(inArgs[0], 'id');
+            assertEquals(inArgs[1]?.length, activeModelIds.length);
+            assert(inArgs[1]?.includes(activeModelIds[0]));
+            assert(inArgs[1]?.includes(activeModelIds[1]));
+
+            // Check that the error was logged by the outer catch block
+            assertSpyCall(mockDeps.error as Spy, 0); 
+            const loggedErrorArg = (mockDeps.error as Spy).calls[0].args[1];
+            // assert(loggedErrorArg instanceof Error, "Logged error should be an Error instance"); // Incorrect: Logs the raw error obj
+            assertEquals(loggedErrorArg, dbDeactivateError, "Logged error object should match the mock DB error"); // Check the raw object
+            // Check the error message contained within the result, which *is* formatted
+            // assertEquals(loggedErrorArg.message, `Deactivation failed for openai: ${dbDeactivateError.message}`); // This would fail as loggedErrorArg is not Error
+            
+            // Check SyncResult
+            assertEquals(result.inserted, 0);
+            assertEquals(result.updated, 0); 
+            assertEquals(result.deactivated, 0); // Deactivation failed
+            // Check the error message formatted by the *outer* catch block
+            assertEquals(result.error, `Deactivation failed for openai: ${dbDeactivateError.message}`);
+
+        } finally { }
+    });
+
+}); // End Deno.test suite
+
+// --- NEW ISOLATED TEST FOR MOCK CLIENT RESOLUTION WITH ERROR ---
+Deno.test("MockClientResolutionWithError", async (t) => {
+    await t.step("mock client .then() should resolve with error object when configured", async () => {
+        const dbError = { message: "Mock client resolves with this error", code: "MOCK" };
+        
+        // Configure mock client for select error
+        const mockSupabaseConfig: MockSupabaseDataConfig = {
+            genericMockResults: {
+                ai_providers: {
+                    select: { data: null, error: dbError }
+                }
+            }
+        };
+        const { client: mockClient } = createMockSupabaseClient(mockSupabaseConfig);
+
+        // Directly await the query builder chain.
+        // We expect it to RESOLVE now, not reject.
+        try {
+            console.log("[Test Log] Before awaiting mock client call...");
+            const result = await mockClient.from('ai_providers').select(); // Use .select() to be more explicit
+            console.log("[Test Log] After awaiting mock client call. Result:", result);
+            
+            // Assert that the resolved result contains the error object
+            assertExists(result.error, "Expected result.error to exist");
+            assertEquals(result.error.message, dbError.message);
+            assertEquals(result.error.code, dbError.code);
+            assertEquals(result.data, null);
+
+        } catch (e) {
+            // If it rejects unexpectedly, fail the test using throw
+            throw new Error(`Mock client rejected unexpectedly: ${e}`);
+        }
+    });
+});
+// --- END ISOLATED TEST --- 

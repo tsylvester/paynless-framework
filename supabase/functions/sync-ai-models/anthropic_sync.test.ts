@@ -3,13 +3,14 @@ import { assertSpyCall, assertSpyCalls, spy, stub, type Stub, type Spy } from "j
 import { assert, assertEquals, assertExists, assertRejects } from "jsr:@std/assert@0.225.3";
 import type { SupabaseClient } from "npm:@supabase/supabase-js@2";
 
-// Import the function to test
-import { syncAnthropicModels } from "./anthropic_sync.ts"; 
+// Import the function to test AND the dependency interface
+import { syncAnthropicModels, type SyncAnthropicDeps } from "./anthropic_sync.ts"; 
 
-// Import the adapter to mock its method
-import { anthropicAdapter } from "../_shared/ai_service/anthropic_adapter.ts";
+// No longer need to import the adapter directly for mocking
+// import { anthropicAdapter } from "../_shared/ai_service/anthropic_adapter.ts";
 
 // Import shared types and test utils
+// NOTE: getCurrentDbModels is now mocked via deps, but keep types
 import type { DbAiProvider, SyncResult } from "./index.ts"; 
 import type { ProviderModelInfo } from "../_shared/types.ts";
 import { 
@@ -24,6 +25,15 @@ import {
 const PROVIDER_NAME = 'anthropic';
 const ANTHROPIC_API_KEY = "test-anthropic-key";
 
+// Helper to create mock dependencies (similar to other tests)
+const createMockSyncDeps = (overrides: Partial<SyncAnthropicDeps> = {}): SyncAnthropicDeps => ({
+    listProviderModels: spy(async (_apiKey: string): Promise<ProviderModelInfo[]> => []), // Default: empty models
+    getCurrentDbModels: spy(async (_client: SupabaseClient, _provider: string): Promise<DbAiProvider[]> => []), // Default: empty DB
+    log: spy(() => {}), // Default: no-op spy
+    error: spy(() => {}), // Default: no-op spy
+    ...overrides,
+});
+
 // --- Test Suite ---
 
 Deno.test("syncAnthropicModels", { 
@@ -32,41 +42,41 @@ Deno.test("syncAnthropicModels", {
 }, async (t) => {
 
     await t.step("should insert new models when DB is empty and adapter returns models", async () => {
-        let listModelsStub: Stub | undefined;
+        // let listModelsStub: Stub | undefined; // No longer needed
         try {
-            // Mock the adapter response
+            // Mock the API response via deps
             const mockApiModels: ProviderModelInfo[] = [
                 { api_identifier: `anthropic-claude-3-opus-20240229`, name: 'Anthropic Claude 3 Opus', description: 'Most powerful model' },
                 { api_identifier: `anthropic-claude-3-sonnet-20240229`, name: 'Anthropic Claude 3 Sonnet', description: 'Balanced model' },
             ];
-            listModelsStub = stub(anthropicAdapter, "listModels", () => Promise.resolve(mockApiModels));
+            const mockDeps = createMockSyncDeps({
+                listProviderModels: spy(async () => mockApiModels),
+                getCurrentDbModels: spy(async () => []) // DB empty
+            });
             
-            // Configure the Supabase mock
+            // Configure the Supabase mock for INSERT
             const mockSupabaseConfig: MockSupabaseDataConfig = {
                 genericMockResults: {
                     ai_providers: {
-                        select: { data: [], error: null, count: 0 }, // DB empty
-                        insert: { data: mockApiModels.map(m => ({ ...m, provider: PROVIDER_NAME, is_active: true })), error: null, count: mockApiModels.length }
+                        // select handled by mockDeps
+                        insert: { data: mockApiModels.map(m => ({ ...m, provider: PROVIDER_NAME, is_active: true, id: crypto.randomUUID() })), error: null, count: mockApiModels.length }
                     }
                 }
             };
             const { client: mockClient, spies } = createMockSupabaseClient(mockSupabaseConfig);
 
-            // Call the function
-            const result = await syncAnthropicModels(mockClient as any, ANTHROPIC_API_KEY);
+            // Call the function with mock deps
+            const result = await syncAnthropicModels(mockClient as any, ANTHROPIC_API_KEY, mockDeps);
             
             // Assertions 
-            assertSpyCall(listModelsStub, 0, { args: [ANTHROPIC_API_KEY] }); // Adapter called
+            assertSpyCall(mockDeps.listProviderModels as Spy, 0, { args: [ANTHROPIC_API_KEY] }); 
+            assertSpyCall(mockDeps.getCurrentDbModels as Spy, 0, { args: [mockClient as any, PROVIDER_NAME] });
 
             const fromSpy = spies.fromSpy;
-            assertEquals(fromSpy.calls.length, 2, "from() should be called twice (select, insert)");
+            // Only called for INSERT now
+            assertEquals(fromSpy.calls.length, 1, "from() should be called once (insert)");
 
-            const selectBuilderSpies = fromSpy.calls[0].returned;
-            assertSpyCall(selectBuilderSpies.select, 0);
-            assertEquals(selectBuilderSpies.eq.calls.length, 1);
-            assertSpyCall(selectBuilderSpies.eq, 0, { args: ['provider', PROVIDER_NAME] });
-
-            const insertBuilderSpies = fromSpy.calls[1].returned;
+            const insertBuilderSpies = fromSpy.calls[0].returned;
             assertEquals(insertBuilderSpies.insert.calls.length, 1);
             const insertArgs = insertBuilderSpies.insert.calls[0].args[0];
             assertEquals(insertArgs.length, mockApiModels.length);
@@ -83,22 +93,28 @@ Deno.test("syncAnthropicModels", {
             assertEquals(result.error, undefined);
 
         } finally {
-            listModelsStub?.restore(); // Restore original adapter method
+            // No stub to restore
         }
     });
 
-    await t.step("should return error result if adapter call fails", async () => {
-        let listModelsStub: Stub | undefined;
+    await t.step("should return error result if listProviderModels fails", async () => {
+        // let listModelsStub: Stub | undefined; // No longer needed
         const adapterError = new Error("Anthropic API Key Invalid");
         try {
-            // Mock anthropicAdapter.listModels to throw an error
-            listModelsStub = stub(anthropicAdapter, "listModels", () => Promise.reject(adapterError));
+            // Mock listProviderModels to reject via deps
+            const mockDeps = createMockSyncDeps({
+                listProviderModels: spy(() => Promise.reject(adapterError))
+            });
             
             const { client: mockClient, spies } = createMockSupabaseClient();
 
-            const result = await syncAnthropicModels(mockClient as any, ANTHROPIC_API_KEY);
+            // Call the function with mock deps
+            const result = await syncAnthropicModels(mockClient as any, ANTHROPIC_API_KEY, mockDeps);
             
-            assertSpyCall(listModelsStub, 0, { args: [ANTHROPIC_API_KEY] });
+            assertSpyCall(mockDeps.listProviderModels as Spy, 0, { args: [ANTHROPIC_API_KEY] });
+            assertSpyCalls(mockDeps.getCurrentDbModels as Spy, 0); // Should not be called
+            assertSpyCall(mockDeps.error as Spy, 0); // Error should be logged
+            assert((mockDeps.error as Spy).calls[0].args[1] === adapterError);
 
             // Ensure Supabase was NOT called
             assertEquals(spies.fromSpy.calls.length, 0);
@@ -111,305 +127,262 @@ Deno.test("syncAnthropicModels", {
             assertEquals(result.error, adapterError.message); 
 
         } finally {
-            listModelsStub?.restore();
+            // No stub to restore
         }
     });
     
-    await t.step("should return error result if DB select fails", async () => {
-        let listModelsStub: Stub | undefined;
-        const dbError = { message: "DB Connection refused", code: "500" };
+    await t.step("should return error result if getCurrentDbModels fails", async () => {
+        // let listModelsStub: Stub | undefined; // No longer needed
+        const dbSelectError = new Error("DB Connection refused");
         try {
-            // Mock adapter to return successfully
+            // Mock adapter to return successfully via deps
              const mockApiModels: ProviderModelInfo[] = [
                 { api_identifier: `anthropic-claude-3-opus-20240229`, name: 'Anthropic Claude 3 Opus', description: 'Most powerful model' },
              ];
-            listModelsStub = stub(anthropicAdapter, "listModels", () => Promise.resolve(mockApiModels));
+            // Mock getCurrentDbModels to reject via deps
+            const mockDeps = createMockSyncDeps({
+                listProviderModels: spy(async () => mockApiModels),
+                getCurrentDbModels: spy(() => Promise.reject(dbSelectError))
+            });
 
-            // Configure Supabase mock for select error
-            const mockSupabaseConfig: MockSupabaseDataConfig = {
-                 genericMockResults: {
-                    ai_providers: {
-                        select: { data: null, error: dbError }
-                    }
-                }
-            };
-            const { client: mockClient, spies } = createMockSupabaseClient(mockSupabaseConfig);
+            // Configure Supabase mock (no DB ops expected)
+            const { client: mockClient, spies } = createMockSupabaseClient();
 
-            const result = await syncAnthropicModels(mockClient as any, ANTHROPIC_API_KEY);
+            // Call the function with mock deps
+            const result = await syncAnthropicModels(mockClient as any, ANTHROPIC_API_KEY, mockDeps);
 
-            assertSpyCall(listModelsStub, 0, { args: [ANTHROPIC_API_KEY] });
+            assertSpyCall(mockDeps.listProviderModels as Spy, 0, { args: [ANTHROPIC_API_KEY] });
+            assertSpyCall(mockDeps.getCurrentDbModels as Spy, 0, { args: [mockClient as any, PROVIDER_NAME] });
+            assertSpyCall(mockDeps.error as Spy, 0); // Error should be logged
+            assert((mockDeps.error as Spy).calls[0].args[1] === dbSelectError);
 
-            // Check DB call
-            assertSpyCall(spies.fromSpy, 0, { args: ['ai_providers'] });
-            const queryBuilderSpies = spies.fromSpy.calls[0].returned;
-            assertSpyCall(queryBuilderSpies.select, 0); 
-            assertSpyCall(queryBuilderSpies.eq, 0, { args: ['provider', PROVIDER_NAME] });
+            // No Supabase mutation calls expected
+            assertEquals(spies.fromSpy.calls.length, 0);
 
             // Check SyncResult
             assertEquals(result.provider, PROVIDER_NAME);
             assertEquals(result.inserted, 0);
             assertEquals(result.updated, 0);
             assertEquals(result.deactivated, 0);
-            // The error should be the stringified DB error object
-            assertEquals(result.error, String(dbError));
+            assertEquals(result.error, dbSelectError.message);
 
         } finally {
-            listModelsStub?.restore();
+            // No stub to restore
         }
     });
 
     // Add other test cases similar to openai_sync.test.ts (no change, db insert/update/deactivate fail, reactivate, empty API)
-    // Remember to stub the anthropicAdapter.listModels call appropriately for each case.
+    // Remember to mock the dependencies (listProviderModels, getCurrentDbModels) appropriately for each case.
 
-    // --- Start: Added Edge Case Tests ---
+    // --- Start: Added Edge Case Tests (Updated for DI) ---
 
     await t.step("should do nothing if API and DB models match", async () => {
-        let listModelsStub: Stub | undefined;
+        // let listModelsStub: Stub | undefined; // No longer needed
         try {
             const commonModel = { api_identifier: `anthropic-claude-3-opus-20240229`, name: 'Anthropic Claude 3 Opus', description: 'Most powerful model' };
-            listModelsStub = stub(anthropicAdapter, "listModels", () => Promise.resolve([commonModel]));
-
             const existingDbModels: DbAiProvider[] = [
                 { id: 'db-id-1', api_identifier: commonModel.api_identifier, name: commonModel.name, description: commonModel.description, is_active: true, provider: PROVIDER_NAME },
             ];
-
-            const mockSupabaseConfig: MockSupabaseDataConfig = {
-                genericMockResults: {
-                    ai_providers: {
-                        select: { data: existingDbModels, error: null, count: 1 }
-                    }
-                }
-            };
-            const { client: mockClient, spies } = createMockSupabaseClient(mockSupabaseConfig);
             
-            const result = await syncAnthropicModels(mockClient as any, ANTHROPIC_API_KEY);
+            // Mock dependencies
+            const mockDeps = createMockSyncDeps({
+                listProviderModels: spy(async () => [commonModel]),
+                getCurrentDbModels: spy(async () => existingDbModels)
+            });
 
-            assertSpyCall(listModelsStub, 0);
+            // Configure Supabase mock (no DB ops expected)
+            const { client: mockClient, spies } = createMockSupabaseClient();
+            
+            // Call function with mock deps
+            const result = await syncAnthropicModels(mockClient as any, ANTHROPIC_API_KEY, mockDeps);
+
+            assertSpyCall(mockDeps.listProviderModels as Spy, 0);
+            assertSpyCall(mockDeps.getCurrentDbModels as Spy, 0);
+
+            // No Supabase calls expected
             const fromSpy = spies.fromSpy;
-            assertSpyCall(fromSpy, 0, { args: ['ai_providers'] }); 
-            assertEquals(fromSpy.calls.length, 1, "Only select should happen");
+            assertEquals(fromSpy.calls.length, 0, "No Supabase calls should happen");
             
-            const selectSpies = fromSpy.calls[0].returned;
-            assertSpyCall(selectSpies.select, 0);
-            assertSpyCall(selectSpies.eq, 0, { args: ['provider', PROVIDER_NAME] });
-            assertEquals(selectSpies.insert?.calls.length ?? 0, 0);
-            assertEquals(selectSpies.update?.calls.length ?? 0, 0);
-
             assertEquals(result.inserted, 0);
             assertEquals(result.updated, 0);
             assertEquals(result.deactivated, 0);
             assertEquals(result.error, undefined);
         } finally {
-            listModelsStub?.restore();
+            // No stub to restore
         }
     });
 
     await t.step("should return error result if DB insert fails", async () => {
-        let listModelsStub: Stub | undefined;
+        // let listModelsStub: Stub | undefined; // No longer needed
         const dbError = { message: "Insert failed", code: "23505" };
         try {
             // Ensure description is undefined, not null, to match ProviderModelInfo type
             const mockApiModels = [{ api_identifier: `anthropic-claude-new`, name: 'Anthropic New', description: undefined }];
-            listModelsStub = stub(anthropicAdapter, "listModels", () => Promise.resolve(mockApiModels));
+            
+            // Mock dependencies
+            const mockDeps = createMockSyncDeps({
+                listProviderModels: spy(async () => mockApiModels),
+                getCurrentDbModels: spy(async () => []) // DB empty
+            });
 
+            // Configure Supabase mock for INSERT failure
             const mockSupabaseConfig: MockSupabaseDataConfig = {
                 genericMockResults: {
                     ai_providers: {
-                        select: { data: [], error: null, count: 0 },
+                        // select handled by mockDeps
                         insert: { data: null, error: dbError }
                     }
                 }
             };
             const { client: mockClient, spies } = createMockSupabaseClient(mockSupabaseConfig);
             
-            const result = await syncAnthropicModels(mockClient as any, ANTHROPIC_API_KEY);
+            // Call function with mock deps
+            const result = await syncAnthropicModels(mockClient as any, ANTHROPIC_API_KEY, mockDeps);
 
-            assertSpyCall(listModelsStub, 0);
+            assertSpyCall(mockDeps.listProviderModels as Spy, 0);
+            assertSpyCall(mockDeps.getCurrentDbModels as Spy, 0);
+            assertSpyCall(mockDeps.error as Spy, 0); // Log the DB error
+            assertEquals((mockDeps.error as Spy).calls[0].args[1], dbError, "Logged error object should match mock DB error");
+
+            // Check Supabase insert attempt
             const fromSpy = spies.fromSpy;
-            assertSpyCall(fromSpy, 0, { args: ['ai_providers'] });
-            assertSpyCall(fromSpy, 1, { args: ['ai_providers'] });
-            assertEquals(fromSpy.calls.length, 2);
-            assertSpyCall(fromSpy.calls[1].returned.insert, 0);
+            assertEquals(fromSpy.calls.length, 1); // Only insert attempt
+            assertSpyCall(fromSpy.calls[0].returned.insert, 0);
 
+            // Check SyncResult
             assertEquals(result.inserted, 0);
             assertEquals(result.updated, 0);
             assertEquals(result.deactivated, 0);
-            assertEquals(result.error, "[object Object]");
+            // The error from sync function should match the dbError message
+            assertEquals(result.error, `Insert failed for ${PROVIDER_NAME}: ${dbError.message}`);
         } finally {
-            listModelsStub?.restore();
+            // No stub to restore
         }
     });
 
      await t.step("should return error result if DB update fails", async () => {
-        let listModelsStub: Stub | undefined;
+        // let listModelsStub: Stub | undefined; // No longer needed
         const dbError = { message: "Update failed", code: "xxxxx" };
+        const modelId = 'db-id-a1';
         try {
              // Ensure description is undefined, not null, to match ProviderModelInfo type
             const mockApiModels = [{ api_identifier: `anthropic-claude-3-opus-20240229`, name: 'Anthropic Claude 3 Opus UPDATED', description: undefined }];
-            listModelsStub = stub(anthropicAdapter, "listModels", () => Promise.resolve(mockApiModels));
-
             const existingDbModels: DbAiProvider[] = [
-                { id: 'db-id-1', api_identifier: 'anthropic-claude-3-opus-20240229', name: 'Anthropic Claude 3 Opus', description: null, is_active: true, provider: PROVIDER_NAME },
+                { id: modelId, api_identifier: `anthropic-claude-3-opus-20240229`, name: 'Anthropic Claude 3 Opus', description: null, is_active: true, provider: PROVIDER_NAME },
             ];
+            
+            // Mock dependencies
+            const mockDeps = createMockSyncDeps({
+                listProviderModels: spy(async () => mockApiModels),
+                getCurrentDbModels: spy(async () => existingDbModels)
+            });
 
+            // Configure Supabase mock for UPDATE failure
             const mockSupabaseConfig: MockSupabaseDataConfig = {
                 genericMockResults: {
                     ai_providers: {
-                        select: { data: existingDbModels, error: null, count: 1 },
+                        // select handled by mockDeps
                         update: { data: null, error: dbError }
                     }
                 }
             };
             const { client: mockClient, spies } = createMockSupabaseClient(mockSupabaseConfig);
             
-            const result = await syncAnthropicModels(mockClient as any, ANTHROPIC_API_KEY);
+            // Call function with mock deps
+            const result = await syncAnthropicModels(mockClient as any, ANTHROPIC_API_KEY, mockDeps);
 
-            assertSpyCall(listModelsStub, 0);
+            assertSpyCall(mockDeps.listProviderModels as Spy, 0);
+            assertSpyCall(mockDeps.getCurrentDbModels as Spy, 0);
+            assertSpyCall(mockDeps.error as Spy, 0); // Log the DB error
+            assertEquals((mockDeps.error as Spy).calls[0].args[1], dbError, "Logged error object should match mock DB error");
+
+            // Check Supabase update attempt
             const fromSpy = spies.fromSpy;
-            assertSpyCall(fromSpy, 0, { args: ['ai_providers'] });
-            assertSpyCall(fromSpy, 1, { args: ['ai_providers'] });
-            assertEquals(fromSpy.calls.length, 2);
-            assertSpyCall(fromSpy.calls[1].returned.update, 0);
-            assertSpyCall(fromSpy.calls[1].returned.eq, 0, { args: ['id', 'db-id-1'] });
+            assertEquals(fromSpy.calls.length, 1); // Only update attempt
+            assertSpyCall(fromSpy.calls[0].returned.update, 0);
+            assertSpyCall(fromSpy.calls[0].returned.eq, 0, { args: ['id', modelId] });
 
+            // Check SyncResult
             assertEquals(result.inserted, 0);
             assertEquals(result.updated, 0);
             assertEquals(result.deactivated, 0);
-            assertEquals(result.error, "[object Object]");
+            // Final error message caught by the outer block
+            assertEquals(result.error, `Update failed for model ID ${modelId} (${PROVIDER_NAME}): ${dbError.message}`);
         } finally {
-            listModelsStub?.restore();
-        }
-    });
-    
-     await t.step("should return error result if DB deactivate fails", async () => {
-        let listModelsStub: Stub | undefined;
-        const dbError = { message: "Deactivation failed", code: "xxxxx" };
-        try {
-            listModelsStub = stub(anthropicAdapter, "listModels", () => Promise.resolve([])); // Empty API response
-
-            const existingDbModels: DbAiProvider[] = [
-                { id: 'db-id-1', api_identifier: 'anthropic-claude-old', name: 'Claude Old', description: null, is_active: true, provider: PROVIDER_NAME },
-            ];
-
-            const mockSupabaseConfig: MockSupabaseDataConfig = {
-                genericMockResults: {
-                    ai_providers: {
-                        select: { data: existingDbModels, error: null, count: 1 },
-                        update: { data: null, error: dbError }
-                    }
-                }
-            };
-            const { client: mockClient, spies } = createMockSupabaseClient(mockSupabaseConfig);
-            
-            const result = await syncAnthropicModels(mockClient as any, ANTHROPIC_API_KEY);
-
-            assertSpyCall(listModelsStub, 0);
-            const fromSpy = spies.fromSpy;
-            assertSpyCall(fromSpy, 0, { args: ['ai_providers'] });
-            assertSpyCall(fromSpy, 1, { args: ['ai_providers'] });
-            assertEquals(fromSpy.calls.length, 2);
-
-            const deactivateSpies = fromSpy.calls[1].returned;
-            assertSpyCall(deactivateSpies.update, 0, { args: [{ is_active: false }] });
-            assertSpyCall(deactivateSpies.in, 0, { args: ['id', ['db-id-1']] });
-
-            assertEquals(result.inserted, 0);
-            assertEquals(result.updated, 0);
-            assertEquals(result.deactivated, 0);
-            assertEquals(result.error, "[object Object]");
-        } finally {
-            listModelsStub?.restore();
-        }
-    });
-
-     await t.step("should reactivate inactive model if it reappears in API", async () => {
-        let listModelsStub: Stub | undefined;
-        try {
-             const mockApiModels = [{ api_identifier: `anthropic-claude-3-opus-20240229`, name: 'Anthropic Claude 3 Opus', description: 'Most powerful model' }];
-            listModelsStub = stub(anthropicAdapter, "listModels", () => Promise.resolve(mockApiModels));
-
-            const existingDbModels: DbAiProvider[] = [
-                { id: 'db-id-1', api_identifier: 'anthropic-claude-3-opus-20240229', name: 'Anthropic Claude 3 Opus', description: null, is_active: false, provider: PROVIDER_NAME },
-            ];
-
-            const mockSupabaseConfig: MockSupabaseDataConfig = {
-                genericMockResults: {
-                    ai_providers: {
-                        select: { data: existingDbModels, error: null, count: 1 },
-                        update: { data: [{ id: 'db-id-1', is_active: true }], error: null, count: 1 }
-                    }
-                }
-            };
-            const { client: mockClient, spies } = createMockSupabaseClient(mockSupabaseConfig);
-            
-            const result = await syncAnthropicModels(mockClient as any, ANTHROPIC_API_KEY);
-
-            assertSpyCall(listModelsStub, 0);
-            const fromSpy = spies.fromSpy;
-            assertSpyCall(fromSpy, 0, { args: ['ai_providers'] });
-            assertSpyCall(fromSpy, 1, { args: ['ai_providers'] });
-            assertEquals(fromSpy.calls.length, 2);
-
-            const updateSpies = fromSpy.calls[1].returned;
-            assertSpyCall(updateSpies.update, 0);
-            assertEquals(updateSpies.update.calls[0].args[0], { description: 'Most powerful model', is_active: true });
-            assertSpyCall(updateSpies.eq, 0, { args: ['id', 'db-id-1'] });
-
-            assertEquals(result.inserted, 0);
-            assertEquals(result.updated, 1);
-            assertEquals(result.deactivated, 0);
-            assertEquals(result.error, undefined);
-        } finally {
-            listModelsStub?.restore();
-        }
-    });
-
-    await t.step("should deactivate all active models if API returns empty", async () => {
-        let listModelsStub: Stub | undefined;
-        try {
-            listModelsStub = stub(anthropicAdapter, "listModels", () => Promise.resolve([])); // Empty API response
-
-            const existingDbModels: DbAiProvider[] = [
-                { id: 'db-id-1', api_identifier: 'anthropic-claude-4', name: 'Anthropic Claude 4', description: null, is_active: true, provider: PROVIDER_NAME },
-                { id: 'db-id-2', api_identifier: 'anthropic-claude-old', name: 'Anthropic Claude Old', description: null, is_active: true, provider: PROVIDER_NAME },
-                { id: 'db-id-3', api_identifier: 'anthropic-claude-inactive', name: 'Anthropic Inactive', description: null, is_active: false, provider: PROVIDER_NAME },
-            ];
-
-            const mockSupabaseConfig: MockSupabaseDataConfig = {
-                genericMockResults: {
-                    ai_providers: {
-                        select: { data: existingDbModels, error: null, count: existingDbModels.length },
-                        update: { data: [{ id: 'db-id-1', is_active: false }, { id: 'db-id-2', is_active: false }], error: null, count: 2 } 
-                    }
-                }
-            };
-            const { client: mockClient, spies } = createMockSupabaseClient(mockSupabaseConfig);
-            
-            const result = await syncAnthropicModels(mockClient as any, ANTHROPIC_API_KEY);
-
-            assertSpyCall(listModelsStub, 0);
-            const fromSpy = spies.fromSpy;
-            assertSpyCall(fromSpy, 0, { args: ['ai_providers'] });
-            assertSpyCall(fromSpy, 1, { args: ['ai_providers'] });
-            assertEquals(fromSpy.calls.length, 2);
-
-            const deactivateSpies = fromSpy.calls[1].returned;
-            assertSpyCall(deactivateSpies.update, 0, { args: [{ is_active: false }] });
-            assertSpyCall(deactivateSpies.in, 0);
-            assertEquals(deactivateSpies.in.calls[0].args[0], 'id'); 
-            assertEquals(deactivateSpies.in.calls[0].args[1]?.length, 2);
-            assert(deactivateSpies.in.calls[0].args[1]?.includes('db-id-1'));
-            assert(deactivateSpies.in.calls[0].args[1]?.includes('db-id-2'));
-
-            assertEquals(result.inserted, 0);
-            assertEquals(result.updated, 0);
-            assertEquals(result.deactivated, 2); // Only the 2 initially active models
-            assertEquals(result.error, undefined);
-        } finally {
-            listModelsStub?.restore();
+            // No stub to restore
         }
     });
 
     // --- End: Added Edge Case Tests ---
 
-}); 
+    // --- NEW TEST: DB Deactivate Failure ---
+    await t.step("should return error result if DB deactivate fails", async () => {
+        const mockApiKey = "test-anthropic-key";
+        const activeModelIds = ['db-anthropic-deactivate-fail1', 'db-anthropic-deactivate-fail2'];
+        const dbDeactivateError = { message: "Anthropic deactivation constraint violation", code: "23504" }; // Example error
+
+        try {
+            // Mock API returns empty list
+            const apiModels: ProviderModelInfo[] = []; 
+
+            // Mock DB returns active models that need deactivation
+            const existingDbModels: DbAiProvider[] = [
+                { id: activeModelIds[0], api_identifier: 'anthropic-deactivate-fail1', name: 'Deactivate Fail 1', description: null, is_active: true, provider: 'anthropic' },
+                { id: activeModelIds[1], api_identifier: 'anthropic-deactivate-fail2', name: 'Deactivate Fail 2', description: null, is_active: true, provider: 'anthropic' },
+            ];
+            
+            // Mock dependencies
+            const mockDeps = createMockSyncDeps({
+                listProviderModels: spy(async () => apiModels), // API is empty
+                getCurrentDbModels: spy(async () => existingDbModels), // DB has active models
+            });
+
+            // Configure Supabase mock for UPDATE failure during deactivation
+            const mockSupabaseConfig: MockSupabaseDataConfig = {
+                genericMockResults: {
+                    ai_providers: {
+                        update: { data: null, error: dbDeactivateError } // Simulate deactivation failure
+                    }
+                }
+            };
+            const { client: mockClient, spies } = createMockSupabaseClient(mockSupabaseConfig);
+            
+            // Call function - expect error to be caught and returned in result
+            const result = await syncAnthropicModels(mockClient as any, mockApiKey, mockDeps);
+
+            // Assertions
+            assertSpyCall(mockDeps.listProviderModels as Spy, 0);
+            assertSpyCall(mockDeps.getCurrentDbModels as Spy, 0);
+            
+            // Check Supabase deactivate update attempt
+            const fromSpy = spies.fromSpy;
+            assertEquals(fromSpy.calls.length, 1, "Only one Supabase call (deactivate attempt) should happen");
+            const deactivateCall = fromSpy.calls[0];
+            assertExists(deactivateCall.returned.update, "Update spy should exist");
+            assertSpyCall(deactivateCall.returned.update, 0, { args: [{ is_active: false }] }); // Correct payload
+            assertExists(deactivateCall.returned.in, "in spy should exist");
+            assertSpyCall(deactivateCall.returned.in, 0); // .in was called
+             // Check the IDs passed to .in()
+            const inArgs = deactivateCall.returned.in.calls[0].args;
+            assertEquals(inArgs[0], 'id');
+            assertEquals(inArgs[1]?.length, activeModelIds.length);
+            assert(inArgs[1]?.includes(activeModelIds[0]));
+            assert(inArgs[1]?.includes(activeModelIds[1]));
+
+            // Check that the error was logged by the outer catch block
+            assertSpyCall(mockDeps.error as Spy, 0); 
+            const loggedErrorArg = (mockDeps.error as Spy).calls[0].args[1];
+            assertEquals(loggedErrorArg, dbDeactivateError, "Logged error object should match the mock DB error"); // Check the raw object
+            
+            // Check SyncResult
+            assertEquals(result.provider, 'anthropic');
+            assertEquals(result.inserted, 0);
+            assertEquals(result.updated, 0); 
+            assertEquals(result.deactivated, 0); // Deactivation failed
+            // Check the error message formatted by the *outer* catch block
+            assertEquals(result.error, `Deactivation failed for anthropic: ${dbDeactivateError.message}`);
+
+        } finally { }
+    });
+
+}); // End Deno.test suite

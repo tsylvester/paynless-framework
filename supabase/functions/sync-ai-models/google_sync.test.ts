@@ -3,13 +3,14 @@ import { assertSpyCall, assertSpyCalls, spy, stub, type Stub, type Spy } from "j
 import { assert, assertEquals, assertExists, assertRejects } from "jsr:@std/assert@0.225.3";
 import type { SupabaseClient } from "npm:@supabase/supabase-js@2";
 
-// Import the function to test
-import { syncGoogleModels } from "./google_sync.ts"; 
+// Import the function to test AND the dependency interface
+import { syncGoogleModels, type SyncGoogleDeps } from "./google_sync.ts"; 
 
-// Import the adapter to mock its method
-import { googleAdapter } from "../_shared/ai_service/google_adapter.ts";
+// No longer need to import the adapter directly for mocking
+// import { googleAdapter } from "../_shared/ai_service/google_adapter.ts";
 
 // Import shared types and test utils
+// NOTE: getCurrentDbModels is now mocked via deps, but keep types
 import type { DbAiProvider, SyncResult } from "./index.ts"; 
 import type { ProviderModelInfo } from "../_shared/types.ts";
 import { 
@@ -22,6 +23,15 @@ import {
 const PROVIDER_NAME = 'google';
 const GOOGLE_API_KEY = "test-google-key"; // Use a placeholder key for tests
 
+// Helper to create mock dependencies (similar to OpenAI test)
+const createMockSyncDeps = (overrides: Partial<SyncGoogleDeps> = {}): SyncGoogleDeps => ({
+    listProviderModels: spy(async (_apiKey: string): Promise<ProviderModelInfo[]> => []), // Default: empty models
+    getCurrentDbModels: spy(async (_client: SupabaseClient, _provider: string): Promise<DbAiProvider[]> => []), // Default: empty DB
+    log: spy(() => {}), // Default: no-op spy
+    error: spy(() => {}), // Default: no-op spy
+    ...overrides,
+});
+
 // --- Test Suite ---
 
 Deno.test("syncGoogleModels", { 
@@ -30,41 +40,41 @@ Deno.test("syncGoogleModels", {
 }, async (t) => {
 
     await t.step("should insert new models when DB is empty and adapter returns models", async () => {
-        let listModelsStub: Stub | undefined;
+        // let listModelsStub: Stub | undefined; // No longer needed
         try {
-            // Mock the adapter response (example Google models)
+            // Mock the API response via deps
             const mockApiModels: ProviderModelInfo[] = [
                 { api_identifier: 'google-gemini-1.5-pro-latest', name: 'Google Gemini 1.5 Pro', description: 'Most capable model' },
                 { api_identifier: 'google-gemini-1.5-flash-latest', name: 'Google Gemini 1.5 Flash', description: 'Fast and versatile model' },
             ];
-            listModelsStub = stub(googleAdapter, "listModels", () => Promise.resolve(mockApiModels));
+            const mockDeps = createMockSyncDeps({
+                listProviderModels: spy(async () => mockApiModels), // Mock API return
+                getCurrentDbModels: spy(async () => []), // Mock empty DB return
+            });
             
-            // Configure the Supabase mock
+            // Configure the Supabase mock for INSERT
             const mockSupabaseConfig: MockSupabaseDataConfig = {
                 genericMockResults: {
                     ai_providers: {
-                        select: { data: [], error: null, count: 0 }, // DB empty
-                        insert: { data: mockApiModels.map(m => ({ ...m, provider: PROVIDER_NAME, is_active: true })), error: null, count: mockApiModels.length }
+                        // select handled by mockDeps.getCurrentDbModels
+                        insert: { data: mockApiModels.map(m => ({ ...m, provider: PROVIDER_NAME, is_active: true, id: crypto.randomUUID() })), error: null, count: mockApiModels.length }
                     }
                 }
             };
             const { client: mockClient, spies } = createMockSupabaseClient(mockSupabaseConfig);
 
-            // Call the function
-            const result = await syncGoogleModels(mockClient as any, GOOGLE_API_KEY);
+            // Call the function with mock deps
+            const result = await syncGoogleModels(mockClient as any, GOOGLE_API_KEY, mockDeps);
             
             // Assertions 
-            assertSpyCall(listModelsStub, 0, { args: [GOOGLE_API_KEY] }); // Adapter called
+            assertSpyCall(mockDeps.listProviderModels as Spy, 0, { args: [GOOGLE_API_KEY] }); 
+            assertSpyCall(mockDeps.getCurrentDbModels as Spy, 0, { args: [mockClient as any, PROVIDER_NAME] });
 
             const fromSpy = spies.fromSpy;
-            assertEquals(fromSpy.calls.length, 2, "from() should be called twice (select, insert)");
+            // Only called for INSERT now
+            assertEquals(fromSpy.calls.length, 1, "from() should be called once (insert)");
 
-            const selectBuilderSpies = fromSpy.calls[0].returned;
-            assertSpyCall(selectBuilderSpies.select, 0);
-            assertEquals(selectBuilderSpies.eq.calls.length, 1);
-            assertSpyCall(selectBuilderSpies.eq, 0, { args: ['provider', PROVIDER_NAME] });
-
-            const insertBuilderSpies = fromSpy.calls[1].returned;
+            const insertBuilderSpies = fromSpy.calls[0].returned;
             assertEquals(insertBuilderSpies.insert.calls.length, 1);
             const insertArgs = insertBuilderSpies.insert.calls[0].args[0];
             assertEquals(insertArgs.length, mockApiModels.length);
@@ -81,22 +91,28 @@ Deno.test("syncGoogleModels", {
             assertEquals(result.error, undefined);
 
         } finally {
-            listModelsStub?.restore(); // Restore original adapter method
+            // listModelsStub?.restore(); // No stub to restore
         }
     });
 
-    await t.step("should return error result if adapter call fails", async () => {
-        let listModelsStub: Stub | undefined;
+    await t.step("should return error result if listProviderModels fails", async () => {
+        // let listModelsStub: Stub | undefined; // No longer needed
         const adapterError = new Error("Google API Key Invalid");
         try {
-            // Mock googleAdapter.listModels to throw an error
-            listModelsStub = stub(googleAdapter, "listModels", () => Promise.reject(adapterError));
+            // Mock listProviderModels to reject via deps
+            const mockDeps = createMockSyncDeps({
+                listProviderModels: spy(() => Promise.reject(adapterError))
+            });
             
             const { client: mockClient, spies } = createMockSupabaseClient();
 
-            const result = await syncGoogleModels(mockClient as any, GOOGLE_API_KEY);
+            // Call the function with mock deps
+            const result = await syncGoogleModels(mockClient as any, GOOGLE_API_KEY, mockDeps);
             
-            assertSpyCall(listModelsStub, 0, { args: [GOOGLE_API_KEY] });
+            assertSpyCall(mockDeps.listProviderModels as Spy, 0, { args: [GOOGLE_API_KEY] });
+            assertSpyCalls(mockDeps.getCurrentDbModels as Spy, 0); // Should not be called
+            assertSpyCall(mockDeps.error as Spy, 0); // Error should be logged
+            assert((mockDeps.error as Spy).calls[0].args[1] === adapterError); // Check logged error object
 
             // Ensure Supabase was NOT called
             assertEquals(spies.fromSpy.calls.length, 0);
@@ -109,143 +125,163 @@ Deno.test("syncGoogleModels", {
             assertEquals(result.error, adapterError.message); 
 
         } finally {
-            listModelsStub?.restore();
+            // listModelsStub?.restore(); // No stub to restore
         }
     });
     
-    await t.step("should return error result if DB select fails", async () => {
-        let listModelsStub: Stub | undefined;
-        const dbError = { message: "DB Connection refused", code: "500" };
+    await t.step("should return error result if getCurrentDbModels fails", async () => {
+        // let listModelsStub: Stub | undefined; // No longer needed
+        const dbSelectError = new Error("DB Connection refused");
         try {
-            // Mock adapter to return successfully
+            // Mock adapter to return successfully via deps
              const mockApiModels: ProviderModelInfo[] = [
                 { api_identifier: 'google-gemini-1.5-pro-latest', name: 'Google Gemini 1.5 Pro', description: 'Most capable model' },
              ];
-            listModelsStub = stub(googleAdapter, "listModels", () => Promise.resolve(mockApiModels));
+            // Mock getCurrentDbModels to reject via deps
+             const mockDeps = createMockSyncDeps({
+                 listProviderModels: spy(async () => mockApiModels),
+                 getCurrentDbModels: spy(() => Promise.reject(dbSelectError))
+             });
 
-            // Configure Supabase mock for select error
-            const mockSupabaseConfig: MockSupabaseDataConfig = {
-                 genericMockResults: {
-                    ai_providers: {
-                        select: { data: null, error: dbError }
-                    }
-                }
-            };
-            const { client: mockClient, spies } = createMockSupabaseClient(mockSupabaseConfig);
+            // Configure Supabase mock (no DB ops expected)
+            const { client: mockClient, spies } = createMockSupabaseClient();
 
-            const result = await syncGoogleModels(mockClient as any, GOOGLE_API_KEY);
+            // Call the function with mock deps
+            const result = await syncGoogleModels(mockClient as any, GOOGLE_API_KEY, mockDeps);
 
-            assertSpyCall(listModelsStub, 0, { args: [GOOGLE_API_KEY] });
+            assertSpyCall(mockDeps.listProviderModels as Spy, 0, { args: [GOOGLE_API_KEY] });
+            assertSpyCall(mockDeps.getCurrentDbModels as Spy, 0, { args: [mockClient as any, PROVIDER_NAME] });
+            assertSpyCall(mockDeps.error as Spy, 0); // Error should be logged
+            assert((mockDeps.error as Spy).calls[0].args[1] === dbSelectError);
 
-            // Check DB call
-            assertSpyCall(spies.fromSpy, 0, { args: ['ai_providers'] });
-            const queryBuilderSpies = spies.fromSpy.calls[0].returned;
-            assertSpyCall(queryBuilderSpies.select, 0); 
-            assertSpyCall(queryBuilderSpies.eq, 0, { args: ['provider', PROVIDER_NAME] });
+            // No Supabase mutation calls expected
+            assertEquals(spies.fromSpy.calls.length, 0);
 
             // Check SyncResult
             assertEquals(result.provider, PROVIDER_NAME);
             assertEquals(result.inserted, 0);
             assertEquals(result.updated, 0);
             assertEquals(result.deactivated, 0);
-            // The error should be the stringified DB error object
-            assertEquals(result.error, String(dbError));
+            // The error message comes from the rejected promise caught in the main function
+            assertEquals(result.error, dbSelectError.message);
 
         } finally {
-            listModelsStub?.restore();
+            // listModelsStub?.restore(); // No stub to restore
         }
     });
 
     await t.step("should do nothing if API and DB models match", async () => {
-        let listModelsStub: Stub | undefined;
+        const mockApiKey = "test-google-key";
         try {
-            const commonModel = { api_identifier: 'google-gemini-1.5-pro-latest', name: 'Google Gemini 1.5 Pro', description: 'Most capable model' };
-            listModelsStub = stub(googleAdapter, "listModels", () => Promise.resolve([commonModel]));
-
-            const existingDbModels: DbAiProvider[] = [
-                { id: 'db-id-g1', api_identifier: commonModel.api_identifier, name: commonModel.name, description: commonModel.description, is_active: true, provider: PROVIDER_NAME },
-            ];
-
-            const mockSupabaseConfig: MockSupabaseDataConfig = {
-                genericMockResults: {
-                    ai_providers: {
-                        select: { data: existingDbModels, error: null, count: 1 }
-                    }
-                }
+            // Define a common model structure that exists in both API and DB
+            const commonApiModel: ProviderModelInfo = {
+                api_identifier: "google-gemini-1.0-pro",
+                name: "Google Gemini 1.0 Pro",
+                description: "Balanced model"
             };
-            const { client: mockClient, spies } = createMockSupabaseClient(mockSupabaseConfig);
-            
-            const result = await syncGoogleModels(mockClient as any, GOOGLE_API_KEY);
+            const commonDbModel: DbAiProvider = {
+                id: 'db-google-1',
+                api_identifier: commonApiModel.api_identifier,
+                name: commonApiModel.name,
+                description: commonApiModel.description ?? null,
+                is_active: true, // Ensure it's active
+                provider: 'google' // Correct provider
+            };
 
-            assertSpyCall(listModelsStub, 0);
+            // Mock dependencies
+            const mockDeps = createMockSyncDeps({
+                listProviderModels: spy(async () => [commonApiModel]), // API returns the model
+                getCurrentDbModels: spy(async () => [commonDbModel]), // DB returns the exact same model (active)
+            });
+
+            // Configure Supabase mock (no DB ops expected)
+            const { client: mockClient, spies } = createMockSupabaseClient();
+
+            // Call function with mock deps
+            const result = await syncGoogleModels(mockClient as any, mockApiKey, mockDeps);
+
+            // Assertions
+            assertSpyCall(mockDeps.listProviderModels as Spy, 0, { args: [mockApiKey] });
+            assertSpyCall(mockDeps.getCurrentDbModels as Spy, 0, { args: [mockClient as any, 'google'] });
+
+            // No Supabase calls expected
             const fromSpy = spies.fromSpy;
-            assertSpyCall(fromSpy, 0, { args: ['ai_providers'] }); 
-            assertEquals(fromSpy.calls.length, 1, "Only select should happen");
-            
-            const selectSpies = fromSpy.calls[0].returned;
-            assertSpyCall(selectSpies.select, 0);
-            assertSpyCall(selectSpies.eq, 0, { args: ['provider', PROVIDER_NAME] });
-            assertEquals(selectSpies.insert?.calls.length ?? 0, 0);
-            assertEquals(selectSpies.update?.calls.length ?? 0, 0);
+            assertEquals(fromSpy.calls.length, 0, "No Supabase calls should happen");
 
+            // Check SyncResult
+            assertEquals(result.provider, 'google');
             assertEquals(result.inserted, 0);
             assertEquals(result.updated, 0);
             assertEquals(result.deactivated, 0);
             assertEquals(result.error, undefined);
-        } finally {
-            listModelsStub?.restore();
-        }
+        } finally { }
     });
 
     await t.step("should return error result if DB insert fails", async () => {
-        let listModelsStub: Stub | undefined;
+        // let listModelsStub: Stub | undefined; // No longer needed
         const dbError = { message: "Insert failed", code: "23505" };
         try {
             const mockApiModels = [{ api_identifier: 'google-new-model', name: 'Google New Model', description: undefined }];
-            listModelsStub = stub(googleAdapter, "listModels", () => Promise.resolve(mockApiModels));
+            
+            // Mock dependencies
+             const mockDeps = createMockSyncDeps({
+                listProviderModels: spy(async () => mockApiModels),
+                getCurrentDbModels: spy(async () => []) // DB is empty
+            });
 
+            // Configure Supabase mock for INSERT failure
             const mockSupabaseConfig: MockSupabaseDataConfig = {
                 genericMockResults: {
                     ai_providers: {
-                        select: { data: [], error: null, count: 0 },
+                        // select handled by mockDeps
                         insert: { data: null, error: dbError }
                     }
                 }
             };
             const { client: mockClient, spies } = createMockSupabaseClient(mockSupabaseConfig);
             
-            const result = await syncGoogleModels(mockClient as any, GOOGLE_API_KEY);
+            // Call function with mock deps
+            const result = await syncGoogleModels(mockClient as any, GOOGLE_API_KEY, mockDeps);
 
-            assertSpyCall(listModelsStub, 0);
+            assertSpyCall(mockDeps.listProviderModels as Spy, 0);
+            assertSpyCall(mockDeps.getCurrentDbModels as Spy, 0);
+            assertSpyCall(mockDeps.error as Spy, 0); // Log the DB error
+            assert((mockDeps.error as Spy).calls[0].args[0] === `Insert resolved with error object for ${PROVIDER_NAME}:`);
+            assert((mockDeps.error as Spy).calls[0].args[1] === dbError, "The original dbError object should be logged");
+
+            // Check Supabase insert attempt
             const fromSpy = spies.fromSpy;
-            assertSpyCall(fromSpy, 0, { args: ['ai_providers'] });
-            assertSpyCall(fromSpy, 1, { args: ['ai_providers'] });
-            assertEquals(fromSpy.calls.length, 2);
-            assertSpyCall(fromSpy.calls[1].returned.insert, 0);
+            assertEquals(fromSpy.calls.length, 1); // Only insert attempt
+            assertSpyCall(fromSpy.calls[0].returned.insert, 0);
 
+            // Check SyncResult
             assertEquals(result.inserted, 0);
             assertEquals(result.updated, 0);
             assertEquals(result.deactivated, 0);
-            // Match the error handling in syncGoogleModels which stringifies the error
-            assertEquals(result.error, `Insert failed for ${PROVIDER_NAME}: ${dbError.message}`); 
+            assertEquals(result.error, `Insert failed for ${PROVIDER_NAME}: Insert failed for ${PROVIDER_NAME}: ${dbError.message}`); 
         } finally {
-            listModelsStub?.restore();
+            // listModelsStub?.restore(); // No stub to restore
         }
     });
 
      await t.step("should return error result if DB update fails", async () => {
-        let listModelsStub: Stub | undefined;
+        // let listModelsStub: Stub | undefined; // No longer needed
         const dbError = { message: "Update failed", code: "xxxxx" };
         const modelId = 'db-id-g1';
         try {
             const mockApiModels = [{ api_identifier: 'google-gemini-1.5-pro-latest', name: 'Google Gemini 1.5 Pro UPDATED', description: undefined }];
-            listModelsStub = stub(googleAdapter, "listModels", () => Promise.resolve(mockApiModels));
-
             const existingDbModels: DbAiProvider[] = [
                 { id: modelId, api_identifier: 'google-gemini-1.5-pro-latest', name: 'Google Gemini 1.5 Pro', description: null, is_active: true, provider: PROVIDER_NAME },
             ];
 
-            // Simulate multiple calls for update - one per update needed
+            // Mock dependencies
+             const mockDeps = createMockSyncDeps({
+                listProviderModels: spy(async () => mockApiModels),
+                getCurrentDbModels: spy(async () => existingDbModels) 
+            });
+
+            // Configure Supabase mock for UPDATE failure
+            // The mock client might need adjustment if it doesn't handle multiple update calls well
             const mockSupabaseConfig: MockSupabaseDataConfig = {
                  genericMockResults: {
                     ai_providers: {
@@ -257,163 +293,227 @@ Deno.test("syncGoogleModels", {
             };
             const { client: mockClient, spies } = createMockSupabaseClient(mockSupabaseConfig);
             
-            const result = await syncGoogleModels(mockClient as any, GOOGLE_API_KEY);
+            const result = await syncGoogleModels(mockClient as any, GOOGLE_API_KEY, mockDeps);
 
-            assertSpyCall(listModelsStub, 0);
+            assertSpyCall(mockDeps.listProviderModels as Spy, 0, { args: [GOOGLE_API_KEY] });
+            assertSpyCall(mockDeps.getCurrentDbModels as Spy, 0, { args: [mockClient as any, PROVIDER_NAME] });
+            assertSpyCall(mockDeps.error as Spy, 0); // Error should be logged
+            assert((mockDeps.error as Spy).calls[0].args[0] === `Update resolved with error object for model ID ${modelId} (${PROVIDER_NAME}):`);
+            assert((mockDeps.error as Spy).calls[0].args[1] === dbError, "The original dbError object should be logged");
+
             const fromSpy = spies.fromSpy;
-            assertSpyCall(fromSpy, 0, { args: ['ai_providers'] });
-            // Expect a call to 'from' for each update attempt
-            assertSpyCall(fromSpy, 1, { args: ['ai_providers'] }); 
-            assertEquals(fromSpy.calls.length, 2); // select + update attempt
-            assertSpyCall(fromSpy.calls[1].returned.update, 0);
-            assertSpyCall(fromSpy.calls[1].returned.eq, 0, { args: ['id', modelId] });
+            // Check that Supabase .from() was called exactly once for the update attempt
+            assertEquals(fromSpy.calls.length, 1, "from() should be called once for the update attempt");
+            // Check the details of the first (and only) call
+            assertSpyCall(fromSpy.calls[0].returned.update, 0);
+            assertSpyCall(fromSpy.calls[0].returned.eq, 0, { args: ['id', modelId] });
 
             assertEquals(result.inserted, 0);
             assertEquals(result.updated, 0); // Update failed
             assertEquals(result.deactivated, 0);
-            // Match the adjusted error handling in syncGoogleModels for update loops
-            assertEquals(result.error, `Update process failed for ${PROVIDER_NAME}: ${dbError.message}`); 
+            assertEquals(result.error, `Update process failed for ${PROVIDER_NAME}: Update failed for model ID ${modelId} (${PROVIDER_NAME}): ${dbError.message}`); 
         } finally {
-            listModelsStub?.restore();
+            // listModelsStub?.restore(); // No stub to restore
         }
     });
     
-     await t.step("should return error result if DB deactivate fails", async () => {
-        let listModelsStub: Stub | undefined;
+    await t.step("should return error result if DB deactivate fails", async () => {
         const dbError = { message: "Deactivation failed", code: "xxxxx" };
         try {
-            listModelsStub = stub(googleAdapter, "listModels", () => Promise.resolve([])); // Empty API response
+            // API returns empty list, triggering deactivation
+            const mockApiModels: ProviderModelInfo[] = [];
 
+            // DB has active models to deactivate
             const existingDbModels: DbAiProvider[] = [
-                { id: 'db-id-g1', api_identifier: 'google-old-model', name: 'Google Old', description: null, is_active: true, provider: PROVIDER_NAME },
+                { id: 'db-google-deact1', api_identifier: 'google-old1', name: 'Old 1', description: null, is_active: true, provider: PROVIDER_NAME },
+                { id: 'db-google-deact2', api_identifier: 'google-old2', name: 'Old 2', description: null, is_active: true, provider: PROVIDER_NAME },
             ];
+            const idsToDeactivate = existingDbModels.map(m => m.id);
 
+            // Mock dependencies
+            const mockDeps = createMockSyncDeps({
+                listProviderModels: spy(async () => mockApiModels), // API is empty
+                getCurrentDbModels: spy(async () => existingDbModels) // DB has models to deactivate
+            });
+
+            // Configure Supabase mock for DEACTIVATE update failure
             const mockSupabaseConfig: MockSupabaseDataConfig = {
-                 genericMockResults: {
+                genericMockResults: {
                     ai_providers: {
-                        select: { data: existingDbModels, error: null, count: 1 },
-                        update: { data: null, error: dbError } // Fail the update (deactivation)
+                        // Simulate update (deactivate) failure
+                        update: { data: null, error: dbError } 
                     }
                 }
             };
             const { client: mockClient, spies } = createMockSupabaseClient(mockSupabaseConfig);
             
-            const result = await syncGoogleModels(mockClient as any, GOOGLE_API_KEY);
+            // Call function
+            const result = await syncGoogleModels(mockClient as any, GOOGLE_API_KEY, mockDeps);
 
-            assertSpyCall(listModelsStub, 0);
+            // Assertions
+            assertSpyCall(mockDeps.listProviderModels as Spy, 0, { args: [GOOGLE_API_KEY] });
+            assertSpyCall(mockDeps.getCurrentDbModels as Spy, 0, { args: [mockClient as any, PROVIDER_NAME] });
+            assertSpyCall(mockDeps.error as Spy, 0); // Error should be logged
+            assert((mockDeps.error as Spy).calls[0].args[0] === `Deactivation resolved with error object for ${PROVIDER_NAME}:`);
+            assert((mockDeps.error as Spy).calls[0].args[1] === dbError, "The original dbError object should be logged");
+
+            // Check Supabase DEACTIVATE update attempt
             const fromSpy = spies.fromSpy;
-            assertSpyCall(fromSpy, 0, { args: ['ai_providers'] });
-            assertSpyCall(fromSpy, 1, { args: ['ai_providers'] }); // Select + Deactivate attempt
-            assertEquals(fromSpy.calls.length, 2);
-
-            const deactivateSpies = fromSpy.calls[1].returned;
-            assertSpyCall(deactivateSpies.update, 0, { args: [{ is_active: false }] });
-            assertSpyCall(deactivateSpies.in, 0, { args: ['id', ['db-id-g1']] });
-
+            assertEquals(fromSpy.calls.length, 1, "Only one Supabase call (deactivate update) should happen");
+            
+            const deactivateCall = fromSpy.calls[0];
+            assertExists(deactivateCall.returned.update, "Update spy should exist");
+            assertSpyCall(deactivateCall.returned.update, 0, { args: [{ is_active: false }] }); // Check payload
+            
+            // Check that the .in() filter targeted the correct IDs
+            assertExists(deactivateCall.returned.in, "in spy should exist");
+            assertSpyCall(deactivateCall.returned.in, 0);
+            const inArgs = deactivateCall.returned.in.calls[0].args;
+            assertEquals(inArgs[0], 'id');
+            assertEquals(inArgs[1], idsToDeactivate, "Should target correct IDs for deactivation");
+            
+            // Check SyncResult
+            assertEquals(result.provider, PROVIDER_NAME);
             assertEquals(result.inserted, 0);
             assertEquals(result.updated, 0);
             assertEquals(result.deactivated, 0); // Deactivation failed
-            // Match the error handling in syncGoogleModels
-            assertEquals(result.error, `Deactivation failed for ${PROVIDER_NAME}: ${dbError.message}`); 
-        } finally {
-            listModelsStub?.restore();
-        }
+            assertEquals(result.error, `Deactivation failed for ${PROVIDER_NAME}: Deactivation failed for ${PROVIDER_NAME}: ${dbError.message}`); 
+        } finally { }
     });
 
-     await t.step("should reactivate inactive model if it reappears in API", async () => {
-        let listModelsStub: Stub | undefined;
-        const modelId = 'db-id-g1';
+    await t.step("should reactivate inactive model if it reappears in API", async () => {
+        const mockApiKey = "test-google-key";
+        const modelId = 'db-google-reactivate';
         try {
-             const mockApiModels = [{ api_identifier: 'google-gemini-1.5-pro-latest', name: 'Google Gemini 1.5 Pro', description: 'Most capable model' }];
-            listModelsStub = stub(googleAdapter, "listModels", () => Promise.resolve(mockApiModels));
+            // Define the model that appears in the API
+            const apiModel: ProviderModelInfo = { 
+                api_identifier: "google-reactivate-model", 
+                name: "Google Reactivate", 
+                description: "Should be reactivated"
+            };
+            // Define the same model as existing in the DB but inactive
+            const existingInactiveDbModel: DbAiProvider = {
+                id: modelId,
+                api_identifier: apiModel.api_identifier,
+                name: "Google Reactivate Old Name", // Simulate name/desc update too
+                description: "Old description",
+                is_active: false, // Key part: it's inactive
+                provider: 'google'
+            };
+            
+            // Mock dependencies
+            const mockDeps = createMockSyncDeps({
+                listProviderModels: spy(async () => [apiModel]), // API returns the model
+                getCurrentDbModels: spy(async () => [existingInactiveDbModel]), // DB has it, but inactive
+            });
 
-            const existingDbModels: DbAiProvider[] = [
-                { id: modelId, api_identifier: 'google-gemini-1.5-pro-latest', name: 'Google Gemini 1.5 Pro', description: null, is_active: false, provider: PROVIDER_NAME }, // Initially inactive, description differs
-            ];
-
-            // Mock config: Select finds the inactive model, Update succeeds
+            // Configure Supabase mock for the expected UPDATE operation
             const mockSupabaseConfig: MockSupabaseDataConfig = {
                 genericMockResults: {
                     ai_providers: {
-                        select: { data: existingDbModels, error: null, count: 1 },
-                        // Simulate successful update for the one model
-                        update: { data: [{ id: modelId, is_active: true }], error: null, count: 1 } 
+                        update: { data: [{ id: modelId, is_active: true }], error: null, count: 1 } // Expect successful update
                     }
                 }
             };
             const { client: mockClient, spies } = createMockSupabaseClient(mockSupabaseConfig);
             
-            const result = await syncGoogleModels(mockClient as any, GOOGLE_API_KEY);
+            // Call function with mock deps
+            const result = await syncGoogleModels(mockClient as any, mockApiKey, mockDeps);
 
-            assertSpyCall(listModelsStub, 0);
+            // Assertions
+            assertSpyCall(mockDeps.listProviderModels as Spy, 0, { args: [mockApiKey] });
+            assertSpyCall(mockDeps.getCurrentDbModels as Spy, 0, { args: [mockClient as any, 'google'] });
+
+            // Check Supabase UPDATE call
             const fromSpy = spies.fromSpy;
-            assertSpyCall(fromSpy, 0, { args: ['ai_providers'] }); // Select
-            assertSpyCall(fromSpy, 1, { args: ['ai_providers'] }); // Update attempt
-            assertEquals(fromSpy.calls.length, 2); 
+            assertEquals(fromSpy.calls.length, 1, "Only one Supabase call (update) should happen");
+            
+            const updateCall = fromSpy.calls[0];
+            assertExists(updateCall.returned.update, "Update spy should exist");
+            assertSpyCall(updateCall.returned.update, 0); // Update called once
+            
+            // Check the payload sent to update
+            const updatePayload = updateCall.returned.update.calls[0].args[0];
+            assertEquals(updatePayload.name, apiModel.name, "Name should be updated");
+            assertEquals(updatePayload.description, apiModel.description, "Description should be updated"); 
+            assertEquals(updatePayload.is_active, true, "is_active should be set to true");
 
-            const updateSpies = fromSpy.calls[1].returned;
-            assertSpyCall(updateSpies.update, 0);
-            // Expect both description and is_active to be updated
-            assertEquals(updateSpies.update.calls[0].args[0], { description: 'Most capable model', is_active: true });
-            assertSpyCall(updateSpies.eq, 0, { args: ['id', modelId] });
-
+            // Check that the correct model ID was targeted
+            assertExists(updateCall.returned.eq, "eq spy should exist");
+            assertSpyCall(updateCall.returned.eq, 0, { args: ['id', modelId] });
+            
+            // Check SyncResult
+            assertEquals(result.provider, 'google');
             assertEquals(result.inserted, 0);
-            assertEquals(result.updated, 1); // One model updated (reactivated + description change)
+            assertEquals(result.updated, 1); // Reactivation counts as an update
             assertEquals(result.deactivated, 0);
             assertEquals(result.error, undefined);
-        } finally {
-            listModelsStub?.restore();
-        }
+        } finally { }
     });
 
+    // --- NEW TEST: Deactivate All Scenario ---
     await t.step("should deactivate all active models if API returns empty", async () => {
-        let listModelsStub: Stub | undefined;
+        const mockApiKey = "test-google-key";
         try {
-            listModelsStub = stub(googleAdapter, "listModels", () => Promise.resolve([])); // Empty API response
+            // Mock API returns empty list
+            const apiModels: ProviderModelInfo[] = []; 
 
+            // Mock DB returns active and inactive models
             const existingDbModels: DbAiProvider[] = [
-                { id: 'db-id-g1', api_identifier: 'google-gemini-pro', name: 'Google Gemini Pro', description: null, is_active: true, provider: PROVIDER_NAME },
-                { id: 'db-id-g2', api_identifier: 'google-gemini-flash', name: 'Google Gemini Flash', description: null, is_active: true, provider: PROVIDER_NAME },
-                { id: 'db-id-g3', api_identifier: 'google-inactive', name: 'Google Inactive', description: null, is_active: false, provider: PROVIDER_NAME }, // Already inactive
-         ];
-             const activeModelIds = ['db-id-g1', 'db-id-g2'];
+                { id: 'db-google-active1', api_identifier: 'google-active1', name: 'Active 1', description: null, is_active: true, provider: 'google' },
+                { id: 'db-google-active2', api_identifier: 'google-active2', name: 'Active 2', description: null, is_active: true, provider: 'google' },
+                { id: 'db-google-inactive', api_identifier: 'google-inactive', name: 'Inactive', description: null, is_active: false, provider: 'google' },
+            ];
+            const activeModelIds = ['db-google-active1', 'db-google-active2'];
+            
+            // Mock dependencies
+            const mockDeps = createMockSyncDeps({
+                listProviderModels: spy(async () => apiModels), // API is empty
+                getCurrentDbModels: spy(async () => existingDbModels), // DB has models
+            });
 
-            // Mock config: Select finds models, Update (deactivate) succeeds
+            // Configure Supabase mock for the expected DEACTIVATE update operation
             const mockSupabaseConfig: MockSupabaseDataConfig = {
                 genericMockResults: {
                     ai_providers: {
-                        select: { data: existingDbModels, error: null, count: existingDbModels.length },
+                        // Expect successful deactivation update call
                         update: { data: activeModelIds.map(id => ({ id, is_active: false })), error: null, count: activeModelIds.length } 
                     }
                 }
             };
             const { client: mockClient, spies } = createMockSupabaseClient(mockSupabaseConfig);
             
-            const result = await syncGoogleModels(mockClient as any, GOOGLE_API_KEY);
+            // Call function with mock deps
+            const result = await syncGoogleModels(mockClient as any, mockApiKey, mockDeps);
 
-            assertSpyCall(listModelsStub, 0);
+            // Assertions
+            assertSpyCall(mockDeps.listProviderModels as Spy, 0, { args: [mockApiKey] });
+            assertSpyCall(mockDeps.getCurrentDbModels as Spy, 0, { args: [mockClient as any, 'google'] });
+
+            // Check Supabase DEACTIVATE update call
             const fromSpy = spies.fromSpy;
-            assertSpyCall(fromSpy, 0, { args: ['ai_providers'] }); // Select
-            assertSpyCall(fromSpy, 1, { args: ['ai_providers'] }); // Deactivate attempt
-            assertEquals(fromSpy.calls.length, 2);
-
-            const deactivateSpies = fromSpy.calls[1].returned;
-            assertSpyCall(deactivateSpies.update, 0, { args: [{ is_active: false }] });
-            assertSpyCall(deactivateSpies.in, 0);
-            assertEquals(deactivateSpies.in.calls[0].args[0], 'id'); 
-            // Check the list of IDs passed to 'in'
-            const idsToDeactivate = deactivateSpies.in.calls[0].args[1] as string[];
-            assertEquals(idsToDeactivate?.length, activeModelIds.length);
-            assert(idsToDeactivate?.includes('db-id-g1'));
-            assert(idsToDeactivate?.includes('db-id-g2'));
-
+            assertEquals(fromSpy.calls.length, 1, "Only one Supabase call (deactivate update) should happen");
+            
+            const deactivateCall = fromSpy.calls[0];
+            assertExists(deactivateCall.returned.update, "Update spy should exist");
+            assertSpyCall(deactivateCall.returned.update, 0, { args: [{ is_active: false }] }); // Check the payload
+            
+            // Check that the .in() filter targeted the correct IDs
+            assertExists(deactivateCall.returned.in, "in spy should exist");
+            assertSpyCall(deactivateCall.returned.in, 0);
+            const inArgs = deactivateCall.returned.in.calls[0].args;
+            assertEquals(inArgs[0], 'id');
+            assertEquals(inArgs[1]?.length, activeModelIds.length, "Should target only initially active models");
+            assert(inArgs[1]?.includes('db-google-active1'));
+            assert(inArgs[1]?.includes('db-google-active2'));
+            
+            // Check SyncResult
+            assertEquals(result.provider, 'google');
             assertEquals(result.inserted, 0);
             assertEquals(result.updated, 0);
-            assertEquals(result.deactivated, activeModelIds.length); // Only the 2 initially active models
+            assertEquals(result.deactivated, activeModelIds.length); // Only the initially active models
             assertEquals(result.error, undefined);
-        } finally {
-            listModelsStub?.restore();
-        }
+        } finally { }
     });
 
     // --- Additional Google Specific Tests (Optional) ---

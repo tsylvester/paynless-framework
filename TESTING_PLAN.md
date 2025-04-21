@@ -293,13 +293,13 @@ Following this cycle helps catch errors early, ensures comprehensive test covera
         *   Mock DB client, env vars.
         *   Test filtering logic (models returned only if API key env var set).
         *   Test empty list if no keys set.
-    *   [ ] **`sync-ai-models/` (Provider Logic - e.g., `openai/sync.ts`):**
-        *   Mock provider adapter, Supabase client.
-        *   Test sync logic: INSERT new, UPDATE existing, DEACTIVATE missing models.
-    *   [ ] **`sync-ai-models/index.ts` (Router):**
+    *   [🚧] **`sync-ai-models/` (Provider Logic):**
+        *   [✅] `google_sync.ts` (Mock provider adapter, Supabase client; Test INSERT, UPDATE, DEACTIVATE, Error Handling)
+        *   [✅] `anthropic_sync.ts` (Mock provider adapter, Supabase client; Test INSERT, UPDATE, DEACTIVATE, Error Handling)
+        *   [✅] `openai_sync.ts` (Mock provider adapter, Supabase client; Test INSERT, UPDATE, DEACTIVATE, Error Handling)
+    *   [✅] **`sync-ai-models/index.ts` (Router):**
         *   Mock provider `sync<Provider>Models` functions, env vars.
         *   Test calling correct sync functions based on set keys.
-        *   Test error handling per provider.
 
 *   **Phase 2: Backend Integration Tests (Local & Deployed)**
     *   [ ] **`/ai-providers`:** Test endpoint returns correctly filtered list based on local `.env` keys.

@@ -335,48 +335,64 @@ export function createMockSupabaseClient(
             console.log(`[Mock QB ${tableName}] .then() called. Resolving query...`);
             try {
                 const result = await resolveQuery();
-                // The original Supabase client passes the whole response object { data, error, count... }
-                // when the promise resolves if there's no error.
-                // If there IS an error, it throws/rejects.
+                // The actual Supabase client resolves the promise even if there's a DB error,
+                // putting the error object in the resolved value.
+                // We mimic that behavior here.
                 if (result.error) {
-                    console.log(`[Mock QB ${tableName}] Query resolved with error, rejecting promise.`);
-                    // Call original onrejected if provided
-                    onrejected?.(result.error);
-                    // Explicitly return a rejected promise for await
-                    return Promise.reject(result.error);
+                    console.log(`[Mock QB ${tableName}] Query resolved with DB error. Fulfilling promise with error object.`);
+                    // Resolve with the full result object containing the error
+                    const errorResult = { data: result.data, error: result.error, count: result.count, status: result.status ?? 500, statusText: result.statusText ?? 'Internal Server Error' };
+                    onfulfilled?.(errorResult);
+                    return Promise.resolve(errorResult);
                 } else {
                      console.log(`[Mock QB ${tableName}] Query resolved successfully, fulfilling promise.`);
-                     const resolvedResult = { data: result.data, error: null, count: result.count, status: result.status ?? 200, statusText: result.statusText ?? 'OK' };
-                     // Call original onfulfilled if provided
-                     onfulfilled?.(resolvedResult);
-                     // Explicitly return a resolved promise
-                     return Promise.resolve(resolvedResult);
+                     const successResult = { data: result.data, error: null, count: result.count, status: result.status ?? 200, statusText: result.statusText ?? 'OK' };
+                     onfulfilled?.(successResult);
+                     return Promise.resolve(successResult);
                 }
             } catch (e) {
+                 // Catch errors during the resolveQuery itself (e.g., bad mock function)
                  console.error(`[Mock QB ${tableName}] Unexpected error during query resolution in .then():`, e);
+                 const error = e instanceof Error ? e : new Error(String(e ?? 'Unknown error during query resolution'));
                  if (onrejected) {
-                     return onrejected(e);
+                     onrejected(error);
+                     // Even if onrejected exists, return a rejected promise for await
+                     return Promise.reject(error); 
                  } else {
-                     throw e;
+                     // If no reject handler, re-throw the error (wrapped as an Error)
+                     return Promise.reject(error);
                  }
             }
         });
 
         // Mock .single()
+        // This method *should* reject if the query resolution resulted in an error object.
         mockQueryBuilder.single = spy(async () => {
              if (config.simulateDbError) return { data: null, error: config.simulateDbError }; // Keep simple error override
              console.log(`[Mock QB ${tableName}] .single() called. Resolving query...`);
-             const result = await resolveQuery();
-             // .single() expects { data: object | null, error: Error | null }
-             if (result.error) {
-                 return { data: null, error: result.error };
-             } else if (result.data && result.data.length > 1) {
-                 // Simulate PostgREST error for multiple rows found
-                 console.warn(`[Mock QB ${tableName}] .single() found multiple rows. Simulating PostgREST error.`);
-                 return { data: null, error: { message: 'Multiple rows returned for single row query', code: 'PGRST116' } };
-             } else {
-                 return { data: result.data?.[0] ?? null, error: null };
-             }
+             try {
+                const result = await resolveQuery();
+                // .single() expects { data: object | null, error: Error | null }
+                if (result.error) {
+                    console.log(`[Mock QB ${tableName}] Query (for single) resolved with DB error. Rejecting promise.`);
+                    // Unlike .then(), .single() should REJECT if the underlying query had an error.
+                     const errorMsg = typeof result.error === 'object' && result.error !== null && 'message' in result.error 
+                                       ? String(result.error.message) 
+                                       : String(result.error ?? 'Unknown mock DB error in .single');
+                     throw new Error(errorMsg); // Throw error to reject the promise
+                } else if (result.data && result.data.length > 1) {
+                    // Simulate PostgREST error for multiple rows found
+                    console.warn(`[Mock QB ${tableName}] .single() found multiple rows. Simulating PostgREST error.`);
+                    throw new Error('Multiple rows returned for single row query'); // Throw PGRST116
+                } else {
+                    console.log(`[Mock QB ${tableName}] Query (for single) resolved successfully.`);
+                    return { data: result.data?.[0] ?? null, error: null }; // Resolve successfully
+                }
+            } catch (e) {
+                console.error(`[Mock QB ${tableName}] Error during query resolution or processing in .single():`, e);
+                // Ensure we throw an actual Error instance
+                throw e instanceof Error ? e : new Error(String(e ?? 'Unknown error in .single()'));
+            }
         });
 
         return mockQueryBuilder;

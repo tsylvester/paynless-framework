@@ -22,7 +22,12 @@
         *   **Required:** Investigate Stripe Customer Portal settings in the dashboard for options to enable automatic redirects after specific actions (like cancellation or payment method update). This is the preferred solution if available.
         *   **If Dashboard Settings Insufficient:** Research further into using the `flow_data` parameter, potentially requiring changes to how the portal session is initiated or handling multiple flow types.
     *   https://docs.stripe.com/api/customer_portal/sessions/create
-*   [ ] AI model sync automation
+*   [🚧] AI model sync automation
+    *   [✅] Unit Test Google provider sync logic (`supabase/functions/sync-ai-models/google_sync.test.ts`)
+    *   [✅] Unit Test Anthropic provider sync logic (`supabase/functions/sync-ai-models/anthropic_sync.test.ts`)
+    *   [✅] Unit Test OpenAI provider sync logic (`supabase/functions/sync-ai-models/openai_sync.test.ts`)
+    *   [✅] Unit Test main sync router (`supabase/functions/sync-ai-models/index.test.ts`)
+    *   [ ] Implement & Test Cron Job trigger
 *   [🚧] Test project on Bolt & Lovable 
     *   [ ] Bolt & Lovable don't support pnpm monorepos well atm 
 *   [ ] Change password from within app

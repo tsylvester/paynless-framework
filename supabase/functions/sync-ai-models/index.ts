@@ -9,10 +9,19 @@ import {
     createSuccessResponse as actualCreateJsonResponse 
 } from '../_shared/cors-headers.ts'; 
 
-// Import provider-specific sync functions
-import { syncOpenAIModels as actualSyncOpenAIModels } from './openai_sync.ts';
-import { syncAnthropicModels as actualSyncAnthropicModels } from './anthropic_sync.ts';
-import { syncGoogleModels as actualSyncGoogleModels } from './google_sync.ts';
+// Import provider-specific sync functions AND their default deps
+import {
+    syncOpenAIModels as actualSyncOpenAIModels,
+    defaultSyncOpenAIDeps
+} from './openai_sync.ts';
+import {
+    syncAnthropicModels as actualSyncAnthropicModels,
+    defaultSyncAnthropicDeps
+} from './anthropic_sync.ts';
+import {
+    syncGoogleModels as actualSyncGoogleModels,
+    defaultSyncGoogleDeps
+} from './google_sync.ts';
 
 // Import shared types used by this function and potentially by tests
 import type { AiProviderAdapter, ProviderModelInfo } from '../_shared/types.ts';
@@ -58,15 +67,15 @@ export interface SyncAiModelsDeps {
 }
 
 export const defaultDeps: SyncAiModelsDeps = {
-  createSupabaseClient: (url, key) => createClient(url, key), // Use actual createClient
+  createSupabaseClient: (url, key) => createClient(url, key),
   getEnv: Deno.env.get,
   handleCorsPreflightRequest: actualHandleCorsPreflightRequest,
   createJsonResponse: actualCreateJsonResponse,
   createErrorResponse: actualCreateErrorResponse,
-  // Provide the actual imported functions
-  doOpenAiSync: actualSyncOpenAIModels,
-  doAnthropicSync: actualSyncAnthropicModels,
-  doGoogleSync: actualSyncGoogleModels,
+  // Provide wrapper functions that call the actual sync functions with their default deps
+  doOpenAiSync: (client, key) => actualSyncOpenAIModels(client, key, defaultSyncOpenAIDeps),
+  doAnthropicSync: (client, key) => actualSyncAnthropicModels(client, key, defaultSyncAnthropicDeps),
+  doGoogleSync: (client, key) => actualSyncGoogleModels(client, key, defaultSyncGoogleDeps),
 };
 
 // --- Provider Configuration (Internal - Uses deps) ---
