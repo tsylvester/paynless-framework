@@ -107,7 +107,12 @@ Following this cycle helps catch errors early, ensures comprehensive test covera
 
 *   **[NEW] Phase 5: Anonymous Chat Auth Refactor Verification:** Added specific backend and E2E test cases for the anonymous secret header and related flows.
 
----
+*   **[NEW] Deno Function Testing Learnings (May 2024 - sync-ai-models):**
+    *   **Mocking Supabase Client Chaining:** Accurately mocking the Supabase JS client requires mimicking the synchronous return of the query builder object for chaining methods like `.select()`, `.eq()`, `.in()` before the final asynchronous resolution (`await`, `.then()`, `.single()`). The successful refactor in `test-utils.ts` implements this by having modifier methods return the mock builder instance and resolving configured mock results only within terminal methods (`.then()`, `.single()`). Initial attempts where modifier methods were `async` failed.
+    *   **Mocking Fetch:** Using shared helpers like `stubFetchForTestScope` (which returns a disposable stub) and `setMockFetchResponse` (which configures the response) from `test-utils.ts` is more robust than manual stubbing within test files. Attempting to manually cancel the original response body within the fetch mock (`baseFetchImplementation`) can cause tests to hang and should be avoided.
+    *   **Spy Assertions:** Checking spy call counts (`assertEquals(spy.calls.length, 1)`) can sometimes be more reliable than asserting specific call arguments (`assertSpyCall`) immediately after the invocation, especially across `await` boundaries or when dealing with complex mock object interactions.
+    *   **Mock Error Propagation:** When a mocked promise rejects (e.g., simulating a DB error), the way the error propagates through subsequent `catch` blocks in the code under test might differ slightly from live execution. Assertions may need to check for the stringified original mock error (`String(mockErrorObject)`) instead of the message from a potentially re-thrown `new Error("...")` if the re-throw doesn't occur as expected in the test context.
+    *   **Test Data Consistency:** Ensure mock data used in tests (e.g., mock database records) aligns with data conventions established by other parts of the system (e.g., provider prefixes like `openai-` added to identifiers by adapters). Inconsistent test data can lead to misleading failures.
 
 ✅ **How to Test Incrementally and Correctly (Layered Testing Strategy)**
 *This remains our guiding principle.*
@@ -164,9 +169,9 @@ Following this cycle helps catch errors early, ensures comprehensive test covera
                 *   [✅] Implement handling for key events (checkout complete, sub updated, etc.)
                 *   [✅] Unit test webhook handler logic & signature verification
             *   [✅] **AI Chat Functions:**
-                *   [ ] Unit Test `ai-providers/index.ts` (Mock Supabase client) *(Pending)*
+                *   [✅] Unit Test `ai-providers/index.ts` (Mock Supabase client)
                 *   [ ] Unit Test `system-prompts/index.ts` (Mock Supabase client) *(Pending)*
-                *   [🚧] **Unit Test `chat/index.ts`:**
+                *   [✅] **Unit Test `chat/index.ts`:**
                 *   [✅] Unit Test `chat-history/index.ts`
                 *   [✅] Unit Test `chat-details/index.ts`
             *   **[NEW] Email Marketing Sync:**
@@ -269,3 +274,53 @@ Following this cycle helps catch errors early, ensures comprehensive test covera
     *   **[NEW] User Registration with Email Sync:**
         *   [ ] Case 1 (Kit Disabled): Register via UI. Verify user created, NO user added to Kit list.
         *   [ ] Case 2 (Kit Enabled): Configure E2E env with Kit credentials. Register via UI. Verify user created AND user appears in Kit list/form.
+
+        
+## Testing Plan: Multi-Provider AI Integration
+
+*   **Phase 1: Backend Unit Tests**
+    *   [✅] **DB Migration:** Test `YYYYMMDDHHMMSS_add_provider_to_ai_providers.sql` using `supabase test db`.
+    *   [✅] **Adapters (`_shared/ai_service/*_adapter.ts`):**
+        *   [✅] OpenAI (`openai_adapter.test.ts`): Tests passing.
+        *   [🚧] Anthropic (`anthropic_adapter.test.ts`): Most tests passing. `History Ends With Assistant (Invalid Format)` case deferred due to complex interaction between test data and validation logic (failsafe error not triggering as expected). Needs revisit.
+        *   [✅] Google (`google_adapter.test.ts`): Tests passing.
+    *   [✅] **Factory (`_shared/ai_service/factory.ts`):** Tests passing.
+    *   [✅] **`/chat/index.ts`:**
+        *   Mock factory, DB client, env vars.
+        *   Test routing to correct adapter based on fetched provider.
+        *   Test error handling (model not found, adapter error, etc.).
+    *   [✅] **`/ai-providers/index.ts`:**
+        *   Mock DB client, env vars.
+        *   Test filtering logic (models returned only if API key env var set).
+        *   Test empty list if no keys set.
+    *   [🚧] **`sync-ai-models/` (Provider Logic):**
+        *   [✅] `google_sync.ts` (Mock provider adapter, Supabase client; Test INSERT, UPDATE, DEACTIVATE, Error Handling)
+        *   [✅] `anthropic_sync.ts` (Mock provider adapter, Supabase client; Test INSERT, UPDATE, DEACTIVATE, Error Handling)
+        *   [✅] `openai_sync.ts` (Mock provider adapter, Supabase client; Test INSERT, UPDATE, DEACTIVATE, Error Handling)
+    *   [✅] **`sync-ai-models/index.ts` (Router):**
+        *   Mock provider `sync<Provider>Models` functions, env vars.
+        *   Test calling correct sync functions based on set keys.
+
+*   **Phase 2: Backend Integration Tests (Local & Deployed)**
+    *   [ ] **`/ai-providers`:** Test endpoint returns correctly filtered list based on local `.env` keys.
+    *   [ ] **`/chat`:** Test sending messages via different configured providers (requires API keys in local `.env`).
+    *   [ ] **`sync-ai-models` (Manual Invocation):**
+        *   Manually invoke function (`supabase functions invoke sync-ai-models`, requires API keys configured in Supabase project secrets).
+        *   Verify database changes (new/updated/deactivated models).
+        *   Test idempotency (running again should ideally result in no changes or expected updates).
+    *   [ ] **Cron Job (Manual Setup / Deferred):** *(No automated cron setup currently. Verification requires manual setup via Dashboard or is deferred until automation is possible).* 
+
+*   **Phase 3: Frontend Integration Tests (MSW)**
+    *   [✅] **`ModelSelector.tsx`:** Mock `/ai-providers` response. Test component renders the correct list.
+    *   [✅] **`AiChatbox.tsx` / `aichat.tsx`:** Mock `/chat` response. Test sending message results in correct API call (verify payload).
+
+*   **Phase 4: End-to-End Validation**
+    *   [ ] Manually configure API keys (OpenAI, Anthropic, Google).
+    *   [ ] Run `sync-ai-models`.
+    *   [ ] Start web app.
+    *   [ ] Verify `ModelSelector` shows models from all configured providers.
+    *   [ ] Send messages using models from each provider; verify success.
+    *   [ ] Remove an API key, restart backend, refresh frontend. Verify corresponding models disappear.
+    *   [ ] Add E2E tests (Playwright/Cypress) covering model selection and chat for each provider.
+
+---

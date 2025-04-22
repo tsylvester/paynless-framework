@@ -1,6 +1,16 @@
+// Add Json type alias here to resolve linter error within this file
+export type Json =
+  | string
+  | number
+  | boolean
+  | null
+  | { [key: string]: Json | undefined }
+  | Json[];
+
 /**
  * Represents an AI Provider available for selection.
  * Matches the ai_providers table structure (public fields only).
+ * NOTE: This represents a specific MODEL entry in the database, despite the name.
  */
 export interface AiProvider {
   id: string; // uuid
@@ -39,14 +49,14 @@ export interface Chat {
  * Matches the chat_messages table structure.
  */
 export interface ChatMessage {
-  id: string; // uuid
-  chat_id: string; // uuid
+  id?: string; // uuid - Optional as it's assigned by DB
+  chat_id?: string; // uuid - Optional as it's assigned by DB
   user_id: string | null; // uuid (null for assistant/system)
   role: 'user' | 'assistant' | 'system';
   content: string;
   ai_provider_id: string | null; // uuid
   system_prompt_id: string | null; // uuid
-  token_usage: Record<string, number> | null; // e.g., { prompt_tokens: number, completion_tokens: number, total_tokens: number }
+  token_usage: Json | null; // Use defined Json type
   created_at: string; // ISO 8601 timestamp string
 }
 
@@ -96,6 +106,43 @@ export interface ChatHistoryApiResponse {
  */
 export interface ChatMessagesApiResponse {
     messages: ChatMessage[];
+}
+
+/**
+ * Represents the standardized information returned by a provider's listModels method.
+ */
+export interface ProviderModelInfo {
+  api_identifier: string; // The specific ID the provider uses for this model in API calls
+  name: string;           // A user-friendly name for the model
+  description?: string;    // Optional description
+  config?: Json;         // Optional non-sensitive configuration details
+  // Add other common relevant fields if needed (e.g., context window size, capabilities)
+}
+
+/**
+ * Interface for AI provider adapters.
+ * Defines the common methods required for interacting with different AI provider APIs.
+ */
+export interface AiProviderAdapter {
+  /**
+   * Sends a chat request to the provider's API.
+   * @param request - The chat request details (messages, etc.).
+   * @param modelIdentifier - The specific API identifier for the model to use.
+   * @param apiKey - The API key for the provider.
+   * @returns A Promise resolving to the assistant's ChatMessage response.
+   */
+  sendMessage(
+    request: ChatApiRequest, // Existing type, might need adjustment based on provider needs
+    modelIdentifier: string,
+    apiKey: string
+  ): Promise<ChatMessage>; // Existing type, might need adjustment
+
+  /**
+   * Lists the available models from the provider's API.
+   * @param apiKey - The API key for the provider.
+   * @returns A Promise resolving to an array of standardized model information.
+   */
+  listModels(apiKey: string): Promise<ProviderModelInfo[]>;
 }
 
 // --- Zustand Store Types ---
