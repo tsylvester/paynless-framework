@@ -45,6 +45,6 @@
 *   [🚧] User email automation - abstract for generic but specific implementation with Kit 
     *   [ ] Everything works EXCEPT the email_sync_trigger for on_user_created, the current form breaks registration
 *   [ ] Connect frontend analytics events (PostHog) to email marketing service (Kit) for behavioral triggers (IFTTT)
-*   [ ] Groups & organizations 
-*   [ ] Notifications 
+*   [ ] Groups & organizations - how does Supabase currently support this? 
+*   [ ] Notifications - system wide and user specific 
 *   [ ] Consolidate authStore with Zustand, remove the direct localSession interactions. 
