@@ -9,6 +9,7 @@ import type {
 import { AuthRequiredError } from '@paynless/types'; 
 import { StripeApiClient } from './stripe.api'; 
 import { AiApiClient } from './ai.api';
+import { NotificationApiClient } from './notifications.api'; // Import new client
 import { logger } from '@paynless/utils';
 
 // Define ApiError class locally for throwing (can extend the type)
@@ -35,6 +36,7 @@ export class ApiClient {
 
     public billing: StripeApiClient;
     public ai: AiApiClient;
+    public notifications: NotificationApiClient; // Add new client property
 
     // Update constructor signature
     constructor(options: ApiClientConstructorOptions) {
@@ -48,6 +50,7 @@ export class ApiClient {
 
         this.billing = new StripeApiClient(this);
         this.ai = new AiApiClient(this);
+        this.notifications = new NotificationApiClient(this); // Initialize new client
     }
 
     private async getToken(): Promise<string | undefined> {
@@ -229,4 +232,5 @@ export const api = {
         getApiClient().delete<T>(endpoint, options),
     ai: () => getApiClient().ai, 
     billing: () => getApiClient().billing,
+    notifications: () => getApiClient().notifications, // Add getter for notifications
 }; 
