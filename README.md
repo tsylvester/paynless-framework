@@ -28,6 +28,7 @@ The framework comes pre-configured with essential features:
 *   **Web Analytics:** Google Analytics pre-configured. 
 *   **User Analytics:** Pluggable analytics client (`@paynless/analytics-client`) with PostHog prebuilt, prepared for Mixpanel or others.
 *   **Email Marketing Sync:** Trigger-based system to sync new users to email marketing platforms like Kit (prebuilt), prepared for other email marketing platforms.
+*   **Customer Service:** Chatwoot prebuild for helping users. 
 
 ## Development
 *   **Development Experience:**
