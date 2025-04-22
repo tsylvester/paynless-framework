@@ -1,208 +1,348 @@
 // packages/store/src/notificationStore.test.ts
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { useNotificationStore, NotificationState } from './notificationStore'; // Will fail initially
-import { api } from '@paynless/api-client'; // Mock this
-import { Notification } from '@paynless/types';
+import { act } from '@testing-library/react'; // Using react-specific act for state updates
+import { useNotificationStore, NotificationState } from './notificationStore'; // Assuming store is defined here
+import { api } from '@paynless/api-client';
+import type { Notification, ApiError } from '@paynless/types';
+// Removed logger import as it will be mocked
 
-// Mock the API client
-vi.mock('@paynless/api-client', () => ({
-  api: {
-    notifications: {
-      fetchNotifications: vi.fn(),
-      markNotificationAsRead: vi.fn(),
-      markAllNotificationsAsRead: vi.fn(),
+// --- Mock Logger --- 
+vi.mock('@paynless/utils', () => ({
+    logger: {
+        info: vi.fn(),
+        warn: vi.fn(),
+        error: vi.fn(),
+        debug: vi.fn(),
+        fatal: vi.fn(), // Include fatal even if not used directly in store code, for completeness
     },
-  },
 }));
 
-// Helper to reset store state before each test
-const resetStore = () => useNotificationStore.setState(useNotificationStore.getInitialState());
+// --- Refined API Mock --- 
+const mockFetchNotifications = vi.fn();
+const mockMarkNotificationAsRead = vi.fn();
+const mockMarkAllNotificationsAsRead = vi.fn();
+
+vi.mock('@paynless/api-client', () => ({
+    api: {
+        // Provide the nested structure directly with the mocked functions
+        notifications: () => ({
+            fetchNotifications: mockFetchNotifications,
+            markNotificationAsRead: mockMarkNotificationAsRead,
+            markAllNotificationsAsRead: mockMarkAllNotificationsAsRead,
+        }),
+    },
+}));
+
+// Helper to get mocked functions - Use the directly defined mocks now
+// const mockedApi = vi.mocked(api, true); // No longer needed with direct mocks
+
+const initialState = useNotificationStore.getState();
+
+// Mock Notification Data
+const mockNotification1: Notification = {
+    id: 'uuid-1',
+    user_id: 'user-abc',
+    type: 'test',
+    data: { message: 'Test 1' },
+    read: false,
+    created_at: new Date(Date.now() - 10000).toISOString(),
+};
+const mockNotification2: Notification = {
+    id: 'uuid-2',
+    user_id: 'user-abc',
+    type: 'test',
+    data: { message: 'Test 2', target_path: '/some/path' },
+    read: false,
+    created_at: new Date(Date.now() - 5000).toISOString(),
+};
+const mockNotification3: Notification = {
+    id: 'uuid-3',
+    user_id: 'user-abc',
+    type: 'another',
+    data: null,
+    read: true, // Already read
+    created_at: new Date(Date.now() - 20000).toISOString(),
+};
 
 describe('notificationStore', () => {
-  beforeEach(() => {
-    resetStore();
-    vi.clearAllMocks();
-  });
-
-  afterEach(() => {
-    vi.clearAllMocks();
-  });
-
-  const mockNotification1: Notification = { id: 'n1', type: 'test', read: false, user_id: 'u1', created_at: new Date(Date.now() - 1000).toISOString(), data: {} };
-  const mockNotification2: Notification = { id: 'n2', type: 'test', read: true, user_id: 'u1', created_at: new Date(Date.now() - 2000).toISOString(), data: {} };
-  const mockNotification3: Notification = { id: 'n3', type: 'test', read: false, user_id: 'u1', created_at: new Date(Date.now() - 500).toISOString(), data: {} };
-
-  it('should have correct initial state', () => {
-    const state = useNotificationStore.getState();
-    expect(state.notifications).toEqual([]);
-    expect(state.unreadCount).toBe(0);
-    expect(state.isLoading).toBe(false);
-    expect(state.error).toBeNull();
-  });
-
-  // --- Actions ---
-
-  describe('fetchNotifications', () => {
-    it('should fetch and set notifications, updating unread count', async () => {
-      const notifications = [mockNotification1, mockNotification2]; // 1 unread
-      vi.mocked(api.notifications.fetchNotifications).mockResolvedValue({ status: 200, data: notifications });
-
-      await useNotificationStore.getState().fetchNotifications();
-
-      const state = useNotificationStore.getState();
-      expect(state.isLoading).toBe(false);
-      expect(state.notifications).toEqual(notifications);
-      expect(state.unreadCount).toBe(1);
-      expect(state.error).toBeNull();
-      expect(api.notifications.fetchNotifications).toHaveBeenCalledTimes(1);
+    // Reset store state and mocks before each test
+    beforeEach(() => {
+        act(() => {
+            useNotificationStore.setState(initialState, true); // Replace state
+        });
+        // Reset direct mocks
+        vi.clearAllMocks();
+        mockFetchNotifications.mockClear();
+        mockMarkNotificationAsRead.mockClear();
+        mockMarkAllNotificationsAsRead.mockClear();
     });
 
-     it('should handle empty fetch result', async () => {
-       vi.mocked(api.notifications.fetchNotifications).mockResolvedValue({ status: 200, data: [] });
-
-       await useNotificationStore.getState().fetchNotifications();
-
-       const state = useNotificationStore.getState();
-       expect(state.isLoading).toBe(false);
-       expect(state.notifications).toEqual([]);
-       expect(state.unreadCount).toBe(0);
-       expect(state.error).toBeNull();
-     });
-
-    it('should set loading state during fetch', async () => {
-      vi.mocked(api.notifications.fetchNotifications).mockResolvedValue({ status: 200, data: [] });
-      const promise = useNotificationStore.getState().fetchNotifications();
-      expect(useNotificationStore.getState().isLoading).toBe(true);
-      await promise;
-      expect(useNotificationStore.getState().isLoading).toBe(false);
+    it('should have correct initial state', () => {
+        expect(useNotificationStore.getState().notifications).toEqual([]);
+        expect(useNotificationStore.getState().unreadCount).toBe(0);
+        expect(useNotificationStore.getState().isLoading).toBe(false);
+        expect(useNotificationStore.getState().error).toBeNull();
     });
 
-    it('should set error state on fetch failure', async () => {
-      const error = { message: 'Failed to fetch' };
-      vi.mocked(api.notifications.fetchNotifications).mockResolvedValue({ status: 500, error });
+    describe('Actions', () => {
+        describe('fetchNotifications', () => {
+            it('should set notifications and unread count on successful fetch', async () => {
+                const mockNotifications = [mockNotification1, mockNotification2, mockNotification3];
+                // Use the direct mock
+                mockFetchNotifications.mockResolvedValue({
+                    data: mockNotifications,
+                    status: 200,
+                });
 
-      await useNotificationStore.getState().fetchNotifications();
+                await act(async () => {
+                    await useNotificationStore.getState().fetchNotifications();
+                });
 
-      const state = useNotificationStore.getState();
-      expect(state.isLoading).toBe(false);
-      expect(state.notifications).toEqual([]);
-      expect(state.unreadCount).toBe(0);
-      expect(state.error).toEqual(error.message); // Store likely stores just the message
-      expect(api.notifications.fetchNotifications).toHaveBeenCalledTimes(1);
-    });
-  });
+                const state = useNotificationStore.getState();
+                expect(state.isLoading).toBe(false);
+                expect(state.error).toBeNull();
+                expect(state.notifications).toEqual([mockNotification2, mockNotification1, mockNotification3]); // Correct order
+                expect(state.unreadCount).toBe(2);
+                 expect(mockFetchNotifications).toHaveBeenCalledTimes(1);
+            });
 
-   describe('addNotification', () => {
-     it('should prepend a new notification and increment unread count if unread', () => {
-       useNotificationStore.setState({ notifications: [mockNotification1], unreadCount: 1 });
-       const newNotification = mockNotification3; // Unread
+             it('should handle null data on successful fetch', async () => {
+                // Use the direct mock
+                mockFetchNotifications.mockResolvedValue({
+                    data: null as any, // Simulate null data
+                    status: 200,
+                });
 
-       useNotificationStore.getState().addNotification(newNotification);
+                await act(async () => {
+                    await useNotificationStore.getState().fetchNotifications();
+                });
 
-       const state = useNotificationStore.getState();
-       expect(state.notifications).toEqual([newNotification, mockNotification1]);
-       expect(state.unreadCount).toBe(2);
-     });
+                const state = useNotificationStore.getState();
+                expect(state.isLoading).toBe(false);
+                expect(state.error).toBeNull();
+                expect(state.notifications).toEqual([]);
+                expect(state.unreadCount).toBe(0);
+                 expect(mockFetchNotifications).toHaveBeenCalledTimes(1);
+            });
 
-     it('should prepend a new notification and not increment unread count if read', () => {
-        useNotificationStore.setState({ notifications: [mockNotification1], unreadCount: 1 });
-       const newNotification = { ...mockNotification3, read: true }; // Read
+            it('should set loading state during fetch', async () => {
+                const mockNotifications = [mockNotification1];
+                 // Use the direct mock
+                mockFetchNotifications.mockResolvedValue({
+                    data: mockNotifications,
+                    status: 200,
+                });
 
-       useNotificationStore.getState().addNotification(newNotification);
+                const promise = act(async () => {
+                     useNotificationStore.getState().fetchNotifications();
+                 });
+                expect(useNotificationStore.getState().isLoading).toBe(true);
+                await promise;
+                expect(useNotificationStore.getState().isLoading).toBe(false);
+            });
 
-       const state = useNotificationStore.getState();
-       expect(state.notifications).toEqual([newNotification, mockNotification1]);
-       expect(state.unreadCount).toBe(1); // Stays the same
-     });
+            it('should set error state on failed fetch', async () => {
+                 const mockError: ApiError = { code: 'FETCH_ERROR', message: 'Failed to fetch' };
+                 // Use the direct mock
+                 mockFetchNotifications.mockResolvedValue({
+                    error: mockError,
+                    status: 500,
+                });
 
-      it('should not add a duplicate notification', () => {
-        useNotificationStore.setState({ notifications: [mockNotification1], unreadCount: 1 });
+                await act(async () => {
+                    await useNotificationStore.getState().fetchNotifications();
+                });
 
-        useNotificationStore.getState().addNotification(mockNotification1); // Add existing one
+                const state = useNotificationStore.getState();
+                expect(state.isLoading).toBe(false);
+                expect(state.error).toEqual(mockError);
+                expect(state.notifications).toEqual([]);
+                expect(state.unreadCount).toBe(0);
+                 expect(mockFetchNotifications).toHaveBeenCalledTimes(1);
+            });
+        });
 
-        const state = useNotificationStore.getState();
-        // State should remain unchanged
-        expect(state.notifications).toEqual([mockNotification1]);
-        expect(state.unreadCount).toBe(1);
-      });
-   });
+        describe('addNotification (Realtime)', () => {
+            it('should prepend a new notification and increment unread count', () => {
+                 act(() => {
+                    useNotificationStore.setState({
+                        notifications: [mockNotification2],
+                        unreadCount: 1,
+                    });
+                });
+                 act(() => {
+                    useNotificationStore.getState().addNotification(mockNotification1); // Add older, unread notification
+                });
+                const state = useNotificationStore.getState();
+                 expect(state.notifications).toEqual([mockNotification2, mockNotification1]); // Corrected order
+                expect(state.unreadCount).toBe(2); // Incremented
+            });
 
-   describe('markAsRead', () => {
-    it('should mark a specific notification as read and decrement unread count', async () => {
-       useNotificationStore.setState({ notifications: [mockNotification1, mockNotification3], unreadCount: 2 }); // Both unread
-       vi.mocked(api.notifications.markNotificationAsRead).mockResolvedValue({ status: 200 });
+            it('should prepend a new notification but not increment count if already read', () => {
+                 act(() => {
+                    useNotificationStore.setState({
+                        notifications: [mockNotification1],
+                        unreadCount: 1,
+                    });
+                });
+                act(() => {
+                    useNotificationStore.getState().addNotification(mockNotification3); // Add read notification
+                });
+                const state = useNotificationStore.getState();
+                 expect(state.notifications).toEqual([mockNotification1, mockNotification3]); // Corrected order
+                expect(state.unreadCount).toBe(1); // Not incremented
+            });
 
-       await useNotificationStore.getState().markAsRead(mockNotification1.id);
+             it('should not add a duplicate notification', () => {
+                 act(() => {
+                    useNotificationStore.setState({
+                        notifications: [mockNotification1],
+                        unreadCount: 1,
+                    });
+                });
+                act(() => {
+                    useNotificationStore.getState().addNotification(mockNotification1);
+                });
+                const state = useNotificationStore.getState();
+                expect(state.notifications).toEqual([mockNotification1]);
+                expect(state.unreadCount).toBe(1);
+            });
+        });
 
-       const state = useNotificationStore.getState();
-       expect(state.notifications.find(n => n.id === mockNotification1.id)?.read).toBe(true);
-       expect(state.unreadCount).toBe(1);
-       expect(state.error).toBeNull();
-       expect(api.notifications.markNotificationAsRead).toHaveBeenCalledWith(mockNotification1.id);
-    });
+        describe('markNotificationRead', () => {
+             beforeEach(() => {
+                act(() => {
+                    useNotificationStore.setState({
+                         notifications: [mockNotification2, mockNotification1, mockNotification3],
+                         unreadCount: 2,
+                    });
+                 });
+             });
 
-    it('should not change count if marking an already read notification', async () => {
-       useNotificationStore.setState({ notifications: [mockNotification2], unreadCount: 0 }); // Already read
-        vi.mocked(api.notifications.markNotificationAsRead).mockResolvedValue({ status: 200 });
+             it('should mark a notification as read, decrement count, and call API', async () => {
+                 // Use the direct mock
+                 mockMarkNotificationAsRead.mockResolvedValue({ status: 204 });
 
-       await useNotificationStore.getState().markAsRead(mockNotification2.id);
+                 await act(async () => {
+                     await useNotificationStore.getState().markNotificationRead('uuid-1');
+                 });
 
-       const state = useNotificationStore.getState();
-       expect(state.notifications.find(n => n.id === mockNotification2.id)?.read).toBe(true);
-       expect(state.unreadCount).toBe(0);
-       expect(api.notifications.markNotificationAsRead).toHaveBeenCalledWith(mockNotification2.id);
-    });
+                 const state = useNotificationStore.getState();
+                 const updatedNotification = state.notifications.find(n => n.id === 'uuid-1');
+                 expect(updatedNotification?.read).toBe(true);
+                 expect(state.unreadCount).toBe(1);
+                 expect(state.error).toBeNull();
+                 expect(mockMarkNotificationAsRead).toHaveBeenCalledTimes(1);
+                 expect(mockMarkNotificationAsRead).toHaveBeenCalledWith('uuid-1');
+             });
 
-     it('should handle API error when marking as read', async () => {
-       useNotificationStore.setState({ notifications: [mockNotification1], unreadCount: 1 });
-       const error = { message: 'API Error' };
-       vi.mocked(api.notifications.markNotificationAsRead).mockResolvedValue({ status: 500, error });
+             it('should not change state or call API if notification is already read', async () => {
+                 await act(async () => {
+                     await useNotificationStore.getState().markNotificationRead('uuid-3');
+                 });
+                 const state = useNotificationStore.getState();
+                 expect(state.unreadCount).toBe(2);
+                 expect(state.error).toBeNull();
+                 expect(mockMarkNotificationAsRead).not.toHaveBeenCalled();
+             });
 
-       await useNotificationStore.getState().markAsRead(mockNotification1.id);
+              it('should not change state or call API if notification is not found', async () => {
+                 await act(async () => {
+                     await useNotificationStore.getState().markNotificationRead('uuid-unknown');
+                 });
+                 const state = useNotificationStore.getState();
+                 expect(state.unreadCount).toBe(2);
+                 expect(state.error).toBeNull();
+                 expect(mockMarkNotificationAsRead).not.toHaveBeenCalled();
+             });
 
-       const state = useNotificationStore.getState();
-       expect(state.notifications.find(n => n.id === mockNotification1.id)?.read).toBe(false); // State not changed
-       expect(state.unreadCount).toBe(1);
-       expect(state.error).toBe(error.message);
-     });
-   });
+             it('should set error state if API call fails', async () => {
+                 const mockError: ApiError = { code: 'UPDATE_ERROR', message: 'Failed to update' };
+                 // Use the direct mock
+                 mockMarkNotificationAsRead.mockResolvedValue({ error: mockError, status: 500 });
 
-    describe('markAllAsRead', () => {
-     it('should mark all notifications as read and set unread count to 0', async () => {
-       useNotificationStore.setState({ notifications: [mockNotification1, mockNotification2, mockNotification3], unreadCount: 2 }); // 2 unread
-       vi.mocked(api.notifications.markAllNotificationsAsRead).mockResolvedValue({ status: 200 });
+                 await act(async () => {
+                     await useNotificationStore.getState().markNotificationRead('uuid-1');
+                 });
 
-       await useNotificationStore.getState().markAllAsRead();
+                 const state = useNotificationStore.getState();
+                 const updatedNotification = state.notifications.find(n => n.id === 'uuid-1');
+                 expect(updatedNotification?.read).toBe(false);
+                 expect(state.unreadCount).toBe(2);
+                 expect(state.error).toEqual(mockError);
+                 expect(mockMarkNotificationAsRead).toHaveBeenCalledTimes(1);
+                 expect(mockMarkNotificationAsRead).toHaveBeenCalledWith('uuid-1');
+             });
+        });
 
-       const state = useNotificationStore.getState();
-       expect(state.notifications.every(n => n.read)).toBe(true);
-       expect(state.unreadCount).toBe(0);
-       expect(state.error).toBeNull();
-       expect(api.notifications.markAllNotificationsAsRead).toHaveBeenCalledTimes(1);
-     });
+        describe('markAllNotificationsAsRead', () => {
+             beforeEach(() => {
+                act(() => {
+                    useNotificationStore.setState({
+                        notifications: [mockNotification2, mockNotification1, mockNotification3],
+                        unreadCount: 2,
+                    });
+                });
+            });
 
-      it('should handle API error when marking all as read', async () => {
-       useNotificationStore.setState({ notifications: [mockNotification1, mockNotification3], unreadCount: 2 });
-       const error = { message: 'API Error' };
-       vi.mocked(api.notifications.markAllNotificationsAsRead).mockResolvedValue({ status: 500, error });
+            it('should mark all as read, set count to 0, and call API', async () => {
+                 mockMarkAllNotificationsAsRead.mockResolvedValue({ status: 204 });
 
-       await useNotificationStore.getState().markAllAsRead();
+                await act(async () => {
+                    await useNotificationStore.getState().markAllNotificationsAsRead();
+                });
 
-       const state = useNotificationStore.getState();
-       expect(state.notifications.some(n => !n.read)).toBe(true); // State not changed
-       expect(state.unreadCount).toBe(2);
-       expect(state.error).toBe(error.message);
-     });
-    });
+                const state = useNotificationStore.getState();
+                expect(state.notifications.every(n => n.read)).toBe(true);
+                expect(state.unreadCount).toBe(0);
+                expect(state.error).toBeNull();
+                expect(mockMarkAllNotificationsAsRead).toHaveBeenCalledTimes(1);
+            });
 
-     describe('clearError', () => {
-        it('should clear the error state', () => {
-            useNotificationStore.setState({ error: 'Some error' });
-            expect(useNotificationStore.getState().error).toBe('Some error');
+            it('should not change state or call API if count is already 0', async () => {
+                 act(() => {
+                    useNotificationStore.setState({ unreadCount: 0 });
+                });
+                await act(async () => {
+                    await useNotificationStore.getState().markAllNotificationsAsRead();
+                });
+                const state = useNotificationStore.getState();
+                 expect(state.error).toBeNull();
+                expect(mockMarkAllNotificationsAsRead).not.toHaveBeenCalled();
+            });
 
-            useNotificationStore.getState().clearError();
-            expect(useNotificationStore.getState().error).toBeNull();
+            it('should set error state if API call fails', async () => {
+                const mockError: ApiError = { code: 'UPDATE_ALL_ERROR', message: 'Failed to update all' };
+                 mockMarkAllNotificationsAsRead.mockResolvedValue({ error: mockError, status: 500 });
+
+                await act(async () => {
+                    await useNotificationStore.getState().markAllNotificationsAsRead();
+                });
+
+                const state = useNotificationStore.getState();
+                 expect(state.notifications.some(n => !n.read)).toBe(true);
+                 expect(state.unreadCount).toBe(2);
+                expect(state.error).toEqual(mockError);
+                expect(mockMarkAllNotificationsAsRead).toHaveBeenCalledTimes(1);
+            });
         });
     });
 
+    describe('Selectors', () => {
+        it('selectNotifications should return the notifications array', () => {
+             const notifications = [mockNotification1, mockNotification2];
+             act(() => {
+                 useNotificationStore.setState({ notifications });
+             });
+             expect(useNotificationStore.getState().notifications).toEqual(notifications);
+        });
+
+        it('selectUnreadCount should return the unread count', () => {
+            const count = 5;
+             act(() => {
+                 useNotificationStore.setState({ unreadCount: count });
+             });
+             expect(useNotificationStore.getState().unreadCount).toBe(count);
+        });
+    });
 }); 

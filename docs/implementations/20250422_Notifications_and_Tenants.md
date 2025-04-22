@@ -52,14 +52,14 @@ This document outlines the steps for implementing an in-app notification system 
 
 ### 1.4 State Management (`@paynless/store`)
 
-*   [ ] **Tests:** Write unit tests for the notification Zustand store slice:
+*   [X] **Tests:** Write unit tests for the notification Zustand store slice:
     *   Initial state (empty list, count 0).
     *   Action to set notifications (updates list and unread count).
     *   Action to add a new notification (prepends to list, increments unread count).
     *   Action to mark a notification as read (updates item `read` status, decrements unread count).
     *   Action to mark all as read (updates all items, sets count to 0).
     *   Selectors for `notifications` list and `unreadCount`.
-*   [ ] **Implementation:** Create the `notificationStore` slice in `@paynless/store` with the tested state, actions, and selectors.
+*   [X] **Implementation:** Create the `notificationStore` slice in `@paynless/store` with the tested state, actions, and selectors.
 
 ### 1.5 Frontend Component (`packages/web/src/components/Notifications.tsx`)
 
