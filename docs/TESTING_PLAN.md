@@ -114,6 +114,41 @@ Following this cycle helps catch errors early, ensures comprehensive test covera
     *   **Mock Error Propagation:** When a mocked promise rejects (e.g., simulating a DB error), the way the error propagates through subsequent `catch` blocks in the code under test might differ slightly from live execution. Assertions may need to check for the stringified original mock error (`String(mockErrorObject)`) instead of the message from a potentially re-thrown `new Error("...")` if the re-throw doesn't occur as expected in the test context.
     *   **Test Data Consistency:** Ensure mock data used in tests (e.g., mock database records) aligns with data conventions established by other parts of the system (e.g., provider prefixes like `openai-` added to identifiers by adapters). Inconsistent test data can lead to misleading failures.
 
+*   **[NEW] Notification System Testing Strategy:**
+    *   **Backend (Triggers/RLS):**
+        *   Test trigger functions (e.g., `notify_org_admins_on_join_request`) using SQL unit tests or Supabase local dev tools to verify correct insertion into `notifications` table, including accurate population of the `data` JSONB field with context (`target_path`, relevant IDs).
+        *   Test RLS policies on `notifications` using `supabase test db` or equivalent to ensure users can only select/update their own notifications.
+    *   **API Client (`@paynless/api-client`):**
+        *   Unit test new functions (`fetchNotifications`, `markNotificationAsRead`, `markAllNotificationsAsRead`) by mocking the Supabase client (`apiClient`).
+    *   **State Management (`@paynless/store/notificationStore`):**
+        *   Unit test Zustand store actions, mocking the API client calls. Verify correct state transitions for notification list, unread count, loading, and error states.
+        *   Test selectors for `notifications` list and `unreadCount`.
+    *   **Frontend (`Notifications.tsx` Component - Vitest/RTL):**
+        *   Test rendering based on store state (no user, empty list, list with items, unread badge).
+        *   Test initial fetch logic on mount (mock store action/API client).
+        *   Test Realtime subscription setup (`useEffect`): Mock Supabase client `.channel()`, `.on()`, `.subscribe()`, and `.removeChannel()` to verify correct setup and cleanup.
+        *   Test handling of incoming Realtime payloads (mocking the callback) and verify corresponding store actions are called.
+        *   Test user interactions: Clicking "mark as read" (item/all), clicking an actionable notification (verify `data.target_path` parsing and mock `react-router` navigation trigger).
+
+*   **[NEW] Multi-Tenancy (Organizations) Testing Strategy:**
+    *   **Backend (Schema/RLS/Triggers):**
+        *   Test RLS policies on `organizations`, `organization_members`, and *updated* policies on related tables (e.g., `chats`) using `supabase test db` or equivalent. Verify access control based on membership status (`active`), role (`admin`/`member`), organization visibility (`public`/`private`), and soft deletion (`deleted_at IS NULL`).
+        *   Test the "last admin" check logic (trigger/function) thoroughly with various scenarios (single admin, multiple admins, attempts to leave/demote).
+    *   **API Client (`@paynless/api-client`):**
+        *   Unit test all new organization-related functions (`createOrganization`, `listUserOrganizations`, `getOrganizationDetails`, `getOrganizationMembers`, `inviteUser...`, `acceptInvite...`, `requestToJoin...`, `approveJoinRequest...`, `updateMemberRole...`, `removeMember...`, `deleteOrganization`), mocking the Supabase client and Edge Function invocations where necessary. Ensure tests cover admin-only actions and handling of potential errors (e.g., last admin check failure).
+    *   **State Management (`@paynless/store/organizationStore`):**
+        *   Unit test Zustand store actions, mocking API client calls. Verify state transitions for `userOrganizations` (filtering deleted), `currentOrganizationId`, `currentOrganizationDetails` (including visibility), `currentOrganizationMembers`, loading, error states. Test selectors for current org context and user role within the current org.
+        *   Test the `setCurrentOrganizationId` action triggers fetching of details/members.
+        *   Test the `softDeleteOrganization` action correctly removes the org from local state after API success.
+    *   **Frontend Components (Vitest/RTL):**
+        *   Test `OrganizationSwitcher`: Mock store, verify rendering, test selection logic triggers store action/navigation.
+        *   Test Organization Forms (`CreateOrganizationForm`): Mock API calls, test validation, visibility options.
+        *   Test Organization Pages (`/dashboard/organizations/...`): Test routing guards (require membership, non-deleted org). Test components for Settings (edit name/visibility, delete button - admin only), Member Management (`MemberList`, `InviteMemberModal`, role changes, removal - admin only, handling last admin error display), Invite/Join flows.
+        *   Test conditional rendering based on user role within the current organization context (fetched from the store).
+    *   **Integration (MSW/Manual):**
+        *   Use MSW to mock backend API endpoints for frontend integration tests covering flows like creating an org, switching context, inviting/joining, managing members, and soft-deleting.
+        *   Manual testing (as outlined in Checkpoint 2) is crucial for verifying RLS and complex interaction flows end-to-end.
+
 ✅ **How to Test Incrementally and Correctly (Layered Testing Strategy)**
 *This remains our guiding principle.*
 

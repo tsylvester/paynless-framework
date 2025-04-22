@@ -70,6 +70,14 @@ To contribute to this project:
 6. Apply database migrations: `supabase db reset` (if starting fresh) or ensure migrations in `supabase/migrations` are up-to-date.
 7. Run `npm run dev` from the root or the specific app directory (e.g., `cd apps/web && npm run dev`) to start the development server.
 
+## Current Development Focus
+
+*   Implementing In-App Notifications System.
+*   Implementing Multi-Tenancy support (Organizations/Teams).
+*   Refactoring older stores (`authStore`, `subscriptionStore`) to use the API Client Singleton pattern.
+*   Stabilizing and enhancing AI Chat features.
+*   Improving test coverage across all packages.
+
 ## Supabase Setup
 
 1. Create a new Supabase project.

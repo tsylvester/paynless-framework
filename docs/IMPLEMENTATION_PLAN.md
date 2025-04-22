@@ -20,7 +20,10 @@
     *   [✅] Manual invocation works
     *   [ ] Implement & Test Cron Job trigger
 
-**Incomplete Features** 
+**Incomplete Features** // Or In Progress
+
+*   [🚧] Notification System (Phase 1 - see `docs/implementations/20250422_Notifications_and_Tenants.md`)
+*   [🚧] Multi-Tenancy Support (Organizations/Teams) (Phase 2 - see `docs/implementations/20250422_Notifications_and_Tenants.md`)
 *   [ ] Manage Billing sends user to portal but doesn't return user after action.
     *   **Status:** Verified the `return_url` (`<app-origin>/subscription`) is correctly passed to Stripe via the `createBillingPortalSession` backend handler. Stripe logs confirm it receives the correct `return_url`. The general "Return to..." link in the portal works.
     *   **Issue:** Users are not automatically redirected back to the `return_url` after completing specific actions like cancelling a subscription or updating payment methods; they remain on the Stripe portal page.
@@ -45,6 +48,24 @@
 *   [🚧] User email automation - abstract for generic but specific implementation with Kit 
     *   [ ] Everything works EXCEPT the email_sync_trigger for on_user_created, the current form breaks registration
 *   [ ] Connect frontend analytics events (PostHog) to email marketing service (Kit) for behavioral triggers (IFTTT)
-*   [ ] Groups & organizations - how does Supabase currently support this? 
-*   [ ] Notifications - system wide and user specific 
-*   [ ] Consolidate authStore with Zustand, remove the direct localSession interactions. 
+*   [ ] Groups & organizations - how does Supabase currently support this? // Now being implemented
+*   [ ] Notifications - system wide and user specific // Now being implemented
+*   [ ] Consolidate authStore with Zustand, remove the direct localSession interactions.
+
+**Future Considerations / Deferred Scope**
+
+*   Granular Member Roles (Beyond Admin/Member)
+*   Sub-Teams within Organizations
+*   Public Organization Discovery & Search
+*   Domain-Based Joining for Organizations
+*   Enhanced Org Privacy/Visibility Settings
+*   Invite Token Expiration/Management
+*   User Notification Preferences (In-app/Email channels, Opt-outs)
+*   Email Notifications (Beyond Invites)
+*   Automatic Notification Cleanup/Archiving
+*   Notification Grouping (Complex for actionable items)
+*   Organization-Level Billing
+*   Resource Quotas/Limits per Organization
+*   Dedicated Audit Log for Organization Events
+*   Specific Org-Focused User Onboarding Flows
+*   Advanced Org Deletion Data Handling (Archiving, etc.)
