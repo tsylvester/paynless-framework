@@ -9,6 +9,7 @@ export * from './platform.types';
 export * from './analytics.types';
 export * from './email.types';
 export * from './notification.types';
+export * from './navigation.types';
 
 // Export Json type if it's defined elsewhere or define basic alias
 // If Json is complex and defined in its own file (e.g., json.types.ts), export that:

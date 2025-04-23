@@ -1,3 +1,5 @@
+import { NavigateFunction } from './navigation.types'; // Import NavigateFunction
+
 export interface User {
   id: string
   email: string
@@ -5,8 +7,8 @@ export interface User {
   last_name?: string
   avatarUrl?: string
   role: UserRole
-  created_at: string
-  updated_at: string
+  created_at?: string
+  updated_at?: string
 }
 
 export interface UserProfile {
@@ -15,12 +17,12 @@ export interface UserProfile {
   last_name?: string
   avatarUrl?: string
   role: UserRole
-  created_at: string
-  updated_at: string
+  created_at?: string
+  updated_at?: string
 }
 
 export enum UserRole {
-  USER = 'user',
+  USER = 'authenticated',
   ADMIN = 'admin',
 }
 
@@ -37,7 +39,7 @@ export interface AuthStore {
   setProfile: (profile: UserProfile | null) => void
   setIsLoading: (isLoading: boolean) => void
   setError: (error: Error | null) => void
-  setNavigate: (navigateFn: (path: string) => void) => void
+  setNavigate: (navigateFn: NavigateFunction) => void
   login: (email: string, password: string) => Promise<User | null>
   // Update register signature
   register: (email: string, password: string) => Promise<User | null>
@@ -54,13 +56,15 @@ export interface AuthStore {
   profile: UserProfile | null
   isLoading: boolean
   error: Error | null
-  navigate: ((path: string) => void) | null
+  navigate: NavigateFunction | null
 }
 
 export interface Session {
   access_token: string
   refresh_token: string
   expiresAt: number
+  token_type?: string
+  expires_in?: number
 }
 
 export interface LoginCredentials {
@@ -77,7 +81,7 @@ export interface RegisterCredentials {
 export interface AuthResponse {
   user: User | null
   session: Session | null
-  profile: UserProfile | null // Allow null for cases like registration or failed profile fetch
+  profile: UserProfile | null
 }
 
 // Response type specifically for profile fetch (/me)
@@ -85,4 +89,23 @@ export interface AuthResponse {
 export interface ProfileResponse {
   user: User
   profile: UserProfile
+}
+
+/**
+ * Structure of the response from the (potential) token refresh endpoint.
+ */
+export interface RefreshResponse {
+  session: Session | null
+  user: User | null
+  profile: UserProfile | null
+}
+
+/**
+ * Structure of the pending action details stored in localStorage for replay.
+ */
+export interface PendingAction {
+  endpoint: string;
+  method: string;
+  body?: Record<string, unknown> | null;
+  returnPath: string;
 }
