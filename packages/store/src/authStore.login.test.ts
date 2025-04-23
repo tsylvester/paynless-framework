@@ -84,7 +84,7 @@ describe('AuthStore - Login Action', () => {
       const result = await useAuthStore.getState().login(email, password);
 
       // Expect postSpy to be called with URL and body ONLY
-      expect(postSpy).toHaveBeenCalledWith('/login', { email, password });
+      expect(postSpy).toHaveBeenCalledWith('login', { email, password });
       expect(getItemSpy).toHaveBeenCalledWith('pendingAction'); // Verify replay check
       const state = useAuthStore.getState();
       expect(state.isLoading).toBe(false);
@@ -94,7 +94,7 @@ describe('AuthStore - Login Action', () => {
       expect(state.error).toBeNull();
       expect(result).toEqual(user);
       expect(localMockNavigate).toHaveBeenCalledOnce();
-      expect(localMockNavigate).toHaveBeenCalledWith('/dashboard'); // Default navigation
+      expect(localMockNavigate).toHaveBeenCalledWith('dashboard'); // Default navigation
 
       // Assert: Analytics identify call (using the assigned mock variable)
       expect(mockIdentify).toHaveBeenCalledTimes(1);
@@ -112,7 +112,7 @@ describe('AuthStore - Login Action', () => {
       const result = await useAuthStore.getState().login(email, password);
 
       // Expect postSpy to be called with URL and body ONLY
-      expect(postSpy).toHaveBeenCalledWith('/login', { email, password });
+      expect(postSpy).toHaveBeenCalledWith('login', { email, password });
       const state = useAuthStore.getState();
       expect(state.isLoading).toBe(false);
       expect(state.user).toBeNull(); // User should be cleared
@@ -154,19 +154,19 @@ describe('AuthStore - Login Action', () => {
 
         // Chat action data
         const chatPendingActionData = {
-            endpoint: '/chat',
+            endpoint: 'chat',
             method: 'POST',
             body: { message: 'Stored message' },
-            returnPath: '/chat' // Specific return path for chat
+            returnPath: 'chat' // Specific return path for chat
         };
         const chatPendingActionJson = JSON.stringify(chatPendingActionData);
 
         // Non-chat action data (e.g., hypothetical profile update)
         const nonChatPendingActionData = {
-            endpoint: '/profile',
+            endpoint: 'profile',
             method: 'PUT',
             body: { firstName: 'Updated Name' },
-            returnPath: '/profile' // Different return path
+            returnPath: 'profile' // Different return path
         };
          const nonChatPendingActionJson = JSON.stringify(nonChatPendingActionData);
 
@@ -199,7 +199,7 @@ describe('AuthStore - Login Action', () => {
                 endpoint: 'chat', 
                 method: 'POST',
                 body: { message: 'pending message' },
-                returnPath: '/chat'
+                returnPath: 'chat'
             };
             // Mock localStorage getItem & removeItem
             const getItemSpy = vi.spyOn(window.localStorage, 'getItem').mockReturnValue(JSON.stringify(mockPendingAction));
@@ -243,7 +243,7 @@ describe('AuthStore - Login Action', () => {
             expect(setItemSpy).toHaveBeenCalledWith('loadChatIdOnRedirect', mockChatId);
 
             // Assert navigation to specific path from pending action
-            expect(mockNavigateGlobal).toHaveBeenCalledWith('/chat');
+            expect(mockNavigateGlobal).toHaveBeenCalledWith('chat');
 
             // Assert removeItem was called for pendingAction
             expect(removeItemSpy).toHaveBeenCalledWith('pendingAction');
@@ -274,7 +274,7 @@ describe('AuthStore - Login Action', () => {
             expect(mockSessionGetItem).toHaveBeenCalled();
             expect(mockSessionRemoveItem).toHaveBeenCalledWith('pendingAction'); 
             // Check login call (1st call)
-            expect(apiPostSpy).toHaveBeenNthCalledWith(1, '/login', { email: mockLoginData.email, password: mockLoginData.password });
+            expect(apiPostSpy).toHaveBeenNthCalledWith(1, 'login', { email: mockLoginData.email, password: mockLoginData.password });
             // Check replay call (2nd call)
             expect(apiPostSpy).toHaveBeenNthCalledWith(2,
                 chatPendingActionData.endpoint,
@@ -286,7 +286,7 @@ describe('AuthStore - Login Action', () => {
 
             // Assert navigation still goes to the returnPath from pending action
             expect(localMockNavigate).toHaveBeenCalledTimes(1);
-            expect(localMockNavigate).toHaveBeenCalledWith(chatPendingActionData.returnPath); // Should still be '/chat'
+            expect(localMockNavigate).toHaveBeenCalledWith(chatPendingActionData.returnPath); // Should still be 'chat'
 
               // Fix: Adjust assertion to match actual nested error structure
               expect(logErrorSpy).toHaveBeenCalledWith(
@@ -313,7 +313,7 @@ describe('AuthStore - Login Action', () => {
              expect(mockSessionRemoveItem).toHaveBeenCalledWith('pendingAction');
              // Check login call (api.post - 1st call overall)
              expect(apiPostSpy).toHaveBeenCalledTimes(1);
-             expect(apiPostSpy).toHaveBeenNthCalledWith(1, '/login', { email: mockLoginData.email, password: mockLoginData.password });
+             expect(apiPostSpy).toHaveBeenNthCalledWith(1, 'login', { email: mockLoginData.email, password: mockLoginData.password });
              // Check replay call (api.put - 1st PUT call)
              expect(apiPutSpy).toHaveBeenCalledTimes(1);
              expect(apiPutSpy).toHaveBeenCalledWith(
@@ -326,7 +326,7 @@ describe('AuthStore - Login Action', () => {
 
              // Assert navigation to specific path from non-chat pending action
              expect(localMockNavigate).toHaveBeenCalledTimes(1);
-             expect(localMockNavigate).toHaveBeenCalledWith(nonChatPendingActionData.returnPath); // Should be '/profile'
+             expect(localMockNavigate).toHaveBeenCalledWith(nonChatPendingActionData.returnPath); // Should be 'profile'
          });
 
          it('should navigate to dashboard if pendingAction JSON is invalid', async () => {
@@ -346,7 +346,7 @@ describe('AuthStore - Login Action', () => {
              expect(setItemSpy).not.toHaveBeenCalledWith('loadChatIdOnRedirect', expect.anything());
              // Should navigate to default dashboard path
              expect(localMockNavigate).toHaveBeenCalledTimes(1);
-             expect(localMockNavigate).toHaveBeenCalledWith('/dashboard');
+             expect(localMockNavigate).toHaveBeenCalledWith('dashboard');
              // Fix: Adjust assertion to match actual log format (Object with error message string)
              expect(logErrorSpy).toHaveBeenCalledWith("Error processing pending action after login:", expect.objectContaining({ 
                 error: expect.any(String) // Check if error property is a string

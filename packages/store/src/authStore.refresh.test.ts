@@ -74,7 +74,7 @@ describe('AuthStore - refreshSession Action', () => {
     // Arrange: Set initial state with an existing session (and refresh token)
     // Also set a pending action to test replay
     useAuthStore.setState({ session: mockInitialSession, user: mockUser, profile: mockProfile });
-    const pendingAction = { endpoint: '/replay-me', method: 'POST', body: { test: 1 }, returnPath: '/destination' };
+    const pendingAction = { endpoint: 'replay-me', method: 'POST', body: { test: 1 }, returnPath: 'destination' };
     localStorage.setItem('pendingAction', JSON.stringify(pendingAction));
 
     const mockRefreshResponse: RefreshResponse = {

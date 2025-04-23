@@ -65,7 +65,7 @@ describe('AuthStore - Register Action', () => {
 
          const result = await useAuthStore.getState().register(email, password);
 
-         expect(postSpy).toHaveBeenCalledWith('/register', { email, password });
+         expect(postSpy).toHaveBeenCalledWith('register', { email, password });
          expect(getItemSpy).toHaveBeenCalledWith('pendingAction'); // Verify replay check
          const state = useAuthStore.getState();
          expect(state.isLoading).toBe(false);
@@ -75,7 +75,7 @@ describe('AuthStore - Register Action', () => {
          expect(state.error).toBeNull();
          expect(result).toEqual(user); // Should return the user object on success
          expect(localMockNavigate).toHaveBeenCalledOnce();
-         expect(localMockNavigate).toHaveBeenCalledWith('/dashboard'); // Default navigation
+         expect(localMockNavigate).toHaveBeenCalledWith('dashboard'); // Default navigation
      });
 
      it('should set error state, clear user data, not navigate, and return null on API failure', async () => {
@@ -88,7 +88,7 @@ describe('AuthStore - Register Action', () => {
 
          const result = await useAuthStore.getState().register(email, password);
 
-         expect(postSpy).toHaveBeenCalledWith('/register', { email, password });
+         expect(postSpy).toHaveBeenCalledWith('register', { email, password });
          const state = useAuthStore.getState();
          expect(state.isLoading).toBe(false);
          expect(state.user).toBeNull(); // User should be cleared
@@ -122,19 +122,19 @@ describe('AuthStore - Register Action', () => {
 
          // Chat action data
         const chatPendingActionData = {
-            endpoint: '/chat',
+            endpoint: 'chat',
             method: 'POST',
             body: { message: 'Stored message for register' },
-            returnPath: '/chat'
+            returnPath: 'chat'
         };
         const chatPendingActionJson = JSON.stringify(chatPendingActionData);
 
          // Non-chat action data
         const nonChatPendingActionData = {
-            endpoint: '/settings',
+            endpoint: 'settings',
             method: 'POST', // Assuming POST for simplicity
             body: { theme: 'dark' },
-            returnPath: '/settings'
+            returnPath: 'settings'
         };
          const nonChatPendingActionJson = JSON.stringify(nonChatPendingActionData);
 
@@ -184,7 +184,7 @@ describe('AuthStore - Register Action', () => {
             expect(mockSessionGetItem).toHaveBeenCalledWith('pendingAction');
             expect(mockSessionRemoveItem).toHaveBeenCalledWith('pendingAction');
             // Check register call (1st call)
-            expect(apiPostSpy).toHaveBeenNthCalledWith(1, '/register', { email: mockRegisterData.email, password: mockRegisterData.password });
+            expect(apiPostSpy).toHaveBeenNthCalledWith(1, 'register', { email: mockRegisterData.email, password: mockRegisterData.password });
             // Check replay call (2nd call)
             expect(apiPostSpy).toHaveBeenNthCalledWith(2,
                 chatPendingActionData.endpoint,
@@ -197,7 +197,7 @@ describe('AuthStore - Register Action', () => {
 
             // Assert navigation to specific path from pending action
             expect(localMockNavigate).toHaveBeenCalledTimes(1);
-            expect(localMockNavigate).toHaveBeenCalledWith(chatPendingActionData.returnPath); // Should be '/chat'
+            expect(localMockNavigate).toHaveBeenCalledWith(chatPendingActionData.returnPath); // Should be 'chat'
         });
 
          it('should navigate to /chat and NOT store chatId if chat replay fails', async () => {
@@ -219,7 +219,7 @@ describe('AuthStore - Register Action', () => {
             expect(mockSessionGetItem).toHaveBeenCalledWith('pendingAction');
             expect(mockSessionRemoveItem).toHaveBeenCalledWith('pendingAction'); 
             // Check register call (1st call)
-            expect(apiPostSpy).toHaveBeenNthCalledWith(1, '/register', { email: mockRegisterData.email, password: mockRegisterData.password });
+            expect(apiPostSpy).toHaveBeenNthCalledWith(1, 'register', { email: mockRegisterData.email, password: mockRegisterData.password });
             // Check replay call (2nd call)
             expect(apiPostSpy).toHaveBeenNthCalledWith(2,
                 chatPendingActionData.endpoint,
@@ -231,7 +231,7 @@ describe('AuthStore - Register Action', () => {
            
             // Assert navigation still goes to the returnPath from pending action
             expect(localMockNavigate).toHaveBeenCalledTimes(1);
-            expect(localMockNavigate).toHaveBeenCalledWith(chatPendingActionData.returnPath); // Should still be '/chat'
+            expect(localMockNavigate).toHaveBeenCalledWith(chatPendingActionData.returnPath); // Should still be 'chat'
 
               // Fix: Adjust assertion to match actual nested error structure
               expect(logErrorSpy).toHaveBeenCalledWith(
@@ -270,7 +270,7 @@ describe('AuthStore - Register Action', () => {
 
              // Assert navigation to specific path from non-chat pending action
              expect(localMockNavigate).toHaveBeenCalledTimes(1);
-             expect(localMockNavigate).toHaveBeenCalledWith(nonChatPendingActionData.returnPath); // Should be '/settings'
+             expect(localMockNavigate).toHaveBeenCalledWith(nonChatPendingActionData.returnPath); // Should be 'settings'
          });
 
          it('should navigate to dashboard if pendingAction JSON is invalid', async () => {

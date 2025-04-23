@@ -95,7 +95,7 @@ describe('AuthStore - Logout Action', () => {
       });
 
       // Assert
-      expect(postSpy).toHaveBeenCalledWith('/logout', {}, { token: mockSession.access_token });
+      expect(postSpy).toHaveBeenCalledWith('logout', {}, { token: mockSession.access_token });
       const state = useAuthStore.getState();
       expect(state.user).toBeNull();
       expect(state.session).toBeNull();
@@ -104,7 +104,7 @@ describe('AuthStore - Logout Action', () => {
       expect(state.error).toBeNull(); // Error should be cleared
       expect(useAuthStore.getState().navigate).toBe(localMockNavigate);
       expect(localMockNavigate).toHaveBeenCalledTimes(1);
-      expect(localMockNavigate).toHaveBeenCalledWith('/login');
+      expect(localMockNavigate).toHaveBeenCalledWith('login');
 
       // Assert: Analytics reset call (using the assigned mock variable)
       expect(mockReset).toHaveBeenCalledTimes(1);
@@ -125,14 +125,14 @@ describe('AuthStore - Logout Action', () => {
          });
 
          // Assert
-         expect(postSpy).toHaveBeenCalledWith('/logout', {}, { token: mockSession.access_token });
+         expect(postSpy).toHaveBeenCalledWith('logout', {}, { token: mockSession.access_token });
          const state = useAuthStore.getState();
          expect(state.user).toBeNull(); // State should still be cleared
          expect(state.session).toBeNull();
          expect(state.profile).toBeNull();
          expect(state.error).toBeNull(); // Should still clear local error state
          expect(localMockNavigate).toHaveBeenCalledTimes(1); // Navigation should still happen
-         expect(localMockNavigate).toHaveBeenCalledWith('/login');
+         expect(localMockNavigate).toHaveBeenCalledWith('login');
 
          // Assert: Analytics reset call (state is cleared, using the assigned mock variable)
          expect(mockReset).toHaveBeenCalledTimes(1);
@@ -160,7 +160,7 @@ describe('AuthStore - Logout Action', () => {
         expect(state.error).toBeNull(); 
         expect(logWarnSpy).toHaveBeenCalledWith('Logout called but no session token found. Clearing local state only.');
         expect(localMockNavigate).toHaveBeenCalledTimes(1); 
-        expect(localMockNavigate).toHaveBeenCalledWith('/login');
+        expect(localMockNavigate).toHaveBeenCalledWith('login');
 
         // Assert: Analytics reset call (state is cleared, using the assigned mock variable)
         expect(mockReset).toHaveBeenCalledTimes(1);

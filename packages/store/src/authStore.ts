@@ -525,7 +525,7 @@ export const useAuthStore = create<
           })
           if (response.error || !response.data || !response.data.user) {
             // Token invalid or expired
-            logger.error('/me call failed after restoring session.', {
+            logger.error('me call failed after restoring session.', {
               error: response.error,
             })
 
@@ -535,7 +535,7 @@ export const useAuthStore = create<
             return
           }
           // /me successful, update user/profile
-          logger.info('/me call successful, user authenticated.')
+          logger.info('me call successful, user authenticated.')
           set({
             user: response.data.user,
             profile: response.data.profile,
@@ -844,7 +844,7 @@ export const useAuthStore = create<
 
             // Handle special case for chat endpoint
             if (
-              (endpoint === 'chat' || endpoint === '/chat') &&
+              (endpoint === 'chat') &&
               method.toUpperCase() === 'POST' &&
               replayResponse.data
             ) {

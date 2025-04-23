@@ -170,7 +170,7 @@ export const useAiStore = create<AiStore>()(
                                 endpoint: 'chat', 
                                 method: 'POST',
                                 body: { ...requestData, chatId: effectiveChatId ?? null }, 
-                                returnPath: '/chat'
+                                returnPath: 'chat'
                             };
                             localStorage.setItem('pendingAction', JSON.stringify(pendingAction));
                             logger.info('Stored pending chat action:', pendingAction);
@@ -184,7 +184,7 @@ export const useAiStore = create<AiStore>()(
                         if (storageSuccess) {
                             const navigate = useAuthStore.getState().navigate;
                             if (navigate) {
-                                navigate('/login');
+                                navigate('login');
                                 errorHandled = true; // Set only if navigation occurs
                             } else {
                                 logger.error('Navigate function not found after successful storage...');

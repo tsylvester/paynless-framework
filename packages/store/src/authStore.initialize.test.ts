@@ -163,7 +163,7 @@ describe('AuthStore - Initialize Action', () => {
   it('should restore session from storage, call /me, update state, and handle replay on success', async () => {
      // Arrange
      const storedSession: Session = { ...mockSession, expiresAt: (Date.now() / 1000) + 3600 }; // Valid session
-     const pendingAction = { endpoint: '/some-action', method: 'POST', body: {}, returnPath: '/target' };
+     const pendingAction = { endpoint: 'some-action', method: 'POST', body: {}, returnPath: 'target' };
      // Set both items in mock storage
      mockSessionSetItem('auth-session', JSON.stringify(storedSession));
      mockSessionSetItem('pendingAction', JSON.stringify(pendingAction));
@@ -179,7 +179,7 @@ describe('AuthStore - Initialize Action', () => {
 
 
      // Assert
-     expect(apiGetSpy).toHaveBeenCalledWith('/me', { token: storedSession.access_token });
+     expect(apiGetSpy).toHaveBeenCalledWith('me', { token: storedSession.access_token });
      const state = useAuthStore.getState();
      expect(state.session).toEqual(storedSession);
      expect(state.user).toBeNull();
@@ -188,10 +188,10 @@ describe('AuthStore - Initialize Action', () => {
      expect(state.error).toBeNull();
       // Assert replay logic was triggered
      // WORKAROUND: Comment out potentially flaky spy assertion for now
-     // expect(apiPostSpy).toHaveBeenCalledWith('/some-action', {}, { token: storedSession.access_token });
+     // expect(apiPostSpy).toHaveBeenCalledWith('some-action', {}, { token: storedSession.access_token });
      // FIX: Use the specific spy
      expect(removeItemSpy).toHaveBeenCalledWith('pendingAction');
-     expect(localMockNavigate).toHaveBeenCalledWith('/target'); 
+     expect(localMockNavigate).toHaveBeenCalledWith('target'); 
 
      // Assert: Analytics identify call (using the assigned mock variable)
      expect(mockIdentify).toHaveBeenCalledTimes(1);
@@ -200,7 +200,7 @@ describe('AuthStore - Initialize Action', () => {
      // Add assertion to check if replay function was called
      expect(replaySpy).toHaveBeenCalled(); 
      expect(removeItemSpy).toHaveBeenCalledWith('pendingAction');
-     expect(localMockNavigate).toHaveBeenCalledWith('/target'); 
+     expect(localMockNavigate).toHaveBeenCalledWith('target'); 
   });
 
   it('should handle expired session from storage and clear state', async () => {
@@ -218,7 +218,7 @@ describe('AuthStore - Initialize Action', () => {
      await useAuthStore.getState().initialize();
 
      // Assert
-     expect(apiGetSpy).not.toHaveBeenCalledWith('/me', expect.anything()); // /me should NOT be called
+     expect(apiGetSpy).not.toHaveBeenCalledWith('me', expect.anything()); // /me should NOT be called
      expect(mockSessionRemoveItem).toHaveBeenCalledWith('auth-session'); // Expired session removed
      const state = useAuthStore.getState();
      expect(state.session).toBeNull();
@@ -245,7 +245,7 @@ describe('AuthStore - Initialize Action', () => {
 
 
       // Assert
-      expect(apiGetSpy).toHaveBeenCalledWith('/me', { token: storedSession.access_token });
+      expect(apiGetSpy).toHaveBeenCalledWith('me', { token: storedSession.access_token });
       const state = useAuthStore.getState();
       expect(state.session).toBeNull();
       expect(state.user).toBeNull();
@@ -276,7 +276,7 @@ describe('AuthStore - Initialize Action', () => {
 
 
        // Assert
-       expect(apiGetSpy).toHaveBeenCalledWith('/me', { token: storedSession.access_token });
+       expect(apiGetSpy).toHaveBeenCalledWith('me', { token: storedSession.access_token });
        expect(mockSessionRemoveItem).toHaveBeenCalledWith('auth-session'); // Session removed
        const state = useAuthStore.getState();
        expect(state.session).toBeNull();
@@ -304,7 +304,7 @@ describe('AuthStore - Initialize Action', () => {
       await useAuthStore.getState().initialize();
 
       // Assert
-      expect(apiGetSpy).toHaveBeenCalledWith('/me', { token: storedSession.access_token });
+      expect(apiGetSpy).toHaveBeenCalledWith('me', { token: storedSession.access_token });
       // Crucially, replay should NOT have happened
       expect(apiPostSpy).not.toHaveBeenCalled();
       expect(mockSessionRemoveItem).not.toHaveBeenCalledWith('pendingAction');
@@ -360,7 +360,7 @@ describe('AuthStore - Initialize Action', () => {
 
        // Assert
        // Verify /me was called and state updated
-       expect(apiGetSpy).toHaveBeenCalledWith('/me', { token: storedSession.access_token });
+       expect(apiGetSpy).toHaveBeenCalledWith('me', { token: storedSession.access_token });
        const state = useAuthStore.getState();
        expect(state.session).toEqual(storedSession);
        expect(state.user).toBeNull();
