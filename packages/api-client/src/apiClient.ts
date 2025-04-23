@@ -66,6 +66,7 @@ export class ApiClient {
             logger.error('Error fetching session for token:', { error });
             return undefined;
         }
+        logger.debug('[ApiClient.getToken] Fetched session data:', { session: data.session }); 
         return data.session?.access_token;
     }
 

@@ -75,6 +75,7 @@ To contribute to this project:
 *   Implementing In-App Notifications System.
 *   Implementing Multi-Tenancy support (Organizations/Teams).
 *   Refactoring older stores (`authStore`, `subscriptionStore`) to use the API Client Singleton pattern.
+*   Refactoring `authStore` to align with Supabase `onAuthStateChange` for improved reliability.
 *   Stabilizing and enhancing AI Chat features.
 *   Improving test coverage across all packages.
 
