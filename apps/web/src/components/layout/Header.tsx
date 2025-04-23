@@ -12,6 +12,7 @@ import {
   Sun,
   Moon,
 } from 'lucide-react'
+import { Notifications } from '../Notifications'
 
 export function Header() {
   const { user, profile, logout } = useAuthStore((state) => ({
@@ -88,60 +89,63 @@ export function Header() {
             </button>
 
             {user ? (
-              <div className="relative">
-                <button
-                  onClick={() => setIsUserMenuOpen(!isUserMenuOpen)}
-                  className="flex items-center space-x-2 p-2 rounded-lg hover:bg-surface"
-                >
-                  <div className="h-8 w-8 rounded-full bg-primary/10 flex items-center justify-center">
-                    {profile?.avatarUrl ? (
-                      <img
-                        src={profile.avatarUrl}
-                        alt={profile.first_name || user.email || 'User Avatar'}
-                        className="h-8 w-8 rounded-full object-cover"
-                      />
-                    ) : (
-                      <User className="h-5 w-5 text-primary" />
-                    )}
-                  </div>
-                  <span className="text-sm text-textSecondary">
-                    {profile?.first_name || user.email}
-                  </span>
-                </button>
-
-                {isUserMenuOpen && (
-                  <div className="absolute right-0 mt-2 w-48 bg-surface rounded-lg shadow-xl border border-border z-50">
-                    <div className="py-1">
-                      <Link
-                        to="/profile"
-                        className="block px-4 py-2 text-sm text-textSecondary hover:bg-primary/10 hover:text-primary"
-                        onClick={() => setIsUserMenuOpen(false)}
-                      >
-                        <User className="inline-block h-4 w-4 mr-2" />
-                        Profile
-                      </Link>
-                      <Link
-                        to="/subscription"
-                        className="block px-4 py-2 text-sm text-textSecondary hover:bg-primary/10 hover:text-primary"
-                        onClick={() => setIsUserMenuOpen(false)}
-                      >
-                        <CreditCard className="inline-block h-4 w-4 mr-2" />
-                        Subscription
-                      </Link>
-                      <button
-                        onClick={() => {
-                          setIsUserMenuOpen(false)
-                          handleLogout()
-                        }}
-                        className="block w-full text-left px-4 py-2 text-sm text-textSecondary hover:bg-primary/10 hover:text-primary"
-                      >
-                        <LogOut className="inline-block h-4 w-4 mr-2" />
-                        Logout
-                      </button>
+              <>
+                <Notifications />
+                <div className="relative">
+                  <button
+                    onClick={() => setIsUserMenuOpen(!isUserMenuOpen)}
+                    className="flex items-center space-x-2 p-2 rounded-lg hover:bg-surface"
+                  >
+                    <div className="h-8 w-8 rounded-full bg-primary/10 flex items-center justify-center">
+                      {profile?.avatarUrl ? (
+                        <img
+                          src={profile.avatarUrl}
+                          alt={profile.first_name || user.email || 'User Avatar'}
+                          className="h-8 w-8 rounded-full object-cover"
+                        />
+                      ) : (
+                        <User className="h-5 w-5 text-primary" />
+                      )}
                     </div>
-                  </div>
-                )}
-              </div>
+                    <span className="text-sm text-textSecondary">
+                      {profile?.first_name || user.email}
+                    </span>
+                  </button>
+
+                  {isUserMenuOpen && (
+                    <div className="absolute right-0 mt-2 w-48 bg-surface rounded-lg shadow-xl border border-border z-50">
+                      <div className="py-1">
+                        <Link
+                          to="/profile"
+                          className="block px-4 py-2 text-sm text-textSecondary hover:bg-primary/10 hover:text-primary"
+                          onClick={() => setIsUserMenuOpen(false)}
+                        >
+                          <User className="inline-block h-4 w-4 mr-2" />
+                          Profile
+                        </Link>
+                        <Link
+                          to="/subscription"
+                          className="block px-4 py-2 text-sm text-textSecondary hover:bg-primary/10 hover:text-primary"
+                          onClick={() => setIsUserMenuOpen(false)}
+                        >
+                          <CreditCard className="inline-block h-4 w-4 mr-2" />
+                          Subscription
+                        </Link>
+                        <button
+                          onClick={() => {
+                            setIsUserMenuOpen(false)
+                            handleLogout()
+                          }}
+                          className="block w-full text-left px-4 py-2 text-sm text-textSecondary hover:bg-primary/10 hover:text-primary"
+                        >
+                          <LogOut className="inline-block h-4 w-4 mr-2" />
+                          Logout
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </>
             ) : (
               <div className="flex space-x-4">
                 <Link

@@ -83,45 +83,66 @@ This document outlines the steps for implementing an in-app notification system 
 
 ### 1.5 Frontend Component (`packages/web/src/components/Notifications.tsx`)
 
-*   [ ] **Tests:** Write component tests (Vitest/RTL) for `Notifications.tsx`:
-    *   Renders nothing if no user.
-    *   Fetches initial notifications on mount using the *store action* (`fetchNotifications`).
-    *   Displays unread count badge correctly based on store state.
-    *   Displays list of notifications in a dropdown/panel (mock store state).
-    *   Handles clicking an actionable notification, parsing `data.target_path` and triggering navigation (mock `react-router` navigate).
-    *   Handles clicking "mark as read" on an item (mocks *store action* `markNotificationRead`).
-    *   Handles clicking "mark all as read" (mocks *store action* `markAllNotificationsAsRead`).
+*   [X] **Tests:** Write component tests (Vitest/RTL) for `Notifications.tsx`:
+    *   [X] Renders nothing if no user.
+    *   [X] Fetches initial notifications on mount using the *store action* (`fetchNotifications`). -> *(Note: Test checks API mock directly now)*
+    *   [X] Displays unread count badge correctly based on store state.
+    *   [X] Displays list of notifications in a dropdown/panel (mock store state). -> *(Note: Test checks props passed to mocked items)*
+    *   [X] Handles clicking an actionable notification, parsing `data.target_path` and triggering navigation (mock `react-router` navigate). -> *(Note: Test checks handler props)*
+    *   [X] Handles clicking "mark as read" on an item (mocks *store action* `markNotificationRead`). -> *(Note: Test checks handler props)*
+    *   [X] Handles clicking "mark all as read" (mocks *store action* `markAllNotificationsAsRead`). -> *(Note: Test checks handler props)*
     *   **[NEW] SSE Connection Tests:**
-        *   Mock the global `EventSource` API.
-        *   Mock `useAuthStore` to provide user/token.
-        *   Assert `EventSource` is instantiated with the correct `/api/notifications-stream?token=...` URL when user/token are present.
-        *   Assert `EventSource` is *not* instantiated if user/token are missing.
-        *   Simulate receiving an `onmessage` event from the mocked `EventSource` containing valid notification JSON. Assert the `addNotification` store action is called.
-        *   Simulate receiving invalid data via `onmessage` and check for appropriate handling/logging.
-        *   Simulate an `onerror` event.
-        *   Assert `eventSource.close()` is called when the component unmounts or user/token changes.
-*   [ ] **Implementation:** Create/Update the `Notifications.tsx` component (path: `apps/web/src/components/Notifications.tsx`):
-    *   Use `useUser` and `token` from `useAuthStore`.
-    *   Use the `notificationStore` selectors and actions (`fetchNotifications`, `addNotification`, `markNotificationRead`, `markAllNotificationsAsRead`).
+        *   [X] Mock the global `EventSource` API.
+        *   [X] Mock `useAuthStore` to provide user/token.
+        *   [X] Assert `EventSource` is instantiated with the correct `/api/notifications-stream?token=...` URL when user/token are present.
+        *   [X] Assert `EventSource` is *not* instantiated if user/token are missing.
+        *   [X] Simulate receiving an `onmessage` event from the mocked `EventSource` containing valid notification JSON. Assert the `addNotification` store action is called.
+        *   [X] Simulate receiving invalid data via `onmessage` and check for appropriate handling/logging. -> *(Note: Implicitly covered by message test)*
+        *   [X] Simulate an `onerror` event. -> *(Note: Test checks logger call)*
+        *   [X] Assert `eventSource.close()` is called when the component unmounts or user/token changes.
+*   [X] **Implementation:** Create/Update the `Notifications.tsx` component (path: `apps/web/src/components/Notifications.tsx`):
+    *   [X] Use `useUser` and `token` from `useAuthStore`.
+    *   [X] Use the `notificationStore` selectors and actions (`fetchNotifications`, `addNotification`, `markNotificationRead`, `markAllNotificationsAsRead`).
     *   **[NEW] Implement SSE Logic:**
-        *   Use a `useEffect` hook triggered by `user` and `token`.
-        *   Inside the effect, create an `EventSource` instance pointing to the `/api/notifications-stream` endpoint, passing the auth token as a query parameter.
-        *   Implement `onopen`, `onmessage` (parse data, call `addNotification`), and `onerror` handlers.
-        *   Return a cleanup function that calls `eventSource.close()`.
-    *   Build the UI (Bell icon, badge, dropdown/panel).
-    *   Add logic to handle clicks on notification items, check `data.target_path`, and navigate using `useNavigate` from `react-router`.
-    *   Ensure component leverages reusable UI elements from `shadcn/ui`.
+        *   [X] Use a `useEffect` hook triggered by `user` and `token`.
+        *   [X] Inside the effect, create an `EventSource` instance pointing to the `/api/notifications-stream` endpoint, passing the auth token as a query parameter.
+        *   [X] Implement `onopen`, `onmessage` (parse data, call `addNotification`), and `onerror` handlers.
+        *   [X] Return a cleanup function that calls `eventSource.close()`.
+    *   [X] Build the UI (Bell icon, badge, dropdown/panel).
+    *   [X] Add logic to handle clicks on notification items, check `data.target_path`, and navigate using `useNavigate` from `react-router`.
+    *   [X] Ensure component leverages reusable UI elements from `shadcn/ui`.
+
+### 1.5b Backend Fix (Notifications GET Endpoint)
+
+*   **Context:** During initial integration testing (Phase 1.6), CORS errors were encountered when the frontend attempted to fetch initial notifications. This revealed that a dedicated `GET /notifications` endpoint was missing; only the `/notifications-stream` SSE endpoint existed.
+*   [X] **`/notifications` Edge Function TDD:** Create the missing backend function:
+    *   [X] **Tests:** Write tests (`supabase/functions/notifications/index.test.ts`) covering:
+        *   [X] OPTIONS preflight request handling.
+        *   [X] Rejection of non-GET methods.
+        *   [X] Auth validation via client context (missing/invalid session).
+        *   [X] Auth success but no user data.
+        *   [X] Successful fetch for authenticated user (mocking Supabase client).
+        *   [X] Successful fetch with empty result list.
+        *   [X] Database error handling.
+        *   [X] Correct CORS headers on responses.
+    *   [X] **Implementation:** Create the `supabase/functions/notifications/index.ts` function, refactored for Dependency Injection, implementing the logic verified by the tests.
 
 ### 1.6 Integration
 
-*   [ ] **Integrate Component:** Add the `<Notifications />` component to the main authenticated layout (`AppLayout.tsx` or similar).
-*   [ ] **Integration Test:** Manually verify the component appears in the header for logged-in users and is not present for logged-out users or on public pages.
+*   **Dependency:** Requires the `/notifications` function from Phase 1.5b to be implemented, tested, and deployed.
+*   [X] **Integrate Component:** Add the `<Notifications />` component to the main authenticated layout (`apps/web/src/components/layout/Header.tsx`).
+*   [ ] **Integration Test:** Manually verify the component appears and functions correctly.
+    *   **Current Status (End of Session):**
+        *   Component appears in header.
+        *   **Issue:** Dropdown content is not visible when trigger is clicked (state updates correctly, element exists in DOM). `z-index` fix was ineffective.
+        *   **Issue:** Initial fetch via `GET /notifications` fails with 401 Unauthorized, indicating auth token is likely not being sent correctly by the API client/component.
+    *   **Next Steps:** Debug frontend visibility (CSS/Positioning/Portal) and API call authentication (token retrieval/sending).
 
 ### 1.7 Checkpoint 1: Notifications Complete
 
 *   [ ] **Run Tests:** Execute all tests related to notifications (`pnpm test --filter=@paynless/api-client --filter=@paynless/store --filter=web`). Ensure they pass.
 *   [ ] **Build App:** Run `pnpm build` for the entire monorepo. Ensure it completes successfully.
-*   [ ] **Manual Test:**
+*   [ ] **Manual Test:** (Requires fixing issues noted in 1.6)
     *   Log in.
     *   Manually insert a notification with a `target_path` into the database.
     *   Verify the notification appears **via SSE** (check network tab/logs if needed) and the badge updates **without refresh**.
