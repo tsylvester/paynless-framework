@@ -35,12 +35,13 @@
 
 **Goal:** Implement the core `onAuthStateChange` listener and have it manage the initial `isLoading` flag and the `session` state.
 
-*   [ ] **1.1 Add Supabase Client Getter to `apiClient`:**
+*   [x] **1.1 Add Supabase Client Getter to `apiClient`:**
     *   **File:** `packages/api-client/src/apiClient.ts`
     *   **TDD:** (Minimal test needed) Ensure the getter exists and returns the client instance.
     *   **Implement:** Add a public method `getSupabaseClient()` to the `ApiClient` class that returns `this.supabase`. Update the exported `api` object to include this getter.
     *   **Refactor:** N/A.
-    *   **Test:** Run related unit test.
+    *   **Test:** Run related unit test. -> *Tests fixed and passed.*
+    *   **Enhance Test Coverage:** Add basic unit tests for `api.post`, `api.put`, and `api.delete` methods in `apiClient.test.ts` to ensure comprehensive coverage of the core request logic. *(Current step)*
 *   [ ] **1.2 Test Listener Logic:**
     *   **File:** Create `packages/store/src/authStore.listener.test.ts` (or add to existing tests).
     *   **TDD (RED):** Write tests simulating `onAuthStateChange` events (`INITIAL_SESSION` with session, `INITIAL_SESSION` with null, `SIGNED_IN`, `SIGNED_OUT`) and assert that the correct `set` calls are made within the listener callback to update `session` and `isLoading`. Mock the Supabase client and its `auth.onAuthStateChange` method. Mock `set` from Zustand.
@@ -49,7 +50,7 @@
     *   **TDD (GREEN):** Implement an exported function `initAuthListener(supabaseClient)` that takes a Supabase client instance. Inside this function, set up the `supabaseClient.auth.onAuthStateChange` listener.
     *   **Refactor:** N/A.
     *   **Test:** Run tests from 1.2 - they should now pass.
-*   [ ] **1.4 Implement Listener Callback Logic (isLoading, session):**
+*   [x] **1.4 Implement Listener Callback Logic (isLoading, session):**
     *   **File:** `packages/store/src/authStore.ts` (within the listener callback created in 1.3).
     *   **TDD (GREEN):** Implement the logic within the callback:
         *   On `INITIAL_SESSION`: Set `session` (to provided session or null). Set `isLoading` to `false`.
@@ -58,8 +59,8 @@
         *   Handle other events like `TOKEN_REFRESHED` (update session).
         *   *(Within the callback logic for `INITIAL_SESSION` and `SIGNED_IN` with a valid session)*: Trigger the check for and replay of pending actions stored in localStorage (logic to be moved from `login`/`register` in Phase 3).
     *   **Refactor:** N/A.
-    *   **Test:** Run tests from 1.2 - ensure all assertions pass.
-*   [ ] **1.5 Integrate Listener Setup:**
+    *   **Test:** Run tests from 1.2 - they should now pass.
+*   [x] **1.5 Integrate Listener Setup:**
     *   **File:** `apps/web/src/App.tsx` (or potentially `main.tsx` if `apiClient` initialization happens there).
     *   **TDD:** (Integration test focus) Ensure the listener is called on app startup.
     *   **Implement:** Find where `initializeApiClient` is called. Immediately after, import `initAuthListener` from `@paynless/store` and `api` from `@paynless/api-client`. Call `initAuthListener(api.getSupabaseClient())`. Ensure this happens early in the app lifecycle, likely within a `useEffect` with an empty dependency array in `AppContent` or similar root component, *after* `apiClient` is initialized.
@@ -166,48 +167,4 @@
     *   **TDD (Ensure Coverage):** Verify existing tests adequately cover the listener setting `isLoading: false` and the correct initial `session`/`profile` state (or null) based on the *first* `INITIAL_SESSION` event received.
 *   [ ] **4.3 Refactor/Remove `initialize` Logic:**
     *   **File:** `packages/store/src/authStore.ts`
-    *   **TDD (Adjust):** Remove tests in `authStore.initialize.test.ts` related to fetching `/me` or checking localStorage expiry logic, as the listener now handles this. Keep tests verifying `isLoading` state transitions if `initialize` still manages that briefly.
-    *   **Implement:** Remove the core logic from the `initialize` action (checking storage, calling `/me`). It might become an empty function, or potentially be removed entirely if the listener setup in `App.tsx` is sufficient. *Decision:* Let's simplify it to primarily ensure the listener is active, potentially just logging for now. The main work is done by the listener triggered externally.
-    *   **Refactor:** N/A.
-*   [ ] **4.4 Adjust `AppContent`:**
-    *   **File:** `apps/web/src/App.tsx`
-    *   **Implement:** If `initialize` was removed or significantly changed, adjust the `useEffect` in `AppContent` accordingly. It might no longer need to call `initialize`. Ensure the `initAuthListener` call remains.
-    *   **Refactor:** N/A.
-*   [ ] **4.5 Checkpoint 4:**
-    *   **Run Unit Tests:** `pnpm test --filter=@paynless/store`. Ensure all auth-related tests pass.
-    *   **Build App:** `pnpm build`. Ensure it completes successfully.
-    *   **Manual Test:** Thoroughly test app loading:
-        *   Load app while logged out.
-        *   Load app while logged in (hard refresh).
-        *   Verify initial loading indicator behaves correctly.
-        *   Verify correct state (login page or dashboard/profile loaded) after loading.
-        *   Check console for errors or unexpected logs.
-    *   **Commit:** `refactor(auth): simplify initialize action, rely on listener for initial state (#issue_number)`
-
----
-
-## Phase 5: Final Cleanup, Testing & Documentation
-
-**Goal:** Ensure all changes are integrated cleanly, remove obsolete code/tests, and update documentation.
-
-*   [ ] **5.1 Code Review:** Review all changes in `authStore.ts`, `apiClient.ts` (getter), `App.tsx` (listener init). Check for consistency, potential issues, and adherence to patterns.
-*   [ ] **5.2 Remove Obsolete Code/Tests:** Delete `authStore.initialize.test.ts` if the action is now trivial/gone. Remove redundant tests from other files. Clean up commented-out code.
-*   [ ] **5.3 Run All Store Tests:** `pnpm test --filter=@paynless/store`. Fix any failures.
-*   [ ] **5.4 Run Web App Integration Tests:** `pnpm test --filter=web`. Pay close attention to tests involving login, logout, profile, and protected route access. Update mocks or assertions if the timing of state updates has changed slightly.
-*   [ ] **5.5 Build App:** `pnpm build`. Ensure final success.
-*   [ ] **5.6 Manual E2E Testing:**
-    *   Login / Logout flows.
-    *   Registration flow.
-    *   Page refresh while logged in / out.
-    *   Accessing protected vs public routes.
-    *   Verify components depending on auth state (Header links, User menu, Profile page, **Notifications component**) load and behave correctly without timing issues or 401 errors.
-    *   Test pending action replay if that logic was kept/adjusted.
-*   [ ] **5.7 Update Documentation:**
-    *   **`docs/STRUCTURE.md`:** Update the description of `authStore` state management to reflect the reliance on `onAuthStateChange`.
-    *   **`docs/TESTING_PLAN.md`:** Update sections related to `authStore` testing strategy.
-    *   **`docs/DEV_PLAN.md`:** Update state management patterns if necessary.
-    *   **`README.md` / Setup:** Ensure setup instructions are still accurate.
-*   [ ] **5.8 Final Commit:** `fix(auth): complete authStore refactor to use onAuthStateChange (#issue_number)`
-*   [ ] **5.9 Remind User:** "The authStore has been refactored to align with Supabase standards using onAuthStateChange. This should resolve the observed timing issues. Please perform thorough testing, especially around login, logout, page refresh, and components dependent on auth state (like Notifications). Remember to review and commit the final changes: `git add . && git commit -m 'fix(auth): complete authStore refactor to use onAuthStateChange'`"
-
---- 
+    *   **TDD (Adjust):** Remove tests in `authStore.initialize.test.ts` related to fetching `/me` or checking localStorage expiry logic, as the listener now handles this. Keep tests verifying `isLoading` state transitions if `

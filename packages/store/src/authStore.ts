@@ -12,6 +12,7 @@ import { logger } from '@paynless/utils'
 import { persist } from 'zustand/middleware'
 import { api } from '@paynless/api-client'
 import { analytics } from '@paynless/analytics-client'
+import { SupabaseClient } from '@supabase/supabase-js'
 
 // Define the structure of the response from the refresh endpoint
 interface RefreshResponse {
@@ -904,3 +905,57 @@ export const useAuthStore = create<
     }
   )
 )
+
+// --- Listener Setup --- 
+
+/**
+ * Sets up the Supabase auth state change listener.
+ * This function should be called once when the application initializes,
+ * likely after the ApiClient has been initialized.
+ * 
+ * @param supabaseClient The initialized Supabase client instance (obtained via api.getSupabaseClient()).
+ * @returns A function to unsubscribe the listener.
+ */
+export function initAuthListener(supabaseClient: SupabaseClient): () => void {
+  logger.info('[AuthStore] Initializing Supabase auth state listener...');
+
+  const { data: listener } = supabaseClient.auth.onAuthStateChange(
+    (event, session) => {
+      logger.debug('[Auth Listener] Received event:', { event, session });
+
+      // --- Logic to update store based on event --- 
+      switch (event) {
+        case 'INITIAL_SESSION':
+          // This is the crucial event for determining initial load state.
+          // It fires once when the client initializes.
+          useAuthStore.setState({ session: session, isLoading: false });
+          break;
+        case 'SIGNED_IN':
+        case 'TOKEN_REFRESHED':
+          // Update the session, assume loading is already false or handled by INITIAL_SESSION
+          useAuthStore.setState({ session: session });
+          break;
+        case 'SIGNED_OUT':
+          // Clear the session, assume loading is already false
+          useAuthStore.setState({ session: null });
+          break;
+      }
+    }
+  );
+
+  if (!listener || typeof listener.subscription?.unsubscribe !== 'function') {
+     logger.error('[AuthStore] Failed to subscribe to onAuthStateChange. Unsubscribe function not available.');
+     // Return a no-op function to prevent errors
+     return () => { 
+        logger.warn('[AuthStore] Attempted to unsubscribe from a failed listener subscription.');
+     };
+  }
+
+  logger.info('[AuthStore] Supabase auth state listener initialized successfully.');
+
+  // Return the unsubscribe function provided by Supabase
+  return () => {
+    logger.info('[AuthStore] Unsubscribing from Supabase auth state changes.');
+    listener.subscription.unsubscribe();
+  };
+}

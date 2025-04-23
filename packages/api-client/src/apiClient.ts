@@ -134,7 +134,9 @@ export class ApiClient {
                          errorPayload = { code: String(response.status), message: responseData.error };
                     } else {
                         // Fallback if object structure is unexpected
-                        const errorMessage = response.statusText || 'Unknown API Error';
+                        // ---> Prioritize responseData.message if it exists, before statusText <--- 
+                        const messageFromBody = typeof responseData === 'object' && responseData?.message ? responseData.message : null;
+                        const errorMessage = messageFromBody || response.statusText || 'Unknown API Error';
                         errorPayload = { code: String(response.status), message: errorMessage };
                     }
                 } else {
@@ -153,9 +155,24 @@ export class ApiClient {
 
         } catch (error: any) {
              // ---> Check if it's the AuthRequiredError we threw <--- 
-            if (error instanceof AuthRequiredError || error?.name === 'AuthRequiredError') { // Check name too for safety
-                logger.info("AuthRequiredError caught in apiClient, re-throwing...");
-                throw error; // Re-throw it so the caller (aiStore) can catch it
+            if (error instanceof AuthRequiredError || error?.name === 'AuthRequiredError') {
+                logger.warn("AuthRequiredError detected by API Client. Saving pending action...");
+                try {
+                  // Construct pending action data
+                  const pendingAction = {
+                    endpoint: endpoint.startsWith('/') ? endpoint.substring(1) : endpoint,
+                    method: options.method || 'GET',
+                    body: options.body ? JSON.parse(options.body as string) : null, // Attempt to parse body
+                    returnPath: window.location.pathname + window.location.search // Capture current path
+                  };
+                  localStorage.setItem('pendingAction', JSON.stringify(pendingAction));
+                  logger.info('Pending action saved to localStorage', { pendingAction });
+                } catch (storageError: any) {
+                  logger.error('Failed to save pending action to localStorage', { error: storageError.message });
+                  // Don't prevent the original error from being thrown
+                }
+                // Re-throw the original AuthRequiredError
+                throw error; 
             }
             
             // ---> Otherwise, handle as a network/unexpected error <--- 
@@ -272,6 +289,16 @@ export class ApiClient {
             logger.warn(`[ApiClient] No active notification subscription found to unsubscribe for user ${userId}.`);
         }
     }
+
+    /**
+     * Retrieves the underlying Supabase client instance.
+     * **Warning:** This should ONLY be used for setting up the onAuthStateChange listener
+     * at the application root. Do NOT use this to bypass the ApiClient for other operations.
+     * @returns The SupabaseClient instance.
+     */
+    public getSupabaseClient(): SupabaseClient<any> {
+        return this.supabase;
+    }
 }
 
 // --- Singleton Instance Logic --- 
@@ -286,7 +313,7 @@ interface ApiInitializerConfig {
 // Update initializeApiClient signature and implementation
 export function initializeApiClient(config: ApiInitializerConfig) {
 
-    //console.log('initializeApiClientinitializeApiClientinitializeApiClientinitializeApiClientinitializeApiClientinitializeApiClientinitializeApiClient')
+    //console.log('initializeApiClientinitializeApiClientinitializeApiClientinitializeApiClientinitializeApiClientinitializeApiClient')
   if (apiClientInstance) {
     throw new Error('ApiClient already initialized');
   }
@@ -310,7 +337,8 @@ export function _resetApiClient() {
   logger.info('ApiClient Singleton reset for testing.');
 }
 
-function getApiClient(): ApiClient {
+// ---> Export for testing purposes <--- 
+export function getApiClient(): ApiClient {
     if (!apiClientInstance) {
         throw new Error('ApiClient not initialized. Call initializeApiClient first.');
     }
@@ -335,4 +363,7 @@ export const api = {
         getApiClient().subscribeToNotifications(userId, callback),
     unsubscribeFromNotifications: (userId: string): void =>
         getApiClient().unsubscribeFromNotifications(userId),
+    // ---> Add the new getter to the exported api object <--- 
+    getSupabaseClient: (): SupabaseClient<any> => 
+        getApiClient().getSupabaseClient(),
 }; 
