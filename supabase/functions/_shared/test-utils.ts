@@ -1,11 +1,13 @@
 // IMPORTANT: Supabase Edge Functions require relative paths for imports from shared modules.
 // Do not use path aliases (like @shared/) as they will cause deployment failures.
-import { createClient, SupabaseClient } from "npm:@supabase/supabase-js@^2.0.0";
+import { createClient, SupabaseClient } from "npm:@supabase/supabase-js@^2.43.4";
 import { spy, stub, type Spy } from "jsr:@std/testing/mock"; // Add Deno mock imports
 // Remove unstable directive, no longer needed after removing KV mocks
 // /// <reference lib="deno.unstable" />
 // Import ChatMessage type
 import type { ChatMessage } from "../../../packages/types/src/ai.types.ts";
+// --- Import RealtimeChannel type --- 
+import type { RealtimeChannel } from "npm:@supabase/supabase-js@^2.43.4";
 
 // Check for essential Supabase variables, but don't throw if missing during import
 // These checks will now rely on the environment being correctly set by `deno test --env`
@@ -169,12 +171,20 @@ export interface MockSupabaseDataConfig {
     };
 }
 
+// --- Define a type for the minimal mock channel ---
+type MockChannel = {
+    on: Spy<MockChannel, [any, any]>; // Returns self
+    subscribe: Spy<MockChannel, [any?]>; // Returns self
+    unsubscribe: Spy<Promise<'ok' | 'error' | 'timed out'>, []>; // Returns promise
+    topic: string;
+};
+
 /** Creates a mocked Supabase client instance for unit testing (Revised & Extended) */
 export function createMockSupabaseClient(
     config: MockSupabaseDataConfig = {}
 ): {
     client: SupabaseClient;
-    spies: { getUserSpy: Spy<any>; fromSpy: Spy<any>; /* Add more if needed */ };
+    spies: { getUserSpy: Spy<any>; fromSpy: Spy<any>; removeChannelSpy: Spy<any> };
 } {
     // --- Mock Auth ---
     const mockAuth = {
@@ -398,14 +408,35 @@ export function createMockSupabaseClient(
         return mockQueryBuilder;
     });
 
+    // --- Define spy ONLY for removeChannel --- 
+    const removeChannelSpy = spy((_channel: RealtimeChannel) => Promise.resolve<'ok' | 'error' | 'timed out'>('ok'));
+
+    // --- Assemble Mock Client ---
     const mockClient = {
         auth: mockAuth,
         from: fromSpy,
+        // --- Add a PLAIN function implementation for channel ---
+        channel: (channelName: string): RealtimeChannel => {
+            // --- Use the explicit MockChannel type --- 
+            const minimalMockChannel: MockChannel = {
+                topic: `realtime:${channelName}`,
+                // Assign spies, returning the correctly typed object
+                on: spy((_event: any, _callback: any) => minimalMockChannel),
+                subscribe: spy((_callback?: any) => minimalMockChannel),
+                unsubscribe: spy(() => Promise.resolve<'ok' | 'error' | 'timed out'>('ok')),
+            };
+            return minimalMockChannel as unknown as RealtimeChannel;
+        },
+        removeChannel: removeChannelSpy, // Assign the spy for removeChannel
     } as unknown as SupabaseClient;
 
     return {
         client: mockClient,
-        spies: { getUserSpy: mockAuth.getUser, fromSpy: fromSpy },
+        spies: {
+            getUserSpy: mockAuth.getUser,
+            fromSpy: fromSpy,
+            removeChannelSpy: removeChannelSpy,
+        },
     };
 }
 

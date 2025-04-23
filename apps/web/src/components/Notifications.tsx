@@ -20,90 +20,83 @@ import { Badge } from '@/components/ui/badge';
 import { logger } from '@paynless/utils';
 import { formatDistanceToNowStrict } from 'date-fns'; // For relative time
 
+// Define callback type
+// type NotificationHandler = (notification: Notification) => void; // Removed
+
 export const Notifications: React.FC = () => {
     const user = useAuthStore((state) => state.user);
     const {
         notifications,
         unreadCount,
-        fetchNotifications,
-        addNotification,
-        markNotificationRead,
-        markAllNotificationsAsRead,
-    } = useNotificationStore();
+        // fetchNotifications, // Use api.notifications().fetchNotifications directly
+        addNotification, // Keep for potential future store-based Realtime handling
+        // markNotificationRead, // Use api.notifications().mark... directly
+        // markAllNotificationsAsRead, // Use api.notifications().mark... directly
+    } = useNotificationStore(); // Primarily use for state
 
     const navigate = useNavigate();
     const [isOpen, setIsOpen] = useState(false);
 
-    // Fetch initial notifications on mount/user change
+    // Fetch initial notifications using the API client
     useEffect(() => {
         if (user) {
-            logger.debug('[Notifications] User found, fetching notifications.');
-            fetchNotifications();
-        }
-    }, [user, fetchNotifications]);
-
-    // Setup Realtime subscription
-    useEffect(() => {
-        if (!user) return; // Only subscribe if user is logged in
-
-        logger.debug('[Notifications] Setting up Realtime subscription for user:', { userId: user.id });
-
-        const channelName = `notifications-user-${user.id}`; // Unique channel per user
-        const channel = api.getSupabaseClient().channel(channelName, {
-            config: {
-                broadcast: { self: false }, // Don't receive broadcasts sent by self
-                presence: { key: user.id }, // Track presence if needed later
-            },
-        });
-
-        channel
-            .on(
-                'postgres_changes',
-                {
-                    event: 'INSERT',
-                    schema: 'public',
-                    table: 'notifications',
-                    filter: `user_id=eq.${user.id}`, // Server-side filter for this user
-                },
-                (payload) => {
-                     logger.info('[Notifications] Realtime INSERT received', { payload });
-                    // Ensure payload.new is a valid Notification
-                    // Add basic validation if necessary
-                     if (payload.new && payload.new.id) {
-                         addNotification(payload.new as Notification);
-                    } else {
-                        logger.warn('[Notifications] Received invalid INSERT payload', { payload });
-                    }
+            logger.debug('[Notifications] User found, fetching initial notifications via API client.');
+            // TODO: Ideally, this fetch should be triggered by the store itself
+            // For now, keep it here for component mount logic
+            api.notifications().fetchNotifications().then(response => {
+                if (response.error) {
+                     logger.error("[Notifications] Failed to fetch initial notifications", { error: response.error });
+                } else {
+                    // Let the store handle setting the state after fetch if needed
+                    // useNotificationStore.getState().setNotifications(response.data ?? []);
                 }
-            )
-            .subscribe((status, err) => {
-                if (status === 'SUBSCRIBED') {
-                    logger.info(`[Notifications] Realtime channel "${channelName}" subscribed successfully.`);
-                } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
-                     logger.error(`[Notifications] Realtime channel subscription error/timeout`, { status, err });
-                 } else if (status === 'CLOSED') {
-                     logger.warn(`[Notifications] Realtime channel "${channelName}" closed.`);
-                 }
+            }).catch(err => {
+                 logger.error("[Notifications] Exception during initial fetch", { err });
             });
+        }
+    }, [user]); // Dependency on user only
 
-        // Cleanup function
-        return () => {
-            logger.debug(`[Notifications] Cleaning up Realtime channel "${channelName}"`);
-            api.getSupabaseClient().removeChannel(channel).catch(error => {
-                 logger.error('[Notifications] Error removing Realtime channel', { error });
-             });
-        };
-    }, [user, addNotification]); // Re-run if user or addNotification function changes
+    // Removed Realtime subscription useEffect hook
+    // // Setup Realtime subscription using the API client
+    // useEffect(() => {
+    //     if (!user || !user.id) {
+    //         return;
+    //     }
+    // 
+    //     logger.debug('[Notifications] Setting up Realtime subscription via API client for user:', { userId: user.id });
+    // 
+    //     // Define the handler function to pass to the API client
+    //     const handleNewNotification: NotificationHandler = (newNotification) => {
+    //         logger.info('[Notifications] Received new notification from API subscription', { newNotification });
+    //         addNotification(newNotification); // Call store action to update UI state
+    //     };
+    // 
+    //     // Subscribe using the main api object
+    //     api.subscribeToNotifications(user.id, handleNewNotification);
+    // 
+    //     // Cleanup function: Unsubscribe using the main api object
+    //     return () => {
+    //         logger.debug(`[Notifications] Cleaning up Realtime subscription via API client for user ${user.id}`);
+    //         api.unsubscribeFromNotifications(user.id);
+    //     };
+    // // Dependency on user.id ensures re-subscription on user change.
+    // // Dependency on addNotification ensures the latest store action is used.
+    // }, [user?.id, addNotification]);
 
     const handleNotificationClick = (notification: Notification) => {
          logger.debug('[Notifications] Notification clicked', { id: notification.id });
-        // Mark as read even if not navigating
+        // Mark as read via API client
         if (!notification.read) {
-            markNotificationRead(notification.id);
+             api.notifications().markNotificationAsRead(notification.id).catch(err => {
+                 logger.error(`Failed to mark notification ${notification.id} as read`, { err });
+             });
+            // Optimistic update in store might be needed here
+            useNotificationStore.getState().markNotificationRead(notification.id); // Optimistic UI update
         }
-        // Navigate if target_path exists
-        if (notification.data?.target_path) {
-            navigate(notification.data.target_path);
+        // Navigate if target_path exists - use bracket notation
+        const targetPath = notification.data?.['target_path']; // Use optional chaining correctly
+        if (targetPath && typeof targetPath === 'string') { // Check if path exists and is a string
+            navigate(targetPath);
         }
         setIsOpen(false); // Close dropdown after interaction
     };
@@ -111,12 +104,22 @@ export const Notifications: React.FC = () => {
     const handleMarkReadClick = (e: React.MouseEvent, notificationId: string) => {
         e.stopPropagation(); // Prevent triggering handleNotificationClick
         logger.debug('[Notifications] Mark as read clicked', { id: notificationId });
-        markNotificationRead(notificationId);
+        // Mark as read via API client
+        api.notifications().markNotificationAsRead(notificationId).catch(err => {
+             logger.error(`Failed to mark notification ${notificationId} as read from button`, { err });
+         });
+         // Optimistic update in store might be needed here
+        useNotificationStore.getState().markNotificationRead(notificationId); // Optimistic UI update
     };
 
     const handleMarkAllReadClick = () => {
         logger.debug('[Notifications] Mark all as read clicked');
-        markAllNotificationsAsRead();
+        // Mark all as read via API client
+        api.notifications().markAllNotificationsAsRead().catch(err => {
+             logger.error(`Failed to mark all notifications as read`, { err });
+         });
+        // Optimistic update in store might be needed here
+        useNotificationStore.getState().markAllNotificationsAsRead(); // Optimistic UI update
     };
 
     if (!user) {
@@ -132,7 +135,6 @@ export const Notifications: React.FC = () => {
                         <Badge
                             variant="destructive"
                             className="absolute -top-1 -right-1 h-4 w-4 justify-center rounded-full p-0 text-xs"
-                            // Add aria-label for accessibility
                             aria-label={`${unreadCount} unread notifications`}
                         >
                             {unreadCount > 9 ? '9+' : unreadCount}
@@ -142,7 +144,7 @@ export const Notifications: React.FC = () => {
                 </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-80 max-h-[60vh] overflow-y-auto">
-                <DropdownMenuLabel className="flex justify-between items-center">
+                 <DropdownMenuLabel className="flex justify-between items-center">
                     <span>Notifications</span>
                     {unreadCount > 0 && (
                         <Button
@@ -166,6 +168,8 @@ export const Notifications: React.FC = () => {
                         const timeAgo = notification.created_at
                             ? formatDistanceToNowStrict(new Date(notification.created_at), { addSuffix: true })
                             : '';
+                        // Use bracket notation for data access
+                        const message = notification.data?.['message'] || 'System Notification';
                         return (
                             <DropdownMenuItem
                                 key={notification.id}
@@ -174,21 +178,19 @@ export const Notifications: React.FC = () => {
                                     !notification.read && 'bg-muted/50'
                                 )}
                                 onClick={() => handleNotificationClick(notification)}
-                                // Add aria-label describing the notification and its read status
-                                aria-label={`Notification: ${notification.data?.message || 'System Notification'}. ${!notification.read ? 'Unread.' : 'Read.'} Received ${timeAgo}`}
+                                aria-label={`Notification: ${message}. ${!notification.read ? 'Unread' : 'Read'}. Received ${timeAgo}`}
                             >
                                 {!notification.read && (
                                     <span className="mt-1 block h-2 w-2 rounded-full bg-blue-500 flex-shrink-0" aria-hidden="true" />
                                 )}
                                 <div className={cn("flex-grow", notification.read && "pl-4")}>
                                     <p className="text-sm font-medium leading-none mb-1">
-                                         {notification.data?.message || 'System Notification'}
+                                         {message}
                                     </p>
                                      <p className="text-xs text-muted-foreground">
                                          {timeAgo}
                                     </p>
                                  </div>
-                                 {/* Optional: Explicit mark as read button per item */}
                                  {!notification.read && (
                                      <Button
                                          variant="ghost"

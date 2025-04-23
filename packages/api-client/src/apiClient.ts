@@ -11,6 +11,8 @@ import { StripeApiClient } from './stripe.api';
 import { AiApiClient } from './ai.api';
 import { NotificationApiClient } from './notifications.api'; // Import new client
 import { logger } from '@paynless/utils';
+import type { RealtimeChannel, RealtimePostgresChangesPayload } from '@supabase/supabase-js';
+import { Notification } from '@paynless/types'; // Need Notification type
 
 // Define ApiError class locally for throwing (can extend the type)
 export class ApiError extends Error {
@@ -29,10 +31,15 @@ interface ApiClientConstructorOptions {
     supabaseAnonKey: string; // <<< Add anon key here
 }
 
+// Interface for the notification callback function (can be defined here or imported)
+type NotificationCallback = (notification: Notification) => void;
+
 export class ApiClient {
     private supabase: SupabaseClient<any>;
     private functionsUrl: string;
     private supabaseAnonKey: string; // <<< Add storage for anon key
+    // Store notification channels here, managed by the main client
+    private notificationChannels: Map<string, RealtimeChannel> = new Map();
 
     public billing: StripeApiClient;
     public ai: AiApiClient;
@@ -175,6 +182,95 @@ export class ApiClient {
     public async delete<T>(endpoint: string, options?: FetchOptions): Promise<ApiResponse<T>> {
         return this.request<T>(endpoint, { ...options, method: 'DELETE' });
     }
+
+    // --- NEW REALTIME METHODS --- 
+
+    /**
+     * Subscribes to new notifications for a specific user.
+     * @param userId The ID of the user to subscribe for.
+     * @param callback The function to call when a new notification arrives.
+     */
+    public subscribeToNotifications(userId: string, callback: NotificationCallback): void {
+        if (!userId) {
+            logger.warn('[ApiClient] Cannot subscribe to notifications: userId is missing.');
+            return;
+        }
+        if (this.notificationChannels.has(userId)) {
+            logger.warn(`[ApiClient] Already subscribed to notifications for user ${userId}.`);
+            return;
+        }
+
+        logger.debug(`[ApiClient] Subscribing to notifications for user ${userId}...`);
+        const channelName = `notifications-user-${userId}`;
+        // Use internal this.supabase
+        const channel = this.supabase.channel(channelName, {
+            config: {
+                broadcast: { self: false },
+                presence: { key: userId }, 
+            },
+        });
+
+        channel
+            .on<Notification>(
+                'postgres_changes',
+                {
+                    event: 'INSERT',
+                    schema: 'public',
+                    table: 'notifications',
+                    filter: `user_id=eq.${userId}`,
+                },
+                (payload: RealtimePostgresChangesPayload<Notification>) => {
+                    logger.info('[ApiClient] Realtime Notification INSERT received', { payload });
+                    if (payload.new) {
+                        const newNotification = payload.new as Notification;
+                        if (newNotification.id) {
+                            callback(newNotification);
+                        } else {
+                            logger.warn('[ApiClient] Received notification payload missing ID', { payload });
+                        }
+                    } else {
+                        logger.warn('[ApiClient] Received notification payload missing `new` object', { payload });
+                    }
+                }
+            )
+            .subscribe((status, err) => {
+                if (status === 'SUBSCRIBED') {
+                    logger.info(`[ApiClient] Realtime channel "${channelName}" subscribed successfully.`);
+                    this.notificationChannels.set(userId, channel); // Store the channel
+                } else {
+                    logger.error(`[ApiClient] Realtime channel "${channelName}" subscription error/status: ${status}`, { err });
+                    this.notificationChannels.delete(userId); // Clean up map on failure/close
+                }
+            });
+    }
+
+    /**
+     * Unsubscribes from new notifications for a specific user.
+     * @param userId The ID of the user to unsubscribe for.
+     */
+    public unsubscribeFromNotifications(userId: string): void {
+        if (!userId) {
+            logger.warn('[ApiClient] Cannot unsubscribe from notifications: userId is missing.');
+            return;
+        }
+        const channel = this.notificationChannels.get(userId);
+        if (channel) {
+            logger.debug(`[ApiClient] Unsubscribing from notifications for user ${userId}...`);
+            channel.unsubscribe()
+                .catch(error => {
+                    logger.error(`[ApiClient] Error unsubscribing notification channel for user ${userId}:`, { error });
+                })
+                .finally(() => {
+                    this.notificationChannels.delete(userId);
+                    // Attempt to remove the channel instance from Supabase client
+                    this.supabase.removeChannel(channel).catch(removeError => {
+                         logger.error(`[ApiClient] Error calling removeChannel for user ${userId}:`, { removeError });
+                    });
+                });
+        } else {
+            logger.warn(`[ApiClient] No active notification subscription found to unsubscribe for user ${userId}.`);
+        }
+    }
 }
 
 // --- Singleton Instance Logic --- 
@@ -232,5 +328,10 @@ export const api = {
         getApiClient().delete<T>(endpoint, options),
     ai: () => getApiClient().ai, 
     billing: () => getApiClient().billing,
-    notifications: () => getApiClient().notifications, // Add getter for notifications
+    notifications: () => getApiClient().notifications, // Getter for NotificationApiClient
+    // Add new Realtime methods to the exported api object
+    subscribeToNotifications: (userId: string, callback: NotificationCallback): void =>
+        getApiClient().subscribeToNotifications(userId, callback),
+    unsubscribeFromNotifications: (userId: string): void =>
+        getApiClient().unsubscribeFromNotifications(userId),
 }; 
