@@ -6,6 +6,7 @@ import {
   UserProfile,
   UserProfileUpdate,
   UserRole,
+  AuthResponse
 } from '@paynless/types'
 import { NavigateFunction } from '@paynless/types'
 import { logger } from '@paynless/utils'
@@ -420,12 +421,12 @@ export function initAuthListener(
                     const apiClientInstance = getApiClient();
                     // Fetch Profile
                     logger.debug(`[AuthListener] Fetching profile for ${event}`);
-                    const profileResponse = await apiClientInstance.get<UserProfile>('/me', {
+                    const profileResponse = await apiClientInstance.get<AuthResponse>('/me', {
                         token: storeSession.access_token, // Pass token explicitly
                     });
-                    if (profileResponse.data) {
+                    if (profileResponse.data && profileResponse.data.profile) {
                         logger.debug(`[AuthListener] Profile fetched successfully for ${event}`);
-                        useAuthStore.setState({ profile: profileResponse.data });
+                        useAuthStore.setState({ profile: profileResponse.data.profile });
                     } else {
                         logger.error(`[AuthListener] Failed to fetch profile for ${event}`, { error: profileResponse.error });
                         useAuthStore.setState({ profile: null, error: new Error(profileResponse.error?.message || 'Failed fetch profile') });
