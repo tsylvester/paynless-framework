@@ -607,6 +607,9 @@ export function initAuthListener(
             }
             const navigate = useAuthStore.getState().navigate;
             await replayPendingAction(apiClientInstance, navigate); 
+          } else {
+             // Explicitly set profile to null if there was no session during INITIAL_SESSION
+             // useAuthStore.setState({ profile: null }); // REMOVED: Redundant, first setState handles this.
           }
           break;
 

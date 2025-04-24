@@ -65,7 +65,7 @@
     *   **TDD:** (Integration test focus) Ensure the listener is called on app startup.
     *   **Implement:** Find where `initializeApiClient` is called. Immediately after, import `initAuthListener` from `@paynless/store` and `api` from `@paynless/api-client`. Call `initAuthListener(api.getSupabaseClient())`. Ensure this happens early in the app lifecycle, likely within a `useEffect` with an empty dependency array in `AppContent` or similar root component, *after* `apiClient` is initialized.
     *   **Refactor:** N/A.
-*   [ ] **1.6 Checkpoint 1:**
+*   [x] **1.6 Checkpoint 1:**
     *   **Run Unit Tests:** `pnpm test --filter=@paynless/store authStore.listener.test.ts` (or similar). Ensure they pass.
     *   **Run Unit Tests:** `pnpm test --filter=@paynless/api-client apiClient.test.ts` (or similar). Ensure they pass.
     *   **Build App:** `pnpm build`. Ensure it completes successfully.
@@ -78,10 +78,10 @@
 
 **Goal:** Fetch the user profile (`/me`) automatically when the listener confirms a valid session.
 
-*   [ ] **2.1 Test Listener Profile Fetch Logic:**
+*   [x] **2.1 Test Listener Profile Fetch Logic:**
     *   **File:** `packages/store/src/authStore.listener.test.ts`
     *   **TDD (RED):** Add/modify tests for the listener callback. Simulate `INITIAL_SESSION` or `SIGNED_IN` with a valid session. Mock `api.get('/me')`. Assert that `api.get('/me')` is called. Assert that `set` is called with the correct `profile` data on `/me` success. Assert `error` state is handled on `/me` failure.
-*   [ ] **2.2 Implement Listener Profile Fetch:**
+*   [x] **2.2 Implement Listener Profile Fetch:**
     *   **File:** `packages/store/src/authStore.ts` (within the listener callback).
     *   **TDD (GREEN):** Modify the callback logic for `INITIAL_SESSION` and `SIGNED_IN`:
         *   If a valid `session` is received:
