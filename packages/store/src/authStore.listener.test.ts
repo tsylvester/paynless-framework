@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach, type Mock } from 'vitest';
 import {
   SupabaseClient,
   Session as SupabaseSession,
@@ -16,6 +16,8 @@ vi.mock('./lib/replayPendingAction', () => ({
   replayPendingAction: vi.fn().mockResolvedValue(false), // Mock implementation
 }));
 
+// Import the mocked function to make assertions
+import { replayPendingAction } from './lib/replayPendingAction';
 
 // Define a type for the listener callback Supabase expects
 type AuthStateChangeListener = (event: AuthChangeEvent, session: SupabaseSession | null) => void;
@@ -74,6 +76,9 @@ const mockProfileData: UserProfile = {
 let listenerCallback: AuthStateChangeListener | null = null;
 const mockUnsubscribe = vi.fn();
 
+// Add mock navigate function
+const mockNavigate = vi.fn();
+
 const mockSupabaseClient = {
   auth: {
     onAuthStateChange: vi.fn((callback: AuthStateChangeListener) => {
@@ -108,6 +113,9 @@ describe('authStore Listener Logic (initAuthListener)', () => {
         error: null,
         navigate: null,
     }, true); // Replace state
+
+    // Set the mock navigate function in the store state
+    useAuthStore.setState({ navigate: mockNavigate });
 
     // Reset listener callback store
     listenerCallback = null;
@@ -158,6 +166,65 @@ describe('authStore Listener Logic (initAuthListener)', () => {
     });
     // Optionally check final state if needed
     // expect(useAuthStore.getState()).toMatchObject({ ... });
+
+    // Assert replayPendingAction was called
+    expect(replayPendingAction).toHaveBeenCalledTimes(1);
+    expect(replayPendingAction).toHaveBeenCalledWith(mockApiClientInstance, mockNavigate);
+  });
+
+  it('should set profile=null, set error, and still call replay on profile fetch failure', async () => {
+    const fetchError = new Error('Failed to fetch profile');
+    // Mock get to return an error
+    mockApiClientInstance.get = vi.fn().mockResolvedValue({ data: null, error: { message: fetchError.message, code: 500 }, status: 500 });
+
+    initAuthListener(mockSupabaseClient, mockApiClientInstance); 
+    expect(listenerCallback).toBeDefined();
+
+    await triggerListener('INITIAL_SESSION', mockSupabaseSession);
+
+    // Check API call
+    expect(mockApiClientInstance.get).toHaveBeenCalledTimes(1);
+    expect(mockApiClientInstance.get).toHaveBeenCalledWith('/me', { token: mockSupabaseSession.access_token });
+
+    // Check state updates (should be 2: session/user/loading, then profile/error)
+    expect(useAuthStore.setState).toHaveBeenCalledTimes(2); 
+    // Check first call (session/user/loading)
+    expect(useAuthStore.setState).toHaveBeenNthCalledWith(1, expect.objectContaining({
+      session: expectedMappedSession, 
+      user: expectedMappedUser, 
+      isLoading: false,
+      error: null,
+    }));
+    // Check second call (profile/error)
+    expect(useAuthStore.setState).toHaveBeenNthCalledWith(2, { 
+      profile: null, // Profile should be null on error
+      error: expect.any(Error) // Check if an error object was set
+    });
+    
+    // ---> Remove Logging <---
+    const actualError = useAuthStore.getState().error; // Keep this line to use below
+    // console.log('----- DEBUG START -----');
+    // console.log('Actual Error Object:', actualError);
+    // console.log('typeof Actual Error Object:', typeof actualError);
+    // console.log('Actual Error Message:', actualError?.message);
+    // console.log('Expected Error Message:', 'Failed to fetch profile'); // Corrected expected message here too
+    // console.log('Are messages strictly equal (===)?', actualError?.message === 'Failed to fetch profile');
+    // // Log character codes for comparison
+    // if (actualError?.message) {
+    //   console.log('Actual Char Codes:', actualError.message.split('').map(c => c.charCodeAt(0)));
+    // }
+    // console.log('Expected Char Codes:', 'Failed to fetch profile'.split('').map(c => c.charCodeAt(0)));
+    // console.log('----- DEBUG END -----');
+    // --- End Logging ---
+
+    // Existing assertions
+    expect(actualError).toBeInstanceOf(Error);
+    // ---> Correct the expected string literal <---
+    expect(actualError?.message).toEqual('Failed to fetch profile'); 
+
+    // Assert replayPendingAction was STILL called even after profile error
+    expect(replayPendingAction).toHaveBeenCalledTimes(1);
+    expect(replayPendingAction).toHaveBeenCalledWith(mockApiClientInstance, mockNavigate);
   });
 
   it('should set session=null, user=null, profile=null, isLoading=false on INITIAL_SESSION without session', async () => {
@@ -178,6 +245,9 @@ describe('authStore Listener Logic (initAuthListener)', () => {
       isLoading: false,
       error: null,
     });
+
+    // Assert replayPendingAction was NOT called
+    expect(replayPendingAction).not.toHaveBeenCalled();
   });
 
   it('should set session, user, profile on SIGNED_IN event', async () => {
@@ -201,6 +271,10 @@ describe('authStore Listener Logic (initAuthListener)', () => {
     expect(useAuthStore.setState).toHaveBeenNthCalledWith(2, { 
       profile: mockProfileData 
     });
+
+    // Assert replayPendingAction was called
+    expect(replayPendingAction).toHaveBeenCalledTimes(1);
+    expect(replayPendingAction).toHaveBeenCalledWith(mockApiClientInstance, mockNavigate);
   });
 
   it('should clear user, session, profile on SIGNED_OUT event', async () => {
@@ -209,7 +283,8 @@ describe('authStore Listener Logic (initAuthListener)', () => {
         session: expectedMappedSession, 
         user: expectedMappedUser, 
         profile: mockProfileData,
-        isLoading: false 
+        isLoading: false,
+        navigate: mockNavigate // Ensure navigate is set here too
     }, true);
     vi.clearAllMocks(); // Clear mocks after setting state
     vi.spyOn(useAuthStore, 'setState'); // Re-apply spy
@@ -229,6 +304,9 @@ describe('authStore Listener Logic (initAuthListener)', () => {
         isLoading: false, 
         error: null,
      });
+
+    // Assert replayPendingAction was NOT called
+    expect(replayPendingAction).not.toHaveBeenCalled();
   });
 
   it('should update session and user on TOKEN_REFRESHED event', async () => {
@@ -260,6 +338,9 @@ describe('authStore Listener Logic (initAuthListener)', () => {
         isLoading: false, 
         error: null,     
      });
+
+    // Assert replayPendingAction was NOT called (Token refresh itself doesn't trigger replay)
+    expect(replayPendingAction).not.toHaveBeenCalled();
   });
 
   // Add test for USER_UPDATED if needed
