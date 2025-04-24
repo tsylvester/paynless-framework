@@ -51,6 +51,7 @@
 *   [ ] Connect frontend analytics events (PostHog) to email marketing service (Kit) for behavioral triggers (IFTTT)
 *   [ ] Groups & organizations - how does Supabase currently support this? // Now being implemented
 *   [ ] Notifications - system wide and user specific // Now being implemented
+*   [ ] Add dark mode logo 
 
 **Chat Improvements**
 *   [ ] Fix homepage to load default choices correctly again
