@@ -80,12 +80,12 @@
 
 *   [x] **2.1 Test Listener Profile Fetch Logic:**
     *   **File:** `packages/store/src/authStore.listener.test.ts`
-    *   **TDD (RED):** Add/modify tests for the listener callback. Simulate `INITIAL_SESSION` or `SIGNED_IN` with a valid session. Mock `api.get('/me')`. Assert that `api.get('/me')` is called. Assert that `set` is called with the correct `profile` data on `/me` success. Assert `error` state is handled on `/me` failure.
+    *   **TDD (RED):** Add/modify tests for the listener callback. Simulate `INITIAL_SESSION` or `SIGNED_IN` with a valid session. Mock `api.get('me')`. Assert that `api.get('me')` is called. Assert that `set` is called with the correct `profile` data on `me` success. Assert `error` state is handled on `me` failure.
 *   [x] **2.2 Implement Listener Profile Fetch:**
     *   **File:** `packages/store/src/authStore.ts` (within the listener callback).
     *   **TDD (GREEN):** Modify the callback logic for `INITIAL_SESSION` and `SIGNED_IN`:
         *   If a valid `session` is received:
-            *   Call `api.get<UserProfile>('/me', { token: session.access_token })`. *(Note: Still need to pass token explicitly here as this runs before internal state might be ready)*.
+            *   Call `api.get<UserProfile>('me', { token: session.access_token })`. *(Note: Still need to pass token explicitly here as this runs before internal state might be ready)*.
             *   On success, call `set({ profile: response.data })`.
             *   On failure, call `set({ error: new Error('Failed to fetch profile'), profile: null })` and log the error.
         *   If `session` is null (e.g., `SIGNED_OUT`, `INITIAL_SESSION` with no session):
@@ -117,7 +117,7 @@
     *   **TDD (GREEN):** Modify the `login` action:
         *   Set `isLoading: true`, `error: null`.
         *   Call `await supabase.auth.signInWithPassword({ email, password })`. (Need access to the client instance).
-        *   Remove the previous `api.post('/login')` call and the subsequent manual `set` calls for user/session/profile on success.
+        *   Remove the previous `api.post('login')` call and the subsequent manual `set` calls for user/session/profile on success.
         *   In the `catch` block, set `error` state based on the error from `signInWithPassword`.
         *   In a `finally` block (or at end of try/catch), set `isLoading: false`.
         *   *(Keep replay logic for now, but it might need adjustment later)*.
@@ -155,10 +155,10 @@
 *   [✅] **4.4 Refactor Listener Callback:** Modified the `onAuthStateChange` callback to be synchronous for immediate state updates (`isLoading`, `session`, `user`) and deferred asynchronous tasks (profile fetch, action replay) using `setTimeout(..., 0)` to prevent deadlocks, per Supabase docs.
 *   [✅] **4.5 Correct Profile Fetch Handling:** Updated the profile fetch within the listener to expect the `AuthResponse` structure from `/me` and correctly extract `response.data.profile` before setting state.
 *   [🔄] **4.6 Address Pending Action Replay:** The `replayPendingAction` function, previously triggered within `login`/`register`, is likely broken due to the refactor. Needs investigation and fixing. The associated test (`authStore.refresh.test.ts` or similar) is currently skipped or failing.
-    *   **Decision:** Refactoring this flow. The listener will no longer trigger replay directly. Instead, the target page (e.g., `/chat`) will handle replay optimistically on load. See Phase 5.
+    *   **Decision:** Refactoring this flow. The listener will no longer trigger replay directly. Instead, the target page (e.g., `/chat`) will handle replay optimistically on load. See Phase 5. (Tests related to this area now passing/addressed).
 
-*   [ ] **4.7 Checkpoint 4:**
-    *   **Run Unit Tests:** `pnpm test --filter=@paynless/store`. Verify all tests pass *except* the known failing/skipped test for `replayPendingAction` (which will be addressed/removed in Phase 5).
+*   [✅] **4.7 Checkpoint 4:**
+    *   **Run Unit Tests:** `pnpm test --filter=@paynless/store`. Verify all tests pass ~~*except* the known failing/skipped test for `replayPendingAction` (which will be addressed/removed in Phase 5)~~.
     *   **Build App:** `pnpm build`. Ensure it completes successfully.
     *   **Manual Test:** Thoroughly test login, logout, page refresh while logged in/out. Verify profile displays correctly.
     *   **Commit:** `refactor(auth): complete Supabase listener integration and cleanup (#issue_number)`
@@ -178,7 +178,7 @@
     *   **File:** `packages/store/src/authStore.ts` (within `onAuthStateChange`, likely `SIGNED_IN`)
     *   **TDD:** Test that if `pendingAction` exists in `localStorage` on sign-in, `navigate(pendingAction.returnPath)` is called promptly.
     *   **Implement:** After setting `isLoading: false` and `user/session` on `SIGNED_IN`, check `localStorage.getItem('pendingAction')`. If it exists, parse it, read `returnPath`, call `navigate(returnPath)`, and potentially clear the `pendingAction` *or* leave it for the target page to clear.
-*   [ ] **5.3 Find Chat Page Component:** Identify the main React component responsible for rendering the `/chat` route (e.g., `AiChatPage.tsx`).
+*   [ ] **5.3 Find Chat Page Component:** Identify the main React component responsible for rendering the `chat` route (e.g., `AiChatPage.tsx`).
 *   [ ] **5.4 Implement Component Hook:**
     *   **File:** Chat Page Component (e.g., `apps/web/src/pages/AiChat.tsx`)
     *   **TDD:** Write simple component test to ensure the store action is called on mount.
@@ -190,13 +190,13 @@
         *   Test reading/parsing/clearing `localStorage`.
         *   Test correct identification of chat actions.
         *   Test optimistic state update (adding user message with 'pending' status).
-        *   Test triggering `api.post('/chat', ...)` with correct arguments.
+        *   Test triggering `api.post('chat', ...)` with correct arguments.
         *   Test state updates on API success (message status -> 'sent', add AI response).
         *   Test state updates on API failure (message status -> 'error').
     *   **Implement:** Create the `checkAndReplayPendingChatAction` action:
         *   Include all logic for reading/parsing/clearing `localStorage`.
         *   Perform optimistic `set` call to add user message with 'pending' status.
-        *   Make the `api.post('/chat', ...)` call.
+        *   Make the `api.post('chat', ...)` call.
         *   Handle success/failure by calling `set` again to update message status and add AI response/error details.
         *   Ensure the store state (`ChatMessage` type?) can handle the 'pending'/'error' statuses.
 *   [ ] **5.6 Refactor/Remove `replayPendingAction.ts`:**
@@ -206,7 +206,7 @@
     *   **Run Unit Tests:** `pnpm test --filter=@paynless/store` and relevant UI tests. Ensure all pass.
     *   **Build App:** `pnpm build`. Ensure it completes successfully.
     *   **Manual Test:** Repeat the unauthenticated chat -> login flow. Verify:
-        *   Navigation to `/chat` is fast after login.
+        *   Navigation to `chat` is fast after login.
         *   The user's original message appears quickly in the chat list with a pending indicator.
         *   The AI response appears after the ~9-second delay, replacing the indicator.
         *   Check `localStorage` to ensure `pendingAction` is cleared.

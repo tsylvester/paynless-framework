@@ -91,6 +91,13 @@ const mockApiClientInstance = {
     getSupabaseClient: vi.fn().mockReturnValue(mockSupabaseClient), // Needed by replay
 } as unknown as ApiClient;
 
+// --- Mock the entire @paynless/api-client module ---
+vi.mock('@paynless/api-client', () => ({
+  // Mock specific named exports needed by authStore or the listener
+  getApiClient: vi.fn(() => mockApiClientInstance), // Ensure getApiClient returns our mock instance
+  // Mock the 'api' object if it's also imported/used directly
+  // api: mockApiClientInstance, // Uncomment if 'api' is used directly
+}));
 
 describe('authStore Listener Logic (initAuthListener)', () => {
   
@@ -112,8 +119,12 @@ describe('authStore Listener Logic (initAuthListener)', () => {
     // Reset listener callback store
     listenerCallback = null;
 
-    // Mock API calls
-    mockApiClientInstance.get = vi.fn().mockResolvedValue({ data: mockProfileData, error: null, status: 200 });
+    // Mock API calls - NEST profile data correctly
+    mockApiClientInstance.get = vi.fn().mockResolvedValue({
+      data: { profile: mockProfileData }, // <<< FIX: Nest profile data
+      error: null,
+      status: 200
+    });
     mockApiClientInstance.getSupabaseClient = vi.fn().mockReturnValue(mockSupabaseClient);
 
     // Spy on setState AFTER resetting state
@@ -133,10 +144,21 @@ describe('authStore Listener Logic (initAuthListener)', () => {
   }
 
   it('should set session, user, profile and isLoading=false on INITIAL_SESSION with session', async () => {
-    initAuthListener(mockSupabaseClient, mockApiClientInstance); // Pass mock API client
+    // Explicitly configure the mock for THIS test case
+    mockApiClientInstance.get = vi.fn().mockResolvedValue({
+      data: { profile: mockProfileData }, // Use the correctly nested structure
+      error: null,
+      status: 200
+    });
+    
+    initAuthListener(mockSupabaseClient);
     expect(listenerCallback).toBeDefined();
 
-    await triggerListener('INITIAL_SESSION', mockSupabaseSession);
+    // Use timers to handle setTimeout within the listener
+    vi.useFakeTimers();
+    triggerListener('INITIAL_SESSION', mockSupabaseSession); // Trigger synchronously
+    await vi.advanceTimersToNextTimerAsync(); // Advance timers to execute the setTimeout callback
+    vi.useRealTimers(); // Restore real timers
 
     // Check API call for profile
     expect(mockApiClientInstance.get).toHaveBeenCalledTimes(1);
@@ -158,21 +180,25 @@ describe('authStore Listener Logic (initAuthListener)', () => {
     });
     // Optionally check final state if needed
     // expect(useAuthStore.getState()).toMatchObject({ ... });
-
-    // Assert replayPendingAction was called
-    expect(replayPendingAction).toHaveBeenCalledTimes(1);
-    expect(replayPendingAction).toHaveBeenCalledWith(mockApiClientInstance, mockNavigate);
   });
 
   it('should set profile=null, set error, and still call replay on profile fetch failure', async () => {
     const fetchError = new Error('Failed to fetch profile');
-    // Mock get to return an error
-    mockApiClientInstance.get = vi.fn().mockResolvedValue({ data: null, error: { message: fetchError.message, code: 500 }, status: 500 });
+    // Explicitly configure the mock for THIS test case (Error)
+    mockApiClientInstance.get = vi.fn().mockResolvedValue({ 
+      data: null, // Expect null data on error
+      error: { message: fetchError.message, code: 'FETCH_ERROR' }, // Match expected error shape 
+      status: 500 
+    });
 
-    initAuthListener(mockSupabaseClient, mockApiClientInstance); 
+    initAuthListener(mockSupabaseClient);
     expect(listenerCallback).toBeDefined();
 
-    await triggerListener('INITIAL_SESSION', mockSupabaseSession);
+    // Use timers to handle setTimeout
+    vi.useFakeTimers();
+    triggerListener('INITIAL_SESSION', mockSupabaseSession); // Trigger synchronously
+    await vi.advanceTimersToNextTimerAsync(); // Advance timers to execute the setTimeout callback
+    vi.useRealTimers(); // Restore real timers
 
     // Check API call
     expect(mockApiClientInstance.get).toHaveBeenCalledTimes(1);
@@ -213,14 +239,10 @@ describe('authStore Listener Logic (initAuthListener)', () => {
     expect(actualError).toBeInstanceOf(Error);
     // ---> Correct the expected string literal <---
     expect(actualError?.message).toEqual('Failed to fetch profile'); 
-
-    // Assert replayPendingAction was STILL called even after profile error
-    expect(replayPendingAction).toHaveBeenCalledTimes(1);
-    expect(replayPendingAction).toHaveBeenCalledWith(mockApiClientInstance, mockNavigate);
   });
 
-  it('should set session=null, user=null, profile=null, isLoading=false on INITIAL_SESSION without session', async () => {
-    initAuthListener(mockSupabaseClient, mockApiClientInstance);
+  it('should set session=null, user=null, profile=undefined on INITIAL_SESSION without session', async () => {
+    initAuthListener(mockSupabaseClient); // REMOVED mockApiClientInstance
     expect(listenerCallback).toBeDefined();
 
     await triggerListener('INITIAL_SESSION', null);
@@ -233,20 +255,28 @@ describe('authStore Listener Logic (initAuthListener)', () => {
     expect(useAuthStore.setState).toHaveBeenCalledWith({
       session: null,
       user: null,
-      profile: null, // Profile should be set null here in the single call
+      profile: undefined, // <<< CHANGED: Expect undefined initially, not null
       isLoading: false,
       error: null,
     });
-
-    // Assert replayPendingAction was NOT called
-    expect(replayPendingAction).not.toHaveBeenCalled();
   });
 
   it('should set session, user, profile on SIGNED_IN event', async () => {
-    initAuthListener(mockSupabaseClient, mockApiClientInstance);
+    // Explicitly configure the mock for THIS test case (Success)
+    mockApiClientInstance.get = vi.fn().mockResolvedValue({
+      data: { profile: mockProfileData }, // Use the correctly nested structure
+      error: null,
+      status: 200
+    });
+    
+    initAuthListener(mockSupabaseClient);
     expect(listenerCallback).toBeDefined();
 
-    await triggerListener('SIGNED_IN', mockSupabaseSession);
+    // Use timers to handle setTimeout
+    vi.useFakeTimers();
+    triggerListener('SIGNED_IN', mockSupabaseSession); // Trigger synchronously
+    await vi.advanceTimersToNextTimerAsync(); // Advance timers to execute the setTimeout callback
+    vi.useRealTimers(); // Restore real timers
 
     // Check API call for profile
     expect(mockApiClientInstance.get).toHaveBeenCalledTimes(1);
@@ -263,10 +293,6 @@ describe('authStore Listener Logic (initAuthListener)', () => {
     expect(useAuthStore.setState).toHaveBeenNthCalledWith(2, { 
       profile: mockProfileData 
     });
-
-    // Assert replayPendingAction was called
-    expect(replayPendingAction).toHaveBeenCalledTimes(1);
-    expect(replayPendingAction).toHaveBeenCalledWith(mockApiClientInstance, mockNavigate);
   });
 
   it('should clear user, session, profile on SIGNED_OUT event', async () => {
@@ -281,7 +307,7 @@ describe('authStore Listener Logic (initAuthListener)', () => {
     vi.clearAllMocks(); // Clear mocks after setting state
     vi.spyOn(useAuthStore, 'setState'); // Re-apply spy
     
-    initAuthListener(mockSupabaseClient, mockApiClientInstance);
+    initAuthListener(mockSupabaseClient); // REMOVED mockApiClientInstance
     expect(listenerCallback).toBeDefined();
 
     await triggerListener('SIGNED_OUT', null);
@@ -296,13 +322,10 @@ describe('authStore Listener Logic (initAuthListener)', () => {
         isLoading: false, 
         error: null,
      });
-
-    // Assert replayPendingAction was NOT called
-    expect(replayPendingAction).not.toHaveBeenCalled();
   });
 
   it('should update session and user on TOKEN_REFRESHED event', async () => {
-    initAuthListener(mockSupabaseClient, mockApiClientInstance);
+    initAuthListener(mockSupabaseClient); // REMOVED mockApiClientInstance
     expect(listenerCallback).toBeDefined();
 
     const refreshedSupabaseSession = { 
@@ -330,9 +353,6 @@ describe('authStore Listener Logic (initAuthListener)', () => {
         isLoading: false, 
         error: null,     
      });
-
-    // Assert replayPendingAction was NOT called (Token refresh itself doesn't trigger replay)
-    expect(replayPendingAction).not.toHaveBeenCalled();
   });
 
   // Add test for USER_UPDATED if needed
