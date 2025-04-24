@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import {
-  AuthStore as AuthStoreType,
+  AuthStore,
+  AuthResponse,
   User,
   Session,
   UserProfile,
@@ -11,12 +12,12 @@ import {
 import { NavigateFunction } from '@paynless/types'
 import { logger } from '@paynless/utils'
 import { persist } from 'zustand/middleware'
-import { api, ApiClient } from '@paynless/api-client'
+import { api, getApiClient, ApiClient } from '@paynless/api-client'
 import { analytics } from '@paynless/analytics-client'
 import { SupabaseClient, Session as SupabaseSession, User as SupabaseUser } from '@supabase/supabase-js'
 import { replayPendingAction } from './lib/replayPendingAction'
 
-export const useAuthStore = create<AuthStoreType>()(
+export const useAuthStore = create<AuthStore>()(
   persist(
     (set, get) => ({
       user: null,
@@ -41,113 +42,497 @@ export const useAuthStore = create<AuthStoreType>()(
       login: async (email: string, password: string): Promise<User | null> => {
         set({ isLoading: true, error: null })
         try {
-          const supabase = api.getSupabaseClient()
-          const { error } = await supabase.auth.signInWithPassword({
-            email,
-            password,
+          const response = await api.post<
+            AuthResponse,
+            { email: string; password: string }
+          >('login', { email, password })
+
+          if (!response.error && response.data) {
+            const authData = response.data
+            set({
+              user: authData.user,
+              session: authData.session,
+              profile: authData.profile,
+              isLoading: false,
+              error: null,
+            })
+
+            // ---> Identify user for analytics <---
+            if (authData.user?.id) {
+              analytics.identify(authData.user.id, {
+                email: authData.user.email,
+              })
+            }
+
+            // Navigate to dashboard only if we didn't navigate based on returnPath
+              const navigate = get().navigate
+              if (navigate) {
+                logger.info(
+                  'Login successful (no pending action/navigation), navigating to dashboard.'
+                )
+                navigate('dashboard')
+              } else {
+                logger.warn(
+                  'Login successful but navigate function not set in store.'
+                )
+              }
+          
+
+            return authData.user ?? null
+          } else {
+            const errorMessage =
+              response.error?.message || 'Login failed without specific error'
+            throw new Error(errorMessage)
+          }
+        } catch (error) {
+          const finalError =
+            error instanceof Error ? error : new Error('Unknown login error')
+          logger.error('Login error in store', { message: finalError.message })
+          set({
+            isLoading: false,
+            error: finalError,
+            user: null,
+            session: null,
+            profile: null,
           })
-          if (error) throw error;
-          set({ isLoading: false })
-          return null // Listener handles state
-        } catch (error) {
-          const finalError = error instanceof Error ? error : new Error('Unknown login error')
-          logger.error('Login action error:', { message: finalError.message })
-          set({ isLoading: false, error: finalError, user: null, session: null, profile: null })
           return null
         }
       },
 
-      register: async (email: string, password: string): Promise<User | null> => {
+      register: async (
+        email: string,
+        password: string
+      ): Promise<User | null> => {
         set({ isLoading: true, error: null })
         try {
-          const supabase = api.getSupabaseClient()
-          const { error } = await supabase.auth.signUp({ email, password })
-          if (error) throw error;
-          set({ isLoading: false })
-          return null // Listener handles state
+          const response = await api.post<
+            AuthResponse,
+            { email: string; password: string }
+          >('register', { email, password })
+
+          if (!response.error && response.data) {
+            const authData = response.data
+            set({
+              user: authData.user,
+              session: authData.session,
+              profile: null,
+              isLoading: false,
+              error: null,
+            })
+
+            // ---> Identify user for analytics <---
+            if (authData.user?.id) {
+              analytics.identify(authData.user.id, {
+                email: authData.user.email,
+              })
+            }
+
+            // Use the navigate function if available AND if we didn't navigate via returnPath
+              const navigate = get().navigate
+              if (navigate) {
+                logger.info(
+                  'Registration successful (no pending action/navigation), navigating to dashboard.'
+                )
+                navigate('dashboard')
+              } else {
+                logger.warn(
+                  'Registration successful but navigate function not set in store.'
+                )
+              }
+          
+
+            return authData.user ?? null
+          } else {
+            const errorMessage =
+              response.error?.message || 'Registration failed'
+            throw new Error(errorMessage)
+          }
         } catch (error) {
-          const finalError = error instanceof Error ? error : new Error('Unknown registration error')
-          logger.error('Register action error:', { message: finalError.message })
-          set({ isLoading: false, error: finalError, user: null, session: null, profile: null })
+          const finalError =
+            error instanceof Error
+              ? error
+              : new Error('Unknown registration error')
+          logger.error('Register error in store', {
+            message: finalError.message,
+          })
+          set({
+            isLoading: false,
+            error: finalError,
+            user: null,
+            session: null,
+            profile: null,
+          })
           return null
         }
       },
 
-      logout: async (): Promise<void> => {
-        set({ isLoading: true, error: null })
+      logout: async () => {
+        // ---> Reset analytics user <---
         analytics.reset()
-        try {
-          const supabase = api.getSupabaseClient()
-          const { error } = await supabase.auth.signOut()
-          if (error) logger.error('Supabase sign-out error:', { error })
+
+        const token = get().session?.access_token
+
+        if (token) {
+          set({ isLoading: true, error: null })
+          try {
+            await api.post('logout', {}, { token })
+            logger.info('AuthStore: Logout API call successful.')
+          } catch (error) {
+            logger.error(
+              'Logout API call failed, proceeding with local cleanup.',
+              { error: error instanceof Error ? error.message : String(error) }
+            )
+          } finally {
+            // Always clear local state
+            set({
+              user: null,
+              session: null,
+              profile: null,
+              isLoading: false,
+              error: null,
+            })
+
+            // Clear localStorage items including Zustand's persisted state
+            localStorage.removeItem('auth-storage') // This is the Zustand persist key
+            localStorage.removeItem('pendingAction')
+            localStorage.removeItem('loadChatIdOnRedirect')
+          }
+        } else {
+          logger.warn(
+            'Logout called but no session token found. Clearing local state only.'
+          )
+          set({
+            user: null,
+            session: null,
+            profile: null,
+            isLoading: false,
+            error: null,
+          })
+          localStorage.removeItem('auth-storage')
           localStorage.removeItem('pendingAction')
           localStorage.removeItem('loadChatIdOnRedirect')
-        } catch (error) {
-          logger.error('Unexpected error during logout action:', { error })
-        } finally {
-          set({ isLoading: false })
-          const navigate = get().navigate
-          if (navigate) navigate('login'); 
-          else logger.warn('Logout: navigate function not available.')
+        }
+
+        // Navigate to login
+        const navigate = get().navigate
+        if (navigate) {
+          navigate('login')
+          logger.info('Cleared local state and navigated to /login.')
+        } else {
+          logger.error(
+            'Logout cleanup complete but navigate function not available in store.'
+          )
         }
       },
 
-      initialize: async (): Promise<void> => {
-        logger.debug('AuthStore initialize action called (now minimal)')
-      },
-
-      refreshSession: async (): Promise<void> => {
-        logger.warn('refreshSession not implemented for Supabase v2 listener pattern yet.');
-        set({ isLoading: false }); 
-      },
-
-      updateProfile: async (profileData: UserProfileUpdate): Promise<UserProfile | null> => {
-        logger.warn('updateProfile needs implementation using Supabase client.');
-        const token = get().session?.access_token;
-        if (!token) {
-            set({ error: new Error('Not authenticated') });
-            return null;
-        }
-        set({ error: null });
+      initialize: async () => {
         try {
-             const response = await api.put<UserProfile, UserProfileUpdate>(
-               'me',
-               profileData,
-               { token }
-             );
-             if (response.data && !response.error) {
-                set({ profile: response.data });
-                return response.data;
-             } else {
-                throw new Error(response.error?.message || 'Failed to update profile');
-             }
+          // Get session from Zustand's persisted state
+          const session = get().session
+          //const user = get().user;
+
+          // If no session or expired session, clear state and return
+          if (!session || !session.access_token) {
+            logger.info('No session found in store.')
+            set({
+              user: null,
+              profile: null,
+              session: null,
+              isLoading: false,
+              error: null,
+            })
+            return
+          }
+
+          // Check for expired session
+          if (session.expiresAt * 1000 < Date.now()) {
+            logger.info('Stored session is expired.')
+
+            // Try to refresh if we have a refresh token
+            if (session.refresh_token) {
+              logger.info('Attempting to refresh expired token...')
+              await get().refreshSession()
+            } else {
+              // No refresh token, clear state
+              set({
+                user: null,
+                profile: null,
+                session: null,
+                isLoading: false,
+                error: null,
+              })
+              localStorage.removeItem('auth-storage')
+            }
+            return
+          }
+          // Session exists and is not expired, verify with backend
+          logger.info(
+            'Valid session found, verifying token / fetching initial profile...'
+          )
+          const response = await api.get<AuthResponse>('me', {
+            token: session.access_token,
+          })
+          if (response.error || !response.data || !response.data.user) {
+            // Token invalid or expired
+            logger.error('/me call failed after restoring session.', {
+              error: response.error,
+            })
+
+            // Try refreshing the token
+            logger.info('Attempting to refresh token after failed /me call...')
+            await get().refreshSession()
+            return
+          }
+          // /me successful, update user/profile
+          logger.info('/me call successful, user authenticated.')
+          set({
+            user: response.data.user,
+            profile: response.data.profile,
+            isLoading: false,
+            error: null,
+          })
+
+          // ---> Identify user for analytics <---
+          if (response.data.user?.id) {
+            analytics.identify(response.data.user.id, {
+              email: response.data.user.email,
+              // Add traits from profile if available
+              firstName: response.data.profile?.first_name,
+              lastName: response.data.profile?.last_name,
+            })
+          }
+
+          // Refresh token if it expires soon (within 10 minutes)
+          const expiresAt = session.expiresAt * 1000
+          const now = Date.now()
+          const timeUntilExpiry = expiresAt - now
+
+          if (timeUntilExpiry < 10 * 60 * 1000) {
+            logger.info('Token expires soon, refreshing...')
+            await get().refreshSession()
+          }
+
+          // Check for pending action and replay
+          const navigate = get().navigate;
+          const apiClientInstance = getApiClient();
+          
+          if (navigate) {
+            await replayPendingAction(apiClientInstance, navigate);
+          } else {
+            logger.warn('Cannot replay pending action: navigate function not available.');
+          }
         } catch (error) {
-             const finalError = error instanceof Error ? error : new Error('Update profile failed');
-             logger.error('Update profile failed', { error: finalError });
-             set({ error: finalError });
-             return null;
+          logger.error('Error during initialization process', {
+            error: error instanceof Error ? error.message : String(error),
+          })
+          set({
+            isLoading: false,
+            user: null,
+            session: null,
+            profile: null,
+            error: new Error('Error during initialization', {
+              cause: error instanceof Error ? error : undefined,
+            }),
+          })
+          // Clear localStorage on error
+          localStorage.removeItem('auth-storage')
+        }
+      },
+
+      refreshSession: async () => {
+        const currentSession = get().session
+        if (!currentSession?.refresh_token) {
+          logger.warn('refreshSession called without a refresh token.')
+          set({
+            error: new Error('No refresh token available to refresh session.'),
+            isLoading: false,
+          })
+          return
+        }
+        set({ isLoading: true, error: null })
+        try {
+          const response = await api.post<RefreshResponse, {}>(
+            'refresh',
+            {},
+            {
+              headers: {
+                Authorization: `Bearer ${currentSession.refresh_token}`,
+              },
+            }
+          )
+
+          if (!response.error && response.data) {
+            const refreshData = response.data
+            if (refreshData?.session && refreshData?.user) {
+              set({
+                session: refreshData.session,
+                user: refreshData.user,
+                profile: refreshData.profile,
+                isLoading: false,
+                error: null,
+              })
+
+              logger.info('Session refreshed successfully')
+
+              // Call replay after successful refresh and state update
+              const navigate = get().navigate;
+              const apiClientInstance = getApiClient();
+              
+              if (navigate) {
+                await replayPendingAction(apiClientInstance, navigate);
+              } else {
+                logger.warn('Cannot replay pending action: navigate function not available.');
+              }
+            } else {
+              logger.error('Refresh returned invalid data', { refreshData })
+              set({
+                session: null,
+                user: null,
+                profile: null,
+                isLoading: false,
+                error: new Error(
+                  'Failed to refresh session (invalid response)'
+                ),
+              })
+              localStorage.removeItem('auth-storage')
+            }
+          } else {
+            const errorMessage =
+              response.error?.message || 'Failed to refresh session'
+            logger.error('Refresh API error', { error: response.error })
+            localStorage.removeItem('auth-storage')
+            throw new Error(errorMessage)
+          }
+        } catch (error) {
+          const finalError =
+            error instanceof Error
+              ? error
+              : new Error('Error refreshing session')
+          logger.error('Refresh session error', { message: finalError.message })
+          localStorage.removeItem('auth-storage')
+          set({
+            session: null,
+            user: null,
+            profile: null,
+            isLoading: false,
+            error: finalError,
+          })
+        }
+      },
+
+      updateProfile: async (
+        profileData: UserProfileUpdate
+      ): Promise<UserProfile | null> => {
+        set({ error: null })
+        const token = get().session?.access_token
+        const currentProfile = get().profile
+
+        // Check if authenticated first
+        if (!token) {
+          logger.error(
+            'updateProfile: Cannot update profile, user not authenticated.'
+          )
+          set({ error: new Error('Not authenticated') })
+          return null
+        }
+
+        // Then check if profile is loaded
+        if (!currentProfile) {
+          logger.error(
+            'updateProfile: Cannot update profile, no current profile loaded.'
+          )
+          set({
+            error: new Error('Profile not loaded'),
+          })
+          return null
+        }
+
+        try {
+          const response = await api.put<UserProfile, UserProfileUpdate>(
+            'me',
+            profileData,
+            { token }
+          )
+
+          if (!response.error && response.data) {
+            const updatedProfile = response.data
+            set({
+              profile: updatedProfile,
+              error: null,
+            })
+            logger.info('Profile updated successfully.')
+            return updatedProfile
+          } else {
+            const errorMessage =
+              response.error?.message || 'Failed to update profile'
+            throw new Error(errorMessage)
+          }
+        } catch (error) {
+          const finalError =
+            error instanceof Error
+              ? error
+              : new Error('Failed to update profile (API error)')
+          logger.error('Update profile: Error during API call.', {
+            message: finalError.message,
+          })
+          set({ error: finalError })
+          return null
         }
       },
 
       updateEmail: async (newEmail: string): Promise<boolean> => {
-        logger.warn('updateEmail needs implementation using Supabase client.');
-         const token = get().session?.access_token; 
-         if (!token) {
-            set({ error: new Error('Not authenticated') });
-            return false;
-         }
-        set({ error: null });
+        set({ error: null })
+        const token = get().session?.access_token
+
+        if (!token) {
+          const error = new Error('Authentication required to update email.')
+          set({ error })
+          return false // Indicate failure
+        }
+
+        logger.info('[AuthStore] Attempting to update email...', {
+          email: newEmail,
+        })
+
         try {
-             const supabase = api.getSupabaseClient();
-             const { error } = await supabase.auth.updateUser({ email: newEmail });
-             if (error) throw error;
-             logger.info('Supabase email update initiated. Confirmation likely required.');
-             return true; 
+          // Call the new Supabase Edge Function
+          const response = await api.post<
+            { success: boolean },
+            { email: string }
+          >(
+            'update-email', // Endpoint name for the new function
+            { email: newEmail },
+            { token }
+          )
+
+          if (!response.error && response.data?.success) {
+            logger.info(
+              '[AuthStore] Email update request successful. Verification email likely sent.'
+            )
+            set({ error: null })
+            // Note: The user object in the store might not reflect the change immediately.
+            // Supabase Auth handles the email change flow (verification).
+            // We might need to fetch the user again or rely on Supabase listeners if immediate UI update is needed.
+            // For now, we just return success.
+            return true // Indicate success
+          } else {
+            const errorMessage =
+              response.error?.message || 'Failed to update email via API'
+            logger.error('[AuthStore] Email update API call failed:', {
+              error: errorMessage,
+            })
+            throw new Error(errorMessage)
+          }
         } catch (error) {
-            const finalError = error instanceof Error ? error : new Error('Update email failed');
-            logger.error('Update email failed', { error: finalError });
-            set({ error: finalError });
-            return false;
+          const finalError =
+            error instanceof Error
+              ? error
+              : new Error('Unknown error during email update')
+          logger.error('[AuthStore] updateEmail action failed:', {
+            message: finalError.message,
+          })
+          set({ error: finalError })
+          return false // Indicate failure
         }
       },
 
@@ -155,7 +540,11 @@ export const useAuthStore = create<AuthStoreType>()(
     }),
     {
       name: 'auth-storage',
-      partialize: (state) => ({}),
+      // Store session and user in localStorage through Zustand persist
+      partialize: (state) => ({
+        session: state.session,
+        user: state.user, // Include user to prevent user/session mismatch
+      }),
     }
   )
 )

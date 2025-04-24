@@ -57,6 +57,7 @@ export interface AuthStore {
   isLoading: boolean
   error: Error | null
   navigate: NavigateFunction | null
+  
 }
 
 export interface Session {
