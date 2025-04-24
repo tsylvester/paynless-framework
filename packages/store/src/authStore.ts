@@ -415,15 +415,20 @@ export function initAuthListener(
 
         // Now, handle ASYNCHRONOUS tasks (profile fetch, replay) AFTER the main callback finishes
         if ((event === 'INITIAL_SESSION' || event === 'SIGNED_IN') && storeSession?.access_token) {
-            setTimeout(async () => {
+            setTimeout(async () => { 
+                const startTime = Date.now(); // Start timer
                 logger.debug(`[AuthListener] Performing async tasks for ${event}`);
                 try {
                     const apiClientInstance = getApiClient();
-                    // Fetch Profile
-                    logger.debug(`[AuthListener] Fetching profile for ${event}`);
-                    const profileResponse = await apiClientInstance.get<AuthResponse>('/me', {
-                        token: storeSession.access_token, // Pass token explicitly
-                    });
+                    const token = storeSession.access_token;
+
+                    // --- Delay Point 1: Profile Fetch ---
+                    logger.debug(`[AuthListener] Fetching profile for ${event}...`);
+                    const profileStartTime = Date.now();
+                    const profileResponse = await apiClientInstance.get<AuthResponse>('/me', { token });
+                    const profileEndTime = Date.now();
+                    logger.debug(`[AuthListener] Profile fetch completed for ${event}. Duration: ${profileEndTime - profileStartTime}ms`);
+                    
                     if (profileResponse.data && profileResponse.data.profile) {
                         logger.debug(`[AuthListener] Profile fetched successfully for ${event}`);
                         useAuthStore.setState({ profile: profileResponse.data.profile });
@@ -432,17 +437,22 @@ export function initAuthListener(
                         useAuthStore.setState({ profile: null, error: new Error(profileResponse.error?.message || 'Failed fetch profile') });
                     }
 
-                    // Replay Action
-                    logger.debug(`[AuthListener] Checking for pending action for ${event}`);
+                    // --- Delay Point 2: Action Replay ---
+                    logger.debug(`[AuthListener] Checking for pending action for ${event}...`);
+                    const replayStartTime = Date.now(); // Timer for replay call
                     const navigate = useAuthStore.getState().navigate;
-                    // Pass the SAME apiClientInstance used for profile fetch AND the token
-                    await replayPendingAction(apiClientInstance, navigate, storeSession.access_token); 
+                    await replayPendingAction(apiClientInstance, navigate, token);
+                    const replayEndTime = Date.now();
+                    // Note: Navigation happens *inside* replayPendingAction
+                    logger.debug(`[AuthListener] replayPendingAction call completed for ${event}. Duration: ${replayEndTime - replayStartTime}ms`); 
+
                 } catch (asyncError) {
                     logger.error(`[AuthListener] Error during async tasks for ${event}`, { 
                         error: asyncError instanceof Error ? asyncError.message : String(asyncError) 
                     });
-                    // Optionally set an error state, but profile/replay might already have.
-                    // useAuthStore.setState({ error: new Error('Async auth tasks failed') });
+                } finally {
+                    const endTime = Date.now(); // End timer
+                    logger.debug(`[AuthListener] Finished async tasks for ${event}. Total duration: ${endTime - startTime}ms`);
                 }
             }, 0); // setTimeout 0ms
         } 

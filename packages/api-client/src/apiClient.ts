@@ -108,41 +108,40 @@ export class ApiClient {
                 throw new ApiError(parseError.message || 'Failed to parse response body', response.status);
             }
 
-            // ---> Handle 401 AUTH_REQUIRED immediately after successful parse <--- 
-            if (response.status === 401 && typeof responseData === 'object' && responseData?.code === 'AUTH_REQUIRED') {
-                 logger.warn('AuthRequiredError detected. Throwing error for caller to handle...');
-                 throw new AuthRequiredError(responseData.message || 'Authentication required');
+            // ---> NEW: Handle 401 Unauthorized immediately by throwing AuthRequiredError <---
+            // We throw here regardless of the specific body content, as the 401 status itself
+            // for a non-public endpoint implies authentication is needed.
+            // The catch block below will handle saving the pending action.
+            if (response.status === 401 && !options.isPublic) { // Only throw if it wasn't a public route
+                logger.warn('[apiClient] Received 401 status. Throwing AuthRequiredError to trigger pending action save...');
+                // Use a generic message or attempt to get one from the body if available
+                const errorMessage = (typeof responseData === 'object' && responseData?.message)
+                                    ? responseData.message
+                                    : 'Authentication required';
+                throw new AuthRequiredError(errorMessage);
             }
 
-            // ---> Original check for any non-OK response <--- 
+            // ---> Check for other non-OK responses (excluding the 401 we just handled) <---
             if (!response.ok) {
-                // Log the response data for debugging NON-AUTH_REQUIRED errors
-                if (response.status === 401) { // Log if it's 401 but NOT the specific AUTH_REQUIRED case
-                     logger.warn('[apiClient] Received 401 response body (but not AUTH_REQUIRED code): ', { responseData });
-                } else {
-                     logger.warn(`[apiClient] Received non-OK (${response.status}) response body:`, { responseData });
-                }
+                // Log the response data for debugging OTHER errors
+                // We no longer need the specific 401 log here as it's handled above.
+                 logger.warn(`[apiClient] Received non-OK (${response.status}) response body:`, { responseData });
                 
                 // --- Original error handling for other non-OK responses ---
                 let errorPayload: ApiErrorType;
-                if (typeof responseData === 'object' && responseData !== null) { // Check if it's an object
+                if (typeof responseData === 'object' && responseData !== null) {
                     if (responseData.code && responseData.message) {
-                         // Handle { code: ..., message: ... }
                          errorPayload = responseData as ApiErrorType;
                     } else if (responseData.error && typeof responseData.error === 'string') {
-                         // Handle { error: "..." }
                          errorPayload = { code: String(response.status), message: responseData.error };
                     } else {
-                        // Fallback if object structure is unexpected
-                        // ---> Prioritize responseData.message if it exists, before statusText <--- 
                         const messageFromBody = typeof responseData === 'object' && responseData?.message ? responseData.message : null;
                         const errorMessage = messageFromBody || response.statusText || 'Unknown API Error';
                         errorPayload = { code: String(response.status), message: errorMessage };
                     }
                 } else {
-                    // Handle non-object responses (e.g., plain text)
                     const errorMessage = typeof responseData === 'string' && responseData.trim() !== ''
-                                        ? responseData 
+                                        ? responseData
                                         : response.statusText || 'Unknown API Error';
                     errorPayload = { code: String(response.status), message: errorMessage };
                 }
