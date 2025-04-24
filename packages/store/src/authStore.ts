@@ -13,7 +13,6 @@ import { logger } from '@paynless/utils'
 import { api, getApiClient } from '@paynless/api-client'
 import { analytics } from '@paynless/analytics-client'
 import { SupabaseClient, Session as SupabaseSession, User as SupabaseUser } from '@supabase/supabase-js'
-import { replayPendingAction } from './lib/replayPendingAction'
 
 export const useAuthStore = create<AuthStore>()((set, get) => ({
       user: null,
@@ -375,16 +374,63 @@ export function initAuthListener(
         // Handle state updates SYNCHRONOUSLY first
         switch (event) {
           case 'INITIAL_SESSION':
-          case 'SIGNED_IN':
-          case 'TOKEN_REFRESHED':
             // Update core session/user state immediately
             useAuthStore.setState({
               session: storeSession,
               user: storeUser,
               isLoading: false, // Set loading false here!
               error: null,
-              // Set profile undefined initially, let async part fetch it
-              profile: event === 'INITIAL_SESSION' && !storeSession ? null : undefined,
+              profile: undefined, // Set profile undefined initially, let async part fetch it
+            });
+            break;
+          case 'SIGNED_IN':
+            // Update core session/user state immediately
+            useAuthStore.setState({
+              session: storeSession,
+              user: storeUser,
+              isLoading: false, // Set loading false here!
+              error: null,
+              profile: undefined, // Set profile undefined initially, let async part fetch it
+            });
+            
+            // --- NEW: Check for pending action and navigate immediately ---
+            try {
+                const pendingActionJson = localStorage.getItem('pendingAction');
+                if (pendingActionJson) {
+                    logger.debug('[AuthListener] Found pending action on SIGNED_IN. Checking return path...');
+                    const pendingAction = JSON.parse(pendingActionJson);
+                    if (pendingAction && pendingAction.returnPath) {
+                        const navigate = useAuthStore.getState().navigate;
+                        if (navigate) {
+                            logger.info(`[AuthListener] Navigating to pending action return path: ${pendingAction.returnPath}`);
+                            // Navigate immediately, let the target page handle the action itself.
+                            // Do NOT remove pendingAction here; target page needs it.
+                            navigate(pendingAction.returnPath);
+                        } else {
+                            logger.warn('[AuthListener] Pending action exists but navigate function not available to redirect.');
+                        }
+                    } else {
+                         logger.warn('[AuthListener] Could not parse returnPath from pending action JSON.', { pendingActionJson });
+                    }
+                } else {
+                    // No pending action, normal sign-in flow (default navigation might happen elsewhere)
+                }
+            } catch (e) {
+                logger.error('[AuthListener] Error checking/parsing pendingAction for navigation:', { 
+                    error: e instanceof Error ? e.message : String(e) 
+                });
+                localStorage.removeItem('pendingAction'); // Clear potentially corrupted item
+            }
+            // --- End Immediate Navigation Check ---
+            break;
+          case 'TOKEN_REFRESHED':
+            // Update core session/user state immediately
+            useAuthStore.setState({
+              session: storeSession,
+              user: storeUser,
+              isLoading: false, // Can likely set loading false here too
+              error: null,
+              // Profile should already exist, no need to reset to undefined
             });
             break;
           case 'SIGNED_OUT':
@@ -437,14 +483,13 @@ export function initAuthListener(
                         useAuthStore.setState({ profile: null, error: new Error(profileResponse.error?.message || 'Failed fetch profile') });
                     }
 
-                    // --- Delay Point 2: Action Replay ---
-                    logger.debug(`[AuthListener] Checking for pending action for ${event}...`);
-                    const replayStartTime = Date.now(); // Timer for replay call
-                    const navigate = useAuthStore.getState().navigate;
-                    await replayPendingAction(apiClientInstance, navigate, token);
-                    const replayEndTime = Date.now();
-                    // Note: Navigation happens *inside* replayPendingAction
-                    logger.debug(`[AuthListener] replayPendingAction call completed for ${event}. Duration: ${replayEndTime - replayStartTime}ms`); 
+                    // --- Delay Point 2: Action Replay (REMOVED) ---
+                    // logger.debug(`[AuthListener] Checking for pending action for ${event}...`);
+                    // const replayStartTime = Date.now(); // Timer for replay call
+                    // const navigate = useAuthStore.getState().navigate;
+                    // await replayPendingAction(apiClientInstance, navigate, token);
+                    // const replayEndTime = Date.now();
+                    // logger.debug(`[AuthListener] replayPendingAction call completed for ${event}. Duration: ${replayEndTime - replayStartTime}ms`); 
 
                 } catch (asyncError) {
                     logger.error(`[AuthListener] Error during async tasks for ${event}`, { 

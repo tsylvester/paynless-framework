@@ -7,7 +7,8 @@ import {
 	FetchOptions,
     ApiResponse,
     AiState, 
-    AiStore // Import the combined type
+    AiStore, // Import the combined type
+    PendingAction // <<< Add this import
 } from '@paynless/types';
 import { api } from '@paynless/api-client';
 import { logger } from '@paynless/utils';
@@ -296,6 +297,112 @@ export const useAiStore = create<AiStore>()(
                  set({ aiError: null });
             },
             
+            checkAndReplayPendingChatAction: async () => {
+                logger.info('[aiStore] Checking for pending chat action...');
+                const pendingActionJson = localStorage.getItem('pendingAction');
+
+                if (!pendingActionJson) {
+                    logger.info('[aiStore] No pending action found.');
+                    return;
+                }
+
+                let action: PendingAction | null = null;
+                try {
+                    action = JSON.parse(pendingActionJson);
+                } catch (e) {
+                    logger.error('[aiStore] Failed to parse pending action JSON. Removing invalid item.', { error: e });
+                    localStorage.removeItem('pendingAction');
+                    return;
+                }
+
+                // Validate if it's a chat POST action - Added null check for body
+                if (!action || action.endpoint !== 'chat' || action.method !== 'POST' || !action.body || typeof action.body['message'] !== 'string') { // Use bracket notation and check type
+                    logger.warn('[aiStore] Pending action found, but not a valid chat POST. Ignoring.', { action });
+                    return;
+                }
+
+                // --- Authentication Check ---
+                const token = useAuthStore.getState().session?.access_token;
+                if (!token) {
+                    logger.error('[aiStore] Cannot replay pending action: User is not authenticated (no token).');
+                    set({ aiError: 'Authentication required to replay pending action.' });
+                    return;
+                }
+
+                // --- Process Valid Chat Action ---
+                logger.info('[aiStore] Pending chat action is valid and user authenticated. Processing...');
+                localStorage.removeItem('pendingAction');
+                logger.info('[aiStore] Removed pending action from localStorage.');
+
+                const tempId = `temp-replay-${Date.now()}`;
+                set({ isLoadingAiResponse: true, aiError: null });
+
+                try {
+                    const response: ApiResponse<ChatMessage> = await api.post(
+                        '/chat',
+                        action.body,
+                        { token }
+                    );
+
+                    if (response.error) {
+                        throw new Error(response.error.message || 'API returned an error during replay');
+                    }
+
+                    if (response.data) {
+                        const assistantMessage = response.data;
+                        logger.info('[aiStore] Pending action replay successful. Received AI response.', { assistantMessage });
+
+                        set(state => {
+                            const newChatId = assistantMessage.chat_id;
+                            // Safely access message content using bracket notation and null check
+                            const userMessageContent = action?.body?.[ 'message' ] as string ?? '[Message content not found]'; 
+                            const userMessage: ChatMessage = {
+                                id: tempId,
+                                role: 'user',
+                                content: userMessageContent, // Use safe content
+                                chat_id: newChatId,
+                                user_id: useAuthStore.getState().user?.id || 'unknown-replay-user',
+                                status: 'sent',
+                                created_at: new Date(parseInt(tempId.split('-')[2])).toISOString(),
+                                ai_provider_id: null,
+                                system_prompt_id: null,
+                                token_usage: null,
+                            };
+
+                            const filteredMessages = state.currentChatMessages.filter(
+                                msg => msg.id !== tempId && msg.id !== assistantMessage.id
+                            );
+                            const updatedMessages = [...filteredMessages, userMessage, assistantMessage];
+
+                            return {
+                                currentChatMessages: updatedMessages,
+                                currentChatId: newChatId || state.currentChatId,
+                                isLoadingAiResponse: false,
+                                aiError: null,
+                            };
+                        });
+                    } else {
+                        throw new Error('API returned success status but no data during replay.');
+                    }
+                } catch (error: any) {
+                    logger.error('[aiStore] Error during pending action replay API call:', { error: error.message || String(error) });
+                    set(state => {
+                        const updatedMessages = state.currentChatMessages.map(msg =>
+                            msg.id === tempId
+                                ? { ...msg, status: 'error' as const }
+                                : msg
+                        );
+                        const messageFound = state.currentChatMessages.some(msg => msg.id === tempId);
+                        if (!messageFound) {
+                            logger.warn(`[aiStore] Could not find optimistic message with tempId ${tempId} to mark as error.`);
+                        }
+                        return {
+                            currentChatMessages: updatedMessages,
+                            isLoadingAiResponse: false,
+                        };
+                    });
+                }
+            }
         })
     // )
 );

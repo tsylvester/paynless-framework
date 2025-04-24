@@ -11,14 +11,6 @@ import { ApiClient } from '@paynless/api-client'; // Import ApiClient type
 // Import our actual mapped types for verifying results
 import { Session, User, UserProfile, UserRole } from '@paynless/types'; 
 
-// Mock the replayPendingAction function
-vi.mock('./lib/replayPendingAction', () => ({
-  replayPendingAction: vi.fn().mockResolvedValue(false), // Mock implementation
-}));
-
-// Import the mocked function to make assertions
-import { replayPendingAction } from './lib/replayPendingAction';
-
 // Define a type for the listener callback Supabase expects
 type AuthStateChangeListener = (event: AuthChangeEvent, session: SupabaseSession | null) => void;
 

@@ -9,7 +9,7 @@ import { UserRole } from '@paynless/types';
 import { ProtectedRoute } from '../components/auth/ProtectedRoute';
 import { SubscriptionSuccessPage } from '../pages/SubscriptionSuccess';
 import { RootRoute } from '../components/routes/RootRoute';
-import { AiChatPage } from '../pages/AiChat';
+import AiChatPage from '../pages/AiChat';
 
 export const routes: AppRoute[] = [
   {

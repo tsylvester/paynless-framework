@@ -177,6 +177,26 @@ Following this cycle helps catch errors early, ensures comprehensive test covera
 
 ---
 
+## Testing Resources & Libraries
+
+*   **Vitest:** Our primary test runner for JavaScript/TypeScript code (stores, components, utils).
+    *   Configuration: `vitest.config.ts` in relevant packages.
+    *   [Vitest Documentation](https://vitest.dev/)
+*   **Testing Library:** Used for testing React components (`@testing-library/react`).
+    *   [React Testing Library Documentation](https://testing-library.com/docs/react-testing-library/intro/)
+*   **Zustand:** Our state management library.
+    *   [Zustand Testing Guide](https://zustand.docs.pmnd.rs/guides/testing)
+*   **Mock Service Worker (MSW):** Used for mocking API requests in integration tests.
+    *   Configuration: `apps/web/src/tests/mocks/` and `apps/web/src/tests/setup.ts`.
+    *   [MSW Documentation](https://mswjs.io/docs/)
+*   **vitest-localstorage-mock:** Used to reliably mock `localStorage` in Vitest tests.
+    *   Setup via `setupFiles` in `vitest.config.ts`.
+    *   [vitest-localstorage-mock on npm](https://www.npmjs.com/package/vitest-localstorage-mock)
+*   **Deno Standard Library:** Used for testing Supabase Edge Functions.
+    *   [Deno Standard Library Documentation](https://deno.land/std)
+
+---
+
 *   **Phase 1: Backend (`supabase/`)**
     *   **1.1 Unit Tests:**
         *   **Status:** Most core function unit tests passing. AI function tests added.

@@ -58,6 +58,7 @@ export interface ChatMessage {
   system_prompt_id: string | null; // uuid
   token_usage: Json | null; // Use defined Json type
   created_at: string; // ISO 8601 timestamp string
+  status?: 'pending' | 'sent' | 'error';
 }
 
 // --- API Request/Response Types (Placeholders/Examples) ---
@@ -185,6 +186,7 @@ export interface AiActions {
   loadChatDetails: (chatId: string) => Promise<void>; 
   startNewChat: () => void;
   clearAiError: () => void;
+  checkAndReplayPendingChatAction: () => Promise<void>;
 }
 
 // Combined type for the store

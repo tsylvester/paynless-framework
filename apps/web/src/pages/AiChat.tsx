@@ -8,7 +8,7 @@ import { AiChatbox } from '../components/ai/AiChatbox';
 import { Layout } from '../components/layout/Layout';
 import { ChatHistoryList } from '../components/ai/ChatHistoryList';
 
-export function AiChatPage() {
+export default function AiChatPage() {
   // Get user, session, and loading state from auth store
   const { user, isLoading: isAuthLoading } = useAuthStore((state) => ({ 
       user: state.user, 
@@ -40,15 +40,18 @@ export function AiChatPage() {
   const [selectedProviderId, setSelectedProviderId] = useState<string | null>(null);
   const [selectedPromptId, setSelectedPromptId] = useState<string | null>(null);
 
-  // Load config (public) and history (auth-required)
+  // ---> Get the new action from aiStore <---
+  const checkAndReplayPendingChatAction = useAiStore((state) => state.checkAndReplayPendingChatAction);
+
+  // Load config (public)
   useEffect(() => {
     logger.info('[AiChatPage] Config effect running.');
     loadAiConfig(); // Always load config
-  }, [loadAiConfig]); // Separate effect for config
+  }, [loadAiConfig]);
 
+  // Load history (auth-required)
   useEffect(() => {
     logger.info('[AiChatPage] History effect running.', { isAuthLoading, hasUser: !!user });
-    // Only load history if auth is finished AND the user is logged in
     if (!isAuthLoading && user) {
         logger.info('[AiChatPage] Auth finished and user found, loading history...');
         loadChatHistory();
@@ -57,8 +60,19 @@ export function AiChatPage() {
     } else {
         logger.warn('[AiChatPage] Auth finished but no user found, skipping chat history load.');
     }
-    // Depend on auth loading state and user state
   }, [loadChatHistory, user, isAuthLoading]);
+
+  // ---> NEW: Check for pending chat action on mount <---
+  useEffect(() => {
+    logger.info('[AiChatPage] Checking for pending chat action on mount...');
+    // Check if the function exists before calling, as it might not during initial setup/TDD
+    if (checkAndReplayPendingChatAction) { 
+      checkAndReplayPendingChatAction();
+    } else {
+      logger.warn('[AiChatPage] checkAndReplayPendingChatAction function not found in aiStore yet.')
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [checkAndReplayPendingChatAction]); // Depend on the action function itself
 
   // Set default selections when providers/prompts load
   useEffect(() => {
