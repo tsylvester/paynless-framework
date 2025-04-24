@@ -44,8 +44,6 @@ export interface AuthStore {
   // Update register signature
   register: (email: string, password: string) => Promise<User | null>
   logout: () => Promise<void>
-  initialize: () => Promise<void>
-  refreshSession: () => Promise<void>
   // Update updateProfile signature
   updateProfile: (profileData: UserProfileUpdate) => Promise<UserProfile | null>
   updateEmail: (email: string) => Promise<boolean>

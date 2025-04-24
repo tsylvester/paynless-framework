@@ -92,7 +92,7 @@
             *   Call `set({ profile: null })`.
     *   **Refactor:** N/A.
     *   **Test:** Run tests from 2.1 - ensure they pass.
-*   [ ] **2.3 Checkpoint 2:**
+*   [x] **2.3 Checkpoint 2:**
     *   **Run Unit Tests:** `pnpm test --filter=@paynless/store authStore.listener.test.ts`. Ensure they pass.
     *   **Build App:** `pnpm build`. Ensure it completes successfully.
     *   **Manual Test:** Log in. Refresh the page. Verify profile information (e.g., name in header) appears correctly after the initial load. Log out and log back in, verify profile appears. Check console logs for `/me` calls triggered by the listener.
@@ -104,7 +104,7 @@
 
 **Goal:** Modify actions to trigger Supabase JS methods and handle only immediate errors/loading, delegating final state updates (`user`, `session`, `profile`) to the listener.
 
-*   [ ] **3.1 Test Refactored `login` Action:**
+*   [x] **3.1 Test Refactored `login` Action:**
     *   **File:** `packages/store/src/authStore.login.test.ts` (or relevant test file).
     *   **TDD (RED):** Modify tests for the `login` action:
         *   Mock `supabase.auth.signInWithPassword` (requires access to the Supabase client instance - potentially pass it to actions or mock the getter).
@@ -112,7 +112,7 @@
         *   Assert `supabase.auth.signInWithPassword` is called with correct credentials.
         *   Assert that on *success* from `signInWithPassword`, the action *does not* directly call `set` with `user`, `session`, or `profile`.
         *   Assert that on *failure* from `signInWithPassword`, the action *does* call `set` with the appropriate `error` object and `isLoading: false`.
-*   [ ] **3.2 Implement Refactored `login` Action:**
+*   [x] **3.2 Implement Refactored `login` Action:**
     *   **File:** `packages/store/src/authStore.ts`
     *   **TDD (GREEN):** Modify the `login` action:
         *   Set `isLoading: true`, `error: null`.
@@ -124,68 +124,21 @@
         *   *(Keep navigation logic)*.
     *   **Refactor:** N/A.
     *   **Test:** Run tests from 3.1. Ensure they pass.
-*   [ ] **3.3 Test Refactored `register` Action:**
+*   [x] **3.3 Test Refactored `register` Action:**
     *   **File:** `packages/store/src/authStore.register.test.ts` (or relevant).
     *   **TDD (RED):** Similar to 3.1, but mock `supabase.auth.signUp` and test the `register` action.
-*   [ ] **3.4 Implement Refactored `register` Action:**
+*   [x] **3.4 Implement Refactored `register` Action:**
     *   **File:** `packages/store/src/authStore.ts`
     *   **TDD (GREEN):** Similar to 3.2, modify `register` to call `supabase.auth.signUp` and remove manual state setting on success, handling only errors/loading within the action.
     *   **Refactor:** N/A.
     *   **Test:** Run tests from 3.3. Ensure they pass.
-*   [ ] **3.5 Test Refactored `logout` Action:**
+*   [x] **3.5 Test Refactored `logout` Action:**
     *   **File:** `packages/store/src/authStore.logout.test.ts` (or relevant).
     *   **TDD (RED):** Modify tests for `logout`:
         *   Mock `supabase.auth.signOut`.
         *   Assert `signOut` is called.
         *   Assert action *does not* directly clear user/session/profile state.
         *   Assert error handling for `signOut` failure.
-*   [ ] **3.6 Implement Refactored `logout` Action:**
+*   [x] **3.6 Implement Refactored `logout` Action:**
     *   **File:** `packages/store/src/authStore.ts`
     *   **TDD (GREEN):** Modify `logout` action:
-        *   Call `await supabase.auth.signOut()`.
-        *   Remove manual state clearing (`set({ user: null, ... })`).
-        *   Handle errors from `signOut`.
-    *   **Refactor:** N/A.
-    *   **Test:** Run tests from 3.5. Ensure they pass.
-*   [ ] **3.7 Checkpoint 3:**
-    *   **Run Unit Tests:** `pnpm test --filter=@paynless/store` covering `login`, `register`, `logout` tests. Ensure all pass.
-    *   **Build App:** `pnpm build`. Ensure it completes successfully.
-    *   **Manual Test:** Perform login, observe profile loads, perform logout. Verify state updates correctly via the listener mechanism. Test login/register failure scenarios. Check console logs.
-    *   **Commit:** `refactor(auth): align login/register/logout actions with onAuthStateChange (#issue_number)`
-
----
-
-## Phase 4: Refactoring `initialize` Action & Cleanup
-
-**Goal:** Rely entirely on the listener setup in `App.tsx` for initial auth state determination, simplifying or removing the `initialize` action's logic.
-
-*   [ ] **4.1 Analyze `initialize` Usage:**
-    *   **File:** `apps/web/src/App.tsx` (`AppContent` component).
-    *   **Verify:** Confirm `initialize()` is called only once on mount.
-*   [ ] **4.2 Test Listener Handles Initial State:**
-    *   **File:** `packages/store/src/authStore.listener.test.ts`
-    *   **TDD (Ensure Coverage):** Verify existing tests adequately cover the listener setting `isLoading: false` and the correct initial `session`/`profile` state (or null) based on the *first* `INITIAL_SESSION` event received.
-*   [ ] **4.3 Refactor/Remove `initialize` Logic:**
-    *   **File:** `packages/store/src/authStore.ts`
-    *   **TDD (Adjust):** Remove tests in `authStore.initialize.test.ts` related to fetching `/me` or checking localStorage expiry logic, as the listener now handles this. Keep tests verifying `isLoading` state transitions if `initialize` is kept for that purpose. Simplify or remove the `initialize` action implementation. If kept, it might only be responsible for triggering an initial check or setting `isLoading: true` if the listener hasn't finished yet.
-    *   **Known Issue:** The test case `should call /me and update state if initialized with a valid session state` in `authStore.initialize.test.ts` is currently skipped (`it.skip`). It fails in the test environment despite the `initialize` function working correctly during manual application testing. The test asserts that the `user` state is updated after a successful `/me` call, but the state remains `null`. The exact cause within the test setup (mocking, state interaction, timing) is unclear and needs further investigation when time permits. This may become obsolete depending on the outcome of the `initialize` refactor.
-*   [ ] **4.4 Test Cleanup:**
-    *   **File:** `packages/store/src/authStore.initialize.test.ts`
-    *   **TDD (Adjust):** Remove or adjust tests based on the final state of the `initialize` action.
-    *   **Test:** Ensure remaining store tests pass.
-*   [ ] **4.5 Checkpoint 4:**
-    *   **Run Unit Tests:** `pnpm test --filter=@paynless/store`. Ensure all pass.
-    *   **Build App:** `pnpm build`. Ensure it completes successfully.
-    *   **Manual Test:** Thoroughly test initial load, login, logout, refresh scenarios. Ensure state is managed correctly and reliably by the listener.
-    *   **Commit:** `refactor(auth): simplify initialize action, rely on listener (#issue_number)`
-
----
-
-## Phase 5: Final Review & Documentation
-
-*   [ ] **5.1 Code Review:** Review all changes made to `authStore`, related tests, and `App.tsx`.
-*   [ ] **5.2 Documentation:** Update any relevant comments in `authStore.ts`. Ensure this implementation plan (`docs/implementations/...`) is marked as complete.
-*   [ ] **5.3 Cleanup:** Remove any temporary logging or commented-out code.
-*   [ ] **5.4 Merge:** Merge branch to `development` after final checks.
-
----

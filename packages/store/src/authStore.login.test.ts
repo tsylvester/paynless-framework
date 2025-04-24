@@ -1,12 +1,12 @@
-import { vi, describe, it, expect, beforeEach, afterEach, type Mock } from 'vitest'
+import { vi, describe, it, expect, beforeEach, afterEach, type Mock, type SpyInstance } from 'vitest'
 import { useAuthStore } from './authStore'; 
 import { api } from '@paynless/api-client';
 import { act } from '@testing-library/react';
 import type { User, Session, UserProfile, ChatMessage, ApiResponse, FetchOptions, AuthResponse } from '@paynless/types';
-import { UserRole } from '@paynless/types'; // Import UserRole separately
+import { UserRole, AuthRequiredError } from '@paynless/types'; // Import UserRole, AuthRequiredError
 import { logger } from '@paynless/utils'; 
-// Import the module to access the mocked version later
 import * as analyticsClient from '@paynless/analytics-client';
+import { SupabaseClient, Session as SupabaseSession, User as SupabaseUser } from '@supabase/supabase-js'; // Import Supabase types
 
 // Helper to reset Zustand store state between tests
 const resetStore = () => {
@@ -104,84 +104,157 @@ const password = 'password123' // Keep password declaration here if needed
 //   last_name: 'User',
 // }
 
-describe('AuthStore - Login Action', () => {
-  let postSpy: Mock
-  let navigateMock: Mock
+// --- Mocks ---
+// Keep logger mock
+vi.mock('@paynless/utils', () => ({
+  logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
+}));
+
+// Keep analytics mock
+vi.mock('@paynless/analytics-client', () => ({ 
+  analytics: { identify: vi.fn(), reset: vi.fn(), track: vi.fn() } 
+}));
+
+// Keep replayPendingAction mock
+vi.mock('./lib/replayPendingAction', () => ({
+  replayPendingAction: vi.fn(),
+}));
+
+// --- Mock Supabase Client Setup ---
+// Mock the Supabase client instance that api.getSupabaseClient() will return
+const mockSupabaseAuthResponse = { data: { user: {} as SupabaseUser, session: {} as SupabaseSession }, error: null };
+const mockSignInWithPassword = vi.fn().mockResolvedValue(mockSupabaseAuthResponse);
+const mockSignUp = vi.fn(); // Add mocks for other methods if needed
+const mockSignOut = vi.fn();
+
+const mockSupabaseClient = {
+  auth: {
+    signInWithPassword: mockSignInWithPassword,
+    signUp: mockSignUp,
+    signOut: mockSignOut,
+    // Mock onAuthStateChange if needed for direct tests, but listener tests cover it
+    onAuthStateChange: vi.fn(() => ({ data: { subscription: { unsubscribe: vi.fn() } } })),
+  }
+} as unknown as SupabaseClient;
+
+// Mock the api client module to return our mock Supabase client
+vi.mock('@paynless/api-client', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@paynless/api-client')>()
+  // Define the mocked api object separately for clarity
+  const mockedApi = {
+    get: vi.fn(),
+    post: vi.fn(),
+    put: vi.fn(),
+    delete: vi.fn(),
+    getSupabaseClient: vi.fn(() => mockSupabaseClient),
+    ai: vi.fn(),
+    billing: vi.fn(),
+    notifications: vi.fn(),
+  };
+  return {
+    ...actual,
+    api: mockedApi, // Export the mocked api object
+    getApiClient: vi.fn(() => mockedApi), // getApiClient returns the mocked api object
+  }
+});
+
+describe('AuthStore - Login Action (Refactored for Supabase)', () => {
+  // Spies/Mocks to be assigned in beforeEach
+  let signInPasswordSpy: SpyInstance; 
+  let navigateMock: Mock;
+  let loggerErrorSpy: SpyInstance;
 
   beforeEach(() => {
-    // Reset Zustand store before each test
-    useAuthStore.setState(
-      {
-        user: null,
-        session: null,
-        profile: null,
-        isLoading: false,
-        error: null,
-        // Keep navigate mock setup separate
-        // navigate: null, 
-      },
-      // ---> Change true to false (or remove) to merge state instead of replacing <---
-      false 
-    ) // false merges state, preserving actions
+    // Reset Zustand store state
+    useAuthStore.setState(useAuthStore.getInitialState(), true); // Use initial state
 
-    // Set up mocks
-    postSpy = vi.mocked(api.post)
-    navigateMock = vi.fn()
-    useAuthStore.setState({ navigate: navigateMock })
+    // Assign mocks/spies
+    signInPasswordSpy = vi.spyOn(mockSupabaseClient.auth, 'signInWithPassword'); 
+    loggerErrorSpy = vi.spyOn(logger, 'error');
+    
+    // Setup navigation mock
+    navigateMock = vi.fn();
+    useAuthStore.getState().setNavigate(navigateMock); // Set navigate after resetting state
 
-    // Clear mock call history
-    vi.clearAllMocks()
-  })
-
-  afterEach(() => {
-    // Restore mocks after each test
-    vi.restoreAllMocks()
-    // Clear localStorage
-    localStorage.clear()
-  })
-
-  // ---> Test focuses on basic login success, NOT replay <---
-  it('should update state, call navigate("dashboard"), and return user on success (no replay)', async () => {
-    postSpy.mockResolvedValue({ data: { user: mockUser, session: mockSession, profile: mockProfile }, error: null, status: 200 });
-
-    const result = await useAuthStore.getState().login(email, password);
-
-    // Verify API call
-    expect(postSpy).toHaveBeenCalledTimes(1);
-    expect(postSpy).toHaveBeenCalledWith('login', { email, password });
-
-    const state = useAuthStore.getState();
-    expect(state.isLoading).toBe(false);
-    expect(state.user).toEqual(mockUser);
-    expect(state.session).toEqual(mockSession);
-    expect(state.profile).toEqual(mockProfile);
-    expect(state.error).toBeNull();
-    expect(result).toEqual(mockUser);
-
-    // Verify navigation (default to dashboard when no replay)
-    expect(navigateMock).toHaveBeenCalledTimes(1);
-    expect(navigateMock).toHaveBeenCalledWith('dashboard');
+    // Clear mock history AFTER setup
+    vi.clearAllMocks();
   });
 
-  // Keep the API failure test
-  it('should set error state, clear user data, not navigate, and return null on API failure', async () => {
-    const apiError = { code: 'LOGIN_FAILED', message: 'Invalid credentials' };
-    postSpy.mockResolvedValue({ data: null, error: apiError, status: 401 });
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
 
+  it('should call supabase.auth.signInWithPassword, set loading/error, navigate, but NOT set user/session directly', async () => {
+    // Arrange: Mock supabase success
+    signInPasswordSpy.mockResolvedValue(mockSupabaseAuthResponse); // Already set globally, but can override here if needed
+    
+    // Act
     const result = await useAuthStore.getState().login(email, password);
 
-    expect(postSpy).toHaveBeenCalledTimes(1);
-    expect(postSpy).toHaveBeenCalledWith('login', { email, password });
+    // Assert: Supabase call
+    expect(signInPasswordSpy).toHaveBeenCalledTimes(1);
+    expect(signInPasswordSpy).toHaveBeenCalledWith({ email, password });
 
-    const state = useAuthStore.getState();
-    expect(state.isLoading).toBe(false);
-    expect(state.user).toBeNull();
-    expect(state.session).toBeNull();
-    expect(state.profile).toBeNull();
-    expect(state.error).toBeInstanceOf(Error);
-    expect(state.error?.message).toBe(apiError.message);
-    expect(result).toBeNull();
+    // Assert: State changes for loading/error ONLY (Removed setStateSpy checks)
+    // expect(setStateSpy).toHaveBeenCalledTimes(2); 
+    // expect(setStateSpy).toHaveBeenNthCalledWith(1, { isLoading: true, error: null });
+    // expect(setStateSpy).toHaveBeenNthCalledWith(2, { isLoading: false });
+
+    // Check final state directly
+    const finalState = useAuthStore.getState();
+    expect(finalState.isLoading).toBe(false); // Should be false at the end
+    expect(finalState.user).toBeNull(); 
+    expect(finalState.session).toBeNull();
+    expect(finalState.profile).toBeNull();
+    expect(finalState.error).toBeNull(); // Error should be null on success
+
+    // Assert: Return value (should it return anything now? Plan says handle errors)
+    // Let's assume it returns null or void on success after refactor
+    expect(result).toBeNull(); // Tentative assertion based on listener handling state
+
+    // Assert: Navigation (assuming login action still handles default navigation)
+    expect(navigateMock).toHaveBeenCalledTimes(1);
+    expect(navigateMock).toHaveBeenCalledWith('dashboard');
+    
+    // Assert: Analytics should still be called by the LISTENER (not tested here)
+    // Assert: replayPendingAction might be called by LISTENER (not tested here)
+  });
+
+  // Keep the API failure test -> Refactor for Supabase error
+  it('should set error state, clear user data, not navigate, and return null on Supabase failure', async () => {
+    // Arrange: Mock supabase failure
+    const supabaseError = new Error('Invalid login credentials');
+    signInPasswordSpy.mockRejectedValue(supabaseError);
+
+    // Act
+    const result = await useAuthStore.getState().login(email, password);
+
+    // Assert: Supabase call
+    expect(signInPasswordSpy).toHaveBeenCalledTimes(1);
+    expect(signInPasswordSpy).toHaveBeenCalledWith({ email, password });
+
+    // Assert: State changes for loading/error (Removed setStateSpy checks)
+    // expect(setStateSpy).toHaveBeenCalledTimes(3); // Expect 3 calls now
+    // expect(setStateSpy).toHaveBeenNthCalledWith(1, { isLoading: true, error: null });
+    // expect(setStateSpy).toHaveBeenNthCalledWith(2, { isLoading: false, error: supabaseError }); // Check error is set
+    // expect(setStateSpy).toHaveBeenNthCalledWith(3, { isLoading: false }); // Check finally call
+    
+    // Assert: Final state remains cleared and error is set
+    const finalState = useAuthStore.getState();
+    expect(finalState.isLoading).toBe(false); // Should be false at the end
+    expect(finalState.user).toBeNull();
+    expect(finalState.session).toBeNull();
+    expect(finalState.profile).toBeNull();
+    expect(finalState.error).toBe(supabaseError); // Verify the specific error object
+    
+    // Assert: Return value
+    expect(result).toBeNull(); // Should return null on failure
+    
+    // Assert: No navigation
     expect(navigateMock).not.toHaveBeenCalled();
+    
+    // Assert: Logger called
+    expect(loggerErrorSpy).toHaveBeenCalledWith('Login error in store', { message: supabaseError.message });
   });
 
 });

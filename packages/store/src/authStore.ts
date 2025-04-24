@@ -1,25 +1,20 @@
 import { create } from 'zustand'
 import {
   AuthStore,
-  AuthResponse,
   User,
   Session,
   UserProfile,
   UserProfileUpdate,
   UserRole,
-  RefreshResponse,
 } from '@paynless/types'
 import { NavigateFunction } from '@paynless/types'
 import { logger } from '@paynless/utils'
-import { persist } from 'zustand/middleware'
-import { api, getApiClient, ApiClient } from '@paynless/api-client'
+import { api, getApiClient } from '@paynless/api-client'
 import { analytics } from '@paynless/analytics-client'
 import { SupabaseClient, Session as SupabaseSession, User as SupabaseUser } from '@supabase/supabase-js'
 import { replayPendingAction } from './lib/replayPendingAction'
 
-export const useAuthStore = create<AuthStore>()(
-  persist(
-    (set, get) => ({
+export const useAuthStore = create<AuthStore>()((set, get) => ({
       user: null,
       session: null,
       profile: null,
@@ -42,60 +37,61 @@ export const useAuthStore = create<AuthStore>()(
       login: async (email: string, password: string): Promise<User | null> => {
         set({ isLoading: true, error: null })
         try {
-          const response = await api.post<
-            AuthResponse,
-            { email: string; password: string }
-          >('login', { email, password })
-
-          if (!response.error && response.data) {
-            const authData = response.data
-            set({
-              user: authData.user,
-              session: authData.session,
-              profile: authData.profile,
-              isLoading: false,
-              error: null,
-            })
-
-            // ---> Identify user for analytics <---
-            if (authData.user?.id) {
-              analytics.identify(authData.user.id, {
-                email: authData.user.email,
-              })
-            }
-
-            // Navigate to dashboard only if we didn't navigate based on returnPath
-              const navigate = get().navigate
-              if (navigate) {
-                logger.info(
-                  'Login successful (no pending action/navigation), navigating to dashboard.'
-                )
-                navigate('dashboard')
-              } else {
-                logger.warn(
-                  'Login successful but navigate function not set in store.'
-                )
-              }
-          
-
-            return authData.user ?? null
-          } else {
-            const errorMessage =
-              response.error?.message || 'Login failed without specific error'
-            throw new Error(errorMessage)
+          // Get Supabase client instance
+          const supabase = api.getSupabaseClient(); // Assuming api is accessible here
+          if (!supabase) {
+            throw new Error('Supabase client not available');
           }
+
+          // Call Supabase auth method
+          const { error: signInError } = await supabase.auth.signInWithPassword({ email, password });
+
+          if (signInError) {
+            // Throw the error to be caught by the catch block
+            throw signInError;
+          }
+
+          // On success, Supabase call is done. 
+          // The onAuthStateChange listener will handle setting user, session, profile.
+          // We don't need to manually set state here anymore.
+          
+          // Keep navigation logic? (The listener might handle this too via replay)
+          // For now, let's assume login still triggers default navigation if listener doesn't
+          const navigate = get().navigate;
+          if (navigate) {
+            logger.info(
+              'Supabase Login successful, navigating to dashboard (listener will handle state).',
+            );
+            navigate('dashboard');
+          } else {
+            logger.warn(
+              'Supabase Login successful but navigate function not set in store.',
+            );
+          }
+
+          // What should login return now? Listener handles state. 
+          // Returning null seems appropriate as the action itself doesn't provide the final user state.
+          return null; 
+
         } catch (error) {
           const finalError =
-            error instanceof Error ? error : new Error('Unknown login error')
-          logger.error('Login error in store', { message: finalError.message })
+            error instanceof Error ? error : new Error('Unknown login error');
+          logger.error('Login error in store', { message: finalError.message });
           set({
+            // Only set error and loading false. User/session/profile cleared by listener or remain null.
             isLoading: false,
             error: finalError,
-            user: null,
-            session: null,
-            profile: null,
-          })
-          return null
+            // user: null, // Let listener handle this
+            // session: null,
+            // profile: null,
+          });
+          return null;
+        } finally {
+            // Ensure isLoading is always set to false
+            // Note: The catch block also sets isLoading: false, 
+            // so this might be redundant if the catch always runs before finally on error.
+            // However, setting it here guarantees it in case of unexpected non-error exits from try.
+             set({ isLoading: false });
         }
       },
 
@@ -105,115 +101,102 @@ export const useAuthStore = create<AuthStore>()(
       ): Promise<User | null> => {
         set({ isLoading: true, error: null })
         try {
-          const response = await api.post<
-            AuthResponse,
-            { email: string; password: string }
-          >('register', { email, password })
-
-          if (!response.error && response.data) {
-            const authData = response.data
-            set({
-              user: authData.user,
-              session: authData.session,
-              profile: null,
-              isLoading: false,
-              error: null,
-            })
-
-            // ---> Identify user for analytics <---
-            if (authData.user?.id) {
-              analytics.identify(authData.user.id, {
-                email: authData.user.email,
-              })
-            }
-
-            // Use the navigate function if available AND if we didn't navigate via returnPath
-              const navigate = get().navigate
-              if (navigate) {
-                logger.info(
-                  'Registration successful (no pending action/navigation), navigating to dashboard.'
-                )
-                navigate('dashboard')
-              } else {
-                logger.warn(
-                  'Registration successful but navigate function not set in store.'
-                )
-              }
-          
-
-            return authData.user ?? null
-          } else {
-            const errorMessage =
-              response.error?.message || 'Registration failed'
-            throw new Error(errorMessage)
+          // Get Supabase client instance
+          const supabase = api.getSupabaseClient(); 
+          if (!supabase) {
+            throw new Error('Supabase client not available');
           }
+
+          // Call Supabase auth method
+          const { error: signUpError } = await supabase.auth.signUp({ email, password });
+
+          if (signUpError) {
+            throw signUpError;
+          }
+
+          // On success, Supabase call is done.
+          // The onAuthStateChange listener handles setting state.
+          
+          // Keep navigation logic?
+          const navigate = get().navigate;
+          if (navigate) {
+            logger.info(
+              'Supabase Registration successful, navigating to dashboard (listener will handle state).'
+            );
+            navigate('dashboard');
+          } else {
+            logger.warn(
+              'Supabase Registration successful but navigate function not set in store.'
+            );
+          }
+
+          // Return null as listener handles final user state
+          return null;
+
         } catch (error) {
           const finalError =
             error instanceof Error
               ? error
-              : new Error('Unknown registration error')
+              : new Error('Unknown registration error');
           logger.error('Register error in store', {
             message: finalError.message,
-          })
+          });
           set({
             isLoading: false,
             error: finalError,
-            user: null,
-            session: null,
-            profile: null,
-          })
-          return null
+            // user: null, // Let listener handle
+            // session: null,
+            // profile: null,
+          });
+          return null;
+        } finally {
+            set({ isLoading: false });
         }
       },
 
       logout: async () => {
-        // ---> Reset analytics user <---
         analytics.reset()
 
-        const token = get().session?.access_token
+        // Check if there's a session in the store state first
+        const currentSession = get().session;
 
-        if (token) {
-          set({ isLoading: true, error: null })
+        if (currentSession) {
+          // Only attempt Supabase signOut if we think we have a session
           try {
-            await api.post('logout', {}, { token })
-            logger.info('AuthStore: Logout API call successful.')
+            // Get Supabase client instance
+            const supabase = api.getSupabaseClient(); 
+            if (!supabase) {
+              logger.error('Logout cannot call Supabase: client not available.');
+            } else {
+              const { error: signOutError } = await supabase.auth.signOut()
+              if (signOutError) {
+                  logger.error(
+                      'Supabase signOut failed, proceeding with local cleanup.',
+                      { error: signOutError.message }
+                  )
+              }
+            }
           } catch (error) {
             logger.error(
-              'Logout API call failed, proceeding with local cleanup.',
+              'Logout Supabase call failed unexpectedly, proceeding with local cleanup.',
               { error: error instanceof Error ? error.message : String(error) }
             )
-          } finally {
-            // Always clear local state
-            set({
-              user: null,
-              session: null,
-              profile: null,
-              isLoading: false,
-              error: null,
-            })
-
-            // Clear localStorage items including Zustand's persisted state
-            localStorage.removeItem('auth-storage') // This is the Zustand persist key
-            localStorage.removeItem('pendingAction')
-            localStorage.removeItem('loadChatIdOnRedirect')
           }
         } else {
-          logger.warn(
-            'Logout called but no session token found. Clearing local state only.'
-          )
-          set({
-            user: null,
-            session: null,
-            profile: null,
-            isLoading: false,
-            error: null,
-          })
-          localStorage.removeItem('auth-storage')
+          // Log warning if logout is called without a session in the store
+           logger.warn('Logout called but no session token found. Clearing local state only.');
+        }
+        
+        // Actions common to both paths (logged in or not)
+        try { 
+          // Always clear local state items NOT managed by listener/persist
           localStorage.removeItem('pendingAction')
           localStorage.removeItem('loadChatIdOnRedirect')
+        } catch(storageError) {
+           logger.error('Error clearing localStorage during logout', { error: storageError instanceof Error ? storageError.message : String(storageError) });
         }
 
-        // Navigate to login
+        // Navigate to login - This should always happen
         const navigate = get().navigate
         if (navigate) {
           navigate('login')
@@ -225,201 +208,6 @@ export const useAuthStore = create<AuthStore>()(
         }
       },
 
-      initialize: async () => {
-        try {
-          // Get session from Zustand's persisted state
-          const session = get().session
-          //const user = get().user;
-
-          // If no session or expired session, clear state and return
-          if (!session || !session.access_token) {
-            logger.info('No session found in store.')
-            set({
-              user: null,
-              profile: null,
-              session: null,
-              isLoading: false,
-              error: null,
-            })
-            return
-          }
-
-          // Check for expired session
-          if (session.expiresAt * 1000 < Date.now()) {
-            logger.info('Stored session is expired.')
-
-            // Try to refresh if we have a refresh token
-            if (session.refresh_token) {
-              logger.info('Attempting to refresh expired token...')
-              await get().refreshSession()
-            } else {
-              // No refresh token, clear state
-              set({
-                user: null,
-                profile: null,
-                session: null,
-                isLoading: false,
-                error: null,
-              })
-              localStorage.removeItem('auth-storage')
-            }
-            return
-          }
-          // Session exists and is not expired, verify with backend
-          logger.info(
-            'Valid session found, verifying token / fetching initial profile...'
-          )
-          const response = await api.get<AuthResponse>('me', {
-            token: session.access_token,
-          })
-          if (response.error || !response.data || !response.data.user) {
-            // Token invalid or expired
-            logger.error('/me call failed after restoring session.', {
-              error: response.error,
-            })
-
-            // Try refreshing the token
-            logger.info('Attempting to refresh token after failed /me call...')
-            await get().refreshSession()
-            return
-          }
-          // /me successful, update user/profile
-          logger.info('/me call successful, user authenticated.')
-          set({
-            user: response.data.user,
-            profile: response.data.profile,
-            isLoading: false,
-            error: null,
-          })
-
-          // ---> Identify user for analytics <---
-          if (response.data.user?.id) {
-            analytics.identify(response.data.user.id, {
-              email: response.data.user.email,
-              // Add traits from profile if available
-              firstName: response.data.profile?.first_name,
-              lastName: response.data.profile?.last_name,
-            })
-          }
-
-          // Refresh token if it expires soon (within 10 minutes)
-          const expiresAt = session.expiresAt * 1000
-          const now = Date.now()
-          const timeUntilExpiry = expiresAt - now
-
-          if (timeUntilExpiry < 10 * 60 * 1000) {
-            logger.info('Token expires soon, refreshing...')
-            await get().refreshSession()
-          }
-
-          // Check for pending action and replay
-          const navigate = get().navigate;
-          const apiClientInstance = getApiClient();
-          
-          if (navigate) {
-            await replayPendingAction(apiClientInstance, navigate);
-          } else {
-            logger.warn('Cannot replay pending action: navigate function not available.');
-          }
-        } catch (error) {
-          logger.error('Error during initialization process', {
-            error: error instanceof Error ? error.message : String(error),
-          })
-          set({
-            isLoading: false,
-            user: null,
-            session: null,
-            profile: null,
-            error: new Error('Error during initialization', {
-              cause: error instanceof Error ? error : undefined,
-            }),
-          })
-          // Clear localStorage on error
-          localStorage.removeItem('auth-storage')
-        }
-      },
-
-      refreshSession: async () => {
-        const currentSession = get().session
-        if (!currentSession?.refresh_token) {
-          logger.warn('refreshSession called without a refresh token.')
-          set({
-            error: new Error('No refresh token available to refresh session.'),
-            isLoading: false,
-          })
-          return
-        }
-        set({ isLoading: true, error: null })
-        try {
-          const response = await api.post<RefreshResponse, {}>(
-            'refresh',
-            {},
-            {
-              headers: {
-                Authorization: `Bearer ${currentSession.refresh_token}`,
-              },
-            }
-          )
-
-          if (!response.error && response.data) {
-            const refreshData = response.data
-            if (refreshData?.session && refreshData?.user) {
-              set({
-                session: refreshData.session,
-                user: refreshData.user,
-                profile: refreshData.profile,
-                isLoading: false,
-                error: null,
-              })
-
-              logger.info('Session refreshed successfully')
-
-              // Call replay after successful refresh and state update
-              const navigate = get().navigate;
-              const apiClientInstance = getApiClient();
-              
-              if (navigate) {
-                await replayPendingAction(apiClientInstance, navigate);
-              } else {
-                logger.warn('Cannot replay pending action: navigate function not available.');
-              }
-            } else {
-              logger.error('Refresh returned invalid data', { refreshData })
-              set({
-                session: null,
-                user: null,
-                profile: null,
-                isLoading: false,
-                error: new Error(
-                  'Failed to refresh session (invalid response)'
-                ),
-              })
-              localStorage.removeItem('auth-storage')
-            }
-          } else {
-            const errorMessage =
-              response.error?.message || 'Failed to refresh session'
-            logger.error('Refresh API error', { error: response.error })
-            localStorage.removeItem('auth-storage')
-            throw new Error(errorMessage)
-          }
-        } catch (error) {
-          const finalError =
-            error instanceof Error
-              ? error
-              : new Error('Error refreshing session')
-          logger.error('Refresh session error', { message: finalError.message })
-          localStorage.removeItem('auth-storage')
-          set({
-            session: null,
-            user: null,
-            profile: null,
-            isLoading: false,
-            error: finalError,
-          })
-        }
-      },
-
       updateProfile: async (
         profileData: UserProfileUpdate
       ): Promise<UserProfile | null> => {
@@ -427,12 +215,11 @@ export const useAuthStore = create<AuthStore>()(
         const token = get().session?.access_token
         const currentProfile = get().profile
 
-        // Check if authenticated first
         if (!token) {
           logger.error(
             'updateProfile: Cannot update profile, user not authenticated.'
           )
-          set({ error: new Error('Not authenticated') })
+          set({ error: new Error('Authentication required'), isLoading: false }) 
           return null
         }
 
@@ -443,10 +230,13 @@ export const useAuthStore = create<AuthStore>()(
           )
           set({
             error: new Error('Profile not loaded'),
+            isLoading: false 
           })
           return null
         }
 
+        // Set loading true only if proceeding to API call
+        set({ isLoading: true });
         try {
           const response = await api.put<UserProfile, UserProfileUpdate>(
             'me',
@@ -477,6 +267,8 @@ export const useAuthStore = create<AuthStore>()(
           })
           set({ error: finalError })
           return null
+        } finally {
+            set({ isLoading: false });
         }
       },
 
@@ -537,17 +329,7 @@ export const useAuthStore = create<AuthStore>()(
       },
 
       clearError: () => set({ error: null }),
-    }),
-    {
-      name: 'auth-storage',
-      // Store session and user in localStorage through Zustand persist
-      partialize: (state) => ({
-        session: state.session,
-        user: state.user, // Include user to prevent user/session mismatch
-      }),
-    }
-  )
-)
+    }))
 
 const mapSupabaseUser = (supabaseUser: SupabaseUser | null): User | null => {
   if (!supabaseUser) return null;
@@ -574,97 +356,110 @@ const mapSupabaseSession = (supabaseSession: SupabaseSession | null): Session | 
 };
 
 export function initAuthListener(
-  supabaseClient: SupabaseClient,
-  apiClientInstance: ApiClient
+  supabaseClient: SupabaseClient
 ): () => void {
   logger.debug('[AuthListener] Initializing Supabase auth listener...');
 
   const { data: listener } = supabaseClient.auth.onAuthStateChange(
-    async (event, session) => {
-      logger.debug(`[AuthListener] Event: ${event}`, { session });
+    (event, session) => {
+      try {
+        // --- Remove diagnostic log --- 
+        // logger.warn('<<<<< onAuthStateChange CALLBACK EXECUTED >>>>>', { event });
+        
+        logger.debug(`[AuthListener] Event: ${event}`, { session });
 
-      const storeSession = mapSupabaseSession(session);
-      const storeUser = mapSupabaseUser(session?.user ?? null);
+        const storeSession = mapSupabaseSession(session);
+        const storeUser = mapSupabaseUser(session?.user ?? null);
 
-      switch (event) {
-        case 'INITIAL_SESSION':
-          useAuthStore.setState({
-            session: storeSession,
-            user: storeUser,
-            profile: storeSession ? undefined : null,
-            isLoading: false,
-            error: null,
-          });
-          if (storeSession?.access_token) {
-            try {
-              const profileResponse = await apiClientInstance.get<UserProfile>('/me', {
-                token: storeSession.access_token,
-              });
-              if (profileResponse.data) useAuthStore.setState({ profile: profileResponse.data });
-              else useAuthStore.setState({ profile: null, error: new Error(profileResponse.error?.message || 'Failed fetch profile') });
-            } catch (err) {
-              useAuthStore.setState({ profile: null, error: err instanceof Error ? err : new Error('Error fetch profile') });
-            }
-            const navigate = useAuthStore.getState().navigate;
-            await replayPendingAction(apiClientInstance, navigate); 
-          } else {
-             // Explicitly set profile to null if there was no session during INITIAL_SESSION
-             // useAuthStore.setState({ profile: null }); // REMOVED: Redundant, first setState handles this.
-          }
-          break;
+        // Handle state updates SYNCHRONOUSLY first
+        switch (event) {
+          case 'INITIAL_SESSION':
+          case 'SIGNED_IN':
+          case 'TOKEN_REFRESHED':
+            // Update core session/user state immediately
+            useAuthStore.setState({
+              session: storeSession,
+              user: storeUser,
+              isLoading: false, // Set loading false here!
+              error: null,
+              // Set profile undefined initially, let async part fetch it
+              profile: event === 'INITIAL_SESSION' && !storeSession ? null : undefined,
+            });
+            break;
+          case 'SIGNED_OUT':
+            useAuthStore.setState({
+              user: null,
+              session: null,
+              profile: null,
+              isLoading: false, 
+              error: null,
+            });
+            localStorage.removeItem('pendingAction');
+            localStorage.removeItem('loadChatIdOnRedirect');
+            break;
+          case 'USER_UPDATED':
+            useAuthStore.setState({ user: storeUser }); 
+            break;
+          case 'PASSWORD_RECOVERY':
+            // Typically, you might navigate or set a specific state 
+            // For now, ensure loading is false.
+            useAuthStore.setState({ isLoading: false });
+            break;
+          default:
+            logger.warn('[AuthListener] Unhandled auth event:', { event });
+             // Ensure loading is false even for unhandled events
+            useAuthStore.setState({ isLoading: false }); 
+            break;
+        }
 
-        case 'SIGNED_IN':
-          useAuthStore.setState({
-            session: storeSession,
-            user: storeUser,
+        // Now, handle ASYNCHRONOUS tasks (profile fetch, replay) AFTER the main callback finishes
+        if ((event === 'INITIAL_SESSION' || event === 'SIGNED_IN') && storeSession?.access_token) {
+            setTimeout(async () => {
+                logger.debug(`[AuthListener] Performing async tasks for ${event}`);
+                try {
+                    const apiClientInstance = getApiClient();
+                    // Fetch Profile
+                    logger.debug(`[AuthListener] Fetching profile for ${event}`);
+                    const profileResponse = await apiClientInstance.get<UserProfile>('/me', {
+                        token: storeSession.access_token, // Pass token explicitly
+                    });
+                    if (profileResponse.data) {
+                        logger.debug(`[AuthListener] Profile fetched successfully for ${event}`);
+                        useAuthStore.setState({ profile: profileResponse.data });
+                    } else {
+                        logger.error(`[AuthListener] Failed to fetch profile for ${event}`, { error: profileResponse.error });
+                        useAuthStore.setState({ profile: null, error: new Error(profileResponse.error?.message || 'Failed fetch profile') });
+                    }
+
+                    // Replay Action
+                    logger.debug(`[AuthListener] Checking for pending action for ${event}`);
+                    const navigate = useAuthStore.getState().navigate;
+                    // Pass the SAME apiClientInstance used for profile fetch
+                    await replayPendingAction(apiClientInstance, navigate); 
+                } catch (asyncError) {
+                    logger.error(`[AuthListener] Error during async tasks for ${event}`, { 
+                        error: asyncError instanceof Error ? asyncError.message : String(asyncError) 
+                    });
+                    // Optionally set an error state, but profile/replay might already have.
+                    // useAuthStore.setState({ error: new Error('Async auth tasks failed') });
+                }
+            }, 0); // setTimeout 0ms
+        } 
+        // else if (event === 'SIGNED_OUT') {
+            // If any async cleanup is needed for signout, add another setTimeout here.
+        // }
+
+      } catch (callbackError) {
+        logger.error('!!!!!! ERROR INSIDE onAuthStateChange CALLBACK !!!!!!', {
+          error: callbackError instanceof Error ? callbackError.message : String(callbackError),
+          stack: callbackError instanceof Error ? callbackError.stack : undefined,
+          event,
+          session
+        });
+        useAuthStore.setState({ 
             isLoading: false, 
-            error: null,
-          });
-          if (storeSession?.access_token) {
-             try {
-                const profileResponse = await apiClientInstance.get<UserProfile>('/me', {
-                  token: storeSession.access_token,
-                });
-                if (profileResponse.data) useAuthStore.setState({ profile: profileResponse.data });
-                else useAuthStore.setState({ profile: null, error: new Error(profileResponse.error?.message || 'Failed fetch profile') });
-             } catch (err) {
-                useAuthStore.setState({ profile: null, error: err instanceof Error ? err : new Error('Error fetch profile') });
-             }
-            const navigate = useAuthStore.getState().navigate;
-            await replayPendingAction(apiClientInstance, navigate);
-          }
-          break;
-
-        case 'SIGNED_OUT':
-          useAuthStore.setState({
-            user: null,
-            session: null,
-            profile: null,
-            isLoading: false, 
-            error: null,
-          });
-          localStorage.removeItem('pendingAction')
-          localStorage.removeItem('loadChatIdOnRedirect')
-          break;
-
-        case 'TOKEN_REFRESHED':
-          useAuthStore.setState({
-            session: storeSession, 
-            user: storeUser, 
-            isLoading: false,
-            error: null,
-          });
-          break;
-
-        case 'USER_UPDATED':
-          useAuthStore.setState({ user: storeUser }); 
-          break;
-
-        case 'PASSWORD_RECOVERY':
-          break;
-
-        default:
-          logger.warn('[AuthListener] Unhandled auth event:', { event });
+            error: new Error('Auth listener callback failed') 
+        });
       }
     }
   );

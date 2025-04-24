@@ -1,9 +1,10 @@
-import { describe, it, expect, beforeEach, vi, type MockInstance, type Mock } from 'vitest';
+import { describe, it, expect, beforeEach, vi, type MockInstance, type Mock, type SpyInstance } from 'vitest';
 import { useAuthStore } from './authStore'; 
 import { api } from '@paynless/api-client';
 import { act } from '@testing-library/react';
 import type { User, Session, UserProfile, UserRole, ChatMessage, ApiResponse, FetchOptions } from '@paynless/types';
 import { logger } from '@paynless/utils'; 
+import { SupabaseClient, Session as SupabaseSession, User as SupabaseUser } from '@supabase/supabase-js'; // Import Supabase types
 
 // Helper to reset Zustand store state between tests
 const resetStore = () => {
@@ -21,281 +22,142 @@ const mockProfile: UserProfile = { id: 'user-123', first_name: 'Test', last_name
 const mockRegisterData = {
   email: 'new@example.com',
   password: 'newpassword',
-  // Slightly different user/session for register success response
-  user: { ...mockUser, id: 'user-new', email: 'new@example.com' }, 
-  session: { ...mockSession, access_token: 'xyz', refresh_token: '123' }, 
-  profile: { ...mockProfile, id: 'user-new', first_name: 'New', last_name: 'User' }
+  // User/session data now comes from Supabase/listener, not register action
 };
 
 // Mock the logger 
 vi.mock('@paynless/utils', () => ({
-  logger: {
-    info: vi.fn(),
-    warn: vi.fn(),
-    error: vi.fn(),
-    debug: vi.fn(),
-  },
+  logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
 }));
 
-// Mock navigate function (will be injected into store state)
-const mockNavigateGlobal = vi.fn(); 
+// Mock replayPendingAction (still needed by listener, potentially)
+vi.mock('./lib/replayPendingAction', () => ({
+  replayPendingAction: vi.fn(),
+}));
 
-describe('AuthStore - Register Action', () => {
+// --- Mock Supabase Client Setup ---
+const mockSupabaseAuthResponse = { data: { user: {} as SupabaseUser, session: {} as SupabaseSession }, error: null }; // Generic success response
+const mockSignInWithPassword = vi.fn(); 
+const mockSignUp = vi.fn().mockResolvedValue(mockSupabaseAuthResponse); // Mock signUp specificially
+const mockSignOut = vi.fn();
+
+const mockSupabaseClient = {
+  auth: {
+    signInWithPassword: mockSignInWithPassword,
+    signUp: mockSignUp,
+    signOut: mockSignOut,
+    onAuthStateChange: vi.fn(() => ({ data: { subscription: { unsubscribe: vi.fn() } } })),
+  }
+} as unknown as SupabaseClient;
+
+// Mock the api client module
+vi.mock('@paynless/api-client', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@paynless/api-client')>();
+  const mockedApi = {
+    get: vi.fn(),
+    post: vi.fn(),
+    put: vi.fn(),
+    delete: vi.fn(),
+    getSupabaseClient: vi.fn(() => mockSupabaseClient),
+    ai: vi.fn(),
+    billing: vi.fn(),
+    notifications: vi.fn(),
+  };
+  return {
+    ...actual,
+    api: mockedApi,
+    getApiClient: vi.fn(() => mockedApi),
+  }
+});
+
+describe('AuthStore - Register Action (Refactored for Supabase)', () => {
+  let signUpSpy: SpyInstance;
+  let navigateMock: Mock;
+  let loggerErrorSpy: SpyInstance;
+
   beforeEach(() => {
-    act(() => {
-      resetStore();
-      // Inject the mock navigate function before relevant tests
-      useAuthStore.getState().setNavigate(mockNavigateGlobal);
-    });
-    // Clear mocks between tests
+    // Reset Zustand store state
+    useAuthStore.setState(useAuthStore.getInitialState(), true);
+
+    // Assign mocks/spies
+    signUpSpy = vi.spyOn(mockSupabaseClient.auth, 'signUp');
+    loggerErrorSpy = vi.spyOn(logger, 'error');
+    
+    // Setup navigation mock
+    navigateMock = vi.fn();
+    useAuthStore.getState().setNavigate(navigateMock);
+
+    // Clear mocks
     vi.clearAllMocks();
-    // Restore any spies
-    vi.restoreAllMocks();
   });
 
+  afterEach(() => {
+     vi.restoreAllMocks();
+  });
 
-     it('should update state, call navigate, and return user on success (no replay)', async () => {
-         const { email, password } = mockRegisterData;
-         const { user, session, profile } = mockRegisterData; // Use the register-specific mock data
-         const postSpy = vi.spyOn(api, 'post').mockResolvedValue({ data: { user, session, profile }, error: undefined, status: 201 });
-         // Spy on localStorage getItem to ensure it's checked but returns null
-         const getItemSpy = vi.spyOn(Storage.prototype, 'getItem').mockReturnValue(null);
-         const localMockNavigate = vi.fn(); // Use local mock for this test
-         useAuthStore.setState({ navigate: localMockNavigate });
+  it('should call supabase.auth.signUp, set loading/error, navigate, but NOT set state directly', async () => {
+    // Arrange
+    const { email, password } = mockRegisterData;
+    signUpSpy.mockResolvedValue(mockSupabaseAuthResponse); // Ensure success
 
-         const result = await useAuthStore.getState().register(email, password);
+    // Act
+    const result = await useAuthStore.getState().register(email, password);
 
-         expect(postSpy).toHaveBeenCalledWith('register', { email, password });
-         expect(getItemSpy).toHaveBeenCalledWith('pendingAction'); // Verify replay check
-         const state = useAuthStore.getState();
-         expect(state.isLoading).toBe(false);
-         expect(state.user).toEqual(user);
-         expect(state.session).toEqual(session);
-         expect(state.profile).toEqual(profile);
-         expect(state.error).toBeNull();
-         expect(result).toEqual(user); // Should return the user object on success
-         expect(localMockNavigate).toHaveBeenCalledOnce();
-         expect(localMockNavigate).toHaveBeenCalledWith('dashboard'); // Default navigation
-     });
+    // Assert: Supabase call
+    expect(signUpSpy).toHaveBeenCalledTimes(1);
+    expect(signUpSpy).toHaveBeenCalledWith({ email, password });
 
-     it('should set error state, clear user data, not navigate, and return null on API failure', async () => {
-         const { email, password } = mockRegisterData;
-         const apiError = { code: 'EMAIL_EXISTS', message: 'Email already exists' };
-         const postSpy = vi.spyOn(api, 'post').mockResolvedValue({ data: null, error: apiError, status: 409 });
-         const localMockNavigate = vi.fn(); // Use local mock
-         useAuthStore.setState({ navigate: localMockNavigate });
-         useAuthStore.setState({ user: { id: 'old-user' } as any, session: { access_token: 'old_token' } as any }); // Pre-set user/session
+    // Assert: Final state (loading false, no user/session/profile set by action)
+    const finalState = useAuthStore.getState();
+    expect(finalState.isLoading).toBe(false);
+    expect(finalState.user).toBeNull(); 
+    expect(finalState.session).toBeNull();
+    expect(finalState.profile).toBeNull();
+    expect(finalState.error).toBeNull();
 
-         const result = await useAuthStore.getState().register(email, password);
+    // Assert: Return value (expect null as listener handles state)
+    expect(result).toBeNull(); 
 
-         expect(postSpy).toHaveBeenCalledWith('register', { email, password });
-         const state = useAuthStore.getState();
-         expect(state.isLoading).toBe(false);
-         expect(state.user).toBeNull(); // User should be cleared
-         expect(state.session).toBeNull();
-         expect(state.profile).toBeNull();
-         expect(state.error).toBeInstanceOf(Error);
-         expect(state.error?.message).toContain(apiError.message);
-         expect(result).toBeNull(); // Should return null on failure
-         expect(localMockNavigate).not.toHaveBeenCalled();
-     });
+    // Assert: Navigation (assuming register still navigates)
+    expect(navigateMock).toHaveBeenCalledTimes(1);
+    expect(navigateMock).toHaveBeenCalledWith('dashboard');
+  });
 
+  it('should set error state, not navigate, and return null on Supabase signUp failure', async () => {
+    // Arrange
+    const { email, password } = mockRegisterData;
+    const supabaseError = new Error('User already registered');
+    signUpSpy.mockRejectedValue(supabaseError);
+    
+    // Act
+    const result = await useAuthStore.getState().register(email, password);
 
-      // --- Tests for Register Replay Logic ---
+    // Assert: Supabase call
+    expect(signUpSpy).toHaveBeenCalledTimes(1);
+    expect(signUpSpy).toHaveBeenCalledWith({ email, password });
+
+    // Assert: Final state (loading false, error set, user/session/profile null)
+    const finalState = useAuthStore.getState();
+    expect(finalState.isLoading).toBe(false);
+    expect(finalState.user).toBeNull(); 
+    expect(finalState.session).toBeNull();
+    expect(finalState.profile).toBeNull();
+    expect(finalState.error).toBe(supabaseError);
+
+    // Assert: Return value
+    expect(result).toBeNull();
+
+    // Assert: No navigation
+    expect(navigateMock).not.toHaveBeenCalled();
+
+    // Assert: Logger called
+    expect(loggerErrorSpy).toHaveBeenCalledWith('Register error in store', { message: supabaseError.message });
+  });
+
+  // --- Tests for Register Replay Logic --- // REMOVED
+  /* 
     describe('register action - replay logic', () => {
-        // FIX: Use stubGlobal mocks for sessionStorage
-        let mockSessionGetItem: Mock<[key: string], string | null>;
-        let mockSessionSetItem: Mock<[key: string, value: string], void>;
-        let mockSessionRemoveItem: Mock<[key: string], void>;
-        // Keep API spy
-        let apiPostSpy: MockInstance<[endpoint: string, body: unknown, options?: FetchOptions], Promise<ApiResponse<unknown>>>;
-        let localMockNavigate: Mock<[], void>;
-
-         // Mock ChatMessage for replay response
-        const mockChatId = 'replay-chat-reg-456';
-        const mockReplayChatMessage: ChatMessage = { 
-             id: 'replay-msg-reg-1',
-             chat_id: mockChatId,
-             content: 'Replayed after register',
-              role: 'assistant', created_at: '2024-01-02T00:00:00Z', user_id: null, ai_provider_id: 'p1', system_prompt_id: 's1', token_usage: {total_tokens: 10}
-        };
-
-         // Chat action data
-        const chatPendingActionData = {
-            endpoint: 'chat',
-            method: 'POST',
-            body: { message: 'Stored message for register' },
-            returnPath: 'chat'
-        };
-        const chatPendingActionJson = JSON.stringify(chatPendingActionData);
-
-         // Non-chat action data
-        const nonChatPendingActionData = {
-            endpoint: 'settings',
-            method: 'POST', // Assuming POST for simplicity
-            body: { theme: 'dark' },
-            returnPath: 'settings'
-        };
-         const nonChatPendingActionJson = JSON.stringify(nonChatPendingActionData);
-
-          beforeEach(() => {
-            // Mock localStorage
-            getItemSpy = vi.spyOn(Storage.prototype, 'getItem');
-            removeItemSpy = vi.spyOn(Storage.prototype, 'removeItem');
-            setItemSpy = vi.spyOn(Storage.prototype, 'setItem');
-
-            // Mock api.post
-            apiPostSpy = vi.spyOn(api, 'post');
-             // Use a local mock for navigation
-            localMockNavigate = vi.fn();
-            useAuthStore.setState({ navigate: localMockNavigate });
-
-             // Mock successful register response by default for the FIRST call
-            apiPostSpy.mockResolvedValueOnce({
-                data: { user: mockRegisterData.user, session: mockRegisterData.session, profile: mockRegisterData.profile },
-                error: undefined,
-                status: 201 // Typically 201 Created for register
-            });
-        });
-
-         it('should replay chat action, store chatId, navigate to /chat, and skip default nav on success', async () => {
-            // Arrange
-            mockSessionGetItem.mockReturnValue(chatPendingActionJson); 
-            // Mock successful replay response (SECOND api.post call)
-            // apiPostSpy.mockResolvedValueOnce({ data: mockReplayChatMessage, error: undefined, status: 200 });
-            
-            // FIX: Use mockImplementationOnce for clearer sequence control
-            const mockRegisterResponse = { data: { user: mockRegisterData.user, session: mockRegisterData.session, profile: mockRegisterData.profile }, error: undefined, status: 201 };
-            const mockReplayResponse = { data: mockReplayChatMessage, error: undefined, status: 200 };
-            
-            vi.mocked(api.post)
-              .mockImplementationOnce(() => Promise.resolve(mockRegisterResponse)) // 1st call (register)
-              .mockImplementationOnce(() => Promise.resolve(mockReplayResponse)); // 2nd call (replay)
-
-            // Act
-            let promise;
-            await act(async () => { 
-              promise = useAuthStore.getState().register(mockRegisterData.email, mockRegisterData.password);
-            });
-            // Ensure the promise resolves fully
-            await promise;
-
-            // Assert
-            expect(mockSessionGetItem).toHaveBeenCalledWith('pendingAction');
-            expect(mockSessionRemoveItem).toHaveBeenCalledWith('pendingAction');
-            // Check register call (1st call)
-            expect(apiPostSpy).toHaveBeenNthCalledWith(1, 'register', { email: mockRegisterData.email, password: mockRegisterData.password });
-            // Check replay call (2nd call)
-            expect(apiPostSpy).toHaveBeenNthCalledWith(2,
-                chatPendingActionData.endpoint,
-                chatPendingActionData.body,
-                { token: mockRegisterData.session.access_token } // Use token from register response
-            );
-            // Assert localStorage.setItem for redirect ID
-            expect(setItemSpy).toHaveBeenCalledWith('loadChatIdOnRedirect', mockChatId);
-
-
-            // Assert navigation to specific path from pending action
-            expect(localMockNavigate).toHaveBeenCalledTimes(1);
-            expect(localMockNavigate).toHaveBeenCalledWith(chatPendingActionData.returnPath); // Should be 'chat'
-        });
-
-         it('should navigate to /chat and NOT store chatId if chat replay fails', async () => {
-             // Arrange
-            mockSessionGetItem.mockReturnValue(chatPendingActionJson); 
-            // Redefine replayError to include status and nested error
-            const replayError = { 
-              error: { code: 'REPLAY_FAILED', message: 'Chat replay failed after register' }, 
-              status: 500 
-            };
-            // Mock the SECOND call to apiPostSpy (the replay call)
-            apiPostSpy.mockResolvedValueOnce({ data: null, error: replayError.error, status: replayError.status }); 
-            const logErrorSpy = vi.spyOn(logger, 'error');
-
-            // Act
-            await useAuthStore.getState().register(mockRegisterData.email, mockRegisterData.password);
-
-            // Assert
-            expect(mockSessionGetItem).toHaveBeenCalledWith('pendingAction');
-            expect(mockSessionRemoveItem).toHaveBeenCalledWith('pendingAction'); 
-            // Check register call (1st call)
-            expect(apiPostSpy).toHaveBeenNthCalledWith(1, 'register', { email: mockRegisterData.email, password: mockRegisterData.password });
-            // Check replay call (2nd call)
-            expect(apiPostSpy).toHaveBeenNthCalledWith(2,
-                chatPendingActionData.endpoint,
-                chatPendingActionData.body,
-                { token: mockRegisterData.session.access_token }
-            );
-            // Assert localStorage.setItem for redirect ID was NOT called
-            expect(setItemSpy).not.toHaveBeenCalledWith('loadChatIdOnRedirect', expect.anything());
-           
-            // Assert navigation still goes to the returnPath from pending action
-            expect(localMockNavigate).toHaveBeenCalledTimes(1);
-            expect(localMockNavigate).toHaveBeenCalledWith(chatPendingActionData.returnPath); // Should still be 'chat'
-
-              // Fix: Adjust assertion to match actual nested error structure
-              expect(logErrorSpy).toHaveBeenCalledWith(
-                "Error replaying pending action:", 
-                expect.objectContaining({
-                  status: replayError.status, // Use status from replayError
-                  error: expect.objectContaining(replayError.error) // Match nested error
-                })
-              );
-              // expect(useAuthStore.getState().error).toBeNull(); // Replay error shouldn't block register state
-         });
-
-         it('should replay non-chat action, navigate to returnPath, and NOT store chatId', async () => {
-            // Arrange
-            mockSessionGetItem.mockReturnValue(nonChatPendingActionJson); 
-             // Mock successful non-chat replay response - assumes POST for /settings (SECOND api.post call)
-             apiPostSpy.mockResolvedValueOnce({ data: { success: true }, error: undefined, status: 200 });
-
-
-             // Act
-             await useAuthStore.getState().register(mockRegisterData.email, mockRegisterData.password);
-
-             // Assert
-             expect(mockSessionGetItem).toHaveBeenCalledWith('pendingAction');
-             expect(mockSessionRemoveItem).toHaveBeenCalledWith('pendingAction');
-             // Check register call (api.post - 1st call)
-             expect(apiPostSpy).toHaveBeenNthCalledWith(1, 'register', { email: mockRegisterData.email, password: mockRegisterData.password });
-             // Check replay call (api.post - 2nd call)
-             expect(apiPostSpy).toHaveBeenNthCalledWith(2,
-                 nonChatPendingActionData.endpoint, // /settings
-                 nonChatPendingActionData.body,
-                 { token: mockRegisterData.session.access_token }
-             );
-             // Assert localStorage.setItem for redirect ID was NOT called
-             expect(setItemSpy).not.toHaveBeenCalledWith('loadChatIdOnRedirect', expect.anything());
-
-             // Assert navigation to specific path from non-chat pending action
-             expect(localMockNavigate).toHaveBeenCalledTimes(1);
-             expect(localMockNavigate).toHaveBeenCalledWith(nonChatPendingActionData.returnPath); // Should be 'settings'
-         });
-
-         it('should navigate to dashboard if pendingAction JSON is invalid', async () => {
-              // Arrange
-             mockSessionGetItem.mockReturnValue('{invalid json');
-             const logErrorSpy = vi.spyOn(logger, 'error');
-             const expectedError = expect.any(SyntaxError);
-
-             // Act
-             await useAuthStore.getState().register(mockRegisterData.email, mockRegisterData.password);
-
-            // Assert
-            expect(getItemSpy).toHaveBeenCalledWith('pendingAction');
-            expect(removeItemSpy).not.toHaveBeenCalled(); // Should not remove if parse fails
-            expect(apiPostSpy).toHaveBeenCalledTimes(1); // Only register call
-            // Assert localStorage.setItem was NOT called for redirect ID
-            expect(setItemSpy).not.toHaveBeenCalledWith('loadChatIdOnRedirect', expect.anything());
-            // Should navigate to default dashboard path
-            expect(localMockNavigate).toHaveBeenCalledTimes(1);
-            expect(localMockNavigate).toHaveBeenCalledWith('dashboard');
-            // Should log an error
-            expect(logErrorSpy).toHaveBeenCalledWith("Error processing pending action after registration:", expect.objectContaining({
-                error: expect.any(String) // Check if error property is a string
-             }));
-         });
-
+       // ... All previous replay tests removed ...
     });
+  */
 }); 

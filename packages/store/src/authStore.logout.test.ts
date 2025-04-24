@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach, vi, type MockInstance, Mock } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi, type MockInstance, Mock, type SpyInstance } from 'vitest';
 import { useAuthStore } from './authStore'; 
 import { api } from '@paynless/api-client';
 import { act } from '@testing-library/react';
@@ -6,6 +6,7 @@ import type { User, Session, UserProfile, UserRole, ApiError } from '@paynless/t
 import { logger } from '@paynless/utils'; 
 // Import the module to access the mocked version later
 import * as analyticsClient from '@paynless/analytics-client';
+import { SupabaseClient, Session as SupabaseSession, User as SupabaseUser } from '@supabase/supabase-js'; // Import Supabase types
 
 // Helper to reset Zustand store state between tests
 const resetStore = () => {
@@ -30,139 +31,143 @@ vi.mock('@paynless/utils', () => ({
   },
 }));
 
-// Declare variables to hold mock functions
-let mockIdentify: Mock;
-let mockReset: Mock;
-let mockTrack: Mock;
-
-// Mock the analytics client module factory (Creates NEW vi.fn() instances)
+// Mock analytics client
 vi.mock('@paynless/analytics-client', () => ({ 
-  analytics: { 
-    identify: vi.fn(), 
-    reset: vi.fn(), 
-    track: vi.fn() 
-  } 
+  analytics: { identify: vi.fn(), reset: vi.fn(), track: vi.fn() } 
 }));
 
-// Mock navigate function (will be injected into store state)
-const mockNavigateGlobal = vi.fn(); 
+// --- Mock Supabase Client Setup ---
+const mockSignInWithPassword = vi.fn(); 
+const mockSignUp = vi.fn();
+const mockSignOut = vi.fn().mockResolvedValue({ error: null }); // Mock signOut specifically
 
-describe('AuthStore - Logout Action', () => {
-  // Define spies at the describe level
-  let postSpy: MockInstance;
+const mockSupabaseClient = {
+  auth: {
+    signInWithPassword: mockSignInWithPassword,
+    signUp: mockSignUp,
+    signOut: mockSignOut,
+    onAuthStateChange: vi.fn(() => ({ data: { subscription: { unsubscribe: vi.fn() } } })),
+  }
+} as unknown as SupabaseClient;
+
+// Mock the api client module
+vi.mock('@paynless/api-client', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@paynless/api-client')>();
+  const mockedApi = {
+    get: vi.fn(), post: vi.fn(), put: vi.fn(), delete: vi.fn(),
+    getSupabaseClient: vi.fn(() => mockSupabaseClient),
+    ai: vi.fn(), billing: vi.fn(), notifications: vi.fn(),
+  };
+  return { ...actual, api: mockedApi, getApiClient: vi.fn(() => mockedApi) }
+});
+
+describe('AuthStore - Logout Action (Refactored for Supabase)', () => {
+  let signOutSpy: SpyInstance;
   let logErrorSpy: MockInstance;
   let logWarnSpy: MockInstance;
-  let localMockNavigate: Mock<[], void>; // Use local mock for navigation tests
+  let mockReset: Mock; // For analytics
+  let localMockNavigate: Mock<[], void>; 
 
   beforeEach(() => {
-    // Assign the actual mock functions from the mocked module to the variables
-    mockIdentify = vi.mocked(analyticsClient.analytics.identify);
-    mockReset = vi.mocked(analyticsClient.analytics.reset);
-    mockTrack = vi.mocked(analyticsClient.analytics.track);
+    // Reset Zustand store state
+    useAuthStore.setState(useAuthStore.getInitialState(), true);
 
-    resetStore();
-    // Inject the mock navigate function before relevant tests
-    localMockNavigate = vi.fn(); // Initialize local mock here
-    useAuthStore.getState().setNavigate(localMockNavigate); // Inject it
-
-    // Setup spies
-    postSpy = vi.spyOn(api, 'post'); // Spy on post globally for tests if needed
+    // Assign mocks/spies
+    signOutSpy = vi.spyOn(mockSupabaseClient.auth, 'signOut');
     logErrorSpy = vi.spyOn(logger, 'error');
     logWarnSpy = vi.spyOn(logger, 'warn');
+    mockReset = vi.mocked(analyticsClient.analytics.reset); // Get analytics mock
+    
+    // Setup navigation mock
+    localMockNavigate = vi.fn();
+    useAuthStore.getState().setNavigate(localMockNavigate);
+
+    // Clear mocks
+    vi.clearAllMocks();
   });
 
-  // ADD afterEach for cleanup
   afterEach(() => {
-    vi.clearAllMocks();
     vi.restoreAllMocks();
   });
 
-   it('should clear state, call api.post(/logout), and navigate to /login', async () => {
-      // Arrange: Set some initial authenticated state
-      useAuthStore.setState({
-        user: mockUser,
-        session: mockSession,
-        profile: mockProfile,
-        isLoading: false,
-        error: new Error('previous error'),
-      });
-      // Configure the spy return value for this specific test if needed
-      postSpy.mockResolvedValue({ data: { success: true }, error: undefined, status: 200 });
+  it('should call supabase.signOut, reset analytics, and navigate (state cleared by listener)', async () => {
+    // Arrange: Set initial authenticated state (simulate state after listener ran)
+    useAuthStore.setState({ user: mockUser, session: mockSession, profile: mockProfile });
+    signOutSpy.mockResolvedValue({ error: null }); // Ensure success
 
-      // Act
-      await act(async () => {
-        await useAuthStore.getState().logout();
-      });
+    // Act
+    await useAuthStore.getState().logout();
 
-      // Assert
-      expect(postSpy).toHaveBeenCalledWith('logout', {}, { token: mockSession.access_token });
-      const state = useAuthStore.getState();
-      expect(state.user).toBeNull();
-      expect(state.session).toBeNull();
-      expect(state.profile).toBeNull();
-      expect(state.isLoading).toBe(false); 
-      expect(state.error).toBeNull(); // Error should be cleared
-      expect(useAuthStore.getState().navigate).toBe(localMockNavigate);
-      expect(localMockNavigate).toHaveBeenCalledTimes(1);
-      expect(localMockNavigate).toHaveBeenCalledWith('login');
+    // Assert: Supabase call
+    expect(signOutSpy).toHaveBeenCalledTimes(1);
 
-      // Assert: Analytics reset call (using the assigned mock variable)
-      expect(mockReset).toHaveBeenCalledTimes(1);
-    });
+    // Assert: State is NOT cleared directly by the action
+    const state = useAuthStore.getState();
+    expect(state.user).toEqual(mockUser); // State remains until listener reacts
+    expect(state.session).toEqual(mockSession);
+    // Note: Depending on timing, the listener *might* have already cleared state 
+    // before this assertion runs in a real async environment. 
+    // In unit tests with mocks, it likely hasn't reacted yet.
 
-    it('should clear state and navigate even if API call fails', async () => {
-        // Arrange
-        useAuthStore.setState({
-            user: mockUser,
-            session: mockSession,
-        });
-         const mockApiError: ApiError = { code: 'LOGOUT_FAILED', message: 'Logout failed' };
-         postSpy.mockResolvedValue({ data: null, error: mockApiError, status: 500 });
+    // Assert: Navigation
+    expect(localMockNavigate).toHaveBeenCalledTimes(1);
+    expect(localMockNavigate).toHaveBeenCalledWith('login');
 
-         // Act
-         await act(async () => {
-            await useAuthStore.getState().logout();
-         });
+    // Assert: Analytics reset called immediately
+    expect(mockReset).toHaveBeenCalledTimes(1);
+  });
 
-         // Assert
-         expect(postSpy).toHaveBeenCalledWith('logout', {}, { token: mockSession.access_token });
-         const state = useAuthStore.getState();
-         expect(state.user).toBeNull(); // State should still be cleared
-         expect(state.session).toBeNull();
-         expect(state.profile).toBeNull();
-         expect(state.error).toBeNull(); // Should still clear local error state
-         expect(localMockNavigate).toHaveBeenCalledTimes(1); // Navigation should still happen
-         expect(localMockNavigate).toHaveBeenCalledWith('login');
+  it('should reset analytics and navigate even if supabase.signOut fails (state cleared by listener)', async () => {
+    // Arrange
+    useAuthStore.setState({ user: mockUser, session: mockSession });
+    const supabaseError = new Error('Sign out failed');
+    signOutSpy.mockResolvedValue({ error: supabaseError }); // Mock failure
 
-         // Assert: Analytics reset call (state is cleared, using the assigned mock variable)
-         expect(mockReset).toHaveBeenCalledTimes(1);
-    });
+    // Act
+    await useAuthStore.getState().logout();
+
+    // Assert: Supabase call attempted
+    expect(signOutSpy).toHaveBeenCalledTimes(1);
+
+    // Assert: State not cleared directly
+    const state = useAuthStore.getState();
+    expect(state.user).toEqual(mockUser); 
+    expect(state.session).toEqual(mockSession);
     
-     it('should clear state and navigate without calling API if no session exists', async () => {
-        // Arrange: Ensure state is logged out (default after reset)
-        useAuthStore.setState({ user: null, session: null /* navigate is set in beforeEach */ });
-        // postSpy is already set up in beforeEach
-        // const postSpy = vi.spyOn(api, 'post');
-        // logWarnSpy is already set up in beforeEach
-        // const logWarnSpy = vi.spyOn(logger, 'warn');
+    // Assert: Error logged (if implemented in logout action)
+    expect(logErrorSpy).toHaveBeenCalledWith('Supabase signOut failed, proceeding with local cleanup.', { error: supabaseError.message });
 
-        // Act
-        await act(async () => {
-            await useAuthStore.getState().logout();
-        });
+    // Assert: Navigation still happens
+    expect(localMockNavigate).toHaveBeenCalledTimes(1);
+    expect(localMockNavigate).toHaveBeenCalledWith('login');
 
-        // Assert
-        expect(postSpy).not.toHaveBeenCalled(); // API should not be called
-        const state = useAuthStore.getState();
-        expect(state.user).toBeNull();
-        expect(state.session).toBeNull();
-        expect(state.profile).toBeNull();
-        expect(state.error).toBeNull(); 
-        expect(logWarnSpy).toHaveBeenCalledWith('Logout called but no session token found. Clearing local state only.');
-        expect(localMockNavigate).toHaveBeenCalledTimes(1); 
-        expect(localMockNavigate).toHaveBeenCalledWith('login');
+    // Assert: Analytics reset still called
+    expect(mockReset).toHaveBeenCalledTimes(1);
+  });
+    
+  it('should reset analytics and navigate without calling signOut if no session exists', async () => {
+    // Arrange: Ensure state is logged out
+    useAuthStore.setState({ user: null, session: null });
 
-        // Assert: Analytics reset call (state is cleared, using the assigned mock variable)
-        expect(mockReset).toHaveBeenCalledTimes(1);
-    });
+    // Act
+    await useAuthStore.getState().logout();
+
+    // Assert: Supabase call NOT made
+    expect(signOutSpy).not.toHaveBeenCalled();
+
+    // Assert: State remains cleared
+    const state = useAuthStore.getState();
+    expect(state.user).toBeNull();
+    expect(state.session).toBeNull();
+
+    // Assert: Logged warning (if implemented)
+    expect(logWarnSpy).toHaveBeenCalledWith('Logout called but no session token found. Clearing local state only.');
+
+    // Assert: Navigation still happens
+    expect(localMockNavigate).toHaveBeenCalledTimes(1); 
+    expect(localMockNavigate).toHaveBeenCalledWith('login');
+
+    // Assert: Analytics reset still called
+    expect(mockReset).toHaveBeenCalledTimes(1);
+  });
 }); 

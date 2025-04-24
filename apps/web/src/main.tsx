@@ -5,6 +5,8 @@ import './index.css'
 import { initializeApiClient } from '@paynless/api-client'
 import { logger/*, LogLevel*/ } from '@paynless/utils'
 import ReactGA from 'react-ga4'
+import { api } from '@paynless/api-client'
+import { initAuthListener } from '@paynless/store'
 import { analytics } from '@paynless/analytics-client'
 
 // --- Configure Logger Early ---
@@ -22,6 +24,19 @@ if (!supabaseUrl || !supabaseAnonKey) {
   // Potentially render an error message or throw an error
 } else {
   initializeApiClient({ supabaseUrl, supabaseAnonKey })
+  // --- Initialize Auth Listener Immediately After API Client --- 
+  try {
+    logger.info('[main.tsx] Initializing auth state listener...');
+    const supabaseClient = api.getSupabaseClient();
+    // TODO: Manage this unsubscribe function properly on app unmount
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    const unsubscribe = initAuthListener(supabaseClient); 
+    logger.info('[main.tsx] Auth state listener initialized.');
+    // You could assign to window for dev debugging if needed:
+    // window.unsubscribeAuth = unsubscribe;
+  } catch (error) {
+    logger.error('[main.tsx] Failed to initialize auth state listener:', { error });
+  }
 }
 
 // Initialize Google Analytics (GA4)

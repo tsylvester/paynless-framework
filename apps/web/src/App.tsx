@@ -36,39 +36,10 @@ function NavigateInjector() {
 
 // NEW: Separate App Content component
 export function AppContent() {
-  const { initialize, isLoading } = useAuthStore((state) => ({
-    initialize: state.initialize,
-    isLoading: state.isLoading,
-  }))
+  const isLoading = useAuthStore((state) => state.isLoading);
+
   const initializedRef = useRef(false)
   const setTestMode = useSubscriptionStore((state) => state.setTestMode) // Get action
-
-  useEffect(() => {
-    let unsubscribeAuthListener: (() => void) | undefined;
-    if (!initializedRef.current) {
-      initializedRef.current = true
-      logger.info('App initializing auth store...')
-      initialize()
-
-      try {
-        logger.info('Initializing auth state listener...');
-        const supabaseClient = api.getSupabaseClient();
-        unsubscribeAuthListener = initAuthListener(supabaseClient);
-        logger.info('Auth state listener initialization complete.');
-      } catch (error) {
-        logger.error('Failed to initialize auth state listener:', { error });
-        // Handle initialization error? Maybe set an error state in a global context?
-      }
-    }
-
-    // Cleanup function for the useEffect hook
-    return () => {
-      if (unsubscribeAuthListener) {
-        logger.debug('Cleaning up auth state listener subscription.');
-        unsubscribeAuthListener();
-      }
-    };
-  }, [initialize]) // Keep initialize in dependency array for now
 
   // Add useEffect for Test Mode Initialization
   useEffect(() => {

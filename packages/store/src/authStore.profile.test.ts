@@ -149,9 +149,9 @@ describe('AuthStore - Update Profile Action', () => {
              const state = useAuthStore.getState();
              expect(state.profile).toEqual(mockProfile);
              expect(state.error).toBeInstanceOf(Error);
-             expect(state.error?.message).toContain('Failed to update profile');
+             expect(state.error?.message).toBe(thrownError.message); 
              expect(state.isLoading).toBe(false);
              expect(result).toBeNull();
-             expect(logErrorSpy).toHaveBeenCalledWith('Error during profile update:', { error: thrownError });
+             expect(logErrorSpy).toHaveBeenCalledWith('Update profile: Error during API call.', { message: thrownError.message });
           });
 }); 
