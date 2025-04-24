@@ -51,24 +51,6 @@ export const useAuthStore = create<AuthStore>()((set, get) => ({
             throw signInError;
           }
 
-          // On success, Supabase call is done. 
-          // The onAuthStateChange listener will handle setting user, session, profile.
-          // We don't need to manually set state here anymore.
-          
-          // Keep navigation logic? (The listener might handle this too via replay)
-          // For now, let's assume login still triggers default navigation if listener doesn't
-          const navigate = get().navigate;
-          if (navigate) {
-            logger.info(
-              'Supabase Login successful, navigating to dashboard (listener will handle state).',
-            );
-            navigate('dashboard');
-          } else {
-            logger.warn(
-              'Supabase Login successful but navigate function not set in store.',
-            );
-          }
-
           // What should login return now? Listener handles state. 
           // Returning null seems appropriate as the action itself doesn't provide the final user state.
           return null; 
@@ -116,19 +98,6 @@ export const useAuthStore = create<AuthStore>()((set, get) => ({
 
           // On success, Supabase call is done.
           // The onAuthStateChange listener handles setting state.
-          
-          // Keep navigation logic?
-          const navigate = get().navigate;
-          if (navigate) {
-            logger.info(
-              'Supabase Registration successful, navigating to dashboard (listener will handle state).'
-            );
-            navigate('dashboard');
-          } else {
-            logger.warn(
-              'Supabase Registration successful but navigate function not set in store.'
-            );
-          }
 
           // Return null as listener handles final user state
           return null;

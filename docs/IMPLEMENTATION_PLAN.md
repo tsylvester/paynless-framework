@@ -19,6 +19,7 @@
     *   [✅] Unit Test main sync router (`supabase/functions/sync-ai-models/index.test.ts`)
     *   [✅] Manual invocation works
     *   [ ] Implement & Test Cron Job trigger
+*   [✅] Figure out how to parse chat responses better, they get messy if the assistant uses markdown 
 
 **Incomplete Features** // Or In Progress
 
@@ -43,14 +44,18 @@
     *   [ ] Convert all pages / components to shadcn
     *   [ ] Loading skeletons for all components 
 *   [ ] Run SEO scan 
-*   [✅] Figure out how to parse chat responses better, they get messy if the assistant uses markdown 
 *   [ ] Fix super long login delay on chat flow 
 *   [🚧] User email automation - abstract for generic but specific implementation with Kit 
     *   [ ] Everything works EXCEPT the email_sync_trigger for on_user_created, the current form breaks registration
 *   [ ] Connect frontend analytics events (PostHog) to email marketing service (Kit) for behavioral triggers (IFTTT)
 *   [ ] Groups & organizations - how does Supabase currently support this? // Now being implemented
 *   [ ] Notifications - system wide and user specific // Now being implemented
-*   [ ] Consolidate authStore with Zustand, remove the direct localSession interactions.
+*   [✅] Consolidate authStore with Zustand, remove the direct localSession interactions.
+*   [ ] Fix homepage to load default choices correctly again
+*   [ ] Fix chat history to dynamically reload 
+*   [ ] Fix auto navigate on replay 
+*   [ ] Fix chat to scroll correctly on new submissions 
+*   [ ] Save system prompt to chat so it sets correctly when chat loads 
 
 **Future Considerations / Deferred Scope**
 
