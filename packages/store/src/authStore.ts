@@ -435,8 +435,8 @@ export function initAuthListener(
                     // Replay Action
                     logger.debug(`[AuthListener] Checking for pending action for ${event}`);
                     const navigate = useAuthStore.getState().navigate;
-                    // Pass the SAME apiClientInstance used for profile fetch
-                    await replayPendingAction(apiClientInstance, navigate); 
+                    // Pass the SAME apiClientInstance used for profile fetch AND the token
+                    await replayPendingAction(apiClientInstance, navigate, storeSession.access_token); 
                 } catch (asyncError) {
                     logger.error(`[AuthListener] Error during async tasks for ${event}`, { 
                         error: asyncError instanceof Error ? asyncError.message : String(asyncError) 

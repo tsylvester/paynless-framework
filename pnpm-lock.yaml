@@ -385,6 +385,9 @@ importers:
       vitest:
         specifier: ^1.6.1
         version: 1.6.1(@types/node@20.17.30)(@vitest/ui@1.6.1)(jsdom@26.0.0)
+      vitest-localstorage-mock:
+        specifier: ^0.1.2
+        version: 0.1.2(vitest@1.6.1(@types/node@20.17.30)(@vitest/ui@1.6.1)(jsdom@26.0.0))
 
   packages/types:
     devDependencies:
@@ -5168,6 +5171,11 @@ packages:
       yaml:
         optional: true
 
+  vitest-localstorage-mock@0.1.2:
+    resolution: {integrity: sha512-1oee6iDWhhquzVogssbpwQi6a2F3L+nCKF2+qqyCs5tH0sOYRyTqnsfj2dtmEQiL4xtJkHLn42hEjHGESlsJHw==}
+    peerDependencies:
+      vitest: '*'
+
   vitest@1.6.1:
     resolution: {integrity: sha512-Ljb1cnSJSivGN0LqXd/zmDbWEM0RNNg2t1QW/XUhYl/qPqyu7CsqeWtqQXHVaJsecLPuDoak2oJcZN2QoRIOag==}
     engines: {node: ^18.0.0 || >=20.0.0}
@@ -7735,7 +7743,7 @@ snapshots:
       pathe: 1.1.2
       picocolors: 1.1.1
       sirv: 2.0.4
-      vitest: 1.6.1(@types/node@22.14.0)(@vitest/ui@1.6.1)(jsdom@24.1.3)
+      vitest: 1.6.1(@types/node@20.17.30)(@vitest/ui@1.6.1)(jsdom@26.0.0)
 
   '@vitest/utils@1.6.1':
     dependencies:
@@ -10619,6 +10627,10 @@ snapshots:
       fsevents: 2.3.3
       jiti: 2.4.2
       yaml: 2.7.1
+
+  vitest-localstorage-mock@0.1.2(vitest@1.6.1(@types/node@20.17.30)(@vitest/ui@1.6.1)(jsdom@26.0.0)):
+    dependencies:
+      vitest: 1.6.1(@types/node@20.17.30)(@vitest/ui@1.6.1)(jsdom@26.0.0)
 
   vitest@1.6.1(@types/node@20.17.30)(@vitest/ui@1.6.1)(jsdom@26.0.0):
     dependencies:

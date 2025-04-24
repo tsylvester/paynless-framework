@@ -142,3 +142,23 @@
 *   [x] **3.6 Implement Refactored `logout` Action:**
     *   **File:** `packages/store/src/authStore.ts`
     *   **TDD (GREEN):** Modify `logout` action:
+
+---
+
+## Phase 4: Listener Stabilization & Cleanup
+
+**Goal:** Ensure the listener integration is robust and address issues discovered during refactoring.
+
+*   [✅] **4.1 Remove Legacy Actions:** Removed `initialize` and `refreshSession` actions from `authStore.ts` and updated associated types/tests.
+*   [✅] **4.2 Remove Store Persistence:** Removed the Zustand `persist` middleware from `authStore.ts` to avoid conflicts with Supabase session management.
+*   [✅] **4.3 Adjust Listener Initialization:** Moved the `initAuthListener` call from `AppContent`'s `useEffect` to `main.tsx` immediately after `initializeApiClient` to fix event timing issues.
+*   [✅] **4.4 Refactor Listener Callback:** Modified the `onAuthStateChange` callback to be synchronous for immediate state updates (`isLoading`, `session`, `user`) and deferred asynchronous tasks (profile fetch, action replay) using `setTimeout(..., 0)` to prevent deadlocks, per Supabase docs.
+*   [✅] **4.5 Correct Profile Fetch Handling:** Updated the profile fetch within the listener to expect the `AuthResponse` structure from `/me` and correctly extract `response.data.profile` before setting state.
+*   [🚧] **4.6 Address Pending Action Replay:** The `replayPendingAction` function, previously triggered within `login`/`register`, is likely broken due to the refactor. Needs investigation and fixing. The associated test (`authStore.refresh.test.ts` or similar) is currently skipped or failing.
+
+*   [ ] **4.7 Checkpoint 4:**
+    *   **Run Unit Tests:** `pnpm test --filter=@paynless/store`. Verify all tests pass *except* the known failing/skipped test for `replayPendingAction`.
+    *   **Build App:** `pnpm build`. Ensure it completes successfully.
+    *   **Manual Test:** Thoroughly test login, logout, page refresh while logged in/out. Verify profile displays correctly.
+    *   **Commit:** `refactor(auth): complete Supabase listener integration and cleanup (#issue_number)`
+    *   **Update Main Plan:** Mark `Consolidate authStore with Zustand...` as `[🚧]` in `docs/IMPLEMENTATION_PLAN.md`, noting the `replayPendingAction` sub-task remains.

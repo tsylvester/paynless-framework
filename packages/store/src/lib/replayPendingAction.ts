@@ -9,11 +9,13 @@ import { type NavigateFunction } from '@paynless/types';
  *
  * @param api - The initialized ApiClient instance.
  * @param navigate - The navigation function from the router.
+ * @param token - The user's current access token.
  * @returns {Promise<boolean>} - True if navigation occurred based on returnPath, false otherwise.
  */
 export async function replayPendingAction(
   api: ApiClient,
-  navigate: NavigateFunction | null
+  navigate: NavigateFunction | null,
+  token: string | undefined | null
 ): Promise<boolean> {
   let navigated = false;
   const pendingActionJson = localStorage.getItem('pendingAction');
@@ -24,49 +26,53 @@ export async function replayPendingAction(
   }
 
   logger.info('[replayPendingAction] Found pending action. Attempting replay...');
+  let pendingAction: PendingAction | null = null; // Declare outside for potential later use
 
   try {
-    const pendingAction: PendingAction = JSON.parse(pendingActionJson);
-    localStorage.removeItem('pendingAction'); // Clear immediately after successful parse
+    pendingAction = JSON.parse(pendingActionJson);
+    // --- Add check for null after parse --- 
+    if (!pendingAction) {
+        // This case should ideally not happen if JSON.parse succeeds with non-empty JSON
+        // but good to handle defensively.
+        logger.error('[replayPendingAction] Parsed pending action is null or undefined.');
+        // Attempt to remove potentially corrupt item?
+        try { localStorage.removeItem('pendingAction'); } catch(e){}
+        return false;
+    }
+
+    // --- DO NOT remove item here --- 
+    // localStorage.removeItem('pendingAction'); 
 
     const { endpoint, method, body, returnPath } = pendingAction;
-    const session = await api.getSupabaseClient().auth.getSession();
-    const token = session.data.session?.access_token;
+
+    // --- Add temporary log for token ---
+    console.log('[DEBUG replayPendingAction] Checking token:', token);
 
     if (!endpoint || !method || !token) {
       logger.error('[replayPendingAction] Invalid pending action data or missing token:', {
         pendingAction,
         hasToken: !!token,
       });
-      // Potentially keep the invalid item in localStorage? Or clear it?
-      // Let's clear it for now to prevent loops.
-      return false; // Cannot replay
+      // Keep the item in localStorage since replay failed early
+      return false; 
     }
 
     logger.info(`[replayPendingAction] Replaying action: ${method} ${endpoint}`, { body });
-    let replayResponse: ApiResponse<unknown>; // Use unknown for generic replay
+    let replayResponse: ApiResponse<unknown>;
 
-    // --- Replay Logic (Moved from authStore.ts) ---
+    // --- Replay Logic ---
     switch (method.toUpperCase()) {
       case 'POST':
-        replayResponse = await api.post(endpoint, body ?? {}, {
-          token: token,
-        });
+        replayResponse = await api.post(endpoint, body ?? {}, { token });
         break;
       case 'PUT':
-        replayResponse = await api.put(endpoint, body ?? {}, {
-          token: token,
-        });
+        replayResponse = await api.put(endpoint, body ?? {}, { token });
         break;
       case 'DELETE':
-        replayResponse = await api.delete(endpoint, {
-          token: token,
-        });
+        replayResponse = await api.delete(endpoint, { token });
         break;
       case 'GET':
-        replayResponse = await api.get(endpoint, {
-          token: token,
-        });
+        replayResponse = await api.get(endpoint, { token });
         break;
       default:
         logger.error(
@@ -88,11 +94,19 @@ export async function replayPendingAction(
         status: replayResponse.status,
         error: replayResponse.error,
       });
+      // --- Keep item on error --- 
     } else {
       logger.info(
         '[replayPendingAction] Successfully replayed pending action.',
         { status: replayResponse.status }
       );
+      // --- Remove item ONLY on SUCCESS --- 
+      try {
+          localStorage.removeItem('pendingAction');
+          logger.debug('[replayPendingAction] Cleared pending action from localStorage after successful replay.')
+      } catch (removeError) {
+          logger.error('[replayPendingAction] Failed to remove pendingAction after success:', { removeError });
+      }
 
       // --- Special Chat Handling (Moved from authStore.ts) ---
        if (
@@ -115,13 +129,16 @@ export async function replayPendingAction(
           }
        }
       // --- End Special Chat Handling ---
-
     }
 
     // --- Navigation Logic (To be moved from authStore.ts) ---
+
+    // --- Add temporary log for navigation check ---
+    console.log('[DEBUG replayPendingAction] Checking navigation:', { hasNavigate: !!navigate, returnPath });
+
     if (navigate && returnPath) {
       logger.info(
-        `[replayPendingAction] Replay complete, navigating to original path: ${returnPath}`
+        `[replayPendingAction] Replay processing complete, navigating to original path: ${returnPath}`
       );
       navigate(returnPath);
       navigated = true;
@@ -138,12 +155,9 @@ export async function replayPendingAction(
     logger.error('[replayPendingAction] Error processing pending action:', {
       error: errorMsg,
     });
-    // Attempt to clear localStorage even if parsing failed, to prevent loops
-    try {
-        localStorage.removeItem('pendingAction');
-    } catch (removeError) {
-        logger.error('[replayPendingAction] Failed to remove pendingAction after error:', { removeError });
-    }
+    // Keep item if error occurred during parsing/processing
+    // logger.error('[replayPendingAction] Error processing pending action:', ...);
+    // try { localStorage.removeItem('pendingAction'); } ... // Remove this attempt
   }
 
   return navigated;
