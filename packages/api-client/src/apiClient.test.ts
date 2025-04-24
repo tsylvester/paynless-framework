@@ -258,114 +258,236 @@ describe('apiClient', () => {
 
   });
 
-  // ---> Add tests for POST <--- 
+  // ---> NEW TESTS for api.post <---
   describe('api.post', () => {
     const endpoint = 'test-post';
-    const requestBody = { name: 'test', value: 123 };
-    const mockResponseData = { id: 'new-resource', ...requestBody };
+    const requestBody = { name: 'Test', value: 123 };
+    const mockResponseData = { id: 'new-item-123', ...requestBody };
 
     it('should perform a POST request with correct body and headers', async () => {
       server.use(
         http.post(`${MOCK_FUNCTIONS_URL}/${endpoint}`, async ({ request }) => {
-          expect(request.method).toBe('POST');
+          const body = await request.json();
+          expect(body).toEqual(requestBody);
           expect(request.headers.get('Authorization')).toBe(`Bearer ${MOCK_ACCESS_TOKEN}`);
-          expect(request.headers.get('apikey')).toBe(MOCK_ANON_KEY);
           expect(request.headers.get('Content-Type')).toBe('application/json');
-          expect(await request.json()).toEqual(requestBody); // Verify body
+          expect(request.headers.get('apikey')).toBe(MOCK_ANON_KEY);
           return HttpResponse.json(mockResponseData, { status: 201 });
         })
       );
+
       const response = await api.post(endpoint, requestBody);
+
       expect(response.error).toBeUndefined();
       expect(response.data).toEqual(mockResponseData);
       expect(response.status).toBe(201);
     });
 
-    it('should handle API errors for POST requests', async () => {
-       const errorResponse = { message: 'Creation failed', code: 'POST_ERROR' };
-       server.use(
-         http.post(`${MOCK_FUNCTIONS_URL}/${endpoint}`, () => 
-           HttpResponse.json(errorResponse, { status: 400 })
-         )
-       );
-       const response = await api.post(endpoint, requestBody);
-       expect(response.data).toBeUndefined();
-       expect(response.status).toBe(400);
-       expect(response.error).toEqual(errorResponse);
+    it('should handle POST API error response', async () => {
+      const errorResponse = { message: 'Creation failed', code: 'FAILED_POST' };
+      server.use(
+        http.post(`${MOCK_FUNCTIONS_URL}/${endpoint}`, () =>
+          HttpResponse.json(errorResponse, { status: 400 })
+        )
+      );
+
+      const response = await api.post(endpoint, requestBody);
+
+      expect(response.data).toBeUndefined();
+      expect(response.status).toBe(400);
+      expect(response.error).toBeDefined();
+      expect(response.error?.code).toBe(errorResponse.code);
+      expect(response.error?.message).toBe(errorResponse.message);
+    });
+
+     // Test for AuthRequiredError on POST
+    it('should THROW AuthRequiredError on POST 401 AUTH_REQUIRED', async () => {
+        const errorResponse = { message: 'Login required', code: 'AUTH_REQUIRED' };
+        server.use(
+            http.post(`${MOCK_FUNCTIONS_URL}/${endpoint}`, () =>
+                HttpResponse.json(errorResponse, { status: 401 })
+            )
+        );
+        const setItemSpy = vi.spyOn(Storage.prototype, 'setItem');
+        const originalLocation = window.location;
+        delete window.location;
+        window.location = { ...originalLocation, pathname: '/post/resource', search: '' } as Location;
+
+        await expect(api.post(endpoint, requestBody)).rejects.toThrow(AuthRequiredError);
+
+        expect(setItemSpy).toHaveBeenCalledTimes(1);
+        const storedAction = JSON.parse(setItemSpy.mock.calls[0][1]);
+        expect(storedAction).toEqual({
+            endpoint: endpoint,
+            method: 'POST',
+            body: requestBody, // Body included for POST
+            returnPath: '/post/resource'
+        });
+        setItemSpy.mockRestore();
+        window.location = originalLocation;
     });
   });
+  // ---> END NEW TESTS for api.post <---
 
-  // ---> Add tests for PUT <--- 
+  // ---> NEW TESTS for api.put <---
   describe('api.put', () => {
-    const endpoint = 'test-put/resource-id';
-    const requestBody = { name: 'updated name' };
-    const mockResponseData = { id: 'resource-id', name: 'updated name' };
+    const endpoint = 'test-put/item-123';
+    const requestBody = { value: 456 };
+    const mockResponseData = { id: 'item-123', value: 456 };
 
     it('should perform a PUT request with correct body and headers', async () => {
       server.use(
         http.put(`${MOCK_FUNCTIONS_URL}/${endpoint}`, async ({ request }) => {
-          expect(request.method).toBe('PUT');
+          const body = await request.json();
+          expect(body).toEqual(requestBody);
           expect(request.headers.get('Authorization')).toBe(`Bearer ${MOCK_ACCESS_TOKEN}`);
-          expect(request.headers.get('apikey')).toBe(MOCK_ANON_KEY);
           expect(request.headers.get('Content-Type')).toBe('application/json');
-          expect(await request.json()).toEqual(requestBody);
-          return HttpResponse.json(mockResponseData);
+          expect(request.headers.get('apikey')).toBe(MOCK_ANON_KEY);
+          return HttpResponse.json(mockResponseData, { status: 200 });
         })
       );
+
       const response = await api.put(endpoint, requestBody);
+
       expect(response.error).toBeUndefined();
       expect(response.data).toEqual(mockResponseData);
       expect(response.status).toBe(200);
     });
 
-    it('should handle API errors for PUT requests', async () => {
-       const errorResponse = { message: 'Update failed', code: 'PUT_ERROR' };
-       server.use(
-         http.put(`${MOCK_FUNCTIONS_URL}/${endpoint}`, () => 
-           HttpResponse.json(errorResponse, { status: 500 })
-         )
-       );
-       const response = await api.put(endpoint, requestBody);
-       expect(response.data).toBeUndefined();
-       expect(response.status).toBe(500);
-       // Need to adjust expected error shape based on refined logic
-       expect(response.error?.code).toBe(errorResponse.code);
-       expect(response.error?.message).toBe(errorResponse.message);
+    it('should handle PUT API error response', async () => {
+      const errorResponse = { message: 'Update failed', code: 'FAILED_PUT' };
+      server.use(
+        http.put(`${MOCK_FUNCTIONS_URL}/${endpoint}`, () =>
+          HttpResponse.json(errorResponse, { status: 500 })
+        )
+      );
+
+      const response = await api.put(endpoint, requestBody);
+
+      expect(response.data).toBeUndefined();
+      expect(response.status).toBe(500);
+      expect(response.error).toBeDefined();
+      expect(response.error?.code).toBe(errorResponse.code); // Uses code from response body
+      expect(response.error?.message).toBe(errorResponse.message);
+    });
+
+      // Test for AuthRequiredError on PUT
+      it('should THROW AuthRequiredError on PUT 401 AUTH_REQUIRED', async () => {
+        const errorResponse = { message: 'Login required', code: 'AUTH_REQUIRED' };
+        server.use(
+            http.put(`${MOCK_FUNCTIONS_URL}/${endpoint}`, () =>
+                HttpResponse.json(errorResponse, { status: 401 })
+            )
+        );
+        const setItemSpy = vi.spyOn(Storage.prototype, 'setItem');
+        const originalLocation = window.location;
+        delete window.location;
+        window.location = { ...originalLocation, pathname: '/put/resource', search: '' } as Location;
+
+        await expect(api.put(endpoint, requestBody)).rejects.toThrow(AuthRequiredError);
+
+        expect(setItemSpy).toHaveBeenCalledTimes(1);
+        const storedAction = JSON.parse(setItemSpy.mock.calls[0][1]);
+        expect(storedAction).toEqual({
+            endpoint: endpoint,
+            method: 'PUT',
+            body: requestBody, // Body included for PUT
+            returnPath: '/put/resource'
+        });
+        setItemSpy.mockRestore();
+        window.location = originalLocation;
     });
   });
+  // ---> END NEW TESTS for api.put <---
 
-  // ---> Add tests for DELETE <--- 
+  // ---> NEW TESTS for api.delete <---
   describe('api.delete', () => {
-    const endpoint = 'test-delete/resource-id';
+    const endpoint = 'test-delete/item-456';
+    const mockResponseData = { message: 'Item deleted successfully' };
 
     it('should perform a DELETE request with correct headers', async () => {
       server.use(
         http.delete(`${MOCK_FUNCTIONS_URL}/${endpoint}`, ({ request }) => {
-          expect(request.method).toBe('DELETE');
           expect(request.headers.get('Authorization')).toBe(`Bearer ${MOCK_ACCESS_TOKEN}`);
           expect(request.headers.get('apikey')).toBe(MOCK_ANON_KEY);
-          // No body for DELETE usually
-          return new HttpResponse(null, { status: 204 }); // No Content
+          // Note: DELETE often returns 200 or 204 with or without a body
+          return HttpResponse.json(mockResponseData, { status: 200 });
         })
       );
+
       const response = await api.delete(endpoint);
+
       expect(response.error).toBeUndefined();
-      expect(response.data).toBe(''); // <-- Expect empty string for 204
-      expect(response.status).toBe(204);
+      expect(response.data).toEqual(mockResponseData);
+      expect(response.status).toBe(200);
     });
 
-    it('should handle API errors for DELETE requests', async () => {
-      const errorResponse = { message: 'Deletion forbidden', code: 'FORBIDDEN' };
+     it('should handle DELETE request with 204 No Content response', async () => {
+      const endpoint = 'test-delete-no-content';
       server.use(
-        http.delete(`${MOCK_FUNCTIONS_URL}/${endpoint}`, () => 
-          HttpResponse.json(errorResponse, { status: 403 })
+        http.delete(`${MOCK_FUNCTIONS_URL}/${endpoint}`, ({ request }) => {
+          expect(request.headers.get('Authorization')).toBe(`Bearer ${MOCK_ACCESS_TOKEN}`);
+          expect(request.headers.get('apikey')).toBe(MOCK_ANON_KEY);
+          return new HttpResponse(null, { status: 204 }); // No body
+        })
+      );
+
+      const response = await api.delete(endpoint);
+
+      // For 204, data might be null or undefined depending on fetch behavior
+      expect(response.error).toBeUndefined();
+      expect(response.status).toBe(204);
+      // Data might be null if fetch doesn't parse empty response, or T if expected
+      // ---> Expect empty string for 204 No Content response based on response.text() fallback <---
+      expect(response.data).toBe(''); 
+    });
+
+
+    it('should handle DELETE API error response', async () => {
+      const errorResponse = { message: 'Deletion failed', code: 'FAILED_DELETE' };
+      server.use(
+        http.delete(`${MOCK_FUNCTIONS_URL}/${endpoint}`, () =>
+          HttpResponse.json(errorResponse, { status: 403 }) // Forbidden
         )
       );
+
       const response = await api.delete(endpoint);
+
       expect(response.data).toBeUndefined();
       expect(response.status).toBe(403);
-      expect(response.error).toEqual(errorResponse);
+      expect(response.error).toBeDefined();
+      expect(response.error?.code).toBe(errorResponse.code);
+      expect(response.error?.message).toBe(errorResponse.message);
+    });
+
+    // Test for AuthRequiredError on DELETE
+    it('should THROW AuthRequiredError on DELETE 401 AUTH_REQUIRED', async () => {
+        const errorResponse = { message: 'Login required', code: 'AUTH_REQUIRED' };
+        server.use(
+            http.delete(`${MOCK_FUNCTIONS_URL}/${endpoint}`, () =>
+                HttpResponse.json(errorResponse, { status: 401 })
+            )
+        );
+        const setItemSpy = vi.spyOn(Storage.prototype, 'setItem');
+        const originalLocation = window.location;
+        delete window.location;
+        window.location = { ...originalLocation, pathname: '/delete/resource', search: '' } as Location;
+
+        await expect(api.delete(endpoint)).rejects.toThrow(AuthRequiredError);
+
+        expect(setItemSpy).toHaveBeenCalledTimes(1);
+        const storedAction = JSON.parse(setItemSpy.mock.calls[0][1]);
+        expect(storedAction).toEqual({
+            endpoint: endpoint,
+            method: 'DELETE',
+            body: null, // No body for DELETE
+            returnPath: '/delete/resource'
+        });
+        setItemSpy.mockRestore();
+        window.location = originalLocation;
     });
   });
+  // ---> END NEW TESTS for api.delete <---
 
+  // Keep existing tests for Realtime methods etc. if they exist
 }); 
