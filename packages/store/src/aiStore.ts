@@ -337,6 +337,27 @@ export const useAiStore = create<AiStore>()(
                 const tempId = `temp-replay-${Date.now()}`;
                 set({ isLoadingAiResponse: true, aiError: null });
 
+                // --- BEGIN ADD OPTIMISTIC UPDATE ---
+                const userMessageContent = action?.body?.['message'] as string ?? '[Message content not found]';
+                const optimisticUserMessage: ChatMessage = {
+                    id: tempId,
+                    role: 'user',
+                    content: userMessageContent,
+                    chat_id: (typeof action?.body?.['chatId'] === 'string' ? action.body['chatId'] : undefined),
+                    user_id: useAuthStore.getState().user?.id || 'unknown-replay-user',
+                    status: 'pending', // Set status to pending
+                    created_at: new Date(parseInt(tempId.split('-')[2])).toISOString(),
+                    ai_provider_id: null,
+                    system_prompt_id: null,
+                    token_usage: null,
+                };
+
+                set(state => ({
+                    currentChatMessages: [...state.currentChatMessages, optimisticUserMessage]
+                }));
+                logger.info('[aiStore] Added optimistic pending message for replay.', { tempId });
+                // --- END ADD OPTIMISTIC UPDATE ---
+
                 try {
                     const response: ApiResponse<ChatMessage> = await api.post(
                         '/chat',
@@ -354,28 +375,25 @@ export const useAiStore = create<AiStore>()(
 
                         set(state => {
                             const newChatId = assistantMessage.chat_id;
-                            // Safely access message content using bracket notation and null check
-                            const userMessageContent = action?.body?.[ 'message' ] as string ?? '[Message content not found]'; 
-                            const userMessage: ChatMessage = {
-                                id: tempId,
-                                role: 'user',
-                                content: userMessageContent, // Use safe content
-                                chat_id: newChatId,
-                                user_id: useAuthStore.getState().user?.id || 'unknown-replay-user',
-                                status: 'sent',
-                                created_at: new Date(parseInt(tempId.split('-')[2])).toISOString(),
-                                ai_provider_id: null,
-                                system_prompt_id: null,
-                                token_usage: null,
-                            };
-
-                            const filteredMessages = state.currentChatMessages.filter(
-                                msg => msg.id !== tempId && msg.id !== assistantMessage.id
+                            
+                            // --- Update existing optimistic message ---
+                            const updatedMessages = state.currentChatMessages.map(msg => 
+                                msg.id === tempId 
+                                    ? { ...msg, status: 'sent' as const, chat_id: newChatId } 
+                                    : msg
                             );
-                            const updatedMessages = [...filteredMessages, userMessage, assistantMessage];
+
+                            // --- Add the assistant message ---
+                            updatedMessages.push(assistantMessage);
+                            
+                            // --- Filter out potential duplicates (just in case) ---
+                            // This ensures we don't have duplicate assistant messages if the API were ever called twice by mistake
+                            const finalMessages = updatedMessages.filter((msg, index, self) =>
+                                index === self.findIndex((m) => m.id === msg.id)
+                            );
 
                             return {
-                                currentChatMessages: updatedMessages,
+                                currentChatMessages: finalMessages,
                                 currentChatId: newChatId || state.currentChatId,
                                 isLoadingAiResponse: false,
                                 aiError: null,
@@ -392,13 +410,10 @@ export const useAiStore = create<AiStore>()(
                                 ? { ...msg, status: 'error' as const }
                                 : msg
                         );
-                        const messageFound = state.currentChatMessages.some(msg => msg.id === tempId);
-                        if (!messageFound) {
-                            logger.warn(`[aiStore] Could not find optimistic message with tempId ${tempId} to mark as error.`);
-                        }
                         return {
                             currentChatMessages: updatedMessages,
                             isLoadingAiResponse: false,
+                            aiError: error.message || String(error)
                         };
                     });
                 }

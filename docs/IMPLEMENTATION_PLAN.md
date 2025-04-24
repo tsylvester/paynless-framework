@@ -20,6 +20,8 @@
     *   [✅] Manual invocation works
     *   [ ] Implement & Test Cron Job trigger
 *   [✅] Figure out how to parse chat responses better, they get messy if the assistant uses markdown 
+*   [✅] Consolidate authStore with Zustand, remove the direct localSession interactions.
+*   [✅] Fix super long login delay on chat flow 
 
 **Incomplete Features** // Or In Progress
 
@@ -43,34 +45,35 @@
 *   [✅] shadcn implemented
     *   [ ] Convert all pages / components to shadcn
     *   [ ] Loading skeletons for all components 
-*   [ ] Run SEO scan 
-*   [ ] Fix super long login delay on chat flow 
+*   [ ] Run SEO scan & security scan https://owasp.org/www-project-top-ten/
 *   [🚧] User email automation - abstract for generic but specific implementation with Kit 
     *   [ ] Everything works EXCEPT the email_sync_trigger for on_user_created, the current form breaks registration
 *   [ ] Connect frontend analytics events (PostHog) to email marketing service (Kit) for behavioral triggers (IFTTT)
 *   [ ] Groups & organizations - how does Supabase currently support this? // Now being implemented
 *   [ ] Notifications - system wide and user specific // Now being implemented
-*   [✅] Consolidate authStore with Zustand, remove the direct localSession interactions.
+
+**Chat Improvements**
 *   [ ] Fix homepage to load default choices correctly again
 *   [ ] Fix chat history to dynamically reload 
 *   [ ] Fix auto navigate on replay 
 *   [ ] Fix chat to scroll correctly on new submissions 
 *   [ ] Save system prompt to chat so it sets correctly when chat loads 
 
-**Future Considerations / Deferred Scope**
+**Notification Improvements**
+*   [ ] User Notification Preferences (In-app/Email channels, Opt-outs)
+*   [ ] Email Notifications (Beyond Invites)
+*   [ ] Automatic Notification Cleanup/Archiving
+*   [ ] Notification Grouping (Complex for actionable items)
 
-*   Granular Member Roles (Beyond Admin/Member)
-*   Sub-Teams within Organizations
-*   Public Organization Discovery & Search
-*   Domain-Based Joining for Organizations
-*   Enhanced Org Privacy/Visibility Settings
-*   Invite Token Expiration/Management
-*   User Notification Preferences (In-app/Email channels, Opt-outs)
-*   Email Notifications (Beyond Invites)
-*   Automatic Notification Cleanup/Archiving
-*   Notification Grouping (Complex for actionable items)
-*   Organization-Level Billing
-*   Resource Quotas/Limits per Organization
-*   Dedicated Audit Log for Organization Events
-*   Specific Org-Focused User Onboarding Flows
-*   Advanced Org Deletion Data Handling (Archiving, etc.)
+**Organization Improvements**
+*   [ ] Granular Member Roles (Beyond Admin/Member)
+*   [ ] Sub-Teams within Organizations
+*   [ ] Public Organization Discovery & Search
+*   [ ] Domain-Based Joining for Organizations
+*   [ ] Enhanced Org Privacy/Visibility Settings
+*   [ ] Invite Token Expiration/Management
+*   [ ] Organization-Level Billing
+*   [ ] Resource Quotas/Limits per Organization
+*   [ ] Dedicated Audit Log for Organization Events
+*   [ ] Specific Org-Focused User Onboarding Flows
+*   [ ] Advanced Org Deletion Data Handling (Archiving, etc.)

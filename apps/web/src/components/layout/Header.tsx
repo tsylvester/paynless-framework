@@ -8,7 +8,6 @@ import {
   X,
   User,
   CreditCard,
-  Home,
   Sun,
   Moon,
 } from 'lucide-react'
@@ -44,7 +43,11 @@ export function Header() {
           <div className="flex">
             <div className="flex-shrink-0 flex items-center">
               <Link to="/" className="text-primary font-bold text-xl">
-                <Home className="h-6 w-6" />
+                <img 
+                  src="/logos/app_icon_240x240.png" 
+                  alt="Paynless Logo" 
+                  className="h-6 w-6" 
+                />
               </Link>
             </div>
             {user && (
