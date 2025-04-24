@@ -140,7 +140,7 @@ describe('authStore Listener Logic (initAuthListener)', () => {
 
     // Check API call for profile
     expect(mockApiClientInstance.get).toHaveBeenCalledTimes(1);
-    expect(mockApiClientInstance.get).toHaveBeenCalledWith('/me', { token: mockSupabaseSession.access_token });
+    expect(mockApiClientInstance.get).toHaveBeenCalledWith('me', { token: mockSupabaseSession.access_token });
 
     // Check state updates
     expect(useAuthStore.setState).toHaveBeenCalledTimes(2); // 1 for session/user, 1 for profile
@@ -176,7 +176,7 @@ describe('authStore Listener Logic (initAuthListener)', () => {
 
     // Check API call
     expect(mockApiClientInstance.get).toHaveBeenCalledTimes(1);
-    expect(mockApiClientInstance.get).toHaveBeenCalledWith('/me', { token: mockSupabaseSession.access_token });
+    expect(mockApiClientInstance.get).toHaveBeenCalledWith('me', { token: mockSupabaseSession.access_token });
 
     // Check state updates (should be 2: session/user/loading, then profile/error)
     expect(useAuthStore.setState).toHaveBeenCalledTimes(2); 
@@ -250,7 +250,7 @@ describe('authStore Listener Logic (initAuthListener)', () => {
 
     // Check API call for profile
     expect(mockApiClientInstance.get).toHaveBeenCalledTimes(1);
-    expect(mockApiClientInstance.get).toHaveBeenCalledWith('/me', { token: mockSupabaseSession.access_token });
+    expect(mockApiClientInstance.get).toHaveBeenCalledWith('me', { token: mockSupabaseSession.access_token });
 
     // Check state updates
     expect(useAuthStore.setState).toHaveBeenCalledTimes(2); // 1 for session/user, 1 for profile

@@ -51,7 +51,7 @@ const mockNotification2: Notification = {
     id: 'uuid-2',
     user_id: 'user-abc',
     type: 'test',
-    data: { message: 'Test 2', target_path: '/some/path' },
+    data: { message: 'Test 2', target_path: 'some/path' },
     read: false,
     created_at: new Date(Date.now() - 5000).toISOString(),
 };

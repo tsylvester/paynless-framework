@@ -259,7 +259,7 @@ describe('aiStore - sendMessage', () => {
                 // NOTE: Error is expected to be set here now because navigate is null
                 expect(finalState.aiError).toBe(authError.message);
             });
-            const expectedPendingAction = { endpoint: 'chat', method: 'POST', body: { ...messageData, chatId: null }, returnPath: '/chat' };
+            const expectedPendingAction = { endpoint: 'chat', method: 'POST', body: { ...messageData, chatId: null }, returnPath: 'chat' };
             expect(setItemSpy).toHaveBeenCalledTimes(1);
             expect(setItemSpy).toHaveBeenCalledWith('pendingAction', JSON.stringify(expectedPendingAction));
             // Ensure navigate was NOT called

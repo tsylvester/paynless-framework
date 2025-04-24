@@ -471,7 +471,7 @@ export function initAuthListener(
                     // --- Delay Point 1: Profile Fetch ---
                     logger.debug(`[AuthListener] Fetching profile for ${event}...`);
                     const profileStartTime = Date.now();
-                    const profileResponse = await apiClientInstance.get<AuthResponse>('/me', { token });
+                    const profileResponse = await apiClientInstance.get<AuthResponse>('me', { token });
                     const profileEndTime = Date.now();
                     logger.debug(`[AuthListener] Profile fetch completed for ${event}. Duration: ${profileEndTime - profileStartTime}ms`);
                     
