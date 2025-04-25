@@ -169,7 +169,61 @@ This document outlines the steps for implementing an in-app notification system 
 *   [X] **Implement Trigger Functions (Notifications - Full):** Finalize/implement notification triggers. *(Note: Verification via application-level/integration testing)*
 *   [X] **Test Migration:** Apply notification trigger migrations.
 
-### 2.3 API Client (`@paynless/api-client`)
+### 2.3 Refactor to Centralized Supabase DB Types
+
+**Context:** To ensure long-term maintainability, type safety, and a single source of truth for database schema definitions, we will refactor the codebase to use the Supabase-generated `types_db.ts` file directly, eliminating manually defined database type duplications in `packages/types`.
+
+**Rationale:**
+*   Avoids manually keeping frontend types in sync with backend schema changes.
+*   Ensures type consistency across the application.
+*   Leverages Supabase tooling for accurate type generation.
+
+**Steps:**
+
+*   [ ] **Setup Internal Types Package:**
+    *   [ ] Create a minimal `package.json` file in `supabase/functions/` with the content:
+        ```json
+        {
+          "name": "@paynless/db-types",
+          "version": "0.0.0",
+          "private": true,
+          "types": "./types_db.ts"
+        }
+        ```
+        *(Note: This file only defines the package for type resolution; it does not make `supabase/functions` buildable)*.
+    *   [ ] Add `"supabase/functions"` to the `workspaces` array in the root `package.json`.
+    *   [ ] Run `pnpm install` in the workspace root to link the new internal package.
+*   [ ] **Generate Up-to-Date DB Types:**
+    *   [ ] Ensure your local Supabase instance is running (`supabase start`).
+    *   [ ] Run the Supabase CLI command to regenerate the types file, capturing all recent migrations (including `organizations`, `organization_members`, `notifications`, etc.):
+        ```bash
+        supabase gen types typescript --local > supabase/functions/types_db.ts
+        ```
+    *   [ ] Verify the generated `supabase/functions/types_db.ts` contains definitions for all expected tables (`organizations`, `organization_members`, `notifications`, `user_profiles`, etc.) and enums (`user_role`, etc.).
+*   [ ] **Add Dependency:**
+    *   [ ] Add the internal types package as a development dependency to packages that need DB types:
+        ```bash
+        pnpm add -D @paynless/db-types --filter=@paynless/api-client --filter=@paynless/store --filter=web
+        ```
+        *(Add filters for any other packages/apps that might need these types).*\
+*   [ ] **Refactor Codebase:**
+    *   [ ] **Identify Redundant Types:** Review files in `packages/types/src`. Primarily target types duplicating table structures or enums now present in `@paynless/db-types`:
+        *   `auth.types.ts`: `User` (if mapping to `auth.users`), `UserProfile` (maps to `user_profiles`), `UserRole` (maps to `user_role` enum).
+        *   `notification.types.ts`: `Notification` (maps to `notifications`).
+        *   *(Review other files like `ai.types.ts`, `subscription.types.ts` etc. for potential overlaps)*
+    *   [ ] **Update Imports & Usage:** Systematically go through `@paynless/api-client`, `@paynless/store`, `apps/web`, etc.
+        *   Remove imports for the redundant manual types (e.g., `import { UserProfile } from '@paynless/types';`).
+        *   Add imports from the internal package (e.g., `import type { Database } from '@paynless/db-types';`).
+        *   Replace usage of manual types with derived types from `Database` (e.g., replace `UserProfile` with `Database['public']['Tables']['user_profiles']['Row']`, `UserRole` with `Database['public']['Enums']['user_role']`, `Notification` with `Database['public']['Tables']['notifications']['Row']`). Use Supabase helper types (`Tables<'user_profiles'>`, `Enums<'user_role'>`) for brevity if preferred.
+    *   [ ] **Update `organizations.types.ts`:** Change the existing relative import (`import type { Database } from '../../supabase/functions/types_db.ts';`) to use the package import (`import type { Database } from '@paynless/db-types';`).
+*   [ ] **Cleanup:**
+    *   [ ] Delete the now-unused manual type definitions (e.g., `UserProfile`, `Notification`) from the files in `packages/types/src`. Keep types unrelated to the DB schema (e.g., `ApiError`, `FetchOptions`, `AuthStore`, `Session`).
+*   [ ] **Verification:**
+    *   [ ] Run TypeScript checks across the monorepo: `pnpm typecheck` (or equivalent `tsc -b` command). Fix any type errors.
+    *   [ ] Run all existing tests: `pnpm test`. Ensure tests pass after refactoring. Address any failures, potentially updating mocks to reflect the new type structures if necessary.
+*   [ ] **Commit:** `refactor: centralize database types using supabase gen types (#issue_number)`
+
+### 2.4 API Client (`@paynless/api-client`)
 
 *   [X] **Tests:** Write unit tests for new multi-tenancy functions:
     *   [X] `createOrganization(name, visibility?)`
@@ -189,7 +243,7 @@ This document outlines the steps for implementing an in-app notification system 
     *   [X] Implemented `updateOrganization`
     *   [X] Implemented `listUserOrganizations`
 
-### 2.4 State Management (`@paynless/store`)
+### 2.5 State Management (`@paynless/store`)
 
 *   [ ] **Tests:** Write unit tests for `organizationStore` slice:
     *   State: `userOrganizations` (list should not include deleted ones), `currentOrganizationId`, `currentOrganizationDetails`, `currentOrganizationMembers`, `isLoading`, `error`.
@@ -197,7 +251,7 @@ This document outlines the steps for implementing an in-app notification system 
     *   Selectors for current org details, memberships, members, current user's role in current org.
 *   [ ] **Implementation:** Create/Update the `organizationStore` slice to handle filtering/removal of soft-deleted orgs from the UI state.
 
-### 2.5 Frontend Components & UI
+### 2.6 Frontend Components & UI
 
 *   [ ] **Organization Creation:**
     *   **Tests:** Test the creation form component (validation, API call mock, visibility option).
@@ -218,7 +272,7 @@ This document outlines the steps for implementing an in-app notification system 
     *   **Tests:** Test UI for accepting invites (e.g., dedicated page `/accept-invite/:token`) or approving requests (e.g., action triggered from notification link leading to member list/modal). Mock API calls.
     *   **Implementation:** Build necessary pages/components. Ensure flow for "Request to Join" assumes user obtained `orgId` via external means (link/manual input) for this phase.
 
-### 2.6 Routing & Access Control (Frontend)
+### 2.7 Routing & Access Control (Frontend)
 
 *   [ ] **Tests:** Write tests for route guards or logic within components:
     *   Ensure `/dashboard/organizations/:orgId/...` routes redirect if org is deleted or user is not an active member.
@@ -229,7 +283,7 @@ This document outlines the steps for implementing an in-app notification system 
     *   Ensure `OrganizationSwitcher` correctly updates state and potentially navigates user.
     *   Apply role-based conditional rendering using `organizationStore` data.
 
-### 2.7 Integration with Existing Features
+### 2.8 Integration with Existing Features
 
 *   [ ] **Identify Impacted Features:** Review existing features (Chat, User Profile, Subscriptions?) to see which need to become organization-scoped.
 *   [ ] **Update Backend:** Modify Supabase queries/RLS for identified features to include `WHERE organization_id = current_org_id`. Add `organization_id` columns via migration where needed. Test these RLS changes.
@@ -237,7 +291,7 @@ This document outlines the steps for implementing an in-app notification system 
 *   [ ] **Update Frontend:** Modify components using these features to pass the `currentOrganizationId` from the store to API calls. Test these components to ensure they filter data correctly based on the selected org.
 *   [ ] **Update Existing Tests:** Modify tests for impacted features to mock and account for the `organizationId` parameter and context.
 
-### 2.8 Checkpoint 2: Multi-Tenancy Complete
+### 2.9 Checkpoint 2: Multi-Tenancy Complete
 
 *   [ ] **Run Tests:** Execute all tests (`pnpm test`). Ensure they pass.
 *   [ ] **Build App:** Run `pnpm build`. Ensure it completes successfully.
