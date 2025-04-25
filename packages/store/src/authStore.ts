@@ -382,7 +382,14 @@ export function initAuthListener(
                          logger.warn('[AuthListener] Could not parse returnPath from pending action JSON.', { pendingActionJson });
                     }
                 } else {
-                    // No pending action, normal sign-in flow (default navigation might happen elsewhere)
+                    // No pending action, normal sign-in flow. Navigate to default authenticated route.
+                    logger.info('[AuthListener] No pending action found on SIGNED_IN. Navigating to default route dashboard.');
+                    const navigate = useAuthStore.getState().navigate;
+                    if (navigate) {
+                        navigate('dashboard'); // Correctly use string literal
+                    } else {
+                        logger.warn('[AuthListener] Navigate function not available for default redirection.');
+                    }
                 }
             } catch (e) {
                 logger.error('[AuthListener] Error checking/parsing pendingAction for navigation:', { 

@@ -8,7 +8,8 @@ import {
     ApiResponse,
     AiState, 
     AiStore, // Import the combined type
-    PendingAction // <<< Add this import
+    PendingAction, // <<< Add this import
+    AuthRequiredError // <<< Add this import
 } from '@paynless/types';
 import { api } from '@paynless/api-client';
 import { logger } from '@paynless/utils';
@@ -160,59 +161,75 @@ export const useAiStore = create<AiStore>()(
 
                 } catch (err: any) {
                     let errorHandled = false;
-                    let authErrorMessage: string | null = null; // Store original auth error message
+                    let requiresLogin = false;
+                    let errorMessage = err?.message || String(err) || 'Unknown error';
 
-                    if (err?.name === 'AuthRequiredError') { 
-                        logger.warn('sendMessage caught AuthRequiredError...');
-                        authErrorMessage = err.message || 'Authentication required'; // Capture the message
-                        let storageSuccess = false; 
+                    // Check 1: Was it the specific AuthRequiredError thrown by apiClient?
+                    if (err instanceof AuthRequiredError || err?.name === 'AuthRequiredError') {
+                        logger.warn('sendMessage caught AuthRequiredError. Initiating login flow...');
+                        requiresLogin = true;
+                        errorMessage = err.message || 'Authentication required'; // Use specific message
+                    }
+                    // Check 2: Was it a generic error thrown *after* apiClient returned a standard 401 response?
+                    // We check the original requestData context, assuming the generic error message
+                    // might match the one from the 401 ApiResponse. This is slightly indirect.
+                    // A potentially cleaner way might involve inspecting a custom property on the thrown generic error,
+                    // but let's stick closer to the original structure for now.
+                    // ---> THIS CHECK IS LIKELY INSUFFICIENT <--- 
+                    // Let's simplify: The primary signal is the AuthRequiredError. If that's not thrown,
+                    // the current design means we treat other errors as non-auth-related for the replay mechanism.
+                    // We rely on apiClient ONLY throwing AuthRequiredError when replay/login is needed.
+
+                    // If AuthRequiredError was caught, try to save pending action and navigate
+                    if (requiresLogin) {
+                        let storageSuccess = false;
                         try {
-                            const pendingAction = { 
-                                endpoint: 'chat', 
+                            const pendingAction = {
+                                endpoint: 'chat',
                                 method: 'POST',
-                                body: { ...requestData, chatId: effectiveChatId ?? null }, 
-                                returnPath: 'chat'
+                                body: { ...requestData, chatId: effectiveChatId ?? null },
+                                returnPath: 'chat' // Or dynamically get current path
                             };
                             localStorage.setItem('pendingAction', JSON.stringify(pendingAction));
                             logger.info('Stored pending chat action:', pendingAction);
-                            storageSuccess = true; 
+                            storageSuccess = true;
                         } catch (storageError: unknown) {
                            logger.error('Failed to store pending action in localStorage:', { 
                                 error: storageError instanceof Error ? storageError.message : String(storageError)
                            });
                         }
-                        
+
                         if (storageSuccess) {
                             const navigate = useAuthStore.getState().navigate;
                             if (navigate) {
                                 navigate('login');
-                                errorHandled = true; // Set only if navigation occurs
+                                errorHandled = true; // Set flag: state cleanup should clear aiError
                             } else {
                                 logger.error('Navigate function not found after successful storage...');
+                                // Proceed with error state if navigation fails
                             }
                         }
+                        // If storage failed, we also proceed to show an error state
                     }
 
-                    // Use plain set without immer for error/cleanup
+                    // State update: Clean up optimistic message. Set error ONLY if login wasn't triggered/successful.
                     set(state => {
                         const finalMessages = state.currentChatMessages.filter(
                             (msg) => msg.id !== tempUserMessageId
                         );
-                        const finalError = errorHandled 
-                            ? null 
-                            : (authErrorMessage || err?.message || String(err) || 'Unknown error');
-                            
+                        const finalError = errorHandled ? null : errorMessage;
+
                         if (!errorHandled) {
                              logger.error('Error during send message API call (catch block):', { error: finalError });
                         }
-                        return { 
+                        return {
                             currentChatMessages: finalMessages,
                             aiError: finalError,
-                            isLoadingAiResponse: false, 
+                            isLoadingAiResponse: false,
                          };
                     });
                     return null;
-                } 
+                }
             },
 
             loadChatHistory: async () => {

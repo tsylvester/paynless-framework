@@ -251,7 +251,8 @@ export async function mainHandler(req: Request, deps: ChatHandlerDeps = defaultD
             const firstUserMessage = requestBody.message.substring(0, 50); // Simple title
             const { data: newChat, error: newChatError } = await supabaseClient
                 .from('chats')
-                .insert({ user_id: userId, title: `Chat: ${firstUserMessage}...` })
+                // Do NOT prepend with 'Chat: ' or 'Chat - ' or anything like that.
+                .insert({ user_id: userId, title: `${firstUserMessage}...` })
                 .select('id')
                 .single();
             if (newChatError || !newChat) {

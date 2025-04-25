@@ -108,12 +108,15 @@ export class ApiClient {
                 throw new ApiError(parseError.message || 'Failed to parse response body', response.status);
             }
 
-            // ---> NEW: Handle 401 Unauthorized immediately by throwing AuthRequiredError <---
-            // We throw here regardless of the specific body content, as the 401 status itself
-            // for a non-public endpoint implies authentication is needed.
-            // The catch block below will handle saving the pending action.
-            if (response.status === 401 && !options.isPublic) { // Only throw if it wasn't a public route
-                logger.warn('[apiClient] Received 401 status. Throwing AuthRequiredError to trigger pending action save...');
+            // ---> Add specific debug log for 401 response data (using WARN level) <--- 
+            if (response.status === 401) {
+                logger.warn('[apiClient] Raw responseData for 401 status:', { responseData });
+            }
+
+            // ---> NEW: Throw AuthRequiredError ONLY on specific 401 + code <---
+            // The calling function (e.g., store) is responsible for handling the consequences (like saving pending action).
+            if (response.status === 401 && !options.isPublic && responseData?.code === 'AUTH_REQUIRED') {
+                logger.warn('[apiClient] Received 401 with AUTH_REQUIRED code. Throwing AuthRequiredError...');
                 // Use a generic message or attempt to get one from the body if available
                 const errorMessage = (typeof responseData === 'object' && responseData?.message)
                                     ? responseData.message
@@ -121,12 +124,11 @@ export class ApiClient {
                 throw new AuthRequiredError(errorMessage);
             }
 
-            // ---> Check for other non-OK responses (excluding the 401 we just handled) <---
+            // ---> Check for other non-OK responses (including other 401s) <---
             if (!response.ok) {
                 // Log the response data for debugging OTHER errors
-                // We no longer need the specific 401 log here as it's handled above.
                  logger.warn(`[apiClient] Received non-OK (${response.status}) response body:`, { responseData });
-                
+
                 // --- Original error handling for other non-OK responses ---
                 let errorPayload: ApiErrorType;
                 if (typeof responseData === 'object' && responseData !== null) {
@@ -148,37 +150,24 @@ export class ApiClient {
                 logger.error(`API Error ${response.status} on ${endpoint}: ${errorPayload.message}`, { code: errorPayload.code, details: errorPayload.details });
                 return { status: response.status, error: errorPayload };
             }
-            
+
             // Success case
             return { status: response.status, data: responseData as T };
 
         } catch (error: any) {
-             // ---> Check if it's the AuthRequiredError we threw <--- 
-            if (error instanceof AuthRequiredError || error?.name === 'AuthRequiredError') {
-                logger.warn("AuthRequiredError detected by API Client. Saving pending action...");
-                try {
-                  // Construct pending action data
-                  const pendingAction = {
-                    endpoint: endpoint.startsWith('/') ? endpoint.substring(1) : endpoint,
-                    method: options.method || 'GET',
-                    body: options.body ? JSON.parse(options.body as string) : null, // Attempt to parse body
-                    returnPath: window.location.pathname + window.location.search // Capture current path
-                  };
-                  localStorage.setItem('pendingAction', JSON.stringify(pendingAction));
-                  logger.info('Pending action saved to localStorage', { pendingAction });
-                } catch (storageError: any) {
-                  logger.error('Failed to save pending action to localStorage', { error: storageError.message });
-                  // Don't prevent the original error from being thrown
-                }
-                // Re-throw the original AuthRequiredError
-                throw error; 
+             // ---> Check if it's the specific AuthRequiredError we threw <---
+            if (error instanceof AuthRequiredError) {
+                logger.warn("AuthRequiredError caught by API Client. Re-throwing for store handler...");
+                // The logic to save pending actions has been moved to the relevant store (e.g., aiStore).
+                // We simply re-throw the error here so the caller can handle it.
+                throw error;
             }
-            
-            // ---> Otherwise, handle as a network/unexpected error <--- 
+
+            // ---> Otherwise, handle as a network/unexpected error <---
             logger.error(`Network or fetch error on ${endpoint}:`, { error: error?.message });
-            return { 
-                status: 0, 
-                error: { code: 'NETWORK_ERROR', message: error.message || 'Network error' } 
+            return {
+                status: 0,
+                error: { code: 'NETWORK_ERROR', message: error.message || 'Network error' }
             };
         }
     }
