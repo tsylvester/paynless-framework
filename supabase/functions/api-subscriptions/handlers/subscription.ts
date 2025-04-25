@@ -2,49 +2,63 @@
 // Do not use path aliases (like @shared/) as they will cause deployment failures.
 import { SupabaseClient } from "npm:@supabase/supabase-js";
 import Stripe from "npm:stripe";
-import { type UserSubscription } from "../../_shared/types.ts";
-import { corsHeaders } from "../../_shared/cors-headers.ts";
-import { 
-  createErrorResponse as CreateErrorResponseType, 
-  createSuccessResponse as CreateSuccessResponseType 
-} from "../../_shared/responses.ts";
+// Fix: Import DB types and HandlerError
+import type { Database } from '../../types_db.ts';
+import { HandlerError } from "./current.ts"; // Reuse HandlerError
 
-// Define Dependencies Type
-interface SubscriptionActionDeps {
-  createErrorResponse: typeof CreateErrorResponseType;
-  createSuccessResponse: typeof CreateSuccessResponseType;
-}
+// Remove old imports and Deps interface
+// import { type UserSubscription } from "../../_shared/types.ts"; // Use DB type for return type
+// import { corsHeaders } from "../../_shared/cors-headers.ts"; // Removed
+// import { 
+//   createErrorResponse as CreateErrorResponseType, 
+//   createSuccessResponse as CreateSuccessResponseType 
+// } from "../../_shared/responses.ts"; // Removed
+// 
+// interface SubscriptionActionDeps {
+//   createErrorResponse: typeof CreateErrorResponseType;
+//   createSuccessResponse: typeof CreateSuccessResponseType;
+// } // Removed
+
+// Fix: Define return type based on DB schema (same as current.ts)
+type UserSubscriptionData = Database['public']['Tables']['user_subscriptions']['Row'] & {
+  subscription_plans: Database['public']['Tables']['subscription_plans']['Row'] | null;
+};
 
 /**
- * Cancel a subscription at period end
+ * Cancel a subscription at period end.
+ * Returns updated subscription data on success, throws HandlerError on failure.
  */
 export const cancelSubscription = async (
-  supabase: SupabaseClient,
+  supabase: SupabaseClient<Database>,
   stripe: Stripe,
   userId: string,
-  subscriptionId: string,
-  deps: SubscriptionActionDeps
-): Promise<Response> => {
-  const { createErrorResponse, createSuccessResponse } = deps;
+  subscriptionId: string
+  // Remove deps parameter
+): Promise<UserSubscriptionData> => {
+  // Remove destructuring of removed deps
+  // const { createErrorResponse, createSuccessResponse } = deps;
   try {
     // Get subscription to verify ownership
     const { data: subscription, error: subscriptionError } = await supabase
       .from("user_subscriptions")
-      .select("*, plans:subscription_plans(*)")
+      .select("*, subscription_plans:plan_id(*)") // Fetch nested plan data
       .eq("stripe_subscription_id", subscriptionId)
       .eq("user_id", userId)
-      .single();
+      .returns<UserSubscriptionData[]>() // Specify return type array
+      .single(); // Expect single result
     
     if (subscriptionError) {
       console.error("Error fetching subscription for cancel:", subscriptionError);
-      return createErrorResponse("Subscription not found or access denied", 404, subscriptionError);
+      // Fix: Throw HandlerError (404 for not found/access denied)
+      throw new HandlerError("Subscription not found or access denied", 404, subscriptionError);
     }
-    if (!subscription) {
-        return createErrorResponse("Subscription not found or access denied", 404);
-    }
+    // No need for !subscription check as .single() throws if not found
     
     if (!subscription.stripe_subscription_id) {
-      return createErrorResponse("No active Stripe subscription found", 400);
+      // This case might be redundant if the query finds the record based on stripe_subscription_id
+      console.warn(`Subscription record ${subscription.id} found but missing stripe_subscription_id during cancel.`);
+      // Fix: Throw HandlerError for inconsistent data
+      throw new HandlerError("Subscription data inconsistent", 400);
     }
     
     // Stripe: Cancel the subscription at period end
@@ -60,51 +74,65 @@ export const cancelSubscription = async (
           status: updatedStripeSub.status
        })
       .eq("id", subscription.id)
-      .select("*, plans:subscription_plans(*)")
+      .select("*, subscription_plans:plan_id(*)") // Fetch updated data with plan
+      .returns<UserSubscriptionData[]>()
       .single();
       
     if (updateError) {
         console.error("Error updating local subscription after cancel:", updateError);
+        // Fix: Throw HandlerError - critical failure if DB update fails
+        throw new HandlerError("Failed to update local subscription status after cancellation", 500, updateError);
     }
     
-    return createSuccessResponse(updatedLocalSub ?? { success: true }); 
+    // Return updated local subscription data
+    return updatedLocalSub;
+
   } catch (err) {
+    // Fix: Handle/re-throw HandlerError or wrap other errors
+    if (err instanceof HandlerError) {
+      throw err;
+    }
     console.error("Error cancelling subscription:", err);
-    const message = err instanceof Error ? err.message : "An unknown error occurred during cancellation.";
-    return createErrorResponse(message, 500, err instanceof Error ? err : undefined);
+    const message = err instanceof Error ? err.message : String(err);
+    const status = (err instanceof Stripe.errors.StripeError) ? (err.statusCode ?? 500) : 500;
+    throw new HandlerError(message, status, err);
   }
 };
 
 /**
- * Resume a subscription that was set to cancel
+ * Resume a subscription that was set to cancel.
+ * Returns updated subscription data on success, throws HandlerError on failure.
  */
 export const resumeSubscription = async (
-  supabase: SupabaseClient,
+  supabase: SupabaseClient<Database>,
   stripe: Stripe,
   userId: string,
-  subscriptionId: string,
-  deps: SubscriptionActionDeps
-): Promise<Response> => {
-  const { createErrorResponse, createSuccessResponse } = deps;
+  subscriptionId: string
+  // Remove deps parameter
+): Promise<UserSubscriptionData> => {
+  // Remove destructuring of removed deps
+  // const { createErrorResponse, createSuccessResponse } = deps;
   try {
     // Get subscription to verify ownership
     const { data: subscription, error: subscriptionError } = await supabase
       .from("user_subscriptions")
-      .select("*, plans:subscription_plans(*)")
+      .select("*, subscription_plans:plan_id(*)") // Fetch nested plan data
       .eq("stripe_subscription_id", subscriptionId)
       .eq("user_id", userId)
+      .returns<UserSubscriptionData[]>()
       .single();
     
     if (subscriptionError) {
        console.error("Error fetching subscription for resume:", subscriptionError);
-       return createErrorResponse("Subscription not found or access denied", 404, subscriptionError);
+       // Fix: Throw HandlerError
+       throw new HandlerError("Subscription not found or access denied", 404, subscriptionError);
     }
-    if (!subscription) {
-       return createErrorResponse("Subscription not found or access denied", 404);
-    }
+    // No need for !subscription check
     
     if (!subscription.stripe_subscription_id) {
-      return createErrorResponse("No active Stripe subscription found", 400);
+      // Fix: Throw HandlerError
+      console.warn(`Subscription record ${subscription.id} found but missing stripe_subscription_id during resume.`);
+      throw new HandlerError("Subscription data inconsistent", 400);
     }
     
     // Stripe: Resume the subscription
@@ -120,17 +148,27 @@ export const resumeSubscription = async (
           status: updatedStripeSub.status
       })
       .eq("id", subscription.id)
-      .select("*, plans:subscription_plans(*)")
+      .select("*, subscription_plans:plan_id(*)") // Fetch updated data
+      .returns<UserSubscriptionData[]>()
       .single();
       
     if (updateError) {
         console.error("Error updating local subscription after resume:", updateError);
+        // Fix: Throw HandlerError
+        throw new HandlerError("Failed to update local subscription status after resumption", 500, updateError);
     }
     
-    return createSuccessResponse(updatedLocalSub ?? { success: true });
+    // Return updated local subscription data
+    return updatedLocalSub;
+
   } catch (err) {
+    // Fix: Handle/re-throw HandlerError or wrap other errors
+    if (err instanceof HandlerError) {
+      throw err;
+    }
     console.error("Error resuming subscription:", err);
-    const message = err instanceof Error ? err.message : "An unknown error occurred during resumption.";
-    return createErrorResponse(message, 500, err instanceof Error ? err : undefined);
+    const message = err instanceof Error ? err.message : String(err);
+    const status = (err instanceof Stripe.errors.StripeError) ? (err.statusCode ?? 500) : 500;
+    throw new HandlerError(message, status, err);
   }
 };

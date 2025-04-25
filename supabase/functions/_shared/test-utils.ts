@@ -205,7 +205,9 @@ export function createMockSupabaseClient(
         in: Spy<any>; // Add 'in' filter
         match: Spy<any>; // Add match spy definition
         order: Spy<any>;
+        returns: Spy<any>; // <-- Add returns method
         single: Spy<any>;
+        maybeSingle: Spy<any>; // <-- Add maybeSingle method (assuming it's used)
         then: Spy<any>; // Keep 'then' for compatibility with some existing mocks
     }
 
@@ -248,35 +250,37 @@ export function createMockSupabaseClient(
             console.log(`[Mock QB ${tableName}] .update() called with:`, data);
              _queryBuilderState.operation = 'update';
             _queryBuilderState.updateData = data;
-            _queryBuilderState.selectColumns = null; // Not a select op initially
-            return mockQueryBuilder; // Return self for chaining .select() after update
+            _queryBuilderState.selectColumns = null;
+            return mockQueryBuilder;
         });
         
         mockQueryBuilder.delete = spy(() => {
             console.log(`[Mock QB ${tableName}] .delete() called`);
             _queryBuilderState.operation = 'delete';
-             _queryBuilderState.selectColumns = null; // Not a select op
-            // Delete is often terminal but can sometimes chain? Assume terminal for now.
-            // To make it chainable, it should return mockQueryBuilder.
-            // For terminal: directly return the promise resolution logic.
-             return Promise.resolve().then(() => resolveQuery()); // Make it awaitable/thenable
+            return mockQueryBuilder;
         });
 
         mockQueryBuilder.eq = spy((column: string, value: any) => {
-             console.log(`[Mock QB ${tableName}] .eq(${column}, ${value}) called`);
+            console.log(`[Mock QB ${tableName}] .eq(${column}, ${value}) called`);
             _queryBuilderState.filters.push({ column, value, type: 'eq' });
             return mockQueryBuilder;
         });
         
         mockQueryBuilder.in = spy((column: string, values: any[]) => {
-             console.log(`[Mock QB ${tableName}] .in(${column}, [${values.join(',')}]) called`);
+            console.log(`[Mock QB ${tableName}] .in(${column}, [${values.length} items]) called`);
              _queryBuilderState.filters.push({ column, value: values, type: 'in' });
              return mockQueryBuilder;
-         });
+        });
 
         mockQueryBuilder.match = spy((criteria: object) => {
             console.log(`[Mock QB ${tableName}] .match() called with:`, criteria);
-            _queryBuilderState.filters.push({ type: 'match', criteria });
+            _queryBuilderState.filters.push({ type: 'match', criteria }); // Store the whole criteria object
+            return mockQueryBuilder;
+        });
+
+        // Add .returns() mock - just returns self for chaining
+        mockQueryBuilder.returns = spy(() => {
+            console.log(`[Mock QB ${tableName}] .returns() called`);
             return mockQueryBuilder;
         });
 
@@ -409,6 +413,36 @@ export function createMockSupabaseClient(
                 console.error(`[Mock QB ${tableName}] Error during query resolution or processing in .single():`, e);
                 // Ensure we throw an actual Error instance
                 throw e instanceof Error ? e : new Error(String(e ?? 'Unknown error in .single()'));
+            }
+        });
+
+        // Mock .maybeSingle()
+        // Resolves with { data: object | null, error: Error | null }
+        mockQueryBuilder.maybeSingle = spy(async () => {
+            console.log(`[Mock QB ${tableName}] .maybeSingle() called. Resolving query...`);
+            try {
+                const result = await resolveQuery();
+                // maybeSingle resolves with error object if underlying query failed
+                if (result.error) {
+                    console.log(`[Mock QB ${tableName}] Query (for maybeSingle) resolved with DB error. Resolving promise with error object.`);
+                    return { data: null, error: result.error };
+                } else if (result.data && result.data.length > 1) {
+                    // Simulate PostgREST error for multiple rows found
+                    console.warn(`[Mock QB ${tableName}] .maybeSingle() found multiple rows. Simulating PostgREST error.`);
+                    // Create a mock PostgREST error object
+                    const error = new Error('Multiple rows returned for maybeSingle row query');
+                    (error as any).code = 'PGRST116'; // Add code like real PostgREST error
+                    return { data: null, error: error };
+                } else {
+                    console.log(`[Mock QB ${tableName}] Query (for maybeSingle) resolved successfully.`);
+                    return { data: result.data?.[0] ?? null, error: null }; // Resolve successfully with first item or null
+                }
+            } catch (e) {
+                 console.error(`[Mock QB ${tableName}] Error during query resolution or processing in .maybeSingle():`, e);
+                 // Ensure we throw an actual Error instance if resolveQuery itself throws unexpectedly
+                 const error = e instanceof Error ? e : new Error(String(e ?? 'Unknown error in .maybeSingle()'));
+                 // Return error in the resolved object structure
+                 return { data: null, error: error }; 
             }
         });
 
