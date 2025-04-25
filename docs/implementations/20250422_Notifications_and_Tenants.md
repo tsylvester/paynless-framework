@@ -242,19 +242,28 @@ This document outlines the steps for implementing an in-app notification system 
     *   [X] `createOrganization(name, visibility?)`
     *   [X] `updateOrganization(orgId, { name?, visibility? })` (Admin action, checks org not deleted)
     *   [X] `listUserOrganizations(userId)` (Filters out deleted orgs)
-    *   [ ] `getOrganizationDetails(orgId)` (Checks org not deleted)
-    *   [ ] `getOrganizationMembers(orgId)` (Checks org not deleted)
-    *   [ ] `inviteUserToOrganization(orgId, emailOrUserId, role)` (Checks org not deleted)
-    *   [ ] `acceptOrganizationInvite(inviteTokenOrId)`
-    *   [ ] `requestToJoinOrganization(orgId)` (Checks org not deleted)
-    *   [ ] `approveJoinRequest(membershipId)` (Admin action, checks org not deleted)
-    *   [ ] `updateMemberRole(membershipId, newRole)` (Admin action, handles 'last admin' error, checks org not deleted)
-    *   [ ] `removeMember(membershipId)` (Admin or self action, handles 'last admin' error, checks org not deleted)
-    *   [ ] `deleteOrganization(orgId)` (Admin action, performs soft delete by setting `deleted_at`)
+    *   [X] `getOrganizationDetails(orgId)` (Checks org not deleted)
+    *   [X] `getOrganizationMembers(orgId)` (Checks org not deleted)
+    *   [X] `inviteUserToOrganization(orgId, emailOrUserId, role)` (Checks org not deleted)
+    *   [X] `acceptOrganizationInvite(inviteTokenOrId)`
+    *   [X] `requestToJoinOrganization(orgId)` (Checks org not deleted)
+    *   [X] `approveJoinRequest(membershipId)` (Admin action, checks org not deleted)
+    *   [X] `updateMemberRole(membershipId, newRole)` (Admin action, handles 'last admin' error, checks org not deleted)
+    *   [X] `removeMember(membershipId)` (Admin or self action, handles 'last admin' error, checks org not deleted)
+    *   [X] `deleteOrganization(orgId)` (Admin action, performs soft delete by setting `deleted_at`)
 *   [X] **Implementation:** Add/Update these functions in the API client. Ensure appropriate checks for `deleted_at` are performed implicitly by RLS or explicitly where needed. Implement soft delete logic for `deleteOrganization`.
     *   [X] Implemented `createOrganization`
     *   [X] Implemented `updateOrganization`
     *   [X] Implemented `listUserOrganizations`
+    *   [X] Implemented `getOrganizationDetails`
+    *   [X] Implemented `getOrganizationMembers`
+    *   [X] Implemented `inviteUserToOrganization`
+    *   [X] Implemented `acceptOrganizationInvite`
+    *   [X] Implemented `requestToJoinOrganization`
+    *   [X] Implemented `approveJoinRequest`
+    *   [X] Implemented `updateMemberRole`
+    *   [X] Implemented `removeMember`
+    *   [X] Implemented `deleteOrganization`
 
 ### 2.5 State Management (`@paynless/store`)
 

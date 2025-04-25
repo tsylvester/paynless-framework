@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { OrganizationApiClient } from './organizations.api';
 import { ApiClient } from './apiClient'; // Import base client type
-import { ApiResponse, ApiError, Organization, OrganizationInsert, OrganizationUpdate } from '@paynless/types';
+import { ApiResponse, ApiError, Organization, OrganizationInsert, OrganizationUpdate, OrganizationMemberWithProfile } from '@paynless/types';
 
 // --- Mock the ApiClient dependency directly --- 
 const mockApiClient = {
@@ -232,13 +232,432 @@ describe('OrganizationApiClient', () => {
     });
   });
 
-  // TODO: Add tests for getOrganizationMembers
-  // TODO: Add tests for inviteUserToOrganization (Likely apiClient.post(`organizations/${orgId}/invites`, { emailOrUserId, role }))
-  // TODO: Add tests for acceptOrganizationInvite (Likely apiClient.post(`organizations/invites/accept`, { inviteTokenOrId }))
-  // TODO: Add tests for requestToJoinOrganization (Likely apiClient.post(`organizations/${orgId}/requests`))
-  // TODO: Add tests for approveJoinRequest (Likely apiClient.put(`organizations/members/${membershipId}/approve`, {}))
-  // TODO: Add tests for updateMemberRole (Likely apiClient.put(`organizations/members/${membershipId}/role`, { role }))
-  // TODO: Add tests for removeMember (Likely apiClient.delete(`organizations/members/${membershipId}`))
-  // TODO: Add tests for deleteOrganization (soft delete) (Likely apiClient.delete(`organizations/${orgId}`))
+  // --- getOrganizationMembers --- //
+  describe('getOrganizationMembers', () => {
+    it('should call apiClient.get with correct endpoint and return members with profiles', async () => {
+      // Define mock member data using the imported type
+      const mockMembers: OrganizationMemberWithProfile[] = [
+        {
+          id: 'mem1', organization_id: orgId, user_id: 'user1', role: 'admin', status: 'active', created_at: 'd1',
+          user_profiles: { id: 'user1', first_name: 'Admin', last_name: 'User', email: 'admin@test.com', role: 'user', created_at: 'dp1', updated_at: 'dp1', deleted_at: null, avatar_url: null } // Nested profile
+        },
+        {
+          id: 'mem2', organization_id: orgId, user_id: 'user2', role: 'member', status: 'active', created_at: 'd2',
+          user_profiles: { id: 'user2', first_name: 'Member', last_name: 'User', email: 'member@test.com', role: 'user', created_at: 'dp2', updated_at: 'dp2', deleted_at: null, avatar_url: null }
+        },
+         {
+          id: 'mem3', organization_id: orgId, user_id: 'user3', role: 'member', status: 'pending', created_at: 'd3',
+          user_profiles: null // Example of a member without a linked profile
+        },
+      ];
+      const mockResponse: ApiResponse<OrganizationMemberWithProfile[]> = { status: 200, data: mockMembers };
+
+      vi.mocked(mockApiClient.get).mockResolvedValue(mockResponse);
+
+      const result = await organizationApiClient.getOrganizationMembers(orgId);
+
+      expect(mockApiClient.get).toHaveBeenCalledTimes(1);
+      expect(mockApiClient.get).toHaveBeenCalledWith(`organizations/${orgId}/members`);
+      expect(result).toEqual(mockResponse);
+      expect(result.data).toHaveLength(3);
+      expect(result.data?.[0].user_profiles?.first_name).toBe('Admin'); // Check nested data
+      expect(result.data?.[2].user_profiles).toBeNull();
+    });
+
+    it('should return empty array in data if API returns success with no members', async () => {
+      const mockResponse: ApiResponse<OrganizationMemberWithProfile[]> = { status: 200, data: [] };
+
+      vi.mocked(mockApiClient.get).mockResolvedValue(mockResponse);
+
+      const result = await organizationApiClient.getOrganizationMembers(orgId);
+
+      expect(mockApiClient.get).toHaveBeenCalledTimes(1);
+      expect(mockApiClient.get).toHaveBeenCalledWith(`organizations/${orgId}/members`);
+      expect(result).toEqual(mockResponse);
+      expect(result.data).toEqual([]);
+    });
+
+    it('should return error response if organization not found (404)', async () => {
+      const mockError: ApiError = { message: 'Org Not Found', code: 'PGRST116' };
+      const mockResponse: ApiResponse<OrganizationMemberWithProfile[]> = { status: 404, error: mockError };
+
+      vi.mocked(mockApiClient.get).mockResolvedValue(mockResponse);
+
+      const result = await organizationApiClient.getOrganizationMembers(orgId);
+
+      expect(mockApiClient.get).toHaveBeenCalledTimes(1);
+      expect(mockApiClient.get).toHaveBeenCalledWith(`organizations/${orgId}/members`);
+      expect(result).toEqual(mockResponse);
+      expect(result.data).toBeUndefined();
+      expect(result.error).toEqual(mockError);
+    });
+
+    it('should return error response if access is forbidden (403)', async () => {
+      const mockError: ApiError = { message: 'Forbidden', code: 'RLS_ERROR' };
+      const mockResponse: ApiResponse<OrganizationMemberWithProfile[]> = { status: 403, error: mockError };
+
+      vi.mocked(mockApiClient.get).mockResolvedValue(mockResponse);
+
+      const result = await organizationApiClient.getOrganizationMembers(orgId);
+
+      expect(mockApiClient.get).toHaveBeenCalledTimes(1);
+      expect(mockApiClient.get).toHaveBeenCalledWith(`organizations/${orgId}/members`);
+      expect(result).toEqual(mockResponse);
+      expect(result.data).toBeUndefined();
+      expect(result.error).toEqual(mockError);
+    });
+  });
+
+  // --- inviteUserToOrganization --- //
+  describe('inviteUserToOrganization', () => {
+    const inviteeEmail = 'invite@example.com';
+    const inviteeRole = 'member';
+
+    it('should call apiClient.post with correct endpoint and payload for invite', async () => {
+      const expectedPayload = { emailOrUserId: inviteeEmail, role: inviteeRole };
+      const mockResponse: ApiResponse<void> = { status: 204, data: undefined }; // Expect 204 No Content on success
+
+      vi.mocked(mockApiClient.post).mockResolvedValue(mockResponse);
+
+      const result = await organizationApiClient.inviteUserToOrganization(orgId, inviteeEmail, inviteeRole);
+
+      expect(mockApiClient.post).toHaveBeenCalledTimes(1);
+      expect(mockApiClient.post).toHaveBeenCalledWith(`organizations/${orgId}/invites`, expectedPayload);
+      expect(result).toEqual(mockResponse);
+    });
+
+    it('should return error response if organization not found (404)', async () => {
+      const expectedPayload = { emailOrUserId: inviteeEmail, role: inviteeRole };
+      const mockError: ApiError = { message: 'Organization not found', code: 'PGRST116' };
+      const mockResponse: ApiResponse<void> = { status: 404, error: mockError };
+
+      vi.mocked(mockApiClient.post).mockResolvedValue(mockResponse);
+
+      const result = await organizationApiClient.inviteUserToOrganization(orgId, inviteeEmail, inviteeRole);
+
+      expect(mockApiClient.post).toHaveBeenCalledTimes(1);
+      expect(mockApiClient.post).toHaveBeenCalledWith(`organizations/${orgId}/invites`, expectedPayload);
+      expect(result).toEqual(mockResponse);
+      expect(result.data).toBeUndefined();
+    });
+
+    it('should return error response if user is already a member (e.g., 409 Conflict)', async () => {
+      const expectedPayload = { emailOrUserId: inviteeEmail, role: inviteeRole };
+      const mockError: ApiError = { message: 'User already member or invited', code: 'DUPLICATE_INVITE' };
+      const mockResponse: ApiResponse<void> = { status: 409, error: mockError }; // Example status code
+
+      vi.mocked(mockApiClient.post).mockResolvedValue(mockResponse);
+
+      const result = await organizationApiClient.inviteUserToOrganization(orgId, inviteeEmail, inviteeRole);
+
+      expect(mockApiClient.post).toHaveBeenCalledTimes(1);
+      expect(mockApiClient.post).toHaveBeenCalledWith(`organizations/${orgId}/invites`, expectedPayload);
+      expect(result).toEqual(mockResponse);
+      expect(result.data).toBeUndefined();
+    });
+
+    it('should return error response if inviting user lacks permissions (403)', async () => {
+      const expectedPayload = { emailOrUserId: inviteeEmail, role: inviteeRole };
+      const mockError: ApiError = { message: 'Forbidden', code: 'RLS_ERROR' };
+      const mockResponse: ApiResponse<void> = { status: 403, error: mockError };
+
+      vi.mocked(mockApiClient.post).mockResolvedValue(mockResponse);
+
+      const result = await organizationApiClient.inviteUserToOrganization(orgId, inviteeEmail, inviteeRole);
+
+      expect(mockApiClient.post).toHaveBeenCalledTimes(1);
+      expect(mockApiClient.post).toHaveBeenCalledWith(`organizations/${orgId}/invites`, expectedPayload);
+      expect(result).toEqual(mockResponse);
+      expect(result.data).toBeUndefined();
+    });
+  });
+
+  // --- acceptOrganizationInvite --- //
+  describe('acceptOrganizationInvite', () => {
+    const inviteToken = 'valid-invite-token-123';
+
+    it('should call apiClient.post with correct endpoint and token payload', async () => {
+      const expectedPayload = { inviteTokenOrId: inviteToken };
+      const mockResponse: ApiResponse<void> = { status: 204, data: undefined };
+
+      vi.mocked(mockApiClient.post).mockResolvedValue(mockResponse);
+
+      const result = await organizationApiClient.acceptOrganizationInvite(inviteToken);
+
+      expect(mockApiClient.post).toHaveBeenCalledTimes(1);
+      expect(mockApiClient.post).toHaveBeenCalledWith('organizations/invites/accept', expectedPayload);
+      expect(result).toEqual(mockResponse);
+    });
+
+    it('should return error response for invalid or expired token (e.g., 400/404)', async () => {
+      const expectedPayload = { inviteTokenOrId: inviteToken };
+      const mockError: ApiError = { message: 'Invalid or expired invitation', code: 'INVALID_TOKEN' };
+      // Backend might return 400 or 404 depending on implementation
+      const mockResponse: ApiResponse<void> = { status: 400, error: mockError }; 
+
+      vi.mocked(mockApiClient.post).mockResolvedValue(mockResponse);
+
+      const result = await organizationApiClient.acceptOrganizationInvite(inviteToken);
+
+      expect(mockApiClient.post).toHaveBeenCalledTimes(1);
+      expect(mockApiClient.post).toHaveBeenCalledWith('organizations/invites/accept', expectedPayload);
+      expect(result).toEqual(mockResponse);
+      expect(result.data).toBeUndefined();
+    });
+
+     it('should return error response on server error (500)', async () => {
+      const expectedPayload = { inviteTokenOrId: inviteToken };
+      const mockError: ApiError = { message: 'Internal Server Error', code: 'SERVER_ERROR' };
+      const mockResponse: ApiResponse<void> = { status: 500, error: mockError };
+
+      vi.mocked(mockApiClient.post).mockResolvedValue(mockResponse);
+
+      const result = await organizationApiClient.acceptOrganizationInvite(inviteToken);
+
+      expect(mockApiClient.post).toHaveBeenCalledTimes(1);
+      expect(mockApiClient.post).toHaveBeenCalledWith('organizations/invites/accept', expectedPayload);
+      expect(result).toEqual(mockResponse);
+      expect(result.data).toBeUndefined();
+    });
+  });
+
+  // --- requestToJoinOrganization --- //
+  describe('requestToJoinOrganization', () => {
+    it('should call apiClient.post with correct endpoint and empty payload', async () => {
+      const mockResponse: ApiResponse<void> = { status: 204, data: undefined };
+      vi.mocked(mockApiClient.post).mockResolvedValue(mockResponse);
+
+      const result = await organizationApiClient.requestToJoinOrganization(orgId);
+
+      expect(mockApiClient.post).toHaveBeenCalledTimes(1);
+      // Check endpoint and ensure an empty object {} is sent as payload
+      expect(mockApiClient.post).toHaveBeenCalledWith(`organizations/${orgId}/requests`, {}); 
+      expect(result).toEqual(mockResponse);
+    });
+
+    it('should return error response if organization not found (404)', async () => {
+      const mockError: ApiError = { message: 'Organization not found', code: 'PGRST116' };
+      const mockResponse: ApiResponse<void> = { status: 404, error: mockError };
+      vi.mocked(mockApiClient.post).mockResolvedValue(mockResponse);
+      
+      const result = await organizationApiClient.requestToJoinOrganization(orgId);
+
+      expect(mockApiClient.post).toHaveBeenCalledTimes(1);
+      expect(mockApiClient.post).toHaveBeenCalledWith(`organizations/${orgId}/requests`, {});
+      expect(result).toEqual(mockResponse);
+    });
+
+    it('should return error response if user already member or request pending (409)', async () => {
+      const mockError: ApiError = { message: 'Request already pending or user is member', code: 'DUPLICATE_REQUEST' };
+      const mockResponse: ApiResponse<void> = { status: 409, error: mockError };
+      vi.mocked(mockApiClient.post).mockResolvedValue(mockResponse);
+      
+      const result = await organizationApiClient.requestToJoinOrganization(orgId);
+
+      expect(mockApiClient.post).toHaveBeenCalledTimes(1);
+      expect(mockApiClient.post).toHaveBeenCalledWith(`organizations/${orgId}/requests`, {});
+      expect(result).toEqual(mockResponse);
+    });
+    
+    it('should return error response if org is private/not accepting requests (403)', async () => {
+      const mockError: ApiError = { message: 'Organization does not accept join requests', code: 'REQUESTS_DISABLED' };
+      const mockResponse: ApiResponse<void> = { status: 403, error: mockError };
+      vi.mocked(mockApiClient.post).mockResolvedValue(mockResponse);
+      
+      const result = await organizationApiClient.requestToJoinOrganization(orgId);
+
+      expect(mockApiClient.post).toHaveBeenCalledTimes(1);
+      expect(mockApiClient.post).toHaveBeenCalledWith(`organizations/${orgId}/requests`, {});
+      expect(result).toEqual(mockResponse);
+    });
+  });
+
+  // --- approveJoinRequest --- //
+  describe('approveJoinRequest', () => {
+    const membershipId = 'mem-join-request-123';
+
+    it('should call apiClient.put with correct endpoint and empty payload', async () => {
+      const mockResponse: ApiResponse<void> = { status: 204, data: undefined };
+      vi.mocked(mockApiClient.put).mockResolvedValue(mockResponse);
+
+      const result = await organizationApiClient.approveJoinRequest(membershipId);
+
+      expect(mockApiClient.put).toHaveBeenCalledTimes(1);
+      // Check endpoint and ensure an empty object {} is sent as payload
+      expect(mockApiClient.put).toHaveBeenCalledWith(`organizations/members/${membershipId}/approve`, {});
+      expect(result).toEqual(mockResponse);
+    });
+
+    it('should return error response if request/member not found (404)', async () => {
+      const mockError: ApiError = { message: 'Membership request not found', code: 'NOT_FOUND' };
+      const mockResponse: ApiResponse<void> = { status: 404, error: mockError };
+      vi.mocked(mockApiClient.put).mockResolvedValue(mockResponse);
+
+      const result = await organizationApiClient.approveJoinRequest(membershipId);
+
+      expect(mockApiClient.put).toHaveBeenCalledTimes(1);
+      expect(mockApiClient.put).toHaveBeenCalledWith(`organizations/members/${membershipId}/approve`, {});
+      expect(result).toEqual(mockResponse);
+    });
+
+    it('should return error response if approver lacks permissions (403)', async () => {
+      const mockError: ApiError = { message: 'Forbidden', code: 'RLS_ERROR' };
+      const mockResponse: ApiResponse<void> = { status: 403, error: mockError };
+      vi.mocked(mockApiClient.put).mockResolvedValue(mockResponse);
+
+      const result = await organizationApiClient.approveJoinRequest(membershipId);
+
+      expect(mockApiClient.put).toHaveBeenCalledTimes(1);
+      expect(mockApiClient.put).toHaveBeenCalledWith(`organizations/members/${membershipId}/approve`, {});
+      expect(result).toEqual(mockResponse);
+    });
+  });
+
+  // --- updateMemberRole --- //
+  describe('updateMemberRole', () => {
+    const membershipId = 'mem-to-update-role-456';
+    const newRole = 'admin';
+
+    it('should call apiClient.put with correct endpoint and role payload', async () => {
+      const expectedPayload = { role: newRole };
+      const mockResponse: ApiResponse<void> = { status: 204, data: undefined };
+      vi.mocked(mockApiClient.put).mockResolvedValue(mockResponse);
+
+      const result = await organizationApiClient.updateMemberRole(membershipId, newRole);
+
+      expect(mockApiClient.put).toHaveBeenCalledTimes(1);
+      expect(mockApiClient.put).toHaveBeenCalledWith(`organizations/members/${membershipId}/role`, expectedPayload);
+      expect(result).toEqual(mockResponse);
+    });
+
+    it('should return error response if membership not found (404)', async () => {
+      const expectedPayload = { role: newRole };
+      const mockError: ApiError = { message: 'Membership not found', code: 'NOT_FOUND' };
+      const mockResponse: ApiResponse<void> = { status: 404, error: mockError };
+      vi.mocked(mockApiClient.put).mockResolvedValue(mockResponse);
+
+      const result = await organizationApiClient.updateMemberRole(membershipId, newRole);
+
+      expect(mockApiClient.put).toHaveBeenCalledTimes(1);
+      expect(mockApiClient.put).toHaveBeenCalledWith(`organizations/members/${membershipId}/role`, expectedPayload);
+      expect(result).toEqual(mockResponse);
+    });
+
+    it('should return error response if updater lacks permissions (403)', async () => {
+      const expectedPayload = { role: newRole };
+      const mockError: ApiError = { message: 'Forbidden', code: 'RLS_ERROR' };
+      const mockResponse: ApiResponse<void> = { status: 403, error: mockError };
+      vi.mocked(mockApiClient.put).mockResolvedValue(mockResponse);
+
+      const result = await organizationApiClient.updateMemberRole(membershipId, newRole);
+
+      expect(mockApiClient.put).toHaveBeenCalledTimes(1);
+      expect(mockApiClient.put).toHaveBeenCalledWith(`organizations/members/${membershipId}/role`, expectedPayload);
+      expect(result).toEqual(mockResponse);
+    });
+    
+    it('should return error response if attempting to remove last admin (e.g., 400)', async () => {
+      const expectedPayload = { role: 'member' }; // Trying to downgrade last admin
+      const mockError: ApiError = { message: 'Cannot remove last admin', code: 'LAST_ADMIN_ERROR' };
+      const mockResponse: ApiResponse<void> = { status: 400, error: mockError }; // Or 403?
+      vi.mocked(mockApiClient.put).mockResolvedValue(mockResponse);
+
+      const result = await organizationApiClient.updateMemberRole(membershipId, 'member');
+
+      expect(mockApiClient.put).toHaveBeenCalledTimes(1);
+      expect(mockApiClient.put).toHaveBeenCalledWith(`organizations/members/${membershipId}/role`, expectedPayload);
+      expect(result).toEqual(mockResponse);
+    });
+  });
+
+  // --- removeMember --- //
+  describe('removeMember', () => {
+    const membershipId = 'mem-to-remove-789';
+
+    it('should call apiClient.delete with correct endpoint', async () => {
+      const mockResponse: ApiResponse<void> = { status: 204, data: undefined };
+      vi.mocked(mockApiClient.delete).mockResolvedValue(mockResponse);
+
+      const result = await organizationApiClient.removeMember(membershipId);
+
+      expect(mockApiClient.delete).toHaveBeenCalledTimes(1);
+      expect(mockApiClient.delete).toHaveBeenCalledWith(`organizations/members/${membershipId}`);
+      expect(result).toEqual(mockResponse);
+    });
+
+    it('should return error response if membership not found (404)', async () => {
+      const mockError: ApiError = { message: 'Membership not found', code: 'NOT_FOUND' };
+      const mockResponse: ApiResponse<void> = { status: 404, error: mockError };
+      vi.mocked(mockApiClient.delete).mockResolvedValue(mockResponse);
+
+      const result = await organizationApiClient.removeMember(membershipId);
+
+      expect(mockApiClient.delete).toHaveBeenCalledTimes(1);
+      expect(mockApiClient.delete).toHaveBeenCalledWith(`organizations/members/${membershipId}`);
+      expect(result).toEqual(mockResponse);
+    });
+
+    it('should return error response if remover lacks permissions (403)', async () => {
+      const mockError: ApiError = { message: 'Forbidden', code: 'RLS_ERROR' };
+      const mockResponse: ApiResponse<void> = { status: 403, error: mockError };
+      vi.mocked(mockApiClient.delete).mockResolvedValue(mockResponse);
+
+      const result = await organizationApiClient.removeMember(membershipId);
+
+      expect(mockApiClient.delete).toHaveBeenCalledTimes(1);
+      expect(mockApiClient.delete).toHaveBeenCalledWith(`organizations/members/${membershipId}`);
+      expect(result).toEqual(mockResponse);
+    });
+    
+     it('should return error response if attempting to remove last admin (e.g., 400)', async () => {
+      const mockError: ApiError = { message: 'Cannot remove last admin', code: 'LAST_ADMIN_ERROR' };
+      const mockResponse: ApiResponse<void> = { status: 400, error: mockError };
+      vi.mocked(mockApiClient.delete).mockResolvedValue(mockResponse);
+
+      const result = await organizationApiClient.removeMember(membershipId);
+
+      expect(mockApiClient.delete).toHaveBeenCalledTimes(1);
+      expect(mockApiClient.delete).toHaveBeenCalledWith(`organizations/members/${membershipId}`);
+      expect(result).toEqual(mockResponse);
+    });
+  });
+
+  // --- deleteOrganization (soft delete) --- //
+  describe('deleteOrganization', () => {
+    it('should call apiClient.delete with correct organization endpoint', async () => {
+      const mockResponse: ApiResponse<void> = { status: 204, data: undefined };
+      vi.mocked(mockApiClient.delete).mockResolvedValue(mockResponse);
+
+      const result = await organizationApiClient.deleteOrganization(orgId);
+
+      expect(mockApiClient.delete).toHaveBeenCalledTimes(1);
+      expect(mockApiClient.delete).toHaveBeenCalledWith(`organizations/${orgId}`);
+      expect(result).toEqual(mockResponse);
+    });
+
+    it('should return error response if organization not found (404)', async () => {
+      const mockError: ApiError = { message: 'Organization not found', code: 'NOT_FOUND' };
+      const mockResponse: ApiResponse<void> = { status: 404, error: mockError };
+      vi.mocked(mockApiClient.delete).mockResolvedValue(mockResponse);
+
+      const result = await organizationApiClient.deleteOrganization(orgId);
+
+      expect(mockApiClient.delete).toHaveBeenCalledTimes(1);
+      expect(mockApiClient.delete).toHaveBeenCalledWith(`organizations/${orgId}`);
+      expect(result).toEqual(mockResponse);
+    });
+
+    it('should return error response if deleter lacks permissions (403)', async () => {
+       const mockError: ApiError = { message: 'Forbidden - Only admins can delete', code: 'RLS_ERROR' };
+       const mockResponse: ApiResponse<void> = { status: 403, error: mockError };
+       vi.mocked(mockApiClient.delete).mockResolvedValue(mockResponse);
+
+       const result = await organizationApiClient.deleteOrganization(orgId);
+
+       expect(mockApiClient.delete).toHaveBeenCalledTimes(1);
+       expect(mockApiClient.delete).toHaveBeenCalledWith(`organizations/${orgId}`);
+       expect(result).toEqual(mockResponse);
+    });
+  });
 
 }); 
