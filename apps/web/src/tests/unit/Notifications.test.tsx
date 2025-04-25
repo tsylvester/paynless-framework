@@ -112,7 +112,7 @@ const mockUseAuthStore = useAuthStore;
 
 // Mock Data (ensure data is always defined for these tests or add checks)
 const mockUser: User = { /* ... */ 
-    id: 'user-abc', email: 'test@example.com', first_name: 'Test', last_name: 'User', avatarUrl: 'https://example.com/avatar.png', role: UserRole.USER, created_at: new Date().toISOString(), updated_at: new Date().toISOString(),
+    id: 'user-abc', email: 'test@example.com', first_name: 'Test', last_name: 'User', avatarUrl: 'https://example.com/avatar.png', role: 'user', created_at: new Date().toISOString(), updated_at: new Date().toISOString(),
 };
 const mockToken = 'mock-jwt-token';
 const mockNotification1: Notification = { 

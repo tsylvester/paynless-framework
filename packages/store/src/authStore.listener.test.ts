@@ -54,11 +54,11 @@ const expectedMappedSession: Session = {
     expires_in: mockSupabaseSession.expires_in,
 };
 
-const mockProfileData: UserProfile = {
+const mockUserProfile: UserProfile = {
     id: 'user-123',
     first_name: 'Testy',
     last_name: 'McTestface',
-    role: UserRole.USER,
+    role: 'user',
     created_at: '2023-01-01T10:00:00Z',
     updated_at: '2023-01-10T10:00:00Z',
     // avatarUrl etc. 
@@ -121,7 +121,7 @@ describe('authStore Listener Logic (initAuthListener)', () => {
 
     // Mock API calls - NEST profile data correctly
     mockApiClientInstance.get = vi.fn().mockResolvedValue({
-      data: { profile: mockProfileData }, // <<< FIX: Nest profile data
+      data: { profile: mockUserProfile }, // <<< FIX: Nest profile data
       error: null,
       status: 200
     });
@@ -146,7 +146,7 @@ describe('authStore Listener Logic (initAuthListener)', () => {
   it('should set session, user, profile and isLoading=false on INITIAL_SESSION with session', async () => {
     // Explicitly configure the mock for THIS test case
     mockApiClientInstance.get = vi.fn().mockResolvedValue({
-      data: { profile: mockProfileData }, // Use the correctly nested structure
+      data: { profile: mockUserProfile }, // Use the correctly nested structure
       error: null,
       status: 200
     });
@@ -176,7 +176,7 @@ describe('authStore Listener Logic (initAuthListener)', () => {
     });
     // Check second call (profile)
     expect(useAuthStore.setState).toHaveBeenNthCalledWith(2, { 
-      profile: mockProfileData 
+      profile: mockUserProfile 
     });
     // Optionally check final state if needed
     // expect(useAuthStore.getState()).toMatchObject({ ... });
@@ -264,7 +264,7 @@ describe('authStore Listener Logic (initAuthListener)', () => {
   it('should set session, user, profile on SIGNED_IN event', async () => {
     // Explicitly configure the mock for THIS test case (Success)
     mockApiClientInstance.get = vi.fn().mockResolvedValue({
-      data: { profile: mockProfileData }, // Use the correctly nested structure
+      data: { profile: mockUserProfile }, // Use the correctly nested structure
       error: null,
       status: 200
     });
@@ -291,7 +291,7 @@ describe('authStore Listener Logic (initAuthListener)', () => {
       error: null,
     }));
     expect(useAuthStore.setState).toHaveBeenNthCalledWith(2, { 
-      profile: mockProfileData 
+      profile: mockUserProfile 
     });
   });
 
@@ -300,7 +300,7 @@ describe('authStore Listener Logic (initAuthListener)', () => {
     useAuthStore.setState({ 
         session: expectedMappedSession, 
         user: expectedMappedUser, 
-        profile: mockProfileData,
+        profile: mockUserProfile,
         isLoading: false,
         navigate: mockNavigate // Ensure navigate is set here too
     }, true);

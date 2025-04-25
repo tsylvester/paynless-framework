@@ -21,7 +21,7 @@ const email = 'test@example.com' // Needed by mockUser
 const mockUser: User = {
   id: 'user-123',
   email,
-  role: UserRole.USER,
+  role: 'user',
   created_at: new Date().toISOString(),
   updated_at: new Date().toISOString(),
 }
@@ -32,7 +32,7 @@ const mockSession: Session = {
 }
 const mockProfile: UserProfile = {
   id: 'profile-123',
-  role: UserRole.USER,
+  role: 'user',
   first_name: 'Test',
   last_name: 'User',
 }

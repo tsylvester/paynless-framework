@@ -231,7 +231,9 @@ This document outlines the steps for implementing an in-app notification system 
     *   [ ] Add the script command to root `package.json`.
 *   [ ] **Verification:**
     *   [ ] Run TypeScript checks across the monorepo: `pnpm typecheck` (or equivalent `tsc -b` command). Fix any type errors.
+        *   **Status:** Known failures due to planned but unimplemented code in `packages/api-client` (Phase 2.4). 
     *   [ ] Run all existing tests: `pnpm test`. Ensure tests pass after refactoring. Address any failures, potentially updating mocks to reflect the new type structures if necessary.
+        *   **Status:** `@paynless/store` tests passed after fixing `UserRole` mock references. `apps/web` tests have known failures unrelated to this refactor or requiring broader updates (deferred).
 *   [ ] **Commit:** `refactor: centralize database types using supabase gen types (#issue_number)`
 
 ### 2.4 API Client (`@paynless/api-client`)
