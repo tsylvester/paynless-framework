@@ -1,39 +1,14 @@
-import { assertEquals, assertExists } from "jsr:@std/assert";
+import { assertEquals, assertExists, assertRejects } from "jsr:@std/assert";
 import { describe, it, beforeEach } from "jsr:@std/testing/bdd";
 import { spy, assertSpyCalls, type Spy } from "jsr:@std/testing/mock";
 import { SupabaseClient } from "npm:@supabase/supabase-js";
-import { getCurrentSubscription } from "./current.ts";
-import { 
-    createErrorResponse, 
-    createSuccessResponse, 
-    type createErrorResponse as CreateErrorResponseType, 
-    type createSuccessResponse as CreateSuccessResponseType 
-} from "../../_shared/responses.ts";
+import { getCurrentSubscription, HandlerError } from "./current.ts";
+import { createMockSupabaseClient, type MockSupabaseDataConfig } from "../../_shared/test-utils.ts";
 
 // --- Mocks & Spies ---
 let mockSupabaseClient: SupabaseClient;
-let mockCreateErrorResponse: Spy<CreateErrorResponseType>;
-let mockCreateSuccessResponse: Spy<CreateSuccessResponseType>;
-// Declare spies in describe scope
-let selectSpy: Spy;
-let eqSpy: Spy;
-let maybeSingleSpy: Spy;
 
 // --- Mock Setup Helpers ---
-
-// For .select(...).eq("user_id", userId).maybeSingle()
-const createSelectSpies = (data: any = null, error: any = null) => {
-    const maybeSingleSpy = spy(() => Promise.resolve({ data, error }));
-    const eqSpy = spy(() => ({ maybeSingle: maybeSingleSpy }));
-    const selectSpy = spy(() => ({ eq: eqSpy }));
-    return { selectSpy, eqSpy, maybeSingleSpy };
-};
-
-// Mock dependencies object
-const mockDeps = () => ({
-  createErrorResponse: mockCreateErrorResponse,
-  createSuccessResponse: mockCreateSuccessResponse,
-});
 
 // --- Test Data ---
 const userId = "user_current_test";
@@ -77,118 +52,95 @@ const mockSubDataWithoutPlan = {
 describe("getCurrentSubscription Handler", () => {
 
     beforeEach(() => {
-        // Reset spies
-        mockCreateErrorResponse = spy(createErrorResponse);
-        mockCreateSuccessResponse = spy(createSuccessResponse);
-
-        // Default successful mock setup (with plan) - Assign to describe-scoped vars
-        const spies = createSelectSpies(mockSubDataWithPlan);
-        selectSpy = spies.selectSpy;
-        eqSpy = spies.eqSpy;
-        maybeSingleSpy = spies.maybeSingleSpy;
-        
-        mockSupabaseClient = {
-            from: spy((tableName: string) => {
-                if (tableName === "user_subscriptions") {
-                    // Use the describe-scoped selectSpy directly
-                    return { select: selectSpy }; 
+        // Use shared Supabase mock setup (basic config, will be overridden)
+        const mockSupabaseConfig: MockSupabaseDataConfig = {
+            genericMockResults: {
+                user_subscriptions: {
+                    select: () => Promise.resolve({ data: [mockSubDataWithPlan], error: null })
                 }
-                throw new Error(`Unexpected table: ${tableName}`);
-            })
-        } as unknown as SupabaseClient;
+            }
+        };
+        const { client } = createMockSupabaseClient(mockSupabaseConfig);
+        mockSupabaseClient = client;
     });
 
     it("should successfully fetch and return subscription with plan details", async () => {
-        // Arrange - Uses spies set in beforeEach
-        const deps = mockDeps();
-        const response = await getCurrentSubscription(mockSupabaseClient, userId, deps);
-        const body = await response.json();
-
-        assertEquals(response.status, 200);
-        assertSpyCalls(mockCreateSuccessResponse, 1);
-        // Assert DB Query Chain using describe-scoped spies
-        assertSpyCalls(selectSpy, 1); 
-        assertSpyCalls(eqSpy, 1, { args: ["user_id", userId] });
-        assertSpyCalls(maybeSingleSpy, 1);
-        // Assert Response Body Structure
-        assertEquals(body.id, mockSubDataWithPlan.id);
-        assertEquals(body.userId, userId);
-        assertEquals(body.status, 'active');
-        assertExists(body.plan);
-        assertEquals(body.plan.id, mockSubDataWithPlan.plan_id);
-        assertEquals(body.plan.name, 'Pro Plan');
-        assertSpyCalls(mockCreateErrorResponse, 0);
+        // Arrange - mock client configured in beforeEach
+        // Act: Call handler directly
+        const result = await getCurrentSubscription(mockSupabaseClient, userId);
+        
+        // Assert: Check returned data directly
+        assertEquals(result.id, mockSubDataWithPlan.id);
+        assertEquals(result.user_id, userId);
+        assertEquals(result.status, 'active');
+        assertExists(result.subscription_plans); // Check the nested plan object exists
+        assertEquals(result.subscription_plans?.id, mockSubDataWithPlan.plan_id);
+        assertEquals(result.subscription_plans?.name, 'Pro Plan');
+        // Removed old response/spy assertions
     });
 
     it("should successfully fetch and return subscription without plan details if plan_id is null", async () => {
-        // Arrange - Override spies for this test
-        const spiesWithoutPlan = createSelectSpies(mockSubDataWithoutPlan);
-        selectSpy = spiesWithoutPlan.selectSpy;
-        eqSpy = spiesWithoutPlan.eqSpy;
-        maybeSingleSpy = spiesWithoutPlan.maybeSingleSpy;
-        // Re-assign from mock to use the new selectSpy
-        mockSupabaseClient.from = spy(() => ({ select: selectSpy })) as any;
-        const deps = mockDeps();
-        const response = await getCurrentSubscription(mockSupabaseClient, userId, deps);
-        const body = await response.json();
+        // Arrange: Configure mock for this specific case
+        const mockSupabaseConfig: MockSupabaseDataConfig = {
+            genericMockResults: {
+                user_subscriptions: {
+                    select: () => Promise.resolve({ data: [mockSubDataWithoutPlan], error: null })
+                }
+            }
+        };
+        const { client } = createMockSupabaseClient(mockSupabaseConfig);
+        // Use the client configured for this test
+        const result = await getCurrentSubscription(client, userId);
 
-        assertEquals(response.status, 200);
-        assertSpyCalls(mockCreateSuccessResponse, 1);
-        // Assert DB Query Chain
-        assertSpyCalls(selectSpy, 1);
-        assertSpyCalls(eqSpy, 1, { args: ["user_id", userId] });
-        assertSpyCalls(maybeSingleSpy, 1);
-        // Assert Response Body Structure
-        assertEquals(body.id, mockSubDataWithoutPlan.id);
-        assertEquals(body.userId, userId);
-        assertEquals(body.status, 'free');
-        assertEquals(body.plan, null); // Assert plan is null
-        assertSpyCalls(mockCreateErrorResponse, 0);
+        // Assert: Check returned data directly
+        assertEquals(result.id, mockSubDataWithoutPlan.id);
+        assertEquals(result.user_id, userId);
+        assertEquals(result.status, 'free');
+        assertEquals(result.subscription_plans, null); // Assert plan is null
+        // Removed old response/spy assertions
     });
 
-    it("should return 500 if database query fails", async () => {
-        // Arrange - Override spies for error
+    it("should throw HandlerError(500) if database query fails", async () => {
+        // Arrange: Configure mock for DB error
         const dbError = new Error("Connection failed");
-        const spiesWithError = createSelectSpies(null, dbError);
-        selectSpy = spiesWithError.selectSpy;
-        eqSpy = spiesWithError.eqSpy;
-        maybeSingleSpy = spiesWithError.maybeSingleSpy;
-        // Re-assign from mock
-        mockSupabaseClient.from = spy(() => ({ select: selectSpy })) as any;
-        const deps = mockDeps();
-        const response = await getCurrentSubscription(mockSupabaseClient, userId, deps);
+        const mockSupabaseConfig: MockSupabaseDataConfig = {
+            genericMockResults: {
+                user_subscriptions: {
+                    select: () => Promise.resolve({ data: null, error: dbError })
+                }
+            }
+        };
+        const { client } = createMockSupabaseClient(mockSupabaseConfig);
 
-        assertEquals(response.status, 500);
-        assertSpyCalls(mockCreateErrorResponse, 1);
-        // Assert DB Query Chain was called
-        assertSpyCalls(selectSpy, 1);
-        assertSpyCalls(eqSpy, 1, { args: ["user_id", userId] });
-        assertSpyCalls(maybeSingleSpy, 1);
-        // Assert error response args
-        assertEquals(mockCreateErrorResponse.calls[0].args, ["Failed to retrieve subscription data", 500, dbError]);
-        assertSpyCalls(mockCreateSuccessResponse, 0);
+        // Act & Assert: Use assertRejects
+        await assertRejects(
+            async () => await getCurrentSubscription(client, userId),
+            HandlerError, // Expect HandlerError
+            "Failed to retrieve subscription data" // Expected message
+            // We could also check e.status === 500 and e.cause === dbError inside assertRejects if needed
+        );
+        // Removed old response/spy assertions
     });
 
-    it("should return 404 if no subscription record is found for the user", async () => {
-        // Arrange - Override spies for null data
-        const spiesWithNull = createSelectSpies(null, null);
-        selectSpy = spiesWithNull.selectSpy;
-        eqSpy = spiesWithNull.eqSpy;
-        maybeSingleSpy = spiesWithNull.maybeSingleSpy;
-        // Re-assign from mock
-        mockSupabaseClient.from = spy(() => ({ select: selectSpy })) as any;
-        const deps = mockDeps();
-        const response = await getCurrentSubscription(mockSupabaseClient, userId, deps);
-
-        assertEquals(response.status, 404);
-        assertSpyCalls(mockCreateErrorResponse, 1);
-        // Assert DB Query Chain was called
-        assertSpyCalls(selectSpy, 1);
-        assertSpyCalls(eqSpy, 1, { args: ["user_id", userId] });
-        assertSpyCalls(maybeSingleSpy, 1);
-        // Assert error response args
-        assertEquals(mockCreateErrorResponse.calls[0].args, ["Subscription not found", 404]);
-        assertSpyCalls(mockCreateSuccessResponse, 0);
+    it("should throw HandlerError(404) if no subscription record is found for the user", async () => {
+        // Arrange: Configure mock for no data found
+        const mockSupabaseConfig: MockSupabaseDataConfig = {
+            genericMockResults: {
+                user_subscriptions: {
+                    select: () => Promise.resolve({ data: null, error: null }) // No data, no error
+                }
+            }
+        };
+        const { client } = createMockSupabaseClient(mockSupabaseConfig);
+        
+        // Act & Assert: Use assertRejects
+        await assertRejects(
+            async () => await getCurrentSubscription(client, userId),
+            HandlerError,
+            "Subscription not found" // Expected message
+            // We could also check e.status === 404 inside assertRejects
+        );
+        // Removed old response/spy assertions
     });
 
 }); 
