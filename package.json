@@ -13,7 +13,8 @@
     "clean:node_modules": "rimraf node_modules packages/**/node_modules apps/**/node_modules",
     "preview": "pnpm --filter @paynless/web preview",
     "lint": "pnpm -r run lint --if-present",
-    "test": "pnpm -r test"
+    "test": "pnpm -r test",
+    "sync:types": "supabase gen types typescript --local > supabase/functions/types_db.ts && node supabase/scripts/sync-supabase-shared-types.mjs"
   },
   "keywords": [
     "supabase",

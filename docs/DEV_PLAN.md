@@ -79,6 +79,18 @@ To contribute to this project:
 *   Stabilizing and enhancing AI Chat features.
 *   Improving test coverage across all packages.
 
+## Recent Developments
+
+*   **Centralized Database Types (Refactor):**
+    *   Refactored the codebase to use Supabase-generated types (`supabase/functions/types_db.ts`) as the single source of truth for database schema definitions.
+    *   Created an internal workspace package (`@paynless/db-types` pointing to `types_db.ts`) for easier type resolution.
+    *   Added this internal package as a dependency to `@paynless/types`, `api-client`, `store`, and `web`.
+    *   Removed manually defined, redundant DB type definitions from `packages/types/src` and updated affected files to use aliases pointing to `@paynless/db-types`.
+    *   Updated Supabase Edge Functions (`supabase/functions/*`) to import DB types directly from `../types_db.ts` and application-level types from `../_shared/types.ts`.
+    *   Cleaned `supabase/functions/_shared/types.ts` to only contain necessary application-level types.
+    *   Created a Node.js script (`supabase/scripts/sync-supabase-shared-types.mjs`) to automatically synchronize required application-level types from `packages/types` into `supabase/functions/_shared/types.ts`.
+    *   Added a combined script `sync:types` to the root `package.json` to run both `supabase gen types ...` and the new sync script, ensuring consistency.
+
 ## Supabase Setup
 
 1. Create a new Supabase project.
