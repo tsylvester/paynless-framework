@@ -3,7 +3,7 @@ import {
   assertExists,
 } from "https://deno.land/std@0.224.0/assert/mod.ts"; // Use a specific version
 import { NoOpEmailService } from "./no_op_service.ts";
-import type { UserData } from "../types.ts"; // Use UserData
+import type { UserData } from "@paynless/types/email"; // Use UserData
 import { logger } from "../logger.ts"; // Import logger if needed for spy checks
 import { spy } from "jsr:@std/testing/mock";
 

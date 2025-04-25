@@ -1,5 +1,5 @@
 import { logger } from "../logger.ts";
-import { type EmailMarketingService } from "../types.ts";
+import { type EmailMarketingService } from "@paynless/types/email";
 import { KitService, type KitServiceConfig } from "./kit_service.ts";
 import { NoOpEmailService } from "./no_op_service.ts";
 import { DummyEmailService } from './dummy_service.ts';

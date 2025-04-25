@@ -208,6 +208,9 @@ importers:
         specifier: ^4.5.4
         version: 4.5.6(@types/react@18.3.20)(immer@10.1.1)(react@18.3.1)
     devDependencies:
+      '@paynless/db-types':
+        specifier: workspace:^
+        version: link:../../supabase/functions
       '@testing-library/jest-dom':
         specifier: ^6.4.8
         version: 6.6.3
@@ -318,6 +321,9 @@ importers:
         specifier: ^4.5.2
         version: 4.5.6(@types/react@18.3.20)(immer@10.1.1)(react@18.3.1)
     devDependencies:
+      '@paynless/db-types':
+        specifier: workspace:^
+        version: link:../../supabase/functions
       '@types/node':
         specifier: ^20.11.20
         version: 20.17.30
@@ -364,6 +370,9 @@ importers:
         specifier: ^4.5.2
         version: 4.5.6(@types/react@18.3.20)(immer@10.1.1)(react@18.3.1)
     devDependencies:
+      '@paynless/db-types':
+        specifier: workspace:^
+        version: link:../../supabase/functions
       '@testing-library/react':
         specifier: ^16.3.0
         version: 16.3.0(@testing-library/dom@10.4.0)(@types/react-dom@18.3.6(@types/react@18.3.20))(@types/react@18.3.20)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
@@ -391,6 +400,9 @@ importers:
 
   packages/types:
     devDependencies:
+      '@paynless/db-types':
+        specifier: workspace:^
+        version: link:../../supabase/functions
       '@types/react':
         specifier: ^18
         version: 18.3.20
@@ -434,6 +446,8 @@ importers:
       vitest:
         specifier: ^1.6.1
         version: 1.6.1(@types/node@20.17.30)(@vitest/ui@1.6.1)(jsdom@26.0.0)
+
+  supabase/functions: {}
 
 packages:
 
@@ -7743,7 +7757,7 @@ snapshots:
       pathe: 1.1.2
       picocolors: 1.1.1
       sirv: 2.0.4
-      vitest: 1.6.1(@types/node@20.17.30)(@vitest/ui@1.6.1)(jsdom@26.0.0)
+      vitest: 1.6.1(@types/node@22.14.0)(@vitest/ui@1.6.1)(jsdom@26.0.0)
 
   '@vitest/utils@1.6.1':
     dependencies:

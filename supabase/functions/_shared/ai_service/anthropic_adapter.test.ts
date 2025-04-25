@@ -1,7 +1,8 @@
 import { assertEquals, assertExists, assertRejects, assertInstanceOf } from "https://deno.land/std@0.224.0/assert/mod.ts";
 import { spy, stub, type Stub } from "https://deno.land/std@0.224.0/testing/mock.ts";
 import { AnthropicAdapter, anthropicAdapter } from './anthropic_adapter.ts';
-import type { ChatApiRequest, ChatMessage, ProviderModelInfo, Json } from '../types.ts';
+import type { ChatApiRequest, ChatMessage, ProviderModelInfo } from '@paynless/types/ai';
+import type { Json } from '@paynless/db-types';
 
 // --- Test Data ---
 const MOCK_API_KEY = 'sk-ant-test-key';

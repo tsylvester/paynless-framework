@@ -1,4 +1,5 @@
-import type { AiProviderAdapter, ChatMessage, ProviderModelInfo, ChatApiRequest, Json } from '../types.ts';
+import type { AiProviderAdapter, ChatMessage, ProviderModelInfo, ChatApiRequest } from '@paynless/types/ai';
+import type { Json } from '@paynless/db-types';
 
 const OPENAI_API_BASE = 'https://api.openai.com/v1';
 

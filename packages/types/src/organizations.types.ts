@@ -1,4 +1,4 @@
-import type { Database } from '../../supabase/functions/types_db.ts';
+import type { Database } from '@paynless/db-types';
 
 // Base types derived from the generated Database type
 type OrganizationsTable = Database['public']['Tables']['organizations'];

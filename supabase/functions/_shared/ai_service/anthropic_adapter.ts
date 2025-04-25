@@ -2,7 +2,8 @@
 // import { Json } from "../../../../packages/types/src/index.ts";
 
 // Import types from the shared location
-import type { AiProviderAdapter, ChatMessage, ProviderModelInfo, ChatApiRequest, Json } from '../types.ts';
+import type { AiProviderAdapter, ChatMessage, ProviderModelInfo, ChatApiRequest } from '@paynless/types/ai';
+import type { Json } from '@paynless/db-types';
 
 // --- Removed Type Definitions (Copied from packages/types for Edge Function compatibility) ---
 // export type Json = ... (definitions removed)

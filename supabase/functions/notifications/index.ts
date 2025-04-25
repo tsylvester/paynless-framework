@@ -1,6 +1,6 @@
 import { serve } from "https://deno.land/std@0.177.0/http/server.ts";
 import { createClient, SupabaseClient, User } from 'npm:@supabase/supabase-js@^2.43.4';
-import { Notification } from "../_shared/types.ts"; // Import Notification from shared
+import type { Database } from "../types_db.ts"; // Import Database type
 import { corsHeaders } from '../_shared/cors-headers.ts'; // Assuming this utility exists
 
 console.log("Notifications GET/PUT/POST function initializing (top-level).");
@@ -40,6 +40,11 @@ async function authenticateUser(client: SupabaseClient): Promise<{ user: User | 
         }) };
     }
 }
+
+// Use derived type for Notification
+type NotificationPayload = Database['public']['Tables']['notifications']['Insert']; 
+// Type for the row data if needed elsewhere
+// export type NotificationRow = Database['public']['Tables']['notifications']['Row'];
 
 // Define the handler function (exported)
 export async function handler(req: Request, deps: NotificationsDeps): Promise<Response> {

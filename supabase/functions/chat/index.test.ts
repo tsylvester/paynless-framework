@@ -3,16 +3,23 @@ import { assert, assertEquals, assertExists, assertObjectMatch } from "jsr:@std/
 import { spy, type Spy, assertSpyCalls } from "jsr:@std/testing@0.225.1/mock"; 
 import { createClient, type SupabaseClient } from "npm:@supabase/supabase-js";
 import type { ConnInfo } from "https://deno.land/std@0.177.0/http/server.ts";
-
-// Import main handler, deps type, and the REAL defaultDeps for comparison/base
-import { mainHandler, type ChatHandlerDeps, defaultDeps as realDefaultDeps } from './index.ts';
-// Import AI Provider Adapter type and ChatMessage type
-import type { AiProviderAdapter, ChatMessage, ChatApiRequest as AdapterChatRequest } from '../_shared/types.ts'; // Assuming types are in _shared
+import type { Database } from "../types_db.ts"; // Import Database type
+import type { AiProviderAdapter, ChatApiRequest as AdapterChatRequest } from '../_shared/types.ts'; // Import App types
 import { getAiProviderAdapter as actualGetAiProviderAdapter } from '../_shared/ai_service/factory.ts'; // Import real factory
 import {
   createMockSupabaseClient,
   type MockSupabaseDataConfig,
 } from "../_shared/test-utils.ts";
+import { stub } from "https://deno.land/std@0.177.0/testing/mock.ts";
+// Import main handler, deps type, and the REAL defaultDeps for comparison/base
+import { mainHandler, type ChatHandlerDeps, defaultDeps as realDefaultDeps } from './index.ts';
+
+// Define derived DB types needed locally
+type ChatMessageRow = Database['public']['Tables']['chat_messages']['Row'];
+
+// Type definition for the structure expected in the mocked DB insert result
+// This should match what the .select() returns after insert
+type MockDbInsertResultType = ChatMessageRow; 
 
 // --- Mock Data ---
 const mockSupabaseUrl = 'http://localhost:54321';
@@ -30,7 +37,7 @@ const mockConnInfo: ConnInfo = {
 // --- Mock Implementations (Defined outside test suite) --- 
 
 // Helper to create a mock AiProviderAdapter
-const createMockAdapter = (sendMessageResult: ChatMessage | Error): AiProviderAdapter => {
+const createMockAdapter = (sendMessageResult: ChatMessageRow | Error): AiProviderAdapter => {
     // Implement resolve/reject manually
     const sendMessageSpy = sendMessageResult instanceof Error 
         ? spy(() => Promise.reject(sendMessageResult)) 
@@ -45,7 +52,7 @@ const createMockAdapter = (sendMessageResult: ChatMessage | Error): AiProviderAd
 // --- Test Dependency Creation Helper --- 
 const createTestDeps = (
   supaConfig: MockSupabaseDataConfig = {},
-  adapterSendMessageResult?: ChatMessage | Error, // Make optional for tests not needing it
+  adapterSendMessageResult?: ChatMessageRow | Error, // Make optional for tests not needing it
   envVars: Record<string, string | undefined> = {},
   depOverrides: Partial<ChatHandlerDeps> = {}
 ): ChatHandlerDeps => {
@@ -83,7 +90,7 @@ Deno.test("Chat Function Tests (Adapter Refactor)", async (t) => {
     const now = new Date().toISOString();
 
     // Define the successful response the MOCK adapter's sendMessage should return
-    const mockAdapterSuccessResponse: ChatMessage = {
+    const mockAdapterSuccessResponse: ChatMessageRow = {
         id: 'temp-adapter-msg-id', 
         chat_id: testChatId, 
         role: 'assistant', 
@@ -95,8 +102,9 @@ Deno.test("Chat Function Tests (Adapter Refactor)", async (t) => {
         token_usage: { prompt_tokens: 15, completion_tokens: 25, total_tokens: 40 },
     };
 
-    // Define the successful message structure returned by the DB INSERT (and thus the API response)
-    const mockDbInsertResult: ChatMessage = {
+    // Define the successful message structure returned by the DB INSERT 
+    // (and thus the API response) - should strictly match ChatMessageRow
+    const mockDbInsertResult: ChatMessageRow = {
         id: testAsstMsgId, 
         chat_id: testChatId,
         role: 'assistant', 
@@ -183,7 +191,7 @@ Deno.test("Chat Function Tests (Adapter Refactor)", async (t) => {
         const response = await mainHandler(req, deps);
         
         assertEquals(response.status, 200, `Expected status 200 but got ${response.status}`);
-        const responseJson = await response.json() as ChatMessage;
+        const responseJson = await response.json() as ChatMessageRow;
         
         // Assert response body matches the SAVED assistant message from DB mock
         assertObjectMatch(responseJson as unknown as Record<PropertyKey, unknown>, mockDbInsertResult as unknown as Record<PropertyKey, unknown>);
@@ -267,7 +275,7 @@ Deno.test("Chat Function Tests (Adapter Refactor)", async (t) => {
     });
 
     await t.step("POST request with existing chat history includes history in adapter call", async () => {
-         const history: Pick<ChatMessage, 'role' | 'content'>[] = [
+         const history: Pick<ChatMessageRow, 'role' | 'content'>[] = [
              { role: 'user', content: 'Previous user message' },
              { role: 'assistant', content: 'Previous assistant response' }
          ];
@@ -436,7 +444,7 @@ Deno.test("Chat Function Tests (Adapter Refactor)", async (t) => {
         });
         const response = await mainHandler(req, deps);
         assertEquals(response.status, 200); 
-        const responseJson = await response.json() as ChatMessage;
+        const responseJson = await response.json() as ChatMessageRow;
         assertEquals(responseJson.chat_id, testChatId); 
 
         // Verify adapter sendMessage payload had no history messages
@@ -545,7 +553,7 @@ Deno.test("Chat Function Tests (Adapter Refactor)", async (t) => {
         };
 
         // Mock Adapter response for Anthropic (content might be same, adjust tokens)
-        const anthropicAdapterResponse: ChatMessage = {
+        const anthropicAdapterResponse: ChatMessageRow = {
             ...mockAdapterSuccessResponse,
             ai_provider_id: testAnthropicProviderId,
             token_usage: { prompt_tokens: 20, completion_tokens: 30, total_tokens: 50 } 
@@ -569,7 +577,7 @@ Deno.test("Chat Function Tests (Adapter Refactor)", async (t) => {
         const response = await mainHandler(req, deps);
         
         assertEquals(response.status, 200, `Expected status 200 but got ${response.status}`);
-        const responseJson = await response.json() as ChatMessage;
+        const responseJson = await response.json() as ChatMessageRow;
         
         // Assert response matches DB insert mock for Anthropic
         assertEquals(responseJson.id, testAnthropicAsstMsgId);

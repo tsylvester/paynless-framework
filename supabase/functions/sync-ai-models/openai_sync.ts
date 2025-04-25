@@ -1,6 +1,6 @@
 import type { SupabaseClient } from 'npm:@supabase/supabase-js@2';
 import { openAiAdapter } from '../_shared/ai_service/openai_adapter.ts'; // Import specific adapter
-import type { ProviderModelInfo } from '../_shared/types.ts'; 
+import type { ProviderModelInfo } from '@paynless/types/ai';
 import { getCurrentDbModels as actualGetCurrentDbModels, type SyncResult, type DbAiProvider } from './index.ts'; // Import shared helper and types from main index
 
 const PROVIDER_NAME = 'openai';

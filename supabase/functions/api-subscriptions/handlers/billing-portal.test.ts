@@ -11,7 +11,7 @@ import {
     type createErrorResponse as CreateErrorResponseType, 
     type createSuccessResponse as CreateSuccessResponseType 
 } from "../../_shared/responses.ts"; 
-import { BillingPortalRequest } from "../types.ts";
+import { BillingPortalRequest } from "../../_shared/types.ts";
 
 // --- Mocks & Spies ---
 let mockSupabaseClient: SupabaseClient;

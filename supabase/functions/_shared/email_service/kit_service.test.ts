@@ -13,7 +13,7 @@ import {
 } from "https://deno.land/std@0.224.0/testing/mock.ts";
 import { KitService } from "./kit_service.ts";
 import type { KitServiceConfig } from "./kit_service.ts";
-import type { UserData } from "../types.ts";
+import type { UserData } from "@paynless/types/email";
 import { logger } from "../logger.ts"; // Import real logger for potential spy
 
 // --- Local Test Utilities for Fetch Mocking ---

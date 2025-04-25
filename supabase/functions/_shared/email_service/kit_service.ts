@@ -1,5 +1,5 @@
 import { logger } from "../logger.ts";
-import { type UserData, type EmailMarketingService } from "../types.ts";
+import { type UserData, type EmailMarketingService } from "@paynless/types/email";
 
 // Export the interface
 export interface KitServiceConfig {

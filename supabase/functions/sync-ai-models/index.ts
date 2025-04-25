@@ -24,7 +24,7 @@ import {
 } from './google_sync.ts';
 
 // Import shared types used by this function and potentially by tests
-import type { AiProviderAdapter, ProviderModelInfo } from '../_shared/types.ts';
+import type { AiProviderAdapter, ProviderModelInfo } from '@paynless/types/ai';
 // DbAiProvider and SyncResult are defined below and implicitly exported when mainHandler uses them
 // Provider files should import { type DbAiProvider, type SyncResult } from './index.ts'
 

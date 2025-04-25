@@ -1,4 +1,4 @@
-import type { AiProviderAdapter } from '../types.ts';
+import type { AiProviderAdapter } from '@paynless/types/ai';
 import { openAiAdapter } from './openai_adapter.ts';
 import { anthropicAdapter } from './anthropic_adapter.ts';
 import { googleAdapter } from './google_adapter.ts';

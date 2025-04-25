@@ -180,8 +180,8 @@ This document outlines the steps for implementing an in-app notification system 
 
 **Steps:**
 
-*   [ ] **Setup Internal Types Package:**
-    *   [ ] Create a minimal `package.json` file in `supabase/functions/` with the content:
+*   [X] **Setup Internal Types Package:**
+    *   [X] Create a minimal `package.json` file in `supabase/functions/` with the content:
         ```json
         {
           "name": "@paynless/db-types",
@@ -191,33 +191,44 @@ This document outlines the steps for implementing an in-app notification system 
         }
         ```
         *(Note: This file only defines the package for type resolution; it does not make `supabase/functions` buildable)*.
-    *   [ ] Add `"supabase/functions"` to the `workspaces` array in the root `package.json`.
-    *   [ ] Run `pnpm install` in the workspace root to link the new internal package.
-*   [ ] **Generate Up-to-Date DB Types:**
-    *   [ ] Ensure your local Supabase instance is running (`supabase start`).
-    *   [ ] Run the Supabase CLI command to regenerate the types file, capturing all recent migrations (including `organizations`, `organization_members`, `notifications`, etc.):
+    *   [X] Add `"supabase/functions"` to the `workspaces` array in the root `pnpm-workspace.yaml`.
+    *   [X] Run `pnpm install` in the workspace root to link the new internal package.
+*   [X] **Generate Up-to-Date DB Types:**
+    *   [X] Ensure your local Supabase instance is running (`supabase start`).
+    *   [X] Run the Supabase CLI command to regenerate the types file, capturing all recent migrations (including `organizations`, `organization_members`, `notifications`, etc.):
         ```bash
         supabase gen types typescript --local > supabase/functions/types_db.ts
         ```
-    *   [ ] Verify the generated `supabase/functions/types_db.ts` contains definitions for all expected tables (`organizations`, `organization_members`, `notifications`, `user_profiles`, etc.) and enums (`user_role`, etc.).
-*   [ ] **Add Dependency:**
-    *   [ ] Add the internal types package as a development dependency to packages that need DB types:
+    *   [X] Verify the generated `supabase/functions/types_db.ts` contains definitions for all expected tables (`organizations`, `organization_members`, `notifications`, `user_profiles`, etc.) and enums (`user_role`, etc.).
+*   [X] **Add Dependency:**
+    *   [X] Add the internal types package as a development dependency to packages that need DB types:
         ```bash
-        pnpm add -D @paynless/db-types --filter=@paynless/api-client --filter=@paynless/store --filter=web
+        pnpm add -D @paynless/db-types@workspace:* --filter=@paynless/api-client --filter=@paynless/store --filter=web
         ```
-        *(Add filters for any other packages/apps that might need these types).*\
-*   [ ] **Refactor Codebase:**
-    *   [ ] **Identify Redundant Types:** Review files in `packages/types/src`. Primarily target types duplicating table structures or enums now present in `@paynless/db-types`:
-        *   `auth.types.ts`: `User` (if mapping to `auth.users`), `UserProfile` (maps to `user_profiles`), `UserRole` (maps to `user_role` enum).
-        *   `notification.types.ts`: `Notification` (maps to `notifications`).
-        *   *(Review other files like `ai.types.ts`, `subscription.types.ts` etc. for potential overlaps)*
-    *   [ ] **Update Imports & Usage:** Systematically go through `@paynless/api-client`, `@paynless/store`, `apps/web`, etc.
-        *   Remove imports for the redundant manual types (e.g., `import { UserProfile } from '@paynless/types';`).
-        *   Add imports from the internal package (e.g., `import type { Database } from '@paynless/db-types';`).
-        *   Replace usage of manual types with derived types from `Database` (e.g., replace `UserProfile` with `Database['public']['Tables']['user_profiles']['Row']`, `UserRole` with `Database['public']['Enums']['user_role']`, `Notification` with `Database['public']['Tables']['notifications']['Row']`). Use Supabase helper types (`Tables<'user_profiles'>`, `Enums<'user_role'>`) for brevity if preferred.
-    *   [ ] **Update `organizations.types.ts`:** Change the existing relative import (`import type { Database } from '../../supabase/functions/types_db.ts';`) to use the package import (`import type { Database } from '@paynless/db-types';`).
+    *   [X] Add the internal types package as a development dependency to `@paynless/types` package itself to aid TS resolution:
+        ```bash
+        pnpm add -D @paynless/db-types@workspace:* --filter=@paynless/types
+        ```
+*   [X] **Refactor Codebase:**
+    *   [X] **Identify Redundant Types:** Review files in `packages/types/src`. Primarily target types duplicating table structures or enums now present in `@paynless/db-types`:
+        *   `auth.types.ts`: `UserProfile`, `UserRole`.
+        *   `notification.types.ts`: `Notification`.
+        *   `subscription.types.ts`: `SubscriptionPlan`, `UserSubscription`, `SubscriptionTransaction`.
+        *   `ai.types.ts`: `AiProvider`, `SystemPrompt`, `Chat`, `ChatMessage`, local `Json` alias.
+    *   [X] **Update Imports & Usage (in `@paynless/types`):**
+        *   Refactored `auth.types.ts` (removed redundant, updated `User`, used DB types).
+        *   Refactored `notification.types.ts` (removed manual, used alias).
+        *   Refactored `subscription.types.ts` (removed manual DB types, used aliases, moved in API types from `_shared`).
+        *   Refactored `ai.types.ts` (removed manual DB types, used aliases, removed `Json`, updated API/Store types).
+        *   Updated `organizations.types.ts` to import `@paynless/db-types`.
+    *   [X] **Update Imports & Usage (in `supabase/functions`):**
+        *   Corrected `supabase/functions/_shared/types.ts` to only contain necessary *application-level* types (removing DB duplicates).
+        *   Updated imports in relevant function files (`email_service`, `ai_service`, `sync-ai-models`, `on-user-created`, `notifications`, `chat`, `api-subscriptions`) to use relative paths `../_shared/types.ts` for App types or `../types_db.ts` for DB types.
 *   [ ] **Cleanup:**
-    *   [ ] Delete the now-unused manual type definitions (e.g., `UserProfile`, `Notification`) from the files in `packages/types/src`. Keep types unrelated to the DB schema (e.g., `ApiError`, `FetchOptions`, `AuthStore`, `Session`).
+    *   [ ] Delete the now-unused manual type definitions (e.g., `UserProfile`, `UserRole`, `Notification`, `SubscriptionPlan`, etc.) from the files in `packages/types/src`.
+*   [ ] **Create Sync Script:**
+    *   [ ] Implement script (`scripts/sync-supabase-shared-types.ts`) to automatically copy necessary application-level types from `packages/types/*` into `supabase/functions/_shared/types.ts`.
+    *   [ ] Add the script command to root `package.json`.
 *   [ ] **Verification:**
     *   [ ] Run TypeScript checks across the monorepo: `pnpm typecheck` (or equivalent `tsc -b` command). Fix any type errors.
     *   [ ] Run all existing tests: `pnpm test`. Ensure tests pass after refactoring. Address any failures, potentially updating mocks to reflect the new type structures if necessary.

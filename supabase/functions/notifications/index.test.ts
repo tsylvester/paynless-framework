@@ -4,7 +4,6 @@ import { assertSpyCalls, spy, stub, restore } from "https://deno.land/std@0.177.
 // Import Supabase types directly from npm specifier (User only)
 import { SupabaseClient, User } from "npm:@supabase/supabase-js@^2.43.4"; 
 // Import Notification type from shared types
-import { Notification } from "../_shared/types.ts";
 
 // Import the shared test utility
 import { createMockSupabaseClient, type MockSupabaseDataConfig } from "../_shared/test-utils.ts";
@@ -12,6 +11,9 @@ import { createMockSupabaseClient, type MockSupabaseDataConfig } from "../_share
 // Import the handler function and dependency types
 import { handler, NotificationsDeps } from "./index.ts";
 import { corsHeaders } from "../_shared/cors-headers.ts";
+
+// Import derived type for Notification Row data in tests
+import type { Database } from "../types_db.ts";
 
 // --- Mock Data ---
 // Ensure mock data conforms to the imported types
@@ -23,7 +25,10 @@ const mockUser: User = {
     created_at: new Date().toISOString(),
 };
 
-const mockNotifications: Notification[] = [
+// Use derived type for Notification Row data in tests
+type NotificationRow = Database['public']['Tables']['notifications']['Row'];
+
+const mockNotifications: NotificationRow[] = [
     {
         id: "noti-1",
         user_id: mockUser.id,

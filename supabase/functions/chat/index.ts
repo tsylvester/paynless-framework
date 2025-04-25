@@ -12,7 +12,14 @@ import {
 // Import AI service factory and necessary types
 import { getAiProviderAdapter } from '../_shared/ai_service/factory.ts';
 // Use import type for type-only imports
-import type { ChatMessage, ChatApiRequest as AdapterChatRequest } from '../_shared/types.ts'; // Adjusted path assuming types are in _shared
+import type { ChatApiRequest as AdapterChatRequest } from '../_shared/types.ts'; // Keep App-level request type
+import type { Database } from "../types_db.ts"; // Import Database type for DB objects
+import { corsHeaders } from '../_shared/cors-headers.ts';
+
+// Define derived DB types needed locally
+type ChatMessageInsert = Database['public']['Tables']['chat_messages']['Insert'];
+type ChatMessageRow = Database['public']['Tables']['chat_messages']['Row'];
+type ChatRow = Database['public']['Tables']['chats']['Row'];
 
 // Define expected request body structure
 interface ChatRequest {
@@ -237,7 +244,7 @@ export async function mainHandler(req: Request, deps: ChatHandlerDeps = defaultD
 
         console.log(`Calling ${provider} adapter sendMessage with apiIdentifier: ${apiIdentifier}`);
         // Call the adapter's sendMessage method
-        const assistantResponse: ChatMessage = await adapter.sendMessage(
+        const assistantResponse: ChatMessageRow = await adapter.sendMessage(
             adapterRequest,
             apiIdentifier, // Pass the specific model API identifier (e.g., openai-gpt-4o)
             apiKey
@@ -263,53 +270,55 @@ export async function mainHandler(req: Request, deps: ChatHandlerDeps = defaultD
             console.log(`Created new chat with ID: ${currentChatId}`);
         }
 
-        // 2. Save User Message
-        const userMessageRecord: Partial<ChatMessage> = {
-            chat_id: currentChatId,
-            user_id: userId,
-            role: 'user',
-            content: requestBody.message,
-            ai_provider_id: requestBody.providerId, // Link to the specific model used
-            system_prompt_id: requestBody.promptId !== '__none__' ? requestBody.promptId : null,
-            // token_usage: null, // User messages don't have token usage
-        };
-        const { error: userSaveError } = await supabaseClient.from('chat_messages').insert(userMessageRecord);
-        if (userSaveError) {
-            console.error(`Error saving user message for chat ${currentChatId}:`, userSaveError);
-            // Don't necessarily fail the whole request, but log it.
-            // The assistant response might still be useful to the user.
+        // Ensure we have a valid chat ID before proceeding
+        if (!currentChatId) {
+          console.error("Chat ID is missing before attempting to save messages.");
+          return createErrorResponse("Invalid chat session state.", 500);
         }
 
-        // 3. Save Assistant Message (using data from adapter response)
-        const assistantMessageRecord: Partial<ChatMessage> = {
-            chat_id: currentChatId,
-            // user_id: null, // Let DB handle default or leave null
-            role: 'assistant', // Role comes from the adapter response convention
-            content: assistantResponse.content, // From adapter response
-            ai_provider_id: requestBody.providerId, // Link to the specific model used
-            system_prompt_id: assistantResponse.system_prompt_id, // From adapter response (could be null)
-            token_usage: assistantResponse.token_usage, // From adapter response
-            // created_at will be set by the DB
+        // 4. Save user message (using ChatMessageInsert)
+        const userMessageRecord: ChatMessageInsert = {
+          chat_id: currentChatId, // Now guaranteed non-null
+          user_id: userId,
+          role: 'user',
+          content: requestBody.message,
+          ai_provider_id: requestBody.providerId,
+          system_prompt_id: requestBody.promptId !== '__none__' ? requestBody.promptId : null,
         };
-         const { data: savedAssistantMessageData, error: assistantSaveError } = await supabaseClient
-            .from('chat_messages')
-            .insert(assistantMessageRecord)
-            .select('*'); // Select all columns, result is an array
 
-        if (assistantSaveError || !savedAssistantMessageData || savedAssistantMessageData.length === 0) {
-            console.error(`Error saving assistant message for chat ${currentChatId}:`, assistantSaveError);
-            // If saving the assistant message fails, or we somehow get an empty array back
-            return createErrorResponse('Failed to save assistant response.', 500);
+        // 5. Save assistant message (using ChatMessageInsert)
+        const assistantMessageRecord: ChatMessageInsert = {
+          chat_id: currentChatId, // Now guaranteed non-null
+          user_id: null, 
+          role: 'assistant',
+          content: assistantResponse.content,
+          ai_provider_id: assistantResponse.ai_provider_id, 
+          system_prompt_id: assistantResponse.system_prompt_id,
+          token_usage: assistantResponse.token_usage, 
+        };
+
+        // Insert both messages (Remove explicit cast, rely on TS inference now)
+        const { data: savedMessages, error: saveError } = await supabaseClient
+          .from('chat_messages')
+          .insert([userMessageRecord, assistantMessageRecord])
+          .select();
+
+        if (saveError) {
+            console.error(`Error saving messages for chat ${currentChatId}:`, saveError);
+            return createErrorResponse('Failed to save messages to database.', 500);
+        }
+        
+        // Find the saved assistant message (should conform to ChatMessageRow)
+        const finalAssistantMessage: ChatMessageRow | undefined = savedMessages?.find(m => m.role === 'assistant'); 
+
+        if (!finalAssistantMessage) {
+            console.error("Failed to retrieve saved assistant message from DB", { currentChatId, savedMessages });
+            return createErrorResponse("Failed to save or retrieve chat response.", 500);
         }
 
-        // Extract the single message from the array
-        const savedAssistantMessage = savedAssistantMessageData[0];
-
-        console.log(`Saved user and assistant messages for chat ${currentChatId}`);
-
-        // Return the saved assistant message (with ID, created_at) to the client
-        // Ensure the returned object matches the ChatMessage type exactly
-        return createJsonResponse(savedAssistantMessage as ChatMessage, 200);
+        // Return only the saved assistant message (as ChatMessageRow)
+        // Ensure createJsonResponse handles the ChatMessageRow type correctly
+        return createJsonResponse({ message: finalAssistantMessage }, 200);
 
     } catch (error) {
         // Catch errors from adapter.sendMessage or DB operations
