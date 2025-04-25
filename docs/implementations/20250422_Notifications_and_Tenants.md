@@ -171,20 +171,23 @@ This document outlines the steps for implementing an in-app notification system 
 
 ### 2.3 API Client (`@paynless/api-client`)
 
-*   [ ] **Tests:** Write unit tests for new multi-tenancy functions:
-    *   `createOrganization(name, visibility?)`
-    *   `updateOrganization(orgId, { name?, visibility? })` (Admin action, checks org not deleted)
-    *   `listUserOrganizations(userId)` (Filters out deleted orgs)
-    *   `getOrganizationDetails(orgId)` (Checks org not deleted)
-    *   `getOrganizationMembers(orgId)` (Checks org not deleted)
-    *   `inviteUserToOrganization(orgId, emailOrUserId, role)` (Checks org not deleted)
-    *   `acceptOrganizationInvite(inviteTokenOrId)`
-    *   `requestToJoinOrganization(orgId)` (Checks org not deleted)
-    *   `approveJoinRequest(membershipId)` (Admin action, checks org not deleted)
-    *   `updateMemberRole(membershipId, newRole)` (Admin action, handles 'last admin' error, checks org not deleted)
-    *   `removeMember(membershipId)` (Admin or self action, handles 'last admin' error, checks org not deleted)
-    *   `deleteOrganization(orgId)` (Admin action, performs soft delete by setting `deleted_at`)
-*   [ ] **Implementation:** Add/Update these functions in the API client. Ensure appropriate checks for `deleted_at` are performed implicitly by RLS or explicitly where needed. Implement soft delete logic for `deleteOrganization`.
+*   [X] **Tests:** Write unit tests for new multi-tenancy functions:
+    *   [X] `createOrganization(name, visibility?)`
+    *   [X] `updateOrganization(orgId, { name?, visibility? })` (Admin action, checks org not deleted)
+    *   [X] `listUserOrganizations(userId)` (Filters out deleted orgs)
+    *   [ ] `getOrganizationDetails(orgId)` (Checks org not deleted)
+    *   [ ] `getOrganizationMembers(orgId)` (Checks org not deleted)
+    *   [ ] `inviteUserToOrganization(orgId, emailOrUserId, role)` (Checks org not deleted)
+    *   [ ] `acceptOrganizationInvite(inviteTokenOrId)`
+    *   [ ] `requestToJoinOrganization(orgId)` (Checks org not deleted)
+    *   [ ] `approveJoinRequest(membershipId)` (Admin action, checks org not deleted)
+    *   [ ] `updateMemberRole(membershipId, newRole)` (Admin action, handles 'last admin' error, checks org not deleted)
+    *   [ ] `removeMember(membershipId)` (Admin or self action, handles 'last admin' error, checks org not deleted)
+    *   [ ] `deleteOrganization(orgId)` (Admin action, performs soft delete by setting `deleted_at`)
+*   [X] **Implementation:** Add/Update these functions in the API client. Ensure appropriate checks for `deleted_at` are performed implicitly by RLS or explicitly where needed. Implement soft delete logic for `deleteOrganization`.
+    *   [X] Implemented `createOrganization`
+    *   [X] Implemented `updateOrganization`
+    *   [X] Implemented `listUserOrganizations`
 
 ### 2.4 State Management (`@paynless/store`)
 

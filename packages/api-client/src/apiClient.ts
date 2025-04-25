@@ -10,6 +10,7 @@ import { AuthRequiredError } from '@paynless/types';
 import { StripeApiClient } from './stripe.api'; 
 import { AiApiClient } from './ai.api';
 import { NotificationApiClient } from './notifications.api'; // Import new client
+import { OrganizationApiClient } from './organizations.api'; // <<< Import Org client
 import { logger } from '@paynless/utils';
 import type { RealtimeChannel, RealtimePostgresChangesPayload } from '@supabase/supabase-js';
 import { Notification } from '@paynless/types'; // Need Notification type
@@ -44,6 +45,7 @@ export class ApiClient {
     public billing: StripeApiClient;
     public ai: AiApiClient;
     public notifications: NotificationApiClient; // Add new client property
+    public organizations: OrganizationApiClient; // <<< Add Org client property
 
     // Update constructor signature
     constructor(options: ApiClientConstructorOptions) {
@@ -58,6 +60,7 @@ export class ApiClient {
         this.billing = new StripeApiClient(this);
         this.ai = new AiApiClient(this);
         this.notifications = new NotificationApiClient(this); // Initialize new client
+        this.organizations = new OrganizationApiClient(this); // <<< Initialize Org client
     }
 
     private async getToken(): Promise<string | undefined> {
