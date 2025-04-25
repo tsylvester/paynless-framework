@@ -12,7 +12,7 @@ import { syncGoogleModels, type SyncGoogleDeps } from "./google_sync.ts";
 // Import shared types and test utils
 // NOTE: getCurrentDbModels is now mocked via deps, but keep types
 import type { DbAiProvider, SyncResult } from "./index.ts"; 
-import type { ProviderModelInfo } from "@paynless/types/ai";
+import type { ProviderModelInfo } from "../../_shared/ai_service/types.ts";
 import { 
     createMockSupabaseClient, 
     type MockSupabaseDataConfig,

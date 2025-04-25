@@ -1,4 +1,4 @@
-import { type UserData, type EmailMarketingService } from "@paynless/types/email";
+import { type UserData, type EmailMarketingService } from "../types.ts";
 import { logger } from "../logger.ts";
 
 /**

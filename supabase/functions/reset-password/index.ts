@@ -15,8 +15,8 @@ interface ResetPasswordDependencies {
   handleCorsPreflightRequest: (req: Request) => Response | null;
   verifyApiKey: (req: Request) => boolean;
   createUnauthorizedResponse: (message: string) => Response;
-  createErrorResponse: (message: string, status: number) => Response;
-  createSuccessResponse: (body?: Record<string, unknown>) => Response;
+  createErrorResponse: (message: string, status: number, request: Request, error?: unknown) => Response;
+  createSuccessResponse: (body: Record<string, unknown>, status: number, request: Request) => Response;
   getEnv: (key: string) => string | undefined;
   getOriginHeader: (req: Request) => string | null;
   createSupabaseClient: (url: string, key: string) => SupabaseClient;
@@ -66,7 +66,7 @@ export async function handleResetPasswordRequest(req: Request, deps: ResetPasswo
 
     // Only allow POST method for the actual reset request
     if (req.method !== 'POST') {
-      return createErrorResponse('Method Not Allowed', 405);
+      return createErrorResponse('Method Not Allowed', 405, req);
     }
 
     try {
@@ -74,10 +74,10 @@ export async function handleResetPasswordRequest(req: Request, deps: ResetPasswo
 
       // Basic validation
       if (!email) {
-        return createErrorResponse("Email is required", 400);
+        return createErrorResponse("Email is required", 400, req);
       }
       if (typeof email !== 'string') {
-        return createErrorResponse("Invalid email format", 400);
+        return createErrorResponse("Invalid email format", 400, req);
       }
 
       // Get required env vars
@@ -85,7 +85,7 @@ export async function handleResetPasswordRequest(req: Request, deps: ResetPasswo
       const supabaseAnonKey = getEnv('SUPABASE_ANON_KEY');
       if (!supabaseUrl || !supabaseAnonKey) {
         console.error("Reset password error: Missing Supabase URL or Anon Key");
-        return createErrorResponse("Configuration error", 500);
+        return createErrorResponse("Configuration error", 500, req);
       }
       
       // Get origin for redirect
@@ -103,7 +103,7 @@ export async function handleResetPasswordRequest(req: Request, deps: ResetPasswo
         supabaseAdmin = createSupabaseClient(supabaseUrl, supabaseAnonKey);
       } catch(initError) {
         console.error("Reset password error: Failed to initialize Supabase client:", initError);
-        return createErrorResponse("Failed to initialize service", 500);
+        return createErrorResponse("Failed to initialize service", 500, req, initError);
       }
 
       // Send password reset email
@@ -113,18 +113,18 @@ export async function handleResetPasswordRequest(req: Request, deps: ResetPasswo
       if (error) {
         console.error(`Reset password error for ${email}:`, error.message); // Log specific error
         // Avoid exposing detailed Supabase errors to the client
-        return createErrorResponse("Failed to send reset email", 500); 
+        return createErrorResponse("Failed to send reset email", 500, req, error); 
       }
 
       console.log(`Password reset email sent successfully for: ${email}`);
-      return createSuccessResponse({ message: "Password reset email sent successfully" });
+      return createSuccessResponse({ message: "Password reset email sent successfully" }, 200, req);
 
     } catch (error) {
       if (error instanceof SyntaxError) {
-         return createErrorResponse("Invalid JSON body", 400);
+         return createErrorResponse("Invalid JSON body", 400, req, error);
       }
       console.error("Error in reset password handler:", error);
-      return createErrorResponse("Internal server error", 500);
+      return createErrorResponse("Internal server error", 500, req, error);
     }
 }
 

@@ -2,26 +2,28 @@
 // Do not use path aliases (like @shared/ or @paynless/) as they will cause deployment failures.
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 // Revert to explicit npm/jsr specifiers
-import ActualStripe from "npm:stripe@14.11.0"; // Assuming version from previous files
-import type Stripe from "npm:stripe@14.11.0";
+import Stripe from "npm:stripe@14.11.0";
 import { createClient as actualCreateClient } from "jsr:@supabase/supabase-js@2"; // Assuming version from previous files
-import type { SupabaseClient, SupabaseClientOptions, PostgrestResponse } from "npm:@supabase/supabase-js@2"; // USE NPM SPECIFIER
+// Use JSR import for SupabaseClient types as well
+import type { SupabaseClient, SupabaseClientOptions, PostgrestResponse } from "jsr:@supabase/supabase-js@2"; 
 import { 
-    // corsHeaders, // Keep separate if only used for OPTIONS
+    handleCorsPreflightRequest as actualHandleCorsPreflightRequest, // Import the handler
     createErrorResponse as actualCreateErrorResponse, 
     createSuccessResponse as actualCreateSuccessResponse, 
-    corsHeaders // Import directly for simple OPTIONS response
+    // corsHeaders // Remove direct import of headers object
 } from "../_shared/cors-headers.ts";
 // Import the new service
 import { ISyncPlansService, SyncPlansService } from "./services/sync_plans_service.ts";
+import { Database } from "../types_db.ts"; // Import the Database type
 
 // Define dependency types
 type StripeConstructor = new (key: string, config?: Stripe.StripeConfig) => Stripe;
 // Keep client type for service creation
-type CreateClientFn = (url: string, key: string, options?: SupabaseClientOptions<any>) => SupabaseClient<any>; 
+type CreateClientFn = (url: string, key: string, options?: SupabaseClientOptions<any>) => SupabaseClient<Database>; // Use Database type
 
 // Define dependencies interface
 export interface SyncPlansHandlerDeps {
+    handleCorsPreflightRequest: typeof actualHandleCorsPreflightRequest; // Add to deps
     createErrorResponse: typeof actualCreateErrorResponse;
     createSuccessResponse: typeof actualCreateSuccessResponse;
     stripeConstructor: StripeConstructor;
@@ -32,7 +34,7 @@ export interface SyncPlansHandlerDeps {
 
 // Default dependencies
 // Create the real client and service here
-const createDefaultSupabaseClient = (): SupabaseClient<any> => { // Add return type
+const createDefaultSupabaseClient = (): SupabaseClient<Database> => { // Use Database type
     const supabaseUrl = Deno.env.get("SUPABASE_URL");
     const supabaseServiceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
     if (!supabaseUrl || !supabaseServiceRoleKey) {
@@ -44,9 +46,10 @@ const defaultSupabaseClient = createDefaultSupabaseClient();
 const defaultSyncPlansService = new SyncPlansService(defaultSupabaseClient);
 
 const defaultDeps: SyncPlansHandlerDeps = {
+    handleCorsPreflightRequest: actualHandleCorsPreflightRequest, // Add default
     createErrorResponse: actualCreateErrorResponse,
     createSuccessResponse: actualCreateSuccessResponse,
-    stripeConstructor: ActualStripe,
+    stripeConstructor: Stripe,
     // Provide the instantiated service
     syncPlansService: defaultSyncPlansService,
 };
@@ -56,9 +59,16 @@ export async function handleSyncPlansRequest(
     req: Request,
     deps: SyncPlansHandlerDeps = defaultDeps
 ): Promise<Response> {
-  // Handle CORS preflight request if needed (using direct header import)
-  if (req.method === "OPTIONS") {
-    return new Response("ok", { headers: corsHeaders });
+  // Handle CORS preflight request using the injected handler
+  const corsResponse = deps.handleCorsPreflightRequest(req);
+  if (corsResponse) {
+    return corsResponse;
+  }
+
+  // Only allow POST method after CORS check (or specific methods you want)
+  if (req.method !== 'POST') {
+      // Pass request object to error response for CORS
+      return deps.createErrorResponse('Method Not Allowed', 405, req);
   }
 
   let isTestMode: boolean;
@@ -70,7 +80,9 @@ export async function handleSyncPlansRequest(
       try {
         requestBody = await req.json();
       } catch (e) {
-        console.warn("Could not parse request body for mode setting:", e.message);
+        // Explicitly cast caught error to Error
+        const error = e as Error;
+        console.warn("Could not parse request body for mode setting:", error.message);
         // Don't fail, just fallback to env var
       }
     }
@@ -93,13 +105,13 @@ export async function handleSyncPlansRequest(
     if (!stripeKey) {
       const keyType = isTestMode ? "test" : "live";
       console.error(`STRIPE_SECRET_${keyType.toUpperCase()}_KEY is not configured.`);
-      return deps.createErrorResponse(`Stripe ${keyType} secret key is not configured.`, 500);
+      return deps.createErrorResponse(`Stripe ${keyType} secret key is not configured.`, 500, req);
     }
     
     // Initialize Stripe using injected constructor
     const stripe = new deps.stripeConstructor(stripeKey, {
-      apiVersion: "2024-04-10", 
-      httpClient: ActualStripe.createFetchHttpClient(), // Use static method from actual import
+      apiVersion: "2023-10-16",
+      httpClient: Stripe.createFetchHttpClient(), // Use static method from actual import
     });
     console.log(`Stripe client initialized in ${isTestMode ? 'TEST' : 'LIVE'} mode.`);
 
@@ -109,7 +121,7 @@ export async function handleSyncPlansRequest(
 
     // if (!supabaseUrl || !supabaseServiceRoleKey) {
     //   console.error("Supabase URL or Service Role Key is not configured.");
-    //   return deps.createErrorResponse("Supabase connection details missing.", 500);
+    //   return deps.createErrorResponse("Supabase connection details missing.", 500, req);
     // }
 
     // const supabaseAdmin = deps.createSupabaseClient(supabaseUrl, supabaseServiceRoleKey, {
@@ -164,14 +176,15 @@ export async function handleSyncPlansRequest(
 
     if (plansToUpsert.length === 0) {
       console.log("No recurring plans found to upsert.");
-      return deps.createSuccessResponse({ message: "No recurring plans found.", syncedCount: 0 });
+      return deps.createSuccessResponse({ message: "No recurring plans found.", syncedCount: 0 }, 200, req);
     }
 
     // **** Upsert data via the Service ****
     console.log("Upserting plans via service...");
     const upsertResult = await deps.syncPlansService.upsertPlans(plansToUpsert);
     if (upsertResult.error) {
-      return deps.createErrorResponse(`Supabase upsert failed via service: ${upsertResult.error.message}`, 500);
+      // Pass req to error response
+      return deps.createErrorResponse(`Supabase upsert failed via service: ${upsertResult.error.message}`, 500, req);
     }
 
     // --- BEGIN DEACTIVATION LOGIC ---
@@ -183,6 +196,7 @@ export async function handleSyncPlansRequest(
 
         if (fetchError) {
           console.warn("Service could not fetch existing plans:", fetchError.message);
+          // Potentially return an error response here if critical, passing req
         } else if (existingPlans) {
           const plansToDeactivate = existingPlans
             .filter(p => p.stripe_price_id && p.stripe_price_id !== 'price_FREE') 
@@ -206,14 +220,22 @@ export async function handleSyncPlansRequest(
         }
     } catch (deactivationError) {
         console.error("[sync-stripe-plans] Error during service-based deactivation logic:", deactivationError);
+        // Potentially return an error response here, passing req
     }
     // --- END DEACTIVATION LOGIC ---
 
-    return deps.createSuccessResponse({ message: "Stripe plans synced successfully via service.", syncedCount: plansToUpsert.length });
+    // Pass req to success response
+    return deps.createSuccessResponse({ message: "Stripe plans synced successfully via service.", syncedCount: plansToUpsert.length }, 200, req);
 
   } catch (error) {
     console.error("Error in sync-stripe-plans function:", error);
-    return deps.createErrorResponse(error.message || "Internal server error", 500);
+    // Pass req and original error to error response
+    return deps.createErrorResponse(
+        error instanceof Error ? error.message : "Internal server error", 
+        500, 
+        req, 
+        error
+    );
   }
 }
 

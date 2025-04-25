@@ -32,8 +32,8 @@ export interface RefreshHandlerDeps {
     handleCorsPreflightRequest: (req: Request) => Response | null;
     verifyApiKey: (req: Request) => boolean;
     createUnauthorizedResponse: (message: string) => Response;
-    createErrorResponse: (message: string, status?: number) => Response;
-    createSuccessResponse: (data: unknown, status?: number) => Response;
+    createErrorResponse: (message: string, status: number, request: Request, error?: unknown) => Response;
+    createSuccessResponse: (data: unknown, status: number, request: Request) => Response;
     createSupabaseClient: (url: string, key: string, options?: SupabaseClientOptions<any>) => SupabaseClient<any>;
     // Optional finer-grained mocks if needed
     // refreshSession?: (client: SupabaseClient<any>, args: { refresh_token: string }) => Promise<AuthResponse>;
@@ -71,7 +71,7 @@ export async function handleRefreshRequest(
     const refreshToken = authHeader?.replace('Bearer ', '');
     
     if (!refreshToken) {
-      return deps.createErrorResponse("Refresh token is required in Authorization header", 400);
+      return deps.createErrorResponse("Refresh token is required in Authorization header", 400, req);
     }
     
     // Initialize Supabase client using injected factory
@@ -89,16 +89,17 @@ export async function handleRefreshRequest(
 
     if (refreshError) {
       console.error("Refresh error:", refreshError);
-      return deps.createErrorResponse(refreshError.message || "Failed to refresh token", 401);
+      return deps.createErrorResponse(refreshError.message || "Failed to refresh token", 401, req, refreshError);
     }
 
     // Check if session and user data are present after refresh
     if (!data || !data.session || !data.user) {
       console.error("No session or user data returned after successful refresh");
-      return deps.createErrorResponse("Failed to refresh session: Incomplete data", 500);
+      return deps.createErrorResponse("Failed to refresh session: Incomplete data", 500, req);
     }
 
-    const { session, user }: { session: Session, user: User } = data;
+    // Use non-null assertions as we've already checked for nulls above
+    const { session, user }: { session: Session, user: User } = { session: data.session!, user: data.user! };
 
     // Get the user's profile using the (implicitly) authenticated client
     let userProfile = null; 
@@ -129,12 +130,12 @@ export async function handleRefreshRequest(
         token_type: session.token_type
       },
       profile: userProfile
-    });
+    }, 200, req);
 
   } catch (error) {
     // Catch unexpected errors (e.g., client creation failure, though unlikely here)
     console.error("Error in refresh handler:", error);
-    return deps.createErrorResponse("Internal server error", 500);
+    return deps.createErrorResponse("Internal server error", 500, req, error);
   }
 }
 

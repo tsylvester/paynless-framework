@@ -87,7 +87,7 @@ export const getStripeClient = (
   }
   
   return new stripeConstructor(secretKey, {
-    apiVersion: "2025-03-31.basil",
+    apiVersion: "2023-10-16",
   });
 };
 

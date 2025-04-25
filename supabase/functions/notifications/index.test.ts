@@ -10,7 +10,8 @@ import { createMockSupabaseClient, type MockSupabaseDataConfig } from "../_share
 
 // Import the handler function and dependency types
 import { handler, NotificationsDeps } from "./index.ts";
-import { corsHeaders } from "../_shared/cors-headers.ts";
+// Import the handler function for CORS, not the headers object
+import { handleCorsPreflightRequest } from "../_shared/cors-headers.ts"; 
 
 // Import derived type for Notification Row data in tests
 import type { Database } from "../types_db.ts";
@@ -65,12 +66,22 @@ Deno.test("/notifications endpoint tests", async (t) => {
     await t.step("GET /notifications: should handle OPTIONS preflight request", async () => {
         const { client } = createMockSupabaseClient(); 
         const req = new Request("http://localhost/notifications", { method: "OPTIONS" });
+        
+        // Spy on the imported handler
+        const handleCorsSpy = spy(handleCorsPreflightRequest);
+        // Create deps, potentially overriding the handler for testing (if needed)
+        // In this case, we just want to verify the real one is called
+        const deps = createDeps(client);
+
         const res = await handler(req, createDeps(client)); 
         await res.body?.cancel(); 
 
-        assertEquals(res.status, 200);
+        assertEquals(res.status, 200); 
         assertEquals(res.headers.get("access-control-allow-origin"), "*");
         assertEquals(res.headers.get("access-control-allow-headers"), "authorization, x-client-info, apikey, content-type, x-paynless-anon-secret"); 
+        // assertSpyCalls(handleCorsSpy, 1); // Verify the handler was called
+        // Restore if spied
+        restore();
     });
 
     await t.step("GET /notifications: should reject non-GET/PUT/POST requests", async () => {

@@ -1,5 +1,5 @@
-import type { AiProviderAdapter, ChatMessage, ProviderModelInfo, ChatApiRequest } from '@paynless/types/ai';
-import type { Json } from '@paynless/db-types';
+import type { AiProviderAdapter, ChatMessage, ProviderModelInfo, ChatApiRequest } from '../types.ts';
+import type { Json } from '../../../functions/types_db.ts';
 
 // Google Gemini API constants
 const GOOGLE_API_BASE = 'https://generativelanguage.googleapis.com/v1beta';

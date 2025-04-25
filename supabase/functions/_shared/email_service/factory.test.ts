@@ -2,7 +2,7 @@ import { assertEquals, assertExists, assertInstanceOf, assertStrictEquals } from
 import { getEmailMarketingService, type EmailFactoryConfig } from "./factory.ts";
 import { KitService } from "./kit_service.ts";
 import { NoOpEmailService } from "./no_op_service.ts";
-import { type EmailMarketingService } from "@paynless/types/email";
+import { type EmailMarketingService } from "../types.ts";
 
 // Define mock Kit config values
 const mockKitApiKey = "fake-key";

@@ -45,8 +45,8 @@ interface WebhookDependencies {
   ) => Promise<Stripe.Event>;
   createSupabaseAdminClient: () => SupabaseClient;
   handleCorsPreflightRequest: (req: Request) => Response | null;
-  createErrorResponse: (message: string, status: number) => Response;
-  createSuccessResponse: (body?: Record<string, unknown>) => Response;
+  createErrorResponse: (message: string, status: number, request: Request, error?: unknown) => Response;
+  createSuccessResponse: (body: Record<string, unknown>, status: number, request: Request) => Response;
   // Event Handlers
   handleCheckoutSessionCompleted: typeof defaultHandleCheckoutSessionCompleted;
   handleSubscriptionUpdated: typeof defaultHandleSubscriptionUpdated;
@@ -108,7 +108,7 @@ export async function handleWebhookRequest(req: Request, deps: WebhookDependenci
   if (corsResponse) return corsResponse;
 
   if (req.method !== "POST") {
-    return createErrorResponse("Method not allowed", 405);
+    return createErrorResponse("Method not allowed", 405, req);
   }
 
   let stripeClient: Stripe | undefined;
@@ -122,7 +122,7 @@ export async function handleWebhookRequest(req: Request, deps: WebhookDependenci
     console.log("[stripe-webhook] Body read. Signature header present:", !!signature);
 
     if (!signature) {
-      return createErrorResponse("Missing Stripe signature", 400);
+      return createErrorResponse("Missing Stripe signature", 400, req);
     }
 
     // Use getStripeMode for initial key guess, but actual mode comes from verified event
@@ -133,7 +133,7 @@ export async function handleWebhookRequest(req: Request, deps: WebhookDependenci
     } catch(stripeInitError) {
        console.error("[stripe-webhook] CRITICAL: Failed to initialize Stripe client:", stripeInitError);
        const message = stripeInitError instanceof Error ? stripeInitError.message : String(stripeInitError);
-       return createErrorResponse(message || "Stripe client initialization failed.", 500);
+       return createErrorResponse(message || "Stripe client initialization failed.", 500, req, stripeInitError);
     }
 
     console.log("[stripe-webhook] Verifying signature...");
@@ -149,7 +149,7 @@ export async function handleWebhookRequest(req: Request, deps: WebhookDependenci
         } catch (supabaseInitError) {
            console.error("[stripe-webhook] CRITICAL: Failed to initialize Supabase admin client:", supabaseInitError);
            const message = supabaseInitError instanceof Error ? supabaseInitError.message : String(supabaseInitError);
-           return createErrorResponse(message || "Supabase admin client initialization failed.", 500);
+           return createErrorResponse(message || "Supabase admin client initialization failed.", 500, req, supabaseInitError);
         }
         
         // Instantiate services using the admin client
@@ -246,7 +246,7 @@ export async function handleWebhookRequest(req: Request, deps: WebhookDependenci
         }
         
         console.log(`[stripe-webhook] Event ${event.id} processed (or ignored). Returning 200 OK.`);
-        return createSuccessResponse();
+        return createSuccessResponse({}, 200, req);
 
     } catch (err) {
        // Catch errors from verifyWebhookSignature OR the event handling logic above
@@ -254,7 +254,7 @@ export async function handleWebhookRequest(req: Request, deps: WebhookDependenci
        const message = err instanceof Error ? err.message : "Webhook processing error";
        // Determine status code based on error type if possible (e.g., signature error vs handler error)
        const status = message.includes("verification failed") ? 400 : 500;
-       return createErrorResponse(message, status);
+       return createErrorResponse(message, status, req, err);
     }
 
   } catch (error) {
@@ -267,10 +267,10 @@ export async function handleWebhookRequest(req: Request, deps: WebhookDependenci
     if (message.includes("verification failed") || message.includes("Missing Stripe signature")) {
          // If somehow signature error bubbled up, return 400
          // This shouldn't happen due to earlier returns, but as a safeguard
-         return createErrorResponse(message, 400);
+         return createErrorResponse(message, 400, req, error);
     }
     // For other unexpected errors, return 500
-    return createErrorResponse(message, 500);
+    return createErrorResponse(message, 500, req, error);
   }
 }
 
@@ -291,7 +291,7 @@ if (import.meta.main) {
           // Revert the error object passing for the simpler signature
           // Add type check before constructing error message
           const errorMessage = e instanceof Error ? e.message : "Internal Server Error";
-          return createErrResp(errorMessage, 500);
+          return createErrResp(errorMessage, 500, req, e);
       }
     }, {
       onListen({ port, hostname }) {

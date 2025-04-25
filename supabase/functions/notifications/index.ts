@@ -1,7 +1,11 @@
 import { serve } from "https://deno.land/std@0.177.0/http/server.ts";
 import { createClient, SupabaseClient, User } from 'npm:@supabase/supabase-js@^2.43.4';
 import type { Database } from "../types_db.ts"; // Import Database type
-import { corsHeaders } from '../_shared/cors-headers.ts'; // Assuming this utility exists
+import { 
+    handleCorsPreflightRequest, 
+    createErrorResponse, 
+    createSuccessResponse 
+} from '../_shared/cors-headers.ts'; // Assuming this utility exists
 
 console.log("Notifications GET/PUT/POST function initializing (top-level).");
 
@@ -20,24 +24,30 @@ function getEnvVar(name: string): string {
 }
 
 // Helper function for authentication
-async function authenticateUser(client: SupabaseClient): Promise<{ user: User | null; errorResponse: Response | null }> {
+async function authenticateUser(req: Request, client: SupabaseClient): Promise<{ user: User | null; errorResponse: Response | null }> {
     try {
         const { data: userData, error: authError } = await client.auth.getUser();
         if (authError || !userData?.user) {
             console.error('Authentication failed:', authError);
-            return { user: null, errorResponse: new Response(JSON.stringify({ error: `Unauthorized: ${authError?.message ?? 'Invalid client context'}` }), {
-                status: 401,
-                headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-            }) };
+            // Use shared error response
+            return { user: null, errorResponse: createErrorResponse(
+                `Unauthorized: ${authError?.message ?? 'Invalid client context'}`,
+                401,
+                req,
+                authError
+            ) };
         }
         console.log(`Authenticated user: ${userData.user.id}`);
         return { user: userData.user, errorResponse: null };
     } catch (err) {
         console.error('Unexpected error during authentication:', err);
-        return { user: null, errorResponse: new Response(JSON.stringify({ error: 'Internal Server Error during authentication' }), {
-            status: 500,
-            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        }) };
+        // Use shared error response
+        return { user: null, errorResponse: createErrorResponse(
+            'Internal Server Error during authentication',
+            500,
+            req,
+            err
+        ) };
     }
 }
 
@@ -53,30 +63,27 @@ export async function handler(req: Request, deps: NotificationsDeps): Promise<Re
     const pathSegments = url.pathname.split('/').filter(segment => segment !== '');
 
     // 1. Handle CORS preflight requests first
-    if (req.method === 'OPTIONS') {
-        console.log('Handling OPTIONS preflight request');
-        return new Response('ok', { headers: corsHeaders });
+    const corsResponse = handleCorsPreflightRequest(req);
+    if (corsResponse) {
+        console.log('Handling OPTIONS preflight request via handler');
+        return corsResponse;
     }
 
     // 2. Check for allowed methods *before* authentication
     if (!['GET', 'PUT', 'POST'].includes(req.method)) {
         console.warn(`Method not allowed: ${req.method}`);
-        return new Response(JSON.stringify({ error: 'Method Not Allowed' }), {
-            status: 405, 
-            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        });
+        // Use shared error response
+        return createErrorResponse('Method Not Allowed', 405, req);
     }
 
     // 3. Authenticate (only for GET, PUT, POST)
-    const { user, errorResponse: authErrorResponse } = await authenticateUser(deps.supabaseClient);
+    const { user, errorResponse: authErrorResponse } = await authenticateUser(req, deps.supabaseClient);
     if (authErrorResponse) {
         return authErrorResponse;
     }
     if (!user) { 
-         return new Response(JSON.stringify({ error: 'Unauthorized: User not found after auth check' }), {
-            status: 401,
-            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        });
+         // Use shared error response
+         return createErrorResponse('Unauthorized: User not found after auth check', 401, req);
     }
 
     // 4. Routing based on Method and Path (now assumes authenticated user)
@@ -92,16 +99,12 @@ export async function handler(req: Request, deps: NotificationsDeps): Promise<Re
 
             if (dbError) {
                 console.error('Database error fetching notifications:', dbError);
-                return new Response(JSON.stringify({ error: `Database error: ${dbError.message}` }), {
-                    status: 500,
-                    headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-                });
+                // Use shared error response
+                return createErrorResponse(`Database error: ${dbError.message}`, 500, req, dbError);
             }
             console.log(`Successfully fetched ${notifications?.length ?? 0} notifications.`);
-            return new Response(JSON.stringify(notifications ?? []), {
-                status: 200,
-                headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-            });
+            // Use shared success response
+            return createSuccessResponse(notifications ?? [], 200, req);
         }
 
         // --- Handle PUT /notifications/:id ---
@@ -111,9 +114,8 @@ export async function handler(req: Request, deps: NotificationsDeps): Promise<Re
 
             // Basic validation (could add UUID check)
             if (!notificationId) {
-                 return new Response(JSON.stringify({ error: 'Missing notification ID' }), {
-                    status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-                });
+                 // Use shared error response
+                 return createErrorResponse('Missing notification ID', 400, req);
             }
 
             const { error: updateError } = await deps.supabaseClient
@@ -127,19 +129,18 @@ export async function handler(req: Request, deps: NotificationsDeps): Promise<Re
                  console.error(`Database error marking notification ${notificationId} as read:`, updateError);
                  // Let's assume generic 500 for now, could refine if needed
                  if (updateError.code === 'PGRST116') { // Example: Check for specific PostgREST error for not found/zero rows
-                    return new Response(JSON.stringify({ error: 'Notification not found or not owned by user' }), {
-                        status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-                    });
+                    // Use shared error response
+                    return createErrorResponse('Notification not found or not owned by user', 404, req, updateError);
                  }
-                 return new Response(JSON.stringify({ error: `Database error: ${updateError.message}` }), {
-                     status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-                 });
+                 // Use shared error response
+                 return createErrorResponse(`Database error: ${updateError.message}`, 500, req, updateError);
             }
 
             // If no error, assume success (even if 0 rows were updated, the state is now read=true for that ID/user)
             // Returning 204 No Content is standard for successful PUT/DELETE with no body
              console.log(`Successfully marked notification ${notificationId} as read.`);
-             return new Response(null, { status: 204, headers: corsHeaders });
+             // Create 204 response directly (no shared helper for this)
+             return new Response(null, { status: 204, headers: { "Access-Control-Allow-Origin": "*" } }); // Keep basic CORS for 204
         }
 
         // --- Handle POST /notifications/mark-all-read ---
@@ -153,31 +154,27 @@ export async function handler(req: Request, deps: NotificationsDeps): Promise<Re
 
             if (updateError) {
                  console.error(`Database error marking all notifications as read:`, updateError);
-                 return new Response(JSON.stringify({ error: `Database error: ${updateError.message}` }), {
-                     status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-                 });
+                 // Use shared error response
+                 return createErrorResponse(`Database error: ${updateError.message}`, 500, req, updateError);
             }
 
             // Success, even if 0 rows were affected (means none were unread)
             console.log(`Successfully marked all notifications as read for user ${user.id}.`);
-            return new Response(null, { status: 204, headers: corsHeaders });
+            // Create 204 response directly
+            return new Response(null, { status: 204, headers: { "Access-Control-Allow-Origin": "*" } }); // Keep basic CORS for 204
         }
 
         // --- Handle Unmatched Routes (for valid methods) ---
         else {
             console.warn(`Path not handled for method ${req.method}: ${url.pathname}`);
-            return new Response(JSON.stringify({ error: 'Not Found' }), {
-                status: 404,
-                headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-            });
+            // Use shared error response
+            return createErrorResponse('Not Found', 404, req);
         }
 
     } catch (error) {
         console.error('Unexpected server error:', error);
-        return new Response(JSON.stringify({ error: 'Internal Server Error' }), {
-            status: 500,
-            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        });
+        // Use shared error response
+        return createErrorResponse('Internal Server Error', 500, req, error);
     }
 }
 
@@ -232,10 +229,13 @@ if (import.meta.main) {
                  const { data: checkData, error: checkError } = await userClient.auth.getUser();
                  if (checkError || !checkData.user) {
                     console.error("Direct run: Auth header token invalid:", checkError);
-                    return new Response(JSON.stringify({ error: `Unauthorized: ${checkError?.message ?? 'Invalid token'}` }), {
-                        status: 401,
-                        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-                    });
+                    // Use shared error response (req is available here)
+                    return createErrorResponse(
+                        `Unauthorized: ${checkError?.message ?? 'Invalid token'}`,
+                        401,
+                        req,
+                        checkError
+                    );
                  } else {
                      console.log("Direct run: User client created successfully.");
                      clientToUse = userClient;
@@ -243,10 +243,13 @@ if (import.meta.main) {
                  }
              } catch (e) {
                  console.error("Direct run: Error creating user client:", e);
-                  return new Response(JSON.stringify({ error: 'Internal Server Error creating client' }), {
-                    status: 500,
-                    headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-                 });
+                  // Use shared error response (req is available here)
+                  return createErrorResponse(
+                      'Internal Server Error creating client',
+                      500,
+                      req,
+                      e
+                  );
              }
         }
         

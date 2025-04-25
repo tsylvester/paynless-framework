@@ -21,8 +21,8 @@ import {
 // Define dependencies
 export interface SessionHandlerDeps {
     handleCorsPreflightRequest: (req: Request) => Response | null;
-    createErrorResponse: (message: string, status?: number) => Response;
-    createSuccessResponse: (data: unknown, status?: number) => Response;
+    createErrorResponse: (message: string, status: number, request: Request, error?: unknown) => Response;
+    createSuccessResponse: (data: unknown, status: number, request: Request) => Response;
     createSupabaseClient: (url: string, key: string, options?: SupabaseClientOptions<any>) => SupabaseClient<any>;
     // Specific client methods for testing complex interactions
     // getUser?: (client: SupabaseClient<any>, token: string) => Promise<{ data: { user: User | null }, error: AuthError | null }>;
@@ -54,7 +54,7 @@ export async function handleSessionRequest(
     const { access_token, refresh_token } = await req.json();
 
     if (!access_token || !refresh_token) {
-        return deps.createErrorResponse("Access token and refresh token are required", 400);
+        return deps.createErrorResponse("Access token and refresh token are required", 400, req);
     }
 
     const supabaseClient = deps.createSupabaseClient(
@@ -72,13 +72,13 @@ export async function handleSessionRequest(
 
       if (refreshError) {
         console.error("Refresh error:", refreshError);
-        return deps.createErrorResponse(refreshError.message, 401); // Refresh failed -> Unauthorized
+        return deps.createErrorResponse(refreshError.message, 401, req, refreshError); // Refresh failed -> Unauthorized
       }
 
       // Ensure refresh response is valid
       if (!refreshData || !refreshData.user || !refreshData.session) {
           console.error("Refresh succeeded but user/session data missing:", refreshData);
-          return deps.createErrorResponse("Session refresh failed.", 500);
+          return deps.createErrorResponse("Session refresh failed.", 500, req);
       }
 
       console.log("Refresh successful, fetching profile...");
@@ -103,13 +103,13 @@ export async function handleSessionRequest(
         user: refreshData.user,
         session: refreshData.session, // Return the whole new session
         profile: profile 
-      });
+      }, 200, req);
     }
     
     // Access token was valid, ensure user data is present
     if (!getUserData || !getUserData.user) {
         console.error("getUser succeeded but user data missing:", getUserData);
-        return deps.createErrorResponse("Failed to retrieve user data.", 500);
+        return deps.createErrorResponse("Failed to retrieve user data.", 500, req);
     }
 
     console.log("Access token valid, fetching profile...");
@@ -134,15 +134,15 @@ export async function handleSessionRequest(
     return deps.createSuccessResponse({
       user: currentUser,
       profile: profile
-    });
+    }, 200, req);
 
   } catch (error) {
     // Catch errors like req.json() failing
     console.error("Error in session handler:", error);
     if (error instanceof SyntaxError) {
-        return deps.createErrorResponse("Invalid JSON body", 400);
+        return deps.createErrorResponse("Invalid JSON body", 400, req, error);
     }
-    return deps.createErrorResponse("Internal server error", 500);
+    return deps.createErrorResponse("Internal server error", 500, req, error);
   }
 }
 

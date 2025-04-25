@@ -24,8 +24,8 @@ export interface RegisterHandlerDeps {
     handleCorsPreflightRequest: (req: Request) => Response | null;
     verifyApiKey: (req: Request) => boolean;
     createUnauthorizedResponse: (message: string) => Response;
-    createErrorResponse: (message: string, status?: number) => Response;
-    createSuccessResponse: (data: unknown, status?: number) => Response;
+    createErrorResponse: (message: string, status: number, request: Request, error?: unknown) => Response;
+    createSuccessResponse: (data: unknown, status: number, request: Request) => Response;
     createSupabaseClient: (url: string, key: string, options?: SupabaseClientOptions<any>) => SupabaseClient<any>;
     // Allow injecting specific auth methods for finer-grained testing if needed later
     // signUp?: (client: SupabaseClient<any>, creds: SignUpWithPasswordCredentials) => Promise<AuthResponse>; 
@@ -70,7 +70,7 @@ export async function handleRegisterRequest(
 
   if (req.method !== 'POST') {
       console.log(`[register/index.ts] Method ${req.method} not allowed.`);
-      return deps.createErrorResponse('Method Not Allowed', 405);
+      return deps.createErrorResponse('Method Not Allowed', 405, req);
   }
 
   try {
@@ -80,7 +80,7 @@ export async function handleRegisterRequest(
 
     if (!email || !password) {
       console.log("[register/index.ts] Email or password missing.");
-      return deps.createErrorResponse("Email and password are required", 400);
+      return deps.createErrorResponse("Email and password are required", 400, req);
     }
     
     console.log("[register/index.ts] Creating Supabase client...");
@@ -89,7 +89,7 @@ export async function handleRegisterRequest(
     console.log(`[register/index.ts] Env Vars for client: URL=${!!supabaseUrl}, Key=${!!supabaseAnonKey}`);
     if (!supabaseUrl || !supabaseAnonKey) {
         console.error("[register/index.ts] CRITICAL: Missing SUPABASE_URL or SUPABASE_ANON_KEY in env for client creation.");
-        return deps.createErrorResponse("Server configuration error", 500);
+        return deps.createErrorResponse("Server configuration error", 500, req);
     }
     const supabaseClient = deps.createSupabaseClient(supabaseUrl, supabaseAnonKey);
     console.log("[register/index.ts] Supabase client created.");
@@ -105,30 +105,37 @@ export async function handleRegisterRequest(
       console.error("[register/index.ts] signUp Error:", error);
       return deps.createErrorResponse(
           `Auth Error: ${error.message}`,
-          error.status || 400
+          error.status || 400,
+          req,
+          error
       );
     }
 
     // Check added in case signUp succeeds but returns null user/session unexpectedly
     if (!data?.user || !data?.session) { 
        console.error("[register/index.ts] signUp succeeded but user/session data missing", data);
-       return deps.createErrorResponse("Registration completed but failed to retrieve session.", 500);
+       return deps.createErrorResponse("Registration completed but failed to retrieve session.", 500, req);
     }
     
     console.log(`[register/index.ts] signUp Success for: ${email}`); 
     return deps.createSuccessResponse({
       user: data.user,
       session: data.session
-    });
+    }, 200, req);
 
   } catch (err) {
     console.error("[register/index.ts] FATAL UNEXPECTED ERROR in handler:", err);
-    console.error("Error Name:", err?.name);
-    console.error("Error Message:", err?.message);
-    console.error("Error Stack:", err?.stack);
+    if (err instanceof Error) {
+        console.error("Error Name:", err.name);
+        console.error("Error Message:", err.message);
+        console.error("Error Stack:", err.stack);
+    }
+    const errorMessage = err instanceof Error ? err.message : "An unexpected error occurred in handler";
     return deps.createErrorResponse(
-      err instanceof Error ? err.message : "An unexpected error occurred in handler",
-      500
+      errorMessage,
+      500,
+      req,
+      err
     );
   }
 }

@@ -1,6 +1,7 @@
 // supabase/functions/_shared/types.ts
 // Centralized APPLICATION-LEVEL types for Supabase Edge Functions.
 // Types directly related to DB tables should be imported from ../types_db.ts
+import type { Database } from '../../functions/types_db.ts';
 
 /**
  * Represents the standard user data structure for email marketing services.
@@ -120,11 +121,8 @@ export interface AiProviderAdapter {
 
   listModels(apiKey: string): Promise<ProviderModelInfo[]>;
 }
-
-// --- REMOVED DB-Related Type Duplicates ---
-// - SubscriptionPlan
-// - UserSubscription
-// - ChatMessage
-// - Notification
-// - Json (local alias)
-// Import Database['public']['Tables']['...']['Row'] from '../types_db.ts' where needed. 
+export type ChatMessage = Database['public']['Tables']['chat_messages']['Row'] & {
+  // Keep application-level status enrichment if needed by UI directly
+  // Note: status was previously added to LocalChatMessage, consider if it belongs here
+  status?: 'pending' | 'sent' | 'error'; 
+};
