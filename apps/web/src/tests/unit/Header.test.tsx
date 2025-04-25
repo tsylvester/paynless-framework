@@ -1,7 +1,9 @@
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { MemoryRouter } from 'react-router-dom';
-import { Header } from './Header';
+import { Header } from '../../components/layout/Header';
+import { ThemeProvider } from '../../context/theme.context';
+import { BrowserRouter } from 'react-router-dom';
 import { useAuthStore } from '@paynless/store';
 
 // Mock the auth store
@@ -23,9 +25,11 @@ const renderHeader = (authState: any = { user: null, session: null, profile: nul
     (useAuthStore as vi.Mock).mockReturnValue(mockState);
 
     render(
-        <MemoryRouter>
-            <Header />
-        </MemoryRouter>
+        <ThemeProvider>
+            <MemoryRouter>
+                <Header />
+            </MemoryRouter>
+        </ThemeProvider>
     );
     return { logoutMock }; 
 };
@@ -37,14 +41,13 @@ describe('Header Component', () => {
 
     it('should render Home link pointing to root', () => {
         renderHeader();
-        // Find the link by its href attribute, as the SVG icon gives it no default accessible name.
-        // Note: The link destination is always "/", redirection logic based on auth state
-        // likely occurs elsewhere (e.g., in AppRoutes).
-        const homeLink = screen.getByRole('link', { name: '' }); // Still has no accessible name from SVG
+        // Find the link by role, href, AND accessible name
+        const homeLink = screen.getByRole('link', { 
+            href: '/', 
+            name: /paynless logo/i 
+        });
         expect(homeLink).toBeInTheDocument();
-        expect(homeLink).toHaveAttribute('href', '/');
-        // We could also check if it contains an SVG element if needed for more specificity
-        // expect(homeLink.querySelector('svg.lucide-home')).toBeInTheDocument(); 
+        // No need for separate name assertion now
     });
 
     describe('When logged out', () => {

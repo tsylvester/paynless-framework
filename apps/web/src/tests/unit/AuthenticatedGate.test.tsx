@@ -1,6 +1,6 @@
 import { render, screen } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { AuthenticatedGate } from './AuthenticatedGate';
+import { AuthenticatedGate } from '../../components/auth/AuthenticatedGate';
 import type { User } from '@paynless/types'; // Import User type if needed for mock
 
 // Define mock state that can be modified by tests

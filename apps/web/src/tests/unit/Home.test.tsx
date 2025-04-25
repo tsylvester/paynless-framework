@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen } from '@testing-library/react';
-import { HomePage } from './Home';
+import { HomePage } from '../../pages/Home';
 import { useAuthStore } from '@paynless/store';
 import React from 'react';
 

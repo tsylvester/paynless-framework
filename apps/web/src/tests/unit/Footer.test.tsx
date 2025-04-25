@@ -1,7 +1,7 @@
 import { render, screen } from '@testing-library/react';
 import { BrowserRouter } from 'react-router-dom';
 import { describe, it, expect } from 'vitest';
-import { Footer } from './Footer';
+import { Footer } from '../../components/layout/Footer';
 
 // Basic test suite for the Footer component
 describe('Footer Component', () => {

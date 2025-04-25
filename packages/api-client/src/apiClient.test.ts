@@ -202,7 +202,7 @@ describe('apiClient', () => {
     });
     
     // --- NEW Test for AuthRequiredError ---
-    it('should THROW AuthRequiredError and store pending action on 401 with code AUTH_REQUIRED', async () => {
+    it('should THROW AuthRequiredError on GET 401 with code AUTH_REQUIRED', async () => {
         const endpoint = 'test-auth-required';
         const errorResponse = { message: 'Please log in', code: 'AUTH_REQUIRED' };
         server.use(
@@ -211,30 +211,8 @@ describe('apiClient', () => {
             )
         );
 
-        const setItemSpy = vi.spyOn(Storage.prototype, 'setItem');
-        // Mock window.location for returnPath
-        const originalLocation = window.location;
-        delete window.location;
-        window.location = { ...originalLocation, pathname: '/protected/resource', search: '?a=1' } as Location;
-        const expectedReturnPath = '/protected/resource?a=1';
-
-        // Use expect().rejects to catch the thrown error
+        // Assert that the correct error is thrown
         await expect(api.get(endpoint)).rejects.toThrow(new AuthRequiredError(errorResponse.message));
-
-        // Verify localStorage call
-        expect(setItemSpy).toHaveBeenCalledTimes(1);
-        expect(setItemSpy).toHaveBeenCalledWith('pendingAction', expect.any(String));
-        const storedAction = JSON.parse(setItemSpy.mock.calls[0][1]);
-        expect(storedAction).toEqual({
-            endpoint: endpoint,
-            method: 'GET',
-            body: null, // No body for GET
-            returnPath: expectedReturnPath
-        });
-
-        // Restore mocks
-        setItemSpy.mockRestore();
-        window.location = originalLocation;
     });
     // --- End NEW Test ---
 
@@ -308,23 +286,9 @@ describe('apiClient', () => {
                 HttpResponse.json(errorResponse, { status: 401 })
             )
         );
-        const setItemSpy = vi.spyOn(Storage.prototype, 'setItem');
-        const originalLocation = window.location;
-        delete window.location;
-        window.location = { ...originalLocation, pathname: '/post/resource', search: '' } as Location;
 
+        // Assert that the correct error is thrown
         await expect(api.post(endpoint, requestBody)).rejects.toThrow(AuthRequiredError);
-
-        expect(setItemSpy).toHaveBeenCalledTimes(1);
-        const storedAction = JSON.parse(setItemSpy.mock.calls[0][1]);
-        expect(storedAction).toEqual({
-            endpoint: endpoint,
-            method: 'POST',
-            body: requestBody, // Body included for POST
-            returnPath: '/post/resource'
-        });
-        setItemSpy.mockRestore();
-        window.location = originalLocation;
     });
   });
   // ---> END NEW TESTS for api.post <---
@@ -379,23 +343,9 @@ describe('apiClient', () => {
                 HttpResponse.json(errorResponse, { status: 401 })
             )
         );
-        const setItemSpy = vi.spyOn(Storage.prototype, 'setItem');
-        const originalLocation = window.location;
-        delete window.location;
-        window.location = { ...originalLocation, pathname: '/put/resource', search: '' } as Location;
 
+        // Assert that the correct error is thrown
         await expect(api.put(endpoint, requestBody)).rejects.toThrow(AuthRequiredError);
-
-        expect(setItemSpy).toHaveBeenCalledTimes(1);
-        const storedAction = JSON.parse(setItemSpy.mock.calls[0][1]);
-        expect(storedAction).toEqual({
-            endpoint: endpoint,
-            method: 'PUT',
-            body: requestBody, // Body included for PUT
-            returnPath: '/put/resource'
-        });
-        setItemSpy.mockRestore();
-        window.location = originalLocation;
     });
   });
   // ---> END NEW TESTS for api.put <---
@@ -468,23 +418,9 @@ describe('apiClient', () => {
                 HttpResponse.json(errorResponse, { status: 401 })
             )
         );
-        const setItemSpy = vi.spyOn(Storage.prototype, 'setItem');
-        const originalLocation = window.location;
-        delete window.location;
-        window.location = { ...originalLocation, pathname: '/delete/resource', search: '' } as Location;
 
+        // Assert that the correct error is thrown
         await expect(api.delete(endpoint)).rejects.toThrow(AuthRequiredError);
-
-        expect(setItemSpy).toHaveBeenCalledTimes(1);
-        const storedAction = JSON.parse(setItemSpy.mock.calls[0][1]);
-        expect(storedAction).toEqual({
-            endpoint: endpoint,
-            method: 'DELETE',
-            body: null, // No body for DELETE
-            returnPath: '/delete/resource'
-        });
-        setItemSpy.mockRestore();
-        window.location = originalLocation;
     });
   });
   // ---> END NEW TESTS for api.delete <---

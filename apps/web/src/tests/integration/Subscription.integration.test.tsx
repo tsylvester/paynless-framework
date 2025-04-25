@@ -3,7 +3,7 @@ import { render, screen, fireEvent, within, act, waitFor } from '@testing-librar
 import { SubscriptionPage } from '../../pages/Subscription';
 import { useAuthStore, useSubscriptionStore } from '@paynless/store';
 import { render as customRender } from '../../tests/utils/render';
-import { server } from '../../mocks/server';
+import { server } from '../mocks/server';
 import type { User, SubscriptionPlan, UserSubscription, ProfileResponse } from '@paynless/types';
 import { http, HttpResponse } from 'msw';
 

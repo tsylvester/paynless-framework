@@ -192,4 +192,15 @@ export const handlers = [
     return HttpResponse.json(mockMessages, { status: 200 });
   }),
 
+  // --- Notifications endpoint ---
+  http.get(`${API_BASE_URL}/notifications`, ({ request }) => {
+    // Check auth - notifications requires login
+    const authHeader = request.headers.get('Authorization');
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      return HttpResponse.json({ error: { message: 'Unauthorized' } }, { status: 401 });
+    }
+    // Return empty array for now
+    return HttpResponse.json([], { status: 200 });
+  }),
+
 ]; 

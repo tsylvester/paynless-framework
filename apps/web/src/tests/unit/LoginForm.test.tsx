@@ -3,7 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { BrowserRouter } from 'react-router-dom';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { useAuthStore } from '@paynless/store'; // Import the actual store
-import { LoginForm } from './LoginForm';
+import { LoginForm } from '../../components/auth/LoginForm';
 
 // Mock the login function that will be injected into the store's state
 const mockLogin = vi.fn();

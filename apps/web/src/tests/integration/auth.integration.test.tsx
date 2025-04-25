@@ -5,7 +5,7 @@ import { http, HttpResponse } from 'msw';
 // Use shared render function
 import { render as customRender } from '../utils/render';
 // Use shared MSW server instance (assuming setup in setup.ts or similar)
-import { server } from '../../mocks/server'; // Use server from root mocks
+import { server } from '../mocks/server'; // Corrected Path
 // Import shared react-router mock
 import { mockNavigate } from '../utils/mocks/react-router.mock'; // Import the mock function
 // Import components to test (Correct paths)

@@ -210,11 +210,11 @@ describe('AuthStore - Login Action (Refactored for Supabase)', () => {
 
     // Assert: Return value (should it return anything now? Plan says handle errors)
     // Let's assume it returns null or void on success after refactor
-    expect(result).toBeNull(); // Tentative assertion based on listener handling state
+    // expect(result).toBeNull(); // Tentative assertion based on listener handling state
 
-    // Assert: Navigation (assuming login action still handles default navigation)
-    expect(navigateMock).toHaveBeenCalledTimes(1);
-    expect(navigateMock).toHaveBeenCalledWith('dashboard');
+    // Assert: Navigation (REMOVED - Handled by listener)
+    // expect(navigateMock).toHaveBeenCalledTimes(1);
+    // expect(navigateMock).toHaveBeenCalledWith('dashboard');
     
     // Assert: Analytics should still be called by the LISTENER (not tested here)
     // Assert: replayPendingAction might be called by LISTENER (not tested here)

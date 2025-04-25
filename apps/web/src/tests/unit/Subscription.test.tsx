@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, type Mock } from 'vitest';
 import { render, screen, act, within } from '@testing-library/react';
-import { SubscriptionPage } from './Subscription';
+import { SubscriptionPage } from '../../pages/Subscription';
 import { useAuthStore, useSubscriptionStore } from '@paynless/store'; // Import actual stores
 import React from 'react';
 import { MemoryRouter } from 'react-router-dom';

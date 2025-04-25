@@ -1,7 +1,7 @@
 import { render, screen, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi } from 'vitest';
 import { App } from '../../App';
-import { createMockAuthStore } from '../../test-utils/mocks/stores/authStore';
+import { createMockAuthStore } from '../utils/mocks/stores/authStore';
 
 describe('Profile Integration Tests', () => {
   it('should load profile data', async () => {
