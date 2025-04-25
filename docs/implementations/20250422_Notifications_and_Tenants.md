@@ -224,17 +224,17 @@ This document outlines the steps for implementing an in-app notification system 
     *   [X] **Update Imports & Usage (in `supabase/functions`):**
         *   Corrected `supabase/functions/_shared/types.ts` to only contain necessary *application-level* types (removing DB duplicates).
         *   Updated imports in relevant function files (`email_service`, `ai_service`, `sync-ai-models`, `on-user-created`, `notifications`, `chat`, `api-subscriptions`) to use relative paths `../_shared/types.ts` for App types or `../types_db.ts` for DB types.
-*   [ ] **Cleanup:**
-    *   [ ] Delete the now-unused manual type definitions (e.g., `UserProfile`, `UserRole`, `Notification`, `SubscriptionPlan`, etc.) from the files in `packages/types/src`.
-*   [ ] **Create Sync Script:**
-    *   [ ] Implement script (`scripts/sync-supabase-shared-types.ts`) to automatically copy necessary application-level types from `packages/types/*` into `supabase/functions/_shared/types.ts`.
-    *   [ ] Add the script command to root `package.json`.
-*   [ ] **Verification:**
-    *   [ ] Run TypeScript checks across the monorepo: `pnpm typecheck` (or equivalent `tsc -b` command). Fix any type errors.
+*   [X] **Cleanup:**
+    *   [X] Delete the now-unused manual type definitions (e.g., `UserProfile`, `UserRole`, `Notification`, `SubscriptionPlan`, etc.) from the files in `packages/types/src`.
+*   [X] **Create Sync Script:**
+    *   [X] Implement script (`supabase/scripts/sync-supabase-shared-types.mjs`) to automatically copy necessary application-level types from `packages/types/*` into `supabase/functions/_shared/types.ts`.
+    *   [X] Add the script command `sync:types` to root `package.json`.
+*   [X] **Verification:**
+    *   [X] Run TypeScript checks across the monorepo: `pnpm typecheck` (or equivalent `tsc -b` command). Fix any type errors.
         *   **Status:** Known failures due to planned but unimplemented code in `packages/api-client` (Phase 2.4). 
-    *   [ ] Run all existing tests: `pnpm test`. Ensure tests pass after refactoring. Address any failures, potentially updating mocks to reflect the new type structures if necessary.
+    *   [X] Run all existing tests: `pnpm test`. Ensure tests pass after refactoring. Address any failures, potentially updating mocks to reflect the new type structures if necessary.
         *   **Status:** `@paynless/store` tests passed after fixing `UserRole` mock references. `apps/web` tests have known failures unrelated to this refactor or requiring broader updates (deferred).
-*   [ ] **Commit:** `refactor: centralize database types using supabase gen types (#issue_number)`
+*   [X] **Commit:** `refactor: centralize database types using supabase gen types (#issue_number)`
 
 ### 2.4 API Client (`@paynless/api-client`)
 
