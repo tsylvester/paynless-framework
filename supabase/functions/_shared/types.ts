@@ -1,7 +1,7 @@
 // supabase/functions/_shared/types.ts
 // Centralized APPLICATION-LEVEL types for Supabase Edge Functions.
 // Types directly related to DB tables should be imported from ../types_db.ts
-import type { Database } from '../../functions/types_db.ts';
+import type { Database } from '../types_db.ts';
 
 /**
  * Represents the standard user data structure for email marketing services.
@@ -121,8 +121,37 @@ export interface AiProviderAdapter {
 
   listModels(apiKey: string): Promise<ProviderModelInfo[]>;
 }
+
 export type ChatMessage = Database['public']['Tables']['chat_messages']['Row'] & {
   // Keep application-level status enrichment if needed by UI directly
   // Note: status was previously added to LocalChatMessage, consider if it belongs here
   status?: 'pending' | 'sent' | 'error'; 
 };
+
+/**
+ * Type representing the payload returned *by* an AI Provider Adapter's sendMessage method.
+ * This contains only the information the adapter can realistically provide before
+ * the message is saved to the database (which adds id, chat_id, user_id, created_at).
+ */
+export interface AdapterResponsePayload {
+  role: 'assistant'; // Adapters always return assistant messages
+  content: string;
+  ai_provider_id: string | null; // The DB ID of the provider used
+  system_prompt_id: string | null; // The DB ID of the prompt used (or null)
+  token_usage: any | null; // Use 'any' for now to avoid linter issues
+}
+
+/**
+ * Represents a full chat message record as stored in the database.
+ */
+export interface FullChatMessageRecord {
+  id: string;
+  chat_id: string;
+  user_id: string;
+  created_at: string;
+  role: 'user' | 'assistant' | 'system';
+  content: string;
+  ai_provider_id?: string | null;
+  system_prompt_id?: string | null;
+  token_usage?: any | null; // Use 'any' for now
+}
