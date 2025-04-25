@@ -265,12 +265,10 @@ Deno.test("/notifications endpoint tests", async (t) => {
         // Mock the update chain: update -> match -> success
         const { client, spies } = createMockSupabaseClient({
             getUserResult: { data: { user: mockUser }, error: null },
-            // --- Adjusted Mock Structure --- 
-            // Mock results based on the *final* call in the chain (`match`)
             genericMockResults: {
                 notifications: { 
-                    update: { data: null, error: null }, // update() itself might return something, mock it broadly
-                    match: { data: null, error: null } // Simulate successful match/update
+                    // Mock the result of the UPDATE operation
+                    update: { data: null, error: null } 
                 }
             }
         });
@@ -282,29 +280,22 @@ Deno.test("/notifications endpoint tests", async (t) => {
         });
         const res = await handler(req, createDeps(client));
         
-        // Assert success (204 No Content)
         assertEquals(res.status, 204);
-        assertEquals(await res.text(), ""); // No body on 204
+        assertEquals(await res.text(), ""); 
 
-        // Verify mock calls
         assertSpyCalls(spies.getUserSpy, 1);
-        // Assuming test-utils mocks update/match:
-        // assertSpyCalls(spies.fromSpy, 1); // called with 'notifications'
-        // assertSpyCalls(spies.updateSpy, 1); // called with { read: true }
-        // assertSpyCalls(spies.matchSpy, 1); // called with { id: notificationId, user_id: mockUser.id }
+        // TODO: Enhance test-utils spies to verify update/match calls and criteria
     });
 
     await t.step("PUT /notifications/:id: should return 404 if notification not found or doesn't belong to user", async () => {
         const notificationId = "noti-unknown";
-        // Mock the update chain failing (e.g., match returns error)
+        // Mock the update operation failing (e.g., returns error)
         const { client, spies } = createMockSupabaseClient({
             getUserResult: { data: { user: mockUser }, error: null },
-            // --- Adjusted Mock Structure --- 
             genericMockResults: {
                 notifications: { 
-                    update: { data: null, error: null }, 
-                    // Simulate match failing to find the row
-                    match: { data: null, error: { code: 'PGRST116', message: 'Row not found' } } 
+                    // Simulate the UPDATE operation failing (as if match found nothing)
+                    update: { data: null, error: { code: 'PGRST116', message: 'Row not found' } } 
                 }
             }
         });
@@ -319,10 +310,9 @@ Deno.test("/notifications endpoint tests", async (t) => {
         
         assertEquals(res.status, 404); 
         assertExists(body.error);
-        assert(body.error.includes("Notification not found or not owned by user")); // Expected error message
+        assert(body.error.includes("Notification not found or not owned by user"));
         
         assertSpyCalls(spies.getUserSpy, 1);
-        // ... verify update/match calls ...
     });
 
     await t.step("PUT /notifications/:id: should handle database errors during update", async () => {
@@ -330,11 +320,10 @@ Deno.test("/notifications endpoint tests", async (t) => {
         const mockDbError = new Error("DB update error");
         const { client, spies } = createMockSupabaseClient({
             getUserResult: { data: { user: mockUser }, error: null },
-            // --- Adjusted Mock Structure --- 
             genericMockResults: {
                 notifications: { 
-                    update: { data: null, error: null }, 
-                    match: { data: null, error: mockDbError } // Simulate DB error during match/update
+                    // Simulate the UPDATE operation encountering a DB error
+                    update: { data: null, error: mockDbError } 
                 }
             }
         });
@@ -352,7 +341,6 @@ Deno.test("/notifications endpoint tests", async (t) => {
         assert(body.error.includes("Database error: DB update error")); 
 
         assertSpyCalls(spies.getUserSpy, 1);
-        // ... verify update/match calls ...
     });
 
     // --- POST Request Tests (New) ---
@@ -369,14 +357,12 @@ Deno.test("/notifications endpoint tests", async (t) => {
     });
 
     await t.step("POST /notifications/mark-all-read: should successfully mark all notifications as read", async () => {
-         // Mock the update chain: update -> match -> success
         const { client, spies } = createMockSupabaseClient({
             getUserResult: { data: { user: mockUser }, error: null },
-            // --- Adjusted Mock Structure --- 
             genericMockResults: {
                 notifications: { 
-                    update: { data: null, error: null }, 
-                    match: { data: null, error: null } // Simulate successful match/update
+                    // Mock the result of the UPDATE operation
+                    update: { data: null, error: null } 
                 }
             }
         });
@@ -388,21 +374,17 @@ Deno.test("/notifications endpoint tests", async (t) => {
         assertEquals(await res.text(), "");
 
         assertSpyCalls(spies.getUserSpy, 1);
-        // Assuming test-utils mocks update/match:
-        // assertSpyCalls(spies.fromSpy, 1); // called with 'notifications'
-        // assertSpyCalls(spies.updateSpy, 1); // called with { read: true }
-        // assertSpyCalls(spies.matchSpy, 1); // called with { user_id: mockUser.id, read: false }
+        // TODO: Enhance test-utils spies to verify update/match calls and criteria
     });
 
     await t.step("POST /notifications/mark-all-read: should handle case where no notifications need updating", async () => {
         // Assume success (204) is returned even if 0 rows updated.
         const { client, spies } = createMockSupabaseClient({
             getUserResult: { data: { user: mockUser }, error: null },
-            // --- Adjusted Mock Structure --- 
             genericMockResults: {
                 notifications: { 
-                    update: { data: null, error: null }, 
-                    match: { data: null, error: null } // Simulate success
+                    // Mock the result of the UPDATE operation (success)
+                    update: { data: null, error: null } 
                 }
             }
         });
@@ -414,18 +396,16 @@ Deno.test("/notifications endpoint tests", async (t) => {
         assertEquals(await res.text(), "");
 
         assertSpyCalls(spies.getUserSpy, 1);
-        // ... verify update/match calls ...
     });
 
     await t.step("POST /notifications/mark-all-read: should handle database errors during update", async () => {
         const mockDbError = new Error("DB mark-all error");
         const { client, spies } = createMockSupabaseClient({
             getUserResult: { data: { user: mockUser }, error: null },
-            // --- Adjusted Mock Structure --- 
             genericMockResults: {
                 notifications: { 
-                    update: { data: null, error: null }, 
-                    match: { data: null, error: mockDbError } // Simulate DB error
+                     // Simulate the UPDATE operation encountering a DB error
+                    update: { data: null, error: mockDbError } 
                 }
             }
         });
@@ -439,7 +419,6 @@ Deno.test("/notifications endpoint tests", async (t) => {
         assert(body.error.includes("Database error: DB mark-all error")); 
 
         assertSpyCalls(spies.getUserSpy, 1);
-        // ... verify update/match calls ...
     });
 
     await t.step("should reject requests to paths other than /notifications/:id or /notifications/mark-all-read for PUT/POST", async () => {

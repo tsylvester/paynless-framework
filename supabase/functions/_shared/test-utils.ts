@@ -137,7 +137,7 @@ export async function cleanupUser(email: string, adminClient?: SupabaseClient): 
 export interface MockQueryBuilderState {
     tableName: string;
     operation: 'select' | 'insert' | 'update' | 'delete'; 
-    filters: { column: string; value: any; type: 'eq' | 'in' }[]; 
+    filters: { column?: string; value?: any; type: 'eq' | 'in' | 'match'; criteria?: object }[]; // Added 'match' type and criteria object
     selectColumns: string | null;
     insertData: any[] | object | null; 
     updateData: object | null;
@@ -203,6 +203,7 @@ export function createMockSupabaseClient(
         delete: Spy<any>; // Add delete
         eq: Spy<any>;
         in: Spy<any>; // Add 'in' filter
+        match: Spy<any>; // Add match spy definition
         order: Spy<any>;
         single: Spy<any>;
         then: Spy<any>; // Keep 'then' for compatibility with some existing mocks
@@ -212,7 +213,7 @@ export function createMockSupabaseClient(
         const _queryBuilderState = {
             tableName: tableName,
             operation: 'select' as 'select' | 'insert' | 'update' | 'delete', // Track the intended operation
-            filters: [] as { column: string; value: any; type: 'eq' | 'in' }[], 
+            filters: [] as { column?: string; value?: any; type: 'eq' | 'in' | 'match'; criteria?: object }[], 
             selectColumns: '*' as string | null, // Can be null if not a select op
             insertData: null as any[] | object | null, 
             updateData: null as object | null,
@@ -272,6 +273,12 @@ export function createMockSupabaseClient(
              _queryBuilderState.filters.push({ column, value: values, type: 'in' });
              return mockQueryBuilder;
          });
+
+        mockQueryBuilder.match = spy((criteria: object) => {
+            console.log(`[Mock QB ${tableName}] .match() called with:`, criteria);
+            _queryBuilderState.filters.push({ type: 'match', criteria });
+            return mockQueryBuilder;
+        });
 
         mockQueryBuilder.order = spy((_column: string, _options?: any) => {
             console.log(`[Mock QB ${tableName}] .order() called`);
