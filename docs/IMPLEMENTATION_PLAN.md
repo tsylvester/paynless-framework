@@ -52,6 +52,8 @@
 *   [ ] Groups & organizations - how does Supabase currently support this? // Now being implemented
 *   [ ] Notifications - system wide and user specific // Now being implemented
 *   [ ] Add dark mode logo 
+*   [ ] User avatars and banners 
+
 
 **Chat Improvements**
 *   [ ] Fix homepage to load default choices correctly again
@@ -59,7 +61,12 @@
 *   [ ] Fix auto navigate on replay 
 *   [ ] Fix chat to scroll correctly on new submissions 
 *   [ ] Save system prompt to chat so it sets correctly when chat loads 
-
+*   [ ] More interactions for AI chat
+    *   [ ] File attachment
+    *   [ ] File download 
+    *   [ ] Chat download 
+    *   [ ] Chat-to-image
+    
 **Notification Improvements**
 *   [ ] User Notification Preferences (In-app/Email channels, Opt-outs)
 *   [ ] Email Notifications (Beyond Invites)

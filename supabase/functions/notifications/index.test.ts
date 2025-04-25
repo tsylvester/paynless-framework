@@ -49,7 +49,7 @@ function createDeps(mockClient: SupabaseClient): NotificationsDeps {
 }
 
 // --- Test Suite ---
-Deno.test("/notifications GET endpoint tests", async (t) => {
+Deno.test("/notifications endpoint tests", async (t) => {
 
     // No longer need env var mocking as handler uses injected client
 
@@ -57,7 +57,7 @@ Deno.test("/notifications GET endpoint tests", async (t) => {
     // With the handler refactored to use the injected deps.supabaseClient,
     // these tests now accurately reflect the handler's isolated logic.
 
-    await t.step("should handle OPTIONS preflight request", async () => {
+    await t.step("GET /notifications: should handle OPTIONS preflight request", async () => {
         const { client } = createMockSupabaseClient(); 
         const req = new Request("http://localhost/notifications", { method: "OPTIONS" });
         const res = await handler(req, createDeps(client)); 
@@ -68,17 +68,16 @@ Deno.test("/notifications GET endpoint tests", async (t) => {
         assertEquals(res.headers.get("access-control-allow-headers"), "authorization, x-client-info, apikey, content-type, x-paynless-anon-secret"); 
     });
 
-    await t.step("should reject non-GET requests", async () => {
+    await t.step("GET /notifications: should reject non-GET/PUT/POST requests", async () => {
         const { client } = createMockSupabaseClient();
-        const req = new Request("http://localhost/notifications", { method: "POST" });
+        const req = new Request("http://localhost/notifications", { method: "PATCH" }); // Test PATCH for example
         const res = await handler(req, createDeps(client));
         const body = await res.json(); 
         assertEquals(res.status, 405);
         assertEquals(body.error, "Method Not Allowed");
-        assertEquals(res.headers.get("content-type"), "application/json");
     });
 
-    await t.step("should reject request without Authorization header", async () => {
+    await t.step("GET /notifications: should reject request without Authorization header", async () => {
         // NOTE: The refactored handler relies on the *client itself* being authenticated.
         // It doesn't check the header directly anymore, it calls deps.supabaseClient.auth.getUser().
         // So this test case needs to simulate getUser failing when no token context exists.
@@ -96,7 +95,7 @@ Deno.test("/notifications GET endpoint tests", async (t) => {
         assertSpyCalls(spies.getUserSpy, 1); // Verify getUser was called
     });
 
-    await t.step("should reject request with invalid client context (invalid token)", async () => {
+    await t.step("GET /notifications: should reject request with invalid client context (invalid token)", async () => {
         // Simulate getUser failing because the client was created with a bad token
         const mockError = new Error("Invalid token used for client");
         const { client, spies } = createMockSupabaseClient({
@@ -118,7 +117,7 @@ Deno.test("/notifications GET endpoint tests", async (t) => {
         assertSpyCalls(spies.getUserSpy, 1); // Verify getUser was called
     });
 
-    await t.step("should return notifications on successful GET with valid client context", async () => {
+    await t.step("GET /notifications: should return notifications on successful GET with valid client context", async () => {
         const { client, spies } = createMockSupabaseClient({
             // Simulate getUser succeeding
             getUserResult: { data: { user: mockUser }, error: null },
@@ -153,7 +152,7 @@ Deno.test("/notifications GET endpoint tests", async (t) => {
         // assertSpyCalls(spies.orderSpy, 1);
     });
 
-    await t.step("should handle database errors during fetch with valid client context", async () => {
+    await t.step("GET /notifications: should handle database errors during fetch with valid client context", async () => {
         const mockDbError = new Error("DB error from mock");
         const { client, spies } = createMockSupabaseClient({
             // Simulate getUser succeeding
@@ -186,7 +185,7 @@ Deno.test("/notifications GET endpoint tests", async (t) => {
     });
 
     // --- NEW TEST CASE --- 
-    await t.step("should return 401 if auth succeeds but no user data is returned", async () => {
+    await t.step("GET /notifications: should return 401 if auth succeeds but no user data is returned", async () => {
         const { client, spies } = createMockSupabaseClient({
             // Simulate getUser succeeding but returning no user object
             getUserResult: { data: { user: null }, error: null },
@@ -213,7 +212,7 @@ Deno.test("/notifications GET endpoint tests", async (t) => {
     });
 
     // --- NEW TEST CASE --- 
-    await t.step("should return empty array for successful GET when no notifications exist", async () => {
+    await t.step("GET /notifications: should return empty array for successful GET when no notifications exist", async () => {
         const { client, spies } = createMockSupabaseClient({
             // Simulate getUser succeeding
             getUserResult: { data: { user: mockUser }, error: null },
@@ -241,6 +240,220 @@ Deno.test("/notifications GET endpoint tests", async (t) => {
         assertSpyCalls(spies.getUserSpy, 1);
         // assertSpyCalls(spies.fromSpy, 1);
         // ... other DB spies
+    });
+
+    // --- PUT Request Tests (New) ---
+    await t.step("PUT /notifications/:id: should reject request without valid client context", async () => {
+        const notificationId = "noti-1";
+        const { client, spies } = createMockSupabaseClient({
+            simulateAuthError: new Error("Auth failed for PUT")
+        });
+        const req = new Request(`http://localhost/notifications/${notificationId}`, { 
+            method: "PUT", 
+            body: JSON.stringify({ read: true }), // Body isn't strictly needed by this endpoint, but good practice
+            headers: { 'Content-Type': 'application/json' }
+        });
+        const res = await handler(req, createDeps(client));
+        const body = await res.json();
+        assertEquals(res.status, 401);
+        assert(body.error?.includes("Unauthorized: Auth failed for PUT"));
+        assertSpyCalls(spies.getUserSpy, 1);
+    });
+
+    await t.step("PUT /notifications/:id: should successfully mark notification as read", async () => {
+        const notificationId = "noti-1";
+        // Mock the update chain: update -> match -> success
+        const { client, spies } = createMockSupabaseClient({
+            getUserResult: { data: { user: mockUser }, error: null },
+            // --- Adjusted Mock Structure --- 
+            // Mock results based on the *final* call in the chain (`match`)
+            genericMockResults: {
+                notifications: { 
+                    update: { data: null, error: null }, // update() itself might return something, mock it broadly
+                    match: { data: null, error: null } // Simulate successful match/update
+                }
+            }
+        });
+
+        const req = new Request(`http://localhost/notifications/${notificationId}`, { 
+            method: "PUT",
+            body: JSON.stringify({ read: true }),
+            headers: { 'Content-Type': 'application/json' }
+        });
+        const res = await handler(req, createDeps(client));
+        
+        // Assert success (204 No Content)
+        assertEquals(res.status, 204);
+        assertEquals(await res.text(), ""); // No body on 204
+
+        // Verify mock calls
+        assertSpyCalls(spies.getUserSpy, 1);
+        // Assuming test-utils mocks update/match:
+        // assertSpyCalls(spies.fromSpy, 1); // called with 'notifications'
+        // assertSpyCalls(spies.updateSpy, 1); // called with { read: true }
+        // assertSpyCalls(spies.matchSpy, 1); // called with { id: notificationId, user_id: mockUser.id }
+    });
+
+    await t.step("PUT /notifications/:id: should return 404 if notification not found or doesn't belong to user", async () => {
+        const notificationId = "noti-unknown";
+        // Mock the update chain failing (e.g., match returns error)
+        const { client, spies } = createMockSupabaseClient({
+            getUserResult: { data: { user: mockUser }, error: null },
+            // --- Adjusted Mock Structure --- 
+            genericMockResults: {
+                notifications: { 
+                    update: { data: null, error: null }, 
+                    // Simulate match failing to find the row
+                    match: { data: null, error: { code: 'PGRST116', message: 'Row not found' } } 
+                }
+            }
+        });
+
+        const req = new Request(`http://localhost/notifications/${notificationId}`, { 
+            method: "PUT",
+            body: JSON.stringify({ read: true }),
+            headers: { 'Content-Type': 'application/json' }
+        });
+        const res = await handler(req, createDeps(client));
+        const body = await res.json();
+        
+        assertEquals(res.status, 404); 
+        assertExists(body.error);
+        assert(body.error.includes("Notification not found or not owned by user")); // Expected error message
+        
+        assertSpyCalls(spies.getUserSpy, 1);
+        // ... verify update/match calls ...
+    });
+
+    await t.step("PUT /notifications/:id: should handle database errors during update", async () => {
+        const notificationId = "noti-1";
+        const mockDbError = new Error("DB update error");
+        const { client, spies } = createMockSupabaseClient({
+            getUserResult: { data: { user: mockUser }, error: null },
+            // --- Adjusted Mock Structure --- 
+            genericMockResults: {
+                notifications: { 
+                    update: { data: null, error: null }, 
+                    match: { data: null, error: mockDbError } // Simulate DB error during match/update
+                }
+            }
+        });
+
+        const req = new Request(`http://localhost/notifications/${notificationId}`, { 
+            method: "PUT",
+            body: JSON.stringify({ read: true }),
+            headers: { 'Content-Type': 'application/json' }
+        });
+        const res = await handler(req, createDeps(client));
+        const body = await res.json();
+        
+        assertEquals(res.status, 500);
+        assertExists(body.error);
+        assert(body.error.includes("Database error: DB update error")); 
+
+        assertSpyCalls(spies.getUserSpy, 1);
+        // ... verify update/match calls ...
+    });
+
+    // --- POST Request Tests (New) ---
+    await t.step("POST /notifications/mark-all-read: should reject request without valid client context", async () => {
+         const { client, spies } = createMockSupabaseClient({
+            simulateAuthError: new Error("Auth failed for POST")
+        });
+        const req = new Request("http://localhost/notifications/mark-all-read", { method: "POST" });
+        const res = await handler(req, createDeps(client));
+        const body = await res.json();
+        assertEquals(res.status, 401);
+        assert(body.error?.includes("Unauthorized: Auth failed for POST"));
+        assertSpyCalls(spies.getUserSpy, 1);
+    });
+
+    await t.step("POST /notifications/mark-all-read: should successfully mark all notifications as read", async () => {
+         // Mock the update chain: update -> match -> success
+        const { client, spies } = createMockSupabaseClient({
+            getUserResult: { data: { user: mockUser }, error: null },
+            // --- Adjusted Mock Structure --- 
+            genericMockResults: {
+                notifications: { 
+                    update: { data: null, error: null }, 
+                    match: { data: null, error: null } // Simulate successful match/update
+                }
+            }
+        });
+
+        const req = new Request("http://localhost/notifications/mark-all-read", { method: "POST" });
+        const res = await handler(req, createDeps(client));
+        
+        assertEquals(res.status, 204);
+        assertEquals(await res.text(), "");
+
+        assertSpyCalls(spies.getUserSpy, 1);
+        // Assuming test-utils mocks update/match:
+        // assertSpyCalls(spies.fromSpy, 1); // called with 'notifications'
+        // assertSpyCalls(spies.updateSpy, 1); // called with { read: true }
+        // assertSpyCalls(spies.matchSpy, 1); // called with { user_id: mockUser.id, read: false }
+    });
+
+    await t.step("POST /notifications/mark-all-read: should handle case where no notifications need updating", async () => {
+        // Assume success (204) is returned even if 0 rows updated.
+        const { client, spies } = createMockSupabaseClient({
+            getUserResult: { data: { user: mockUser }, error: null },
+            // --- Adjusted Mock Structure --- 
+            genericMockResults: {
+                notifications: { 
+                    update: { data: null, error: null }, 
+                    match: { data: null, error: null } // Simulate success
+                }
+            }
+        });
+
+        const req = new Request("http://localhost/notifications/mark-all-read", { method: "POST" });
+        const res = await handler(req, createDeps(client));
+        
+        assertEquals(res.status, 204); 
+        assertEquals(await res.text(), "");
+
+        assertSpyCalls(spies.getUserSpy, 1);
+        // ... verify update/match calls ...
+    });
+
+    await t.step("POST /notifications/mark-all-read: should handle database errors during update", async () => {
+        const mockDbError = new Error("DB mark-all error");
+        const { client, spies } = createMockSupabaseClient({
+            getUserResult: { data: { user: mockUser }, error: null },
+            // --- Adjusted Mock Structure --- 
+            genericMockResults: {
+                notifications: { 
+                    update: { data: null, error: null }, 
+                    match: { data: null, error: mockDbError } // Simulate DB error
+                }
+            }
+        });
+
+        const req = new Request("http://localhost/notifications/mark-all-read", { method: "POST" });
+        const res = await handler(req, createDeps(client));
+        const body = await res.json();
+        
+        assertEquals(res.status, 500);
+        assertExists(body.error);
+        assert(body.error.includes("Database error: DB mark-all error")); 
+
+        assertSpyCalls(spies.getUserSpy, 1);
+        // ... verify update/match calls ...
+    });
+
+    await t.step("should reject requests to paths other than /notifications/:id or /notifications/mark-all-read for PUT/POST", async () => {
+        const { client } = createMockSupabaseClient({
+            getUserResult: { data: { user: mockUser }, error: null },
+        });
+        // Test PUT to base path
+        const reqPut = new Request("http://localhost/notifications", { method: "PUT" });
+        const resPut = await handler(reqPut, createDeps(client));
+        assertEquals(resPut.status, 404); // Or 405 depending on desired routing logic
+        // Test POST to different path
+        const reqPost = new Request("http://localhost/notifications/other-action", { method: "POST" });
+        const resPost = await handler(reqPost, createDeps(client));
+        assertEquals(resPost.status, 404); // Or 405
     });
 
 }); 

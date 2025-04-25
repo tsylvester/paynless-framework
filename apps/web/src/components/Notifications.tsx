@@ -1,66 +1,50 @@
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Bell, CheckCheck } from 'lucide-react';
 
 import { cn } from '@/lib/utils';
 import { useAuthStore } from '@paynless/store';
 import { useNotificationStore } from '@paynless/store';
-import { api } from '@paynless/api-client';
+// Remove direct API client import if no longer needed for mark read/all read
+// import { api } from '@paynless/api-client'; 
 import type { Notification } from '@paynless/types';
 import { Button } from '@/components/ui/button';
-import {
-    DropdownMenu,
-    DropdownMenuContent,
-    DropdownMenuItem,
-    DropdownMenuLabel,
-    DropdownMenuSeparator,
-    DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
 import { Badge } from '@/components/ui/badge';
 import { logger } from '@paynless/utils';
 import { formatDistanceToNowStrict } from 'date-fns'; // For relative time
+
+import { SimpleDropdown } from '@/components/ui/SimpleDropdown'; // Import the new component
 
 // Define callback type
 // type NotificationHandler = (notification: Notification) => void; // Removed
 
 export const Notifications: React.FC = () => {
-    // --- Temporarily use `as any` for token until store/types are updated --- 
-    const { user, token } = useAuthStore((state: any) => ({ user: state.user, token: state.token }));
+    // Infer type from selector directly
+    const { user, token } = useAuthStore(state => ({ user: state.user, token: state.token }));
     const {
         notifications,
         unreadCount,
-        // fetchNotifications, // Use api.notifications().fetchNotifications directly
-        addNotification, // Keep for potential future store-based Realtime handling
-        // markNotificationRead, // Use api.notifications().mark... directly
-        // markAllNotificationsAsRead, // Use api.notifications().mark... directly
-        // --- Destructure actions from the hook --- 
+        addNotification, 
         markNotificationRead, 
         markAllNotificationsAsRead, 
-    } = useNotificationStore(); // Primarily use for state
+        fetchNotifications, // Get fetch action from store
+        // isLoading, // Optional: Could use loading state from store
+        // error, // Optional: Could use error state from store
+    } = useNotificationStore(); // Use default hook return type
 
     const navigate = useNavigate();
-    const [isOpen, setIsOpen] = useState(false);
+    // const [isOpen, setIsOpen] = useState(false); // Remove state, handled by SimpleDropdown
     // Use ref to hold EventSource instance
     const eventSourceRef = useRef<EventSource | null>(null);
 
     // Fetch initial notifications using the API client
     useEffect(() => {
         if (user) {
-            logger.debug('[Notifications] User found, fetching initial notifications via API client.');
-            // TODO: Ideally, this fetch should be triggered by the store itself
-            // For now, keep it here for component mount logic
-            api.notifications().fetchNotifications().then(response => {
-                if (response.error) {
-                     logger.error("[Notifications] Failed to fetch initial notifications", { error: response.error });
-                } else {
-                    // Let the store handle setting the state after fetch if needed
-                    // useNotificationStore.getState().setNotifications(response.data ?? []);
-                }
-            }).catch(err => {
-                 logger.error("[Notifications] Exception during initial fetch", { err });
-            });
+            logger.debug('[Notifications] User found, triggering fetchNotifications store action.');
+            fetchNotifications(); // Call the action from the store
+            // Store action handles success/error/loading internally
         }
-    }, [user]); // Dependency on user only
+    }, [user, fetchNotifications]); // Add fetchNotifications to dependency array
 
     // --- NEW: useEffect for SSE Connection --- 
     useEffect(() => {
@@ -126,35 +110,27 @@ export const Notifications: React.FC = () => {
     const handleNotificationClick = (notification: Notification) => {
          logger.debug('[Notifications] Notification clicked', { id: notification.id });
         if (!notification.read) {
-             api.notifications().markNotificationAsRead(notification.id).catch(err => {
-                 logger.error(`Failed to mark notification ${notification.id} as read`, { err });
-             });
-            // --- Use destructured action --- 
-            markNotificationRead(notification.id); 
+            // Call store action (already does API call + state update)
+             markNotificationRead(notification.id); 
         }
         const targetPath = notification.data?.['target_path']; 
         if (targetPath && typeof targetPath === 'string') { 
             navigate(targetPath);
         }
-        setIsOpen(false); 
+        // setIsOpen(false); // Removed
     };
 
     const handleMarkReadClick = (e: React.MouseEvent, notificationId: string) => {
         e.stopPropagation(); 
         logger.debug('[Notifications] Mark as read clicked', { id: notificationId });
-        api.notifications().markNotificationAsRead(notificationId).catch(err => {
-             logger.error(`Failed to mark notification ${notificationId} as read from button`, { err });
-         });
-        // --- Use destructured action --- 
+        // Call store action (already does API call + state update)
         markNotificationRead(notificationId); 
     };
 
-    const handleMarkAllReadClick = () => {
+    const handleMarkAllReadClick = (e: React.MouseEvent) => {
+        e.stopPropagation(); 
         logger.debug('[Notifications] Mark all as read clicked');
-        api.notifications().markAllNotificationsAsRead().catch(err => {
-             logger.error(`Failed to mark all notifications as read`, { err });
-         });
-        // --- Use destructured action --- 
+        // Call store action (already does API call + state update)
         markAllNotificationsAsRead(); 
     };
 
@@ -170,12 +146,21 @@ export const Notifications: React.FC = () => {
         return null; 
     }
 
-    console.log('[Notifications] Rendering, isOpen:', isOpen);
+    // console.log('[Notifications] Rendering'); // No longer need isOpen here
 
     return (
-        <DropdownMenu open={isOpen} onOpenChange={setIsOpen} modal={false}>
-            <DropdownMenuTrigger asChild>
-                <Button variant="ghost" size="icon" className="relative rounded-full">
+        <SimpleDropdown
+            align="end"
+            contentClassName="w-80 max-h-[60vh] overflow-y-auto" // Pass specific styles
+            trigger={
+                // The trigger button itself
+                <Button 
+                    variant="ghost" 
+                    size="icon" 
+                    className="relative rounded-full" 
+                    aria-label="Toggle Notifications"
+                    // No onClick needed here, SimpleDropdown wraps it
+                >
                     <Bell className="h-5 w-5" />
                     {unreadCount > 0 && (
                         <Badge
@@ -188,78 +173,78 @@ export const Notifications: React.FC = () => {
                     )}
                      <span className="sr-only">Notifications</span>
                 </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent 
-                align="end" 
-                className="w-80 max-h-[60vh] overflow-y-auto z-[51]"
-            >
-                 <DropdownMenuLabel className="flex justify-between items-center">
-                    <span>Notifications</span>
-                    {unreadCount > 0 && (
-                        <Button
-                            variant="ghost"
-                            size="sm"
-                            className="h-auto px-2 py-1 text-xs"
-                             onClick={handleMarkAllReadClick}
-                             aria-label="Mark all notifications as read"
-                        >
-                             <CheckCheck className="mr-1 h-3 w-3" /> Mark all as read
-                        </Button>
-                    )}
-                </DropdownMenuLabel>
-                <DropdownMenuSeparator />
-                {notifications.length === 0 ? (
-                    <DropdownMenuItem disabled className="text-center text-muted-foreground py-4">
-                        No new notifications
-                    </DropdownMenuItem>
-                ) : (
-                    notifications.map((notification) => {
-                        const timeAgo = notification.created_at
-                            ? formatDistanceToNowStrict(new Date(notification.created_at), { addSuffix: true })
-                            : '';
-                        // Use bracket notation for data access
-                        const subject = notification.data?.['subject'] || 'Untitled';
-                        const message = notification.data?.['message'] || 'System Notification';
-                        const isActionable = !!notification.data?.['target_path'];
-                        const label = `Notification: ${subject}. ${notification.read ? 'Read' : 'Unread'}. Received ${timeAgo}`;
-                        return (
-                            <DropdownMenuItem
-                                key={notification.id}
-                                data-notification-id={notification.id}
-                                aria-label={label}
-                                className={cn(
-                                    'flex cursor-pointer items-start gap-2 p-3',
-                                    !notification.read && 'bg-muted/50'
-                                )}
-                                onClick={() => handleNotificationClick(notification)}
-                            >
-                                {!notification.read && (
-                                    <span className="mt-1 block h-2 w-2 rounded-full bg-blue-500 flex-shrink-0" aria-hidden="true" />
-                                )}
-                                <div className={cn("flex-grow", notification.read && "pl-4")}>
-                                    <p className="text-sm font-medium leading-none mb-1">
-                                         {message}
-                                    </p>
-                                     <p className="text-xs text-muted-foreground">
-                                         {timeAgo}
-                                    </p>
-                                 </div>
-                                 {!notification.read && (
-                                     <Button
-                                         variant="ghost"
-                                         size="sm"
-                                         className="ml-auto h-auto p-1 flex-shrink-0"
-                                         onClick={(e) => handleMarkReadClick(e, notification.id)}
-                                         aria-label={`Mark notification ${notification.id} as read`}
-                                     >
-                                         <CheckCheck className="h-4 w-4" />
-                                     </Button>
-                                 )}
-                            </DropdownMenuItem>
-                        );
-                    })
+            }
+        >
+            {/* Children: The content previously inside the absolute div */}
+            <div className="px-2 py-1.5 text-sm font-medium flex justify-between items-center">
+                <span>Notifications</span>
+                {unreadCount > 0 && (
+                    <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-auto px-2 py-1 text-xs"
+                        onClick={handleMarkAllReadClick} // Pass event
+                        aria-label="Mark all notifications as read"
+                    >
+                        <CheckCheck className="mr-1 h-3 w-3" /> Mark all as read
+                    </Button>
                 )}
-            </DropdownMenuContent>
-        </DropdownMenu>
+            </div>
+            <div className="bg-border -mx-1 my-1 h-px" /> 
+
+            {notifications.length === 0 ? (
+                <div className="px-2 py-4 text-center text-sm text-muted-foreground">
+                    {/* Adjust message based on loading/error state if implemented */} 
+                    No new notifications
+                </div>
+            ) : (
+                notifications.map((notification) => {
+                    const timeAgo = notification.created_at
+                        ? formatDistanceToNowStrict(new Date(notification.created_at), { addSuffix: true })
+                        : '';
+                    const subject = notification.data?.['subject'] || 'Untitled';
+                    const message = notification.data?.['message'] || 'System Notification';
+                    const label = `Notification: ${subject}. ${notification.read ? 'Read' : 'Unread'}. Received ${timeAgo}`;
+                    return (
+                        <div
+                            key={notification.id}
+                            data-notification-id={notification.id}
+                            aria-label={label}
+                            role="menuitem"
+                            className={cn(
+                                'relative flex cursor-pointer items-start gap-2 rounded-sm px-2 py-3 text-sm outline-none select-none',
+                                'hover:bg-primary/10 hover:text-primary',
+                                !notification.read && 'bg-muted/50'
+                            )}
+                            onClick={() => handleNotificationClick(notification)}
+                            tabIndex={-1}
+                        >
+                            {!notification.read && (
+                                <span className="mt-1 block h-2 w-2 rounded-full bg-blue-500 flex-shrink-0" aria-hidden="true" />
+                            )}
+                            <div className={cn("flex-grow", notification.read && "pl-4")}>
+                                <p className="text-sm font-medium leading-none mb-1">
+                                     {message}
+                                </p>
+                                 <p className="text-xs text-muted-foreground">
+                                     {timeAgo}
+                                </p>
+                             </div>
+                             {!notification.read && (
+                                 <Button
+                                     variant="ghost"
+                                     size="sm"
+                                     className="ml-auto h-auto p-1 flex-shrink-0"
+                                     onClick={(e) => handleMarkReadClick(e, notification.id)} // Pass event
+                                     aria-label={`Mark notification ${notification.id} as read`}
+                                 >
+                                     <CheckCheck className="h-4 w-4" />
+                                 </Button>
+                             )}
+                        </div>
+                    );
+                })
+            )}
+        </SimpleDropdown>
     );
 }; 
