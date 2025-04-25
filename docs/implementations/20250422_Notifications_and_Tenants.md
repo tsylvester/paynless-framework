@@ -265,7 +265,22 @@ This document outlines the steps for implementing an in-app notification system 
     *   [X] Implemented `removeMember`
     *   [X] Implemented `deleteOrganization`
 
-### 2.5 State Management (`@paynless/store`)
+### 2.5 Local Development Environment Configuration (CORS)
+
+*   **Context:** Encountered CORS errors when running the frontend (`http://localhost:5173`) against local Supabase Edge Functions (`http://127.0.0.1:54321`) **during testing of new multi-tenancy API endpoints**. The existing `cors-headers.ts` uses `"Access-Control-Allow-Origin": "*"`, which is insecure and potentially incompatible with credentialed requests.
+*   **Goal:** Implement robust and environment-aware CORS handling for all Edge Functions.
+*   [ ] **Define Allowed Origins:** Identify the necessary origins to allow (e.g., `http://localhost:5173` for local dev, `YOUR_PRODUCTION_FRONTEND_URL` for production). Store the production URL securely (e.g., environment variable).
+*   [ ] **Update `supabase/functions/_shared/cors-headers.ts`:**
+    *   Remove static `"Access-Control-Allow-Origin": "*"`.
+    *   Modify `handleCorsPreflightRequest` to check the incoming request `Origin` header against the list of allowed origins. If allowed, respond with the specific origin in the `Access-Control-Allow-Origin` header. Otherwise, reject or respond without CORS headers.
+    *   Modify `createErrorResponse` and `createSuccessResponse` to accept the request `Origin` (or the `Request` object) and dynamically set the `Access-Control-Allow-Origin` header in responses if the origin is allowed.
+*   [ ] **Update Edge Functions:** Ensure all Edge Functions correctly import and use `handleCorsPreflightRequest` at the beginning of their handlers and pass the necessary origin information to `createErrorResponse`/`createSuccessResponse`.
+*   [ ] **Test CORS Locally:** Verify that requests from `http://localhost:5173` to local Edge Functions now succeed without CORS errors.
+*   [ ] **Test CORS Deployed (Staging/Prod):** Verify that deployed functions correctly allow requests from the production frontend URL and reject requests from other origins.
+*   [ ] **Update Docs:** Mark Phase 2.5 tasks as complete in this file.
+*   [ ] **Commit:** `fix(supabase): implement dynamic CORS handling for edge functions`
+
+### 2.6 State Management (`@paynless/store`)
 
 *   [ ] **Tests:** Write unit tests for `organizationStore` slice:
     *   State: `userOrganizations` (list should not include deleted ones), `currentOrganizationId`, `currentOrganizationDetails`, `currentOrganizationMembers`, `isLoading`, `error`.
@@ -273,7 +288,7 @@ This document outlines the steps for implementing an in-app notification system 
     *   Selectors for current org details, memberships, members, current user's role in current org.
 *   [ ] **Implementation:** Create/Update the `organizationStore` slice to handle filtering/removal of soft-deleted orgs from the UI state.
 
-### 2.6 Frontend Components & UI
+### 2.7 Frontend Components & UI
 
 *   [ ] **Organization Creation:**
     *   **Tests:** Test the creation form component (validation, API call mock, visibility option).
@@ -294,7 +309,7 @@ This document outlines the steps for implementing an in-app notification system 
     *   **Tests:** Test UI for accepting invites (e.g., dedicated page `/accept-invite/:token`) or approving requests (e.g., action triggered from notification link leading to member list/modal). Mock API calls.
     *   **Implementation:** Build necessary pages/components. Ensure flow for "Request to Join" assumes user obtained `orgId` via external means (link/manual input) for this phase.
 
-### 2.7 Routing & Access Control (Frontend)
+### 2.8 Routing & Access Control (Frontend)
 
 *   [ ] **Tests:** Write tests for route guards or logic within components:
     *   Ensure `/dashboard/organizations/:orgId/...` routes redirect if org is deleted or user is not an active member.
@@ -305,7 +320,7 @@ This document outlines the steps for implementing an in-app notification system 
     *   Ensure `OrganizationSwitcher` correctly updates state and potentially navigates user.
     *   Apply role-based conditional rendering using `organizationStore` data.
 
-### 2.8 Integration with Existing Features
+### 2.9 Integration with Existing Features
 
 *   [ ] **Identify Impacted Features:** Review existing features (Chat, User Profile, Subscriptions?) to see which need to become organization-scoped.
 *   [ ] **Update Backend:** Modify Supabase queries/RLS for identified features to include `WHERE organization_id = current_org_id`. Add `organization_id` columns via migration where needed. Test these RLS changes.
@@ -313,7 +328,7 @@ This document outlines the steps for implementing an in-app notification system 
 *   [ ] **Update Frontend:** Modify components using these features to pass the `currentOrganizationId` from the store to API calls. Test these components to ensure they filter data correctly based on the selected org.
 *   [ ] **Update Existing Tests:** Modify tests for impacted features to mock and account for the `organizationId` parameter and context.
 
-### 2.9 Checkpoint 2: Multi-Tenancy Complete
+### 2.10 Checkpoint 2: Multi-Tenancy Complete
 
 *   [ ] **Run Tests:** Execute all tests (`pnpm test`). Ensure they pass.
 *   [ ] **Build App:** Run `pnpm build`. Ensure it completes successfully.

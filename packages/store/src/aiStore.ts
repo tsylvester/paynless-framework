@@ -100,25 +100,40 @@ export const useAiStore = create<AiStore>()(
 
                 const token = useAuthStore.getState().session?.access_token;
 
-                const _addOptimisticUserMessage = (msgContent: string): string => {
+                // --- Refactored Helper --- 
+                // Now accepts optional explicitChatId
+                const _addOptimisticUserMessage = (msgContent: string, explicitChatId?: string | null): string => {
                     const tempId = `temp-user-${Date.now()}`;
+                    const existingChatId = get().currentChatId; // Get current state ID
+                    // Use explicit ID if provided, else fallback to existing or temp string
+                    const chatIdToUse = (typeof explicitChatId === 'string' && explicitChatId) 
+                                        ? explicitChatId 
+                                        : (existingChatId || `temp-chat-${Date.now()}`); // Fallback to new temp ID
+                    
                     const userMsg: ChatMessage = {
-                         id: tempId, chat_id: existingChatId || 'temp-chat', user_id: 'current-user', 
-                         role: 'user', content: msgContent, ai_provider_id: null, system_prompt_id: null,
-                         token_usage: null, created_at: new Date().toISOString(),
+                         id: tempId, 
+                         chat_id: chatIdToUse, // Use determined chat ID
+                         user_id: useAuthStore.getState().user?.id || 'optimistic-user', 
+                         role: 'user', 
+                         content: msgContent, 
+                         status: 'pending', // Add status
+                         ai_provider_id: null, 
+                         system_prompt_id: null,
+                         token_usage: null, 
+                         created_at: new Date(parseInt(tempId.split('-')[2])).toISOString(),
                     };
-                    // Use plain set without immer
                     set(state => ({ 
                         currentChatMessages: [...state.currentChatMessages, userMsg]
                     }));
-                    logger.info('[sendMessage] Added optimistic user message', { id: tempId });
+                    logger.info('[sendMessage] Added optimistic user message', { id: tempId, chatId: chatIdToUse });
                     return tempId;
                 };
+                // --- End Refactored Helper ---
 
-                // Use plain set without immer
                 set({ isLoadingAiResponse: true, aiError: null });
 
-                const tempUserMessageId = _addOptimisticUserMessage(message);
+                // Call helper without explicit chatId - it will use current state or temp
+                const tempUserMessageId = _addOptimisticUserMessage(message); 
 
                 const effectiveChatId = inputChatId ?? existingChatId ?? undefined;
                 const requestData: ChatApiRequest = { message, providerId, promptId, chatId: effectiveChatId };
@@ -351,29 +366,45 @@ export const useAiStore = create<AiStore>()(
                 localStorage.removeItem('pendingAction');
                 logger.info('[aiStore] Removed pending action from localStorage.');
 
-                const tempId = `temp-replay-${Date.now()}`;
-                set({ isLoadingAiResponse: true, aiError: null });
-
-                // --- BEGIN ADD OPTIMISTIC UPDATE ---
-                const userMessageContent = action?.body?.['message'] as string ?? '[Message content not found]';
-                const optimisticUserMessage: ChatMessage = {
-                    id: tempId,
-                    role: 'user',
-                    content: userMessageContent,
-                    chat_id: (typeof action?.body?.['chatId'] === 'string' ? action.body['chatId'] : undefined),
-                    user_id: useAuthStore.getState().user?.id || 'unknown-replay-user',
-                    status: 'pending', // Set status to pending
-                    created_at: new Date(parseInt(tempId.split('-')[2])).toISOString(),
-                    ai_provider_id: null,
-                    system_prompt_id: null,
-                    token_usage: null,
+                // --- Refactored Helper (same as above, defined once in scope) --- 
+                const _addOptimisticUserMessage = (msgContent: string, explicitChatId?: string | null): string => {
+                    const tempId = `temp-user-${Date.now()}`;
+                    const existingChatId = get().currentChatId; // Get current state ID
+                    // Use explicit ID if provided, else fallback to existing or temp string
+                    const chatIdToUse = (typeof explicitChatId === 'string' && explicitChatId) 
+                                        ? explicitChatId 
+                                        : (existingChatId || `temp-chat-replay-${Date.now()}`); // Unique temp ID for replay
+                    
+                    const userMsg: ChatMessage = {
+                         id: tempId, 
+                         chat_id: chatIdToUse, // Use determined chat ID
+                         user_id: useAuthStore.getState().user?.id || 'unknown-replay-user', 
+                         role: 'user', 
+                         content: msgContent, 
+                         status: 'pending', // Add status
+                         ai_provider_id: null, 
+                         system_prompt_id: null,
+                         token_usage: null, 
+                         created_at: new Date(parseInt(tempId.split('-')[2])).toISOString(),
+                    };
+                    set(state => ({ 
+                        currentChatMessages: [...state.currentChatMessages, userMsg]
+                    }));
+                    logger.info('[replayAction] Added optimistic user message', { id: tempId, chatId: chatIdToUse });
+                    return tempId;
                 };
+                 // --- End Refactored Helper ---
 
-                set(state => ({
-                    currentChatMessages: [...state.currentChatMessages, optimisticUserMessage]
-                }));
-                logger.info('[aiStore] Added optimistic pending message for replay.', { tempId });
-                // --- END ADD OPTIMISTIC UPDATE ---
+                 set({ isLoadingAiResponse: true, aiError: null });
+
+                 // --- BEGIN ADD OPTIMISTIC UPDATE (using helper) ---
+                 const userMessageContent = action?.body?.['message'] as string ?? '[Message content not found]';
+                 // Extract chatId from the action, which might be string or null/undefined
+                 const chatIdFromAction = (typeof action?.body?.['chatId'] === 'string' ? action.body['chatId'] : null);
+                 // Call the refactored helper, passing the chatId from the action
+                 const tempId = _addOptimisticUserMessage(userMessageContent, chatIdFromAction);
+                 logger.info('[aiStore] Added optimistic pending message for replay via helper.', { tempId });
+                 // --- END ADD OPTIMISTIC UPDATE ---
 
                 try {
                     const response: ApiResponse<ChatMessage> = await api.post(

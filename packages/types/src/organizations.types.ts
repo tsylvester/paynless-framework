@@ -29,3 +29,30 @@ export type OrganizationMemberWithProfile = OrganizationMember & {
 // export type OrganizationMemberWithProfile = OrganizationMember & {
 //   profile: Database['public']['Tables']['user_profiles']['Row'] | null;
 // }; 
+
+// --- Zustand Store Types ---
+
+// Define the state structure for the organization store
+export interface OrganizationState {
+  userOrganizations: Organization[];
+  currentOrganizationId: string | null;
+  currentOrganizationDetails: Organization | null;
+  currentOrganizationMembers: OrganizationMemberWithProfile[];
+  isLoading: boolean;
+  error: string | null; // Store error messages as strings
+}
+
+// Define the actions interface for the organization store
+export interface OrganizationActions {
+  fetchUserOrganizations: () => Promise<void>;
+  setCurrentOrganizationId: (orgId: string | null) => void;
+  fetchOrganizationDetails: (orgId: string) => Promise<void>;
+  fetchCurrentOrganizationMembers: () => Promise<void>; // Fetches for currentOrganizationId
+  softDeleteOrganization: (orgId: string) => Promise<boolean>; // Returns success status
+  // Internal helper actions might not need to be exported if not used outside the store
+  // _setError: (error: string | null) => void;
+  // _setLoading: (loading: boolean) => void;
+}
+
+// Combined store type (might be useful for consumers)
+export type OrganizationStoreType = OrganizationState & OrganizationActions; 

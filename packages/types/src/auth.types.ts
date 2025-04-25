@@ -1,6 +1,9 @@
 import type { Database } from '@paynless/db-types';
 import { NavigateFunction } from './navigation.types'; // Import NavigateFunction
 
+// Export the DB enum type under the alias UserRole for easier consumption
+export type UserRole = Database['public']['Enums']['user_role'];
+
 // Keep User interface for combined frontend state, but align properties
 // and derive role from DB enum.
 export interface User {
@@ -10,8 +13,8 @@ export interface User {
   // Properties typically from user_profiles table
   first_name?: string | null; // From Database['public']['Tables']['user_profiles']['Row']['first_name']
   last_name?: string | null; // From Database['public']['Tables']['user_profiles']['Row']['last_name']
-  // Role from DB enum
-  role: Database['public']['Enums']['user_role']; // Use DB Enum
+  // Use the exported alias
+  role: UserRole; 
   // Timestamps might come from either or be app-specific
   created_at?: string;
   updated_at?: string;
@@ -25,11 +28,14 @@ export type UserProfileUpdate = {
   last_name?: string | null; // Match DB nullability
 }
 
+// Define UserProfile using the DB type for consistency
+export type UserProfile = Database['public']['Tables']['user_profiles']['Row'];
+
 export interface AuthStore {
   setUser: (user: User | null) => void // Uses combined User type
   setSession: (session: Session | null) => void
   // Use DB type for profile state
-  setProfile: (profile: Database['public']['Tables']['user_profiles']['Row'] | null) => void
+  setProfile: (profile: UserProfile | null) => void // Uses UserProfile alias
   setIsLoading: (isLoading: boolean) => void
   setError: (error: Error | null) => void
   setNavigate: (navigateFn: NavigateFunction) => void
@@ -37,14 +43,14 @@ export interface AuthStore {
   register: (email: string, password: string) => Promise<User | null> // Returns combined User
   logout: () => Promise<void>
   // updateProfile returns the updated DB profile row
-  updateProfile: (profileData: UserProfileUpdate) => Promise<Database['public']['Tables']['user_profiles']['Row'] | null>
+  updateProfile: (profileData: UserProfileUpdate) => Promise<UserProfile | null> // Uses UserProfile alias
   updateEmail: (email: string) => Promise<boolean>
   clearError: () => void
   // State properties
   session: Session | null
   user: User | null // Uses combined User type
   // Use DB type for profile state
-  profile: Database['public']['Tables']['user_profiles']['Row'] | null
+  profile: UserProfile | null // Uses UserProfile alias
   isLoading: boolean
   error: Error | null
   navigate: NavigateFunction | null

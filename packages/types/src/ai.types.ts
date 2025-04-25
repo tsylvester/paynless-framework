@@ -24,7 +24,9 @@ export type Chat = Database['public']['Tables']['chats']['Row'];
  * Derived from the `chat_messages` table.
  */
 export type ChatMessage = Database['public']['Tables']['chat_messages']['Row'] & {
-  status?: 'pending' | 'sent' | 'error'; // Keep application-level status enrichment
+  // Keep application-level status enrichment if needed by UI directly
+  // Note: status was previously added to LocalChatMessage, consider if it belongs here
+  status?: 'pending' | 'sent' | 'error'; 
 };
 
 // --- Application/API/Adapter/Store Specific Types ---

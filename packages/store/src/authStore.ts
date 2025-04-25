@@ -3,10 +3,10 @@ import {
   AuthStore,
   User,
   Session,
-  UserProfile,
   UserProfileUpdate,
-  UserRole,
-  AuthResponse
+  AuthResponse,
+  UserProfile,
+  UserRole
 } from '@paynless/types'
 import { NavigateFunction } from '@paynless/types'
 import { logger } from '@paynless/utils'
@@ -17,7 +17,7 @@ import { SupabaseClient, Session as SupabaseSession, User as SupabaseUser } from
 export const useAuthStore = create<AuthStore>()((set, get) => ({
       user: null,
       session: null,
-      profile: null,
+      profile: null as UserProfile | null,
       isLoading: true,
       error: null,
       navigate: null as NavigateFunction | null,
@@ -304,10 +304,10 @@ const mapSupabaseUser = (supabaseUser: SupabaseUser | null): User | null => {
   if (!supabaseUser) return null;
   return {
     id: supabaseUser.id,
-    role: (supabaseUser.role as UserRole) ?? 'authenticated',
-    email: supabaseUser.email ?? '',
+    email: supabaseUser.email,
+    role: supabaseUser.role as UserRole,
     created_at: supabaseUser.created_at,
-    updated_at: supabaseUser.updated_at,
+    updated_at: supabaseUser.updated_at ?? supabaseUser.created_at,
   };
 };
 

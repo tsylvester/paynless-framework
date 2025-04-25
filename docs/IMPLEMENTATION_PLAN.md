@@ -53,7 +53,10 @@
 *   [ ] Notifications - system wide and user specific // Now being implemented
 *   [ ] Add dark mode logo 
 *   [ ] User avatars and banners 
-
+*   [ ] Fix the types sync script
+*   [ ] Fix the UI tests 
+*   [ ] DRY const _addOptimisticUserMessage in aiStore.ts
+*   [ ] Sanitize packages/types, _shared/types.ts, and db_types.ts
 
 **Chat Improvements**
 *   [ ] Fix homepage to load default choices correctly again

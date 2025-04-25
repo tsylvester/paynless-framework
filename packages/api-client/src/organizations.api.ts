@@ -1,5 +1,5 @@
 import { ApiClient } from './apiClient'; // <<< Import base ApiClient
-import { ApiResponse, Organization, OrganizationInsert, OrganizationUpdate } from '@paynless/types'; // <<< Import types
+import { ApiResponse, Organization, OrganizationInsert, OrganizationUpdate, OrganizationMemberWithProfile } from '@paynless/types'; // <<< Import types
 
 export class OrganizationApiClient {
   // Store the main ApiClient instance
@@ -48,7 +48,7 @@ export class OrganizationApiClient {
    * @param userId - (Potentially redundant if backend uses auth context) The ID of the user.
    * @returns An ApiResponse containing an array of organization details or an error.
    */
-  async listUserOrganizations(userId: string): Promise<ApiResponse<Organization[]>> {
+  async listUserOrganizations(_userId: string): Promise<ApiResponse<Organization[]>> {
     // userId might not be needed if the backend endpoint implicitly uses the authenticated user
     // Use the injected ApiClient's get method
     const response = await this.client.get<Organization[]>('organizations');
