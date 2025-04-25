@@ -166,6 +166,7 @@ export interface MockSupabaseDataConfig {
             select?: { data: any[] | null; error?: any | null; count?: number | null; status?: number; statusText?: string } | ((state: MockQueryBuilderState) => Promise<{ data: any[] | null; error?: any | null; count?: number | null; status?: number; statusText?: string }>);
             insert?: { data: any[] | null; error?: any | null; count?: number | null; status?: number; statusText?: string } | ((state: MockQueryBuilderState) => Promise<{ data: any[] | null; error?: any | null; count?: number | null; status?: number; statusText?: string }>);
             update?: { data: any[] | null; error?: any | null; count?: number | null; status?: number; statusText?: string } | ((state: MockQueryBuilderState) => Promise<{ data: any[] | null; error?: any | null; count?: number | null; status?: number; statusText?: string }>);
+            upsert?: { data: any[] | null; error?: any | null; count?: number | null; status?: number; statusText?: string } | ((state: MockQueryBuilderState) => Promise<{ data: any[] | null; error?: any | null; count?: number | null; status?: number; statusText?: string }>);
             delete?: { data: any[] | null; error?: any | null; count?: number | null; status?: number; statusText?: string } | ((state: MockQueryBuilderState) => Promise<{ data: any[] | null; error?: any | null; count?: number | null; status?: number; statusText?: string }>);
         };
     };
@@ -206,6 +207,7 @@ export function createMockSupabaseClient(
         match: Spy<any>; // Add match spy definition
         order: Spy<any>;
         returns: Spy<any>; // <-- Add returns method
+        upsert: Spy<any>; // <-- Add upsert method
         single: Spy<any>;
         maybeSingle: Spy<any>; // <-- Add maybeSingle method (assuming it's used)
         then: Spy<any>; // Keep 'then' for compatibility with some existing mocks
@@ -288,6 +290,17 @@ export function createMockSupabaseClient(
             console.log(`[Mock QB ${tableName}] .order() called`);
             // Logic to store order state could be added if needed
             return mockQueryBuilder; 
+        });
+
+        // Add .upsert() mock - mirrors update for now
+        mockQueryBuilder.upsert = spy((data: any, options?: any) => {
+            console.log(`[Mock QB ${tableName}] .upsert() called with:`, data, options);
+             _queryBuilderState.operation = 'update'; // Treat as update for mock config
+            _queryBuilderState.updateData = data;
+            // Store options if needed for resolveQuery logic
+            // _queryBuilderState.upsertOptions = options; 
+            _queryBuilderState.selectColumns = null;
+            return mockQueryBuilder; // Return self for chaining .select() etc.
         });
 
         // --- Terminal Methods / Resolution Logic ---
