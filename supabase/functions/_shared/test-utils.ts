@@ -399,33 +399,60 @@ export function createMockSupabaseClient(
             }
         });
 
-        // Mock .single()
-        // This method *should* reject if the query resolution resulted in an error object.
+        // Modifier to get a single row
         mockQueryBuilder.single = spy(async () => {
-             if (config.simulateDbError) return { data: null, error: config.simulateDbError }; // Keep simple error override
-             console.log(`[Mock QB ${tableName}] .single() called. Resolving query...`);
-             try {
-                const result = await resolveQuery();
-                // .single() expects { data: object | null, error: Error | null }
-                if (result.error) {
-                    console.log(`[Mock QB ${tableName}] Query (for single) resolved with DB error. Rejecting promise.`);
-                    // Unlike .then(), .single() should REJECT if the underlying query had an error.
-                     const errorMsg = typeof result.error === 'object' && result.error !== null && 'message' in result.error 
-                                       ? String(result.error.message) 
-                                       : String(result.error ?? 'Unknown mock DB error in .single');
-                     throw new Error(errorMsg); // Throw error to reject the promise
-                } else if (result.data && result.data.length > 1) {
-                    // Simulate PostgREST error for multiple rows found
-                    console.warn(`[Mock QB ${tableName}] .single() found multiple rows. Simulating PostgREST error.`);
-                    throw new Error('Multiple rows returned for single row query'); // Throw PGRST116
-                } else {
-                    console.log(`[Mock QB ${tableName}] Query (for single) resolved successfully.`);
-                    return { data: result.data?.[0] ?? null, error: null }; // Resolve successfully
+            console.log(`[Mock QB ${tableName}] .single() called. Resolving query...`);
+            // Define a minimal mock PostgrestError for simulation ONLY for row count issues
+            class MockPostgrestErrorPGRST116 extends Error { // Rename for clarity
+                details: string | null;
+                hint: string | null;
+                code: string;
+                status: number;
+                statusText: string;
+                    constructor(message: string, hint: string) {
+                    super(message);
+                    this.name = 'MockPostgrestErrorPGRST116';
+                    this.status = 406;
+                    this.statusText = "Not Acceptable";
+                    this.details = null;
+                    this.hint = hint;
+                    this.code = "PGRST116";
                 }
-            } catch (e) {
-                console.error(`[Mock QB ${tableName}] Error during query resolution or processing in .single():`, e);
-                // Ensure we throw an actual Error instance
-                throw e instanceof Error ? e : new Error(String(e ?? 'Unknown error in .single()'));
+            }
+            
+            try {
+                // Step 1: Resolve the underlying query
+                const { data, error, status, statusText, count } = await resolveQuery(); // Include count/status if needed
+                
+                // --- FIX: Return error object if underlying query failed --- 
+                if (error) {
+                    console.log(`[Mock QB ${tableName}] Query (for single) resolved with DB error. Returning error object.`);
+                    // Mimic real client: return the error object, don't throw here
+                    return { data: null, error: error, status: status ?? 500, statusText: statusText ?? "Internal Server Error", count: 0 }; 
+                }
+                
+                // Step 2: If query succeeded, check row count for .single()
+                
+                // --- FIX: Throw specific error if no data found --- 
+                if (!data || data.length === 0) {
+                     console.warn(`[Mock QB ${tableName}] Query (for single) resolved with no data. Throwing MockPostgrestErrorPGRST116.`);
+                     throw new MockPostgrestErrorPGRST116("JSON object requested, multiple (or no) rows returned", "Results contain 0 rows");
+                }
+                
+                // --- FIX: Throw specific error if multiple rows found ---
+                if (data.length > 1) {
+                    console.warn(`[Mock QB ${tableName}] Query (for single) resolved with multiple rows (${data.length}). Throwing MockPostgrestErrorPGRST116.`);
+                    throw new MockPostgrestErrorPGRST116("JSON object requested, multiple (or no) rows returned", `Results contain ${data.length} rows`);
+                }
+                
+                // If query succeeded AND exactly one row was found, return it
+                console.log(`[Mock QB ${tableName}] Query (for single) resolved successfully with one row.`);
+                return { data: data[0], error: null, status: status ?? 200, statusText: statusText ?? "OK", count: 1 }; 
+            } catch (err) {
+                 // Catch errors thrown by the row count checks or resolveQuery itself
+                console.error(`[Mock QB ${tableName}] Error originated or caught within .single() implementation:`, err);
+                 // Re-throw the error 
+                throw err; 
             }
         });
 

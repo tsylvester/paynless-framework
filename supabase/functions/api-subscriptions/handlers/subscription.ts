@@ -88,14 +88,20 @@ export const cancelSubscription = async (
     return updatedLocalSub;
 
   } catch (err) {
-    // Fix: Handle/re-throw HandlerError or wrap other errors
+    // If we caught a specific PGRST116 error from .single(), treat it as 404
+    if (err instanceof Error && 'code' in err && (err as any).code === 'PGRST116') {
+      console.error("Caught PGRST116 from .single(), throwing 404 HandlerError:", err);
+      throw new HandlerError("Subscription not found or access denied", 404, err);
+    }
+    // If it's already a HandlerError, re-throw it
     if (err instanceof HandlerError) {
       throw err;
     }
+    // Otherwise, wrap other errors
     console.error("Error cancelling subscription:", err);
     const message = err instanceof Error ? err.message : String(err);
     const status = (err instanceof Stripe.errors.StripeError) ? (err.statusCode ?? 500) : 500;
-    throw new HandlerError(message, status, err);
+    throw new HandlerError(message, status, err instanceof Error ? err : undefined);
   }
 };
 
@@ -162,13 +168,19 @@ export const resumeSubscription = async (
     return updatedLocalSub;
 
   } catch (err) {
-    // Fix: Handle/re-throw HandlerError or wrap other errors
+    // If we caught a specific PGRST116 error from .single(), treat it as 404
+    if (err instanceof Error && 'code' in err && (err as any).code === 'PGRST116') {
+      console.error("Caught PGRST116 from .single(), throwing 404 HandlerError:", err);
+      throw new HandlerError("Subscription not found or access denied", 404, err);
+    }
+    // If it's already a HandlerError, re-throw it
     if (err instanceof HandlerError) {
       throw err;
     }
+    // Otherwise, wrap other errors
     console.error("Error resuming subscription:", err);
     const message = err instanceof Error ? err.message : String(err);
     const status = (err instanceof Stripe.errors.StripeError) ? (err.statusCode ?? 500) : 500;
-    throw new HandlerError(message, status, err);
+    throw new HandlerError(message, status, err instanceof Error ? err : undefined);
   }
 };
