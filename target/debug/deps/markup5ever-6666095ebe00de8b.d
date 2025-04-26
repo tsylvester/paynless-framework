@@ -1,0 +1,15 @@
+C:\Users\Tim\paynless-framework\target\debug\deps\libmarkup5ever-6666095ebe00de8b.rmeta: C:\Users\Tim\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\markup5ever-0.11.0\lib.rs C:\Users\Tim\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\markup5ever-0.11.0\data\mod.rs C:\Users\Tim\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\markup5ever-0.11.0\interface\mod.rs C:\Users\Tim\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\markup5ever-0.11.0\interface\tree_builder.rs C:\Users\Tim\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\markup5ever-0.11.0\serialize.rs C:\Users\Tim\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\markup5ever-0.11.0\util\buffer_queue.rs C:\Users\Tim\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\markup5ever-0.11.0\util\smallcharset.rs C:\Users\Tim\paynless-framework\target\debug\build\markup5ever-885429be7ff092c3\out/generated.rs C:\Users\Tim\paynless-framework\target\debug\build\markup5ever-885429be7ff092c3\out/named_entities.rs
+
+C:\Users\Tim\paynless-framework\target\debug\deps\markup5ever-6666095ebe00de8b.d: C:\Users\Tim\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\markup5ever-0.11.0\lib.rs C:\Users\Tim\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\markup5ever-0.11.0\data\mod.rs C:\Users\Tim\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\markup5ever-0.11.0\interface\mod.rs C:\Users\Tim\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\markup5ever-0.11.0\interface\tree_builder.rs C:\Users\Tim\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\markup5ever-0.11.0\serialize.rs C:\Users\Tim\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\markup5ever-0.11.0\util\buffer_queue.rs C:\Users\Tim\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\markup5ever-0.11.0\util\smallcharset.rs C:\Users\Tim\paynless-framework\target\debug\build\markup5ever-885429be7ff092c3\out/generated.rs C:\Users\Tim\paynless-framework\target\debug\build\markup5ever-885429be7ff092c3\out/named_entities.rs
+
+C:\Users\Tim\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\markup5ever-0.11.0\lib.rs:
+C:\Users\Tim\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\markup5ever-0.11.0\data\mod.rs:
+C:\Users\Tim\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\markup5ever-0.11.0\interface\mod.rs:
+C:\Users\Tim\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\markup5ever-0.11.0\interface\tree_builder.rs:
+C:\Users\Tim\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\markup5ever-0.11.0\serialize.rs:
+C:\Users\Tim\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\markup5ever-0.11.0\util\buffer_queue.rs:
+C:\Users\Tim\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\markup5ever-0.11.0\util\smallcharset.rs:
+C:\Users\Tim\paynless-framework\target\debug\build\markup5ever-885429be7ff092c3\out/generated.rs:
+C:\Users\Tim\paynless-framework\target\debug\build\markup5ever-885429be7ff092c3\out/named_entities.rs:
+
+# env-dep:OUT_DIR=C:\\Users\\Tim\\paynless-framework\\target\\debug\\build\\markup5ever-885429be7ff092c3\\out

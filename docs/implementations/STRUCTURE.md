@@ -1,74 +1,87 @@
 # Project Structure: Decentralized Content Distribution System (Synthesized)
 
-This document outlines the high-level modular architecture of the decentralized content distribution system, as defined by the synthesized plan in `docs/implementations/3. synthesis/synthesis.gemini.md`. It reflects a design focused on **modularity, testability, security, and maintainability**.
+This document outlines the high-level modular architecture of the decentralized content distribution system, reflecting the NFT-gated access model defined in `docs/protocols/key_management.md`. It reflects a design focused on **modularity, testability, security, and maintainability**.
 
 ## Guiding Architectural Principles
 
-*   **Modularity:** The system is composed of loosely coupled Rust crates/modules with clearly defined APIs (using Rust traits).
-*   **Layered Approach:** Functionality is layered, starting with core cryptography and networking, building up to application-specific logic and UI.
-*   **Security by Design:** Security considerations permeate all layers, informed by threat modeling.
-*   **Testability:** Modules are designed to be testable in isolation (unit tests) and in combination (integration tests).
-*   **Explicit Interfaces:** Communication between frontend (Tauri/Web) and backend (Rust) occurs through a well-defined bridge (`tauri-bridge`).
+*   **Modularity:** The system is composed of loosely coupled Rust crates/modules, smart contracts, and potentially external services/protocols with clearly defined APIs.
+*   **Layered Approach:** Functionality is layered: Core Crypto -> Blockchain/P2P -> Application Logic -> UI.
+*   **Security by Design:** Security considerations permeate all layers, informed by threat modeling, especially around key management and access control.
+*   **Testability:** Modules are designed to be testable in isolation and in combination.
+*   **Explicit Interfaces:** Communication between frontend and backend occurs through `tauri-bridge`. Blockchain interactions are managed via `blockchain-adapter`. Decryption access is controlled via the Decryption Oracle.
+
+## Blockchain Components (Smart Contracts)
+
+*   **Content Registry Contract:**
+    *   **Responsibility:** Stores the immutable mapping between a `Content ID` and its associated metadata, primarily the `Encrypted Content Hash/Pointer` and the `NFT Key Contract Address`.
+    *   **Interface:** Allows creators to register content, allows clients to query content metadata by `Content ID`.
+*   **NFT Key Contract(s):**
+    *   **Responsibility:** Implements the NFT standard (e.g., ERC-721) representing transferable decryption rights for specific content. Manages ownership of `Token ID`s.
+    *   **Interface:** Standard NFT functions (`ownerOf`, `transferFrom`, etc.), potentially with metadata linking `Token ID` to `Content ID` (depending on design). Creators interact to mint new keys.
 
 ## Core System Modules (Rust Backend)
 
-The backend is primarily composed of the following Rust modules (likely corresponding to crates):
-
 1.  **`core-crypto`:**
-    *   **Responsibility:** Handles all fundamental cryptographic operations.
-    *   **Sub-components:** Symmetric encryption/decryption (e.g., AES-GCM, ChaCha20-Poly1305), hashing (e.g., SHA3, Blake3), digital signatures (e.g., Ed25519), key exchange (e.g., X25519), key derivation (Master -> Derived), "Transactable Key" token generation/validation logic. Secure random number generation.
-    *   **Dependencies:** Low-level crypto libraries (e.g., `RustCrypto` suite, `ring`, `libsodium-sys`).
+    *   **Responsibility:** Handles all fundamental cryptographic operations (Hashing, Symmetric Encryption, Signatures, KDF). **Does NOT handle token validation logic anymore.**
+    *   **Sub-components:** (As before, minus token logic) Symmetric encryption/decryption, hashing, digital signatures, key exchange, key derivation. Secure random number generation.
+    *   **Dependencies:** Low-level crypto libraries.
 
 2.  **`p2p-network`:**
-    *   **Responsibility:** Manages all peer-to-peer network interactions.
-    *   **Sub-components:** Peer identity management, peer discovery (DHT - Kademlia, bootstrap), connection management, NAT traversal (STUN/TURN integration), P2P messaging protocol implementation, core slice transfer logic, **ordered streaming protocol implementation**, seeder advertisement/serving logic. Potentially includes reputation/Sybil resistance mechanisms at the network level.
-    *   **Dependencies:** `libp2p`, `core-crypto` (for signing messages, potentially encrypting P2P traffic), `storage-layer` (for peer info caching).
+    *   **Responsibility:** Manages P2P interactions for slice discovery and transfer.
+    *   **Sub-components:** (As before) Peer discovery, connection management, slice transfer protocol, seeder logic. **Does NOT perform access validation based on tokens.** Seeders serve slices upon request; validation happens before download initiation via the Oracle mechanism.
+    *   **Dependencies:** `libp2p`, `core-crypto`, `storage-layer`.
 
 3.  **`blockchain-adapter`:**
-    *   **Responsibility:** Abstracts interactions with the chosen blockchain/L2 ledger.
-    *   **Sub-components:** Wallet management (key generation/storage interface - delegates actual storage), transaction construction/signing/submission, event listening/parsing, smart contract interaction API (calling functions, decoding results), handling chain-specific details (RPC endpoints, gas estimation, nonce management). Adapts to the specific ledger chosen in Phase 0.
-    *   **Dependencies:** Blockchain client libraries (e.g., `ethers-rs`, `web3`, specific L2 SDKs), `core-crypto` (for signing transactions), `serde` (for data serialization).
+    *   **Responsibility:** Abstracts all interactions with the chosen blockchain/L2 ledger.
+    *   **Sub-components:** Wallet management interface, transaction construction/signing/submission, **interaction with Content Registry contract (reading metadata)**, **interaction with NFT Key contracts (querying `ownerOf`)**, event listening/parsing.
+    *   **Dependencies:** Blockchain client libraries, `core-crypto`, `serde`.
 
 4.  **`payment-protocol`:**
-    *   **Responsibility:** Implements the chosen microtransaction mechanism.
-    *   **Sub-components:** Logic for initiating/validating/settling payments (potentially state channels, L2-specific interactions, etc.), linking payments to content access (slices/time), implementing the Creator/Seeder payment split.
-    *   **Dependencies:** `blockchain-adapter`, `p2p-network` (for payment-related P2P messages), `core-crypto`.
+    *   **Responsibility:** Implements payment mechanisms, potentially linked to NFT acquisition or access fees.
+    *   **Sub-components:** Payment initiation/validation/settlement logic. May interact with `blockchain-adapter` for on-chain payments or NFT transfers.
+    *   **Dependencies:** `blockchain-adapter`, `p2p-network` (potentially), `core-crypto`.
 
 5.  **`content-manager`:**
-    *   **Responsibility:** Handles the lifecycle of content from ingestion to consumption.
-    *   **Sub-components:** File chunking/reassembly logic, integration with `core-crypto` for encryption/decryption, Merkle tree generation/verification for content integrity, Meta Hash generation, management of download/upload state.
-    *   **Dependencies:** `core-crypto`, `storage-layer` (for state persistence).
+    *   **Responsibility:** Handles content lifecycle (chunking, encryption, reassembly).
+    *   **Sub-components:** File chunking/reassembly, integration with `core-crypto` for encryption/decryption, Merkle tree generation, managing local download/upload state. **Does NOT generate access tokens.**
+    *   **Dependencies:** `core-crypto`, `storage-layer`.
 
 6.  **`storage-layer`:**
-    *   **Responsibility:** Provides reliable persistence for application state.
-    *   **Sub-components:** Interface for storing/retrieving cryptographic keys (interfacing with secure platform storage where possible), wallet state, download/upload progress, seeding status, peer information cache, application configuration. Uses an embedded database (e.g., `sled`, `RocksDB`) or platform-specific storage.
-    *   **Dependencies:** Database libraries, potentially OS-specific APIs for secure storage.
+    *   **Responsibility:** Provides reliable persistence for application state, especially the **user's master seed/wallet keys**.
+    *   **Sub-components:** Interface for secure key storage (prioritizing hardware/OS), wallet state, download/upload progress, config, potentially cached blockchain data or user NFT inventory.
+    *   **Dependencies:** Database libraries, OS APIs.
 
-7.  **`social-features`:**
-    *   **Responsibility:** Implements social interaction logic (reactions, follows, etc.).
-    *   **Sub-components:** Data storage/retrieval logic for social metadata (using `storage-layer` or potentially `blockchain-adapter` for on-chain elements), feed generation logic (if applicable).
+7.  **`social-features`:** (Largely unchanged)
+    *   **Responsibility:** Implements social interaction logic.
     *   **Dependencies:** `storage-layer`, `blockchain-adapter`.
 
 8.  **`tauri-bridge`:**
-    *   **Responsibility:** Mediates communication between the Tauri frontend and the Rust backend modules.
-    *   **Sub-components:** Definition of Tauri commands (invoked from frontend), event emission logic (Rust -> frontend), state synchronization mechanisms, serialization/deserialization of data crossing the boundary.
-    *   **Dependencies:** `tauri`, all other backend modules it needs to expose functionality from, `serde`.
+    *   **Responsibility:** Mediates communication between frontend and backend.
+    *   **Sub-components:** Definition of Tauri commands (e.g., initiate decryption attempt, sign challenge), event emission, state sync.
+    *   **Dependencies:** `tauri`, other backend modules, `serde`.
+
+## Decryption Oracle (Logical Component)
+
+*   **Responsibility:** Gates access to the Symmetric Content Key (SCK) or performs decryption based on live verification of NFT ownership.
+*   **Interface:** Accepts proof of NFT ownership (e.g., signed challenge, wallet address, token ID, contract address); returns SCK temporarily or performs decryption upon successful verification. Interacts with `blockchain-adapter` to query NFT ownership. Securely manages access to SCKs.
+*   **Implementation:** Can be a decentralized protocol, federated service, or creator-hosted service (decision impacts overall architecture). *This component requires detailed design.*
 
 ## Frontend (Tauri Application)
 
-*   **Responsibility:** Provides the graphical user interface (GUI) and interacts with the Rust backend via the `tauri-bridge`.
-*   **Structure:** Standard web application structure (HTML, CSS, JavaScript/TypeScript) using a chosen framework (e.g., React, Vue, Svelte).
-*   **Components:** UI views for content discovery, playback/viewing, wallet management, content upload, settings, social interactions, etc.
+*   **Responsibility:** GUI, user interaction, initiating decryption requests, **managing wallet interactions (signing challenges)**.
+*   **Structure:** Standard web app.
+*   **Components:** Views for discovery, playback (integrating potentially streamed decrypted data), wallet management (key import/generation, signing prompts), upload, settings.
 
-## Interconnections & Data Flow
+## Interconnections & Data Flow (Updated NFT-Gated Flow Example)
 
-*   The **Frontend** interacts *only* with the **`tauri-bridge`**.
-*   The **`tauri-bridge`** orchestrates calls to various backend modules based on frontend requests.
-*   **`content-manager`** uses **`core-crypto`** for encryption and **`storage-layer`** for state.
-*   **`p2p-network`** facilitates slice transfer, interacting with **`content-manager`** (what slices?), **`payment-protocol`** (payment validation), and potentially **`blockchain-adapter`** (peer discovery via registry?).
-*   **`payment-protocol`** coordinates with **`p2p-network`** and **`blockchain-adapter`** to execute microtransactions.
-*   **`blockchain-adapter`** handles all on-chain communication, including publishing meta-hashes generated by **`content-manager`** and verifying payments for **`payment-protocol`**.
-*   **`core-crypto`** provides fundamental services to most other backend modules.
-*   **`storage-layer`** persists state for multiple modules.
+1.  **User Action:** User selects content in **Frontend**.
+2.  **Metadata Query:** **Frontend** -> **`tauri-bridge`** -> **`blockchain-adapter`** -> **Blockchain (Content Registry)** -> returns Content Hash & NFT Contract Address.
+3.  **Content Download:** **Frontend** -> **`tauri-bridge`** -> **`p2p-network`** -> downloads encrypted content.
+4.  **Identify NFT:** **Frontend/Client Logic** determines which `Token ID` user owns on the NFT Contract Address for this content.
+5.  **Challenge Request:** **Frontend** -> **`tauri-bridge`** -> (potentially **Decryption Oracle** to get challenge).
+6.  **Sign Challenge:** **Frontend** prompts user -> **Wallet Interaction** (via OS/browser extension/internal logic connected to `storage-layer`).
+7.  **Verification & Decryption:** **Frontend** -> **`tauri-bridge`** -> **Decryption Oracle** (provides signed challenge, wallet addr, token ID, contract addr) -> **Oracle** interacts with **`blockchain-adapter`** -> **Blockchain (NFT Contract)** (verifies `ownerOf`) -> **Oracle** (if valid) accesses SCK -> performs decryption or returns SCK temporarily -> Data flows back to **Frontend** for display.
+
+This modular structure, now incorporating blockchain state and the Oracle, facilitates the NFT-gated access model.
 
 This modular structure facilitates parallel development (where dependencies allow), independent testing, and better long-term maintainability compared to a monolithic design. Detailed APIs between modules will be defined during Phase 0/1. 

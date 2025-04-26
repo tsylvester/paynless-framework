@@ -22,6 +22,7 @@ tauri = { version = "2.0.0", features = [] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 tauri-plugin-opener = "2.2.6"
+core-crypto = { path = "crates/core-crypto" }
 
 [dev-dependencies]
 tempfile = "3.10.1"

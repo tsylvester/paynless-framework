@@ -1,6 +1,6 @@
 # Implementation Plan: Decentralized Content Distribution System (Synthesized)
 
-This document provides the detailed implementation checklist for the project, organized by the phases defined in `DEV_PLAN.md` and derived from the comprehensive plan in `docs/implementations/3. synthesis/synthesis.gemini.md`. It serves as the primary task list for development.
+This document provides the detailed implementation checklist for the project, organized by the phases defined in `DEV_PLAN.md` and reflecting the NFT-gated access model in `docs/protocols/key_management.md`. It serves as the primary task list for development.
 
 **Phase 0: Foundation, Validation & Architecture Definition (High-Risk Focus)**
 
@@ -15,12 +15,12 @@ This document provides the detailed implementation checklist for the project, or
     *   [ ] **Formal Functional Requirements (FRs):** Specify *precise*, testable behaviors for every system function. Document in `/docs/requirements/functional_requirements.md`:
         *   [ ] Content Ingestion: Chunking algorithm, encryption standard (cipher, mode, padding), metadata extraction.
         *   [ ] Hashing: Content hash algorithm, meta-hash structure definition (distinguish on-chain vs. off-chain parts).
-        *   [ ] Key Management: Master key generation, derived key generation algorithm (HD wallets?), "transactable key" format/protocol (NFT? Signed capability?), secure storage requirements, revocation/recovery strategy (if any).
+        *   [ ] Key Management: Master key generation, derivation algorithm (HKDF), **NFT Key Contract standard (e.g., ERC-721 + metadata)**, **Decryption Oracle interaction protocol**, secure storage requirements, revocation/recovery strategy (if any).
         *   [ ] P2P Network: Peer discovery mechanism(s) (DHT, bootstrap nodes), connection protocol, message formats.
-        *   [ ] Content Discovery: Meta-hash feed mechanism (blockchain query? P2P pub/sub?), search/filtering capabilities.
+        *   [ ] Content Discovery: Fetching registry data (`Content ID`, `NFT Key Contract Address`, `Content Hash`) from blockchain.
         *   [ ] Slice Negotiation/Transfer: Protocol for advertising/requesting/sending encrypted slices, including error handling.
         *   [ ] **Streaming Protocol:** Define the *exact* mechanism for prioritized/ordered slice delivery (e.g., request pipelining, buffer management, peer selection logic). Document in `/docs/protocols/streaming.md`.
-        *   [ ] **Microtransaction Protocol:** Define the *precise* workflow for payment initiation, verification (linking payment to slice/time), settlement, and dispute resolution (if any). Specify interaction with chosen ledger. Document in `/docs/protocols/microtransactions.md`.
+        *   [ ] **Microtransaction Protocol:** Potentially linked to NFT purchase/transfer events.
         *   [ ] Payment Splitting: Define the algorithm/logic for distributing funds between Creator and Seeder(s).
         *   [ ] Social Features: Define storage and retrieval mechanisms for reactions, follows, views (on-chain/off-chain/hybrid).
     *   [ ] **Formal Non-Functional Requirements (NFRs):** Quantify targets and acceptance criteria. Document in `/docs/requirements/non_functional_requirements.md`:
@@ -30,6 +30,11 @@ This document provides the detailed implementation checklist for the project, or
         *   [ ] Security: Required encryption standards (e.g., NIST/RFC approved), key lengths, resistance to specific attack classes (from threat model).
         *   [ ] Reliability: Uptime targets, data loss tolerance, fault recovery times.
         *   [ ] Usability: Define heuristics or metrics for key user flows (e.g., key purchase, content upload).
+        *   [ ] Add metrics for **NFT ownership query latency** and **Decryption Oracle response time**.
+        *   [ ] Add cost for **NFT ownership checks** and **Oracle interactions** (if on-chain).
+        *   [ ] Add requirements for **Oracle security**, **smart contract security**, **challenge-response mechanism**.
+        *   [ ] Add requirements for **Oracle availability** and **blockchain node access**.
+        *   [ ] Consider UX for **wallet signing prompts** during decryption.
     *   [ ] **Data Structure Specification:** Define byte-level or detailed schematic formats (e.g., using Protobuf, JSON Schema) for all core data: Meta Hash, Slice Manifest/Torrent equivalent, Key Tokens, P2P messages, Blockchain transaction payloads/event logs. Document in `/docs/data_structures.md`.
     *   [ ] **Legal & Regulatory Analysis:** Consult experts to identify requirements/constraints related to copyright (DMCA handling), content liability, financial regulations (MSB/VASP status?), data privacy (GDPR/CCPA), and cryptography export controls for target jurisdictions. Document findings and incorporate requirements into FRs/NFRs.
 *   **[0.3] Core Technology Evaluation & Proof-of-Concept (PoC) Validation:** *(Build minimal, isolated prototypes to validate feasibility)*
@@ -53,7 +58,7 @@ This document provides the detailed implementation checklist for the project, or
     *   [ ] **Cryptographic & Key Management PoC:**
         *   [ ] Select specific algorithms (e.g., AES-256-GCM, ChaCha20-Poly1305, SHA3-256/Blake3, Ed25519). Justify choices. Consider post-quantum readiness. Document choices in `/docs/cryptography.md`.
         *   [ ] Design the *exact* protocol for Master Key -> Derived Key generation, the "transactable key" representation (e.g., signed token), and its validation against payment/ownership state on the chosen ledger. Document in `/docs/protocols/key_management.md`.
-        *   [ ] **Build PoC:** Implement core crypto operations, key derivation, token generation/validation logic. Source code in `/poc/crypto_keys/`. Test interop and security properties.
+        *   [ ] **Build PoC:** Implement core crypto operations, key derivation, **challenge signing/verification**, potentially a **mock Oracle interaction** demonstrating NFT ownership check logic. Test interop.
         *   [ ] Document results in `/poc/crypto_keys/README.md`.
         *   [ ] **DECISION:** Validate or refine cryptographic and key management protocols.
 *   **[0.4] System Architecture & Security Design:**
@@ -64,6 +69,7 @@ This document provides the detailed implementation checklist for the project, or
     *   [ ] **State Management Design:** Define how local application state is persisted reliably and consistently. Document in `/docs/architecture/state_management.md`.
     *   [ ] **Tauri <-> Rust Interface Design:** Define communication patterns (async commands, events), data serialization format, and state synchronization strategy. Document in `/docs/architecture/tauri_bridge.md`.
     *   [ ] **Initial Database Schema Design** (if using local DB beyond simple state). Document in `/docs/architecture/database_schema.md`.
+    *   [ ] **Decryption Oracle Design:** Define the specific architecture (Decentralized, Federated, Hosted), SCK management strategy, interaction protocols, security measures. Document in `/docs/architecture/decryption_oracle.md`.
 *   **[0.5] Economic Model Design & Simulation Plan:**
     *   [ ] Design detailed Seeder incentive mechanism. Document in `/docs/economics/incentives.md`.
     *   [ ] Design Creator/Seeder payment split mechanism. Document in `/docs/economics/payment_split.md`.
@@ -73,6 +79,11 @@ This document provides the detailed implementation checklist for the project, or
 
 **Phase 1: Core Module Implementation & Integration (Milestone: Integrated Core Workflow)**
 
+*   [ ] **Implement Smart Contracts:**
+    *   [ ] Implement Content Registry contract.
+    *   [ ] Implement NFT Key contract (e.g., ERC-721 compliant + potential metadata).
+    *   [ ] Write unit tests for contracts (e.g., using Hardhat/Foundry).
+    *   [ ] Deploy contracts to testnet.
 *   [ ] **Implement `core-crypto` Module:** Based on PoC and specs (TDD).
     *   [ ] Implement hashing functions.
     *   [ ] Implement symmetric encryption/decryption.
@@ -82,9 +93,10 @@ This document provides the detailed implementation checklist for the project, or
     *   [ ] Add extensive unit tests (KATs, property tests).
 *   [ ] **Implement `blockchain-adapter` Module:** Based on PoC and chosen tech (TDD).
     *   [ ] Implement wallet interface (generation, loading - secure storage delegated).
-    *   [ ] Implement transaction construction/signing/submission logic.
-    *   [ ] Implement event listening/parsing logic.
-    *   [ ] Implement smart contract interaction wrappers.
+    *   [ ] Implement transaction construction/signing/submission logic (for registry interactions, NFT minting/transfers).
+    *   [ ] **Implement functions to query Content Registry contract.**
+    *   [ ] **Implement robust functions to query `ownerOf` on NFT Key contracts.**
+    *   [ ] Implement event listening (e.g., for NFT transfers if needed by client cache).
     *   [ ] Add unit tests mocking blockchain interactions.
 *   [ ] **Implement `payment-protocol` Module:** Based on PoC and chosen protocol (TDD).
     *   [ ] Implement payment initiation/validation logic.
@@ -108,9 +120,14 @@ This document provides the detailed implementation checklist for the project, or
     *   [ ] Implement interface for chosen embedded DB (e.g., `sled`).
     *   [ ] Implement persistence logic for keys (interface only), wallet state, download/upload progress, config.
     *   [ ] Add unit tests.
+*   [ ] **Implement Decryption Oracle (Chosen Model):**
+    *   [ ] Implement Oracle's core logic (receive request, interact with blockchain-adapter, manage SCK access/decryption).
+    *   [ ] Implement Oracle's security measures (authentication, rate limiting, etc.).
+    *   [ ] Implement secure SCK storage/handling mechanism (if applicable).
+    *   [ ] Add unit/integration tests for the Oracle.
 *   [ ] **Core Integration & Testing:**
-    *   [ ] Integrate modules for the **Creator Workflow** path. Write integration tests covering this flow.
-    *   [ ] Integrate modules for the **Consumer Workflow (Core)** path. Write integration tests covering this flow (including streaming and payment validation).
+    *   [ ] Integrate modules for the **Creator Workflow:** Ingestion -> Encryption -> SCK Handling -> Content Registration -> NFT Minting. Write integration tests.
+    *   [ ] Integrate modules for the **Consumer Workflow (Core):** Metadata Fetch -> Content Download -> **Challenge Signing -> Oracle Verification (inc. NFT check) -> SCK Access/Decryption**. Write integration tests covering this flow.
     *   [ ] Refine CI/CD pipeline to run integration tests. Configure code coverage reporting.
 
 **Phase 2: Seeding, Economics, Social & Discovery (Milestone: Viable P2P Economy & Basic Social Features)**

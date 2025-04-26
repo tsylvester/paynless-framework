@@ -1,0 +1,18 @@
+C:\Users\Tim\paynless-framework\target\debug\deps\libselectors-7d0149e94495ad96.rmeta: C:\Users\Tim\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\selectors-0.22.0\lib.rs C:\Users\Tim\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\selectors-0.22.0\attr.rs C:\Users\Tim\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\selectors-0.22.0\bloom.rs C:\Users\Tim\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\selectors-0.22.0\builder.rs C:\Users\Tim\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\selectors-0.22.0\context.rs C:\Users\Tim\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\selectors-0.22.0\matching.rs C:\Users\Tim\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\selectors-0.22.0\nth_index_cache.rs C:\Users\Tim\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\selectors-0.22.0\parser.rs C:\Users\Tim\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\selectors-0.22.0\sink.rs C:\Users\Tim\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\selectors-0.22.0\tree.rs C:\Users\Tim\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\selectors-0.22.0\visitor.rs C:\Users\Tim\paynless-framework\target\debug\build\selectors-7b6f9701b1f5e36b\out/ascii_case_insensitive_html_attributes.rs
+
+C:\Users\Tim\paynless-framework\target\debug\deps\selectors-7d0149e94495ad96.d: C:\Users\Tim\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\selectors-0.22.0\lib.rs C:\Users\Tim\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\selectors-0.22.0\attr.rs C:\Users\Tim\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\selectors-0.22.0\bloom.rs C:\Users\Tim\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\selectors-0.22.0\builder.rs C:\Users\Tim\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\selectors-0.22.0\context.rs C:\Users\Tim\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\selectors-0.22.0\matching.rs C:\Users\Tim\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\selectors-0.22.0\nth_index_cache.rs C:\Users\Tim\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\selectors-0.22.0\parser.rs C:\Users\Tim\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\selectors-0.22.0\sink.rs C:\Users\Tim\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\selectors-0.22.0\tree.rs C:\Users\Tim\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\selectors-0.22.0\visitor.rs C:\Users\Tim\paynless-framework\target\debug\build\selectors-7b6f9701b1f5e36b\out/ascii_case_insensitive_html_attributes.rs
+
+C:\Users\Tim\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\selectors-0.22.0\lib.rs:
+C:\Users\Tim\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\selectors-0.22.0\attr.rs:
+C:\Users\Tim\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\selectors-0.22.0\bloom.rs:
+C:\Users\Tim\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\selectors-0.22.0\builder.rs:
+C:\Users\Tim\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\selectors-0.22.0\context.rs:
+C:\Users\Tim\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\selectors-0.22.0\matching.rs:
+C:\Users\Tim\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\selectors-0.22.0\nth_index_cache.rs:
+C:\Users\Tim\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\selectors-0.22.0\parser.rs:
+C:\Users\Tim\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\selectors-0.22.0\sink.rs:
+C:\Users\Tim\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\selectors-0.22.0\tree.rs:
+C:\Users\Tim\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\selectors-0.22.0\visitor.rs:
+C:\Users\Tim\paynless-framework\target\debug\build\selectors-7b6f9701b1f5e36b\out/ascii_case_insensitive_html_attributes.rs:
+
+# env-dep:OUT_DIR=C:\\Users\\Tim\\paynless-framework\\target\\debug\\build\\selectors-7b6f9701b1f5e36b\\out
