@@ -45,6 +45,8 @@ pub enum CryptoError {
     SignatureParsingError(String),
     #[error("Key exchange failed: {0}")]
     KeyExchangeError(String),
+    #[error("Key derivation failed: {0}")]
+    KeyDerivationError(String),
 }
 
 // Implement From trait to allow '?' conversion from signature::Error
@@ -305,6 +307,102 @@ pub fn key_exchange(
     }
 
     Ok(shared_secret.into())
+}
+
+// --- HKDF Imports ---
+use hkdf::Hkdf;
+use sha2::Sha256;
+
+// --- Key Derivation ---
+
+// Define key types as specified in the protocol
+// Using fixed-size arrays for secrets where appropriate.
+// MasterSeed is often variable length (e.g., from BIP39), represented as Vec<u8>.
+pub type MasterSeed = Vec<u8>;
+pub const ROOT_IDENTITY_SECRET_BYTES: usize = 32;
+pub type RootIdentitySecret = [u8; ROOT_IDENTITY_SECRET_BYTES];
+pub const CONTENT_MASTER_KEY_BYTES: usize = 32;
+pub type ContentMasterKey = [u8; CONTENT_MASTER_KEY_BYTES];
+// Re-use existing types:
+// SymmetricContentKey = SymKey ([u8; 32])
+// TokenSigningKeyPair = (SigningSecretKey, SigningPublicKey)
+// IdentitySigningKeyPair = (SigningSecretKey, SigningPublicKey)
+
+// Private helper for HKDF-SHA256 derivation
+fn derive_hkdf_output(
+    ikm: &[u8],          // Input Key Material
+    salt: &[u8],
+    info: &[u8],
+    output_buffer: &mut [u8], // Buffer to fill with derived key material
+) -> Result<(), CryptoError> {
+    let hk = Hkdf::<Sha256>::new(Some(salt), ikm);
+    hk.expand(info, output_buffer).map_err(|e| {
+        CryptoError::KeyDerivationError(format!("HKDF expansion failed: {}", e))
+    })
+}
+
+// 1. Master Seed -> Root Identity Key (RIK)
+pub fn derive_root_identity_secret(master_seed: &MasterSeed) -> Result<RootIdentitySecret, CryptoError> {
+    let salt = b"master";
+    let info = b"root-identity";
+    let mut rik = [0u8; ROOT_IDENTITY_SECRET_BYTES];
+    derive_hkdf_output(master_seed, salt, info, &mut rik)?;
+    Ok(rik)
+}
+
+// 2. RIK -> Identity Signing Key Pair (Ed25519)
+pub fn derive_identity_signing_keypair(
+    rik: &RootIdentitySecret,
+    purpose_string: &str, // e.g., "primary-chain-signing"
+) -> Result<(SigningSecretKey, SigningPublicKey), CryptoError> {
+    let salt = b"identity-signing";
+    let info = purpose_string.as_bytes();
+    // Ed25519 secret key seed is 32 bytes
+    let mut key_seed = [0u8; SIGNING_SECRET_KEY_BYTES];
+    derive_hkdf_output(rik, salt, info, &mut key_seed)?;
+
+    // Generate the full keypair from the derived seed
+    let signing_key = SigningKey::from_bytes(&key_seed); // This handles the Ed25519 specific part
+    let verifying_key = signing_key.verifying_key();
+
+    Ok((signing_key.into(), verifying_key.into()))
+}
+
+// 3. RIK -> Content Master Key (CMK)
+pub fn derive_content_master_key(
+    rik: &RootIdentitySecret,
+    content_id: &[u8], // Unique identifier for the content
+) -> Result<ContentMasterKey, CryptoError> {
+    let salt = b"content-key-derivation";
+    let info = content_id; // Use the content_id directly as info
+    let mut cmk = [0u8; CONTENT_MASTER_KEY_BYTES];
+    derive_hkdf_output(rik, salt, info, &mut cmk)?;
+    Ok(cmk)
+}
+
+// 4. CMK -> Symmetric Content Key (SCK - ChaCha20 Key)
+pub fn derive_symmetric_content_key(cmk: &ContentMasterKey) -> Result<SymKey, CryptoError> {
+    let salt = b"symmetric-encryption";
+    let info = b"slice-encryption";
+    let mut sck = [0u8; SYMMETRIC_KEY_BYTES]; // SYMMETRIC_KEY_BYTES = 32
+    derive_hkdf_output(cmk, salt, info, &mut sck)?;
+    Ok(sck)
+}
+
+// 5. CMK -> Token Signing Key Pair (Ed25519)
+pub fn derive_token_signing_keypair(
+    cmk: &ContentMasterKey,
+) -> Result<(SigningSecretKey, SigningPublicKey), CryptoError> {
+    let salt = b"token-signing";
+    let info = b"transactable-key-token";
+    let mut key_seed = [0u8; SIGNING_SECRET_KEY_BYTES];
+    derive_hkdf_output(cmk, salt, info, &mut key_seed)?;
+
+    // Generate the full keypair from the derived seed
+    let signing_key = SigningKey::from_bytes(&key_seed);
+    let verifying_key = signing_key.verifying_key();
+
+    Ok((signing_key.into(), verifying_key.into()))
 }
 
 #[cfg(test)]
@@ -598,5 +696,90 @@ mod tests {
             }
             e => panic!("Expected KeyExchangeError containing 'all-zero shared secret', got {:?}", e),
         }
+    }
+
+    // --- HKDF Key Derivation Tests ---
+
+    // Basic test for RIK derivation determinism
+    #[test]
+    fn test_derive_rik_deterministic() {
+        let seed: MasterSeed = vec![0x01, 0x02, 0x03, 0x04];
+        let rik1 = derive_root_identity_secret(&seed).expect("Derivation 1 failed");
+        let rik2 = derive_root_identity_secret(&seed).expect("Derivation 2 failed");
+        assert_eq!(rik1, rik2);
+    }
+
+    // Test that different master seeds yield different RIKs
+    #[test]
+    fn test_derive_rik_distinct_seeds() {
+        let seed1: MasterSeed = vec![0x01, 0x02, 0x03, 0x04];
+        let seed2: MasterSeed = vec![0x05, 0x06, 0x07, 0x08];
+        let rik1 = derive_root_identity_secret(&seed1).expect("Derivation 1 failed");
+        let rik2 = derive_root_identity_secret(&seed2).expect("Derivation 2 failed");
+        assert_ne!(rik1, rik2);
+    }
+
+    // Test Identity Signing Key derivation (determinism and distinctness)
+    #[test]
+    fn test_derive_identity_signing_keypair() {
+        let rik: RootIdentitySecret = [1u8; 32];
+        let (sk1a, pk1a) = derive_identity_signing_keypair(&rik, "purpose1").unwrap();
+        let (sk1b, pk1b) = derive_identity_signing_keypair(&rik, "purpose1").unwrap();
+        let (sk2, pk2) = derive_identity_signing_keypair(&rik, "purpose2").unwrap();
+
+        assert_eq!(sk1a.0, sk1b.0); // Secret keys derived from same seed/info should match
+        assert_eq!(pk1a.0, pk1b.0); // Public keys derived from same seed/info should match
+        assert_ne!(sk1a.0, sk2.0); // Different info should yield different secret keys
+        assert_ne!(pk1a.0, pk2.0); // Different info should yield different public keys
+    }
+
+    // Test Content Master Key derivation (determinism and distinctness)
+    #[test]
+    fn test_derive_content_master_key() {
+        let rik: RootIdentitySecret = [2u8; 32];
+        let content_id1 = b"content_1";
+        let content_id2 = b"different_content_2";
+        let cmk1a = derive_content_master_key(&rik, content_id1).unwrap();
+        let cmk1b = derive_content_master_key(&rik, content_id1).unwrap();
+        let cmk2 = derive_content_master_key(&rik, content_id2).unwrap();
+
+        assert_eq!(cmk1a, cmk1b);
+        assert_ne!(cmk1a, cmk2);
+    }
+
+    // Test Symmetric Content Key derivation (determinism)
+    #[test]
+    fn test_derive_symmetric_content_key() {
+        let cmk: ContentMasterKey = [3u8; 32];
+        let sck1 = derive_symmetric_content_key(&cmk).unwrap();
+        let sck2 = derive_symmetric_content_key(&cmk).unwrap();
+        assert_eq!(sck1, sck2);
+        assert_eq!(sck1.len(), SYMMETRIC_KEY_BYTES);
+    }
+
+    // Test Token Signing Key derivation (determinism)
+    #[test]
+    fn test_derive_token_signing_keypair() {
+        let cmk: ContentMasterKey = [4u8; 32];
+        let (sk1, pk1) = derive_token_signing_keypair(&cmk).unwrap();
+        let (sk2, pk2) = derive_token_signing_keypair(&cmk).unwrap();
+        assert_eq!(sk1.0, sk2.0);
+        assert_eq!(pk1.0, pk2.0);
+        assert_eq!(sk1.0.len(), SIGNING_SECRET_KEY_BYTES);
+    }
+
+    // Test that different CMKs yield different SCKs and Token Signing Keys
+    #[test]
+    fn test_derive_keys_distinct_cmk() {
+        let cmk1: ContentMasterKey = [5u8; 32];
+        let cmk2: ContentMasterKey = [6u8; 32];
+
+        let sck1 = derive_symmetric_content_key(&cmk1).unwrap();
+        let sck2 = derive_symmetric_content_key(&cmk2).unwrap();
+        assert_ne!(sck1, sck2);
+
+        let (token_sk1, _) = derive_token_signing_keypair(&cmk1).unwrap();
+        let (token_sk2, _) = derive_token_signing_keypair(&cmk2).unwrap();
+        assert_ne!(token_sk1.0, token_sk2.0);
     }
 }

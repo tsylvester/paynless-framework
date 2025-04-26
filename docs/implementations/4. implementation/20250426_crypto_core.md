@@ -54,12 +54,12 @@
     *   [X] Define types for keys, signatures, shared secrets.
     *   [X] Write unit tests (key gen, sign/verify roundtrip, invalid sig, exchange roundtrip, KATs).
 
-5.  **[ ] Implement Key Derivation Logic:**
-    *   [ ] Implement HKDF-SHA256 based on `docs/protocols/key_management.md`.
-    *   [ ] Implement `derive_key` function according to defined paths.
-    *   [ ] Define precise logic for `salt` and `info` construction.
-    *   [ ] Define `MasterSeed`, `RootIdentitySecret`, `ContentMasterSecret`, `SymmetricContentKey`, `SigningKeyPair` etc. types.
-    *   [ ] Write unit tests (KATs, input uniqueness, determinism).
+5.  **[X] Implement Key Derivation Logic:**
+    *   [X] Implement HKDF-SHA256 based on `docs/protocols/key_management.md`.
+    *   [X] Implement `derive_key` function according to defined paths.
+    *   [X] Define precise logic for `salt` and `info` construction.
+    *   [X] Define `MasterSeed`, `RootIdentitySecret`, `ContentMasterSecret`, `SymmetricContentKey`, `SigningKeyPair` etc. types.
+    *   [X] Write unit tests (KATs, input uniqueness, determinism).
 
 7.  **[ ] Integrate into CI:**
     *   [ ] Ensure all `core-crypto` unit tests run in CI.
