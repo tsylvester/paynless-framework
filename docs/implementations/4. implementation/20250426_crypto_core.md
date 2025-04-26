@@ -46,12 +46,12 @@
         *   [X] Test that decryption fails if ciphertext is tampered with.
         *   [X] Test that decryption fails if AAD is tampered with.
 
-4.  **[ ] Implement Signing/Verification & Key Exchange:**
+4.  **[X] Implement Signing/Verification & Key Exchange:**
     *   [X] Implement key pair generation for Ed25519.
     *   [X] Implement `sign` and `verify` functions (for challenge-response).
-    *   [ ] Implement key pair generation for X25519.
-    *   [ ] Implement `key_exchange` function.
-    *   [ ] Define types for keys, signatures, shared secrets.
+    *   [X] Implement key pair generation for X25519.
+    *   [X] Implement `key_exchange` function.
+    *   [X] Define types for keys, signatures, shared secrets.
     *   [X] Write unit tests (key gen, sign/verify roundtrip, invalid sig, exchange roundtrip, KATs).
 
 5.  **[ ] Implement Key Derivation Logic:**
