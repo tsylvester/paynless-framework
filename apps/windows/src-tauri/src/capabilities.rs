@@ -1,23 +1,20 @@
+use tauri::command;
 use std::fs;
+use std::path::Path;
 
-// --- Command Implementations ---
-
-#[tauri::command]
-pub fn read_file(path: String) -> Result<Vec<u8>, String> {
-    // Use std::fs::read to read the entire file content into a Vec<u8>
-    fs::read(&path).map_err(|err| {
-        // Map the std::io::Error to a descriptive String for Tauri
-        format!("Failed to read file at path '{}': {}", path, err)
-    })
+// Helper to map std::io::Error to a String
+fn map_io_err(err: std::io::Error) -> String {
+    format!("Filesystem Error: {}", err)
 }
 
-#[tauri::command]
+#[command]
+pub fn read_file(path: String) -> Result<Vec<u8>, String> {
+    fs::read(Path::new(&path)).map_err(map_io_err)
+}
+
+#[command]
 pub fn write_file(path: String, data: Vec<u8>) -> Result<(), String> {
-    // Use std::fs::write to write the entire slice to the file
-    fs::write(&path, &data).map_err(|err| {
-        // Map the std::io::Error to a descriptive String for Tauri
-        format!("Failed to write file to path '{}': {}", path, err)
-    })
+    fs::write(Path::new(&path), data).map_err(map_io_err)
 }
 
 // --- Unit Tests ---

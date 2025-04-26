@@ -1,5 +1,5 @@
 [package]
-name = "windows"
+name = "paynless-desktop"
 version = "0.1.0"
 description = "A Tauri App"
 authors = ["you"]
@@ -22,7 +22,9 @@ tauri = { version = "2.0.0", features = [] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 tauri-plugin-opener = "2.2.6"
-core-crypto = { path = "crates/core-crypto" }
+core-crypto = { path = "./crates/core-crypto" }
+hex = "0.4"
+ed25519-dalek = { version = "2.1.1", features = ["rand_core"] }
 
 [dev-dependencies]
 tempfile = "3.10.1"

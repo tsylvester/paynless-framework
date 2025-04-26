@@ -193,7 +193,7 @@ This plan assumes we'll start by implementing the core service and then focus on
 **Phase 2: Web Platform Provider Implementation (Shared Package)**
 
 *   **Goal:** Implement the web-specific provider, offering baseline functionality or explicitly stating unavailability.
-*   **Location:** `packages/platform-capabilities/src/webPlatformCapabilities.ts` (or integrated into Provider)
+*   **Location:** `packages/platform-capabilities/src/webPlatformCapabilities.ts` (or integrated into main provider)
 *   **Checklist:**
     *   [x] **Create Web Provider File:** (Or logic integrated into main provider)
     *   [x] **Implement `fileSystem` for Web:**
@@ -223,8 +223,9 @@ This plan assumes we'll start by implementing the core service and then focus on
         *   [x] Test that `readFile`/`writeFile` call the mocked `invoke` function with the correct command name and arguments. Test argument serialization if necessary (e.g., data conversion).
     *   [x] **Integrate Tauri Provider:** (Done in main provider logic via factory)
 
-**Phase 4: Tauri Desktop Backend (Rust Layer)**
+**Status Update (YYYY-MM-DD):** Decided to implement Phase 4 (Rust backend commands) *before* rebasing `feature/p2p` branch onto `development` and tackling broader integration issues (API conflicts, Windows build errors). This allows completion of the platform capabilities feature before addressing integration complexities.
 
+**Phase 4: Tauri Desktop Backend (Rust Layer)**
 *   **Goal:** Implement the Rust functions that perform the actual native operations for Tauri.
 *   **Location:** `apps/desktop/src-tauri/src/`
 *   **Checklist:**

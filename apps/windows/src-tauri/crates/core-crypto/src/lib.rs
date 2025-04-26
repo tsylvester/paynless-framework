@@ -109,31 +109,55 @@ use rand::rngs::OsRng as RandOsRng; // Keep only necessary rand imports
 // --- Ed25519 Digital Signatures ---
 
 pub const SIGNING_PUBLIC_KEY_BYTES: usize = 32;
-pub const SIGNING_SECRET_KEY_BYTES: usize = 32; // ed25519 secret keys are 32 bytes
+pub const SIGNING_SECRET_KEY_BYTES: usize = 32;
 pub const SIGNATURE_BYTES: usize = 64;
 
 // Wrapper structs for type safety and potential future abstraction
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SigningPublicKey([u8; SIGNING_PUBLIC_KEY_BYTES]);
 
+impl SigningPublicKey {
+    pub fn as_bytes(&self) -> &[u8; SIGNING_PUBLIC_KEY_BYTES] {
+        &self.0
+    }
+
+    // Constructor that validates the bytes
+    pub fn try_from_bytes(bytes: &[u8; SIGNING_PUBLIC_KEY_BYTES]) -> Result<Self, CryptoError> {
+        // Attempt to parse using VerifyingKey::from_bytes to validate
+        VerifyingKey::from_bytes(bytes)
+            .map(|_| Self(*bytes)) // If ok, construct Self
+            .map_err(|e| CryptoError::InternalError(format!("Failed to parse public key bytes: {}", e)))
+    }
+}
+
 #[derive(Debug)] // Avoid Clone, Eq, PartialEq for secret key wrapper
 pub struct SigningSecretKey([u8; SIGNING_SECRET_KEY_BYTES]);
+
+impl SigningSecretKey {
+    pub fn as_bytes(&self) -> &[u8; SIGNING_SECRET_KEY_BYTES] {
+        &self.0
+    }
+
+    // Simple constructor from bytes (no validation needed beyond length)
+    pub fn from_bytes(bytes: [u8; SIGNING_SECRET_KEY_BYTES]) -> Self {
+        Self(bytes)
+    }
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Signature([u8; SIGNATURE_BYTES]);
 
-// Implement Deref to easily access the inner byte array if needed
-impl std::ops::Deref for SigningPublicKey {
-    type Target = [u8; SIGNING_PUBLIC_KEY_BYTES];
-    fn deref(&self) -> &Self::Target {
+impl Signature {
+    pub fn as_bytes(&self) -> &[u8; SIGNATURE_BYTES] {
         &self.0
     }
-}
 
-impl std::ops::Deref for Signature {
-    type Target = [u8; SIGNATURE_BYTES];
-    fn deref(&self) -> &Self::Target {
-        &self.0
+    // Constructor that validates the bytes
+    pub fn try_from_bytes(bytes: &[u8; SIGNATURE_BYTES]) -> Result<Self, CryptoError> {
+        // Attempt to parse using EdSignature::try_from<&[u8]> to validate
+        <EdSignature as TryFrom<&[u8]>>::try_from(bytes)
+             .map(|_| Self(*bytes)) // If ok, construct Self
+             .map_err(|e| CryptoError::SignatureParsingError(e.to_string())) // Map signature::Error
     }
 }
 
@@ -146,10 +170,6 @@ impl From<VerifyingKey> for SigningPublicKey {
 
 impl From<SigningKey> for SigningSecretKey {
     fn from(key: SigningKey) -> Self {
-        // Note: SigningKey encapsulates the secret scalar and the public key bytes.
-        // We only store the secret part here for simplicity, assuming the public key
-        // can be derived or is stored separately when needed for signing pair generation.
-        // The to_bytes() method returns the 32-byte secret scalar.
         SigningSecretKey(key.to_bytes())
     }
 }
@@ -164,6 +184,7 @@ impl From<EdSignature> for Signature {
 impl TryFrom<&SigningPublicKey> for VerifyingKey {
     type Error = CryptoError;
     fn try_from(value: &SigningPublicKey) -> Result<Self, Self::Error> {
+        // Use the already validated bytes
         VerifyingKey::from_bytes(&value.0)
             .map_err(|e| CryptoError::InternalError(format!("Failed to parse public key: {}", e)))
     }
