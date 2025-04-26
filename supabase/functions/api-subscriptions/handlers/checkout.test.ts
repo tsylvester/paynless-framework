@@ -1,6 +1,6 @@
-import { assertEquals, assertObjectMatch, assertRejects } from "jsr:@std/assert";
-import { describe, it, beforeEach, afterEach } from "jsr:@std/testing/bdd";
-import { spy, Spy, assertSpyCalls, assertSpyCall } from "jsr:@std/testing/mock";
+import { assertEquals, assertObjectMatch, assertRejects, assertExists } from "https://deno.land/std@0.208.0/assert/mod.ts";
+import { describe, it, beforeEach, afterEach } from "https://deno.land/std@0.208.0/testing/bdd.ts";
+import { spy, type Spy, assertSpyCalls, assertSpyCall } from "https://deno.land/std@0.208.0/testing/mock.ts";
 import { SupabaseClient } from "npm:@supabase/supabase-js";
 import Stripe from "npm:stripe";
 import { createCheckoutSession } from "./checkout.ts";
@@ -292,12 +292,19 @@ describe("createCheckoutSession Handler", () => {
     assertEquals(result.sessionId, "cs_123"); // Check sessionId
     assertSpyCalls(sessionCreateSpy, 1);
 
-    // Verify Stripe session create arguments
-    const sessionArgs = sessionCreateSpy.calls[0]!.args[0];
-    assertEquals(sessionArgs.customer, existingCustomerId);
-    assertEquals(sessionArgs.line_items[0].price, "price_test_123");
-    assertEquals(sessionArgs.mode, "subscription");
-    assertEquals(sessionArgs.metadata?.isTestMode, "true"); // Expect "true" string
+    // Verify Stripe session create arguments using assertSpyCall
+    assertSpyCall(sessionCreateSpy, 0, {
+        args: [
+            {
+                customer: existingCustomerId,
+                line_items: [{ price: "price_test_123", quantity: 1 }],
+                mode: "subscription",
+                success_url: "/success",
+                cancel_url: "/cancel",
+                metadata: { isTestMode: "true" } // Check metadata directly
+            }
+        ]
+    });
   });
 
   it("should throw HandlerError(500) if Stripe session creation fails", async () => {
@@ -350,14 +357,26 @@ describe("createCheckoutSession Handler", () => {
     // const sessionCreateSpy = mockStripeInstance.checkout.sessions.create as Spy; // Already defined above
     assertSpyCall(sessionCreateSpy, 0); // Check it was called (index 0 for first call)
 
-    // Assert arguments passed to Stripe
-    // Add non-null assertion
-    const sessionArgs = sessionCreateSpy.calls[0]!.args[0]; 
-    assertEquals(sessionArgs.client_reference_id, mockUserId, "client_reference_id should match userId");
-    assertEquals(sessionArgs.customer, existingCustomerId, "customer should be existing ID");
-    assertEquals(sessionArgs.line_items[0].price, "price_client_ref");
-    assertEquals(sessionArgs.metadata?.isTestMode, "true");
-    assertEquals(sessionArgs.metadata?.userId, undefined, "userId should NOT be in metadata"); // Explicitly check userId is undefined
+    // Assert arguments passed to Stripe using assertSpyCall
+    assertSpyCall(sessionCreateSpy, 0, {
+        args: [
+            {
+                client_reference_id: mockUserId,
+                customer: existingCustomerId,
+                line_items: [{ price: "price_client_ref", quantity: 1 }],
+                mode: "subscription",
+                success_url: "/success", // Assuming these are still needed
+                cancel_url: "/cancel",   // Assuming these are still needed
+                metadata: { isTestMode: "true", userId: undefined } // Verify metadata structure
+            }
+        ]
+    });
+    // Remove the individual assertEquals for sessionArgs properties as they are covered above
+    // assertEquals(sessionArgs.client_reference_id, mockUserId, "client_reference_id should match userId");
+    // assertEquals(sessionArgs.customer, existingCustomerId, "customer should be existing ID");
+    // assertEquals(sessionArgs.line_items[0].price, "price_client_ref");
+    // assertEquals(sessionArgs.metadata?.isTestMode, "true");
+    // assertEquals(sessionArgs.metadata?.userId, undefined, "userId should NOT be in metadata");
   });
 
 }); 

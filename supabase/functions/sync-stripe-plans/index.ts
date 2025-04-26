@@ -17,7 +17,8 @@ import { ISyncPlansService, SyncPlansService } from "./services/sync_plans_servi
 import { Database } from "../types_db.ts"; // Import the Database type
 
 // Define dependency types
-type StripeConstructor = new (key: string, config?: Stripe.StripeConfig) => Stripe;
+// Export StripeConstructor
+export type StripeConstructor = new (key: string, config?: Stripe.StripeConfig) => Stripe;
 // Keep client type for service creation
 type CreateClientFn = (url: string, key: string, options?: SupabaseClientOptions<any>) => SupabaseClient<Database>; // Use Database type
 
@@ -110,8 +111,8 @@ export async function handleSyncPlansRequest(
     
     // Initialize Stripe using injected constructor
     const stripe = new deps.stripeConstructor(stripeKey, {
-      apiVersion: "2023-10-16",
-      httpClient: Stripe.createFetchHttpClient(), // Use static method from actual import
+      httpClient: Stripe.createFetchHttpClient(),
+      apiVersion: "2025-03-31.basil",
     });
     console.log(`Stripe client initialized in ${isTestMode ? 'TEST' : 'LIVE'} mode.`);
 

@@ -6,18 +6,29 @@ import type { SupabaseClient } from "npm:@supabase/supabase-js@2";
 // Import the function to test AND the dependency interface
 import { syncGoogleModels, type SyncGoogleDeps } from "./google_sync.ts"; 
 
-// No longer need to import the adapter directly for mocking
-// import { googleAdapter } from "../_shared/ai_service/google_adapter.ts";
-
 // Import shared types and test utils
 // NOTE: getCurrentDbModels is now mocked via deps, but keep types
 import type { DbAiProvider, SyncResult } from "./index.ts"; 
-import type { ProviderModelInfo } from "../../_shared/ai_service/types.ts";
+// Corrected path for ProviderModelInfo
+import type { ProviderModelInfo } from "../_shared/types.ts";
 import { 
     createMockSupabaseClient, 
     type MockSupabaseDataConfig,
     type MockQueryBuilderState 
 } from "../_shared/test-utils.ts";
+// REMOVE these lines:
+// import { GoogleAIHandler } from "./google_sync.ts"; // Handler we are testing
+// import type { GoogleModel } from "./google_models.ts"; // Type for models
+// import type { ApiModel } from "../_shared/models.ts"; // Type for database model
+// import type { 
+//     AdapterRequestPayload, 
+//     AdapterResponsePayload, 
+//     TextContent, 
+//     ModelParams,
+//     ModelProviderOptions,
+//     PromptChoice,
+//     ResponseMessage
+// } from "../../_shared/ai_service/types.ts"; 
 
 // Constants for Google
 const PROVIDER_NAME = 'google';
