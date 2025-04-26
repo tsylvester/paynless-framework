@@ -1,0 +1,208 @@
+name: Continuous Integration
+
+on:
+  push:
+    branches: [ main, development, desktop, feature/p2p ]
+  pull_request:
+    branches: [ main, development, desktop, feature/p2p ]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  lint:
+    name: Lint Checks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20' # Specify your Node.js version
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 8 # Specify your pnpm version
+          run_install: false
+
+      - name: Get pnpm store directory
+        shell: bash
+        run: |
+          echo "STORE_PATH=$(pnpm store path --silent)" >> $GITHUB_ENV
+
+      - name: Set up pnpm cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.STORE_PATH }}
+          key: ${{ runner.os }}-pnpm-store-${{ hashFiles('**/pnpm-lock.yaml') }}
+          restore-keys: |
+            ${{ runner.os }}-pnpm-store-
+
+      - name: Install pnpm dependencies
+        run: pnpm install
+
+      # --- Rust Linting ---
+      - name: Set up Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+
+      - name: Cache Cargo Dependencies
+        uses: Swatinem/rust-cache@v2
+
+      - name: Run cargo clippy (Rust Linter)
+        run: cargo clippy --workspace --all-targets -- -D warnings
+
+      # --- Frontend Linting ---
+      - name: Run pnpm lint (JS/TS Linter)
+        run: pnpm lint
+
+  test_rust:
+    name: Rust Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Cargo Dependencies
+        uses: Swatinem/rust-cache@v2
+
+      - name: Run cargo test
+        run: cargo test --workspace
+
+  test_build_web:
+    name: Web App Test & Build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20' # Specify your Node.js version
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 8 # Specify your pnpm version
+          run_install: false
+
+      - name: Get pnpm store directory
+        shell: bash
+        run: |
+          echo "STORE_PATH=$(pnpm store path --silent)" >> $GITHUB_ENV
+
+      - name: Set up pnpm cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.STORE_PATH }}
+          key: ${{ runner.os }}-pnpm-store-${{ hashFiles('**/pnpm-lock.yaml') }}
+          restore-keys: |
+            ${{ runner.os }}-pnpm-store-
+
+      - name: Install pnpm dependencies
+        run: pnpm install
+
+      - name: Run Web App Tests (Vitest)
+        run: pnpm --filter @paynless/web test
+
+      - name: Build Web App (Vite)
+        run: pnpm --filter @paynless/web build
+
+  build_tauri_linux:
+    name: Tauri App Build (Ubuntu)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 8
+          run_install: false
+
+      - name: Get pnpm store directory
+        shell: bash
+        run: |
+          echo "STORE_PATH=$(pnpm store path --silent)" >> $GITHUB_ENV
+
+      - name: Set up pnpm cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.STORE_PATH }}
+          key: ${{ runner.os }}-pnpm-store-${{ hashFiles('**/pnpm-lock.yaml') }}
+          restore-keys: |
+            ${{ runner.os }}-pnpm-store-
+
+      - name: Install pnpm dependencies
+        run: pnpm install # Install root and workspace deps
+
+      - name: Set up Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Cargo Dependencies
+        uses: Swatinem/rust-cache@v2
+
+      - name: Install Linux dependencies for Tauri build
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.0-dev libappindicator3-dev librsvg2-dev patchelf
+
+      - name: Build Tauri App (Linux)
+        # Note: This builds the .deb and AppImage for Linux on ubuntu-latest.
+        run: cd apps/windows && cargo tauri build
+
+  build_tauri_windows:
+    name: Tauri App Build (Windows)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 8
+          run_install: false
+
+      - name: Get pnpm store directory
+        shell: bash
+        run: |
+          echo "STORE_PATH=$(pnpm store path --silent)" >> $env:GITHUB_ENV
+
+      - name: Set up pnpm cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.STORE_PATH }}
+          key: ${{ runner.os }}-pnpm-store-${{ hashFiles('**/pnpm-lock.yaml') }}
+          restore-keys: |
+            ${{ runner.os }}-pnpm-store-
+
+      - name: Install pnpm dependencies
+        run: pnpm install # Install root and workspace deps
+
+      - name: Set up Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Cargo Dependencies
+        uses: Swatinem/rust-cache@v2
+
+      # No specific system dependencies needed for Windows build usually,
+      # relies on MSVC toolchain and WebView2 runtime (often pre-installed on runners/user machines)
+
+      - name: Build Tauri App (Windows)
+        # Note: Assumes MSVC toolchain is available on windows-latest runner.
+        run: cd apps/windows && cargo tauri build 
