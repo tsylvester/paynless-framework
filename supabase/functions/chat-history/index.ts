@@ -1,116 +1,143 @@
 // IMPORTANT: Supabase Edge Functions require relative paths for imports from shared modules.
 // Do not use path aliases (like @shared/) as they will cause deployment failures.
 import { serve } from 'https://deno.land/std@0.177.0/http/server.ts'
-import { createClient, type SupabaseClient } from 'npm:@supabase/supabase-js@2'
-import { corsHeaders as defaultCorsHeaders } from '../_shared/cors-headers.ts'
-// Import Chat type if needed for explicit typing (optional)
-// import type { Chat } from '../../../packages/types/src/ai.types.ts';
+import { createClient, type SupabaseClient, type AuthError } from 'npm:@supabase/supabase-js@2'
+// Remove CORS header import
+// import { corsHeaders as defaultCorsHeaders } from '../_shared/cors-headers.ts'
+// Import Chat type from shared types
+// import type { Chat } from '../_shared/types.ts'; 
+// Reuse HandlerError
+import { HandlerError } from '../api-subscriptions/handlers/current.ts'; 
+// Import DB types
+import type { Database } from '../types_db.ts';
 
-// --- Dependency Injection Setup ---
-
-export interface ChatHistoryHandlerDeps {
-  createSupabaseClient: (url: string, key: string, options?: any) => SupabaseClient;
-  getEnv: (key: string) => string | undefined;
-  corsHeaders: Record<string, string>;
-  createJsonResponse: (data: unknown, status?: number, headers?: Record<string, string>) => Response;
-  createErrorResponse: (message: string, status?: number, headers?: Record<string, string>) => Response;
+// Define the type for the items returned by this specific handler
+export interface ChatHistoryItem {
+  id: string;
+  title: string | null;
+  updated_at: string;
 }
 
-const defaultDeps: ChatHistoryHandlerDeps = {
-  createSupabaseClient: createClient,
-  getEnv: Deno.env.get,
-  corsHeaders: defaultCorsHeaders,
-  createJsonResponse: (data, status = 200, headers = {}) => {
-    return new Response(JSON.stringify(data), {
-      headers: { ...defaultCorsHeaders, 'Content-Type': 'application/json', ...headers },
-      status: status,
-    });
-  },
-  createErrorResponse: (message, status = 500, headers = {}) => {
-     return new Response(JSON.stringify({ error: message }), {
-       headers: { ...defaultCorsHeaders, 'Content-Type': 'application/json', ...headers },
-       status: status,
-     });
-  },
-};
+// Define default CORS headers locally
+const defaultCorsHeaders = {
+  'Access-Control-Allow-Origin': '*', 
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type', 
+  'Access-Control-Allow-Methods': 'GET, OPTIONS' // Explicitly allow GET and OPTIONS
+}; 
+
+// Remove Dependency Injection Setup
+/*
+export interface ChatHistoryHandlerDeps { ... }
+const defaultDeps: ChatHistoryHandlerDeps = { ... };
+*/
 
 // --- Main Handler Logic ---
+// This function now *only* handles the core logic for a validated GET request
+export async function mainHandler(supabaseClient: SupabaseClient<Database>, userId: string): Promise<ChatHistoryItem[]> { 
+  // Method/Auth checks handled by serve wrapper
+  try {
+    console.log(`Fetching chat history for user: ${userId}`);
 
-export async function mainHandler(req: Request, deps: ChatHistoryHandlerDeps = defaultDeps): Promise<Response> {
-  const {
-      createSupabaseClient: createSupabaseClientDep,
-      getEnv: getEnvDep,
-      corsHeaders: corsHeadersDep,
-      createJsonResponse,
-      createErrorResponse,
-  } = deps;
+    // --- Fetch Chat History ---
+    // RLS policy on 'chats' table restricts rows to the authenticated user
+    const { data: chats, error: fetchError } = await supabaseClient
+      .from('chats')
+      .select('id, title, updated_at') // Select specific fields for history list
+      .order('updated_at', { ascending: false })
+      .returns<ChatHistoryItem[]>(); // Ensure correct return type
 
-  // Handle CORS preflight requests
-  if (req.method === 'OPTIONS') {
-    return new Response(null, { headers: corsHeadersDep, status: 204 })
+    if (fetchError) {
+        console.error(`Error fetching chat history for user ${userId}:`, fetchError);
+        // Handle specific errors like permission denied if necessary
+        if (fetchError.code === 'PGRST116' || fetchError.message.includes('permission denied')) {
+            // Although RLS *should* prevent this, handle defensively
+            throw new HandlerError('Unauthorized: Could not retrieve chat history.', 403, fetchError);
+        }
+        // Throw generic DB error
+        throw new HandlerError(fetchError.message || 'Failed to fetch chat history from database.', 500, fetchError);
+    }
+
+    console.log(`Found ${chats?.length ?? 0} chat(s) for user ${userId}`);
+
+    // --- Return Chat History --- 
+    // Return the array directly (or empty array if null)
+    return chats || [];
+
+  } catch (error) {
+    // Re-throw HandlerError directly
+    if (error instanceof HandlerError) {
+      throw error;
+    }
+    // Wrap other errors
+    console.error('Chat history mainHandler error:', error);
+    const errorMessage = error instanceof Error ? error.message : 'An unexpected internal error occurred';
+    // Default to 500, could check error.status if available
+    const status = typeof error === 'object' && error !== null && 'status' in error && typeof error.status === 'number' ? error.status : 500;
+    throw new HandlerError(errorMessage, status, error instanceof Error ? error : undefined);
   }
+}
 
-  // Ensure the request method is GET
-  if (req.method !== 'GET') {
-      return createErrorResponse('Method Not Allowed', 405);
+// --- Serve Function --- 
+// This wrapper handles request validation, routing, auth, client creation, and response formatting
+serve(async (req) => {
+  // --- Handle CORS Preflight --- 
+  if (req.method === 'OPTIONS') {
+    return new Response(null, { headers: defaultCorsHeaders, status: 204 });
   }
 
   try {
-    // --- Auth and Client Initialization ---
+    // --- Basic Request Validation ---
+    if (req.method !== 'GET') {
+      throw new HandlerError('Method Not Allowed', 405);
+    }
+
+    // --- Authentication & Client Setup ---
     const authHeader = req.headers.get('Authorization');
     if (!authHeader) {
-       return createErrorResponse('Missing Authorization header', 401);
+       throw new HandlerError('Missing Authorization header', 401);
     }
-
-    const supabaseUrl = getEnvDep('SUPABASE_URL') ?? '';
-    const supabaseAnonKey = getEnvDep('SUPABASE_ANON_KEY') ?? '';
+    const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? '';
+    const supabaseAnonKey = Deno.env.get('SUPABASE_ANON_KEY') ?? '';
     if (!supabaseUrl || !supabaseAnonKey) {
-        console.error("Missing SUPABASE_URL or SUPABASE_ANON_KEY environment variables.");
-        return createErrorResponse("Server configuration error.", 500);
+         console.error("Missing SUPABASE_URL or SUPABASE_ANON_KEY environment variables.");
+         throw new HandlerError("Server configuration error.", 500);
     }
-
-    const supabaseClient = createSupabaseClientDep(
+    const supabaseClient = createClient<Database>(
       supabaseUrl,
       supabaseAnonKey,
       { global: { headers: { Authorization: authHeader } } }
     );
-
-    // --- Verify user authentication ---
     const { data: { user }, error: userError } = await supabaseClient.auth.getUser();
     if (userError || !user) {
-      console.error('Auth error fetching chat history:', userError);
-      return createErrorResponse('Invalid authentication credentials', 401);
+      throw new HandlerError('Invalid authentication credentials', 401, userError as AuthError);
     }
-    console.log(`Fetching chat history for user: ${user.id}`);
+    
+    // --- Call Main Logic --- 
+    const data = await mainHandler(supabaseClient, user.id);
+    
+    // --- Format Success Response --- 
+    return new Response(JSON.stringify(data), {
+      headers: { ...defaultCorsHeaders, 'Content-Type': 'application/json' },
+      status: 200,
+    });
 
-    // --- Fetch Chat History ---
-    const { data: chats, error: fetchError } = await supabaseClient
-      .from('chats')
-      .select('id, title, updated_at')
-      .order('updated_at', { ascending: false });
-
-    if (fetchError) {
-        console.error(`Error fetching chat history for user ${user.id}:`, fetchError);
-        if (fetchError.code === 'PGRST116' || fetchError.message.includes('permission denied')) {
-            return createErrorResponse('Unauthorized: Could not retrieve chat history.', 403);
-        }
-        // Directly return a 500 error for other fetch errors
-        return createErrorResponse(fetchError.message || 'Failed to fetch chat history from database.', 500);
+  } catch (err) {
+    // --- Format Error Response --- 
+    let errorStatus = 500;
+    let errorMessage = "Internal Server Error";
+    if (err instanceof HandlerError) {
+      errorStatus = err.status;
+      errorMessage = err.message;
+      if (err.cause) console.error("Original error cause:", err.cause);
+    } else if (err instanceof Error) {
+       errorMessage = err.message;
+    } else {
+      errorMessage = String(err); 
     }
-
-    console.log(`Found ${chats?.length ?? 0} chat(s) for user ${user.id}`);
-
-    // --- Return Chat History ---
-    return createJsonResponse(chats || [], 200);
-
-  } catch (error) {
-    // This catch block now only handles truly unexpected errors (e.g., during auth, setup)
-    console.error('Unexpected error in chat history function:', error);
-    const errorMessage = error instanceof Error ? error.message : 'An unexpected internal error occurred';
-    return createErrorResponse(errorMessage, 500);
+    console.error("Returning error response:", { status: errorStatus, message: errorMessage });
+    return new Response(JSON.stringify({ error: errorMessage }), {
+      headers: { ...defaultCorsHeaders, 'Content-Type': 'application/json' },
+      status: errorStatus,
+    });
   }
-}
-
-// --- Serve Function ---
-console.log(`Function "chat-history" up and running!`);
-serve((req) => mainHandler(req, defaultDeps)); 
+}); 
