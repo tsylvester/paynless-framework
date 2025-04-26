@@ -80,11 +80,16 @@ const createTestDeps = (
     const mockSupabaseClient = createMockSupaClientForProviders(dbResult.data, dbResult.error);
     const mockGetEnv = spy((key: string): string | undefined => envVars[key]);
 
-    // Return the deps object, overriding only what's necessary for the test
+    // Return the deps object, overriding necessary functions and spying on others
     return {
-        ...realDefaultDeps, // Start with real dependencies (like response creators)
-        createSupabaseClient: spy(() => mockSupabaseClient) as any, // Mock client creation
-        getEnv: mockGetEnv, // Mock environment variable access
+        // Explicitly wrap the real response helpers with spies
+        handleCorsPreflightRequest: spy(realDefaultDeps.handleCorsPreflightRequest), 
+        createJsonResponse: spy(realDefaultDeps.createJsonResponse), 
+        createErrorResponse: spy(realDefaultDeps.createErrorResponse), 
+        // Mock client creation
+        createSupabaseClient: spy(() => mockSupabaseClient) as any, 
+        // Mock environment variable access
+        getEnv: mockGetEnv, 
     };
 };
 
@@ -95,7 +100,10 @@ Deno.test("ai-providers Function Tests", async (t) => {
 
     await t.step("OPTIONS request should return CORS headers", async () => {
         const deps = createTestDeps({ data: [], error: null }, {}); // Minimal deps needed
-        const req = new Request('http://localhost/ai-providers', { method: 'OPTIONS' });
+        const req = new Request('http://localhost/ai-providers', { 
+            method: 'OPTIONS', 
+            headers: { 'Origin': 'http://localhost:5173' } 
+        });
         const response = await mainHandler(req, deps);
         assertEquals(response.status, 204); // Correct status for CORS preflight
         assertEquals(await response.text(), ''); // Expect empty body for 204 No Content
@@ -108,8 +116,7 @@ Deno.test("ai-providers Function Tests", async (t) => {
         const req = new Request('http://localhost/ai-providers', { method: 'POST' });
         const response = await mainHandler(req, deps);
         assertEquals(response.status, 405);
-        // Check the message property of the error object
-        assertEquals((await response.json()).error.message, 'Method Not Allowed');
+        assertEquals((await response.json()).error, 'Method Not Allowed');
     });
 
     await t.step("GET Success - All Keys Set: Returns ONLY known, active, enabled providers", async () => {
@@ -316,11 +323,13 @@ Deno.test("ai-providers Function Tests", async (t) => {
         const response = await mainHandler(req, deps);
         assertEquals(response.status, 500);
         const body = await response.json();
-        assertEquals(body.error.message, dbError.message); // Should propagate the DB error message
+        assertEquals(body.error, dbError.message);
 
         // Verify .eq calls were made before error
         const mockClient = deps.createSupabaseClient(mockSupabaseUrl, mockAnonKey);
-        const eqSpy = (mockClient.from as Spy).calls[0].returned.eq as Spy;
+        const fromSpy = mockClient.from as Spy;
+        assertSpyCalls(fromSpy, 1);
+        const eqSpy = fromSpy.calls[0].returned.eq as Spy;
         assertSpyCalls(eqSpy, 2);
         assertSpyCall(eqSpy, 0, { args: ['is_active', true] });
         assertSpyCall(eqSpy, 1, { args: ['is_enabled', true] });

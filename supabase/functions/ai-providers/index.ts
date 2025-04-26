@@ -54,7 +54,7 @@ export async function mainHandler(req: Request, deps: AiProvidersHandlerDeps = d
   if (corsResponse) return corsResponse;
 
   if (req.method !== 'GET') {
-    return createErrorResponse('Method Not Allowed', 405);
+    return createErrorResponse('Method Not Allowed', 405, req);
   }
 
   try {
@@ -63,7 +63,7 @@ export async function mainHandler(req: Request, deps: AiProvidersHandlerDeps = d
     const supabaseAnonKey = getEnvDep('SUPABASE_ANON_KEY') ?? '';
     if (!supabaseUrl || !supabaseAnonKey) {
         console.error("Missing SUPABASE_URL or SUPABASE_ANON_KEY environment variables.");
-        return createErrorResponse("Server configuration error.", 500);
+        return createErrorResponse("Server configuration error.", 500, req);
     }
     const supabaseClient = createSupabaseClientDep(supabaseUrl, supabaseAnonKey);
 
@@ -78,7 +78,7 @@ export async function mainHandler(req: Request, deps: AiProvidersHandlerDeps = d
       console.error('Error fetching providers:', error)
       // Handle specific known errors like RLS if necessary
       if (error.code === 'PGRST116' || error.message.includes('permission denied')) {
-         return createErrorResponse('Unauthorized: RLS policy prevented access.', 403);
+         return createErrorResponse('Unauthorized: RLS policy prevented access.', 403, req);
       } 
       // Throw other DB errors to be caught by the main catch block
       throw error;
@@ -104,7 +104,7 @@ export async function mainHandler(req: Request, deps: AiProvidersHandlerDeps = d
     console.log(`Returning ${configuredProviders.length} configured providers.`);
 
     // Return the filtered list using the injected response creator
-    return createJsonResponse({ providers: configuredProviders }, 200);
+    return createJsonResponse({ providers: configuredProviders }, 200, req);
 
   } catch (error) {
     console.error('Error in ai-providers function:', error) // Log the raw error
@@ -122,7 +122,8 @@ export async function mainHandler(req: Request, deps: AiProvidersHandlerDeps = d
        // errorMessage = await error.text(); // Avoid await in catch if possible
      }
 
-    return createErrorResponse(errorMessage, errorStatus);
+    // Add req as the 3rd argument, pass original error as 4th
+    return createErrorResponse(errorMessage, errorStatus, req, error);
   }
 }
 
