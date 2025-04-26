@@ -19,26 +19,52 @@ import {
     createUnauthorizedResponse as actualCreateUnauthorizedResponse 
 } from "../_shared/auth.ts";
 
-// Define the interface for injectable dependencies
+// --- Service Abstraction ---
+export interface RegisterService {
+    signUp(credentials: SignUpWithPasswordCredentials): Promise<AuthResponse>;
+}
+
+export class SupabaseRegisterService implements RegisterService {
+    private supabase: SupabaseClient;
+
+    constructor(client: SupabaseClient) {
+        this.supabase = client;
+    }
+
+    async signUp(credentials: SignUpWithPasswordCredentials): Promise<AuthResponse> {
+        console.log(`[SupabaseRegisterService] Calling signUp...`);
+        return await this.supabase.auth.signUp(credentials);
+    }
+}
+
+// Define the interface for injectable dependencies, now using the service
 export interface RegisterHandlerDeps {
     handleCorsPreflightRequest: (req: Request) => Response | null;
     verifyApiKey: (req: Request) => boolean;
     createUnauthorizedResponse: (message: string) => Response;
     createErrorResponse: (message: string, status: number, request: Request, error?: unknown) => Response;
     createSuccessResponse: (data: unknown, status: number, request: Request) => Response;
-    createSupabaseClient: (url: string, key: string, options?: SupabaseClientOptions<any>) => SupabaseClient<any>;
-    // Allow injecting specific auth methods for finer-grained testing if needed later
-    // signUp?: (client: SupabaseClient<any>, creds: SignUpWithPasswordCredentials) => Promise<AuthResponse>; 
+    registerService: RegisterService; // Inject the service
 }
 
-// Default dependencies using the actual implementations
-const defaultDeps: RegisterHandlerDeps = {
-    handleCorsPreflightRequest: actualHandleCorsPreflightRequest,
-    verifyApiKey: actualVerifyApiKey,
-    createUnauthorizedResponse: actualCreateUnauthorizedResponse,
-    createErrorResponse: actualCreateErrorResponse,
-    createSuccessResponse: actualCreateSuccessResponse,
-    createSupabaseClient: actualCreateClient
+// Factory function for default dependencies
+const createDefaultDeps = (): RegisterHandlerDeps => {
+    const supabaseUrl = Deno.env.get('SUPABASE_URL');
+    const supabaseAnonKey = Deno.env.get('SUPABASE_ANON_KEY');
+    if (!supabaseUrl || !supabaseAnonKey) {
+        throw new Error("SUPABASE_URL or SUPABASE_ANON_KEY environment variables are not set.");
+    }
+    const supabaseClient = actualCreateClient(supabaseUrl, supabaseAnonKey);
+    const registerServiceInstance = new SupabaseRegisterService(supabaseClient);
+
+    return {
+        handleCorsPreflightRequest: actualHandleCorsPreflightRequest,
+        verifyApiKey: actualVerifyApiKey,
+        createUnauthorizedResponse: actualCreateUnauthorizedResponse,
+        createErrorResponse: actualCreateErrorResponse,
+        createSuccessResponse: actualCreateSuccessResponse,
+        registerService: registerServiceInstance, // Provide the service instance
+    };
 };
 
 /**
@@ -50,7 +76,8 @@ const defaultDeps: RegisterHandlerDeps = {
 // Export the handler, accepting dependencies with defaults
 export async function handleRegisterRequest(
   req: Request, 
-  deps: RegisterHandlerDeps = defaultDeps // Use default dependencies if none provided
+  // Initialize deps using the factory function
+  deps: RegisterHandlerDeps = createDefaultDeps() 
 ): Promise<Response> {
   console.log("[register/index.ts] Handling request:", req.method, req.url);
   const corsResponse = deps.handleCorsPreflightRequest(req);
@@ -83,29 +110,18 @@ export async function handleRegisterRequest(
       return deps.createErrorResponse("Email and password are required", 400, req);
     }
     
-    console.log("[register/index.ts] Creating Supabase client...");
-    const supabaseUrl = Deno.env.get('SUPABASE_URL');
-    const supabaseAnonKey = Deno.env.get('SUPABASE_ANON_KEY');
-    console.log(`[register/index.ts] Env Vars for client: URL=${!!supabaseUrl}, Key=${!!supabaseAnonKey}`);
-    if (!supabaseUrl || !supabaseAnonKey) {
-        console.error("[register/index.ts] CRITICAL: Missing SUPABASE_URL or SUPABASE_ANON_KEY in env for client creation.");
-        return deps.createErrorResponse("Server configuration error", 500, req);
-    }
-    const supabaseClient = deps.createSupabaseClient(supabaseUrl, supabaseAnonKey);
-    console.log("[register/index.ts] Supabase client created.");
-
-    console.log(`[register/index.ts] Attempting signUp for: ${email}`); 
-    const { data, error } = await supabaseClient.auth.signUp({
-      email,
-      password,
-    });
-    console.log(`[register/index.ts] signUp result: user=${!!data?.user}, session=${!!data?.session}, error=${error?.message}`);
+    // Use the injected service for the signUp operation
+    console.log(`[register/index.ts] Attempting signUp via service for: ${email}`); 
+    const { data, error } = await deps.registerService.signUp({ email, password });
+    console.log(`[register/index.ts] signUp result from service: user=${!!data?.user}, session=${!!data?.session}, error=${error?.message}`);
 
     if (error) {
-      console.error("[register/index.ts] signUp Error:", error);
+      console.error("[register/index.ts] signUp Error from service:", error);
+      // Ensure error has status if possible, default to 400 for auth errors
+      const status = typeof error === 'object' && error !== null && 'status' in error && typeof error.status === 'number' ? error.status : 400;
       return deps.createErrorResponse(
           `Auth Error: ${error.message}`,
-          error.status || 400,
+          status,
           req,
           error
       );
@@ -141,5 +157,5 @@ export async function handleRegisterRequest(
 }
 
 // Deno.serve calls the handler, which uses defaultDeps by default
-// Update serve call to explicitly pass defaultDeps
-serve((req) => handleRegisterRequest(req, defaultDeps)); 
+// Update serve call to use the factory function
+serve((req) => handleRegisterRequest(req, createDefaultDeps())); 
