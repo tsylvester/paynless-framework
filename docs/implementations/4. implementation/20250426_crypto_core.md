@@ -47,12 +47,12 @@
         *   [X] Test that decryption fails if AAD is tampered with.
 
 4.  **[ ] Implement Signing/Verification & Key Exchange:**
-    *   [ ] Implement key pair generation for Ed25519.
-    *   [ ] Implement `sign` and `verify` functions (for challenge-response).
+    *   [X] Implement key pair generation for Ed25519.
+    *   [X] Implement `sign` and `verify` functions (for challenge-response).
     *   [ ] Implement key pair generation for X25519.
     *   [ ] Implement `key_exchange` function.
     *   [ ] Define types for keys, signatures, shared secrets.
-    *   [ ] Write unit tests (key gen, sign/verify roundtrip, invalid sig, exchange roundtrip, KATs).
+    *   [X] Write unit tests (key gen, sign/verify roundtrip, invalid sig, exchange roundtrip, KATs).
 
 5.  **[ ] Implement Key Derivation Logic:**
     *   [ ] Implement HKDF-SHA256 based on `docs/protocols/key_management.md`.

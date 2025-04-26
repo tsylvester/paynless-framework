@@ -4,7 +4,7 @@ use chacha20poly1305::{
 };
 use thiserror::Error;
 use sha3::{Digest, Sha3_256};
-// extern crate hex; // Removed this line
+use signature::Error as SignatureTraitError;
 
 // Define a type alias for our standard hash output (32 bytes for SHA3-256)
 pub type Hash = [u8; 32];
@@ -37,8 +37,19 @@ pub enum CryptoError {
     InvalidKeyLength,
     #[error("Invalid nonce length provided")]
     InvalidNonceLength,
+    #[error("Signature verification failed")]
+    SignatureVerificationFailed,
     #[error("Underlying cryptographic operation failed: {0}")]
     InternalError(String), // Catch-all for unexpected library errors
+    #[error("Failed to parse signature: {0}")]
+    SignatureParsingError(String),
+}
+
+// Implement From trait to allow '?' conversion from signature::Error
+impl From<SignatureTraitError> for CryptoError {
+    fn from(e: SignatureTraitError) -> Self {
+        CryptoError::SignatureParsingError(e.to_string())
+    }
 }
 
 // Function to generate a cryptographically secure random nonce
@@ -87,14 +98,113 @@ pub fn decrypt_symmetric(
         // See note in encrypt_symmetric regarding associated_data handling.
 }
 
+// --- Ed25519 Imports ---
+use ed25519_dalek::{Signer, Verifier, VerifyingKey, SigningKey, Signature as EdSignature};
+use rand::rngs::OsRng as RandOsRng; // Keep only necessary rand imports
+
+// --- Ed25519 Digital Signatures ---
+
+pub const SIGNING_PUBLIC_KEY_BYTES: usize = 32;
+pub const SIGNING_SECRET_KEY_BYTES: usize = 32; // ed25519 secret keys are 32 bytes
+pub const SIGNATURE_BYTES: usize = 64;
+
+// Wrapper structs for type safety and potential future abstraction
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SigningPublicKey([u8; SIGNING_PUBLIC_KEY_BYTES]);
+
+#[derive(Debug)] // Avoid Clone, Eq, PartialEq for secret key wrapper
+pub struct SigningSecretKey([u8; SIGNING_SECRET_KEY_BYTES]);
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Signature([u8; SIGNATURE_BYTES]);
+
+// Implement Deref to easily access the inner byte array if needed
+impl std::ops::Deref for SigningPublicKey {
+    type Target = [u8; SIGNING_PUBLIC_KEY_BYTES];
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl std::ops::Deref for Signature {
+    type Target = [u8; SIGNATURE_BYTES];
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+// Implement From traits for easier conversion from dalek types
+impl From<VerifyingKey> for SigningPublicKey {
+    fn from(key: VerifyingKey) -> Self {
+        SigningPublicKey(key.to_bytes())
+    }
+}
+
+impl From<SigningKey> for SigningSecretKey {
+    fn from(key: SigningKey) -> Self {
+        // Note: SigningKey encapsulates the secret scalar and the public key bytes.
+        // We only store the secret part here for simplicity, assuming the public key
+        // can be derived or is stored separately when needed for signing pair generation.
+        // The to_bytes() method returns the 32-byte secret scalar.
+        SigningSecretKey(key.to_bytes())
+    }
+}
+
+impl From<EdSignature> for Signature {
+    fn from(sig: EdSignature) -> Self {
+        Signature(sig.to_bytes())
+    }
+}
+
+// Allow converting our wrapper back to dalek types (requires error handling for public key)
+impl TryFrom<&SigningPublicKey> for VerifyingKey {
+    type Error = CryptoError;
+    fn try_from(value: &SigningPublicKey) -> Result<Self, Self::Error> {
+        VerifyingKey::from_bytes(&value.0)
+            .map_err(|e| CryptoError::InternalError(format!("Failed to parse public key: {}", e)))
+    }
+}
+
+// Function to generate a new Ed25519 key pair
+pub fn generate_signing_keypair() -> (SigningSecretKey, SigningPublicKey) {
+    let mut csprng = RandOsRng;
+    let signing_key: SigningKey = SigningKey::generate(&mut csprng);
+    let verifying_key: VerifyingKey = signing_key.verifying_key();
+    (signing_key.into(), verifying_key.into())
+}
+
+// Function to sign a message with a secret key
+pub fn sign(secret_key: &SigningSecretKey, message: &[u8]) -> Result<Signature, CryptoError> {
+    // Reconstruct the SigningKey from the secret bytes.
+    // Note: This assumes the SigningSecretKey wrapper only holds the secret scalar bytes.
+    // Note 2: SigningKey::from_bytes will panic if the length is incorrect. We assume
+    // our SigningSecretKey is always constructed correctly (e.g., via generate_signing_keypair).
+    let signing_key = SigningKey::from_bytes(&secret_key.0);
+
+    // Sign the message
+    let signature: EdSignature = signing_key.sign(message);
+    Ok(signature.into())
+}
+
+// Function to verify a signature
+pub fn verify(
+    public_key: &SigningPublicKey,
+    message: &[u8],
+    signature: &Signature,
+) -> Result<(), CryptoError> {
+    let verifying_key = VerifyingKey::try_from(public_key)?;
+    let ed_signature = <EdSignature as TryFrom<&[u8]>>::try_from(&signature.0)?;
+
+    verifying_key
+        .verify(message, &ed_signature)
+        .map_err(|_| CryptoError::SignatureVerificationFailed)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rand::RngCore;
+    use rand::RngCore; // This is needed for generate_random_key in tests
     use hex; // Ensure use hex is present inside the test module
-
-    // Helper for hex decoding (assuming hex crate is dev-dependency)
-    // mod hex_helper { ... } // Removed hex_helper module
 
     // --- Hashing Tests (Updated for SHA3-256) ---
     #[test]
@@ -108,7 +218,7 @@ mod tests {
             .try_into()
             .expect("Decoded hex string has incorrect length");
 
-        let actual_hash = hash_data(input); 
+        let actual_hash = hash_data(input);
         assert_eq!(actual_hash, expected_bytes, "SHA3-256 hash for 'hello world' did not match expected value");
     }
 
@@ -141,7 +251,8 @@ mod tests {
 
     fn generate_random_key() -> SymKey {
         let mut key = [0u8; SYMMETRIC_KEY_BYTES];
-        OsRng.fill_bytes(&mut key);
+        // Use OsRng from chacha20poly1305::aead imports
+        OsRng.fill_bytes(&mut key); 
         key
     }
 
@@ -238,24 +349,89 @@ mod tests {
 
     // --- Add tests for Associated Data (AAD) if the implementation supports it ---
     // #[test]
-    // fn test_encrypt_decrypt_roundtrip_with_aad() {
-    //     let key = generate_random_key();
-    //     let nonce = generate_nonce();
-    //     let plaintext = b"payload";
-    //     let associated_data = Some(&b"metadata"[..]);
-    //
-    //     let ciphertext = encrypt_symmetric(&key, plaintext, &nonce, associated_data)
-    //         .expect("Encryption with AAD failed");
-    //
-    //     let decrypted_plaintext = decrypt_symmetric(&key, &ciphertext, &nonce, associated_data)
-    //         .expect("Decryption with AAD failed");
-    //
-    //     assert_eq!(decrypted_plaintext, plaintext);
-    //
-    //     // Test failure with wrong AAD
-    //     let wrong_associated_data = Some(&b"other_metadata"[..]);
-    //     let result = decrypt_symmetric(&key, &ciphertext, &nonce, wrong_associated_data);
-    //     assert!(result.is_err());
-    //     assert_eq!(result.unwrap_err(), CryptoError::DecryptionError);
-    // }
+    // fn test_encrypt_decrypt_roundtrip_with_aad() { ... }
+
+    // --- Ed25519 Signing Tests ---
+
+    #[test]
+    fn test_signing_keypair_generation() {
+        let (secret_key, public_key) = generate_signing_keypair();
+
+        // Check lengths
+        assert_eq!(secret_key.0.len(), SIGNING_SECRET_KEY_BYTES);
+        assert_eq!(public_key.0.len(), SIGNING_PUBLIC_KEY_BYTES);
+
+        // Try to reconstruct dalek keys to ensure validity (basic check)
+        assert!(SigningKey::from_bytes(&secret_key.0).verifying_key().to_bytes() == public_key.0);
+        assert!(VerifyingKey::try_from(&public_key).is_ok());
+    }
+
+    #[test]
+    fn test_sign_verify_roundtrip() {
+        let (secret_key, public_key) = generate_signing_keypair();
+        let message = b"This message needs to be signed";
+
+        // Sign the message
+        let signature = sign(&secret_key, message).expect("Signing failed");
+        assert_eq!(signature.0.len(), SIGNATURE_BYTES);
+
+        // Verify the signature
+        let verification_result = verify(&public_key, message, &signature);
+        assert!(verification_result.is_ok(), "Verification failed when it should succeed");
+    }
+
+    #[test]
+    fn test_verify_wrong_key() {
+        let (secret_key1, _public_key1) = generate_signing_keypair();
+        let (_secret_key2, public_key2) = generate_signing_keypair(); // Different key pair
+        let message = b"Message signed by key 1";
+
+        let signature = sign(&secret_key1, message).expect("Signing failed");
+
+        // Verify with the wrong public key
+        let verification_result = verify(&public_key2, message, &signature);
+        assert!(verification_result.is_err());
+        assert_eq!(verification_result.unwrap_err(), CryptoError::SignatureVerificationFailed);
+    }
+
+    #[test]
+    fn test_verify_tampered_message() {
+        let (secret_key, public_key) = generate_signing_keypair();
+        let original_message = b"Original message content";
+        let tampered_message = b"Tampered message content";
+
+        let signature = sign(&secret_key, original_message).expect("Signing failed");
+
+        // Verify with the tampered message
+        let verification_result = verify(&public_key, tampered_message, &signature);
+        assert!(verification_result.is_err());
+        assert_eq!(verification_result.unwrap_err(), CryptoError::SignatureVerificationFailed);
+    }
+
+    #[test]
+    fn test_verify_tampered_signature() {
+        let (secret_key, public_key) = generate_signing_keypair();
+        let message = b"A message to verify";
+
+        let mut signature = sign(&secret_key, message).expect("Signing failed");
+
+        // Tamper with the signature (flip a bit)
+        let last_byte_index = signature.0.len() - 1;
+        signature.0[last_byte_index] ^= 0x01;
+
+        // Verify with the tampered signature
+        let verification_result = verify(&public_key, message, &signature);
+        assert!(verification_result.is_err());
+
+        // Check if the error is either ParsingError or VerificationFailed
+        match verification_result.unwrap_err() {
+            CryptoError::SignatureParsingError(_) | CryptoError::SignatureVerificationFailed => {
+                // Test passes if either error occurs
+            }
+            e => panic!(
+                "Expected SignatureParsingError or SignatureVerificationFailed, got {:?}",
+                e
+            ),
+        }
+    }
 }
