@@ -108,6 +108,10 @@ jobs:
         run: pnpm install
 
       - name: Run Web App Tests (Vitest)
+        # Provide dummy env vars required by MSW handlers during test setup
+        env:
+          VITE_SUPABASE_URL: http://localhost:54321
+          VITE_SUPABASE_ANON_KEY: dummy_anon_key
         run: pnpm --filter @paynless/web test
 
       - name: Build Web App (Vite)
@@ -179,9 +183,9 @@ jobs:
           run_install: false
 
       - name: Get pnpm store directory
-        shell: bash
-        run: |
-          echo "STORE_PATH=$(pnpm store path --silent)" >> $env:GITHUB_ENV
+        # Use PowerShell syntax for Windows runner
+        shell: pwsh
+        run: echo "STORE_PATH=$(pnpm store path --silent)" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 
       - name: Set up pnpm cache
         uses: actions/cache@v4
