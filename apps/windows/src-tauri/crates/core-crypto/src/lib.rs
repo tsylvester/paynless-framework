@@ -43,6 +43,8 @@ pub enum CryptoError {
     InternalError(String), // Catch-all for unexpected library errors
     #[error("Failed to parse signature: {0}")]
     SignatureParsingError(String),
+    #[error("Key exchange failed: {0}")]
+    KeyExchangeError(String),
 }
 
 // Implement From trait to allow '?' conversion from signature::Error
@@ -198,6 +200,111 @@ pub fn verify(
     verifying_key
         .verify(message, &ed_signature)
         .map_err(|_| CryptoError::SignatureVerificationFailed)
+}
+
+// --- X25519 Imports ---
+use x25519_dalek::{
+    PublicKey as X25519PublicKey,
+    SharedSecret as X25519SharedSecret,
+    StaticSecret as X25519StaticSecret,
+};
+
+// --- X25519 Key Exchange ---
+
+pub const KEY_EXCHANGE_PUBLIC_KEY_BYTES: usize = 32;
+pub const KEY_EXCHANGE_SECRET_KEY_BYTES: usize = 32;
+pub const SHARED_SECRET_BYTES: usize = 32;
+
+// Wrapper structs for type safety
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct KeyExchangePublicKey([u8; KEY_EXCHANGE_PUBLIC_KEY_BYTES]);
+
+#[derive(Debug)] // Avoid Clone, Eq, PartialEq for secret key wrapper
+pub struct KeyExchangeSecretKey([u8; KEY_EXCHANGE_SECRET_KEY_BYTES]);
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SharedSecret([u8; SHARED_SECRET_BYTES]);
+
+// Implement Deref to easily access inner bytes
+impl std::ops::Deref for KeyExchangePublicKey {
+    type Target = [u8; KEY_EXCHANGE_PUBLIC_KEY_BYTES];
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl std::ops::Deref for SharedSecret {
+    type Target = [u8; SHARED_SECRET_BYTES];
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+// Conversions between our wrappers and x25519_dalek types
+impl From<X25519PublicKey> for KeyExchangePublicKey {
+    fn from(key: X25519PublicKey) -> Self {
+        KeyExchangePublicKey(*key.as_bytes()) // as_bytes() returns &[u8; 32]
+    }
+}
+
+impl TryFrom<&KeyExchangePublicKey> for X25519PublicKey {
+    type Error = CryptoError;
+    fn try_from(value: &KeyExchangePublicKey) -> Result<Self, Self::Error> {
+        // X25519PublicKey does not have a direct fallible from_bytes.
+        // It validates internally. If length is wrong, it would panic earlier.
+        // If the bytes are invalid (e.g., all zero), diffie_hellman might produce
+        // an all-zero output, which should be checked by the caller using the secret.
+        Ok(X25519PublicKey::from(value.0))
+    }
+}
+
+impl From<X25519StaticSecret> for KeyExchangeSecretKey {
+    fn from(key: X25519StaticSecret) -> Self {
+        KeyExchangeSecretKey(key.to_bytes())
+    }
+}
+
+impl From<&KeyExchangeSecretKey> for X25519StaticSecret {
+    fn from(value: &KeyExchangeSecretKey) -> Self {
+        // StaticSecret::from performs clamping, doesn't fail for valid length
+        X25519StaticSecret::from(value.0)
+    }
+}
+
+impl From<X25519SharedSecret> for SharedSecret {
+    fn from(secret: X25519SharedSecret) -> Self {
+        SharedSecret(secret.to_bytes())
+    }
+}
+
+// Function to generate a new X25519 static key pair
+pub fn generate_key_exchange_keypair() -> (KeyExchangeSecretKey, KeyExchangePublicKey) {
+    let mut csprng = RandOsRng;
+    let static_secret = X25519StaticSecret::random_from_rng(&mut csprng);
+    let public_key = X25519PublicKey::from(&static_secret);
+    (static_secret.into(), public_key.into())
+}
+
+// Function to perform X25519 Diffie-Hellman key exchange
+pub fn key_exchange(
+    our_secret: &KeyExchangeSecretKey,
+    their_public: &KeyExchangePublicKey,
+) -> Result<SharedSecret, CryptoError> {
+    let static_secret = X25519StaticSecret::from(our_secret);
+    let public_key = X25519PublicKey::try_from(their_public)?;
+
+    // Perform the Diffie-Hellman exchange
+    let shared_secret: X25519SharedSecret = static_secret.diffie_hellman(&public_key);
+
+    // Check for all-zero shared secret (potential indication of weak/invalid public key)
+    // While not strictly mandated by RFC7748, it's a common safety check.
+    if shared_secret.as_bytes() == &[0u8; 32] {
+        return Err(CryptoError::KeyExchangeError(
+            "Potential weak key detected: resulted in all-zero shared secret".to_string(),
+        ));
+    }
+
+    Ok(shared_secret.into())
 }
 
 #[cfg(test)]
@@ -432,6 +539,64 @@ mod tests {
                 "Expected SignatureParsingError or SignatureVerificationFailed, got {:?}",
                 e
             ),
+        }
+    }
+
+    // --- X25519 Key Exchange Tests ---
+
+    #[test]
+    fn test_key_exchange_keypair_generation() {
+        let (secret_key, public_key) = generate_key_exchange_keypair();
+
+        // Check lengths
+        assert_eq!(secret_key.0.len(), KEY_EXCHANGE_SECRET_KEY_BYTES);
+        assert_eq!(public_key.0.len(), KEY_EXCHANGE_PUBLIC_KEY_BYTES);
+
+        // Basic sanity check: try to reconstruct and compare public key
+        let reconstructed_secret = X25519StaticSecret::from(&secret_key);
+        let reconstructed_public = X25519PublicKey::from(&reconstructed_secret);
+        assert_eq!(reconstructed_public.as_bytes(), &public_key.0);
+    }
+
+    #[test]
+    fn test_key_exchange_roundtrip() {
+        // Generate key pairs for Alice and Bob
+        let (alice_secret_key, alice_public_key) = generate_key_exchange_keypair();
+        let (bob_secret_key, bob_public_key) = generate_key_exchange_keypair();
+
+        // Alice computes shared secret with Bob's public key
+        let shared_secret_alice = key_exchange(&alice_secret_key, &bob_public_key)
+            .expect("Alice key exchange failed");
+
+        // Bob computes shared secret with Alice's public key
+        let shared_secret_bob = key_exchange(&bob_secret_key, &alice_public_key)
+            .expect("Bob key exchange failed");
+
+        // The shared secrets must be identical
+        assert_eq!(shared_secret_alice, shared_secret_bob);
+        assert_eq!(shared_secret_alice.0.len(), SHARED_SECRET_BYTES);
+
+        // Ensure the shared secret is not all zeros (highly unlikely with random keys)
+        assert_ne!(shared_secret_alice.0, [0u8; SHARED_SECRET_BYTES]);
+    }
+
+    #[test]
+    fn test_key_exchange_weak_key_detection() {
+        let (alice_secret_key, _alice_public_key) = generate_key_exchange_keypair();
+
+        // Create an invalid all-zero public key for Bob (simulating a weak key)
+        let bob_weak_public_key = KeyExchangePublicKey([0u8; KEY_EXCHANGE_PUBLIC_KEY_BYTES]);
+
+        // Alice attempts key exchange with Bob's weak public key
+        let result = key_exchange(&alice_secret_key, &bob_weak_public_key);
+
+        // Expect an error indicating a potential weak key / all-zero result
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            CryptoError::KeyExchangeError(msg) => {
+                assert!(msg.contains("all-zero shared secret"));
+            }
+            e => panic!("Expected KeyExchangeError containing 'all-zero shared secret', got {:?}", e),
         }
     }
 }
