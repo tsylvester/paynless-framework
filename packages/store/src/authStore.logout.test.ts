@@ -96,7 +96,7 @@ describe('AuthStore - Logout Action (Refactored for Supabase)', () => {
     signOutSpy.mockResolvedValue({ error: null }); // Ensure success
 
     // Act
-    await useAuthStore.getState().logout();
+    await useAuthStore.getState().logout(mockSupabaseClient.auth);
 
     // Assert: Supabase call
     expect(signOutSpy).toHaveBeenCalledTimes(1);
@@ -124,7 +124,7 @@ describe('AuthStore - Logout Action (Refactored for Supabase)', () => {
     signOutSpy.mockResolvedValue({ error: supabaseError }); // Mock failure
 
     // Act
-    await useAuthStore.getState().logout();
+    await useAuthStore.getState().logout(mockSupabaseClient.auth);
 
     // Assert: Supabase call attempted
     expect(signOutSpy).toHaveBeenCalledTimes(1);
@@ -150,7 +150,7 @@ describe('AuthStore - Logout Action (Refactored for Supabase)', () => {
     useAuthStore.setState({ user: null, session: null });
 
     // Act
-    await useAuthStore.getState().logout();
+    await useAuthStore.getState().logout(mockSupabaseClient.auth);
 
     // Assert: Supabase call NOT made
     expect(signOutSpy).not.toHaveBeenCalled();

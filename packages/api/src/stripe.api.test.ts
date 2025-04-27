@@ -1,14 +1,36 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { http, HttpResponse } from 'msw';
 import { StripeApiClient } from './stripe.api';
-import { initializeApiClient, _resetApiClient, api, ApiClient } from './apiClient';
+import { ApiClient } from './apiClient';
 import type { ApiResponse, SubscriptionPlan, UserSubscription, SubscriptionUsageMetrics, ApiError as ApiErrorType } from '@paynless/types';
 import { server } from './setupTests';
-import { mockSupabaseAuthSession, MOCK_ACCESS_TOKEN } from './mocks/supabase.mock';
+import { createClient } from '@supabase/supabase-js';
 
 // --- Mock URLs & Token ---
 const MOCK_SUPABASE_URL = 'http://localhost/api';
 const MOCK_FUNCTIONS_URL = `${MOCK_SUPABASE_URL}/functions/v1`;
+const MOCK_ANON_KEY = 'mock-stripe-test-anon-key';
+const MOCK_ACCESS_TOKEN = 'mock-stripe-test-access-token';
+
+// Mock the @supabase/supabase-js module for the ApiClient instantiation
+vi.mock('@supabase/supabase-js', () => {
+  const mockAuth = {
+    getSession: vi.fn(),
+  };
+  const mockClient = {
+    auth: mockAuth,
+    channel: vi.fn(() => ({
+      on: vi.fn().mockReturnThis(),
+      subscribe: vi.fn(),
+      unsubscribe: vi.fn(),
+    })),
+    removeChannel: vi.fn(),
+  };
+  return {
+    createClient: vi.fn(() => mockClient),
+    SupabaseClient: vi.fn(),
+  };
+});
 
 // --- Mock Handlers (using MOCK_FUNCTIONS_URL) ---
 const stripeApiHandlers = [
@@ -58,26 +80,40 @@ const stripeApiHandlers = [
 // --- Test Suite ---
 describe('StripeApiClient', () => {
     let stripeApiClient: StripeApiClient;
-    let internalApiClientInstance: ApiClient;
+    let apiClientInstance: ApiClient;
+    let mockSupabaseClient: ReturnType<typeof createClient>;
 
     beforeEach(() => {
-        _resetApiClient(); 
-        initializeApiClient({ supabaseUrl: MOCK_SUPABASE_URL, supabaseAnonKey: 'test-anon-key' }); 
-        
-        internalApiClientInstance = api.billing().apiClient; 
+        vi.clearAllMocks();
 
-        mockSupabaseAuthSession(internalApiClientInstance);
-        
-        stripeApiClient = new StripeApiClient(internalApiClientInstance);
-        
+        const mockAuth = {
+            getSession: vi.fn().mockResolvedValue({
+                data: {
+                    session: { access_token: MOCK_ACCESS_TOKEN }
+                },
+                error: null
+            }),
+        };
+        mockSupabaseClient = {
+            auth: mockAuth,
+            channel: vi.fn().mockReturnThis(),
+            removeChannel: vi.fn(),
+        } as unknown as ReturnType<typeof createClient>;
+
+        apiClientInstance = new ApiClient({
+            supabase: mockSupabaseClient,
+            supabaseUrl: MOCK_SUPABASE_URL,
+            supabaseAnonKey: MOCK_ANON_KEY,
+        });
+
+        stripeApiClient = apiClientInstance.billing;
+
         server.resetHandlers();
         server.use(...stripeApiHandlers);
     });
 
     afterEach(() => {
         server.resetHandlers();
-        _resetApiClient();
-        vi.restoreAllMocks();
     });
 
     // --- Test Cases (Ensure assertions match ApiResponse structure) --- 

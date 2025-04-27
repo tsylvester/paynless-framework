@@ -258,153 +258,87 @@ export function initAuthListener(supabaseClient: SupabaseClient): () => void {
   logger.debug('[AuthListener] Initializing Supabase auth listener with passed client...');
   let initialSessionEventFired = false;
 
-  const { data: listener } = supabaseClient.auth.onAuthStateChange(
-    (event: AuthChangeEvent, session: SupabaseSession | null) => {
-      try {
-        logger.debug(`[AuthListener] Event received: ${event}`);
-        if (event === 'INITIAL_SESSION') {
-          initialSessionEventFired = true;
-        }
+  const handleAuthStateChange = async (event: AuthChangeEvent, session: SupabaseSession | null) => {
+    logger.info(`[AuthListener] Auth state change event: ${event}`, { session: !!session });
+    initialSessionEventFired = initialSessionEventFired || event === 'INITIAL_SESSION';
 
-        const storeSession = mapSupabaseSession(session);
-        const storeUser = mapSupabaseUser(session?.user ?? null);
+    const currentState = useAuthStore.getState();
+    const currentMappedSession = mapSupabaseSession(session);
+    const currentMappedUser = mapSupabaseUser(session?.user ?? null);
 
-        switch (event) {
-          case 'INITIAL_SESSION':
-            useAuthStore.setState({
-              session: storeSession,
-              user: storeUser,
-              isLoading: false, 
-              error: null,
-              profile: undefined, 
-            });
-            break;
-          case 'SIGNED_IN':
-            useAuthStore.setState({
-              session: storeSession,
-              user: storeUser,
-              isLoading: false,
-              error: null,
-              profile: undefined,
-            });
-            
-            try {
-                const pendingActionJson = localStorage.getItem('pendingAction');
-                if (pendingActionJson) {
-                    logger.debug('[AuthListener] Found pending action on SIGNED_IN. Checking return path...');
-                    const pendingAction = JSON.parse(pendingActionJson);
-                    if (pendingAction && pendingAction.returnPath) {
-                        const navigate = useAuthStore.getState().navigate;
-                        if (navigate) {
-                            logger.info(`[AuthListener] Navigating to pending action return path: ${pendingAction.returnPath}`);
-                            navigate(pendingAction.returnPath);
-                        } else {
-                            logger.warn('[AuthListener] Pending action exists but navigate function not available to redirect.');
-                        }
-                    } else {
-                         logger.warn('[AuthListener] Could not parse returnPath from pending action JSON.', { pendingActionJson });
-                    }
-                } else {
-                    logger.info('[AuthListener] No pending action found on SIGNED_IN. Navigating to default route dashboard.');
-                    const navigate = useAuthStore.getState().navigate;
-                    if (navigate) {
-                        navigate('dashboard');
-                    } else {
-                        logger.warn('[AuthListener] Navigate function not available for default redirection.');
-                    }
-                }
-            } catch (e) {
-                logger.error('[AuthListener] Error checking/parsing pendingAction for navigation:', { 
-                    error: e instanceof Error ? e.message : String(e) 
-                });
-                localStorage.removeItem('pendingAction');
-            }
-            break;
-          case 'TOKEN_REFRESHED':
-            useAuthStore.setState({
-              session: storeSession,
-              user: storeUser,
-              isLoading: false,
-              error: null,
-            });
-            break;
-          case 'SIGNED_OUT':
-            useAuthStore.setState({
-              user: null,
-              session: null,
-              profile: null,
-              isLoading: false,
-              error: null,
-            });
-            localStorage.removeItem('pendingAction');
-            localStorage.removeItem('loadChatIdOnRedirect');
-            break;
-          case 'USER_UPDATED':
-            useAuthStore.setState({ user: storeUser }); 
-            break;
-          case 'PASSWORD_RECOVERY':
-            useAuthStore.setState({ isLoading: false });
-            break;
-          default:
-            useAuthStore.setState({ isLoading: false }); 
-            break;
-        }
+    // Update user and session regardless of the event type initially
+    const userChanged = currentState.user?.id !== currentMappedUser?.id || currentState.user?.email !== currentMappedUser?.email;
+    const sessionChanged = currentState.session?.access_token !== currentMappedSession?.access_token || currentState.session?.expires_at !== currentMappedSession?.expires_at;
 
-        if ((event === 'INITIAL_SESSION' || event === 'SIGNED_IN') && storeSession?.access_token) {
-            setTimeout(async () => { 
-                const startTime = Date.now();
-                logger.debug(`[AuthListener] Performing async tasks for ${event}`);
-                try {
-                    if (!storeUser?.id) {
-                      logger.error(`[AuthListener] Cannot fetch profile for ${event}: User ID is missing.`);
-                      useAuthStore.setState({ profile: null, error: new Error('User ID missing for profile fetch') });
-                      return;
-                    }
-
-                    logger.debug(`[AuthListener] Fetching profile for user ${storeUser.id} during ${event}...`);
-                    const profileStartTime = Date.now();
-                    const { data: profileData, error: profileError } = await supabaseClient
-                      .from('profiles')
-                      .select('*')
-                      .eq('id', storeUser.id)
-                      .single();
-                    const profileEndTime = Date.now();
-                    logger.debug(`[AuthListener] Profile fetch completed for ${event}. Duration: ${profileEndTime - profileStartTime}ms`);
-
-                    if (profileError) {
-                        logger.error(`[AuthListener] Failed to fetch profile for ${event}`, { error: profileError });
-                        const errorMessage = `Failed to fetch profile: ${profileError.message}${profileError.code ? ` (Code: ${profileError.code})` : ''}`;
-                        useAuthStore.setState({ profile: null, error: new Error(errorMessage) });
-                    } else if (profileData) {
-                        logger.debug(`[AuthListener] Profile fetched successfully for ${event}`);
-                        useAuthStore.setState({ profile: profileData as UserProfile });
-                    } else {
-                        logger.warn(`[AuthListener] Profile fetch for ${event} returned no data and no error for user ${storeUser.id}.`);
-                        useAuthStore.setState({ profile: null });
-                    }
-
-                } catch (asyncError) {
-                    logger.error(`[AuthListener] Error during async tasks for ${event}`, { 
-                        error: asyncError instanceof Error ? asyncError.message : String(asyncError) 
-                    });
-                } finally {
-                    const endTime = Date.now();
-                    logger.debug(`[AuthListener] Finished async tasks for ${event}. Total duration: ${endTime - startTime}ms`);
-                }
-            }, 0);
-        } 
-
-      } catch (callbackError) {
-        logger.error('!!!!!! ERROR INSIDE onAuthStateChange CALLBACK !!!!!!', {
-          error: callbackError instanceof Error ? callbackError.message : String(callbackError),
-          stack: callbackError instanceof Error ? callbackError.stack : undefined,
-          event,
-          session
-        });
-        useAuthStore.setState({ isLoading: false, error: new Error('Auth listener callback failed') });
+    // Always update user/session if they changed or if it's sign-out
+    if (userChanged || sessionChanged || event === 'SIGNED_OUT') {
+      set({ 
+        user: currentMappedUser, 
+        session: currentMappedSession, 
+        // Reset profile only on SIGNED_OUT or if user ID changes
+        profile: event === 'SIGNED_OUT' || (currentMappedUser?.id !== currentState.user?.id) ? null : currentState.profile,
+        isLoading: false, // Mark loading complete after session update
+        error: null, // Clear previous errors on auth change
+      });
+    } else {
+      // If only user metadata changed (e.g., USER_UPDATED), just update user
+      if (event === 'USER_UPDATED') {
+        set({ user: currentMappedUser, isLoading: false });
+      } else {
+        // Otherwise, just ensure loading is false if nothing significant changed
+        set({ isLoading: false });
       }
     }
-  );
+
+    // --- Refined Profile Fetching Logic ---
+    const shouldFetchProfile = 
+        session?.user && 
+        (event === 'INITIAL_SESSION' || event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED');
+
+    if (shouldFetchProfile) {
+        logger.debug(`[AuthListener] Fetching profile for ${event}...`, { userId: session.user.id });
+        try {
+            const { data: profileData, error: profileError } = await supabaseClient
+                .from('user_profiles')
+                .select('*')
+                .eq('id', session.user.id)
+                .single();
+
+            if (profileError) {
+                // Throw the error to be caught below
+                throw profileError;
+            }
+
+            if (profileData) {
+                set({ profile: profileData as UserProfile, error: null });
+                logger.info('[AuthListener] Profile fetched successfully.', { userId: session.user.id });
+                // Identify user with analytics after profile is loaded
+                analytics.identify(session.user.id, { 
+                  email: session.user.email, 
+                  name: `${profileData.first_name || ''} ${profileData.last_name || ''}`.trim(),
+                  // Add other relevant traits from profileData
+                });
+            } else {
+                 // Handle case where profile fetch succeeds but returns no data (shouldn't usually happen if RLS is correct)
+                 logger.warn('[AuthListener] Profile fetch returned no data.', { userId: session.user.id });
+                 set({ profile: null, error: new Error('User profile not found.') });
+            }
+
+        } catch (error: any) {
+            logger.error('[AuthListener] Error fetching profile:', error);
+            set({ 
+                profile: null, 
+                error: new Error(`Failed to fetch profile: ${error.message} (Code: ${error.code || 'UNKNOWN'})`) 
+            });
+        }
+    }
+    // --- End Refined Profile Fetching Logic ---
+
+  };
+
+  // Subscribe to auth state changes
+  const { data: { subscription }, error: subscriptionError } = supabaseClient.auth.onAuthStateChange(handleAuthStateChange);
+
   logger.debug('[AuthListener] Listener attached.');
 
   logger.debug('[AuthListener] Manually fetching initial session using passed client...');
@@ -471,7 +405,7 @@ export function initAuthListener(supabaseClient: SupabaseClient): () => void {
   logger.debug('[AuthListener] Function execution finished.');
   return () => {
     logger.debug('[AuthListener] Unsubscribing Supabase auth listener.');
-    listener?.subscription.unsubscribe();
+    subscription?.unsubscribe();
   };
 }
 

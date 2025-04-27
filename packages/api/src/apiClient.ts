@@ -256,28 +256,38 @@ export class ApiClient implements IApiClient { // <-- Add implements IApiClient
     /**
      * Unsubscribes from new notifications for a specific user.
      * @param userId The ID of the user to unsubscribe for.
+     * @returns A promise that resolves when unsubscribe is complete, or rejects on error.
      */
-    public unsubscribeFromNotifications(userId: string): void {
+    public async unsubscribeFromNotifications(userId: string): Promise<void> {
         if (!userId) {
             logger.warn('[ApiClient] Cannot unsubscribe from notifications: userId is missing.');
-            return;
+            return Promise.resolve(); // Return resolved promise for consistency
         }
         const channel = this.notificationChannels.get(userId);
         if (channel) {
             logger.debug(`[ApiClient] Unsubscribing from notifications for user ${userId}...`);
-            channel.unsubscribe()
+            // Return the promise chain
+            return channel.unsubscribe()
                 .catch(error => {
                     logger.error(`[ApiClient] Error unsubscribing notification channel for user ${userId}:`, { error });
+                    // Optionally re-throw or handle differently if needed
+                    throw error; // Re-throw caught error to make the promise reject
                 })
-                .finally(() => {
+                .finally(async () => { // Make finally async to await removeChannel if needed
                     this.notificationChannels.delete(userId);
-                    // Attempt to remove the channel instance from Supabase client
-                    this.supabase.removeChannel(channel).catch(removeError => {
+                    try {
+                        // Attempt to remove the channel instance from Supabase client
+                        await this.supabase.removeChannel(channel);
+                        logger.debug(`[ApiClient] Successfully removed channel for user ${userId}`);
+                    } catch (removeError) {
                          logger.error(`[ApiClient] Error calling removeChannel for user ${userId}:`, { removeError });
-                    });
+                         // Decide if this error should cause the main promise to reject
+                         // For now, we just log it, the main promise status depends on unsubscribe()
+                    }
                 });
         } else {
             logger.warn(`[ApiClient] No active notification subscription found to unsubscribe for user ${userId}.`);
+            return Promise.resolve(); // Return resolved promise if no channel found
         }
     }
 
