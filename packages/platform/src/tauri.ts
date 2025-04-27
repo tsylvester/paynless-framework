@@ -1,16 +1,9 @@
-// Import types for Tauri APIs to define dependencies
-import type { open as DialogOpenFn, save as DialogSaveFn } from '@tauri-apps/api/dialog';
-import type { invoke as TauriInvokeFn } from '@tauri-apps/api/tauri';
+// Import Tauri APIs directly within this module
+import { invoke } from '@tauri-apps/api/tauri';
+import { open, save } from '@tauri-apps/api/dialog';
 
 // Import types for the capabilities interface
 import type { FileSystemCapabilities } from '@paynless/types';
-
-// Re-introduce the dependency injection interface
-interface TauriFsDeps {
-  invoke: typeof TauriInvokeFn;
-  open: typeof DialogOpenFn;
-  save: typeof DialogSaveFn;
-}
 
 // Utility function remains the same
 function parseAcceptToFilters(accept?: string): { name: string; extensions: string[] }[] | undefined {
@@ -23,15 +16,15 @@ function parseAcceptToFilters(accept?: string): { name: string; extensions: stri
   return [{ name: 'File', extensions }];
 }
 
-// Factory function accepts dependencies again
-export function createTauriFileSystemCapabilities(deps: TauriFsDeps): FileSystemCapabilities {
+// Factory function no longer accepts dependencies
+export function createTauriFileSystemCapabilities(): FileSystemCapabilities {
   return {
     isAvailable: true,
 
     async readFile(path: string): Promise<Uint8Array> {
       try {
-        // Use injected deps.invoke
-        const data = await deps.invoke<number[]>('plugin:capabilities|read_file', { path });
+        // Use directly imported invoke
+        const data = await invoke<number[]>('plugin:capabilities|read_file', { path });
         return new Uint8Array(data);
       } catch (error) {
         console.error('Error reading file via Tauri:', error);
@@ -42,8 +35,8 @@ export function createTauriFileSystemCapabilities(deps: TauriFsDeps): FileSystem
     async writeFile(path: string, data: Uint8Array): Promise<void> {
       try {
         const dataArray = Array.from(data);
-        // Use injected deps.invoke
-        await deps.invoke('plugin:capabilities|write_file', { path, data: dataArray });
+        // Use directly imported invoke
+        await invoke('plugin:capabilities|write_file', { path, data: dataArray });
       } catch (error) {
         console.error('Error writing file via Tauri:', error);
         throw new Error(`Failed to write file: ${error}`);
@@ -53,8 +46,8 @@ export function createTauriFileSystemCapabilities(deps: TauriFsDeps): FileSystem
     async pickFile(options?: { accept?: string }): Promise<string | null> {
       try {
         const filters = parseAcceptToFilters(options?.accept);
-        // Use injected deps.open
-        const result = await deps.open({ multiple: false, filters });
+        // Use directly imported open
+        const result = await open({ multiple: false, filters });
         if (Array.isArray(result)) {
           return result[0] ?? null;
         }
@@ -68,8 +61,8 @@ export function createTauriFileSystemCapabilities(deps: TauriFsDeps): FileSystem
     async pickSaveFile(options?: { defaultPath?: string, accept?: string }): Promise<string | null> {
       try {
         const filters = parseAcceptToFilters(options?.accept);
-        // Use injected deps.save
-        const result = await deps.save({ defaultPath: options?.defaultPath, filters });
+        // Use directly imported save
+        const result = await save({ defaultPath: options?.defaultPath, filters });
         return result;
       } catch (error) {
         console.error('Error picking save file:', error);

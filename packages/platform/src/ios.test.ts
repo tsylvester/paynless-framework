@@ -1,9 +1,9 @@
 import { describe, it, expect } from 'vitest';
-import { webFileSystemCapabilities } from './webPlatformCapabilities';
+import { ios } from './ios';
 
-describe('webPlatformCapabilities', () => {
+describe('ios', () => {
   it('should report fileSystem as unavailable', () => {
-    expect(webFileSystemCapabilities.isAvailable).toBe(false);
+    expect(ios.isAvailable).toBe(false);
   });
 
   // Add tests for any *actual* web capabilities if implemented later

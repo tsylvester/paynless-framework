@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 // REMOVE mockIPC and clearMocks imports
 // import { mockIPC, clearMocks } from '@tauri-apps/api/mocks';
 // Import the FACTORY function now
-import { createTauriFileSystemCapabilities } from './tauriPlatformCapabilities';
+import { createTauriFileSystemCapabilities } from './tauri';
 import type { FileSystemCapabilities } from '@paynless/types';
 
 // REMOVE vi.mock

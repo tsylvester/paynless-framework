@@ -7,7 +7,7 @@ import {
   // Import the default state if it's exported, otherwise define it here
   // Assuming a default state structure like this:
   // DEFAULT_INITIAL_CAPABILITIES // No default exported yet, define below
-} from './PlatformCapabilitiesContext'; 
+} from './Context'; 
 import type { PlatformCapabilities } from '@paynless/types';
 import * as core from '@tauri-apps/api/core';
 
@@ -127,7 +127,7 @@ describe('PlatformCapabilitiesProvider', () => {
     vi.mocked(core.isTauri).mockReturnValue(true);
 
     // Mock the factory return value
-    const { createTauriFileSystemCapabilities } = await import('./tauriPlatformCapabilities');
+    const { createTauriFileSystemCapabilities } = await import('./tauri');
     vi.mocked(createTauriFileSystemCapabilities).mockReturnValue(mockTauriCapabilities);
 
     renderWithProvider(<TestConsumer />);
@@ -148,7 +148,7 @@ describe('PlatformCapabilitiesProvider', () => {
   it('should handle errors when loading Tauri capabilities module (when isTauri is true)', async () => {
     vi.mocked(core.isTauri).mockReturnValue(true);
     const loadError = new Error('Failed to create Tauri capabilities');
-    const { createTauriFileSystemCapabilities } = await import('./tauriPlatformCapabilities');
+    const { createTauriFileSystemCapabilities } = await import('./tauri');
     vi.mocked(createTauriFileSystemCapabilities).mockImplementation(() => {
       throw loadError;
     });

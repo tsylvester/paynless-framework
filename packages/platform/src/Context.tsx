@@ -7,7 +7,7 @@ import type { PlatformCapabilities } from '@paynless/types';
 // NOTE: Removed event listener imports
 
 // Import static web provider
-import { webFileSystemCapabilities } from './webPlatformCapabilities';
+import { web } from './web';
 // Import the *factory function* for Tauri capabilities
 // import { createTauriFileSystemCapabilities } from './tauriPlatformCapabilities';
 
@@ -27,7 +27,7 @@ export const DEFAULT_INITIAL_CAPABILITIES: PlatformCapabilities = {
 type CapabilitiesContextType = PlatformCapabilities | null; 
 
 // Initialize context with the default non-null state
-const PlatformCapabilitiesContext = createContext<CapabilitiesContextType>(DEFAULT_INITIAL_CAPABILITIES);
+const context = createContext<CapabilitiesContextType>(DEFAULT_INITIAL_CAPABILITIES);
 
 // --- Provider Component ---
 
@@ -47,9 +47,17 @@ interface PlatformCapabilitiesProviderProps {
 export const PlatformCapabilitiesProvider: React.FC<PlatformCapabilitiesProviderProps> = ({ children }) => {
   // Initialize state with the default non-null object
   const [capabilities, setCapabilities] = useState<PlatformCapabilities>(DEFAULT_INITIAL_CAPABILITIES);
+  // Add state to track API initialization
+  const [apiInitialized, setApiInitialized] = useState(false);
 
   useEffect(() => {
     let isMounted = true;
+
+    // Only run initialization once
+    if (apiInitialized) {
+      // logger.debug('[PlatformCapabilitiesProvider] API already initialized, skipping effect run.');
+      return; 
+    }
 
     (async () => {
       // --- Platform Detection Logic --- (Keep existing detection)
@@ -83,13 +91,13 @@ export const PlatformCapabilitiesProvider: React.FC<PlatformCapabilitiesProvider
 
       try {
         if (currentPlatform === 'web') {
-          finalCaps.fileSystem = webFileSystemCapabilities; 
+          finalCaps.fileSystem = web; 
           console.log('PlatformCapabilitiesProvider: Using static Web capabilities.');
         } else if (currentPlatform === 'tauri') {
           console.log('PlatformCapabilitiesProvider: Dynamically importing Tauri capabilities factory...');
-          // Dynamic import for Tauri capabilities
-          const { createTauriFileSystemCapabilities } = await import('./tauriPlatformCapabilities');
-          const tauriCaps = createTauriFileSystemCapabilities(); // Assuming this is sync after import
+          const { createTauriFileSystemCapabilities } = await import('./tauri');
+          // ---> Call factory without dependencies <--- 
+          const tauriCaps = createTauriFileSystemCapabilities(); 
           finalCaps.fileSystem = tauriCaps;
           // Potentially detect OS here if needed using tauri API
           // const { type } = await import('@tauri-apps/api/os');
@@ -101,6 +109,12 @@ export const PlatformCapabilitiesProvider: React.FC<PlatformCapabilitiesProvider
         if (isMounted) {
           console.log('PlatformCapabilitiesProvider: Setting final capabilities state:', finalCaps);
           setCapabilities(finalCaps);
+
+          // Initialize API Client and Listener AFTER setting capabilities
+          if (!apiInitialized) {
+            // ... API and Listener Init Logic ...
+             setApiInitialized(true); // Mark as initialized
+          } 
         }
       } catch (loadError) {
         console.error('Error loading or determining specific platform capabilities:', loadError);
@@ -121,22 +135,25 @@ export const PlatformCapabilitiesProvider: React.FC<PlatformCapabilitiesProvider
     return () => {
       isMounted = false;
     };
-  }, []); // End of useEffect
+  }, [apiInitialized]); // End of useEffect
 
+  // Render children immediately, provide default value while loading
+  // The context value will update once capabilities are loaded.
   return (
-    <PlatformCapabilitiesContext.Provider value={capabilities}>
+    <context.Provider value={capabilities}>
       {children}
-    </PlatformCapabilitiesContext.Provider>
+    </context.Provider>
   );
 };
 
 // --- Hook Definition ---
 export const usePlatformCapabilities = (): PlatformCapabilities => {
-  const context = useContext(PlatformCapabilitiesContext);
-  // Since we initialize with a non-null default, context should ideally never be null.
-  // Throwing an error here helps catch provider setup issues early.
-  if (context === null) {
+  // Rename the variable holding the context value
+  const capabilitiesContextValue = useContext(context);
+  // Check the renamed variable
+  if (capabilitiesContextValue === null) {
     throw new Error('usePlatformCapabilities must be used within a PlatformCapabilitiesProvider');
   }
-  return context;
+  // Return the renamed variable
+  return capabilitiesContextValue;
 }; 
