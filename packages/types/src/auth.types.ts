@@ -59,7 +59,7 @@ export interface AuthStore {
 export interface Session {
   access_token: string
   refresh_token: string
-  expiresAt: number
+  expires_at: number
   token_type?: string
   expires_in?: number
 }

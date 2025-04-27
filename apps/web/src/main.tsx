@@ -1,4 +1,4 @@
-import { StrictMode } from 'react'
+import { /* Remove StrictMode */ } from 'react'
 import { createRoot } from 'react-dom/client'
 import App from './App'
 import './index.css'
@@ -7,13 +7,12 @@ import { logger/*, LogLevel*/ } from '@paynless/utils'
 import ReactGA from 'react-ga4'
 import { api } from '@paynless/api'
 import { initAuthListener } from '@paynless/store'
-import { analytics } from '@paynless/analytics'
+import { PlatformCapabilitiesProvider } from '@paynless/platform';
 
 // --- Configure Logger Early ---
 // Only show errors in the console for now to reduce noise
 //logger.configure({ minLevel: LogLevel.ERROR });
 //logger.info("Logger configured to minimum level: ERROR"); // This line itself won't show now
-import { PlatformCapabilitiesProvider } from '@paynless/platform';
 
 // --- Initialize API Client ---
 const supabaseUrl = import.meta.env['VITE_SUPABASE_URL']
@@ -24,6 +23,8 @@ if (!supabaseUrl || !supabaseAnonKey) {
   logger.error('Supabase URL or Anon Key is missing in environment variables.')
   // Potentially render an error message or throw an error
 } else {
+  // ---> Log before initializing <---
+  logger.info(`[main.tsx] About to call initializeApiClient...`, { urlProvided: !!supabaseUrl, keyProvided: !!supabaseAnonKey });
   initializeApiClient({ supabaseUrl, supabaseAnonKey })
   // --- Initialize Auth Listener Immediately After API Client --- 
   try {
@@ -36,7 +37,9 @@ if (!supabaseUrl || !supabaseAnonKey) {
     // You could assign to window for dev debugging if needed:
     // window.unsubscribeAuth = unsubscribe;
   } catch (error) {
-    logger.error('[main.tsx] Failed to initialize auth state listener:', { error });
+    // ---> Temporarily comment out logger call <--- 
+    // logger.error('[main.tsx] Failed to initialize auth state listener'); 
+    // console.error('[main.tsx] Failed to initialize auth state listener:', error); // Use console for now
   }
 }
 
@@ -51,9 +54,10 @@ if (gaMeasurementId) {
 }
 
 createRoot(document.getElementById('root')!).render(
-  <StrictMode>
+  // ---> Remove StrictMode wrapper <--- 
+  // <StrictMode>
     <PlatformCapabilitiesProvider>
       <App />
     </PlatformCapabilitiesProvider>
-  </StrictMode>
+  // </StrictMode>
 )

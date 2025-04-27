@@ -12,7 +12,6 @@ import { NavigateFunction } from '@paynless/types'
 import { logger } from '@paynless/utils'
 import { api } from '@paynless/api'
 import { analytics } from '@paynless/analytics'
-import { SupabaseClient, Session as SupabaseSession, User as SupabaseUser } from '@supabase/supabase-js'
 
 export const useAuthStore = create<AuthStore>()((set, get) => ({
       user: null,
@@ -301,37 +300,48 @@ export const useAuthStore = create<AuthStore>()((set, get) => ({
       clearError: () => set({ error: null }),
     }))
 
-const mapSupabaseUser = (supabaseUser: SupabaseUser | null): User | null => {
+const mapSupabaseUser = (supabaseUser: any): User | null => {
   if (!supabaseUser) return null;
+
+  // Default role to 'user' if undefined or not a valid UserRole 
+  let role: UserRole = 'user'; // Default
+  if (supabaseUser.role === 'admin' || supabaseUser.role === 'user') {
+    role = supabaseUser.role;
+  }
+  
+  // Default updated_at if missing
+  const updatedAt = supabaseUser.updated_at ?? supabaseUser.created_at;
+
   return {
     id: supabaseUser.id,
     email: supabaseUser.email,
-    role: supabaseUser.role as UserRole,
+    role: role, // Use the validated/defaulted role
     created_at: supabaseUser.created_at,
-    updated_at: supabaseUser.updated_at ?? supabaseUser.created_at,
+    updated_at: updatedAt, // Use the defaulted updated_at
   };
 };
 
-const mapSupabaseSession = (supabaseSession: SupabaseSession | null): Session | null => {
+const mapSupabaseSession = (supabaseSession: any): Session | null => {
   if (!supabaseSession) return null;
+  
   const nowInSeconds = Math.floor(Date.now() / 1000);
+  // Provide a default for expires_at if undefined
   const expiresAtTimestamp = supabaseSession.expires_at ?? (supabaseSession.expires_in ? nowInSeconds + supabaseSession.expires_in : nowInSeconds);
+  
   return {
     access_token: supabaseSession.access_token,
     refresh_token: supabaseSession.refresh_token,
-    expiresAt: expiresAtTimestamp,
+    // expires_at is now guaranteed to be a number
+    expires_at: expiresAtTimestamp, 
     token_type: supabaseSession.token_type,
     expires_in: supabaseSession.expires_in,
   };
 };
 
 export function initAuthListener(): () => void {
-  // ---> Get client from the (mocked) api module <--- 
-  const supabaseClient = api.getSupabaseClient(); 
-  // Add a check in case the client isn't available (important for real app)
+  const supabaseClient = api.getSupabaseClient();
   if (!supabaseClient) {
     logger.error('[AuthListener] Supabase client not available. Cannot initialize listener.');
-    // Return a no-op unsubscribe function
     return () => { logger.warn('[AuthListener] No-op unsubscribe called (listener never initialized).'); };
   }
 
@@ -340,9 +350,6 @@ export function initAuthListener(): () => void {
   const { data: listener } = supabaseClient.auth.onAuthStateChange(
     (event, session) => {
       try {
-        // --- Remove diagnostic log --- 
-        // logger.warn('<<<<< onAuthStateChange CALLBACK EXECUTED >>>>>', { event });
-        
         logger.debug(`[AuthListener] Event: ${event}`, { session });
 
         const storeSession = mapSupabaseSession(session);
