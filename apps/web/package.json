@@ -20,6 +20,7 @@
     "@mui/material": "^5.16.5",
     "@paynless/analytics": "workspace:*",
     "@paynless/api": "workspace:*",
+    "@paynless/platform": "workspace:*",
     "@paynless/store": "workspace:*",
     "@paynless/types": "workspace:*",
     "@paynless/utils": "workspace:*",

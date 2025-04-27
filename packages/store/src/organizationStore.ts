@@ -10,7 +10,7 @@ import {
 } from '@paynless/types';
 // Import the specific client class and the base api object
 import { 
-    api, 
+    useApi, 
     OrganizationApiClient as _OrganizationApiClient,
     ApiClient as _ApiClient
 } from '@paynless/api';
@@ -77,7 +77,7 @@ export const useOrganizationStore = create<OrganizationStoreImplementation>((set
       // Use the factory method api.organizations() to get the client instance
       // Correctly access the organizations property and its method
       // --- TEMPORARY WORKAROUND: Cast to 'any' due to export type issue ---
-      const response = await (api as any).organizations.listUserOrganizations(userId);
+      const response = await (useApi() as any).organizations.listUserOrganizations(userId);
 
       if (response.error || response.status >= 300) {
         // Log only the error message or relevant parts

@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { api } from '@paynless/api';
+import { useApi } from '@paynless/api';
 import type { Notification, ApiError } from '@paynless/types';
 import { logger } from '@paynless/utils'; // Import logger
 
@@ -38,7 +38,7 @@ export const useNotificationStore = create<NotificationState>((set, get) => ({
         set({ isLoading: true, error: null });
         try {
             // --- Debug Check --- 
-            const notificationApi = api.notifications();
+            const notificationApi = useApi().notifications;
             if (!notificationApi) {
                 logger.error('[notificationStore] api.notifications() returned undefined!');
                 throw new Error('Internal Test Error: api.notifications() is undefined');
@@ -102,7 +102,7 @@ export const useNotificationStore = create<NotificationState>((set, get) => ({
         set({ error: null }); // Clear previous errors
         try {
             // --- Debug Check --- 
-            const notificationApi = api.notifications();
+            const notificationApi = useApi().notifications;
             if (!notificationApi) {
                 logger.error('[notificationStore] api.notifications() returned undefined!');
                 throw new Error('Internal Test Error: api.notifications() is undefined');
@@ -149,7 +149,7 @@ export const useNotificationStore = create<NotificationState>((set, get) => ({
         set({ error: null }); // Clear previous errors
         try {
             // --- Debug Check --- 
-            const notificationApi = api.notifications();
+            const notificationApi = useApi().notifications;
             if (!notificationApi) {
                 logger.error('[notificationStore] api.notifications() returned undefined!');
                 throw new Error('Internal Test Error: api.notifications() is undefined');

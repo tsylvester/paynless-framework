@@ -1,6 +1,7 @@
 import React, { Suspense, useState, useEffect } from 'react'
 import { AlertCircle } from 'lucide-react'
 import { useAuthStore } from '@paynless/store'
+import { useApi } from '@paynless/api'
 import type { UserProfileUpdate } from '@paynless/types'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -16,14 +17,17 @@ import { Button } from '@/components/ui/button'
 // Renamed the component that handles Profile (First/Last Name)
 function ProfileNameEditor() {
   const {
+    user,
     profile,
     error, // Use store's error state
     updateProfile, // Use store's update action
   } = useAuthStore((state) => ({
+    user: state.user,
     profile: state.profile,
     error: state.error,
     updateProfile: state.updateProfile,
   }))
+  const apiClient = useApi()
 
   // Local state for form inputs
   const [firstName, setFirstName] = useState('')
@@ -41,23 +45,28 @@ function ProfileNameEditor() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (saving) return // Prevent submit while already saving
+    if (saving || !apiClient || !user?.id) {
+        console.warn('Cannot save profile: Missing apiClient or user ID');
+        return
+    }
+    const supabase = apiClient.getSupabaseClient();
+    if (!supabase) {
+        console.error('handleSubmit in ProfileNameEditor: Failed to get Supabase client');
+        return;
+    }
 
     setSaving(true)
-
     let profileUpdateError = false
 
-    // --- Update Profile (First/Last Name) ---
     // Only update if names have changed
     if (firstName !== profile?.first_name || lastName !== profile?.last_name) {
       const profileUpdateData: UserProfileUpdate = {
         first_name: firstName,
         last_name: lastName,
       }
-      const profileResult = await updateProfile(profileUpdateData)
+      const profileResult = await updateProfile(supabase, user.id, profileUpdateData)
       if (!profileResult) {
         profileUpdateError = true
-        // Error is already set in the store by updateProfile
       }
     }
 
@@ -155,13 +164,12 @@ function EmailEditor() {
     user, // Get user object for email
     error, // Use store's error state
     updateEmail, // Use store's update action
-    refreshSession,
   } = useAuthStore((state) => ({
     user: state.user, // Add user to selector
     error: state.error,
     updateEmail: state.updateEmail, // <-- Add the new action
-    refreshSession: state.refreshSession,
   }))
+  const apiClient = useApi() // <-- Get apiClient
 
   // Local state for form inputs
   const [email, setEmail] = useState('')
@@ -178,13 +186,22 @@ function EmailEditor() {
   const handleEmailSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
 
-    if (saving || email === user?.email) return // Prevent submit while already saving or if no change
+    if (saving || email === user?.email || !apiClient) return // <-- Check apiClient
+
+    const supabase = apiClient.getSupabaseClient(); // <-- Get Supabase
+    if (!supabase) { // <-- Check Supabase
+        console.error('handleEmailSubmit in EmailEditor: Failed to get Supabase client');
+        return;
+    }
 
     setSaving(true)
+    // Pass supabase.auth
+    const success = await updateEmail(supabase.auth, email)
 
-    await updateEmail(email)
-
-    refreshSession()
+    if (success) {
+      // Optionally show a success message or prompt user to check email
+      console.info('Email update submitted, verification likely required.')
+    }
 
     setSaving(false)
   }

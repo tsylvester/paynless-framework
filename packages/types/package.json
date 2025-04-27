@@ -17,6 +17,7 @@
   },
   "devDependencies": {
     "@paynless/db-types": "workspace:^",
+    "@supabase/supabase-js": "^2",
     "@types/react": "^18",
     "@typescript-eslint/eslint-plugin": "^7.18.0",
     "@typescript-eslint/parser": "^7.18.0",

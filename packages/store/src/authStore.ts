@@ -1,323 +1,230 @@
 import { create } from 'zustand'
 import {
   AuthStore,
+  AuthState,
   User,
   Session,
   UserProfileUpdate,
-  AuthResponse,
   UserProfile,
-  UserRole
+  UserRole,
+  ISupabaseAuthClient,
+  ISupabaseDataClient,
+  NavigateFunction,
 } from '@paynless/types'
-import { NavigateFunction } from '@paynless/types'
 import { logger } from '@paynless/utils'
-import { api } from '@paynless/api'
 import { analytics } from '@paynless/analytics'
+import type { AuthChangeEvent, Session as SupabaseSession, SupabaseClient } from '@supabase/supabase-js'
+import { devtools } from 'zustand/middleware'
 
-export const useAuthStore = create<AuthStore>()((set, get) => ({
-      user: null,
-      session: null,
-      profile: null as UserProfile | null,
-      isLoading: true,
-      error: null,
-      navigate: null as NavigateFunction | null,
+const initialAuthState: Omit<AuthState, 'navigate'> = {
+  user: null,
+  session: null,
+  profile: null,
+  isLoading: true,
+  error: null,
+  supabaseClient: null,
+  _listenerInitialized: false,
+}
 
-      setNavigate: (navigateFn: NavigateFunction) => set({ navigate: navigateFn }),
+const authStoreCreator = (set: (partial: Partial<AuthState>) => void, get: () => AuthState): AuthStore => ({
+  ...initialAuthState,
+  navigate: null,
 
-      setUser: (user: User | null) => set({ user }),
+  setNavigate: (navigateFn: NavigateFunction) => set({ navigate: navigateFn }),
 
-      setSession: (session: Session | null) => set({ session }),
+  setUser: (user: User | null) => set({ user }),
 
-      setProfile: (profile: UserProfile | null) => set({ profile }),
+  setSession: (session: Session | null) => set({ session }),
 
-      setIsLoading: (isLoading: boolean) => set({ isLoading }),
+  setProfile: (profile: UserProfile | null) => set({ profile }),
 
-      setError: (error: Error | null) => set({ error }),
+  setIsLoading: (isLoading: boolean) => set({ isLoading }),
 
-      login: async (email: string, password: string): Promise<User | null> => {
-        set({ isLoading: true, error: null })
-        logger.info('Attempting to login user via form', { email: email })
-        try {
-          // Get Supabase client instance
-          const supabase = api.getSupabaseClient(); // Assuming api is accessible here
-          if (!supabase) {
-            throw new Error('Supabase client not available');
-          }
+  setError: (error: Error | null) => set({ error }),
 
-          // Call Supabase auth method
-          const { error: signInError } = await supabase.auth.signInWithPassword({ email, password });
+  setSupabaseClient: (client: any | null) => set({ supabaseClient: client }),
 
-          if (signInError) {
-            // Throw the error to be caught by the catch block
-            throw signInError;
-          }
+  _setListenerInitialized: (initialized: boolean) => set({ _listenerInitialized: initialized }),
 
-          // What should login return now? Listener handles state. 
-          // Returning null seems appropriate as the action itself doesn't provide the final user state.
-          return null; 
+  login: async (authClient: ISupabaseAuthClient, email: string, password: string): Promise<User | null> => {
+    set({ isLoading: true, error: null })
+    logger.info('Attempting to login user via form', { email: email })
+    try {
+      const { error: signInError } = await authClient.signInWithPassword({ email, password });
+      if (signInError) throw signInError;
+      return null;
+    } catch (error) {
+      const finalError =
+        error instanceof Error ? error : new Error('Unknown login error');
+      logger.error('Login error in store', { message: finalError.message });
+      set({
+        isLoading: false,
+        error: finalError,
+      });
+      return null;
+    } finally {
+        set({ isLoading: false });
+    }
+  },
 
-        } catch (error) {
-          const finalError =
-            error instanceof Error ? error : new Error('Unknown login error');
-          logger.error('Login error in store', { message: finalError.message });
-          set({
-            // Only set error and loading false. User/session/profile cleared by listener or remain null.
-            isLoading: false,
-            error: finalError,
-            // user: null, // Let listener handle this
-            // session: null,
-            // profile: null,
-          });
-          return null;
-        } finally {
-            // Ensure isLoading is always set to false
-            // Note: The catch block also sets isLoading: false, 
-            // so this might be redundant if the catch always runs before finally on error.
-            // However, setting it here guarantees it in case of unexpected non-error exits from try.
-             set({ isLoading: false });
-        }
-      },
+  register: async (authClient: ISupabaseAuthClient, email: string, password: string): Promise<User | null> => {
+    set({ isLoading: true, error: null })
+    try {
+      const { error: signUpError } = await authClient.signUp({ email, password });
+      if (signUpError) throw signUpError;
+      return null;
+    } catch (error) {
+      const finalError =
+        error instanceof Error
+          ? error
+          : new Error('Unknown registration error');
+      logger.error('Register error in store', {
+        message: finalError.message,
+      });
+      set({
+        isLoading: false,
+        error: finalError,
+      });
+      return null;
+    } finally {
+        set({ isLoading: false });
+    }
+  },
 
-      register: async (
-        email: string,
-        password: string
-      ): Promise<User | null> => {
-        set({ isLoading: true, error: null })
-        try {
-          // Get Supabase client instance
-          const supabase = api.getSupabaseClient(); 
-          if (!supabase) {
-            throw new Error('Supabase client not available');
-          }
+  logout: async (authClient: ISupabaseAuthClient | null) => {
+    analytics.reset()
 
-          // Call Supabase auth method
-          const { error: signUpError } = await supabase.auth.signUp({ email, password });
+    const currentSession = get().session;
 
-          if (signUpError) {
-            throw signUpError;
-          }
-
-          // On success, Supabase call is done.
-          // The onAuthStateChange listener handles setting state.
-
-          // Return null as listener handles final user state
-          return null;
-
-        } catch (error) {
-          const finalError =
-            error instanceof Error
-              ? error
-              : new Error('Unknown registration error');
-          logger.error('Register error in store', {
-            message: finalError.message,
-          });
-          set({
-            isLoading: false,
-            error: finalError,
-            // user: null, // Let listener handle
-            // session: null,
-            // profile: null,
-          });
-          return null;
-        } finally {
-            set({ isLoading: false });
-        }
-      },
-
-      logout: async () => {
-        analytics.reset()
-
-        // Check if there's a session in the store state first
-        const currentSession = get().session;
-
-        if (currentSession) {
-          // Only attempt Supabase signOut if we think we have a session
-          try {
-            // Get Supabase client instance
-            const supabase = api.getSupabaseClient(); 
-            if (!supabase) {
-              logger.error('Logout cannot call Supabase: client not available.');
-            } else {
-              const { error: signOutError } = await supabase.auth.signOut()
-              if (signOutError) {
-                  logger.error(
-                      'Supabase signOut failed, proceeding with local cleanup.',
-                      { error: signOutError.message }
-                  )
-              }
-            }
-          } catch (error) {
-            logger.error(
-              'Logout Supabase call failed unexpectedly, proceeding with local cleanup.',
-              { error: error instanceof Error ? error.message : String(error) }
-            )
-          }
+    if (currentSession) {
+      try {
+        if (!authClient) {
+          logger.error('Logout cannot call Supabase: authClient not provided.');
         } else {
-          // Log warning if logout is called without a session in the store
-           logger.warn('Logout called but no session token found. Clearing local state only.');
-        }
-        
-        // Actions common to both paths (logged in or not)
-        try { 
-          // Always clear local state items NOT managed by listener/persist
-          localStorage.removeItem('pendingAction')
-          localStorage.removeItem('loadChatIdOnRedirect')
-        } catch(storageError) {
-           logger.error('Error clearing localStorage during logout', { error: storageError instanceof Error ? storageError.message : String(storageError) });
-        }
-
-        // Navigate to login - This should always happen
-        const navigate = get().navigate
-        if (navigate) {
-          navigate('login')
-          logger.info('Cleared local state and navigated to /login.')
-        } else {
-          logger.error(
-            'Logout cleanup complete but navigate function not available in store.'
-          )
-        }
-      },
-
-      updateProfile: async (
-        profileData: UserProfileUpdate
-      ): Promise<UserProfile | null> => {
-        set({ error: null })
-        const token = get().session?.access_token
-        const currentProfile = get().profile
-
-        if (!token) {
-          logger.error(
-            'updateProfile: Cannot update profile, user not authenticated.'
-          )
-          set({ error: new Error('Authentication required'), isLoading: false }) 
-          return null
-        }
-
-        // Then check if profile is loaded
-        if (!currentProfile) {
-          logger.error(
-            'updateProfile: Cannot update profile, no current profile loaded.'
-          )
-          set({
-            error: new Error('Profile not loaded'),
-            isLoading: false 
-          })
-          return null
-        }
-
-        // Set loading true only if proceeding to API call
-        set({ isLoading: true });
-        try {
-          const response = await api.put<UserProfile, UserProfileUpdate>(
-            'me',
-            profileData,
-            { token: get().session?.access_token }
-          )
-
-          if (!response.error && response.data) {
-            const updatedProfile = response.data
-            set({
-              profile: updatedProfile,
-              error: null,
-            })
-            logger.info('Profile updated successfully.')
-            return updatedProfile
-          } else {
-            const errorMessage =
-              response.error?.message || 'Failed to update profile'
-            throw new Error(errorMessage)
+          const { error: signOutError } = await authClient.signOut()
+          if (signOutError) {
+              logger.error('Supabase signOut failed, proceeding with local cleanup.', { error: signOutError.message })
           }
-        } catch (error) {
-          const finalError =
-            error instanceof Error
-              ? error
-              : new Error('Failed to update profile (API error)')
-          logger.error('Update profile: Error during API call.', {
-            message: finalError.message,
-          })
-          set({ error: finalError })
-          return null
-        } finally {
-            set({ isLoading: false });
         }
-      },
+      } catch (error) {
+        logger.error(
+          'Logout Supabase call failed unexpectedly, proceeding with local cleanup.',
+          { error: error instanceof Error ? error.message : String(error) }
+        )
+      }
+    } else {
+      logger.warn('Logout called but no session token found. Clearing local state only.');
+    }
+    
+    try { 
+      localStorage.removeItem('pendingAction')
+      localStorage.removeItem('loadChatIdOnRedirect')
+    } catch(storageError) {
+       logger.error('Error clearing localStorage during logout', { error: storageError instanceof Error ? storageError.message : String(storageError) });
+    }
 
-      updateEmail: async (newEmail: string): Promise<boolean> => {
-        set({ error: null })
-        const token = get().session?.access_token
+    const navigate = get().navigate
+    if (navigate) {
+      navigate('login')
+      logger.info('Cleared local state and navigated to /login.')
+    } else {
+      logger.error(
+        'Logout cleanup complete but navigate function not available in store.'
+      )
+    }
+  },
 
-        if (!token) {
-          const error = new Error('Authentication required to update email.')
-          set({ error })
-          return false // Indicate failure
-        }
+  updateProfile: async (dataClient: ISupabaseDataClient, userId: string, profileData: UserProfileUpdate): Promise<UserProfile | null> => {
+    set({ error: null })
 
-        logger.info('[AuthStore] Attempting to update email...', {
-          email: newEmail,
-        })
+    if (!userId) {
+      logger.error(
+        'updateProfile: Cannot update profile, user not authenticated or ID missing.'
+      )
+      set({ error: new Error('Authentication required'), isLoading: false }) 
+      return null
+    }
 
-        try {
-          // Call the new Supabase Edge Function
-          const response = await api.post<
-            { success: boolean },
-            { email: string }
-          >(
-            'update-email', // Endpoint name for the new function
-            { email: newEmail },
-            { token }
-          )
+    set({ isLoading: true });
+    try {
+      const { data: updatedProfileData, error: updateError } = await dataClient
+        .from('user_profiles')
+        .update(profileData)
+        .eq('id', userId)
+        .select()
+        .single();
 
-          if (!response.error && response.data?.success) {
-            logger.info(
-              '[AuthStore] Email update request successful. Verification email likely sent.'
-            )
-            set({ error: null })
-            // Note: The user object in the store might not reflect the change immediately.
-            // Supabase Auth handles the email change flow (verification).
-            // We might need to fetch the user again or rely on Supabase listeners if immediate UI update is needed.
-            // For now, we just return success.
-            return true // Indicate success
-          } else {
-            const errorMessage =
-              response.error?.message || 'Failed to update email via API'
-            logger.error('[AuthStore] Email update API call failed:', {
-              error: errorMessage,
-            })
-            throw new Error(errorMessage)
-          }
-        } catch (error) {
-          const finalError =
-            error instanceof Error
-              ? error
-              : new Error('Unknown error during email update')
-          logger.error('[AuthStore] updateEmail action failed:', {
-            message: finalError.message,
-          })
-          set({ error: finalError })
-          return false // Indicate failure
-        }
-      },
+      if (updateError) {
+        logger.error('updateProfile: Failed to update profile in Supabase', { error: updateError });
+        set({ error: new Error(updateError.message || 'Failed to update profile'), isLoading: false });
+        return null;
+      }
 
-      clearError: () => set({ error: null }),
-    }))
+      if (!updatedProfileData) {
+        logger.error('updateProfile: No profile data returned after update');
+        set({ error: new Error('No profile data returned after update'), isLoading: false });
+        return null;
+      }
+
+      const updatedProfile = updatedProfileData as UserProfile; 
+      logger.info('updateProfile: Profile updated successfully', { userId });
+      set({ profile: updatedProfile, isLoading: false, error: null });
+      return updatedProfile;
+      
+    } catch (err) {
+      const error = err instanceof Error ? err : new Error('An unknown error occurred during profile update')
+      logger.error('updateProfile: Unknown error', { error: error.message });
+      set({ error, isLoading: false })
+      return null
+    } finally {
+      set({ isLoading: false })
+    }
+  },
+
+  updateEmail: async (authClient: ISupabaseAuthClient, newEmail: string): Promise<boolean> => {
+    set({ error: null })
+    
+    set({ isLoading: true })
+    try {
+      const { error: updateError } = await authClient.updateUser({ email: newEmail });
+      if (updateError) throw updateError;
+
+      logger.info('Email update initiated via Supabase. User may need to confirm.');
+      set({ isLoading: false });
+      return true;
+
+    } catch (error) {
+      const finalError =
+        error instanceof Error ? error : new Error('Unknown email update error');
+      logger.error('Update email error', { message: finalError.message });
+      set({ error: finalError, isLoading: false });
+      return false;
+    } finally {
+       set({ isLoading: false }); 
+    }
+  },
+
+  clearError: () => set({ error: null }),
+})
+
+export const useAuthStore = create<AuthStore>()(authStoreCreator)
 
 const mapSupabaseUser = (supabaseUser: any): User | null => {
   if (!supabaseUser) return null;
 
-  // Default role to 'user' if undefined or not a valid UserRole 
-  let role: UserRole = 'user'; // Default
+  let role: UserRole = 'user';
   if (supabaseUser.role === 'admin' || supabaseUser.role === 'user') {
     role = supabaseUser.role;
   }
   
-  // Default updated_at if missing
   const updatedAt = supabaseUser.updated_at ?? supabaseUser.created_at;
 
   return {
     id: supabaseUser.id,
     email: supabaseUser.email,
-    role: role, // Use the validated/defaulted role
+    role: role,
     created_at: supabaseUser.created_at,
-    updated_at: updatedAt, // Use the defaulted updated_at
+    updated_at: updatedAt,
   };
 };
 
@@ -325,59 +232,62 @@ const mapSupabaseSession = (supabaseSession: any): Session | null => {
   if (!supabaseSession) return null;
   
   const nowInSeconds = Math.floor(Date.now() / 1000);
-  // Provide a default for expires_at if undefined
   const expiresAtTimestamp = supabaseSession.expires_at ?? (supabaseSession.expires_in ? nowInSeconds + supabaseSession.expires_in : nowInSeconds);
   
   return {
     access_token: supabaseSession.access_token,
     refresh_token: supabaseSession.refresh_token,
-    // expires_at is now guaranteed to be a number
     expires_at: expiresAtTimestamp, 
     token_type: supabaseSession.token_type,
     expires_in: supabaseSession.expires_in,
   };
 };
 
-export function initAuthListener(): () => void {
-  const supabaseClient = api.getSupabaseClient();
+export function initAuthListener(supabaseClient: SupabaseClient): () => void {
   if (!supabaseClient) {
-    logger.error('[AuthListener] Supabase client not available. Cannot initialize listener.');
+    logger.error('[AuthListener] Invalid Supabase client passed. Cannot initialize listener.');
+    useAuthStore.setState({ isLoading: false, error: new Error('Auth listener failed: Invalid Supabase client') });
     return () => { logger.warn('[AuthListener] No-op unsubscribe called (listener never initialized).'); };
   }
+  if (typeof supabaseClient.auth?.onAuthStateChange !== 'function') {
+      logger.error('[AuthListener] Passed client is missing auth.onAuthStateChange method.', { clientReceived: supabaseClient });
+      useAuthStore.setState({ isLoading: false, error: new Error('Auth listener failed: Invalid client object') });
+      return () => { logger.warn('[AuthListener] No-op unsubscribe called (listener never initialized - invalid client).'); };
+  }
 
-  logger.debug('[AuthListener] Initializing Supabase auth listener...');
+  logger.debug('[AuthListener] Initializing Supabase auth listener with passed client...');
+  let initialSessionEventFired = false;
 
   const { data: listener } = supabaseClient.auth.onAuthStateChange(
-    (event, session) => {
+    (event: AuthChangeEvent, session: SupabaseSession | null) => {
       try {
-        logger.debug(`[AuthListener] Event: ${event}`, { session });
+        logger.debug(`[AuthListener] Event received: ${event}`);
+        if (event === 'INITIAL_SESSION') {
+          initialSessionEventFired = true;
+        }
 
         const storeSession = mapSupabaseSession(session);
         const storeUser = mapSupabaseUser(session?.user ?? null);
 
-        // Handle state updates SYNCHRONOUSLY first
         switch (event) {
           case 'INITIAL_SESSION':
-            // Update core session/user state immediately
             useAuthStore.setState({
               session: storeSession,
               user: storeUser,
-              isLoading: false, // Set loading false here!
+              isLoading: false, 
               error: null,
-              profile: undefined, // Set profile undefined initially, let async part fetch it
+              profile: undefined, 
             });
             break;
           case 'SIGNED_IN':
-            // Update core session/user state immediately
             useAuthStore.setState({
               session: storeSession,
               user: storeUser,
-              isLoading: false, // Set loading false here!
+              isLoading: false,
               error: null,
-              profile: undefined, // Set profile undefined initially, let async part fetch it
+              profile: undefined,
             });
             
-            // --- NEW: Check for pending action and navigate immediately ---
             try {
                 const pendingActionJson = localStorage.getItem('pendingAction');
                 if (pendingActionJson) {
@@ -387,8 +297,6 @@ export function initAuthListener(): () => void {
                         const navigate = useAuthStore.getState().navigate;
                         if (navigate) {
                             logger.info(`[AuthListener] Navigating to pending action return path: ${pendingAction.returnPath}`);
-                            // Navigate immediately, let the target page handle the action itself.
-                            // Do NOT remove pendingAction here; target page needs it.
                             navigate(pendingAction.returnPath);
                         } else {
                             logger.warn('[AuthListener] Pending action exists but navigate function not available to redirect.');
@@ -397,11 +305,10 @@ export function initAuthListener(): () => void {
                          logger.warn('[AuthListener] Could not parse returnPath from pending action JSON.', { pendingActionJson });
                     }
                 } else {
-                    // No pending action, normal sign-in flow. Navigate to default authenticated route.
                     logger.info('[AuthListener] No pending action found on SIGNED_IN. Navigating to default route dashboard.');
                     const navigate = useAuthStore.getState().navigate;
                     if (navigate) {
-                        navigate('dashboard'); // Correctly use string literal
+                        navigate('dashboard');
                     } else {
                         logger.warn('[AuthListener] Navigate function not available for default redirection.');
                     }
@@ -410,18 +317,15 @@ export function initAuthListener(): () => void {
                 logger.error('[AuthListener] Error checking/parsing pendingAction for navigation:', { 
                     error: e instanceof Error ? e.message : String(e) 
                 });
-                localStorage.removeItem('pendingAction'); // Clear potentially corrupted item
+                localStorage.removeItem('pendingAction');
             }
-            // --- End Immediate Navigation Check ---
             break;
           case 'TOKEN_REFRESHED':
-            // Update core session/user state immediately
             useAuthStore.setState({
               session: storeSession,
               user: storeUser,
-              isLoading: false, // Can likely set loading false here too
+              isLoading: false,
               error: null,
-              // Profile should already exist, no need to reset to undefined
             });
             break;
           case 'SIGNED_OUT':
@@ -429,7 +333,7 @@ export function initAuthListener(): () => void {
               user: null,
               session: null,
               profile: null,
-              isLoading: false, 
+              isLoading: false,
               error: null,
             });
             localStorage.removeItem('pendingAction');
@@ -439,61 +343,56 @@ export function initAuthListener(): () => void {
             useAuthStore.setState({ user: storeUser }); 
             break;
           case 'PASSWORD_RECOVERY':
-            // Typically, you might navigate or set a specific state 
-            // For now, ensure loading is false.
             useAuthStore.setState({ isLoading: false });
             break;
           default:
-            logger.warn('[AuthListener] Unhandled auth event:', { event });
-             // Ensure loading is false even for unhandled events
             useAuthStore.setState({ isLoading: false }); 
             break;
         }
 
-        // Now, handle ASYNCHRONOUS tasks (profile fetch, replay) AFTER the main callback finishes
         if ((event === 'INITIAL_SESSION' || event === 'SIGNED_IN') && storeSession?.access_token) {
             setTimeout(async () => { 
-                const startTime = Date.now(); // Start timer
+                const startTime = Date.now();
                 logger.debug(`[AuthListener] Performing async tasks for ${event}`);
                 try {
-                    const token = storeSession.access_token;
-
-                    // --- Delay Point 1: Profile Fetch ---
-                    logger.debug(`[AuthListener] Fetching profile for ${event}...`);
-                    const profileStartTime = Date.now();
-                    const profileResponse = await api.get<AuthResponse>('me', { token });
-                    const profileEndTime = Date.now();
-                    logger.debug(`[AuthListener] Profile fetch completed for ${event}. Duration: ${profileEndTime - profileStartTime}ms`);
-                    
-                    if (profileResponse.data && profileResponse.data.profile) {
-                        logger.debug(`[AuthListener] Profile fetched successfully for ${event}`);
-                        useAuthStore.setState({ profile: profileResponse.data.profile });
-                    } else {
-                        logger.error(`[AuthListener] Failed to fetch profile for ${event}`, { error: profileResponse.error });
-                        useAuthStore.setState({ profile: null, error: new Error(profileResponse.error?.message || 'Failed fetch profile') });
+                    if (!storeUser?.id) {
+                      logger.error(`[AuthListener] Cannot fetch profile for ${event}: User ID is missing.`);
+                      useAuthStore.setState({ profile: null, error: new Error('User ID missing for profile fetch') });
+                      return;
                     }
 
-                    // --- Delay Point 2: Action Replay (REMOVED) ---
-                    // logger.debug(`[AuthListener] Checking for pending action for ${event}...`);
-                    // const replayStartTime = Date.now(); // Timer for replay call
-                    // const navigate = useAuthStore.getState().navigate;
-                    // await replayPendingAction(apiClientInstance, navigate, token);
-                    // const replayEndTime = Date.now();
-                    // logger.debug(`[AuthListener] replayPendingAction call completed for ${event}. Duration: ${replayEndTime - replayStartTime}ms`); 
+                    logger.debug(`[AuthListener] Fetching profile for user ${storeUser.id} during ${event}...`);
+                    const profileStartTime = Date.now();
+                    const { data: profileData, error: profileError } = await supabaseClient
+                      .from('profiles')
+                      .select('*')
+                      .eq('id', storeUser.id)
+                      .single();
+                    const profileEndTime = Date.now();
+                    logger.debug(`[AuthListener] Profile fetch completed for ${event}. Duration: ${profileEndTime - profileStartTime}ms`);
+
+                    if (profileError) {
+                        logger.error(`[AuthListener] Failed to fetch profile for ${event}`, { error: profileError });
+                        const errorMessage = `Failed to fetch profile: ${profileError.message}${profileError.code ? ` (Code: ${profileError.code})` : ''}`;
+                        useAuthStore.setState({ profile: null, error: new Error(errorMessage) });
+                    } else if (profileData) {
+                        logger.debug(`[AuthListener] Profile fetched successfully for ${event}`);
+                        useAuthStore.setState({ profile: profileData as UserProfile });
+                    } else {
+                        logger.warn(`[AuthListener] Profile fetch for ${event} returned no data and no error for user ${storeUser.id}.`);
+                        useAuthStore.setState({ profile: null });
+                    }
 
                 } catch (asyncError) {
                     logger.error(`[AuthListener] Error during async tasks for ${event}`, { 
                         error: asyncError instanceof Error ? asyncError.message : String(asyncError) 
                     });
                 } finally {
-                    const endTime = Date.now(); // End timer
+                    const endTime = Date.now();
                     logger.debug(`[AuthListener] Finished async tasks for ${event}. Total duration: ${endTime - startTime}ms`);
                 }
-            }, 0); // setTimeout 0ms
+            }, 0);
         } 
-        // else if (event === 'SIGNED_OUT') {
-            // If any async cleanup is needed for signout, add another setTimeout here.
-        // }
 
       } catch (callbackError) {
         logger.error('!!!!!! ERROR INSIDE onAuthStateChange CALLBACK !!!!!!', {
@@ -502,16 +401,78 @@ export function initAuthListener(): () => void {
           event,
           session
         });
-        useAuthStore.setState({ 
-            isLoading: false, 
-            error: new Error('Auth listener callback failed') 
-        });
+        useAuthStore.setState({ isLoading: false, error: new Error('Auth listener callback failed') });
       }
     }
   );
+  logger.debug('[AuthListener] Listener attached.');
 
+  logger.debug('[AuthListener] Manually fetching initial session using passed client...');
+  supabaseClient.auth.getSession()
+    .then(({ data }: { data: { session: SupabaseSession | null } }) => {
+        if (!initialSessionEventFired) {
+            logger.warn('[AuthListener] Listener likely missed INITIAL_SESSION event. Manually setting initial state from getSession().');
+            const initialSession = data.session;
+            const storeSession = mapSupabaseSession(initialSession);
+            const storeUser = mapSupabaseUser(initialSession?.user ?? null);
+
+            useAuthStore.setState({
+              session: storeSession,
+              user: storeUser,
+              isLoading: false,
+              error: null,
+              profile: undefined,
+            });
+            
+            if (storeSession?.access_token) {
+                  setTimeout(async () => {
+                    try {
+                       logger.debug('[AuthListener] Manually triggering profile fetch after getSession()');
+                       if (!storeUser?.id) {
+                          logger.error('[AuthListener] Cannot fetch profile manually: User ID is missing.');
+                          useAuthStore.setState({ profile: null, error: new Error('User ID missing for manual profile fetch') });
+                          return; 
+                       }
+                       const { data: profileData, error: profileError } = await supabaseClient
+                         .from('profiles')
+                         .select('*')
+                         .eq('id', storeUser.id)
+                         .single();
+
+                       if (profileError) {
+                           logger.error('[AuthListener] Error during manual profile fetch', { error: profileError });
+                           const errorMessage = `Manual profile fetch failed: ${profileError.message}${profileError.code ? ` (Code: ${profileError.code})` : ''}`;
+                           useAuthStore.setState({ profile: null, error: new Error(errorMessage) });
+                       } else if (profileData) {
+                           logger.debug('[AuthListener] Manual profile fetch successful.');
+                           useAuthStore.setState({ profile: profileData as UserProfile });
+                       } else {
+                           logger.warn('[AuthListener] Manual profile fetch returned no data and no error.');
+                           useAuthStore.setState({ profile: null });
+                       }
+                    } catch(e) {
+                         logger.error('[AuthListener] Unexpected error during manual profile fetch execution', { error: e });
+                         const error = e instanceof Error ? e : new Error('Unknown error during manual profile fetch');
+                         useAuthStore.setState({ profile: null, error: error });
+                    }
+                  }, 0);
+            }
+        } else {
+             logger.debug('[AuthListener] Initial session event was handled by listener, manual getSession() update skipped.');
+        }
+    })
+    .catch((error: any) => {
+        logger.error('[AuthListener] Error during manual getSession() call:', { error });
+        if (!initialSessionEventFired) {
+             useAuthStore.setState({ isLoading: false, error: new Error('Failed to get initial session') });
+        }
+    });
+
+  logger.debug('[AuthListener] Function execution finished.');
   return () => {
     logger.debug('[AuthListener] Unsubscribing Supabase auth listener.');
     listener?.subscription.unsubscribe();
   };
 }
+
+export const useAuthStoreDevtools = devtools(useAuthStore)

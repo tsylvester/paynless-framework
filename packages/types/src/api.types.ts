@@ -1,3 +1,11 @@
+import {
+    AiProvider,
+    SystemPrompt,
+    Chat,
+    ChatMessage,
+    ChatApiRequest
+} from './ai.types';
+
 export interface ApiError {
   code: string;
   message: string;
@@ -67,3 +75,22 @@ export class AuthRequiredError extends Error {
         this.name = 'AuthRequiredError';
     }
 }
+
+// +++ Add IApiClient Interface +++
+/**
+ * Defines the contract for the API client methods needed by stores.
+ */
+export interface IApiClient {
+  ai: {
+    getAiProviders: () => Promise<ApiResponse<AiProvider[]>>;
+    getSystemPrompts: () => Promise<ApiResponse<SystemPrompt[]>>;
+    sendChatMessage: (request: ChatApiRequest, options?: FetchOptions) => Promise<ApiResponse<ChatMessage>>;
+    getChatHistory: (token: string) => Promise<ApiResponse<Chat[]>>;
+    getChatMessages: (chatId: string, token: string) => Promise<ApiResponse<ChatMessage[]>>;
+  };
+  post: <T, U>(endpoint: string, body: U, options?: FetchOptions) => Promise<ApiResponse<T>>;
+  // Define other top-level API namespaces if needed
+  // billing?: { ... }; 
+  // organizations?: { ... };
+}
+// +++ End IApiClient Interface +++

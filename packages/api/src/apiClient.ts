@@ -1,9 +1,10 @@
-import { SupabaseClient, createClient } from '@supabase/supabase-js';
+import { SupabaseClient/*, createClient*/ } from '@supabase/supabase-js';
 // Import types from @paynless/types
 import type {
   // UserProfile, UserProfileUpdate, // Removed unused imports
   ApiResponse, ApiError as ApiErrorType,
-  FetchOptions // Import FetchOptions from types
+  FetchOptions, // Import FetchOptions from types
+  IApiClient // <-- Import IApiClient
 } from '@paynless/types';
 // ---> Import AuthRequiredError from types <--- 
 import { AuthRequiredError } from '@paynless/types'; 
@@ -35,7 +36,7 @@ interface ApiClientConstructorOptions {
 // Interface for the notification callback function (can be defined here or imported)
 type NotificationCallback = (notification: Notification) => void;
 
-export class ApiClient {
+export class ApiClient implements IApiClient { // <-- Add implements IApiClient
     private supabase: SupabaseClient<any>;
     private functionsUrl: string;
     private supabaseAnonKey: string; // <<< Add storage for anon key
@@ -55,7 +56,6 @@ export class ApiClient {
         const baseUrl = options.supabaseUrl.replace(/\/$/, ''); 
         this.functionsUrl = `${baseUrl}/functions/v1`; 
         this.supabaseAnonKey = options.supabaseAnonKey; // <<< Store anon key
-        logger.info('API Client constructed with Functions URL:', { url: this.functionsUrl });
 
         this.billing = new StripeApiClient(this);
         this.ai = new AiApiClient(this);
@@ -291,147 +291,3 @@ export class ApiClient {
         return this.supabase;
     }
 }
-
-// --- Singleton Pattern Implementation ---
-let apiClientInstance: ApiClient | null = null;
-let isInitializing = false; // Flag to prevent race conditions
-
-// --- HMR State Restoration (Vite) ---
-// Check if we have state preserved from a previous HMR update
-if (import.meta.hot && import.meta.hot.data.apiClientInstance) {
-  logger.warn('[ApiClient HMR] Restoring apiClientInstance from import.meta.hot.data');
-  apiClientInstance = import.meta.hot.data.apiClientInstance;
-  // Potentially reset isInitializing if restoration implies it finished?
-  // isInitializing = false; // Let's assume dispose handler runs after finally block
-}
-
-interface ApiInitializerConfig {
-    supabaseUrl: string;
-    supabaseAnonKey: string;
-}
-
-/**
- * Initializes the singleton ApiClient instance.
- * Now relies on import.meta.hot for HMR persistence.
- */
-export function initializeApiClient(config: ApiInitializerConfig) {
-    const isDev = import.meta.env.DEV; // Still useful for logging
-
-    logger.info('[initializeApiClient] Attempting initialization...', { 
-        isDev,
-        isInitializing, 
-        hasModuleInstance: !!apiClientInstance, 
-        // Remove window check logging
-    });
-
-    // Standard checks for initialization in progress or existing module instance
-    if (isInitializing) {
-        logger.warn('[initializeApiClient] Initialization already in progress. Skipping.');
-        return; 
-    }
-    if (apiClientInstance) {
-        logger.warn('[initializeApiClient] ApiClient Singleton already initialized (module scope). Skipping.');
-        return apiClientInstance;
-    }
-
-    isInitializing = true;
-    logger.info('[initializeApiClient] Starting initialization process...');
-
-    try {
-        if (!config.supabaseUrl || !config.supabaseAnonKey) {
-            throw new Error('Supabase URL or Anon Key is missing in configuration.');
-        }
-
-        const newInstance = new ApiClient({
-            supabase: createClient(config.supabaseUrl, config.supabaseAnonKey, { /* ... auth config ... */ }),
-            supabaseUrl: config.supabaseUrl, // Pass URL to constructor
-            supabaseAnonKey: config.supabaseAnonKey, // Pass key to constructor
-        });
-
-        apiClientInstance = newInstance; // Set in module scope
-
-        logger.info('[initializeApiClient] ApiClient Singleton Initialized Successfully.', { instanceExistsNow: !!apiClientInstance });
-        return apiClientInstance;
-
-    } catch (error: any) {
-        logger.error('[initializeApiClient] FATAL ERROR during initialization:', { /* ... error details ... */ });
-        apiClientInstance = null; 
-        throw error; 
-    } finally {
-        isInitializing = false;
-        logger.info('[initializeApiClient] Initialization process finished.', { isInitializing });
-    }
-}
-
-/**
- * Resets the singleton ApiClient instance. FOR TESTING PURPOSES ONLY.
- */
-export function _resetApiClient() {
-    // const isDev = import.meta.env.DEV;
-    logger.warn('Resetting ApiClient Singleton for testing...'); 
-    apiClientInstance = null;
-    isInitializing = false; 
-}
-
-/**
- * Retrieves the singleton ApiClient instance.
- * Relies on HMR restoration happening at module load time.
- * Throws an error if the client has not been initialized.
- */
-function _internal_getApiClient_DONOTUSEDIRECTLY(): ApiClient {
-    // const isDev = import.meta.env.DEV;
-    
-    // Direct check after HMR should have restored the instance if needed
-    if (!apiClientInstance) {
-        // Updated error message slightly
-        logger.error('[_internal_getApiClient] CRITICAL: ApiClient instance is NULL. Check initialization and HMR handling.');
-        throw new Error('ApiClient has not been initialized. Call initializeApiClient first.');
-    }
-    
-    return apiClientInstance;
-}
-
-// Export the api object (no changes needed here, still uses the internal getter)
-export const api = {
-    get: <T>(endpoint: string, options?: FetchOptions): Promise<ApiResponse<T>> => 
-        _internal_getApiClient_DONOTUSEDIRECTLY().get<T>(endpoint, options),
-    post: <T, U>(endpoint: string, body: U, options?: FetchOptions): Promise<ApiResponse<T>> => 
-        _internal_getApiClient_DONOTUSEDIRECTLY().post<T, U>(endpoint, body, options),
-    put: <T, U>(endpoint: string, body: U, options?: FetchOptions): Promise<ApiResponse<T>> => 
-        _internal_getApiClient_DONOTUSEDIRECTLY().put<T, U>(endpoint, body, options),
-    delete: <T>(endpoint: string, options?: FetchOptions): Promise<ApiResponse<T>> => 
-        _internal_getApiClient_DONOTUSEDIRECTLY().delete<T>(endpoint, options),
-    
-    // Access nested clients via the getter
-    ai: () => _internal_getApiClient_DONOTUSEDIRECTLY().ai, 
-    billing: () => _internal_getApiClient_DONOTUSEDIRECTLY().billing,
-    notifications: () => _internal_getApiClient_DONOTUSEDIRECTLY().notifications, 
-    organizations: () => _internal_getApiClient_DONOTUSEDIRECTLY().organizations, // <<< Add Org client getter
-
-    // Realtime methods call the getter first
-    subscribeToNotifications: (userId: string, callback: NotificationCallback): void =>
-        _internal_getApiClient_DONOTUSEDIRECTLY().subscribeToNotifications(userId, callback),
-    unsubscribeFromNotifications: (userId: string): void =>
-        _internal_getApiClient_DONOTUSEDIRECTLY().unsubscribeFromNotifications(userId),
-    
-    // Supabase client getter calls the internal getter
-    getSupabaseClient: (): SupabaseClient<any> => 
-        _internal_getApiClient_DONOTUSEDIRECTLY().getSupabaseClient(),
-}; 
-
-// --- HMR Dispose Handler (Vite) ---
-if (import.meta.hot) {
-  import.meta.hot.dispose((data: any) => {
-    logger.warn('[ApiClient HMR] Dispose triggered. Saving apiClientInstance to import.meta.hot.data');
-    // Persist the current instance state
-    data.apiClientInstance = apiClientInstance;
-    // Optionally, persist other state like isInitializing if needed?
-    // data.isInitializing = isInitializing; 
-  });
-
-  // Accept the update for this module
-  import.meta.hot.accept(() => {
-    logger.warn('[ApiClient HMR] Module accepted update.');
-    // The module code will re-run, and the restoration logic at the top should execute.
-  });
-} 

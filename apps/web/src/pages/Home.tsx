@@ -20,6 +20,7 @@ import {
 } from 'lucide-react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useAuthStore, useAiStore } from '@paynless/store'
+import { useApi } from '@paynless/api'
 import { useState, useEffect, useRef } from 'react'
 import { logger } from '@paynless/utils'
 import { ModelSelector } from '../components/ai/ModelSelector'
@@ -31,6 +32,7 @@ export function HomePage() {
   const { user, session, isLoading: isAuthLoading } = useAuthStore()
   const navigate = useNavigate()
   const { colorMode } = useTheme()
+  const apiClient = useApi()
 
   const loadAiConfig = useAiStore((state) => state.loadAiConfig)
   const { 
@@ -52,14 +54,14 @@ export function HomePage() {
   const configLoadedRef = useRef(false)
 
   useEffect(() => {
-    if (!isAuthLoading && !configLoadedRef.current) {
+    if (!isAuthLoading && !configLoadedRef.current && apiClient) {
       logger.info('[HomePage] Auth loaded, initiating AI config load and new chat...')
-      loadAiConfig()
+      loadAiConfig(apiClient)
       startNewChat()
       configLoadedRef.current = true
       hasSetDefaults.current = false
     }
-  }, [isAuthLoading, loadAiConfig, startNewChat])
+  }, [isAuthLoading, loadAiConfig, startNewChat, apiClient])
 
   useEffect(() => {
     if (!isAiConfigLoading && !hasSetDefaults.current && availableProviders.length > 0) {

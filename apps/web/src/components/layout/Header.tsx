@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Link, useNavigate, useLocation } from 'react-router-dom'
 import { useAuthStore } from '@paynless/store'
+import { useApi } from '@paynless/api'
 import { useTheme } from '../../hooks/useTheme'
 import {
   LogOut,
@@ -20,6 +21,7 @@ export function Header() {
     profile: state.profile,
     logout: state.logout,
   }))
+  const apiClient = useApi()
 
   const { colorMode, setColorMode } = useTheme()
   const navigate = useNavigate()
@@ -27,8 +29,8 @@ export function Header() {
   const [isMenuOpen, setIsMenuOpen] = useState(false)
 
   const handleLogout = async () => {
-    await logout()
-    navigate('login')
+    const supabase = apiClient?.getSupabaseClient();
+    await logout(supabase?.auth || null);
   }
 
   // Check if a route is active
@@ -266,11 +268,8 @@ export function Header() {
                     Subscription
                   </Link>
                   <button
-                    onClick={() => {
-                      setIsMenuOpen(false)
-                      handleLogout()
-                    }}
-                    className="block w-full text-left px-4 py-2 text-base font-medium text-textSecondary hover:text-textPrimary hover:bg-surface"
+                    onClick={handleLogout}
+                    className="block w-full text-left px-4 py-2 text-base font-medium text-textSecondary hover:bg-surface hover:text-textPrimary"
                   >
                     <LogOut className="inline-block h-5 w-5 mr-2" />
                     Logout

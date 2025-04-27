@@ -12,6 +12,7 @@ import remarkGfm from 'remark-gfm'
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { okaidia } from 'react-syntax-highlighter/dist/esm/styles/prism'; // Adjust path as needed
 import rehypeSanitize from 'rehype-sanitize';
+import { useApi } from '@paynless/api'
 
 // Assuming existing cn utility
 // import { Textarea } from '@/components/ui/textarea';
@@ -34,6 +35,7 @@ export const AiChatbox: React.FC<AiChatboxProps> = ({
 }) => {
   const [inputMessage, setInputMessage] = useState('')
   const scrollContainerRef = useRef<HTMLDivElement>(null); // Ref for the scrollable container
+  const apiClient = useApi()
 
   // Fetch state and actions from the store
   const {
@@ -67,7 +69,7 @@ export const AiChatbox: React.FC<AiChatboxProps> = ({
   }, [currentChatMessages]); 
 
   const handleSend = async () => {
-    if (!inputMessage.trim() || isLoadingAiResponse) return
+    if (!inputMessage.trim() || isLoadingAiResponse || !apiClient) return
     if (!providerId) {
       logger.error('[AiChatbox] Cannot send message: Provider ID is missing.')
       return
@@ -82,7 +84,7 @@ export const AiChatbox: React.FC<AiChatboxProps> = ({
     setInputMessage('') // Clear input immediately
 
     try {
-      const result = await sendMessage({
+      const result = await sendMessage(apiClient, {
         message: messageToSend,
         providerId,
         promptId,
