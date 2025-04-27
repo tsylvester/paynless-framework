@@ -10,8 +10,8 @@ import {
 } from '@paynless/types'
 import { NavigateFunction } from '@paynless/types'
 import { logger } from '@paynless/utils'
-import { api, getApiClient } from '@paynless/api-client'
-import { analytics } from '@paynless/analytics-client'
+import { api } from '@paynless/api'
+import { analytics } from '@paynless/analytics'
 import { SupabaseClient, Session as SupabaseSession, User as SupabaseUser } from '@supabase/supabase-js'
 
 export const useAuthStore = create<AuthStore>()((set, get) => ({
@@ -442,13 +442,12 @@ export function initAuthListener(
                 const startTime = Date.now(); // Start timer
                 logger.debug(`[AuthListener] Performing async tasks for ${event}`);
                 try {
-                    const apiClientInstance = getApiClient();
                     const token = storeSession.access_token;
 
                     // --- Delay Point 1: Profile Fetch ---
                     logger.debug(`[AuthListener] Fetching profile for ${event}...`);
                     const profileStartTime = Date.now();
-                    const profileResponse = await apiClientInstance.get<AuthResponse>('me', { token });
+                    const profileResponse = await api.get<AuthResponse>('me', { token });
                     const profileEndTime = Date.now();
                     logger.debug(`[AuthListener] Profile fetch completed for ${event}. Duration: ${profileEndTime - profileStartTime}ms`);
                     

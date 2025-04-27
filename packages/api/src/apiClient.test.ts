@@ -3,7 +3,7 @@ import { http, HttpResponse } from 'msw';
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import { AuthRequiredError } from '@paynless/types';
 
-import { api, initializeApiClient, _resetApiClient, ApiError, getApiClient } from './apiClient';
+import { api, initializeApiClient, _resetApiClient, ApiError } from './apiClient';
 import { server } from './setupTests'; // <-- Import the shared server
 // Remove direct SupabaseClient import if no longer needed here
 // import { SupabaseClient } from '@supabase/supabase-js'; // Import SupabaseClient type
@@ -52,9 +52,6 @@ describe('apiClient', () => {
 
     // Initialize. This will call the mocked createClient internally.
     initializeApiClient({ supabaseUrl: MOCK_SUPABASE_URL, supabaseAnonKey: MOCK_ANON_KEY });
-
-    // Get the instance using the exported (for test) function
-    internalApiClientInstance = getApiClient();
 
     // Get the reference to the mock client returned by the mocked createClient
     // This relies on the vi.mock structure above

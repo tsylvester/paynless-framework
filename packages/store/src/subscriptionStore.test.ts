@@ -3,7 +3,7 @@ import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
 import { useSubscriptionStore } from './subscriptionStore';
 import { act } from '@testing-library/react';
 import type { UserSubscription, SubscriptionPlan, SubscriptionUsageMetrics, ApiResponse, ApiError as ApiErrorType, User, Session } from '@paynless/types';
-import { api, initializeApiClient, _resetApiClient } from '@paynless/api-client';
+import { api, initializeApiClient, _resetApiClient } from '@paynless/api';
 import { logger } from '@paynless/utils';
 import { useAuthStore } from './authStore'; // Import auth store
 import {
@@ -15,12 +15,12 @@ import {
     mockStripeResumeSubscription,
     mockStripeGetUsageMetrics,
     resetStripeMocks, // Import the reset function
-} from '@paynless/api-client/mocks/stripe.mock';
+} from '@paynless/api/mocks/stripe.mock';
 
 // --- Mocks ---
 // Mock the API functions *directly* via the mock file functions
-vi.mock('@paynless/api-client', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('@paynless/api-client')>();
+vi.mock('@paynless/api', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@paynless/api')>();
   return {
     ...actual, // Keep original exports like initializeApiClient, _resetApiClient
     // Mock the api.billing() functions by assigning our imported mocks

@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { api } from '@paynless/api-client';
+import { api } from '@paynless/api';
 import type { Notification, ApiError } from '@paynless/types';
 import { logger } from '@paynless/utils'; // Import logger
 

@@ -19,7 +19,7 @@ export default defineConfig({
       'react-router-dom',
       'zustand',
       '@paynless/store',
-      // No longer include platform-capabilities source
+      // No longer include platform source
       // Include necessary Tauri APIs (may be needed by other deps? Keep exclude too)
       // '@tauri-apps/api/core',
       // '@tauri-apps/api/dialog',
@@ -38,10 +38,10 @@ export default defineConfig({
     preserveSymlinks: false,
     // Restore explicit aliases for workspace packages
     alias: {
-      '@paynless/api-client': path.resolve(__dirname, '../../packages/api-client/src'),
+      '@paynless/api': path.resolve(__dirname, '../../packages/api/src'),
       '@paynless/store': path.resolve(__dirname, '../../packages/store/src'),
       // Point alias directly to the index.ts file
-      '@paynless/platform-capabilities': path.resolve(__dirname, '../../packages/platform-capabilities/src/index.ts'),
+      '@paynless/platform': path.resolve(__dirname, '../../packages/platform/src/index.ts'),
       // Add aliases for other local packages if needed
       '@': path.resolve(__dirname, './src'),
     },

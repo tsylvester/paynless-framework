@@ -6,6 +6,6 @@
 export const isTauri = false;
 
 // Add other exports from @tauri-apps/api/core if they are imported elsewhere
-// in platform-capabilities, providing dummy implementations.
+// in platform, providing dummy implementations.
 // For now, only isTauri seems to be used.
 console.log('[Mock] Loaded tauri-api-core.web-mock.ts'); 

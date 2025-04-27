@@ -12,10 +12,10 @@ export default defineConfig({
         },
       },
       // Force use of source code
-      inline: [/^@paynless\/api-client/],
+      inline: [/^@paynless\/api/],
     },
-    // Watch for changes in api-client
-    forceRerunTriggers: ['../../packages/api-client/src/**/*'],
+    // Watch for changes in api
+    forceRerunTriggers: ['../../packages/api/src/**/*'],
     // Explicit setup
     setupFiles: ['./src/tests/setup.ts'],
     environment: 'jsdom',

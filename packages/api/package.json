@@ -1,5 +1,5 @@
 {
-  "name": "@paynless/api-client",
+  "name": "@paynless/api",
   "version": "0.1.0",
   "private": true,
   "description": "API client for Paynless applications",

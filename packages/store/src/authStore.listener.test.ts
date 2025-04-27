@@ -3,11 +3,12 @@ import {
   SupabaseClient,
   Session as SupabaseSession,
   User as SupabaseUser,
-  AuthChangeEvent
+  AuthChangeEvent,
+  createClient
 } from '@supabase/supabase-js';
 import { useAuthStore } from './authStore'; // Import the store hook itself
 import { initAuthListener } from './authStore';
-import { ApiClient } from '@paynless/api-client'; // Import ApiClient type
+import { ApiClient } from '@paynless/api'; // Import ApiClient type
 // Import our actual mapped types for verifying results
 import { Session, User, UserProfile, UserRole } from '@paynless/types'; 
 
@@ -71,33 +72,47 @@ const mockUnsubscribe = vi.fn();
 // Add mock navigate function
 const mockNavigate = vi.fn();
 
-const mockSupabaseClient = {
-  auth: {
-    onAuthStateChange: vi.fn((callback: AuthStateChangeListener) => {
-      listenerCallback = callback; // Store the callback
-      return { 
-        data: { subscription: { unsubscribe: mockUnsubscribe } }, 
-        error: null 
-      };
-    }),
-  },
-} as unknown as SupabaseClient;
+// ---> REMOVE mockSupabaseClient definition here <--- 
+// const mockSupabaseClient = {
+// ...
+// } as unknown as SupabaseClient;
 
-const mockApiClientInstance = {
-    get: vi.fn(),
-    post: vi.fn(), // Mock other methods if needed by replay
-    put: vi.fn(),
-    delete: vi.fn(),
-    getSupabaseClient: vi.fn().mockReturnValue(mockSupabaseClient), // Needed by replay
-} as unknown as ApiClient;
+// ---> REMOVE mockApiClientInstance definition here <--- 
+// const mockApiClientInstance = {
+// ...
+// } as unknown as ApiClient;
 
-// --- Mock the entire @paynless/api-client module ---
-vi.mock('@paynless/api-client', () => ({
-  // Mock specific named exports needed by authStore or the listener
-  getApiClient: vi.fn(() => mockApiClientInstance), // Ensure getApiClient returns our mock instance
-  // Mock the 'api' object if it's also imported/used directly
-  // api: mockApiClientInstance, // Uncomment if 'api' is used directly
-}));
+// --- Mock the entire @paynless/api module ---
+vi.mock('@paynless/api', () => {
+    // ---> DEFINE *BOTH* mocks inside the factory <--- 
+    const internalMockSupabaseClient = {
+      auth: {
+        onAuthStateChange: vi.fn((callback: AuthStateChangeListener) => {
+          listenerCallback = callback; // Store the callback
+          return { 
+            data: { subscription: { unsubscribe: mockUnsubscribe } }, 
+            error: null 
+          };
+        }),
+      },
+    } as unknown as SupabaseClient;
+
+    const internalMockApiClientInstance = {
+        get: vi.fn(),
+        post: vi.fn(), 
+        put: vi.fn(),
+        delete: vi.fn(),
+        getSupabaseClient: vi.fn().mockReturnValue(internalMockSupabaseClient), // Use internal mock
+    } as unknown as ApiClient;
+
+    return {
+        api: internalMockApiClientInstance,
+    };
+});
+
+// Get a reference to the mock *after* vi.mock has run
+// This requires importing the mocked module first
+import { api as mockedApi } from '@paynless/api';
 
 describe('authStore Listener Logic (initAuthListener)', () => {
   
@@ -120,12 +135,13 @@ describe('authStore Listener Logic (initAuthListener)', () => {
     listenerCallback = null;
 
     // Mock API calls - NEST profile data correctly
-    mockApiClientInstance.get = vi.fn().mockResolvedValue({
+    // ---> Use mockedApi reference <--- 
+    vi.mocked(mockedApi.get).mockResolvedValue({
       data: { profile: mockUserProfile }, // <<< FIX: Nest profile data
       error: null,
       status: 200
     });
-    mockApiClientInstance.getSupabaseClient = vi.fn().mockReturnValue(mockSupabaseClient);
+    // vi.mocked(mockedApi.getSupabaseClient).mockReturnValue(mockSupabaseClient); // Already mocked in factory
 
     // Spy on setState AFTER resetting state
     vi.spyOn(useAuthStore, 'setState');
@@ -145,13 +161,14 @@ describe('authStore Listener Logic (initAuthListener)', () => {
 
   it('should set session, user, profile and isLoading=false on INITIAL_SESSION with session', async () => {
     // Explicitly configure the mock for THIS test case
-    mockApiClientInstance.get = vi.fn().mockResolvedValue({
+    // ---> Use mockedApi reference <--- 
+    vi.mocked(mockedApi.get).mockResolvedValue({
       data: { profile: mockUserProfile }, // Use the correctly nested structure
       error: null,
       status: 200
     });
     
-    initAuthListener(mockSupabaseClient);
+    initAuthListener();
     expect(listenerCallback).toBeDefined();
 
     // Use timers to handle setTimeout within the listener
@@ -161,8 +178,9 @@ describe('authStore Listener Logic (initAuthListener)', () => {
     vi.useRealTimers(); // Restore real timers
 
     // Check API call for profile
-    expect(mockApiClientInstance.get).toHaveBeenCalledTimes(1);
-    expect(mockApiClientInstance.get).toHaveBeenCalledWith('me', { token: mockSupabaseSession.access_token });
+    // ---> Use mockedApi reference <--- 
+    expect(vi.mocked(mockedApi.get)).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(mockedApi.get)).toHaveBeenCalledWith('me', { token: mockSupabaseSession.access_token });
 
     // Check state updates
     expect(useAuthStore.setState).toHaveBeenCalledTimes(2); // 1 for session/user, 1 for profile
@@ -185,13 +203,14 @@ describe('authStore Listener Logic (initAuthListener)', () => {
   it('should set profile=null, set error, and still call replay on profile fetch failure', async () => {
     const fetchError = new Error('Failed to fetch profile');
     // Explicitly configure the mock for THIS test case (Error)
-    mockApiClientInstance.get = vi.fn().mockResolvedValue({ 
+    // ---> Use mockedApi reference <--- 
+    vi.mocked(mockedApi.get).mockResolvedValue({ 
       data: null, // Expect null data on error
       error: { message: fetchError.message, code: 'FETCH_ERROR' }, // Match expected error shape 
       status: 500 
     });
 
-    initAuthListener(mockSupabaseClient);
+    initAuthListener();
     expect(listenerCallback).toBeDefined();
 
     // Use timers to handle setTimeout
@@ -201,8 +220,9 @@ describe('authStore Listener Logic (initAuthListener)', () => {
     vi.useRealTimers(); // Restore real timers
 
     // Check API call
-    expect(mockApiClientInstance.get).toHaveBeenCalledTimes(1);
-    expect(mockApiClientInstance.get).toHaveBeenCalledWith('me', { token: mockSupabaseSession.access_token });
+    // ---> Use mockedApi reference <--- 
+    expect(vi.mocked(mockedApi.get)).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(mockedApi.get)).toHaveBeenCalledWith('me', { token: mockSupabaseSession.access_token });
 
     // Check state updates (should be 2: session/user/loading, then profile/error)
     expect(useAuthStore.setState).toHaveBeenCalledTimes(2); 
@@ -242,13 +262,15 @@ describe('authStore Listener Logic (initAuthListener)', () => {
   });
 
   it('should set session=null, user=null, profile=undefined on INITIAL_SESSION without session', async () => {
-    initAuthListener(mockSupabaseClient); // REMOVED mockApiClientInstance
+    // ---> Pass the *real* (but globally mocked) Supabase client to initAuthListener <--- 
+    initAuthListener(createClient('', '')); // Pass a valid (though mocked) client
     expect(listenerCallback).toBeDefined();
 
     await triggerListener('INITIAL_SESSION', null);
 
     // Should not fetch profile
-    expect(mockApiClientInstance.get).not.toHaveBeenCalled();
+    // ---> Use mockedApi reference <--- 
+    expect(vi.mocked(mockedApi.get)).not.toHaveBeenCalled();
 
     // Check state update
     expect(useAuthStore.setState).toHaveBeenCalledTimes(1); 
@@ -263,13 +285,15 @@ describe('authStore Listener Logic (initAuthListener)', () => {
 
   it('should set session, user, profile on SIGNED_IN event', async () => {
     // Explicitly configure the mock for THIS test case (Success)
-    mockApiClientInstance.get = vi.fn().mockResolvedValue({
+    // ---> Use mockedApi reference <--- 
+    vi.mocked(mockedApi.get).mockResolvedValue({
       data: { profile: mockUserProfile }, // Use the correctly nested structure
       error: null,
       status: 200
     });
     
-    initAuthListener(mockSupabaseClient);
+    // ---> Pass the *real* (but globally mocked) Supabase client <--- 
+    initAuthListener(createClient('', ''));
     expect(listenerCallback).toBeDefined();
 
     // Use timers to handle setTimeout
@@ -279,8 +303,9 @@ describe('authStore Listener Logic (initAuthListener)', () => {
     vi.useRealTimers(); // Restore real timers
 
     // Check API call for profile
-    expect(mockApiClientInstance.get).toHaveBeenCalledTimes(1);
-    expect(mockApiClientInstance.get).toHaveBeenCalledWith('me', { token: mockSupabaseSession.access_token });
+    // ---> Use mockedApi reference <--- 
+    expect(vi.mocked(mockedApi.get)).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(mockedApi.get)).toHaveBeenCalledWith('me', { token: mockSupabaseSession.access_token });
 
     // Check state updates
     expect(useAuthStore.setState).toHaveBeenCalledTimes(2); // 1 for session/user, 1 for profile
@@ -307,12 +332,14 @@ describe('authStore Listener Logic (initAuthListener)', () => {
     vi.clearAllMocks(); // Clear mocks after setting state
     vi.spyOn(useAuthStore, 'setState'); // Re-apply spy
     
-    initAuthListener(mockSupabaseClient); // REMOVED mockApiClientInstance
+    // ---> Pass the *real* (but globally mocked) Supabase client <--- 
+    initAuthListener(createClient('', ''));
     expect(listenerCallback).toBeDefined();
 
     await triggerListener('SIGNED_OUT', null);
 
-    expect(mockApiClientInstance.get).not.toHaveBeenCalled(); // No profile fetch on logout
+    // ---> Use mockedApi reference <--- 
+    expect(vi.mocked(mockedApi.get)).not.toHaveBeenCalled(); // No profile fetch on logout
 
     expect(useAuthStore.setState).toHaveBeenCalledTimes(1);
     expect(useAuthStore.setState).toHaveBeenCalledWith({ 
@@ -325,7 +352,8 @@ describe('authStore Listener Logic (initAuthListener)', () => {
   });
 
   it('should update session and user on TOKEN_REFRESHED event', async () => {
-    initAuthListener(mockSupabaseClient); // REMOVED mockApiClientInstance
+    // ---> Pass the *real* (but globally mocked) Supabase client <--- 
+    initAuthListener(createClient('', ''));
     expect(listenerCallback).toBeDefined();
 
     const refreshedSupabaseSession = { 
@@ -344,7 +372,8 @@ describe('authStore Listener Logic (initAuthListener)', () => {
 
     await triggerListener('TOKEN_REFRESHED', refreshedSupabaseSession);
 
-    expect(mockApiClientInstance.get).not.toHaveBeenCalled(); // No profile fetch on refresh usually
+    // ---> Use mockedApi reference <--- 
+    expect(vi.mocked(mockedApi.get)).not.toHaveBeenCalled(); // No profile fetch on refresh usually
 
     expect(useAuthStore.setState).toHaveBeenCalledTimes(1);
     expect(useAuthStore.setState).toHaveBeenCalledWith({ 

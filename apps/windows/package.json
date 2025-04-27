@@ -12,7 +12,7 @@
   "dependencies": {
     "@tauri-apps/api": "^2",
     "@tauri-apps/plugin-opener": "^2",
-    "@paynless/platform-capabilities": "workspace:*"
+    "@paynless/platform": "workspace:*"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2",

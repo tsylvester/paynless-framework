@@ -1,11 +1,11 @@
 import { describe, it, expect, beforeEach, afterEach, vi, type MockInstance, Mock, type SpyInstance } from 'vitest';
 import { useAuthStore } from './authStore'; 
-import { api } from '@paynless/api-client';
+import { api } from '@paynless/api';
 import { act } from '@testing-library/react';
 import type { User, Session, UserProfile, UserRole, ApiError } from '@paynless/types';
 import { logger } from '@paynless/utils'; 
 // Import the module to access the mocked version later
-import * as analyticsClient from '@paynless/analytics-client';
+import * as analyticsClient from '@paynless/analytics';
 import { SupabaseClient, Session as SupabaseSession, User as SupabaseUser } from '@supabase/supabase-js'; // Import Supabase types
 
 // Helper to reset Zustand store state between tests
@@ -32,7 +32,7 @@ vi.mock('@paynless/utils', () => ({
 }));
 
 // Mock analytics client
-vi.mock('@paynless/analytics-client', () => ({ 
+vi.mock('@paynless/analytics', () => ({ 
   analytics: { identify: vi.fn(), reset: vi.fn(), track: vi.fn() } 
 }));
 
@@ -51,8 +51,8 @@ const mockSupabaseClient = {
 } as unknown as SupabaseClient;
 
 // Mock the api client module
-vi.mock('@paynless/api-client', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('@paynless/api-client')>();
+vi.mock('@paynless/api', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@paynless/api')>();
   const mockedApi = {
     get: vi.fn(), post: vi.fn(), put: vi.fn(), delete: vi.fn(),
     getSupabaseClient: vi.fn(() => mockSupabaseClient),

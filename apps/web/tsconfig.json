@@ -21,7 +21,13 @@
     "types": ["vite/client", "node", "vitest/globals"],
     "baseUrl": ".",
     "paths": {
-      "@/*": ["./src/*"]
+      "@/*": ["./src/*"],
+      "@paynless/platform": ["../../packages/platform/src/index.ts"],
+      "@paynless/types": ["../../packages/types/src/index.ts"],
+      "@paynless/api": ["../../packages/api/src/index.ts"],
+      "@paynless/store": ["../../packages/store/src/index.ts"],
+      "@paynless/utils": ["../../packages/utils/src/index.ts"],
+      "@paynless/analytics": ["../../packages/analytics/src/index.ts"]
     },
 
     /* Linting */
@@ -38,10 +44,11 @@
     "vitest.config.ts"
   ],
   "references": [
-    { "path": "../../packages/api-client" },
+    { "path": "../../packages/api" },
     { "path": "../../packages/store" },
     { "path": "../../packages/types" },
     { "path": "../../packages/utils" },
-    { "path": "../../packages/platform-capabilities" },
+    { "path": "../../packages/platform" },
+    { "path": "../../packages/analytics" }
   ]
 } 

@@ -1,11 +1,11 @@
 import { vi, describe, it, expect, beforeEach, afterEach, type Mock, type SpyInstance } from 'vitest'
 import { useAuthStore } from './authStore'; 
-import { api } from '@paynless/api-client';
+import { api } from '@paynless/api';
 import { act } from '@testing-library/react';
 import type { User, Session, UserProfile, ChatMessage, ApiResponse, FetchOptions, AuthResponse } from '@paynless/types';
 import { UserRole, AuthRequiredError } from '@paynless/types'; // Import UserRole, AuthRequiredError
 import { logger } from '@paynless/utils'; 
-import * as analyticsClient from '@paynless/analytics-client';
+import * as analyticsClient from '@paynless/analytics';
 import { SupabaseClient, Session as SupabaseSession, User as SupabaseUser } from '@supabase/supabase-js'; // Import Supabase types
 
 // Helper to reset Zustand store state between tests
@@ -47,8 +47,8 @@ const mockLoginData = {
 };
 
 // Mocks
-vi.mock('@paynless/api-client', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('@paynless/api-client')>()
+vi.mock('@paynless/api', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@paynless/api')>()
   return {
     ...actual, // Keep other exports like getApiClient if needed elsewhere
     // ---> Mock the api object used by the login action (currently) <---
@@ -111,7 +111,7 @@ vi.mock('@paynless/utils', () => ({
 }));
 
 // Keep analytics mock
-vi.mock('@paynless/analytics-client', () => ({ 
+vi.mock('@paynless/analytics', () => ({ 
   analytics: { identify: vi.fn(), reset: vi.fn(), track: vi.fn() } 
 }));
 
@@ -138,8 +138,8 @@ const mockSupabaseClient = {
 } as unknown as SupabaseClient;
 
 // Mock the api client module to return our mock Supabase client
-vi.mock('@paynless/api-client', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('@paynless/api-client')>()
+vi.mock('@paynless/api', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@paynless/api')>()
   // Define the mocked api object separately for clarity
   const mockedApi = {
     get: vi.fn(),

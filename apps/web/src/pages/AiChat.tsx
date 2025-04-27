@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useAiStore, useAuthStore } from '@paynless/store';
 import { logger } from '@paynless/utils';
-import { analytics } from '@paynless/analytics-client';
+import { analytics } from '@paynless/analytics';
 import { ModelSelector } from '../components/ai/ModelSelector';
 import { PromptSelector } from '../components/ai/PromptSelector';
 import { AiChatbox } from '../components/ai/AiChatbox';

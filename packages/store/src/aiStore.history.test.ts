@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach, type SpyInstance } from 'vitest';
 import { useAiStore } from './aiStore';
-import { api } from '@paynless/api-client';
+import { api } from '@paynless/api';
 import { act } from '@testing-library/react';
 import {
     // AiProvider,
@@ -24,8 +24,8 @@ const mockSendChatMessage = vi.fn();
 const mockGetChatHistory = vi.fn();
 const mockGetChatMessages = vi.fn(); 
 
-vi.mock('@paynless/api-client', async (importOriginal) => {
-    const actual = await importOriginal<typeof import('@paynless/api-client')>();
+vi.mock('@paynless/api', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('@paynless/api')>();
     return {
         ...actual, 
         api: {

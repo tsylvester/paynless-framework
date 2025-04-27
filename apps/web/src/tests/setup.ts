@@ -9,7 +9,7 @@ import '@testing-library/jest-dom/vitest';
 import { beforeAll, afterEach, afterAll, vi } from 'vitest';
 import { setupServer } from 'msw/node';
 import { handlers } from './utils/mocks/handlers';
-import { initializeApiClient } from '@paynless/api-client';
+import { initializeApiClient } from '@paynless/api';
 import { cleanup } from '@testing-library/react';
 
 console.log('Setting up test environment...');

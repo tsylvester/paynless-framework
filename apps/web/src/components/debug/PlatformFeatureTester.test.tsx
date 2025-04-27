@@ -2,7 +2,7 @@ import React from 'react';
 import { render, screen, fireEvent, act } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { PlatformFeatureTester } from './PlatformFeatureTester';
-import { PlatformCapabilitiesProvider, usePlatformCapabilities } from '@paynless/platform-capabilities';
+import { PlatformCapabilitiesProvider, usePlatformCapabilities } from '@paynless/platform';
 import type { PlatformCapabilities } from '@paynless/types';
 import { logger } from '@paynless/utils';
 
@@ -18,7 +18,7 @@ vi.mock('@paynless/utils', () => ({
 
 // Mock the hook directly
 const MockCapabilitiesContext = React.createContext<PlatformCapabilities | null>(null);
-vi.mock('@paynless/platform-capabilities', async (importOriginal) => {
+vi.mock('@paynless/platform', async (importOriginal) => {
     const original = await importOriginal<any>();
     return {
         ...original,

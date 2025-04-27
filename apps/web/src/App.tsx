@@ -9,7 +9,7 @@ import { logger } from '@paynless/utils';
 import { useSubscriptionStore } from '@paynless/store';
 import { ChatwootIntegration } from './components/integrations/ChatwootIntegration';
 import { PlatformFeatureTester } from './components/debug/PlatformFeatureTester';
-import { api } from '@paynless/api-client'
+import { api } from '@paynless/api'
 import { initAuthListener } from '@paynless/store'
 
 // Create a client for React Query

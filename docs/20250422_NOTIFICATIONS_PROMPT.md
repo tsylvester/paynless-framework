@@ -44,7 +44,7 @@ We are currently paused midway through **Phase 1.6 Integration** of the `docs/im
 1.  **Debug Dropdown Visibility:** Investigate CSS (`position`, `z-index`, `overflow`, transforms), inspect element positioning in dev tools, and check `shadcn/ui` `DropdownMenu` (and potentially `Dialog` or `Portal`) documentation/behavior regarding fixed positioning contexts.
 2.  **Debug API Call Authentication:**
     *   Verify the `token` state is correctly retrieved from `useAuthStore` in `Notifications.tsx`.
-    *   Trace the API call through `@paynless/api-client` (`api.notifications().fetchNotifications()` -> `apiClient.get()`) to ensure the retrieved token is being attached to the `Authorization` header.
+    *   Trace the API call through `@paynless/api` (`api.notifications().fetchNotifications()` -> `apiClient.get()`) to ensure the retrieved token is being attached to the `Authorization` header.
 3.  **Complete Manual Testing (Phase 1.6):** Once the above issues are fixed, perform the manual checks (SSE updates, GET on load, click interactions, mark read).
 4.  **Complete Checkpoint (Phase 1.7):** Run final tests, build, update docs, and commit.
 

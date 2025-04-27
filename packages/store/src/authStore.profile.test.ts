@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { useAuthStore } from './authStore'; 
-import { api } from '@paynless/api-client';
+import { api } from '@paynless/api';
 import { act } from '@testing-library/react';
 import type { User, Session, UserProfile, UserRole, UserProfileUpdate, ApiError } from '@paynless/types';
 import { logger } from '@paynless/utils'; 

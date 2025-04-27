@@ -135,7 +135,7 @@ export function DashboardPage() {
             </li>
             <li>
               Be extremely careful with any changes to files in{' '}
-              <code>packages/api-client</code> or <code>packages/store/</code>.
+              <code>packages/api</code> or <code>packages/store/</code>.
             </li>
             <li>
               The <code>apps/web</code> and <code>apps/desktop</code> frontends

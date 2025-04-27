@@ -84,7 +84,7 @@ To contribute to this project:
 *   **Centralized Database Types (Refactor):**
     *   Refactored the codebase to use Supabase-generated types (`supabase/functions/types_db.ts`) as the single source of truth for database schema definitions.
     *   Created an internal workspace package (`@paynless/db-types` pointing to `types_db.ts`) for easier type resolution.
-    *   Added this internal package as a dependency to `@paynless/types`, `api-client`, `store`, and `web`.
+    *   Added this internal package as a dependency to `@paynless/types`, `api`, `store`, and `web`.
     *   Removed manually defined, redundant DB type definitions from `packages/types/src` and updated affected files to use aliases pointing to `@paynless/db-types`.
     *   Updated Supabase Edge Functions (`supabase/functions/*`) to import DB types directly from `../types_db.ts` and application-level types from `../_shared/types.ts`.
     *   Cleaned `supabase/functions/_shared/types.ts` to only contain necessary application-level types.
@@ -168,7 +168,7 @@ This project includes an Edge Function (`sync-ai-models`) responsible for fetchi
 The application follows a clear layered architecture for API interactions:
 1. UI Components/Pages (`apps/web/src/pages`, `packages/ui-components`) → Trigger actions.
 2. Hooks/Stores (`packages/store/src/*`) → Manage state and call API Client methods.
-3. API Client Layer (`packages/api-client/src/*`) → Handles HTTP requests to specific backend endpoints, uses base `apiClient`.
+3. API Client Layer (`packages/api/src/*`) → Handles HTTP requests to specific backend endpoints, uses base `apiClient`.
 4. Backend API (Supabase Edge Functions at `supabase/functions/*`) → Receives requests, interacts with Supabase Auth/DB, Stripe.
 
 ## State Management
@@ -185,7 +185,7 @@ To ensure a clear separation of concerns, predictability, and testability, the f
 
 *   **Store Actions as Flow Controllers:** Store actions (e.g., `authStore.login`, `subscriptionStore.createCheckoutSession`) are responsible for the entire flow associated with the action. This includes:
     *   Setting a centralized loading state (e.g., `authStore.isLoading = true`).
-    *   Making the necessary API call via the `api-client`.
+    *   Making the necessary API call via the `api`.
     *   Handling the success case: Updating relevant store state (e.g., setting `user`, `session`), clearing loading/error states. For actions resulting in internal navigation (like login/register), the store action itself triggers the navigation (e.g., using an injected `navigate` function or via effects).
     *   Handling the error case: Catching errors from the API client, setting a centralized error state (e.g., `authStore.error = caughtError`), and clearing the loading state. Errors are generally *not* re-thrown from the store action unless a specific downstream reaction is needed.
 *   **UI Components as Dispatchers/Viewers:** React components:
@@ -211,7 +211,7 @@ To ensure consistency and prevent subtle bugs when constructing URLs for API cal
     *   *Incorrect:* `/auth/login`, `/api-subscriptions/checkout`, `/details`
 
 3.  **URL Construction (API Client):**
-    *   When combining a base URL and an endpoint path within API client logic (like `packages/api-client`), use simple string concatenation with a single slash in between: `` `${baseUrl}/${endpoint}` ``.
+    *   When combining a base URL and an endpoint path within API client logic (like `packages/api`), use simple string concatenation with a single slash in between: `` `${baseUrl}/${endpoint}` ``.
     *   This relies on the base URL not having a trailing slash (Rule 1) and the endpoint path not having a leading slash (Rule 2).
 
 **Rationale:** This approach is simple, predictable, and avoids ambiguities encountered with the standard `URL` constructor when base URLs contain paths. It ensures consistency across different packages and environments.
@@ -246,9 +246,9 @@ When integrating optional, third-party services (like email marketing - Kit) tha
 
 **Benefits:** This approach ensures the application remains functional even if optional services aren't configured, provides a clear and consistent pattern for developers, and makes adding new backend integrations straightforward.
 
-## Handling Frontend Analytics Integration (`packages/analytics-client`)
+## Handling Frontend Analytics Integration (`packages/analytics`)
 
-The frontend analytics integration (`packages/analytics-client`) follows a similar pattern to ensure graceful degradation and extensibility:
+The frontend analytics integration (`packages/analytics`) follows a similar pattern to ensure graceful degradation and extensibility:
 
 1.  **Environment Variables:** Configuration relies on Vite environment variables (prefixed with `VITE_`):
     *   `VITE_ANALYTICS_PROVIDER`: Specifies the provider (e.g., `'posthog'`, `'none'`).
@@ -260,7 +260,7 @@ The frontend analytics integration (`packages/analytics-client`) follows a simil
 
 3.  **Usage:** Components and stores should import and use this singleton directly:
     ```typescript
-    import { analytics } from '@paynless/analytics-client';
+    import { analytics } from '@paynless/analytics';
 
     // Example usage:
     analytics.identify(userId, { email });
@@ -278,7 +278,7 @@ The frontend analytics integration (`packages/analytics-client`) follows a simil
     *   To add a new frontend analytics provider (e.g., Mixpanel):
         *   Add required `VITE_MIXPANEL_TOKEN`, etc., to `.env.example`.
         *   Create `mixpanelAdapter.ts` implementing `AnalyticsClient` and its `init` method.
-        *   Update the factory logic in `packages/analytics-client/src/index.ts` to check for `VITE_ANALYTICS_PROVIDER === 'mixpanel'` and the required key, then instantiate and initialize the `MixpanelAdapter`.
+        *   Update the factory logic in `packages/analytics/src/index.ts` to check for `VITE_ANALYTICS_PROVIDER === 'mixpanel'` and the required key, then instantiate and initialize the `MixpanelAdapter`.
         *   Consuming code (`analytics.track(...)`) remains unchanged.
 
 **Benefits:** This ensures analytics calls are seamlessly ignored if not configured, simplifies usage across the frontend, and provides a clear path for adding other analytics providers.

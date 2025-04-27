@@ -12,8 +12,8 @@ Paynless utilizes a **monorepo architecture** managed with `pnpm` workspaces, pr
     *   **Database:** PostgreSQL database for storing application data (profiles, subscriptions, AI chat history, etc.).
     *   **Edge Functions:** Deno-based serverless functions implementing the backend API endpoints for business logic (user management, subscription handling via Stripe, AI chat interactions).
 *   **Frontend (Web):** Built with **React** (using **Vite**), **TypeScript**, and styled with **TailwindCSS**. Leverages **shadcn/ui** and **Radix UI** for accessible and reusable UI components. State management is handled globally by **Zustand** and data fetching/caching by **TanStack Query**. Routing is managed by **React Router**.
-*   **Shared Packages:** Core logic like the API client (`@paynless/api-client`), state stores (`@paynless/store`), shared types (`@paynless/types`), analytics (`@paynless/analytics-client`), and utilities (`@paynless/utils`) are organized into reusable packages within the monorepo.
-*   **Multi-Platform Goal:** The structure includes placeholders and capability abstractions (`@paynless/platform-capabilities`) aiming for future deployment targets including iOS, Android, Windows Desktop (Tauri), Linux, and Mac.
+*   **Shared Packages:** Core logic like the API client (`@paynless/api`), state stores (`@paynless/store`), shared types (`@paynless/types`), analytics (`@paynless/analytics`), and utilities (`@paynless/utils`) are organized into reusable packages within the monorepo.
+*   **Multi-Platform Goal:** The structure includes placeholders and capability abstractions (`@paynless/platform`) aiming for future deployment targets including iOS, Android, Windows Desktop (Tauri), Linux, and Mac.
 
 ## Core Features & Capabilities
 
@@ -26,7 +26,7 @@ The framework comes pre-configured with essential features:
 *   **AI Chat Integration:** Backend functions and frontend components to interact with various AI providers (configurable, supports OpenAI, Anthropic, Google), manage chat history, and utilize system prompts.
     * Syncs with model providers and automatically populates available models into the database. 
 *   **Web Analytics:** Google Analytics pre-configured. 
-*   **User Analytics:** Pluggable analytics client (`@paynless/analytics-client`) with PostHog prebuilt, prepared for Mixpanel or others.
+*   **User Analytics:** Pluggable analytics client (`@paynless/analytics`) with PostHog prebuilt, prepared for Mixpanel or others.
 *   **Email Marketing Sync:** Trigger-based system to sync new users to email marketing platforms like Kit (prebuilt), prepared for other email marketing platforms.
 *   **Customer Service:** Chatwoot prebuild for helping users. 
 

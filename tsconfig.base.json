@@ -21,12 +21,12 @@
     "moduleResolution": "node",
     "baseUrl": ".",
     "paths": {
-      "@paynless/platform-capabilities": ["packages/platform-capabilities/src/index.ts"],
+      "@paynless/platform": ["packages/platform/src/index.ts"],
       "@paynless/types": ["packages/types/src/index.ts"],
-      "@paynless/api-client": ["packages/api-client/src/index.ts"],
+      "@paynless/api": ["packages/api/src/index.ts"],
       "@paynless/store": ["packages/store/src/index.ts"],
       "@paynless/utils": ["packages/utils/src/index.ts"],
-      "@paynless/analytics-client": ["packages/analytics-client/src/index.ts"]
+      "@paynless/analytics": ["packages/analytics/src/index.ts"]
     },
     "resolveJsonModule": true,
     "declaration": true,

@@ -12,7 +12,7 @@ export default defineConfig(async () => ({
   // Add resolve alias for the shared package
   resolve: {
     alias: {
-      '@paynless/platform-capabilities': path.resolve(__dirname, '../../packages/platform-capabilities/src/index.ts'),
+      '@paynless/platform': path.resolve(__dirname, '../../packages/platform/src/index.ts'),
     },
   },
 

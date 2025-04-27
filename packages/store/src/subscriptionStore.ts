@@ -2,7 +2,7 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { SubscriptionPlan, UserSubscription, SubscriptionUsageMetrics } from '@paynless/types';
 // Import the global api object instead of StripeApiClient directly
-import { api } from '@paynless/api-client'; 
+import { api } from '@paynless/api'; 
 import { logger } from '@paynless/utils';
 import { useAuthStore } from './authStore';
 
@@ -225,7 +225,7 @@ export const useSubscriptionStore = create<SubscriptionStore>()(
         try {
           const isTestMode = get().isTestMode;
           // Construct the return URL from the current location
-          // TODO: Replace with platform-aware URL (e.g., custom scheme for desktop/mobile) using platform-capabilities service
+          // TODO: Replace with platform-aware URL (e.g., custom scheme for desktop/mobile) using platform service
           const returnUrl = `${window.location.origin}/subscription`; // Stripe needs the full absolute URL
           // Pass token explicitly and the returnUrl
           const response = await api.billing().createPortalSession(isTestMode, returnUrl, { token });

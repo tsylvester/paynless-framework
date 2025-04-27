@@ -61,7 +61,7 @@ This document outlines the steps for implementing an in-app notification system 
     *   [X] Implements callback (`handleRealtimePayload`) to enqueue `data: {JSON}` messages to the stream controller. -> *Refactored & Tested*
     *   [X] Implements stream `cancel()` method to call `supabaseClient.removeChannel()`. -> *Completed*
 
-### 1.3 API Client (`@paynless/api-client`)
+### 1.3 API Client (`@paynless/api`)
 
 *   [X] **Tests:** Write unit tests for new notification functions:
     *   `api.notifications().fetchNotifications()`: Mocks Supabase `select`.
@@ -130,7 +130,7 @@ This document outlines the steps for implementing an in-app notification system 
 
 ### 1.7 Checkpoint 1: Notifications Complete
 
-*   [X] **Run Tests:** Execute all tests related to notifications (`pnpm test --filter=@paynless/api-client --filter=@paynless/store --filter=web`). Ensure they pass. *(Note: Web tests currently failing, deferring debug)*.
+*   [X] **Run Tests:** Execute all tests related to notifications (`pnpm test --filter=@paynless/api --filter=@paynless/store --filter=web`). Ensure they pass. *(Note: Web tests currently failing, deferring debug)*.
 *   [X] **Build App:** Run `pnpm build` for the entire monorepo. Ensure it completes successfully.
 *   [X] **Manual Test:** (Requires fixing issues noted in 1.6)
     *   Log in.
@@ -203,7 +203,7 @@ This document outlines the steps for implementing an in-app notification system 
 *   [X] **Add Dependency:**
     *   [X] Add the internal types package as a development dependency to packages that need DB types:
         ```bash
-        pnpm add -D @paynless/db-types@workspace:* --filter=@paynless/api-client --filter=@paynless/store --filter=web
+        pnpm add -D @paynless/db-types@workspace:* --filter=@paynless/api --filter=@paynless/store --filter=web
         ```
     *   [X] Add the internal types package as a development dependency to `@paynless/types` package itself to aid TS resolution:
         ```bash
@@ -231,12 +231,12 @@ This document outlines the steps for implementing an in-app notification system 
     *   [X] Add the script command `sync:types` to root `package.json`.
 *   [X] **Verification:**
     *   [X] Run TypeScript checks across the monorepo: `pnpm typecheck` (or equivalent `tsc -b` command). Fix any type errors.
-        *   **Status:** Known failures due to planned but unimplemented code in `packages/api-client` (Phase 2.4). 
+        *   **Status:** Known failures due to planned but unimplemented code in `packages/api` (Phase 2.4). 
     *   [X] Run all existing tests: `pnpm test`. Ensure tests pass after refactoring. Address any failures, potentially updating mocks to reflect the new type structures if necessary.
         *   **Status:** `@paynless/store` tests passed after fixing `UserRole` mock references. `apps/web` tests have known failures unrelated to this refactor or requiring broader updates (deferred).
 *   [X] **Commit:** `refactor: centralize database types using supabase gen types (#issue_number)`
 
-### 2.4 API Client (`@paynless/api-client`)
+### 2.4 API Client (`@paynless/api`)
 
 *   [X] **Tests:** Write unit tests for new multi-tenancy functions:
     *   [X] `createOrganization(name, visibility?)`

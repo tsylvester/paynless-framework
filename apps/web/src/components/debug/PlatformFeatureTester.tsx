@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { usePlatformCapabilities } from '@paynless/platform-capabilities';
+import { usePlatformCapabilities } from '@paynless/platform';
 import { logger } from '@paynless/utils';
 
 /**
@@ -13,8 +13,15 @@ export const PlatformFeatureTester: React.FC = () => {
   if (!capabilities) {
     return <div>Loading platform capabilities...</div>;
   }
-
   // --- Platform-Specific Rendering & Actions --- 
+  // --- <<< ADD CHECK FOR WEB PLATFORM >>> ---
+  if (capabilities.platform === 'web') {
+    // Optionally return a placeholder, or null to render nothing
+    // return <div>Platform Feature Tester is not applicable in a web browser.</div>;
+    return null; 
+  }
+
+  // --- Platform-Specific Rendering & Actions (Now only runs if not web) --- 
   const { platform, fileSystem } = capabilities;
 
   // --- Pick File Handler --- 
@@ -30,7 +37,9 @@ export const PlatformFeatureTester: React.FC = () => {
           setTextContent(decodedContent);
           logger.info(`[${platform}] File content length: ${contentBytes.byteLength} bytes`);
         } catch (err) {
-          logger.error(`[${platform}] Error reading file:`, err);
+          // Check if err is an Error before logging
+          const logData = err instanceof Error ? { error: err.message } : { error: String(err) };
+          logger.error(`[${platform}] Error reading file:`, logData);
         }
       } else {
         logger.info(`[${platform}] File picking cancelled.`);
@@ -55,7 +64,9 @@ export const PlatformFeatureTester: React.FC = () => {
           logger.info(`[${platform}] File saving cancelled.`); 
         }
       } catch (err) {
-        logger.error(`[${platform}] Error saving file:`, err);
+        // Check if err is an Error before logging
+        const logData = err instanceof Error ? { error: err.message } : { error: String(err) };
+        logger.error(`[${platform}] Error saving file:`, logData);
       }
     } else {
       logger.warn('File saving not available on this platform.');
@@ -92,13 +103,13 @@ export const PlatformFeatureTester: React.FC = () => {
         <p>(File operation buttons hidden on platforms without filesystem capability)</p>
       )}
 
-      {/* Example of web-specific fallback (or alternative) */}
-      {platform === 'web' && (
+      {/* <<< REMOVE REDUNDANT WEB FALLBACK >>> */}
+      {/* {platform === 'web' && (
         <div style={{ marginTop: '10px' }}>
           <label htmlFor="web-file-input">Choose file (Web standard): </label>
           <input type="file" id="web-file-input" accept='.txt' />
         </div>
-      )}
+      )} */}
     </div>
   );
 }; 

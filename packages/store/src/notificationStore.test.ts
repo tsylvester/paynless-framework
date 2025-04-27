@@ -2,7 +2,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { act } from '@testing-library/react'; // Using react-specific act for state updates
 import { useNotificationStore, NotificationState } from './notificationStore'; // Assuming store is defined here
-import { api } from '@paynless/api-client';
+import { api } from '@paynless/api';
 import type { Notification, ApiError } from '@paynless/types';
 // Removed logger import as it will be mocked
 
@@ -22,7 +22,7 @@ const mockFetchNotifications = vi.fn();
 const mockMarkNotificationAsRead = vi.fn();
 const mockMarkAllNotificationsAsRead = vi.fn();
 
-vi.mock('@paynless/api-client', () => ({
+vi.mock('@paynless/api', () => ({
     api: {
         // Provide the nested structure directly with the mocked functions
         notifications: () => ({

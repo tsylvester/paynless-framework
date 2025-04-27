@@ -1,4 +1,4 @@
-import React, { ReactNode } from 'react';
+import { ReactNode } from 'react';
 import { render, screen, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import {
@@ -42,11 +42,13 @@ vi.mock('./tauriPlatformCapabilities', () => ({
 }));
 
 // Define the expected default initial state structure
+{/* <<< REMOVE REDUNDANT WEB FALLBACK >>> 
 const testDefaultInitialCapabilities: PlatformCapabilities = {
   platform: 'unknown', // Defaulting to 'unknown' initially
   os: undefined,
   fileSystem: { isAvailable: false },
 };
+*/}
 
 // Define the expected state for the Web platform
 const testWebCapabilities: PlatformCapabilities = {

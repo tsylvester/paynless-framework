@@ -6,7 +6,7 @@ import { cn } from '@/lib/utils';
 import { useAuthStore } from '@paynless/store';
 import { useNotificationStore } from '@paynless/store';
 // Remove direct API client import if no longer needed for mark read/all read
-// import { api } from '@paynless/api-client'; 
+// import { api } from '@paynless/api'; 
 import type { Notification } from '@paynless/types';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
