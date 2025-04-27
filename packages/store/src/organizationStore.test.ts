@@ -75,7 +75,8 @@ const createTestStore = (initialState: Partial<OrganizationState> = {}) => creat
     const isAuthenticated = !!useAuthStore.getState().user;
     if (!isAuthenticated) {
         get().setError('User not authenticated');
-        set({ userOrganizations: [], isLoading: false }); // Clear orgs and ensure loading is false
+        get().setLoading(false);
+        set({ userOrganizations: [] }); // Keep clearing orgs directly
         return; // Stop execution if not authenticated
     }
     try {
@@ -148,6 +149,8 @@ describe('OrganizationStore', () => {
       { id: 'org3', name: 'Deleted Org', visibility: 'private', created_at: 'd3', deleted_at: new Date().toISOString() }, // Example deleted org
     ];
 
+    const mockAuthUser = { id: 'test-user-id', email: 'test@test.com', role: 'authenticated' as const, created_at: '', updated_at: '' };
+
     it('should set loading state, call API, filter deleted orgs, and update state on success', async () => {
       // Arrange: Access the mocked method correctly
       const listMock = vi.mocked(api.organizations.listUserOrganizations);
@@ -157,6 +160,7 @@ describe('OrganizationStore', () => {
       }); 
       const setStateSpy = vi.spyOn(useOrgStore.getState(), 'setLoading');
       const setErrorSpy = vi.spyOn(useOrgStore.getState(), 'setError');
+      useAuthStore.setState({ user: mockAuthUser, session: {} as any });
 
       // Act
       await useOrgStore.getState().fetchUserOrganizations('test-user-id');
@@ -187,8 +191,8 @@ describe('OrganizationStore', () => {
       });
       const setStateSpy = vi.spyOn(useOrgStore.getState(), 'setLoading');
       const setErrorSpy = vi.spyOn(useOrgStore.getState(), 'setError');
-      // Pre-fill state to ensure it gets cleared
       useOrgStore.setState({ userOrganizations: mockOrgs });
+      useAuthStore.setState({ user: mockAuthUser, session: {} as any });
 
       // Act
       await useOrgStore.getState().fetchUserOrganizations('test-user-id');

@@ -325,9 +325,16 @@ const mapSupabaseSession = (supabaseSession: SupabaseSession | null): Session | 
   };
 };
 
-export function initAuthListener(
-  supabaseClient: SupabaseClient
-): () => void {
+export function initAuthListener(): () => void {
+  // ---> Get client from the (mocked) api module <--- 
+  const supabaseClient = api.getSupabaseClient(); 
+  // Add a check in case the client isn't available (important for real app)
+  if (!supabaseClient) {
+    logger.error('[AuthListener] Supabase client not available. Cannot initialize listener.');
+    // Return a no-op unsubscribe function
+    return () => { logger.warn('[AuthListener] No-op unsubscribe called (listener never initialized).'); };
+  }
+
   logger.debug('[AuthListener] Initializing Supabase auth listener...');
 
   const { data: listener } = supabaseClient.auth.onAuthStateChange(
