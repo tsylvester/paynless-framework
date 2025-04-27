@@ -70,6 +70,27 @@ To contribute to this project:
 6. Apply database migrations: `supabase db reset` (if starting fresh) or ensure migrations in `supabase/migrations` are up-to-date.
 7. Run `npm run dev` from the root or the specific app directory (e.g., `cd apps/web && npm run dev`) to start the development server.
 
+## Current Development Focus
+
+*   Implementing In-App Notifications System.
+*   Implementing Multi-Tenancy support (Organizations/Teams).
+*   Refactoring older stores (`authStore`, `subscriptionStore`) to use the API Client Singleton pattern.
+*   Refactoring `authStore` to align with Supabase `onAuthStateChange` for improved reliability.
+*   Stabilizing and enhancing AI Chat features.
+*   Improving test coverage across all packages.
+
+## Recent Developments
+
+*   **Centralized Database Types (Refactor):**
+    *   Refactored the codebase to use Supabase-generated types (`supabase/functions/types_db.ts`) as the single source of truth for database schema definitions.
+    *   Created an internal workspace package (`@paynless/db-types` pointing to `types_db.ts`) for easier type resolution.
+    *   Added this internal package as a dependency to `@paynless/types`, `api-client`, `store`, and `web`.
+    *   Removed manually defined, redundant DB type definitions from `packages/types/src` and updated affected files to use aliases pointing to `@paynless/db-types`.
+    *   Updated Supabase Edge Functions (`supabase/functions/*`) to import DB types directly from `../types_db.ts` and application-level types from `../_shared/types.ts`.
+    *   Cleaned `supabase/functions/_shared/types.ts` to only contain necessary application-level types.
+    *   Created a Node.js script (`supabase/scripts/sync-supabase-shared-types.mjs`) to automatically synchronize required application-level types from `packages/types` into `supabase/functions/_shared/types.ts`.
+    *   Added a combined script `sync:types` to the root `package.json` to run both `supabase gen types ...` and the new sync script, ensuring consistency.
+
 ## Supabase Setup
 
 1. Create a new Supabase project.
@@ -111,6 +132,36 @@ DROP TRIGGER IF EXISTS on_user_created_hook ON auth.users;
 DROP FUNCTION IF EXISTS handle_user_created();
 ```
 You can also delete the trigger manually through the Supabase GUI under the Database -> Triggers menu (and the function under Database -> Functions).
+
+### Manually Invoking `sync-ai-models`
+
+This project includes an Edge Function (`sync-ai-models`) responsible for fetching the latest available AI models from configured providers (like OpenAI, Anthropic, Google) and updating the `ai_models` table in the database.
+
+**Currently, there is no automated scheduling (like a cron job) set up for this function.** To update the AI models in your database, you need to invoke this function manually using the Supabase CLI.
+
+**Prerequisites:**
+
+1.  **Link Project:** Ensure your local CLI is linked to your Supabase project:
+    ```bash
+    supabase link --project-ref YOUR_PROJECT_REF
+    ```
+2.  **Deploy Function:** Ensure the `sync-ai-models` Edge Function has been deployed:
+    ```bash
+    supabase functions deploy sync-ai-models
+    ```
+3.  **(Optional) Set API Keys:** For the function to fetch models from providers, ensure the relevant API keys (e.g., `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GOOGLE_API_KEY`) are set as environment variables for the function in your Supabase project settings (or locally in `.env.local` if invoking locally, though local invocation might have limitations). Go to Project Settings -> Edge Functions -> `sync-ai-models` -> Secrets.
+
+**To Manually Invoke:**
+
+*   Run the following command from your project's root directory:
+    ```bash
+    supabase functions invoke sync-ai-models
+    ```
+
+*   *(Note: You might need to add `--project-ref YOUR_PROJECT_REF` if you have multiple linked projects or are not in the root directory).* 
+*   Check the command output and your Supabase function logs for success or errors.
+
+*(Future Work: Set up automated scheduling, likely via a manual Cron Function Hook in the Supabase Dashboard UI, once that process is fully verified or alternative automation becomes available).* 
 
 ## API Implementation Layering
 

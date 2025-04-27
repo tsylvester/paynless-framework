@@ -91,8 +91,8 @@ describe('aiStore - loadChatHistory', () => {
             { id: 'c1', user_id: 'u1', title: 'Chat 1', created_at: 't1', updated_at: 't2'},
         ];
         const mockToken = 'valid-token-for-history';
-        const mockUser: User = { id: 'user-123', email: 'test@test.com', created_at: 't', updated_at: 't', role: UserRole.USER };
-        const mockSession: Session = { access_token: mockToken, refresh_token: 'r', expiresAt: Date.now() / 1000 + 3600 };
+        const mockUser: User = { id: 'user-123', email: 'test@test.com', role: 'user', created_at: '2023-01-01', updated_at: '2023-01-01' };
+        const mockSession: Session = { access_token: mockToken, refresh_token: 'rt', expiresAt: Date.now() / 1000 + 3600 };
 
         // Nested beforeEach using mockReturnValue for authStore.getState
         beforeEach(() => {

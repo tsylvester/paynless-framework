@@ -7,6 +7,11 @@ import { logger } from '@paynless/utils'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
+import ReactMarkdown from 'react-markdown'
+import remarkGfm from 'remark-gfm'
+import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
+import { okaidia } from 'react-syntax-highlighter/dist/esm/styles/prism'; // Adjust path as needed
+import rehypeSanitize from 'rehype-sanitize';
 
 // Assuming existing cn utility
 // import { Textarea } from '@/components/ui/textarea';
@@ -44,10 +49,8 @@ export const AiChatbox: React.FC<AiChatboxProps> = ({
   useEffect(() => {
     const latestMessage = currentChatMessages[currentChatMessages.length - 1];
     if (latestMessage && latestMessage.role === 'assistant') { 
-      console.log('[ScrollEffect] Assistant message detected:', latestMessage.id);
       const container = scrollContainerRef.current;
       if (!container) {
-        console.log('[ScrollEffect] Scroll container ref not found.');
         return;
       }
 
@@ -55,16 +58,10 @@ export const AiChatbox: React.FC<AiChatboxProps> = ({
       const lastMessageElement = messageElements?.[messageElements.length - 1] as HTMLElement | undefined;
 
       if (lastMessageElement) {
-        // Calculate target scroll position: top of the message element relative to the container's top
         const targetScrollTop = lastMessageElement.offsetTop - container.offsetTop; 
-        console.log(`[ScrollEffect] Calculated targetScrollTop: ${targetScrollTop}`);
-        // Use requestAnimationFrame for smoother scroll updates
         requestAnimationFrame(() => {
            container.scrollTop = targetScrollTop;
-           console.log(`[ScrollEffect] Set container scrollTop to: ${container.scrollTop}`);
         });
-      } else {
-        console.log('[ScrollEffect] Could not find last message element.');
       }
     }
   }, [currentChatMessages]); 
@@ -148,7 +145,49 @@ export const AiChatbox: React.FC<AiChatboxProps> = ({
                   : 'bg-[rgb(var(--color-surface))] text-textPrimary'
               )}
             >
-              {msg.content}
+              <div className="markdown-content w-full">
+                <ReactMarkdown
+                  remarkPlugins={[remarkGfm]}
+                  rehypePlugins={[rehypeSanitize]}
+                  components={{
+                    code(props) {
+                      const {children, className, node, ...rest} = props
+                      const match = /language-(\\w+)/.exec(className || '')
+                      return match ? (
+                        <SyntaxHighlighter
+                          {...rest}
+                          PreTag="div"
+                          children={String(children).replace(/\\n$/, '')}
+                          language={match[1]}
+                          style={okaidia} // Choose your style
+                          className="whitespace-pre-wrap break-words"
+                        />
+                      ) : (
+                        <code {...rest} className={cn(className, "whitespace-pre-wrap break-words")}>
+                          {children}
+                        </code>
+                      )
+                    }
+                  }}
+                >
+                  {msg.content}
+                </ReactMarkdown>
+              </div>
+              {/* Add timestamp below the message content */}
+              {msg.created_at && (
+                <div className={cn(
+                  "text-xs mt-1",
+                  msg.role === 'user' 
+                    ? "text-gray-200/80" /* Lighter text on dark user bubble */
+                    : "text-[rgb(var(--color-textSecondary))]" /* Muted text on light assistant bubble */
+                )}>
+                  {/* Format date and time using toLocaleString */}
+                  {new Date(msg.created_at).toLocaleString([], {
+                    year: 'numeric', month: 'numeric', day: 'numeric', 
+                    hour: 'numeric', minute: '2-digit' 
+                  })}
+                </div>
+              )}
             </div>
           ))}
           {isLoadingAiResponse && (

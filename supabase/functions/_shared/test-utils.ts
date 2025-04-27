@@ -1,65 +1,13 @@
 // IMPORTANT: Supabase Edge Functions require relative paths for imports from shared modules.
 // Do not use path aliases (like @shared/) as they will cause deployment failures.
-import { createClient, SupabaseClient } from "npm:@supabase/supabase-js@^2.0.0";
+import { createClient, SupabaseClient } from "npm:@supabase/supabase-js@^2.43.4";
 import { spy, stub, type Spy } from "jsr:@std/testing/mock"; // Add Deno mock imports
 // Remove unstable directive, no longer needed after removing KV mocks
 // /// <reference lib="deno.unstable" />
 // Import ChatMessage type
 import type { ChatMessage } from "../../../packages/types/src/ai.types.ts";
-
-// Remove manual .env file loading - rely on deno test --env flag instead
-/*
-// Load environment variables from .env.local file manually
-// Assuming CWD is the project root (paynless-framework)
-const envFileName = '.env.local'; // Corrected filename WITH leading dot
-const relativePath = `supabase/${envFileName}`;
-
-console.log(`Attempting to manually load .env file from relative path: ${relativePath}`);
-
-try {
-    const fileContent = await Deno.readTextFile(relativePath); // Use relative path directly
-    const lines = fileContent.split('\n');
-
-    for (const line of lines) {
-        const trimmedLine = line.trim();
-        // Skip comments and empty lines
-        if (trimmedLine.startsWith('#') || trimmedLine.length === 0) {
-            continue;
-        }
-        // Split line by the first '=' 
-        const equalsIndex = trimmedLine.indexOf('=');
-        if (equalsIndex === -1) {
-            // Skip lines without an equals sign
-            continue;
-        }
-
-        const key = trimmedLine.substring(0, equalsIndex).trim();
-        let value = trimmedLine.substring(equalsIndex + 1).trim();
-
-        // Remove surrounding quotes (single or double) if present
-        if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
-            value = value.substring(1, value.length - 1);
-        }
-        
-        if (key) {
-             // Set the environment variable
-             Deno.env.set(key, value);
-             // Optional: Log loaded variables for debugging (can be noisy)
-             // console.log(`  Loaded env var: ${key}`); 
-        }
-    }
-    console.log("Manually processed .env file:", relativePath);
-
-} catch (error) {
-    if (error instanceof Deno.errors.NotFound) {
-        console.warn(`WARN: Environment file (${envFileName}) not found at relative path ${relativePath}. Relying on globally set env vars.`);
-    } else {
-        console.error(`Error manually reading or parsing environment file ${relativePath}:`, error);
-        // Re-throw critical errors during loading
-        throw error; 
-    }
-}
-*/
+// --- Import RealtimeChannel type --- 
+import type { RealtimeChannel } from "npm:@supabase/supabase-js@^2.43.4";
 
 // Check for essential Supabase variables, but don't throw if missing during import
 // These checks will now rely on the environment being correctly set by `deno test --env`
@@ -184,170 +132,392 @@ export async function cleanupUser(email: string, adminClient?: SupabaseClient): 
     }
 }
 
-// --- Supabase Client Mocking Utilities ---
+// Define type for the internal state of the mock query builder
+// Export this type so it can be used in test mock functions
+export interface MockQueryBuilderState {
+    tableName: string;
+    operation: 'select' | 'insert' | 'update' | 'delete'; 
+    filters: { column?: string; value?: any; type: 'eq' | 'in' | 'match'; criteria?: object }[]; // Added 'match' type and criteria object
+    selectColumns: string | null;
+    insertData: any[] | object | null; 
+    updateData: object | null;
+    // Add order state etc. if needed
+}
 
-/** Configurable data/handlers for the mock Supabase client (Revised) */
+/** Configurable data/handlers for the mock Supabase client (Revised & Extended) */
 export interface MockSupabaseDataConfig {
-    // Expected results for specific operations
+    // Existing specific results (retain for compatibility)
     getUserResult?: { data: { user: { id: string } | null }; error: any };
     selectPromptResult?: { data: { id: string; prompt_text: string } | null; error: any };
     selectProviderResult?: { data: { id: string; api_identifier: string } | null; error: any };
     selectChatHistoryResult?: { data: Array<{ role: string; content: string }> | null; error: any };
     insertChatResult?: { data: { id: string } | null; error: any };
-    insertUserMessageResult?: { data: ChatMessage | null; error: any }; // Use ChatMessage type
-    insertAssistantMessageResult?: { data: ChatMessage | null; error: any }; // Use ChatMessage type
-    // User for auth mock (if not providing full getUserResult)
+    insertUserMessageResult?: { data: ChatMessage | null; error: any }; 
+    insertAssistantMessageResult?: { data: ChatMessage | null; error: any };
+    // User for auth mock
     mockUser?: { id: string };
-    // Error simulation (simplified)
-    simulateDbError?: Error | null; // General DB error
+    // Error simulation
+    simulateDbError?: Error | null; 
     simulateAuthError?: Error | null;
+
+    // --- Generic Mocking (Passes full state to function) --- 
+    genericMockResults?: {
+        [tableName: string]: {
+            select?: { data: any[] | null; error?: any | null; count?: number | null; status?: number; statusText?: string } | ((state: MockQueryBuilderState) => Promise<{ data: any[] | null; error?: any | null; count?: number | null; status?: number; statusText?: string }>);
+            insert?: { data: any[] | null; error?: any | null; count?: number | null; status?: number; statusText?: string } | ((state: MockQueryBuilderState) => Promise<{ data: any[] | null; error?: any | null; count?: number | null; status?: number; statusText?: string }>);
+            update?: { data: any[] | null; error?: any | null; count?: number | null; status?: number; statusText?: string } | ((state: MockQueryBuilderState) => Promise<{ data: any[] | null; error?: any | null; count?: number | null; status?: number; statusText?: string }>);
+            upsert?: { data: any[] | null; error?: any | null; count?: number | null; status?: number; statusText?: string } | ((state: MockQueryBuilderState) => Promise<{ data: any[] | null; error?: any | null; count?: number | null; status?: number; statusText?: string }>);
+            delete?: { data: any[] | null; error?: any | null; count?: number | null; status?: number; statusText?: string } | ((state: MockQueryBuilderState) => Promise<{ data: any[] | null; error?: any | null; count?: number | null; status?: number; statusText?: string }>);
+        };
+    };
 }
 
-/** Creates a mocked Supabase client instance for unit testing (Revised) */
+// --- Define a type for the minimal mock channel ---
+type MockChannel = {
+    on: Spy<MockChannel, [any, any]>; // Returns self
+    subscribe: Spy<MockChannel, [any?]>; // Returns self
+    unsubscribe: Spy<Promise<'ok' | 'error' | 'timed out'>, []>; // Returns promise
+    topic: string;
+};
+
+/** Creates a mocked Supabase client instance for unit testing (Revised & Extended) */
 export function createMockSupabaseClient(
     config: MockSupabaseDataConfig = {}
 ): {
     client: SupabaseClient;
-    spies: { getUserSpy: Spy<any>; fromSpy: Spy<any>; /* Add more if needed */ };
+    spies: { getUserSpy: Spy<any>; fromSpy: Spy<any>; removeChannelSpy: Spy<any> };
 } {
     // --- Mock Auth ---
     const mockAuth = {
         getUser: spy(async () => {
             if (config.simulateAuthError) return { data: { user: null }, error: config.simulateAuthError };
-            // Prefer getUserResult if provided, otherwise use mockUser
             if (config.getUserResult) return config.getUserResult;
             return { data: { user: config.mockUser ?? null }, error: null };
         }),
-        // Add other auth methods if needed (e.g., signInWithPassword)
     };
 
     // --- Mock Query Builder Chain ---
-    // Define an interface for the builder methods we mock
     interface MockQueryBuilder {
         select: Spy<any>;
         insert: Spy<any>;
+        update: Spy<any>; // Add update if missing
+        delete: Spy<any>; // Add delete
         eq: Spy<any>;
+        in: Spy<any>; // Add 'in' filter
+        match: Spy<any>; // Add match spy definition
         order: Spy<any>;
+        returns: Spy<any>; // <-- Add returns method
+        upsert: Spy<any>; // <-- Add upsert method
         single: Spy<any>;
-        then: Spy<any>;
+        maybeSingle: Spy<any>; // <-- Add maybeSingle method (assuming it's used)
+        then: Spy<any>; // Keep 'then' for compatibility with some existing mocks
     }
 
     const fromSpy = spy((tableName: string) => {
-        // State for the current query chain
         const _queryBuilderState = {
             tableName: tableName,
-            operation: 'select', // Default operation
-            filters: [] as { column: string; value: any }[],
-            selectColumns: '*',
+            operation: 'select' as 'select' | 'insert' | 'update' | 'delete', // Track the intended operation
+            filters: [] as { column?: string; value?: any; type: 'eq' | 'in' | 'match'; criteria?: object }[], 
+            selectColumns: '*' as string | null, // Can be null if not a select op
+            insertData: null as any[] | object | null, 
+            updateData: null as object | null,
+            // Add flags for modifiers if needed, e.g., single: false
         };
 
-        // Define the mock builder methods here, typed with the interface
-        const mockQueryBuilder: MockQueryBuilder = {} as MockQueryBuilder; 
+        const mockQueryBuilder: MockQueryBuilder = {} as MockQueryBuilder;
+        
+        // --- Modifier Methods (Return `this` for chaining) ---
 
         mockQueryBuilder.select = spy((columns = '*') => {
             console.log(`[Mock QB ${tableName}] .select(${columns}) called`);
-            if (_queryBuilderState.operation !== 'insert') {
-                _queryBuilderState.operation = 'select';
+            // Only relevant if starting op or after insert/update
+            if (_queryBuilderState.operation === 'insert' || _queryBuilderState.operation === 'update') {
+                 console.log(`[Mock QB ${tableName}] Chaining .select() after ${_queryBuilderState.operation}`);
+            } else {
+                 _queryBuilderState.operation = 'select'; // Set op if starting chain
             }
             _queryBuilderState.selectColumns = columns;
             return mockQueryBuilder; // Return self for chaining
         });
 
-        mockQueryBuilder.insert = spy((rows: any[] | object) => {
+         mockQueryBuilder.insert = spy((rows: any[] | object) => {
             console.log(`[Mock QB ${tableName}] .insert() called with:`, rows);
             _queryBuilderState.operation = 'insert';
-            // In a real scenario, you might store `rows` in the state
-            return mockQueryBuilder; // Return self for chaining
+            _queryBuilderState.insertData = rows;
+            _queryBuilderState.selectColumns = null; // Not a select op initially
+            return mockQueryBuilder; // Return self for chaining .select() after insert
+        });
+        
+        mockQueryBuilder.update = spy((data: object) => {
+            console.log(`[Mock QB ${tableName}] .update() called with:`, data);
+             _queryBuilderState.operation = 'update';
+            _queryBuilderState.updateData = data;
+            _queryBuilderState.selectColumns = null;
+            return mockQueryBuilder;
+        });
+        
+        mockQueryBuilder.delete = spy(() => {
+            console.log(`[Mock QB ${tableName}] .delete() called`);
+            _queryBuilderState.operation = 'delete';
+            return mockQueryBuilder;
         });
 
         mockQueryBuilder.eq = spy((column: string, value: any) => {
-             console.log(`[Mock QB ${tableName}] .eq(${column}, ${value}) called`);
-            _queryBuilderState.filters.push({ column, value });
-            return mockQueryBuilder; // Return self for chaining
+            console.log(`[Mock QB ${tableName}] .eq(${column}, ${value}) called`);
+            _queryBuilderState.filters.push({ column, value, type: 'eq' });
+            return mockQueryBuilder;
+        });
+        
+        mockQueryBuilder.in = spy((column: string, values: any[]) => {
+            console.log(`[Mock QB ${tableName}] .in(${column}, [${values.length} items]) called`);
+             _queryBuilderState.filters.push({ column, value: values, type: 'in' });
+             return mockQueryBuilder;
+        });
+
+        mockQueryBuilder.match = spy((criteria: object) => {
+            console.log(`[Mock QB ${tableName}] .match() called with:`, criteria);
+            _queryBuilderState.filters.push({ type: 'match', criteria }); // Store the whole criteria object
+            return mockQueryBuilder;
+        });
+
+        // Add .returns() mock - just returns self for chaining
+        mockQueryBuilder.returns = spy(() => {
+            console.log(`[Mock QB ${tableName}] .returns() called`);
+            return mockQueryBuilder;
         });
 
         mockQueryBuilder.order = spy((_column: string, _options?: any) => {
             console.log(`[Mock QB ${tableName}] .order() called`);
-            // Ordering logic could be added if needed
-            return mockQueryBuilder; // Return self for chaining
+            // Logic to store order state could be added if needed
+            return mockQueryBuilder; 
         });
 
-        // Terminal methods: .single() and .then()
+        // Add .upsert() mock - mirrors update for now
+        mockQueryBuilder.upsert = spy((data: any, options?: any) => {
+            console.log(`[Mock QB ${tableName}] .upsert() called with:`, data, options);
+             _queryBuilderState.operation = 'update'; // Treat as update for mock config
+            _queryBuilderState.updateData = data;
+            // Store options if needed for resolveQuery logic
+            // _queryBuilderState.upsertOptions = options; 
+            _queryBuilderState.selectColumns = null;
+            return mockQueryBuilder; // Return self for chaining .select() etc.
+        });
+
+        // --- Terminal Methods / Resolution Logic ---
+        
+        // Helper to resolve the query based on current state and config
+        const resolveQuery = async () => {
+            console.log(`[Mock QB ${tableName}] Resolving query. State:`, _queryBuilderState);
+            const operation = _queryBuilderState.operation;
+            const genericConfig = config.genericMockResults?.[tableName]?.[operation];
+            
+            // Function Config
+            if (typeof genericConfig === 'function') {
+                console.log(`[Mock QB ${tableName}] Using function config for ${operation}`);
+                // Pass the whole state object
+                 try {
+                    // The function defined in the config is responsible 
+                    // for interpreting the state based on the operation.
+                    return await genericConfig(_queryBuilderState);
+                } catch (e) {
+                    console.error(`[Mock QB ${tableName}] Error executing generic mock function for ${operation}:`, e);
+                    return { data: null, error: e, status: 500, statusText: 'Internal Server Error', count: null };
+                }
+            } 
+            // Object Config
+            else if (genericConfig) {
+                 console.log(`[Mock QB ${tableName}] Using object config for ${operation}`);
+                 return { 
+                    data: genericConfig.data ?? null,
+                    error: genericConfig.error ?? null,
+                    count: genericConfig.count ?? (genericConfig.data ? genericConfig.data.length : null),
+                    status: genericConfig.status ?? (genericConfig.error ? 500 : (operation === 'insert' ? 201 : (operation === 'delete' ? 204 : 200))),
+                    statusText: genericConfig.statusText ?? (genericConfig.error ? 'Internal Server Error' : (operation === 'insert' ? 'Created' : (operation === 'delete' ? 'No Content' : 'OK')))
+                };
+            }
+            
+            // Fallback to specific configs (for backward compatibility)
+            console.log(`[Mock QB ${tableName}] No generic config found for ${operation}. Checking specific fallbacks.`);
+            if (operation === 'select') {
+                if (tableName === 'chat_messages') {
+                     console.log("[Mock QB chat_messages] Resolving .select() with specific history config");
+                     const fallbackResult = config.selectChatHistoryResult ?? { data: [], error: null };
+                     return { 
+                        data: fallbackResult.data,
+                        error: fallbackResult.error,
+                        count: fallbackResult.data?.length ?? 0,
+                        status: fallbackResult.error ? 500 : 200,
+                        statusText: fallbackResult.error ? 'Internal Server Error' : 'OK'
+                     };
+                }
+                // Add other specific table fallbacks for select if needed
+            }
+            // Add specific fallbacks for insert/update/delete if needed
+
+            // Ultimate Fallback: Return default based on operation
+            console.warn(`[Mock QB ${tableName}] No specific or generic mock found for ${operation}. Returning default.`);
+             switch (operation) {
+                case 'select': return { data: [], error: null, count: 0, status: 200, statusText: 'OK' };
+                case 'insert': return { data: [{ id: 'mock-inserted-id' }], error: null, count: 1, status: 201, statusText: 'Created' };
+                case 'update': return { data: [{ id: 'mock-updated-id' }], error: null, count: 1, status: 200, statusText: 'OK' };
+                case 'delete': return { data: [], error: null, count: 0, status: 204, statusText: 'No Content' };
+            }
+        };
+
+        // Mock .then() to make the builder awaitable
+        mockQueryBuilder.then = spy(async (onfulfilled: (value: any) => any, onrejected?: (reason: any) => any) => {
+            console.log(`[Mock QB ${tableName}] .then() called. Resolving query...`);
+            try {
+                const result = await resolveQuery();
+                // The actual Supabase client resolves the promise even if there's a DB error,
+                // putting the error object in the resolved value.
+                // We mimic that behavior here.
+                if (result.error) {
+                    console.log(`[Mock QB ${tableName}] Query resolved with DB error. Fulfilling promise with error object.`);
+                    // Resolve with the full result object containing the error
+                    const errorResult = { data: result.data, error: result.error, count: result.count, status: result.status ?? 500, statusText: result.statusText ?? 'Internal Server Error' };
+                    onfulfilled?.(errorResult);
+                    return Promise.resolve(errorResult);
+                } else {
+                     console.log(`[Mock QB ${tableName}] Query resolved successfully, fulfilling promise.`);
+                     const successResult = { data: result.data, error: null, count: result.count, status: result.status ?? 200, statusText: result.statusText ?? 'OK' };
+                     onfulfilled?.(successResult);
+                     return Promise.resolve(successResult);
+                }
+            } catch (e) {
+                 // Catch errors during the resolveQuery itself (e.g., bad mock function)
+                 console.error(`[Mock QB ${tableName}] Unexpected error during query resolution in .then():`, e);
+                 const error = e instanceof Error ? e : new Error(String(e ?? 'Unknown error during query resolution'));
+                 if (onrejected) {
+                     onrejected(error);
+                     // Even if onrejected exists, return a rejected promise for await
+                     return Promise.reject(error); 
+                 } else {
+                     // If no reject handler, re-throw the error (wrapped as an Error)
+                     return Promise.reject(error);
+                 }
+            }
+        });
+
+        // Modifier to get a single row
         mockQueryBuilder.single = spy(async () => {
-             if (config.simulateDbError) return { data: null, error: config.simulateDbError };
-             console.log(`[Mock QB ${tableName}] .single() resolving based on state:`, _queryBuilderState);
-             // Logic based on operation and table name
-             if (_queryBuilderState.operation === 'select') {
-                 switch (tableName) {
-                    case 'system_prompts': return config.selectPromptResult ?? { data: null, error: null };
-                    case 'ai_providers': return config.selectProviderResult ?? { data: null, error: null };
-                    // *** FIX: Add case for selecting a single chat (needed?) ***
-                    // case 'chats': return ???; 
-                    default: return { data: null, error: new Error(`Mock .single() SELECT not configured for table ${tableName}`) };
-                 }
-             } else if (_queryBuilderState.operation === 'insert') {
-                 // .insert().select().single() case
-                 switch (tableName) {
-                     // *** FIX: Add case for inserting a chat ***
-                     case 'chats': 
-                         console.log("[Mock QB chats] Resolving .single() after insert");
-                         return config.insertChatResult ?? { data: { id: 'mock-chat-id-fallback' }, error: null };
-                     default: return { data: null, error: new Error(`Mock .single() INSERT not configured for table ${tableName}`) };
-                 }
-             }
-             // Reset operation state after terminal call?
-             // _queryBuilderState.operation = 'select'; // Reset to default? Or handle differently?
-            return { data: null, error: new Error(`Unhandled mock .single() case for table ${tableName} and operation ${_queryBuilderState.operation}`) };
+            console.log(`[Mock QB ${tableName}] .single() called. Resolving query...`);
+            // Define a minimal mock PostgrestError for simulation ONLY for row count issues
+            class MockPostgrestErrorPGRST116 extends Error { // Rename for clarity
+                details: string | null;
+                hint: string | null;
+                code: string;
+                status: number;
+                statusText: string;
+                    constructor(message: string, hint: string) {
+                    super(message);
+                    this.name = 'MockPostgrestErrorPGRST116';
+                    this.status = 406;
+                    this.statusText = "Not Acceptable";
+                    this.details = null;
+                    this.hint = hint;
+                    this.code = "PGRST116";
+                }
+            }
+            
+            try {
+                // Step 1: Resolve the underlying query
+                const { data, error, status, statusText, count } = await resolveQuery(); // Include count/status if needed
+                
+                // --- FIX: Return error object if underlying query failed --- 
+                if (error) {
+                    console.log(`[Mock QB ${tableName}] Query (for single) resolved with DB error. Returning error object.`);
+                    // Mimic real client: return the error object, don't throw here
+                    return { data: null, error: error, status: status ?? 500, statusText: statusText ?? "Internal Server Error", count: 0 }; 
+                }
+                
+                // Step 2: If query succeeded, check row count for .single()
+                
+                // --- FIX: Throw specific error if no data found --- 
+                if (!data || data.length === 0) {
+                     console.warn(`[Mock QB ${tableName}] Query (for single) resolved with no data. Throwing MockPostgrestErrorPGRST116.`);
+                     throw new MockPostgrestErrorPGRST116("JSON object requested, multiple (or no) rows returned", "Results contain 0 rows");
+                }
+                
+                // --- FIX: Throw specific error if multiple rows found ---
+                if (data.length > 1) {
+                    console.warn(`[Mock QB ${tableName}] Query (for single) resolved with multiple rows (${data.length}). Throwing MockPostgrestErrorPGRST116.`);
+                    throw new MockPostgrestErrorPGRST116("JSON object requested, multiple (or no) rows returned", `Results contain ${data.length} rows`);
+                }
+                
+                // If query succeeded AND exactly one row was found, return it
+                console.log(`[Mock QB ${tableName}] Query (for single) resolved successfully with one row.`);
+                return { data: data[0], error: null, status: status ?? 200, statusText: statusText ?? "OK", count: 1 }; 
+            } catch (err) {
+                 // Catch errors thrown by the row count checks or resolveQuery itself
+                console.error(`[Mock QB ${tableName}] Error originated or caught within .single() implementation:`, err);
+                 // Re-throw the error 
+                throw err; 
+            }
         });
 
-        mockQueryBuilder.then = spy(async (onfulfilled: (value: { data: any; error: any; }) => any) => {
-             if (config.simulateDbError) return onfulfilled({ data: null, error: config.simulateDbError });
-             console.log(`[Mock QB ${tableName}] .then() resolving based on state:`, _queryBuilderState);
-
-             if (_queryBuilderState.operation === 'insert' && tableName === 'chat_messages') {
-                 // Handle insert().select('*') for chat_messages
-                 console.log("[Mock QB chat_messages] Resolving .then() after insert");
-                 
-                 // *** FIX: Check for configured errors first ***
-                 const userMsgError = config.insertUserMessageResult?.error;
-                 const asstMsgError = config.insertAssistantMessageResult?.error;
-                 if (userMsgError || asstMsgError) {
-                    console.log("[Mock QB chat_messages] Returning configured insert error");
-                    // Return the first error found (or combine if needed, but usually one error matters)
-                    return onfulfilled({ data: null, error: userMsgError || asstMsgError });
-                 }
-                 
-                 // Original logic: Combine data only if no errors
-                 const insertedData = [
-                     config.insertUserMessageResult?.data,
-                     config.insertAssistantMessageResult?.data
-                 ].filter(Boolean);
-                 return onfulfilled({ data: insertedData, error: null });
-             }
-
-             if (_queryBuilderState.operation === 'select' && tableName === 'chat_messages') {
-                 // Handle select() for chat history
-                 console.log("[Mock QB chat_messages] Resolving .then() for history select");
-                 return onfulfilled(config.selectChatHistoryResult ?? { data: [], error: null });
-             }
-
-             // Default case for other .then() calls (e.g., select from other tables)
-             console.log(`[Mock QB ${tableName}] Resolving .then() with default empty array data`);
-             return onfulfilled({ data: [], error: null });
+        // Mock .maybeSingle()
+        // Resolves with { data: object | null, error: Error | null }
+        mockQueryBuilder.maybeSingle = spy(async () => {
+            console.log(`[Mock QB ${tableName}] .maybeSingle() called. Resolving query...`);
+            try {
+                const result = await resolveQuery();
+                // maybeSingle resolves with error object if underlying query failed
+                if (result.error) {
+                    console.log(`[Mock QB ${tableName}] Query (for maybeSingle) resolved with DB error. Resolving promise with error object.`);
+                    return { data: null, error: result.error };
+                } else if (result.data && result.data.length > 1) {
+                    // Simulate PostgREST error for multiple rows found
+                    console.warn(`[Mock QB ${tableName}] .maybeSingle() found multiple rows. Simulating PostgREST error.`);
+                    // Create a mock PostgREST error object
+                    const error = new Error('Multiple rows returned for maybeSingle row query');
+                    (error as any).code = 'PGRST116'; // Add code like real PostgREST error
+                    return { data: null, error: error };
+                } else {
+                    console.log(`[Mock QB ${tableName}] Query (for maybeSingle) resolved successfully.`);
+                    return { data: result.data?.[0] ?? null, error: null }; // Resolve successfully with first item or null
+                }
+            } catch (e) {
+                 console.error(`[Mock QB ${tableName}] Error during query resolution or processing in .maybeSingle():`, e);
+                 // Ensure we throw an actual Error instance if resolveQuery itself throws unexpectedly
+                 const error = e instanceof Error ? e : new Error(String(e ?? 'Unknown error in .maybeSingle()'));
+                 // Return error in the resolved object structure
+                 return { data: null, error: error }; 
+            }
         });
 
-        // Return the fully constructed mock query builder
         return mockQueryBuilder;
     });
 
+    // --- Define spy ONLY for removeChannel --- 
+    const removeChannelSpy = spy((_channel: RealtimeChannel) => Promise.resolve<'ok' | 'error' | 'timed out'>('ok'));
+
+    // --- Assemble Mock Client ---
     const mockClient = {
         auth: mockAuth,
         from: fromSpy,
+        // --- Add a PLAIN function implementation for channel ---
+        channel: (channelName: string): RealtimeChannel => {
+            // --- Use the explicit MockChannel type --- 
+            const minimalMockChannel: MockChannel = {
+                topic: `realtime:${channelName}`,
+                // Assign spies, returning the correctly typed object
+                on: spy((_event: any, _callback: any) => minimalMockChannel),
+                subscribe: spy((_callback?: any) => minimalMockChannel),
+                unsubscribe: spy(() => Promise.resolve<'ok' | 'error' | 'timed out'>('ok')),
+            };
+            return minimalMockChannel as unknown as RealtimeChannel;
+        },
+        removeChannel: removeChannelSpy, // Assign the spy for removeChannel
     } as unknown as SupabaseClient;
 
     return {
         client: mockClient,
-        spies: { getUserSpy: mockAuth.getUser, fromSpy: fromSpy }, // Export fromSpy correctly
+        spies: {
+            getUserSpy: mockAuth.getUser,
+            fromSpy: fromSpy,
+            removeChannelSpy: removeChannelSpy,
+        },
     };
 }
 
@@ -385,39 +555,42 @@ export function setMockFetchResponse(
 }
 
 // Base fetch implementation function
-async function baseFetchImplementation(/*url: string | URL, options?: RequestInit*/): Promise<Response> {
+async function baseFetchImplementation(url: string | URL, options?: RequestInit): Promise<Response> {
+    console.log(`[Mock Fetch] Intercepted fetch call: ${url}`, options);
     let configToUse: MockResponseConfig;
 
     if (Array.isArray(_mockFetchResponseConfig)) {
+        console.log(`[Mock Fetch] Using response sequence (Index: ${_responseSequenceIndex})`);
         if (_responseSequenceIndex >= _mockFetchResponseConfig.length) {
+            console.error("[Mock Fetch] Mock fetch sequence exhausted.");
             throw new Error(`Mock fetch sequence exhausted.`);
         }
         configToUse = _mockFetchResponseConfig[_responseSequenceIndex++];
     } else {
+        console.log("[Mock Fetch] Using single response config.");
         configToUse = _mockFetchResponseConfig;
     }
 
+    console.log("[Mock Fetch] Resolving configured response...");
     const responseToReturn = configToUse.response instanceof Promise
         ? await configToUse.response
         : configToUse.response;
+    console.log(`[Mock Fetch] Resolved response object (Status: ${responseToReturn.status})`);
 
     // Clone the response before modifying/returning
     const clonedResponse = responseToReturn.clone();
+    console.log("[Mock Fetch] Cloned response.");
 
     // Stub the .json() method if jsonData was provided in the config
     if (configToUse.jsonData !== undefined) {
-        stub(clonedResponse, "json", () => Promise.resolve(configToUse.jsonData));
+        stub(clonedResponse, "json", () => {
+             console.log("[Mock Fetch] Stubbed .json() method called.");
+             return Promise.resolve(configToUse.jsonData);
+        });
         console.log("[Mock Fetch] Stubbed .json() method on response clone.");
     }
 
-    // Cancel original body if needed (on a separate clone)
-    if (responseToReturn.body) {
-        const cancelClone = responseToReturn.clone();
-        if (cancelClone.body) {
-           await cancelClone.body.cancel().catch(e => console.warn("[Mock Fetch] Error cancelling body:", e));
-        }
-    }
-
+    console.log("[Mock Fetch] Returning cloned response.");
     return clonedResponse; // Return the clone with potentially stubbed .json()
 }
 

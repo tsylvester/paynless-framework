@@ -1,5 +1,8 @@
 import { ReactNode } from 'react';
-import { UserRole } from './auth.types';
+import type { Database } from '@paynless/db-types';
+
+// Alias the enum type for easier use
+type UserRole = Database['public']['Enums']['user_role'];
 
 export interface AppRoute {
   path: string;

@@ -193,7 +193,7 @@ describe("handleCheckoutSessionCompleted Handler", () => {
     assertSpyCalls(txMaybeSingleSpy, 1); // Initial check
     assertSpyCalls(txUpsertSpy, 1); // Processing upsert
     assertSpyCalls(txUpdatePromiseSpy, 1); // Final update
-    assertSpyCalls(subMaybeSingleSpy, 0); 
+    assertSpyCalls(subMaybeSingleSpy!, 0); 
   });
 
   it("should throw error if customer ID is missing when subscription ID is present", async () => {
@@ -221,7 +221,7 @@ describe("handleCheckoutSessionCompleted Handler", () => {
     assertSpyCalls(mockFromSpy, 2); // Once for initial check, once for final update
     assertSpyCalls(txMaybeSingleSpy, 1); // Initial check called
     assertSpyCalls(txUpsertSpy, 0); // Upsert skipped
-    assertSpyCalls(subMaybeSingleSpy, 0); // Sub update skipped
+    assertSpyCalls(subMaybeSingleSpy!, 0); // Sub update skipped
     // CORRECTED Assertion: Final update IS called in finally block
     assertSpyCalls(txUpdatePromiseSpy, 1); 
   });

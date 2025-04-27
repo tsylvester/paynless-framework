@@ -9,6 +9,8 @@ import { logger } from '@paynless/utils';
 import { useSubscriptionStore } from '@paynless/store';
 import { ChatwootIntegration } from './components/integrations/ChatwootIntegration';
 import { PlatformFeatureTester } from './components/debug/PlatformFeatureTester';
+import { api } from '@paynless/api-client'
+import { initAuthListener } from '@paynless/store'
 
 // Create a client for React Query
 const queryClient = new QueryClient({
@@ -35,20 +37,10 @@ function NavigateInjector() {
 
 // NEW: Separate App Content component
 export function AppContent() {
-  const { initialize, isLoading } = useAuthStore((state) => ({
-    initialize: state.initialize,
-    isLoading: state.isLoading,
-  }))
+  const isLoading = useAuthStore((state) => state.isLoading);
+
   const initializedRef = useRef(false)
   const setTestMode = useSubscriptionStore((state) => state.setTestMode) // Get action
-
-  useEffect(() => {
-    if (!initializedRef.current) {
-      initializedRef.current = true
-      logger.info('App initializing auth store...')
-      initialize()
-    }
-  }, [initialize])
 
   // Add useEffect for Test Mode Initialization
   useEffect(() => {

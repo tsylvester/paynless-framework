@@ -1,39 +1,15 @@
-import { assertEquals, assertExists } from "jsr:@std/assert";
+import { assertEquals, assertExists, assertRejects } from "jsr:@std/assert";
 import { describe, it, beforeEach } from "jsr:@std/testing/bdd";
 import { spy, assertSpyCalls, type Spy } from "jsr:@std/testing/mock";
 import { SupabaseClient } from "npm:@supabase/supabase-js";
 import { getSubscriptionPlans } from "./plans.ts";
-import { 
-    createErrorResponse, 
-    createSuccessResponse, 
-    type createErrorResponse as CreateErrorResponseType, 
-    type createSuccessResponse as CreateSuccessResponseType 
-} from "../../_shared/responses.ts";
+import { HandlerError } from "./current.ts";
+import { createMockSupabaseClient, type MockSupabaseDataConfig } from "../../_shared/test-utils.ts";
 
 // --- Mocks & Spies ---
 let mockSupabaseClient: SupabaseClient;
-let mockCreateErrorResponse: Spy<CreateErrorResponseType>;
-let mockCreateSuccessResponse: Spy<CreateSuccessResponseType>;
-// Define spies in outer scope to be shared
-let selectSpy: Spy;
-let eqSpy: Spy;
-let orderSpy: Spy;
 
 // --- Mock Setup Helpers ---
-
-// For .select("*").eq("active", true).order()
-const createSelectSpies = (data: any[] | null = null, error: any = null) => {
-    const orderSpy = spy(() => Promise.resolve({ data, error }));
-    const eqSpy = spy(() => ({ order: orderSpy }));
-    const selectSpy = spy(() => ({ eq: eqSpy }));
-    return { selectSpy, eqSpy, orderSpy };
-};
-
-// Mock dependencies object
-const mockDeps = () => ({
-  createErrorResponse: mockCreateErrorResponse,
-  createSuccessResponse: mockCreateSuccessResponse,
-});
 
 // --- Test Data ---
 const mockDbPlans = [
@@ -50,121 +26,95 @@ const activeMockDbPlans = mockDbPlans.filter(p => p.active);
 describe("getSubscriptionPlans Handler", () => {
 
     beforeEach(() => {
-        // Reset spies
-        mockCreateErrorResponse = spy(createErrorResponse);
-        mockCreateSuccessResponse = spy(createSuccessResponse);
-
-        // Create and assign spies using ACTIVE plans
-        const spies = createSelectSpies(activeMockDbPlans);
-        selectSpy = spies.selectSpy;
-        eqSpy = spies.eqSpy;
-        orderSpy = spies.orderSpy;
-        
-        mockSupabaseClient = {
-            from: spy((tableName: string) => {
-                if (tableName === "subscription_plans") {
-                    // Return the chain with spies created in this scope
-                    return { select: selectSpy };
+        // Use shared Supabase mock setup 
+        // Configure it to return *all* active plans; filtering happens in handler
+        const mockSupabaseConfig: MockSupabaseDataConfig = {
+            genericMockResults: {
+                subscription_plans: {
+                    select: () => Promise.resolve({ data: activeMockDbPlans, error: null })
                 }
-                throw new Error(`Unexpected table: ${tableName}`);
-            })
-        } as unknown as SupabaseClient;
+            }
+        };
+        const { client } = createMockSupabaseClient(mockSupabaseConfig);
+        mockSupabaseClient = client;
     });
 
-    it("should successfully fetch and return all applicable plans when isTestMode=true", async () => {
-        // Arrange - Use mocks from beforeEach
-        const deps = mockDeps();
+    it("should successfully fetch and return applicable plans when isTestMode=true", async () => {
+        // Arrange - Uses mock client from beforeEach (returns ALL active plans)
+        const isTestMode = true;
         
-        // Act
-        const response = await getSubscriptionPlans(mockSupabaseClient, true, deps);
-        const body = await response.json();
+        // Act: Call handler directly
+        const result = await getSubscriptionPlans(mockSupabaseClient, isTestMode);
 
-        assertEquals(response.status, 200);
-        assertSpyCalls(mockCreateSuccessResponse, 1);
-        // Assert DB Query Chain (using spies from beforeEach)
-        assertSpyCalls(selectSpy, 1, { args: ["*"] });
-        assertSpyCalls(eqSpy, 1, { args: ["active", true] });
-        assertSpyCalls(orderSpy, 1, { args: ["amount", { ascending: true }] });
-        // Assert Response Body
-        assertExists(body.plans);
-        assertEquals(body.plans.length, 3); // plan_1, plan_2, plan_4 (active plans only)
-        const planIds = body.plans.map((p: any) => p.id);
+        // Assert: Check filtered results
+        assertExists(result);
+        // Only plans without test_mode or with test_mode=true (plan_1, plan_2, plan_4)
+        assertEquals(result.length, 3); 
+        const planIds = result.map(p => p.id);
         assertEquals(planIds.includes('plan_1'), true);
         assertEquals(planIds.includes('plan_2'), true); 
         assertEquals(planIds.includes('plan_4'), true);
-        assertEquals(planIds.includes('plan_3'), false); 
-        const plan1 = body.plans.find((p: any) => p.id === 'plan_1');
-        assertEquals(plan1.name, 'Basic');
-        assertEquals(plan1.stripePriceId, 'price_basic');
-        assertSpyCalls(mockCreateErrorResponse, 0);
+        assertEquals(planIds.includes('plan_3'), false); // Live only should be filtered out
+        // Check specific plan data transformation (if any - now returns raw DB data)
+        const plan1 = result.find(p => p.id === 'plan_1');
+        assertEquals(plan1?.name, 'Basic'); 
+        assertEquals(plan1?.stripe_price_id, 'price_basic');
     });
 
-    it("should successfully fetch and return all applicable plans when isTestMode=false", async () => {
-        // Arrange - Use mocks from beforeEach
-        const deps = mockDeps();
+    it("should successfully fetch and return applicable plans when isTestMode=false", async () => {
+        // Arrange - Uses mock client from beforeEach
+        const isTestMode = false;
         
-        // Act
-        const response = await getSubscriptionPlans(mockSupabaseClient, false, deps);
-        const body = await response.json();
+        // Act: Call handler directly
+        const result = await getSubscriptionPlans(mockSupabaseClient, isTestMode);
 
-        assertEquals(response.status, 200);
-        assertSpyCalls(mockCreateSuccessResponse, 1);
-        // Assert DB Query Chain (using spies from beforeEach)
-        assertSpyCalls(selectSpy, 1);
-        assertSpyCalls(eqSpy, 1);
-        assertSpyCalls(orderSpy, 1);
-        // Assert Response Body
-        assertExists(body.plans);
-        assertEquals(body.plans.length, 3); // plan_1, plan_3, plan_4 (active plans only)
-        const planIds = body.plans.map((p: any) => p.id);
+        // Assert: Check filtered results
+        assertExists(result);
+        // Only plans without test_mode or with test_mode=false (plan_1, plan_3, plan_4)
+        assertEquals(result.length, 3);
+        const planIds = result.map(p => p.id);
         assertEquals(planIds.includes('plan_1'), true);
-        assertEquals(planIds.includes('plan_3'), true); 
+        assertEquals(planIds.includes('plan_3'), true); // Live only should be included
         assertEquals(planIds.includes('plan_4'), true);
-        assertEquals(planIds.includes('plan_2'), false); 
-        assertSpyCalls(mockCreateErrorResponse, 0);
+        assertEquals(planIds.includes('plan_2'), false); // Test only should be filtered out
     });
 
-    it("should return 500 if database query fails", async () => {
-        // Arrange - Override mock for this specific test
+    it("should throw HandlerError(500) if database query fails", async () => {
+        // Arrange: Configure mock for DB error
         const dbError = new Error("Database connection lost");
-        const spiesWithError = createSelectSpies(null, dbError);
-        mockSupabaseClient.from = spy(() => ({ select: spiesWithError.selectSpy })) as any;
-        const deps = mockDeps();
+        const mockSupabaseConfig: MockSupabaseDataConfig = {
+            genericMockResults: {
+                subscription_plans: {
+                    select: () => Promise.resolve({ data: null, error: dbError })
+                }
+            }
+        };
+        const { client } = createMockSupabaseClient(mockSupabaseConfig);
         
-        // Act
-        const response = await getSubscriptionPlans(mockSupabaseClient, true, deps);
-
-        assertEquals(response.status, 500);
-        assertSpyCalls(mockCreateErrorResponse, 1);
-        // Assert DB Query Chain was called (using the error spies)
-        assertSpyCalls(spiesWithError.selectSpy, 1);
-        assertSpyCalls(spiesWithError.eqSpy, 1);
-        assertSpyCalls(spiesWithError.orderSpy, 1);
-        // Assert error response args
-        assertEquals(mockCreateErrorResponse.calls[0].args, ["Failed to retrieve subscription plans", 500, dbError]);
-        assertSpyCalls(mockCreateSuccessResponse, 0);
+        // Act & Assert: Use assertRejects
+        await assertRejects(
+            async () => await getSubscriptionPlans(client, true),
+            HandlerError,
+            "Failed to retrieve subscription plans" // Expected message
+        );
     });
 
-    it("should return success with empty array if database returns null data", async () => {
-        // Arrange - Override mock for this specific test
-        const spiesWithNull = createSelectSpies(null, null); 
-        mockSupabaseClient.from = spy(() => ({ select: spiesWithNull.selectSpy })) as any;
-        const deps = mockDeps();
+    it("should return empty array if database returns null data", async () => {
+        // Arrange: Configure mock for null data
+        const mockSupabaseConfig: MockSupabaseDataConfig = {
+            genericMockResults: {
+                subscription_plans: {
+                    select: () => Promise.resolve({ data: null, error: null }) // No error, but null data
+                }
+            }
+        };
+        const { client } = createMockSupabaseClient(mockSupabaseConfig);
         
-        // Act
-        const response = await getSubscriptionPlans(mockSupabaseClient, true, deps);
-        const body = await response.json();
+        // Act: Call handler directly
+        const result = await getSubscriptionPlans(client, true);
 
-        assertEquals(response.status, 200);
-        assertSpyCalls(mockCreateSuccessResponse, 1);
-        // Assert DB Query Chain was called (using the null spies)
-        assertSpyCalls(spiesWithNull.selectSpy, 1);
-        assertSpyCalls(spiesWithNull.eqSpy, 1);
-        assertSpyCalls(spiesWithNull.orderSpy, 1);
-        // Assert specific success response
-        assertEquals(mockCreateSuccessResponse.calls[0].args[0], { plans: [] });
-        assertEquals(body, { plans: [] });
-        assertSpyCalls(mockCreateErrorResponse, 0);
+        // Assert: Should return empty array
+        assertEquals(result, []); 
     });
 
     // Optional: Test transformation logic if it were more complex

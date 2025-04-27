@@ -31,6 +31,7 @@
     "zustand": "^4.5.2"
   },
   "devDependencies": {
+    "@paynless/db-types": "workspace:^",
     "@types/node": "^20.11.20",
     "@typescript-eslint/eslint-plugin": "^7.18.0",
     "@typescript-eslint/parser": "^7.18.0",

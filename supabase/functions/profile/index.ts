@@ -84,7 +84,7 @@ export async function handleProfileRequest(
     
     if (!profileMatch) {
         console.warn(`[profile] Invalid path accessed: ${path}`);
-        return createErrorResponse("Not Found", 404);
+        return createErrorResponse("Not Found", 404, req);
     }
     
     const targetUserId = profileMatch[1];
@@ -106,33 +106,35 @@ export async function handleProfileRequest(
             profileError = error;
         } catch (fetchErr) {
             console.error(`[profile] Exception fetching profile for ${targetUserId}:`, fetchErr);
-            return createErrorResponse("Error fetching profile data", 500);
+            return createErrorResponse("Error fetching profile data", 500, req);
         }
 
         if (profileError) {
           console.error(`[profile] Error fetching profile for ${targetUserId}:`, profileError);
           // Don't expose detailed DB errors
-          return createErrorResponse("Failed to fetch profile", 500); 
+          return createErrorResponse("Failed to fetch profile", 500, req); 
         }
         
         if (!profile) {
             // If maybeSingle returns null, the profile wasn't found
-            return createErrorResponse("Profile not found", 404);
+            return createErrorResponse("Profile not found", 404, req);
         }
 
         // Return only the fetched profile data
-        return createSuccessResponse(profile);
+        return createSuccessResponse(profile, 200, req);
       }
 
       default:
         // Return Method Not Allowed for anything other than GET
-        return createErrorResponse(`Method ${req.method} not allowed`, 405);
+        return createErrorResponse(`Method ${req.method} not allowed`, 405, req);
     }
   } catch (err) {
     console.error("[profile] Unexpected error:", err);
     return createErrorResponse(
       err instanceof Error ? err.message : "An unexpected error occurred",
-      500
+      500,
+      req,
+      err 
     );
   }
 }

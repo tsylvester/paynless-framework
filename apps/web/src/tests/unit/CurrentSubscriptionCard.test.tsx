@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
-import { CurrentSubscriptionCard } from './CurrentSubscriptionCard';
+import { CurrentSubscriptionCard } from '../../components/subscription/CurrentSubscriptionCard';
 import type { UserSubscription, SubscriptionPlan } from '@paynless/types';
 import React from 'react';
 

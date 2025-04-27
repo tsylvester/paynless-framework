@@ -9,7 +9,11 @@ import type {
 import { AuthRequiredError } from '@paynless/types'; 
 import { StripeApiClient } from './stripe.api'; 
 import { AiApiClient } from './ai.api';
+import { NotificationApiClient } from './notifications.api'; // Import new client
+import { OrganizationApiClient } from './organizations.api'; // <<< Import Org client
 import { logger } from '@paynless/utils';
+import type { RealtimeChannel, RealtimePostgresChangesPayload } from '@supabase/supabase-js';
+import { Notification } from '@paynless/types'; // Need Notification type
 
 // Define ApiError class locally for throwing (can extend the type)
 export class ApiError extends Error {
@@ -28,13 +32,20 @@ interface ApiClientConstructorOptions {
     supabaseAnonKey: string; // <<< Add anon key here
 }
 
+// Interface for the notification callback function (can be defined here or imported)
+type NotificationCallback = (notification: Notification) => void;
+
 export class ApiClient {
     private supabase: SupabaseClient<any>;
     private functionsUrl: string;
     private supabaseAnonKey: string; // <<< Add storage for anon key
+    // Store notification channels here, managed by the main client
+    private notificationChannels: Map<string, RealtimeChannel> = new Map();
 
     public billing: StripeApiClient;
     public ai: AiApiClient;
+    public notifications: NotificationApiClient; // Add new client property
+    public organizations: OrganizationApiClient; // <<< Add Org client property
 
     // Update constructor signature
     constructor(options: ApiClientConstructorOptions) {
@@ -48,6 +59,8 @@ export class ApiClient {
 
         this.billing = new StripeApiClient(this);
         this.ai = new AiApiClient(this);
+        this.notifications = new NotificationApiClient(this); // Initialize new client
+        this.organizations = new OrganizationApiClient(this); // <<< Initialize Org client
     }
 
     private async getToken(): Promise<string | undefined> {
@@ -56,6 +69,7 @@ export class ApiClient {
             logger.error('Error fetching session for token:', { error });
             return undefined;
         }
+        logger.debug('[ApiClient.getToken] Fetched session data:', { session: data.session }); 
         return data.session?.access_token;
     }
 
@@ -97,61 +111,66 @@ export class ApiClient {
                 throw new ApiError(parseError.message || 'Failed to parse response body', response.status);
             }
 
-            // ---> Handle 401 AUTH_REQUIRED immediately after successful parse <--- 
-            if (response.status === 401 && typeof responseData === 'object' && responseData?.code === 'AUTH_REQUIRED') {
-                 logger.warn('AuthRequiredError detected. Throwing error for caller to handle...');
-                 throw new AuthRequiredError(responseData.message || 'Authentication required');
+            // ---> Add specific debug log for 401 response data (using WARN level) <--- 
+            if (response.status === 401) {
+                logger.warn('[apiClient] Raw responseData for 401 status:', { responseData });
             }
 
-            // ---> Original check for any non-OK response <--- 
+            // ---> NEW: Throw AuthRequiredError ONLY on specific 401 + code <---
+            // The calling function (e.g., store) is responsible for handling the consequences (like saving pending action).
+            if (response.status === 401 && !options.isPublic && responseData?.code === 'AUTH_REQUIRED') {
+                logger.warn('[apiClient] Received 401 with AUTH_REQUIRED code. Throwing AuthRequiredError...');
+                // Use a generic message or attempt to get one from the body if available
+                const errorMessage = (typeof responseData === 'object' && responseData?.message)
+                                    ? responseData.message
+                                    : 'Authentication required';
+                throw new AuthRequiredError(errorMessage);
+            }
+
+            // ---> Check for other non-OK responses (including other 401s) <---
             if (!response.ok) {
-                // Log the response data for debugging NON-AUTH_REQUIRED errors
-                if (response.status === 401) { // Log if it's 401 but NOT the specific AUTH_REQUIRED case
-                     logger.warn('[apiClient] Received 401 response body (but not AUTH_REQUIRED code): ', { responseData });
-                } else {
-                     logger.warn(`[apiClient] Received non-OK (${response.status}) response body:`, { responseData });
-                }
-                
+                // Log the response data for debugging OTHER errors
+                 logger.warn(`[apiClient] Received non-OK (${response.status}) response body:`, { responseData });
+
                 // --- Original error handling for other non-OK responses ---
                 let errorPayload: ApiErrorType;
-                if (typeof responseData === 'object' && responseData !== null) { // Check if it's an object
+                if (typeof responseData === 'object' && responseData !== null) {
                     if (responseData.code && responseData.message) {
-                         // Handle { code: ..., message: ... }
                          errorPayload = responseData as ApiErrorType;
                     } else if (responseData.error && typeof responseData.error === 'string') {
-                         // Handle { error: "..." }
                          errorPayload = { code: String(response.status), message: responseData.error };
                     } else {
-                        // Fallback if object structure is unexpected
-                        const errorMessage = response.statusText || 'Unknown API Error';
+                        const messageFromBody = typeof responseData === 'object' && responseData?.message ? responseData.message : null;
+                        const errorMessage = messageFromBody || response.statusText || 'Unknown API Error';
                         errorPayload = { code: String(response.status), message: errorMessage };
                     }
                 } else {
-                    // Handle non-object responses (e.g., plain text)
                     const errorMessage = typeof responseData === 'string' && responseData.trim() !== ''
-                                        ? responseData 
+                                        ? responseData
                                         : response.statusText || 'Unknown API Error';
                     errorPayload = { code: String(response.status), message: errorMessage };
                 }
                 logger.error(`API Error ${response.status} on ${endpoint}: ${errorPayload.message}`, { code: errorPayload.code, details: errorPayload.details });
                 return { status: response.status, error: errorPayload };
             }
-            
+
             // Success case
             return { status: response.status, data: responseData as T };
 
         } catch (error: any) {
-             // ---> Check if it's the AuthRequiredError we threw <--- 
-            if (error instanceof AuthRequiredError || error?.name === 'AuthRequiredError') { // Check name too for safety
-                logger.info("AuthRequiredError caught in apiClient, re-throwing...");
-                throw error; // Re-throw it so the caller (aiStore) can catch it
+             // ---> Check if it's the specific AuthRequiredError we threw <---
+            if (error instanceof AuthRequiredError) {
+                logger.warn("AuthRequiredError caught by API Client. Re-throwing for store handler...");
+                // The logic to save pending actions has been moved to the relevant store (e.g., aiStore).
+                // We simply re-throw the error here so the caller can handle it.
+                throw error;
             }
-            
-            // ---> Otherwise, handle as a network/unexpected error <--- 
+
+            // ---> Otherwise, handle as a network/unexpected error <---
             logger.error(`Network or fetch error on ${endpoint}:`, { error: error?.message });
-            return { 
-                status: 0, 
-                error: { code: 'NETWORK_ERROR', message: error.message || 'Network error' } 
+            return {
+                status: 0,
+                error: { code: 'NETWORK_ERROR', message: error.message || 'Network error' }
             };
         }
     }
@@ -171,6 +190,105 @@ export class ApiClient {
 
     public async delete<T>(endpoint: string, options?: FetchOptions): Promise<ApiResponse<T>> {
         return this.request<T>(endpoint, { ...options, method: 'DELETE' });
+    }
+
+    // --- NEW REALTIME METHODS --- 
+
+    /**
+     * Subscribes to new notifications for a specific user.
+     * @param userId The ID of the user to subscribe for.
+     * @param callback The function to call when a new notification arrives.
+     */
+    public subscribeToNotifications(userId: string, callback: NotificationCallback): void {
+        if (!userId) {
+            logger.warn('[ApiClient] Cannot subscribe to notifications: userId is missing.');
+            return;
+        }
+        if (this.notificationChannels.has(userId)) {
+            logger.warn(`[ApiClient] Already subscribed to notifications for user ${userId}.`);
+            return;
+        }
+
+        logger.debug(`[ApiClient] Subscribing to notifications for user ${userId}...`);
+        const channelName = `notifications-user-${userId}`;
+        // Use internal this.supabase
+        const channel = this.supabase.channel(channelName, {
+            config: {
+                broadcast: { self: false },
+                presence: { key: userId }, 
+            },
+        });
+
+        channel
+            .on<Notification>(
+                'postgres_changes',
+                {
+                    event: 'INSERT',
+                    schema: 'public',
+                    table: 'notifications',
+                    filter: `user_id=eq.${userId}`,
+                },
+                (payload: RealtimePostgresChangesPayload<Notification>) => {
+                    logger.info('[ApiClient] Realtime Notification INSERT received', { payload });
+                    if (payload.new) {
+                        const newNotification = payload.new as Notification;
+                        if (newNotification.id) {
+                            callback(newNotification);
+                        } else {
+                            logger.warn('[ApiClient] Received notification payload missing ID', { payload });
+                        }
+                    } else {
+                        logger.warn('[ApiClient] Received notification payload missing `new` object', { payload });
+                    }
+                }
+            )
+            .subscribe((status, err) => {
+                if (status === 'SUBSCRIBED') {
+                    logger.info(`[ApiClient] Realtime channel "${channelName}" subscribed successfully.`);
+                    this.notificationChannels.set(userId, channel); // Store the channel
+                } else {
+                    logger.error(`[ApiClient] Realtime channel "${channelName}" subscription error/status: ${status}`, { err });
+                    this.notificationChannels.delete(userId); // Clean up map on failure/close
+                }
+            });
+    }
+
+    /**
+     * Unsubscribes from new notifications for a specific user.
+     * @param userId The ID of the user to unsubscribe for.
+     */
+    public unsubscribeFromNotifications(userId: string): void {
+        if (!userId) {
+            logger.warn('[ApiClient] Cannot unsubscribe from notifications: userId is missing.');
+            return;
+        }
+        const channel = this.notificationChannels.get(userId);
+        if (channel) {
+            logger.debug(`[ApiClient] Unsubscribing from notifications for user ${userId}...`);
+            channel.unsubscribe()
+                .catch(error => {
+                    logger.error(`[ApiClient] Error unsubscribing notification channel for user ${userId}:`, { error });
+                })
+                .finally(() => {
+                    this.notificationChannels.delete(userId);
+                    // Attempt to remove the channel instance from Supabase client
+                    this.supabase.removeChannel(channel).catch(removeError => {
+                         logger.error(`[ApiClient] Error calling removeChannel for user ${userId}:`, { removeError });
+                    });
+                });
+        } else {
+            logger.warn(`[ApiClient] No active notification subscription found to unsubscribe for user ${userId}.`);
+        }
+    }
+
+    /**
+     * Retrieves the underlying Supabase client instance.
+     * **Warning:** This should ONLY be used for setting up the onAuthStateChange listener
+     * at the application root. Do NOT use this to bypass the ApiClient for other operations.
+     * @returns The SupabaseClient instance.
+     */
+    public getSupabaseClient(): SupabaseClient<any> {
+        return this.supabase;
     }
 }
 
@@ -241,4 +359,13 @@ export const api = {
         getApiClient().delete<T>(endpoint, options),
     ai: () => getApiClient().ai, 
     billing: () => getApiClient().billing,
+    notifications: () => getApiClient().notifications, // Getter for NotificationApiClient
+    // Add new Realtime methods to the exported api object
+    subscribeToNotifications: (userId: string, callback: NotificationCallback): void =>
+        getApiClient().subscribeToNotifications(userId, callback),
+    unsubscribeFromNotifications: (userId: string): void =>
+        getApiClient().unsubscribeFromNotifications(userId),
+    // ---> Add the new getter to the exported api object <--- 
+    getSupabaseClient: (): SupabaseClient<any> => 
+        getApiClient().getSupabaseClient(),
 }; 

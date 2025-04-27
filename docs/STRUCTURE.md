@@ -59,6 +59,23 @@ The application exposes the following primary API endpoints through Supabase Edg
 ### Internal / Triggers
 - `/on-user-created`: Function triggered by Supabase Auth on new user creation (handles profile creation and **optional email marketing sync**).
 
+### [NEW] Notifications & Multi-Tenancy (Organizations)
+- `/notifications`: (GET) Fetches notifications for the current user.
+- `/notifications/:notificationId`: (PATCH) Marks a specific notification as read.
+- `/notifications/mark-all-read`: (POST) Marks all user's notifications as read.
+- `/organizations`: (POST) Creates a new organization.
+- `/organizations`: (GET) Lists organizations the current user is a member of.
+- `/organizations/:orgId`: (GET) Fetches details for a specific organization.
+- `/organizations/:orgId`: (PATCH) Updates organization details (name, visibility) (Admin only).
+- `/organizations/:orgId`: (DELETE) Soft-deletes an organization (Admin only).
+- `/organizations/:orgId/members`: (GET) Lists members of a specific organization.
+- `/organizations/:orgId/invite`: (POST) Invites a user to an organization (Admin only, may involve Edge Function).
+- `/invites/accept/:token`: (POST/GET) Accepts an organization invitation (may involve Edge Function).
+- `/organizations/:orgId/join`: (POST) Requests to join an organization.
+- `/memberships/:membershipId/approve`: (POST) Approves a pending join request (Admin only).
+- `/memberships/:membershipId/role`: (PATCH) Updates a member's role (Admin only).
+- `/memberships/:membershipId`: (DELETE) Removes a member from an organization (Admin or self).
+
 *(Note: This list is based on the `supabase/functions/` directory structure and inferred functionality. Specific HTTP methods and request/response details require inspecting function code or the `api-client` package.)*
 
 ## Database Schema (Simplified)
@@ -153,6 +170,43 @@ The core database tables defined in `supabase/migrations/` include:
   - `token_usage` (jsonb, nullable) - *Stores request/response tokens from AI API*
   - `created_at` (timestamptz)
 
+### [NEW] Notifications & Multi-Tenancy Schema
+
+- **`public.organizations`** (Represents a team, workspace, or organization)
+  - `id` (uuid, PK, default `gen_random_uuid()`)
+  - `name` (text, NOT NULL)
+  - `visibility` (text, NOT NULL, CHECK (`visibility` IN ('private', 'public')), default `'private'`) - *Controls discoverability. Chosen `TEXT CHECK` for future extensibility (e.g., 'unlisted').*
+  - `deleted_at` (timestamp with time zone, default `NULL`) - *For soft deletion*
+  - `created_at`, `updated_at` (timestamptz)
+
+- **`public.organization_members`** (Junction table linking users to organizations)
+  - `id` (uuid, PK, default `gen_random_uuid()`)
+  - `user_id` (uuid, NOT NULL, FK references `auth.users(id) ON DELETE CASCADE`)
+  - `organization_id` (uuid, NOT NULL, FK references `organizations(id) ON DELETE CASCADE`)
+  - `role` (text, NOT NULL, CHECK (`role` IN ('admin', 'member'))) - *Initial roles, extensible later.*
+  - `status` (text, NOT NULL, CHECK (`status` IN ('pending', 'active', 'removed')))
+  - `created_at`, `updated_at` (timestamptz)
+  - *Index:* (`user_id`, `organization_id`) UNIQUE
+
+- **`public.notifications`** (Stores in-app notifications for users)
+  - `id` (uuid, PK, default `gen_random_uuid()`)
+  - `user_id` (uuid, NOT NULL, FK references `auth.users(id) ON DELETE CASCADE`)
+  - `type` (text, NOT NULL) - *e.g., 'join_request', 'invite_sent', 'role_changed'*
+  - `data` (jsonb, nullable) - *Stores context like `target_path`, `org_id`, `requesting_user_id`, `membership_id` for linking and display.*
+  - `read` (boolean, NOT NULL, default `false`)
+  - `created_at` (timestamptz)
+  - *Index:* (`user_id`, `read`, `created_at`)
+
+### [NEW] Backend Logic (Notifications & Tenancy)
+
+- **Row-Level Security (RLS):**
+  - `organizations`: Policies enforce that users can only see/interact with non-deleted orgs they are active members of. Visibility checks might apply. Admins have broader permissions within their org.
+  - `organization_members`: Policies enforce access based on org membership and role. Admins manage memberships within their org.
+  - `notifications`: Policies ensure users only access their own notifications.
+  - *Existing Tables*: RLS on tables like `chats`, `chat_messages`, etc., will be updated to check for `organization_id` based on the user's active membership in a non-deleted organization.
+- **Triggers/Functions:**
+  - **Notification Triggers:** Database triggers (e.g., `notify_org_admins_on_join_request` on `AFTER INSERT ON organization_members`) will automatically create entries in the `notifications` table for relevant users (e.g., org admins) when specific events occur (join request, role change, etc.). These triggers populate the `notifications.data` field with necessary context.
+  - **Last Admin Check:** A `BEFORE UPDATE OR DELETE` trigger or function on `organization_members` prevents the last active admin of a non-deleted organization from being removed or having their role changed to non-admin.
 
 ## Project Structure (Monorepo)
 
@@ -203,6 +257,8 @@ The project is organized as a monorepo using pnpm workspaces:
 │   │       ├── authStore.ts        # Auth state & actions
 │   │       ├── subscriptionStore.ts # Subscription state & actions
 │   │       └── aiStore.ts          # AI Chat state & actions
+│   │       ├── notificationStore.ts # [NEW] In-app notification state & actions
+│   │       └── organizationStore.ts # [NEW] Organization/Multi-tenancy state & actions
 │   ├── types/              # Shared TypeScript types and interfaces
 │   │   └── src/
 │   │       ├── api.types.ts

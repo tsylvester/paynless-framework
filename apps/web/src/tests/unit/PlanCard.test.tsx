@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
-import { PlanCard } from './PlanCard';
+import { PlanCard } from '../../components/subscription/PlanCard';
 import type { SubscriptionPlan } from '@paynless/types';
 import React from 'react'; // Needed for JSX
 

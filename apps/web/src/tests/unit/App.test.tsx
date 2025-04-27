@@ -1,7 +1,7 @@
 import { render, screen } from '@testing-library/react';
 import { describe, it, expect, vi } from 'vitest';
 import { MemoryRouter } from 'react-router-dom';
-import App from './App';
+import App from '../../App';
 import { useAuthStore } from '@paynless/store';
 
 // Mock the auth store
@@ -21,8 +21,8 @@ vi.mock('@paynless/store', async (importOriginal) => {
 
 // Mock child components to isolate App logic if needed
 // Assume named exports for these components
-vi.mock('./components/layout/Header', () => ({ Header: () => <div>Mock Header</div> }));
-vi.mock('./components/layout/Footer', () => ({ Footer: () => <div>Mock Footer</div> }));
+vi.mock('../../components/layout/Header', () => ({ Header: () => <div>Mock Header</div> }));
+vi.mock('../../components/layout/Footer', () => ({ Footer: () => <div>Mock Footer</div> }));
 // Remove the AppRoutes mock
 // vi.mock('./routes/AppRoutes', () => ({ default: () => <div>Mock App Routes</div> }));
 

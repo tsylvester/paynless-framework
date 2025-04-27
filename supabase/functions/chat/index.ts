@@ -1,9 +1,28 @@
 // IMPORTANT: Supabase Edge Functions require relative paths for imports from shared modules.
 // Do not use path aliases (like @shared/) as they will cause deployment failures.
-import { serve } from 'https://deno.land/std@0.177.0/http/server.ts'
+import { serve } from 'https://deno.land/std@0.224.0/http/server.ts'
 import { createClient, type SupabaseClient } from 'npm:@supabase/supabase-js@2'
-import { corsHeaders as defaultCorsHeaders } from '../_shared/cors-headers.ts'
-import type { ChatMessage } from '../../../packages/types/src/ai.types.ts';
+// Import shared response/error handlers instead of defaultCorsHeaders directly
+import { 
+    handleCorsPreflightRequest as actualHandleCorsPreflightRequest, 
+    createErrorResponse as actualCreateErrorResponse, 
+    createSuccessResponse as actualCreateJsonResponse, // Assuming createSuccessResponse is the equivalent JSON response creator
+    isOriginAllowed,
+    baseCorsHeaders // Keep base for potential SSE use?
+} from '../_shared/cors-headers.ts'; 
+// Import getEnv from Deno namespace directly when needed, avoid putting in deps if not necessary for mocking
+// Import AI service factory and necessary types
+import { getAiProviderAdapter as actualGetAiProviderAdapter } from '../_shared/ai_service/factory.ts';
+// Use import type for type-only imports
+import type { ChatApiRequest as AdapterChatRequest } from '../_shared/types.ts'; // Keep App-level request type
+import type { Database } from "../types_db.ts"; // Import Database type for DB objects
+import { verifyApiKey as actualVerifyApiKey } from '../_shared/auth.ts';
+import { logger } from '../_shared/logger.ts';
+
+// Define derived DB types needed locally
+type ChatMessageInsert = Database['public']['Tables']['chat_messages']['Insert'];
+type ChatMessageRow = Database['public']['Tables']['chat_messages']['Row'];
+type ChatRow = Database['public']['Tables']['chats']['Row'];
 
 // Define expected request body structure
 interface ChatRequest {
@@ -17,32 +36,30 @@ interface ChatRequest {
 
 // Define the interface for dependencies
 export interface ChatHandlerDeps {
-  createSupabaseClient: (url: string, key: string, options?: any) => SupabaseClient;
-  getEnv: (key: string) => string | undefined;
+  createSupabaseClient: typeof createClient; // Use the imported createClient type directly
   fetch: typeof fetch;
-  corsHeaders: Record<string, string>;
-  createJsonResponse: (data: unknown, status?: number, headers?: Record<string, string>) => Response;
-  createErrorResponse: (message: string, status?: number, headers?: Record<string, string>) => Response;
+  // Use the imported actual handlers
+  handleCorsPreflightRequest: typeof actualHandleCorsPreflightRequest;
+  createJsonResponse: typeof actualCreateJsonResponse;
+  createErrorResponse: typeof actualCreateErrorResponse;
+  // Add getAiProviderAdapter dependency for testing/mocking
+  getAiProviderAdapter: typeof actualGetAiProviderAdapter;
+  verifyApiKey: typeof actualVerifyApiKey;
+  logger: typeof logger;
 }
 
 // Create default dependencies using actual implementations
 export const defaultDeps: ChatHandlerDeps = {
-  createSupabaseClient: createClient,
-  getEnv: Deno.env.get,
+  createSupabaseClient: createClient, // Use the direct import
   fetch: fetch,
-  corsHeaders: defaultCorsHeaders,
-  createJsonResponse: (data, status = 200, headers = {}) => {
-    return new Response(JSON.stringify(data), {
-      headers: { ...defaultCorsHeaders, 'Content-Type': 'application/json', ...headers },
-      status: status,
-    });
-  },
-  createErrorResponse: (message, status = 500, headers = {}) => {
-     return new Response(JSON.stringify({ error: message }), {
-       headers: { ...defaultCorsHeaders, 'Content-Type': 'application/json', ...headers },
-       status: status,
-     });
-  },
+  // Use the imported actual handlers
+  handleCorsPreflightRequest: actualHandleCorsPreflightRequest,
+  createJsonResponse: actualCreateJsonResponse,
+  createErrorResponse: actualCreateErrorResponse,
+  // Provide the real factory implementation
+  getAiProviderAdapter: actualGetAiProviderAdapter,
+  verifyApiKey: actualVerifyApiKey,
+  logger: logger
 };
 
 // --- Main Handler Logic ---
@@ -51,21 +68,20 @@ export async function mainHandler(req: Request, deps: ChatHandlerDeps = defaultD
   // Use injected deps
   const {
     createSupabaseClient: createSupabaseClientDep,
-    getEnv: getEnvDep,
-    fetch: fetchDep,
-    corsHeaders: corsHeadersDep,
+    handleCorsPreflightRequest, // Use the destructured handler
     createJsonResponse,
     createErrorResponse,
+    getAiProviderAdapter: getAiProviderAdapterDep, // Use the injected factory
+    verifyApiKey: verifyApiKeyDep,
+    logger: loggerDep // Assuming logger is used internally
   } = deps;
 
-  // Handle CORS preflight requests
-  if (req.method === 'OPTIONS') {
-    // Status 204 must have null body
-    return new Response(null, { headers: corsHeadersDep, status: 204 });
-  }
+  // Handle CORS preflight requests using the injected handler
+  const corsResponse = handleCorsPreflightRequest(req);
+  if (corsResponse) return corsResponse;
 
   if (req.method !== 'POST') {
-    return createErrorResponse('Method Not Allowed', 405);
+    return createErrorResponse('Method Not Allowed', 405, req);
   }
 
   try {
@@ -74,17 +90,17 @@ export async function mainHandler(req: Request, deps: ChatHandlerDeps = defaultD
 
     // --- Input Validation ---
     if (!requestBody.message || typeof requestBody.message !== 'string' || requestBody.message.trim() === '') {
-      return createErrorResponse('Missing or invalid "message" in request body', 400);
+      return createErrorResponse('Missing or invalid "message" in request body', 400, req);
     }
     if (!requestBody.providerId || typeof requestBody.providerId !== 'string') {
-       return createErrorResponse('Missing or invalid "providerId" in request body', 400);
+       return createErrorResponse('Missing or invalid "providerId" in request body', 400, req);
     }
     // Allow '__none__' for promptId
     if (!requestBody.promptId || typeof requestBody.promptId !== 'string') {
-      return createErrorResponse('Missing or invalid "promptId" in request body', 400);
+      return createErrorResponse('Missing or invalid "promptId" in request body', 400, req);
     }
     if (requestBody.chatId && typeof requestBody.chatId !== 'string') {
-      return createErrorResponse('Invalid "chatId" in request body', 400);
+      return createErrorResponse('Invalid "chatId" in request body', 400, req);
     }
 
     // --- Auth and Client Initialization ---
@@ -93,16 +109,17 @@ export async function mainHandler(req: Request, deps: ChatHandlerDeps = defaultD
        console.log("Chat function called without Authorization header. Returning AUTH_REQUIRED signal.")
        return createJsonResponse(
            { error: "Authentication required", code: "AUTH_REQUIRED" },
-           401 // Set status to 401 Unauthorized
+           401, // Set status to 401 Unauthorized
+           req
        );
     }
 
-    // Use injected createSupabaseClient and getEnv
-    const supabaseUrl = getEnvDep('SUPABASE_URL') ?? '';
-    const supabaseAnonKey = getEnvDep('SUPABASE_ANON_KEY') ?? '';
+    // Use Deno.env.get directly
+    const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? '';
+    const supabaseAnonKey = Deno.env.get('SUPABASE_ANON_KEY') ?? '';
     if (!supabaseUrl || !supabaseAnonKey) {
         console.error("Missing SUPABASE_URL or SUPABASE_ANON_KEY environment variables.");
-        return createErrorResponse("Server configuration error.", 500);
+        return createErrorResponse("Server configuration error.", 500, req);
     }
 
     const supabaseClient = createSupabaseClientDep(
@@ -115,83 +132,77 @@ export async function mainHandler(req: Request, deps: ChatHandlerDeps = defaultD
     const { data: { user }, error: userError } = await supabaseClient.auth.getUser();
     if (userError || !user) {
       console.error('Auth error:', userError);
-      return createErrorResponse('Invalid authentication credentials', 401);
+      return createErrorResponse('Invalid authentication credentials', 401, req);
     }
     const userId = user.id; // Store user ID for later use
     console.log('Authenticated user:', userId);
 
-    // --- Fetch System Prompt and AI Provider details ---
-    let systemPromptText: string;
-    // Handle the case where no prompt is selected
-    if (requestBody.promptId === '__none__') {
-      systemPromptText = ''; // Use empty string if no prompt
-      console.log('No system prompt selected (__none__), using empty prompt text.');
-    } else {
-      // Fetch system prompt text only if a specific promptId is provided
+    // --- Fetch System Prompt and AI Provider details (including provider string) ---
+    let systemPromptText: string | null = null; // Initialize as null
+    if (requestBody.promptId !== '__none__') {
       const { data: promptData, error: promptError } = await supabaseClient
         .from('system_prompts')
         .select('prompt_text')
         .eq('id', requestBody.promptId)
-        .eq('is_active', true) // Ensure prompt is active
-        .single(); // Expect only one prompt
-
+        .eq('is_active', true)
+        .single();
       if (promptError || !promptData) {
           console.error('Error fetching system prompt:', promptError);
-          // Use injected createErrorResponse
-          return createErrorResponse(promptError?.message || 'System prompt not found or inactive.', 400);
+          return createErrorResponse(promptError?.message || 'System prompt not found or inactive.', 400, req);
       }
       systemPromptText = promptData.prompt_text;
       console.log('Fetched system prompt text.');
     }
 
-    // Fetch provider api_identifier
+    // Fetch provider api_identifier AND provider string
     const { data: providerData, error: providerError } = await supabaseClient
       .from('ai_providers')
-      .select('api_identifier')
-      .eq('id', requestBody.providerId)
-      .eq('is_active', true) // Ensure provider is active
+      .select('api_identifier, provider') // Fetch provider string
+      .eq('id', requestBody.providerId) // Use the UUID from the request
+      .eq('is_active', true)
       .single();
 
     if (providerError || !providerData) {
         console.error('Error fetching provider details:', providerError);
-        // Use injected createErrorResponse
-        return createErrorResponse(providerError?.message || 'AI provider not found or inactive.', 400);
+        return createErrorResponse(providerError?.message || 'AI provider not found or inactive.', 400, req);
     }
     const apiIdentifier = providerData.api_identifier;
-    console.log(`Fetched provider api_identifier: ${apiIdentifier}`);
+    const provider = providerData.provider; // Get the provider string (e.g., 'openai')
+    if (!provider) {
+        console.error(`Provider string missing for ai_providers record ID: ${requestBody.providerId}`);
+        return createErrorResponse('AI provider configuration error on server [missing provider string].', 500, req);
+    }
+    console.log(`Fetched provider details: provider=${provider}, api_identifier=${apiIdentifier}`);
 
-    // --- Securely Get API Key from Environment Variables ---
-    let apiKeyEnvVarName: string | undefined;
-    switch (apiIdentifier) {
-      case 'openai-gpt-4o': // Example identifier
-        apiKeyEnvVarName = 'OPENAI_API_KEY';
-        break;
-      case 'openai-gpt-3.5-turbo': // Example identifier
-        apiKeyEnvVarName = 'OPENAI_API_KEY'; // Might use the same key
-        break;
-      case 'anthropic-claude-3-sonnet': // Example identifier
-        apiKeyEnvVarName = 'ANTHROPIC_API_KEY';
-        break;
-      // Add cases for other supported api_identifiers
-      default:
-        console.error(`Unsupported api_identifier: ${apiIdentifier}`);
-        // Use injected createErrorResponse
-        return createErrorResponse(`Unsupported AI provider: ${apiIdentifier}`, 400);
+    // --- Get Adapter from Factory ---
+    const adapter = getAiProviderAdapterDep(provider);
+    if (!adapter) {
+        console.error(`No adapter found for provider: ${provider}`);
+        return createErrorResponse(`Unsupported AI provider: ${provider}`, 400, req);
     }
 
-    // Use injected getEnv
-    const apiKey = getEnvDep(apiKeyEnvVarName);
+    // --- Securely Get API Key based on Provider ---
+    let apiKeyEnvVarName: string;
+    switch (provider.toLowerCase()) { // Use the fetched provider string
+        case 'openai': apiKeyEnvVarName = 'OPENAI_API_KEY'; break;
+        case 'anthropic': apiKeyEnvVarName = 'ANTHROPIC_API_KEY'; break;
+        case 'google': apiKeyEnvVarName = 'GOOGLE_API_KEY'; break;
+        // Add other cases as needed
+        default:
+            console.error(`Unknown provider string encountered for API key lookup: ${provider}`);
+            return createErrorResponse(`Internal server error: Unknown AI provider configuration for provider ${provider}.`, 500, req);
+    }
+    // Use Deno.env.get directly
+    const apiKey = Deno.env.get(apiKeyEnvVarName);
     if (!apiKey) {
-        console.error(`API key not found in environment variable: ${apiKeyEnvVarName}`);
-        // Do NOT expose the variable name in the client-facing error
-        // Use injected createErrorResponse
-        return createErrorResponse('AI provider configuration error on server.', 500);
+        console.error(`API key not found in environment variable: ${apiKeyEnvVarName} for provider ${provider}`);
+        return createErrorResponse('AI provider configuration error on server [key missing].', 500, req);
     }
     console.log(`Retrieved API key from env var: ${apiKeyEnvVarName}`);
 
     // --- Fetch Chat History (if chatId provided) ---
-    let chatHistory: { role: string; content: string }[] = [];
-    let currentChatId = requestBody.chatId; // Use existing chatId or will be updated if new
+    let chatHistory: { role: 'user' | 'assistant' | 'system'; content: string }[] = [];
+    let currentChatId = requestBody.chatId;
 
     if (currentChatId) {
         console.log(`Fetching history for chat ID: ${currentChatId}`);
@@ -210,217 +221,126 @@ export async function mainHandler(req: Request, deps: ChatHandlerDeps = defaultD
             // Consider if a stricter error response is needed here.
             currentChatId = undefined; // Treat as a new chat if history fetch fails
         } else if (messages) {
-            // Map to the simple { role, content } format needed for AI context
-            chatHistory = messages.map(msg => ({ role: msg.role, content: msg.content }));
+            // Map DB messages to the simple format expected by adapters/API
+            // Ensure role is correctly typed
+            chatHistory = messages.map(msg => ({ 
+                role: msg.role as ('user' | 'assistant' | 'system'), 
+                content: msg.content 
+            }));
             console.log(`Fetched ${chatHistory.length} messages for history.`);
         }
     } else {
         console.log('No chatId provided, starting new chat.');
     }
 
-    // --- Construct AI Provider Payload & Call API ---
-    let aiApiResponse: any;
-
+    // --- Construct Adapter Payload & Call Adapter ---
     try {
-        const messagesPayload = [
-            // Conditionally add system prompt if it's not empty
-            ...(systemPromptText ? [{ role: 'system', content: systemPromptText }] : []),
-            ...chatHistory, // Add historical messages
-            { role: 'user', content: requestBody.message },
-        ].filter(msg => msg.content); // Ensure no empty messages are sent
+        // Prepare history, adding system prompt if present
+        const messagesForAdapter = [
+            ...(systemPromptText ? [{ role: 'system' as const, content: systemPromptText }] : []),
+            ...chatHistory,
+        ];
 
-        console.log(`Sending ${messagesPayload.length} messages to AI (${apiIdentifier}).`);
-        // console.log('Payload:', JSON.stringify(messagesPayload)); // Debug: careful logging PII
+        const adapterRequest: AdapterChatRequest = {
+            message: requestBody.message,
+            providerId: requestBody.providerId, // Pass the DB record ID
+            promptId: requestBody.promptId,
+            chatId: currentChatId,
+            messages: messagesForAdapter, // Pass the prepared history + system prompt
+        };
 
-        // Use injected fetch
-        const fetchFn = fetchDep;
+        console.log(`Calling ${provider} adapter sendMessage with apiIdentifier: ${apiIdentifier}`);
+        // Call the adapter's sendMessage method
+        const assistantResponse: ChatMessageRow = await adapter.sendMessage(
+            adapterRequest,
+            apiIdentifier, // Pass the specific model API identifier (e.g., openai-gpt-4o)
+            apiKey
+        );
+        console.log('Received response from adapter.');
 
-        if (apiIdentifier.startsWith('openai-')) {
-            // --- OpenAI API Call ---
-            const openaiUrl = 'https://api.openai.com/v1/chat/completions';
-            const openaiPayload = {
-                model: apiIdentifier.replace('openai-', ''), // e.g., 'gpt-4o'
-                messages: messagesPayload,
-                // Add other parameters like temperature, max_tokens as needed
-            };
-
-            const response = await fetchFn(openaiUrl, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${apiKey}`,
-                },
-                body: JSON.stringify(openaiPayload),
-            });
-
-            if (!response.ok) {
-                const errorBody = await response.text();
-                console.error(`OpenAI API error: ${response.status} ${response.statusText}`, errorBody);
-                throw new Error(`AI API request failed: ${response.statusText}`);
+        // --- Save Messages to Database ---
+        // 1. Ensure Chat Exists (Create if new, get existing ID)
+        if (!currentChatId) {
+            // Create a new chat entry
+            const firstUserMessage = requestBody.message.substring(0, 50); // Simple title
+            const { data: newChat, error: newChatError } = await supabaseClient
+                .from('chats')
+                // Do NOT prepend with 'Chat: ' or 'Chat - ' or anything like that.
+                .insert({ user_id: userId, title: `${firstUserMessage}...` })
+                .select('id')
+                .single();
+            if (newChatError || !newChat) {
+                console.error('Error creating new chat:', newChatError);
+                return createErrorResponse('Failed to create new chat session.', 500, req);
             }
-            aiApiResponse = await response.json();
-            console.log('Received response from OpenAI.');
-
-        } else if (apiIdentifier.startsWith('anthropic-')) {
-            // --- Anthropic API Call (Placeholder - Requires update) ---
-            const anthropicUrl = 'https://api.anthropic.com/v1/messages';
-             const anthropicPayload = {
-               model: apiIdentifier.replace('anthropic-', ''), // e.g., claude-3-opus-20240229
-               max_tokens: 1024, // Example max tokens
-               messages: messagesPayload, // Anthropic uses the same 'messages' structure
-               system: systemPromptText || undefined, // Anthropic uses a top-level 'system' parameter
-             };
-             messagesPayload.shift(); // Remove system prompt from messages if it exists for Anthropic
-
-             const response = await fetchFn(anthropicUrl, {
-                method: 'POST',
-                headers: {
-                  'Content-Type': 'application/json',
-                  'x-api-key': apiKey,
-                  'anthropic-version': '2023-06-01', // Required header
-                },
-                body: JSON.stringify(anthropicPayload),
-             });
-
-             if (!response.ok) {
-                const errorBody = await response.text();
-                console.error(`Anthropic API error: ${response.status} ${response.statusText}`, errorBody);
-                throw new Error(`AI API request failed: ${response.statusText}`);
-             }
-             aiApiResponse = await response.json();
-             console.log('Received response from Anthropic.');
-            // console.error('Anthropic API call not yet implemented.');
-            // throw new Error('Anthropic provider not yet supported.');
-
-        } else {
-            // Should have been caught earlier by the API key lookup, but as a safeguard:
-            throw new Error(`Unsupported api_identifier for API call: ${apiIdentifier}`);
+            currentChatId = newChat.id;
+            console.log(`Created new chat with ID: ${currentChatId}`);
         }
+
+        // Ensure we have a valid chat ID before proceeding
+        if (!currentChatId) {
+          console.error("Chat ID is missing before attempting to save messages.");
+          return createErrorResponse("Invalid chat session state.", 500, req);
+        }
+
+        // 4. Save user message (using ChatMessageInsert)
+        const userMessageRecord: ChatMessageInsert = {
+          chat_id: currentChatId, // Now guaranteed non-null
+          user_id: userId,
+          role: 'user',
+          content: requestBody.message,
+          ai_provider_id: requestBody.providerId,
+          system_prompt_id: requestBody.promptId !== '__none__' ? requestBody.promptId : null,
+        };
+
+        // 5. Save assistant message (using ChatMessageInsert)
+        const assistantMessageRecord: ChatMessageInsert = {
+          chat_id: currentChatId, // Now guaranteed non-null
+          user_id: null, 
+          role: 'assistant',
+          content: assistantResponse.content,
+          ai_provider_id: assistantResponse.ai_provider_id, 
+          system_prompt_id: assistantResponse.system_prompt_id,
+          token_usage: assistantResponse.token_usage, 
+        };
+
+        // Insert both messages (Remove explicit cast, rely on TS inference now)
+        const { data: savedMessages, error: saveError } = await supabaseClient
+          .from('chat_messages')
+          .insert([userMessageRecord, assistantMessageRecord])
+          .select();
+
+        if (saveError) {
+            console.error(`Error saving messages for chat ${currentChatId}:`, saveError);
+            return createErrorResponse('Failed to save messages to database.', 500, req);
+        }
+        
+        // Find the saved assistant message (should conform to ChatMessageRow)
+        const finalAssistantMessage: ChatMessageRow | undefined = savedMessages?.find(m => m.role === 'assistant'); 
+
+        if (!finalAssistantMessage) {
+            console.error("Failed to retrieve saved assistant message from DB", { currentChatId, savedMessages });
+            return createErrorResponse("Failed to save or retrieve chat response.", 500, req);
+        }
+
+        // Return only the saved assistant message (as ChatMessageRow)
+        // Ensure createJsonResponse handles the ChatMessageRow type correctly
+        return createJsonResponse({ message: finalAssistantMessage }, 200, req);
 
     } catch (error) {
-        console.error('Error during AI API call:', error);
-        // Safely access error message
-        const errorMessage = error instanceof Error ? error.message : 'Unknown AI API error';
-        return createErrorResponse(`Failed to get response from AI provider: ${errorMessage}`, 502);
+        // Catch errors from adapter.sendMessage or DB operations
+        console.error('Error during AI interaction or saving:', error);
+        // Check if error is an Error instance before accessing message
+        const errorMessage = error instanceof Error ? error.message : 'An internal error occurred during chat processing.';
+        return createErrorResponse(errorMessage, 500, req);
     }
 
-    // --- Process AI Response ---
-    let assistantMessageContent: string;
-    let tokenUsage: object | null = null;
-
-    try {
-        if (apiIdentifier.startsWith('openai-') && aiApiResponse?.choices?.[0]?.message?.content) {
-            assistantMessageContent = aiApiResponse.choices[0].message.content.trim();
-            if (aiApiResponse.usage) {
-                tokenUsage = aiApiResponse.usage; // e.g., { prompt_tokens: ..., completion_tokens: ..., total_tokens: ... }
-            }
-            console.log('Extracted content and usage from OpenAI response.');
-        } else if (apiIdentifier.startsWith('anthropic-') && aiApiResponse?.content?.[0]?.text) {
-             assistantMessageContent = aiApiResponse.content[0].text.trim();
-             if (aiApiResponse.usage) {
-                // Map Anthropic usage (input_tokens, output_tokens) to our schema if needed
-                tokenUsage = {
-                    prompt_tokens: aiApiResponse.usage.input_tokens,
-                    completion_tokens: aiApiResponse.usage.output_tokens,
-                    total_tokens: aiApiResponse.usage.input_tokens + aiApiResponse.usage.output_tokens
-                };
-             }
-            console.log('Extracted content and usage from Anthropic response.');
-        } else {
-            console.error('Failed to extract assistant message content from AI response:', aiApiResponse);
-            throw new Error('Invalid response structure from AI provider.');
-        }
-
-        if (!assistantMessageContent) {
-             throw new Error('Empty message content received from AI provider.');
-        }
-
-    } catch (error) {
-        console.error('Error processing AI response:', error);
-        // Safely access error message
-        const errorMessage = error instanceof Error ? error.message : 'Unknown error processing AI response';
-        return createErrorResponse(`Error processing AI response: ${errorMessage}`, 500);
-    }
-
-    // --- Save Messages to Database ---
-    let finalChatId = currentChatId;
-
-    // Create a new chat entry if no chatId was provided or history fetch failed
-    if (!finalChatId) {
-        // Generate title from the first part of the user's message
-        const potentialTitle = requestBody.message.substring(0, 100); // Use first 100 chars
-
-        const { data: newChatData, error: newChatError } = await supabaseClient
-            .from('chats')
-            .insert({ 
-                user_id: userId,
-                title: potentialTitle // Add the generated title here
-            }) 
-            .select('id')
-            .single();
-
-        if (newChatError || !newChatData) {
-            console.error('Error creating new chat entry:', newChatError);
-            // Use injected createErrorResponse
-            return createErrorResponse('Failed to initiate new chat session.', 500);
-        }
-        finalChatId = newChatData.id;
-        console.log(`Created new chat with ID: ${finalChatId}`);
-    }
-
-    // Prepare messages for insertion
-    const userMessageRecord = {
-        chat_id: finalChatId,
-        user_id: userId,
-        role: 'user',
-        content: requestBody.message,
-        ai_provider_id: requestBody.providerId,
-        system_prompt_id: requestBody.promptId !== '__none__' ? requestBody.promptId : null,
-    };
-    const assistantMessageRecord = {
-        chat_id: finalChatId,
-        user_id: null, // Assistant messages aren't directly linked to a user sender
-        role: 'assistant',
-        content: assistantMessageContent,
-        ai_provider_id: requestBody.providerId,
-        system_prompt_id: requestBody.promptId !== '__none__' ? requestBody.promptId : null,
-        token_usage: tokenUsage,
-    };
-
-    // Insert both messages
-    const { data: insertedMessages, error: messagesInsertError } = await supabaseClient
-        .from('chat_messages')
-        .insert([userMessageRecord, assistantMessageRecord])
-        .select('*'); // Select all columns of the inserted rows
-
-    if (messagesInsertError) {
-        console.error('Error saving chat messages:', messagesInsertError);
-        // Use injected createErrorResponse
-        return createErrorResponse('Failed to save chat messages.', 500);
-    }
-
-    const finalAssistantMessage = insertedMessages?.find(msg => msg.role === 'assistant');
-
-    if (!finalAssistantMessage) {
-        console.error('Assistant message not found in insert result:', insertedMessages);
-        // Use injected createErrorResponse
-        return createErrorResponse('Failed to retrieve saved assistant message.', 500);
-    }
-     // Log the message we're about to return
-    console.log('Final assistant message to return:', JSON.stringify(finalAssistantMessage, null, 2));
-    console.log('Explicitly checking finalAssistantMessage.id:', finalAssistantMessage?.id);
-
-    // --- Return Success Response --- 
-    console.log('Chat interaction successful. Returning SAVED assistant message.'); // Updated log
-    // Use injected createJsonResponse
-    // ---> Return the SAVED finalAssistantMessage object <--- 
-    return createJsonResponse(finalAssistantMessage, 200); // Corrected to return the saved message
-
-  } catch (error) {
-    console.error('Unhandled error in chat handler:', error);
-    // Safely access error message
-    const errorMessage = error instanceof Error ? error.message : 'An unexpected error occurred';
-    return createErrorResponse(errorMessage, 500);
+  } catch (err) {
+    // Catch errors from initial request parsing, auth, setup
+    console.error('Unhandled error in chat handler:', err);
+    // Check if err is an Error instance before accessing message
+    const errorMessage = err instanceof Error ? err.message : 'An unexpected error occurred.';
+    return createErrorResponse(errorMessage, 500, req);
   }
 }
 

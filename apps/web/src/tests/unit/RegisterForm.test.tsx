@@ -3,7 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { BrowserRouter } from 'react-router-dom';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { useAuthStore } from '@paynless/store'; // Import actual store
-import { RegisterForm } from './RegisterForm';
+import { RegisterForm } from '../../components/auth/RegisterForm';
 
 // Mock the register function that will be injected
 const mockRegister = vi.fn();

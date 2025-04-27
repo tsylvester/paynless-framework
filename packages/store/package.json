@@ -19,22 +19,24 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@paynless/analytics-client": "workspace:*",
     "@paynless/api-client": "workspace:*",
     "@paynless/types": "workspace:*",
     "@paynless/utils": "workspace:*",
-    "@paynless/analytics-client": "workspace:*",
+    "immer": "^10.1.1",
     "jwt-decode": "^4.0.0",
-    "zustand": "^4.5.2",
-    "immer": "^10.1.1"
+    "zustand": "^4.5.2"
   },
   "devDependencies": {
+    "@paynless/db-types": "workspace:^",
     "@testing-library/react": "^16.3.0",
     "@types/node": "^20.11.24",
     "@typescript-eslint/eslint-plugin": "^7.18.0",
     "@typescript-eslint/parser": "^7.18.0",
     "eslint": "^8.57.0",
     "typescript": "^5.5.3",
-    "vitest": "^1.6.1"
+    "vitest": "^1.6.1",
+    "vitest-localstorage-mock": "^0.1.2"
   },
   "license": "ISC"
 }

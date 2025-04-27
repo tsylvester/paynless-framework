@@ -42,7 +42,9 @@ export type Database = {
           description: string | null
           id: string
           is_active: boolean
+          is_enabled: boolean
           name: string
+          provider: string | null
           updated_at: string
         }
         Insert: {
@@ -52,7 +54,9 @@ export type Database = {
           description?: string | null
           id?: string
           is_active?: boolean
+          is_enabled?: boolean
           name: string
+          provider?: string | null
           updated_at?: string
         }
         Update: {
@@ -62,7 +66,9 @@ export type Database = {
           description?: string | null
           id?: string
           is_active?: boolean
+          is_enabled?: boolean
           name?: string
+          provider?: string | null
           updated_at?: string
         }
         Relationships: []
@@ -146,6 +152,92 @@ export type Database = {
           title?: string | null
           updated_at?: string
           user_id?: string | null
+        }
+        Relationships: []
+      }
+      notifications: {
+        Row: {
+          created_at: string
+          data: Json | null
+          id: string
+          read: boolean
+          type: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          data?: Json | null
+          id?: string
+          read?: boolean
+          type: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          data?: Json | null
+          id?: string
+          read?: boolean
+          type?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      organization_members: {
+        Row: {
+          created_at: string
+          id: string
+          organization_id: string
+          role: string
+          status: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          organization_id: string
+          role?: string
+          status?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          organization_id?: string
+          role?: string
+          status?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "organization_members_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      organizations: {
+        Row: {
+          created_at: string
+          deleted_at: string | null
+          id: string
+          name: string
+          visibility: string
+        }
+        Insert: {
+          created_at?: string
+          deleted_at?: string | null
+          id?: string
+          name: string
+          visibility?: string
+        }
+        Update: {
+          created_at?: string
+          deleted_at?: string | null
+          id?: string
+          name?: string
+          visibility?: string
         }
         Relationships: []
       }
@@ -375,7 +467,23 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      create_notification_for_user: {
+        Args: {
+          target_user_id: string
+          notification_type: string
+          notification_data: Json
+        }
+        Returns: undefined
+      }
+      is_org_member: {
+        Args: {
+          p_org_id: string
+          p_user_id: string
+          required_status: string
+          required_role?: string
+        }
+        Returns: boolean
+      }
     }
     Enums: {
       user_role: "user" | "admin"

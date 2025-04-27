@@ -5,11 +5,10 @@ import { RegisterPage } from '../pages/Register';
 import { DashboardPage } from '../pages/Dashboard';
 import { ProfilePage } from '../pages/Profile';
 import { SubscriptionPage } from '../pages/Subscription';
-import { UserRole } from '@paynless/types';
 import { ProtectedRoute } from '../components/auth/ProtectedRoute';
 import { SubscriptionSuccessPage } from '../pages/SubscriptionSuccess';
 import { RootRoute } from '../components/routes/RootRoute';
-import { AiChatPage } from '../pages/AiChat';
+import AiChatPage from '../pages/AiChat';
 
 export const routes: AppRoute[] = [
   {
@@ -43,7 +42,7 @@ export const routes: AppRoute[] = [
     path: '/subscription',
     element: <ProtectedRoute><SubscriptionPage /></ProtectedRoute>,
     requireAuth: true,
-    allowedRoles: [UserRole.USER],
+    allowedRoles: ['user'],
   },
   {
     path: '/subscriptionsuccess',
@@ -52,9 +51,9 @@ export const routes: AppRoute[] = [
   },
   {
     path: '/admin',
-    element: <ProtectedRoute allowedRoles={[UserRole.ADMIN]}><div>Admin Page</div></ProtectedRoute>,
+    element: <ProtectedRoute allowedRoles={['admin']}><div>Admin Page</div></ProtectedRoute>,
     requireAuth: true,
-    allowedRoles: [UserRole.ADMIN],
+    allowedRoles: ['admin'],
   },
   {
     path: '*',

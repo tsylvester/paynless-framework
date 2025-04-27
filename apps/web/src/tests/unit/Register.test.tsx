@@ -1,7 +1,7 @@
 import { render, screen } from '@testing-library/react';
 import { BrowserRouter } from 'react-router-dom';
 import { describe, it, expect, vi } from 'vitest';
-import { RegisterPage } from './Register';
+import { RegisterPage } from '../../pages/Register';
 
 // Mock the RegisterForm component to isolate the RegisterPage test
 vi.mock('../components/auth/RegisterForm', () => ({

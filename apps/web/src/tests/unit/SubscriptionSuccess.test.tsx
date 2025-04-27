@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
-import { SubscriptionSuccessPage } from './SubscriptionSuccess';
+import { SubscriptionSuccessPage } from '../../pages/SubscriptionSuccess';
 import { useAuthStore } from '@paynless/store';
 import { useSubscriptionStore } from '@paynless/store';
 import React from 'react';

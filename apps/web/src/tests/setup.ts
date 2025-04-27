@@ -65,20 +65,19 @@ if (!supabaseUrl || !supabaseAnonKey) {
     console.log('[setupTests] API Client Initialized.');
 }
 
-// Mock window.matchMedia
-Object.defineProperty(window, 'matchMedia', {
-  writable: true,
-  value: vi.fn().mockImplementation(query => ({
-    matches: false,
+// Mock window.matchMedia using vi.stubGlobal
+const matchMediaMock = vi.fn(query => ({
+    matches: false, // Default to light mode for tests
     media: query,
     onchange: null,
-    addListener: vi.fn(),
-    removeListener: vi.fn(),
+    addListener: vi.fn(), // Deprecated
+    removeListener: vi.fn(), // Deprecated
     addEventListener: vi.fn(),
     removeEventListener: vi.fn(),
     dispatchEvent: vi.fn(),
-  })),
-});
+}));
+vi.stubGlobal('matchMedia', matchMediaMock);
+console.log('[setupTests] Applied window.matchMedia mock using vi.stubGlobal.'); // Log confirmation
 
 // Optional: Add any other global setup here
 

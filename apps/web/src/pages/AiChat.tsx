@@ -8,7 +8,7 @@ import { AiChatbox } from '../components/ai/AiChatbox';
 import { Layout } from '../components/layout/Layout';
 import { ChatHistoryList } from '../components/ai/ChatHistoryList';
 
-export function AiChatPage() {
+export default function AiChatPage() {
   // Get user, session, and loading state from auth store
   const { user, isLoading: isAuthLoading } = useAuthStore((state) => ({ 
       user: state.user, 
@@ -40,15 +40,18 @@ export function AiChatPage() {
   const [selectedProviderId, setSelectedProviderId] = useState<string | null>(null);
   const [selectedPromptId, setSelectedPromptId] = useState<string | null>(null);
 
-  // Load config (public) and history (auth-required)
+  // ---> Get the new action from aiStore <---
+  const checkAndReplayPendingChatAction = useAiStore((state) => state.checkAndReplayPendingChatAction);
+
+  // Load config (public)
   useEffect(() => {
     logger.info('[AiChatPage] Config effect running.');
     loadAiConfig(); // Always load config
-  }, [loadAiConfig]); // Separate effect for config
+  }, [loadAiConfig]);
 
+  // Load history (auth-required)
   useEffect(() => {
     logger.info('[AiChatPage] History effect running.', { isAuthLoading, hasUser: !!user });
-    // Only load history if auth is finished AND the user is logged in
     if (!isAuthLoading && user) {
         logger.info('[AiChatPage] Auth finished and user found, loading history...');
         loadChatHistory();
@@ -57,8 +60,19 @@ export function AiChatPage() {
     } else {
         logger.warn('[AiChatPage] Auth finished but no user found, skipping chat history load.');
     }
-    // Depend on auth loading state and user state
   }, [loadChatHistory, user, isAuthLoading]);
+
+  // ---> NEW: Check for pending chat action on mount <---
+  useEffect(() => {
+    logger.info('[AiChatPage] Checking for pending chat action on mount...');
+    // Check if the function exists before calling, as it might not during initial setup/TDD
+    if (checkAndReplayPendingChatAction) { 
+      checkAndReplayPendingChatAction();
+    } else {
+      logger.warn('[AiChatPage] checkAndReplayPendingChatAction function not found in aiStore yet.')
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [checkAndReplayPendingChatAction]); // Depend on the action function itself
 
   // Set default selections when providers/prompts load
   useEffect(() => {
@@ -121,9 +135,9 @@ export function AiChatPage() {
   return (
     <Layout>
       {/* Make grid container grow vertically and respect parent height */}
-      <div className="container mx-auto p-6 grid grid-cols-1 md:grid-cols-3 gap-6 flex-grow min-h-0"> 
+      <div className="container mx-auto p-6 grid grid-cols-1 md:grid-cols-3 gap-6"> 
         {/* Left Column: Make COLUMN scrollable */}
-        <div className="md:col-span-2 flex flex-col border border-border rounded-lg bg-card shadow-sm overflow-y-auto min-h-0 max-h-[calc(100vh-6rem)]"> 
+        <div className="md:col-span-2 flex flex-col border border-border rounded-lg bg-card shadow-sm overflow-y-auto min-h-0 max-h-[calc(100vh-12rem)]"> 
           {/* Header is sticky within the column */} 
           <div className="p-4 border-b border-border flex flex-wrap items-center gap-4 sticky top-0 bg-card z-10"> 
             <h2 className="text-lg font-semibold text-card-foreground mr-auto">AI Chat</h2> 
@@ -168,6 +182,7 @@ export function AiChatPage() {
              history={chatHistoryList}
              onLoadChat={handleLoadChat}
              isLoading={isAuthLoading || isHistoryLoading} 
+             currentChatId={currentChatId}
           />
         </div>
       </div>

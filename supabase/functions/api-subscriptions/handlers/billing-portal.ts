@@ -2,32 +2,25 @@
 // Do not use path aliases (like @shared/) as they will cause deployment failures.
 import { SupabaseClient } from "npm:@supabase/supabase-js";
 import Stripe from "npm:stripe";
+import type { Database } from '../../types_db.ts';
 import { type BillingPortalRequest, type SessionResponse } from "../../_shared/types.ts";
-import type { createErrorResponse as CreateErrorResponseType, createSuccessResponse as CreateSuccessResponseType } from "../../_shared/responses.ts";
-import { corsHeaders } from "../../_shared/cors-headers.ts";
-
-interface BillingPortalDeps {
-  createErrorResponse: typeof CreateErrorResponseType;
-  createSuccessResponse: typeof CreateSuccessResponseType;
-}
+import { HandlerError } from "./current.ts";
 
 /**
- * Create a billing portal session
+ * Create a billing portal session.
+ * Returns SessionResponse data on success, throws HandlerError on failure.
  */
 export const createBillingPortalSession = async (
-  supabase: SupabaseClient,
+  supabase: SupabaseClient<Database>,
   stripe: Stripe,
   userId: string,
-  request: BillingPortalRequest,
-  deps: BillingPortalDeps
-): Promise<Response> => {
-  const { createErrorResponse, createSuccessResponse } = deps;
-
+  requestData: BillingPortalRequest
+): Promise<SessionResponse> => {
   try {
-    const { returnUrl } = request;
+    const { returnUrl } = requestData;
     
     if (!returnUrl) {
-      return createErrorResponse("Missing return URL", 400);
+      throw new HandlerError("Missing return URL", 400);
     }
     
     // Get user subscription data to find the Stripe customer ID
@@ -40,11 +33,11 @@ export const createBillingPortalSession = async (
     // Check for errors or if the customer ID is missing
     if (subscriptionError) {
         console.error("Error fetching user subscription for portal:", subscriptionError);
-        return createErrorResponse("Failed to retrieve subscription data", 500, subscriptionError);
+        throw new HandlerError("Failed to retrieve subscription data", 500, subscriptionError);
     }
     if (!subscriptionData?.stripe_customer_id) {
         console.warn(`No Stripe customer ID found for user ${userId} in user_subscriptions.`);
-        return createErrorResponse("No Stripe customer found for this user", 400);
+        throw new HandlerError("No Stripe customer found for this user", 400);
     }
     
     const stripeCustomerId = subscriptionData.stripe_customer_id;
@@ -55,14 +48,21 @@ export const createBillingPortalSession = async (
       return_url: returnUrl,
     });
     
+    // Construct and return the response data
     const response: SessionResponse = {
       sessionId: session.id,
       url: session.url,
     };
     
-    return createSuccessResponse(response);
+    return response;
+
   } catch (err) {
+    if (err instanceof HandlerError) {
+      throw err;
+    }
     console.error("Error creating billing portal session:", err);
-    return createErrorResponse(err.message, 500, err);
+    const message = err instanceof Error ? err.message : String(err);
+    const status = (err instanceof Stripe.errors.StripeError) ? (err.statusCode ?? 500) : 500;
+    throw new HandlerError(message, status, err); 
   }
 };

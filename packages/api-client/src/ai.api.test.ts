@@ -278,6 +278,7 @@ describe('AiApiClient', () => {
     // Tests for getChatMessages
     describe('getChatMessages', () => {
         const chatId = 'c123';
+        const mockToken = 'test-auth-token'; // <<< Add mock token
         const mockMessages: ChatMessage[] = [
             { id: 'm1', chat_id: chatId, role: 'user', content: 'Hi', user_id: 'u1', ai_provider_id: null, system_prompt_id: null, token_usage: null, created_at: 't1' },
             { id: 'm2', chat_id: chatId, role: 'assistant', content: 'Hello', user_id: null, ai_provider_id: 'p1', system_prompt_id: 'sp1', token_usage: null, created_at: 't2' },
@@ -310,46 +311,52 @@ describe('AiApiClient', () => {
             (mockApiClient.get as vi.Mock).mockResolvedValue(mockResponse);
 
             // Act
-            await aiApiClient.getChatMessages(chatId);
+            // Pass mockToken as the second argument
+            await aiApiClient.getChatMessages(chatId, mockToken); // <<< Pass mockToken
 
             // Assert
             expect(mockApiClient.get).toHaveBeenCalledTimes(1);
-            // Corrected expectation: Check only the endpoint path
-            expect(mockApiClient.get).toHaveBeenCalledWith(`chat-details/${chatId}`); 
+            // Corrected expectation: Check endpoint and options with token
+            expect(mockApiClient.get).toHaveBeenCalledWith(`chat-details/${chatId}`, { token: mockToken }); // <<< Verify token in options
         });
 
         it('should return the messages array on successful response', async () => {
             // Arrange
              const mockResponse: ApiResponse<ChatMessage[]> = {
-                success: true,
+                // success: true, // Remove success property if not used
                 data: mockMessages, // Data is the array directly
-                statusCode: 200,
+                status: 200,
             };
             (mockApiClient.get as vi.Mock).mockResolvedValue(mockResponse);
 
             // Act
-            const result = await aiApiClient.getChatMessages(chatId);
+            // Pass mockToken as the second argument
+            const result = await aiApiClient.getChatMessages(chatId, mockToken); // <<< Pass mockToken
 
             // Assert
             expect(result.data).toEqual(mockMessages);
-            expect(result.statusCode).toBe(200);
+            expect(result.status).toBe(200); // Use status, not statusCode
         });
 
         it('should return the error object on failed response', async () => {
             // Arrange
-             const mockErrorResponse: ApiResponse<ChatMessagesApiResponse> = {
-                success: false,
-                error: 'Failed to fetch messages',
-                statusCode: 404,
+            const mockError: ApiError = { code: 'FETCH_FAILED', message: 'Failed to fetch messages' };
+             const mockErrorResponse: ApiResponse<ChatMessage[]> = {
+                // success: false, // Remove success property if not used
+                error: mockError,
+                status: 404, // Use status
             };
             (mockApiClient.get as vi.Mock).mockResolvedValue(mockErrorResponse);
 
             // Act
-            const result = await aiApiClient.getChatMessages(chatId);
+            // Pass mockToken as the second argument
+            const result = await aiApiClient.getChatMessages(chatId, mockToken); // <<< Pass mockToken
 
             // Assert
-            expect(result.error).toBe('Failed to fetch messages');
-            expect(result.statusCode).toBe(404);
+            // Expect the error object
+            expect(result.error).toEqual(mockError); // <<< Check for the error object
+            expect(result.status).toBe(404); // Use status
+            expect(result.data).toBeUndefined(); // Ensure data is undefined on error
         });
     });
 }); 

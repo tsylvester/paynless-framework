@@ -1,120 +1,214 @@
 // IMPORTANT: Supabase Edge Functions require relative paths for imports from shared modules.
 // Do not use path aliases (like @shared/) as they will cause deployment failures.
 import { serve } from 'https://deno.land/std@0.177.0/http/server.ts'
-import { createClient, SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2'
-import { corsHeaders } from '../_shared/cors-headers.ts'
+import { createClient, type SupabaseClient } from 'npm:@supabase/supabase-js@2'
+// Import shared response/error handlers
+import { 
+    handleCorsPreflightRequest as actualHandleCorsPreflightRequest, 
+    createErrorResponse as actualCreateErrorResponse, 
+    createSuccessResponse as actualCreateJsonResponse 
+} from '../_shared/cors-headers.ts'; 
 
-// We don't store types and interfaces inline, we store them in the types directories. These inline interfaces need to be fixed. 
-// We also need this sync function to be extensible for other model providers. It's probably best to create subfolders for each provider and have the provider-specific code in their own file. 
+// Import provider-specific sync functions AND their default deps
+import {
+    syncOpenAIModels as actualSyncOpenAIModels,
+    defaultSyncOpenAIDeps
+} from './openai_sync.ts';
+import {
+    syncAnthropicModels as actualSyncAnthropicModels,
+    defaultSyncAnthropicDeps
+} from './anthropic_sync.ts';
+import {
+    syncGoogleModels as actualSyncGoogleModels,
+    defaultSyncGoogleDeps
+} from './google_sync.ts';
 
-// Define the expected structure of a model from the OpenAI API
-interface OpenAIModel {
+// Import shared types used by this function and potentially by tests
+// DbAiProvider and SyncResult are defined below and implicitly exported when mainHandler uses them
+// Provider files should import { type DbAiProvider, type SyncResult } from './index.ts'
+
+// --- Types specific to this function ---
+
+// Structure of the DB ai_providers table
+// Exporting this so provider files can import it
+export interface DbAiProvider {
   id: string;
-  object: string;
-  created: number;
-  owned_by: string;
-  // Add other potential fields if needed
+  api_identifier: string;
+  name: string;
+  description: string | null;
+  is_active: boolean;
+  provider: string; 
 }
 
-// Define the structure of the expected response from OpenAI API
-interface OpenAIModelsResponse {
-  object: string;
-  data: OpenAIModel[];
+// Structure for sync results
+// Exporting this so provider files can import it
+export interface SyncResult {
+  provider: string;
+  inserted: number;
+  updated: number;
+  deactivated: number;
+  error?: string;
 }
 
-console.log(`Function "sync-ai-models" up and running!`);
+type ProviderSyncFunction = (client: SupabaseClient, key: string) => Promise<SyncResult>;
 
-async function syncModels() {
-  console.log('Starting AI model sync process...');
+// --- Dependency Injection Setup ---
+export interface SyncAiModelsDeps {
+  createSupabaseClient: (url: string, key: string) => SupabaseClient;
+  getEnv: (key: string) => string | undefined;
+  handleCorsPreflightRequest: typeof actualHandleCorsPreflightRequest;
+  createJsonResponse: typeof actualCreateJsonResponse;
+  createErrorResponse: typeof actualCreateErrorResponse;
+  // Include the sync functions in dependencies for mocking
+  doOpenAiSync: ProviderSyncFunction;
+  doAnthropicSync: ProviderSyncFunction;
+  doGoogleSync: ProviderSyncFunction;
+}
 
-  // 1. Get API Key
-  const openAIApiKey = Deno.env.get('OPENAI_API_KEY');
-  if (!openAIApiKey) {
-    console.error('Missing environment variable: OPENAI_API_KEY');
-    throw new Error('Server configuration error: OpenAI API Key not found.');
+export const defaultDeps: SyncAiModelsDeps = {
+  createSupabaseClient: (url, key) => createClient(url, key),
+  getEnv: Deno.env.get,
+  handleCorsPreflightRequest: actualHandleCorsPreflightRequest,
+  createJsonResponse: actualCreateJsonResponse,
+  createErrorResponse: actualCreateErrorResponse,
+  // Provide wrapper functions that call the actual sync functions with their default deps
+  doOpenAiSync: (client, key) => actualSyncOpenAIModels(client, key, defaultSyncOpenAIDeps),
+  doAnthropicSync: (client, key) => actualSyncAnthropicModels(client, key, defaultSyncAnthropicDeps),
+  doGoogleSync: (client, key) => actualSyncGoogleModels(client, key, defaultSyncGoogleDeps),
+};
+
+// --- Provider Configuration (Internal - Uses deps) ---
+// Moved inside mainHandler or runAllSyncs if it needs deps, or keep static if not.
+// Keeping static is fine here as it only defines structure.
+interface ProviderSyncConfig {
+  providerName: string;        
+  apiKeyEnvVar: string;       
+  // We'll map the provider name to the correct function from deps later
+}
+
+const PROVIDERS_TO_SYNC: ProviderSyncConfig[] = [
+  { providerName: 'openai', apiKeyEnvVar: 'OPENAI_API_KEY' },
+  { providerName: 'anthropic', apiKeyEnvVar: 'ANTHROPIC_API_KEY' },
+  { providerName: 'google', apiKeyEnvVar: 'GOOGLE_API_KEY' },
+];
+
+// --- Shared Helper Functions (Not dependent on request-specific deps) ---
+
+// Export this function so provider sync files can use it
+export async function getCurrentDbModels(supabaseClient: SupabaseClient, providerName: string): Promise<DbAiProvider[]> {
+  const { data, error } = await supabaseClient
+    .from('ai_providers')
+    .select('id, api_identifier, name, description, is_active, provider')
+    .eq('provider', providerName);
+
+  if (error) {
+    console.error(`Error fetching DB models for provider ${providerName}:`, error);
+    throw new Error(`Database error fetching models for ${providerName}: ${error.message}`);
   }
-  console.log('Retrieved OPENAI_API_KEY.');
+  return data || [];
+}
 
-  // 2. Call OpenAI API
-  const openaiUrl = 'https://api.openai.com/v1/models';
-  let openAIModels: OpenAIModel[] = [];
+// --- Main Sync Orchestration Logic (Uses deps) ---
 
-  try {
-    const response = await fetch(openaiUrl, {
-      method: 'GET',
-      headers: {
-        'Authorization': `Bearer ${openAIApiKey}`,
-      },
-    });
+async function runAllSyncs(deps: SyncAiModelsDeps): Promise<SyncResult[]> {
+  const { getEnv, createSupabaseClient, doOpenAiSync, doAnthropicSync, doGoogleSync } = deps;
+  console.log('Starting all AI model syncs...');
+  const results: SyncResult[] = [];
 
-    if (!response.ok) {
-      const errorBody = await response.text();
-      console.error(`OpenAI API error: ${response.status} ${response.statusText}`, errorBody);
-      throw new Error(`Failed to fetch models from OpenAI: ${response.statusText}`);
+  const supabaseUrl = getEnv('SUPABASE_URL');
+  const serviceRoleKey = getEnv('SUPABASE_SERVICE_ROLE_KEY');
+
+  if (!supabaseUrl || !serviceRoleKey) {
+    console.error('Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY for admin client.');
+    throw new Error('Server configuration error: Supabase admin credentials not found.');
+  }
+
+  const supabaseAdminClient = createSupabaseClient(supabaseUrl, serviceRoleKey);
+  
+  // Map provider names to their sync functions from dependencies
+  const syncFunctionMap: Record<string, ProviderSyncFunction> = {
+      openai: doOpenAiSync,
+      anthropic: doAnthropicSync,
+      google: doGoogleSync,
+  };
+
+  for (const config of PROVIDERS_TO_SYNC) {
+    const apiKey = getEnv(config.apiKeyEnvVar);
+    const syncFunction = syncFunctionMap[config.providerName]; // Get the function from the map
+
+    if (!apiKey) {
+      console.log(`API Key (${config.apiKeyEnvVar}) not found for provider ${config.providerName}. Skipping sync.`);
+      results.push({ provider: config.providerName, inserted: 0, updated: 0, deactivated: 0, error: 'API key not configured' });
+      continue; 
+    }
+    
+    if (!syncFunction) {
+        console.warn(`No sync function found in deps for provider ${config.providerName}. Skipping sync.`);
+        results.push({ provider: config.providerName, inserted: 0, updated: 0, deactivated: 0, error: 'No sync function available' });
+        continue;
     }
 
-    const responseData: OpenAIModelsResponse = await response.json();
-    if (responseData?.object === 'list' && Array.isArray(responseData.data)) {
-      openAIModels = responseData.data;
-      console.log(`Successfully fetched ${openAIModels.length} models from OpenAI.`);
-      // Optional: Log the model IDs fetched
-      // console.log('Fetched model IDs:', openAIModels.map(m => m.id).join(', '));
-    } else {
-      console.error('Invalid response structure from OpenAI API:', responseData);
-      throw new Error('Received invalid data structure from OpenAI API.');
+    try {
+        console.log(`--- Starting sync for provider: ${config.providerName} ---`);
+        // Call the sync function obtained from dependencies
+        const providerResult = await syncFunction(supabaseAdminClient, apiKey);
+        results.push(providerResult);
+        console.log(`--- Sync finished for provider: ${config.providerName} ---`);
+    } catch (error) {
+        console.error(`!!! Sync failed critically for provider ${config.providerName}:`, error);
+        const errorMessage = error instanceof Error ? error.message : String(error ?? 'Unknown critical error during sync');
+        results.push({ 
+            provider: config.providerName, 
+            inserted: 0, updated: 0, deactivated: 0, 
+            error: errorMessage 
+        });
     }
-  } catch (error) {
-    console.error('Error calling OpenAI API:', error);
-    // Re-throw or handle appropriately for the function's response
-    throw error;
   }
 
-  // TODO:
-  // 3. Create Supabase Admin Client (Service Role Key)
-  // 4. Fetch current providers from DB
-  // 5. Compare and sync (insert/update/deactivate)
-
-  return { syncedCount: 0, newCount: 0, deactivatedCount: 0 }; // Placeholder return
+  console.log('Finished all AI model syncs.');
+  return results;
 }
 
-serve(async (req) => {
-  // --- Security Check (Example: Simple Header Check - NOT PRODUCTION READY) ---
-  // For production, use Supabase Cron Job triggers or proper RBAC/Auth
-  // Also ensure SYNC_SECRET is set in env vars
-  const syncSecret = Deno.env.get('SYNC_SECRET');
-  const authHeader = req.headers.get('X-Sync-Secret');
-  if (!syncSecret || !authHeader || authHeader !== syncSecret) {
-      console.warn('Unauthorized sync attempt received.');
-      return new Response(JSON.stringify({ error: 'Unauthorized' }), {
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        status: 401,
-      });
-  }
+// --- Exported Main Handler ---
+export async function mainHandler(req: Request, deps: SyncAiModelsDeps = defaultDeps): Promise<Response> {
+  const { handleCorsPreflightRequest, createJsonResponse, createErrorResponse, getEnv } = deps;
 
   // Handle CORS preflight requests
-  if (req.method === 'OPTIONS') {
-    return new Response('ok', { headers: corsHeaders });
+  const corsResponse = handleCorsPreflightRequest(req);
+  if (corsResponse) return corsResponse;
+
+  // --- Security Check ---
+  const syncSecret = getEnv('SYNC_SECRET');
+  const authHeader = req.headers.get('X-Sync-Secret');
+  const isAuthorized = (syncSecret && authHeader && authHeader === syncSecret) || !syncSecret; 
+
+  if (!isAuthorized) {
+      console.warn('Unauthorized sync attempt received.');
+      // Add req argument
+      return createErrorResponse('Unauthorized', 401, req);
   }
 
-  if (req.method !== 'POST') { // Typically trigger sync via POST
-     return new Response(JSON.stringify({ error: 'Method Not Allowed' }), {
-       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-       status: 405,
-     });
+  if (req.method !== 'POST') { 
+     // Add req argument
+     return createErrorResponse('Method Not Allowed', 405, req);
   }
 
   try {
-    const result = await syncModels();
-    console.log('Sync process completed.', result);
-    return new Response(JSON.stringify({ success: true, ...result }), {
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      status: 200,
-    });
+    // Pass deps to the orchestration function
+    const results = await runAllSyncs(deps);
+    console.log('Overall sync process completed.', results);
+    const overallSuccess = results.every(r => !r.error);
+    // Add req argument
+    return createJsonResponse({ success: overallSuccess, results }, overallSuccess ? 200 : 500, req);
   } catch (error) {
-    console.error('Sync function failed:', error);
-    return new Response(JSON.stringify({ error: error.message || 'Sync failed due to an internal server error.' }), {
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      status: 500,
-    });
+    console.error('Sync function failed critically (mainHandler level):', error);
+    const errorMessage = error instanceof Error ? error.message : String(error ?? 'Sync failed due to a critical internal server error.');
+    // Add req argument and pass original error
+    return createErrorResponse(errorMessage, 500, req, error);
   }
-});
+}
+
+// --- Serve Function --- 
+serve((req) => mainHandler(req, defaultDeps)) 
+
+console.log(`Function "sync-ai-models" started.`); // Indicate start
