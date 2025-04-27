@@ -2,13 +2,13 @@ import { ReactNode } from 'react';
 import { render, screen, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import {
-  PlatformCapabilitiesProvider,
-  usePlatformCapabilities,
+  PlatformProvider,
+  usePlatform,
   // Import the default state if it's exported, otherwise define it here
   // Assuming a default state structure like this:
   // DEFAULT_INITIAL_CAPABILITIES // No default exported yet, define below
-} from './Context'; 
-import type { PlatformCapabilities } from '@paynless/types';
+} from './context';
+import type { Platform } from '@paynless/types';
 import * as core from '@tauri-apps/api/core';
 
 // --- Mocks Setup ---
@@ -51,7 +51,7 @@ const testDefaultInitialCapabilities: PlatformCapabilities = {
 */}
 
 // Define the expected state for the Web platform
-const testWebCapabilities: PlatformCapabilities = {
+const testWebCapabilities: Platform = {
   platform: 'web',
   os: undefined,
   fileSystem: { isAvailable: false }, // Matches webFileSystemCapabilities
@@ -61,7 +61,7 @@ const testWebCapabilities: PlatformCapabilities = {
 
 // Helper component to consume the context
 const TestConsumer = () => {
-  const capabilities = usePlatformCapabilities();
+  const capabilities = usePlatform();
   // No need for null check here anymore if the hook guarantees non-null
   // if (capabilities === null) {
   //   return <div>Loading...</div>; // This state should not occur if initialized non-null
@@ -72,11 +72,11 @@ const TestConsumer = () => {
 // Helper to render with provider
 const renderWithProvider = (ui: ReactNode) => {
   return render(
-    <PlatformCapabilitiesProvider>{ui}</PlatformCapabilitiesProvider>
+    <PlatformProvider>{ui}</PlatformProvider>
   );
 };
 
-describe('PlatformCapabilitiesProvider', () => {
+describe('PlatformProvider', () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });
@@ -92,7 +92,7 @@ describe('PlatformCapabilitiesProvider', () => {
     // So, the state read immediately after render is typically already the 'web' state.
     renderWithProvider(<TestConsumer />);
     const capsElement = screen.getByTestId('capabilities');
-    const initialCapabilities = JSON.parse(capsElement.textContent || '{}') as PlatformCapabilities;
+    const initialCapabilities = JSON.parse(capsElement.textContent || '{}') as Platform;
     // Assert against the expected *web* state, which is the effective initial state here.
     expect(initialCapabilities).toEqual(testWebCapabilities);
   });
@@ -103,7 +103,7 @@ describe('PlatformCapabilitiesProvider', () => {
     renderWithProvider(<TestConsumer />);
     await waitFor(() => {
       const capsElement = screen.getByTestId('capabilities');
-      const capabilities = JSON.parse(capsElement.textContent || '') as PlatformCapabilities;
+      const capabilities = JSON.parse(capsElement.textContent || '') as Platform;
       expect(capabilities.platform).toBe('web');
       expect(capabilities.fileSystem.isAvailable).toBe(false);
     });
@@ -115,7 +115,7 @@ describe('PlatformCapabilitiesProvider', () => {
     renderWithProvider(<TestConsumer />);
     await waitFor(() => {
       const capsElement = screen.getByTestId('capabilities');
-      const capabilities = JSON.parse(capsElement.textContent || '') as PlatformCapabilities;
+      const capabilities = JSON.parse(capsElement.textContent || '') as Platform;
       expect(capabilities.platform).toBe('web');
       expect(capabilities.fileSystem.isAvailable).toBe(false);
     });
@@ -134,7 +134,7 @@ describe('PlatformCapabilitiesProvider', () => {
 
     await waitFor(() => {
       const capsElement = screen.getByTestId('capabilities');
-      const capabilities = JSON.parse(capsElement.textContent || '') as PlatformCapabilities;
+      const capabilities = JSON.parse(capsElement.textContent || '') as Platform;
       expect(capabilities.platform).toBe('tauri');
       expect(capabilities.fileSystem.isAvailable).toBe(true);
       expect(createTauriFileSystemCapabilities).toHaveBeenCalled();
@@ -158,7 +158,7 @@ describe('PlatformCapabilitiesProvider', () => {
 
     await waitFor(() => {
       const finalCapsElement = screen.getByTestId('capabilities');
-      const capabilities = JSON.parse(finalCapsElement.textContent || '{}') as PlatformCapabilities;
+      const capabilities = JSON.parse(finalCapsElement.textContent || '{}') as Platform;
       expect(capabilities.platform).toBe('tauri'); 
       expect(capabilities.fileSystem.isAvailable).toBe(false);
       // Update the expected error message to match the implementation
@@ -182,7 +182,7 @@ describe('PlatformCapabilitiesProvider', () => {
     await waitFor(() => {
       const capsElement = screen.getByTestId('capabilities');
       expect(capsElement).toBeInTheDocument();
-      const capabilities = JSON.parse(capsElement.textContent || '') as PlatformCapabilities;
+      const capabilities = JSON.parse(capsElement.textContent || '') as Platform;
       expect(capabilities.platform).toBe('web');
       expect(capabilities.fileSystem.isAvailable).toBe(false);
     });

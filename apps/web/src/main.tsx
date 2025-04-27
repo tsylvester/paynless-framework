@@ -4,7 +4,7 @@ import App from './App'
 import './index.css'
 import { logger/*, LogLevel*/ } from '@paynless/utils'
 import ReactGA from 'react-ga4'
-import { PlatformCapabilitiesProvider } from '@paynless/platform';
+import { PlatformProvider } from '@paynless/platform';
 import { ApiProvider } from '@paynless/api';
 
 // --- Configure Logger Early ---
@@ -32,9 +32,9 @@ createRoot(document.getElementById('root')!).render(
     {/* Pass config to ApiProvider. Handle missing keys potentially with fallback UI */}
     {supabaseUrl && supabaseAnonKey ? (
       <ApiProvider supabaseUrl={supabaseUrl} supabaseAnonKey={supabaseAnonKey}>
-        <PlatformCapabilitiesProvider>
+        <PlatformProvider>
           <App />
-        </PlatformCapabilitiesProvider>
+        </PlatformProvider>
       </ApiProvider>
     ) : (
       // Render an error message or fallback if config is missing

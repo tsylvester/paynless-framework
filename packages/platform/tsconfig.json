@@ -4,7 +4,6 @@
     "outDir": "./dist",
     "rootDir": "./src",
     "composite": true,
-    "tsBuildInfoFile": "./dist/.tsbuildinfo",
     // Ensure JSX is handled correctly if using React components within this package, even for context
     "jsx": "react-jsx",
     // Add specific lib entries if needed, e.g., for DOM types if manipulating window
@@ -13,7 +12,12 @@
     "types": ["node", "vitest/globals", "@testing-library/jest-dom"]
   },
   "include": ["src/**/*"], // Restore original broad include
-  "exclude": ["node_modules", "dist"],
+  "exclude": [
+    "node_modules", 
+    "dist",
+    "**/*.test.ts",
+    "**/*.test.tsx"
+  ],
   "references": [
     // Add references to other workspace packages this one depends on
     { "path": "../types" }

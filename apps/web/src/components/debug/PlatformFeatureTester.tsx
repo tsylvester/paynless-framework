@@ -1,12 +1,12 @@
 import React, { useState } from 'react';
-import { usePlatformCapabilities } from '@paynless/platform';
+import { usePlatform } from '@paynless/platform';
 import { logger } from '@paynless/utils';
 
 /**
  * Example component demonstrating use of platform capabilities.
  */
 export const PlatformFeatureTester: React.FC = () => {
-  const capabilities = usePlatformCapabilities();
+  const capabilities = usePlatform();
   const [textContent, setTextContent] = useState('Test content to save');
 
   // --- Handle Loading State --- 

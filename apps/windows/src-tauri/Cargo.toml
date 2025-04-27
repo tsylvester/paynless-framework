@@ -22,6 +22,7 @@ tauri = { version = "2.0.0", features = [] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 tauri-plugin-opener = "2.2.6"
+tauri-plugin-dialog = { version = "2.0.0-beta.8", features = [] }
 core-crypto = { path = "./crates/core-crypto" }
 hex = "0.4"
 ed25519-dalek = { version = "2.1.1", features = ["rand_core"] }

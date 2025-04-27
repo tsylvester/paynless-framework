@@ -1,9 +1,9 @@
 // Import Tauri APIs directly within this module
-import { invoke } from '@tauri-apps/api/tauri';
-import { open, save } from '@tauri-apps/api/dialog';
+import { invoke } from '@tauri-apps/api/core';
+import { open, save } from '@tauri-apps/plugin-dialog';
 
 // Import types for the capabilities interface
-import type { FileSystemCapabilities } from '@paynless/types';
+import type { FileSystem } from '@paynless/types';
 
 // Utility function remains the same
 function parseAcceptToFilters(accept?: string): { name: string; extensions: string[] }[] | undefined {
@@ -17,7 +17,7 @@ function parseAcceptToFilters(accept?: string): { name: string; extensions: stri
 }
 
 // Factory function no longer accepts dependencies
-export function createTauriFileSystemCapabilities(): FileSystemCapabilities {
+export function createTauriFileSystemCapabilities(): FileSystem {
   return {
     isAvailable: true,
 
@@ -74,4 +74,4 @@ export function createTauriFileSystemCapabilities(): FileSystemCapabilities {
 }
 
 // Ensure old direct export is removed or commented out
-// export const tauriFileSystemCapabilities: FileSystemCapabilities = { ... }; 
+// export const tauriFileSystemCapabilities: FileSystem = { ... }; 

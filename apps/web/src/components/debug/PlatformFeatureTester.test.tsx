@@ -2,8 +2,8 @@ import React from 'react';
 import { render, screen, fireEvent, act } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { PlatformFeatureTester } from './PlatformFeatureTester';
-import { PlatformCapabilitiesProvider, usePlatformCapabilities } from '@paynless/platform';
-import type { PlatformCapabilities } from '@paynless/types';
+import { usePlatform } from '@paynless/platform';
+import type { Platform } from '@paynless/types';
 import { logger } from '@paynless/utils';
 
 // Mock the logger
@@ -17,17 +17,17 @@ vi.mock('@paynless/utils', () => ({
 }));
 
 // Mock the hook directly
-const MockCapabilitiesContext = React.createContext<PlatformCapabilities | null>(null);
+const MockCapabilitiesContext = React.createContext<Platform | null>(null);
 vi.mock('@paynless/platform', async (importOriginal) => {
     const original = await importOriginal<any>();
     return {
         ...original,
-        usePlatformCapabilities: () => React.useContext(MockCapabilitiesContext),
+        usePlatform: () => React.useContext(MockCapabilitiesContext),
     };
 });
 
 // Helper to render with the mocked hook
-const renderWithMockedHook = (capabilities: PlatformCapabilities | null) => {
+const renderWithMockedHook = (capabilities: Platform | null) => {
     return render(
         <MockCapabilitiesContext.Provider value={capabilities}>
             <PlatformFeatureTester />
@@ -43,7 +43,7 @@ describe('PlatformFeatureTester', () => {
   });
 
   it('should display web platform info and hide desktop button in web environment', () => {
-    const webCaps: PlatformCapabilities = {
+    const webCaps: Platform = {
       platform: 'web',
       fileSystem: { isAvailable: false },
     };
@@ -56,7 +56,7 @@ describe('PlatformFeatureTester', () => {
   });
 
   it('should display tauri platform info and show desktop button in tauri environment', () => {
-    const tauriCaps: PlatformCapabilities = {
+    const tauriCaps: Platform = {
       platform: 'tauri',
       fileSystem: {
         isAvailable: true,
@@ -80,7 +80,7 @@ describe('PlatformFeatureTester', () => {
     let mockReadFile: ReturnType<typeof vi.fn>;
     let mockPickSaveFile: ReturnType<typeof vi.fn>;
     let mockWriteFile: ReturnType<typeof vi.fn>;
-    let tauriCaps: PlatformCapabilities;
+    let tauriCaps: Platform;
 
     beforeEach(() => {
       mockPickFile = vi.fn();
