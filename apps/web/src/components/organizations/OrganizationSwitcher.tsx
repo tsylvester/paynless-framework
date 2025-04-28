@@ -88,9 +88,6 @@ export const OrganizationSwitcher: React.FC = () => {
     >
       {/* Content inside SimpleDropdown's children */}
       <div className="flex flex-col">
-        <p className="text-xs font-semibold px-2 py-1.5 text-muted-foreground">Your Organizations</p>
-        <hr className="my-1 border-border" />
-
         {/* Organization List */}
         <div className="flex flex-col space-y-1 p-1 max-h-[200px] overflow-y-auto">
           {userOrganizations.length > 0 ? (
