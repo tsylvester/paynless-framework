@@ -44,6 +44,7 @@ export interface OrganizationState {
 
 // Define the actions interface for the organization store
 export interface OrganizationActions {
+  createOrganization: (name: string, visibility?: 'private' | 'public') => Promise<Organization | null>;
   fetchUserOrganizations: () => Promise<void>;
   setCurrentOrganizationId: (orgId: string | null) => void;
   fetchOrganizationDetails: (orgId: string) => Promise<void>;

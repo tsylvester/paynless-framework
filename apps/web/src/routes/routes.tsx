@@ -10,6 +10,16 @@ import { SubscriptionSuccessPage } from '../pages/SubscriptionSuccess';
 import { RootRoute } from '../components/routes/RootRoute';
 import AiChatPage from '../pages/AiChat';
 import NotificationsPage from '../pages/Notifications';
+import { CreateOrganizationPage } from '../pages/CreateOrganization';
+import { OrganizationListPage } from '../pages/OrganizationList';
+import { OrganizationSettingsPage } from '../pages/OrganizationSettingsPage';
+import { OrganizationMembersPage } from '../pages/OrganizationMembersPage';
+import { AcceptInvitePage } from '../pages/AcceptInvitePage';
+
+// Placeholder components for organization routes
+const OrgLayout = () => <div>Organizations Layout (Placeholder - wraps list, create, and manage)</div>;
+const OrgManageLayout = () => <div>Manage Organization Layout (Placeholder - wraps settings, members)</div>;
+const OrgOverviewPage = () => <div>Organization Overview (Placeholder)</div>;
 
 export const routes: AppRoute[] = [
   {
@@ -28,6 +38,50 @@ export const routes: AppRoute[] = [
     path: 'dashboard',
     element: <ProtectedRoute><DashboardPage /></ProtectedRoute>,
     requireAuth: true,
+    // Add children routes for dashboard sections
+    children: [
+      {
+        path: 'organizations',
+        element: <ProtectedRoute><OrgLayout /></ProtectedRoute>,
+        requireAuth: true,
+        children: [
+          {
+            path: '',
+            index: true,
+            element: <ProtectedRoute><OrganizationListPage /></ProtectedRoute>,
+            requireAuth: true,
+          },
+          {
+            path: 'new',
+            element: <ProtectedRoute><CreateOrganizationPage /></ProtectedRoute>,
+            requireAuth: true,
+          },
+          {
+            path: ':orgId',
+            element: <ProtectedRoute><OrgManageLayout /></ProtectedRoute>,
+            requireAuth: true,
+            children: [
+              {
+                path: '',
+                index: true,
+                element: <ProtectedRoute><OrgOverviewPage /></ProtectedRoute>,
+                requireAuth: true,
+              },
+              {
+                path: 'settings',
+                element: <ProtectedRoute><OrganizationSettingsPage /></ProtectedRoute>,
+                requireAuth: true,
+              },
+              {
+                path: 'members',
+                element: <ProtectedRoute><OrganizationMembersPage /></ProtectedRoute>,
+                requireAuth: true,
+              },
+            ]
+          }
+        ]
+      }
+    ]
   },
   {
     path: 'chat',
@@ -54,6 +108,10 @@ export const routes: AppRoute[] = [
     path: 'subscriptionsuccess',
     element: <ProtectedRoute><SubscriptionSuccessPage /></ProtectedRoute>,
     requireAuth: true,
+  },
+  {
+    path: 'accept-invite/:token',
+    element: <AcceptInvitePage />,
   },
   {
     path: 'admin',

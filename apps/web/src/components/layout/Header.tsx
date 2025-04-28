@@ -13,6 +13,7 @@ import {
 } from 'lucide-react'
 import { Notifications } from '../Notifications'
 import { SimpleDropdown } from '../ui/SimpleDropdown'
+import { OrganizationSwitcher } from '../organizations/OrganizationSwitcher'
 
 export function Header() {
   const { user, profile, logout } = useAuthStore((state) => ({
@@ -93,6 +94,7 @@ export function Header() {
 
             {user ? (
               <>
+                <OrganizationSwitcher />
                 <Notifications />
                 <SimpleDropdown
                   align="end"

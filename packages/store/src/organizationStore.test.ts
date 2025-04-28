@@ -5,7 +5,7 @@ import { api } from '@paynless/api'; // Mock this
 import { logger } from '@paynless/utils';
 import { useOrganizationStore } from './organizationStore'; // <<< IMPORT THE ACTUAL STORE
 import { useAuthStore } from './authStore'; // <<< ADD THIS IMPORT
-import { Organization } from '@paynless/types'; // Import types needed for mock data
+import { Organization, OrganizationMemberWithProfile } from '@paynless/types'; // Import types needed for mock data
 
 // --- Mock Dependencies --- // (Keep mocks as they are)
 vi.mock('@paynless/api', () => ({
@@ -133,28 +133,121 @@ describe('OrganizationStore', () => {
     });
 
     it('should set error and clear orgs list if user is not authenticated', async () => {
-      // Arrange: Mock authStore to return no user
+       // Arrange: Mock authStore to return no user
       vi.mocked(useAuthStore.getState).mockReturnValueOnce({ user: null });
       const listMock = vi.mocked(api.organizations.listUserOrganizations);
       useOrganizationStore.setState({ userOrganizations: mockOrgs }); // Pre-fill
 
-      // Act
+       // Act
       const fetchPromise = useOrganizationStore.getState().fetchUserOrganizations();
       // expect(useOrganizationStore.getState().isLoading).toBe(true);
 
       await fetchPromise;
 
-      // Assert
-      expect(listMock).not.toHaveBeenCalled(); // Ensure API not called
+       // Assert
+       expect(listMock).not.toHaveBeenCalled(); // Ensure API not called
       const finalState = useOrganizationStore.getState();
-      expect(finalState.userOrganizations).toEqual([]);
-      expect(finalState.error).toBe('User not authenticated');
-      expect(finalState.isLoading).toBe(false);
+       expect(finalState.userOrganizations).toEqual([]);
+       expect(finalState.error).toBe('User not authenticated');
+       expect(finalState.isLoading).toBe(false);
     });
   });
 
   // --- setCurrentOrganizationId Tests ---
-  // TODO: Add tests for setCurrentOrganizationId
+  describe('setCurrentOrganizationId', () => {
+    const orgId1 = 'org-id-1';
+    const orgId2 = 'org-id-2';
+    const mockOrgDetails: Organization = { id: orgId1, name: 'Org 1', visibility:'private', created_at:'d1', deleted_at: null };
+    const mockMembers: OrganizationMemberWithProfile[] = [
+        { id: 'mem1', organization_id: orgId1, user_id:'u1', role:'admin', status:'active', created_at:'m1', user_profiles: null }
+    ];
+
+    it('should update currentId, clear details/members/error, and trigger fetches when setting a new ID', () => {
+      // Arrange
+      const detailsMock = vi.mocked(api.organizations.getOrganizationDetails);
+      const membersMock = vi.mocked(api.organizations.getOrganizationMembers);
+      // Set initial non-matching state
+      useOrganizationStore.setState({
+        currentOrganizationId: orgId2,
+        currentOrganizationDetails: { id: orgId2 } as any, // Dummy data
+        currentOrganizationMembers: [{ id: 'mem-other' } as any],
+        error: 'Some previous error'
+      });
+
+      // Act
+      useOrganizationStore.getState().setCurrentOrganizationId(orgId1);
+
+      // Assert state updates
+      const state = useOrganizationStore.getState();
+      expect(state.currentOrganizationId).toBe(orgId1);
+      expect(state.currentOrganizationDetails).toBeNull();
+      expect(state.currentOrganizationMembers).toEqual([]);
+      expect(state.error).toBeNull();
+
+      // Assert that the fetch actions were triggered (by checking the underlying API mocks)
+      expect(detailsMock).toHaveBeenCalledTimes(1);
+      expect(detailsMock).toHaveBeenCalledWith(orgId1);
+      expect(membersMock).toHaveBeenCalledTimes(1);
+      expect(membersMock).toHaveBeenCalledWith(orgId1);
+    });
+
+    it('should do nothing if setting the same ID', () => {
+      // Arrange
+      const detailsMock = vi.mocked(api.organizations.getOrganizationDetails);
+      const membersMock = vi.mocked(api.organizations.getOrganizationMembers);
+      // Set initial state
+      const initialStateSnapshot = {
+        currentOrganizationId: orgId1,
+        currentOrganizationDetails: mockOrgDetails,
+        currentOrganizationMembers: mockMembers,
+        error: null
+      };
+      useOrganizationStore.setState(initialStateSnapshot);
+      vi.clearAllMocks(); // Clear mocks after setting state
+
+      // Act
+      useOrganizationStore.getState().setCurrentOrganizationId(orgId1);
+
+      // Assert state hasn't changed
+      const state = useOrganizationStore.getState();
+      expect(state.currentOrganizationId).toBe(initialStateSnapshot.currentOrganizationId);
+      expect(state.currentOrganizationDetails).toEqual(initialStateSnapshot.currentOrganizationDetails);
+      expect(state.currentOrganizationMembers).toEqual(initialStateSnapshot.currentOrganizationMembers);
+      expect(state.error).toBe(initialStateSnapshot.error);
+
+      // Assert that fetches were NOT triggered
+      expect(detailsMock).not.toHaveBeenCalled();
+      expect(membersMock).not.toHaveBeenCalled();
+    });
+
+    it('should clear currentId, details, members, and error when setting ID to null', () => {
+        // Arrange
+        const detailsMock = vi.mocked(api.organizations.getOrganizationDetails);
+        const membersMock = vi.mocked(api.organizations.getOrganizationMembers);
+        // Set initial state
+        useOrganizationStore.setState({
+            currentOrganizationId: orgId1,
+            currentOrganizationDetails: mockOrgDetails,
+            currentOrganizationMembers: mockMembers,
+            error: 'Some previous error'
+        });
+        vi.clearAllMocks();
+
+        // Act
+        useOrganizationStore.getState().setCurrentOrganizationId(null);
+
+        // Assert state updates
+        const state = useOrganizationStore.getState();
+        expect(state.currentOrganizationId).toBeNull();
+        expect(state.currentOrganizationDetails).toBeNull();
+        expect(state.currentOrganizationMembers).toEqual([]);
+        expect(state.error).toBeNull();
+
+        // Assert that fetches were NOT triggered
+        expect(detailsMock).not.toHaveBeenCalled();
+        expect(membersMock).not.toHaveBeenCalled();
+    });
+  });
 
   // --- fetchOrganizationDetails Tests ---
   describe('fetchOrganizationDetails', () => {
@@ -237,7 +330,212 @@ describe('OrganizationStore', () => {
     });
   });
 
-  // TODO: Add tests for fetchCurrentOrganizationMembers
-  // TODO: Add tests for softDeleteOrganization
+  // --- fetchCurrentOrganizationMembers Tests ---
+  describe('fetchCurrentOrganizationMembers', () => {
+    const orgId = 'org-members-test-id';
+    const mockMembers: OrganizationMemberWithProfile[] = [
+       { 
+         id: 'mem1', organization_id: orgId, user_id: 'user1', role: 'admin', status: 'active', created_at: 'd1', 
+         user_profiles: { id: 'user1', first_name: 'Admin', last_name: 'User', email: 'admin@test.com', role: 'user', created_at: 'dp1', updated_at: 'dp1', deleted_at: null, avatar_url: null }
+       },
+       {
+         id: 'mem2', organization_id: orgId, user_id: 'user2', role: 'member', status: 'active', created_at: 'd2',
+         user_profiles: { id: 'user2', first_name: 'Member', last_name: 'User', email: 'member@test.com', role: 'user', created_at: 'dp2', updated_at: 'dp2', deleted_at: null, avatar_url: null }
+       },
+    ];
 
-}); 
+    it('should do nothing if currentOrganizationId is null', async () => {
+      // Arrange
+      const membersMock = vi.mocked(api.organizations.getOrganizationMembers);
+      useOrganizationStore.setState({ currentOrganizationId: null }); // Ensure no org is set
+
+      // Act
+      await useOrganizationStore.getState().fetchCurrentOrganizationMembers();
+
+      // Assert
+      expect(membersMock).not.toHaveBeenCalled();
+      expect(useOrganizationStore.getState().isLoading).toBe(false); // Should reset loading if called
+      expect(useOrganizationStore.getState().currentOrganizationMembers).toEqual([]);
+      expect(logger.warn).toHaveBeenCalledWith('[OrganizationStore] fetchCurrentOrganizationMembers - No current organization selected.');
+    });
+
+    it('should call API, update members, and clear loading/error on success', async () => {
+      // Arrange
+      const membersMock = vi.mocked(api.organizations.getOrganizationMembers);
+      membersMock.mockResolvedValue({ status: 200, data: mockMembers });
+      useOrganizationStore.setState({ currentOrganizationId: orgId }); // Set current org
+
+      // Act
+      const fetchPromise = useOrganizationStore.getState().fetchCurrentOrganizationMembers();
+      // Check intermediate states if desired, or remove if flaky
+      // expect(useOrganizationStore.getState().isLoading).toBe(true);
+      // expect(useOrganizationStore.getState().error).toBeNull();
+      
+      await fetchPromise;
+
+      // Assert
+      expect(membersMock).toHaveBeenCalledTimes(1);
+      expect(membersMock).toHaveBeenCalledWith(orgId);
+
+      const finalState = useOrganizationStore.getState();
+      expect(finalState.currentOrganizationMembers).toEqual(mockMembers);
+      expect(finalState.isLoading).toBe(false);
+      expect(finalState.error).toBeNull();
+    });
+
+    it('should set error, clear members, and clear loading on API error', async () => {
+      // Arrange
+      const membersMock = vi.mocked(api.organizations.getOrganizationMembers);
+      const errorMsg = 'Failed to fetch members';
+      membersMock.mockResolvedValue({ status: 500, error: { message: errorMsg, code: 'INTERNAL_ERROR' } });
+      useOrganizationStore.setState({ currentOrganizationId: orgId, currentOrganizationMembers: mockMembers }); // Set current org and pre-fill members
+
+      // Act
+      const fetchPromise = useOrganizationStore.getState().fetchCurrentOrganizationMembers();
+      // expect(useOrganizationStore.getState().isLoading).toBe(true);
+
+      await fetchPromise;
+
+      // Assert
+      expect(membersMock).toHaveBeenCalledTimes(1);
+      expect(membersMock).toHaveBeenCalledWith(orgId);
+
+      const finalState = useOrganizationStore.getState();
+      expect(finalState.currentOrganizationMembers).toEqual([]); // Should be cleared
+      expect(finalState.isLoading).toBe(false);
+      expect(finalState.error).toBe(errorMsg);
+    });
+    
+    it('should set error, clear members, and clear loading on unexpected error', async () => {
+      // Arrange
+      const membersMock = vi.mocked(api.organizations.getOrganizationMembers);
+      const errorMsg = 'Something broke';
+      membersMock.mockRejectedValue(new Error(errorMsg)); // Simulate unexpected error
+       useOrganizationStore.setState({ currentOrganizationId: orgId, currentOrganizationMembers: mockMembers }); // Set current org and pre-fill members
+
+      // Act
+      const fetchPromise = useOrganizationStore.getState().fetchCurrentOrganizationMembers();
+      // expect(useOrganizationStore.getState().isLoading).toBe(true);
+
+      await fetchPromise;
+
+      // Assert
+      expect(membersMock).toHaveBeenCalledTimes(1);
+      expect(membersMock).toHaveBeenCalledWith(orgId);
+
+      const finalState = useOrganizationStore.getState();
+      expect(finalState.currentOrganizationMembers).toEqual([]); // Should be cleared
+      expect(finalState.isLoading).toBe(false);
+      expect(finalState.error).toBe(errorMsg);
+    });
+  });
+
+  // --- softDeleteOrganization Tests ---
+  describe('softDeleteOrganization', () => {
+    const orgToDeleteId = 'org-to-delete';
+    const otherOrgId = 'other-org';
+    const initialOrgs: Organization[] = [
+        { id: orgToDeleteId, name: 'Delete Me', visibility: 'private', created_at: 'd1', deleted_at: null },
+        { id: otherOrgId, name: 'Keep Me', visibility: 'private', created_at: 'd2', deleted_at: null },
+    ];
+    const mockMember: OrganizationMemberWithProfile = {
+        id: 'mem-del', organization_id: orgToDeleteId, user_id: 'u1', role: 'admin', status: 'active', created_at: 'd3',
+        user_profiles: null
+    };
+
+    it('should call API, remove org from list, return true on success (not current org)', async () => {
+      // Arrange
+      const deleteMock = vi.mocked(api.organizations.deleteOrganization);
+      deleteMock.mockResolvedValue({ status: 204, data: undefined }); // 204 No Content is typical for DELETE
+      useOrganizationStore.setState({ userOrganizations: initialOrgs, currentOrganizationId: otherOrgId });
+
+      // Act
+      const result = await useOrganizationStore.getState().softDeleteOrganization(orgToDeleteId);
+
+      // Assert
+      expect(result).toBe(true);
+      expect(deleteMock).toHaveBeenCalledTimes(1);
+      expect(deleteMock).toHaveBeenCalledWith(orgToDeleteId);
+      
+      const finalState = useOrganizationStore.getState();
+      expect(finalState.userOrganizations).toEqual([initialOrgs[1]]); // Only otherOrg should remain
+      expect(finalState.currentOrganizationId).toBe(otherOrgId); // Current org unaffected
+      expect(finalState.isLoading).toBe(false);
+      expect(finalState.error).toBeNull();
+    });
+
+    it('should call API, remove org, clear current context, return true on success (current org)', async () => {
+      // Arrange
+      const deleteMock = vi.mocked(api.organizations.deleteOrganization);
+      deleteMock.mockResolvedValue({ status: 204, data: undefined });
+      useOrganizationStore.setState({ 
+          userOrganizations: initialOrgs, 
+          currentOrganizationId: orgToDeleteId, // Set org to delete as current
+          currentOrganizationDetails: initialOrgs[0], // Set details/members too
+          currentOrganizationMembers: [mockMember]
+      });
+
+      // Act
+      const result = await useOrganizationStore.getState().softDeleteOrganization(orgToDeleteId);
+
+      // Assert
+      expect(result).toBe(true);
+      expect(deleteMock).toHaveBeenCalledTimes(1);
+      expect(deleteMock).toHaveBeenCalledWith(orgToDeleteId);
+      
+      const finalState = useOrganizationStore.getState();
+      expect(finalState.userOrganizations).toEqual([initialOrgs[1]]); // Only otherOrg should remain
+      // Verify context is cleared
+      expect(finalState.currentOrganizationId).toBeNull(); 
+      expect(finalState.currentOrganizationDetails).toBeNull(); 
+      expect(finalState.currentOrganizationMembers).toEqual([]); 
+      expect(finalState.isLoading).toBe(false);
+      expect(finalState.error).toBeNull();
+    });
+
+    it('should set error, not modify state, and return false on API error', async () => {
+       // Arrange
+      const deleteMock = vi.mocked(api.organizations.deleteOrganization);
+      const errorMsg = 'Delete permission denied';
+      deleteMock.mockResolvedValue({ status: 403, error: { message: errorMsg, code: 'FORBIDDEN' } });
+      useOrganizationStore.setState({ userOrganizations: initialOrgs, currentOrganizationId: otherOrgId });
+
+      // Act
+      const result = await useOrganizationStore.getState().softDeleteOrganization(orgToDeleteId);
+
+      // Assert
+      expect(result).toBe(false);
+      expect(deleteMock).toHaveBeenCalledTimes(1);
+      expect(deleteMock).toHaveBeenCalledWith(orgToDeleteId);
+      
+      const finalState = useOrganizationStore.getState();
+      expect(finalState.userOrganizations).toEqual(initialOrgs); // List unchanged
+      expect(finalState.currentOrganizationId).toBe(otherOrgId); // Context unchanged
+      expect(finalState.isLoading).toBe(false);
+      expect(finalState.error).toBe(errorMsg);
+    });
+
+    it('should set error, not modify state, and return false on unexpected error', async () => {
+      // Arrange
+      const deleteMock = vi.mocked(api.organizations.deleteOrganization);
+      const errorMsg = 'Network failed';
+      deleteMock.mockRejectedValue(new Error(errorMsg));
+      useOrganizationStore.setState({ userOrganizations: initialOrgs, currentOrganizationId: otherOrgId });
+
+      // Act
+      const result = await useOrganizationStore.getState().softDeleteOrganization(orgToDeleteId);
+
+      // Assert
+      expect(result).toBe(false);
+      expect(deleteMock).toHaveBeenCalledTimes(1);
+      expect(deleteMock).toHaveBeenCalledWith(orgToDeleteId);
+      
+      const finalState = useOrganizationStore.getState();
+      expect(finalState.userOrganizations).toEqual(initialOrgs); // List unchanged
+      expect(finalState.currentOrganizationId).toBe(otherOrgId); // Context unchanged
+      expect(finalState.isLoading).toBe(false);
+      expect(finalState.error).toBe(errorMsg);
+    });
+  });
+
+}); // End of main describe block

@@ -2,7 +2,7 @@ import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 // Import vitest types for test config
 import type { UserConfig } from 'vitest/config';
-import path from 'path'; // Keep path for alias
+import path from 'node:path'; // Keep path for alias
 
 // https://vitejs.dev/config/
 export default defineConfig({

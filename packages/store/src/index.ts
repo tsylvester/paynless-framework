@@ -3,6 +3,7 @@ export * from './authStore';
 export * from './subscriptionStore';
 export * from './aiStore';
 export * from './notificationStore';
+export * from './organizationStore';
 
 // Explicitly export types used by other packages
 export type { SubscriptionStore } from './subscriptionStore';

@@ -6,6 +6,7 @@ type UserRole = Database['public']['Enums']['user_role'];
 
 export interface AppRoute {
   path: string;
+  index?: boolean;
   element: ReactNode;
   requireAuth?: boolean;
   allowedRoles?: UserRole[];

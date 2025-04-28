@@ -167,34 +167,40 @@ This document outlines the steps for implementing an in-app notification system 
 ### 2.1 Database Schema (Organizations & Members)
 
 *   [X] **Define Schema:**
-    *   `organizations`: `id`, `name`, `created_at`, `visibility` (e.g., `TEXT CHECK (visibility IN ('private', 'public')) DEFAULT 'private'`), `deleted_at` (`TIMESTAMP WITH TIME ZONE DEFAULT NULL`), add other org profile fields later.
-    *   `organization_members`: `id`, `user_id`, `organization_id`, `role` (`TEXT CHECK (role IN ('admin', 'member'))`), `status` (`TEXT CHECK (status IN ('pending', 'active', 'removed'))`), `created_at`.
-*   [X] **Migration:** Create Supabase migration scripts for these tables, the `visibility` column/enum, and the `deleted_at` column.
-*   [X] **Test Migration:** Apply migrations locally and verify table structures, default values, and nullability.
+    *   `organizations`: `id`, `name`, `created_at`, `visibility` (e.g., `TEXT CHECK (visibility IN ('private', 'public')) DEFAULT 'private'`), `deleted_at` (`TIMESTAMP WITH TIME ZONE DEFAULT NULL`). *(Columns like `description`, `website`, `logo_url` can be added later)*.
+    *   `organization_members`: `id`, `user_id`, `organization_id`, `role` (`TEXT CHECK (role IN ('admin', 'member')) DEFAULT 'member'`), `status` (`TEXT CHECK (status IN ('pending', 'active', 'removed')) DEFAULT 'pending'`), `created_at`.
+*   [X] **Migration:** Create Supabase migration scripts for these tables, the `visibility` check constraint, the `role` check constraint with default, the `status` check constraint with default, and the nullable `deleted_at` column.
+*   [X] **Test Migration:** Apply migrations locally and verify table structures, defaults, constraints, and nullability.
 
 ### 2.2 Backend Logic (Tenancy)
 
 *   [X] **RLS Policy Checks:** Confirm the existing migration files properly represent requirements for:
-    *   `organizations`: Access based on membership status (`active`), `deleted_at IS NULL`, and potentially `visibility`. Admins might have broader select/update access within their non-deleted org. Test creation policy.
-    *   `organization_members`: Access based on membership (in a non-deleted org) and role. Test self-removal vs admin removal.
-    *   Other Tables (e.g., `chat_history`): RLS policies requiring `organization_id` matching an active membership in a non-deleted org for the current user.
-*   [X] **Implement RLS Policies:** Apply the RLS policies (including `deleted_at IS NULL` checks where appropriate) via migration scripts.
-*   [X] **Test Migration:** Apply RLS migrations and verify. *(Note: Verification via application-level/integration testing, no direct DB tests)*
-*   [X] **Implement Trigger/Function (Last Admin Check):** Create/update logic considering `deleted_at IS NULL`. *(Note: Verification via application-level/integration testing)*
+    *   `organizations`:
+        *   `SELECT`: Members with `status='active'` in non-deleted orgs (`deleted_at IS NULL`) can select. Public, non-deleted orgs are visible to authenticated users. Admins can select their non-deleted org.
+        *   `INSERT`: Authenticated users can insert.
+        *   `UPDATE`: Admins of the org can update non-deleted orgs.
+        *   `DELETE`: Never allowed (use soft delete via function/API).
+    *   `organization_members`:
+        *   `SELECT`: Members of the same non-deleted org can select.
+        *   `INSERT`: Requires permission (e.g., admin invite, user request/accept).
+        *   `UPDATE`: Admins can update roles/status in their non-deleted org. Users can update their own status (e.g., accept invite, leave org).
+        *   `DELETE`: Requires permission (admin removal, user self-removal).
+    *   Other Tables (e.g., `chat_history`): Need `organization_id` column. RLS policies must check `organization_id` matches an active membership in a non-deleted org for the current user.
+*   [X] **Implement RLS Policies:** Apply the RLS policies (including `deleted_at IS NULL` checks) via migration scripts.
+*   [X] **Test Migration:** Apply RLS migrations and verify policies through application-level testing.
+*   [X] **Implement Trigger/Function (Last Admin Check):** Create/update logic (e.g., `BEFORE UPDATE OR DELETE ON organization_members`) to prevent removing/demoting the last admin of a non-deleted org. Consider `deleted_at IS NULL` in checks.
 *   [X] **Test Migration:** Apply last admin check migration.
-*   [X] **Implement Trigger Functions (Notifications - Full):** Finalize/implement notification triggers. *(Note: Verification via application-level/integration testing)*
+*   [X] **Implement Trigger Functions (Notifications - Full):**
+    *   `notify_org_admins_on_join_request`: Triggered `AFTER INSERT ON organization_members WHEN (NEW.status = 'pending')`. Inserts notification for org admins.
+    *   `notify_user_on_invite_acceptance`: Triggered `AFTER UPDATE ON organization_members WHEN (OLD.status = 'pending' AND NEW.status = 'active')`. Inserts notification for the user who joined.
+    *   `notify_user_on_role_change`: Triggered `AFTER UPDATE ON organization_members WHEN (OLD.role <> NEW.role)`. Inserts notification for the affected user.
+    *   *(Add others as needed, e.g., invite received)*
 *   [X] **Test Migration:** Apply notification trigger migrations.
+*   [ ] **(New) Backend Edge Functions (e.g., `/organizations`):**
+    *   [ ] **Tests:** Write tests for edge functions handling org operations (create, update, list, get details, members, invites, join requests, member management, soft delete). Mock Supabase client calls. Test auth, input validation, responses, handling of `deleted_at`.
+    *   [ ] **Implementation:** Create edge functions (e.g., in `supabase/functions/organizations`) to handle HTTP requests, perform validation, interact with Supabase (respecting RLS), and implement logic like soft delete (`UPDATE organizations SET deleted_at = NOW() ...`).
 
 ### 2.3 Refactor to Centralized Supabase DB Types
-
-**Context:** To ensure long-term maintainability, type safety, and a single source of truth for database schema definitions, we will refactor the codebase to use the Supabase-generated `types_db.ts` file directly, eliminating manually defined database type duplications in `packages/types`.
-
-**Rationale:**
-*   Avoids manually keeping frontend types in sync with backend schema changes.
-*   Ensures type consistency across the application.
-*   Leverages Supabase tooling for accurate type generation.
-
-**Steps:**
 
 *   [X] **Setup Internal Types Package:**
     *   [X] Create a minimal `package.json` file in `supabase/functions/` with the content:
@@ -252,22 +258,22 @@ This document outlines the steps for implementing an in-app notification system 
         *   **Status:** `@paynless/store` tests passed after fixing `UserRole` mock references. `apps/web` tests have known failures unrelated to this refactor or requiring broader updates (deferred).
 *   [X] **Commit:** `refactor: centralize database types using supabase gen types (#issue_number)`
 
-### 2.4 API Client (`@paynless/api-client`)
+### 2.4 API Client (`@paynless/api`)
 
-*   [X] **Tests:** Write unit tests for new multi-tenancy functions:
-    *   [X] `createOrganization(name, visibility?)`
-    *   [X] `updateOrganization(orgId, { name?, visibility? })` (Admin action, checks org not deleted)
-    *   [X] `listUserOrganizations(userId)` (Filters out deleted orgs)
-    *   [X] `getOrganizationDetails(orgId)` (Checks org not deleted)
-    *   [X] `getOrganizationMembers(orgId)` (Checks org not deleted)
-    *   [X] `inviteUserToOrganization(orgId, emailOrUserId, role)` (Checks org not deleted)
-    *   [X] `acceptOrganizationInvite(inviteTokenOrId)`
-    *   [X] `requestToJoinOrganization(orgId)` (Checks org not deleted)
-    *   [X] `approveJoinRequest(membershipId)` (Admin action, checks org not deleted)
-    *   [X] `updateMemberRole(membershipId, newRole)` (Admin action, handles 'last admin' error, checks org not deleted)
-    *   [X] `removeMember(membershipId)` (Admin or self action, handles 'last admin' error, checks org not deleted)
-    *   [X] `deleteOrganization(orgId)` (Admin action, performs soft delete by setting `deleted_at`)
-*   [X] **Implementation:** Add/Update these functions in the API client. Ensure appropriate checks for `deleted_at` are performed implicitly by RLS or explicitly where needed. Implement soft delete logic for `deleteOrganization`.
+*   [X] **Tests:** Write unit tests for new multi-tenancy functions in `OrganizationApiClient`:
+    *   [X] `createOrganization(name, visibility?)`: Mocks POST `/organizations`.
+    *   [X] `updateOrganization(orgId, { name?, visibility? })`: Mocks PUT `/organizations/:orgId`.
+    *   [X] `listUserOrganizations()`: Mocks GET `/organizations` (or a user-specific endpoint). Filters deleted.
+    *   [X] `getOrganizationDetails(orgId)`: Mocks GET `/organizations/:orgId`.
+    *   [X] `getOrganizationMembers(orgId)`: Mocks GET `/organizations/:orgId/members`.
+    *   [X] `inviteUserToOrganization(orgId, emailOrUserId, role)`: Mocks POST `/organizations/:orgId/invites`.
+    *   [X] `acceptOrganizationInvite(inviteTokenOrId)`: Mocks POST `/organizations/invites/accept` (or similar).
+    *   [X] `requestToJoinOrganization(orgId)`: Mocks POST `/organizations/:orgId/join-requests`.
+    *   [X] `approveJoinRequest(membershipId)`: Mocks PUT `/organizations/members/:membershipId/approve` (or similar).
+    *   [X] `updateMemberRole(membershipId, newRole)`: Mocks PUT `/organizations/members/:membershipId/role`.
+    *   [X] `removeMember(membershipId)`: Mocks DELETE `/organizations/members/:membershipId`.
+    *   [X] `deleteOrganization(orgId)`: Mocks DELETE `/organizations/:orgId` (soft delete endpoint).
+*   [X] **Implementation:** Add/Update these functions in `OrganizationApiClient` class in `packages/api/src/organizations.api.ts`. Functions should call the corresponding backend edge function endpoints. Soft delete logic is handled by the backend endpoint called by `deleteOrganization`.
     *   [X] Implemented `createOrganization`
     *   [X] Implemented `updateOrganization`
     *   [X] Implemented `listUserOrganizations`
@@ -283,51 +289,79 @@ This document outlines the steps for implementing an in-app notification system 
 
 ### 2.5 State Management (`@paynless/store`)
 
-*   [ ] **Tests:** Write unit tests for `organizationStore` slice:
-    *   State: `userOrganizations` (list should not include deleted ones), `currentOrganizationId`, `currentOrganizationDetails`, `currentOrganizationMembers`, `isLoading`, `error`.
-    *   Actions: `fetchUserOrganizations` (should filter deleted), `setCurrentOrganizationId` (should potentially clear if org becomes deleted), `fetchOrganizationDetails`, `fetchCurrentOrganizationMembers`, `softDeleteOrganization` (removes org from local state after successful API call).
-    *   Selectors for current org details, memberships, members, current user's role in current org.
-*   [ ] **Implementation:** Create/Update the `organizationStore` slice to handle filtering/removal of soft-deleted orgs from the UI state.
+*   [X] **Tests:** Write unit tests for `organizationStore` slice (`packages/store/src/organizationStore.ts` / `.test.ts`):
+    *   [X] Initial state: `userOrganizations: []`, `currentOrganizationId: null`, `currentOrganizationDetails: null`, `currentOrganizationMembers: []`, `isLoading: false`, `error: null`.
+    *   [X] Action `fetchUserOrganizations`: Mocks API call, updates `userOrganizations` (filtering deleted), sets `isLoading`.
+    *   [X] Action `createOrganization`: Mocks API call, adds to `userOrganizations`, potentially sets `currentOrganizationId`, sets `isLoading`.
+    *   [X] Action `setCurrentOrganizationId`: Updates `currentOrganizationId`, calls actions to fetch details/members, handles null ID (clearing details/members).
+    *   [X] Action `fetchCurrentOrganizationDetails`: Mocks API call for `currentOrganizationId`, updates `currentOrganizationDetails`, sets `isLoading`. Handles case where org is deleted (clears details, maybe logs error).
+    *   [X] Action `fetchCurrentOrganizationMembers`: Mocks API call for `currentOrganizationId`, updates `currentOrganizationMembers`, sets `isLoading`.
+    *   [X] Action `softDeleteOrganization`: Mocks API call, removes org from `userOrganizations`, clears `currentOrganizationId` if it matches, sets `isLoading`.
+    *   [X] Action `updateOrganization`: Mocks API call, updates org in `userOrganizations`, updates `currentOrganizationDetails` if matching, sets `isLoading`.
+    *   [X] Action `inviteUser`: Mocks API call, potentially updates member list optimistically or refetches, sets `isLoading`.
+    *   [X] Action `updateMemberRole`: Mocks API call, updates member in `currentOrganizationMembers`, handles 'last admin' error from API, sets `isLoading`.
+    *   [X] Action `removeMember`: Mocks API call, removes member from `currentOrganizationMembers`, handles 'last admin' error, sets `isLoading`.
+    *   [X] Selectors: `selectUserOrganizations`, `selectCurrentOrganization`, `selectCurrentMembers`, `selectCurrentUserRole` (finds current user in members list), `selectIsLoading`, `selectError`.
+*   [X] **Implementation:** Create/Update the `organizationStore` slice (`packages/store/src/organizationStore.ts`) with the defined state, actions, and selectors. Ensure actions handle loading states and errors. Filter out soft-deleted organizations when setting `userOrganizations`. Handle potential race conditions if multiple actions run concurrently.
 
-### 2.6 Frontend Components & UI
+### 2.6 Frontend Components & UI (`apps/web`)
 
-*   [ ] **Organization Creation:**
-    *   **Tests:** Test the creation form component (validation, API call mock, visibility option).
-    *   **Implementation:** Build `CreateOrganizationForm.tsx` (likely used within the new org routing structure). Leverage reusable Form components.
-*   [ ] **Organization Switcher:**
-    *   **Tests:** Test dropdown component, fetching orgs (mock store), dispatching action to change current org and trigger navigation (mock store, router).
-    *   **Implementation:** Build `OrganizationSwitcher.tsx` (in header/sidebar). Integrate with `organizationStore` and `react-router`.
-*   [ ] **Organization Pages (`/dashboard/organizations/:orgId/...`):**
-    *   **Tests:** Test main layout/routing for this section. Test placeholder components for `/dashboard/organizations/:orgId/dashboard` (or overview), `/settings`, `/members`.
-    *   **Implementation:** Set up nested routing. Build basic page structure for org sections.
-*   [ ] **Organization Settings:**
-    *   **Tests:** Test components for viewing/editing org name, visibility. Test Delete Organization button/modal (admin only). Mock API calls/store state.
-    *   **Implementation:** Build components within `/dashboard/organizations/:orgId/settings`. Add a 'Delete Organization' section/button visible only to admins, triggering a confirmation modal and calling `apiClient.deleteOrganization` / store action.
-*   [ ] **Member Management:**
-    *   **Tests:** Test components for viewing members, inviting users (modal), changing roles, removing members. Mock API calls/store state. Test handling 'last admin' error display. Test admin-only controls.
-    *   **Implementation:** Build `MemberList.tsx`, `InviteMemberModal.tsx`, etc., within `/dashboard/organizations/:orgId/members`. Use `organizationStore`. Leverage reusable Table/Modal components.
-*   [ ] **Invite/Join Request Handling:**
-    *   **Tests:** Test UI for accepting invites (e.g., dedicated page `/accept-invite/:token`) or approving requests (e.g., action triggered from notification link leading to member list/modal). Mock API calls.
-    *   **Implementation:** Build necessary pages/components. Ensure flow for "Request to Join" assumes user obtained `orgId` via external means (link/manual input) for this phase.
+*   [X] **Routes (`src/routes/routes.tsx`):**
+    *   [X] Define protected routes under `/dashboard/organizations`.
+    *   [X] `/dashboard/organizations`: List page (`OrganizationListPage`).
+    *   [X] `/dashboard/organizations/new`: Create page (`CreateOrganizationPage`).
+    *   [X] `/dashboard/organizations/:orgId`: Base layout/route for a specific org. Should fetch org details/members via store action triggered by a loader or `useEffect`. Redirect if org not found/deleted or user not member.
+        *   [X] `/dashboard/organizations/:orgId/settings`: Org settings page (`OrganizationSettingsPage`).
+        *   [X] `/dashboard/organizations/:orgId/members`: Member management page (`OrganizationMembersPage`).
+        *   *(Add other org-specific sections like dashboard/overview later)*
+    *   [X] `/accept-invite/:token`: Page to handle accepting invites (`AcceptInvitePage`).
+*   [ ] **Pages (`src/pages`):**
+    *   [X] `OrganizationListPage.tsx`: Displays list of user's organizations (from store). Links to individual orgs and the 'Create New' page. Uses reusable components (e.g., `Card`, `Button`). Test fetching/display logic.
+    *   [X] `CreateOrganizationPage.tsx`: Contains `CreateOrganizationForm.tsx`. Test form rendering/interaction.
+    *   [ ] `OrganizationSettingsPage.tsx`: Displays org details (name, visibility). Contains forms/buttons to update settings and delete the organization (admin only). Test display, form interaction, delete confirmation/action.
+    *   [ ] `OrganizationMembersPage.tsx`: Displays `MemberList.tsx`. Contains button to trigger `InviteMemberModal.tsx`. Test display, invite action, member actions (role change, remove).
+    *   [ ] `AcceptInvitePage.tsx`: Handles invite acceptance logic, calls API via store action. Test token handling, API call trigger, success/error feedback.
+*   [ ] **Layouts (`src/components/layout`):**
+    *   [ ] `OrganizationLayout.tsx` (Optional): A wrapper for routes under `/dashboard/organizations/:orgId` that handles fetching context, checking access, and providing consistent org navigation (e.g., sidebar with Settings, Members links).
+    *   [ ] Update `Header.tsx` or main layout to include `OrganizationSwitcher.tsx`.
+*   [ ] **Components (`src/components/organizations`):**
+    *   [ ] `OrganizationSwitcher.tsx`: Dropdown/selector to view user's orgs (from store) and switch the `currentOrganizationId` in the store. Test display, store interaction, selection change.
+    *   [X] `CreateOrganizationForm.tsx`: Form with fields for name, visibility. Uses `react-hook-form`, `zod` for validation. Calls store action on submit. Test validation, submission logic.
+    *   [ ] `OrganizationListCard.tsx` (or similar): Reusable card to display basic org info in the list page.
+    *   [ ] `MemberList.tsx`: Table/list displaying members (from store). Includes buttons/menus for actions (change role, remove) visible based on current user's role. Test display, filtering/sorting, action triggers.
+    *   [ ] `InviteMemberModal.tsx`: Modal form to invite users (email/ID, role). Calls store action. Test display, form validation, submission.
+    *   [ ] `DeleteOrganizationDialog.tsx`: Confirmation dialog for soft-deleting an organization. Triggered from settings page. Calls store action. Test display, confirmation logic.
 
 ### 2.7 Routing & Access Control (Frontend)
 
-*   [ ] **Tests:** Write tests for route guards or logic within components:
-    *   Ensure `/dashboard/organizations/:orgId/...` routes redirect if org is deleted or user is not an active member.
-    *   Ensure organization context (`currentOrganizationId`) is set correctly when navigating these routes.
-    *   Ensure actions (settings edit, inviting) are disabled/hidden based on user's role in the current org (from `organizationStore`).
+*   [ ] **Tests:**
+    *   Test route loader/component logic for `/dashboard/organizations/:orgId`: Verify redirection if org is not found, deleted (check `currentOrganizationDetails` from store after fetch), or user is not a member (`currentOrganizationMembers`).
+    *   Test `OrganizationSwitcher`: Verify it updates `currentOrganizationId` in the store and navigation occurs (if designed to navigate).
+    *   Test conditional rendering within org pages: Ensure admin-only controls (delete org, change roles, approve requests) are hidden/disabled for non-admins based on `selectCurrentUserRole` from store.
 *   [ ] **Implementation:**
-    *   Implement route guards/checks considering `deleted_at` status (fetched via `organizationStore`).
-    *   Ensure `OrganizationSwitcher` correctly updates state and potentially navigates user.
-    *   Apply role-based conditional rendering using `organizationStore` data.
+    *   Use `react-router` loaders or `useEffect` hooks in org-specific pages/layouts to fetch data via store actions (`fetchCurrentOrganizationDetails`, `fetchCurrentOrganizationMembers`). Check the fetched state (details for existence/`deleted_at`, members for current user presence) and use `useNavigate` to redirect if access is denied.
+    *   Connect `OrganizationSwitcher` dropdown selection to the `setCurrentOrganizationId` store action.
+    *   Use the `selectCurrentUserRole` selector in components like `OrganizationSettingsPage`, `OrganizationMembersPage`, `MemberList` to conditionally render UI elements or disable actions.
 
 ### 2.8 Integration with Existing Features
 
-*   [ ] **Identify Impacted Features:** Review existing features (Chat, User Profile, Subscriptions?) to see which need to become organization-scoped.
-*   [ ] **Update Backend:** Modify Supabase queries/RLS for identified features to include `WHERE organization_id = current_org_id`. Add `organization_id` columns via migration where needed. Test these RLS changes.
-*   [ ] **Update API Client:** Modify relevant API client functions to accept `organizationId`. Test these changes.
-*   [ ] **Update Frontend:** Modify components using these features to pass the `currentOrganizationId` from the store to API calls. Test these components to ensure they filter data correctly based on the selected org.
-*   [ ] **Update Existing Tests:** Modify tests for impacted features to mock and account for the `organizationId` parameter and context.
+*   [ ] **Identify Impacted Features:** Chat (`chat_history`, `chats`), potentially User Profile settings if some become org-specific, Subscriptions if they become org-based.
+*   [ ] **Update Backend:**
+    *   Add `organization_id` FK column to `chats`, `chat_history`.
+    *   Update RLS for `chats`, `chat_history` to require `organization_id` matches an active, non-deleted membership.
+    *   Apply migrations. Test RLS changes.
+*   [ ] **Update API Client (`@paynless/api`):**
+    *   Modify `ChatApiClient` functions (`fetchChats`, `fetchChatHistory`, `createChat`, `sendMessage`, etc.) to accept and pass `organizationId`.
+    *   Update tests for `ChatApiClient`.
+*   [ ] **Update State Management (`@paynless/store`):**
+    *   Modify `chatStore` actions to accept `organizationId`.
+    *   Modify state structure if needed (e.g., store chats per org: `chatsByOrgId: { [orgId: string]: Chat[] }`).
+    *   Update selectors to accept `organizationId` or use `currentOrganizationId` from `organizationStore`.
+    *   Update tests for `chatStore`.
+*   [ ] **Update Frontend (`apps/web`):**
+    *   Modify components using chat features (e.g., `ChatInterface`, `ChatList`) to get `currentOrganizationId` from `organizationStore` and pass it to chat store actions/API calls.
+    *   Ensure UI reflects data scoped to the currently selected organization.
+    *   Update tests for chat components.
 
 ### 2.9 Checkpoint 2: Multi-Tenancy Complete
 
