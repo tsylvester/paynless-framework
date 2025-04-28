@@ -54,9 +54,10 @@ export function ThemeProvider({ children }: ThemeProviderProps) {
     const root = document.documentElement;
     
     // Determine if the final theme should be dark
-    const baseTheme = themes[themeName] || themes['light'];
+    // Use bracket notation for theme lookup with fallback
+    const baseTheme = themes[themeName] || themes['light']; 
     const finalTheme = colorMode === 'dark' ? getDarkTheme(baseTheme) : baseTheme;
-    const isDark = finalTheme.isDark;
+    const isDark = finalTheme.isDark; 
 
     // Add/remove dark class for Tailwind
     root.classList.toggle('dark', isDark);
@@ -65,6 +66,7 @@ export function ThemeProvider({ children }: ThemeProviderProps) {
     setCurrentTheme(finalTheme);
     
     // Map color names to CSS variable names (camelCase to kebab-case)
+    // Use imported ThemeColors type
     const cssVarMap: Record<keyof ThemeColors, string> = {
       primary: '--primary',
       secondary: '--secondary',
