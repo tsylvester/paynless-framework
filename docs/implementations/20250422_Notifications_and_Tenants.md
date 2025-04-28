@@ -57,26 +57,26 @@ This document outlines the steps for implementing an in-app notification system 
 
 ### 1.4 State Management (`@paynless/store`)
 
-*   [ ] **Tests:** Write unit tests for the `notificationStore` Zustand store slice:
+*   [X] **Tests:** Write unit tests for the `notificationStore` Zustand store slice:
     *   [X] Initial state (empty list, count 0).
     *   [X] Action to set notifications (updates list and unread count).
     *   [X] Action to add a new notification (prepends to list, increments unread count).
     *   [X] Action to mark a notification as read (updates item `read` status, decrements unread count).
     *   [X] Action to mark all as read (updates all items, sets count to 0).
     *   [X] Selectors for `notifications` list and `unreadCount`.
-    *   [ ] **(New - Supabase Realtime)** Action `subscribeToUserNotifications`: Tests that it correctly calls `apiClient.notifications().subscribeToNotifications(userId, callback)` and stores the channel/subscription details necessary for unsubscribing.
-    *   [ ] **(New - Supabase Realtime)** Action `unsubscribeFromUserNotifications`: Tests that it correctly calls `apiClient.notifications().unsubscribeFromNotifications()`.
-    *   [ ] **(New - Supabase Realtime)** Internal callback mechanism: Test that the callback passed to the API client correctly dispatches the `addNotification` action when the API client invokes it with new notification data.
-*   [ ] **Implementation:** Update the `notificationStore` slice:
+    *   [X] **(New - Supabase Realtime)** Action `subscribeToUserNotifications`: Tests that it correctly calls `apiClient.notifications().subscribeToNotifications(userId, callback)` and stores the channel/subscription details necessary for unsubscribing.
+    *   [X] **(New - Supabase Realtime)** Action `unsubscribeFromUserNotifications`: Tests that it correctly calls `apiClient.notifications().unsubscribeFromNotifications()`.
+    *   [X] **(New - Supabase Realtime)** Internal callback mechanism: Test that the callback passed to the API client correctly dispatches the `addNotification` action when the API client invokes it with new notification data.
+*   [X] **Implementation:** Update the `notificationStore` slice:
     *   [X] Ensure existing state, actions, and selectors are implemented.
-    *   [ ] Implement the `subscribeToUserNotifications(userId)` action. It should:
+    *   [X] Implement the `subscribeToUserNotifications(userId)` action. It should:
         *   Call `apiClient.notifications().subscribeToNotifications(userId, this.handleIncomingNotification)`.
         *   Store the returned `RealtimeChannel` (or manage subscription status) so it can be potentially cleaned up.
         *   Handle potential errors or existing subscriptions.
-    *   [ ] Implement the `unsubscribeFromUserNotifications()` action. It should:
+    *   [X] Implement the `unsubscribeFromUserNotifications()` action. It should:
         *   Call `apiClient.notifications().unsubscribeFromNotifications()`.
         *   Clear any stored channel/subscription state.
-    *   [ ] Implement the internal callback `handleIncomingNotification(notification: Notification)` (likely a bound method or arrow function property) that dispatches the `addNotification` action.
+    *   [X] Implement the internal callback `handleIncomingNotification(notification: Notification)` (likely a bound method or arrow function property) that dispatches the `addNotification` action.
     *   [ ] Ensure `subscribeToUserNotifications` is called appropriately (e.g., on user login/app initialization, potentially requiring `userId`).
     *   [ ] Ensure `unsubscribeFromUserNotifications` is called appropriately (e.g., on user logout).
 
