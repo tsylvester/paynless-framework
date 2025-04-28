@@ -84,14 +84,14 @@ describe('NotificationApiClient', () => {
       expect(result.error).toBeUndefined();
     });
 
-    it('should return empty array if data is null/undefined on success', async () => {
-      const mockResponse = { status: 200, data: undefined } as ApiResponse<Notification[]>;
-      vi.mocked(mockApiClient.get).mockResolvedValue(mockResponse);
-      const result = await notificationApiClient.fetchNotifications();
-      expect(result.status).toBe(200);
+     it('should return empty array if data is null/undefined on success', async () => {
+       const mockResponse = { status: 200, data: undefined } as ApiResponse<Notification[]>;
+       vi.mocked(mockApiClient.get).mockResolvedValue(mockResponse);
+       const result = await notificationApiClient.fetchNotifications();
+       expect(result.status).toBe(200);
       expect(result.data).toEqual([]);
-      expect(result.error).toBeUndefined();
-    });
+       expect(result.error).toBeUndefined();
+     });
 
     it('should return the error object on failed fetch', async () => {
       const mockError: ApiError = { message: 'Fetch failed', code: '500' };
@@ -116,13 +116,13 @@ describe('NotificationApiClient', () => {
       expect(mockApiClient.put).toHaveBeenCalledWith(`notifications/${notificationId}`, { read: true });
     });
 
-    it('should return success response when marking as read succeeds', async () => {
+     it('should return success response when marking as read succeeds', async () => {
       const mockResponse = { status: 200, data: undefined } as ApiResponse<void>;
-      vi.mocked(mockApiClient.put).mockResolvedValue(mockResponse);
-      const result = await notificationApiClient.markNotificationAsRead(notificationId);
-      expect(result.status).toBe(200);
-      expect(result.error).toBeUndefined();
-    });
+       vi.mocked(mockApiClient.put).mockResolvedValue(mockResponse);
+       const result = await notificationApiClient.markNotificationAsRead(notificationId);
+       expect(result.status).toBe(200);
+       expect(result.error).toBeUndefined();
+     });
 
     it('should return the error object on failed update', async () => {
       const mockError: ApiError = { message: 'Update failed', code: 'DB_ERROR' };
@@ -147,14 +147,14 @@ describe('NotificationApiClient', () => {
 
     it('should return success response when marking all as read succeeds', async () => {
       const mockResponse = { status: 200, data: undefined } as ApiResponse<void>;
-      vi.mocked(mockApiClient.post).mockResolvedValue(mockResponse);
-      const result = await notificationApiClient.markAllNotificationsAsRead();
-      expect(result.status).toBe(200);
-      expect(result.error).toBeUndefined();
-    });
+       vi.mocked(mockApiClient.post).mockResolvedValue(mockResponse);
+       const result = await notificationApiClient.markAllNotificationsAsRead();
+       expect(result.status).toBe(200);
+       expect(result.error).toBeUndefined();
+     });
 
     it('should return the error object on failed update', async () => {
-      const mockError: ApiError = { message: 'Update all failed', code: 'INTERNAL' };
+       const mockError: ApiError = { message: 'Update all failed', code: 'INTERNAL' };
       const mockResponse = { status: 500, error: mockError } as ApiResponse<void>;
       vi.mocked(mockApiClient.post).mockResolvedValue(mockResponse);
       const result = await notificationApiClient.markAllNotificationsAsRead();

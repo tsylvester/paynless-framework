@@ -12,16 +12,6 @@ import { AiApiClient } from './ai.api';
 import { NotificationApiClient } from './notifications.api'; // Import new client
 import { OrganizationApiClient } from './organizations.api'; // <<< Import Org client
 import { logger } from '@paynless/utils';
-import { Notification } from '@paynless/types'; // Need Notification type
-
-// --- New Types for Streaming ---
-interface StreamCallbacks<T> {
-  onMessage: (data: T) => void;
-  onError: (error: Event | Error) => void;
-  onOpen?: () => void; // Optional: callback for when the connection opens
-}
-type StreamDisconnectFunction = () => void;
-// ------------------------------
 
 // Define ApiError class locally for throwing (can extend the type)
 export class ApiError extends Error {
@@ -40,15 +30,10 @@ interface ApiClientConstructorOptions {
     supabaseAnonKey: string; // <<< Add anon key here
 }
 
-// Interface for the notification callback function (can be defined here or imported)
-type NotificationCallback = (notification: Notification) => void;
-
 export class ApiClient {
     private supabase: SupabaseClient<any>;
     private functionsUrl: string;
     private supabaseAnonKey: string; // <<< Add storage for anon key
-    // Store active EventSource streams
-    private eventSources: Map<string, EventSource> = new Map();
 
     public billing: StripeApiClient;
     public ai: AiApiClient;
@@ -208,104 +193,6 @@ export class ApiClient {
         return this.request<T>(endpoint, { ...options, method: 'DELETE' });
     }
 
-    // --- SERVER-SENT EVENTS (SSE) STREAMING METHOD ---
-    /**
-     * Establishes a Server-Sent Events (SSE) connection to a given endpoint.
-     *
-     * @template T The expected type of data received in messages.
-     * @param {string} endpoint The relative endpoint path for the SSE stream (e.g., 'notifications-stream').
-     * @param {StreamCallbacks<T>} callbacks An object containing onMessage, onError, and optional onOpen handlers.
-     * @returns {StreamDisconnectFunction | null} A function to close the connection, or null if initialization fails immediately.
-     */
-    public stream<T>(endpoint: string, callbacks: StreamCallbacks<T>): StreamDisconnectFunction | null {
-        const streamKey = endpoint; // Use endpoint as the key for managing streams
-        logger.debug(`[ApiClient.stream] Attempting to connect SSE stream for endpoint: ${endpoint}`);
-
-        // Prevent multiple streams to the same endpoint concurrently
-        if (this.eventSources.has(streamKey)) {
-            logger.warn(`[ApiClient.stream] SSE stream already exists for endpoint: ${endpoint}. Disconnecting existing one.`);
-            this.closeStream(streamKey); // Close the old one before creating a new one
-        }
-
-        // Use an IIAFE to handle async token retrieval and prevent blocking the return
-        (async () => {
-            let es: EventSource | null = null;
-            try {
-                const token = await this.getToken();
-                if (!token) {
-                    throw new Error('Authentication token not available for SSE connection.');
-                }
-
-                // Construct the full URL within ApiClient
-                const baseUrl = this.getFunctionsUrl(); // Use the public getter
-                const sseUrl = `${baseUrl}/${endpoint}?token=${token}`; // Construct SSE URL
-                logger.debug(`[ApiClient.stream] Connecting to SSE URL: ${sseUrl}`);
-
-                es = new EventSource(sseUrl); // Create the EventSource
-                this.eventSources.set(streamKey, es); // Store it
-
-                es.onopen = () => {
-                    logger.info(`[ApiClient.stream] SSE stream opened for endpoint: ${endpoint}`);
-                    callbacks.onOpen?.(); // Call onOpen callback if provided
-                };
-
-                es.onmessage = (event: MessageEvent) => {
-                    logger.debug(`[ApiClient.stream] SSE message received for ${endpoint}:`, event.data);
-                    try {
-                        const parsedData: T = JSON.parse(event.data);
-                        callbacks.onMessage(parsedData);
-                    } catch (parseError) {
-                        logger.error(`[ApiClient.stream] Failed to parse SSE message data for ${endpoint}:`, { data: event.data, error: parseError });
-                        callbacks.onError(parseError instanceof Error ? parseError : new Error('SSE data parsing failed'));
-                    }
-                };
-
-                es.onerror = (errorEvent: Event) => {
-                    // Wrap errorEvent in an object for the logger
-                    logger.error(`[ApiClient.stream] SSE stream error for endpoint: ${endpoint}`, { error: errorEvent });
-                    callbacks.onError(errorEvent);
-
-                    // If the error causes the connection to close permanently, remove it
-                    if (es?.readyState === EventSource.CLOSED) {
-                        logger.warn(`[ApiClient.stream] SSE stream for ${endpoint} closed permanently due to error. Cleaning up.`);
-                        this.closeStream(streamKey);
-                    }
-                    // Note: Browser might attempt reconnect automatically for recoverable errors.
-                };
-
-            } catch (error) {
-                // Construct metadata object for the logger
-                const errorMetadata = error instanceof Error
-                    ? { error: { message: error.message, name: error.name, stack: error.stack } } 
-                    : { error: error }; 
-                logger.error(`[ApiClient.stream] Failed to initialize SSE stream for ${endpoint}:`, errorMetadata);
-                callbacks.onError(error instanceof Error ? error : new Error('SSE initialization failed'));
-                // Clean up if initialization failed
-                if (es) {
-                    es.close(); // Ensure it's closed if partially created
-                }
-                this.eventSources.delete(streamKey); // Remove from map
-            }
-        })();
-
-        // Return a function that specifically closes THIS stream
-        return () => this.closeStream(streamKey);
-    }
-
-    /**
-     * Closes a specific SSE stream managed by the ApiClient.
-     * @param {string} streamKey The key (usually the endpoint) of the stream to close.
-     */
-    private closeStream(streamKey: string): void {
-        const es = this.eventSources.get(streamKey);
-        if (es) {
-            logger.debug(`[ApiClient.closeStream] Closing SSE stream for key: ${streamKey}`);
-            es.close();
-            this.eventSources.delete(streamKey);
-            logger.info(`[ApiClient.closeStream] SSE stream closed and removed for key: ${streamKey}`);
-        }
-    }
-
     /**
      * Retrieves the underlying Supabase client instance.
      * **Warning:** This should ONLY be used for setting up the onAuthStateChange listener
@@ -371,13 +258,9 @@ export const api = {
         getApiClient().put<T, U>(endpoint, body, options),
     delete: <T>(endpoint: string, options?: FetchOptions): Promise<ApiResponse<T>> => 
         getApiClient().delete<T>(endpoint, options),
-    // Add the new stream method to the exported api object
-    stream: <T>(endpoint: string, callbacks: StreamCallbacks<T>): StreamDisconnectFunction | null =>
-        getApiClient().stream<T>(endpoint, callbacks),
     ai: () => getApiClient().ai, 
     billing: () => getApiClient().billing,
-    notifications: () => getApiClient().notifications, // Getter for NotificationApiClient
-    // ---> Add the new getter to the exported api object <--- 
+    notifications: () => getApiClient().notifications,
     getSupabaseClient: (): SupabaseClient<any> => 
         getApiClient().getSupabaseClient(),
 }; 

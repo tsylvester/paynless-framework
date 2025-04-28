@@ -20,15 +20,16 @@ import { SimpleDropdown } from '@/components/ui/SimpleDropdown'; // Import the n
 
 export const Notifications: React.FC = () => {
     // Only need user from auth store now
-    const user = useAuthStore(state => state.user); 
+    const user = useAuthStore(state => state.user);
     const {
         notifications,
         unreadCount,
-        markNotificationRead, 
-        markAllNotificationsAsRead, 
+        markNotificationRead,
+        markAllNotificationsAsRead,
         fetchNotifications,
-        initNotificationStream, 
-        disconnectNotificationStream
+        // Remove unused stream actions
+        // initNotificationStream,
+        // disconnectNotificationStream
     } = useNotificationStore();
 
     const navigate = useNavigate();
@@ -36,12 +37,15 @@ export const Notifications: React.FC = () => {
 
     // Fetch initial notifications using the store action
     useEffect(() => {
-        if (user) {
-            logger.debug('[Notifications] User found, triggering fetchNotifications store action.');
+        if (user?.id) { // Check for user ID specifically
+            logger.debug('[Notifications] User ID found, triggering fetchNotifications store action.');
             fetchNotifications();
         }
-    }, [user, fetchNotifications]); 
+        // Depend on the stable user ID instead of the potentially changing user object reference
+    }, [user?.id, fetchNotifications]);
 
+    // Remove the entire useEffect block that handled stream connection/disconnection
+    /*
     // --- NEW: useEffect to connect/disconnect stream via store actions --- 
     useEffect(() => {
         if (user) {
@@ -60,6 +64,7 @@ export const Notifications: React.FC = () => {
     // Dependencies: user, initNotificationStream, disconnectNotificationStream
     }, [user, initNotificationStream, disconnectNotificationStream]);
     // --------------------------------------------------------------
+    */
 
     // Callback for when dropdown opens/closes
     const handleOpenChange = useCallback((open: boolean) => {

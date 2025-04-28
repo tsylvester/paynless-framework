@@ -41,57 +41,44 @@ This document outlines the steps for implementing an in-app notification system 
 *   [X] **Trigger Function Tests (Placeholder):** Write tests for the *concept* of a trigger creating notifications (e.g., `notify_org_admins_on_join_request`). Ensure tests cover inserting correct context (e.g., IDs, potential `target_path`) into the `data` field.
 *   [X] **Implement Trigger Function (Placeholder):** Create the initial SQL function `notify_org_admins_on_join_request`. Ensure it correctly inserts into `notifications` including structured `data`. Add via migration.
 *   [X] **Test Migration:** Apply the trigger function migration.
-*   [X] **[NEW] `/notifications-stream` Edge Function Tests:** Write tests (Deno standard library) for the new SSE endpoint:
-    *   [X] Test successful connection with valid JWT query parameter (`?token=...`).
-    *   [X] Test connection rejection with invalid/missing token.
-    *   [X] Mock Supabase Admin client `channel().on().subscribe()` calls.
-    *   [X] Verify correct SSE headers are set (`Content-Type: text/event-stream`, etc.).
-    *   [X] Verify `supabaseClient.channel()` is called correctly.
-    *   [X] Verify `channel.subscribe()` is called.
-    *   [X] Verify `channel.on()` is called to set up listener.
-    *   [X] Verify `handleRealtimePayload` correctly formats and enqueues SSE message for valid INSERT payloads. -> *Tested extracted function*
-    *   [X] Test `removeChannel()` is called on stream cancellation (client disconnect). -> *Completed*
-*   [X] **[NEW] `/notifications-stream` Edge Function Implementation:** Create the `supabase/functions/notifications-stream/index.ts` function:
-    *   [X] Handles GET requests.
-    *   [X] Extracts and verifies JWT from query parameter using Supabase Admin auth.
-    *   [X] Establishes SSE connection with appropriate headers.
-    *   [X] Calls `supabaseClient.channel()` correctly.
-    *   [X] Calls `channel.subscribe()`.
-    *   [X] Uses Supabase Admin client `channel.on()` to listen for `postgres_changes`.
-    *   [X] Implements callback (`handleRealtimePayload`) to enqueue `data: {JSON}` messages to the stream controller. -> *Refactored & Tested*
-    *   [X] Implements stream `cancel()` method to call `supabaseClient.removeChannel()`. -> *Completed*
 
 ### 1.3 API Client (`@paynless/api`)
 
-*   [X] **Tests:** Write unit tests for new notification functions:
+*   [X] **Tests:** Write unit tests for notification functions:
     *   [X] `api.notifications().fetchNotifications()`: Mocks Supabase `select`.
     *   [X] `api.notifications().markNotificationAsRead(notificationId)`: Mocks Supabase `update`.
     *   [X] `api.notifications().markAllNotificationsAsRead()`: Mocks Supabase `update`.
-    *   *(Note: Remove any tests related to `api.subscribeToNotifications` or similar, as this pattern is not used)*.
-    *   [ ] **(New - SSE Refactor)** `api.notifications().connectToNotificationStream(onMessageCallback, onErrorCallback)`: Tests establishing `EventSource`, handling messages, errors, and returning a disconnect function.
-    *   [ ] **(New - SSE Refactor)** `api.notifications().disconnectFromNotificationStream()`: Tests closing the `EventSource`.
-*   [X] **Implementation:** Add the `fetchNotifications`, `markNotificationAsRead`, and `markAllNotificationsAsRead` functions to the `NotificationApiClient` within the API client package, using the singleton Supabase client. *(Note: Ensure no client-side subscription logic exists)*.
-*   [ ] **(New - SSE Refactor)** Implement `connectToNotificationStream` and `disconnectFromNotificationStream` methods. `connect` should handle `EventSource` creation, URL construction (with token), message parsing, error handling, and invoke the provided callbacks. `disconnect` should close the `EventSource`.
+    *   [X] `api.notifications().subscribeToNotifications(userId, callback)`: Mocks Supabase client `channel()` and subscription methods. *(Implicitly tested via implementation)*
+    *   [X] `api.notifications().unsubscribeFromNotifications()`: Mocks Supabase client `removeChannel()`. *(Implicitly tested via implementation)*
+*   [X] **Implementation:** Add/Update functions in `NotificationApiClient`:
+    *   [X] Implement `fetchNotifications`, `markNotificationAsRead`, `markAllNotificationsAsRead`.
+    *   [X] Implement `subscribeToNotifications(userId, callback)` using Supabase Realtime `channel()` and `.on('postgres_changes', ...)` to listen for inserts.
+    *   [X] Implement `unsubscribeFromNotifications()` using Supabase `removeChannel()`.
 
 ### 1.4 State Management (`@paynless/store`)
 
-*   [X] **Tests:** Write unit tests for the notification Zustand store slice:
-    *   Initial state (empty list, count 0).
-    *   Action to set notifications (updates list and unread count).
-    *   Action to add a new notification (prepends to list, increments unread count) - *This action will be triggered by the SSE message handler*.
-    *   Action to mark a notification as read (updates item `read` status, decrements unread count).
-    *   Action to mark all as read (updates all items, sets count to 0).
-    *   Selectors for `notifications` list and `unreadCount`.
-    *   [ ] **(New - SSE Refactor)** Action `initNotificationStream`: Tests that it calls the API client's `connect` method correctly and stores the disconnect function.
-    *   [ ] **(New - SSE Refactor)** Action `disconnectNotificationStream`: Tests that it calls the API client's `disconnect` method.
-    *   [ ] **(New - SSE Refactor)** Internal callback `handleIncomingNotification`: Tests that it calls the `addNotification` action with parsed data.
-    *   [ ] **(New - SSE Refactor)** Internal callback `handleStreamError`: Tests error logging/state update.
-*   [X] **Implementation:** Create the `notificationStore` slice in `@paynless/store` with the tested state, actions, and selectors. *(Ensure `addNotification` action handles incoming data correctly)*.
-*   [ ] **(New - SSE Refactor)** Implement `initNotificationStream` action to call `api.connectToNotificationStream`, passing internal callbacks (`handleIncomingNotification`, `handleStreamError`). Store the returned disconnect function.
-*   [ ] **(New - SSE Refactor)** Implement `disconnectNotificationStream` action to call the stored disconnect function.
-*   [ ] **(New - SSE Refactor)** Implement the internal callbacks `handleIncomingNotification` (to dispatch `addNotification`) and `handleStreamError`.
-*   [ ] **(New - SSE Refactor)** Ensure `initNotificationStream` is called appropriately (e.g., on user login/app initialization).
-*   [ ] **(New - SSE Refactor)** Ensure `disconnectNotificationStream` is called appropriately (e.g., on user logout).
+*   [ ] **Tests:** Write unit tests for the `notificationStore` Zustand store slice:
+    *   [X] Initial state (empty list, count 0).
+    *   [X] Action to set notifications (updates list and unread count).
+    *   [X] Action to add a new notification (prepends to list, increments unread count).
+    *   [X] Action to mark a notification as read (updates item `read` status, decrements unread count).
+    *   [X] Action to mark all as read (updates all items, sets count to 0).
+    *   [X] Selectors for `notifications` list and `unreadCount`.
+    *   [ ] **(New - Supabase Realtime)** Action `subscribeToUserNotifications`: Tests that it correctly calls `apiClient.notifications().subscribeToNotifications(userId, callback)` and stores the channel/subscription details necessary for unsubscribing.
+    *   [ ] **(New - Supabase Realtime)** Action `unsubscribeFromUserNotifications`: Tests that it correctly calls `apiClient.notifications().unsubscribeFromNotifications()`.
+    *   [ ] **(New - Supabase Realtime)** Internal callback mechanism: Test that the callback passed to the API client correctly dispatches the `addNotification` action when the API client invokes it with new notification data.
+*   [ ] **Implementation:** Update the `notificationStore` slice:
+    *   [X] Ensure existing state, actions, and selectors are implemented.
+    *   [ ] Implement the `subscribeToUserNotifications(userId)` action. It should:
+        *   Call `apiClient.notifications().subscribeToNotifications(userId, this.handleIncomingNotification)`.
+        *   Store the returned `RealtimeChannel` (or manage subscription status) so it can be potentially cleaned up.
+        *   Handle potential errors or existing subscriptions.
+    *   [ ] Implement the `unsubscribeFromUserNotifications()` action. It should:
+        *   Call `apiClient.notifications().unsubscribeFromNotifications()`.
+        *   Clear any stored channel/subscription state.
+    *   [ ] Implement the internal callback `handleIncomingNotification(notification: Notification)` (likely a bound method or arrow function property) that dispatches the `addNotification` action.
+    *   [ ] Ensure `subscribeToUserNotifications` is called appropriately (e.g., on user login/app initialization, potentially requiring `userId`).
+    *   [ ] Ensure `unsubscribeFromUserNotifications` is called appropriately (e.g., on user logout).
 
 ### 1.5 Frontend Component (`packages/web/src/components/Notifications.tsx`)
 
@@ -103,25 +90,21 @@ This document outlines the steps for implementing an in-app notification system 
     *   [X] Handles clicking an actionable notification, parsing `data.target_path` and triggering navigation.
     *   [X] Handles clicking "mark as read" on an item (mocks *store action* `markNotificationRead`).
     *   [X] Handles clicking "mark all as read" (mocks *store action* `markAllNotificationsAsRead`).
-    *   [X] **(Removed)** ~~SSE Connection Tests.~~ *(Component no longer handles connection)*.
-    *   [X] **(New)** Displays a link in the dropdown header to a dedicated notification history page.
-    *   [X] **(New)** Correctly tracks and filters based on items marked read during dropdown session.
+    *   [X] Displays a link in the dropdown header to a dedicated notification history page.
+    *   [X] Correctly tracks and filters based on items marked read during dropdown session.
 *   [X] **Implementation:** Create/Update the `Notifications.tsx` component:
-    *   [X] Use `useUser` ~~and `token`~~ from `useAuthStore`. *(Token no longer needed here)*.
+    *   [X] Use `useUser` from `useAuthStore`.
     *   [X] Use the `notificationStore` selectors and actions (`fetchNotifications`, `addNotification`, `markNotificationRead`, `markAllNotificationsAsRead`).
-    *   [ ] **(SSE Refactor)** **Remove** all direct `EventSource` creation, management (`useEffect` hooks for connection), and event listener logic from the component.
-    *   [ ] **(SSE Refactor)** Rely solely on `useNotificationStore` to get `notifications` and `unreadCount`. New notifications will automatically appear via store updates initiated by the `handleIncomingNotification` callback (triggered by the API layer).
-    *   [X] **(Removed)** ~~**(Revised Approach)** The component **no longer** directly manages the SSE connection...~~ *(This concept is now detailed in 1.5c)*.
-    *   [X] **(Removed)** ~~Implement SSE Logic.~~
+    *   [X] **Note:** The component relies *solely* on `useNotificationStore` to get `notifications` and `unreadCount`. Real-time updates arrive automatically via store updates triggered by the Supabase Realtime subscription managed within the store/API layers. No direct connection management occurs here.
     *   [X] Build the UI (Bell icon, badge, dropdown/panel).
     *   [X] Add logic to handle clicks on notification items.
     *   [X] Ensure component leverages reusable UI elements.
     *   [X] **Refactor:** Replaced Radix DropdownMenu with manual `SimpleDropdown` component to fix positioning issues.
-    *   [X] **(New)** Added state to track items marked read during dropdown session to keep them visible until closed.
-    *   [X] **(New)** Filtered the displayed list in the dropdown to show only unread items or items marked read during the current session.
-    *   [X] **(New)** Added visual indicators (e.g., blue dot) for items that are currently unread in the store.
-    *   [X] **(New)** Added a `Link` in the dropdown header to `/notifications`.
-    *   [X] **(New)** Enhanced `SimpleDropdown` to include `onOpenChange` callback to support dropdown filtering logic.
+    *   [X] Added state to track items marked read during dropdown session to keep them visible until closed.
+    *   [X] Filtered the displayed list in the dropdown to show only unread items or items marked read during the current session.
+    *   [X] Added visual indicators (e.g., blue dot) for items that are currently unread in the store.
+    *   [X] Added a `Link` in the dropdown header to `/notifications`.
+    *   [X] Enhanced `SimpleDropdown` to include `onOpenChange` callback to support dropdown filtering logic.
 *   [X] **(New) Notification History Page (`apps/web/src/pages/Notifications.tsx`):**
     *   [ ] **Tests (Placeholder):** Basic tests for rendering, fetching from store, grid layout.
     *   [X] **Implementation:** Create a new page component.
@@ -144,67 +127,6 @@ This document outlines the steps for implementing an in-app notification system 
         *   Rejection of other methods (PATCH, DELETE etc.).
     *   [X] **Implementation:** Modify `supabase/functions/notifications/index.ts` to handle `PUT /notifications/:id` and `POST /notifications/mark-all-read` requests, including authentication, Supabase client calls (`update`), and appropriate responses.
 
-### 1.5c (New) Refactor SSE Implementation for Layered Architecture
-
-**Problem:** The initial implementation handled the Server-Sent Events (SSE) connection for real-time notification updates directly within the `Notifications.tsx` React component. This violates the established layered architecture (UI -> Store -> API Client -> Backend) and introduces several issues:
-
-*   **Violation of Separation of Concerns:** The UI component becomes responsible for data fetching connection management, URL construction, and authentication details, mixing presentation logic with infrastructure concerns.
-*   **Tight Coupling:** The component is tightly coupled to the specific SSE endpoint URL and the `EventSource` API. Changes in the backend mechanism or endpoint require UI code changes.
-*   **Reduced Reusability/Scalability:** The connection logic is difficult to reuse in other parts of the application or different frontend environments (web, desktop, mobile).
-*   **Architectural Inconsistency:** It bypasses the `store` and `api` layers, which are designed to handle data fetching and state management.
-*   **Platform Portability Issues:** Directly using browser-specific APIs like `EventSource` in the UI layer complicates adapting the feature for other platforms (e.g., Tauri, mobile) where connection handling might differ. The `@paynless/platform` package exists to abstract such differences, but wasn't leveraged.
-
-**Correct Approach:** Encapsulate SSE connection logic within the appropriate layers, adhering to the UI -> Store -> API pattern.
-
-**Refactoring Steps:**
-
-1.  **API Client Layer (`@paynless/api`):**
-    *   **Responsibility:** Establish and manage the raw `EventSource` connection, handle authentication (likely via token in URL query param, encapsulated here), parse incoming messages, and provide callbacks for the store.
-    *   **Implementation:**
-        *   [ ] Create `api.notifications().connectToNotificationStream(onMessageCallback, onErrorCallback)`:
-            *   Constructs the `/api/notifications-stream?token=...` URL internally.
-            *   Initializes `EventSource`.
-            *   Sets up `onmessage` listener: parses JSON data, calls `onMessageCallback` with the `Notification` object.
-            *   Sets up `onerror` listener: calls `onErrorCallback`.
-            *   Returns a `disconnect` function.
-        *   [ ] Create `api.notifications().disconnectFromNotificationStream(eventSourceInstance)` (or the disconnect function returned by `connect` handles this):
-            *   Closes the provided `EventSource` connection (`eventSource.close()`).
-    *   **Checklist Updates:** Added tests and implementation tasks for these methods in **Section 1.3**.
-
-2.  **Store Layer (`@paynless/store/src/notificationStore.ts`):**
-    *   **Responsibility:** Orchestrate the connection lifecycle using the API client, manage notification state, and react to incoming messages via API callbacks.
-    *   **Implementation:**
-        *   [ ] Create action `initNotificationStream()`:
-            *   Called on app initialization/user login.
-            *   Calls `api.notifications().connectToNotificationStream()`, passing internal store methods (`handleIncomingNotification`, `handleStreamError`) as callbacks.
-            *   Stores the returned `disconnect` function in the store's state (transiently, not persisted).
-        *   [ ] Create *internal* method `handleIncomingNotification(notification: Notification)`:
-            *   Called by the API client's `onMessageCallback`.
-            *   Dispatches the existing `addNotification` action to update the store state (`notifications` list, `unreadCount`).
-        *   [ ] Create *internal* method `handleStreamError(error: any)`:
-            *   Called by the API client's `onErrorCallback`.
-            *   Logs the error, potentially sets an error state in the store.
-        *   [ ] Create action `disconnectNotificationStream()`:
-            *   Called on user logout/app shutdown.
-            *   Calls the stored `disconnect` function provided by the API client.
-    *   **Checklist Updates:** Added tests and implementation tasks for these actions/methods in **Section 1.4**.
-
-3.  **UI Component (`apps/web/src/components/Notifications.tsx`):**
-    *   **Responsibility:** Display notification data from the store and dispatch user interaction actions (mark read, etc.) to the store.
-    *   **Implementation:**
-        *   [ ] **Remove** all `EventSource` related code: `useEffect` hooks for connection management, direct URL construction, token usage for the stream, event listeners (`onmessage`, `onerror`).
-        *   [ ] Rely *solely* on `useNotificationStore` to subscribe to `notifications` and `unreadCount`.
-        *   [ ] Continue using store actions like `fetchNotifications` (for initial load), `markNotificationRead`, `markAllNotificationsAsRead`.
-        *   The component becomes unaware of how real-time updates arrive; it just reacts to changes in the store's state.
-    *   **Checklist Updates:** Removed SSE-specific tasks and updated implementation notes in **Section 1.5**.
-
-**Benefits of Refactoring:**
-
-*   Restores adherence to the layered architecture.
-*   Improves separation of concerns, making code easier to understand, test, and maintain.
-*   Decouples the UI from the specific real-time implementation details.
-*   Enhances reusability and simplifies support for multiple platforms/environments by centralizing connection logic in the `api` package.
-
 ### 1.6 Integration
 
 *   [X] **Integrate Component:** Add the `<Notifications />` component to the main authenticated layout (`apps/web/src/components/layout/Header.tsx`).
@@ -221,22 +143,22 @@ This document outlines the steps for implementing an in-app notification system 
 
 ### 1.7 Checkpoint 1: Notifications Complete
 
-*   [ ] **Run Tests:** Execute all tests related to notifications (`pnpm test --filter=@paynless/api --filter=@paynless/store --filter=web`). Ensure they pass. *(Marked incomplete due to new frontend tests needed)*.
+*   [ ] **Run Tests:** Execute all tests related to notifications (`pnpm test --filter=@paynless/api --filter=@paynless/store --filter=web`). Ensure they pass. *(Marked incomplete due to new store/frontend tests needed)*.
 *   [X] **Build App:** Run `pnpm build` for the entire monorepo. Ensure it completes successfully.
 *   [ ] **Manual Test:** *(Marked incomplete pending full verification)*
     *   Log in.
     *   Verify seeded notifications appear in the history page (`/notifications`).
     *   Verify only *unread* notifications (or those just marked read) appear initially in the dropdown.
-    *   Manually insert a *new* notification with a `target_path` into the database.
-    *   Verify the new notification appears **via SSE** and the badge updates **without refresh**.
+    *   Manually insert a *new* notification with a `target_path` into the database for the logged-in user.
+    *   Verify the new notification appears **via Supabase Realtime** and the badge updates **without refresh**.
     *   Verify the new notification appears in the dropdown (if unread).
-    *   Click the SSE notification and verify navigation.
+    *   Click the new notification and verify navigation.
     *   Click "Mark as read" on individual unread items in the dropdown and verify UI updates (dot disappears, etc.) and item remains visible until dropdown closes.
     *   Click "Mark all as read" and verify UI updates and items remain visible until dropdown closes.
     *   Navigate to the history page (`/notifications`) via the dropdown link and verify all notifications (read and unread) are displayed correctly.
 *   [ ] **Update Docs:** Mark Phase 1 tasks as complete in `IMPLEMENTATION_PLAN.md`. *(Marked incomplete pending testing/verification)*
-*   [ ] **Commit:** `feat: implement notification system via SSE (#issue_number)` *(Marked incomplete pending testing/verification)*
-*   [ ] **Remind User:** "The basic notification system with SSE streaming is implemented..." *(Marked incomplete pending testing/verification)*
+*   [ ] **Commit:** `feat: implement notification system via Supabase Realtime (#issue_number)` *(Marked incomplete pending testing/verification)*
+*   [ ] **Remind User:** \"The basic notification system with Supabase Realtime streaming is implemented...\" *(Marked incomplete pending testing/verification)*
 
 ---
 

@@ -1,7 +1,9 @@
 import { ApiClient } from './apiClient'; // Import base client
-// Import StreamCallbacks from types
-import { Notification, ApiResponse, StreamCallbacks, StreamDisconnectFunction } from '@paynless/types';
+// Remove StreamCallbacks and StreamDisconnectFunction from import
+import { Notification, ApiResponse } from '@paynless/types';
 import { logger } from '@paynless/utils';
+// Import Supabase client types
+import { RealtimeChannel, SupabaseClient } from '@supabase/supabase-js';
 
 // Define the expected callback types locally if not imported (Now imported, so commented out)
 // type OnMessageCallback = (notification: Notification) => void;
@@ -15,15 +17,22 @@ import { logger } from '@paynless/utils';
 //   onOpen?: () => void;
 // }
 
+// Type for the callback function provided by the store
+type NotificationSubscriptionCallback = (notification: Notification) => void;
+
 export class NotificationApiClient {
   private apiClient: ApiClient; // Store base client instance
+  private supabase: SupabaseClient<any>; // Store Supabase client instance
+  private notificationChannel: RealtimeChannel | null = null; // Store the active channel
   // Remove internal eventSource management
   // private eventSource: EventSource | null = null;
   // Use imported type StreamDisconnectFunction
-  private disconnectStream: StreamDisconnectFunction | null = null;
+  // private disconnectStream: StreamDisconnectFunction | null = null;
 
   constructor(apiClientInstance: ApiClient) {
     this.apiClient = apiClientInstance;
+    this.supabase = this.apiClient.getSupabaseClient(); // Get client from ApiClient
+    logger.debug('[NotificationApiClient] Initialized.');
   }
 
   /**
@@ -32,110 +41,122 @@ export class NotificationApiClient {
   async fetchNotifications(): Promise<ApiResponse<Notification[]>> {
     logger.debug('[NotificationApiClient] Fetching notifications...');
     const response = await this.apiClient.get<Notification[]>('notifications');
-    if (response.error) {
-      logger.error('Error fetching notifications:', { error: response.error });
-      return response;
+    if (!response.error && response.data) {
+      logger.info(`[NotificationApiClient] Fetched ${response.data.length} notifications.`);
+    } else {
+      logger.error('[NotificationApiClient] Error fetching notifications:', { error: response.error });
     }
-    response.data = response.data ?? [];
-    logger.debug('[NotificationApiClient] Fetched notifications successfully', { count: response.data.length });
     return response;
   }
 
   /**
    * Marks a specific notification as read for the authenticated user.
    */
-  async markNotificationAsRead(notificationId: string): Promise<ApiResponse<void>> {
+  async markNotificationRead(notificationId: string): Promise<ApiResponse<null>> {
     logger.debug(`[NotificationApiClient] Marking notification ${notificationId} as read...`);
-    // Use PUT as PATCH might not be available on base client
-    const response = await this.apiClient.put<void, { read: boolean }>(`notifications/${notificationId}`, { read: true });
-    if (response.error) {
-        logger.error(`Error marking notification ${notificationId} as read:`, { error: response.error });
-        return response;
+    // Endpoint expects /notifications/:id for PUT
+    const response = await this.apiClient.put<null, {}>(`notifications/${notificationId}`, {});
+    if (!response.error) {
+      logger.info(`[NotificationApiClient] Marked notification ${notificationId} as read successfully.`);
+    } else {
+      logger.error('[NotificationApiClient] Error marking notification', { error: response.error });
     }
-    logger.debug(`[NotificationApiClient] Marked notification ${notificationId} as read successfully`);
     return response;
   }
 
   /**
    * Marks all unread notifications as read for the authenticated user.
    */
-  async markAllNotificationsAsRead(): Promise<ApiResponse<void>> {
+  async markAllNotificationsAsRead(): Promise<ApiResponse<null>> {
     logger.debug('[NotificationApiClient] Marking all notifications as read...');
-    const response = await this.apiClient.post<void, null>('notifications/mark-all-read', null);
-    if (response.error) {
-        logger.error('Error marking all notifications as read:', { error: response.error });
-        return response;
+    // Endpoint expects /notifications/mark-all-read for POST
+    const response = await this.apiClient.post<null, {}>(`notifications/mark-all-read`, {});
+    if (!response.error) {
+      logger.info('[NotificationApiClient] Marked all notifications as read successfully.');
+    } else {
+      logger.error('[NotificationApiClient] Error marking all notifications as read:', { error: response.error });
     }
-     logger.debug('[NotificationApiClient] Marked all notifications as read successfully');
     return response;
   }
 
-  /**
-   * Connects to the server-sent events stream for real-time notifications
-   * by delegating to the main ApiClient's stream method.
-   *
-   * @param onMessageCallback - Function to call when a new notification message is received.
-   * @param onErrorCallback - Function to call when an error occurs with the stream.
-   * @returns A function to disconnect the stream, or null if connection failed immediately.
-   */
-  connectToNotificationStream(
-    onMessageCallback: (notification: Notification) => void,
-    onErrorCallback: (error: Event | Error) => void
-    // Removed explicit onOpen callback type here, relying on StreamCallbacks<Notification>
-  ): StreamDisconnectFunction | null { // Use imported type
-    logger.debug('[NotificationApiClient] Requesting notification stream connection from ApiClient...');
-
-    // Ensure any previously stored disconnect function is called before starting a new one
-    this.disconnectFromNotificationStream();
-
-    // Define callbacks conforming to StreamCallbacks<Notification>
-    const callbacks: StreamCallbacks<Notification> = {
-      onMessage: onMessageCallback,
-      onError: onErrorCallback,
-      onOpen: () => {
-        logger.info('[NotificationApiClient] Notification stream connected (via ApiClient).');
-        // Add any specific logic needed when the notification stream opens
-      },
-    };
-
-    // Delegate connection management to the main ApiClient
-    const disconnectFn = this.apiClient.stream<Notification>('notifications-stream', callbacks);
-
-    // Store the returned disconnect function
-    this.disconnectStream = disconnectFn;
-
-    if (!disconnectFn) {
-      logger.error('[NotificationApiClient] ApiClient.stream returned null, connection likely failed immediately.');
+  // --- NEW: Subscribe using Supabase Realtime --- 
+  subscribeToNotifications(
+    userId: string,
+    onNotificationCallback: NotificationSubscriptionCallback
+  ): RealtimeChannel | null {
+    if (!userId) {
+      logger.error('[NotificationApiClient] Cannot subscribe without userId.');
+      return null;
     }
 
-    return disconnectFn;
+    if (this.notificationChannel) {
+      logger.warn('[NotificationApiClient] Already subscribed. Unsubscribing previous channel first.');
+      this.unsubscribeFromNotifications();
+    }
+
+    const channelName = `notifications-user-${userId}`;
+    logger.info(`[NotificationApiClient] Subscribing to Realtime channel: ${channelName}`);
+
+    try {
+      this.notificationChannel = this.supabase.channel(channelName);
+
+      this.notificationChannel
+        .on(
+          'postgres_changes',
+          {
+            event: 'INSERT',
+            schema: 'public',
+            table: 'notifications',
+            filter: `user_id=eq.${userId}`,
+          },
+          (payload) => {
+            logger.debug('[NotificationApiClient] Received Realtime payload:', payload);
+            if (payload.new) {
+              // Pass the new notification object to the callback
+              onNotificationCallback(payload.new as Notification);
+            } else {
+              logger.warn('[NotificationApiClient] Received INSERT payload without new data.', payload);
+            }
+          }
+        )
+        .subscribe((status, err) => {
+          if (status === 'SUBSCRIBED') {
+            logger.info(`[NotificationApiClient] Successfully subscribed to channel ${channelName}.`);
+          } else if (status === 'CHANNEL_ERROR' || err) {
+            const errorMessage = err ? err.message : `Channel status: ${status}`;
+            logger.error(`[NotificationApiClient] Error subscribing to channel ${channelName}:`, { error: errorMessage });
+            // Attempt to unsubscribe on error to clean up
+            this.unsubscribeFromNotifications();
+          } else {
+            logger.debug(`[NotificationApiClient] Channel ${channelName} status: ${status}`);
+          }
+        });
+
+      return this.notificationChannel;
+    } catch (err: any) {
+      const errorMessage = err instanceof Error ? err.message : String(err);
+      logger.error('[NotificationApiClient] Exception during subscription setup:', { error: errorMessage });
+      this.notificationChannel = null;
+      return null;
+    }
   }
 
-  /**
-   * Disconnects the active notification stream by calling the stored disconnect function.
-   */
-  disconnectFromNotificationStream(): void {
-    if (this.disconnectStream) {
-      logger.debug('[NotificationApiClient] Calling stored disconnect function to close notification stream...');
-      this.disconnectStream();
-      this.disconnectStream = null; // Clear the stored function
+  // --- NEW: Unsubscribe using Supabase Realtime --- 
+  unsubscribeFromNotifications(): void {
+    if (this.notificationChannel) {
+      const channelName = this.notificationChannel.topic;
+      logger.info(`[NotificationApiClient] Unsubscribing from Realtime channel: ${channelName}`);
+      this.supabase.removeChannel(this.notificationChannel)
+        .then((status) => {
+          logger.info(`[NotificationApiClient] Channel ${channelName} removal status: ${status}`);
+        })
+        .catch((err: any) => {
+          const errorMessage = err instanceof Error ? err.message : String(err);
+          logger.error(`[NotificationApiClient] Error removing channel ${channelName}:`, { error: errorMessage });
+        });
+      this.notificationChannel = null;
     } else {
-        logger.debug('[NotificationApiClient] No active disconnect function stored, stream likely not connected or already disconnected.');
+      logger.debug('[NotificationApiClient] No active notification channel to unsubscribe from.');
     }
   }
-
-  // Removed the old implementation that directly used EventSource
-  /*
-  connectToNotificationStream(
-    onMessageCallback: OnMessageCallback,
-    onErrorCallback: OnErrorCallback
-  ): DisconnectFunction | null {
-    // ... old implementation ...
-  }
-
-  disconnectFromNotificationStream(): void {
-    // ... old implementation ...
-  }
-  */
-
 } // End of NotificationApiClient class 

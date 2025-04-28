@@ -103,20 +103,17 @@ export const useAuthStore = create<AuthStore>()((set, get) => ({
       logout: async () => {
         analytics.reset()
 
-        // --- Disconnect Notification Stream --- 
+        // --- NEW: Unsubscribe from Notifications ---
         try {
-           const { disconnectNotificationStream } = useNotificationStore.getState();
-           if (disconnectNotificationStream) {
-              logger.info('[AuthStore Logout] Disconnecting notification stream...');
-              disconnectNotificationStream();
-           } else {
-              logger.debug('[AuthStore Logout] No active notification stream to disconnect.');
-           }
+           // Get the action directly
+           const unsubscribeNotifications = useNotificationStore.getState().unsubscribeFromUserNotifications;
+           logger.info('[AuthStore Logout] Unsubscribing from notifications...');
+           unsubscribeNotifications(); // Call the new action
         } catch (streamError) {
            // Log error but proceed with logout
-           logger.error('[AuthStore Logout] Error disconnecting notification stream:', { error: streamError instanceof Error ? streamError.message : String(streamError) });
+           logger.error('[AuthStore Logout] Error unsubscribing from notifications:', { error: streamError instanceof Error ? streamError.message : String(streamError) });
         }
-        // ------------------------------------
+        // -----------------------------------------
 
         // Check if there's a session in the store state first
         const currentSession = get().session;
@@ -387,10 +384,12 @@ export function initAuthListener(
             break;
         }
 
-        if ((event === 'INITIAL_SESSION' || event === 'SIGNED_IN') && currentSession?.access_token) {
+        if ((event === 'INITIAL_SESSION' || event === 'SIGNED_IN') && currentSession?.access_token && currentUser?.id) { // Ensure currentUser.id exists
+            // Added timeout to allow other potential listeners to finish first and avoid race conditions
             setTimeout(async () => { 
                 const startTime = Date.now();
                 logger.debug(`[AuthListener] Performing async tasks for ${event}`);
+                const userId = currentUser.id; // Store user ID
                 try {
                     const apiClientInstance = getApiClient();
                     const token = currentSession.access_token;
@@ -405,24 +404,25 @@ export function initAuthListener(
                         logger.debug(`[AuthListener] Profile fetched successfully for ${event}`);
                         useAuthStore.setState({ profile: profileResponse.data.profile });
                         
-                        // --- Initialize Notification Stream --- 
+                        // --- NEW: Subscribe to Notifications ---
                         try {
-                           logger.info(`[AuthListener] Initializing notification stream after successful ${event} and profile fetch...`);
-                           // Get notification store action and call it
-                           const { initNotificationStream } = useNotificationStore.getState();
-                           initNotificationStream(); 
-                        } catch (streamInitError) {
-                            logger.error(`[AuthListener] Failed to initialize notification stream during ${event}:`, {
-                                error: streamInitError instanceof Error ? streamInitError.message : String(streamInitError)
+                           // Match logger signature: message (string), metadata (object)
+                           logger.info(`[AuthListener] Subscribing to notifications after successful ${event} and profile fetch`, { userId });
+                           // Get notification store action and call it with user ID
+                           const { subscribeToUserNotifications } = useNotificationStore.getState();
+                           subscribeToUserNotifications(userId); // Pass the user ID
+                        } catch (subscribeError) {
+                            logger.error(`[AuthListener] Failed to subscribe to notifications during ${event}:`, {
+                                error: subscribeError instanceof Error ? subscribeError.message : String(subscribeError)
                             });
                             // Decide if we need to set an error state here or just log
                         }
-                        // -------------------------------------
+                        // ---------------------------------------
 
                     } else {
                         logger.error(`[AuthListener] Failed to fetch profile for ${event}`, { error: profileResponse.error });
                         useAuthStore.setState({ profile: null, error: new Error(profileResponse.error?.message || 'Failed fetch profile') });
-                        // Note: Stream is NOT initialized if profile fetch fails
+                        // Note: Subscription is NOT initiated if profile fetch fails
                     }
 
                 } catch (asyncError) {
@@ -433,8 +433,17 @@ export function initAuthListener(
                     const endTime = Date.now();
                     logger.debug(`[AuthListener] Finished async tasks for ${event}. Total duration: ${endTime - startTime}ms`);
                 }
-            }, 0); 
-        } 
+            }, 0); // setTimeout ensures this runs after the current event loop tick
+        } else if (event === 'SIGNED_OUT') {
+             // Explicitly unsubscribe on sign out event as well
+             try {
+                 const unsubscribeNotifications = useNotificationStore.getState().unsubscribeFromUserNotifications;
+                 logger.info('[AuthListener SIGNED_OUT] Unsubscribing from notifications...');
+                 unsubscribeNotifications();
+             } catch (unsubscribeError) {
+                  logger.error('[AuthListener SIGNED_OUT] Error unsubscribing from notifications:', { error: unsubscribeError instanceof Error ? unsubscribeError.message : String(unsubscribeError) });
+             }
+        }
 
       } catch (callbackError) {
         logger.error('!!!!!! ERROR INSIDE onAuthStateChange CALLBACK !!!!!!', {
