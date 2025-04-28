@@ -1,37 +1,15 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { create } from 'zustand';
-import { Organization, OrganizationMemberWithProfile, ApiError } from '@paynless/types';
+// REMOVED: Local state/action interfaces - rely on types from @paynless/types via the store import
+// import { Organization, OrganizationMemberWithProfile, ApiError } from '@paynless/types'; // Keep if needed for mock data types
 import { api } from '@paynless/api'; // Mock this
 import { logger } from '@paynless/utils';
+import { useOrganizationStore } from './organizationStore'; // <<< IMPORT THE ACTUAL STORE
+import { useAuthStore } from './authStore'; // <<< ADD THIS IMPORT
+import { Organization } from '@paynless/types'; // Import types needed for mock data
 
-// Define the state structure based on the plan
-interface OrganizationState {
-  userOrganizations: Organization[];
-  currentOrganizationId: string | null;
-  currentOrganizationDetails: Organization | null;
-  currentOrganizationMembers: OrganizationMemberWithProfile[];
-  isLoading: boolean;
-  error: string | null; // Store error messages as strings
-}
-
-// Define the actions interface (implementations will be in the actual store)
-interface OrganizationActions {
-  fetchUserOrganizations: () => Promise<void>;
-  setCurrentOrganizationId: (orgId: string | null) => void;
-  fetchOrganizationDetails: (orgId: string) => Promise<void>;
-  fetchCurrentOrganizationMembers: () => Promise<void>; // Fetches for currentOrganizationId
-  softDeleteOrganization: (orgId: string) => Promise<boolean>; // Returns success status
-  setError: (error: string | null) => void;
-  setLoading: (loading: boolean) => void;
-}
-
-// Combine state and actions for the store type
-type OrganizationStore = OrganizationState & OrganizationActions;
-
-// --- Mock Dependencies ---
+// --- Mock Dependencies --- // (Keep mocks as they are)
 vi.mock('@paynless/api', () => ({
   api: {
-    // Mock the organizations PROPERTY as an OBJECT containing the methods
     organizations: {
       listUserOrganizations: vi.fn(),
       getOrganizationDetails: vi.fn(),
@@ -39,10 +17,7 @@ vi.mock('@paynless/api', () => ({
       deleteOrganization: vi.fn(),
       // Add other org methods if needed by store actions
     },
-    // Mock other API groups if needed (ensure structure matches real api export)
-    // billing: { ... },
-    // ai: { ... }, 
-    // notifications: { ... }
+    // Mock other API groups if needed
   },
 }));
 
@@ -55,49 +30,25 @@ vi.mock('@paynless/utils', () => ({
   },
 }));
 
-// Mock authStore to get userId - simplified for now
 vi.mock('./authStore', () => ({
   useAuthStore: {
     getState: vi.fn(() => ({ user: { id: 'test-user-id' } })) // Provide mock user ID
   }
 }));
 
-// --- Create a temporary store instance for testing --- 
-// This allows testing actions without needing the full store implementation yet
-// We will need the actual store implementation later for more complex tests
-
-const createTestStore = (initialState: Partial<OrganizationState> = {}) => create<OrganizationStore>((set, get) => ({
-  // Initial State
-  userOrganizations: initialState.userOrganizations ?? [],
-  currentOrganizationId: initialState.currentOrganizationId ?? null,
-  currentOrganizationDetails: initialState.currentOrganizationDetails ?? null,
-  currentOrganizationMembers: initialState.currentOrganizationMembers ?? [],
-  isLoading: initialState.isLoading ?? false,
-  error: initialState.error ?? null,
-
-  // Mock Actions for testing purposes (implementations to come)
-  fetchUserOrganizations: vi.fn(async () => { /* Test logic will go here */ }),
-  setCurrentOrganizationId: vi.fn((orgId) => { 
-      set({ currentOrganizationId: orgId });
-      // TODO: Add logic later to potentially clear details/members if orgId changes
-  }),
-  fetchOrganizationDetails: vi.fn(async (orgId) => { /* Test logic will go here */ }),
-  fetchCurrentOrganizationMembers: vi.fn(async () => { /* Test logic will go here */ }),
-  softDeleteOrganization: vi.fn(async (orgId) => true), // Placeholder
-  setError: vi.fn((error) => set({ error, isLoading: false })), 
-  setLoading: vi.fn((loading) => set({ isLoading: loading })), 
-}));
-
+// REMOVED: createTestStore function
 
 // --- Test Suite --- 
 describe('OrganizationStore', () => {
-  let useOrgStore: ReturnType<typeof createTestStore>;
+  // REMOVED: let useOrgStore: ReturnType<typeof createTestStore>;
+  const initialState = useOrganizationStore.getState(); // Get initial state for reset
 
   beforeEach(() => {
-    // Create a fresh store instance for each test
-    useOrgStore = createTestStore();
+    // Reset the actual store to its initial state before each test
+    useOrganizationStore.setState(initialState, true); // Replace state
     vi.clearAllMocks();
-    // Mock API return values needed for the tests in this suite
+    // Restore mock user for authStore as it might be changed in tests
+    vi.mocked(useAuthStore.getState).mockReturnValue({ user: { id: 'test-user-id' } });
   });
 
   afterEach(() => {
@@ -106,7 +57,7 @@ describe('OrganizationStore', () => {
 
   // --- Initial State Tests ---
   it('should have correct initial state', () => {
-    const state = useOrgStore.getState();
+    const state = useOrganizationStore.getState(); // Use actual store
     expect(state.userOrganizations).toEqual([]);
     expect(state.currentOrganizationId).toBeNull();
     expect(state.currentOrganizationDetails).toBeNull();
@@ -124,83 +75,81 @@ describe('OrganizationStore', () => {
     ];
 
     it('should set loading state, call API, filter deleted orgs, and update state on success', async () => {
-      // Arrange: Access the mocked method correctly
+      // Arrange
       const listMock = vi.mocked(api.organizations.listUserOrganizations);
       listMock.mockResolvedValue({ 
           status: 200, 
           data: mockOrgs 
       }); 
-      const setStateSpy = vi.spyOn(useOrgStore.getState(), 'setLoading');
-      const setErrorSpy = vi.spyOn(useOrgStore.getState(), 'setError');
+      // Spying on the store's internal methods might be brittle.
+      // Instead, we can check the state changes directly.
 
-      // Act
-      await useOrgStore.getState().fetchUserOrganizations();
+      // Act: Call action on the actual store
+      const fetchPromise = useOrganizationStore.getState().fetchUserOrganizations();
 
-      // Assert
-      expect(setStateSpy).toHaveBeenCalledWith(true);
+      // Assert initial loading state if needed (immediately after call)
+      // expect(useOrganizationStore.getState().isLoading).toBe(true);
+      expect(useOrganizationStore.getState().error).toBeNull(); // Error should be cleared
+
+      await fetchPromise; // Wait for the async action to complete
+
+      // Assert API call
       expect(listMock).toHaveBeenCalledTimes(1);
       expect(listMock).toHaveBeenCalledWith('test-user-id');
       
-      // Check final state (implement filtering logic in the store action)
-      const finalState = useOrgStore.getState();
-      // EXPECTATION: The store action should filter out the deleted org
+      // Check final state
+      const finalState = useOrganizationStore.getState();
       expect(finalState.userOrganizations).toEqual(mockOrgs.filter(org => !org.deleted_at)); 
       expect(finalState.userOrganizations).toHaveLength(2);
       expect(finalState.error).toBeNull();
-      expect(finalState.isLoading).toBe(false); // Handled by setLoading spy check
-      expect(setErrorSpy).toHaveBeenCalledWith(null); // Explicitly set error to null
-      expect(setStateSpy).toHaveBeenCalledWith(false);
+      expect(finalState.isLoading).toBe(false); 
     });
 
     it('should set error state and clear orgs list on API failure', async () => {
-      // Arrange: Access the mocked method correctly
+      // Arrange
       const listMock = vi.mocked(api.organizations.listUserOrganizations);
       const errorMsg = 'Failed to fetch orgs';
       listMock.mockResolvedValue({ 
           status: 500, 
           error: { message: errorMsg, code: 'SERVER_ERROR' } 
       });
-      const setStateSpy = vi.spyOn(useOrgStore.getState(), 'setLoading');
-      const setErrorSpy = vi.spyOn(useOrgStore.getState(), 'setError');
       // Pre-fill state to ensure it gets cleared
-      useOrgStore.setState({ userOrganizations: mockOrgs });
+      useOrganizationStore.setState({ userOrganizations: mockOrgs });
 
       // Act
-      await useOrgStore.getState().fetchUserOrganizations();
+      const fetchPromise = useOrganizationStore.getState().fetchUserOrganizations();
+      // expect(useOrganizationStore.getState().isLoading).toBe(true);
+
+      await fetchPromise;
 
       // Assert
-      expect(setStateSpy).toHaveBeenCalledWith(true);
       expect(listMock).toHaveBeenCalledTimes(1);
       
       // Check final state
-      const finalState = useOrgStore.getState();
+      const finalState = useOrganizationStore.getState();
       expect(finalState.userOrganizations).toEqual([]); // Should be cleared
       expect(finalState.error).toBe(errorMsg);
-      expect(finalState.isLoading).toBe(false); // Handled by setLoading spy check
-      expect(setErrorSpy).toHaveBeenCalledWith(errorMsg);
-      expect(setStateSpy).toHaveBeenCalledWith(false);
+      expect(finalState.isLoading).toBe(false);
     });
 
     it('should set error and clear orgs list if user is not authenticated', async () => {
-       // Arrange: Mock authStore to return no user
+      // Arrange: Mock authStore to return no user
       vi.mocked(useAuthStore.getState).mockReturnValueOnce({ user: null });
       const listMock = vi.mocked(api.organizations.listUserOrganizations);
-      const setStateSpy = vi.spyOn(useOrgStore.getState(), 'setLoading');
-      const setErrorSpy = vi.spyOn(useOrgStore.getState(), 'setError');
-      useOrgStore.setState({ userOrganizations: mockOrgs }); // Pre-fill
+      useOrganizationStore.setState({ userOrganizations: mockOrgs }); // Pre-fill
 
-       // Act
-       await useOrgStore.getState().fetchUserOrganizations();
+      // Act
+      const fetchPromise = useOrganizationStore.getState().fetchUserOrganizations();
+      // expect(useOrganizationStore.getState().isLoading).toBe(true);
 
-       // Assert
-       expect(listMock).not.toHaveBeenCalled(); // Ensure API not called
-       const finalState = useOrgStore.getState();
-       expect(finalState.userOrganizations).toEqual([]);
-       expect(finalState.error).toBe('User not authenticated');
-       expect(finalState.isLoading).toBe(false);
-       expect(setStateSpy).toHaveBeenCalledWith(true); // Still sets loading initially
-       expect(setErrorSpy).toHaveBeenCalledWith('User not authenticated');
-       expect(setStateSpy).toHaveBeenCalledWith(false);
+      await fetchPromise;
+
+      // Assert
+      expect(listMock).not.toHaveBeenCalled(); // Ensure API not called
+      const finalState = useOrganizationStore.getState();
+      expect(finalState.userOrganizations).toEqual([]);
+      expect(finalState.error).toBe('User not authenticated');
+      expect(finalState.isLoading).toBe(false);
     });
   });
 

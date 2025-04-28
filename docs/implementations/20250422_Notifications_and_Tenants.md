@@ -251,3 +251,137 @@ This document outlines the steps for implementing an in-app notification system 
     *   [X] Run all existing tests: `pnpm test`. Ensure tests pass after refactoring. Address any failures, potentially updating mocks to reflect the new type structures if necessary.
         *   **Status:** `@paynless/store` tests passed after fixing `UserRole` mock references. `apps/web` tests have known failures unrelated to this refactor or requiring broader updates (deferred).
 *   [X] **Commit:** `refactor: centralize database types using supabase gen types (#issue_number)`
+
+### 2.4 API Client (`@paynless/api-client`)
+
+*   [X] **Tests:** Write unit tests for new multi-tenancy functions:
+    *   [X] `createOrganization(name, visibility?)`
+    *   [X] `updateOrganization(orgId, { name?, visibility? })` (Admin action, checks org not deleted)
+    *   [X] `listUserOrganizations(userId)` (Filters out deleted orgs)
+    *   [X] `getOrganizationDetails(orgId)` (Checks org not deleted)
+    *   [X] `getOrganizationMembers(orgId)` (Checks org not deleted)
+    *   [X] `inviteUserToOrganization(orgId, emailOrUserId, role)` (Checks org not deleted)
+    *   [X] `acceptOrganizationInvite(inviteTokenOrId)`
+    *   [X] `requestToJoinOrganization(orgId)` (Checks org not deleted)
+    *   [X] `approveJoinRequest(membershipId)` (Admin action, checks org not deleted)
+    *   [X] `updateMemberRole(membershipId, newRole)` (Admin action, handles 'last admin' error, checks org not deleted)
+    *   [X] `removeMember(membershipId)` (Admin or self action, handles 'last admin' error, checks org not deleted)
+    *   [X] `deleteOrganization(orgId)` (Admin action, performs soft delete by setting `deleted_at`)
+*   [X] **Implementation:** Add/Update these functions in the API client. Ensure appropriate checks for `deleted_at` are performed implicitly by RLS or explicitly where needed. Implement soft delete logic for `deleteOrganization`.
+    *   [X] Implemented `createOrganization`
+    *   [X] Implemented `updateOrganization`
+    *   [X] Implemented `listUserOrganizations`
+    *   [X] Implemented `getOrganizationDetails`
+    *   [X] Implemented `getOrganizationMembers`
+    *   [X] Implemented `inviteUserToOrganization`
+    *   [X] Implemented `acceptOrganizationInvite`
+    *   [X] Implemented `requestToJoinOrganization`
+    *   [X] Implemented `approveJoinRequest`
+    *   [X] Implemented `updateMemberRole`
+    *   [X] Implemented `removeMember`
+    *   [X] Implemented `deleteOrganization`
+
+### 2.5 State Management (`@paynless/store`)
+
+*   [ ] **Tests:** Write unit tests for `organizationStore` slice:
+    *   State: `userOrganizations` (list should not include deleted ones), `currentOrganizationId`, `currentOrganizationDetails`, `currentOrganizationMembers`, `isLoading`, `error`.
+    *   Actions: `fetchUserOrganizations` (should filter deleted), `setCurrentOrganizationId` (should potentially clear if org becomes deleted), `fetchOrganizationDetails`, `fetchCurrentOrganizationMembers`, `softDeleteOrganization` (removes org from local state after successful API call).
+    *   Selectors for current org details, memberships, members, current user's role in current org.
+*   [ ] **Implementation:** Create/Update the `organizationStore` slice to handle filtering/removal of soft-deleted orgs from the UI state.
+
+### 2.6 Frontend Components & UI
+
+*   [ ] **Organization Creation:**
+    *   **Tests:** Test the creation form component (validation, API call mock, visibility option).
+    *   **Implementation:** Build `CreateOrganizationForm.tsx` (likely used within the new org routing structure). Leverage reusable Form components.
+*   [ ] **Organization Switcher:**
+    *   **Tests:** Test dropdown component, fetching orgs (mock store), dispatching action to change current org and trigger navigation (mock store, router).
+    *   **Implementation:** Build `OrganizationSwitcher.tsx` (in header/sidebar). Integrate with `organizationStore` and `react-router`.
+*   [ ] **Organization Pages (`/dashboard/organizations/:orgId/...`):**
+    *   **Tests:** Test main layout/routing for this section. Test placeholder components for `/dashboard/organizations/:orgId/dashboard` (or overview), `/settings`, `/members`.
+    *   **Implementation:** Set up nested routing. Build basic page structure for org sections.
+*   [ ] **Organization Settings:**
+    *   **Tests:** Test components for viewing/editing org name, visibility. Test Delete Organization button/modal (admin only). Mock API calls/store state.
+    *   **Implementation:** Build components within `/dashboard/organizations/:orgId/settings`. Add a 'Delete Organization' section/button visible only to admins, triggering a confirmation modal and calling `apiClient.deleteOrganization` / store action.
+*   [ ] **Member Management:**
+    *   **Tests:** Test components for viewing members, inviting users (modal), changing roles, removing members. Mock API calls/store state. Test handling 'last admin' error display. Test admin-only controls.
+    *   **Implementation:** Build `MemberList.tsx`, `InviteMemberModal.tsx`, etc., within `/dashboard/organizations/:orgId/members`. Use `organizationStore`. Leverage reusable Table/Modal components.
+*   [ ] **Invite/Join Request Handling:**
+    *   **Tests:** Test UI for accepting invites (e.g., dedicated page `/accept-invite/:token`) or approving requests (e.g., action triggered from notification link leading to member list/modal). Mock API calls.
+    *   **Implementation:** Build necessary pages/components. Ensure flow for "Request to Join" assumes user obtained `orgId` via external means (link/manual input) for this phase.
+
+### 2.7 Routing & Access Control (Frontend)
+
+*   [ ] **Tests:** Write tests for route guards or logic within components:
+    *   Ensure `/dashboard/organizations/:orgId/...` routes redirect if org is deleted or user is not an active member.
+    *   Ensure organization context (`currentOrganizationId`) is set correctly when navigating these routes.
+    *   Ensure actions (settings edit, inviting) are disabled/hidden based on user's role in the current org (from `organizationStore`).
+*   [ ] **Implementation:**
+    *   Implement route guards/checks considering `deleted_at` status (fetched via `organizationStore`).
+    *   Ensure `OrganizationSwitcher` correctly updates state and potentially navigates user.
+    *   Apply role-based conditional rendering using `organizationStore` data.
+
+### 2.8 Integration with Existing Features
+
+*   [ ] **Identify Impacted Features:** Review existing features (Chat, User Profile, Subscriptions?) to see which need to become organization-scoped.
+*   [ ] **Update Backend:** Modify Supabase queries/RLS for identified features to include `WHERE organization_id = current_org_id`. Add `organization_id` columns via migration where needed. Test these RLS changes.
+*   [ ] **Update API Client:** Modify relevant API client functions to accept `organizationId`. Test these changes.
+*   [ ] **Update Frontend:** Modify components using these features to pass the `currentOrganizationId` from the store to API calls. Test these components to ensure they filter data correctly based on the selected org.
+*   [ ] **Update Existing Tests:** Modify tests for impacted features to mock and account for the `organizationId` parameter and context.
+
+### 2.9 Checkpoint 2: Multi-Tenancy Complete
+
+*   [ ] **Run Tests:** Execute all tests (`pnpm test`). Ensure they pass.
+*   [ ] **Build App:** Run `pnpm build`. Ensure it completes successfully.
+*   [ ] **Manual Test:**
+    *   Create orgs (public/private).
+    *   Invite users, accept invites.
+    *   Test org switcher and data scoping (chats, etc.).
+    *   Test RLS (access denial for non-members).
+    *   Test role permissions (admin vs member actions in settings/members pages).
+    *   Test visibility setting (though no public search yet).
+    *   Test join request flow via simulated link/ID entry -> notification -> approval.
+    *   Test "last admin" logic: try to remove last admin role/membership and verify error.
+    *   Test soft deleting an organization as an admin.
+    *   Verify the deleted org disappears from lists/switchers.
+    *   Verify direct access to the deleted org's pages/data is blocked.
+    *   Verify actions within the deleted org context fail gracefully.
+*   [ ] **Update Docs:** Mark Phase 2 tasks as complete in `IMPLEMENTATION_PLAN.md`. Update `STRUCTURE.md`.
+*   [ ] **Commit:** `feat: implement multi-tenancy support (#issue_number)`
+*   [ ] **Remind User:** "Multi-tenancy support is implemented. Please perform thorough testing, especially around roles, RLS, visibility, and the 'last admin' check. Remember to update impacted tests. Review and commit: `git add . && git commit -m 'feat: implement multi-tenancy support'`"
+
+---
+
+## Phase 3: Final Review & Cleanup
+
+*   [ ] **Code Review:** Review all new code for clarity, efficiency, adherence to `DEV_PLAN.md`, and potential bugs (especially around RLS and state management).
+*   [ ] **Test Coverage:** Review test coverage. Add tests for any critical paths missed.
+*   [ ] **Final Test Run:** Execute all tests one last time.
+*   [ ] **Final Build:** Perform a final `pnpm build`.
+*   [ ] **Update `README.md`:** Add information about the new notification and multi-tenancy features.
+*   [ ] **Final Commit:** `chore: finalize notification and multi-tenancy implementation (#issue_number)`
+*   [ ] **Remind User:** "The implementation is complete and documented. Please ensure all tests pass and the build is successful. Consider deploying to a staging environment for further validation before merging to main. Final commit suggestion: `git add . && git commit -m 'chore: finalize notification and multi-tenancy implementation'`"
+
+---
+
+## Future Scope & Considerations
+
+The following items were discussed but deferred from this initial implementation plan to manage scope. They can be considered for future iterations:
+
+*   **Granular Member Roles:** Implementing roles beyond 'admin' and 'member' (e.g., 'viewer', custom roles).
+*   **Sub-Teams:** Adding support for hierarchical teams within organizations.
+*   **Public Organization Discovery & Search:** Implementing UI for users to find `public` organizations.
+*   **Domain-Based Joining:** Logic to suggest/assign users to orgs based on email domain.
+*   **Enhanced Privacy/Visibility Settings:** Extending `organizations.visibility` beyond public/private.
+*   **Invite Token Expiration/Management:** Adding expiry dates and admin management for invites.
+*   **User Notification Preferences:** Allowing users to choose notification types and delivery channels (in-app vs. email).
+*   **Email Notifications:** Sending emails for various notification types (beyond invites).
+*   **Notification Cleanup/Archiving:** Automatic cleanup of old notifications.
+*   **Notification Grouping:** Grouping similar informational notifications in the UI (Note: complex for actionable items).
+*   **Organization-Level Billing:** Allowing an organization entity to manage billing for its members.
+*   **Resource Quotas/Limits per Organization:** Enforcing limits tied to organization billing plans.
+*   **Dedicated Audit Log:** Implementing an immutable log for organization events.
+*   **Org-Focused User Onboarding:** Designing specific flows for new users joining/creating orgs immediately upon signup.
+*   **Advanced Org Deletion Handling:** Defining specific behavior for associated data (chats, resources, etc.) when an org is soft-deleted (e.g., archiving, member status changes beyond just blocking access).
+
+--- 
