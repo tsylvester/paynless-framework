@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { Bell, CheckCheck } from 'lucide-react';
 
@@ -19,95 +19,47 @@ import { SimpleDropdown } from '@/components/ui/SimpleDropdown'; // Import the n
 // type NotificationHandler = (notification: Notification) => void; // Removed
 
 export const Notifications: React.FC = () => {
-    // Infer type from selector directly
-    const { user, token } = useAuthStore(state => ({ user: state.user, token: state.token }));
+    // Only need user from auth store now
+    const user = useAuthStore(state => state.user); 
     const {
         notifications,
         unreadCount,
-        addNotification, 
         markNotificationRead, 
         markAllNotificationsAsRead, 
-        fetchNotifications, // Get fetch action from store
-        // isLoading, // Optional: Could use loading state from store
-        // error, // Optional: Could use error state from store
-    } = useNotificationStore(); // Use default hook return type
+        fetchNotifications,
+        initNotificationStream, 
+        disconnectNotificationStream
+    } = useNotificationStore();
 
     const navigate = useNavigate();
-    // const [isOpen, setIsOpen] = useState(false); // Remove state, handled by SimpleDropdown
-    // Use ref to hold EventSource instance
-    const eventSourceRef = useRef<EventSource | null>(null);
-    // State to track items marked read during this dropdown session
     const [locallyReadIds, setLocallyReadIds] = useState<Set<string>>(new Set());
 
-    // Fetch initial notifications using the API client
+    // Fetch initial notifications using the store action
     useEffect(() => {
         if (user) {
             logger.debug('[Notifications] User found, triggering fetchNotifications store action.');
-            fetchNotifications(); // Call the action from the store
-            // Store action handles success/error/loading internally
+            fetchNotifications();
         }
-    }, [user, fetchNotifications]); // Add fetchNotifications to dependency array
+    }, [user, fetchNotifications]); 
 
-    // --- NEW: useEffect for SSE Connection --- 
+    // --- NEW: useEffect to connect/disconnect stream via store actions --- 
     useEffect(() => {
-        // Ensure user and token are present
-        if (user && token) {
-            logger.info('[Notifications] User and token found, establishing SSE connection.');
-            const sseUrl = `/api/notifications-stream?token=${token}`;
-            
-            // Close existing connection if any (e.g., token changed)
-            if (eventSourceRef.current) {
-                logger.debug('[Notifications] Closing existing EventSource connection.');
-                eventSourceRef.current.close();
-            }
-
-            // Create new EventSource
-            const newEventSource = new EventSource(sseUrl);
-            eventSourceRef.current = newEventSource; // Store ref
-
-            newEventSource.onopen = () => {
-                logger.info('[Notifications] SSE connection opened.');
-            };
-
-            newEventSource.onmessage = (event) => {
-                try {
-                    logger.debug('[Notifications] SSE message received:', event.data);
-                    const newNotificationData: Notification = JSON.parse(event.data);
-                    // Call store action to add the notification
-                    addNotification(newNotificationData);
-                } catch (error) {
-                    logger.error('[Notifications] Failed to parse SSE message data:', { data: event.data, error });
-                }
-            };
-
-            newEventSource.onerror = (errorEvent) => { // Rename variable for clarity
-                // --- Wrap error event in object for logger --- 
-                logger.error('[Notifications] SSE connection error:', { error: errorEvent });
-                // Potentially close and nullify ref? Depends on desired retry logic.
-                // For now, just log the error.
-                // eventSourceRef.current?.close(); 
-                // eventSourceRef.current = null;
-            };
-
-            // Cleanup function for when component unmounts or user/token changes
-            return () => {
-                logger.debug('[Notifications] Cleaning up SSE connection.');
-                if (eventSourceRef.current) {
-                    eventSourceRef.current.close();
-                    eventSourceRef.current = null;
-                }
-            };
-
+        if (user) {
+            logger.info('[Notifications] User detected, initializing notification stream via store.');
+            initNotificationStream(); 
         } else {
-            // User or token is missing, ensure any existing connection is closed
-            if (eventSourceRef.current) {
-                 logger.debug('[Notifications] User or token missing, closing existing SSE connection.');
-                 eventSourceRef.current.close();
-                 eventSourceRef.current = null;
-             }
+             logger.info('[Notifications] No user detected, ensuring notification stream is disconnected.');
+            disconnectNotificationStream();
         }
-    // Dependencies: user and token - reconnect if they change
-    }, [user, token, addNotification]); // Include addNotification from store
+
+        // Cleanup on component unmount OR when user changes (logs out)
+        return () => {
+             logger.debug('[Notifications] Component unmounting or user changed, disconnecting stream.');
+             disconnectNotificationStream(); 
+        };
+    // Dependencies: user, initNotificationStream, disconnectNotificationStream
+    }, [user, initNotificationStream, disconnectNotificationStream]);
+    // --------------------------------------------------------------
 
     // Callback for when dropdown opens/closes
     const handleOpenChange = useCallback((open: boolean) => {
@@ -118,59 +70,43 @@ export const Notifications: React.FC = () => {
     }, []); // Empty dependency array, function doesn't depend on external state
 
     const handleNotificationClick = useCallback((notification: Notification) => {
-         logger.debug('[Notifications] Notification clicked', { id: notification.id });
+        logger.debug('[Notifications] Notification clicked', { id: notification.id });
+        
+        const targetPath = notification.data?.target_path; 
+
         if (!notification.read) {
              markNotificationRead(notification.id);
-             // Add to locally read set *after* initiating the mark as read action
              setLocallyReadIds(prev => new Set(prev).add(notification.id));
         }
-        const targetPath = notification.data?.['target_path']; 
-        if (targetPath && typeof targetPath === 'string') { 
+        
+        if (targetPath) { 
             navigate(targetPath);
-            // Maybe close dropdown here?
         }
-    }, [markNotificationRead, navigate]); // Add dependencies
+    }, [markNotificationRead, navigate, setLocallyReadIds]);
 
     const handleMarkReadClick = useCallback((e: React.MouseEvent, notificationId: string) => {
         e.stopPropagation(); 
         logger.debug('[Notifications] Mark as read clicked', { id: notificationId });
         markNotificationRead(notificationId);
-        // Add to locally read set *after* initiating the mark as read action
         setLocallyReadIds(prev => new Set(prev).add(notificationId));
-    }, [markNotificationRead]); // Add dependency
+    }, [markNotificationRead]); 
 
     const handleMarkAllReadClick = useCallback((e: React.MouseEvent) => {
         e.stopPropagation(); 
         logger.debug('[Notifications] Mark all as read clicked');
-        // Mark all items currently *unread* in the store as locally read
         const idsToMarkLocally = notifications.filter(n => !n.read).map(n => n.id);
         setLocallyReadIds(prev => new Set([...prev, ...idsToMarkLocally]));
-        // Call store action
         markAllNotificationsAsRead(); 
-    }, [markAllNotificationsAsRead, notifications]); // Add dependencies
+    }, [markAllNotificationsAsRead, notifications]); 
 
     // Filter notifications to display
     const displayedNotifications = notifications.filter(n => 
-        !n.read || // Show if it's actually unread in the store
-        locallyReadIds.has(n.id) // OR if it was marked read locally this session
+        !n.read || locallyReadIds.has(n.id)
     );
 
-    // Filter notifications to only show unread
-    const unreadNotifications = notifications.filter(n => !n.read);
-
-    // --- Fix: Ensure component returns null if no user --- 
     if (!user) {
-        // Explicitly close connection if user becomes null while mounted
-        // Though the useEffect cleanup should handle this too.
-         if (eventSourceRef.current) {
-            logger.warn('[Notifications] User became null, ensuring SSE is closed.');
-            eventSourceRef.current.close();
-            eventSourceRef.current = null;
-        }
         return null; 
     }
-
-    // console.log('[Notifications] Rendering'); // No longer need isOpen here
 
     return (
         <SimpleDropdown
@@ -184,7 +120,6 @@ export const Notifications: React.FC = () => {
                     size="icon" 
                     className="relative rounded-full" 
                     aria-label="Toggle Notifications"
-                    // No onClick needed here, SimpleDropdown wraps it
                 >
                     <Bell className="h-5 w-5" />
                     {unreadCount > 0 && (
@@ -226,12 +161,14 @@ export const Notifications: React.FC = () => {
                 </div>
             ) : (
                 displayedNotifications.map((notification) => {
-                    const isActuallyUnread = !notification.read; // Check the actual store state
+                    const isActuallyUnread = !notification.read;
                     const timeAgo = notification.created_at
                         ? formatDistanceToNowStrict(new Date(notification.created_at), { addSuffix: true })
                         : '';
-                    const subject = notification.data?.['subject'] || 'Untitled';
-                    const message = notification.data?.['message'] || 'System Notification';
+
+                    const subject = notification.data?.subject || 'Untitled';
+                    const message = notification.data?.message || 'System Notification';
+
                     const label = `Notification: ${subject}. ${isActuallyUnread ? 'Unread' : 'Read'}. Received ${timeAgo}`;
                     
                     return (
@@ -256,24 +193,24 @@ export const Notifications: React.FC = () => {
                             {/* Adjust padding based on dot presence */}
                             <div className={cn("flex-grow", !isActuallyUnread && "pl-4")}> 
                                 <p className="text-sm font-medium leading-none mb-1">
-                                     {message}
+                                     {message || subject} 
                                 </p>
-                                 <p className="text-xs text-muted-foreground">
-                                     {timeAgo}
+                                <p className="text-xs text-muted-foreground">
+                                    {timeAgo}
                                 </p>
-                             </div>
-                             {/* Show mark read button only if *actually* unread */}
-                             {isActuallyUnread && (
-                                 <Button
-                                     variant="ghost"
-                                     size="sm"
-                                     className="ml-auto h-auto p-1 flex-shrink-0"
-                                     onClick={(e) => handleMarkReadClick(e, notification.id)}
-                                     aria-label={`Mark notification ${notification.id} as read`}
-                                 >
-                                     <CheckCheck className="h-4 w-4" />
-                                 </Button>
-                             )}
+                            </div>
+                            {/* Add Mark as Read button */}
+                            {isActuallyUnread && (
+                                <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    className="absolute top-1 right-1 h-auto px-1 py-0.5 text-muted-foreground hover:text-foreground"
+                                    onClick={(e) => handleMarkReadClick(e, notification.id)}
+                                    aria-label={`Mark notification "${subject}" as read`}
+                                >
+                                    <CheckCheck className="h-3 w-3" />
+                                </Button>
+                            )}
                         </div>
                     );
                 })

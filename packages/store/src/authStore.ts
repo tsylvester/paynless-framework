@@ -10,6 +10,7 @@ import { logger } from '@paynless/utils'
 import { api, getApiClient } from '@paynless/api'
 import { analytics } from '@paynless/analytics'
 import { SupabaseClient } from '@supabase/supabase-js'
+import { useNotificationStore } from './notificationStore'
 
 export const useAuthStore = create<AuthStore>()((set, get) => ({
       user: null,
@@ -101,6 +102,21 @@ export const useAuthStore = create<AuthStore>()((set, get) => ({
 
       logout: async () => {
         analytics.reset()
+
+        // --- Disconnect Notification Stream --- 
+        try {
+           const { disconnectNotificationStream } = useNotificationStore.getState();
+           if (disconnectNotificationStream) {
+              logger.info('[AuthStore Logout] Disconnecting notification stream...');
+              disconnectNotificationStream();
+           } else {
+              logger.debug('[AuthStore Logout] No active notification stream to disconnect.');
+           }
+        } catch (streamError) {
+           // Log error but proceed with logout
+           logger.error('[AuthStore Logout] Error disconnecting notification stream:', { error: streamError instanceof Error ? streamError.message : String(streamError) });
+        }
+        // ------------------------------------
 
         // Check if there's a session in the store state first
         const currentSession = get().session;
@@ -388,9 +404,25 @@ export function initAuthListener(
                     if (profileResponse.data && profileResponse.data.profile) {
                         logger.debug(`[AuthListener] Profile fetched successfully for ${event}`);
                         useAuthStore.setState({ profile: profileResponse.data.profile });
+                        
+                        // --- Initialize Notification Stream --- 
+                        try {
+                           logger.info(`[AuthListener] Initializing notification stream after successful ${event} and profile fetch...`);
+                           // Get notification store action and call it
+                           const { initNotificationStream } = useNotificationStore.getState();
+                           initNotificationStream(); 
+                        } catch (streamInitError) {
+                            logger.error(`[AuthListener] Failed to initialize notification stream during ${event}:`, {
+                                error: streamInitError instanceof Error ? streamInitError.message : String(streamInitError)
+                            });
+                            // Decide if we need to set an error state here or just log
+                        }
+                        // -------------------------------------
+
                     } else {
                         logger.error(`[AuthListener] Failed to fetch profile for ${event}`, { error: profileResponse.error });
                         useAuthStore.setState({ profile: null, error: new Error(profileResponse.error?.message || 'Failed fetch profile') });
+                        // Note: Stream is NOT initialized if profile fetch fails
                     }
 
                 } catch (asyncError) {

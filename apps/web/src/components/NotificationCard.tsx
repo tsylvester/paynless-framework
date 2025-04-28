@@ -6,7 +6,6 @@ import { Button } from '@/components/ui/button';
 import { ExternalLink } from 'lucide-react';
 import { formatDistanceToNowStrict } from 'date-fns';
 import type { Notification } from '@paynless/types';
-import { cn } from '@/lib/utils';
 
 interface NotificationCardProps {
     notification: Notification;
