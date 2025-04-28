@@ -125,8 +125,35 @@ export const useOrganizationStore = create<OrganizationStoreImplementation>((set
   },
 
   fetchOrganizationDetails: async (orgId: string) => {
-    // Implementation TBD
-    logger.info(`[OrganizationStore] fetchOrganizationDetails called for ${orgId} - TBD`);
+    const { _setLoading, _setError } = get();
+    _setLoading(true);
+    _setError(null);
+
+    try {
+      // Use the factory method api.organizations() to get the client instance
+      // --- TEMPORARY WORKAROUND: Cast to 'any' due to export type issue ---
+      const response = await (api as any).organizations.getOrganizationDetails(orgId);
+
+      if (response.error || response.status >= 300) {
+        const errorLog = { 
+            message: response.error?.message ?? 'Unknown API Error', 
+            code: response.error?.code, 
+            status: response.status 
+        };
+        logger.error('[OrganizationStore] fetchOrganizationDetails - API Error', { orgId, ...errorLog });
+        _setError(response.error?.message ?? 'Failed to fetch organization details');
+        set({ currentOrganizationDetails: null }); // Clear details on error
+      } else {
+        set({ currentOrganizationDetails: response.data }); // Set details on success
+        _setError(null); // Explicitly clear error
+      }
+    } catch (err: any) {
+      logger.error('[OrganizationStore] fetchOrganizationDetails - Unexpected Error', { orgId, message: err?.message });
+      _setError(err.message ?? 'An unexpected error occurred');
+      set({ currentOrganizationDetails: null }); // Clear details on error
+    } finally {
+      _setLoading(false);
+    }
   },
 
   fetchCurrentOrganizationMembers: async () => {

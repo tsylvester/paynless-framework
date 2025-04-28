@@ -153,8 +153,90 @@ describe('OrganizationStore', () => {
     });
   });
 
+  // --- setCurrentOrganizationId Tests ---
   // TODO: Add tests for setCurrentOrganizationId
-  // TODO: Add tests for fetchOrganizationDetails
+
+  // --- fetchOrganizationDetails Tests ---
+  describe('fetchOrganizationDetails', () => {
+    const orgId = 'org-detail-test-id';
+    const mockOrgDetails: Organization = {
+      id: orgId,
+      name: 'Detailed Org',
+      visibility: 'private',
+      created_at: 'date-detail',
+      deleted_at: null
+    };
+
+    it('should call API, update details, and clear loading/error on success', async () => {
+      // Arrange
+      const detailMock = vi.mocked(api.organizations.getOrganizationDetails);
+      detailMock.mockResolvedValue({ status: 200, data: mockOrgDetails });
+
+      // Act
+      const fetchPromise = useOrganizationStore.getState().fetchOrganizationDetails(orgId);
+      expect(useOrganizationStore.getState().error).toBeNull(); // Check error cleared
+
+      await fetchPromise;
+
+      // Assert
+      expect(detailMock).toHaveBeenCalledTimes(1);
+      expect(detailMock).toHaveBeenCalledWith(orgId);
+
+      const finalState = useOrganizationStore.getState();
+      expect(finalState.currentOrganizationDetails).toEqual(mockOrgDetails);
+      expect(finalState.isLoading).toBe(false);
+      expect(finalState.error).toBeNull();
+    });
+
+    it('should set error, clear details, and clear loading on API error (e.g., 404)', async () => {
+      // Arrange
+      const detailMock = vi.mocked(api.organizations.getOrganizationDetails);
+      const errorMsg = 'Organization not found';
+      detailMock.mockResolvedValue({ status: 404, error: { message: errorMsg, code: 'PGRST116' } });
+      // Pre-fill state
+      useOrganizationStore.setState({ currentOrganizationDetails: mockOrgDetails });
+
+      // Act
+      const fetchPromise = useOrganizationStore.getState().fetchOrganizationDetails(orgId);
+      expect(useOrganizationStore.getState().error).toBeNull(); // Check error cleared
+
+      await fetchPromise;
+
+      // Assert
+      expect(detailMock).toHaveBeenCalledTimes(1);
+      expect(detailMock).toHaveBeenCalledWith(orgId);
+
+      const finalState = useOrganizationStore.getState();
+      expect(finalState.currentOrganizationDetails).toBeNull(); // Should be cleared
+      expect(finalState.isLoading).toBe(false);
+      expect(finalState.error).toBe(errorMsg);
+    });
+
+    it('should set error, clear details, and clear loading on unexpected error', async () => {
+      // Arrange
+      const detailMock = vi.mocked(api.organizations.getOrganizationDetails);
+      const errorMsg = 'Network error';
+      detailMock.mockRejectedValue(new Error(errorMsg)); // Simulate unexpected error
+      // Pre-fill state
+      useOrganizationStore.setState({ currentOrganizationDetails: mockOrgDetails });
+
+      // Act
+      const fetchPromise = useOrganizationStore.getState().fetchOrganizationDetails(orgId);
+      expect(useOrganizationStore.getState().error).toBeNull(); // Check error cleared
+
+      await fetchPromise;
+
+      // Assert
+      expect(detailMock).toHaveBeenCalledTimes(1);
+      expect(detailMock).toHaveBeenCalledWith(orgId);
+
+      const finalState = useOrganizationStore.getState();
+      expect(finalState.currentOrganizationDetails).toBeNull(); // Should be cleared
+      expect(finalState.isLoading).toBe(false);
+      expect(finalState.error).toBe(errorMsg);
+    });
+  });
+
   // TODO: Add tests for fetchCurrentOrganizationMembers
   // TODO: Add tests for softDeleteOrganization
 
