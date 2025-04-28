@@ -1,13 +1,13 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { useAiStore } from './aiStore'; // Adjust path as needed
 import { useAuthStore } from './authStore'; // Adjust path as needed
-import { api } from '@paynless/api-client'; // Adjust path as needed
+import { api } from '@paynless/api'; // Adjust path as needed
 import type { PendingAction, ChatMessage, Session, User, ApiResponse, UserRole, AuthStore } from '@paynless/types';
 import { create } from 'zustand'; // Import create
 import 'vitest-localstorage-mock'; // <-- Add this import
 
 // Mock dependencies
-vi.mock('@paynless/api-client'); // Use auto-mocking features if possible
+vi.mock('@paynless/api'); // Use auto-mocking features if possible
 vi.mock('./authStore');
 
 // Helper to define mock auth state with required fields

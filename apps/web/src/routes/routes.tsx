@@ -9,6 +9,7 @@ import { ProtectedRoute } from '../components/auth/ProtectedRoute';
 import { SubscriptionSuccessPage } from '../pages/SubscriptionSuccess';
 import { RootRoute } from '../components/routes/RootRoute';
 import AiChatPage from '../pages/AiChat';
+import Notifications from '../pages/Notifications';
 
 export const routes: AppRoute[] = [
   {
@@ -16,41 +17,46 @@ export const routes: AppRoute[] = [
     element: <RootRoute />,
   },
   {
-    path: '/login',
+    path: 'login',
     element: <LoginPage />,
   },
   {
-    path: '/register',
+    path: 'register',
     element: <RegisterPage />,
   },
   {
-    path: '/dashboard',
+    path: 'dashboard',
     element: <ProtectedRoute><DashboardPage /></ProtectedRoute>,
     requireAuth: true,
   },
   {
-    path: '/chat',
+    path: 'chat',
     element: <ProtectedRoute><AiChatPage /></ProtectedRoute>,
     requireAuth: true,
   },
   {
-    path: '/profile',
+    path: 'notifications',
+    element: <ProtectedRoute><Notifications /></ProtectedRoute>,
+    requireAuth: true,
+  },
+  {
+    path: 'profile',
     element: <ProtectedRoute><ProfilePage /></ProtectedRoute>,
     requireAuth: true,
   },
   {
-    path: '/subscription',
+    path: 'subscription',
     element: <ProtectedRoute><SubscriptionPage /></ProtectedRoute>,
     requireAuth: true,
     allowedRoles: ['user'],
   },
   {
-    path: '/subscriptionsuccess',
+    path: 'subscriptionsuccess',
     element: <ProtectedRoute><SubscriptionSuccessPage /></ProtectedRoute>,
     requireAuth: true,
   },
   {
-    path: '/admin',
+    path: 'admin',
     element: <ProtectedRoute allowedRoles={['admin']}><div>Admin Page</div></ProtectedRoute>,
     requireAuth: true,
     allowedRoles: ['admin'],

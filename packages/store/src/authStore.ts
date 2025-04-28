@@ -1,18 +1,15 @@
 import { create } from 'zustand'
 import {
   AuthStore,
-  User,
-  Session,
   UserProfileUpdate,
-  AuthResponse,
   UserProfile,
-  UserRole
+  ProfileResponse,
 } from '@paynless/types'
 import { NavigateFunction } from '@paynless/types'
 import { logger } from '@paynless/utils'
-import { api, getApiClient } from '@paynless/api-client'
-import { analytics } from '@paynless/analytics-client'
-import { SupabaseClient, Session as SupabaseSession, User as SupabaseUser } from '@supabase/supabase-js'
+import { api, getApiClient } from '@paynless/api'
+import { analytics } from '@paynless/analytics'
+import { SupabaseClient } from '@supabase/supabase-js'
 
 export const useAuthStore = create<AuthStore>()((set, get) => ({
       user: null,
@@ -24,9 +21,9 @@ export const useAuthStore = create<AuthStore>()((set, get) => ({
 
       setNavigate: (navigateFn: NavigateFunction) => set({ navigate: navigateFn }),
 
-      setUser: (user: User | null) => set({ user }),
+      setUser: (user) => set({ user }),
 
-      setSession: (session: Session | null) => set({ session }),
+      setSession: (session) => set({ session }),
 
       setProfile: (profile: UserProfile | null) => set({ profile }),
 
@@ -34,7 +31,7 @@ export const useAuthStore = create<AuthStore>()((set, get) => ({
 
       setError: (error: Error | null) => set({ error }),
 
-      login: async (email: string, password: string): Promise<User | null> => {
+      login: async (email: string, password: string): Promise<void> => {
         set({ isLoading: true, error: null })
         try {
           // Get Supabase client instance
@@ -50,29 +47,17 @@ export const useAuthStore = create<AuthStore>()((set, get) => ({
             // Throw the error to be caught by the catch block
             throw signInError;
           }
-
-          // What should login return now? Listener handles state. 
-          // Returning null seems appropriate as the action itself doesn't provide the final user state.
-          return null; 
-
+          // No return value needed, listener handles state
         } catch (error) {
           const finalError =
             error instanceof Error ? error : new Error('Unknown login error');
           logger.error('Login error in store', { message: finalError.message });
           set({
-            // Only set error and loading false. User/session/profile cleared by listener or remain null.
             isLoading: false,
             error: finalError,
-            // user: null, // Let listener handle this
-            // session: null,
-            // profile: null,
           });
-          return null;
+          // No return value needed
         } finally {
-            // Ensure isLoading is always set to false
-            // Note: The catch block also sets isLoading: false, 
-            // so this might be redundant if the catch always runs before finally on error.
-            // However, setting it here guarantees it in case of unexpected non-error exits from try.
              set({ isLoading: false });
         }
       },
@@ -80,7 +65,7 @@ export const useAuthStore = create<AuthStore>()((set, get) => ({
       register: async (
         email: string,
         password: string
-      ): Promise<User | null> => {
+      ): Promise<void> => {
         set({ isLoading: true, error: null })
         try {
           // Get Supabase client instance
@@ -95,13 +80,7 @@ export const useAuthStore = create<AuthStore>()((set, get) => ({
           if (signUpError) {
             throw signUpError;
           }
-
-          // On success, Supabase call is done.
-          // The onAuthStateChange listener handles setting state.
-
-          // Return null as listener handles final user state
-          return null;
-
+          // No return value needed, listener handles state
         } catch (error) {
           const finalError =
             error instanceof Error
@@ -113,11 +92,8 @@ export const useAuthStore = create<AuthStore>()((set, get) => ({
           set({
             isLoading: false,
             error: finalError,
-            // user: null, // Let listener handle
-            // session: null,
-            // profile: null,
           });
-          return null;
+          // No return value needed
         } finally {
             set({ isLoading: false });
         }
@@ -300,30 +276,6 @@ export const useAuthStore = create<AuthStore>()((set, get) => ({
       clearError: () => set({ error: null }),
     }))
 
-const mapSupabaseUser = (supabaseUser: SupabaseUser | null): User | null => {
-  if (!supabaseUser) return null;
-  return {
-    id: supabaseUser.id,
-    email: supabaseUser.email,
-    role: supabaseUser.role as UserRole,
-    created_at: supabaseUser.created_at,
-    updated_at: supabaseUser.updated_at ?? supabaseUser.created_at,
-  };
-};
-
-const mapSupabaseSession = (supabaseSession: SupabaseSession | null): Session | null => {
-  if (!supabaseSession) return null;
-  const nowInSeconds = Math.floor(Date.now() / 1000);
-  const expiresAtTimestamp = supabaseSession.expires_at ?? (supabaseSession.expires_in ? nowInSeconds + supabaseSession.expires_in : nowInSeconds);
-  return {
-    access_token: supabaseSession.access_token,
-    refresh_token: supabaseSession.refresh_token,
-    expiresAt: expiresAtTimestamp,
-    token_type: supabaseSession.token_type,
-    expires_in: supabaseSession.expires_in,
-  };
-};
-
 export function initAuthListener(
   supabaseClient: SupabaseClient
 ): () => void {
@@ -332,37 +284,30 @@ export function initAuthListener(
   const { data: listener } = supabaseClient.auth.onAuthStateChange(
     (event, session) => {
       try {
-        // --- Remove diagnostic log --- 
-        // logger.warn('<<<<< onAuthStateChange CALLBACK EXECUTED >>>>>', { event });
-        
         logger.debug(`[AuthListener] Event: ${event}`, { session });
 
-        const storeSession = mapSupabaseSession(session);
-        const storeUser = mapSupabaseUser(session?.user ?? null);
+        const currentUser = session?.user ?? null;
+        const currentSession = session;
 
-        // Handle state updates SYNCHRONOUSLY first
         switch (event) {
           case 'INITIAL_SESSION':
-            // Update core session/user state immediately
             useAuthStore.setState({
-              session: storeSession,
-              user: storeUser,
-              isLoading: false, // Set loading false here!
+              session: currentSession,
+              user: currentUser,
+              isLoading: false,
               error: null,
-              profile: undefined, // Set profile undefined initially, let async part fetch it
+              profile: undefined,
             });
             break;
           case 'SIGNED_IN':
-            // Update core session/user state immediately
             useAuthStore.setState({
-              session: storeSession,
-              user: storeUser,
-              isLoading: false, // Set loading false here!
+              session: currentSession,
+              user: currentUser,
+              isLoading: false,
               error: null,
-              profile: undefined, // Set profile undefined initially, let async part fetch it
+              profile: undefined,
             });
             
-            // --- NEW: Check for pending action and navigate immediately ---
             try {
                 const pendingActionJson = localStorage.getItem('pendingAction');
                 if (pendingActionJson) {
@@ -372,8 +317,6 @@ export function initAuthListener(
                         const navigate = useAuthStore.getState().navigate;
                         if (navigate) {
                             logger.info(`[AuthListener] Navigating to pending action return path: ${pendingAction.returnPath}`);
-                            // Navigate immediately, let the target page handle the action itself.
-                            // Do NOT remove pendingAction here; target page needs it.
                             navigate(pendingAction.returnPath);
                         } else {
                             logger.warn('[AuthListener] Pending action exists but navigate function not available to redirect.');
@@ -382,11 +325,10 @@ export function initAuthListener(
                          logger.warn('[AuthListener] Could not parse returnPath from pending action JSON.', { pendingActionJson });
                     }
                 } else {
-                    // No pending action, normal sign-in flow. Navigate to default authenticated route.
                     logger.info('[AuthListener] No pending action found on SIGNED_IN. Navigating to default route dashboard.');
                     const navigate = useAuthStore.getState().navigate;
                     if (navigate) {
-                        navigate('dashboard'); // Correctly use string literal
+                        navigate('dashboard');
                     } else {
                         logger.warn('[AuthListener] Navigate function not available for default redirection.');
                     }
@@ -395,18 +337,15 @@ export function initAuthListener(
                 logger.error('[AuthListener] Error checking/parsing pendingAction for navigation:', { 
                     error: e instanceof Error ? e.message : String(e) 
                 });
-                localStorage.removeItem('pendingAction'); // Clear potentially corrupted item
+                localStorage.removeItem('pendingAction');
             }
-            // --- End Immediate Navigation Check ---
             break;
           case 'TOKEN_REFRESHED':
-            // Update core session/user state immediately
             useAuthStore.setState({
-              session: storeSession,
-              user: storeUser,
-              isLoading: false, // Can likely set loading false here too
+              session: currentSession,
+              user: currentUser,
+              isLoading: false,
               error: null,
-              // Profile should already exist, no need to reset to undefined
             });
             break;
           case 'SIGNED_OUT':
@@ -421,33 +360,28 @@ export function initAuthListener(
             localStorage.removeItem('loadChatIdOnRedirect');
             break;
           case 'USER_UPDATED':
-            useAuthStore.setState({ user: storeUser }); 
+            useAuthStore.setState({ user: currentUser });
             break;
           case 'PASSWORD_RECOVERY':
-            // Typically, you might navigate or set a specific state 
-            // For now, ensure loading is false.
             useAuthStore.setState({ isLoading: false });
             break;
           default:
             logger.warn('[AuthListener] Unhandled auth event:', { event });
-             // Ensure loading is false even for unhandled events
             useAuthStore.setState({ isLoading: false }); 
             break;
         }
 
-        // Now, handle ASYNCHRONOUS tasks (profile fetch, replay) AFTER the main callback finishes
-        if ((event === 'INITIAL_SESSION' || event === 'SIGNED_IN') && storeSession?.access_token) {
+        if ((event === 'INITIAL_SESSION' || event === 'SIGNED_IN') && currentSession?.access_token) {
             setTimeout(async () => { 
-                const startTime = Date.now(); // Start timer
+                const startTime = Date.now();
                 logger.debug(`[AuthListener] Performing async tasks for ${event}`);
                 try {
                     const apiClientInstance = getApiClient();
-                    const token = storeSession.access_token;
+                    const token = currentSession.access_token;
 
-                    // --- Delay Point 1: Profile Fetch ---
                     logger.debug(`[AuthListener] Fetching profile for ${event}...`);
                     const profileStartTime = Date.now();
-                    const profileResponse = await apiClientInstance.get<AuthResponse>('me', { token });
+                    const profileResponse = await apiClientInstance.get<ProfileResponse>('me', { token });
                     const profileEndTime = Date.now();
                     logger.debug(`[AuthListener] Profile fetch completed for ${event}. Duration: ${profileEndTime - profileStartTime}ms`);
                     
@@ -459,27 +393,16 @@ export function initAuthListener(
                         useAuthStore.setState({ profile: null, error: new Error(profileResponse.error?.message || 'Failed fetch profile') });
                     }
 
-                    // --- Delay Point 2: Action Replay (REMOVED) ---
-                    // logger.debug(`[AuthListener] Checking for pending action for ${event}...`);
-                    // const replayStartTime = Date.now(); // Timer for replay call
-                    // const navigate = useAuthStore.getState().navigate;
-                    // await replayPendingAction(apiClientInstance, navigate, token);
-                    // const replayEndTime = Date.now();
-                    // logger.debug(`[AuthListener] replayPendingAction call completed for ${event}. Duration: ${replayEndTime - replayStartTime}ms`); 
-
                 } catch (asyncError) {
                     logger.error(`[AuthListener] Error during async tasks for ${event}`, { 
                         error: asyncError instanceof Error ? asyncError.message : String(asyncError) 
                     });
                 } finally {
-                    const endTime = Date.now(); // End timer
+                    const endTime = Date.now();
                     logger.debug(`[AuthListener] Finished async tasks for ${event}. Total duration: ${endTime - startTime}ms`);
                 }
-            }, 0); // setTimeout 0ms
+            }, 0); 
         } 
-        // else if (event === 'SIGNED_OUT') {
-            // If any async cleanup is needed for signout, add another setTimeout here.
-        // }
 
       } catch (callbackError) {
         logger.error('!!!!!! ERROR INSIDE onAuthStateChange CALLBACK !!!!!!', {

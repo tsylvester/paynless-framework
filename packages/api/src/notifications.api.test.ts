@@ -1,4 +1,4 @@
-// packages/api-client/src/notifications.api.test.ts
+// packages/api/src/notifications.api.test.ts
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { NotificationApiClient } from './notifications.api';
 import { ApiClient } from './apiClient'; // Base client needed for mocking

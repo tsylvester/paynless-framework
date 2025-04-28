@@ -7,7 +7,7 @@ import {
 } from '@supabase/supabase-js';
 import { useAuthStore } from './authStore'; // Import the store hook itself
 import { initAuthListener } from './authStore';
-import { ApiClient } from '@paynless/api-client'; // Import ApiClient type
+import { ApiClient } from '@paynless/api'; // Import ApiClient type
 // Import our actual mapped types for verifying results
 import { Session, User, UserProfile, UserRole } from '@paynless/types'; 
 
@@ -91,8 +91,8 @@ const mockApiClientInstance = {
     getSupabaseClient: vi.fn().mockReturnValue(mockSupabaseClient), // Needed by replay
 } as unknown as ApiClient;
 
-// --- Mock the entire @paynless/api-client module ---
-vi.mock('@paynless/api-client', () => ({
+// --- Mock the entire @paynless/api module ---
+vi.mock('@paynless/api', () => ({
   // Mock specific named exports needed by authStore or the listener
   getApiClient: vi.fn(() => mockApiClientInstance), // Ensure getApiClient returns our mock instance
   // Mock the 'api' object if it's also imported/used directly

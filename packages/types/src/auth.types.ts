@@ -1,26 +1,32 @@
 import type { Database } from '@paynless/db-types';
 import { NavigateFunction } from './navigation.types'; // Import NavigateFunction
 
-// Export the DB enum type under the alias UserRole for easier consumption
-export type UserRole = Database['public']['Enums']['user_role'];
-
-// Keep User interface for combined frontend state, but align properties
-// and derive role from DB enum.
-export interface User {
-  // Properties typically from supabase.auth.user
-  id: string; // From SupabaseAuthUser['id']
-  email?: string; // From SupabaseAuthUser['email']
-  // Properties typically from user_profiles table
-  first_name?: string | null; // From Database['public']['Tables']['user_profiles']['Row']['first_name']
-  last_name?: string | null; // From Database['public']['Tables']['user_profiles']['Row']['last_name']
-  // Use the exported alias
-  role: UserRole; 
-  // Timestamps might come from either or be app-specific
+// Define interfaces matching the structure of Supabase User/Session objects
+// We only need properties used by our application.
+export interface SupabaseUser {
+  id: string;
+  email?: string;
+  role?: string; // Keep as string? or specific roles if known and enforced
+  app_metadata: Record<string, any> & { provider?: string };
+  user_metadata: Record<string, any>;
+  aud: string;
   created_at?: string;
   updated_at?: string;
-  // avatarUrl is not standard, assuming it's in user_profiles or handled separately
-  avatarUrl?: string; 
+  // Add other fields if needed from Supabase User, e.g., phone, email_confirmed_at
 }
+
+export interface SupabaseSession {
+  access_token: string;
+  refresh_token: string;
+  expires_in?: number;
+  expires_at?: number; // In seconds since epoch
+  token_type?: string;
+  user: SupabaseUser;
+  // Add other fields if needed from Supabase Session
+}
+
+// Export the DB enum type under the alias UserRole for easier consumption
+export type UserRole = Database['public']['Enums']['user_role'];
 
 // Define the type for profile updates - ONLY first/last name
 export type UserProfileUpdate = {
@@ -32,36 +38,30 @@ export type UserProfileUpdate = {
 export type UserProfile = Database['public']['Tables']['user_profiles']['Row'];
 
 export interface AuthStore {
-  setUser: (user: User | null) => void // Uses combined User type
-  setSession: (session: Session | null) => void
+  // Use Supabase types for parameters
+  setUser: (user: SupabaseUser | null) => void 
+  setSession: (session: SupabaseSession | null) => void
   // Use DB type for profile state
   setProfile: (profile: UserProfile | null) => void // Uses UserProfile alias
   setIsLoading: (isLoading: boolean) => void
   setError: (error: Error | null) => void
   setNavigate: (navigateFn: NavigateFunction) => void
-  login: (email: string, password: string) => Promise<User | null> // Returns combined User
-  register: (email: string, password: string) => Promise<User | null> // Returns combined User
+  // Login/Register now just trigger Supabase flow, listener handles state
+  login: (email: string, password: string) => Promise<void> 
+  register: (email: string, password: string) => Promise<void> 
   logout: () => Promise<void>
   // updateProfile returns the updated DB profile row
   updateProfile: (profileData: UserProfileUpdate) => Promise<UserProfile | null> // Uses UserProfile alias
   updateEmail: (email: string) => Promise<boolean>
   clearError: () => void
-  // State properties
-  session: Session | null
-  user: User | null // Uses combined User type
+  // State properties use Supabase types
+  session: SupabaseSession | null
+  user: SupabaseUser | null 
   // Use DB type for profile state
   profile: UserProfile | null // Uses UserProfile alias
   isLoading: boolean
   error: Error | null
   navigate: NavigateFunction | null
-}
-
-export interface Session {
-  access_token: string
-  refresh_token: string
-  expiresAt: number
-  token_type?: string
-  expires_in?: number
 }
 
 export interface LoginCredentials {
@@ -74,27 +74,17 @@ export interface RegisterCredentials {
   password: string
 }
 
-// Response type for login/register/refresh endpoints
+// Response type for login/register endpoints (if still needed)
 export interface AuthResponse {
-  user: User | null // Keep combined User for convenience?
-  session: Session | null
-  profile: Database['public']['Tables']['user_profiles']['Row'] | null // Use DB type
+  user: SupabaseUser | null 
+  session: SupabaseSession | null
+  profile: Database['public']['Tables']['user_profiles']['Row'] | null
 }
 
 // Response type specifically for profile fetch (/me)
-// It might include user data again depending on backend implementation
 export interface ProfileResponse {
-  user: User // Keep combined User?
-  profile: Database['public']['Tables']['user_profiles']['Row'] // Use DB type
-}
-
-/**
- * Structure of the response from the (potential) token refresh endpoint.
- */
-export interface RefreshResponse {
-  session: Session | null
-  user: User | null // Keep combined User?
-  profile: Database['public']['Tables']['user_profiles']['Row'] | null // Use DB type
+  user: SupabaseUser // Corrected: Use the imported SupabaseUser type
+  profile: Database['public']['Tables']['user_profiles']['Row'] | null // Use DB type and allow null
 }
 
 /**

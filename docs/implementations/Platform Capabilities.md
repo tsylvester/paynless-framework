@@ -12,7 +12,7 @@ This plan assumes we'll start by implementing the core service and then focus on
 **Phase 0: Foundation & Interface Definition (Shared Package)**
 
 *   **Goal:** Define the contracts (interfaces) for capabilities and the basic structure of the service.
-*   **Location:** `packages/types` (for interfaces), `packages/utils` or a new `packages/platform-capabilities` (for the service implementation). Let's assume `packages/platform-capabilities` for clarity.
+*   **Location:** `packages/types` (for interfaces), `packages/utils` or a new `packages/platform` (for the service implementation). Let's assume `packages/platform` for clarity.
 *   **Checklist:**
     *   [ ] **Define Capability Interfaces (`packages/types/src/platform.types.ts`):**
         *   [ ] Define `FileSystemCapabilities`:
@@ -37,7 +37,7 @@ This plan assumes we'll start by implementing the core service and then focus on
             }
             ```
         *   [ ] Export these types from `packages/types/src/index.ts`.
-    *   [ ] **Create Service Stub (`packages/platform-capabilities/src/index.ts`):**
+    *   [ ] **Create Service Stub (`packages/platform/src/index.ts`):**
         *   [ ] Create the basic service file.
         *   [ ] Define the main export function signature: `getPlatformCapabilities(): PlatformCapabilities`.
         *   [ ] Write initial *failing* unit test (`*.test.ts`) asserting the basic structure/return type.
@@ -46,7 +46,7 @@ This plan assumes we'll start by implementing the core service and then focus on
 **Phase 1: Platform Detection & Basic Service Implementation (Shared Package)**
 
 *   **Goal:** Implement the logic within the service to detect the current platform (Web, Tauri, future RN) and OS.
-*   **Location:** `packages/platform-capabilities/src/index.ts`
+*   **Location:** `packages/platform/src/index.ts`
 *   **Checklist:**
     *   [x] **(TDD) Write Unit Tests for Platform Detection:**
         *   [ ] Test case for detecting standard web browser environment.
@@ -67,7 +67,7 @@ This plan assumes we'll start by implementing the core service and then focus on
 **Phase 2: Web Platform Provider Implementation (Shared Package)**
 
 *   **Goal:** Implement the web-specific provider, offering baseline functionality or explicitly stating unavailability.
-*   **Location:** `packages/platform-capabilities/src/webPlatformCapabilities.ts` (new file)
+*   **Location:** `packages/platform/src/webPlatformCapabilities.ts` (new file)
 *   **Checklist:**
     *   [ ] **Create Web Provider File:** `webPlatformCapabilities.ts`.
     *   [ ] **Implement `fileSystem` for Web:**
@@ -76,17 +76,17 @@ This plan assumes we'll start by implementing the core service and then focus on
         *   *Rationale:* Web file access is significantly different (user-prompted, sandboxed) and often handled by standard `<input type="file">` elements. Abstracting it fully might be complex or unnecessary initially compared to just using standard web patterns where the capability service indicates FS isn't available in the *same way* as Desktop.
     *   [ ] **(TDD) Write Unit Tests for Web Provider:** Test that `webFileSystemCapabilities.isAvailable` is `false`.
     *   [ ] **Integrate Web Provider:**
-        *   [ ] In `packages/platform-capabilities/src/index.ts`, import the web provider.
+        *   [ ] In `packages/platform/src/index.ts`, import the web provider.
         *   [ ] Update `getPlatformCapabilities`: When the platform is detected as 'web', return the imported `webFileSystemCapabilities` object for the `fileSystem` key.
         *   [ ] Update/add unit tests for `getPlatformCapabilities` to verify it returns the correct web capabilities object when 'web' is detected.
 
 **Phase 3: Tauri Desktop Platform Provider (TypeScript Layer)**
 
 *   **Goal:** Implement the TypeScript part of the Tauri provider, defining functions that will call the Rust backend via `invoke`.
-*   **Location:** `packages/platform-capabilities/src/tauriPlatformCapabilities.ts` (new file)
+*   **Location:** `packages/platform/src/tauriPlatformCapabilities.ts` (new file)
 *   **Checklist:**
     *   [ ] **Create Tauri Provider File:** `tauriPlatformCapabilities.ts`.
-    *   [ ] **Import Tauri API:** Add `@tauri-apps/api` as a dependency to `packages/platform-capabilities`. Import `invoke` from `@tauri-apps/api/tauri`. Import `open`, `save` from `@tauri-apps/api/dialog`. Import FS functions if using direct Tauri FS API for simple cases.
+    *   [ ] **Import Tauri API:** Add `@tauri-apps/api` as a dependency to `packages/platform`. Import `invoke` from `@tauri-apps/api/tauri`. Import `open`, `save` from `@tauri-apps/api/dialog`. Import FS functions if using direct Tauri FS API for simple cases.
     *   [ ] **Implement `fileSystem` for Tauri:**
         *   [ ] Define `tauriFileSystemCapabilities` object implementing `FileSystemCapabilities`.
         *   [ ] Set `isAvailable: true`.
@@ -99,7 +99,7 @@ This plan assumes we'll start by implementing the core service and then focus on
         *   [ ] Test that `pickFile`/`pickSaveFile` call the mocked `open`/`save` functions correctly.
         *   [ ] Test that `readFile`/`writeFile` call the mocked `invoke` function with the correct command name and arguments. Test argument serialization if necessary (e.g., data conversion).
     *   [ ] **Integrate Tauri Provider:**
-        *   [ ] In `packages/platform-capabilities/src/index.ts`, import the tauri provider.
+        *   [ ] In `packages/platform/src/index.ts`, import the tauri provider.
         *   [ ] Update `getPlatformCapabilities`: When the platform is detected as 'tauri', return the imported `tauriFileSystemCapabilities` object for the `fileSystem` key.
         *   [ ] Update/add unit tests for `getPlatformCapabilities` to verify it returns the correct Tauri capabilities object when 'tauri' is detected.
 
@@ -128,10 +128,10 @@ This plan assumes we'll start by implementing the core service and then focus on
 *   **Checklist:**
     *   [ ] **Identify Components:** Find components that currently handle file input/output or will need desktop-specific features.
     *   [ ] **Refactor/Build Component (Example: `ConfigFileManager.tsx`):**
-        *   [ ] Import `getPlatformCapabilities` from `packages/platform-capabilities`.
+        *   [ ] Import `getPlatformCapabilities` from `packages/platform`.
         *   [ ] Call `const capabilities = getPlatformCapabilities();` within the component.
         *   [ ] **(TDD) Write Component Unit Tests (Vitest/Jest):**
-            *   [ ] Mock `packages/platform-capabilities`.
+            *   [ ] Mock `packages/platform`.
             *   [ ] Test Case 1: Simulate running on Web (`getPlatformCapabilities` returns web capabilities where `fileSystem.isAvailable` is `false`). Assert that Desktop-specific buttons (e.g., "Save Config Locally") are *not* rendered or are disabled. Assert that standard web file input is used if applicable.
             *   [ ] Test Case 2: Simulate running on Tauri (`getPlatformCapabilities` returns Tauri capabilities where `fileSystem.isAvailable` is `true`). Assert that Desktop-specific buttons *are* rendered.
             *   [ ] Test Case 3 (Tauri): Simulate clicking "Save Config Locally". Assert that `capabilities.fileSystem.pickSaveFile` and subsequently `capabilities.fileSystem.writeFile` are called with the correct arguments.
@@ -147,7 +147,7 @@ This plan assumes we'll start by implementing the core service and then focus on
 
 *   **Goal:** Prepare for implementing capabilities on mobile.
 *   **Checklist:**
-    *   [ ] Create `packages/platform-capabilities/src/reactNativePlatformCapabilities.ts`.
+    *   [ ] Create `packages/platform/src/reactNativePlatformCapabilities.ts`.
     *   [ ] Add `react-native-fs` or other necessary native modules to the React Native app.
     *   [ ] Implement the `FileSystemCapabilities` interface using the RN modules.
     *   [ ] Update `getPlatformCapabilities` service to detect React Native and return the corresponding provider.
@@ -158,11 +158,11 @@ This plan assumes we'll start by implementing the core service and then focus on
 **How This Minimizes Changes & Ensures Compatibility:**
 
 1.  **No Backend/API changes:** This entire architecture lives within the frontend monorepo (`apps` and `packages`). The backend Supabase functions are untouched.
-2.  **No API Client Changes:** The `@paynless/api-client` is not involved in platform-specific UI capabilities like filesystem access. It remains focused on HTTP communication with the backend.
+2.  **No API Client Changes:** The `@paynless/api` is not involved in platform-specific UI capabilities like filesystem access. It remains focused on HTTP communication with the backend.
 3.  **Minimal Store Changes (Likely None Initially):** Global state related to *backend* data (auth, subscriptions, AI chats) remains in the existing Zustand stores. State directly related to platform capabilities (like the path of a currently opened file *on desktop*) might eventually warrant its own store or context *if* it needs to be shared widely, but initially, it can often be managed within the components using the capability service. We avoid polluting existing stores.
 4.  **Localized Frontend Changes:**
-    *   **Additive:** We add the new `platform-capabilities` package (or add to `utils` and `types`). We add new provider files and Rust code.
+    *   **Additive:** We add the new `platform` package (or add to `utils` and `types`). We add new provider files and Rust code.
     *   **Targeted Refactoring:** Only components *directly* needing platform-specific features need to be refactored to use the service. Core components, layout, routing, and components dealing only with API data remain unchanged.
-    *   **Shared Logic:** The core UI logic, API data fetching (via `api-client`), and state management (via stores) remain shared within `apps/web`. The capability service allows this shared code to *conditionally access* platform features.
+    *   **Shared Logic:** The core UI logic, API data fetching (via `api`), and state management (via stores) remain shared within `apps/web`. The capability service allows this shared code to *conditionally access* platform features.
 
 This plan provides a structured, testable way to introduce platform-specific functionality incrementally while maintaining a high degree of code sharing and compatibility with your existing architecture.

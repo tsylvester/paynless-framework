@@ -12,12 +12,12 @@ The architecture follows these principles:
 
 ### Core Pattern: API Client Singleton
 
-**Decision (April 2025):** To ensure consistency and simplify integration across multiple frontend platforms (web, mobile) and shared packages (like Zustand stores), the `@paynless/api-client` package follows a **Singleton pattern**.
+**Decision (April 2025):** To ensure consistency and simplify integration across multiple frontend platforms (web, mobile) and shared packages (like Zustand stores), the `@paynless/api` package follows a **Singleton pattern**.
 
 *   **Initialization:** The client is configured and initialized *once* per application lifecycle using `initializeApiClient(config)`. Each platform provides the necessary configuration.
-*   **Access:** All parts of the application (stores, UI components, platform-specific code) access the single, pre-configured client instance by importing the exported `api` object: `import { api } from '@paynless/api-client';`.
+*   **Access:** All parts of the application (stores, UI components, platform-specific code) access the single, pre-configured client instance by importing the exported `api` object: `import { api } from '@paynless/api';`.
 *   **No DI for Stores:** Shared stores (Zustand) should *not* use dependency injection (e.g., an `init` method) to receive the API client. They should import and use the `api` singleton directly.
-*   **Testing:** Unit testing components or stores that use the `api` singleton requires mocking the module import using the test framework's capabilities (e.g., `vi.mock('@paynless/api-client', ...)`).
+*   **Testing:** Unit testing components or stores that use the `api` singleton requires mocking the module import using the test framework's capabilities (e.g., `vi.mock('@paynless/api', ...)`).
 *   **Consistency Note:** Older stores (`authStore`, `subscriptionStore`) may still use an outdated DI pattern and require refactoring to align with this singleton approach.
 
 
@@ -76,7 +76,7 @@ The application exposes the following primary API endpoints through Supabase Edg
 - `/memberships/:membershipId/role`: (PATCH) Updates a member's role (Admin only).
 - `/memberships/:membershipId`: (DELETE) Removes a member from an organization (Admin or self).
 
-*(Note: This list is based on the `supabase/functions/` directory structure and inferred functionality. Specific HTTP methods and request/response details require inspecting function code or the `api-client` package.)*
+*(Note: This list is based on the `supabase/functions/` directory structure and inferred functionality. Specific HTTP methods and request/response details require inspecting function code or the `api` package.)*
 
 ## Database Schema (Simplified)
 
@@ -242,12 +242,12 @@ The project is organized as a monorepo using pnpm workspaces:
 │   └── macos/              # Desktop Application (Placeholder) //do not remove
 │
 ├── packages/               # Shared libraries/packages
-│   ├── api-client/         # Frontend API client logic (Singleton)
+│   ├── api/         # Frontend API client logic (Singleton)
 │   │   └── src/
 │   │       ├── apiClient.ts      # Base API client (fetch wrapper, singleton)
 │   │       ├── stripe.api.ts     # Stripe/Subscription specific client methods
 │   │       └── ai.api.ts         # AI Chat specific client methods
-│   ├── analytics-client/   # Frontend analytics client logic (PostHog, Null adapter)
+│   ├── analytics/   # Frontend analytics client logic (PostHog, Null adapter)
 │   │   └── src/
 │   │       ├── index.ts          # Main service export & factory
 │   │       ├── nullAdapter.ts    # No-op analytics implementation
@@ -272,7 +272,7 @@ The project is organized as a monorepo using pnpm workspaces:
 │   │       ├── route.types.ts
 │   │       ├── vite-env.d.ts
 │   │       └── index.ts            # Main export for types
-│   ├── platform-capabilities/ # Service for abstracting platform-specific APIs (FS, etc.)
+│   ├── platform/ # Service for abstracting platform-specific APIs (FS, etc.)
 │   │   └── src/
 │   │       ├── index.ts          # Main service export & detection
 │   │       ├── webPlatformCapabilities.ts # Web provider (stub)
@@ -370,13 +370,13 @@ supabase/functions/
 
 This section details the key exports from the shared packages to help AI tools understand the available functionality. *(Note: Details require inspecting package source code)*
 
-### 1. `packages/api-client` (API Interaction)
+### 1. `packages/api` (API Interaction)
 
 Manages all frontend interactions with the backend Supabase Edge Functions. It follows a **Singleton pattern**.
 
 - **`initializeApiClient(config: ApiInitializerConfig): void`**: Initializes the singleton instance. Must be called once at application startup.
   - `config: { supabaseUrl: string; supabaseAnonKey: string; }`
-- **`api` object (Singleton Accessor)**: Provides methods for making API requests. Import and use this object directly: `import { api } from '@paynless/api-client';`
+- **`api` object (Singleton Accessor)**: Provides methods for making API requests. Import and use this object directly: `import { api } from '@paynless/api';`
   - **`api.get<ResponseType>(endpoint: string, options?: FetchOptions): Promise<ApiResponse<ResponseType>>`**: Performs a GET request.
   - **`api.post<ResponseType, RequestBodyType>(endpoint: string, body: RequestBodyType, options?: FetchOptions): Promise<ApiResponse<ResponseType>>`**: Performs a POST request.
   - **`api.put<ResponseType, RequestBodyType>(endpoint: string, body: RequestBodyType, options?: FetchOptions): Promise<ApiResponse<ResponseType>>`**: Performs a PUT request.
@@ -392,7 +392,7 @@ Manages all frontend interactions with the backend Supabase Edge Functions. It f
 - **`ApiResponse<T>` type** (defined in `@paynless/types`): Standard response wrapper.
   - `{ status: number; data?: T; error?: ApiErrorType; }`
 
-- **`ApiError` class** (defined in `@paynless/api-client`): Custom error class used internally by the client.
+- **`ApiError` class** (defined in `@paynless/api`): Custom error class used internally by the client.
 - **`AuthRequiredError` class** (defined in `@paynless/types`): Specific error for auth failures detected by the client.
 
 #### `StripeApiClient` (Accessed via `api.billing()`)
@@ -583,7 +583,7 @@ Contains centralized type definitions used across the monorepo. Exports all type
 - **`route.types.ts`**: Types related to application routing.
 - **`vite-env.d.ts`**: Vite environment types.
 
-### 5. `packages/platform-capabilities` (Platform Abstraction)
+### 5. `packages/platform` (Platform Abstraction)
 
 Provides a service to abstract platform-specific functionalities (like filesystem access) for use in shared UI code.
 

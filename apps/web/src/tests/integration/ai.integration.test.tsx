@@ -3,7 +3,7 @@ import { screen, waitFor, act } from '@testing-library/react';
 import { renderWithProviders } from '../utils/render'; // Assuming shared render utility
 import { useAiStore } from '@paynless/store'; // Import the real store
 import { useAuthStore } from '@paynless/store'; // Import auth store for comparison
-import { api, ApiClient } from '@paynless/api-client'; // To potentially spy on
+import { api, ApiClient } from '@paynless/api'; // To potentially spy on
 import { HttpResponse, http } from 'msw';
 import { server } from '../utils/mocks/api/server'; // <<< Use global server import
 

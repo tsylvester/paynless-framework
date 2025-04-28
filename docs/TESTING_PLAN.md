@@ -24,8 +24,8 @@ To ensure features are built correctly and integrated reliably the first time, w
 
 *   **Supabase Functions (`supabase/functions/`):** Start by testing the core handler logic. Mock dependencies like the Supabase client (`supabase/functions/_shared/supabase-client.ts`), external services (like Stripe or the future Kit service), and environment variables (`Deno.env`). Test success paths, error handling (e.g., invalid input, failed service calls), and response formatting.
 *   **Shared Packages (`packages/`):
-    *   `api-client` / `analytics-client` / `platform-capabilities` / `email_service` Adapters: Test adapter methods individually. Mock external dependencies (e.g., `fetch`, `posthog-js`, `@tauri-apps/api`, environment variables). Cover happy paths, configuration errors (missing keys), and API error responses.
-    *   `store` (Zustand): Test actions by mocking the API client (`@paynless/api-client`) calls they make. Assert correct state changes (`isLoading`, `error`, data properties) before, during (optimistic UI), and after the mocked async operations resolve or reject.
+    *   `api` / `analytics` / `platform` / `email_service` Adapters: Test adapter methods individually. Mock external dependencies (e.g., `fetch`, `posthog-js`, `@tauri-apps/api`, environment variables). Cover happy paths, configuration errors (missing keys), and API error responses.
+    *   `store` (Zustand): Test actions by mocking the API client (`@paynless/api`) calls they make. Assert correct state changes (`isLoading`, `error`, data properties) before, during (optimistic UI), and after the mocked async operations resolve or reject.
     *   `utils` / `types`: Primarily tested implicitly through their usage, but core utilities (`logger`) should have dedicated unit tests.
 *   **UI Components (`apps/web/`):** Use Vitest with Testing Library. Test rendering based on different props and states. Mock imported hooks (stores, router) and services (`platformCapabilitiesService`, `analytics`). Simulate user events (`fireEvent`) and assert that the correct actions are dispatched or UI changes occur.
 
@@ -35,10 +35,10 @@ Following this cycle helps catch errors early, ensures comprehensive test covera
 
 1. **Incomplete Stripe E2E Flow (IMPORTANT):** Stripe has been tested in Test Mode but not confirmed live Live Mode with real transactions. 
 2. **Chosen Pattern for `apiClient` Consumption & Testing (April 2024):**
-    *   **Pattern:** The `@paynless/api-client` package utilizes a **Singleton pattern**. It is initialized once per application run (`initializeApiClient`) and accessed via the exported `api` object (`import { api } from '@paynless/api-client';`).
+    *   **Pattern:** The `@paynless/api` package utilizes a **Singleton pattern**. It is initialized once per application run (`initializeApiClient`) and accessed via the exported `api` object (`import { api } from '@paynless/api';`).
     *   **Rationale:** This approach is preferred for this multi-platform architecture as it simplifies client consumption across shared code (stores) and different frontend platforms (web, mobile), centralizes configuration, and guarantees a single instance for managing state like auth tokens.
     *   **Consumption:** All consumers (stores, UI components, etc.) should import and use the `api` singleton directly rather than relying on dependency injection (DI) via props or `init` methods for the API client.
-    *   **Testing:** Unit testing consumers that depend on the `apiClient` requires mocking the module import using the test runner's capabilities (e.g., `vi.mock('@paynless/api-client', ...)` in Vitest). This allows replacing the singleton with a mock during tests.
+    *   **Testing:** Unit testing consumers that depend on the `apiClient` requires mocking the module import using the test runner's capabilities (e.g., `vi.mock('@paynless/api', ...)` in Vitest). This allows replacing the singleton with a mock during tests.
     *   **Consistency Task:** Older stores (`authStore`, `subscriptionStore`) currently use an outdated DI (`init`) pattern. They **must** be refactored to align with the singleton import pattern and `vi.mock` testing strategy for consistency.
 3. **Test Structure Refactor (April 2024):** Standardized `apps/web/src/tests/` structure:
     *   `unit/`: Pure unit tests only (`*.unit.test.tsx`).
@@ -120,7 +120,7 @@ Following this cycle helps catch errors early, ensures comprehensive test covera
     *   **Backend (Triggers/RLS):**
         *   Test trigger functions (e.g., `notify_org_admins_on_join_request`) using SQL unit tests or Supabase local dev tools to verify correct insertion into `notifications` table, including accurate population of the `data` JSONB field with context (`target_path`, relevant IDs).
         *   Test RLS policies on `notifications` using `supabase test db` or equivalent to ensure users can only select/update their own notifications.
-    *   **API Client (`@paynless/api-client`):**
+    *   **API Client (`@paynless/api`):**
         *   Unit test new functions (`fetchNotifications`, `markNotificationAsRead`, `markAllNotificationsAsRead`) by mocking the Supabase client (`apiClient`).
     *   **State Management (`@paynless/store/notificationStore`):**
         *   Unit test Zustand store actions, mocking the API client calls. Verify correct state transitions for notification list, unread count, loading, and error states.
@@ -136,7 +136,7 @@ Following this cycle helps catch errors early, ensures comprehensive test covera
     *   **Backend (Schema/RLS/Triggers):**
         *   Test RLS policies on `organizations`, `organization_members`, and *updated* policies on related tables (e.g., `chats`) using `supabase test db` or equivalent. Verify access control based on membership status (`active`), role (`admin`/`member`), organization visibility (`public`/`private`), and soft deletion (`deleted_at IS NULL`).
         *   Test the "last admin" check logic (trigger/function) thoroughly with various scenarios (single admin, multiple admins, attempts to leave/demote).
-    *   **API Client (`@paynless/api-client`):**
+    *   **API Client (`@paynless/api`):**
         *   Unit test all new organization-related functions (`createOrganization`, `listUserOrganizations`, `getOrganizationDetails`, `getOrganizationMembers`, `inviteUser...`, `acceptInvite...`, `requestToJoin...`, `approveJoinRequest...`, `updateMemberRole...`, `removeMember...`, `deleteOrganization`), mocking the Supabase client and Edge Function invocations where necessary. Ensure tests cover admin-only actions and handling of potential errors (e.g., last admin check failure).
     *   **State Management (`@paynless/store/organizationStore`):**
         *   Unit test Zustand store actions, mocking API client calls. Verify state transitions for `userOrganizations` (filtering deleted), `currentOrganizationId`, `currentOrganizationDetails` (including visibility), `currentOrganizationMembers`, loading, error states. Test selectors for current org context and user role within the current org.
@@ -280,7 +280,7 @@ Following this cycle helps catch errors early, ensures comprehensive test covera
 
 *   **Phase 2: Shared Packages (`packages/`)**
     *   **2.1 Unit Tests:**
-        *   [✅] `packages/api-client` (All sub-clients: `apiClient`, `stripe.api`, `ai.api` tests passing)
+        *   [✅] `packages/api` (All sub-clients: `apiClient`, `stripe.api`, `ai.api` tests passing)
         *   [✅] `packages/store` (Vitest setup complete)
             *   [✅] `authStore.ts` (All actions covered across multiple `authStore.*.test.ts` files)
                 *   **NOTE:** Replay logic tests (in `register.test.ts`, `login.test.ts`) and session/state restoration tests (in `initialize.test.ts`) related to `_checkAndReplayPendingAction` and the `initialize` action are currently unreliable/skipped/adjusted due to known issues in the underlying store functions. These tests need revisiting after the functions are fixed.
@@ -299,11 +299,11 @@ Following this cycle helps catch errors early, ensures comprehensive test covera
         *   [✅] `packages/utils` (`logger.ts` tests passing)
         *   [✅] `packages/types` *(Implicitly tested via usage)*.
             *   [✅] *(Analytics)* Verify `AnalyticsClient` interface exists in `analytics.types.ts`.
-        *   [✅] `packages/analytics-client` *(Setup Complete)*
+        *   [✅] `packages/analytics` *(Setup Complete)*
             *   [✅] Unit Test `nullAdapter.ts` (interface compliance, callable methods).
             *   [✅] Unit Test `posthogAdapter.ts` (mock `posthog-js`, verify calls to `init`, `identify`, `capture`, `reset`, etc.).
             *   [✅] Unit Test `index.ts` (service logic: verify null adapter default [✅], verify PostHog selection [✅]).
-        *   [ ] `packages/utils` or `packages/platform-capabilities`: Unit test `platformCapabilitiesService` (mock platform detection).
+        *   [ ] `packages/utils` or `packages/platform`: Unit test `platformCapabilitiesService` (mock platform detection).
         *   [ ] Unit test TypeScript capability providers (mock underlying APIs like `invoke`, Web APIs, RN Modules).
     *   **2.2 Integration Tests:** (Frontend MSW-based tests are covered in Phase 3.2)
 

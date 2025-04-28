@@ -28,7 +28,7 @@ export default defineConfig({
     preserveSymlinks: false,
     alias: {
       // Keep aliases for local workspace packages
-      '@paynless/api-client': path.resolve(__dirname, '../../packages/api-client/src'),
+      '@paynless/api': path.resolve(__dirname, '../../packages/api/src'),
       '@paynless/store': path.resolve(__dirname, '../../packages/store/src'),
       // Add aliases for other local packages if needed
       '@': path.resolve(__dirname, './src'),

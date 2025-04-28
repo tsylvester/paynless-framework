@@ -20,7 +20,7 @@
 *   [x] **Understand Current State:** Review `packages/store/src/authStore.ts`, specifically the `initialize`, `login`, `register`, and `logout` actions, noting how they currently manage `user`, `session`, `profile`, and `isLoading` state.
     *   Identify direct `localStorage` interactions within `authStore` and plan for their integration/refactoring.
 *   [x] **Review Dependencies:**
-    *   Confirm how `apiClient` (`packages/api-client/src/apiClient.ts`) accesses the Supabase client (`this.supabase`).
+    *   Confirm how `apiClient` (`packages/api/src/apiClient.ts`) accesses the Supabase client (`this.supabase`).
     *   Confirm how `authStore` currently interacts with `apiClient`.
 *   [x] **Plan Supabase Client Access:** Decide how the `authStore` listener logic will access the `supabase-js` client instance.
     *   **Option A (Preferred):** Add a getter to `apiClient` (e.g., `api.getSupabaseClient()`) and call the listener setup from `App.tsx` *after* `initializeApiClient` has run.
@@ -36,7 +36,7 @@
 **Goal:** Implement the core `onAuthStateChange` listener and have it manage the initial `isLoading` flag and the `session` state.
 
 *   [x] **1.1 Add Supabase Client Getter to `apiClient`:**
-    *   **File:** `packages/api-client/src/apiClient.ts`
+    *   **File:** `packages/api/src/apiClient.ts`
     *   **TDD:** (Minimal test needed) Ensure the getter exists and returns the client instance.
     *   **Implement:** Add a public method `getSupabaseClient()` to the `ApiClient` class that returns `this.supabase`. Update the exported `api` object to include this getter.
     *   **Refactor:** N/A.
@@ -63,11 +63,11 @@
 *   [x] **1.5 Integrate Listener Setup:**
     *   **File:** `apps/web/src/App.tsx` (or potentially `main.tsx` if `apiClient` initialization happens there).
     *   **TDD:** (Integration test focus) Ensure the listener is called on app startup.
-    *   **Implement:** Find where `initializeApiClient` is called. Immediately after, import `initAuthListener` from `@paynless/store` and `api` from `@paynless/api-client`. Call `initAuthListener(api.getSupabaseClient())`. Ensure this happens early in the app lifecycle, likely within a `useEffect` with an empty dependency array in `AppContent` or similar root component, *after* `apiClient` is initialized.
+    *   **Implement:** Find where `initializeApiClient` is called. Immediately after, import `initAuthListener` from `@paynless/store` and `api` from `@paynless/api`. Call `initAuthListener(api.getSupabaseClient())`. Ensure this happens early in the app lifecycle, likely within a `useEffect` with an empty dependency array in `AppContent` or similar root component, *after* `apiClient` is initialized.
     *   **Refactor:** N/A.
 *   [x] **1.6 Checkpoint 1:**
     *   **Run Unit Tests:** `pnpm test --filter=@paynless/store authStore.listener.test.ts` (or similar). Ensure they pass.
-    *   **Run Unit Tests:** `pnpm test --filter=@paynless/api-client apiClient.test.ts` (or similar). Ensure they pass.
+    *   **Run Unit Tests:** `pnpm test --filter=@paynless/api apiClient.test.ts` (or similar). Ensure they pass.
     *   **Build App:** `pnpm build`. Ensure it completes successfully.
     *   **Manual Test:** Load the app when logged out. Verify UI renders correctly (no infinite loading spinners). Log in. Log out. Refresh the page while logged in. Verify the app loads correctly and reflects the auth state without excessive delays or spinners (beyond the initial load). Check console for listener logs.
     *   **Commit:** `refactor(auth): implement onAuthStateChange listener for session/loading state (#issue_number)`

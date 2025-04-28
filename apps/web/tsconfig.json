@@ -38,7 +38,7 @@
     "vitest.config.ts"
   ],
   "references": [
-    { "path": "../../packages/api-client" },
+    { "path": "../../packages/api" },
     { "path": "../../packages/store" },
     { "path": "../../packages/types" },
     { "path": "../../packages/utils" }

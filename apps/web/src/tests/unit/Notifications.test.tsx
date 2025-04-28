@@ -8,7 +8,7 @@ import { useNotificationStore, useAuthStore } from '@paynless/store';
 import { UserRole } from '@paynless/types';
 import { Notifications } from '../../components/Notifications';
 import type { Notification, User } from '@paynless/types';
-import { api } from '@paynless/api-client';
+import { api } from '@paynless/api';
 import { logger } from '@paynless/utils';
 
 // --- Mock shadcn/ui components (Define Mocks Inline) --- 
@@ -56,7 +56,7 @@ const fetchNotificationsMock = vi.fn(); // Define mocks first
 const apiMarkNotificationAsReadMock = vi.fn();
 const apiMarkAllNotificationsAsReadMock = vi.fn();
 
-vi.mock('@paynless/api-client', () => ({
+vi.mock('@paynless/api', () => ({
     api: {
         notifications: vi.fn(() => ({ 
             fetchNotifications: fetchNotificationsMock,

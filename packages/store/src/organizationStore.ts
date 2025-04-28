@@ -13,7 +13,7 @@ import {
     api, 
     OrganizationApiClient as _OrganizationApiClient,
     ApiClient as _ApiClient
-} from '@paynless/api-client';
+} from '@paynless/api';
 import { useAuthStore } from './authStore'; // To get user ID
 import { logger } from '@paynless/utils';
 

@@ -12,7 +12,7 @@ const fs = require('fs');
 const PACKAGES = [
   'types',
   'utils',
-  'api-client',
+  'api',
   'store',
   'ui-components'
 ];

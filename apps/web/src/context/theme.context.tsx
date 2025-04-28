@@ -1,5 +1,5 @@
 import React, { createContext, useEffect, useState, useCallback } from 'react';
-import { Theme, ThemeState, ColorMode, ThemeName } from '@paynless/types';
+import { Theme, ThemeState, ColorMode, ThemeName, ThemeColors } from '@paynless/types';
 import { themes, getDarkTheme } from '../config/themes';
 
 // Helper function to convert hex color to RGB string
@@ -52,19 +52,48 @@ export function ThemeProvider({ children }: ThemeProviderProps) {
   // Update CSS variables and manage dark class when theme changes
   useEffect(() => {
     const root = document.documentElement;
-    const isDark = colorMode === 'dark';
+    
+    // Determine if the final theme should be dark
+    const baseTheme = themes[themeName] || themes['light'];
+    const finalTheme = colorMode === 'dark' ? getDarkTheme(baseTheme) : baseTheme;
+    const isDark = finalTheme.isDark;
 
     // Add/remove dark class for Tailwind
     root.classList.toggle('dark', isDark);
 
-    const theme = getCurrentTheme();
-    setCurrentTheme(theme);
+    // Update the state with the final theme
+    setCurrentTheme(finalTheme);
     
-    Object.entries(theme.colors).forEach(([key, value]) => {
-      // Convert hex to RGB string before setting CSS variable
-      root.style.setProperty(`--color-${key}`, hexToRgbString(value));
+    // Map color names to CSS variable names (camelCase to kebab-case)
+    const cssVarMap: Record<keyof ThemeColors, string> = {
+      primary: '--primary',
+      secondary: '--secondary',
+      background: '--background',
+      surface: '--surface',
+      textPrimary: '--text-primary',
+      textSecondary: '--text-secondary',
+      border: '--border',
+      // New notification colors
+      successBackground: '--success-background',
+      successForeground: '--success-foreground',
+      attentionBackground: '--attention-background',
+      attentionForeground: '--attention-foreground',
+    };
+
+    // Clear previous theme variables first (optional but good practice)
+    // Object.values(cssVarMap).forEach(varName => root.style.removeProperty(varName));
+
+    // Apply new theme variables
+    Object.entries(finalTheme.colors).forEach(([key, value]) => {
+      const varName = cssVarMap[key as keyof ThemeColors];
+      if (varName && value) {
+          // Convert hex to RGB string for use with Tailwind opacity modifiers if needed
+          root.style.setProperty(varName, hexToRgbString(value));
+      } else {
+          console.warn(`ThemeContext: Missing CSS variable mapping or color value for key: ${key}`);
+      }
     });
-  }, [colorMode, themeName, getCurrentTheme]);
+  }, [colorMode, themeName]); // Removed getCurrentTheme from deps as it's defined inside effect scope effectively
   
   // Listen for system color scheme changes
   useEffect(() => {

@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { create } from 'zustand';
 import { Organization, OrganizationMemberWithProfile, ApiError } from '@paynless/types';
-import { api } from '@paynless/api-client'; // Mock this
+import { api } from '@paynless/api'; // Mock this
 import { logger } from '@paynless/utils';
 
 // Define the state structure based on the plan
@@ -29,7 +29,7 @@ interface OrganizationActions {
 type OrganizationStore = OrganizationState & OrganizationActions;
 
 // --- Mock Dependencies ---
-vi.mock('@paynless/api-client', () => ({
+vi.mock('@paynless/api', () => ({
   api: {
     // Mock the organizations PROPERTY as an OBJECT containing the methods
     organizations: {

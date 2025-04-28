@@ -2,12 +2,12 @@ import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import App from './App'
 import './index.css'
-import { initializeApiClient } from '@paynless/api-client'
+import { initializeApiClient } from '@paynless/api'
 import { logger/*, LogLevel*/ } from '@paynless/utils'
 import ReactGA from 'react-ga4'
-import { api } from '@paynless/api-client'
+import { api } from '@paynless/api'
 import { initAuthListener } from '@paynless/store'
-import { analytics } from '@paynless/analytics-client'
+import { analytics } from '@paynless/analytics'
 
 // --- Configure Logger Early ---
 // Only show errors in the console for now to reduce noise

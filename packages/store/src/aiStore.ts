@@ -11,7 +11,7 @@ import {
     PendingAction, // <<< Add this import
     AuthRequiredError // <<< Add this import
 } from '@paynless/types';
-import { api } from '@paynless/api-client';
+import { api } from '@paynless/api';
 import { logger } from '@paynless/utils';
 import { useAuthStore } from './authStore';
 

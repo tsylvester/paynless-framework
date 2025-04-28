@@ -12,8 +12,8 @@ export default defineConfig({
     alias: {
         '@paynless/types': path.resolve(__dirname, '../types/src'),
         '@paynless/utils': path.resolve(__dirname, '../utils/src'),
-        '@paynless/api-client': path.resolve(__dirname, '../api-client/src'),
-        '@paynless/analytics-client': path.resolve(__dirname, '../analytics-client/src'),
+        '@paynless/api': path.resolve(__dirname, '../api/src'),
+        '@paynless/analytics': path.resolve(__dirname, '../analytics/src'),
       },
   },
 }); 

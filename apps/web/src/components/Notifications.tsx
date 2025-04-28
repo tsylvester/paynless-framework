@@ -1,12 +1,12 @@
 import React, { useEffect, useRef } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
 import { Bell, CheckCheck } from 'lucide-react';
 
 import { cn } from '@/lib/utils';
 import { useAuthStore } from '@paynless/store';
 import { useNotificationStore } from '@paynless/store';
 // Remove direct API client import if no longer needed for mark read/all read
-// import { api } from '@paynless/api-client'; 
+// import { api } from '@paynless/api'; 
 import type { Notification } from '@paynless/types';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -177,7 +177,9 @@ export const Notifications: React.FC = () => {
         >
             {/* Children: The content previously inside the absolute div */}
             <div className="px-2 py-1.5 text-sm font-medium flex justify-between items-center">
-                <span>Notifications</span>
+                <Link to="/notifications" className="hover:underline focus:outline-none focus-visible:ring-1 focus-visible:ring-ring rounded-sm">
+                    Notifications
+                </Link>
                 {unreadCount > 0 && (
                     <Button
                         variant="ghost"

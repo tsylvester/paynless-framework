@@ -51,40 +51,6 @@ importers:
         specifier: ^1.6.1
         version: 1.6.1(@types/node@22.14.0)(@vitest/ui@1.6.1)(jsdom@26.0.0)
 
-  apps/desktop:
-    dependencies:
-      '@tauri-apps/api':
-        specifier: ^2.4.1
-        version: 2.4.1
-      '@tauri-apps/plugin-opener':
-        specifier: ^2
-        version: 2.2.6
-      react:
-        specifier: ^18.3.1
-        version: 18.3.1
-      react-dom:
-        specifier: ^18.3.1
-        version: 18.3.1(react@18.3.1)
-    devDependencies:
-      '@tauri-apps/cli':
-        specifier: ^2
-        version: 2.4.1
-      '@types/react':
-        specifier: ^18.3.1
-        version: 18.3.20
-      '@types/react-dom':
-        specifier: ^18.3.1
-        version: 18.3.6(@types/react@18.3.20)
-      '@vitejs/plugin-react':
-        specifier: ^4.3.4
-        version: 4.3.4(vite@6.2.6(@types/node@22.14.0)(jiti@2.4.2)(yaml@2.7.1))
-      typescript:
-        specifier: ~5.6.2
-        version: 5.6.3
-      vite:
-        specifier: ^6.0.3
-        version: 6.2.6(@types/node@22.14.0)(jiti@2.4.2)(yaml@2.7.1)
-
   apps/web:
     dependencies:
       '@emotion/react':
@@ -102,12 +68,12 @@ importers:
       '@mui/material':
         specifier: ^5.16.5
         version: 5.17.1(@emotion/react@11.14.0(@types/react@18.3.20)(react@18.3.1))(@emotion/styled@11.14.0(@emotion/react@11.14.0(@types/react@18.3.20)(react@18.3.1))(@types/react@18.3.20)(react@18.3.1))(@types/react@18.3.20)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
-      '@paynless/analytics-client':
+      '@paynless/analytics':
         specifier: workspace:*
-        version: link:../../packages/analytics-client
-      '@paynless/api-client':
+        version: link:../../packages/analytics
+      '@paynless/api':
         specifier: workspace:*
-        version: link:../../packages/api-client
+        version: link:../../packages/api
       '@paynless/store':
         specifier: workspace:*
         version: link:../../packages/store
@@ -275,7 +241,7 @@ importers:
         specifier: ^1.6.1
         version: 1.6.1(@types/node@22.14.0)(@vitest/ui@1.6.1)(jsdom@24.1.3)
 
-  packages/analytics-client:
+  packages/analytics:
     dependencies:
       '@paynless/types':
         specifier: workspace:*
@@ -303,7 +269,7 @@ importers:
         specifier: ^1.6.0
         version: 1.6.1(@types/node@20.17.30)(@vitest/ui@1.6.1)(jsdom@26.0.0)
 
-  packages/api-client:
+  packages/api:
     dependencies:
       '@paynless/types':
         specifier: workspace:*
@@ -348,18 +314,21 @@ importers:
 
   packages/store:
     dependencies:
-      '@paynless/analytics-client':
+      '@paynless/analytics':
         specifier: workspace:*
-        version: link:../analytics-client
-      '@paynless/api-client':
+        version: link:../analytics
+      '@paynless/api':
         specifier: workspace:*
-        version: link:../api-client
+        version: link:../api
       '@paynless/types':
         specifier: workspace:*
         version: link:../types
       '@paynless/utils':
         specifier: workspace:*
         version: link:../utils
+      '@supabase/supabase-js':
+        specifier: ^2.0.0
+        version: 2.49.4
       immer:
         specifier: ^10.1.1
         version: 10.1.1
@@ -2406,83 +2375,6 @@ packages:
 
   '@tanstack/virtual-core@3.13.6':
     resolution: {integrity: sha512-cnQUeWnhNP8tJ4WsGcYiX24Gjkc9ALstLbHcBj1t3E7EimN6n6kHH+DPV4PpDnuw00NApQp+ViojMj1GRdwYQg==}
-
-  '@tauri-apps/api@2.4.1':
-    resolution: {integrity: sha512-5sYwZCSJb6PBGbBL4kt7CnE5HHbBqwH+ovmOW6ZVju3nX4E3JX6tt2kRklFEH7xMOIwR0btRkZktuLhKvyEQYg==}
-
-  '@tauri-apps/cli-darwin-arm64@2.4.1':
-    resolution: {integrity: sha512-QME7s8XQwy3LWClTVlIlwXVSLKkeJ/z88pr917Mtn9spYOjnBfsgHAgGdmpWD3NfJxjg7CtLbhH49DxoFL+hLg==}
-    engines: {node: '>= 10'}
-    cpu: [arm64]
-    os: [darwin]
-
-  '@tauri-apps/cli-darwin-x64@2.4.1':
-    resolution: {integrity: sha512-/r89IcW6Ya1sEsFUEH7wLNruDTj7WmDWKGpPy7gATFtQr5JEY4heernqE82isjTUimnHZD8SCr0jA3NceI4ybw==}
-    engines: {node: '>= 10'}
-    cpu: [x64]
-    os: [darwin]
-
-  '@tauri-apps/cli-linux-arm-gnueabihf@2.4.1':
-    resolution: {integrity: sha512-9tDijkRB+CchAGjXxYdY9l/XzFpLp1yihUtGXJz9eh+3qIoRI043n3e+6xmU8ZURr7XPnu+R4sCmXs6HD+NCEQ==}
-    engines: {node: '>= 10'}
-    cpu: [arm]
-    os: [linux]
-
-  '@tauri-apps/cli-linux-arm64-gnu@2.4.1':
-    resolution: {integrity: sha512-pnFGDEXBAzS4iDYAVxTRhAzNu3K2XPGflYyBc0czfHDBXopqRgMyj5Q9Wj7HAwv6cM8BqzXINxnb2ZJFGmbSgA==}
-    engines: {node: '>= 10'}
-    cpu: [arm64]
-    os: [linux]
-
-  '@tauri-apps/cli-linux-arm64-musl@2.4.1':
-    resolution: {integrity: sha512-Hp0zXgeZNKmT+eoJSCxSBUm2QndNuRxR55tmIeNm3vbyUMJN/49uW7nurZ5fBPsacN4Pzwlx1dIMK+Gnr9A69w==}
-    engines: {node: '>= 10'}
-    cpu: [arm64]
-    os: [linux]
-
-  '@tauri-apps/cli-linux-riscv64-gnu@2.4.1':
-    resolution: {integrity: sha512-3T3bo2E4fdYRvzcXheWUeQOVB+LunEEi92iPRgOyuSVexVE4cmHYl+MPJF+EUV28Et0hIVTsHibmDO0/04lAFg==}
-    engines: {node: '>= 10'}
-    cpu: [riscv64]
-    os: [linux]
-
-  '@tauri-apps/cli-linux-x64-gnu@2.4.1':
-    resolution: {integrity: sha512-kLN0FdNONO+2i+OpU9+mm6oTGufRC00e197TtwjpC0N6K2K8130w7Q3FeODIM2CMyg0ov3tH+QWqKW7GNhHFzg==}
-    engines: {node: '>= 10'}
-    cpu: [x64]
-    os: [linux]
-
-  '@tauri-apps/cli-linux-x64-musl@2.4.1':
-    resolution: {integrity: sha512-a8exvA5Ub9eg66a6hsMQKJIkf63QAf9OdiuFKOsEnKZkNN2x0NLgfvEcqdw88VY0UMs9dBoZ1AGbWMeYnLrLwQ==}
-    engines: {node: '>= 10'}
-    cpu: [x64]
-    os: [linux]
-
-  '@tauri-apps/cli-win32-arm64-msvc@2.4.1':
-    resolution: {integrity: sha512-4JFrslsMCJQG1c573T9uqQSAbF3j/tMKkMWzsIssv8jvPiP++OG61A2/F+y9te9/Q/O95cKhDK63kaiO5xQaeg==}
-    engines: {node: '>= 10'}
-    cpu: [arm64]
-    os: [win32]
-
-  '@tauri-apps/cli-win32-ia32-msvc@2.4.1':
-    resolution: {integrity: sha512-9eXfFORehYSCRwxg2KodfmX/mhr50CI7wyBYGbPLePCjr5z0jK/9IyW6r0tC+ZVjwpX48dkk7hKiUgI25jHjzA==}
-    engines: {node: '>= 10'}
-    cpu: [ia32]
-    os: [win32]
-
-  '@tauri-apps/cli-win32-x64-msvc@2.4.1':
-    resolution: {integrity: sha512-60a4Ov7Jrwqz2hzDltlS7301dhSAmM9dxo+IRBD3xz7yobKrgaHXYpWvnRomYItHcDd51VaKc9292H8/eE/gsw==}
-    engines: {node: '>= 10'}
-    cpu: [x64]
-    os: [win32]
-
-  '@tauri-apps/cli@2.4.1':
-    resolution: {integrity: sha512-9Ta81jx9+57FhtU/mPIckDcOBtPTUdKM75t4+aA0X84b8Sclb0jy1xA8NplmcRzp2fsfIHNngU2NiRxsW5+yOQ==}
-    engines: {node: '>= 10'}
-    hasBin: true
-
-  '@tauri-apps/plugin-opener@2.2.6':
-    resolution: {integrity: sha512-bSdkuP71ZQRepPOn8BOEdBKYJQvl6+jb160QtJX/i2H9BF6ZySY/kYljh76N2Ne5fJMQRge7rlKoStYQY5Jq1w==}
 
   '@testing-library/dom@10.4.0':
     resolution: {integrity: sha512-pemlzrSESWbdAloYml3bAJMEfNh1Z7EduzqPKprCH5S341frlpYnUEW0H72dLxa6IsYr+mPno20GiSm+h9dEdQ==}
@@ -7441,59 +7333,6 @@ snapshots:
 
   '@tanstack/virtual-core@3.13.6': {}
 
-  '@tauri-apps/api@2.4.1': {}
-
-  '@tauri-apps/cli-darwin-arm64@2.4.1':
-    optional: true
-
-  '@tauri-apps/cli-darwin-x64@2.4.1':
-    optional: true
-
-  '@tauri-apps/cli-linux-arm-gnueabihf@2.4.1':
-    optional: true
-
-  '@tauri-apps/cli-linux-arm64-gnu@2.4.1':
-    optional: true
-
-  '@tauri-apps/cli-linux-arm64-musl@2.4.1':
-    optional: true
-
-  '@tauri-apps/cli-linux-riscv64-gnu@2.4.1':
-    optional: true
-
-  '@tauri-apps/cli-linux-x64-gnu@2.4.1':
-    optional: true
-
-  '@tauri-apps/cli-linux-x64-musl@2.4.1':
-    optional: true
-
-  '@tauri-apps/cli-win32-arm64-msvc@2.4.1':
-    optional: true
-
-  '@tauri-apps/cli-win32-ia32-msvc@2.4.1':
-    optional: true
-
-  '@tauri-apps/cli-win32-x64-msvc@2.4.1':
-    optional: true
-
-  '@tauri-apps/cli@2.4.1':
-    optionalDependencies:
-      '@tauri-apps/cli-darwin-arm64': 2.4.1
-      '@tauri-apps/cli-darwin-x64': 2.4.1
-      '@tauri-apps/cli-linux-arm-gnueabihf': 2.4.1
-      '@tauri-apps/cli-linux-arm64-gnu': 2.4.1
-      '@tauri-apps/cli-linux-arm64-musl': 2.4.1
-      '@tauri-apps/cli-linux-riscv64-gnu': 2.4.1
-      '@tauri-apps/cli-linux-x64-gnu': 2.4.1
-      '@tauri-apps/cli-linux-x64-musl': 2.4.1
-      '@tauri-apps/cli-win32-arm64-msvc': 2.4.1
-      '@tauri-apps/cli-win32-ia32-msvc': 2.4.1
-      '@tauri-apps/cli-win32-x64-msvc': 2.4.1
-
-  '@tauri-apps/plugin-opener@2.2.6':
-    dependencies:
-      '@tauri-apps/api': 2.4.1
-
   '@testing-library/dom@10.4.0':
     dependencies:
       '@babel/code-frame': 7.26.2
@@ -7712,17 +7551,6 @@ snapshots:
       '@types/babel__core': 7.20.5
       react-refresh: 0.14.2
       vite: 5.4.18(@types/node@22.14.0)
-    transitivePeerDependencies:
-      - supports-color
-
-  '@vitejs/plugin-react@4.3.4(vite@6.2.6(@types/node@22.14.0)(jiti@2.4.2)(yaml@2.7.1))':
-    dependencies:
-      '@babel/core': 7.26.10
-      '@babel/plugin-transform-react-jsx-self': 7.25.9(@babel/core@7.26.10)
-      '@babel/plugin-transform-react-jsx-source': 7.25.9(@babel/core@7.26.10)
-      '@types/babel__core': 7.20.5
-      react-refresh: 0.14.2
-      vite: 6.2.6(@types/node@22.14.0)(jiti@2.4.2)(yaml@2.7.1)
     transitivePeerDependencies:
       - supports-color
 
