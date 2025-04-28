@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { Bell, CheckCheck } from 'lucide-react';
 
@@ -36,6 +36,8 @@ export const Notifications: React.FC = () => {
     // const [isOpen, setIsOpen] = useState(false); // Remove state, handled by SimpleDropdown
     // Use ref to hold EventSource instance
     const eventSourceRef = useRef<EventSource | null>(null);
+    // State to track items marked read during this dropdown session
+    const [locallyReadIds, setLocallyReadIds] = useState<Set<string>>(new Set());
 
     // Fetch initial notifications using the API client
     useEffect(() => {
@@ -107,32 +109,54 @@ export const Notifications: React.FC = () => {
     // Dependencies: user and token - reconnect if they change
     }, [user, token, addNotification]); // Include addNotification from store
 
-    const handleNotificationClick = (notification: Notification) => {
+    // Callback for when dropdown opens/closes
+    const handleOpenChange = useCallback((open: boolean) => {
+        if (open) {
+            // Clear locally read IDs when dropdown opens
+            setLocallyReadIds(new Set());
+        }
+    }, []); // Empty dependency array, function doesn't depend on external state
+
+    const handleNotificationClick = useCallback((notification: Notification) => {
          logger.debug('[Notifications] Notification clicked', { id: notification.id });
         if (!notification.read) {
-            // Call store action (already does API call + state update)
-             markNotificationRead(notification.id); 
+             markNotificationRead(notification.id);
+             // Add to locally read set *after* initiating the mark as read action
+             setLocallyReadIds(prev => new Set(prev).add(notification.id));
         }
         const targetPath = notification.data?.['target_path']; 
         if (targetPath && typeof targetPath === 'string') { 
             navigate(targetPath);
+            // Maybe close dropdown here?
         }
-        // setIsOpen(false); // Removed
-    };
+    }, [markNotificationRead, navigate]); // Add dependencies
 
-    const handleMarkReadClick = (e: React.MouseEvent, notificationId: string) => {
+    const handleMarkReadClick = useCallback((e: React.MouseEvent, notificationId: string) => {
         e.stopPropagation(); 
         logger.debug('[Notifications] Mark as read clicked', { id: notificationId });
-        // Call store action (already does API call + state update)
-        markNotificationRead(notificationId); 
-    };
+        markNotificationRead(notificationId);
+        // Add to locally read set *after* initiating the mark as read action
+        setLocallyReadIds(prev => new Set(prev).add(notificationId));
+    }, [markNotificationRead]); // Add dependency
 
-    const handleMarkAllReadClick = (e: React.MouseEvent) => {
+    const handleMarkAllReadClick = useCallback((e: React.MouseEvent) => {
         e.stopPropagation(); 
         logger.debug('[Notifications] Mark all as read clicked');
-        // Call store action (already does API call + state update)
+        // Mark all items currently *unread* in the store as locally read
+        const idsToMarkLocally = notifications.filter(n => !n.read).map(n => n.id);
+        setLocallyReadIds(prev => new Set([...prev, ...idsToMarkLocally]));
+        // Call store action
         markAllNotificationsAsRead(); 
-    };
+    }, [markAllNotificationsAsRead, notifications]); // Add dependencies
+
+    // Filter notifications to display
+    const displayedNotifications = notifications.filter(n => 
+        !n.read || // Show if it's actually unread in the store
+        locallyReadIds.has(n.id) // OR if it was marked read locally this session
+    );
+
+    // Filter notifications to only show unread
+    const unreadNotifications = notifications.filter(n => !n.read);
 
     // --- Fix: Ensure component returns null if no user --- 
     if (!user) {
@@ -152,6 +176,7 @@ export const Notifications: React.FC = () => {
         <SimpleDropdown
             align="end"
             contentClassName="w-80 max-h-[60vh] overflow-y-auto" // Pass specific styles
+            onOpenChange={handleOpenChange} // Pass the callback
             trigger={
                 // The trigger button itself
                 <Button 
@@ -185,7 +210,7 @@ export const Notifications: React.FC = () => {
                         variant="ghost"
                         size="sm"
                         className="h-auto px-2 py-1 text-xs"
-                        onClick={handleMarkAllReadClick} // Pass event
+                        onClick={handleMarkAllReadClick}
                         aria-label="Mark all notifications as read"
                     >
                         <CheckCheck className="mr-1 h-3 w-3" /> Mark all as read
@@ -194,19 +219,21 @@ export const Notifications: React.FC = () => {
             </div>
             <div className="bg-border -mx-1 my-1 h-px" /> 
 
-            {notifications.length === 0 ? (
+            {/* Map over the filtered list */}
+            {displayedNotifications.length === 0 ? (
                 <div className="px-2 py-4 text-center text-sm text-muted-foreground">
-                    {/* Adjust message based on loading/error state if implemented */} 
-                    No new notifications
+                    No unread notifications
                 </div>
             ) : (
-                notifications.map((notification) => {
+                displayedNotifications.map((notification) => {
+                    const isActuallyUnread = !notification.read; // Check the actual store state
                     const timeAgo = notification.created_at
                         ? formatDistanceToNowStrict(new Date(notification.created_at), { addSuffix: true })
                         : '';
                     const subject = notification.data?.['subject'] || 'Untitled';
                     const message = notification.data?.['message'] || 'System Notification';
-                    const label = `Notification: ${subject}. ${notification.read ? 'Read' : 'Unread'}. Received ${timeAgo}`;
+                    const label = `Notification: ${subject}. ${isActuallyUnread ? 'Unread' : 'Read'}. Received ${timeAgo}`;
+                    
                     return (
                         <div
                             key={notification.id}
@@ -216,15 +243,18 @@ export const Notifications: React.FC = () => {
                             className={cn(
                                 'relative flex cursor-pointer items-start gap-2 rounded-sm px-2 py-3 text-sm outline-none select-none',
                                 'hover:bg-primary/10 hover:text-primary',
-                                !notification.read && 'bg-muted/50'
+                                // Slightly different background only if *actually* unread
+                                isActuallyUnread && 'bg-muted/50' 
                             )}
                             onClick={() => handleNotificationClick(notification)}
                             tabIndex={-1}
                         >
-                            {!notification.read && (
+                            {/* Blue dot indicator only if *actually* unread */}
+                            {isActuallyUnread && (
                                 <span className="mt-1 block h-2 w-2 rounded-full bg-blue-500 flex-shrink-0" aria-hidden="true" />
                             )}
-                            <div className={cn("flex-grow", notification.read && "pl-4")}>
+                            {/* Adjust padding based on dot presence */}
+                            <div className={cn("flex-grow", !isActuallyUnread && "pl-4")}> 
                                 <p className="text-sm font-medium leading-none mb-1">
                                      {message}
                                 </p>
@@ -232,12 +262,13 @@ export const Notifications: React.FC = () => {
                                      {timeAgo}
                                 </p>
                              </div>
-                             {!notification.read && (
+                             {/* Show mark read button only if *actually* unread */}
+                             {isActuallyUnread && (
                                  <Button
                                      variant="ghost"
                                      size="sm"
                                      className="ml-auto h-auto p-1 flex-shrink-0"
-                                     onClick={(e) => handleMarkReadClick(e, notification.id)} // Pass event
+                                     onClick={(e) => handleMarkReadClick(e, notification.id)}
                                      aria-label={`Mark notification ${notification.id} as read`}
                                  >
                                      <CheckCheck className="h-4 w-4" />

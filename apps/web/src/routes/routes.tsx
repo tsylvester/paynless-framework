@@ -9,7 +9,7 @@ import { ProtectedRoute } from '../components/auth/ProtectedRoute';
 import { SubscriptionSuccessPage } from '../pages/SubscriptionSuccess';
 import { RootRoute } from '../components/routes/RootRoute';
 import AiChatPage from '../pages/AiChat';
-import Notifications from '../pages/Notifications';
+import NotificationsPage from '../pages/Notifications';
 
 export const routes: AppRoute[] = [
   {
@@ -35,13 +35,13 @@ export const routes: AppRoute[] = [
     requireAuth: true,
   },
   {
-    path: 'notifications',
-    element: <ProtectedRoute><Notifications /></ProtectedRoute>,
+    path: 'profile',
+    element: <ProtectedRoute><ProfilePage /></ProtectedRoute>,
     requireAuth: true,
   },
   {
-    path: 'profile',
-    element: <ProtectedRoute><ProfilePage /></ProtectedRoute>,
+    path: 'notifications',
+    element: <ProtectedRoute><NotificationsPage /></ProtectedRoute>,
     requireAuth: true,
   },
   {

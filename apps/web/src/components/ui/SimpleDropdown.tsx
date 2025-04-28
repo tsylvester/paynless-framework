@@ -1,22 +1,29 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { cn } from '@/lib/utils';
 
 interface SimpleDropdownProps {
   trigger: React.ReactNode;
   children: React.ReactNode;
   contentClassName?: string;
-  align?: 'start' | 'end'; // Added for alignment
-  // Add other potential props like sideOffset, alignOffset later if needed
+  align?: 'start' | 'end';
+  onOpenChange?: (open: boolean) => void;
 }
 
 export const SimpleDropdown: React.FC<SimpleDropdownProps> = ({
   trigger,
   children,
   contentClassName,
-  align = 'end', // Default align to end like user/notification menu
+  align = 'end',
+  onOpenChange,
 }) => {
   const [isOpen, setIsOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
+
+  // Callback to handle state change and notify parent
+  const handleSetIsOpen = useCallback((open: boolean) => {
+    setIsOpen(open);
+    onOpenChange?.(open);
+  }, [onOpenChange]);
 
   // Close dropdown if clicking outside of it (using backdrop approach)
   // Note: This backdrop approach is simpler than event listeners for this case.
@@ -41,18 +48,18 @@ export const SimpleDropdown: React.FC<SimpleDropdownProps> = ({
 
   return (
     <div className="relative" ref={dropdownRef}>
-      {/* Wrap trigger to attach onClick */}
-      <div onClick={() => setIsOpen(!isOpen)} className="cursor-pointer">
+      {/* Use the callback for toggling */}
+      <div onClick={() => handleSetIsOpen(!isOpen)} className="cursor-pointer">
         {trigger}
       </div>
 
       {/* Conditionally Rendered Content */}
       {isOpen && (
         <>
-          {/* Backdrop to handle closing on outside click */}
+          {/* Use the callback for backdrop click */}
           <div
             className="fixed inset-0 z-40" 
-            onClick={() => setIsOpen(false)}
+            onClick={() => handleSetIsOpen(false)}
           />
 
           {/* Actual Dropdown Panel */}

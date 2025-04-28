@@ -10,7 +10,6 @@ export const Notifications: React.FC = () => {
         fetchNotifications: state.fetchNotifications,
     }));
 
-    // Fetch notifications if the list is empty (e.g., direct navigation)
     useEffect(() => {
         if (notifications.length === 0) {
             logger.debug('[NotificationsPage] No notifications in store, fetching...');
@@ -36,5 +35,4 @@ export const Notifications: React.FC = () => {
     );
 };
 
-// Export the component for routing
-export default Notifications; 
+export default Notifications;

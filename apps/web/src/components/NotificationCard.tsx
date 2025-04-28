@@ -29,9 +29,8 @@ export const NotificationCard: React.FC<NotificationCardProps> = ({ notification
     return (
         <Card key={notification.id} data-notification-id={notification.id}>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-base font-semibold">{subject}</CardTitle> {/* Smaller title */} 
+                <CardTitle className="text-base font-semibold">{subject}</CardTitle>
                 <div className="flex items-center space-x-2">
-                    {/* Use custom styles based on theme CSS variables */} 
                     {notification.read ? (
                         <Badge 
                             className="text-xs border-transparent bg-[var(--success-background)] text-[var(--success-foreground)] hover:bg-[var(--success-background)]/80"
@@ -48,10 +47,9 @@ export const NotificationCard: React.FC<NotificationCardProps> = ({ notification
                     <span className="text-xs text-muted-foreground whitespace-nowrap">{timeAgo}</span>
                 </div>
             </CardHeader>
-            <CardContent className="pt-2 text-sm"> {/* Added padding top */} 
+            <CardContent className="pt-2 text-sm">
                 {message && <p className="text-muted-foreground mb-3">{message}</p>}
 
-                {/* Display target path if available */}
                 {targetPath && (
                      <Button asChild variant="link" size="sm" className="p-0 h-auto text-xs mb-2"> 
                          <Link to={targetPath} className="flex items-center gap-1">
@@ -60,23 +58,12 @@ export const NotificationCard: React.FC<NotificationCardProps> = ({ notification
                     </Button>
                 )}
 
-                {/* Display type */}
                 {notification.type && (
                     <p className="text-xs text-muted-foreground">
                         Type: <code className='bg-muted/50 p-1 rounded'>{notification.type}</code>
                     </p>
                 )}
-                
-                {/* Optionally keep raw data for debugging? Or remove */}
-                {/* 
-                <details className="text-xs mt-2">
-                    <summary className="cursor-pointer">Raw Data</summary>
-                    <pre className="mt-1 p-2 bg-muted/50 rounded overflow-x-auto">
-                        {JSON.stringify(notification.data, null, 2)}
-                    </pre>
-                </details>
-                */}
             </CardContent>
         </Card>
     );
-}; 
+};
