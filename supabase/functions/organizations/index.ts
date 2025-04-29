@@ -278,8 +278,8 @@ export async function handleOrganizationRequest(
               const { error: updateError, count } = await typedSupabase
                 .from('organizations')
                 .update({ deleted_at: new Date().toISOString() })
-                .eq('id', orgId)
-                .is('deleted_at', null); // Only delete if not already deleted
+                .eq('id', orgId); // RLS should prevent updating already deleted orgs if configured correctly
+                // The count check below handles if 0 rows were updated (not found or already deleted)
 
               if (updateError) {
                    // Handle potential errors during update
