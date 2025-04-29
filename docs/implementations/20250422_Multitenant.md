@@ -126,11 +126,11 @@ This document outlines the steps for implementing an in-app notification system 
               *   [X] Test: Non-admin cannot retrieve list (403).
               *   [X] Test: Returns empty lists if none pending.
               *   [X] Implementation: Handle GET, auth check (admin), validate orgId, Supabase `select` from `organization_members` (status=pending) and `invites` (status=pending), join with profiles where possible, return combined/structured list.
-          *   [ ] **(New) Cancel/Delete Invite (e.g., `DELETE /invites/:inviteId` or `DELETE /organizations/:orgId/invites/:inviteId`):**
-              *   [ ] Test: Admin can delete a pending invite for their org.
-              *   [ ] Test: Non-admin fails (403).
-              *   [ ] Test: Deleting non-pending/non-existent invite fails (404).
-              *   [ ] Implementation: Handle DELETE, auth check (admin), validate inviteId, Supabase `delete` from `invites` where status='pending', return 204.
+          *   [X] **(New) Cancel/Delete Invite (e.g., `DELETE /invites/:inviteId` or `DELETE /organizations/:orgId/invites/:inviteId`):**
+              *   [X] Test: Admin can delete a pending invite for their org.
+              *   [X] Test: Non-admin fails (403).
+              *   [X] Test: Deleting non-pending/non-existent invite fails (404).
+              *   [X] Implementation: Handle DELETE, auth check (admin), validate inviteId, Supabase `delete` from `invites` where status='pending', return 204.
 
 ### 2.4 API Client (`@paynless/api`)
 

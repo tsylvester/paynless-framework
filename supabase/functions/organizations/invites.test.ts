@@ -1,5 +1,5 @@
 import { assertEquals, assert, assertExists } from "https://deno.land/std@0.224.0/assert/mod.ts";
-import { handleCreateInvite, handleAcceptInvite, handleDeclineInvite, handleListPending } from "./invites.ts";
+import { handleCreateInvite, handleAcceptInvite, handleDeclineInvite, handleListPending, handleCancelInvite } from "./invites.ts";
 import { 
     createMockSupabaseClient, 
     MockSupabaseDataConfig, 
@@ -786,5 +786,188 @@ Deno.test("GET /organizations/:orgId/pending", async (t) => {
         assertEquals(res.status, 500);
         const json = await res.json();
         assertEquals(json.error, "Error checking permissions.");
+    });
+}); 
+
+// --- Test Suite for DELETE /organizations/:orgId/invites/:inviteId (Cancel Invite) ---
+Deno.test("DELETE /organizations/:orgId/invites/:inviteId", async (t) => {
+    const mockOrgId = 'org-cancel-invite';
+    const adminUserId = 'admin-canceller';
+    const nonAdminUserId = 'non-admin-canceller';
+    const pendingInviteId = 'pending-invite-to-cancel';
+    const nonPendingInviteId = 'accepted-invite-no-cancel';
+    const nonExistentInviteId = 'does-not-exist-invite';
+
+    await t.step("should return 204 when admin successfully cancels a pending invite", async () => {
+        // Arrange
+        const mockUser = { id: adminUserId };
+        const config: MockSupabaseDataConfig = {
+            mockUser: mockUser,
+            rpcResults: {
+                is_org_admin: () => Promise.resolve({ data: true, error: null })
+            },
+            genericMockResults: {
+                invites: {
+                    // Mock successful delete of the specific pending invite
+                    delete: (state: MockQueryBuilderState) => {
+                        const isCorrectId = state.filters.some(f => f.column === 'id' && f.value === pendingInviteId);
+                        const isCorrectOrg = state.filters.some(f => f.column === 'organization_id' && f.value === mockOrgId);
+                        const isPending = state.filters.some(f => f.column === 'status' && f.value === 'pending');
+                        if (isCorrectId && isCorrectOrg && isPending) {
+                            return Promise.resolve({ data: null, error: null, count: 1 }); // Simulate 1 row deleted
+                        }
+                        console.warn('[Test 204 Cancel] Delete mock did not match expected filters. State:', state);
+                        return Promise.resolve({ data: null, error: null, count: 0 });
+                    }
+                }
+            }
+        };
+        const { client: mockClient } = createMockSupabaseClient(config);
+        const req = createMockRequest("DELETE", `/organizations/${mockOrgId}/invites/${pendingInviteId}`);
+
+        // Act
+        const res = await handleCancelInvite(req, mockClient, mockUser as User, mockOrgId, pendingInviteId);
+
+        // Assert
+        assertEquals(res.status, 204);
+    });
+
+    await t.step("should return 403 if non-admin attempts to cancel", async () => {
+        // Arrange
+        const mockUser = { id: nonAdminUserId }; // Non-admin
+        const config: MockSupabaseDataConfig = {
+            mockUser: mockUser,
+            rpcResults: {
+                is_org_admin: () => Promise.resolve({ data: false, error: null }) // Admin check fails
+            }
+            // No DB mock needed, should fail on permission check
+        };
+        const { client: mockClient } = createMockSupabaseClient(config);
+        const req = createMockRequest("DELETE", `/organizations/${mockOrgId}/invites/${pendingInviteId}`);
+
+        // Act
+        const res = await handleCancelInvite(req, mockClient, mockUser as User, mockOrgId, pendingInviteId);
+
+        // Assert
+        assertEquals(res.status, 403);
+        const json = await res.json();
+        assertEquals(json.error, "Forbidden: You do not have permission to cancel invites for this organization.");
+    });
+
+    await t.step("should return 404 if invite does not exist", async () => {
+        // Arrange
+        const mockUser = { id: adminUserId };
+        const config: MockSupabaseDataConfig = {
+            mockUser: mockUser,
+            rpcResults: {
+                is_org_admin: () => Promise.resolve({ data: true, error: null })
+            },
+            genericMockResults: {
+                invites: {
+                    // Mock delete finding nothing
+                    delete: () => Promise.resolve({ data: null, error: null, count: 0 })
+                }
+            }
+        };
+        const { client: mockClient } = createMockSupabaseClient(config);
+        const req = createMockRequest("DELETE", `/organizations/${mockOrgId}/invites/${nonExistentInviteId}`);
+
+        // Act
+        const res = await handleCancelInvite(req, mockClient, mockUser as User, mockOrgId, nonExistentInviteId);
+
+        // Assert
+        assertEquals(res.status, 404);
+        const json = await res.json();
+        assertEquals(json.error, "Invite not found, not pending, or does not belong to this organization.");
+    });
+
+    await t.step("should return 404 if invite is not pending (e.g., accepted)", async () => {
+        // Arrange
+        const mockUser = { id: adminUserId };
+        const config: MockSupabaseDataConfig = {
+            mockUser: mockUser,
+            rpcResults: {
+                is_org_admin: () => Promise.resolve({ data: true, error: null })
+            },
+            genericMockResults: {
+                invites: {
+                    // Mock delete finding nothing because status isn't 'pending'
+                    delete: (state: MockQueryBuilderState) => {
+                         const isCorrectId = state.filters.some(f => f.column === 'id' && f.value === nonPendingInviteId);
+                         const isCorrectOrg = state.filters.some(f => f.column === 'organization_id' && f.value === mockOrgId);
+                         const isPending = state.filters.some(f => f.column === 'status' && f.value === 'pending');
+                         if (isCorrectId && isCorrectOrg && isPending) { 
+                             return Promise.resolve({ data: null, error: null, count: 0 }); // Corrected: return 0 count
+                         }
+                         // Default fallback (shouldn't be strictly needed for this specific test, but safe)
+                         return Promise.resolve({ data: null, error: null, count: 0 });
+                    }
+                }
+            }
+        };
+        const { client: mockClient } = createMockSupabaseClient(config);
+        const req = createMockRequest("DELETE", `/organizations/${mockOrgId}/invites/${nonPendingInviteId}`);
+
+        // Act
+        const res = await handleCancelInvite(req, mockClient, mockUser as User, mockOrgId, nonPendingInviteId);
+
+        // Assert
+        assertEquals(res.status, 404);
+        const json = await res.json();
+        assertEquals(json.error, "Invite not found, not pending, or does not belong to this organization.");
+    });
+
+     await t.step("should return 500 if admin check fails", async () => {
+        // Arrange
+        const mockUser = { id: adminUserId };
+        const config: MockSupabaseDataConfig = {
+            mockUser: mockUser,
+            rpcResults: {
+                is_org_admin: () => Promise.resolve({ data: null, error: { message: 'RPC error', code: 'P0001' } })
+            }
+        };
+        const { client: mockClient } = createMockSupabaseClient(config);
+        const req = createMockRequest("DELETE", `/organizations/${mockOrgId}/invites/${pendingInviteId}`);
+
+        // Act
+        const res = await handleCancelInvite(req, mockClient, mockUser as User, mockOrgId, pendingInviteId);
+
+        // Assert
+        assertEquals(res.status, 500); // Expect 500 due to RPC error, even though handler returns 403 text
+         // Note: The current handler returns 403 for permission check errors. 
+         // Adjusting assertion to reflect this, although a 500 might be more appropriate for RPC errors.
+         // assertEquals(res.status, 403);
+         // const json = await res.json();
+         // assertEquals(json.error, "Forbidden: You do not have permission to cancel invites for this organization.");
+         // Sticking with 500 for now as it's an internal check failure
+         const json = await res.json();
+         assertEquals(json.error, "Error checking permissions."); // Corrected expected error message for 500 status
+    });
+
+    await t.step("should return 500 if delete operation fails", async () => {
+        // Arrange
+        const mockUser = { id: adminUserId };
+        const config: MockSupabaseDataConfig = {
+            mockUser: mockUser,
+            rpcResults: {
+                is_org_admin: () => Promise.resolve({ data: true, error: null })
+            },
+            genericMockResults: {
+                invites: {
+                    // Mock delete throwing an error
+                    delete: () => Promise.resolve({ data: null, error: { message: 'DB delete failed', code: 'P0001' }, count: null })
+                }
+            }
+        };
+        const { client: mockClient } = createMockSupabaseClient(config);
+        const req = createMockRequest("DELETE", `/organizations/${mockOrgId}/invites/${pendingInviteId}`);
+
+        // Act
+        const res = await handleCancelInvite(req, mockClient, mockUser as User, mockOrgId, pendingInviteId);
+
+        // Assert
+        assertEquals(res.status, 500);
+        const json = await res.json();
+        assertEquals(json.error, "Failed to cancel invitation: DB delete failed");
     });
 }); 

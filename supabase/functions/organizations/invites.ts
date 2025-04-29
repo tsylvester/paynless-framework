@@ -248,6 +248,60 @@ export async function handleDeclineInvite(
     return new Response(null, { status: 204, headers: res.headers }); // Override status and body
 }
 
+// Cancel/Delete an invite (by Admin)
+export async function handleCancelInvite(
+    req: Request,
+    supabaseClient: SupabaseClient<Database>,
+    user: User,
+    orgId: string,
+    inviteId: string // Get this from the URL path
+): Promise<Response> {
+    console.log(`[invites.ts] Handling CANCEL invite ${inviteId} for org ${orgId}...`);
+
+    // 1. Check permissions (Is user an admin of this org?)
+    const { data: isAdmin, error: adminCheckError } = await supabaseClient.rpc('is_org_admin', { org_id: orgId });
+    
+    // Explicitly handle RPC error first
+    if (adminCheckError) {
+        console.error(`[invites.ts Cancel] Error checking admin status for user ${user.id} on org ${orgId}:`, adminCheckError);
+        return createErrorResponse("Error checking permissions.", 500, req);
+    }
+    
+    // Then handle the case where the user is not an admin
+    if (!isAdmin) {
+        console.warn(`[invites.ts Cancel] Permission denied for user ${user.id} to cancel invites in org ${orgId}. Admin check failed or returned false.`);
+        return createErrorResponse("Forbidden: You do not have permission to cancel invites for this organization.", 403, req);
+    }
+
+    // 2. Delete the invite if it exists, belongs to the org, and is pending
+    const { count, error: deleteError } = await supabaseClient
+        .from('invites')
+        .delete({ count: 'exact' }) // Use 'exact' count to know if a row was deleted
+        .eq('id', inviteId)
+        .eq('organization_id', orgId)
+        .eq('status', 'pending'); // Only delete pending invites
+
+    if (deleteError) {
+        if (deleteError.code === '42501') { // RLS violation (shouldn't happen if admin check passes, but good practice)
+            return createErrorResponse("Forbidden: You do not have permission to cancel this invite.", 403, req);
+        }
+        console.error(`[invites.ts Cancel] Error deleting invite ${inviteId} for org ${orgId}:`, deleteError);
+        return createErrorResponse(`Failed to cancel invitation: ${deleteError.message}`, 500, req);
+    }
+
+    // 3. Check if the delete operation affected any rows
+    if (count === 0) {
+        // Invite wasn't found, didn't belong to the org, or wasn't pending
+        console.warn(`[invites.ts Cancel] Invite ${inviteId} not found or not eligible for cancellation in org ${orgId}.`);
+        return createErrorResponse("Invite not found, not pending, or does not belong to this organization.", 404, req);
+    }
+
+    // 4. Return success (204 No Content)
+    console.log(`[invites.ts Cancel] Invite ${inviteId} successfully cancelled by user ${user.id} in org ${orgId}.`);
+    const res = createSuccessResponse(null, 200, req); // Base response
+    return new Response(null, { status: 204, headers: res.headers }); // Override status and body
+}
+
 // List pending invites and requests for an organization (Admin only)
 export async function handleListPending(
     req: Request, 

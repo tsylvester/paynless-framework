@@ -25,10 +25,15 @@ import {
     handleUpdateMemberRole,
     handleRemoveMember
 } from './members.ts';
-// Import the new invite handler
-import { handleCreateInvite, handleListPending } from './invites.ts';
-// TODO: Import actual handlers later
-// import { handleAcceptInvite, handleDeclineInvite } from './invites_actions.ts';
+// Import the new invite handlers
+import { 
+    handleCreateInvite, 
+    handleListPending,
+    handleAcceptInvite,
+    handleDeclineInvite,
+    handleCancelInvite
+} from './invites.ts';
+// TODO: Remove placeholder imports if they were there
 
 console.log('Organization function booting up...');
 
@@ -80,14 +85,12 @@ export async function handleOrganizationRequest(
 
         if (action === 'accept') {
             console.log(`[index.ts] Routing to ACCEPT invite: ${inviteToken}`);
-            // TODO: Replace with actual handler call:
-            // return handleAcceptInvite(req, typedSupabase, authenticatedUser, inviteToken, body);
-             return createSuccessResponse({ message: `Placeholder: Accepted invite ${inviteToken}` }, 200, req);
+            // Actual handler call:
+            return handleAcceptInvite(req, typedSupabase, authenticatedUser, inviteToken, body);
         } else if (action === 'decline') {
             console.log(`[index.ts] Routing to DECLINE invite: ${inviteToken}`);
-             // TODO: Replace with actual handler call:
-             // return handleDeclineInvite(req, typedSupabase, authenticatedUser, inviteToken, body);
-             return createSuccessResponse({ message: `Placeholder: Declined invite ${inviteToken}` }, 200, req); // Or 204
+             // Actual handler call:
+             return handleDeclineInvite(req, typedSupabase, authenticatedUser, inviteToken, body);
         } else {
              console.warn(`[index.ts] Invalid action for /invites/:token/:action: ${action}`);
              return createErrorResponse('Invalid action for invite.', 400, req);
@@ -183,6 +186,11 @@ export async function handleOrganizationRequest(
     // --- Route for /organizations/:orgId/pending (list pending) ---
     else if (req.method === 'GET' && orgId && resourceType === 'pending' && !resourceId && !action) { // LIST PENDING
         return handleListPending(req, typedSupabase, authenticatedUser, orgId);
+    }
+    // --- Route for /organizations/:orgId/invites/:inviteId (cancel invite) ---
+    else if (req.method === 'DELETE' && orgId && resourceType === 'invites' && resourceId && !action) {
+        // Delegate to the specific handler
+        return handleCancelInvite(req, typedSupabase, authenticatedUser, orgId, resourceId); // resourceId is the inviteId here
     }
     // --- Fallback for unhandled routes --- 
     else {
