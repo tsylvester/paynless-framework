@@ -137,7 +137,7 @@ export async function cleanupUser(email: string, adminClient?: SupabaseClient): 
 export interface MockQueryBuilderState {
     tableName: string;
     operation: 'select' | 'insert' | 'update' | 'delete'; 
-    filters: { column?: string; value?: any; type: 'eq' | 'in' | 'match'; criteria?: object }[]; // Added 'match' type and criteria object
+    filters: { column?: string; value?: any; type: 'eq' | 'in' | 'match' | 'is'; criteria?: object }[]; // Added 'is' type
     selectColumns: string | null;
     insertData: any[] | object | null; 
     updateData: object | null;
@@ -205,28 +205,28 @@ export function createMockSupabaseClient(
     interface MockQueryBuilder {
         select: Spy<any>;
         insert: Spy<any>;
-        update: Spy<any>; // Add update if missing
-        delete: Spy<any>; // Add delete
+        update: Spy<any>;
+        delete: Spy<any>;
         eq: Spy<any>;
-        in: Spy<any>; // Add 'in' filter
-        match: Spy<any>; // Add match spy definition
+        in: Spy<any>;
+        is: Spy<any>; // <-- Add 'is' filter
+        match: Spy<any>;
         order: Spy<any>;
-        returns: Spy<any>; // <-- Add returns method
-        upsert: Spy<any>; // <-- Add upsert method
+        returns: Spy<any>;
+        upsert: Spy<any>;
         single: Spy<any>;
-        maybeSingle: Spy<any>; // <-- Add maybeSingle method (assuming it's used)
-        then: Spy<any>; // Keep 'then' for compatibility with some existing mocks
+        maybeSingle: Spy<any>;
+        then: Spy<any>;
     }
 
     const fromSpy = spy((tableName: string) => {
         const _queryBuilderState = {
             tableName: tableName,
-            operation: 'select' as 'select' | 'insert' | 'update' | 'delete', // Track the intended operation
-            filters: [] as { column?: string; value?: any; type: 'eq' | 'in' | 'match'; criteria?: object }[], 
-            selectColumns: '*' as string | null, // Can be null if not a select op
+            operation: 'select' as 'select' | 'insert' | 'update' | 'delete',
+            filters: [] as { column?: string; value?: any; type: 'eq' | 'in' | 'match' | 'is'; criteria?: object }[], // Added 'is' type
+            selectColumns: '*' as string | null,
             insertData: null as any[] | object | null, 
             updateData: null as object | null,
-            // Add flags for modifiers if needed, e.g., single: false
         };
 
         const mockQueryBuilder: MockQueryBuilder = {} as MockQueryBuilder;
@@ -280,32 +280,29 @@ export function createMockSupabaseClient(
         });
 
         mockQueryBuilder.match = spy((criteria: object) => {
-            console.log(`[Mock QB ${tableName}] .match() called with:`, criteria);
-            _queryBuilderState.filters.push({ type: 'match', criteria }); // Store the whole criteria object
+            console.log(`[Mock QB ${tableName}] .match() called with criteria:`, criteria);
+            _queryBuilderState.filters.push({ criteria, type: 'match' }); // Store criteria directly
             return mockQueryBuilder;
         });
 
-        // Add .returns() mock - just returns self for chaining
-        mockQueryBuilder.returns = spy(() => {
-            console.log(`[Mock QB ${tableName}] .returns() called`);
+        // NEW: Implement the 'is' filter
+        mockQueryBuilder.is = spy((column: string, value: any) => {
+            // Value is typically null, true, or false
+            console.log(`[Mock QB ${tableName}] .is(${column}, ${value}) called`); 
+            _queryBuilderState.filters.push({ column, value, type: 'is' });
             return mockQueryBuilder;
         });
 
+        // --- Other Modifiers (Return `this`) ---
         mockQueryBuilder.order = spy((_column: string, _options?: any) => {
             console.log(`[Mock QB ${tableName}] .order() called`);
             // Logic to store order state could be added if needed
             return mockQueryBuilder; 
         });
 
-        // Add .upsert() mock - mirrors update for now
-        mockQueryBuilder.upsert = spy((data: any, options?: any) => {
-            console.log(`[Mock QB ${tableName}] .upsert() called with:`, data, options);
-             _queryBuilderState.operation = 'update'; // Treat as update for mock config
-            _queryBuilderState.updateData = data;
-            // Store options if needed for resolveQuery logic
-            // _queryBuilderState.upsertOptions = options; 
-            _queryBuilderState.selectColumns = null;
-            return mockQueryBuilder; // Return self for chaining .select() etc.
+        mockQueryBuilder.returns = spy(() => {
+            // Track returns modifier if needed for specific tests (e.g., upsert with ignoreDuplicates)
+            return mockQueryBuilder;
         });
 
         // --- Terminal Methods / Resolution Logic ---

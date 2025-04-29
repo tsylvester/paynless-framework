@@ -112,13 +112,13 @@ This document outlines the steps for implementing an in-app notification system 
           *   [X] Test: Removing from deleted org fails (404).
           *   [X] Test: Removing the last admin fails (400/409 - relies on trigger/check).
           *   [X] Implementation: Handle DELETE, auth check (admin or self), validate orgId/membershipId, check last admin, Supabase `delete` or `update` status, return 204.
-      *   [ ] **(Updated) Other Endpoints:**
-          *   [ ] **Accept/Decline Invite (e.g., `POST /invites/:inviteToken/accept`, `POST /invites/:inviteToken/decline`):**
-              *   [ ] Test: Invited user (authenticated) can accept valid token for their email.
-              *   [ ] Test: Invited user (authenticated) can decline valid token.
-              *   [ ] Test: Authenticated user who isn't the invitee fails (403).
-              *   [ ] Test: Using invalid/expired/used token fails (400/404/410).
-              *   [ ] Implementation: Handle POST, validate token (exists, pending, not expired), check authenticated user matches `invited_email`, **Accept:** Update `invites` status=accepted, create/update `organization_members` record (status=active, role from invite), **Decline:** Update `invites` status=declined (or delete), trigger notifications.
+      *   **(Updated) Other Endpoints:**
+          *   [X] **Accept/Decline Invite (e.g., `POST /invites/:inviteToken/accept`, `POST /invites/:inviteToken/decline`):**
+              *   [X] Test: Invited user (authenticated) can accept valid token for their email.
+              *   [X] Test: Invited user (authenticated) can decline valid token.
+              *   [X] Test: Authenticated user who isn't the invitee fails (403).
+              *   [X] Test: Using invalid/expired/used token fails (400/404/410).
+              *   [X] Implementation: Handle POST, validate token (exists, pending, not expired), check authenticated user matches `invited_email`, **Accept:** Update `invites` status=accepted, create/update `organization_members` record (status=active, role from invite), **Decline:** Update `invites` status=declined (or delete), trigger notifications.
           *   [ ] **Request to Join Public Org (e.g., `POST /organizations/:orgId/requests`):** ... (Existing checks - Uses `organization_members` status=pending)
           *   [ ] **Approve/Deny Join Request (e.g., `PUT /organizations/members/:membershipId/status`):** ... (Existing checks - Uses `organization_members` status=pending)
           *   [ ] **List Pending Invites/Requests for Admins (e.g., `GET /organizations/:orgId/pending`):**
@@ -134,31 +134,31 @@ This document outlines the steps for implementing an in-app notification system 
 
 ### 2.4 API Client (`@paynless/api`)
 
-*   [X] **Tests:** Write unit tests for new multi-tenancy functions in `OrganizationApiClient`:
+*   [ ] **Tests:** Write unit tests for new multi-tenancy functions in `OrganizationApiClient`:
     *   [X] `createOrganization(name, visibility?)`: Mocks POST `/organizations`.
     *   [X] `updateOrganization(orgId, { name?, visibility? })`: Mocks PUT `/organizations/:orgId`.
     *   [X] `listUserOrganizations()`: Mocks GET `/organizations` (or a user-specific endpoint). Filters deleted.
     *   [X] `getOrganizationDetails(orgId)`: Mocks GET `/organizations/:orgId`.
     *   [X] `getOrganizationMembers(orgId)`: Mocks GET `/organizations/:orgId/members`.
-    *   [X] `inviteUserToOrganization(orgId, emailOrUserId, role)`: Mocks POST `/organizations/:orgId/invites`.
-    *   [X] `acceptOrganizationInvite(inviteTokenOrId)`: Mocks POST `/organizations/invites/accept` (or similar).
-    *   [X] `requestToJoinOrganization(orgId)`: Mocks POST `/organizations/:orgId/join-requests`.
-    *   [X] `approveJoinRequest(membershipId)`: Mocks PUT `/organizations/members/:membershipId/approve` (or similar).
+    *   [ ] `inviteUserToOrganization(orgId, emailOrUserId, role)`: Mocks POST `/organizations/:orgId/invites`.
+    *   [ ] `acceptOrganizationInvite(inviteTokenOrId)`: Mocks POST `/organizations/invites/accept` (or similar).
+    *   [ ] `requestToJoinOrganization(orgId)`: Mocks POST `/organizations/:orgId/join-requests`.
+    *   [ ] `approveJoinRequest(membershipId)`: Mocks PUT `/organizations/members/:membershipId/approve` (or similar).
     *   [X] `updateMemberRole(membershipId, newRole)`: Mocks PUT `/organizations/members/:membershipId/role`.
     *   [X] `removeMember(membershipId)`: Mocks DELETE `/organizations/members/:membershipId`.
     *   [X] `deleteOrganization(orgId)`: Mocks DELETE `/organizations/:orgId` (soft delete endpoint).
     *   [ ] **(Note)** Verify `inviteUserToOrganization`, `acceptOrganizationInvite` tests align with `invites` table logic.
     *   [ ] **(New)** Add tests for `cancelInvite`.
-*   [X] **Implementation:** Add/Update these functions in `OrganizationApiClient` class in `packages/api/src/organizations.api.ts`. Functions should call the corresponding backend edge function endpoints. Soft delete logic is handled by the backend endpoint called by `deleteOrganization`.
+*   [ ] **Implementation:** Add/Update these functions in `OrganizationApiClient` class in `packages/api/src/organizations.api.ts`. Functions should call the corresponding backend edge function endpoints. Soft delete logic is handled by the backend endpoint called by `deleteOrganization`.
     *   [X] Implemented `createOrganization`
     *   [X] Implemented `updateOrganization`
     *   [X] Implemented `listUserOrganizations`
     *   [X] Implemented `getOrganizationDetails`
     *   [X] Implemented `getOrganizationMembers`
-    *   [X] Implemented `inviteUserToOrganization`
-    *   [X] Implemented `acceptOrganizationInvite`
-    *   [X] Implemented `requestToJoinOrganization`
-    *   [X] Implemented `approveJoinRequest`
+    *   [ ] Implemented `inviteUserToOrganization`
+    *   [ ] Implemented `acceptOrganizationInvite`
+    *   [ ] Implemented `requestToJoinOrganization`
+    *   [ ] Implemented `approveJoinRequest`
     *   [X] Implemented `updateMemberRole`
     *   [X] Implemented `removeMember`
     *   [X] Implemented `deleteOrganization`
