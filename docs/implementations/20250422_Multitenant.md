@@ -180,20 +180,18 @@ This document outlines the steps for implementing an in-app notification system 
 ### 2.5 State Management (`@paynless/store`)
 
 *   [X] **Tests:** Write unit tests for `organizationStore` slice (`packages/store/src/organizationStore.ts` / `.test.ts`): // All tests passing!
-    *   [X] Initial state: `userOrganizations: []`, `currentOrganizationId: null`, `currentOrganizationDetails: null`, `currentOrganizationMembers: []`, `isLoading: false`, `error: null`, `isDeleteDialogOpen: false`.
+    *   [X] Initial state: `userOrganizations: []`, `currentOrganizationId: null`, `currentOrganizationDetails: null`, `currentOrganizationMembers: []`, `isLoading: false`, `error: null`.
     *   [X] Action `fetchUserOrganizations`: Mocks API call, updates `userOrganizations` (filtering deleted), sets `isLoading`.
     *   [X] Action `createOrganization`: Mocks API call, adds to `userOrganizations`, potentially sets `currentOrganizationId`, sets `isLoading`. // Note: Test doesn't explicitly check adding to list/setting current ID, but action is covered.
     *   [X] Action `setCurrentOrganizationId`: Updates `currentOrganizationId`, calls actions to fetch details/members, handles null ID (clearing details/members).
     *   [X] Action `fetchCurrentOrganizationDetails`: Mocks API call for `currentOrganizationId`, updates `currentOrganizationDetails`, sets `isLoading`. Handles case where org is deleted (clears details, maybe logs error). // Note: Test covers main path, not deleted case explicitly.
     *   [X] Action `fetchCurrentOrganizationMembers`: Mocks API call for `currentOrganizationId`, updates `currentOrganizationMembers`, sets `isLoading`.
-    *   [X] Action `softDeleteOrganization`: Mocks API call, removes org from `userOrganizations`, clears `currentOrganizationId` if it matches, sets `isLoading`, calls `closeDeleteDialog` on success.
+    *   [X] Action `softDeleteOrganization`: Mocks API call, removes org from `userOrganizations`, clears `currentOrganizationId` if it matches, sets `isLoading`.
     *   [X] Action `updateOrganization`: Mocks API call, updates org in `userOrganizations`, updates `currentOrganizationDetails` if matching, sets `isLoading`. // Note: Not explicitly tested, but covered by mock setup.
     *   [X] Action `inviteUser`: Mocks API call (now inserts into `invites` table), potentially updates pending list optimistically or refetches, sets `isLoading`. // Note: Not explicitly tested, but covered by mock setup.
     *   [X] Action `updateMemberRole`: Mocks API call, updates member in `currentOrganizationMembers`, handles 'last admin' error from API, sets `isLoading`. // Note: Not explicitly tested, but covered by mock setup.
     *   [X] Action `removeMember`: Mocks API call, removes member from `currentOrganizationMembers`, handles 'last admin' error, sets `isLoading`. // Note: Not explicitly tested, but covered by mock setup.
-    *   [X] Selectors: `selectUserOrganizations`, `selectCurrentOrganization`, `selectCurrentMembers`, `selectCurrentUserRole` (finds current user in members list), `selectIsLoading`, `selectError`, `selectIsDeleteDialogOpen`.
-    *   [X] **(New)** Action `openDeleteDialog`: Sets `isDeleteDialogOpen` to true.
-    *   [X] **(New)** Action `closeDeleteDialog`: Sets `isDeleteDialogOpen` to false.
+    *   [X] Selectors: `selectUserOrganizations`, `selectCurrentOrganization`, `selectCurrentMembers`, `selectCurrentUserRole` (finds current user in members list), `selectIsLoading`, `selectError`. // Note: Tested implicitly.
     *   [X] **(New)** Action `acceptInvite(token)`: Mocks API call, potentially adds user to `currentOrganizationMembers` on success, sets `isLoading`.
     *   [X] **(New)** Action `declineInvite(token)`: Mocks API call, sets `isLoading`.
     *   [X] **(New)** Action `requestJoin(orgId)`: Mocks API call, sets `isLoading`.
@@ -202,9 +200,6 @@ This document outlines the steps for implementing an in-app notification system 
     *   [X] **(New)** Action `cancelInvite(inviteId)`: Mocks API call, removes pending invite from relevant state, sets `isLoading`.
     *   [X] **(Update)** Action `fetchCurrentOrganizationMembers`: Fetches active members. If the current user is an admin for the org, also fetches pending join requests (`organization_members` status='pending') and pending invites (`invites` status='pending') via a dedicated API call (e.g., `getPendingOrgActions`) and stores them in `currentPendingRequests` and `currentPendingInvites` state. Clears pending state for non-admins.
 *   [X] **Implementation:** Create/Update the `organizationStore` slice (`packages/store/src/organizationStore.ts`) with the defined state, actions, and selectors. Ensure actions handle loading states and errors. Filter out soft-deleted organizations when setting `userOrganizations`. Handle potential race conditions if multiple actions run concurrently.
-    *   [ ] Implement state `isDeleteDialogOpen`.
-    *   [ ] Implement actions `openDeleteDialog`, `closeDeleteDialog`.
-    *   [ ] Update `softDeleteOrganization` to call `closeDeleteDialog`.
     *   [X] Implement actions for `acceptInvite`, `declineInvite`.
     *   [X] Implement actions for `requestJoin`.
     *   [X] Implement actions for `approveRequest`.
@@ -310,26 +305,72 @@ This section outlines the frontend implementation using a dynamic, card-based "h
         *   [X] Test: Handles loading state (shows skeleton/spinner) when `isLoading` is true for details fetch.
         *   [X] Test: Handles null state (shows placeholder/message) when `currentOrganizationId` is null or details are null.
     *   [ ] `OrganizationSettingsCard.tsx`: (Admin Only, Displayed Conditionally on Hub/Focused View)
-        *   [X] Form elements (Name, Visibility) for updates, pre-filled with `currentOrganizationDetails`.
-        *   [X] "Update" button triggers `updateOrganization` action.
-        *   [ ] "Delete Organization" button triggers `openDeleteDialog` store action.
-        *   [X] Test: Visibility is correctly controlled based on `selectCurrentUserRole` (admin only).
-        *   [X] Test: Displays current settings correctly in form fields.
-        *   [X] Test: Form validation works for updates.
-        *   [X] Test: Update submission calls `updateOrganization` with correct orgId and data. Handles success/error feedback.
-        *   [X] Test: Delete button calls `openDeleteDialog` store action.
-        *   [X] Test: Handles API errors gracefully for updates.
+        *   [ ] Form elements (Name, Visibility) for updates, pre-filled with `currentOrganizationDetails`.
+        *   [ ] "Update" button triggers `updateOrganization` action.
+        *   [ ] "Delete Organization" button triggers `DeleteOrganizationDialog`.
+        *   [ ] Test: Visibility is correctly controlled based on `selectCurrentUserRole` (admin only).
+        *   [ ] Test: Displays current settings correctly in form fields.
+        *   [ ] Test: Form validation works for updates.
+        *   [ ] Test: Update submission calls `updateOrganization` with correct orgId and data. Handles success/error feedback.
+        *   [ ] Test: Delete button opens the `DeleteOrganizationDialog`.
+        *   [ ] Test: Handles API errors gracefully for updates.
     *   [ ] **NEW:** `DeleteOrganizationDialog.tsx`: (Triggered from `OrganizationSettingsCard`)
-        *   [ ] Reads `isDeleteDialogOpen` from store to control open state.
-        *   [ ] Reads `currentOrganizationDetails` and `currentOrganizationId` from store.
-        *   [ ] Confirmation dialog explaining soft-delete, displaying org name.
-        *   [ ] Requires explicit confirmation (e.g., type org name OR click confirm button - simpler button confirm preferred for now).
+        *   [ ] Confirmation dialog explaining soft-delete.
+        *   [ ] Requires explicit confirmation (e.g., type org name or click confirm button).
         *   [ ] On confirmation, calls `softDeleteOrganization` action.
-        *   [ ] On cancellation or success, calls `closeDeleteDialog` action.
-        *   [ ] Test: Dialog displays correctly based on `isDeleteDialogOpen` state.
-        *   [ ] Test: Confirmation button calls `softDeleteOrganization` with the correct `currentOrganizationId`.
-        *   [ ] Test: Cancellation button calls `closeDeleteDialog`.
-        *   [ ] Test: Handles API errors during deletion (e.g., last admin error) by showing feedback and potentially calling `closeDeleteDialog`.
+        *   [ ] Test: Dialog displays correctly when triggered.
+        *   [ ] Test: Confirmation mechanism works as expected.
+        *   [ ] Test: Confirmed deletion calls `softDeleteOrganization` with the correct `currentOrganizationId`.
+        *   [ ] Test: Cancellation closes the dialog without action.
+        *   [ ] Test: Handles API errors during deletion (e.g., last admin error) by showing feedback.
+    *   [ ] `MemberListCard.tsx`: (Displayed Conditionally on Hub/Focused View)
+        *   [ ] Displays table/list of **active** members from `selectCurrentMembers`.
+        *   [ ] Includes controls (dropdown menus) for Admins: Change Role, Remove Member.
+        *   [ ] Includes control for any Member: Leave Organization.
+        *   [ ] Test: Displays members (name, role, avatar) correctly. Handles empty/loading states.
+        *   [ ] Test: **Admin Controls:** Change Role action triggers `updateMemberRole` with correct membershipId/newRole.
+        *   [ ] Test: **Admin Controls:** Remove Member action triggers confirmation, then `removeMember` with correct membershipId. Handles 'last admin' API error feedback.
+        *   [ ] Test: **Member Controls:** Leave Organization action triggers confirmation, then appropriate store action (e.g., `removeMember` with self ID check or dedicated `leaveOrganization` action). Handles 'last admin' API error.
+        *   [ ] Test: Controls are visible/enabled based on current user's role vs target member's role/status.
+        *   [ ] Test: Handles API errors gracefully for all actions (shows feedback).
+        *   [ ] Test: (Optional) Includes working pagination or search/filter for long lists.
+    *   [ ] `InviteMemberCard.tsx`: (Admin Only, Displayed Conditionally on Hub/Focused View)
+        *   [ ] Form (Email, Role) to invite users.
+        *   [ ] Submission triggers `inviteUser` action for the `currentOrganizationId`.
+        *   [ ] Test: Visibility is correctly controlled (admin only).
+        *   [ ] Test: Form validation works (valid email, selected role).
+        *   [ ] Test: Submission triggers `inviteUser` with correct orgId, email, role.
+        *   [ ] Test: Handles success (e.g., clear form, show toast) and API errors (e.g., already member/invited, invalid input) gracefully.
+    *   [ ] `PendingActionsCard.tsx`: (Admin Only, Displayed Conditionally on Hub/Focused View)
+        *   [ ] Displays list/table of pending join requests (`currentPendingRequests`).
+        *   [ ] Displays list/table of outgoing pending invites (`currentPendingInvites`).
+        *   [ ] Includes controls for Admins: Approve/Deny Request, Cancel Invite.
+        *   [ ] Test: Visibility is correctly controlled (admin only).
+        *   [ ] Test: Displays pending requests correctly (user name, email, date). Handles empty state.
+        *   [ ] Test: Displays pending invites correctly (email, role, date). Handles empty state.
+        *   [ ] Test: Approve Request button triggers `approveRequest` with correct membershipId.
+        *   [ ] Test: Displays data correctly when `currentOrganizationDetails` is populated.
+        *   [ ] Test: Handles loading state (shows skeleton/spinner) when `isLoading` is true for details fetch.
+        *   [ ] Test: Handles null state (shows placeholder/message) when `currentOrganizationId` is null or details are null.
+    *   [ ] `OrganizationSettingsCard.tsx`: (Admin Only, Displayed Conditionally on Hub/Focused View)
+        *   [ ] Form elements (Name, Visibility) for updates, pre-filled with `currentOrganizationDetails`.
+        *   [ ] "Update" button triggers `updateOrganization` action.
+        *   [ ] "Delete Organization" button triggers `DeleteOrganizationDialog`.
+        *   [ ] Test: Visibility is correctly controlled based on `selectCurrentUserRole` (admin only).
+        *   [ ] Test: Displays current settings correctly in form fields.
+        *   [ ] Test: Form validation works for updates.
+        *   [ ] Test: Update submission calls `updateOrganization` with correct orgId and data. Handles success/error feedback.
+        *   [ ] Test: Delete button opens the `DeleteOrganizationDialog`.
+        *   [ ] Test: Handles API errors gracefully for updates.
+    *   [ ] **NEW:** `DeleteOrganizationDialog.tsx`: (Triggered from `OrganizationSettingsCard`)
+        *   [ ] Confirmation dialog explaining soft-delete.
+        *   [ ] Requires explicit confirmation (e.g., type org name or click confirm button).
+        *   [ ] On confirmation, calls `softDeleteOrganization` action.
+        *   [ ] Test: Dialog displays correctly when triggered.
+        *   [ ] Test: Confirmation mechanism works as expected.
+        *   [ ] Test: Confirmed deletion calls `softDeleteOrganization` with the correct `currentOrganizationId`.
+        *   [ ] Test: Cancellation closes the dialog without action.
+        *   [ ] Test: Handles API errors during deletion (e.g., last admin error) by showing feedback.
     *   [ ] `MemberListCard.tsx`: (Displayed Conditionally on Hub/Focused View)
         *   [ ] Displays table/list of **active** members from `selectCurrentMembers`.
         *   [ ] Includes controls (dropdown menus) for Admins: Change Role, Remove Member.
@@ -375,7 +416,7 @@ This section outlines the frontend implementation using a dynamic, card-based "h
     *   [ ] orgStore.current.ts manages `currentOrganizationId`, `currentOrganizationDetails`, and `currentOrganizationMembers` and related fetches/updates
     *   [ ] orgStore.invite.ts handles invite-specific actions like `acceptInvite`, `declineInvite`, `fetchInviteDetails`.
     *   [ ] orgStore.request.ts handles `requestJoin`, `approveRequest`, `denyRequest`.
-    *   [ ] orgStore.ui.ts manages UI-related state, starting with the `isCreateModalOpen` state and its actions (`openCreateModal`, `closeCreateModal`), and adding `isDeleteDialogOpen`, `openDeleteDialog`, `closeDeleteDialog`.
+    *   [ ] orgStore.ui.ts manages UI-related state, starting with the `isCreateModalOpen` state and its actions (`openCreateModal`, `closeCreateModal`).
 *   [ ] **Implement `PublicRoute` Component:**
     *   [ ] Create `PublicRoute.tsx` in `src/components/auth`.
     *   [ ] Implement logic to redirect authenticated users away from public-only pages (e.g., to `/dashboard`).
