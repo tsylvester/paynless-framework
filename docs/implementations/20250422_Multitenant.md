@@ -196,16 +196,17 @@ This document outlines the steps for implementing an in-app notification system 
     *   [X] **(New)** Action `declineInvite(token)`: Mocks API call, sets `isLoading`.
     *   [X] **(New)** Action `requestJoin(orgId)`: Mocks API call, sets `isLoading`.
     *   [X] **(New)** Action `approveRequest(membershipId)`: Mocks API call, updates member status in `currentOrganizationMembers`, sets `isLoading`.
-    *   [ ] **(New)** Action `denyRequest(membershipId)`: Mocks API call, removes pending member from `currentOrganizationMembers`, sets `isLoading`.
-    *   [ ] **(New)** Action `cancelInvite(inviteId)`: Mocks API call, removes pending invite from relevant state, sets `isLoading`.
-    *   [ ] **(Update)** Action `fetchCurrentOrganizationMembers`: Might need to fetch pending invites/requests separately for admins.
+    *   [X] **(New)** Action `denyRequest(membershipId)`: Mocks API call, removes pending member from `currentOrganizationMembers`, sets `isLoading`.
+    *   [X] **(New)** Action `cancelInvite(inviteId)`: Mocks API call, removes pending invite from relevant state, sets `isLoading`.
+    *   [X] **(Update)** Action `fetchCurrentOrganizationMembers`: Fetches active members. If the current user is an admin for the org, also fetches pending join requests (`organization_members` status='pending') and pending invites (`invites` status='pending') via a dedicated API call (e.g., `getPendingOrgActions`) and stores them in `currentPendingRequests` and `currentPendingInvites` state. Clears pending state for non-admins.
 *   [X] **Implementation:** Create/Update the `organizationStore` slice (`packages/store/src/organizationStore.ts`) with the defined state, actions, and selectors. Ensure actions handle loading states and errors. Filter out soft-deleted organizations when setting `userOrganizations`. Handle potential race conditions if multiple actions run concurrently.
     *   [X] Implement actions for `acceptInvite`, `declineInvite`.
     *   [X] Implement actions for `requestJoin`.
     *   [X] Implement actions for `approveRequest`.
-    *   [ ] **(New)** Implement actions for `denyRequest`, `cancelInvite`.
-    *   [ ] **(Update)** Update `inviteUser` action if API changes.
-    *   [ ] **(Update)** Update `fetchCurrentOrganizationMembers` if separate pending fetches are needed.
+    *   [X] Implement actions for `denyRequest`.
+    *   [X] Implement actions for `cancelInvite`.
+    *   [X] Update `inviteUser` action if API changes.
+    *   [X] **(Update)** Update `fetchCurrentOrganizationMembers` to fetch pending items for admins.
 
 ### 2.6 Frontend Components & UI (`apps/web`)
 
@@ -239,86 +240,4 @@ This document outlines the steps for implementing an in-app notification system 
 
 *   [ ] **Tests:**
     *   Test route loader/component logic for `/dashboard/organizations/:orgId`: Verify redirection if org is not found, deleted (check `currentOrganizationDetails` from store after fetch), or user is not a member (`currentOrganizationMembers`).
-    *   Test `OrganizationSwitcher`: Verify it updates `currentOrganizationId` in the store and navigation occurs (if designed to navigate).
-    *   Test conditional rendering within org pages: Ensure admin-only controls (delete org, change roles, approve requests) are hidden/disabled for non-admins based on `selectCurrentUserRole` from store.
-*   [ ] **Implementation:**
-    *   Use `react-router` loaders or `useEffect` hooks in org-specific pages/layouts to fetch data via store actions (`fetchCurrentOrganizationDetails`, `fetchCurrentOrganizationMembers`). Check the fetched state (details for existence/`deleted_at`, members for current user presence) and use `useNavigate` to redirect if access is denied.
-    *   Connect `OrganizationSwitcher` dropdown selection to the `setCurrentOrganizationId` store action.
-    *   Use the `selectCurrentUserRole` selector in components like `OrganizationSettingsPage`, `OrganizationMembersPage`, `MemberList` to conditionally render UI elements or disable actions.
-
-### 2.8 Integration with Existing Features
-
-*   [ ] **Identify Impacted Features:** Chat (`chat_history`, `chats`), potentially User Profile settings if some become org-specific, Subscriptions if they become org-based.
-*   [ ] **Update Backend:**
-    *   Add `organization_id` FK column to `chats`, `chat_history`.
-    *   Update RLS for `chats`, `chat_history` to require `organization_id` matches an active, non-deleted membership.
-    *   Apply migrations. Test RLS changes.
-*   [ ] **Update API Client (`@paynless/api`):**
-    *   Modify `ChatApiClient` functions (`fetchChats`, `fetchChatHistory`, `createChat`, `sendMessage`, etc.) to accept and pass `organizationId`.
-    *   Update tests for `ChatApiClient`.
-*   [ ] **Update State Management (`@paynless/store`):**
-    *   Modify `chatStore` actions to accept `organizationId`.
-    *   Modify state structure if needed (e.g., store chats per org: `chatsByOrgId: { [orgId: string]: Chat[] }`).
-    *   Update selectors to accept `organizationId` or use `currentOrganizationId` from `organizationStore`.
-    *   Update tests for `chatStore`.
-*   [ ] **Update Frontend (`apps/web`):**
-    *   Modify components using chat features (e.g., `ChatInterface`, `ChatList`) to get `currentOrganizationId` from `organizationStore` and pass it to chat store actions/API calls.
-    *   Ensure UI reflects data scoped to the currently selected organization.
-    *   Update tests for chat components.
-
-### 2.9 Checkpoint 2: Multi-Tenancy Complete
-
-*   [ ] **Run Tests:** Execute all tests (`pnpm test`). Ensure they pass.
-*   [ ] **Build App:** Run `pnpm build`. Ensure it completes successfully.
-*   [ ] **Manual Test:**
-    *   Create orgs (public/private).
-    *   **Invite Flow:** Invite user (by email), verify notification/email, click invite link, view `AcceptInvitePage`, accept invite, verify user added to members list, verify notifications. Repeat for declining invite. Test admin cancelling a pending invite. Test inviting existing member (should fail).
-    *   Test org switcher and data scoping (chats, etc.).
-    *   Test RLS (access denial for non-members).
-    *   Test role permissions (admin vs member actions in settings/members pages).
-    *   Test visibility setting (though no public search yet).
-    *   **Join Request Flow:** (Simulate) User requests to join public org -> Admin sees pending request on Members page -> Admin approves request -> Verify user added, notifications sent. Repeat for denying request. Test requesting when already member (should fail).
-    *   Test "last admin" logic: try to remove last admin role/membership and verify error.
-    *   Test soft deleting an organization as an admin.
-    *   Verify the deleted org disappears from lists/switchers.
-    *   Verify direct access to the deleted org's pages/data is blocked.
-    *   Verify actions within the deleted org context fail gracefully.
-*   [ ] **Update Docs:** Mark Phase 2 tasks as complete in `IMPLEMENTATION_PLAN.md`. Update `STRUCTURE.md`.
-*   [ ] **Commit:** `feat: implement multi-tenancy support (#issue_number)`
-*   [ ] **Remind User:** "Multi-tenancy support is implemented. Please perform thorough testing, especially around roles, RLS, visibility, and the 'last admin' check. Remember to update impacted tests. Review and commit: `git add . && git commit -m 'feat: implement multi-tenancy support'`"
-
----
-
-## Phase 3: Final Review & Cleanup
-
-*   [ ] **Code Review:** Review all new code for clarity, efficiency, adherence to `DEV_PLAN.md`, and potential bugs (especially around RLS and state management).
-*   [ ] **Test Coverage:** Review test coverage. Add tests for any critical paths missed.
-*   [ ] **Final Test Run:** Execute all tests one last time.
-*   [ ] **Final Build:** Perform a final `pnpm build`.
-*   [ ] **Update `README.md`:** Add information about the new notification and multi-tenancy features.
-*   [ ] **Final Commit:** `chore: finalize notification and multi-tenancy implementation (#issue_number)`
-*   [ ] **Remind User:** "The implementation is complete and documented. Please ensure all tests pass and the build is successful. Consider deploying to a staging environment for further validation before merging to main. Final commit suggestion: `git add . && git commit -m 'chore: finalize notification and multi-tenancy implementation'`"
-
----
-
-## Future Scope & Considerations
-
-The following items were discussed but deferred from this initial implementation plan to manage scope. They can be considered for future iterations:
-
-*   **Granular Member Roles:** Implementing roles beyond 'admin' and 'member' (e.g., 'viewer', custom roles).
-*   **Sub-Teams:** Adding support for hierarchical teams within organizations.
-*   **Public Organization Discovery & Search:** Implementing UI for users to find `public` organizations.
-*   **Domain-Based Joining:** Logic to suggest/assign users to orgs based on email domain.
-*   **Enhanced Privacy/Visibility Settings:** Extending `organizations.visibility` beyond public/private.
-*   **Invite Token Expiration/Management:** Adding expiry dates and admin management for invites.
-*   **User Notification Preferences:** Allowing users to choose notification types and delivery channels (in-app vs. email).
-*   **Email Notifications:** Sending emails for various notification types (beyond invites).
-*   **Notification Cleanup/Archiving:** Automatic cleanup of old notifications.
-*   **Notification Grouping:** Grouping similar informational notifications in the UI (Note: complex for actionable items).
-*   **Organization-Level Billing:** Allowing an organization entity to manage billing for its members.
-*   **Resource Quotas/Limits per Organization:** Enforcing limits tied to organization billing plans.
-*   **Dedicated Audit Log:** Implementing an immutable log for organization events.
-*   **Org-Focused User Onboarding:** Designing specific flows for new users joining/creating orgs immediately upon signup.
-*   **Advanced Org Deletion Handling:** Defining specific behavior for associated data (chats, resources, etc.) when an org is soft-deleted (e.g., archiving, member status changes beyond just blocking access).
-
---- 
+    *   Test `

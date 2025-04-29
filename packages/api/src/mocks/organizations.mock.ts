@@ -1,5 +1,12 @@
 import { vi } from 'vitest';
-import type { Organization, OrganizationMember, ApiResponse, OrganizationMemberWithProfile } from '@paynless/types';
+// Import all needed types directly from the package
+import type { 
+    Organization, 
+    ApiResponse, 
+    OrganizationMemberWithProfile, 
+    Invite, 
+    PendingOrgItems 
+} from '@paynless/types';
 
 // Mock implementations using vi.fn()
 // Define expected argument types and return shapes based on common patterns
@@ -21,6 +28,14 @@ export const mockDeclineOrganizationInvite = vi.fn<[string], Promise<ApiResponse
 export const mockRequestToJoinOrganization = vi.fn<[string], Promise<ApiResponse<void>>>(); // Arg: orgId
 // Add mock for approving join request
 export const mockApproveJoinRequest = vi.fn<[string], Promise<ApiResponse<void>>>(); // Arg: membershipId
+// Add mock for denying join request
+export const mockDenyJoinRequest = vi.fn<[string], Promise<ApiResponse<void>>>(); // Arg: membershipId
+// Add mock for cancelling an invite
+export const mockCancelInvite = vi.fn<[string, string], Promise<ApiResponse<void>>>(); // Args: orgId, inviteId
+// Add mock for inviting user by email
+export const mockInviteUserByEmail = vi.fn<[string, string, string], Promise<ApiResponse<any>>>(); // Args: orgId, email, role
+// Add mock for getting pending invites/requests
+export const mockGetPendingItems = vi.fn<[string], Promise<ApiResponse<PendingOrgItems>>>(); // Args: orgId
 // Add more mocks as needed (e.g., for handling invites, roles)
 
 // Default mock data aligned with actual type from linter error
@@ -35,10 +50,10 @@ export const defaultMockOrganization: Organization = {
 // Correct defaultMockMembers based on actual type from linter error
 // Update this if mockGetOrganizationMembers returns OrganizationMemberWithProfile
 export const defaultMockMembers: OrganizationMemberWithProfile[] = [ // Use OrganizationMemberWithProfile
-    {
-        organization_id: 'org-123',
-        user_id: 'user-owner-1',
-        role: 'owner',
+    { 
+        organization_id: 'org-123', 
+        user_id: 'user-owner-1', 
+        role: 'owner', 
         id: 'om-1',
         status: 'active',
         created_at: new Date().toISOString(),
@@ -51,7 +66,7 @@ export const defaultMockMembers: OrganizationMemberWithProfile[] = [ // Use Orga
              role: 'user'
           }
     },
-    {
+    { 
         organization_id: 'org-123',
         user_id: 'user-member-2',
         role: 'member',
@@ -84,6 +99,10 @@ export const resetOrganizationMocks = () => {
   mockDeclineOrganizationInvite.mockReset();
   mockRequestToJoinOrganization.mockReset();
   mockApproveJoinRequest.mockReset();
+  mockDenyJoinRequest.mockReset();
+  mockCancelInvite.mockReset();
+  mockInviteUserByEmail.mockReset();
+  mockGetPendingItems.mockReset();
 
   // Set default successful resolutions with error: undefined and status code
   mockListUserOrganizations.mockResolvedValue({ status: 200, data: [{ ...defaultMockOrganization }], error: undefined });
@@ -99,6 +118,10 @@ export const resetOrganizationMocks = () => {
   mockDeclineOrganizationInvite.mockResolvedValue({ status: 200, data: { success: true }, error: undefined }); // Default success for decline
   mockRequestToJoinOrganization.mockResolvedValue({ status: 200, data: undefined, error: undefined }); // Default success for request join
   mockApproveJoinRequest.mockResolvedValue({ status: 200, data: undefined, error: undefined }); // Default success for approve join
+  mockDenyJoinRequest.mockResolvedValue({ status: 200, data: undefined, error: undefined }); // Default success for deny join
+  mockCancelInvite.mockResolvedValue({ status: 200, data: undefined, error: undefined }); // Default success for cancel invite
+  mockInviteUserByEmail.mockResolvedValue({ status: 201, data: { id: 'new-invite-123' }, error: undefined }); // Default success for invite by email
+  mockGetPendingItems.mockResolvedValue({ status: 200, data: { invites: [], requests: [] }, error: undefined }); // Default success for get pending (empty lists)
 };
 
 // Initialize with default mocks

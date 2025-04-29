@@ -16,13 +16,17 @@ import {
     mockAcceptOrganizationInvite,
     mockDeclineOrganizationInvite,
     mockRequestToJoinOrganization,
-    mockApproveJoinRequest // Import the new mock
+    mockApproveJoinRequest,
+    mockDenyJoinRequest,
+    mockCancelInvite,
+    mockInviteUserByEmail,
+    mockGetPendingOrgActions
 } from '../../api/src/mocks/organizations.mock.ts';
 
 // Other imports
 import { useOrganizationStore } from './organizationStore';
 import { useAuthStore } from './authStore';
-import { Organization, OrganizationMemberWithProfile, SupabaseUser, ApiError as ApiErrorType, AuthStore, ApiResponse } from '@paynless/types';
+import { Organization, OrganizationMemberWithProfile, SupabaseUser, ApiError as ApiErrorType, AuthStore, ApiResponse, Invite, PendingOrgItems } from '@paynless/types';
 // Import ApiClient type
 import { initializeApiClient, _resetApiClient, ApiClient } from '@paynless/api'; 
 import { logger } from '@paynless/utils';
@@ -51,7 +55,11 @@ vi.mock('@paynless/api', () => {
             acceptOrganizationInvite: mockAcceptOrganizationInvite,
             declineOrganizationInvite: mockDeclineOrganizationInvite,
             requestToJoinOrganization: mockRequestToJoinOrganization,
-            approveJoinRequest: mockApproveJoinRequest // Add the imported mock here
+            approveJoinRequest: mockApproveJoinRequest,
+            denyJoinRequest: mockDenyJoinRequest,
+            cancelInvite: mockCancelInvite,
+            inviteUserByEmail: mockInviteUserByEmail,
+            getPendingOrgActions: mockGetPendingOrgActions
         },
         auth: {} as any,
         billing: {} as any,
@@ -709,4 +717,572 @@ describe('OrganizationStore', () => {
     });
   });
 
-}); // End Test Suite
+  // --- [NEW] denyRequest Tests --- //
+  describe('denyRequest', () => {
+    const mockMembershipId = 'om-pending-req-456';
+    // Use the imported mock directly
+    const denyRequestMock = mockDenyJoinRequest;
+
+    beforeEach(() => {
+      // Remove the temporary assignment
+      // vi.mocked(getApiClient)().organizations.denyJoinRequest = denyRequestMock;
+      denyRequestMock.mockClear(); // Still clear calls
+    });
+
+    it('should call API, clear loading/error on success, and return true', async () => {
+      denyRequestMock.mockResolvedValue({ status: 200, data: undefined, error: undefined });
+      useOrganizationStore.setState({ error: 'Old error', isLoading: false });
+
+      let result: boolean | undefined;
+      await act(async () => {
+        result = await useOrganizationStore.getState().denyRequest(mockMembershipId);
+      });
+
+      expect(result).toBe(true);
+      expect(denyRequestMock).toHaveBeenCalledWith(mockMembershipId);
+      const { isLoading, error } = useOrganizationStore.getState();
+      expect(isLoading).toBe(false);
+      expect(error).toBeNull();
+      // Optional: Verify if fetchCurrentOrganizationMembers was called if state should update
+    });
+
+    it('should set error string, clear loading, and return false on API error (e.g., not found/forbidden - 404/403)', async () => {
+      const errorMsg = 'Request not found or action forbidden';
+      denyRequestMock.mockResolvedValue({ status: 403, data: undefined, error: { message: errorMsg, code: '403' } });
+      useOrganizationStore.setState({ isLoading: false });
+
+      let result: boolean | undefined;
+      await act(async () => {
+        result = await useOrganizationStore.getState().denyRequest(mockMembershipId);
+      });
+
+      expect(result).toBe(false);
+      expect(denyRequestMock).toHaveBeenCalledWith(mockMembershipId);
+      const { isLoading, error } = useOrganizationStore.getState();
+      expect(isLoading).toBe(false);
+      expect(error).toBe(errorMsg);
+    });
+
+    it('should set error string, clear loading, and return false on API conflict (e.g., request not pending - 409)', async () => {
+        const errorMsg = 'Request is not in a pending state';
+        denyRequestMock.mockResolvedValue({ status: 409, data: undefined, error: { message: errorMsg, code: '409' } });
+        useOrganizationStore.setState({ isLoading: false });
+  
+        let result: boolean | undefined;
+        await act(async () => {
+          result = await useOrganizationStore.getState().denyRequest(mockMembershipId);
+        });
+  
+        expect(result).toBe(false);
+        expect(denyRequestMock).toHaveBeenCalledWith(mockMembershipId);
+        const { isLoading, error } = useOrganizationStore.getState();
+        expect(isLoading).toBe(false);
+        expect(error).toBe(errorMsg);
+      });
+
+    it('should set error string, clear loading, and return false on unexpected error', async () => {
+      const errorMsg = 'Network error during request denial';
+      denyRequestMock.mockRejectedValue(new Error(errorMsg));
+      useOrganizationStore.setState({ isLoading: false });
+
+      let result: boolean | undefined;
+      await act(async () => {
+        result = await useOrganizationStore.getState().denyRequest(mockMembershipId);
+      });
+
+      expect(result).toBe(false);
+      expect(denyRequestMock).toHaveBeenCalledWith(mockMembershipId);
+      const { isLoading, error } = useOrganizationStore.getState();
+      expect(isLoading).toBe(false);
+      expect(error).toBe(errorMsg);
+    });
+  });
+
+  // --- [NEW] cancelInvite Tests --- //
+  describe('cancelInvite', () => {
+    const mockOrgId = 'org-123'; // Need org context if API requires it
+    const mockInviteId = 'invite-to-cancel-789';
+    // Use the imported mock directly
+    const cancelInviteMock = mockCancelInvite;
+
+    beforeEach(() => {
+      // Remove the temporary assignment
+      // vi.mocked(getApiClient)().organizations.cancelInvite = cancelInviteMock;
+      cancelInviteMock.mockClear(); // Still clear calls
+      // Set current org context if needed by the action
+      useOrganizationStore.setState({ currentOrganizationId: mockOrgId });
+    });
+
+    it('should call API, clear loading/error on success, and return true', async () => {
+      cancelInviteMock.mockResolvedValue({ status: 200, data: undefined, error: undefined });
+      useOrganizationStore.setState({ error: 'Old error', isLoading: false });
+
+      let result: boolean | undefined;
+      await act(async () => {
+        // Assuming cancelInvite takes only inviteId based on plan
+        result = await useOrganizationStore.getState().cancelInvite(mockInviteId);
+      });
+
+      expect(result).toBe(true);
+      // Verify mock call based on actual API client method signature
+      // If it needs orgId: expect(cancelInviteMock).toHaveBeenCalledWith(mockOrgId, mockInviteId);
+      expect(cancelInviteMock).toHaveBeenCalledWith(mockOrgId, mockInviteId); // Assuming API needs orgId from context and inviteId
+      const { isLoading, error } = useOrganizationStore.getState();
+      expect(isLoading).toBe(false);
+      expect(error).toBeNull();
+      // Optional: Verify if a fetch for pending invites/members was called
+    });
+
+    it('should set error string, clear loading, and return false on API error (e.g., not found/forbidden - 404/403)', async () => {
+      const errorMsg = 'Invite not found or action forbidden';
+      cancelInviteMock.mockResolvedValue({ status: 403, data: undefined, error: { message: errorMsg, code: '403' } });
+      useOrganizationStore.setState({ isLoading: false });
+
+      let result: boolean | undefined;
+      await act(async () => {
+        result = await useOrganizationStore.getState().cancelInvite(mockInviteId);
+      });
+
+      expect(result).toBe(false);
+      expect(cancelInviteMock).toHaveBeenCalledWith(mockOrgId, mockInviteId);
+      const { isLoading, error } = useOrganizationStore.getState();
+      expect(isLoading).toBe(false);
+      expect(error).toBe(errorMsg);
+    });
+
+    it('should set error string, clear loading, and return false on API conflict (e.g., invite not pending - 409)', async () => {
+        const errorMsg = 'Invite is not in a pending state';
+        cancelInviteMock.mockResolvedValue({ status: 409, data: undefined, error: { message: errorMsg, code: '409' } });
+        useOrganizationStore.setState({ isLoading: false });
+  
+        let result: boolean | undefined;
+        await act(async () => {
+          result = await useOrganizationStore.getState().cancelInvite(mockInviteId);
+        });
+  
+        expect(result).toBe(false);
+        expect(cancelInviteMock).toHaveBeenCalledWith(mockOrgId, mockInviteId);
+        const { isLoading, error } = useOrganizationStore.getState();
+        expect(isLoading).toBe(false);
+        expect(error).toBe(errorMsg);
+      });
+
+    it('should set error string, clear loading, and return false on unexpected error', async () => {
+      const errorMsg = 'Network error during invite cancellation';
+      cancelInviteMock.mockRejectedValue(new Error(errorMsg));
+      useOrganizationStore.setState({ isLoading: false });
+
+      let result: boolean | undefined;
+      await act(async () => {
+        result = await useOrganizationStore.getState().cancelInvite(mockInviteId);
+      });
+
+      expect(result).toBe(false);
+      expect(cancelInviteMock).toHaveBeenCalledWith(mockOrgId, mockInviteId);
+      const { isLoading, error } = useOrganizationStore.getState();
+      expect(isLoading).toBe(false);
+      expect(error).toBe(errorMsg);
+    });
+    
+    it('should set error and return false if currentOrganizationId is null', async () => {
+        useOrganizationStore.setState({ currentOrganizationId: null }); // Ensure no org context
+        cancelInviteMock.mockClear(); // Clear any previous calls
+
+        let result: boolean | undefined;
+        await act(async () => {
+          result = await useOrganizationStore.getState().cancelInvite(mockInviteId);
+        });
+
+        expect(result).toBe(false);
+        expect(cancelInviteMock).not.toHaveBeenCalled(); // API should not be called
+        const { isLoading, error } = useOrganizationStore.getState();
+        expect(isLoading).toBe(false);
+        expect(error).toBe('Cannot cancel invite without organization context.');
+      });
+  });
+
+  // --- [UPDATE] inviteUser Tests --- //
+  describe('inviteUser', () => {
+    const mockOrgId = 'org-123'; 
+    const mockEmail = 'new.user@example.com';
+    const mockRole = 'member';
+    // Use the imported mock directly
+    const inviteByEmailMock = mockInviteUserByEmail;
+
+    beforeEach(() => {
+      // Remove the temporary assignment
+      // vi.mocked(getApiClient)().organizations.inviteUserByEmail = inviteByEmailMock;
+      inviteByEmailMock.mockClear(); // Still clear calls
+      // Set current org context
+      useOrganizationStore.setState({ currentOrganizationId: mockOrgId });
+    });
+
+    it('should call API with email, clear loading/error on success, and return true', async () => {
+      inviteByEmailMock.mockResolvedValue({ status: 201, data: { id: 'new-invite-id' }, error: undefined }); // Assuming API returns invite details
+      useOrganizationStore.setState({ error: 'Old error', isLoading: false });
+
+      let result: boolean | undefined;
+      await act(async () => {
+        result = await useOrganizationStore.getState().inviteUser(mockEmail, mockRole);
+      });
+
+      expect(result).toBe(true);
+      expect(inviteByEmailMock).toHaveBeenCalledWith(mockOrgId, mockEmail, mockRole);
+      const { isLoading, error } = useOrganizationStore.getState();
+      expect(isLoading).toBe(false);
+      expect(error).toBeNull();
+      // Optional: Verify if a fetch for pending invites/members was called
+    });
+
+    it('should set error string, clear loading, and return false on API error (e.g., existing member/invite - 409)', async () => {
+      const errorMsg = 'User is already a member or has a pending invite';
+      inviteByEmailMock.mockResolvedValue({ status: 409, data: undefined, error: { message: errorMsg, code: '409' } });
+      useOrganizationStore.setState({ isLoading: false });
+
+      let result: boolean | undefined;
+      await act(async () => {
+        result = await useOrganizationStore.getState().inviteUser(mockEmail, mockRole);
+      });
+
+      expect(result).toBe(false);
+      expect(inviteByEmailMock).toHaveBeenCalledWith(mockOrgId, mockEmail, mockRole);
+      const { isLoading, error } = useOrganizationStore.getState();
+      expect(isLoading).toBe(false);
+      expect(error).toBe(errorMsg);
+    });
+    
+    it('should set error string, clear loading, and return false on API error (e.g., invalid email/role - 400)', async () => {
+        const errorMsg = 'Invalid email format or role specified';
+        inviteByEmailMock.mockResolvedValue({ status: 400, data: undefined, error: { message: errorMsg, code: '400' } });
+        useOrganizationStore.setState({ isLoading: false });
+  
+        let result: boolean | undefined;
+        await act(async () => {
+          result = await useOrganizationStore.getState().inviteUser('invalid-email', mockRole);
+        });
+  
+        expect(result).toBe(false);
+        expect(inviteByEmailMock).toHaveBeenCalledWith(mockOrgId, 'invalid-email', mockRole);
+        const { isLoading, error } = useOrganizationStore.getState();
+        expect(isLoading).toBe(false);
+        expect(error).toBe(errorMsg);
+      });
+
+    it('should set error string, clear loading, and return false on unexpected error', async () => {
+      const errorMsg = 'Network error during user invitation';
+      inviteByEmailMock.mockRejectedValue(new Error(errorMsg));
+      useOrganizationStore.setState({ isLoading: false });
+
+      let result: boolean | undefined;
+      await act(async () => {
+        result = await useOrganizationStore.getState().inviteUser(mockEmail, mockRole);
+      });
+
+      expect(result).toBe(false);
+      expect(inviteByEmailMock).toHaveBeenCalledWith(mockOrgId, mockEmail, mockRole);
+      const { isLoading, error } = useOrganizationStore.getState();
+      expect(isLoading).toBe(false);
+      expect(error).toBe(errorMsg);
+    });
+    
+    it('should set error and return false if currentOrganizationId is null', async () => {
+        useOrganizationStore.setState({ currentOrganizationId: null }); // Ensure no org context
+        inviteByEmailMock.mockClear(); // Clear any previous calls
+
+        let result: boolean | undefined;
+        await act(async () => {
+          result = await useOrganizationStore.getState().inviteUser(mockEmail, mockRole);
+        });
+
+        expect(result).toBe(false);
+        expect(inviteByEmailMock).not.toHaveBeenCalled(); // API should not be called
+        const { isLoading, error } = useOrganizationStore.getState();
+        expect(isLoading).toBe(false);
+        expect(error).toBe('Cannot invite user without organization context.');
+      });
+  });
+
+  // --- [NEW] fetchPendingItems Tests --- //
+  describe('fetchPendingItems', () => {
+    const mockOrgId = 'org-123';
+    const mockPendingInvites: Invite[] = [
+        { id: 'invite-1', invite_token: 'tok1', organization_id: mockOrgId, invited_email: 'pending@invite.com', role_to_assign: 'member', invited_by_user_id: 'admin-user', status: 'pending', created_at: new Date().toISOString(), expires_at: null },
+    ];
+    const mockPendingRequests: OrganizationMemberWithProfile[] = [
+        { ...defaultMockMembers[0], id: 'om-pending-1', status: 'pending', user_id: 'pending-user-id' }
+    ];
+    // Placeholder for the new mock - will need definition and import
+    const getPendingMock = vi.fn<[string], Promise<ApiResponse<PendingOrgItems>>>(); // Args: orgId 
+
+    beforeEach(() => {
+      // IMPORTANT: Add the new mock to the vi.mock factory
+      vi.mocked(getApiClient)().organizations.getPendingItems = getPendingMock;
+      getPendingMock.mockClear();
+      useOrganizationStore.setState({ currentOrganizationId: mockOrgId });
+    });
+
+    it('should call API, update pending state, and clear loading/error on success', async () => {
+      getPendingMock.mockResolvedValue({ 
+          status: 200, 
+          data: { invites: mockPendingInvites, requests: mockPendingRequests }, 
+          error: undefined 
+      });
+      useOrganizationStore.setState({ error: 'Old error', isLoading: false, currentPendingInvites: [], currentPendingRequests: [] });
+
+      await act(async () => {
+        await useOrganizationStore.getState().fetchPendingItems();
+      });
+
+      expect(getPendingMock).toHaveBeenCalledWith(mockOrgId);
+      const { isLoading, error, currentPendingInvites, currentPendingRequests } = useOrganizationStore.getState();
+      expect(isLoading).toBe(false);
+      expect(error).toBeNull();
+      expect(currentPendingInvites).toEqual(mockPendingInvites);
+      expect(currentPendingRequests).toEqual(mockPendingRequests);
+    });
+
+    it('should set error string, clear pending state, and clear loading on API error (e.g., forbidden - 403)', async () => {
+      const errorMsg = 'Forbidden: Only admins can view pending items';
+      getPendingMock.mockResolvedValue({ status: 403, data: undefined, error: { message: errorMsg, code: '403' } });
+      useOrganizationStore.setState({ isLoading: false, currentPendingInvites: mockPendingInvites, currentPendingRequests: mockPendingRequests });
+
+      await act(async () => {
+        await useOrganizationStore.getState().fetchPendingItems();
+      });
+
+      expect(getPendingMock).toHaveBeenCalledWith(mockOrgId);
+      const { isLoading, error, currentPendingInvites, currentPendingRequests } = useOrganizationStore.getState();
+      expect(isLoading).toBe(false);
+      expect(error).toBe(errorMsg);
+      expect(currentPendingInvites).toEqual([]);
+      expect(currentPendingRequests).toEqual([]);
+    });
+
+    it('should set error string, clear pending state, and clear loading on unexpected error', async () => {
+      const errorMsg = 'Network error fetching pending items';
+      getPendingMock.mockRejectedValue(new Error(errorMsg));
+      useOrganizationStore.setState({ isLoading: false, currentPendingInvites: mockPendingInvites, currentPendingRequests: mockPendingRequests });
+
+      await act(async () => {
+        await useOrganizationStore.getState().fetchPendingItems();
+      });
+
+      expect(getPendingMock).toHaveBeenCalledWith(mockOrgId);
+      const { isLoading, error, currentPendingInvites, currentPendingRequests } = useOrganizationStore.getState();
+      expect(isLoading).toBe(false);
+      expect(error).toBe(errorMsg);
+      expect(currentPendingInvites).toEqual([]);
+      expect(currentPendingRequests).toEqual([]);
+    });
+
+    it('should set error and not call API if currentOrganizationId is null', async () => {
+        useOrganizationStore.setState({ currentOrganizationId: null });
+        getPendingMock.mockClear();
+
+        await act(async () => {
+          await useOrganizationStore.getState().fetchPendingItems();
+        });
+
+        expect(getPendingMock).not.toHaveBeenCalled();
+        const { isLoading, error, currentPendingInvites, currentPendingRequests } = useOrganizationStore.getState();
+        expect(isLoading).toBe(false);
+        expect(error).toBe('Cannot fetch pending items without organization context.');
+        expect(currentPendingInvites).toEqual([]);
+        expect(currentPendingRequests).toEqual([]);
+    });
+  });
+
+  // --- [REFACTORED] fetchCurrentOrganizationMembers (Includes Pending Items Fetch) Tests --- //
+  describe('fetchCurrentOrganizationMembers (Includes Pending Items Fetch)', () => {
+    const mockOrgId = 'org-123';
+    const mockAdminUserId = 'admin-user-id';
+    const mockMemberUserId = 'member-user-id';
+
+    // Mock active members, including an admin and a regular member
+    const mockActiveMembers: OrganizationMemberWithProfile[] = [
+        { ...defaultMockMembers[0], user_id: mockAdminUserId, role: 'admin', status: 'active', email: 'admin@test.com' }, // Added email for completeness
+        { ...defaultMockMembers[1], user_id: mockMemberUserId, role: 'member', status: 'active', email: 'member@test.com' }, // Added email for completeness
+    ];
+
+    const mockPendingInvitesData: Invite[] = [
+        { id: 'invite-1', invite_token: 'tok1', organization_id: mockOrgId, invited_email: 'pending@invite.com', role_to_assign: 'member', invited_by_user_id: mockAdminUserId, status: 'pending', created_at: new Date().toISOString(), expires_at: null },
+    ];
+    const mockPendingRequestsData: OrganizationMemberWithProfile[] = [
+        // Ensure structure matches OrganizationMemberWithProfile, including profile
+        { 
+            id: 'om-pending-1', 
+            user_id: 'pending-user-id', 
+            organization_id: mockOrgId,
+            role: 'member', 
+            status: 'pending', 
+            created_at: new Date().toISOString(), 
+            user_profile: { // Add profile data
+                id: 'pending-user-id', 
+                email: 'pending.user@req.com', 
+                full_name: 'Pending Request User', 
+                avatar_url: null,
+                updated_at: new Date().toISOString(),
+                created_at: new Date().toISOString()
+            }
+        }
+    ];
+    
+    // Use imported mocks
+    const getMembersMock = mockGetOrganizationMembers;
+    const getPendingMock = mockGetPendingOrgActions;
+
+    beforeEach(() => {
+      // Reset mocks used in this suite
+      getMembersMock.mockClear();
+      getPendingMock.mockClear();
+      
+      // Set current org context
+      useOrganizationStore.setState({ currentOrganizationId: mockOrgId });
+    });
+
+    // Helper to set the logged-in user for a test
+    const setLoggedInUser = (userId: string | null) => {
+        act(() => {
+            vi.mocked(useAuthStore.getState).mockReturnValue({
+                ...mockAuthStoreState,
+                user: userId ? { ...mockSupabaseUser, id: userId } : null, // Set specific user ID or null
+                session: userId ? mockSession : null
+            });
+        });
+    }
+
+    it('should fetch active members AND pending items if user is admin', async () => {
+      setLoggedInUser(mockAdminUserId); // Log in as admin
+      getMembersMock.mockResolvedValue({ status: 200, data: mockActiveMembers, error: undefined });
+      getPendingMock.mockResolvedValue({ 
+          status: 200, 
+          data: { pendingInvites: mockPendingInvitesData, pendingRequests: mockPendingRequestsData }, 
+          error: undefined 
+      });
+      useOrganizationStore.setState({ error: 'Old error', isLoading: false, currentPendingInvites: [], currentPendingRequests: [] });
+
+      await act(async () => {
+        await useOrganizationStore.getState().fetchCurrentOrganizationMembers();
+      });
+
+      expect(getMembersMock).toHaveBeenCalledWith(mockOrgId);
+      expect(getPendingMock).toHaveBeenCalledWith(mockOrgId); // Admin should trigger pending fetch
+      const { isLoading, error, currentOrganizationMembers, currentPendingInvites, currentPendingRequests } = useOrganizationStore.getState();
+      expect(isLoading).toBe(false);
+      expect(error).toBeNull();
+      expect(currentOrganizationMembers).toEqual(mockActiveMembers);
+      expect(currentPendingInvites).toEqual(mockPendingInvitesData);
+      expect(currentPendingRequests).toEqual(mockPendingRequestsData);
+    });
+
+    it('should fetch only active members and clear pending state if user is NOT admin', async () => {
+      setLoggedInUser(mockMemberUserId); // Log in as regular member
+      getMembersMock.mockResolvedValue({ status: 200, data: mockActiveMembers, error: undefined });
+      // Mock pending API to ensure it wasn't called incorrectly
+      getPendingMock.mockResolvedValue({ status: 200, data: { pendingInvites: [], pendingRequests: [] }, error: undefined }); 
+      useOrganizationStore.setState({ error: 'Old error', isLoading: false, currentPendingInvites: [{} as any], currentPendingRequests: [{} as any] }); // Pre-fill pending
+
+      await act(async () => {
+        await useOrganizationStore.getState().fetchCurrentOrganizationMembers();
+      });
+
+      expect(getMembersMock).toHaveBeenCalledWith(mockOrgId);
+      expect(getPendingMock).not.toHaveBeenCalled(); // Non-admin should NOT trigger pending fetch
+      const { isLoading, error, currentOrganizationMembers, currentPendingInvites, currentPendingRequests } = useOrganizationStore.getState();
+      expect(isLoading).toBe(false);
+      expect(error).toBeNull();
+      expect(currentOrganizationMembers).toEqual(mockActiveMembers);
+      expect(currentPendingInvites).toEqual([]); // Should be cleared
+      expect(currentPendingRequests).toEqual([]); // Should be cleared
+    });
+
+    it('should clear pending state if fetching pending items fails for admin', async () => {
+      setLoggedInUser(mockAdminUserId); // Log in as admin
+      const errorMsg = 'Forbidden fetching pending items';
+      getMembersMock.mockResolvedValue({ status: 200, data: mockActiveMembers, error: undefined });
+      getPendingMock.mockResolvedValue({ status: 403, data: undefined, error: { message: errorMsg, code: '403' } }); // Pending fetch fails
+      useOrganizationStore.setState({ isLoading: false, currentPendingInvites: [{} as any], currentPendingRequests: [{} as any] }); // Pre-fill pending
+
+      await act(async () => {
+        await useOrganizationStore.getState().fetchCurrentOrganizationMembers();
+      });
+
+      expect(getMembersMock).toHaveBeenCalledWith(mockOrgId);
+      expect(getPendingMock).toHaveBeenCalledWith(mockOrgId);
+      const { isLoading, error, currentOrganizationMembers, currentPendingInvites, currentPendingRequests } = useOrganizationStore.getState();
+      expect(isLoading).toBe(false);
+      expect(error).toBeNull(); // Main error should remain null if members fetch succeeded
+      expect(currentOrganizationMembers).toEqual(mockActiveMembers); // Active members should still be set
+      expect(currentPendingInvites).toEqual([]); // Should be cleared due to pending fetch error
+      expect(currentPendingRequests).toEqual([]); // Should be cleared due to pending fetch error
+      // Check logs for the specific error
+      expect(vi.mocked(logger.error)).toHaveBeenCalledWith(
+        expect.stringContaining('(Pending Actions)'), 
+        expect.objectContaining({ message: errorMsg })
+      );
+    });
+
+     it('should set error and clear all state if fetching active members fails', async () => {
+       setLoggedInUser(mockAdminUserId); // Log in as admin
+       const errorMsg = 'Failed to fetch members';
+       getMembersMock.mockResolvedValue({ status: 500, data: undefined, error: { message: errorMsg, code: '500' } }); // Members fetch fails
+       getPendingMock.mockClear(); // Ensure pending isn't called
+       useOrganizationStore.setState({ isLoading: false, currentOrganizationMembers: [{} as any], currentPendingInvites: [{} as any], currentPendingRequests: [{} as any] }); // Pre-fill state
+
+       await act(async () => {
+         await useOrganizationStore.getState().fetchCurrentOrganizationMembers();
+       });
+
+       expect(getMembersMock).toHaveBeenCalledWith(mockOrgId);
+       expect(getPendingMock).not.toHaveBeenCalled(); // Should not proceed to pending fetch
+       const { isLoading, error, currentOrganizationMembers, currentPendingInvites, currentPendingRequests } = useOrganizationStore.getState();
+       expect(isLoading).toBe(false);
+       expect(error).toBe(errorMsg); // Main error should be set
+       expect(currentOrganizationMembers).toEqual([]); // Cleared due to error
+       expect(currentPendingInvites).toEqual([]); // Also cleared 
+       expect(currentPendingRequests).toEqual([]); // Also cleared
+     });
+
+     it('should clear state and not call APIs if currentOrganizationId is null', async () => {
+       useOrganizationStore.setState({ currentOrganizationId: null }); // No org context
+       setLoggedInUser(mockAdminUserId); // Set a user, but orgId is null
+       getMembersMock.mockClear();
+       getPendingMock.mockClear();
+
+       await act(async () => {
+         await useOrganizationStore.getState().fetchCurrentOrganizationMembers();
+       });
+
+       expect(getMembersMock).not.toHaveBeenCalled();
+       expect(getPendingMock).not.toHaveBeenCalled();
+       const { isLoading, error, currentOrganizationMembers, currentPendingInvites, currentPendingRequests } = useOrganizationStore.getState();
+       expect(isLoading).toBe(false);
+       expect(error).toBeNull(); // No error set, just returns early
+       expect(currentOrganizationMembers).toEqual([]); 
+       expect(currentPendingInvites).toEqual([]);
+       expect(currentPendingRequests).toEqual([]);
+     });
+     
+     it('should clear state and set error if user is not authenticated', async () => {
+        setLoggedInUser(null); // No logged-in user
+        useOrganizationStore.setState({ currentOrganizationId: mockOrgId }); // Org context exists
+        getMembersMock.mockClear();
+        getPendingMock.mockClear();
+
+        await act(async () => {
+            await useOrganizationStore.getState().fetchCurrentOrganizationMembers();
+        });
+
+        expect(getMembersMock).not.toHaveBeenCalled();
+        expect(getPendingMock).not.toHaveBeenCalled();
+        const { isLoading, error, currentOrganizationMembers, currentPendingInvites, currentPendingRequests } = useOrganizationStore.getState();
+        expect(isLoading).toBe(false);
+        expect(error).toBe('User not authenticated');
+        expect(currentOrganizationMembers).toEqual([]); 
+        expect(currentPendingInvites).toEqual([]);
+        expect(currentPendingRequests).toEqual([]);
+     });
+
+  });
+
+}); // End OrganizationStore describe block

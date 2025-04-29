@@ -1,8 +1,10 @@
 import type { Database } from '@paynless/db-types';
+import { ApiError } from './api.types'; // Add import for ApiError
 
 // Base types derived from the generated Database type
 type OrganizationsTable = Database['public']['Tables']['organizations'];
 type OrganizationMembersTable = Database['public']['Tables']['organization_members'];
+type InvitesTable = Database['public']['Tables']['invites']; // Add invites table type
 // Assume profile table type
 type UserProfilesTable = Database['public']['Tables']['user_profiles'];
 
@@ -30,39 +32,47 @@ export type OrganizationMemberWithProfile = OrganizationMember & {
 //   profile: Database['public']['Tables']['user_profiles']['Row'] | null;
 // }; 
 
-// --- Zustand Store Types ---
+// --- Invite Type ---
+export type Invite = InvitesTable['Row'];
+export type InviteInsert = InvitesTable['Insert'];
+export type InviteUpdate = InvitesTable['Update'];
 
-// Define the state structure for the organization store
+// --- Zustand Store Types (Consolidated) ---
+
 export interface OrganizationState {
   userOrganizations: Organization[];
   currentOrganizationId: string | null;
   currentOrganizationDetails: Organization | null;
   currentOrganizationMembers: OrganizationMemberWithProfile[];
+    currentPendingInvites: Invite[];
+    currentPendingRequests: OrganizationMemberWithProfile[];
   isLoading: boolean;
-  error: string | null; // Store error messages as strings
+    error: string | null;
 }
 
-// Define the actions interface for the organization store
+export interface PendingOrgItems {
+    invites: Invite[];
+    requests: OrganizationMemberWithProfile[];
+}
+  
 export interface OrganizationActions {
-  createOrganization: (name: string, visibility?: 'private' | 'public') => Promise<Organization | null>;
   fetchUserOrganizations: () => Promise<void>;
   setCurrentOrganizationId: (orgId: string | null) => void;
   fetchOrganizationDetails: (orgId: string) => Promise<void>;
-  fetchCurrentOrganizationMembers: () => Promise<void>; // Fetches for currentOrganizationId
-  softDeleteOrganization: (orgId: string) => Promise<boolean>; // Returns success status
-  inviteUser: (emailOrUserId: string, role: string) => Promise<boolean>; // Returns true on success
-  updateMemberRole: (membershipId: string, role: string) => Promise<boolean>; // Returns true on success
-  removeMember: (membershipId: string) => Promise<boolean>; // Returns true on success
-  acceptInvite: (token: string) => Promise<boolean>; // Returns true on success
-  declineInvite: (token: string) => Promise<boolean>; // Returns true on success
-  requestJoin: (orgId: string) => Promise<boolean>; // Returns true on success
-  approveRequest: (membershipId: string) => Promise<boolean>; // Returns true on success
-  denyRequest: (membershipId: string) => Promise<boolean>; // Returns true on success
-  cancelInvite: (inviteId: string) => Promise<boolean>; // Returns true on success
-  // Internal helper actions might not need to be exported if not used outside the store
-  // _setError: (error: string | null) => void;
-  // _setLoading: (loading: boolean) => void;
+    fetchCurrentOrganizationMembers: () => Promise<void>;
+    fetchPendingItems: () => Promise<void>;
+    createOrganization: (name: string, visibility?: 'private' | 'public') => Promise<Organization | null>;
+    softDeleteOrganization: (orgId: string) => Promise<boolean>;
+    updateOrganization: (orgId: string, updates: Partial<Organization>) => Promise<boolean>;
+    inviteUser: (emailOrUserId: string, role: string) => Promise<boolean>;
+    updateMemberRole: (membershipId: string, role: string) => Promise<boolean>;
+    removeMember: (membershipId: string) => Promise<boolean>;
+    acceptInvite: (token: string) => Promise<boolean>;
+    declineInvite: (token: string) => Promise<boolean>;
+    requestJoin: (orgId: string) => Promise<boolean>;
+    approveRequest: (membershipId: string) => Promise<boolean>;
+    denyRequest: (membershipId: string) => Promise<boolean>;
+    cancelInvite: (inviteId: string) => Promise<boolean>;
 }
-
-// Combined store type (might be useful for consumers)
+  
 export type OrganizationStoreType = OrganizationState & OrganizationActions; 
