@@ -13,6 +13,10 @@ export const mockUpdateOrganization = vi.fn<[string, Partial<Organization>], Pro
 export const mockGetOrganizationMembers = vi.fn<[string], Promise<ApiResponse<OrganizationMemberWithProfile[]>>>(); // Arg: orgId
 export const mockRemoveOrganizationMember = vi.fn<[string, string], Promise<ApiResponse<void>>>(); // Args: orgId, userId
 export const mockLeaveOrganization = vi.fn<[string], Promise<ApiResponse<void>>>(); // Arg: orgId
+// Add mock for accepting invite
+export const mockAcceptOrganizationInvite = vi.fn<[string], Promise<ApiResponse<{ success: boolean }>>>(); // Arg: inviteToken
+// Add mock for declining invite
+export const mockDeclineOrganizationInvite = vi.fn<[string], Promise<ApiResponse<{ success: boolean }>>>(); // Arg: inviteToken
 // Add more mocks as needed (e.g., for handling invites, roles)
 
 // Default mock data aligned with actual type from linter error
@@ -72,6 +76,8 @@ export const resetOrganizationMocks = () => {
   mockGetOrganizationMembers.mockReset();
   mockRemoveOrganizationMember.mockReset();
   mockLeaveOrganization.mockReset();
+  mockAcceptOrganizationInvite.mockReset();
+  mockDeclineOrganizationInvite.mockReset();
 
   // Set default successful resolutions with error: undefined and status code
   mockListUserOrganizations.mockResolvedValue({ status: 200, data: [{ ...defaultMockOrganization }], error: undefined });
@@ -83,6 +89,8 @@ export const resetOrganizationMocks = () => {
   mockGetOrganizationMembers.mockResolvedValue({ status: 200, data: [...defaultMockMembers], error: undefined });
   mockRemoveOrganizationMember.mockResolvedValue({ status: 204, data: undefined, error: undefined }); // 204 for successful void response
   mockLeaveOrganization.mockResolvedValue({ status: 204, data: undefined, error: undefined }); // 204 for successful void response
+  mockAcceptOrganizationInvite.mockResolvedValue({ status: 200, data: { success: true }, error: undefined }); // Default success for accept
+  mockDeclineOrganizationInvite.mockResolvedValue({ status: 200, data: { success: true }, error: undefined }); // Default success for decline
 };
 
 // Initialize with default mocks

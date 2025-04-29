@@ -132,6 +132,18 @@ export class OrganizationApiClient {
   }
 
   /**
+   * Declines an invitation to join an organization.
+   * Uses the main client's post method.
+   * @param inviteToken - The unique token identifying the invitation.
+   * @returns An ApiResponse, typically with no data on success (e.g., status 204) or an error.
+   */
+  async declineOrganizationInvite(inviteToken: string): Promise<ApiResponse<void>> {
+    // Use the injected ApiClient's post method
+    // Backend endpoint: POST /invites/:inviteToken/decline
+    return this.client.post<void, undefined>(`invites/${inviteToken}/decline`, undefined);
+  }
+
+  /**
    * Requests to join a public organization.
    * Uses the main client's post method.
    * @param orgId - The ID of the organization to request joining.

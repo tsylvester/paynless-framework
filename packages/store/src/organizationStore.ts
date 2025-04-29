@@ -11,6 +11,7 @@ import {
 // Import the specific client class and the base api object
 import { 
     api, 
+    getApiClient,
     OrganizationApiClient as _OrganizationApiClient,
     ApiClient as _ApiClient
 } from '@paynless/api';
@@ -47,6 +48,7 @@ interface InternalOrganizationActions {
 }
 
 // Combine the public actions and internal actions for the create function implementation type
+// Ensure this includes the newly added OrganizationActions from the types package
 type OrganizationStoreImplementation = OrganizationState & OrganizationActions & InternalOrganizationActions;
 
 // Instantiate the specific client - assuming the main 'api' export *is* the base client instance
@@ -59,7 +61,7 @@ export const useOrganizationStore = create<OrganizationStoreImplementation>((set
   _setError: (error: string | null) => set({ error, isLoading: false }),
   _setLoading: (loading: boolean) => set({ isLoading: loading }),
 
-  // --- Main Actions (Implementations remain the same) ---
+  // --- Main Actions (Existing implementations) ---
   fetchUserOrganizations: async () => {
     const { _setLoading, _setError } = get();
     _setLoading(true);
@@ -298,6 +300,97 @@ export const useOrganizationStore = create<OrganizationStoreImplementation>((set
     } finally {
       _setLoading(false);
     }
+  },
+
+  updateOrganization: async (_orgId: string, _updates: Partial<Organization>): Promise<boolean> => {
+    // Implementation will be added in the GREEN step
+    throw new Error('updateOrganization not implemented');
+  },
+
+  inviteUser: async (_emailOrUserId: string, _role: string): Promise<boolean> => {
+    // Implementation will be added in the GREEN step
+    throw new Error('inviteUser not implemented');
+  },
+
+  updateMemberRole: async (_membershipId: string, _role: string): Promise<boolean> => {
+    // Implementation will be added in the GREEN step
+    throw new Error('updateMemberRole not implemented');
+  },
+
+  removeMember: async (_membershipId: string): Promise<boolean> => {
+    // Implementation will be added in the GREEN step
+    throw new Error('removeMember not implemented');
+  },
+
+  // --- Implement acceptInvite --- 
+  acceptInvite: async (token: string): Promise<boolean> => {
+    const { _setLoading, _setError, fetchUserOrganizations } = get(); 
+    _setLoading(true);
+    _setError(null);
+    try {
+      // Use getApiClient() to ensure correct type
+      const apiClient = getApiClient(); 
+      const response = await apiClient.organizations.acceptOrganizationInvite(token);
+
+      if (response.error || response.status >= 300) {
+        const errorMsg = response.error?.message ?? 'Failed to accept invite';
+        logger.error('[OrganizationStore] acceptInvite - API Error', { token, error: errorMsg, status: response.status });
+        _setError(errorMsg);
+        return false;
+      } else {
+        logger.info('[OrganizationStore] Invite accepted successfully', { token });
+        fetchUserOrganizations(); 
+        return true;
+      }
+    } catch (err: any) {
+      const errorMsg = err.message ?? 'An unexpected error occurred during invite acceptance';
+      logger.error('[OrganizationStore] acceptInvite - Unexpected Error', { token, message: errorMsg });
+      _setError(errorMsg);
+      return false;
+    } finally {
+      _setLoading(false);
+    }
+  },
+  // --- Placeholder new actions ---
+  declineInvite: async (token: string): Promise<boolean> => {
+    const { _setLoading, _setError } = get(); 
+    _setLoading(true);
+    _setError(null);
+    try {
+      const apiClient = getApiClient(); 
+      // Assuming the API client method exists and is named declineOrganizationInvite
+      const response = await apiClient.organizations.declineOrganizationInvite(token);
+
+      if (response.error || response.status >= 300) {
+        const errorMsg = response.error?.message ?? 'Failed to decline invite';
+        logger.error('[OrganizationStore] declineInvite - API Error', { token, error: errorMsg, status: response.status });
+        _setError(errorMsg);
+        return false;
+      } else {
+        logger.info('[OrganizationStore] Invite declined successfully', { token });
+        // No state update usually needed, maybe refetch pending invites if shown to user?
+        return true;
+      }
+    } catch (err: any) {
+      const errorMsg = err.message ?? 'An unexpected error occurred during invite decline';
+      logger.error('[OrganizationStore] declineInvite - Unexpected Error', { token, message: errorMsg });
+      _setError(errorMsg);
+      return false;
+    } finally {
+      _setLoading(false);
+    }
+  },
+  requestJoin: async (_orgId: string): Promise<boolean> => {
+     throw new Error('requestJoin not implemented');
+  },
+  approveRequest: async (_membershipId: string): Promise<boolean> => {
+     throw new Error('approveRequest not implemented');
+  },
+  denyRequest: async (_membershipId: string): Promise<boolean> => {
+     throw new Error('denyRequest not implemented');
+  },
+  cancelInvite: async (_inviteId: string): Promise<boolean> => {
+     throw new Error('cancelInvite not implemented');
   },
 
 })); 

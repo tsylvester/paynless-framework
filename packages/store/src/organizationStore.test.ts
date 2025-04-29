@@ -12,14 +12,17 @@ import {
     mockCreateOrganization,
     resetOrganizationMocks,      // Import reset function
     defaultMockOrganization,
-    defaultMockMembers 
+    defaultMockMembers,
+    mockAcceptOrganizationInvite,
+    mockDeclineOrganizationInvite
 } from '../../api/src/mocks/organizations.mock.ts';
 
 // Other imports
 import { useOrganizationStore } from './organizationStore';
 import { useAuthStore } from './authStore';
 import { Organization, OrganizationMemberWithProfile, SupabaseUser, ApiError as ApiErrorType, AuthStore } from '@paynless/types';
-import { initializeApiClient, _resetApiClient } from '@paynless/api'; // Keep original names for mocking target
+// Import ApiClient type
+import { initializeApiClient, _resetApiClient, ApiClient } from '@paynless/api'; 
 import { logger } from '@paynless/utils';
 import { act } from '@testing-library/react';
 
@@ -28,29 +31,39 @@ import { act } from '@testing-library/react';
 vi.mock('@paynless/utils', () => ({ logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() } }));
 
 // Mock @paynless/api: Use a simple synchronous factory referencing top-level mocks
-vi.mock('@paynless/api', () => ({
-    // Keep non-api exports if needed (assuming they exist)
-    initializeApiClient: vi.fn(),
-    _resetApiClient: vi.fn(),
-    api: { // Mock the api object directly
+// AND explicitly type the returned api object
+// AND mock getApiClient
+vi.mock('@paynless/api', () => {
+    // Define the mocked api object structure first
+    const mockedApi = { 
         organizations: {
-            // Use mocks imported above
             getCurrentOrganization: mockGetCurrentOrganization,
             updateOrganization: mockUpdateOrganization,
             getOrganizationMembers: mockGetOrganizationMembers,
-            removeMember: mockRemoveOrganizationMember, // Check name alignment with store usage
+            removeMember: mockRemoveOrganizationMember, 
             leaveOrganization: mockLeaveOrganization,
             listUserOrganizations: mockListUserOrganizations,
             getOrganizationDetails: mockGetOrganizationDetails,
             deleteOrganization: mockDeleteOrganization,
             createOrganization: mockCreateOrganization,
+            acceptOrganizationInvite: mockAcceptOrganizationInvite,
+            declineOrganizationInvite: mockDeclineOrganizationInvite
         },
-        // Mock other namespaces/methods if necessary
-        auth: { /* mock if needed */ },
-        billing: { /* mock if needed */ },
-        getSupabaseClient: vi.fn(() => ({ auth: { /* mock supabase auth if needed */ } }))
-    },
-}));
+        auth: {} as any, 
+        billing: {} as any,
+        notifications: {} as any, 
+        getSupabaseClient: vi.fn(() => ({ auth: {} }))
+        // Add other base methods if needed, e.g., get: vi.fn(), post: vi.fn()
+    } as any as ApiClient; // Cast the whole api object to ApiClient type
+
+    // Return the exports, including the mocked getApiClient
+    return {
+        initializeApiClient: vi.fn(),
+        _resetApiClient: vi.fn(),
+        api: mockedApi, // Export the mocked api object
+        getApiClient: vi.fn(() => mockedApi) // Mock getApiClient to return the mocked api object
+    };
+});
 
 // --- DEFINE MOCK DATA (Can come after mocks) ---
 const mockSupabaseUser: SupabaseUser = {
@@ -90,12 +103,14 @@ describe('OrganizationStore', () => {
             user: mockSupabaseUser, 
             session: mockSession
         });
+        // Initialize the mocked API client
+        initializeApiClient({ supabaseUrl: 'http://dummy.url', supabaseAnonKey: 'dummy-key' });
     });
   });
 
   afterEach(() => {
-      // Call the mocked _resetApiClient (if needed)
-      // _resetApiClient();
+      // Optional: Reset the API client if needed, though clearAllMocks might suffice
+      // _resetApiClient(); 
   });
 
   it('should have correct initial state', () => {
@@ -376,6 +391,155 @@ describe('OrganizationStore', () => {
       const finalState = useOrganizationStore.getState();
       expect(finalState.userOrganizations).toEqual(initialOrgs);
       expect(finalState.error).toBe(errorMsg);
+    });
+  });
+
+  // --- [NEW] acceptInvite Tests --- //
+  describe('acceptInvite', () => {
+    const mockInviteToken = 'valid-invite-token-123';
+    const acceptMock = mockAcceptOrganizationInvite; // Use the imported mock
+
+    it('should call API, clear loading/error on success, and return true', async () => {
+      acceptMock.mockResolvedValue({ status: 200, data: { success: true }, error: undefined }); // Assuming API returns { success: true } or similar
+      useOrganizationStore.setState({ error: 'Previous error', isLoading: false });
+
+      let result: boolean | undefined;
+      await act(async () => {
+        result = await useOrganizationStore.getState().acceptInvite(mockInviteToken);
+      });
+
+      expect(result).toBe(true);
+      expect(acceptMock).toHaveBeenCalledWith(mockInviteToken);
+      const { isLoading, error } = useOrganizationStore.getState();
+      expect(isLoading).toBe(false);
+      expect(error).toBeNull();
+      // Optional: Assert refetch of user orgs or members if acceptInvite should trigger it
+      // expect(mockListUserOrganizations).toHaveBeenCalled(); 
+    });
+
+    it('should set error string, clear loading, and return false on API error', async () => {
+      const errorMsg = 'Invite acceptance failed';
+      acceptMock.mockResolvedValue({ status: 500, data: undefined, error: { message: errorMsg, code: '500' } });
+      useOrganizationStore.setState({ isLoading: false });
+
+      let result: boolean | undefined;
+      await act(async () => {
+        result = await useOrganizationStore.getState().acceptInvite(mockInviteToken);
+      });
+
+      expect(result).toBe(false);
+      expect(acceptMock).toHaveBeenCalledWith(mockInviteToken);
+      const { isLoading, error } = useOrganizationStore.getState();
+      expect(isLoading).toBe(false);
+      expect(error).toBe(errorMsg);
+    });
+
+    it('should set error string, clear loading, and return false on invalid/not found token (e.g., 404)', async () => {
+        const errorMsg = 'Invite token not found or invalid';
+        acceptMock.mockResolvedValue({ status: 404, data: undefined, error: { message: errorMsg, code: '404' } });
+        useOrganizationStore.setState({ isLoading: false });
+  
+        let result: boolean | undefined;
+        await act(async () => {
+          result = await useOrganizationStore.getState().acceptInvite(mockInviteToken);
+        });
+  
+        expect(result).toBe(false);
+        expect(acceptMock).toHaveBeenCalledWith(mockInviteToken);
+        const { isLoading, error } = useOrganizationStore.getState();
+        expect(isLoading).toBe(false);
+        expect(error).toBe(errorMsg);
+      });
+
+    it('should set error string, clear loading, and return false on unexpected error', async () => {
+      const errorMsg = 'Network error during invite acceptance';
+      acceptMock.mockRejectedValue(new Error(errorMsg));
+      useOrganizationStore.setState({ isLoading: false });
+
+      let result: boolean | undefined;
+      await act(async () => {
+        result = await useOrganizationStore.getState().acceptInvite(mockInviteToken);
+      });
+
+      expect(result).toBe(false);
+      expect(acceptMock).toHaveBeenCalledWith(mockInviteToken);
+      const { isLoading, error } = useOrganizationStore.getState();
+      expect(isLoading).toBe(false);
+      expect(error).toBe(errorMsg);
+    });
+  });
+
+  // --- [NEW] declineInvite Tests --- //
+  describe('declineInvite', () => {
+    const mockInviteToken = 'valid-invite-token-456';
+    // Need to add mockDeclineOrganizationInvite to mocks and import it
+    const declineMock = mockDeclineOrganizationInvite; 
+
+    it('should call API, clear loading/error on success, and return true', async () => {
+      declineMock.mockResolvedValue({ status: 200, data: { success: true }, error: undefined }); // Assuming similar success response
+      useOrganizationStore.setState({ error: 'Old error', isLoading: false });
+
+      let result: boolean | undefined;
+      await act(async () => {
+        result = await useOrganizationStore.getState().declineInvite(mockInviteToken);
+      });
+
+      expect(result).toBe(true);
+      expect(declineMock).toHaveBeenCalledWith(mockInviteToken);
+      const { isLoading, error } = useOrganizationStore.getState();
+      expect(isLoading).toBe(false);
+      expect(error).toBeNull();
+    });
+
+    it('should set error string, clear loading, and return false on API error', async () => {
+      const errorMsg = 'Invite decline failed';
+      declineMock.mockResolvedValue({ status: 500, data: undefined, error: { message: errorMsg, code: '500' } });
+      useOrganizationStore.setState({ isLoading: false });
+
+      let result: boolean | undefined;
+      await act(async () => {
+        result = await useOrganizationStore.getState().declineInvite(mockInviteToken);
+      });
+
+      expect(result).toBe(false);
+      expect(declineMock).toHaveBeenCalledWith(mockInviteToken);
+      const { isLoading, error } = useOrganizationStore.getState();
+      expect(isLoading).toBe(false);
+      expect(error).toBe(errorMsg);
+    });
+    
+    it('should set error string, clear loading, and return false on invalid/not found token (e.g., 404)', async () => {
+        const errorMsg = 'Invite token not found or invalid for decline';
+        declineMock.mockResolvedValue({ status: 404, data: undefined, error: { message: errorMsg, code: '404' } });
+        useOrganizationStore.setState({ isLoading: false });
+  
+        let result: boolean | undefined;
+        await act(async () => {
+          result = await useOrganizationStore.getState().declineInvite(mockInviteToken);
+        });
+  
+        expect(result).toBe(false);
+        expect(declineMock).toHaveBeenCalledWith(mockInviteToken);
+        const { isLoading, error } = useOrganizationStore.getState();
+        expect(isLoading).toBe(false);
+        expect(error).toBe(errorMsg);
+      });
+
+    it('should set error string, clear loading, and return false on unexpected error', async () => {
+      const errorMsg = 'Network error during invite decline';
+      declineMock.mockRejectedValue(new Error(errorMsg));
+      useOrganizationStore.setState({ isLoading: false });
+
+      let result: boolean | undefined;
+      await act(async () => {
+        result = await useOrganizationStore.getState().declineInvite(mockInviteToken);
+      });
+
+      expect(result).toBe(false);
+      expect(declineMock).toHaveBeenCalledWith(mockInviteToken);
+      const { isLoading, error } = useOrganizationStore.getState();
+      expect(isLoading).toBe(false);
+      expect(error).toBe(errorMsg);
     });
   });
 

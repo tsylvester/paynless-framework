@@ -50,6 +50,15 @@ export interface OrganizationActions {
   fetchOrganizationDetails: (orgId: string) => Promise<void>;
   fetchCurrentOrganizationMembers: () => Promise<void>; // Fetches for currentOrganizationId
   softDeleteOrganization: (orgId: string) => Promise<boolean>; // Returns success status
+  inviteUser: (emailOrUserId: string, role: string) => Promise<boolean>; // Returns true on success
+  updateMemberRole: (membershipId: string, role: string) => Promise<boolean>; // Returns true on success
+  removeMember: (membershipId: string) => Promise<boolean>; // Returns true on success
+  acceptInvite: (token: string) => Promise<boolean>; // Returns true on success
+  declineInvite: (token: string) => Promise<boolean>; // Returns true on success
+  requestJoin: (orgId: string) => Promise<boolean>; // Returns true on success
+  approveRequest: (membershipId: string) => Promise<boolean>; // Returns true on success
+  denyRequest: (membershipId: string) => Promise<boolean>; // Returns true on success
+  cancelInvite: (inviteId: string) => Promise<boolean>; // Returns true on success
   // Internal helper actions might not need to be exported if not used outside the store
   // _setError: (error: string | null) => void;
   // _setLoading: (loading: boolean) => void;
