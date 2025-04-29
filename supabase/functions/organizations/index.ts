@@ -1,5 +1,4 @@
-import { serve } from 'https://deno.land/std@0.224.0/http/server.ts'; // Updated Deno version
-import "jsr:@supabase/functions-js/edge-runtime.d.ts"; // Added edge runtime types
+import { serve } from 'https://deno.land/std@0.177.0/http/server.ts'; // Match working function version
 import { 
   handleCorsPreflightRequest, 
   createErrorResponse, 
@@ -10,7 +9,8 @@ import {
   createUnauthorizedResponse // Added for consistency
 } from '../_shared/auth.ts'; // Updated Supabase client import
 import { Database } from '../types_db.ts'; // Import the generated DB types
-import { SupabaseClient, User } from '@supabase/supabase-js'; // Import User type
+// Use npm: specifier for Supabase client, matching notifications function
+import { SupabaseClient, User } from 'npm:@supabase/supabase-js@^2.43.4'; 
 import { handleCreateOrganization } from './create.ts';
 import { handleListOrganizations } from './list.ts';
 // Import the new details handlers

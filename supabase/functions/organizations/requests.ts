@@ -1,6 +1,6 @@
 import { createErrorResponse, createSuccessResponse } from '../_shared/cors-headers.ts';
 import { Database } from '../types_db.ts';
-import { SupabaseClient, User } from '@supabase/supabase-js';
+import { SupabaseClient, User } from 'npm:@supabase/supabase-js@^2.43.4';
 
 // Handler for POST /organizations/:orgId/requests (Create Join Request)
 export async function handleCreateJoinRequest(

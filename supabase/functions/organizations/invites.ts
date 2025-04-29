@@ -1,7 +1,8 @@
 import { createErrorResponse, createSuccessResponse } from '../_shared/cors-headers.ts';
 import { Database } from '../types_db.ts'; 
-import { SupabaseClient, User } from '@supabase/supabase-js'; 
-import { createClient } from '@supabase/supabase-js'; 
+import { SupabaseClient, User } from 'npm:@supabase/supabase-js@^2.43.4'; 
+import { createClient } from 'npm:@supabase/supabase-js@^2.43.4'; 
+import { v4 as uuidv4 } from 'https://deno.land/std@0.177.0/uuid/mod.ts';
 
 // --- Define interface for Admin Auth Lookup dependency ---
 interface AdminAuthLookup { 

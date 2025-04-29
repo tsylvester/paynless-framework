@@ -325,7 +325,7 @@ export const useOrganizationStore = create<OrganizationStoreImplementation>((set
 
   // --- Add createOrganization Action ---
   createOrganization: async (name: string, visibility: 'private' | 'public' = 'private'): Promise<Organization | null> => {
-    const { _setLoading, _setError, fetchUserOrganizations } = get();
+    const { _setLoading, _setError } = get(); 
     _setLoading(true);
     _setError(null);
 

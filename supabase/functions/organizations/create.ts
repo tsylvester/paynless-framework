@@ -1,7 +1,8 @@
 // supabase/functions/organizations/create.ts
 import { createErrorResponse, createSuccessResponse } from '../_shared/cors-headers.ts';
-import { Database } from '../types_db.ts'; 
-import { SupabaseClient, User } from '@supabase/supabase-js'; 
+import { Database } from '../types_db.ts';
+// Use npm: specifier for Supabase client
+import { SupabaseClient, User } from 'npm:@supabase/supabase-js@^2.43.4';
 
 // Handler specifically for POST /organizations
 export async function handleCreateOrganization(
