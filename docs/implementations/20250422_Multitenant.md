@@ -349,4 +349,85 @@ This section outlines the frontend implementation using a dynamic, card-based "h
         *   [ ] Test: Displays pending requests correctly (user name, email, date). Handles empty state.
         *   [ ] Test: Displays pending invites correctly (email, role, date). Handles empty state.
         *   [ ] Test: Approve Request button triggers `approveRequest` with correct membershipId.
-        *   [ ] Test: Deny Request button triggers `
+        *   [ ] Test: Displays data correctly when `currentOrganizationDetails` is populated.
+        *   [ ] Test: Handles loading state (shows skeleton/spinner) when `isLoading` is true for details fetch.
+        *   [ ] Test: Handles null state (shows placeholder/message) when `currentOrganizationId` is null or details are null.
+    *   [ ] `OrganizationSettingsCard.tsx`: (Admin Only, Displayed Conditionally on Hub/Focused View)
+        *   [ ] Form elements (Name, Visibility) for updates, pre-filled with `currentOrganizationDetails`.
+        *   [ ] "Update" button triggers `updateOrganization` action.
+        *   [ ] "Delete Organization" button triggers `DeleteOrganizationDialog`.
+        *   [ ] Test: Visibility is correctly controlled based on `selectCurrentUserRole` (admin only).
+        *   [ ] Test: Displays current settings correctly in form fields.
+        *   [ ] Test: Form validation works for updates.
+        *   [ ] Test: Update submission calls `updateOrganization` with correct orgId and data. Handles success/error feedback.
+        *   [ ] Test: Delete button opens the `DeleteOrganizationDialog`.
+        *   [ ] Test: Handles API errors gracefully for updates.
+    *   [ ] **NEW:** `DeleteOrganizationDialog.tsx`: (Triggered from `OrganizationSettingsCard`)
+        *   [ ] Confirmation dialog explaining soft-delete.
+        *   [ ] Requires explicit confirmation (e.g., type org name or click confirm button).
+        *   [ ] On confirmation, calls `softDeleteOrganization` action.
+        *   [ ] Test: Dialog displays correctly when triggered.
+        *   [ ] Test: Confirmation mechanism works as expected.
+        *   [ ] Test: Confirmed deletion calls `softDeleteOrganization` with the correct `currentOrganizationId`.
+        *   [ ] Test: Cancellation closes the dialog without action.
+        *   [ ] Test: Handles API errors during deletion (e.g., last admin error) by showing feedback.
+    *   [ ] `MemberListCard.tsx`: (Displayed Conditionally on Hub/Focused View)
+        *   [ ] Displays table/list of **active** members from `selectCurrentMembers`.
+        *   [ ] Includes controls (dropdown menus) for Admins: Change Role, Remove Member.
+        *   [ ] Includes control for any Member: Leave Organization.
+        *   [ ] Test: Displays members (name, role, avatar) correctly. Handles empty/loading states.
+        *   [ ] Test: **Admin Controls:** Change Role action triggers `updateMemberRole` with correct membershipId/newRole.
+        *   [ ] Test: **Admin Controls:** Remove Member action triggers confirmation, then `removeMember` with correct membershipId. Handles 'last admin' API error feedback.
+        *   [ ] Test: **Member Controls:** Leave Organization action triggers confirmation, then appropriate store action (e.g., `removeMember` with self ID check or dedicated `leaveOrganization` action). Handles 'last admin' API error.
+        *   [ ] Test: Controls are visible/enabled based on current user's role vs target member's role/status.
+        *   [ ] Test: Handles API errors gracefully for all actions (shows feedback).
+        *   [ ] Test: (Optional) Includes working pagination or search/filter for long lists.
+    *   [ ] `InviteMemberCard.tsx`: (Admin Only, Displayed Conditionally on Hub/Focused View)
+        *   [ ] Form (Email, Role) to invite users.
+        *   [ ] Submission triggers `inviteUser` action for the `currentOrganizationId`.
+        *   [ ] Test: Visibility is correctly controlled (admin only).
+        *   [ ] Test: Form validation works (valid email, selected role).
+        *   [ ] Test: Submission triggers `inviteUser` with correct orgId, email, role.
+        *   [ ] Test: Handles success (e.g., clear form, show toast) and API errors (e.g., already member/invited, invalid input) gracefully.
+    *   [ ] `PendingActionsCard.tsx`: (Admin Only, Displayed Conditionally on Hub/Focused View)
+        *   [ ] Displays list/table of pending join requests (`currentPendingRequests`).
+        *   [ ] Displays list/table of outgoing pending invites (`currentPendingInvites`).
+        *   [ ] Includes controls for Admins: Approve/Deny Request, Cancel Invite.
+        *   [ ] Test: Visibility is correctly controlled (admin only).
+        *   [ ] Test: Displays pending requests correctly (user name, email, date). Handles empty state.
+        *   [ ] Test: Displays pending invites correctly (email, role, date). Handles empty state.
+        *   [ ] Test: Approve Request button triggers `approveRequest` with correct membershipId.
+        *   [ ] Test: Deny Request button triggers `denyRequest` with correct membershipId.
+        *   [ ] Test: Cancel Invite button triggers `cancelInvite` with correct inviteId.
+        *   [ ] Test: Handles API errors gracefully for all actions (shows feedback).
+        *   [ ] Test: Lists update correctly when actions are taken or when `fetchCurrentOrganizationMembers` refreshes the pending data.
+
+### 2.7 Routing & Access Control (Frontend)
+
+*   [ ] **Tests:**
+    *   Test route loader/component logic for `/dashboard/organizations/:orgId`: Verify redirection if org is not found, deleted (check `currentOrganizationDetails` from store after fetch), or user is not a member (`currentOrganizationMembers`).
+    *   Test `
+
+### 2.8 Cleanup for Production (Deferred Tasks)
+
+*   [ ] **Refactor `OrganizationStore` into Slices**
+    *   [ ] orgStore.ts combined interface, initial state, and core
+    *   [ ] orgStore.list.ts fetching and managing `userOrganizations`
+    *   [ ] orgStore.current.ts manages `currentOrganizationId`, `currentOrganizationDetails`, and `currentOrganizationMembers` and related fetches/updates
+    *   [ ] orgStore.invite.ts handles invite-specific actions like `acceptInvite`, `declineInvite`, `fetchInviteDetails`.
+    *   [ ] orgStore.request.ts handles `requestJoin`, `approveRequest`, `denyRequest`.
+    *   [ ] orgStore.ui.ts manages UI-related state, starting with the `isCreateModalOpen` state and its actions (`openCreateModal`, `closeCreateModal`).
+*   [ ] **Implement `PublicRoute` Component:**
+    *   [ ] Create `PublicRoute.tsx` in `src/components/auth`.
+    *   [ ] Implement logic to redirect authenticated users away from public-only pages (e.g., to `/dashboard`).
+    *   [ ] Apply `<PublicRoute>` wrapper to `login`, `register`, `forgot-password`, `reset-password` routes in `routes.tsx`.
+    *   [ ] Test redirection for authenticated and unauthenticated users.
+*   [ ] **Implement Auth Flow Pages:**
+    *   [ ] Create `ForgotPassword.tsx`, `ResetPassword.tsx`, `VerifyEmail.tsx` pages in `src/pages`.
+    *   [ ] Implement the UI and logic for each page, including API interactions.
+    *   [ ] Uncomment the corresponding routes in `routes.tsx`.
+    *   [ ] Write tests for each page's functionality.
+*   [ ] **Final Review & Testing:**
+    *   [ ] Comprehensive end-to-end testing of all notification and multi-tenancy features.
+    *   [ ] Code review for consistency, error handling, and security.
+    *   [ ] Update all relevant documentation (`STRUCTURE.md`, `IMPLEMENTATION_PLAN.md`, `TESTING_PLAN.md`).
