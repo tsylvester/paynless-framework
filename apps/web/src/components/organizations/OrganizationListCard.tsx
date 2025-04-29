@@ -2,7 +2,12 @@
 
 import React from 'react';
 import { useOrganizationStore } from '@paynless/store';
-import { Card, CardHeader, CardBody, CardFooter, Divider, Button, Listbox, ListboxItem } from '@nextui-org/react'; // Import necessary UI components
+import {
+  Card, CardHeader, CardTitle, CardContent, CardFooter
+} from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Separator } from "@/components/ui/separator";
+import { Plus } from 'lucide-react'; // For Create New button
 
 // Placeholder for CreateOrganizationModal trigger
 // import { useCreateOrganizationModal } from './CreateOrganizationModal'; 
@@ -22,53 +27,46 @@ export const OrganizationListCard: React.FC = () => {
     console.log('TODO: Trigger Create Organization Modal');
   };
 
-  const handleSelectionChange = (keys: Set<React.Key>) => {
-    // Assuming the Listbox key is the organization_id
-    const selectedId = Array.from(keys)[0] as string;
-    if (selectedId && selectedId !== currentOrganizationId) {
-      setCurrentOrganizationId(selectedId);
+  // Handle click directly on button
+  const handleOrgClick = (orgId: string) => {
+    if (orgId !== currentOrganizationId) {
+      setCurrentOrganizationId(orgId);
     }
-  };
+  }
 
   return (
     <Card>
       <CardHeader className="flex justify-between items-center">
-        <h4 className="font-bold text-large">Your Organizations</h4>
+        <CardTitle>Your Organizations</CardTitle>
         <Button 
-          color="primary" 
-          size="sm" 
-          onPress={openCreateOrgModal} 
-          // TODO: Add '+' icon
+          onClick={openCreateOrgModal} 
+          variant="outline"
         >
+          <Plus className="mr-2 h-4 w-4" />
           Create New
         </Button>
       </CardHeader>
-      <Divider />
-      <CardBody className="p-0">
+      <Separator />
+      <CardContent className="p-4 space-y-2">
         {isLoading && userOrganizations.length === 0 ? (
-          <div className="p-4 text-center">Loading...</div> // Simple loading indicator
+          <p className="text-sm text-muted-foreground text-center">Loading...</p>
         ) : userOrganizations.length === 0 ? (
-          <div className="p-4 text-center text-gray-500">No organizations found.</div>
+          <p className="text-sm text-muted-foreground text-center">No organizations found.</p>
         ) : (
-          <Listbox
-            aria-label="Organizations"
-            variant="flat"
-            disallowEmptySelection
-            selectionMode="single"
-            selectedKeys={currentOrganizationId ? new Set([currentOrganizationId]) : new Set()}
-            onSelectionChange={(keys) => handleSelectionChange(keys as Set<React.Key>)} // Type assertion needed
-          >
-            {userOrganizations.map((orgMembership) => (
-              <ListboxItem 
-                key={orgMembership.organization_id} 
-                // TODO: Add organization name display, maybe logo?
-              >
-                {orgMembership.organization_name || orgMembership.organization_id} 
-              </ListboxItem>
-            ))}
-          </Listbox>
+          // Replace Listbox with Buttons
+          userOrganizations.map((org) => (
+            <Button
+              key={org.id}
+              variant={currentOrganizationId === org.id ? "secondary" : "ghost"}
+              className="w-full justify-start"
+              onClick={() => handleOrgClick(org.id)}
+            >
+              {/* TODO: Fetch org details if name isn't in userOrganizations */} 
+              {org.name || org.id} 
+            </Button>
+          ))
         )}
-      </CardBody>
+      </CardContent>
       {/* Optional Footer */}
       {/* <CardFooter>
         <p>Footer content if needed</p>

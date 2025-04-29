@@ -1,5 +1,5 @@
 import { ApiClient } from './apiClient'; // <<< Import base ApiClient
-import { ApiResponse, Organization, OrganizationInsert, OrganizationUpdate, OrganizationMemberWithProfile } from '@paynless/types'; // <<< Import types
+import { ApiResponse, Organization, OrganizationInsert, OrganizationUpdate, OrganizationMemberWithProfile, Invite, PendingOrgItems } from '@paynless/types'; // <<< Import types
 
 export class OrganizationApiClient {
   // Store the main ApiClient instance
@@ -45,10 +45,10 @@ export class OrganizationApiClient {
   /**
    * Lists all non-deleted organizations the current user is an active member of.
    * Uses the main client's get method.
-   * @param userId - (Potentially redundant if backend uses auth context) The ID of the user.
+   * @param _userId - (No longer used) The ID of the user.
    * @returns An ApiResponse containing an array of organization details or an error.
    */
-  async listUserOrganizations(_userId: string): Promise<ApiResponse<Organization[]>> {
+  async listUserOrganizations(): Promise<ApiResponse<Organization[]>> {
     // userId might not be needed if the backend endpoint implicitly uses the authenticated user
     // Use the injected ApiClient's get method
     const response = await this.client.get<Organization[]>('organizations');
@@ -102,8 +102,8 @@ export class OrganizationApiClient {
   async inviteUserByEmail(orgId: string, email: string, role: string): Promise<ApiResponse<any>> {
     const payload = { email, role };
     // Use the injected ApiClient's post method
-    // Backend returns 201 with invite details, adjust T accordingly
-    return this.client.post<any, typeof payload>(`organizations/${orgId}/invites`, payload);
+    // Assuming backend returns the created Invite object
+    return this.client.post<Invite, typeof payload>(`organizations/${orgId}/invites`, payload);
   }
 
   /**
@@ -116,7 +116,8 @@ export class OrganizationApiClient {
    */
   async inviteUserById(orgId: string, userId: string, role: string): Promise<ApiResponse<any>> {
     const payload = { invitedUserId: userId, role }; // Use 'invitedUserId' as key
-    return this.client.post<any, typeof payload>(`organizations/${orgId}/invites`, payload);
+    // Assuming backend returns the created Invite object
+    return this.client.post<Invite, typeof payload>(`organizations/${orgId}/invites`, payload);
   }
 
   /**
@@ -222,5 +223,37 @@ export class OrganizationApiClient {
   async denyJoinRequest(membershipId: string): Promise<ApiResponse<void>> {
     const payload = { status: 'removed' };
     return this.client.put<void, typeof payload>(`organizations/members/${membershipId}/status`, payload);
+  }
+
+  /**
+   * Fetches pending invites and join requests for an organization (Admin only).
+   * Uses the main client's get method.
+   * @param orgId - The ID of the organization.
+   * @returns An ApiResponse containing lists of pending invites and requests or an error.
+   */
+  async getPendingOrgActions(orgId: string): Promise<ApiResponse<PendingOrgItems>> {
+    // Backend endpoint: GET /organizations/:orgId/pending (example)
+    const response = await this.client.get<PendingOrgItems>(`organizations/${orgId}/pending`);
+    // Ensure data structure is correct on success, providing empty arrays if parts are missing
+    if (response.status >= 200 && response.status < 300 && !response.error) {
+        response.data = {
+            invites: response.data?.invites ?? [],
+            requests: response.data?.requests ?? []
+        };
+    }
+    return response;
+  }
+
+  /**
+   * Fetches minimal details for an invite using its token, primarily for the accept page.
+   * Uses the main client's get method against a dedicated public endpoint.
+   * @param inviteToken - The unique token identifying the invitation.
+   * @returns An ApiResponse containing necessary invite details (like org name/ID) or an error.
+   */
+  async getInviteDetails(inviteToken: string): Promise<ApiResponse<{ organizationName: string; organizationId: string }>> {
+    // Example public endpoint: GET /invites/:inviteToken/details
+    // This endpoint should NOT require authentication but use the token to find the invite.
+    // It should only return non-sensitive data needed for the accept page.
+    return this.client.get<{ organizationName: string; organizationId: string }>(`invites/${inviteToken}/details`, { isPublic: true });
   }
 } 

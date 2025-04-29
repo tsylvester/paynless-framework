@@ -37,10 +37,6 @@ vi.mock('../../../components/organizations/InviteMemberCard', () => ({
 vi.mock('../../../components/organizations/PendingActionsCard', () => ({
   PendingActionsCard: () => <div data-testid="pending-actions-card">PendingActionsCard</div>,
 }));
-vi.mock('@nextui-org/react', () => ({
-    Spinner: ({ label }: { label: string }) => <div data-testid="spinner">{label}</div>,
-    // Mock other NextUI components used within if necessary
-}));
 
 
 // --- Test Suite ---

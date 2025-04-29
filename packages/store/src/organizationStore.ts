@@ -2,18 +2,16 @@ import { create } from 'zustand';
 // Import store types from the types package
 import {
     Organization,
-    OrganizationMemberWithProfile as _OrganizationMemberWithProfile,
-    ApiError as _ApiError,
+    OrganizationMemberWithProfile,
+    Invite,
+    InviteDetails,
+    MembershipRequest,
     OrganizationState,
     OrganizationActions,
-    OrganizationStoreType as _OrganizationStoreType
 } from '@paynless/types';
 // Import the specific client class and the base api object
 import { 
-    api, 
     getApiClient,
-    OrganizationApiClient as _OrganizationApiClient,
-    ApiClient as _ApiClient
 } from '@paynless/api';
 import { useAuthStore } from './authStore'; // To get user ID
 import { logger } from '@paynless/utils';
@@ -38,7 +36,10 @@ const initialState: OrganizationState = {
   currentOrganizationMembers: [],
   currentPendingInvites: [],
   currentPendingRequests: [],
+  currentInviteDetails: null,
   isLoading: false,
+  isFetchingInviteDetails: false,
+  fetchInviteDetailsError: null,
   error: null,
 };
 
@@ -69,19 +70,18 @@ export const useOrganizationStore = create<OrganizationStoreImplementation>((set
     _setLoading(true);
     _setError(null); // Clear previous errors
 
-    const userId = useAuthStore.getState().user?.id;
-    if (!userId) {
-      logger.warn('[OrganizationStore] fetchUserOrganizations - User not authenticated.');
-      _setError('User not authenticated');
-      set({ userOrganizations: [] }); // Clear orgs if not logged in
-      return;
+    // Check authentication locally before making API call, even if API uses RLS
+    const isAuthenticated = !!useAuthStore.getState().user;
+    if (!isAuthenticated) {
+        logger.warn('[OrganizationStore] fetchUserOrganizations - User not authenticated. Aborting fetch.');
+        _setError('User not authenticated');
+        set({ userOrganizations: [], isLoading: false });
+        return;
     }
 
     try {
-      // Use the factory method api.organizations() to get the client instance
-      // Correctly access the organizations property and its method
-      // --- TEMPORARY WORKAROUND: Cast to 'any' due to export type issue ---
-      const response = await (api as any).organizations.listUserOrganizations(userId);
+      const apiClient = getApiClient();
+      const response = await apiClient.organizations.listUserOrganizations();
 
       if (response.error || response.status >= 300) {
         // Log only the error message or relevant parts
@@ -134,9 +134,8 @@ export const useOrganizationStore = create<OrganizationStoreImplementation>((set
     _setError(null);
 
     try {
-      // Use the factory method api.organizations() to get the client instance
-      // --- TEMPORARY WORKAROUND: Cast to 'any' due to export type issue ---
-      const response = await (api as any).organizations.getOrganizationDetails(orgId);
+      const apiClient = getApiClient();
+      const response = await apiClient.organizations.getOrganizationDetails(orgId);
 
       if (response.error || response.status >= 300) {
         const errorLog = { 
@@ -192,12 +191,12 @@ export const useOrganizationStore = create<OrganizationStoreImplementation>((set
     // Reset pending lists initially
     set({ currentPendingInvites: [], currentPendingRequests: [] }); 
 
-    let activeMembers: _OrganizationMemberWithProfile[] = [];
+    let activeMembers: OrganizationMemberWithProfile[] = [];
     let currentUserRole: 'admin' | 'member' | null = null;
 
     try {
-      // 1. Fetch Active Members (all users can do this)
-      const membersResponse = await (api as any).organizations.getOrganizationMembers(currentOrganizationId);
+      const apiClient = getApiClient();
+      const membersResponse = await apiClient.organizations.getOrganizationMembers(currentOrganizationId);
 
       if (membersResponse.error || membersResponse.status >= 300) {
         const errorLog = { 
@@ -229,8 +228,9 @@ export const useOrganizationStore = create<OrganizationStoreImplementation>((set
         logger.info(`[OrganizationStore] User ${userId} is admin for org ${currentOrganizationId}. Fetching pending actions.`);
         try {
             // Assuming an API function exists like getPendingOrgActions
-            // --- TEMPORARY WORKAROUND: Cast to 'any' ---
-            const pendingResponse = await (api as any).organizations.getPendingOrgActions(currentOrganizationId);
+            // Use the same apiClient instance from above
+
+            const pendingResponse = await apiClient.organizations.getPendingOrgActions(currentOrganizationId);
 
             if (pendingResponse.error || pendingResponse.status >= 300) {
                 const errorLog = { 
@@ -245,10 +245,10 @@ export const useOrganizationStore = create<OrganizationStoreImplementation>((set
             } else {
                 // Set pending lists on success
                 set({ 
-                    currentPendingInvites: pendingResponse.data?.pendingInvites ?? [], 
-                    currentPendingRequests: pendingResponse.data?.pendingRequests ?? [] 
+                    currentPendingInvites: pendingResponse.data?.invites ?? [], 
+                    currentPendingRequests: pendingResponse.data?.requests ?? [] 
                 });
-                logger.info(`[OrganizationStore] Fetched pending actions for org ${currentOrganizationId}: ${pendingResponse.data?.pendingInvites?.length ?? 0} invites, ${pendingResponse.data?.pendingRequests?.length ?? 0} requests.`);
+                logger.info(`[OrganizationStore] Fetched pending actions for org ${currentOrganizationId}: ${pendingResponse.data?.invites?.length ?? 0} invites, ${pendingResponse.data?.requests?.length ?? 0} requests.`);
             }
         } catch (pendingErr: any) {
             // Log error but don't overwrite the primary members list or main error state
@@ -283,9 +283,8 @@ export const useOrganizationStore = create<OrganizationStoreImplementation>((set
     _setError(null);
 
     try {
-      // Use the factory method api.organizations() to get the client instance
-      // --- TEMPORARY WORKAROUND: Cast to 'any' due to export type issue ---
-      const response = await (api as any).organizations.deleteOrganization(orgId);
+      const apiClient = getApiClient();
+      const response = await apiClient.organizations.deleteOrganization(orgId);
 
       if (response.error || response.status >= 300) {
         const errorLog = { 
@@ -337,8 +336,8 @@ export const useOrganizationStore = create<OrganizationStoreImplementation>((set
     _setError(null);
 
     try {
-      // --- TEMPORARY WORKAROUND: Cast to 'any' due to export type issue ---
-      const response = await (api as any).organizations.createOrganization({
+      const apiClient = getApiClient();
+      const response = await apiClient.organizations.createOrganization({
         name,
         visibility,
       });
@@ -385,7 +384,7 @@ export const useOrganizationStore = create<OrganizationStoreImplementation>((set
     throw new Error('updateOrganization not implemented');
   },
 
-  inviteUser: async (emailOrUserId: string, role: string): Promise<boolean> => {
+  inviteUser: async (emailOrUserId: string, role: string): Promise<Invite | null> => {
     // For now, assume emailOrUserId is always an email
     // Future enhancement: check if it looks like a UUID vs email
     const email = emailOrUserId;
@@ -398,30 +397,35 @@ export const useOrganizationStore = create<OrganizationStoreImplementation>((set
       const errorMsg = 'Cannot invite user without organization context.';
       logger.error('[OrganizationStore] inviteUser - Error', { email, role, error: errorMsg });
       _setError(errorMsg);
-      return false;
+      return null;
     }
 
     try {
         const apiClient = getApiClient();
-        // Use the inviteUserByEmail method
-        const response = await apiClient.organizations.inviteUserByEmail(currentOrganizationId, email, role);
+        // Determine if identifier is email or user ID (simple check)
+        const isEmail = emailOrUserId.includes('@');
+        let response;
+        if (isEmail) {
+          response = await apiClient.organizations.inviteUserByEmail(currentOrganizationId, emailOrUserId, role);
+        } else {
+          // Assuming it's a user ID if not an email
+          response = await apiClient.organizations.inviteUserById(currentOrganizationId, emailOrUserId, role);
+        }
 
         if (response.error || response.status >= 300) {
             const errorMsg = response.error?.message ?? 'Failed to invite user';
             logger.error('[OrganizationStore] inviteUser - API Error', { orgId: currentOrganizationId, email, role, error: errorMsg, status: response.status });
             _setError(errorMsg);
-            return false;
+            return null;
         } else {
-            logger.info('[OrganizationStore] User invited successfully', { orgId: currentOrganizationId, email, role, inviteData: response.data });
-            // Optional: Refetch pending invites/members if needed
-            // fetchCurrentOrganizationMembers(); 
-            return true;
+            logger.info(`[OrganizationStore] User ${emailOrUserId} invited to org ${currentOrganizationId} with role ${role}.`);
+            return response.data ?? null;
         }
     } catch (err: any) {
-        const errorMsg = err.message ?? 'An unexpected error occurred during user invitation';
+        const errorMsg = err.message ?? 'An unexpected error occurred during invite';
         logger.error('[OrganizationStore] inviteUser - Unexpected Error', { orgId: currentOrganizationId, email, role, message: errorMsg });
         _setError(errorMsg);
-        return false;
+        return null;
     } finally {
         _setLoading(false);
     }
@@ -495,31 +499,37 @@ export const useOrganizationStore = create<OrganizationStoreImplementation>((set
       _setLoading(false);
     }
   },
-  requestJoin: async (orgId: string): Promise<boolean> => {
+  requestJoin: async (orgId: string): Promise<MembershipRequest | null> => {
     const { _setLoading, _setError } = get();
+    const userId = useAuthStore.getState().user?.id;
+
+    if (!userId) {
+      logger.warn('[OrganizationStore] requestJoin - User not authenticated.');
+      _setError('User not authenticated');
+      return null;
+    }
+
     _setLoading(true);
     _setError(null);
+
     try {
         const apiClient = getApiClient();
-        // Use the correct API client method as defined in organizations.api.ts
         const response = await apiClient.organizations.requestToJoinOrganization(orgId);
 
         if (response.error || response.status >= 300) {
             const errorMsg = response.error?.message ?? 'Failed to request join';
             logger.error('[OrganizationStore] requestJoin - API Error', { orgId, error: errorMsg, status: response.status });
             _setError(errorMsg);
-            return false;
+            return null;
         } else {
-            logger.info('[OrganizationStore] Join request submitted successfully', { orgId });
-            // Optional: Refetch pending requests or members if UI needs update
-            // get().fetchCurrentOrganizationMembers(); // Or a dedicated pending list fetch
-            return true;
+            logger.info(`[OrganizationStore] User ${userId} requested to join org ${orgId}.`);
+            return response.data ?? null;
         }
     } catch (err: any) {
         const errorMsg = err.message ?? 'An unexpected error occurred during join request';
         logger.error('[OrganizationStore] requestJoin - Unexpected Error', { orgId, message: errorMsg });
         _setError(errorMsg);
-        return false;
+        return null;
     } finally {
         _setLoading(false);
     }
@@ -617,6 +627,30 @@ export const useOrganizationStore = create<OrganizationStoreImplementation>((set
         return false;
     } finally {
         _setLoading(false);
+    }
+  },
+
+  fetchInviteDetails: async (token: string): Promise<InviteDetails | null> => {
+    set({ isFetchingInviteDetails: true, fetchInviteDetailsError: null, currentInviteDetails: null });
+    try {
+        const apiClient = getApiClient();
+        const response = await apiClient.organizations.getInviteDetails(token);
+
+        if (response.error || response.status >= 300) {
+            const errorMsg = response.error?.message ?? 'Failed to fetch invite details. The invite may be invalid or expired.';
+            logger.error('[OrganizationStore] fetchInviteDetails - API Error', { token, status: response.status, error: response.error });
+            set({ fetchInviteDetailsError: errorMsg, isFetchingInviteDetails: false });
+            return null;
+        } else {
+            // Assuming response.data has the structure { organizationName: string, organizationId: string }
+            const details: InviteDetails = response.data as InviteDetails; 
+            set({ currentInviteDetails: details, isFetchingInviteDetails: false });
+            return details;
+        }
+    } catch (err: any) {
+        logger.error('[OrganizationStore] fetchInviteDetails - Unexpected Error', { token, message: err?.message });
+        set({ fetchInviteDetailsError: err.message ?? 'An unexpected error occurred fetching invite details.', isFetchingInviteDetails: false });
+        return null;
     }
   },
 

@@ -22,7 +22,7 @@ export function ProtectedRoute({ children, allowedRoles }: ProtectedRouteProps) 
   
   // Don't redirect if we're on the register or login pages
   if (!user && !location.pathname.match(/^\/(register|login)$/)) {
-    return <Navigate to="/login" />;
+    return <Navigate to="login" />;
   }
   
   if (allowedRoles && user && !allowedRoles.includes(user.role as UserRole)) {

@@ -1,5 +1,5 @@
 import type { Database } from '@paynless/db-types';
-import { ApiError } from './api.types'; // Add import for ApiError
+//import { ApiError } from './api.types'; // Add import for ApiError
 
 // Base types derived from the generated Database type
 type OrganizationsTable = Database['public']['Tables']['organizations'];
@@ -50,10 +50,19 @@ export interface OrganizationState {
   currentOrganizationId: string | null;
   currentOrganizationDetails: Organization | null;
   currentOrganizationMembers: OrganizationMemberWithProfile[];
-    currentPendingInvites: Invite[]; // Use DB-derived Invite type
-    currentPendingRequests: MembershipRequest[]; // Use MembershipRequest type
+  currentPendingInvites: Invite[]; // Use DB-derived Invite type
+  currentPendingRequests: MembershipRequest[]; // Use MembershipRequest type
+  currentInviteDetails: InviteDetails | null; // Details of an invite being viewed/acted upon
   isLoading: boolean;
-    error: string | null;
+  isFetchingInviteDetails: boolean; // Loading state specifically for invite details
+  fetchInviteDetailsError: string | null; // Error state specifically for invite details
+  error: string | null;
+}
+
+// Type for the details needed on the Invite Accept page
+export interface InviteDetails {
+    organizationName: string;
+    organizationId: string;
 }
 
 // Uses DB-derived Invite and the defined MembershipRequest
@@ -66,30 +75,30 @@ export interface OrganizationActions {
   fetchUserOrganizations: () => Promise<void>;
   setCurrentOrganizationId: (orgId: string | null) => void;
   fetchOrganizationDetails: (orgId: string) => Promise<void>;
-    fetchCurrentOrganizationMembers: () => Promise<void>;
-    fetchPendingItems: () => Promise<PendingOrgItems>; // Return PendingOrgItems
-    createOrganization: (name: string, visibility?: 'private' | 'public') => Promise<Organization | null>;
-    softDeleteOrganization: (orgId: string) => Promise<boolean>;
-    updateOrganization: (orgId: string, updates: Partial<Organization>) => Promise<boolean>;
-    inviteUser: (emailOrUserId: string, role: string) => Promise<Invite | null>; // Return Invite or null
-    updateMemberRole: (membershipId: string, role: string) => Promise<boolean>;
-    removeMember: (membershipId: string) => Promise<boolean>;
-    acceptInvite: (token: string) => Promise<boolean>;
-    declineInvite: (token: string) => Promise<boolean>;
-    requestJoin: (orgId: string) => Promise<MembershipRequest | null>; // Return request or null
-    approveRequest: (membershipId: string) => Promise<boolean>;
-    denyRequest: (membershipId: string) => Promise<boolean>;
-    cancelInvite: (inviteId: string) => Promise<boolean>;
+  fetchCurrentOrganizationMembers: () => Promise<void>;
+  createOrganization: (name: string, visibility?: 'private' | 'public') => Promise<Organization | null>;
+  softDeleteOrganization: (orgId: string) => Promise<boolean>;
+  updateOrganization: (orgId: string, updates: Partial<Organization>) => Promise<boolean>;
+  inviteUser: (identifier: string, role: string) => Promise<Invite | null>; // Identifier can be email or userId
+  updateMemberRole: (membershipId: string, role: string) => Promise<boolean>;
+  removeMember: (membershipId: string) => Promise<boolean>;
+  acceptInvite: (token: string) => Promise<boolean>;
+  declineInvite: (token: string) => Promise<boolean>;
+  requestJoin: (orgId: string) => Promise<MembershipRequest | null>; // Return request or null
+  approveRequest: (membershipId: string) => Promise<boolean>;
+  denyRequest: (membershipId: string) => Promise<boolean>;
+  cancelInvite: (inviteId: string) => Promise<boolean>;
+  fetchInviteDetails: (token: string) => Promise<InviteDetails | null>; // Action to get details for accept page
 }
 
 export type OrganizationStoreType = OrganizationState & OrganizationActions;
 
 // Type for API responses, generic over the data type T
-export type ApiResponse<T> = {
-  status: number;
-  data: T | undefined;
-  error: ApiError | undefined; // Use defined ApiError type
-};
+// export type ApiResponse<T> = {
+//   status: number;
+//   data: T | undefined;
+//   error: ApiError | undefined; // Use defined ApiError type
+// };
 
 // Represents an invitation to join an organization
 // export type Invite = {

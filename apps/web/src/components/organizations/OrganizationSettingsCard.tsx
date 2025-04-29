@@ -2,9 +2,21 @@
 
 import React from 'react';
 import { useOrganizationStore } from '@paynless/store';
-import { Card, CardHeader, CardBody, CardFooter, Divider, Button, Input, Select, SelectItem } from '@nextui-org/react'; // Assuming NextUI
+
+// Add shadcn/ui imports
+import {
+  Card, CardHeader, CardTitle, CardContent, CardFooter
+} from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { 
+  Select, SelectTrigger, SelectValue, SelectContent, SelectItem 
+} from "@/components/ui/select";
+import { Separator } from "@/components/ui/separator";
+
 // Placeholder for DeleteOrganizationDialog trigger
-// import { useDeleteOrganizationDialog } from './DeleteOrganizationDialog'; 
+// import { useDeleteOrganizationDialog } from './DeleteOrganizationDialog';
 
 // TODO: Add form handling (e.g., react-hook-form, zod) for validation
 
@@ -50,41 +62,51 @@ export const OrganizationSettingsCard: React.FC = () => {
   return (
     <Card>
       <CardHeader>
-        <h4 className="font-bold text-large">Organization Settings (Admin)</h4>
+        <CardTitle>Organization Settings (Admin)</CardTitle>
+        {/* Optional: Add CardDescription here */}
       </CardHeader>
       <form onSubmit={handleUpdate}>
-        <CardBody className="space-y-4">
-          <Input
-            name="name"
-            label="Organization Name"
-            defaultValue={currentOrganizationDetails.name}
-            // TODO: Add validation props
-            isRequired 
-          />
-          <Select
-            name="visibility"
-            label="Visibility"
-            defaultSelectedKeys={[currentOrganizationDetails.visibility || 'private']}
-            // TODO: Add validation props
-            isRequired
-          >
-            <SelectItem key="private" value="private">Private</SelectItem>
-            <SelectItem key="public" value="public">Public</SelectItem>
-          </Select>
-        </CardBody>
-        <Divider />
+        <CardContent className="space-y-4">
+          <div className="space-y-1">
+            <Label htmlFor="org-name">Organization Name</Label>
+            <Input
+              id="org-name"
+              name="name"
+              defaultValue={currentOrganizationDetails.name}
+              required
+              // TODO: Add validation props
+            />
+          </div>
+          <div className="space-y-1">
+            <Label htmlFor="org-visibility">Visibility</Label>
+            <Select
+              name="visibility"
+              defaultValue={currentOrganizationDetails.visibility || 'private'}
+              required
+              // TODO: Add validation props
+            >
+              <SelectTrigger id="org-visibility">
+                <SelectValue placeholder="Select visibility" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="private">Private</SelectItem>
+                <SelectItem value="public">Public</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+        </CardContent>
+        <Separator className="my-4" />
         <CardFooter className="flex justify-between">
-          <Button 
+          <Button
             type="submit"
-            color="primary"
-            isLoading={isLoading} // Reflect loading state
+            disabled={isLoading} // Use disabled for loading state
           >
             Update Settings
           </Button>
-          <Button 
-            color="danger"
-            variant="flat"
-            onPress={openDeleteDialog}
+          <Button
+            variant="destructive" // Use destructive variant
+            onClick={openDeleteDialog} // Use onClick
+            type="button" // Prevent form submission
           >
             Delete Organization
           </Button>

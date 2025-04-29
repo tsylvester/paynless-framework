@@ -49,9 +49,9 @@ export const OrganizationSwitcher: React.FC = () => {
     logger.info(`[OrganizationSwitcher] Setting current org to: ${orgId}`);
     setCurrentOrganizationId(orgId);
     if (orgId) {
-       navigate(`/dashboard/organizations/${orgId}`);
+       navigate(`/organizations/${orgId}`);
     } else {
-       navigate('/dashboard'); 
+       navigate('/organizations'); 
     }
     setIsSwitcherOpen(false); // Explicitly close
   };
@@ -117,9 +117,21 @@ export const OrganizationSwitcher: React.FC = () => {
 
         <hr className="my-1 border-border" />
 
+        {/* Manage All Link */}
+        <Link
+            to="/organizations"
+            className={itemBaseClasses}
+            onClick={() => setIsSwitcherOpen(false)} // Close dropdown on click
+        >
+          <Building className="mr-2 h-4 w-4" />
+          Manage Organizations
+        </Link>
+
+        <hr className="my-1 border-border" />
+
         {/* Create New Link */}
         <Link
-            to="/dashboard/organizations/new"
+            to="/organizations/new"
             className={itemBaseClasses}
             onClick={() => setIsSwitcherOpen(false)} // Close dropdown on click
         >

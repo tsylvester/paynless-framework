@@ -7,6 +7,7 @@ import { logger/*, LogLevel*/ } from '@paynless/utils'
 import ReactGA from 'react-ga4'
 import { api } from '@paynless/api'
 import { initAuthListener } from '@paynless/store'
+//@ts-expect-error - Analytics is initialized by importing the module, do not change this line
 import { analytics } from '@paynless/analytics'
 
 // --- Configure Logger Early ---

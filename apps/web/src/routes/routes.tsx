@@ -48,51 +48,76 @@ const routes: RouteObject[] = [
         element: <AcceptInvitePage />,
       },
       {
+        path: 'profile',
+        element: (
+          <ProtectedRoute>
+            <ProfilePage />
+          </ProtectedRoute>
+        ),
+      },
+      {
+        path: 'subscription',
+        element: (
+          <ProtectedRoute>
+            <SubscriptionPage />
+          </ProtectedRoute>
+        ),
+      },
+      {
+        path: 'subscription/success',
+        element: (
+          <ProtectedRoute>
+            <SubscriptionSuccessPage />
+          </ProtectedRoute>
+        ),
+      },
+      {
+        path: 'chat',
+        element: (
+          <ProtectedRoute>
+            <AiChatPage />
+          </ProtectedRoute>
+        ),
+      },
+      {
+        path: 'notifications',
+        element: (
+          <ProtectedRoute>
+            <NotificationsPage />
+          </ProtectedRoute>
+        ),
+      },
+      {
         path: 'dashboard',
         element: (
           <ProtectedRoute>
             <DashboardPage />
           </ProtectedRoute>
         ),
-        children: [
-          { index: true, element: <Navigate to="organizations" replace /> },
-          {
-            path: 'organizations',
-            element: <OrganizationHubPage />,
-          },
-          {
-            path: 'organizations/:orgId',
-            element: <OrganizationFocusedViewPage />,
-          },
-          {
-            path: 'profile',
-            element: <ProfilePage />,
-          },
-          {
-            path: 'notifications',
-            element: <NotificationsPage />,
-          },
-          {
-            path: 'subscription',
-            element: <SubscriptionPage />,
-          },
-          {
-            path: 'subscription/success',
-            element: <SubscriptionSuccessPage />,
-          },
-          {
-            path: 'ai-chat',
-            element: <AiChatPage />,
-          },
-          {
-            path: 'admin',
-            element: (
-              <ProtectedRoute allowedRoles={['admin']}>
-                <div>Admin Page Content Placeholder</div>
-              </ProtectedRoute>
-            ),
-          },
-        ],
+      },
+      {
+        path: 'organizations',
+        element: (
+          <ProtectedRoute>  
+            <OrganizationHubPage />
+          </ProtectedRoute>
+        ),
+      },
+      {
+        path: 'organizations/:orgId',
+        element: (
+          <ProtectedRoute>
+            <OrganizationFocusedViewPage />
+          </ProtectedRoute>
+        ),
+      },
+      {
+        path: 'admin',
+        element: (
+          <ProtectedRoute allowedRoles={['admin']}>
+            <div>Admin Page Content Placeholder</div>
+          </ProtectedRoute>
+        ),
       },
       { path: '*', element: <Navigate to="/" replace /> },
     ],

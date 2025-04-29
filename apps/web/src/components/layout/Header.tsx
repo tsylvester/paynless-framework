@@ -227,6 +227,7 @@ export function Header() {
           <div className="pt-4 pb-3 border-t border-border">
             {user && profile && (
               <>
+                <div className="px-4 mb-3"><OrganizationSwitcher /></div>
                 <div className="flex items-center px-4 mt-4">
                   <div className="flex-shrink-0">
                     {profile.avatarUrl ? (

@@ -161,7 +161,7 @@ export const useAuthStore = create<AuthStore>()((set, get) => ({
         // Navigate to login - This should always happen
         const navigate = get().navigate
         if (navigate) {
-          navigate('login')
+          navigate('/login')
           logger.info('Cleared local state and navigated to /login.')
         } else {
           logger.error(

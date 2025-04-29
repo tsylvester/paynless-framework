@@ -2,7 +2,10 @@
 
 import React from 'react';
 import { useOrganizationStore } from '@paynless/store';
-import { Card, CardHeader, CardBody, Spinner } from '@nextui-org/react'; // Assuming NextUI
+import {
+  Card, CardHeader, CardTitle, CardContent
+} from "@/components/ui/card";
+import { Loader2 } from 'lucide-react';
 
 export const OrganizationDetailsCard: React.FC = () => {
   const {
@@ -16,15 +19,16 @@ export const OrganizationDetailsCard: React.FC = () => {
   return (
     <Card>
       <CardHeader>
-        <h4 className="font-bold text-large">Organization Details</h4>
+        <CardTitle>Organization Details</CardTitle>
       </CardHeader>
-      <CardBody>
+      <CardContent>
         {isLoadingDetails && !currentOrganizationDetails ? (
-          <div className="flex justify-center items-center">
-             <Spinner size="sm" label="Loading details..." />
+          <div className="flex items-center space-x-2 text-muted-foreground">
+            <Loader2 className="h-4 w-4 animate-spin" />
+            <span>Loading details...</span>
           </div>
         ) : currentOrganizationDetails ? (
-          <div className="space-y-2">
+          <div className="space-y-2 text-sm">
             <p><strong>Name:</strong> {currentOrganizationDetails.name}</p>
             <p><strong>Visibility:</strong> {currentOrganizationDetails.visibility}</p>
             <p><strong>Created:</strong> 
@@ -33,9 +37,9 @@ export const OrganizationDetailsCard: React.FC = () => {
             {/* Add other details as needed */}
           </div>
         ) : (
-          <p className="text-gray-500">No organization selected or details unavailable.</p>
+          <p className="text-sm text-muted-foreground">No organization selected or details unavailable.</p>
         )}
-      </CardBody>
+      </CardContent>
     </Card>
   );
 }; 
