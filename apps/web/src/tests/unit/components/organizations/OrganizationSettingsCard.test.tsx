@@ -35,6 +35,7 @@ const renderWithProvider = (component: React.ReactElement) => {
 describe('OrganizationSettingsCard', () => {
   let mockUpdateOrganization: Mock;
   let mockSelectCurrentUserRoleInOrg: Mock;
+  let mockOpenDeleteDialog: Mock; // Added mock for openDeleteDialog
   // let mockSoftDeleteOrganization: Mock;
 
   // Define baseline state for the organization store

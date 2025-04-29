@@ -20,6 +20,7 @@ import { logger } from '@paynless/utils';
 // We need to augment the imported state for UI elements NOT defined in the type package
 interface OrganizationUIState {
     isCreateModalOpen: boolean;
+    isDeleteDialogOpen: boolean;
 }
 
 // --- Actions Interface (REMOVED - Imported from @paynless/types) ---
@@ -27,6 +28,8 @@ interface OrganizationUIState {
 interface OrganizationUIActions {
     openCreateModal: () => void;
     closeCreateModal: () => void;
+    openDeleteDialog: () => void;
+    closeDeleteDialog: () => void;
 }
 
 // --- Store Type (Use imported type) ---
@@ -49,6 +52,7 @@ const initialState: OrganizationState & OrganizationUIState = {
   error: null,
   // UI State
   isCreateModalOpen: false, 
+  isDeleteDialogOpen: false,
 };
 
 // --- Store Implementation ---
@@ -70,6 +74,7 @@ type OrganizationStoreImplementation =
     InternalOrganizationActions & 
     {
         selectCurrentUserRoleInOrg: () => 'admin' | 'member' | null;
+        selectIsDeleteDialogOpen: () => boolean;
     };
 
 // Instantiate the specific client - assuming the main 'api' export *is* the base client instance
@@ -85,6 +90,8 @@ export const useOrganizationStore = create<OrganizationStoreImplementation>((set
   // --- UI Actions ---
   openCreateModal: () => set({ isCreateModalOpen: true }),
   closeCreateModal: () => set({ isCreateModalOpen: false }),
+  openDeleteDialog: () => set({ isDeleteDialogOpen: true }),
+  closeDeleteDialog: () => set({ isDeleteDialogOpen: false }),
 
   // --- Main Actions (Existing implementations) ---
   fetchUserOrganizations: async () => {
@@ -295,7 +302,7 @@ export const useOrganizationStore = create<OrganizationStoreImplementation>((set
   },
 
   softDeleteOrganization: async (orgId: string): Promise<boolean> => {
-    const { _setLoading, _setError, currentOrganizationId, userOrganizations } = get();
+    const { _setLoading, _setError, currentOrganizationId, userOrganizations, closeDeleteDialog } = get();
     _setLoading(true);
     _setError(null);
 
@@ -316,10 +323,11 @@ export const useOrganizationStore = create<OrganizationStoreImplementation>((set
       } else {
         // Success: Remove org from list and potentially clear current context
         const updatedOrgs = userOrganizations.filter(org => org.id !== orgId);
-        let updatedState: Partial<OrganizationState> = { 
+        let updatedState: Partial<OrganizationState & OrganizationUIState> = { 
             userOrganizations: updatedOrgs,
             isLoading: false,
-            error: null
+            error: null,
+            // isDeleteDialogOpen will be handled by closeDeleteDialog call
         };
 
         if (currentOrganizationId === orgId) {
@@ -334,6 +342,7 @@ export const useOrganizationStore = create<OrganizationStoreImplementation>((set
         
         set(updatedState);
         logger.info(`[OrganizationStore] Successfully soft-deleted organization ${orgId}.`);
+        closeDeleteDialog(); // Call close action on success
         return true; // Indicate success
       }
     } catch (err: any) {
@@ -682,5 +691,7 @@ export const useOrganizationStore = create<OrganizationStoreImplementation>((set
     const currentUserMembership = currentOrganizationMembers.find(member => member.user_id === userId);
     return currentUserMembership?.role as 'admin' | 'member' | null; // Return role or null if not found
   },
+
+  selectIsDeleteDialogOpen: (): boolean => get().isDeleteDialogOpen,
 
 })); 

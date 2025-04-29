@@ -35,6 +35,7 @@ export const OrganizationSettingsCard: React.FC = () => {
     currentOrganizationDetails,
     updateOrganization,
     // softDeleteOrganization, // Commented out as unused for now
+    openDeleteDialog, // Import the action
     selectCurrentUserRoleInOrg, // Add selector for role check
     isLoading, // Use main loading for now, maybe specific loading state later
     currentOrganizationId,
@@ -72,14 +73,10 @@ export const OrganizationSettingsCard: React.FC = () => {
     }
   }, [currentOrganizationDetails, reset, setValue]); // Added setValue dependency
 
-  // Placeholder for delete dialog trigger
-  const openDeleteDialog = () => {
-    console.log('TODO: Open Delete Organization Dialog');
-    // Example of triggering delete action (move to dialog confirmation)
-    // if (currentOrganizationId) {
-    //   softDeleteOrganization(currentOrganizationId); // Keep commented out
-    // }
-  };
+  // // Placeholder for delete dialog trigger - REMOVED
+  // const openDeleteDialogPlaceholder = () => {
+  //   console.log('TODO: Open Delete Organization Dialog');
+  // };
 
   // Actual form submission handler - Remove explicit type annotation
   const onSubmit = async (data: SettingsFormData) => { // Let type inference work with useForm<T>
@@ -174,7 +171,7 @@ export const OrganizationSettingsCard: React.FC = () => {
           </Button>
           <Button
             variant="destructive"
-            onClick={openDeleteDialog}
+            onClick={openDeleteDialog} // Call the store action directly
             type="button"
             disabled={formDisabled} // Also disable delete during update
             // className={!isAdmin ? 'hidden' : ''} // Keep commented until role check is confirmed needed here
