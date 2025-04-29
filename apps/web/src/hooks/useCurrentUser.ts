@@ -1,22 +1,33 @@
-import { User } from '@supabase/supabase-js';
+import { useAuthStore } from '@paynless/store';
+// Remove Supabase User type if not directly needed, or keep if profile structure matches
+// import { User } from '@supabase/supabase-js';
 
-// TODO: Implement actual logic to retrieve the current user
-// This might involve Zustand state, React context, or a direct Supabase call
+// Use the UserProfile type from the store if available and preferred
+// Or adjust the return type based on what authStore actually provides
+import type { UserProfile } from '@paynless/types'; // Assuming this path is correct
 
+// Remove placeholder TODO comments
+// interface UseCurrentUserReturn {
+//   user: User | null; // Keep Supabase User type?
+//   // Add other relevant user state/functions if needed, e.g., isLoading
+// }
+
+// Updated return type to match store structure (adjust as needed)
 interface UseCurrentUserReturn {
-  user: User | null;
-  // Add other relevant user state/functions if needed, e.g., isLoading
+  user: UserProfile | null; // Use UserProfile or the actual type from store
+  isLoading: boolean; // Reflect loading state from store
 }
 
 /**
- * Placeholder hook to provide current user information.
- * Replace with actual implementation.
+ * Hook to provide current user information from the auth store.
  */
 export const useCurrentUser = (): UseCurrentUserReturn => {
-  // Placeholder implementation
-  // Return a mock user for testing purposes or null
-  // In a real app, fetch this from auth context or state
-  console.warn('`useCurrentUser` hook needs implementation!');
+  // Retrieve user and loading state from the Zustand auth store
+  const user = useAuthStore((state) => state.profile);
+  const isLoading = useAuthStore((state) => state.isLoading); // Or appropriate loading state
+
+  // Return the user profile and loading status
+  return { user, isLoading };
 
   // Example: return a static mock user for now
   // const mockUser: User = {
@@ -29,5 +40,5 @@ export const useCurrentUser = (): UseCurrentUserReturn => {
   // return { user: mockUser };
 
   // Or return null if no user is assumed initially
-   return { user: null }; 
+  // return { user: null }; 
 }; 
