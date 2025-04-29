@@ -52,113 +52,117 @@ export async function handleOrganizationRequest(
     console.log(`[organizations] Handler: Authenticated user: ${authenticatedUser.id}`);
 
     // Helper function to extract path parameters
-    // Example: /organizations/org123/members -> { orgId: 'org123' }
-    // Example: /organizations/org123/members/mem456/role -> { orgId: 'org123', membershipId: 'mem456' }
-    function extractPathParams(pathname: string): { orgId?: string; membershipId?: string; segment?: string } {
-        const parts = pathname.split('/').filter(Boolean); // Remove empty segments
-        let orgId: string | undefined;
-        let membershipId: string | undefined;
-        let segment: string | undefined;
+    // Example: /organizations/org123/members -> { orgId: 'org123', resourceType: 'members' }
+    // Example: /organizations/org123/members/mem456 -> { orgId: 'org123', resourceType: 'members', resourceId: 'mem456' }
+    // Example: /organizations/org123/members/mem456/role -> { orgId: 'org123', resourceType: 'members', resourceId: 'mem456', action: 'role' }
+    function extractPathParams(pathname: string): {
+      orgId?: string;
+      resourceType?: 'members' | 'invites' | string; // 'members', 'invites', or potentially others
+      resourceId?: string; // e.g., membershipId, inviteId
+      action?: string; // e.g., 'role', 'accept', 'decline'
+    } {
+      const parts = pathname.split('/').filter(Boolean);
+      let orgId: string | undefined;
+      let resourceType: string | undefined;
+      let resourceId: string | undefined;
+      let action: string | undefined;
 
-        if (parts[0] === 'organizations' && parts.length >= 2) {
-            orgId = parts[1];
-            if (parts.length >= 3) {
-                 if (parts[2] === 'members' && parts.length >= 4) {
-                    membershipId = parts[3];
-                    if (parts.length >= 5) {
-                        segment = parts[4]; // e.g., 'role'
-                    }
-                 } else {
-                     segment = parts[2]; // e.g., 'members', 'invites'
-                 }
+      if (parts[0] === 'organizations' && parts.length >= 2) {
+        orgId = parts[1];
+        if (parts.length >= 3) {
+          resourceType = parts[2]; // e.g., 'members', 'invites'
+          if (parts.length >= 4) {
+            resourceId = parts[3]; // e.g., membershipId
+            if (parts.length >= 5) {
+              action = parts[4]; // e.g., 'role'
             }
+          }
         }
-        return { orgId, membershipId, segment };
+      }
+      // Ensure all paths return explicitly
+      return { orgId, resourceType, resourceId, action };
     }
 
     // --- Route based on HTTP method and path --- //
     const url = new URL(req.url);
     const pathParams = extractPathParams(url.pathname);
     const orgId = pathParams.orgId;
-    const membershipId = pathParams.membershipId;
-    const segment = pathParams.segment; // 'members', 'invites', 'role' etc.
+    const resourceType = pathParams.resourceType;
+    const resourceId = pathParams.resourceId; // Could be membershipId, inviteId etc.
+    const action = pathParams.action;
 
     // --- Base /organizations routes ---
-    if (!orgId) {
-        if (req.method === 'POST') {
-            console.log('[organizations] Logic: Handling POST /organizations...');
-            
-            // 1. Validate input
-            const { name, visibility } = body || {};
-            if (!name || typeof name !== 'string' || name.trim().length < 3) {
-              return createErrorResponse('Organization name is required and must be at least 3 characters long.', 400, req);
-            }
-            const orgVisibility = visibility === 'public' ? 'public' : 'private';
+    if (req.method === 'POST' && !orgId) {
+        console.log('[organizations] Logic: Handling POST /organizations...');
+        
+        // 1. Validate input
+        const { name, visibility } = body || {};
+        if (!name || typeof name !== 'string' || name.trim().length < 3) {
+          return createErrorResponse('Organization name is required and must be at least 3 characters long.', 400, req);
+        }
+        const orgVisibility = visibility === 'public' ? 'public' : 'private';
 
-            // Call the PostgreSQL function using the (potentially injected) client
-            const rpcPayload = {
-                p_user_id: authenticatedUser.id,
-                p_org_name: name.trim(),
-                p_org_visibility: orgVisibility
-            };
-            const { data: newOrg, error: rpcError } = await typedSupabase.rpc(
-                'create_org_and_admin_member',
-                rpcPayload
-            );
+        // Call the PostgreSQL function using the (potentially injected) client
+        const rpcPayload = {
+            p_user_id: authenticatedUser.id,
+            p_org_name: name.trim(),
+            p_org_visibility: orgVisibility
+        };
+        const { data: newOrg, error: rpcError } = await typedSupabase.rpc(
+            'create_org_and_admin_member',
+            rpcPayload
+        );
 
-            if (rpcError) {
-                console.error('[organizations] Logic: Error calling create_org_and_admin_member RPC:', rpcError);
-                return createErrorResponse(`Failed to create organization: ${rpcError.message}`, 500, req);
-            }
+        if (rpcError) {
+            console.error('[organizations] Logic: Error calling create_org_and_admin_member RPC:', rpcError);
+            return createErrorResponse(`Failed to create organization: ${rpcError.message}`, 500, req);
+        }
 
-            if (!newOrg || typeof newOrg !== 'string') {
-                console.error('[organizations] Logic: RPC did not return a valid organization ID.');
-                return createErrorResponse('Failed to retrieve organization details after creation.', 500, req);
-            }
-            
-            const newOrgId = newOrg;
-
-            // Fetch the newly created organization details
-            const { data: createdOrgDetails, error: fetchError } = await typedSupabase
-                .from('organizations')
-                .select('*')
-                .eq('id', newOrgId)
-                .single();
-
-            if (fetchError || !createdOrgDetails) {
-                console.error(`[organizations] Logic: Error fetching details for new org ${newOrgId}:`, fetchError);
-                return createErrorResponse('Organization created, but failed to fetch details.', 500, req);
-            }
-
-            console.log('[organizations] Logic: Organization created successfully:', createdOrgDetails);
-            return createSuccessResponse(createdOrgDetails, 201, req);
+        if (!newOrg || typeof newOrg !== 'string') {
+            console.error('[organizations] Logic: RPC did not return a valid organization ID.');
+            return createErrorResponse('Failed to retrieve organization details after creation.', 500, req);
         }
         
-        if (req.method === 'GET') {
-            console.log('[organizations] Logic: Handling GET /organizations (list user orgs)...');
-            // Fetch organizations where the user is an active member
-            // RLS policy on organization_members should handle filtering for the current user
-            const { data: memberships, error: memError } = await typedSupabase
-                .from('organization_members')
-                .select(`
-                    organizations ( id, name, visibility, created_at ) 
-                `)
-                .eq('user_id', authenticatedUser.id)
-                .eq('status', 'active'); // Only active memberships
+        const newOrgId = newOrg;
 
-            if (memError) {
-                console.error('[organizations] Error fetching user organizations:', memError);
-                return createErrorResponse('Failed to retrieve organizations.', 500, req);
-            }
-            
-            // Extract the organization data, filtering out any nulls in case of unexpected join results
-            const userOrgs = memberships?.map(m => m.organizations).filter(org => org !== null) || [];
+        // Fetch the newly created organization details
+        const { data: createdOrgDetails, error: fetchError } = await typedSupabase
+            .from('organizations')
+            .select('*')
+            .eq('id', newOrgId)
+            .single();
 
-            return createSuccessResponse(userOrgs, 200, req);
+        if (fetchError || !createdOrgDetails) {
+            console.error(`[organizations] Logic: Error fetching details for new org ${newOrgId}:`, fetchError);
+            return createErrorResponse('Organization created, but failed to fetch details.', 500, req);
         }
-    } 
-    // --- Routes with /organizations/:orgId ---
-    else if (orgId && !segment && !membershipId) { // Matches /organizations/:orgId exactly
+
+        console.log('[organizations] Logic: Organization created successfully:', createdOrgDetails);
+        return createSuccessResponse(createdOrgDetails, 201, req);
+    } else if (req.method === 'GET' && !orgId) {
+        console.log('[organizations] Logic: Handling GET /organizations (list user orgs)...');
+        // Fetch organizations where the user is an active member
+        // RLS policy on organization_members should handle filtering for the current user
+        const { data: memberships, error: memError } = await typedSupabase
+            .from('organization_members')
+            .select(`
+                organizations ( id, name, visibility, created_at ) 
+            `)
+            .eq('user_id', authenticatedUser.id)
+            .eq('status', 'active'); // Only active memberships
+
+        if (memError) {
+            console.error('[organizations] Error fetching user organizations:', memError);
+            return createErrorResponse('Failed to retrieve organizations.', 500, req);
+        }
+        
+        // Extract the organization data, filtering out any nulls in case of unexpected join results
+        const userOrgs = memberships?.map(m => m.organizations).filter(org => org !== null) || [];
+
+        return createSuccessResponse(userOrgs, 200, req);
+    }
+    // --- Routes for /organizations/:orgId (no further segments) ---
+    else if (orgId && !resourceType && !resourceId && !action) {
          if (req.method === 'GET') {
             console.log(`[organizations] Logic: Handling GET /organizations/${orgId} (details)...`);
             // Fetch specific organization details
@@ -180,9 +184,7 @@ export async function handleOrganizationRequest(
             }
 
             return createSuccessResponse(orgDetails, 200, req);
-         }
-         
-         if (req.method === 'PUT') {
+         } else if (req.method === 'PUT') {
              console.log(`[organizations] Logic: Handling PUT /organizations/${orgId} (update)...`);
              // 1. Validate payload
              const { name, visibility } = body || {};
@@ -206,27 +208,42 @@ export async function handleOrganizationRequest(
                 .update(updatePayload)
                 .eq('id', orgId)
                 .select() // Select updated data
-                .single(); // Expecting one row to be updated
+                .maybeSingle(); // Use maybeSingle to allow for 0 rows updated due to RLS/not found
+                // Note: Removed .single() which throws on 0 rows
 
              if (updateError) {
-                 // Check if it's a permission error (e.g., RLS failed) - typically results in count 0, but error might occur
-                 if (updateError.code === '42501' || count === 0) { // Check for RLS violation code or 0 count
-                      console.warn(`[organizations] Update forbidden or org not found for user ${authenticatedUser.id} on org ${orgId}`);
+                 // Existing error check remains important for actual DB errors
+                 // Removed the count check here as maybeSingle handles the no-data case gracefully
+                 if (updateError.code === '42501') { // Check for RLS violation code
+                      console.warn(`[organizations] Update forbidden (RLS) for user ${authenticatedUser.id} on org ${orgId}`);
                       return createErrorResponse('Forbidden: You do not have permission to update this organization.', 403, req);
                  }
                  console.error(`[organizations] Error updating org ${orgId}:`, updateError);
                  return createErrorResponse(`Failed to update organization: ${updateError.message}`, 500, req);
              }
-              if (!updatedOrg) {
-                  // Should not happen if count was > 0 and no error, but handle defensively
-                  console.error(`[organizations] Update successful for org ${orgId} but no data returned.`);
-                  return createErrorResponse('Update succeeded but failed to retrieve updated data.', 500, req);
-              }
-
+             
+             // Check if data is null AFTER checking for errors
+             // This indicates either RLS prevented the update (returning 0 rows) or the org wasn't found
+             if (!updatedOrg) { 
+                // To differentiate, we can try a simple select check
+                const { data: checkOrg, error: checkError } = await typedSupabase
+                    .from('organizations')
+                    .select('id', { count: 'exact', head: true })
+                    .eq('id', orgId);
+                    
+                if (checkError || !checkOrg) { // Org doesn't exist or error checking
+                     console.warn(`[organizations] Update failed: Org ${orgId} not found.`);
+                     return createErrorResponse('Organization not found.', 404, req);
+                } else {
+                     // Org exists, but update failed (likely RLS)
+                     console.warn(`[organizations] Update forbidden (likely RLS) for user ${authenticatedUser.id} on org ${orgId}`);
+                     return createErrorResponse('Forbidden: You do not have permission to update this organization.', 403, req);
+                }
+             }
+             
+             // If we reach here, updatedOrg is valid
              return createSuccessResponse(updatedOrg, 200, req);
-         }
-         
-         if (req.method === 'DELETE') {
+         } else if (req.method === 'DELETE') {
               console.log(`[organizations] Logic: Handling DELETE /organizations/${orgId} (soft delete)...`);
               
               // 1. Check if user is admin (RLS *should* handle, but explicit check is clearer)
@@ -299,220 +316,248 @@ export async function handleOrganizationRequest(
               
               // Success
               return createSuccessResponse(null, 204, req);
+         } else {
+            // Handle other methods for this specific path
+            console.warn(`[organizations] Handler: Method ${req.method} not allowed for path /organizations/:orgId`);
+            return createErrorResponse(`Method ${req.method} not allowed for this path`, 405, req);
          }
     }
-    // --- Routes for /organizations/:orgId/members ---
-    else if (orgId && segment === 'members' && !membershipId) {
-        if (req.method === 'GET') {
-            console.log(`[organizations] Logic: Handling GET /organizations/${orgId}/members (list)...`);
-            // RLS on organization_members should ensure user is part of the org
-            // Need to join with profiles to get names etc.
-            const { data: members, error: membersError } = await typedSupabase
-                .from('organization_members')
-                .select(`
-                    id, 
-                    user_id, 
-                    role, 
-                    status,
-                    created_at,
-                    profiles ( full_name, avatar_url ) 
-                `)
-                .eq('organization_id', orgId);
+    // --- Routes for /organizations/:orgId/members (list) ---
+    else if (req.method === 'GET' && orgId && resourceType === 'members' && !resourceId && !action) {
+        console.log(`[organizations] Logic: Handling GET /organizations/${orgId}/members (list)...`);
+        // RLS on organization_members should ensure user is part of the org
+        // Need to join with profiles to get names etc.
+        const { data: members, error: membersError } = await typedSupabase
+            .from('organization_members')
+            .select(`
+                id, 
+                user_id, 
+                role, 
+                status,
+                created_at,
+                profiles ( full_name, avatar_url ) 
+            `)
+            .eq('organization_id', orgId);
 
-             if (membersError) {
-                console.error(`[organizations] Error fetching members for org ${orgId}:`, membersError);
-                return createErrorResponse('Failed to retrieve members.', 500, req);
-             }
-             
-             // If the query succeeds but returns empty, it might be due to RLS.
-             // The test expects 403 in this case. We need a way to differentiate RLS vs. truly empty org.
-             // One way is a preliminary check if the user is a member.
-             const { count: memberCheckCount, error: checkError } = await typedSupabase
-                .from('organization_members')
-                .select('id', { count: 'exact', head: true })
-                .eq('organization_id', orgId)
-                .eq('user_id', authenticatedUser.id)
-                .eq('status', 'active');
-                
-             if (checkError){
-                 console.error(`[organizations] Error checking membership for org ${orgId}:`, checkError);
-                 // Fall through to return potentially empty members list or handle differently
-             }
+         if (membersError) {
+            console.error(`[organizations] Error fetching members for org ${orgId}:`, membersError);
+            return createErrorResponse('Failed to retrieve members.', 500, req);
+         }
+         
+         // If the query succeeds but returns empty, it might be due to RLS.
+         // The test expects 403 in this case. We need a way to differentiate RLS vs. truly empty org.
+         // One way is a preliminary check if the user is a member.
+         const { count: memberCheckCount, error: checkError } = await typedSupabase
+            .from('organization_members')
+            .select('id', { count: 'exact', head: true })
+            .eq('organization_id', orgId)
+            .eq('user_id', authenticatedUser.id)
+            .eq('status', 'active');
+            
+         if (checkError){
+             console.error(`[organizations] Error checking membership for org ${orgId}:`, checkError);
+             // Fall through to return potentially empty members list or handle differently
+         }
 
-             if (memberCheckCount === 0) {
-                 console.warn(`[organizations] User ${authenticatedUser.id} forbidden to view members for org ${orgId}`);
-                 return createErrorResponse("Forbidden: You do not have permission to view members of this organization.", 403, req);
-             }
+         if (memberCheckCount === 0) {
+             console.warn(`[organizations] User ${authenticatedUser.id} forbidden to view members for org ${orgId}`);
+             return createErrorResponse("Forbidden: You do not have permission to view members of this organization.", 403, req);
+         }
 
-             return createSuccessResponse(members || [], 200, req);
+         return createSuccessResponse(members || [], 200, req);
+    }
+    // --- Routes for /organizations/:orgId/invites (create) ---
+    else if (req.method === 'POST' && orgId && resourceType === 'invites' && !resourceId && !action) {
+         console.log(`[organizations] Logic: Handling POST /organizations/${orgId}/invites...`);
+         // 1. Validate payload
+         const { email, role } = body || {};
+         if (!email || typeof email !== 'string' || !email.includes('@')) { // Basic email check
+              return createErrorResponse('Invalid email address provided.', 400, req);
+         }
+         if (!role || (role !== 'admin' && role !== 'member')) {
+              return createErrorResponse('Invalid role specified. Must be "admin" or "member".', 400, req);
+         }
+
+         // 2. Check permissions (Is user an admin of this org? RLS *should* handle this on insert, but an explicit check is safer)
+         // Using the helper function (assumes it exists and is callable via RPC or directly if helper available)
+         const { data: isAdmin, error: adminCheckError } = await typedSupabase.rpc('is_org_admin', { org_id: orgId }); // Corrected parameter name
+
+         if (adminCheckError || !isAdmin) {
+             console.warn(`[organizations] Permission denied for user ${authenticatedUser.id} to invite to org ${orgId}. Admin check failed or returned false.`);
+             return createErrorResponse("Forbidden: You do not have permission to invite members to this organization.", 403, req);
+         }
+         
+         // 3. Check if user is already member or has pending invite (combine checks)
+         const { data: existingMember, error: memberCheckErr } = await typedSupabase
+            .from('organization_members')
+            .select('user_id, status')
+            .eq('organization_id', orgId)
+            .eq('profiles!inner(email)', email) // Join profiles to check email
+            .in('status', ['active', 'pending'])
+            .maybeSingle();
+
+        if (memberCheckErr) console.error("[organizations] Error checking existing member by email:", memberCheckErr); // Log but continue check
+
+        const { data: existingInvite, error: inviteCheckErr } = await typedSupabase
+            .from('invites')
+            .select('id, status')
+            .eq('organization_id', orgId)
+            .eq('invited_email', email)
+            .eq('status', 'pending')
+            .maybeSingle();
+            
+        if (inviteCheckErr) console.error("[organizations] Error checking existing invite by email:", inviteCheckErr); // Log but continue check
+
+        if (existingMember || existingInvite) {
+            console.warn(`[organizations] Attempted to invite existing member/invitee ${email} to org ${orgId}`);
+            return createErrorResponse("User is already a member or has a pending invite.", 409, req); // Conflict
         }
-    }
-    // --- Routes for /organizations/:orgId/invites ---
-    else if (orgId && segment === 'invites' && !membershipId) {
-         if (req.method === 'POST') {
-             console.log(`[organizations] Logic: Handling POST /organizations/${orgId}/invites...`);
-             // 1. Validate payload
-             const { email, role } = body || {};
-             if (!email || typeof email !== 'string' || !email.includes('@')) { // Basic email check
-                  return createErrorResponse('Invalid email address provided.', 400, req);
-             }
-             if (!role || (role !== 'admin' && role !== 'member')) {
-                  return createErrorResponse('Invalid role specified. Must be "admin" or "member".', 400, req);
-             }
 
-             // 2. Check permissions (Is user an admin of this org? RLS *should* handle this on insert, but an explicit check is safer)
-             // Using the helper function (assumes it exists and is callable via RPC or directly if helper available)
-             const { data: isAdmin, error: adminCheckError } = await typedSupabase.rpc('is_org_admin', { org_id: orgId }); // Corrected parameter name
+         // 4. Generate invite token (simple UUID for now)
+         const inviteToken = crypto.randomUUID();
 
-             if (adminCheckError || !isAdmin) {
-                 console.warn(`[organizations] Permission denied for user ${authenticatedUser.id} to invite to org ${orgId}. Admin check failed or returned false.`);
-                 return createErrorResponse("Forbidden: You do not have permission to invite members to this organization.", 403, req);
-             }
-             
-             // 3. Check if user is already member or has pending invite (combine checks)
-             const { data: existingMember, error: memberCheckErr } = await typedSupabase
-                .from('organization_members')
-                .select('user_id, status')
-                .eq('organization_id', orgId)
-                .eq('profiles!inner(email)', email) // Join profiles to check email
-                .in('status', ['active', 'pending'])
-                .maybeSingle();
+         // 5. Insert invite
+         const { data: newInvite, error: insertError } = await typedSupabase
+            .from('invites')
+            .insert({
+                organization_id: orgId,
+                invited_email: email,
+                role_to_assign: role,
+                invited_by_user_id: authenticatedUser.id,
+                invite_token: inviteToken,
+                status: 'pending'
+            })
+            .select()
+            .single();
 
-            if (memberCheckErr) console.error("[organizations] Error checking existing member by email:", memberCheckErr); // Log but continue check
-
-            const { data: existingInvite, error: inviteCheckErr } = await typedSupabase
-                .from('invites')
-                .select('id, status')
-                .eq('organization_id', orgId)
-                .eq('invited_email', email)
-                .eq('status', 'pending')
-                .maybeSingle();
-                
-            if (inviteCheckErr) console.error("[organizations] Error checking existing invite by email:", inviteCheckErr); // Log but continue check
-
-            if (existingMember || existingInvite) {
-                console.warn(`[organizations] Attempted to invite existing member/invitee ${email} to org ${orgId}`);
-                return createErrorResponse("User is already a member or has a pending invite.", 409, req); // Conflict
+        if (insertError) {
+            // RLS could also cause insert failure - map 42501 to 403?
+            if (insertError.code === '42501') {
+                return createErrorResponse("Forbidden: You do not have permission to invite members to this organization.", 403, req);
             }
-
-             // 4. Generate invite token (simple UUID for now)
-             const inviteToken = crypto.randomUUID();
-
-             // 5. Insert invite
-             const { data: newInvite, error: insertError } = await typedSupabase
-                .from('invites')
-                .insert({
-                    organization_id: orgId,
-                    invited_email: email,
-                    role_to_assign: role,
-                    invited_by_user_id: authenticatedUser.id,
-                    invite_token: inviteToken,
-                    status: 'pending'
-                })
-                .select()
-                .single();
-
-            if (insertError) {
-                // RLS could also cause insert failure - map 42501 to 403?
-                if (insertError.code === '42501') {
-                    return createErrorResponse("Forbidden: You do not have permission to invite members to this organization.", 403, req);
-                }
-                console.error(`[organizations] Error inserting invite for ${email} to org ${orgId}:`, insertError);
-                return createErrorResponse(`Failed to create invitation: ${insertError.message}`, 500, req);
-            }
-            
-            if (!newInvite) {
-                 console.error(`[organizations] Invite insert for ${email} to org ${orgId} succeeded but returned no data.`);
-                return createErrorResponse('Failed to create invitation.', 500, req);
-            }
-            
-            // Trigger notification happens via DB trigger, no extra step needed here.
-
-            // 6. Return new invite details (or just 201/204)
-            return createSuccessResponse(newInvite, 201, req);
-         }
-    }
-    // --- Routes for /organizations/:orgId/members/:membershipId ---
-    else if (orgId && segment === 'members' && membershipId) {
-        // --- Routes for /organizations/:orgId/members/:membershipId/role ---
-        if (url.pathname.endsWith('/role') && req.method === 'PUT') {
-            console.log(`[organizations] Logic: Handling PUT /organizations/${orgId}/members/${membershipId}/role...`);
-            // 1. Validate payload
-            const { role } = body || {};
-             if (!role || (role !== 'admin' && role !== 'member')) {
-                  return createErrorResponse('Invalid role specified. Must be "admin" or "member".', 400, req);
-             }
-             
-            // 2. Attempt update (RLS must check admin status, DB trigger must check last admin)
-            const { data: updatedMember, error: updateError, count } = await typedSupabase
-                .from('organization_members')
-                .update({ role: role })
-                .eq('id', membershipId)
-                .eq('organization_id', orgId) // Ensure targeting the correct org
-                .select('id, role') // Select only relevant fields
-                .maybeSingle(); // Use maybeSingle as update might affect 0 rows due to RLS
-
-            if (updateError) {
-                // Check for specific DB error from trigger (e.g., last admin check)
-                if (updateError.message.includes("last admin")) { // Example check
-                    console.warn(`[organizations] Attempted role change for last admin on membership ${membershipId}`);
-                    return createErrorResponse(`Conflict: ${updateError.message}`, 409, req);
-                }
-                 if (updateError.code === '42501') {
-                    console.warn(`[organizations] Role update forbidden for user ${authenticatedUser.id} on membership ${membershipId}`);
-                    return createErrorResponse("Forbidden: You do not have permission to update member roles.", 403, req);
-                }
-                console.error(`[organizations] Error updating role for membership ${membershipId}:`, updateError);
-                return createErrorResponse(`Failed to update member role: ${updateError.message}`, 500, req);
-            }
-            
-            // If count is 0 and no error, it implies RLS blocked or member not found
-            if (count === 0) {
-                 console.warn(`[organizations] Role update forbidden or member not found for user ${authenticatedUser.id} on membership ${membershipId}`);
-                 return createErrorResponse("Forbidden: You do not have permission to update member roles.", 403, req); // Or 404
-            }
-
-            // Return 204 No Content or 200 OK with updated data
-            return createSuccessResponse(null, 204, req); // Correct: Use helper for CORS
+            console.error(`[organizations] Error inserting invite for ${email} to org ${orgId}:`, insertError);
+            return createErrorResponse(`Failed to create invitation: ${insertError.message}`, 500, req);
         }
         
-        // --- Routes for /organizations/:orgId/members/:membershipId (DELETE) ---
-        if (req.method === 'DELETE') {
-             console.log(`[organizations] Logic: Handling DELETE /organizations/${orgId}/members/${membershipId}...`);
-             // Attempt delete (RLS must check admin or self, DB trigger must check last admin)
-              const { error: deleteError, count } = await typedSupabase
-                .from('organization_members')
-                .delete()
-                .eq('id', membershipId)
-                .eq('organization_id', orgId); // Ensure targeting the correct org
-
-              if (deleteError) {
-                  // Check for specific DB error from trigger (e.g., last admin check)
-                  if (deleteError.message.includes("last admin")) { // Example check
-                      console.warn(`[organizations] Attempted removal of last admin membership ${membershipId}`);
-                      return createErrorResponse(`Conflict: ${deleteError.message}`, 409, req);
-                  }
-                   if (deleteError.code === '42501') {
-                       console.warn(`[organizations] Member removal forbidden for user ${authenticatedUser.id} on membership ${membershipId}`);
-                      return createErrorResponse("Forbidden: You do not have permission to remove this member.", 403, req);
-                  }
-                  console.error(`[organizations] Error removing membership ${membershipId}:`, deleteError);
-                  return createErrorResponse(`Failed to remove member: ${deleteError.message}`, 500, req);
-              }
-              
-               // If count is 0 and no error, it implies RLS blocked or member not found
-               if (count === 0) {
-                   console.warn(`[organizations] Member removal forbidden or member not found for user ${authenticatedUser.id} on membership ${membershipId}`);
-                   return createErrorResponse("Forbidden: You do not have permission to remove this member.", 403, req); // Or 404
-               }
-               
-               return createSuccessResponse(null, 204, req); // Correct: Use helper for CORS
+        if (!newInvite) {
+             console.error(`[organizations] Invite insert for ${email} to org ${orgId} succeeded but returned no data.`);
+            return createErrorResponse('Failed to create invitation.', 500, req);
         }
-    }
+        
+        // Trigger notification happens via DB trigger, no extra step needed here.
 
-    // Fallback for unhandled methods/paths within the organization scope
-    console.warn(`[organizations] Handler: Method ${req.method} not allowed for ${url.pathname}`);
-    return createErrorResponse(`Method ${req.method} not allowed for this path`, 405, req);
+        // 6. Return new invite details (or just 201/204)
+        return createSuccessResponse(newInvite, 201, req);
+    }
+    // --- Routes for /organizations/:orgId/members/:membershipId/role (update) ---
+    else if (req.method === 'PUT' && orgId && resourceType === 'members' && resourceId && action === 'role') {
+        const membershipId = resourceId; // Clarify variable name
+        console.log(`[organizations] Logic: Handling PUT /organizations/${orgId}/members/${membershipId}/role...`);
+        // 1. Validate payload
+        const { role } = body || {};
+         if (!role || (role !== 'admin' && role !== 'member')) {
+              return createErrorResponse('Invalid role specified. Must be "admin" or "member".', 400, req);
+         }
+         
+        // 2. Attempt update (RLS must check admin status, DB trigger must check last admin)
+        const { data: updatedMember, error: updateError, count } = await typedSupabase
+            .from('organization_members')
+            .update({ role: role })
+            .eq('id', membershipId)
+            .eq('organization_id', orgId) // Ensure targeting the correct org
+            .select('id, role') // Select only relevant fields
+            .maybeSingle(); // Use maybeSingle as update might affect 0 rows due to RLS
+
+        if (updateError) {
+            // Check for specific DB error from trigger (e.g., last admin check)
+            if (updateError.message.includes("last admin")) { // Example check
+                console.warn(`[organizations] Attempted role change for last admin on membership ${membershipId}`);
+                return createErrorResponse(`Conflict: ${updateError.message}`, 409, req);
+            }
+             if (updateError.code === '42501') {
+                console.warn(`[organizations] Role update forbidden for user ${authenticatedUser.id} on membership ${membershipId}`);
+                return createErrorResponse("Forbidden: You do not have permission to update member roles.", 403, req);
+            }
+            console.error(`[organizations] Error updating role for membership ${membershipId}:`, updateError);
+            return createErrorResponse(`Failed to update member role: ${updateError.message}`, 500, req);
+        }
+        
+        // If the update didn't return data (and no error occurred), it implies RLS blocked or member not found
+        // Note: `count` is not reliable after `.maybeSingle()` or when RLS prevents update without error
+        if (!updatedMember) { // Check if data is null instead of count === 0
+             // We need to differentiate between Not Found (404) and Forbidden (403)
+             // Attempt to select the member directly
+            const { data: memberExists, error: checkError } = await typedSupabase
+                .from('organization_members')
+                .select('id', { count: 'exact', head: true })
+                .eq('id', membershipId)
+                .eq('organization_id', orgId);
+                
+            if (checkError || !memberExists) {
+                 console.warn(`[organizations] Role update failed: Membership ${membershipId} not found in org ${orgId}.`);
+                 return createErrorResponse("Membership not found.", 404, req); 
+            } else {
+                // Member exists, so the update was likely blocked by RLS
+                console.warn(`[organizations] Role update forbidden (likely RLS) for user ${authenticatedUser.id} on membership ${membershipId}`);
+                return createErrorResponse("Forbidden: You do not have permission to update member roles.", 403, req);
+            }
+        }
+
+        // Return 204 No Content if updatedMember has data (update was successful)
+        return createSuccessResponse(null, 204, req); // Correct: Use helper for CORS
+    }
+    // --- Routes for /organizations/:orgId/members/:membershipId (delete) ---
+    else if (req.method === 'DELETE' && orgId && resourceType === 'members' && resourceId && !action) {
+        const membershipId = resourceId; // Clarify variable name
+        console.log(`[organizations] Logic: Handling DELETE /organizations/${orgId}/members/${membershipId}...`);
+        // Attempt delete (RLS must check admin or self, DB trigger must check last admin)
+         const { error: deleteError, count } = await typedSupabase
+           .from('organization_members')
+           .delete()
+           .eq('id', membershipId)
+           .eq('organization_id', orgId); // Ensure targeting the correct org
+
+         if (deleteError) {
+             // Check for specific DB error from trigger (e.g., last admin check)
+             if (deleteError.message.includes("last admin")) { // Example check
+                 console.warn(`[organizations] Attempted removal of last admin membership ${membershipId}`);
+                 return createErrorResponse(`Conflict: ${deleteError.message}`, 409, req);
+             }
+              if (deleteError.code === '42501') {
+                  console.warn(`[organizations] Member removal forbidden for user ${authenticatedUser.id} on membership ${membershipId}`);
+                 return createErrorResponse("Forbidden: You do not have permission to remove this member.", 403, req);
+             }
+             console.error(`[organizations] Error removing membership ${membershipId}:`, deleteError);
+             return createErrorResponse(`Failed to remove member: ${deleteError.message}`, 500, req);
+         }
+         
+          // If count is 0 and no error, it implies RLS blocked or member not found
+          if (count === 0) {
+              console.warn(`[organizations] Member removal forbidden or member not found for user ${authenticatedUser.id} on membership ${membershipId}`);
+              return createErrorResponse("Forbidden: You do not have permission to remove this member.", 403, req); // Or 404
+          }
+          
+          return createSuccessResponse(null, 204, req); // Correct: Use helper for CORS
+    }
+    // --- Fallback for unhandled routes --- 
+    else {
+        console.warn(`[organizations] Handler: Method ${req.method} or Path not handled: ${url.pathname}`);
+        // Provide a more specific error message if possible
+        let errorMessage = `Method ${req.method} not allowed for this path`;
+        let errorStatus = 405; // Method Not Allowed
+        
+        // Simple check if it looks like a known pattern but wrong method/structure
+        if (url.pathname.startsWith('/organizations')) {
+             // Could add more specific checks here later if needed
+             // Example: if GET on a POST-only route
+        } else {
+            // If it doesn't even start with /organizations, it's likely a routing issue upstream or a bad request
+            errorMessage = 'Not Found';
+            errorStatus = 404;
+        }
+        
+        return createErrorResponse(errorMessage, errorStatus, req);
+    }
 
   } catch (error) {
     console.error('[organizations] Handler: Top-level error:', error);

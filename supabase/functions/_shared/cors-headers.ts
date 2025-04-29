@@ -126,13 +126,30 @@ export const createSuccessResponse = (
   // Get dynamic CORS headers
   const corsHeaders = getCorsHeadersForRequest(request);
 
+  // Define statuses that must not have a body according to HTTP standards
+  const nullBodyStatuses = [204, 205, 304]; // 101 can also be added if needed
+
   // Merge headers
   const finalHeaders = {
     ...corsHeaders,
-    "Content-Type": "application/json",
+    // Conditionally set Content-Type only if there will be a body
+    ...(!nullBodyStatuses.includes(status) && { "Content-Type": "application/json" }),
     ...additionalHeaders
   };
 
+  // Return response with null body for specific statuses
+  if (nullBodyStatuses.includes(status)) {
+    // Ensure data is null or undefined before returning null body
+    if (data !== null && data !== undefined) {
+        console.warn(`[cors-headers] WARNING: createSuccessResponse called with status ${status} but received non-null data. Ignoring data for null body response.`);
+    }
+    return new Response(null, {
+        status,
+        headers: finalHeaders,
+    });
+  }
+
+  // For other statuses, return with stringified data
  return new Response(
    JSON.stringify(data),
    {
