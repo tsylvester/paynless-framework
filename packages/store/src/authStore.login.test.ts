@@ -248,7 +248,7 @@ describe('AuthStore - Login Action (Refactored for Supabase)', () => {
     expect(finalState.error).toBe(supabaseError); // Verify the specific error object
     
     // Assert: Return value
-    expect(result).toBeNull(); // Should return null on failure
+    expect(result).toBeUndefined(); // Should return undefined on failure
     
     // Assert: No navigation
     expect(navigateMock).not.toHaveBeenCalled();

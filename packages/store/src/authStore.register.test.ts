@@ -145,7 +145,7 @@ describe('AuthStore - Register Action (Refactored for Supabase)', () => {
     expect(finalState.error).toBe(supabaseError);
 
     // Assert: Return value
-    expect(result).toBeNull();
+    expect(result).toBeUndefined();
 
     // Assert: No navigation
     expect(navigateMock).not.toHaveBeenCalled();
