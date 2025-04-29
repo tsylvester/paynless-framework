@@ -14,13 +14,15 @@ import {
     defaultMockOrganization,
     defaultMockMembers,
     mockAcceptOrganizationInvite,
-    mockDeclineOrganizationInvite
+    mockDeclineOrganizationInvite,
+    mockRequestToJoinOrganization,
+    mockApproveJoinRequest // Import the new mock
 } from '../../api/src/mocks/organizations.mock.ts';
 
 // Other imports
 import { useOrganizationStore } from './organizationStore';
 import { useAuthStore } from './authStore';
-import { Organization, OrganizationMemberWithProfile, SupabaseUser, ApiError as ApiErrorType, AuthStore } from '@paynless/types';
+import { Organization, OrganizationMemberWithProfile, SupabaseUser, ApiError as ApiErrorType, AuthStore, ApiResponse } from '@paynless/types';
 // Import ApiClient type
 import { initializeApiClient, _resetApiClient, ApiClient } from '@paynless/api'; 
 import { logger } from '@paynless/utils';
@@ -35,23 +37,25 @@ vi.mock('@paynless/utils', () => ({ logger: { info: vi.fn(), warn: vi.fn(), erro
 // AND mock getApiClient
 vi.mock('@paynless/api', () => {
     // Define the mocked api object structure first
-    const mockedApi = { 
+    const mockedApi = {
         organizations: {
             getCurrentOrganization: mockGetCurrentOrganization,
             updateOrganization: mockUpdateOrganization,
             getOrganizationMembers: mockGetOrganizationMembers,
-            removeMember: mockRemoveOrganizationMember, 
+            removeMember: mockRemoveOrganizationMember,
             leaveOrganization: mockLeaveOrganization,
             listUserOrganizations: mockListUserOrganizations,
             getOrganizationDetails: mockGetOrganizationDetails,
             deleteOrganization: mockDeleteOrganization,
             createOrganization: mockCreateOrganization,
             acceptOrganizationInvite: mockAcceptOrganizationInvite,
-            declineOrganizationInvite: mockDeclineOrganizationInvite
+            declineOrganizationInvite: mockDeclineOrganizationInvite,
+            requestToJoinOrganization: mockRequestToJoinOrganization,
+            approveJoinRequest: mockApproveJoinRequest // Add the imported mock here
         },
-        auth: {} as any, 
+        auth: {} as any,
         billing: {} as any,
-        notifications: {} as any, 
+        notifications: {} as any,
         getSupabaseClient: vi.fn(() => ({ auth: {} }))
         // Add other base methods if needed, e.g., get: vi.fn(), post: vi.fn()
     } as any as ApiClient; // Cast the whole api object to ApiClient type
@@ -537,6 +541,168 @@ describe('OrganizationStore', () => {
 
       expect(result).toBe(false);
       expect(declineMock).toHaveBeenCalledWith(mockInviteToken);
+      const { isLoading, error } = useOrganizationStore.getState();
+      expect(isLoading).toBe(false);
+      expect(error).toBe(errorMsg);
+    });
+  });
+
+  // --- [NEW] requestJoin Tests --- //
+  describe('requestJoin', () => {
+    const mockOrgId = 'public-org-to-join';
+    // Use the imported mock directly now, no need for local definition
+    const requestJoinMock = mockRequestToJoinOrganization;
+
+    beforeEach(() => {
+      // Remove the temporary assignment - mock is now part of the main factory
+      // vi.mocked(getApiClient)().organizations.requestToJoinOrganization = requestJoinMock; 
+      requestJoinMock.mockClear(); // Still need to clear calls
+    });
+
+    it('should call API, clear loading/error on success, and return true', async () => {
+      requestJoinMock.mockResolvedValue({ status: 200, data: undefined, error: undefined });
+      useOrganizationStore.setState({ error: 'Old error', isLoading: false });
+
+      let result: boolean | undefined;
+      await act(async () => {
+        result = await useOrganizationStore.getState().requestJoin(mockOrgId);
+      });
+
+      expect(result).toBe(true);
+      expect(requestJoinMock).toHaveBeenCalledWith(mockOrgId);
+      const { isLoading, error } = useOrganizationStore.getState();
+      expect(isLoading).toBe(false);
+      expect(error).toBeNull();
+    });
+
+    it('should set error string, clear loading, and return false on API conflict (e.g., already member/pending - 409)', async () => {
+      const errorMsg = 'Already a member or request pending';
+      requestJoinMock.mockResolvedValue({ status: 409, data: undefined, error: { message: errorMsg, code: '409' } });
+      useOrganizationStore.setState({ isLoading: false });
+
+      let result: boolean | undefined;
+      await act(async () => {
+        result = await useOrganizationStore.getState().requestJoin(mockOrgId);
+      });
+
+      expect(result).toBe(false);
+      expect(requestJoinMock).toHaveBeenCalledWith(mockOrgId);
+      const { isLoading, error } = useOrganizationStore.getState();
+      expect(isLoading).toBe(false);
+      expect(error).toBe(errorMsg);
+    });
+
+    it('should set error string, clear loading, and return false on API forbidden (e.g., org not public/joinable - 403/404)', async () => {
+        const errorMsg = 'Organization not found or not joinable';
+        // Could be 403 or 404 depending on backend RLS/logic
+        requestJoinMock.mockResolvedValue({ status: 403, data: undefined, error: { message: errorMsg, code: '403' } }); 
+        useOrganizationStore.setState({ isLoading: false });
+  
+        let result: boolean | undefined;
+        await act(async () => {
+          result = await useOrganizationStore.getState().requestJoin(mockOrgId);
+        });
+  
+        expect(result).toBe(false);
+        expect(requestJoinMock).toHaveBeenCalledWith(mockOrgId);
+        const { isLoading, error } = useOrganizationStore.getState();
+        expect(isLoading).toBe(false);
+        expect(error).toBe(errorMsg);
+      });
+
+    it('should set error string, clear loading, and return false on unexpected error', async () => {
+      const errorMsg = 'Network error during join request';
+      requestJoinMock.mockRejectedValue(new Error(errorMsg));
+      useOrganizationStore.setState({ isLoading: false });
+
+      let result: boolean | undefined;
+      await act(async () => {
+        result = await useOrganizationStore.getState().requestJoin(mockOrgId);
+      });
+
+      expect(result).toBe(false);
+      expect(requestJoinMock).toHaveBeenCalledWith(mockOrgId);
+      const { isLoading, error } = useOrganizationStore.getState();
+      expect(isLoading).toBe(false);
+      expect(error).toBe(errorMsg);
+    });
+  });
+
+  // --- [NEW] approveRequest Tests --- //
+  describe('approveRequest', () => {
+    const mockMembershipId = 'om-pending-req-123';
+    // Use the imported mock directly
+    const approveRequestMock = mockApproveJoinRequest;
+
+    beforeEach(() => {
+      // Remove the temporary assignment
+      // vi.mocked(getApiClient)().organizations.approveJoinRequest = approveRequestMock;
+      approveRequestMock.mockClear(); // Still clear calls
+    });
+
+    it('should call API, clear loading/error on success, and return true', async () => {
+      approveRequestMock.mockResolvedValue({ status: 200, data: undefined, error: undefined });
+      useOrganizationStore.setState({ error: 'Old error', isLoading: false });
+
+      let result: boolean | undefined;
+      await act(async () => {
+        result = await useOrganizationStore.getState().approveRequest(mockMembershipId);
+      });
+
+      expect(result).toBe(true);
+      expect(approveRequestMock).toHaveBeenCalledWith(mockMembershipId);
+      const { isLoading, error } = useOrganizationStore.getState();
+      expect(isLoading).toBe(false);
+      expect(error).toBeNull();
+      // Optional: Verify if fetchCurrentOrganizationMembers was called if state should update
+    });
+
+    it('should set error string, clear loading, and return false on API error (e.g., not found/forbidden - 404/403)', async () => {
+      const errorMsg = 'Request not found or action forbidden';
+      approveRequestMock.mockResolvedValue({ status: 403, data: undefined, error: { message: errorMsg, code: '403' } });
+      useOrganizationStore.setState({ isLoading: false });
+
+      let result: boolean | undefined;
+      await act(async () => {
+        result = await useOrganizationStore.getState().approveRequest(mockMembershipId);
+      });
+
+      expect(result).toBe(false);
+      expect(approveRequestMock).toHaveBeenCalledWith(mockMembershipId);
+      const { isLoading, error } = useOrganizationStore.getState();
+      expect(isLoading).toBe(false);
+      expect(error).toBe(errorMsg);
+    });
+
+    it('should set error string, clear loading, and return false on API conflict (e.g., request not pending - 409)', async () => {
+        const errorMsg = 'Request is not in a pending state';
+        approveRequestMock.mockResolvedValue({ status: 409, data: undefined, error: { message: errorMsg, code: '409' } });
+        useOrganizationStore.setState({ isLoading: false });
+  
+        let result: boolean | undefined;
+        await act(async () => {
+          result = await useOrganizationStore.getState().approveRequest(mockMembershipId);
+        });
+  
+        expect(result).toBe(false);
+        expect(approveRequestMock).toHaveBeenCalledWith(mockMembershipId);
+        const { isLoading, error } = useOrganizationStore.getState();
+        expect(isLoading).toBe(false);
+        expect(error).toBe(errorMsg);
+      });
+
+    it('should set error string, clear loading, and return false on unexpected error', async () => {
+      const errorMsg = 'Network error during request approval';
+      approveRequestMock.mockRejectedValue(new Error(errorMsg));
+      useOrganizationStore.setState({ isLoading: false });
+
+      let result: boolean | undefined;
+      await act(async () => {
+        result = await useOrganizationStore.getState().approveRequest(mockMembershipId);
+      });
+
+      expect(result).toBe(false);
+      expect(approveRequestMock).toHaveBeenCalledWith(mockMembershipId);
       const { isLoading, error } = useOrganizationStore.getState();
       expect(isLoading).toBe(false);
       expect(error).toBe(errorMsg);

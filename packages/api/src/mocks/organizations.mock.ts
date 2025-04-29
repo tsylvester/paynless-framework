@@ -17,6 +17,10 @@ export const mockLeaveOrganization = vi.fn<[string], Promise<ApiResponse<void>>>
 export const mockAcceptOrganizationInvite = vi.fn<[string], Promise<ApiResponse<{ success: boolean }>>>(); // Arg: inviteToken
 // Add mock for declining invite
 export const mockDeclineOrganizationInvite = vi.fn<[string], Promise<ApiResponse<{ success: boolean }>>>(); // Arg: inviteToken
+// Add mock for requesting to join
+export const mockRequestToJoinOrganization = vi.fn<[string], Promise<ApiResponse<void>>>(); // Arg: orgId
+// Add mock for approving join request
+export const mockApproveJoinRequest = vi.fn<[string], Promise<ApiResponse<void>>>(); // Arg: membershipId
 // Add more mocks as needed (e.g., for handling invites, roles)
 
 // Default mock data aligned with actual type from linter error
@@ -78,6 +82,8 @@ export const resetOrganizationMocks = () => {
   mockLeaveOrganization.mockReset();
   mockAcceptOrganizationInvite.mockReset();
   mockDeclineOrganizationInvite.mockReset();
+  mockRequestToJoinOrganization.mockReset();
+  mockApproveJoinRequest.mockReset();
 
   // Set default successful resolutions with error: undefined and status code
   mockListUserOrganizations.mockResolvedValue({ status: 200, data: [{ ...defaultMockOrganization }], error: undefined });
@@ -91,6 +97,8 @@ export const resetOrganizationMocks = () => {
   mockLeaveOrganization.mockResolvedValue({ status: 204, data: undefined, error: undefined }); // 204 for successful void response
   mockAcceptOrganizationInvite.mockResolvedValue({ status: 200, data: { success: true }, error: undefined }); // Default success for accept
   mockDeclineOrganizationInvite.mockResolvedValue({ status: 200, data: { success: true }, error: undefined }); // Default success for decline
+  mockRequestToJoinOrganization.mockResolvedValue({ status: 200, data: undefined, error: undefined }); // Default success for request join
+  mockApproveJoinRequest.mockResolvedValue({ status: 200, data: undefined, error: undefined }); // Default success for approve join
 };
 
 // Initialize with default mocks

@@ -192,15 +192,18 @@ This document outlines the steps for implementing an in-app notification system 
     *   [X] Action `updateMemberRole`: Mocks API call, updates member in `currentOrganizationMembers`, handles 'last admin' error from API, sets `isLoading`. // Note: Not explicitly tested, but covered by mock setup.
     *   [X] Action `removeMember`: Mocks API call, removes member from `currentOrganizationMembers`, handles 'last admin' error, sets `isLoading`. // Note: Not explicitly tested, but covered by mock setup.
     *   [X] Selectors: `selectUserOrganizations`, `selectCurrentOrganization`, `selectCurrentMembers`, `selectCurrentUserRole` (finds current user in members list), `selectIsLoading`, `selectError`. // Note: Tested implicitly.
-    *   [ ] **(New)** Action `acceptInvite(token)`: Mocks API call, potentially adds user to `currentOrganizationMembers` on success, sets `isLoading`.
-    *   [ ] **(New)** Action `declineInvite(token)`: Mocks API call, sets `isLoading`.
-    *   [ ] **(New)** Action `requestJoin(orgId)`: Mocks API call, sets `isLoading`.
-    *   [ ] **(New)** Action `approveRequest(membershipId)`: Mocks API call, updates member status in `currentOrganizationMembers`, sets `isLoading`.
+    *   [X] **(New)** Action `acceptInvite(token)`: Mocks API call, potentially adds user to `currentOrganizationMembers` on success, sets `isLoading`.
+    *   [X] **(New)** Action `declineInvite(token)`: Mocks API call, sets `isLoading`.
+    *   [X] **(New)** Action `requestJoin(orgId)`: Mocks API call, sets `isLoading`.
+    *   [X] **(New)** Action `approveRequest(membershipId)`: Mocks API call, updates member status in `currentOrganizationMembers`, sets `isLoading`.
     *   [ ] **(New)** Action `denyRequest(membershipId)`: Mocks API call, removes pending member from `currentOrganizationMembers`, sets `isLoading`.
     *   [ ] **(New)** Action `cancelInvite(inviteId)`: Mocks API call, removes pending invite from relevant state, sets `isLoading`.
     *   [ ] **(Update)** Action `fetchCurrentOrganizationMembers`: Might need to fetch pending invites/requests separately for admins.
 *   [X] **Implementation:** Create/Update the `organizationStore` slice (`packages/store/src/organizationStore.ts`) with the defined state, actions, and selectors. Ensure actions handle loading states and errors. Filter out soft-deleted organizations when setting `userOrganizations`. Handle potential race conditions if multiple actions run concurrently.
-    *   [ ] **(New)** Implement actions for `acceptInvite`, `declineInvite`, `requestJoin`, `approveRequest`, `denyRequest`, `cancelInvite`.
+    *   [X] Implement actions for `acceptInvite`, `declineInvite`.
+    *   [X] Implement actions for `requestJoin`.
+    *   [X] Implement actions for `approveRequest`.
+    *   [ ] **(New)** Implement actions for `denyRequest`, `cancelInvite`.
     *   [ ] **(Update)** Update `inviteUser` action if API changes.
     *   [ ] **(Update)** Update `fetchCurrentOrganizationMembers` if separate pending fetches are needed.
 

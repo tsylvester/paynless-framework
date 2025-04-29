@@ -380,11 +380,63 @@ export const useOrganizationStore = create<OrganizationStoreImplementation>((set
       _setLoading(false);
     }
   },
-  requestJoin: async (_orgId: string): Promise<boolean> => {
-     throw new Error('requestJoin not implemented');
+  requestJoin: async (orgId: string): Promise<boolean> => {
+    const { _setLoading, _setError } = get();
+    _setLoading(true);
+    _setError(null);
+    try {
+        const apiClient = getApiClient();
+        // Use the correct API client method as defined in organizations.api.ts
+        const response = await apiClient.organizations.requestToJoinOrganization(orgId);
+
+        if (response.error || response.status >= 300) {
+            const errorMsg = response.error?.message ?? 'Failed to request join';
+            logger.error('[OrganizationStore] requestJoin - API Error', { orgId, error: errorMsg, status: response.status });
+            _setError(errorMsg);
+            return false;
+        } else {
+            logger.info('[OrganizationStore] Join request submitted successfully', { orgId });
+            // Optional: Refetch pending requests or members if UI needs update
+            // get().fetchCurrentOrganizationMembers(); // Or a dedicated pending list fetch
+            return true;
+        }
+    } catch (err: any) {
+        const errorMsg = err.message ?? 'An unexpected error occurred during join request';
+        logger.error('[OrganizationStore] requestJoin - Unexpected Error', { orgId, message: errorMsg });
+        _setError(errorMsg);
+        return false;
+    } finally {
+        _setLoading(false);
+    }
   },
-  approveRequest: async (_membershipId: string): Promise<boolean> => {
-     throw new Error('approveRequest not implemented');
+  approveRequest: async (membershipId: string): Promise<boolean> => {
+    const { _setLoading, _setError, fetchCurrentOrganizationMembers } = get();
+    _setLoading(true);
+    _setError(null);
+    try {
+        const apiClient = getApiClient();
+        // Use the correct API client method as defined in organizations.api.ts
+        const response = await apiClient.organizations.approveJoinRequest(membershipId);
+
+        if (response.error || response.status >= 300) {
+            const errorMsg = response.error?.message ?? 'Failed to approve join request';
+            logger.error('[OrganizationStore] approveRequest - API Error', { membershipId, error: errorMsg, status: response.status });
+            _setError(errorMsg);
+            return false;
+        } else {
+            logger.info('[OrganizationStore] Join request approved successfully', { membershipId });
+            // Refetch members list to update status from pending to active
+            fetchCurrentOrganizationMembers(); 
+            return true;
+        }
+    } catch (err: any) {
+        const errorMsg = err.message ?? 'An unexpected error occurred during request approval';
+        logger.error('[OrganizationStore] approveRequest - Unexpected Error', { membershipId, message: errorMsg });
+        _setError(errorMsg);
+        return false;
+    } finally {
+        _setLoading(false);
+    }
   },
   denyRequest: async (_membershipId: string): Promise<boolean> => {
      throw new Error('denyRequest not implemented');
