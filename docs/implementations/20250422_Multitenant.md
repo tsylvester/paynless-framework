@@ -57,61 +57,61 @@ This document outlines the steps for implementing an in-app notification system 
     *   [X] **(New)** Test `notify_user_on_invite` trigger migration.
 *   [X] **(New)** Implement Trigger Function (`restrict_invite_update_fields`) to prevent invited users from modifying anything other than the status to 'accepted' or 'declined'.
 *   [X] **(New)** Test Migration: Apply `restrict_invite_update_fields` trigger migration.
-*   [X] **(New) Backend Edge Functions (`supabase/functions/organizations/index.ts`):** 
+*   [X] **(New) Backend Edge Functions (`supabase/functions/organizations/index.ts`):**
       *   [X] **Setup:** Create function directory and basic handler structure (`index.ts`).
       *   [X] **POST `/organizations` (Create Organization):**
-          *   [] Test: Authenticated user can create, receives new org object, creator is added as admin member.
-          *   [] Test: Unauthenticated user fails (401).
-          *   [] Test: Input validation (e.g., name too short) fails (400).
-          *   [] Implementation: Handle POST, auth check, input validation, DB transaction (insert `organizations`, insert `organization_members` with role 'ADMIN' & status 'active'), return new org.
-      *   [ ] **GET `/organizations` (List User Organizations):**
-          *   [ ] Test: Authenticated user gets list of their active, non-deleted memberships.
-          *   [ ] Test: Unauthenticated user fails (401).
-          *   [ ] Implementation: Handle GET, auth check, Supabase `select` respecting RLS, return list.
-      *   [ ] **GET `/organizations/:orgId` (Get Details):**
-          *   [ ] Test: Member can get details of their active, non-deleted org.
-          *   [ ] Test: Non-member fails (403/404).
-          *   [ ] Test: Requesting deleted org fails (404).
-          *   [ ] Test: Unauthenticated user fails (401).
-          *   [ ] Implementation: Handle GET, auth check, validate orgId param, Supabase `select` respecting RLS, return details or error status.
-      *   [ ] **PUT `/organizations/:orgId` (Update Organization):**
-          *   [ ] Test: Admin can update their non-deleted org (name, visibility).
-          *   [ ] Test: Non-admin member fails (403).
-          *   [ ] Test: Updating deleted org fails (404).
-          *   [ ] Test: Input validation fails (400).
-          *   [ ] Implementation: Handle PUT, auth check (admin role via RLS/check), validate orgId/body, Supabase `update`, return updated org or 204.
-      *   [ ] **DELETE `/organizations/:orgId` (Soft Delete Organization):**
-          *   [ ] Test: Admin can soft-delete their org.
-          *   [ ] Test: Non-admin member fails (403).
-          *   [ ] Test: Deleting already deleted org fails (404) or is idempotent (204).
-          *   [ ] Test: Deleting org fails if user is the last admin (400/409 - Conflict, requires specific check or relies on DB trigger).
-          *   [ ] Implementation: Handle DELETE, auth check (admin role), check for last admin (if trigger doesn't handle), Supabase `update` to set `deleted_at`, return 204.
-      *   [ ] **GET `/organizations/:orgId/members` (List Members):**
-          *   [ ] Test: Member can list members of their active, non-deleted org.
-          *   [ ] Test: Non-member fails (403).
-          *   [ ] Test: Requesting members of deleted org fails (404).
-          *   [ ] Implementation: Handle GET, auth check (member via RLS/check), validate orgId, Supabase `select` with profile join, return list.
-      *   [ ] **POST `/organizations/:orgId/invites` (Invite User):**
-          *   [ ] Test: Admin can invite user by email with a role.
-          *   [ ] Test: Non-admin member fails (403).
-          *   [ ] Test: Inviting to deleted org fails (404).
-          *   [ ] Test: Input validation (email format, valid role) fails (400).
-          *   [ ] Test: Inviting user with existing active/pending membership/invite fails (409 - Conflict).
-          *   [ ] Implementation: Handle POST, auth check (admin), validate orgId/body (email, role), check existing member/invite status, generate unique `invite_token`, insert into `invites` table (status=pending), trigger notification/email. Return 201/204.
-      *   [ ] **PUT `/organizations/:orgId/members/:membershipId/role` (Update Member Role):**
-          *   [ ] Test: Admin can change role of another member in their non-deleted org.
-          *   [ ] Test: Non-admin fails (403).
-          *   [ ] Test: Changing role of member in deleted org fails (404).
-          *   [ ] Test: Changing role *to* admin works.
-          *   [ ] Test: Changing role *of* the last admin fails (400/409 - relies on trigger/check).
-          *   [ ] Implementation: Handle PUT, auth check (admin), validate orgId/membershipId/body, check last admin, Supabase `update`, return 204.
-      *   [ ] **DELETE `/organizations/:orgId/members/:membershipId` (Remove Member):**
-          *   [ ] Test: Admin can remove another member from their non-deleted org.
-          *   [ ] Test: User can remove themselves (optional self-removal endpoint needed, or handled here with permission check).
-          *   [ ] Test: Non-admin cannot remove others (403).
-          *   [ ] Test: Removing from deleted org fails (404).
-          *   [ ] Test: Removing the last admin fails (400/409 - relies on trigger/check).
-          *   [ ] Implementation: Handle DELETE, auth check (admin or self), validate orgId/membershipId, check last admin, Supabase `delete` or `update` status, return 204.
+          *   [X] Test: Authenticated user can create, receives new org object, creator is added as admin member.
+          *   [X] Test: Unauthenticated user fails (401).
+          *   [X] Test: Input validation (e.g., name too short) fails (400).
+          *   [X] Implementation: Handle POST, auth check, input validation, DB transaction (insert `organizations`, insert `organization_members` with role 'ADMIN' & status 'active'), return new org.
+      *   [X] **GET `/organizations` (List User Organizations):**
+          *   [X] Test: Authenticated user gets list of their active, non-deleted memberships.
+          *   [X] Test: Unauthenticated user fails (401).
+          *   [X] Implementation: Handle GET, auth check, Supabase `select` respecting RLS, return list.
+      *   [X] **GET `/organizations/:orgId` (Get Details):**
+          *   [X] Test: Member can get details of their active, non-deleted org.
+          *   [X] Test: Non-member fails (403/404).
+          *   [X] Test: Requesting deleted org fails (404).
+          *   [X] Test: Unauthenticated user fails (401).
+          *   [X] Implementation: Handle GET, auth check, validate orgId param, Supabase `select` respecting RLS, return details or error status.
+      *   [X] **PUT `/organizations/:orgId` (Update Organization):**
+          *   [X] Test: Admin can update their non-deleted org (name, visibility).
+          *   [X] Test: Non-admin member fails (403).
+          *   [X] Test: Updating deleted org fails (404).
+          *   [X] Test: Input validation fails (400).
+          *   [X] Implementation: Handle PUT, auth check (admin role via RLS/check), validate orgId/body, Supabase `update`, return updated org or 204.
+      *   [X] **DELETE `/organizations/:orgId` (Soft Delete Organization):**
+          *   [X] Test: Admin can soft-delete their org.
+          *   [X] Test: Non-admin member fails (403).
+          *   [X] Test: Deleting already deleted org fails (404) or is idempotent (204).
+          *   [X] Test: Deleting org fails if user is the last admin (400/409 - Conflict, requires specific check or relies on DB trigger).
+          *   [X] Implementation: Handle DELETE, auth check (admin role), check for last admin (if trigger doesn't handle), Supabase `update` to set `deleted_at`, return 204.
+      *   [X] **GET `/organizations/:orgId/members` (List Members):**
+          *   [X] Test: Member can list members of their active, non-deleted org.
+          *   [X] Test: Non-member fails (403).
+          *   [X] Test: Requesting members of deleted org fails (404).
+          *   [X] Implementation: Handle GET, auth check (member via RLS/check), validate orgId, Supabase `select` with profile join, return list.
+      *   [X] **POST `/organizations/:orgId/invites` (Invite User):**
+          *   [X] Test: Admin can invite user by email with a role.
+          *   [X] Test: Non-admin member fails (403).
+          *   [X] Test: Inviting to deleted org fails (404).
+          *   [X] Test: Input validation (email format, valid role) fails (400).
+          *   [X] Test: Inviting user with existing active/pending membership/invite fails (409 - Conflict).
+          *   [X] Implementation: Handle POST, auth check (admin), validate orgId/body (email, role), check existing member/invite status, generate unique `invite_token`, insert into `invites` table (status=pending), trigger notification/email. Return 201/204.
+      *   [X] **PUT `/organizations/:orgId/members/:membershipId/role` (Update Member Role):**
+          *   [X] Test: Admin can change role of another member in their non-deleted org.
+          *   [X] Test: Non-admin fails (403).
+          *   [X] Test: Changing role of member in deleted org fails (404).
+          *   [X] Test: Changing role *to* admin works.
+          *   [X] Test: Changing role *of* the last admin fails (400/409 - relies on trigger/check).
+          *   [X] Implementation: Handle PUT, auth check (admin), validate orgId/membershipId/body, check last admin, Supabase `update`, return 204.
+      *   [X] **DELETE `/organizations/:orgId/members/:membershipId` (Remove Member):**
+          *   [X] Test: Admin can remove another member from their non-deleted org.
+          *   [X] Test: User can remove themselves (optional self-removal endpoint needed, or handled here with permission check).
+          *   [X] Test: Non-admin cannot remove others (403).
+          *   [X] Test: Removing from deleted org fails (404).
+          *   [X] Test: Removing the last admin fails (400/409 - relies on trigger/check).
+          *   [X] Implementation: Handle DELETE, auth check (admin or self), validate orgId/membershipId, check last admin, Supabase `delete` or `update` status, return 204.
       *   [ ] **(Updated) Other Endpoints:**
           *   [ ] **Accept/Decline Invite (e.g., `POST /invites/:inviteToken/accept`, `POST /invites/:inviteToken/decline`):**
               *   [ ] Test: Invited user (authenticated) can accept valid token for their email.
