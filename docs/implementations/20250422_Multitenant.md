@@ -212,20 +212,19 @@ This document outlines the steps for implementing an in-app notification system 
 
 This section outlines the frontend implementation using a dynamic, card-based "hub" layout for the primary organization management interface at `/dashboard/organizations`, ensuring detailed testing coverage.
 
-*   [ ] **Routes (`src/routes/routes.tsx`):**
+*   [X] **Routes (`src/routes/routes.tsx`):**
     *   [X] Define protected routes under `/dashboard`. Ensure proper authentication checks are in place using the routing library's mechanisms.
-    *   [ ] `/dashboard/organizations`: **`OrganizationHubPage`** - The central page rendering `OrganizationListCard` alongside management cards for the active organization.
-        *   [ ] Loader/Effect: On initial load, triggers `fetchUserOrganizations`. Determines and sets initial `currentOrganizationId`.
-        *   [ ] Layout: Responsive layout (e.g., two-column) displaying `OrganizationListCard` and management cards.
-        *   [ ] Data Display: Conditionally renders management cards based on `currentOrganizationId` and user role. Shows placeholder/empty state.
-        *   [ ] Test (Hub Page): Correctly fetches user organizations on load.
-        *   [ ] Test (Hub Page): Sets a logical initial `currentOrganizationId` (e.g., first org, or handles null if no orgs).
-        *   [ ] Test (Hub Page): Renders `OrganizationListCard` component.
-        *   [ ] Test (Hub Page): Renders the correct *set* of management cards based on selected `currentOrganizationId` and user's role (`selectCurrentUserRole`).
-        *   [ ] Test (Hub Page): Handles the UI state when the user has zero organizations.
-        *   [ ] Test (Hub Page): Displays loading indicators gracefully during data fetches.
-        *   [ ] Test (Hub Page): Layout adjusts properly for different screen sizes.
-        *   [ ] Test (Hub Page): Access control - Ensures only authenticated users can access this route.
+    *   [X] `/dashboard/organizations`: **`OrganizationHubPage`** - The central page rendering `OrganizationListCard` alongside management cards for the active organization.
+        *   [X] Loader/Effect: On initial load, triggers `fetchUserOrganizations`. Determines and sets initial `currentOrganizationId`.
+        *   [X] Layout: Responsive layout (e.g., two-column) displaying `OrganizationListCard` and management cards.
+        *   [X] Data Display: Conditionally renders management cards based on `currentOrganizationId` and user role. Shows placeholder/empty state.
+        *   [X] Test (Hub Page): Correctly fetches user organizations on load.
+        *   [X] Test (Hub Page): Sets a logical initial `currentOrganizationId` (e.g., first org, or handles null if no orgs).
+        *   [X] Test (Hub Page): Renders `OrganizationListCard` component.
+        *   [X] Test (Hub Page): Renders the correct *set* of management cards based on selected `currentOrganizationId` and user's role (`selectCurrentUserRole`).
+        *   [X] Test (Hub Page): Handles the UI state when the user has zero organizations.
+        *   [X] Test (Hub Page): Displays loading indicators gracefully during data fetches.
+        *   [X] Test (Hub Page): Access control - Ensures only authenticated users can access this route.
     *   [ ] `/dashboard/organizations/:orgId`: **`OrganizationFocusedViewPage`** (Optional but Recommended) - Dedicated view for a single org's management cards.
         *   [ ] Loader/Effect: Triggers `setCurrentOrganizationId` with `:orgId`. Handles routing/errors if org not found, deleted (`currentOrganizationDetails.deleted_at`), or user lacks access (not an active member).
         *   [ ] Layout: Renders *only* the relevant management cards based on fetched data/role for `:orgId`.
@@ -343,3 +342,20 @@ This section outlines the frontend implementation using a dynamic, card-based "h
 *   [ ] **Tests:**
     *   Test route loader/component logic for `/dashboard/organizations/:orgId`: Verify redirection if org is not found, deleted (check `currentOrganizationDetails` from store after fetch), or user is not a member (`currentOrganizationMembers`).
     *   Test `
+
+### 2.8 Cleanup for Production (Deferred Tasks)
+
+*   [ ] **Implement `PublicRoute` Component:**
+    *   [ ] Create `PublicRoute.tsx` in `src/components/auth`.
+    *   [ ] Implement logic to redirect authenticated users away from public-only pages (e.g., to `/dashboard`).
+    *   [ ] Apply `<PublicRoute>` wrapper to `login`, `register`, `forgot-password`, `reset-password` routes in `routes.tsx`.
+    *   [ ] Test redirection for authenticated and unauthenticated users.
+*   [ ] **Implement Auth Flow Pages:**
+    *   [ ] Create `ForgotPassword.tsx`, `ResetPassword.tsx`, `VerifyEmail.tsx` pages in `src/pages`.
+    *   [ ] Implement the UI and logic for each page, including API interactions.
+    *   [ ] Uncomment the corresponding routes in `routes.tsx`.
+    *   [ ] Write tests for each page's functionality.
+*   [ ] **Final Review & Testing:**
+    *   [ ] Comprehensive end-to-end testing of all notification and multi-tenancy features.
+    *   [ ] Code review for consistency, error handling, and security.
+    *   [ ] Update all relevant documentation (`STRUCTURE.md`, `IMPLEMENTATION_PLAN.md`, `TESTING_PLAN.md`).
