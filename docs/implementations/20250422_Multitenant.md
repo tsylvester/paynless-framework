@@ -36,7 +36,7 @@ This document outlines the steps for implementing an in-app notification system 
         *   `INSERT`: Requires permission (e.g., admin invite, user request/accept).
         *   `UPDATE`: Admins can update roles/status in their non-deleted org. Users can update their own status (e.g., accept invite, leave org).
         *   `DELETE`: Requires permission (admin removal, user self-removal).
-    *   [ ] **(New)** `invites`:
+    *   [X] **(New)** `invites`:
         *   `SELECT`: Admins of the related org can select. The invited user (matching `invited_email` or a potential `invited_user_id` if linked) can select their own pending invites.
         *   `INSERT`: Admins of the related org can insert.
         *   `UPDATE`: The invited user can update the status of their own pending invite (accept/decline). Admins can potentially update/revoke.
@@ -45,23 +45,25 @@ This document outlines the steps for implementing an in-app notification system 
 *   [X] **Implement RLS Policies:** Apply the RLS policies (including `deleted_at IS NULL` checks) via migration scripts.
     *   [X] **(New)** Add RLS policies for `invites` table via migration script.
 *   [X] **Test Migration:** Apply RLS migrations and verify policies through application-level testing.
-    *   [ ] **(New)** Verify `invites` RLS policies.
+    *   [X] **(New)** Verify `invites` RLS policies.
 *   [X] **Implement Trigger/Function (Last Admin Check):** Create/update logic (e.g., `BEFORE UPDATE OR DELETE ON organization_members`) to prevent removing/demoting the last admin of a non-deleted org. Consider `deleted_at IS NULL` in checks.
 *   [X] **Test Migration:** Apply last admin check migration.
 *   [X] **Implement Trigger Functions (Notifications - Full):**
     *   `notify_org_admins_on_join_request`: Triggered `AFTER INSERT ON organization_members WHEN (NEW.status = 'pending')`. Inserts notification for org admins.
     *   `notify_user_on_invite_acceptance`: Triggered `AFTER UPDATE ON organization_members WHEN (OLD.status = 'pending' AND NEW.status = 'active')`. Inserts notification for the user who joined.
     *   `notify_user_on_role_change`: Triggered `AFTER UPDATE ON organization_members WHEN (OLD.role <> NEW.role)`. Inserts notification for the affected user.
-    *   [ ] **(New)** `notify_user_on_invite`: Triggered `AFTER INSERT ON invites WHEN (NEW.status = 'pending')`. Inserts notification for the invited user (requires lookup by email or direct user link).
+    *   [X] **(New)** `notify_user_on_invite`: Triggered `AFTER INSERT ON invites WHEN (NEW.status = 'pending')`. Inserts notification for the invited user (requires lookup by email or direct user link).
 *   [X] **Test Migration:** Apply notification trigger migrations.
-    *   [ ] **(New)** Test `notify_user_on_invite` trigger migration.
-*   [ ] **(New) Backend Edge Functions (`supabase/functions/organizations/index.ts`):** 
-      *   [ ] **Setup:** Create function directory and basic handler structure (`index.ts`).
-      *   [ ] **POST `/organizations` (Create Organization):**
-          *   [ ] Test: Authenticated user can create, receives new org object, creator is added as admin member.
-          *   [ ] Test: Unauthenticated user fails (401).
-          *   [ ] Test: Input validation (e.g., name too short) fails (400).
-          *   [ ] Implementation: Handle POST, auth check, input validation, DB transaction (insert `organizations`, insert `organization_members` with role 'ADMIN' & status 'active'), return new org.
+    *   [X] **(New)** Test `notify_user_on_invite` trigger migration.
+*   [X] **(New)** Implement Trigger Function (`restrict_invite_update_fields`) to prevent invited users from modifying anything other than the status to 'accepted' or 'declined'.
+*   [X] **(New)** Test Migration: Apply `restrict_invite_update_fields` trigger migration.
+*   [X] **(New) Backend Edge Functions (`supabase/functions/organizations/index.ts`):** 
+      *   [X] **Setup:** Create function directory and basic handler structure (`index.ts`).
+      *   [X] **POST `/organizations` (Create Organization):**
+          *   [] Test: Authenticated user can create, receives new org object, creator is added as admin member.
+          *   [] Test: Unauthenticated user fails (401).
+          *   [] Test: Input validation (e.g., name too short) fails (400).
+          *   [] Implementation: Handle POST, auth check, input validation, DB transaction (insert `organizations`, insert `organization_members` with role 'ADMIN' & status 'active'), return new org.
       *   [ ] **GET `/organizations` (List User Organizations):**
           *   [ ] Test: Authenticated user gets list of their active, non-deleted memberships.
           *   [ ] Test: Unauthenticated user fails (401).

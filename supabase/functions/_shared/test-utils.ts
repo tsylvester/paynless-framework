@@ -170,6 +170,11 @@ export interface MockSupabaseDataConfig {
             delete?: { data: any[] | null; error?: any | null; count?: number | null; status?: number; statusText?: string } | ((state: MockQueryBuilderState) => Promise<{ data: any[] | null; error?: any | null; count?: number | null; status?: number; statusText?: string }>);
         };
     };
+    
+    // --- NEW: Generic Mocking for RPC --- 
+    rpcResults?: {
+        [functionName: string]: { data?: any; error?: any } | (() => Promise<{ data?: any; error?: any }>);
+    };
 }
 
 // --- Define a type for the minimal mock channel ---
@@ -185,7 +190,7 @@ export function createMockSupabaseClient(
     config: MockSupabaseDataConfig = {}
 ): {
     client: SupabaseClient;
-    spies: { getUserSpy: Spy<any>; fromSpy: Spy<any>; removeChannelSpy: Spy<any> };
+    spies: { getUserSpy: Spy<any>; fromSpy: Spy<any>; rpcSpy: Spy<any>; removeChannelSpy: Spy<any> };
 } {
     // --- Mock Auth ---
     const mockAuth = {
@@ -489,6 +494,30 @@ export function createMockSupabaseClient(
         return mockQueryBuilder;
     });
 
+    // --- NEW: Mock RPC --- 
+    const rpcSpy = spy(async (functionName: string, args?: any) => {
+        console.log(`[Mock RPC] .rpc('${functionName}') called with args:`, args);
+        const rpcConfig = config.rpcResults?.[functionName];
+
+        if (typeof rpcConfig === 'function') {
+            console.log(`[Mock RPC ${functionName}] Using function config.`);
+            try {
+                return await rpcConfig(); // Execute the configured function
+            } catch (e) {
+                console.error(`[Mock RPC ${functionName}] Error executing mock function:`, e);
+                return { data: null, error: e };
+            }
+        } else if (rpcConfig) {
+            console.log(`[Mock RPC ${functionName}] Using object config.`);
+            return { data: rpcConfig.data ?? null, error: rpcConfig.error ?? null };
+        } else {
+            // No specific config found for this RPC function
+            const errorMessage = `[Mock RPC] No mock result configured for RPC function: ${functionName}`;
+            console.warn(errorMessage);
+            return { data: null, error: new Error(errorMessage) };
+        }
+    });
+
     // --- Define spy ONLY for removeChannel --- 
     const removeChannelSpy = spy((_channel: RealtimeChannel) => Promise.resolve<'ok' | 'error' | 'timed out'>('ok'));
 
@@ -496,6 +525,7 @@ export function createMockSupabaseClient(
     const mockClient = {
         auth: mockAuth,
         from: fromSpy,
+        rpc: rpcSpy, // Assign the new rpcSpy
         // --- Add a PLAIN function implementation for channel ---
         channel: (channelName: string): RealtimeChannel => {
             // --- Use the explicit MockChannel type --- 
@@ -516,7 +546,8 @@ export function createMockSupabaseClient(
         spies: {
             getUserSpy: mockAuth.getUser,
             fromSpy: fromSpy,
-            removeChannelSpy: removeChannelSpy,
+            rpcSpy: rpcSpy, // Return the rpcSpy
+            removeChannelSpy: removeChannelSpy, 
         },
     };
 }
