@@ -35,7 +35,8 @@
     "dist", 
     "src/setupTests.ts",
     "vite.config.ts",
-    "vitest.config.ts"
+    "vitest.config.ts",
+    "src/tests"
   ],
   "references": [
     { "path": "../../packages/api" },
