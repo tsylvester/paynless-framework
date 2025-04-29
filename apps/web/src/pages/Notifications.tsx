@@ -1,7 +1,6 @@
 import React, { useEffect } from 'react';
 import { useNotificationStore } from '@paynless/store';
 import { logger } from '@paynless/utils';
-import { Layout } from '@/components/layout/Layout';
 import { NotificationCard } from '@/components/NotificationCard';
 
 export const Notifications: React.FC = () => {
@@ -18,7 +17,7 @@ export const Notifications: React.FC = () => {
     }, [notifications.length, fetchNotifications]);
 
     return (
-        <Layout>
+        <div>
             <div className="container mx-auto py-8 px-4 md:px-6 lg:px-8">
                 <h1 className="text-3xl font-bold mb-6">Notification History</h1>
                 {notifications.length === 0 ? (
@@ -31,7 +30,7 @@ export const Notifications: React.FC = () => {
                     </div>
                 )}
             </div>
-        </Layout>
+        </div>
     );
 };
 

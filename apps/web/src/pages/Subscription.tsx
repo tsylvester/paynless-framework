@@ -1,6 +1,5 @@
 // src/pages/Subscription.tsx
 import { useEffect } from 'react';
-import { Layout } from '../components/layout/Layout';
 import { useAuthStore } from '@paynless/store';
 import { Navigate } from 'react-router-dom';
 import { logger } from '@paynless/utils';
@@ -100,11 +99,11 @@ export function SubscriptionPage() {
 
   if (isLoading && !userSubscription && !availablePlans.length) {
     return (
-      <Layout>
+      <div>
         <div data-testid="loading-spinner-container" className="flex justify-center items-center py-12">
           <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-primary"></div>
         </div>
-      </Layout>
+      </div>
     );
   }
   
@@ -115,7 +114,7 @@ export function SubscriptionPage() {
   const userIsOnPaidPlan = userSubscription?.status === 'active' || userSubscription?.status === 'trialing';
 
   return (
-    <Layout>
+    <div>
       <div className="py-8 px-4 pt-6 sm:px-6 lg:px-8">
         <div className="max-w-7xl mx-auto">
           <div className="text-center">
@@ -201,6 +200,6 @@ export function SubscriptionPage() {
           </div>
         </div>
       </div>
-    </Layout>
+    </div>
   );
 }

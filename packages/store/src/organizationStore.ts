@@ -118,6 +118,8 @@ export const useOrganizationStore = create<OrganizationStoreImplementation>((set
         // Clear details and members when switching orgs
         currentOrganizationDetails: null, 
         currentOrganizationMembers: [],
+        currentPendingInvites: [], // Also clear pending lists
+        currentPendingRequests: [],
         error: null, // Clear errors on context switch
     });
     // Optionally trigger fetch for details/members of the new orgId here or let UI do it
@@ -214,7 +216,7 @@ export const useOrganizationStore = create<OrganizationStoreImplementation>((set
       activeMembers = membersResponse.data ?? [];
       set({ currentOrganizationMembers: activeMembers }); 
 
-      // 2. Determine Current User's Role
+      // 2. Determine Current User's Role (Internally - no need to store separately if we have a selector)
       const currentUserMembership = activeMembers.find(member => member.user_id === userId);
       currentUserRole = currentUserMembership?.role as 'admin' | 'member' | null; // Assuming role is 'admin' or 'member'
 
@@ -248,32 +250,25 @@ export const useOrganizationStore = create<OrganizationStoreImplementation>((set
                     currentPendingInvites: pendingResponse.data?.invites ?? [], 
                     currentPendingRequests: pendingResponse.data?.requests ?? [] 
                 });
-                logger.info(`[OrganizationStore] Fetched pending actions for org ${currentOrganizationId}: ${pendingResponse.data?.invites?.length ?? 0} invites, ${pendingResponse.data?.requests?.length ?? 0} requests.`);
+                _setError(null); // Clear main error state if pending fetch succeeded after members fetch
             }
         } catch (pendingErr: any) {
-            // Log error but don't overwrite the primary members list or main error state
+             // Log error but don't overwrite the primary members list or main error state
             logger.error('[OrganizationStore] fetchCurrentOrganizationMembers - Unexpected Error (Pending Actions)', { orgId: currentOrganizationId, message: pendingErr?.message });
              // Set pending lists to empty on error, but keep active members
-            set({ currentPendingInvites: [], currentPendingRequests: [] });
+            set({ currentPendingInvites: [], currentPendingRequests: [] }); 
         }
       } else {
-         logger.info(`[OrganizationStore] User ${userId} is not admin for org ${currentOrganizationId}. Skipping pending actions fetch.`);
-         // Ensure pending lists are empty for non-admins (already done at the start)
-         set({ currentPendingInvites: [], currentPendingRequests: [] }); 
+          // Non-admin, ensure pending lists are clear
+          set({ currentPendingInvites: [], currentPendingRequests: [] });
       }
-       
-      _setError(null); // Clear error state on successful primary fetch
-    
-    } catch (err: any) { // Catch errors from the primary members fetch
-      logger.error('[OrganizationStore] fetchCurrentOrganizationMembers - Unexpected Outer Error', { orgId: currentOrganizationId, message: err?.message });
-      _setError(err.message ?? 'An unexpected error occurred while fetching members');
-      set({ 
-        currentOrganizationMembers: [], 
-        currentPendingInvites: [], // Clear pending state
-        currentPendingRequests: [] // Clear pending state
-      });
+
+    } catch (err: any) {
+      logger.error('[OrganizationStore] fetchCurrentOrganizationMembers - Unexpected Error', { orgId: currentOrganizationId, message: err?.message });
+      _setError(err.message ?? 'An unexpected error occurred');
+      set({ currentOrganizationMembers: [], currentPendingInvites: [], currentPendingRequests: [] }); // Clear members & pending on error
     } finally {
-      _setLoading(false); // Ensure loading is always set to false at the end
+      _setLoading(false);
     }
   },
 
@@ -330,8 +325,7 @@ export const useOrganizationStore = create<OrganizationStoreImplementation>((set
 
   // --- Add createOrganization Action ---
   createOrganization: async (name: string, visibility: 'private' | 'public' = 'private'): Promise<Organization | null> => {
-    // Remove fetchUserOrganizations as it's not used when updating state directly
-    const { _setLoading, _setError } = get(); 
+    const { _setLoading, _setError, fetchUserOrganizations } = get();
     _setLoading(true);
     _setError(null);
 
@@ -652,6 +646,19 @@ export const useOrganizationStore = create<OrganizationStoreImplementation>((set
         set({ fetchInviteDetailsError: err.message ?? 'An unexpected error occurred fetching invite details.', isFetchingInviteDetails: false });
         return null;
     }
+  },
+
+  // --- Selector Implementation ---
+  selectCurrentUserRoleInOrg: (): 'admin' | 'member' | null => {
+    const { currentOrganizationMembers } = get();
+    const userId = useAuthStore.getState().user?.id;
+
+    if (!userId || !currentOrganizationMembers || currentOrganizationMembers.length === 0) {
+      return null; // No user or no members loaded
+    }
+
+    const currentUserMembership = currentOrganizationMembers.find(member => member.user_id === userId);
+    return currentUserMembership?.role as 'admin' | 'member' | null; // Return role or null if not found
   },
 
 })); 

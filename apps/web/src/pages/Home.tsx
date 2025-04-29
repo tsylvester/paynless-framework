@@ -1,4 +1,3 @@
-import { Layout } from '../components/layout/Layout'
 import {
   ArrowRight,
   Database,
@@ -80,7 +79,7 @@ export function HomePage() {
   }, [availableProviders])
 
   return (
-    <Layout>
+    <div>
       {/* Hero Section */}
       <div className="relative overflow-hidden w-full">
         <div className="absolute inset-0 bg-gradient-to-br from-primary/10 via-primary/5 to-transparent dark:from-primary/20 dark:via-primary/10">
@@ -414,6 +413,6 @@ export function HomePage() {
           </div>
         </div>
       </div>
-    </Layout>
+    </div>
   )
 }

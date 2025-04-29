@@ -1,6 +1,5 @@
 // src/pages/SubscriptionSuccess.tsx
 import { useEffect } from 'react';
-import { Layout } from '../components/layout/Layout';
 import { useAuthStore, useSubscriptionStore } from '@paynless/store';
 import { useNavigate } from 'react-router-dom';
 import { CheckCircle } from 'lucide-react';
@@ -25,7 +24,7 @@ export function SubscriptionSuccessPage() {
   }, [user, refreshSubscription, navigate]);
   
   return (
-    <Layout>
+    <div>
       <div className="max-w-3xl mx-auto py-16 px-4 sm:py-24 sm:px-6 lg:px-8">
         <div className="text-center">
           <div className="flex justify-center">
@@ -50,6 +49,6 @@ export function SubscriptionSuccessPage() {
           </div>
         </div>
       </div>
-    </Layout>
+    </div>
   );
 }

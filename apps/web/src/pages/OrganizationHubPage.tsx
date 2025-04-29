@@ -22,11 +22,11 @@ export const OrganizationHubPage: React.FC = () => {
     currentOrganizationId,
     isLoading: isOrgLoading,
     error: orgError, // Get the error state
-    selectCurrentUserRole, // Selector to get role for current org
+    selectCurrentUserRoleInOrg, // ADDED: The correct selector function
   } = useOrganizationStore();
 
   const { user } = useCurrentUser(); // Get current user details
-  const currentUserRole = selectCurrentUserRole(); // Get role in the currently selected organization
+  const currentUserRole = selectCurrentUserRoleInOrg(); // Call the selector function to get the role
 
   useEffect(() => {
     // Fetch organizations when the component mounts or user changes

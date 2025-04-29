@@ -1,4 +1,3 @@
-import { Layout } from '../components/layout/Layout'
 import { useAuthStore } from '@paynless/store'
 import { ProfileEditor } from '../components/profile/ProfileEditor'
 
@@ -15,30 +14,30 @@ export function ProfilePage() {
 
   if (authLoading && !currentProfile) {
     return (
-      <Layout>
+      <div>
         <div className="flex justify-center items-center h-64">
           <p>Loading profile...</p>
         </div>
-      </Layout>
+      </div>
     )
   }
 
   if (!currentProfile) {
     return (
-      <Layout>
+      <div>
         <div className="text-center p-4 text-red-600">
           Could not load profile data. {authError?.message}
         </div>
-      </Layout>
+      </div>
     )
   }
 
   return (
-    <Layout>
+    <div>
       <div className="py-20 pt-6">
         <ProfileEditor />
       </div>
       {/* Feedback moved inside ProfileEditor or handled via store state globally */}
-    </Layout>
+    </div>
   )
 }

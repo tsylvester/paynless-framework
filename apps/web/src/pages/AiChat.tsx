@@ -5,7 +5,6 @@ import { analytics } from '@paynless/analytics';
 import { ModelSelector } from '../components/ai/ModelSelector';
 import { PromptSelector } from '../components/ai/PromptSelector';
 import { AiChatbox } from '../components/ai/AiChatbox';
-import { Layout } from '../components/layout/Layout';
 import { ChatHistoryList } from '../components/ai/ChatHistoryList';
 
 export default function AiChatPage() {
@@ -133,7 +132,7 @@ export default function AiChatPage() {
   };
 
   return (
-    <Layout>
+    <div>
       {/* Make grid container grow vertically and respect parent height */}
       <div className="container mx-auto p-6 grid grid-cols-1 md:grid-cols-3 gap-6"> 
         {/* Left Column: Make COLUMN scrollable */}
@@ -186,6 +185,6 @@ export default function AiChatPage() {
           />
         </div>
       </div>
-    </Layout>
+    </div>
   );
 } 
