@@ -299,11 +299,11 @@ This section outlines the frontend implementation using a dynamic, card-based "h
         *   [X] Test: Valid submission correctly calls the `createOrganization` store action with form data.
         *   [X] Test: Cancel button calls `closeCreateModal` action.
         *   [X] Test: Buttons are disabled when `isLoading` is true.
-    *   [ ] `OrganizationDetailsCard.tsx`: (Displayed Conditionally on Hub/Focused View)
-        *   [ ] Displays read-only details (Name, Created At, Visibility etc.) from `selectCurrentOrganization`.
-        *   [ ] Test: Displays data correctly when `currentOrganizationDetails` is populated.
-        *   [ ] Test: Handles loading state (shows skeleton/spinner) when `isLoading` is true for details fetch.
-        *   [ ] Test: Handles null state (shows placeholder/message) when `currentOrganizationId` is null or details are null.
+    *   [X] `OrganizationDetailsCard.tsx`: (Displayed Conditionally on Hub/Focused View)
+        *   [X] Displays read-only details (Name, Created At, Visibility etc.) from `selectCurrentOrganization`.
+        *   [X] Test: Displays data correctly when `currentOrganizationDetails` is populated.
+        *   [X] Test: Handles loading state (shows skeleton/spinner) when `isLoading` is true for details fetch.
+        *   [X] Test: Handles null state (shows placeholder/message) when `currentOrganizationId` is null or details are null.
     *   [ ] `OrganizationSettingsCard.tsx`: (Admin Only, Displayed Conditionally on Hub/Focused View)
         *   [ ] Form elements (Name, Visibility) for updates, pre-filled with `currentOrganizationDetails`.
         *   [ ] "Update" button triggers `updateOrganization` action.
@@ -349,37 +349,4 @@ This section outlines the frontend implementation using a dynamic, card-based "h
         *   [ ] Test: Displays pending requests correctly (user name, email, date). Handles empty state.
         *   [ ] Test: Displays pending invites correctly (email, role, date). Handles empty state.
         *   [ ] Test: Approve Request button triggers `approveRequest` with correct membershipId.
-        *   [ ] Test: Deny Request button triggers `denyRequest` with correct membershipId.
-        *   [ ] Test: Cancel Invite button triggers `cancelInvite` with correct inviteId.
-        *   [ ] Test: Handles API errors gracefully for all actions (shows feedback).
-        *   [ ] Test: Lists update correctly when actions are taken or when `fetchCurrentOrganizationMembers` refreshes the pending data.
-
-### 2.7 Routing & Access Control (Frontend)
-
-*   [ ] **Tests:**
-    *   Test route loader/component logic for `/dashboard/organizations/:orgId`: Verify redirection if org is not found, deleted (check `currentOrganizationDetails` from store after fetch), or user is not a member (`currentOrganizationMembers`).
-    *   Test `
-
-### 2.8 Cleanup for Production (Deferred Tasks)
-
-*   [ ] **Refactor `OrganizationStore` into Slices**
-    *   [ ] orgStore.ts combined interface, initial state, and core
-    *   [ ] orgStore.list.ts fetching and managing `userOrganizations`
-    *   [ ] orgStore.current.ts manages `currentOrganizationId`, `currentOrganizationDetails`, and `currentOrganizationMembers` and related fetches/updates
-    *   [ ] orgStore.invite.ts handles invite-specific actions like `acceptInvite`, `declineInvite`, `fetchInviteDetails`.
-    *   [ ] orgStore.request.ts handles `requestJoin`, `approveRequest`, `denyRequest`.
-    *   [ ] orgStore.ui.ts manages UI-related state, starting with the `isCreateModalOpen` state and its actions (`openCreateModal`, `closeCreateModal`).
-*   [ ] **Implement `PublicRoute` Component:**
-    *   [ ] Create `PublicRoute.tsx` in `src/components/auth`.
-    *   [ ] Implement logic to redirect authenticated users away from public-only pages (e.g., to `/dashboard`).
-    *   [ ] Apply `<PublicRoute>` wrapper to `login`, `register`, `forgot-password`, `reset-password` routes in `routes.tsx`.
-    *   [ ] Test redirection for authenticated and unauthenticated users.
-*   [ ] **Implement Auth Flow Pages:**
-    *   [ ] Create `ForgotPassword.tsx`, `ResetPassword.tsx`, `VerifyEmail.tsx` pages in `src/pages`.
-    *   [ ] Implement the UI and logic for each page, including API interactions.
-    *   [ ] Uncomment the corresponding routes in `routes.tsx`.
-    *   [ ] Write tests for each page's functionality.
-*   [ ] **Final Review & Testing:**
-    *   [ ] Comprehensive end-to-end testing of all notification and multi-tenancy features.
-    *   [ ] Code review for consistency, error handling, and security.
-    *   [ ] Update all relevant documentation (`STRUCTURE.md`, `IMPLEMENTATION_PLAN.md`, `TESTING_PLAN.md`).
+        *   [ ] Test: Deny Request button triggers `
