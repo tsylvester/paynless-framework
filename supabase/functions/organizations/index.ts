@@ -33,6 +33,11 @@ import {
     handleDeclineInvite,
     handleCancelInvite
 } from './invites.ts';
+// Import the new request handlers
+import {
+    handleCreateJoinRequest,
+    handleUpdateRequestStatus
+} from './requests.ts';
 // TODO: Remove placeholder imports if they were there
 
 console.log('Organization function booting up...');
@@ -178,6 +183,11 @@ export async function handleOrganizationRequest(
         // Delegate to the specific handler
         return handleUpdateMemberRole(req, typedSupabase, authenticatedUser, orgId, resourceId, body);
     }
+    // --- Routes for /organizations/members/:membershipId/status (approve/deny request) ---
+    else if (req.method === 'PUT' && orgId && resourceType === 'members' && resourceId && action === 'status') { // APPROVE/DENY JOIN REQUEST
+        // Delegate to the specific handler
+        return handleUpdateRequestStatus(req, typedSupabase, authenticatedUser, resourceId, body); // resourceId is membershipId
+    }
     // --- Routes for /organizations/:orgId/invites (create) ---
     else if (req.method === 'POST' && orgId && resourceType === 'invites' && !resourceId && !action) { // CREATE INVITE
          // Delegate to the specific handler
@@ -191,6 +201,10 @@ export async function handleOrganizationRequest(
     else if (req.method === 'DELETE' && orgId && resourceType === 'invites' && resourceId && !action) {
         // Delegate to the specific handler
         return handleCancelInvite(req, typedSupabase, authenticatedUser, orgId, resourceId); // resourceId is the inviteId here
+    }
+    // --- Route for /organizations/:orgId/requests (create join request) ---
+    else if (req.method === 'POST' && orgId && resourceType === 'requests' && !resourceId && !action) { // CREATE JOIN REQUEST
+        return handleCreateJoinRequest(req, typedSupabase, authenticatedUser, orgId, body);
     }
     // --- Fallback for unhandled routes --- 
     else {

@@ -95,27 +95,40 @@ export class OrganizationApiClient {
    * Invites a user to an organization.
    * Uses the main client's post method.
    * @param orgId - The ID of the organization to invite to.
-   * @param emailOrUserId - The email or user ID of the person to invite.
+   * @param email - The email of the person to invite.
    * @param role - The role to assign to the invitee (e.g., 'member', 'admin').
    * @returns An ApiResponse, typically with no data on success (e.g., status 204) or an error.
    */
-  async inviteUserToOrganization(orgId: string, emailOrUserId: string, role: string): Promise<ApiResponse<void>> {
-    const payload = { emailOrUserId, role };
+  async inviteUserByEmail(orgId: string, email: string, role: string): Promise<ApiResponse<any>> {
+    const payload = { email, role };
     // Use the injected ApiClient's post method
-    // Expecting no content (void) on success, so specify void as the return type T
-    return this.client.post<void, typeof payload>(`organizations/${orgId}/invites`, payload);
+    // Backend returns 201 with invite details, adjust T accordingly
+    return this.client.post<any, typeof payload>(`organizations/${orgId}/invites`, payload);
+  }
+
+  /**
+   * Invites a known user (by their ID) to an organization.
+   * Uses the main client's post method.
+   * @param orgId - The ID of the organization to invite to.
+   * @param userId - The ID of the user to invite.
+   * @param role - The role to assign to the invitee (e.g., 'member', 'admin').
+   * @returns An ApiResponse containing invite details or an error.
+   */
+  async inviteUserById(orgId: string, userId: string, role: string): Promise<ApiResponse<any>> {
+    const payload = { invitedUserId: userId, role }; // Use 'invitedUserId' as key
+    return this.client.post<any, typeof payload>(`organizations/${orgId}/invites`, payload);
   }
 
   /**
    * Accepts an invitation to join an organization.
    * Uses the main client's post method.
-   * @param inviteTokenOrId - The unique token or ID identifying the invitation.
+   * @param inviteToken - The unique token identifying the invitation.
    * @returns An ApiResponse, typically with no data on success (e.g., status 204) or an error.
    */
-  async acceptOrganizationInvite(inviteTokenOrId: string): Promise<ApiResponse<void>> {
-     const payload = { inviteTokenOrId };
-     // Use the injected ApiClient's post method
-     return this.client.post<void, typeof payload>('organizations/invites/accept', payload);
+  async acceptOrganizationInvite(inviteToken: string): Promise<ApiResponse<{ message: string; membershipId: string; organizationId: string }>> {
+    // Use the injected ApiClient's post method
+    // Backend returns { message, membershipId, organizationId } on success
+    return this.client.post<{ message: string; membershipId: string; organizationId: string }, undefined>(`invites/${inviteToken}/accept`, undefined);
   }
 
   /**
@@ -124,9 +137,12 @@ export class OrganizationApiClient {
    * @param orgId - The ID of the organization to request joining.
    * @returns An ApiResponse, typically with no data on success (e.g., status 204) or an error.
    */
-  async requestToJoinOrganization(orgId: string): Promise<ApiResponse<void>> {
-    // Sending an empty payload for this request
-    return this.client.post<void, {}>(`organizations/${orgId}/requests`, {});
+  async requestToJoinOrganization(orgId: string): Promise<ApiResponse<any>> {
+    // Backend endpoint: POST /organizations/:orgId/requests
+    // Assuming the backend needs no specific payload from the client for this action.
+    // The backend infers the user from the auth context.
+    // Adjust expected return type <T> if backend provides data (e.g., pending membership record)
+    return this.client.post<any, undefined>(`organizations/${orgId}/requests`, undefined);
   }
 
   /**
@@ -136,8 +152,10 @@ export class OrganizationApiClient {
    * @returns An ApiResponse, typically with no data on success (e.g., status 204) or an error.
    */
   async approveJoinRequest(membershipId: string): Promise<ApiResponse<void>> {
-    // Sending an empty payload for approval
-    return this.client.put<void, {}>(`organizations/members/${membershipId}/approve`, {});
+    // Backend endpoint: PUT /organizations/members/:membershipId/status { status: 'active' }
+    const payload = { status: 'active' };
+    // Use the actual backend endpoint and payload
+    return this.client.put<void, typeof payload>(`organizations/members/${membershipId}/status`, payload);
   }
 
   /**
@@ -170,5 +188,27 @@ export class OrganizationApiClient {
    */
   async deleteOrganization(orgId: string): Promise<ApiResponse<void>> {
     return this.client.delete<void>(`organizations/${orgId}`);
+  }
+
+  /**
+   * Cancels a pending invitation for an organization (Admin only).
+   * Uses the main client's delete method.
+   * @param orgId - The ID of the organization the invite belongs to.
+   * @param inviteId - The ID of the invitation to cancel.
+   * @returns An ApiResponse, typically with no data on success (e.g., status 204) or an error.
+   */
+  async cancelInvite(orgId: string, inviteId: string): Promise<ApiResponse<void>> {
+    return this.client.delete<void>(`organizations/${orgId}/invites/${inviteId}`);
+  }
+
+  /**
+   * Denies a pending join request for a membership (Admin only).
+   * Uses the main client's put method to update the member status to 'removed'.
+   * @param membershipId - The ID of the organization_members record representing the request.
+   * @returns An ApiResponse, typically with no data on success (e.g., status 204) or an error.
+   */
+  async denyJoinRequest(membershipId: string): Promise<ApiResponse<void>> {
+    const payload = { status: 'removed' };
+    return this.client.put<void, typeof payload>(`organizations/members/${membershipId}/status`, payload);
   }
 } 

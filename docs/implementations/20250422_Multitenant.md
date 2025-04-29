@@ -119,8 +119,18 @@ This document outlines the steps for implementing an in-app notification system 
               *   [X] Test: Authenticated user who isn't the invitee fails (403).
               *   [X] Test: Using invalid/expired/used token fails (400/404/410).
               *   [X] Implementation: Handle POST, validate token (exists, pending, not expired), check authenticated user matches `invited_email`, **Accept:** Update `invites` status=accepted, create/update `organization_members` record (status=active, role from invite), **Decline:** Update `invites` status=declined (or delete), trigger notifications.
-          *   [ ] **Request to Join Public Org (e.g., `POST /organizations/:orgId/requests`):** ... (Existing checks - Uses `organization_members` status=pending)
-          *   [X] **Approve/Deny Join Request (e.g., `PUT /organizations/members/:membershipId/status`):** ... (Existing checks - Uses `organization_members` status=pending)
+          *   [X] **Request to Join Public Org (e.g., `POST /organizations/:orgId/requests`):** 
+              *   [X] Test: Authenticated user can request to join.
+              *   [X] Test: Already active/pending member fails (409).
+              *   [X] Test: RLS/Org visibility prevents request fails (404/403).
+              *   [X] Implementation: Handle POST, auth check, check existing membership, insert `organization_members` record (status=pending, role=member).
+          *   [X] **Approve/Deny Join Request (e.g., `PUT /organizations/members/:membershipId/status`):** 
+              *   [X] Test: Admin can approve pending request (status=active).
+              *   [X] Test: Admin can deny pending request (status=removed).
+              *   [X] Test: Non-admin fails (403).
+              *   [X] Test: Approving/denying non-pending request fails (409).
+              *   [X] Test: Membership not found fails (404).
+              *   [X] Implementation: Handle PUT, auth check (admin), validate membershipId/body, check current status, update `organization_members` status.
           *   [X] **List Pending Invites/Requests for Admins (e.g., `GET /organizations/:orgId/pending`):**
               *   [X] Test: Admin can retrieve list of pending members (from `organization_members`) and pending invites (from `invites`) for their org.
               *   [X] Test: Non-admin cannot retrieve list (403).
@@ -134,36 +144,38 @@ This document outlines the steps for implementing an in-app notification system 
 
 ### 2.4 API Client (`@paynless/api`)
 
-*   [ ] **Tests:** Write unit tests for new multi-tenancy functions in `OrganizationApiClient`:
+*   [X] **Tests:** Write unit tests for new multi-tenancy functions in `OrganizationApiClient`:
     *   [X] `createOrganization(name, visibility?)`: Mocks POST `/organizations`.
     *   [X] `updateOrganization(orgId, { name?, visibility? })`: Mocks PUT `/organizations/:orgId`.
     *   [X] `listUserOrganizations()`: Mocks GET `/organizations` (or a user-specific endpoint). Filters deleted.
     *   [X] `getOrganizationDetails(orgId)`: Mocks GET `/organizations/:orgId`.
     *   [X] `getOrganizationMembers(orgId)`: Mocks GET `/organizations/:orgId/members`.
-    *   [ ] `inviteUserToOrganization(orgId, emailOrUserId, role)`: Mocks POST `/organizations/:orgId/invites`.
-    *   [ ] `acceptOrganizationInvite(inviteTokenOrId)`: Mocks POST `/organizations/invites/accept` (or similar).
-    *   [ ] `requestToJoinOrganization(orgId)`: Mocks POST `/organizations/:orgId/join-requests`.
-    *   [ ] `approveJoinRequest(membershipId)`: Mocks PUT `/organizations/members/:membershipId/approve` (or similar).
+    *   [X] `inviteUserToOrganization(orgId, emailOrUserId, role)`: Mocks POST `/organizations/:orgId/invites`.
+    *   [X] `acceptOrganizationInvite(inviteTokenOrId)`: Mocks POST `/invites/:inviteToken/accept`.
+    *   [X] `requestToJoinOrganization(orgId)`: Mocks POST `/organizations/:orgId/requests`.
+    *   [X] `approveJoinRequest(membershipId)`: Mocks PUT `/organizations/members/:membershipId/approve`.
     *   [X] `updateMemberRole(membershipId, newRole)`: Mocks PUT `/organizations/members/:membershipId/role`.
     *   [X] `removeMember(membershipId)`: Mocks DELETE `/organizations/members/:membershipId`.
     *   [X] `deleteOrganization(orgId)`: Mocks DELETE `/organizations/:orgId` (soft delete endpoint).
-    *   [ ] **(Note)** Verify `inviteUserToOrganization`, `acceptOrganizationInvite` tests align with `invites` table logic.
-    *   [ ] **(New)** Add tests for `cancelInvite`.
-*   [ ] **Implementation:** Add/Update these functions in `OrganizationApiClient` class in `packages/api/src/organizations.api.ts`. Functions should call the corresponding backend edge function endpoints. Soft delete logic is handled by the backend endpoint called by `deleteOrganization`.
+    *   [X] **(Note)** Verify `inviteUserToOrganization`, `acceptOrganizationInvite` tests align with `invites` table logic. (Done for accept/invite, need to implement client functions)
+    *   [X] **(New)** Add tests for `cancelInvite`. (Mocks `DELETE /organizations/:orgId/invites/:inviteId`)
+*   [X] **Implementation:** Add/Update these functions in `OrganizationApiClient` class in `packages/api/src/organizations.api.ts`. Functions should call the corresponding backend edge function endpoints. Soft delete logic is handled by the backend endpoint called by `deleteOrganization`.
     *   [X] Implemented `createOrganization`
     *   [X] Implemented `updateOrganization`
     *   [X] Implemented `listUserOrganizations`
     *   [X] Implemented `getOrganizationDetails`
     *   [X] Implemented `getOrganizationMembers`
-    *   [ ] Implemented `inviteUserToOrganization`
-    *   [ ] Implemented `acceptOrganizationInvite`
-    *   [ ] Implemented `requestToJoinOrganization`
-    *   [ ] Implemented `approveJoinRequest`
+    *   [X] Implemented `inviteUserToOrganization`
+    *   [X] Implemented `acceptOrganizationInvite`
     *   [X] Implemented `updateMemberRole`
     *   [X] Implemented `removeMember`
     *   [X] Implemented `deleteOrganization`
-    *   [ ] **(Note)** Verify `inviteUserToOrganization`, `acceptOrganizationInvite` implementation aligns with `invites` table logic.
-    *   [ ] **(New)** Implement `cancelInvite`.
+    *   [X] Implemented `inviteUserById(orgId, userId, role)` (New method)
+    *   [X] Implemented `requestToJoinOrganization(orgId)`
+    *   [X] Implemented `approveJoinRequest(membershipId)`
+    *   [X] **(Note)** Verify `inviteUserToOrganization`, `acceptOrganizationInvite` implementation aligns with `invites` table logic.
+    *   [X] **(New)** Implement `cancelInvite`.
+    *   [X] Implement `denyJoinRequest` (Uses PUT `/organizations/members/:membershipId/status`)
 
 ### 2.5 State Management (`@paynless/store`)
 

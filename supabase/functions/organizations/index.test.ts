@@ -22,13 +22,3 @@ const createMockRequest = (method: string, path: string, body?: Record<string, u
         body: body ? JSON.stringify(body) : undefined,
     });
 };
-
-// --- Test Suites --- 
-
-// Removed Deno.test("POST /organizations/:orgId/invites", ...) block
-
-// Removed Deno.test("POST /invites/:inviteToken/accept", ...) block
-
-// Removed Deno.test("POST /invites/:inviteToken/decline", ...) block
-
-// --- Add test suites for Request to Join, Approve/Deny Join, etc. --- 

@@ -175,6 +175,10 @@ export interface MockSupabaseDataConfig {
     rpcResults?: {
         [functionName: string]: { data?: any; error?: any } | (() => Promise<{ data?: any; error?: any }>);
     };
+    adminAuthConfig?: { // <-- Add this optional property
+        getUserById?: (userId: string) => Promise<any>; // Adjust return type if needed
+        // Add other admin auth methods if needed for testing
+    };
 }
 
 // --- Define a type for the minimal mock channel ---

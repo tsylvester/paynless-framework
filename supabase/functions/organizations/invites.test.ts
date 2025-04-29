@@ -197,6 +197,158 @@ Deno.test("POST /organizations/:orgId/invites", async (t) => {
         const json = await res.json();
         assert(json.error.includes("Invalid email address") || json.error.includes("Invalid role specified"));
     });
+
+    // --- NEW TESTS FOR USER ID INVITES --- //
+    const inviteByUserId = 'user-to-invite-id';
+    const inviteByUserEmail = 'user-to-invite@example.com'; // Email corresponding to inviteByUserId
+
+    await t.step("should return 201 on successful invite by userId by admin", async () => {
+        // Arrange
+        const mockUser = { id: adminUserId };
+        
+        // --- Define Mock Admin Lookup --- 
+        const mockAdminLookup = {
+            getUserById: (userId: string) => {
+                console.log(`[Test Mock Admin Lookup] getUserById called with: ${userId}`);
+                if (userId === inviteByUserId) {
+                    return Promise.resolve({ data: { user: { id: inviteByUserId, email: inviteByUserEmail } }, error: null });
+                }
+                // Simulate not found for other IDs in this test
+                return Promise.resolve({ data: null, error: { message: 'User not found (Mock)', name:'AuthApiError', status:404 } }); 
+            }
+        };
+        // --------------------------------
+
+         const mockNewInvite = {
+            id: 'invite-user-id-123',
+            organization_id: mockOrgId,
+            invited_email: inviteByUserEmail, // Invite record stores email
+            role_to_assign: inviteRole,
+            invited_by_user_id: adminUserId,
+            invite_token: 'mock-token-user-id',
+            status: 'pending',
+            created_at: new Date().toISOString()
+        };
+        const config: MockSupabaseDataConfig = {
+            mockUser: mockUser,
+            rpcResults: { is_org_admin: () => Promise.resolve({ data: true, error: null }) },
+            genericMockResults: {
+                // Mock checks using the *resolved* email
+                organization_members: {
+                    select: (state: MockQueryBuilderState) => {
+                        const emailFilter = state.filters.find(f => f.column === 'profiles.email' && f.value === inviteByUserEmail); 
+                        if (emailFilter) { return Promise.resolve({ data: null, error: null, count: 0 }); } // Not member
+                        return Promise.resolve({ data: null, error: null }); 
+                    }
+                },
+                invites: {
+                    select: (state: MockQueryBuilderState) => {
+                        const emailFilter = state.filters.find(f => f.column === 'invited_email' && f.value === inviteByUserEmail);
+                        if (emailFilter && state.filters.some(f => f.column === 'status' && f.value === 'pending')) {
+                            return Promise.resolve({ data: null, error: null, count: 0 }); // Not invited
+                        }
+                         return Promise.resolve({ data: null, error: null }); 
+                    },
+                    insert: () => Promise.resolve({ data: [mockNewInvite], error: null, count: 1 })
+                }
+            }
+        };
+        const { client: mockClient } = createMockSupabaseClient(config);
+        // Invite using userId instead of email
+        const req = createMockRequest("POST", `/organizations/${mockOrgId}/invites`, { invitedUserId: inviteByUserId, role: inviteRole });
+        const body = { invitedUserId: inviteByUserId, role: inviteRole };
+
+        // Act
+        const res = await handleCreateInvite(
+           req, 
+           mockClient, 
+           mockUser as User, 
+           mockOrgId, 
+           body, 
+           mockAdminLookup // <-- Inject mock lookup
+       );
+
+        // Assert
+        assertEquals(res.status, 201);
+        const json = await res.json();
+        assertEquals(json.invited_email, inviteByUserEmail); // Check correct email stored
+        assertEquals(json.role_to_assign, inviteRole);
+        assertEquals(json.status, 'pending');
+    });
+
+     await t.step("should return 404 if invitedUserId not found", async () => {
+        // Arrange
+        const mockUser = { id: adminUserId };
+        const nonExistentUserId = 'non-existent-user-id';
+        
+        // --- Define Mock Admin Lookup (Simulating Not Found) --- 
+        const mockAdminLookup = {
+            getUserById: (userId: string) => {
+                console.log(`[Test Mock Admin Lookup 404] getUserById called with: ${userId}`);
+                // Simulate user not found error from Supabase admin client
+                return Promise.resolve({ data: null, error: { message: 'User not found (Mock)', name:'AuthApiError', status:404 } });
+            }
+        };
+        // ---------------------------------------------------------
+
+        const config: MockSupabaseDataConfig = {
+            mockUser: mockUser,
+             rpcResults: { is_org_admin: () => Promise.resolve({ data: true, error: null }) }
+            // No DB mocks needed as it should fail on user lookup
+        };
+        const { client: mockClient } = createMockSupabaseClient(config);
+        const req = createMockRequest("POST", `/organizations/${mockOrgId}/invites`, { invitedUserId: nonExistentUserId, role: inviteRole });
+        const body = { invitedUserId: nonExistentUserId, role: inviteRole };
+
+        // Act
+        const res = await handleCreateInvite(
+           req, 
+           mockClient, 
+           mockUser as User, 
+           mockOrgId, 
+           body, 
+           mockAdminLookup // <-- Inject mock lookup
+       );
+
+        // Assert
+        assertEquals(res.status, 404);
+        const json = await res.json();
+        assertEquals(json.error, "Invited user ID not found.");
+    });
+
+     await t.step("should return 400 if both email and invitedUserId provided", async () => {
+        // Arrange
+        const mockUser = { id: adminUserId };
+        const config: MockSupabaseDataConfig = { mockUser: mockUser }; // No DB/RPC needed for validation
+        const { client: mockClient } = createMockSupabaseClient(config);
+        const invalidBody = { email: inviteEmail, invitedUserId: inviteByUserId, role: inviteRole };
+        const req = createMockRequest("POST", `/organizations/${mockOrgId}/invites`, invalidBody);
+
+        // Act
+        const res = await handleCreateInvite(req, mockClient, mockUser as User, mockOrgId, invalidBody);
+
+        // Assert
+        assertEquals(res.status, 400);
+        const json = await res.json();
+        assertEquals(json.error, "Please provide either an email or a user ID to invite.");
+    });
+    
+     await t.step("should return 400 if neither email nor invitedUserId provided", async () => {
+        // Arrange
+        const mockUser = { id: adminUserId };
+        const config: MockSupabaseDataConfig = { mockUser: mockUser }; 
+        const { client: mockClient } = createMockSupabaseClient(config);
+        const invalidBody = { role: inviteRole }; // Missing identifier
+        const req = createMockRequest("POST", `/organizations/${mockOrgId}/invites`, invalidBody);
+
+        // Act
+        const res = await handleCreateInvite(req, mockClient, mockUser as User, mockOrgId, invalidBody);
+
+        // Assert
+        assertEquals(res.status, 400);
+        const json = await res.json();
+        assertEquals(json.error, "Please provide either an email or a user ID to invite.");
+    });
 });
 
 // TODO: Add tests for accept/decline/cancel invites 
@@ -347,7 +499,7 @@ Deno.test("POST /invites/:inviteToken/accept", async (t) => {
                         }
                         return Promise.resolve({ data: [], error: null, count: 0 });
                     }
-                 }
+                }
             }
         };
         const { client: mockClient } = createMockSupabaseClient(config);
@@ -891,17 +1043,8 @@ Deno.test("DELETE /organizations/:orgId/invites/:inviteId", async (t) => {
             },
             genericMockResults: {
                 invites: {
-                    // Mock delete finding nothing because status isn't 'pending'
-                    delete: (state: MockQueryBuilderState) => {
-                         const isCorrectId = state.filters.some(f => f.column === 'id' && f.value === nonPendingInviteId);
-                         const isCorrectOrg = state.filters.some(f => f.column === 'organization_id' && f.value === mockOrgId);
-                         const isPending = state.filters.some(f => f.column === 'status' && f.value === 'pending');
-                         if (isCorrectId && isCorrectOrg && isPending) { 
-                             return Promise.resolve({ data: null, error: null, count: 0 }); // Corrected: return 0 count
-                         }
-                         // Default fallback (shouldn't be strictly needed for this specific test, but safe)
-                         return Promise.resolve({ data: null, error: null, count: 0 });
-                    }
+                    // Simplify: Unconditionally return count 0 for this test case
+                    delete: () => Promise.resolve({ data: null, error: null, count: 0 })
                 }
             }
         };
@@ -923,8 +1066,10 @@ Deno.test("DELETE /organizations/:orgId/invites/:inviteId", async (t) => {
         const config: MockSupabaseDataConfig = {
             mockUser: mockUser,
             rpcResults: {
-                is_org_admin: () => Promise.resolve({ data: null, error: { message: 'RPC error', code: 'P0001' } })
+                // Mock admin check: Returns a real Error object
+                is_org_admin: () => Promise.resolve({ data: null, error: new Error('RPC Failure Mock') })
             }
+            // No DB mocks needed
         };
         const { client: mockClient } = createMockSupabaseClient(config);
         const req = createMockRequest("DELETE", `/organizations/${mockOrgId}/invites/${pendingInviteId}`);

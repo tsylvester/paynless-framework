@@ -1,6 +1,34 @@
 import { createErrorResponse, createSuccessResponse } from '../_shared/cors-headers.ts';
 import { Database } from '../types_db.ts'; 
 import { SupabaseClient, User } from '@supabase/supabase-js'; 
+import { createClient } from '@supabase/supabase-js'; 
+
+// --- Define interface for Admin Auth Lookup dependency ---
+interface AdminAuthLookup { 
+    getUserById: (userId: string) => Promise<{ data: { user: any } | null; error: any | null }>;
+}
+
+// --- Default implementation using environment variables --- 
+const defaultAdminAuthLookup: AdminAuthLookup = {
+    getUserById: async (userId: string) => {
+        const supabaseUrl = Deno.env.get('SUPABASE_URL');
+        const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+        if (!supabaseUrl || !serviceRoleKey) {
+            console.error('[invites.ts Default Admin Lookup] Admin Supabase credentials not found.');
+            // Throw a specific error type or message that can be handled upstream if needed
+            throw new Error('Server configuration error: Admin credentials missing.');
+        }
+        // Create temporary admin client ONLY for this lookup
+        // NOTE: Consider potential performance impact if called very frequently.
+        // Caching the admin client instance might be better in high-load scenarios,
+        // but requires careful handling of potential stale state or errors.
+        const adminClient = createClient(supabaseUrl, serviceRoleKey);
+        console.log(`[invites.ts Default Admin Lookup] Looking up user ID: ${userId}`);
+        const result = await adminClient.auth.admin.getUserById(userId);
+        console.log(`[invites.ts Default Admin Lookup] Result for ${userId}:`, { error: result.error, hasUser: !!result.data?.user });
+        return result;
+    }
+};
 
 // Handler for POST /organizations/:orgId/invites (Create Invite)
 export async function handleCreateInvite(
@@ -8,18 +36,77 @@ export async function handleCreateInvite(
     supabaseClient: SupabaseClient<Database>,
     user: User, 
     orgId: string,
-    body: any
+    body: { email?: string; invitedUserId?: string; role: string },
+    // --- Inject dependency with default implementation --- 
+    adminAuthLookup: AdminAuthLookup = defaultAdminAuthLookup 
 ): Promise<Response> {
     console.log(`[invites.ts] Handling POST /organizations/${orgId}/invites...`);
 
     // 1. Validate payload
-    const { email, role } = body || {};
-    if (!email || typeof email !== 'string' || !email.includes('@')) { 
+    const { email, invitedUserId, role } = body || {};
+    let targetEmail: string | undefined = email;
+
+    // Check if exactly one identifier is provided
+    if ((!email && !invitedUserId) || (email && invitedUserId)) {
+        return createErrorResponse('Please provide either an email or a user ID to invite.', 400, req);
+    }
+    // Validate email format if provided
+    if (email && (typeof email !== 'string' || !email.includes('@'))) { 
         return createErrorResponse('Invalid email address provided.', 400, req);
     }
+    // Validate userId format if provided
+    if (invitedUserId && typeof invitedUserId !== 'string') { 
+        return createErrorResponse('Invalid user ID provided.', 400, req);
+    }
+    // Validate role
     if (!role || (role !== 'admin' && role !== 'member')) {
         return createErrorResponse('Invalid role specified. Must be "admin" or "member".', 400, req);
     }
+
+    // 1b. If invitedUserId is provided, look up the email using injected dependency
+    if (invitedUserId) {
+        console.log(`[invites.ts] Inviting by user ID: ${invitedUserId}. Looking up email via injected lookup...`);
+        try {
+            // --- Use the injected dependency --- 
+            const { data: invitedUserData, error: lookupError } = await adminAuthLookup.getUserById(invitedUserId);
+
+            if (lookupError) {
+                console.error(`[invites.ts] Error looking up user ID ${invitedUserId}:`, lookupError);
+                // Handle specific errors like "User not found" vs. general errors
+                // Check error structure based on actual Supabase client errors
+                if ((lookupError as any)?.status === 404 || lookupError.message?.includes('User not found')) { 
+                    return createErrorResponse('Invited user ID not found.', 404, req);
+                }
+                // Throw a generic error for other issues during lookup
+                throw new Error('Failed to look up invited user.'); 
+            }
+
+            if (!invitedUserData?.user?.email) {
+                 console.error(`[invites.ts] User found for ID ${invitedUserId}, but email is missing.`);
+                 return createErrorResponse('Invited user does not have a valid email address.', 400, req);
+            }
+            
+            targetEmail = invitedUserData.user.email;
+            console.log(`[invites.ts] Found email for user ID ${invitedUserId}: ${targetEmail}`);
+            
+        } catch (lookupErr) { // Catch errors from the lookup function itself or the re-throw
+            console.error('[invites.ts] Error during admin user lookup process:', lookupErr);
+             // Cast lookupErr to Error to access message safely
+             const errorMessage = lookupErr instanceof Error ? lookupErr.message : 'Failed to process user ID invitation.';
+             // Avoid returning the generic "Failed to look up..." if a more specific one was thrown
+             if (errorMessage === 'Failed to look up invited user.' && !(lookupErr instanceof Error && lookupErr.message === errorMessage)) {
+                 // If it's the generic error message triggered by a non-404 lookupError, return 500
+                 return createErrorResponse('Failed to process user ID invitation.', 500, req);
+             }
+             // Otherwise, return the specific error message (like config error)
+             return createErrorResponse(errorMessage, 500, req); 
+        }
+    }
+    
+     if (!targetEmail) { // Should theoretically not happen if validation passed
+         console.error('[invites.ts] Target email could not be determined.');
+         return createErrorResponse('Failed to determine invitee email.', 500, req);
+     }
 
     // 2. Check permissions (Is user an admin of this org?)
     const { data: isAdmin, error: adminCheckError } = await supabaseClient.rpc('is_org_admin', { org_id: orgId });
@@ -34,7 +121,7 @@ export async function handleCreateInvite(
         .from('organization_members')
         .select('user_id, status, profiles!inner(email)') 
         .eq('organization_id', orgId)
-        .eq('profiles.email', email) 
+        .eq('profiles.email', targetEmail)
         .in('status', ['active', 'pending'])
         .maybeSingle();
 
@@ -47,7 +134,7 @@ export async function handleCreateInvite(
         .from('invites')
         .select('id, status')
         .eq('organization_id', orgId)
-        .eq('invited_email', email)
+        .eq('invited_email', targetEmail)
         .eq('status', 'pending')
         .maybeSingle();
         
@@ -57,7 +144,7 @@ export async function handleCreateInvite(
     }
 
     if (existingMember || existingInvite) {
-        console.warn(`[invites.ts] Attempted to invite existing member/invitee ${email} to org ${orgId}`);
+        console.warn(`[invites.ts] Attempted to invite existing member/invitee ${targetEmail} to org ${orgId}`);
         return createErrorResponse("User is already a member or has a pending invite.", 409, req); // Conflict
     }
 
@@ -69,7 +156,7 @@ export async function handleCreateInvite(
         .from('invites')
         .insert({
             organization_id: orgId,
-            invited_email: email,
+            invited_email: targetEmail,
             role_to_assign: role,
             invited_by_user_id: user.id,
             invite_token: '', // Add empty string to satisfy type, DB likely generates/overwrites
@@ -84,12 +171,12 @@ export async function handleCreateInvite(
         }
         // Handle unique constraint violation on invite_token if DB doesn't auto-retry
         // if (insertError.code === '23505') { ... handle collision ... }
-        console.error(`[invites.ts] Error inserting invite for ${email} to org ${orgId}:`, insertError);
+        console.error(`[invites.ts] Error inserting invite for ${targetEmail} to org ${orgId}:`, insertError);
         return createErrorResponse(`Failed to create invitation: ${insertError.message}`, 500, req);
     }
     
     if (!newInvite) {
-         console.error(`[invites.ts] Invite insert for ${email} to org ${orgId} succeeded but returned no data.`);
+         console.error(`[invites.ts] Invite insert for ${targetEmail} to org ${orgId} succeeded but returned no data.`);
         return createErrorResponse('Failed to create invitation.', 500, req);
     }
     
@@ -192,8 +279,16 @@ export async function handleAcceptInvite(
     }
 
     console.log(`[invites.ts Accept] User ${user.id} successfully accepted invite ${invite.id} and joined org ${invite.organization_id} with membership ID ${newMembership.id}`);
-    // 5. Return success
-    return createSuccessResponse({ message: "Invite accepted successfully.", membershipId: newMembership.id }, 200, req);
+    // 5. Return success, including organizationId
+    return createSuccessResponse(
+        { 
+            message: "Invite accepted successfully.", 
+            membershipId: newMembership.id, 
+            organizationId: invite.organization_id // Add orgId here
+        }, 
+        200, 
+        req
+    );
 }
 
 // Decline an invite
