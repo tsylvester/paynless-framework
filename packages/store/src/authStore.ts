@@ -4,6 +4,8 @@ import {
   UserProfileUpdate,
   UserProfile,
   ProfileResponse,
+  SupabaseUser,
+  SupabaseSession
 } from '@paynless/types'
 import { NavigateFunction } from '@paynless/types'
 import { logger } from '@paynless/utils'
@@ -22,15 +24,17 @@ export const useAuthStore = create<AuthStore>()((set, get) => ({
 
       setNavigate: (navigateFn: NavigateFunction) => set({ navigate: navigateFn }),
 
-      setUser: (user) => set({ user }),
+      setUser: (user: SupabaseUser | null) => set({ user }),
 
-      setSession: (session) => set({ session }),
+      setSession: (session: SupabaseSession | null) => set({ session }),
 
       setProfile: (profile: UserProfile | null) => set({ profile }),
 
       setIsLoading: (isLoading: boolean) => set({ isLoading }),
 
       setError: (error: Error | null) => set({ error }),
+
+      clearError: () => set({ error: null }),
 
       login: async (email: string, password: string): Promise<void> => {
         set({ isLoading: true, error: null })
@@ -286,7 +290,34 @@ export const useAuthStore = create<AuthStore>()((set, get) => ({
         }
       },
 
-      clearError: () => set({ error: null }),
+      uploadAvatar: async (_file: File): Promise<string | null> => {
+        // Implementation for uploading avatar
+        // This is a placeholder and should be implemented
+        return null;
+      },
+
+      fetchProfile: async (): Promise<UserProfile | null> => {
+        // Implementation for fetching profile
+        // This is a placeholder and should be implemented
+        return null;
+      },
+
+      checkEmailExists: async (_email: string): Promise<boolean> => {
+        // Implementation for checking if email exists
+        // This is a placeholder and should be implemented
+        return false;
+      },
+
+      requestPasswordReset: async (_email: string): Promise<boolean> => {
+        // Implementation for requesting password reset
+        // This is a placeholder and should be implemented
+        return false;
+      },
+
+      handleOAuthLogin: async (_provider: 'google' | 'github'): Promise<void> => {
+        // Implementation for handling OAuth login
+        // This is a placeholder and should be implemented
+      },
     }))
 
 export function initAuthListener(

@@ -38,26 +38,29 @@ export type UserProfileUpdate = {
 export type UserProfile = Database['public']['Tables']['user_profiles']['Row'];
 
 export interface AuthStore {
-  // Use Supabase types for parameters
+  // Setters
   setUser: (user: SupabaseUser | null) => void 
   setSession: (session: SupabaseSession | null) => void
-  // Use DB type for profile state
   setProfile: (profile: UserProfile | null) => void // Uses UserProfile alias
   setIsLoading: (isLoading: boolean) => void
   setError: (error: Error | null) => void
   setNavigate: (navigateFn: NavigateFunction) => void
-  // Login/Register now just trigger Supabase flow, listener handles state
+
+  // Core Auth Actions
   login: (email: string, password: string) => Promise<void> 
   register: (email: string, password: string) => Promise<void> 
   logout: () => Promise<void>
-  // updateProfile returns the updated DB profile row
   updateProfile: (profileData: UserProfileUpdate) => Promise<UserProfile | null> // Uses UserProfile alias
   updateEmail: (email: string) => Promise<boolean>
-  clearError: () => void
-  // State properties use Supabase types
+  uploadAvatar: (file: File) => Promise<string | null>
+  fetchProfile: () => Promise<UserProfile | null>
+  checkEmailExists: (email: string) => Promise<boolean>
+  requestPasswordReset: (email: string) => Promise<boolean>
+  handleOAuthLogin: (provider: 'google' | 'github') => Promise<void>
+  
+  // State properties
   session: SupabaseSession | null
   user: SupabaseUser | null 
-  // Use DB type for profile state
   profile: UserProfile | null // Uses UserProfile alias
   isLoading: boolean
   error: Error | null

@@ -107,6 +107,45 @@ Following this cycle helps catch errors early, ensures comprehensive test covera
         4.  Assert the final state (e.g., `isLoading: false`) after the `await`.
     *   **Persistent Type Errors:** Encountered persistent `Type '"user"' is not assignable to type 'UserRole'` errors in mock data within `aiStore` tests despite trying various formats. Decided to ignore these after multiple attempts, prioritizing functional correctness, potentially indicating minor inconsistencies in type definitions.
 
+*   **[NEW] Handling `vi.mock` Hoisting Issues (May 2024):**
+    *   **Problem:** When using `vi.mock('module/path', factoryFn)` where the `factoryFn` needs to reference variables (e.g., imported mock functions) defined at the top level of the test file, Vitest's hoisting mechanism can cause runtime errors (`ReferenceError: Cannot access 'variableName' before initialization`). This happens because the mock factory might execute *before* the top-level variable assignments are fully processed.
+    *   **Working Pattern:** To reliably avoid this:
+        1.  **Import Mocks First:** Ensure all mock functions or variables needed by the factory function are imported or defined *at the very top* of the test file, before any `vi.mock` calls.
+        2.  **Use Synchronous Factory:** The factory function provided to `vi.mock` should be synchronous (`() => ({...})`) rather than asynchronous (`async () => ({...})`) if possible.
+        3.  **Reference Top-Level Imports:** Directly reference the top-level imported mocks/variables within the object returned by the synchronous factory. Avoid using `vi.importActual` *inside* the factory if the goal is simply to structure the mock, as this can sometimes reintroduce timing complexities.
+    *   **Example (`organizationStore.test.ts`):**
+        ```typescript
+        // 1. Import mocks at the TOP
+        import {
+            mockListUserOrganizations,
+            mockGetOrganizationDetails,
+            // ... other mocks
+        } from '../../api/src/mocks/organizations.mock.ts';
+        import { initializeApiClient, _resetApiClient, api as apiActual } from '@paynless/api'; // Import actual for typing/structure if needed
+
+        // ... other imports
+
+        // 2. Use synchronous factory referencing top-level imports
+        vi.mock('@paynless/api', () => ({
+            initializeApiClient: vi.fn(),
+            _resetApiClient: vi.fn(),
+            api: {
+                organizations: {
+                    // 3. Reference imported mocks directly
+                    listUserOrganizations: mockListUserOrganizations,
+                    getOrganizationDetails: mockGetOrganizationDetails,
+                    // ... other mocked methods
+                },
+                // Mock other parts of the 'api' object as needed
+                auth: {}, 
+                billing: {},
+                getSupabaseClient: vi.fn(() => ({ auth: {} }))
+            },
+        }));
+
+        // ... rest of test file ...
+        ```
+
 *   **[NEW] Phase 5: Anonymous Chat Auth Refactor Verification:** Added specific backend and E2E test cases for the anonymous secret header and related flows.
 
 *   **[NEW] Deno Function Testing Learnings (May 2024 - sync-ai-models):**

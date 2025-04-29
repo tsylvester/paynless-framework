@@ -1,95 +1,101 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { useOrganizationStore } from './organizationStore';
-import { useAuthStore } from './authStore'; // Import the real store signature
-import { Organization, OrganizationMember, OrganizationMemberWithProfile, SupabaseUser, ApiError as ApiErrorType } from '@paynless/types';
-import { initializeApiClient, _resetApiClient } from '@paynless/api';
-// Import mocks using RELATIVE path
+// Import API mocks FIRST
 import {
     mockGetCurrentOrganization,
     mockUpdateOrganization,
     mockGetOrganizationMembers,
     mockRemoveOrganizationMember,
     mockLeaveOrganization,
-    resetOrganizationMocks,
+    mockListUserOrganizations,
+    mockGetOrganizationDetails,
+    mockDeleteOrganization,
+    mockCreateOrganization,
+    resetOrganizationMocks,      // Import reset function
     defaultMockOrganization,
-    defaultMockMembers
+    defaultMockMembers 
 } from '../../api/src/mocks/organizations.mock.ts';
+
+// Other imports
+import { useOrganizationStore } from './organizationStore';
+import { useAuthStore } from './authStore';
+import { Organization, OrganizationMemberWithProfile, SupabaseUser, ApiError as ApiErrorType, AuthStore } from '@paynless/types';
+import { initializeApiClient, _resetApiClient } from '@paynless/api'; // Keep original names for mocking target
 import { logger } from '@paynless/utils';
 import { act } from '@testing-library/react';
-
-// --- DEFINE PLACEHOLDER MOCKS FOR vi.mock SCOPE ---
-// Define these top-level so they exist when vi.mock runs
-const mockListUserOrganizations = vi.fn();
-const mockGetOrganizationDetails = vi.fn();
-const mockDeleteOrganization = vi.fn();
-const mockCreateOrganization = vi.fn();
 
 // --- Mock Dependencies --- //
 
 vi.mock('@paynless/utils', () => ({ logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() } }));
 
-// Use simple mock for authStore - state will be set in beforeEach
-vi.mock('./authStore');
-
-// Mock @paynless/api using SYNCHRONOUS factory
+// Mock @paynless/api: Use a simple synchronous factory referencing top-level mocks
 vi.mock('@paynless/api', () => ({
+    // Keep non-api exports if needed (assuming they exist)
     initializeApiClient: vi.fn(),
     _resetApiClient: vi.fn(),
-    api: {
-        organizations: vi.fn(() => ({ // Namespace accessed via function call
+    api: { // Mock the api object directly
+        organizations: {
+            // Use mocks imported above
             getCurrentOrganization: mockGetCurrentOrganization,
             updateOrganization: mockUpdateOrganization,
             getOrganizationMembers: mockGetOrganizationMembers,
-            removeMember: mockRemoveOrganizationMember,
+            removeMember: mockRemoveOrganizationMember, // Check name alignment with store usage
             leaveOrganization: mockLeaveOrganization,
-            // Map placeholder mocks defined ABOVE
             listUserOrganizations: mockListUserOrganizations,
             getOrganizationDetails: mockGetOrganizationDetails,
             deleteOrganization: mockDeleteOrganization,
             createOrganization: mockCreateOrganization,
-        })),
-        auth: vi.fn(() => ({})),
-        billing: vi.fn(() => ({}))
+        },
+        // Mock other namespaces/methods if necessary
+        auth: { /* mock if needed */ },
+        billing: { /* mock if needed */ },
+        getSupabaseClient: vi.fn(() => ({ auth: { /* mock supabase auth if needed */ } }))
     },
 }));
 
-// --- DEFINE MOCK DATA (AFTER vi.mock calls) ---
+// --- DEFINE MOCK DATA (Can come after mocks) ---
 const mockSupabaseUser: SupabaseUser = {
     id: 'test-user-id', email: 'test@example.com',
     app_metadata: {}, user_metadata: {}, aud: 'authenticated', created_at: ''
 };
+const mockSession = {
+    access_token: 'mock-token', refresh_token: 'mock-refresh-token', user: mockSupabaseUser,
+    token_type: 'bearer', expires_in: 3600, expires_at: Date.now() + 3600 * 1000,
+};
+const mockAuthStoreState = { /* ... state + mocked functions ... */ } as any as AuthStore;
+
+// --- Mock authStore --- 
+vi.mock('./authStore', () => ({
+    useAuthStore: {
+        getState: vi.fn(() => mockAuthStoreState)
+    }
+}));
 
 // --- Test Suite Setup --- //
 const resetOrgStore = () => useOrganizationStore.setState(useOrganizationStore.getInitialState(), true);
-// No specific resetAuthStore needed if we set state in beforeEach
 
 // --- Test Suite --- //
 describe('OrganizationStore', () => {
 
   beforeEach(() => {
-    // Reset placeholder mocks first
-    mockListUserOrganizations.mockReset();
-    mockGetOrganizationDetails.mockReset();
-    mockDeleteOrganization.mockReset();
-    mockCreateOrganization.mockReset();
-    // Reset imported mocks
+    // Reset imported mocks (use function imported at top)
     resetOrganizationMocks();
     // Clear all Vitest mock tracking
     vi.clearAllMocks(); 
     
-    // Reset stores and set initial mocked auth state
+    // Reset store & auth mock state
     act(() => {
         resetOrgStore();
-        // Set the state on the simple mocked authStore
-        vi.mocked(useAuthStore).setState({ user: mockSupabaseUser }); 
-        // Call the mocked initializeApiClient 
-        initializeApiClient({ supabaseUrl: 'http://d.url', supabaseAnonKey: 'd-key' });
+        vi.mocked(useAuthStore.getState).mockReturnValue({ 
+            ...mockAuthStoreState, 
+            user: mockSupabaseUser, 
+            session: mockSession
+        });
     });
   });
 
   afterEach(() => {
-      // Call the mocked _resetApiClient
-      _resetApiClient();
+      // Call the mocked _resetApiClient (if needed)
+      // _resetApiClient();
   });
 
   it('should have correct initial state', () => {
@@ -107,9 +113,13 @@ describe('OrganizationStore', () => {
     const mockOrgsData: Organization[] = [ defaultMockOrganization ];
 
     it('should update state on success', async () => {
+      // Use the imported mock directly
       mockListUserOrganizations.mockResolvedValue({ status: 200, data: mockOrgsData, error: undefined });
       await act(async () => { await useOrganizationStore.getState().fetchUserOrganizations(); });
+      // Verify the imported mock was called
       expect(mockListUserOrganizations).toHaveBeenCalledTimes(1);
+      // Check auth user ID was used
+      expect(mockListUserOrganizations).toHaveBeenCalledWith(mockSupabaseUser.id);
       const { userOrganizations, isLoading, error } = useOrganizationStore.getState();
       expect(userOrganizations).toEqual(mockOrgsData);
       expect(isLoading).toBe(false);
@@ -118,8 +128,11 @@ describe('OrganizationStore', () => {
 
     it('should set error string state on API failure', async () => {
       const errorMsg = 'Failed fetch';
-      mockListUserOrganizations.mockResolvedValue({ status: 500, data: null, error: { message: errorMsg, code: '500' } });
+      // Use the imported mock directly
+      mockListUserOrganizations.mockResolvedValue({ status: 500, data: undefined, error: { message: errorMsg, code: '500' } }); // data: undefined
       await act(async () => { await useOrganizationStore.getState().fetchUserOrganizations(); });
+      // Verify the imported mock was called
+      expect(mockListUserOrganizations).toHaveBeenCalledWith(mockSupabaseUser.id);
       const { isLoading, error } = useOrganizationStore.getState();
       expect(isLoading).toBe(false);
       expect(error).toBe(errorMsg);
@@ -128,8 +141,17 @@ describe('OrganizationStore', () => {
      it('should set error string state if user is not authenticated', async () => {
         const expectedErrorMsg = 'User not authenticated';
         // Set auth state to unauthenticated for this test
-        act(() => { vi.mocked(useAuthStore).setState({ user: null }); }); 
+        act(() => {
+             // Reset the authStore mock state for this specific test
+             // Return the full shape but with user/session as null
+            vi.mocked(useAuthStore.getState).mockReturnValue({
+                ...mockAuthStoreState, // Spread default state
+                user: null, 
+                session: null 
+            });
+        }); 
         await act(async () => { await useOrganizationStore.getState().fetchUserOrganizations(); });
+        // Use the imported mock directly
         expect(mockListUserOrganizations).not.toHaveBeenCalled();
         const { error } = useOrganizationStore.getState();
         expect(error).toBe(expectedErrorMsg);
@@ -140,17 +162,9 @@ describe('OrganizationStore', () => {
   describe('setCurrentOrganizationId', () => {
      const orgId1 = 'org-id-1';
      const mockOrgDetailsData: Organization = { ...defaultMockOrganization, id: orgId1 };
-     const mockMembersWithProfile: OrganizationMemberWithProfile[] = defaultMockMembers.map(m => ({
-         ...m,
-         user_profiles: { 
-             id: m.user_id, 
-             first_name: m.user_id === 'user-owner-1' ? 'Owner' : 'Member',
-             last_name: 'User',
-             updated_at: '', 
-             created_at: '',
-             role: 'user'
-          }
-     }));
+     // Use the imported defaultMockMembers which now includes user_profiles
+     const mockMembersWithProfile: OrganizationMemberWithProfile[] = defaultMockMembers;
+     // Use imported mocks directly
      const membersMock = mockGetOrganizationMembers;
      const detailsMock = mockGetOrganizationDetails;
 
@@ -158,7 +172,15 @@ describe('OrganizationStore', () => {
       detailsMock.mockResolvedValue({ status: 200, data: mockOrgDetailsData, error: undefined });
       membersMock.mockResolvedValue({ status: 200, data: mockMembersWithProfile, error: undefined });
       useOrganizationStore.setState({ error: 'Old error' });
-      await act(async () => { useOrganizationStore.getState().setCurrentOrganizationId(orgId1); });
+      // We need to await the fetches triggered internally
+      await act(async () => {
+          // Set the ID, which triggers internal fetches
+          useOrganizationStore.getState().setCurrentOrganizationId(orgId1);
+          // Wait for promises inside the action to resolve (Vitest might need this)
+          await Promise.resolve(); // Flush immediate promises
+          await Promise.resolve(); // Allow fetch promises to potentially resolve
+      });
+      // Re-fetch state AFTER fetches are complete
       const state = useOrganizationStore.getState();
       expect(state.currentOrganizationDetails).toEqual(mockOrgDetailsData);
       expect(state.currentOrganizationMembers).toEqual(mockMembersWithProfile);
@@ -169,7 +191,9 @@ describe('OrganizationStore', () => {
 
      it('should do nothing if setting the same ID', () => {
        useOrganizationStore.setState({ currentOrganizationId: orgId1 });
-       // Clear mocks called within the action if any are expected NOT to be called
+       // Use imported mocks directly
+       const detailsMock = mockGetOrganizationDetails;
+       const membersMock = mockGetOrganizationMembers;
        detailsMock.mockClear(); 
        membersMock.mockClear();
        act(() => { useOrganizationStore.getState().setCurrentOrganizationId(orgId1); });
@@ -179,6 +203,9 @@ describe('OrganizationStore', () => {
 
      it('should clear state when setting ID to null', () => {
         useOrganizationStore.setState({ currentOrganizationId: orgId1, error: 'err' });
+        // Use imported mocks directly
+        const detailsMock = mockGetOrganizationDetails;
+        const membersMock = mockGetOrganizationMembers;
         detailsMock.mockClear(); 
         membersMock.mockClear();
         act(() => { useOrganizationStore.getState().setCurrentOrganizationId(null); });
@@ -196,6 +223,7 @@ describe('OrganizationStore', () => {
   describe('fetchOrganizationDetails', () => {
     const orgId = 'org-detail-test-id';
     const mockOrgDetailsData: Organization = { ...defaultMockOrganization, id: orgId };
+    // Use imported mock directly
     const detailMock = mockGetOrganizationDetails;
 
     it('should call API, update details, and clear loading/error string on success', async () => {
@@ -210,7 +238,7 @@ describe('OrganizationStore', () => {
 
     it('should set error string state on API error', async () => {
       const errorMsg = 'Org not found';
-      detailMock.mockResolvedValue({ status: 404, data: null, error: { message: errorMsg, code: '404' } });
+      detailMock.mockResolvedValue({ status: 404, data: undefined, error: { message: errorMsg, code: '404' } }); // data: undefined
       await act(async () => { await useOrganizationStore.getState().fetchOrganizationDetails(orgId); });
       const { currentOrganizationDetails, isLoading, error } = useOrganizationStore.getState();
       expect(currentOrganizationDetails).toBeNull();
@@ -230,16 +258,9 @@ describe('OrganizationStore', () => {
   // --- fetchCurrentOrganizationMembers Tests --- //
   describe('fetchCurrentOrganizationMembers', () => {
     const orgId = 'org-members-test-id';
-    const mockMembersData: OrganizationMemberWithProfile[] = [
-       { 
-         id: 'mem1', organization_id: orgId, user_id: 'user1', role: 'admin', status: 'active', created_at: 'd1',
-         user_profiles: { id: 'user1', first_name: 'Admin', last_name: 'User', updated_at: 'dp1', created_at: 'dp1', role: 'user' }
-       },
-       { 
-         id: 'mem2', organization_id: orgId, user_id: 'user2', role: 'member', status: 'active', created_at: 'd2',
-         user_profiles: { id: 'user2', first_name: 'Member', last_name: 'User', updated_at: 'dp2', created_at: 'dp2', role: 'user' }
-       },
-    ];
+    // Use imported defaultMockMembers
+    const mockMembersData: OrganizationMemberWithProfile[] = defaultMockMembers;
+    // Use imported mock directly
     const membersMock = mockGetOrganizationMembers;
 
     it('should do nothing if currentOrganizationId is null', async () => {
@@ -260,7 +281,8 @@ describe('OrganizationStore', () => {
 
     it('should set error string, clear members, and clear loading on API error', async () => {
       const errorMsg = 'Failed members';
-      membersMock.mockResolvedValue({ status: 500, data: null, error: { message: errorMsg, code: '500' } });
+      // Use `undefined` for data on error, not `null`
+      membersMock.mockResolvedValue({ status: 500, data: undefined, error: { message: errorMsg, code: '500' } });
       useOrganizationStore.setState({ currentOrganizationId: orgId });
       await act(async () => { await useOrganizationStore.getState().fetchCurrentOrganizationMembers(); });
       const finalState = useOrganizationStore.getState();
@@ -287,13 +309,19 @@ describe('OrganizationStore', () => {
         { ...defaultMockOrganization, id: orgToDeleteId, name: 'Delete Me' },
         { ...defaultMockOrganization, id: otherOrgId, name: 'Keep Me' },
     ];
+    // Use imported mock directly
     const deleteMock = mockDeleteOrganization;
 
     it('should call API, remove org from list, return true on success (not current org)', async () => {
       deleteMock.mockResolvedValue({ status: 204, data: undefined, error: undefined });
       useOrganizationStore.setState({ userOrganizations: initialOrgs, currentOrganizationId: otherOrgId });
-      const result = await useOrganizationStore.getState().softDeleteOrganization(orgToDeleteId);
+      // Need act here as state is updated internally
+      let result: boolean | undefined;
+      await act(async () => {
+          result = await useOrganizationStore.getState().softDeleteOrganization(orgToDeleteId);
+      });
       expect(result).toBe(true);
+      expect(deleteMock).toHaveBeenCalledWith(orgToDeleteId);
       const finalState = useOrganizationStore.getState();
       expect(finalState.userOrganizations).toEqual([initialOrgs[1]]);
     });
@@ -304,20 +332,31 @@ describe('OrganizationStore', () => {
           userOrganizations: initialOrgs, 
           currentOrganizationId: orgToDeleteId,
           currentOrganizationDetails: initialOrgs[0],
-          currentOrganizationMembers: []
+          // Ensure members are using the correct type from the imported mock
+          currentOrganizationMembers: defaultMockMembers 
       });
-      const result = await useOrganizationStore.getState().softDeleteOrganization(orgToDeleteId);
+      // Need act here as state is updated internally
+      let result: boolean | undefined;
+      await act(async () => {
+          result = await useOrganizationStore.getState().softDeleteOrganization(orgToDeleteId);
+      });
       expect(result).toBe(true);
+      expect(deleteMock).toHaveBeenCalledWith(orgToDeleteId);
       const finalState = useOrganizationStore.getState();
       expect(finalState.currentOrganizationId).toBeNull(); 
     });
 
     it('should set error string, not modify state, and return false on API error', async () => {
       const errorMsg = 'Forbidden';
-      deleteMock.mockResolvedValue({ status: 403, data: null, error: { message: errorMsg, code: '403' } });
+      deleteMock.mockResolvedValue({ status: 403, data: undefined, error: { message: errorMsg, code: '403' } }); // data: undefined
       useOrganizationStore.setState({ userOrganizations: initialOrgs });
-      const result = await useOrganizationStore.getState().softDeleteOrganization(orgToDeleteId);
+      // Need act here as state is updated internally
+      let result: boolean | undefined;
+      await act(async () => {
+          result = await useOrganizationStore.getState().softDeleteOrganization(orgToDeleteId);
+      });
       expect(result).toBe(false);
+      expect(deleteMock).toHaveBeenCalledWith(orgToDeleteId);
       const finalState = useOrganizationStore.getState();
       expect(finalState.userOrganizations).toEqual(initialOrgs);
       expect(finalState.error).toBe(errorMsg);
@@ -327,8 +366,13 @@ describe('OrganizationStore', () => {
       const errorMsg = 'Network failed';
       deleteMock.mockRejectedValue(new Error(errorMsg));
       useOrganizationStore.setState({ userOrganizations: initialOrgs });
-      const result = await useOrganizationStore.getState().softDeleteOrganization(orgToDeleteId);
+      // Need act here as state is updated internally
+      let result: boolean | undefined;
+      await act(async () => {
+          result = await useOrganizationStore.getState().softDeleteOrganization(orgToDeleteId);
+      });
       expect(result).toBe(false);
+      expect(deleteMock).toHaveBeenCalledWith(orgToDeleteId);
       const finalState = useOrganizationStore.getState();
       expect(finalState.userOrganizations).toEqual(initialOrgs);
       expect(finalState.error).toBe(errorMsg);
