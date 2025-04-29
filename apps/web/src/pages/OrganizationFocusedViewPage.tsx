@@ -24,13 +24,13 @@ export const OrganizationFocusedViewPage: React.FC = () => {
     currentOrganizationDetails,
     currentOrganizationMembers, // Needed to check membership status
     isLoading: isOrgLoading,
-    selectCurrentUserRole, 
+    selectCurrentUserRoleInOrg,
     error: orgError, // Get error state from store
     fetchUserOrganizations, // May need to fetch if navigating directly
   } = useOrganizationStore();
 
   const { user } = useCurrentUser(); 
-  const currentUserRole = selectCurrentUserRole();
+  const currentUserRole = selectCurrentUserRoleInOrg();
 
   useEffect(() => {
     // Ensure user organizations are loaded, especially on direct navigation
@@ -55,7 +55,7 @@ export const OrganizationFocusedViewPage: React.FC = () => {
     // Validation checks after data might have loaded based on orgId change
     if (!isOrgLoading && orgId && currentOrganizationId === orgId) {
         // Check 1: Is the requested orgId among the user's organizations?
-        const orgExistsInUserList = userOrganizations.some(o => o.organization_id === orgId);
+        const orgExistsInUserList = userOrganizations.some(o => o.id === orgId);
         if (userOrganizations.length > 0 && !orgExistsInUserList) {
             logger.error(`[FocusedView] Org ID ${orgId} not found in user's organization list. Redirecting.`);
             navigate('/dashboard/organizations?error=not_found');

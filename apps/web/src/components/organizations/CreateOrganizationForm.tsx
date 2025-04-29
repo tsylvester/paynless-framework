@@ -4,12 +4,8 @@ import React from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
-import { useNavigate } from 'react-router-dom';
 import { useOrganizationStore } from '@paynless/store';
-import { toast } from 'sonner';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
+import { Button } from "@/components/ui/button"
 import {
   Form,
   FormControl,
@@ -18,57 +14,67 @@ import {
   FormItem,
   FormLabel,
   FormMessage,
-} from '@/components/ui/form';
-import {
-  RadioGroup,
-  RadioGroupItem,
-} from "@/components/ui/radio-group"
+} from "@/components/ui/form"
+import { Input } from "@/components/ui/input"
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
+import { toast } from "sonner"; // Or your preferred toast library
+import { logger } from '@paynless/utils';
 
-// Define the Zod schema for form validation
+// Define the form schema using Zod
 const formSchema = z.object({
-  name: z.string().min(3, { message: 'Organization name must be at least 3 characters long.' }),
-  visibility: z.enum(['private', 'public']),
+  name: z.string().min(3, { message: "Organization name must be at least 3 characters." }),
+  visibility: z.enum(['private', 'public'], { 
+      required_error: "You need to select a visibility setting.",
+      // message: "Visibility must be either 'private' or 'public'." // Optional custom message
+  }),
 });
 
-// Use z.infer again, it should now infer visibility as non-optional
-type FormData = z.infer<typeof formSchema>;
+// Define the type for our form values based on the schema
+type CreateOrganizationFormValues = z.infer<typeof formSchema>;
 
 export const CreateOrganizationForm: React.FC = () => {
-  const navigate = useNavigate();
   const createOrganization = useOrganizationStore((state) => state.createOrganization);
+  const closeCreateModal = useOrganizationStore((state) => state.closeCreateModal);
+  // Use isLoading from the store if needed to disable the button
   const isLoading = useOrganizationStore((state) => state.isLoading);
+  // Get error state reactively
+  const storeError = useOrganizationStore((state) => state.error);
 
-  const form = useForm<FormData>({
+  // Initialize the form
+  const form = useForm<CreateOrganizationFormValues>({
     resolver: zodResolver(formSchema),
     defaultValues: {
-      name: '',
-      visibility: 'private',
+      name: "",
+      visibility: "private", // Default to private
     },
   });
 
-  const onSubmit = async (data: FormData) => {
-    const toastId = toast.loading('Creating organization...');
-    try {
-      const newOrg = await createOrganization(data.name, data.visibility);
-      if (newOrg) {
-        toast.success(`Organization '${newOrg.name}' created successfully!`, { id: toastId });
-        // Navigate to the new organization's page or the list
-        // Assuming createOrganization action adds the new org to the store and returns it
-        navigate(`/dashboard/organizations/${newOrg.id}`); // Navigate to the specific org page
-      } else {
-        // Handle case where creation succeeded API-wise but store/return is unexpected
-        toast.error('Failed to create organization. Please try again.', { id: toastId });
-      }
-    } catch (error) {
-      // Error handling likely done in store/API client, but catch here as fallback
-      console.error("Create organization form error:", error);
-      toast.error('Failed to create organization.', { id: toastId });
+  // Define the submit handler
+  const onSubmit = async (values: CreateOrganizationFormValues) => {
+    logger.info('[CreateOrganizationForm] Attempting to create organization', values);
+    // The createOrganization action in the store already sets loading/error states
+    const createdOrg = await createOrganization(values.name, values.visibility);
+
+    if (createdOrg) {
+      logger.info('[CreateOrganizationForm] Organization created successfully', { id: createdOrg.id });
+      toast.success(`Organization "${createdOrg.name}" created successfully!`);
+      form.reset(); // Clear form fields
+      closeCreateModal(); // Close the modal on success
+    } else {
+      // Error handling: The store sets the error state, maybe show a generic toast?
+      // Or use form.setError for specific field errors if the API provides them?
+      // Use the reactively selected storeError state here
+      const currentError = storeError; // Use the value selected by the hook
+      logger.error('[CreateOrganizationForm] Failed to create organization', { error: currentError });
+      toast.error(currentError || 'Failed to create organization. Please try again.');
+      // Example of setting a form error if API indicated name conflict:
+      // form.setError("name", { type: "manual", message: "An organization with this name already exists." });
     }
   };
 
   return (
     <Form {...form}>
-      <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-8">
+      <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
         <FormField
           control={form.control}
           name="name"
@@ -76,16 +82,15 @@ export const CreateOrganizationForm: React.FC = () => {
             <FormItem>
               <FormLabel>Organization Name</FormLabel>
               <FormControl>
-                <Input placeholder="Your Company or Team Name" {...field} />
+                <Input placeholder="Acme Inc." {...field} />
               </FormControl>
               <FormDescription>
-                This will be the display name for your organization.
+                This is the name of your new organization.
               </FormDescription>
               <FormMessage />
             </FormItem>
           )}
         />
-
         <FormField
           control={form.control}
           name="visibility"
@@ -103,7 +108,7 @@ export const CreateOrganizationForm: React.FC = () => {
                       <RadioGroupItem value="private" />
                     </FormControl>
                     <FormLabel className="font-normal">
-                      Private (Only members can see)
+                      Private (Invite only)
                     </FormLabel>
                   </FormItem>
                   <FormItem className="flex items-center space-x-3 space-y-0">
@@ -111,22 +116,29 @@ export const CreateOrganizationForm: React.FC = () => {
                       <RadioGroupItem value="public" />
                     </FormControl>
                     <FormLabel className="font-normal">
-                      Public (Visible to all logged-in users - future feature)
+                      Public (Visible to others, requires join request)
                     </FormLabel>
                   </FormItem>
                 </RadioGroup>
               </FormControl>
-              <FormDescription>
-                Choose who can see this organization.
-              </FormDescription>
               <FormMessage />
             </FormItem>
           )}
         />
-
-        <Button type="submit" disabled={isLoading || form.formState.isSubmitting}>
-          {isLoading || form.formState.isSubmitting ? 'Creating...' : 'Create Organization'}
-        </Button>
+        {/* Form Footer with Buttons */}
+        <div className="flex justify-end space-x-2 pt-4">
+             <Button 
+                type="button" 
+                variant="outline" 
+                onClick={closeCreateModal} 
+                disabled={isLoading}
+             >
+                Cancel
+            </Button>
+             <Button type="submit" disabled={isLoading}>
+                {isLoading ? "Creating..." : "Create Organization"}
+            </Button>
+        </div>
       </form>
     </Form>
   );

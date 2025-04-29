@@ -79,6 +79,15 @@ const matchMediaMock = vi.fn(query => ({
 vi.stubGlobal('matchMedia', matchMediaMock);
 console.log('[setupTests] Applied window.matchMedia mock using vi.stubGlobal.'); // Log confirmation
 
+// Mock ResizeObserver
+const ResizeObserverMock = vi.fn(() => ({
+    observe: vi.fn(),
+    unobserve: vi.fn(),
+    disconnect: vi.fn(),
+}));
+vi.stubGlobal('ResizeObserver', ResizeObserverMock);
+console.log('[setupTests] Applied ResizeObserver mock using vi.stubGlobal.');
+
 // Optional: Add any other global setup here
 
 // Log fetch at the end of setup for comparison

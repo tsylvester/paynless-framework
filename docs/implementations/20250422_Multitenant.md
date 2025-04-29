@@ -273,29 +273,113 @@ This section outlines the frontend implementation using a dynamic, card-based "h
         *   [X] Test: Create Org link works.
         *   [X] Test: Selection navigates correctly.
     *   [ ] **REVISED:** `OrganizationListCard.tsx`: (Displayed on `OrganizationHubPage`)
-        *   [ ] Displays list of user's organizations from `selectUserOrganizations`.
-        *   [ ] Includes "Create New Organization" button triggering `CreateOrganizationModal`.
-        *   [ ] Highlights the list item corresponding to `currentOrganizationId`.
-        *   [ ] Clicking a *different*, inactive org in the list dispatches `setCurrentOrganizationId`. (Consider UX: immediate switch vs. confirmation).
-        *   [ ] Test: Renders organization names correctly. Handles empty state (displays message/create button prominently).
-        *   [ ] Test: "Create New" button correctly opens the `CreateOrganizationModal`.
-        *   [ ] Test: Correctly highlights the active organization based on `currentOrganizationId` from the store.
-        *   [ ] Test: Clicking an inactive list item dispatches `setCurrentOrganizationId` with the correct org ID.
+        *   [X] Displays list of user's organizations from `selectUserOrganizations`.
+        *   [X] Includes "Create New Organization" button triggering `CreateOrganizationModal`.
+        *   [X] Highlights the list item corresponding to `currentOrganizationId`.
+        *   [X] Clicking a *different*, inactive org in the list dispatches `setCurrentOrganizationId`. (Consider UX: immediate switch vs. confirmation).
+        *   [X] Test: Renders organization names correctly. Handles empty state (displays message/create button prominently).
+        *   [X] Test: "Create New" button correctly triggers modal opening action (`openCreateModal`).
+        *   [X] Test: Correctly highlights the active organization based on `currentOrganizationId` from the store.
+        *   [X] Test: Clicking an inactive list item dispatches `setCurrentOrganizationId` with the correct org ID.
+        *   [X] Test: Clicking an active list item does NOT dispatch `setCurrentOrganizationId`.
         *   [ ] Test: The list accurately reflects the `userOrganizations` state, updating automatically when an org is created or deleted via store actions.
-    *   [ ] **NEW:** `CreateOrganizationModal.tsx`:
-        *   [ ] Contains `CreateOrganizationForm.tsx`.
-        *   [ ] Triggered by "Create New" button in `OrganizationListCard`.
-        *   [ ] Handles form submission: calls `createOrganization` store action. On success, closes modal (list updates via state). Shows success feedback (e.g., toast). On failure, displays error within modal.
-        *   [ ] Test: Modal opens when triggered and closes via button/overlay click.
-        *   [ ] Test: `CreateOrganizationForm` is rendered correctly inside.
-        *   [ ] Test: Successful submission calls `createOrganization`, closes modal, and shows success feedback.
-        *   [ ] Test: Failed submission displays API error message clearly within the modal without closing it.
-    *   [ ] `CreateOrganizationForm.tsx`: (Used within Modal)
-        *   [ ] Form fields (name, visibility) with validation (`react-hook-form`, `zod`).
-        *   [ ] `onSubmit` handler performs the call passed down from the modal.
+    *   [X] **NEW:** `CreateOrganizationModal.tsx`:
+        *   [X] Contains `CreateOrganizationForm.tsx`.
+        *   [X] Triggered by "Create New" button in `OrganizationListCard` (via store state).
+        *   [X] Handles form submission: calls `createOrganization` store action. On success, closes modal (list updates via state). Shows success feedback (e.g., toast). On failure, displays error within modal.
+        *   [X] Test: Modal opens/closes based on store state (`isCreateModalOpen`).
+        *   [X] Test: `CreateOrganizationForm` is rendered correctly inside when open.
+        *   [X] Test: Successful submission calls `createOrganization`, closes modal, and shows success feedback.
+        *   [X] Test: Failed submission displays API error message clearly within the modal without closing it.
+    *   [X] `CreateOrganizationForm.tsx`: (Used within Modal)
+        *   [X] Form fields (name, visibility) with validation (`react-hook-form`, `zod`).
+        *   [X] `onSubmit` handler performs the call passed down from the modal (calls `createOrganization`).
         *   [X] Test: Renders form elements correctly.
         *   [X] Test: Validation rules (e.g., required name) are enforced, displaying errors.
-        *   [X] Test: Valid submission correctly calls the provided submit handler with form data.
+        *   [X] Test: Valid submission correctly calls the `createOrganization` store action with form data.
+        *   [X] Test: Cancel button calls `closeCreateModal` action.
+        *   [X] Test: Buttons are disabled when `isLoading` is true.
     *   [ ] `OrganizationDetailsCard.tsx`: (Displayed Conditionally on Hub/Focused View)
         *   [ ] Displays read-only details (Name, Created At, Visibility etc.) from `selectCurrentOrganization`.
-        *   [ ] Test: Displays data correctly when `
+        *   [ ] Test: Displays data correctly when `currentOrganizationDetails` is populated.
+        *   [ ] Test: Handles loading state (shows skeleton/spinner) when `isLoading` is true for details fetch.
+        *   [ ] Test: Handles null state (shows placeholder/message) when `currentOrganizationId` is null or details are null.
+    *   [ ] `OrganizationSettingsCard.tsx`: (Admin Only, Displayed Conditionally on Hub/Focused View)
+        *   [ ] Form elements (Name, Visibility) for updates, pre-filled with `currentOrganizationDetails`.
+        *   [ ] "Update" button triggers `updateOrganization` action.
+        *   [ ] "Delete Organization" button triggers `DeleteOrganizationDialog`.
+        *   [ ] Test: Visibility is correctly controlled based on `selectCurrentUserRole` (admin only).
+        *   [ ] Test: Displays current settings correctly in form fields.
+        *   [ ] Test: Form validation works for updates.
+        *   [ ] Test: Update submission calls `updateOrganization` with correct orgId and data. Handles success/error feedback.
+        *   [ ] Test: Delete button opens the `DeleteOrganizationDialog`.
+        *   [ ] Test: Handles API errors gracefully for updates.
+    *   [ ] **NEW:** `DeleteOrganizationDialog.tsx`: (Triggered from `OrganizationSettingsCard`)
+        *   [ ] Confirmation dialog explaining soft-delete.
+        *   [ ] Requires explicit confirmation (e.g., type org name or click confirm button).
+        *   [ ] On confirmation, calls `softDeleteOrganization` action.
+        *   [ ] Test: Dialog displays correctly when triggered.
+        *   [ ] Test: Confirmation mechanism works as expected.
+        *   [ ] Test: Confirmed deletion calls `softDeleteOrganization` with the correct `currentOrganizationId`.
+        *   [ ] Test: Cancellation closes the dialog without action.
+        *   [ ] Test: Handles API errors during deletion (e.g., last admin error) by showing feedback.
+    *   [ ] `MemberListCard.tsx`: (Displayed Conditionally on Hub/Focused View)
+        *   [ ] Displays table/list of **active** members from `selectCurrentMembers`.
+        *   [ ] Includes controls (dropdown menus) for Admins: Change Role, Remove Member.
+        *   [ ] Includes control for any Member: Leave Organization.
+        *   [ ] Test: Displays members (name, role, avatar) correctly. Handles empty/loading states.
+        *   [ ] Test: **Admin Controls:** Change Role action triggers `updateMemberRole` with correct membershipId/newRole.
+        *   [ ] Test: **Admin Controls:** Remove Member action triggers confirmation, then `removeMember` with correct membershipId. Handles 'last admin' API error feedback.
+        *   [ ] Test: **Member Controls:** Leave Organization action triggers confirmation, then appropriate store action (e.g., `removeMember` with self ID check or dedicated `leaveOrganization` action). Handles 'last admin' API error.
+        *   [ ] Test: Controls are visible/enabled based on current user's role vs target member's role/status.
+        *   [ ] Test: Handles API errors gracefully for all actions (shows feedback).
+        *   [ ] Test: (Optional) Includes working pagination or search/filter for long lists.
+    *   [ ] `InviteMemberCard.tsx`: (Admin Only, Displayed Conditionally on Hub/Focused View)
+        *   [ ] Form (Email, Role) to invite users.
+        *   [ ] Submission triggers `inviteUser` action for the `currentOrganizationId`.
+        *   [ ] Test: Visibility is correctly controlled (admin only).
+        *   [ ] Test: Form validation works (valid email, selected role).
+        *   [ ] Test: Submission triggers `inviteUser` with correct orgId, email, role.
+        *   [ ] Test: Handles success (e.g., clear form, show toast) and API errors (e.g., already member/invited, invalid input) gracefully.
+    *   [ ] `PendingActionsCard.tsx`: (Admin Only, Displayed Conditionally on Hub/Focused View)
+        *   [ ] Displays list/table of pending join requests (`currentPendingRequests`).
+        *   [ ] Displays list/table of outgoing pending invites (`currentPendingInvites`).
+        *   [ ] Includes controls for Admins: Approve/Deny Request, Cancel Invite.
+        *   [ ] Test: Visibility is correctly controlled (admin only).
+        *   [ ] Test: Displays pending requests correctly (user name, email, date). Handles empty state.
+        *   [ ] Test: Displays pending invites correctly (email, role, date). Handles empty state.
+        *   [ ] Test: Approve Request button triggers `approveRequest` with correct membershipId.
+        *   [ ] Test: Deny Request button triggers `denyRequest` with correct membershipId.
+        *   [ ] Test: Cancel Invite button triggers `cancelInvite` with correct inviteId.
+        *   [ ] Test: Handles API errors gracefully for all actions (shows feedback).
+        *   [ ] Test: Lists update correctly when actions are taken or when `fetchCurrentOrganizationMembers` refreshes the pending data.
+
+### 2.7 Routing & Access Control (Frontend)
+
+*   [ ] **Tests:**
+    *   Test route loader/component logic for `/dashboard/organizations/:orgId`: Verify redirection if org is not found, deleted (check `currentOrganizationDetails` from store after fetch), or user is not a member (`currentOrganizationMembers`).
+    *   Test `
+
+### 2.8 Cleanup for Production (Deferred Tasks)
+
+*   [ ] **Refactor `OrganizationStore` into Slices**
+    *   [ ] orgStore.ts combined interface, initial state, and core
+    *   [ ] orgStore.list.ts fetching and managing `userOrganizations`
+    *   [ ] orgStore.current.ts manages `currentOrganizationId`, `currentOrganizationDetails`, and `currentOrganizationMembers` and related fetches/updates
+    *   [ ] orgStore.invite.ts handles invite-specific actions like `acceptInvite`, `declineInvite`, `fetchInviteDetails`.
+    *   [ ] orgStore.request.ts handles `requestJoin`, `approveRequest`, `denyRequest`.
+    *   [ ] orgStore.ui.ts manages UI-related state, starting with the `isCreateModalOpen` state and its actions (`openCreateModal`, `closeCreateModal`).
+*   [ ] **Implement `PublicRoute` Component:**
+    *   [ ] Create `PublicRoute.tsx` in `src/components/auth`.
+    *   [ ] Implement logic to redirect authenticated users away from public-only pages (e.g., to `/dashboard`).
+    *   [ ] Apply `<PublicRoute>` wrapper to `login`, `register`, `forgot-password`, `reset-password` routes in `routes.tsx`.
+    *   [ ] Test redirection for authenticated and unauthenticated users.
+*   [ ] **Implement Auth Flow Pages:**
+    *   [ ] Create `ForgotPassword.tsx`, `ResetPassword.tsx`, `VerifyEmail.tsx` pages in `src/pages`.
+    *   [ ] Implement the UI and logic for each page, including API interactions.
+    *   [ ] Uncomment the corresponding routes in `routes.tsx`.
+    *   [ ] Write tests for each page's functionality.
+*   [ ] **Final Review & Testing:**
+    *   [ ] Comprehensive end-to-end testing of all notification and multi-tenancy features.
+    *   [ ] Code review for consistency, error handling, and security.
+    *   [ ] Update all relevant documentation (`STRUCTURE.md`, `IMPLEMENTATION_PLAN.md`, `TESTING_PLAN.md`).

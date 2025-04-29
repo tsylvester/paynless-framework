@@ -17,19 +17,25 @@ import { useAuthStore } from './authStore'; // To get user ID
 import { logger } from '@paynless/utils';
 
 // --- State Interface (REMOVED - Imported from @paynless/types) ---
-// interface OrganizationState { ... }
+// We need to augment the imported state for UI elements NOT defined in the type package
+interface OrganizationUIState {
+    isCreateModalOpen: boolean;
+}
 
 // --- Actions Interface (REMOVED - Imported from @paynless/types) ---
-// Note: Internal actions (_setError, _setLoading) are part of the implementation,
-// not the public interface defined in OrganizationActions.
-// interface OrganizationActions { ... }
+// We need to augment the imported actions for UI elements NOT defined in the type package
+interface OrganizationUIActions {
+    openCreateModal: () => void;
+    closeCreateModal: () => void;
+}
 
 // --- Store Type (Use imported type) ---
 // type OrganizationStore = OrganizationState & OrganizationActions; 
 // We'll use OrganizationStoreType for the create function signature
 
 // --- Initial State (Define using the imported type) ---
-const initialState: OrganizationState = {
+// Combine the imported state with our UI state
+const initialState: OrganizationState & OrganizationUIState = {
   userOrganizations: [],
   currentOrganizationId: null,
   currentOrganizationDetails: null,
@@ -41,6 +47,8 @@ const initialState: OrganizationState = {
   isFetchingInviteDetails: false,
   fetchInviteDetailsError: null,
   error: null,
+  // UI State
+  isCreateModalOpen: false, 
 };
 
 // --- Store Implementation ---
@@ -52,7 +60,17 @@ interface InternalOrganizationActions {
 
 // Combine the public actions and internal actions for the create function implementation type
 // Ensure this includes the newly added OrganizationActions from the types package
-type OrganizationStoreImplementation = OrganizationState & OrganizationActions & InternalOrganizationActions;
+// Also include our UI Actions
+// And include the selector method signature
+type OrganizationStoreImplementation = 
+    OrganizationState & 
+    OrganizationUIState & 
+    OrganizationActions & 
+    OrganizationUIActions & 
+    InternalOrganizationActions & 
+    {
+        selectCurrentUserRoleInOrg: () => 'admin' | 'member' | null;
+    };
 
 // Instantiate the specific client - assuming the main 'api' export *is* the base client instance
 // const orgApiClient = new OrganizationApiClient(api as ApiClient); 
@@ -63,6 +81,10 @@ export const useOrganizationStore = create<OrganizationStoreImplementation>((set
   // --- Helper Actions ---
   _setError: (error: string | null) => set({ error, isLoading: false }),
   _setLoading: (loading: boolean) => set({ isLoading: loading }),
+
+  // --- UI Actions ---
+  openCreateModal: () => set({ isCreateModalOpen: true }),
+  closeCreateModal: () => set({ isCreateModalOpen: false }),
 
   // --- Main Actions (Existing implementations) ---
   fetchUserOrganizations: async () => {
