@@ -208,88 +208,135 @@ This document outlines the steps for implementing an in-app notification system 
     *   [X] Update `inviteUser` action if API changes.
     *   [X] **(Update)** Update `fetchCurrentOrganizationMembers` to fetch pending items for admins.
 
-### 2.6 Frontend Components & UI (`apps/web`) - Card-Based Approach
+### 2.6 Frontend Components & UI (`apps/web`) - Consolidated Hub Approach (Detailed)
 
-This section outlines the frontend implementation using a dynamic, card-based layout for organization management, enhancing flexibility and reusability.
+This section outlines the frontend implementation using a dynamic, card-based "hub" layout for the primary organization management interface at `/dashboard/organizations`, ensuring detailed testing coverage.
 
-*   [X] **Routes (`src/routes/routes.tsx`):**
-    *   [X] Define protected routes under `/dashboard/organizations`. Ensure proper authentication checks are in place.
-    *   [ ] `/dashboard/organizations`: **`OrganizationListPage`** - Displays the list of organizations the user belongs to.
-        *   [ ] Test: Fetches and displays organizations correctly from `organizationStore`.
-        *   [ ] Test: Handles empty state (no organizations).
-        *   [ ] Test: Links correctly to `/dashboard/organizations/new` and individual `/dashboard/organizations/:orgId` routes.
-        *   [ ] Test: Uses reusable `OrganizationListCard` component.
-    *   [ ] `/dashboard/organizations/new`: **`CreateOrganizationPage`** - Page hosting the form to create a new organization.
-        *   [X] Component: Contains `CreateOrganizationForm.tsx`.
-        *   [X] Test: Form renders, validation works, submission triggers `createOrganization` store action.
-        *   [ ] Test: Redirects to the new organization's page (`/dashboard/organizations/:newOrgId`) upon successful creation.
-        *   [ ] Test: Displays API errors gracefully if creation fails.
-    *   [ ] `/dashboard/organizations/:orgId`: **`OrganizationDashboardPage`** - The main view for managing a specific organization. This page dynamically renders relevant component cards based on user role and available data.
-        *   [ ] Loader/Effect: Triggers `setCurrentOrganizationId` store action with `:orgId` from URL params.
-        *   [ ] Access Control: Redirects (e.g., to `/dashboard/organizations` or a 404/403 page) if the organization is not found, marked as deleted (`currentOrganizationDetails.deleted_at`), or the user is not an active member (check via `selectCurrentOrganizationMembers` or similar logic after data fetch).
-        *   [ ] Layout: Arranges the conditionally rendered cards (e.g., using a responsive grid).
-        *   [ ] Test: Correctly loads data for the specified `:orgId`.
-        *   [ ] Test: Handles loading states gracefully while data is fetched.
-        *   [ ] Test: Implements access control and redirection logic correctly.
-        *   [ ] Test: Dynamically renders the appropriate set of cards based on the current user's role (`selectCurrentUserRole`).
-    *   [X] `/accept-invite/:token`: **`AcceptInvitePage`** - Handles invite acceptance/declination via URL token.
+*   [ ] **Routes (`src/routes/routes.tsx`):**
+    *   [X] Define protected routes under `/dashboard`. Ensure proper authentication checks are in place using the routing library's mechanisms.
+    *   [ ] `/dashboard/organizations`: **`OrganizationHubPage`** - The central page rendering `OrganizationListCard` alongside management cards for the active organization.
+        *   [ ] Loader/Effect: On initial load, triggers `fetchUserOrganizations`. Determines and sets initial `currentOrganizationId`.
+        *   [ ] Layout: Responsive layout (e.g., two-column) displaying `OrganizationListCard` and management cards.
+        *   [ ] Data Display: Conditionally renders management cards based on `currentOrganizationId` and user role. Shows placeholder/empty state.
+        *   [ ] Test (Hub Page): Correctly fetches user organizations on load.
+        *   [ ] Test (Hub Page): Sets a logical initial `currentOrganizationId` (e.g., first org, or handles null if no orgs).
+        *   [ ] Test (Hub Page): Renders `OrganizationListCard` component.
+        *   [ ] Test (Hub Page): Renders the correct *set* of management cards based on selected `currentOrganizationId` and user's role (`selectCurrentUserRole`).
+        *   [ ] Test (Hub Page): Handles the UI state when the user has zero organizations.
+        *   [ ] Test (Hub Page): Displays loading indicators gracefully during data fetches.
+        *   [ ] Test (Hub Page): Layout adjusts properly for different screen sizes.
+        *   [ ] Test (Hub Page): Access control - Ensures only authenticated users can access this route.
+    *   [ ] `/dashboard/organizations/:orgId`: **`OrganizationFocusedViewPage`** (Optional but Recommended) - Dedicated view for a single org's management cards.
+        *   [ ] Loader/Effect: Triggers `setCurrentOrganizationId` with `:orgId`. Handles routing/errors if org not found, deleted (`currentOrganizationDetails.deleted_at`), or user lacks access (not an active member).
+        *   [ ] Layout: Renders *only* the relevant management cards based on fetched data/role for `:orgId`.
+        *   [ ] Test (Focused View): Correctly loads data for the specified `:orgId`.
+        *   [ ] Test (Focused View): Renders the correct set of management cards based on user role for *this specific org*.
+        *   [ ] Test (Focused View): **Access Control** - Redirects/shows error if org is not found in `userOrganizations` after fetch.
+        *   [ ] Test (Focused View): **Access Control** - Redirects/shows error if `currentOrganizationDetails` indicates org is deleted.
+        *   [ ] Test (Focused View): **Access Control** - Redirects/shows error if the current user is not found within `currentOrganizationMembers` after fetch.
+        *   [ ] Test (Focused View): Handles loading states gracefully.
+    *   [X] `/accept-invite/:token`: **`AcceptInvitePage`** - Standalone page for handling invite links.
         *   [ ] Test: Extracts token correctly from URL.
-        *   [ ] Test: Displays invite details (org name, inviter if available).
-        *   [ ] Test: Triggers `acceptInvite` / `declineInvite` store actions correctly.
-        *   [ ] Test: Shows appropriate feedback (success/error messages, redirects) based on the action result.
-        *   [ ] Test: Handles invalid/expired tokens gracefully.
+        *   [ ] Test: Displays invite details (org name, inviter if available) while loading/pending user action.
+        *   [ ] Test: Triggers `acceptInvite` store action when user accepts.
+        *   [ ] Test: Triggers `declineInvite` store action when user declines.
+        *   [ ] Test: Shows appropriate feedback (success message, error message via toast/alert) based on the action result.
+        *   [ ] Test: Redirects on success (e.g., to the relevant `OrganizationHubPage` or `/dashboard/organizations/:orgId`).
+        *   [ ] Test: Handles API errors (e.g., invalid/expired token, user mismatch) gracefully, showing informative messages.
 
 *   [ ] **Pages (`src/pages`):**
-    *   [X] `OrganizationListPage.tsx`: Implements the `/dashboard/organizations` route. Uses `OrganizationListCard`.
-    *   [X] `CreateOrganizationPage.tsx`: Implements the `/dashboard/organizations/new` route. Uses `CreateOrganizationForm`.
-    *   [ ] `OrganizationDashboardPage.tsx`: Implements the `/dashboard/organizations/:orgId` route. Contains logic for data fetching, access control, and conditional rendering of component cards.
-    *   [ ] `AcceptInvitePage.tsx`: Implements the `/accept-invite/:token` route.
+    *   [ ] `OrganizationHubPage.tsx`: Implements `/dashboard/organizations`. Orchestrates display of `OrganizationListCard` + dynamic management cards. Handles initial data load and setting context.
+    *   [ ] `OrganizationFocusedViewPage.tsx` (If implemented): Implements `/dashboard/organizations/:orgId`. Handles data load for specific org and renders management cards.
+    *   [ ] `AcceptInvitePage.tsx`: Implements `/accept-invite/:token`. Handles token processing, user actions, and feedback.
 
 *   [ ] **Layouts (`src/components/layout`):**
-    *   [ ] Update `Header.tsx` or main dashboard layout to include the `OrganizationSwitcher.tsx` component when the user belongs to one or more organizations. Ensure it's visually integrated and functional.
-    *   [ ] (Optional but Recommended) `OrganizationDashboardLayout.tsx`: Consider a layout component specifically for `/dashboard/organizations/:orgId` to potentially handle common elements like a consistent header/sub-nav or standardized loading/error states, simplifying `OrganizationDashboardPage`.
+    *   [ ] Update `Header.tsx` (or main dashboard layout) to include `OrganizationSwitcher.tsx`. Ensure it syncs with `currentOrganizationId`.
+    *   [ ] Consider `OrganizationHubLayout.tsx` for the hub page's responsive structure.
 
-*   [ ] **Components (`src/components/organizations`):** Create/refine the following reusable components:
-    *   [ ] `OrganizationSwitcher.tsx`: Dropdown/selector in the main UI (e.g., Header) listing user's organizations (from `selectUserOrganizations`). Selecting an org updates `currentOrganizationId` in the store, triggering navigation or data refresh for `OrganizationDashboardPage`.
-        *   [ ] Test: Displays organizations correctly.
-        *   [ ] Test: Dispatches `setCurrentOrganizationId` action on selection.
-        *   [ ] Test: Includes a link/button to navigate to `OrganizationListPage` or `CreateOrganizationPage`.
-        *   [ ] Test: Handles the case where the user has no organizations.
-    *   [X] `CreateOrganizationForm.tsx`: Form with fields (name, visibility), validation (`react-hook-form`, `zod`), and submission logic calling `createOrganization`. Already tested via `CreateOrganizationPage`.
-    *   [ ] `OrganizationListCard.tsx`: Simple card displaying basic info (name) for an org in `OrganizationListPage`. Links to the corresponding `OrganizationDashboardPage`.
-        *   [ ] Test: Renders organization data correctly.
-        *   [ ] Test: Links to the correct `/dashboard/organizations/:orgId` route.
-    *   [ ] **NEW:** `OrganizationDetailsCard.tsx`: Displays read-only details of the `currentOrganizationDetails` (e.g., Name, Creation Date). Rendered on `OrganizationDashboardPage`.
-        *   [ ] Test: Displays data from `selectCurrentOrganization` correctly.
-        *   [ ] Test: Handles loading/null state gracefully.
-    *   [ ] **NEW:** `OrganizationSettingsCard.tsx`: Contains form elements (Name, Visibility) to update the organization via `updateOrganization`. Includes a "Delete Organization" button triggering a confirmation dialog and then the `softDeleteOrganization` action. **Visible only to Admins.**
-        *   [ ] Test: Displays current settings correctly.
+*   [ ] **Components (`src/components/organizations`):**
+    *   [ ] `OrganizationSwitcher.tsx`: (Header Component)
+        *   [ ] Test: Displays organizations from `selectUserOrganizations` correctly. Handles empty state.
+        *   [ ] Test: Dispatches `setCurrentOrganizationId` action correctly on selection.
+        *   [ ] Test: Visually updates to reflect `currentOrganizationId` changes originating from `OrganizationListCard` or route changes.
+        *   [ ] Test: Includes a navigational link to `/dashboard/organizations` (the hub page).
+    *   [ ] **REVISED:** `OrganizationListCard.tsx`: (Displayed on `OrganizationHubPage`)
+        *   [ ] Displays list of user's organizations from `selectUserOrganizations`.
+        *   [ ] Includes "Create New Organization" button triggering `CreateOrganizationModal`.
+        *   [ ] Highlights the list item corresponding to `currentOrganizationId`.
+        *   [ ] Clicking a *different*, inactive org in the list dispatches `setCurrentOrganizationId`. (Consider UX: immediate switch vs. confirmation).
+        *   [ ] Test: Renders organization names correctly. Handles empty state (displays message/create button prominently).
+        *   [ ] Test: "Create New" button correctly opens the `CreateOrganizationModal`.
+        *   [ ] Test: Correctly highlights the active organization based on `currentOrganizationId` from the store.
+        *   [ ] Test: Clicking an inactive list item dispatches `setCurrentOrganizationId` with the correct org ID.
+        *   [ ] Test: The list accurately reflects the `userOrganizations` state, updating automatically when an org is created or deleted via store actions.
+    *   [ ] **NEW:** `CreateOrganizationModal.tsx`:
+        *   [ ] Contains `CreateOrganizationForm.tsx`.
+        *   [ ] Triggered by "Create New" button in `OrganizationListCard`.
+        *   [ ] Handles form submission: calls `createOrganization` store action. On success, closes modal (list updates via state). Shows success feedback (e.g., toast). On failure, displays error within modal.
+        *   [ ] Test: Modal opens when triggered and closes via button/overlay click.
+        *   [ ] Test: `CreateOrganizationForm` is rendered correctly inside.
+        *   [ ] Test: Successful submission calls `createOrganization`, closes modal, and shows success feedback.
+        *   [ ] Test: Failed submission displays API error message clearly within the modal without closing it.
+    *   [ ] `CreateOrganizationForm.tsx`: (Used within Modal)
+        *   [ ] Form fields (name, visibility) with validation (`react-hook-form`, `zod`).
+        *   [ ] `onSubmit` handler performs the call passed down from the modal.
+        *   [X] Test: Renders form elements correctly.
+        *   [X] Test: Validation rules (e.g., required name) are enforced, displaying errors.
+        *   [X] Test: Valid submission correctly calls the provided submit handler with form data.
+    *   [ ] `OrganizationDetailsCard.tsx`: (Displayed Conditionally on Hub/Focused View)
+        *   [ ] Displays read-only details (Name, Created At, Visibility etc.) from `selectCurrentOrganization`.
+        *   [ ] Test: Displays data correctly when `currentOrganizationDetails` is populated.
+        *   [ ] Test: Handles loading state (shows skeleton/spinner) when `isLoading` is true for details fetch.
+        *   [ ] Test: Handles null state (shows placeholder/message) when `currentOrganizationId` is null or details are null.
+    *   [ ] `OrganizationSettingsCard.tsx`: (Admin Only, Displayed Conditionally on Hub/Focused View)
+        *   [ ] Form elements (Name, Visibility) for updates, pre-filled with `currentOrganizationDetails`.
+        *   [ ] "Update" button triggers `updateOrganization` action.
+        *   [ ] "Delete Organization" button triggers `DeleteOrganizationDialog`.
+        *   [ ] Test: Visibility is correctly controlled based on `selectCurrentUserRole` (admin only).
+        *   [ ] Test: Displays current settings correctly in form fields.
         *   [ ] Test: Form validation works for updates.
-        *   [ ] Test: Submitting update calls `updateOrganization` store action.
-        *   [ ] Test: Delete button shows confirmation dialog.
-        *   [ ] Test: Confirmed deletion calls `softDeleteOrganization` store action.
-        *   [ ] Test: Handles API errors gracefully for both update and delete.
-        *   [ ] Test: Visibility is correctly controlled based on user role (admin only).
-    *   [ ] **NEW:** `MemberListCard.tsx`: Displays a list/table of **active** members (`currentOrganizationMembers`). Includes controls (e.g., dropdown menus) for Admins to change member roles (`updateMemberRole`) or remove members (`removeMember`). Includes a way for users to leave the organization (requires a dedicated API/action or permission check in `removeMember`).
-        *   [ ] Test: Displays members from `selectCurrentMembers` correctly (name, role, avatar).
-        *   [ ] Test: Actions (change role, remove, leave) are visible/enabled based on the current user's role and the target member (e.g., cannot remove self if last admin, admins can remove others, users can leave).
-        *   [ ] Test: Change role action triggers `updateMemberRole` with correct parameters.
-        *   [ ] Test: Remove member action triggers `removeMember` with correct parameters (shows confirmation).
-        *   [ ] Test: Leave organization action triggers the appropriate store action (shows confirmation).
-        *   [ ] Test: Handles API errors gracefully for all actions.
-        *   [ ] Test: Includes pagination or search/filter if member lists can become long.
-    *   [ ] **NEW:** `InviteMemberCard.tsx`: Contains form (Email, Role) and button to invite users via `inviteUser` store action. **Visible only to Admins.**
-        *   [ ] Test: Form validation works (valid email, role).
-        *   [ ] Test: Submission triggers `inviteUser` action.
-        *   [ ] Test: Handles success (e.g., clear form, show toast) and API errors gracefully.
-        *   [ ] Test: Visibility is correctly controlled based on user role (admin only).
-    *   [ ] **NEW:** `PendingActionsCard.tsx`: Displays lists of pending join requests (`currentPendingRequests`) and outgoing invites (`currentPendingInvites`). Includes controls for Admins to Approve/Deny requests (`approveRequest`/`denyRequest`) and Cancel invites (`cancelInvite`). **Visible only to Admins.**
-        *   [ ] Test: Displays pending requests correctly (user name, email, request date).
-        *   [ ] Test: Displays pending invites correctly (email, role, invite date).
-        *   [ ] Test: Approve/Deny/Cancel buttons trigger the correct store actions (`approveRequest`, `denyRequest`, `cancelInvite`) with correct IDs.
-        *   [ ] Test: Handles empty states gracefully (no pending requests/invites).
-        *   [ ] Test: Handles API errors gracefully for all actions.
-        *   [ ] Test: Visibility is correctly controlled based on user role (admin only).
+        *   [ ] Test: Update submission calls `updateOrganization` with correct orgId and data. Handles success/error feedback.
+        *   [ ] Test: Delete button opens the `DeleteOrganizationDialog`.
+        *   [ ] Test: Handles API errors gracefully for updates.
+    *   [ ] **NEW:** `DeleteOrganizationDialog.tsx`: (Triggered from `OrganizationSettingsCard`)
+        *   [ ] Confirmation dialog explaining soft-delete.
+        *   [ ] Requires explicit confirmation (e.g., type org name or click confirm button).
+        *   [ ] On confirmation, calls `softDeleteOrganization` action.
+        *   [ ] Test: Dialog displays correctly when triggered.
+        *   [ ] Test: Confirmation mechanism works as expected.
+        *   [ ] Test: Confirmed deletion calls `softDeleteOrganization` with the correct `currentOrganizationId`.
+        *   [ ] Test: Cancellation closes the dialog without action.
+        *   [ ] Test: Handles API errors during deletion (e.g., last admin error) by showing feedback.
+    *   [ ] `MemberListCard.tsx`: (Displayed Conditionally on Hub/Focused View)
+        *   [ ] Displays table/list of **active** members from `selectCurrentMembers`.
+        *   [ ] Includes controls (dropdown menus) for Admins: Change Role, Remove Member.
+        *   [ ] Includes control for any Member: Leave Organization.
+        *   [ ] Test: Displays members (name, role, avatar) correctly. Handles empty/loading states.
+        *   [ ] Test: **Admin Controls:** Change Role action triggers `updateMemberRole` with correct membershipId/newRole.
+        *   [ ] Test: **Admin Controls:** Remove Member action triggers confirmation, then `removeMember` with correct membershipId. Handles 'last admin' API error feedback.
+        *   [ ] Test: **Member Controls:** Leave Organization action triggers confirmation, then appropriate store action (e.g., `removeMember` with self ID check or dedicated `leaveOrganization` action). Handles 'last admin' API error.
+        *   [ ] Test: Controls are visible/enabled based on current user's role vs target member's role/status.
+        *   [ ] Test: Handles API errors gracefully for all actions (shows feedback).
+        *   [ ] Test: (Optional) Includes working pagination or search/filter for long lists.
+    *   [ ] `InviteMemberCard.tsx`: (Admin Only, Displayed Conditionally on Hub/Focused View)
+        *   [ ] Form (Email, Role) to invite users.
+        *   [ ] Submission triggers `inviteUser` action for the `currentOrganizationId`.
+        *   [ ] Test: Visibility is correctly controlled (admin only).
+        *   [ ] Test: Form validation works (valid email, selected role).
+        *   [ ] Test: Submission triggers `inviteUser` with correct orgId, email, role.
+        *   [ ] Test: Handles success (e.g., clear form, show toast) and API errors (e.g., already member/invited, invalid input) gracefully.
+    *   [ ] `PendingActionsCard.tsx`: (Admin Only, Displayed Conditionally on Hub/Focused View)
+        *   [ ] Displays list/table of pending join requests (`currentPendingRequests`).
+        *   [ ] Displays list/table of outgoing pending invites (`currentPendingInvites`).
+        *   [ ] Includes controls for Admins: Approve/Deny Request, Cancel Invite.
+        *   [ ] Test: Visibility is correctly controlled (admin only).
+        *   [ ] Test: Displays pending requests correctly (user name, email, date). Handles empty state.
+        *   [ ] Test: Displays pending invites correctly (email, role, date). Handles empty state.
+        *   [ ] Test: Approve Request button triggers `approveRequest` with correct membershipId.
+        *   [ ] Test: Deny Request button triggers `denyRequest` with correct membershipId.
+        *   [ ] Test: Cancel Invite button triggers `cancelInvite` with correct inviteId.
+        *   [ ] Test: Handles API errors gracefully for all actions (shows feedback).
+        *   [ ] Test: Lists update correctly when actions are taken or when `fetchCurrentOrganizationMembers` refreshes the pending data.
 
 ### 2.7 Routing & Access Control (Frontend)
 
