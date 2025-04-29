@@ -387,13 +387,13 @@ describe('OrganizationApiClient', () => {
         const mockInviteResponse = { id: 'new-invite-id-by-user', invited_email: 'resolved@example.com', status: 'pending' /* ... */ };
         const mockResponse: ApiResponse<any> = { status: 201, data: mockInviteResponse }; 
 
-        vi.mocked(mockApiClient.post).mockResolvedValue(mockResponse);
+      vi.mocked(mockApiClient.post).mockResolvedValue(mockResponse);
 
         const result = await organizationApiClient.inviteUserById(orgId, inviteUserId, inviteRole);
 
-        expect(mockApiClient.post).toHaveBeenCalledTimes(1);
+      expect(mockApiClient.post).toHaveBeenCalledTimes(1);
         expect(mockApiClient.post).toHaveBeenCalledWith(endpoint, payload);
-        expect(result).toEqual(mockResponse);
+      expect(result).toEqual(mockResponse);
     });
 
     it('should return error response if user is already member/invited (409)', async () => {
@@ -415,14 +415,14 @@ describe('OrganizationApiClient', () => {
         const mockError: ApiError = { message: 'Invited user ID not found', code: '404' };
         const mockResponse: ApiResponse<any> = { status: 404, error: mockError };
 
-        vi.mocked(mockApiClient.post).mockResolvedValue(mockResponse);
+      vi.mocked(mockApiClient.post).mockResolvedValue(mockResponse);
 
         const result = await organizationApiClient.inviteUserById(orgId, inviteUserId, inviteRole);
 
-        expect(mockApiClient.post).toHaveBeenCalledTimes(1);
+      expect(mockApiClient.post).toHaveBeenCalledTimes(1);
         expect(mockApiClient.post).toHaveBeenCalledWith(endpoint, payload);
-        expect(result).toEqual(mockResponse);
-        expect(result.data).toBeUndefined();
+      expect(result).toEqual(mockResponse);
+      expect(result.data).toBeUndefined();
         expect(result.error).toEqual(mockError);
     });
 
@@ -430,14 +430,14 @@ describe('OrganizationApiClient', () => {
         const mockError: ApiError = { message: 'Forbidden', code: '403' };
         const mockResponse: ApiResponse<any> = { status: 403, error: mockError };
 
-        vi.mocked(mockApiClient.post).mockResolvedValue(mockResponse);
+      vi.mocked(mockApiClient.post).mockResolvedValue(mockResponse);
 
         const result = await organizationApiClient.inviteUserById(orgId, inviteUserId, inviteRole);
 
-        expect(mockApiClient.post).toHaveBeenCalledTimes(1);
+      expect(mockApiClient.post).toHaveBeenCalledTimes(1);
         expect(mockApiClient.post).toHaveBeenCalledWith(endpoint, payload);
-        expect(result).toEqual(mockResponse);
-        expect(result.data).toBeUndefined();
+      expect(result).toEqual(mockResponse);
+      expect(result.data).toBeUndefined();
         expect(result.error).toEqual(mockError);
     });
 
@@ -445,14 +445,14 @@ describe('OrganizationApiClient', () => {
         const mockError: ApiError = { message: 'Internal Server Error', code: '500' };
         const mockResponse: ApiResponse<any> = { status: 500, error: mockError };
 
-        vi.mocked(mockApiClient.post).mockResolvedValue(mockResponse);
+      vi.mocked(mockApiClient.post).mockResolvedValue(mockResponse);
 
         const result = await organizationApiClient.inviteUserById(orgId, inviteUserId, inviteRole);
 
-        expect(mockApiClient.post).toHaveBeenCalledTimes(1);
+      expect(mockApiClient.post).toHaveBeenCalledTimes(1);
         expect(mockApiClient.post).toHaveBeenCalledWith(endpoint, payload);
-        expect(result).toEqual(mockResponse);
-        expect(result.data).toBeUndefined();
+      expect(result).toEqual(mockResponse);
+      expect(result.data).toBeUndefined();
         expect(result.error).toEqual(mockError);
     });
   });
@@ -499,13 +499,13 @@ describe('OrganizationApiClient', () => {
         const mockError: ApiError = { message: 'Forbidden', code: '403' };
         const mockResponse: ApiResponse<void> = { status: 403, error: mockError };
 
-        vi.mocked(mockApiClient.post).mockResolvedValue(mockResponse);
+      vi.mocked(mockApiClient.post).mockResolvedValue(mockResponse);
 
-        const result = await organizationApiClient.acceptOrganizationInvite(inviteToken);
+      const result = await organizationApiClient.acceptOrganizationInvite(inviteToken);
 
-        expect(mockApiClient.post).toHaveBeenCalledTimes(1);
+      expect(mockApiClient.post).toHaveBeenCalledTimes(1);
         expect(mockApiClient.post).toHaveBeenCalledWith(endpoint, undefined);
-        expect(result).toEqual(mockResponse);
+      expect(result).toEqual(mockResponse);
         expect(result.data).toBeUndefined();
         expect(result.error).toEqual(mockError);
     });
@@ -514,29 +514,29 @@ describe('OrganizationApiClient', () => {
         const mockError: ApiError = { message: 'Conflict: User already member', code: '409' };
         const mockResponse: ApiResponse<void> = { status: 409, error: mockError };
 
-        vi.mocked(mockApiClient.post).mockResolvedValue(mockResponse);
+      vi.mocked(mockApiClient.post).mockResolvedValue(mockResponse);
 
-        const result = await organizationApiClient.acceptOrganizationInvite(inviteToken);
+      const result = await organizationApiClient.acceptOrganizationInvite(inviteToken);
 
-        expect(mockApiClient.post).toHaveBeenCalledTimes(1);
+      expect(mockApiClient.post).toHaveBeenCalledTimes(1);
         expect(mockApiClient.post).toHaveBeenCalledWith(endpoint, undefined);
-        expect(result).toEqual(mockResponse);
-        expect(result.data).toBeUndefined();
+      expect(result).toEqual(mockResponse);
+      expect(result.data).toBeUndefined();
         expect(result.error).toEqual(mockError);
     });
 
     it('should return error response for other API failures', async () => {
         const mockError: ApiError = { message: 'Internal Server Error', code: '500' };
-        const mockResponse: ApiResponse<void> = { status: 500, error: mockError };
+      const mockResponse: ApiResponse<void> = { status: 500, error: mockError };
 
-        vi.mocked(mockApiClient.post).mockResolvedValue(mockResponse);
+      vi.mocked(mockApiClient.post).mockResolvedValue(mockResponse);
 
-        const result = await organizationApiClient.acceptOrganizationInvite(inviteToken);
+      const result = await organizationApiClient.acceptOrganizationInvite(inviteToken);
 
-        expect(mockApiClient.post).toHaveBeenCalledTimes(1);
+      expect(mockApiClient.post).toHaveBeenCalledTimes(1);
         expect(mockApiClient.post).toHaveBeenCalledWith(endpoint, undefined);
-        expect(result).toEqual(mockResponse);
-        expect(result.data).toBeUndefined();
+      expect(result).toEqual(mockResponse);
+      expect(result.data).toBeUndefined();
         expect(result.error).toEqual(mockError);
     });
   });
@@ -565,7 +565,7 @@ describe('OrganizationApiClient', () => {
       const mockResponse: ApiResponse<void> = { status: 404, error: mockError };
 
       vi.mocked(mockApiClient.post).mockResolvedValue(mockResponse);
-
+      
       const result = await organizationApiClient.requestToJoinOrganization(orgId);
 
       expect(mockApiClient.post).toHaveBeenCalledTimes(1);
@@ -579,7 +579,7 @@ describe('OrganizationApiClient', () => {
       const mockResponse: ApiResponse<void> = { status: 409, error: mockError };
 
       vi.mocked(mockApiClient.post).mockResolvedValue(mockResponse);
-
+      
       const result = await organizationApiClient.requestToJoinOrganization(orgId);
 
       expect(mockApiClient.post).toHaveBeenCalledTimes(1);
@@ -593,7 +593,7 @@ describe('OrganizationApiClient', () => {
       const mockResponse: ApiResponse<void> = { status: 403, error: mockError };
 
       vi.mocked(mockApiClient.post).mockResolvedValue(mockResponse);
-
+      
       const result = await organizationApiClient.requestToJoinOrganization(orgId);
 
       expect(mockApiClient.post).toHaveBeenCalledTimes(1);
