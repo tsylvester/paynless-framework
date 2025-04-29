@@ -248,5 +248,75 @@ export async function handleDeclineInvite(
     return new Response(null, { status: 204, headers: res.headers }); // Override status and body
 }
 
+// List pending invites and requests for an organization (Admin only)
+export async function handleListPending(
+    req: Request, 
+    supabaseClient: SupabaseClient<Database>,
+    user: User, 
+    orgId: string
+): Promise<Response> {
+    console.log(`[invites.ts] Handling LIST PENDING for org: ${orgId}`);
+
+    // 1. Check permissions (Is user an admin of this org?)
+    // Note: Using RPC is slightly less secure if RLS isn't perfect,
+    // but simpler than joining organization_members here.
+    const { data: isAdmin, error: adminCheckError } = await supabaseClient.rpc('is_org_admin', { org_id: orgId });
+
+    if (adminCheckError) {
+        console.error(`[invites.ts List Pending] Error checking admin status for user ${user.id} on org ${orgId}:`, adminCheckError);
+        return createErrorResponse("Error checking permissions.", 500, req);
+    }
+    if (!isAdmin) {
+        console.warn(`[invites.ts List Pending] Permission denied for user ${user.id} on org ${orgId}.`);
+        return createErrorResponse("Forbidden: You do not have permission to view pending items for this organization.", 403, req);
+    }
+
+    // 2. Fetch pending invites
+    const { data: pendingInvitesData, error: invitesError } = await supabaseClient
+        .from('invites')
+        .select(`
+            id,
+            invited_email,
+            role_to_assign,
+            status,
+            created_at,
+            invited_by_user_id,
+            profiles:invited_by_user_id ( full_name, avatar_url ) 
+        `)
+        .eq('organization_id', orgId)
+        .eq('status', 'pending');
+
+    if (invitesError) {
+        console.error(`[invites.ts List Pending] Error fetching pending invites for org ${orgId}:`, invitesError);
+        return createErrorResponse("Error fetching pending invites.", 500, req);
+    }
+
+    // 3. Fetch pending member requests (members with status='pending')
+    const { data: pendingRequestsData, error: requestsError } = await supabaseClient
+        .from('organization_members')
+        .select(`
+            id, 
+            user_id, 
+            role, 
+            status,
+            created_at,
+            profiles ( full_name, avatar_url, email )
+        `)
+        .eq('organization_id', orgId)
+        .eq('status', 'pending');
+
+    if (requestsError) {
+        console.error(`[invites.ts List Pending] Error fetching pending requests for org ${orgId}:`, requestsError);
+        return createErrorResponse("Error fetching pending requests.", 500, req);
+    }
+
+    // Ensure we return arrays even if data is null
+    const pendingInvites = pendingInvitesData || [];
+    const pendingRequests = pendingRequestsData || [];
+
+    console.log(`[invites.ts List Pending] Found ${pendingInvites.length} invites and ${pendingRequests.length} requests for org ${orgId}.`);
+    return createSuccessResponse({ pendingInvites, pendingRequests }, 200, req);
+}
+
 // TODO: Implement handleCancelInvite (for admins)
 // export async function handleCancelInvite(...) { ... } 

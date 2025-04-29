@@ -26,7 +26,7 @@ import {
     handleRemoveMember
 } from './members.ts';
 // Import the new invite handler
-import { handleCreateInvite } from './invites.ts';
+import { handleCreateInvite, handleListPending } from './invites.ts';
 // TODO: Import actual handlers later
 // import { handleAcceptInvite, handleDeclineInvite } from './invites_actions.ts';
 
@@ -179,6 +179,10 @@ export async function handleOrganizationRequest(
     else if (req.method === 'POST' && orgId && resourceType === 'invites' && !resourceId && !action) { // CREATE INVITE
          // Delegate to the specific handler
          return handleCreateInvite(req, typedSupabase, authenticatedUser, orgId, body);
+    }
+    // --- Route for /organizations/:orgId/pending (list pending) ---
+    else if (req.method === 'GET' && orgId && resourceType === 'pending' && !resourceId && !action) { // LIST PENDING
+        return handleListPending(req, typedSupabase, authenticatedUser, orgId);
     }
     // --- Fallback for unhandled routes --- 
     else {

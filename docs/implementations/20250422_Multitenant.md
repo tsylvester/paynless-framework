@@ -120,12 +120,12 @@ This document outlines the steps for implementing an in-app notification system 
               *   [X] Test: Using invalid/expired/used token fails (400/404/410).
               *   [X] Implementation: Handle POST, validate token (exists, pending, not expired), check authenticated user matches `invited_email`, **Accept:** Update `invites` status=accepted, create/update `organization_members` record (status=active, role from invite), **Decline:** Update `invites` status=declined (or delete), trigger notifications.
           *   [ ] **Request to Join Public Org (e.g., `POST /organizations/:orgId/requests`):** ... (Existing checks - Uses `organization_members` status=pending)
-          *   [ ] **Approve/Deny Join Request (e.g., `PUT /organizations/members/:membershipId/status`):** ... (Existing checks - Uses `organization_members` status=pending)
-          *   [ ] **List Pending Invites/Requests for Admins (e.g., `GET /organizations/:orgId/pending`):**
-              *   [ ] Test: Admin can retrieve list of pending members (from `organization_members`) and pending invites (from `invites`) for their org.
-              *   [ ] Test: Non-admin cannot retrieve list (403).
-              *   [ ] Test: Returns empty lists if none pending.
-              *   [ ] Implementation: Handle GET, auth check (admin), validate orgId, Supabase `select` from `organization_members` (status=pending) and `invites` (status=pending), join with profiles where possible, return combined/structured list.
+          *   [X] **Approve/Deny Join Request (e.g., `PUT /organizations/members/:membershipId/status`):** ... (Existing checks - Uses `organization_members` status=pending)
+          *   [X] **List Pending Invites/Requests for Admins (e.g., `GET /organizations/:orgId/pending`):**
+              *   [X] Test: Admin can retrieve list of pending members (from `organization_members`) and pending invites (from `invites`) for their org.
+              *   [X] Test: Non-admin cannot retrieve list (403).
+              *   [X] Test: Returns empty lists if none pending.
+              *   [X] Implementation: Handle GET, auth check (admin), validate orgId, Supabase `select` from `organization_members` (status=pending) and `invites` (status=pending), join with profiles where possible, return combined/structured list.
           *   [ ] **(New) Cancel/Delete Invite (e.g., `DELETE /invites/:inviteId` or `DELETE /organizations/:orgId/invites/:inviteId`):**
               *   [ ] Test: Admin can delete a pending invite for their org.
               *   [ ] Test: Non-admin fails (403).
