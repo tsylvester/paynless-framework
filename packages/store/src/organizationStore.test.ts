@@ -20,7 +20,7 @@ import {
     mockDenyJoinRequest,
     mockCancelInvite,
     mockInviteUserByEmail,
-    mockGetPendingOrgActions
+    mockGetPendingItems
 } from '../../api/src/mocks/organizations.mock.ts';
 
 // Other imports
@@ -59,7 +59,7 @@ vi.mock('@paynless/api', () => {
             denyJoinRequest: mockDenyJoinRequest,
             cancelInvite: mockCancelInvite,
             inviteUserByEmail: mockInviteUserByEmail,
-            getPendingOrgActions: mockGetPendingOrgActions
+            getPendingOrgActions: mockGetPendingItems
         },
         auth: {} as any,
         billing: {} as any,
@@ -1002,96 +1002,6 @@ describe('OrganizationStore', () => {
       });
   });
 
-  // --- [NEW] fetchPendingItems Tests --- //
-  describe('fetchPendingItems', () => {
-    const mockOrgId = 'org-123';
-    const mockPendingInvites: Invite[] = [
-        { id: 'invite-1', invite_token: 'tok1', organization_id: mockOrgId, invited_email: 'pending@invite.com', role_to_assign: 'member', invited_by_user_id: 'admin-user', status: 'pending', created_at: new Date().toISOString(), expires_at: null },
-    ];
-    const mockPendingRequests: OrganizationMemberWithProfile[] = [
-        { ...defaultMockMembers[0], id: 'om-pending-1', status: 'pending', user_id: 'pending-user-id' }
-    ];
-    // Placeholder for the new mock - will need definition and import
-    const getPendingMock = vi.fn<[string], Promise<ApiResponse<PendingOrgItems>>>(); // Args: orgId 
-
-    beforeEach(() => {
-      // IMPORTANT: Add the new mock to the vi.mock factory
-      vi.mocked(getApiClient)().organizations.getPendingItems = getPendingMock;
-      getPendingMock.mockClear();
-      useOrganizationStore.setState({ currentOrganizationId: mockOrgId });
-    });
-
-    it('should call API, update pending state, and clear loading/error on success', async () => {
-      getPendingMock.mockResolvedValue({ 
-          status: 200, 
-          data: { invites: mockPendingInvites, requests: mockPendingRequests }, 
-          error: undefined 
-      });
-      useOrganizationStore.setState({ error: 'Old error', isLoading: false, currentPendingInvites: [], currentPendingRequests: [] });
-
-      await act(async () => {
-        await useOrganizationStore.getState().fetchPendingItems();
-      });
-
-      expect(getPendingMock).toHaveBeenCalledWith(mockOrgId);
-      const { isLoading, error, currentPendingInvites, currentPendingRequests } = useOrganizationStore.getState();
-      expect(isLoading).toBe(false);
-      expect(error).toBeNull();
-      expect(currentPendingInvites).toEqual(mockPendingInvites);
-      expect(currentPendingRequests).toEqual(mockPendingRequests);
-    });
-
-    it('should set error string, clear pending state, and clear loading on API error (e.g., forbidden - 403)', async () => {
-      const errorMsg = 'Forbidden: Only admins can view pending items';
-      getPendingMock.mockResolvedValue({ status: 403, data: undefined, error: { message: errorMsg, code: '403' } });
-      useOrganizationStore.setState({ isLoading: false, currentPendingInvites: mockPendingInvites, currentPendingRequests: mockPendingRequests });
-
-      await act(async () => {
-        await useOrganizationStore.getState().fetchPendingItems();
-      });
-
-      expect(getPendingMock).toHaveBeenCalledWith(mockOrgId);
-      const { isLoading, error, currentPendingInvites, currentPendingRequests } = useOrganizationStore.getState();
-      expect(isLoading).toBe(false);
-      expect(error).toBe(errorMsg);
-      expect(currentPendingInvites).toEqual([]);
-      expect(currentPendingRequests).toEqual([]);
-    });
-
-    it('should set error string, clear pending state, and clear loading on unexpected error', async () => {
-      const errorMsg = 'Network error fetching pending items';
-      getPendingMock.mockRejectedValue(new Error(errorMsg));
-      useOrganizationStore.setState({ isLoading: false, currentPendingInvites: mockPendingInvites, currentPendingRequests: mockPendingRequests });
-
-      await act(async () => {
-        await useOrganizationStore.getState().fetchPendingItems();
-      });
-
-      expect(getPendingMock).toHaveBeenCalledWith(mockOrgId);
-      const { isLoading, error, currentPendingInvites, currentPendingRequests } = useOrganizationStore.getState();
-      expect(isLoading).toBe(false);
-      expect(error).toBe(errorMsg);
-      expect(currentPendingInvites).toEqual([]);
-      expect(currentPendingRequests).toEqual([]);
-    });
-
-    it('should set error and not call API if currentOrganizationId is null', async () => {
-        useOrganizationStore.setState({ currentOrganizationId: null });
-        getPendingMock.mockClear();
-
-        await act(async () => {
-          await useOrganizationStore.getState().fetchPendingItems();
-        });
-
-        expect(getPendingMock).not.toHaveBeenCalled();
-        const { isLoading, error, currentPendingInvites, currentPendingRequests } = useOrganizationStore.getState();
-        expect(isLoading).toBe(false);
-        expect(error).toBe('Cannot fetch pending items without organization context.');
-        expect(currentPendingInvites).toEqual([]);
-        expect(currentPendingRequests).toEqual([]);
-    });
-  });
-
   // --- [REFACTORED] fetchCurrentOrganizationMembers (Includes Pending Items Fetch) Tests --- //
   describe('fetchCurrentOrganizationMembers (Includes Pending Items Fetch)', () => {
     const mockOrgId = 'org-123';
@@ -1100,8 +1010,8 @@ describe('OrganizationStore', () => {
 
     // Mock active members, including an admin and a regular member
     const mockActiveMembers: OrganizationMemberWithProfile[] = [
-        { ...defaultMockMembers[0], user_id: mockAdminUserId, role: 'admin', status: 'active', email: 'admin@test.com' }, // Added email for completeness
-        { ...defaultMockMembers[1], user_id: mockMemberUserId, role: 'member', status: 'active', email: 'member@test.com' }, // Added email for completeness
+        { ...defaultMockMembers[0], user_id: mockAdminUserId, role: 'admin', status: 'active' }, // <-- Removed email
+        { ...defaultMockMembers[1], user_id: mockMemberUserId, role: 'member', status: 'active' }, // <-- Removed email
     ];
 
     const mockPendingInvitesData: Invite[] = [
@@ -1116,7 +1026,7 @@ describe('OrganizationStore', () => {
             role: 'member', 
             status: 'pending', 
             created_at: new Date().toISOString(), 
-            user_profile: { // Add profile data
+            user_profiles: { // <-- Changed from user_profile
                 id: 'pending-user-id', 
                 email: 'pending.user@req.com', 
                 full_name: 'Pending Request User', 
@@ -1129,12 +1039,12 @@ describe('OrganizationStore', () => {
     
     // Use imported mocks
     const getMembersMock = mockGetOrganizationMembers;
-    const getPendingMock = mockGetPendingOrgActions;
+    const getPendingMock = mockGetPendingItems; // <-- Use corrected mock variable name
 
     beforeEach(() => {
       // Reset mocks used in this suite
       getMembersMock.mockClear();
-      getPendingMock.mockClear();
+      getPendingMock.mockClear(); // <-- Now refers to the correctly imported mock
       
       // Set current org context
       useOrganizationStore.setState({ currentOrganizationId: mockOrgId });

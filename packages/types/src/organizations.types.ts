@@ -37,6 +37,12 @@ export type Invite = InvitesTable['Row'];
 export type InviteInsert = InvitesTable['Insert'];
 export type InviteUpdate = InvitesTable['Update'];
 
+// --- Membership Request Type (Derived from Member for consistency) ---
+// Represents a user's request to join (often corresponds to a member record with 'pending_approval' status)
+export type MembershipRequest = OrganizationMemberWithProfile & {
+    status: 'pending_approval'; // Explicitly define the status for requests
+};
+
 // --- Zustand Store Types (Consolidated) ---
 
 export interface OrganizationState {
@@ -44,35 +50,71 @@ export interface OrganizationState {
   currentOrganizationId: string | null;
   currentOrganizationDetails: Organization | null;
   currentOrganizationMembers: OrganizationMemberWithProfile[];
-    currentPendingInvites: Invite[];
-    currentPendingRequests: OrganizationMemberWithProfile[];
+    currentPendingInvites: Invite[]; // Use DB-derived Invite type
+    currentPendingRequests: MembershipRequest[]; // Use MembershipRequest type
   isLoading: boolean;
     error: string | null;
 }
 
+// Uses DB-derived Invite and the defined MembershipRequest
 export interface PendingOrgItems {
     invites: Invite[];
-    requests: OrganizationMemberWithProfile[];
+    requests: MembershipRequest[];
 }
-  
+
 export interface OrganizationActions {
   fetchUserOrganizations: () => Promise<void>;
   setCurrentOrganizationId: (orgId: string | null) => void;
   fetchOrganizationDetails: (orgId: string) => Promise<void>;
     fetchCurrentOrganizationMembers: () => Promise<void>;
-    fetchPendingItems: () => Promise<void>;
+    fetchPendingItems: () => Promise<PendingOrgItems>; // Return PendingOrgItems
     createOrganization: (name: string, visibility?: 'private' | 'public') => Promise<Organization | null>;
     softDeleteOrganization: (orgId: string) => Promise<boolean>;
     updateOrganization: (orgId: string, updates: Partial<Organization>) => Promise<boolean>;
-    inviteUser: (emailOrUserId: string, role: string) => Promise<boolean>;
+    inviteUser: (emailOrUserId: string, role: string) => Promise<Invite | null>; // Return Invite or null
     updateMemberRole: (membershipId: string, role: string) => Promise<boolean>;
     removeMember: (membershipId: string) => Promise<boolean>;
     acceptInvite: (token: string) => Promise<boolean>;
     declineInvite: (token: string) => Promise<boolean>;
-    requestJoin: (orgId: string) => Promise<boolean>;
+    requestJoin: (orgId: string) => Promise<MembershipRequest | null>; // Return request or null
     approveRequest: (membershipId: string) => Promise<boolean>;
     denyRequest: (membershipId: string) => Promise<boolean>;
     cancelInvite: (inviteId: string) => Promise<boolean>;
 }
-  
-export type OrganizationStoreType = OrganizationState & OrganizationActions; 
+
+export type OrganizationStoreType = OrganizationState & OrganizationActions;
+
+// Type for API responses, generic over the data type T
+export type ApiResponse<T> = {
+  status: number;
+  data: T | undefined;
+  error: ApiError | undefined; // Use defined ApiError type
+};
+
+// Represents an invitation to join an organization
+// export type Invite = {
+//   id: string; // Typically a UUID
+//   organization_id: string;
+//   email: string; // Email address invited
+//   role: 'admin' | 'member'; // Role assigned upon acceptance
+//   status: 'pending' | 'accepted' | 'declined' | 'cancelled'; // Status of the invite
+//   created_at: string; // ISO date string
+//   invited_by_user_id?: string | null; // User who sent the invite
+//   token?: string | null; // Optional invite token if used
+// };
+//
+// // Represents a request from a user to join an organization
+// export type MembershipRequest = {
+//     id: string; // Request identifier (e.g., organization_member id if status is 'pending_approval')
+//     organization_id: string;
+//     user_id: string;
+//     status: 'pending_approval'; // Status indicating it's a request awaiting action
+//     created_at: string; // ISO date string
+//     user_profiles: UserProfilesTable['Row'] | null; // Include user profile info for display
+// };
+//
+// // Combined type for pending items related to an organization
+// export type PendingOrgItems = {
+//     invites: Invite[]; // Array of pending invitations sent out
+//     requests: MembershipRequest[]; // Array of pending join requests
+// }; 
