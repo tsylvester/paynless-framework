@@ -118,11 +118,13 @@ export async function handleCreateInvite(
     }
     
     // 3. Check if user is already member or has pending invite
+    // TODO: Re-implement member check robustly. Requires looking up user_id from email via auth.
+    /* 
     const { data: existingMember, error: memberCheckErr } = await supabaseClient
         .from('organization_members')
-        .select('user_id, status, profiles!inner(email)') 
+        .select('user_id, status, user_profiles!inner(email)') // Corrected join name, but still needs email lookup first
         .eq('organization_id', orgId)
-        .eq('profiles.email', targetEmail)
+        // .eq('user_profiles.email', targetEmail) // Cannot filter directly on email this way
         .in('status', ['active', 'pending'])
         .maybeSingle();
 
@@ -130,6 +132,7 @@ export async function handleCreateInvite(
         console.error("[invites.ts] Error checking existing member by email:", memberCheckErr);
         // Decide if this should be a 500 or continue
     }
+    */
 
     const { data: existingInvite, error: inviteCheckErr } = await supabaseClient
         .from('invites')
@@ -144,9 +147,10 @@ export async function handleCreateInvite(
         // Decide if this should be a 500 or continue
     }
 
-    if (existingMember || existingInvite) {
-        console.warn(`[invites.ts] Attempted to invite existing member/invitee ${targetEmail} to org ${orgId}`);
-        return createErrorResponse("User is already a member or has a pending invite.", 409, req); // Conflict
+    // Adjust check to only look for pending invites for now
+    if (existingInvite) { 
+        console.warn(`[invites.ts] Attempted to invite user ${targetEmail} who already has a pending invite to org ${orgId}`);
+        return createErrorResponse("User already has a pending invite.", 409, req); // Conflict
     }
 
     // 4. Generate invite token (delegated to DB via trigger/default)
@@ -421,17 +425,19 @@ export async function handleListPending(
         return createErrorResponse("Forbidden: You do not have permission to view pending items for this organization.", 403, req);
     }
 
-    // 2. Fetch pending invites
-    const { data: pendingInvitesData, error: invitesError } = await supabaseClient
+    // 2. Fetch pending invites (from invites where status = 'pending')
+    const { data: pendingInvites, error: invitesError } = await supabaseClient
         .from('invites')
         .select(`
-            id,
-            invited_email,
-            role_to_assign,
-            status,
-            created_at,
-            invited_by_user_id,
-            profiles:invited_by_user_id ( full_name, avatar_url ) 
+            id, 
+            invite_token, 
+            organization_id, 
+            invited_email, 
+            role_to_assign, 
+            invited_by_user_id, 
+            status, 
+            created_at, 
+            expires_at
         `)
         .eq('organization_id', orgId)
         .eq('status', 'pending');
@@ -450,7 +456,7 @@ export async function handleListPending(
             role, 
             status,
             created_at,
-            profiles ( full_name, avatar_url, email )
+            user_profiles ( first_name, last_name ) 
         `)
         .eq('organization_id', orgId)
         .eq('status', 'pending');
@@ -461,7 +467,6 @@ export async function handleListPending(
     }
 
     // Ensure we return arrays even if data is null
-    const pendingInvites = pendingInvitesData || [];
     const pendingRequests = pendingRequestsData || [];
 
     console.log(`[invites.ts List Pending] Found ${pendingInvites.length} invites and ${pendingRequests.length} requests for org ${orgId}.`);

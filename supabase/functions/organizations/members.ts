@@ -39,7 +39,7 @@ export async function handleListMembers(
             role, 
             status,
             created_at,
-            profiles ( full_name, avatar_url ) 
+            user_profiles ( first_name, last_name ) 
         `)
         .eq('organization_id', orgId);
 
