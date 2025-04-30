@@ -63,24 +63,52 @@ It respects Supabase as the auth authority while allowing the application to int
     *   In `SIGNED_OUT` handler:
         *   Keep: Existing cleanup logic.
         *   **Add:** Call `_setInitialAuthProcessed(false)`.
+        *   **Add:** (See Step 4.3.8) Trigger clearing of organization store persistence.
 
-*   **[ ] Step 4.3: Review Data Fetching Actions (Other Stores)**
+*   **[ ] Step 4.3: Implement Organization Preference Persistence**
+    *   **[ ] Step 4.3.1 (DB):** Add `last_selected_org_id` (UUID, nullable, FK to `organizations.id`) column to `user_profiles` table. Create and test Supabase migration script.
+    *   **[ ] Step 4.3.2 (Backend):** Create/Update backend endpoint (e.g., in `user-profile` function or a new `preferences` function) to handle `PUT /users/me/preferences` or similar, allowing authenticated users to update their `last_selected_org_id` in the `user_profiles` table. Ensure proper RLS allows users to update their own profile.
+    *   **[ ] Step 4.3.3 (API Client):** Add/Update API client method (e.g., in `@paynless/api` -> `UserApiClient` or a new `PreferencesApiClient`) to call the endpoint from Step 4.3.2.
+    *   **[ ] Step 4.3.4 (Auth/User Store):** Ensure the initial user profile fetch action (triggered after initial `SIGNED_IN` in Step 4.2) retrieves the `last_selected_org_id` field.
+    *   **[ ] Step 4.3.5 (Organization Store - Init):** Modify `organizationStore` initialization logic. This might involve listening to changes in the user profile state (from `authStore` or a dedicated `userStore`). When the profile (including `last_selected_org_id`) loads after login, set `currentOrganizationId` in `organizationStore` to this value if it exists.
+    *   **[ ] Step 4.3.6 (Organization Store - Persist):** Configure the `persist` middleware for `organizationStore`. 
+        *   Persist *only* the `currentOrganizationId` state slice to `localStorage`.
+        *   Use a simple, static storage key (e.g., `organization-store-selection`).
+    *   **[ ] Step 4.3.7 (Organization Store - Update):** Modify the `setCurrentOrganizationId` action in `organizationStore`:
+        *   Update the local state (`currentOrganizationId`) as it does now (this will trigger the persist middleware).
+        *   If the user is authenticated, trigger the API client method (from Step 4.3.3) to update the `last_selected_org_id` in the backend database.
+    *   **[ ] Step 4.3.8 (Auth Store - Logout Trigger):** In the `SIGNED_OUT` handler refactored in Step 4.2, add a call to clear the persisted `organizationStore` state. This might involve importing `useOrganizationStore` and calling `useOrganizationStore.persist.clearStorage()`.
+
+*   **[ ] Step 4.4: Review Data Fetching Actions (Other Stores)**
     *   *Enhancement:* Consider adding checks within fetch actions (`fetchProfile`, etc.) to prevent re-fetching if data is already present and fresh (e.g., based on timestamp or simple presence check).
 
-*   **[ ] Step 4.4: Clean Up Old/Competing Logic**
-    *   Search codebase (esp. `useEffect` hooks in components) for redundant logic triggered by auth state changes (navigation, data fetching, subscriptions).
-    *   Remove/comment out redundant logic, ensuring the listener is the single point of control for initial setup.
+*   **[ ] Step 4.5: Clean Up Old/Competing Logic**
+    *   Search codebase (esp. `useEffect` hooks in components) for redundant logic triggered by auth state changes (navigation, data fetching, subscriptions). Also look for any old logic attempting to persist organization selection.
+    *   Remove/comment out redundant logic, ensuring the listener and stores are the single points of control.
 
-*   **[ ] Step 4.5: Update Tests**
-    *   Update `authStore` tests for new flag/action.
-    *   Update integration/component tests for login/logout flows to mock/verify the flag and ensure actions run only on the *first* simulated `SIGNED_IN`.
-    *   Ensure logout tests verify the flag reset.
+*   **[ ] Step 4.6: Update Tests**
+    *   Update `authStore` tests for new flag/action/logout clearing trigger.
+    *   **Add:** Update/Add tests for the backend preferences endpoint.
+    *   **Add:** Update/Add tests for the API client preferences method.
+    *   **Add:** Update `organizationStore` tests:
+        *   Verify initialization from fetched preference.
+        *   Verify `setCurrentOrganizationId` calls the backend update API.
+        *   Verify persistence configuration and clearing on logout trigger.
+    *   Update integration/component tests for login/logout flows to mock/verify the flags, preference fetching/setting, and ensure actions run only on the *first* simulated `SIGNED_IN`.
+    *   Ensure logout tests verify flag reset and organization persistence clearing.
 
-*   **[ ] Step 4.6: Verification & Testing (Manual & Automated)**
+*   **[ ] Step 4.7: Verification & Testing (Manual & Automated)**
     *   Test login (with/without replay), signup, logout, session persistence (close/reopen tab).
     *   Critically verify navigation and data fetching behavior on tab switching/window focus changes (should *not* trigger initial setup).
+    *   **Add:** Verify organization selection:
+        *   Select Org A -> Refresh -> Org A should still be selected.
+        *   Select Org B -> Close Tab -> Reopen Tab -> Login -> Org B should be selected (from backend pref).
+        *   Select Org C -> Logout -> Login as different user -> Different user's preference (or null) should be selected, *not* Org C.
+        *   Test edge cases (e.g., user has no preference set yet).
     *   Ensure all automated tests pass.
 
-*   **[ ] Step 4.7: Documentation**
+*   **[ ] Step 4.8: Documentation**
     *   Add comments explaining the `isInitialAuthProcessed` logic in the listener.
+    *   **Add:** Document the `last_selected_org_id` preference storage and update flow.
+    *   **Add:** Explain the interaction between backend preference and client-side persistence for `currentOrganizationId`.
     *   Update relevant architecture docs if needed. 

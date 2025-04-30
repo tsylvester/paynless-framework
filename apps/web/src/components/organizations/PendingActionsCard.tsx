@@ -163,7 +163,14 @@ export const PendingActionsCard: React.FC = () => {
                     <TableCell>{invite.role_to_assign}</TableCell>
                     <TableCell>{new Date(invite.created_at).toLocaleDateString()}</TableCell>
                     <TableCell className="text-right">
-                      <Button size="sm" variant="destructive" onClick={() => handleCancelInvite(invite.id)}>Cancel</Button>
+                      <Button 
+                        size="sm" 
+                        variant="destructive" 
+                        onClick={() => handleCancelInvite(invite.id)}
+                        className="text-destructive-foreground"
+                      >
+                        Cancel
+                      </Button>
                     </TableCell>
                   </TableRow>
                 ))}

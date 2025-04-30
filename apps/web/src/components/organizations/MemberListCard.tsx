@@ -19,6 +19,17 @@ import {
 } from "@/components/ui/dropdown-menu"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Button } from '@/components/ui/button'; // Shadcn Button
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog"
 import { useCurrentUser } from '../../hooks/useCurrentUser'; 
 import { MoreHorizontal, RefreshCw } from "lucide-react";
 import { logger } from '@paynless/utils'; // Keep logger for potential error logging
@@ -143,14 +154,35 @@ export const MemberListCard: React.FC = () => {
                   </TableCell>
                   <TableCell className="text-right">
                     {isCurrentUser ? (
-                      <Button 
-                        variant="destructive"
-                        size="sm"
-                        onClick={() => handleLeave(member.id)}
-                        disabled={isLoading} // Disable during any loading
-                      >
-                        Leave
-                      </Button>
+                      <AlertDialog>
+                        <AlertDialogTrigger asChild>
+                           <Button 
+                              variant="destructive"
+                              size="sm"
+                              disabled={isLoading} 
+                            >
+                              Leave
+                            </Button>
+                        </AlertDialogTrigger>
+                         <AlertDialogContent className="bg-background/70 backdrop-blur-md border border-border">
+                          <AlertDialogHeader>
+                            <AlertDialogTitle>Are you sure you want to leave?</AlertDialogTitle>
+                            <AlertDialogDescription>
+                              You will lose access to this organization and its resources. 
+                              If you are the last admin, this action may be blocked.
+                            </AlertDialogDescription>
+                          </AlertDialogHeader>
+                          <AlertDialogFooter>
+                            <AlertDialogCancel>Cancel</AlertDialogCancel>
+                            <AlertDialogAction 
+                              onClick={() => handleLeave(member.id)} 
+                              className="bg-destructive hover:bg-destructive/90"
+                            >
+                              Confirm Leave
+                            </AlertDialogAction>
+                          </AlertDialogFooter>
+                        </AlertDialogContent>
+                      </AlertDialog>
                     ) : canAdministerMember ? (
                       <DropdownMenu>
                         <DropdownMenuTrigger asChild>
@@ -159,7 +191,7 @@ export const MemberListCard: React.FC = () => {
                             <MoreHorizontal className="h-4 w-4" />
                           </Button>
                         </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end">
+                        <DropdownMenuContent align="end" className="bg-background/70 backdrop-blur-md border border-border">
                           {member.role === 'member' ? (
                             <DropdownMenuItem onClick={() => handleRoleChange(member.id, 'admin')}>
                               Make Admin
@@ -169,12 +201,34 @@ export const MemberListCard: React.FC = () => {
                               Make Member
                             </DropdownMenuItem>
                           )}
-                          <DropdownMenuItem 
-                            className="text-destructive focus:text-destructive focus:bg-destructive/10"
-                            onClick={() => handleRemove(member.id)}
-                          >
-                            Remove Member
-                          </DropdownMenuItem>
+                          <AlertDialog>
+                            <AlertDialogTrigger asChild>
+                              <DropdownMenuItem 
+                                onSelect={(e) => e.preventDefault()} // Prevent default closing
+                                className="text-destructive focus:text-destructive focus:bg-destructive/10"
+                              >
+                                Remove Member
+                              </DropdownMenuItem>
+                            </AlertDialogTrigger>
+                            <AlertDialogContent className="bg-background/70 backdrop-blur-md border border-border">
+                              <AlertDialogHeader>
+                                <AlertDialogTitle>Are you sure?</AlertDialogTitle>
+                                <AlertDialogDescription>
+                                  This action cannot be undone. This will permanently remove 
+                                  '{fullName}' from the organization.
+                                </AlertDialogDescription>
+                              </AlertDialogHeader>
+                              <AlertDialogFooter>
+                                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                <AlertDialogAction 
+                                  onClick={() => handleRemove(member.id)} 
+                                  className="bg-destructive hover:bg-destructive/90"
+                                >
+                                  Confirm Remove
+                                </AlertDialogAction>
+                              </AlertDialogFooter>
+                            </AlertDialogContent>
+                          </AlertDialog>
                         </DropdownMenuContent>
                       </DropdownMenu>
                     ) : (

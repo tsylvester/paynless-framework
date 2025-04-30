@@ -5,7 +5,7 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
 import { useOrganizationStore } from '@paynless/store';
-import { Card, CardHeader, CardTitle, CardContent, CardFooter } from '@/components/ui/card';
+import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import {
@@ -63,12 +63,27 @@ export const InviteMemberCard: React.FC = () => {
     }
     logger.debug(`[InviteMemberCard] Attempting invite for ${values.email} as ${values.role} to org ${currentOrganizationId}`);
     try {
-        await inviteUser(values.email, values.role);
-        toast.success(`Invite sent successfully to ${values.email}`);
-        form.reset(); // Reset form on success
-    } catch (error) {
-        logger.error('[InviteMemberCard] Invite failed:', { error });
-        const errorMessage = error instanceof Error ? error.message : 'Failed to send invite. Please try again.';
+        // Store action handles API call
+        const inviteResult = await inviteUser(values.email, values.role);
+        
+        // Check if the store action indicated success (e.g., returned the invite object or true)
+        // Assuming inviteUser returns null on failure/handled error from API
+        if (inviteResult) { 
+           toast.success(`Invite sent successfully to ${values.email}`);
+           form.reset(); 
+        } else {
+            // If inviteUser returns null, it means the store handled the error (like 409)
+            // and likely set an error state. We can grab that error message.
+            // Note: This requires the store to expose the error message reliably.
+            const errorFromStore = useOrganizationStore.getState().error;
+            const displayMessage = errorFromStore || 'Failed to send invite. User may already be a member or have a pending invite.';
+            toast.error(displayMessage);
+            // Optionally clear the store error after displaying it
+            // useOrganizationStore.setState({ error: null });
+        }
+    } catch (error) { // Catch unexpected errors *within the component/store action itself*
+        logger.error('[InviteMemberCard] Unexpected error during invite process:', { error });
+        const errorMessage = error instanceof Error ? error.message : 'An unexpected error occurred.';
         toast.error(errorMessage);
     }
   };

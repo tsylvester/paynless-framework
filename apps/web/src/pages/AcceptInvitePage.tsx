@@ -149,7 +149,6 @@ export const AcceptInvitePage: React.FC = () => {
               <Button 
                 onClick={handleAccept} 
                 disabled={actionLoading}
-                isLoading={actionLoading}
               >
                 Accept Invitation
               </Button>

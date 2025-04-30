@@ -234,6 +234,13 @@ export type Database = {
             referencedRelation: "organizations"
             referencedColumns: ["id"]
           },
+          {
+            foreignKeyName: "organization_members_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "user_profiles"
+            referencedColumns: ["id"]
+          },
         ]
       }
       organizations: {
@@ -486,6 +493,12 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      check_existing_member_by_email: {
+        Args: { target_org_id: string; target_email: string }
+        Returns: {
+          membership_status: string
+        }[]
+      }
       create_notification_for_user: {
         Args: {
           target_user_id: string

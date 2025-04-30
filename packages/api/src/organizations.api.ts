@@ -129,7 +129,8 @@ export class OrganizationApiClient {
   async acceptOrganizationInvite(inviteToken: string): Promise<ApiResponse<{ message: string; membershipId: string; organizationId: string }>> {
     // Use the injected ApiClient's post method
     // Backend returns { message, membershipId, organizationId } on success
-    return this.client.post<{ message: string; membershipId: string; organizationId: string }, undefined>(`invites/${inviteToken}/accept`, undefined);
+    // Corrected path includes /organizations/
+    return this.client.post<{ message: string; membershipId: string; organizationId: string }, undefined>(`organizations/invites/${inviteToken}/accept`, undefined);
   }
 
   /**
@@ -251,9 +252,10 @@ export class OrganizationApiClient {
    * @returns An ApiResponse containing necessary invite details (like org name/ID) or an error.
    */
   async getInviteDetails(inviteToken: string): Promise<ApiResponse<{ organizationName: string; organizationId: string }>> {
-    // Example public endpoint: GET /invites/:inviteToken/details
+    // Example public endpoint: GET /organizations/invites/:inviteToken/details (Corrected path)
     // This endpoint should NOT require authentication but use the token to find the invite.
     // It should only return non-sensitive data needed for the accept page.
-    return this.client.get<{ organizationName: string; organizationId: string }>(`invites/${inviteToken}/details`, { isPublic: true });
+    // Corrected path includes /organizations/
+    return this.client.get<{ organizationName: string; organizationId: string }>(`organizations/invites/${inviteToken}/details`, { isPublic: false });
   }
 } 

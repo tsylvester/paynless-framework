@@ -31,7 +31,8 @@ import {
     handleListPending,
     handleAcceptInvite,
     handleDeclineInvite,
-    handleCancelInvite
+    handleCancelInvite,
+    handleGetInviteDetails
 } from './invites.ts';
 // Import the new request handlers
 import {
@@ -46,18 +47,34 @@ console.log('Organization function booting up...');
 // Accepts an optional SupabaseClient for dependency injection in tests
 export async function handleOrganizationRequest(
     req: Request,
-    injectedSupabaseClient?: SupabaseClient<Database> 
+    injectedSupabaseClient?: SupabaseClient<Database>
 ): Promise<Response> {
   console.log(`[organizations] Handler: Method: ${req.method}, URL: ${req.url}`);
 
+  // 1. Handle CORS Preflight Request FIRST
   const corsResponse = handleCorsPreflightRequest(req);
   if (corsResponse) return corsResponse;
 
+  // 2. Create Supabase Client (needed for public route too)
+  // Use injected client if provided (for tests), otherwise create a new one
+  // Note: For public routes, client uses anon key if no Auth header
+  const supabase = injectedSupabaseClient || createSupabaseClient(req);
+  const typedSupabase = supabase as SupabaseClient<Database>; // Ensure correct typing
+
+  // 3. Handle Public Routes BEFORE Auth Check
+  const url = new URL(req.url);
+  const pathname = url.pathname;
+  const parts = pathname.split('/').filter(Boolean);
+
   let body: any = null;
-  // Only attempt to parse JSON body for POST and PUT requests with the correct Content-Type
-  if ( (req.method === 'POST' || req.method === 'PUT') && 
-       req.headers.get('content-type')?.includes('application/json') && 
-       req.body ) 
+  const contentType = req.headers.get('content-type');
+  const contentLength = req.headers.get('content-length');
+
+  // Only attempt to parse JSON body for POST/PUT if Content-Type is JSON and Content-Length > 0
+  if ((req.method === 'POST' || req.method === 'PUT') && 
+       contentType?.includes('application/json') &&
+       contentLength && parseInt(contentLength) > 0 && // Check content length explicitly
+       req.body) 
   {
     try {
       body = await req.json();
@@ -66,43 +83,51 @@ export async function handleOrganizationRequest(
       console.error('[organizations] Handler: Error parsing request body:', error);
       return createErrorResponse('Invalid JSON body', 400, req);
     }
+  } else if ((req.method === 'POST' || req.method === 'PUT') && contentType?.includes('application/json')) {
+      console.log(`[organizations] Handler: Received ${req.method} with Content-Type JSON but no body (Content-Length: ${contentLength}). Proceeding without parsing body.`);
+      // Body remains null, which is fine for handlers like accept/decline invite
   }
 
   try {
-    // Use injected client if provided (for tests), otherwise create a new one
-    const supabase = injectedSupabaseClient || createSupabaseClient(req);
-    const typedSupabase = supabase as SupabaseClient<Database>; // Ensure correct typing
-
+    // 4. Authenticate User for non-public routes
     const { data: { user }, error: userError } = await typedSupabase.auth.getUser();
 
     if (userError || !user) {
       console.error('[organizations] Handler: Auth error:', userError);
-      return createUnauthorizedResponse('Unauthorized');
+      // Auth error needs CORS headers (handled by createUnauthorizedResponse)
+      return createUnauthorizedResponse('Unauthorized'); 
     }
     
     const authenticatedUser = user as User; // Cast to User type
     console.log(`[organizations] Handler: Authenticated user: ${authenticatedUser.id}`);
 
-    const url = new URL(req.url);
-    const pathname = url.pathname;
-    const parts = pathname.split('/').filter(Boolean);
-
-    // --- Handle /invites/:inviteToken/accept|decline routes FIRST ---
-    if (parts[0] === 'invites' && parts.length === 3 && req.method === 'POST') {
-        const inviteToken = parts[1];
-        const action = parts[2]; // 'accept' or 'decline'
+    // 5. Handle Authenticated Routes
+    
+    // --- Handle GET /organizations/invites/:token/details (Requires Auth) ---
+    if (parts[0] === 'organizations' && parts[1] === 'invites' && parts.length === 4 && parts[3] === 'details' && req.method === 'GET') {
+        const inviteToken = parts[2]; // Token is the 3rd part (index 2)
+        console.log(`[index.ts] AUTH route: GET /organizations/invites/:token/details for token: ${inviteToken}`);
+        // Pass the authenticated user to the handler
+        return handleGetInviteDetails(req, typedSupabase, authenticatedUser, inviteToken);
+    }
+    // --- Handle POST /invites/:inviteToken/accept|decline (Requires Auth) ---
+    // NOTE: This path starts directly with 'invites', not 'organizations/invites' - This comment is now INCORRECT
+    // Adjust if your API client calls /organizations/invites/:token/accept instead - WE DID!
+    // else if (parts[0] === 'invites' && parts.length === 3 && req.method === 'POST') { // Old incorrect check
+    else if (parts[0] === 'organizations' && parts[1] === 'invites' && parts.length === 4 && req.method === 'POST') { // Correct check for /organizations/invites/:token/action
+        const inviteToken = parts[2]; // Token is 3rd part (index 2)
+        const action = parts[3];      // Action is 4th part (index 3)
 
         if (action === 'accept') {
-            console.log(`[index.ts] Routing to ACCEPT invite: ${inviteToken}`);
-            // Actual handler call:
+            console.log(`[index.ts] AUTH route: POST /invites/:inviteToken/accept for token: ${inviteToken}`);
             return handleAcceptInvite(req, typedSupabase, authenticatedUser, inviteToken, body);
         } else if (action === 'decline') {
-            console.log(`[index.ts] Routing to DECLINE invite: ${inviteToken}`);
-             // Actual handler call:
+            console.log(`[index.ts] AUTH route: POST /invites/:inviteToken/decline for token: ${inviteToken}`);
              return handleDeclineInvite(req, typedSupabase, authenticatedUser, inviteToken, body);
         } else {
              console.warn(`[index.ts] Invalid action for /invites/:token/:action: ${action}`);
-             return createErrorResponse('Invalid action for invite.', 400, req);
+             // Use shared error response creator
+             return createErrorResponse('Invalid action for invite.', 400, req); 
         }
     }
 
@@ -113,9 +138,9 @@ export async function handleOrganizationRequest(
     // Example: /organizations/org123/members/mem456/role -> { orgId: 'org123', resourceType: 'members', resourceId: 'mem456', action: 'role' }
     function extractPathParams(pathname: string): {
       orgId?: string;
-      resourceType?: 'members' | 'invites' | string; // 'members', 'invites', or potentially others
-      resourceId?: string; // e.g., membershipId, inviteId
-      action?: string; // e.g., 'role', 'accept', 'decline'
+      resourceType?: 'members' | 'invites' | 'requests' | 'pending' | string;
+      resourceId?: string;
+      action?: string;
     } {
       const parts = pathname.split('/').filter(Boolean);
       let orgId: string | undefined;
@@ -135,7 +160,6 @@ export async function handleOrganizationRequest(
           }
         }
       }
-      // Ensure all paths return explicitly
       return { orgId, resourceType, resourceId, action };
     }
 
@@ -145,7 +169,7 @@ export async function handleOrganizationRequest(
     const resourceId = pathParams.resourceId; 
     const action = pathParams.action;
 
-    // --- Base /organizations routes ---
+    // --- Base /organizations routes (Requires Auth) ---
     if (req.method === 'POST' && !orgId && parts[0] === 'organizations') {
         return handleCreateOrganization(req, typedSupabase, authenticatedUser, body);
     } else if (req.method === 'GET' && !orgId && parts[0] === 'organizations') {
@@ -167,13 +191,11 @@ export async function handleOrganizationRequest(
             return createErrorResponse(`Method ${req.method} not allowed for this path`, 405, req);
          }
     }
-    // --- Routes for /organizations/:orgId/members ---
+    // --- Routes for /organizations/:orgId/members (Requires Auth) ---
     else if (orgId && resourceType === 'members' && !action) {
         if (req.method === 'GET' && !resourceId) { // LIST MEMBERS
-             // Delegate to the specific handler
              return handleListMembers(req, typedSupabase, authenticatedUser, orgId);
         } else if (req.method === 'DELETE' && resourceId) { // REMOVE MEMBER
-             // Delegate to the specific handler
              return handleRemoveMember(req, typedSupabase, authenticatedUser, orgId, resourceId);
         } else {
              // Method Not Allowed for /organizations/:orgId/members or /organizations/:orgId/members/:memberId (without action)
@@ -182,17 +204,17 @@ export async function handleOrganizationRequest(
              return createErrorResponse(`Method ${req.method} not allowed for this path`, 405, req);
         }
     }
-    // --- Routes for /organizations/:orgId/members/:membershipId/role (update) ---
+    // --- Routes for /organizations/:orgId/members/:membershipId/role (Requires Auth) ---
     else if (req.method === 'PUT' && orgId && resourceType === 'members' && resourceId && action === 'role') { // UPDATE MEMBER ROLE
         // Delegate to the specific handler
         return handleUpdateMemberRole(req, typedSupabase, authenticatedUser, orgId, resourceId, body);
     }
     // --- Routes for /organizations/members/:membershipId/status (approve/deny request) ---
     else if (req.method === 'PUT' && orgId && resourceType === 'members' && resourceId && action === 'status') { // APPROVE/DENY JOIN REQUEST
-        // Delegate to the specific handler
+        // Needs membershipId, not orgId directly in path usually
         return handleUpdateRequestStatus(req, typedSupabase, authenticatedUser, resourceId, body); // resourceId is membershipId
     }
-    // --- Routes for /organizations/:orgId/invites (create) ---
+    // --- Routes for /organizations/:orgId/invites (Requires Auth) ---
     else if (req.method === 'POST' && orgId && resourceType === 'invites' && !resourceId && !action) { // CREATE INVITE
          // Delegate to the specific handler
          return handleCreateInvite(req, typedSupabase, authenticatedUser, orgId, body);

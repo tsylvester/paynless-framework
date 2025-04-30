@@ -15,167 +15,120 @@ This document outlines the steps for implementing an in-app notification system 
 ### 2.1 Database Schema (Organizations & Members)
 
 *   [X] **Define Schema:**
-    *   `organizations`: `id`, `name`, `created_at`, `visibility` (e.g., `TEXT CHECK (visibility IN ('private', 'public')) DEFAULT 'private'`), `deleted_at` (`TIMESTAMP WITH TIME ZONE DEFAULT NULL`). *(Columns like `description`, `website`, `logo_url` can be added later)*.
-    *   `organization_members`: `id`, `user_id`, `organization_id`, `role` (`TEXT CHECK (role IN ('admin', 'member')) DEFAULT 'member'`), `status` (`TEXT CHECK (status IN ('pending', 'active', 'removed')) DEFAULT 'pending'`), `created_at`.
-    *   [X] **(New)** `invites`: `id`, `invite_token` (unique, non-guessable text), `organization_id` (FK), `invited_email` (text), `role_to_assign` (text, e.g., 'admin', 'member'), `invited_by_user_id` (FK to users), `status` (`TEXT CHECK (status IN ('pending', 'accepted', 'declined', 'expired')) DEFAULT 'pending'`), `created_at`, `expires_at` (timestamp with time zone, optional).
-*   [X] **Migration:** Create Supabase migration scripts for these tables, the `visibility` check constraint, the `role` check constraint with default, the `status` check constraint with default, and the nullable `deleted_at` column.
-    *   [X] **(New)** Add migration script for the `invites` table, including unique constraint on `invite_token` and relevant indexes.
-*   [X] **Test Migration:** Apply migrations locally and verify table structures, defaults, constraints, and nullability.
-    *   [X] **(New)** Verify `invites` table structure and constraints.
+    *   `organizations`: `id`, `name`, `created_at`, `visibility`, `deleted_at`.
+    *   `organization_members`: `id`, `user_id`, `organization_id`, `role`, `status`, `created_at`.
+    *   [X] **(Updated)** `invites`:
+        *   `id` (UUID PK DEFAULT gen_random_uuid())
+        *   `invite_token` (TEXT UNIQUE NOT NULL DEFAULT extensions.uuid_generate_v4())
+        *   `organization_id` (UUID NOT NULL REFERENCES public.organizations(id))
+        *   `invited_email` (TEXT NOT NULL) -- The email address the invite was sent to.
+        *   `invited_user_id` (UUID NULLABLE REFERENCES auth.users(id)) -- The user ID if known/linked, NULL otherwise.
+        *   `role_to_assign` (TEXT NOT NULL CHECK (role_to_assign IN ('admin', 'member')))
+        *   `invited_by_user_id` (UUID NOT NULL REFERENCES public.users(id))
+        *   `status` (TEXT NOT NULL CHECK (status IN ('pending', 'accepted', 'declined', 'expired')) DEFAULT 'pending')
+        *   `created_at` (TIMESTAMPTZ DEFAULT now() NOT NULL)
+        *   `expires_at` (TIMESTAMPTZ NULL) -- Optional expiration
+*   [X] **Migration:** Create/Update Supabase migration scripts for these tables and constraints.
+    *   [X] **(Updated)** Add/Modify migration script for the `invites` table to include `invited_user_id` (nullable UUID, FK to auth.users) and ensure `invited_email` is NOT NULL. Add indexes on `invite_token`, `organization_id`, `invited_email`, `invited_user_id`, `status`.
+*   [X] **Test Migration:** Apply migrations locally and verify table structures, defaults, constraints, nullability, and FKs.
+    *   [X] **(Updated)** Verify `invites` table structure, especially `invited_user_id` nullability and FK.
 
 ### 2.2 Backend Logic (Tenancy)
 
-*   [X] **RLS Policy Checks:** Confirm the existing migration files properly represent requirements for:
-    *   `organizations`:
-        *   `SELECT`: Members with `status='active'` in non-deleted orgs (`deleted_at IS NULL`) can select. Public, non-deleted orgs are visible to authenticated users. Admins can select their non-deleted org.
-        *   `INSERT`: Authenticated users can insert.
-        *   `UPDATE`: Admins of the org can update non-deleted orgs.
-        *   `DELETE`: Never allowed (use soft delete via function/API).
-    *   `organization_members`:
-        *   `SELECT`: Members of the same non-deleted org can select.
-        *   `INSERT`: Requires permission (e.g., admin invite, user request/accept).
-        *   `UPDATE`: Admins can update roles/status in their non-deleted org. Users can update their own status (e.g., accept invite, leave org).
-        *   `DELETE`: Requires permission (admin removal, user self-removal).
-    *   [X] **(New)** `invites`:
-        *   `SELECT`: Admins of the related org can select. The invited user (matching `invited_email` or a potential `invited_user_id` if linked) can select their own pending invites.
+*   [X] **RLS Policy Checks:** Confirmed existing migrations cover base requirements for `organizations`, `organization_members`. Reviewed/Updated for `invites`:
+    *   [X] **(Update)** `invites`:
+        *   `SELECT`: Admins of the related org can select. The invited user can select their own pending invites **IF** (`auth.uid()` matches `invited_user_id`) **OR** (`invited_user_id` IS NULL AND `auth.jwt() ->> 'email'` matches `invited_email`).
         *   `INSERT`: Admins of the related org can insert.
-        *   `UPDATE`: The invited user can update the status of their own pending invite (accept/decline). Admins can potentially update/revoke.
-        *   `DELETE`: Admins can delete pending invites.
-    *   Other Tables (e.g., `chat_history`): Need `organization_id` column. RLS policies must check `organization_id` matches an active membership in a non-deleted org for the current user.
-*   [X] **Implement RLS Policies:** Apply the RLS policies (including `deleted_at IS NULL` checks) via migration scripts.
-    *   [X] **(New)** Add RLS policies for `invites` table via migration script.
-*   [X] **Test Migration:** Apply RLS migrations and verify policies through application-level testing.
-    *   [X] **(New)** Verify `invites` RLS policies.
-*   [X] **Implement Trigger/Function (Last Admin Check):** Create/update logic (e.g., `BEFORE UPDATE OR DELETE ON organization_members`) to prevent removing/demoting the last admin of a non-deleted org. Consider `deleted_at IS NULL` in checks.
-*   [X] **Test Migration:** Apply last admin check migration.
-*   [X] **Implement Trigger Functions (Notifications - Full):**
-    *   `notify_org_admins_on_join_request`: Triggered `AFTER INSERT ON organization_members WHEN (NEW.status = 'pending')`. Inserts notification for org admins.
-    *   `notify_user_on_invite_acceptance`: Triggered `AFTER UPDATE ON organization_members WHEN (OLD.status = 'pending' AND NEW.status = 'active')`. Inserts notification for the user who joined.
-    *   `notify_user_on_role_change`: Triggered `AFTER UPDATE ON organization_members WHEN (OLD.role <> NEW.role)`. Inserts notification for the affected user.
-    *   [X] **(New)** `notify_user_on_invite`: Triggered `AFTER INSERT ON invites WHEN (NEW.status = 'pending')`. Inserts notification for the invited user (requires lookup by email or direct user link).
-*   [X] **Test Migration:** Apply notification trigger migrations.
-    *   [X] **(New)** Test `notify_user_on_invite` trigger migration.
-*   [X] **(New)** Implement Trigger Function (`restrict_invite_update_fields`) to prevent invited users from modifying anything other than the status to 'accepted' or 'declined'.
-*   [X] **(New)** Test Migration: Apply `restrict_invite_update_fields` trigger migration.
-*   [X] **(New) Backend Edge Functions (`supabase/functions/organizations/index.ts`):**
-      *   [X] **Setup:** Create function directory and basic handler structure (`index.ts`).
-      *   [X] **POST `/organizations` (Create Organization):**
-          *   [X] Test: Authenticated user can create, receives new org object, creator is added as admin member.
-          *   [X] Test: Unauthenticated user fails (401).
-          *   [X] Test: Input validation (e.g., name too short) fails (400).
-          *   [X] Implementation: Handle POST, auth check, input validation, DB transaction (insert `organizations`, insert `organization_members` with role 'ADMIN' & status 'active'), return new org.
-      *   [X] **GET `/organizations` (List User Organizations):**
-          *   [X] Test: Authenticated user gets list of their active, non-deleted memberships.
-          *   [X] Test: Unauthenticated user fails (401).
-          *   [X] Implementation: Handle GET, auth check, Supabase `select` respecting RLS, return list.
-      *   [X] **GET `/organizations/:orgId` (Get Details):**
-          *   [X] Test: Member can get details of their active, non-deleted org.
-          *   [X] Test: Non-member fails (403/404).
-          *   [X] Test: Requesting deleted org fails (404).
-          *   [X] Test: Unauthenticated user fails (401).
-          *   [X] Implementation: Handle GET, auth check, validate orgId param, Supabase `select` respecting RLS, return details or error status.
-      *   [X] **PUT `/organizations/:orgId` (Update Organization):**
-          *   [X] Test: Admin can update their non-deleted org (name, visibility).
-          *   [X] Test: Non-admin member fails (403).
-          *   [X] Test: Updating deleted org fails (404).
-          *   [X] Test: Input validation fails (400).
-          *   [X] Implementation: Handle PUT, auth check (admin role via RLS/check), validate orgId/body, Supabase `update`, return updated org or 204.
-      *   [X] **DELETE `/organizations/:orgId` (Soft Delete Organization):**
-          *   [X] Test: Admin can soft-delete their org.
-          *   [X] Test: Non-admin member fails (403).
-          *   [X] Test: Deleting already deleted org fails (404) or is idempotent (204).
-          *   [X] Test: Deleting org fails if user is the last admin (400/409 - Conflict, requires specific check or relies on DB trigger).
-          *   [X] Implementation: Handle DELETE, auth check (admin role), check for last admin (if trigger doesn't handle), Supabase `update` to set `deleted_at`, return 204.
-      *   [X] **GET `/organizations/:orgId/members` (List Members):**
-          *   [X] Test: Member can list members of their active, non-deleted org.
-          *   [X] Test: Non-member fails (403).
-          *   [X] Test: Requesting members of deleted org fails (404).
-          *   [X] Implementation: Handle GET, auth check (member via RLS/check), validate orgId, Supabase `select` with profile join, return list.
-      *   [X] **POST `/organizations/:orgId/invites` (Invite User):**
-          *   [X] Test: Admin can invite user by email with a role.
-          *   [X] Test: Non-admin member fails (403).
-          *   [X] Test: Inviting to deleted org fails (404).
-          *   [X] Test: Input validation (email format, valid role) fails (400).
-          *   [X] Test: Inviting user with existing active/pending membership/invite fails (409 - Conflict).
-          *   [X] Implementation: Handle POST, auth check (admin), validate orgId/body (email, role), check existing member/invite status, generate unique `invite_token`, insert into `invites` table (status=pending), trigger notification/email. Return 201/204.
-      *   [X] **PUT `/organizations/:orgId/members/:membershipId/role` (Update Member Role):**
-          *   [X] Test: Admin can change role of another member in their non-deleted org.
-          *   [X] Test: Non-admin fails (403).
-          *   [X] Test: Changing role of member in deleted org fails (404).
-          *   [X] Test: Changing role *to* admin works.
-          *   [X] Test: Changing role *of* the last admin fails (400/409 - relies on trigger/check).
-          *   [X] Implementation: Handle PUT, auth check (admin), validate orgId/membershipId/body, check last admin, Supabase `update`, return 204.
-      *   [X] **DELETE `/organizations/:orgId/members/:membershipId` (Remove Member):**
-          *   [X] Test: Admin can remove another member from their non-deleted org.
-          *   [X] Test: User can remove themselves (optional self-removal endpoint needed, or handled here with permission check).
-          *   [X] Test: Non-admin cannot remove others (403).
-          *   [X] Test: Removing from deleted org fails (404).
-          *   [X] Test: Removing the last admin fails (400/409 - relies on trigger/check).
-          *   [X] Implementation: Handle DELETE, auth check (admin or self), validate orgId/membershipId, check last admin, Supabase `delete` or `update` status, return 204.
-      *   **(Updated) Other Endpoints:**
-          *   [X] **Accept/Decline Invite (e.g., `POST /invites/:inviteToken/accept`, `POST /invites/:inviteToken/decline`):**
-              *   [X] Test: Invited user (authenticated) can accept valid token for their email.
-              *   [X] Test: Invited user (authenticated) can decline valid token.
-              *   [X] Test: Authenticated user who isn't the invitee fails (403).
-              *   [X] Test: Using invalid/expired/used token fails (400/404/410).
-              *   [X] Implementation: Handle POST, validate token (exists, pending, not expired), check authenticated user matches `invited_email`, **Accept:** Update `invites` status=accepted, create/update `organization_members` record (status=active, role from invite), **Decline:** Update `invites` status=declined (or delete), trigger notifications.
-          *   [X] **Request to Join Public Org (e.g., `POST /organizations/:orgId/requests`):** 
-              *   [X] Test: Authenticated user can request to join.
-              *   [X] Test: Already active/pending member fails (409).
-              *   [X] Test: RLS/Org visibility prevents request fails (404/403).
-              *   [X] Implementation: Handle POST, auth check, check existing membership, insert `organization_members` record (status=pending, role=member).
-          *   [X] **Approve/Deny Join Request (e.g., `PUT /organizations/members/:membershipId/status`):** 
-              *   [X] Test: Admin can approve pending request (status=active).
-              *   [X] Test: Admin can deny pending request (status=removed).
-              *   [X] Test: Non-admin fails (403).
-              *   [X] Test: Approving/denying non-pending request fails (409).
-              *   [X] Test: Membership not found fails (404).
-              *   [X] Implementation: Handle PUT, auth check (admin), validate membershipId/body, check current status, update `organization_members` status.
-          *   [X] **List Pending Invites/Requests for Admins (e.g., `GET /organizations/:orgId/pending`):**
-              *   [X] Test: Admin can retrieve list of pending members (from `organization_members`) and pending invites (from `invites`) for their org.
-              *   [X] Test: Non-admin cannot retrieve list (403).
-              *   [X] Test: Returns empty lists if none pending.
-              *   [X] Implementation: Handle GET, auth check (admin), validate orgId, Supabase `select` from `organization_members` (status=pending) and `invites` (status=pending), join with profiles where possible, return combined/structured list.
-          *   [X] **(New) Cancel/Delete Invite (e.g., `DELETE /invites/:inviteId` or `DELETE /organizations/:orgId/invites/:inviteId`):**
-              *   [X] Test: Admin can delete a pending invite for their org.
-              *   [X] Test: Non-admin fails (403).
-              *   [X] Test: Deleting non-pending/non-existent invite fails (404).
-              *   [X] Implementation: Handle DELETE, auth check (admin), validate inviteId, Supabase `delete` from `invites` where status='pending', return 204.
+        *   `UPDATE`: The invited user RLS check (`auth.uid() = invited_user_id` or email match) was restored. The `handleAcceptInvite` function now uses a **Service Role client** to bypass RLS for the invite status update after internal validation, due to persistent RLS evaluation issues.
+        *   `DELETE`: Admins can delete pending invites in their org.
+*   [X] **Implement RLS Policies:** Applied/Updated the RLS policies via migration scripts.
+    *   [X] **(Update)** Updated RLS policies for `invites` table per the logic above. (**Note:** `organization_members` INSERT policy prevents user self-insertion on invite accept, requiring Service Role client in `handleAcceptInvite`).
+*   [X] **Test Migration:** Apply RLS migrations and verify policies.
+    *   [ ] **(Update)** Verify updated `invites` RLS policies.
+*   [X] **Implement Trigger/Function (Last Admin Check):** (Existing)
+*   [X] **Test Migration:** (Existing)
+*   [X] **Implement Trigger Functions (Notifications - Existing):** `notify_org_admins_on_join_request`, `notify_user_on_invite_acceptance`, `notify_user_on_role_change`. (Existing)
+*   [X] **(Updated)** Implement/Modify Trigger Function (`notify_user_on_invite`):
+    *   Triggered `AFTER INSERT ON invites WHEN (NEW.status = 'pending')`.
+    *   **Logic:** If `NEW.invited_user_id` IS NOT NULL, insert in-app notification for that user AND send email to `NEW.invited_email`. If `NEW.invited_user_id` IS NULL, ONLY send email to `NEW.invited_email` (inviting to sign up).
+*   [X] **Test Migration:** Apply/Test notification trigger migrations.
+    *   [X] **(Updated)** Test updated `notify_user_on_invite` trigger migration logic.
+*   [X] **Implement Trigger Function (`restrict_invite_update_fields`):**
+    *   Keep existing logic (prevent non-admins from changing fields other than status to accepted/declined).
+    *   Verify it doesn't interfere with the `link_pending_invites_on_signup` trigger updating `invited_user_id`.
+*   [X] **Test Migration:** Apply/Test `restrict_invite_update_fields` trigger migration.
+*   [ ] **(NEW)** Implement Trigger Function (`link_pending_invites_on_signup`):
+    *   Triggered `AFTER INSERT ON auth.users`.
+    *   **Logic:** `UPDATE public.invites SET invited_user_id = NEW.id WHERE invited_email = NEW.email AND invited_user_id IS NULL AND status = 'pending';`
+    *   Needs SECURITY DEFINER or elevated privileges to update `public.invites`.
+*   [ ] **(NEW)** Test Migration: Apply/Test `link_pending_invites_on_signup` trigger migration.
+*   [X] **Backend Edge Functions (`supabase/functions/organizations/index.ts`):**
+      *   ... (Keep existing POST/GET/PUT/DELETE /organizations, /organizations/:orgId, /organizations/:orgId/members, etc.) ...
+      *   [X] **(Updated) `POST /organizations/:orgId/invites` (`handleCreateInvite`):**
+          *   Accepts only `email` and `role` in body.
+          *   **Requires Service Role Key:** Uses service client internally.
+          *   **Logic:**
+              1. Check admin permission for `orgId`.
+              2. Lookup `email` in `auth.users`.
+              3. Perform conflict checks (existing pending invite for user/email, existing active/pending member).
+              4. If user exists: `INSERT INTO invites (..., invited_email, invited_user_id)`.
+              5. If user doesn't exist: `INSERT INTO invites (..., invited_email, invited_user_id)` with `invited_user_id = NULL`.
+              6. Generate `invite_token`.
+              7. (Trigger `notify_user_on_invite` handles notifications).
+          *   Test: Admin can invite existing user by email.
+          *   Test: Admin can invite non-existing user by email.
+          *   Test: Fails if invite already pending.
+          *   Test: Fails if user already member.
+          *   Test: Non-admin fails (403).
+          *   Test: Input validation (email format, role) fails (400).
+      *   [X] **(Updated) `POST /organizations/invites/:inviteToken/accept` (`handleAcceptInvite`):**
+          *   [X] **Path:** Confirmed path is `/organizations/invites/:token/accept`.
+          *   [X] **Logic:**
+              1. Fetch invite by token using user client.
+              2. Validate status is 'pending'.
+              3. **Validate User:** Check if (`invite.invited_user_id` matches `user.id`) OR (`invite.invited_user_id` IS NULL AND `user.email` matches `invite.invited_email`).
+              4. Validate user not already active/pending member.
+              5. **Update Invite (Service Role):** Set `status = 'accepted'` using Service Role Client.
+              6. **Insert Member (Service Role):** Insert into `organization_members` (`status='active'`, role from invite) using Service Role Client (due to INSERT RLS restrictions on `organization_members`).
+          *   [X] Test: Invited user (matched by ID) can accept.
+          *   [X] Test: Invited user (matched by email after signup) can accept.
+          *   [X] Test: Non-invited user fails (403/404).
+          *   [X] Test: Accepting used/invalid token fails.
+      *   [X] **(Updated) `POST /organizations/invites/:inviteToken/decline` (`handleDeclineInvite`):**
+          *   [X] **Path:** Confirmed path is `/organizations/invites/:token/decline`.
+          *   **Logic:** Similar validation as accept (fetch, status, user match). Update `invites.status` to `'declined'`. (Consider if `organization_members` needs cleanup if optimistic insert was ever used - removed from this plan).
+      *   [X] **(Updated) `GET /organizations/invites/:token/details` (`handleGetInviteDetails`):**
+          *   **Path:** Confirmed path is `/organizations/invites/:token/details`.
+          *   Requires authentication.
+          *   **Logic:**
+              1. Fetch invite by token using user client.
+              2. Validate status is 'pending'.
+              3. **Validate User:** Check if (`invite.invited_user_id` matches `user.id`) OR (`invite.invited_user_id` IS NULL AND `user.email` matches `invite.invited_email`).
+              4. **Requires Service Role Key:** Fetch `organizations.name` using service client based on `invite.organization_id`.
+              5. Return combined details.
+          *   Test: Invited user (matched by ID) can get details.
+          *   Test: Invited user (matched by email after signup) can get details.
+          *   Test: Non-invited user fails (403/404).
+          *   Test: Getting details for used/invalid token fails.
+      *   [X] **(Updated) `DELETE /organizations/:orgId/invites/:inviteId` (`handleCancelInvite`):**
+          *   Admin checks are sufficient. Deletes from `invites` table.
 
 ### 2.4 API Client (`@paynless/api`)
 
-*   [X] **Tests:** Write unit tests for new multi-tenancy functions in `OrganizationApiClient`: // Marked as [X] as mocks/signatures confirmed via store tests
-    *   [X] `createOrganization(name, visibility?)`: Mocks POST `/organizations`.
-    *   [X] `updateOrganization(orgId, { name?, visibility? })`: Mocks PUT `/organizations/:orgId`.
-    *   [X] `listUserOrganizations()`: Mocks GET `/organizations`. Filters deleted.
-    *   [X] `getOrganizationDetails(orgId)`: Mocks GET `/organizations/:orgId`.
-    *   [X] `getOrganizationMembers(orgId)`: Mocks GET `/organizations/:orgId/members`.
-    *   [X] `inviteUserToOrganization(orgId, emailOrUserId, role)`: Mocks POST `/organizations/:orgId/invites`.
-    *   [X] `acceptOrganizationInvite(inviteTokenOrId)`: Mocks POST `/invites/:inviteToken/accept`.
-    *   [X] `requestToJoinOrganization(orgId)`: Mocks POST `/organizations/:orgId/requests`.
-    *   [X] `approveJoinRequest(membershipId)`: Mocks PUT `/organizations/members/:membershipId/approve`.
-    *   [X] `updateMemberRole(membershipId, newRole)`: Mocks PUT `/organizations/members/:membershipId/role`.
-    *   [X] `removeMember(membershipId)`: Mocks DELETE `/organizations/members/:membershipId`.
-    *   [X] `deleteOrganization(orgId)`: Mocks DELETE `/organizations/:orgId` (soft delete endpoint).
-    *   [X] **(Note)** Verify `inviteUserToOrganization`, `acceptOrganizationInvite` tests align with `invites` table logic. (Done for accept/invite, need to implement client functions)
-    *   [X] **(New)** Add tests for `cancelInvite`. (Mocks `DELETE /organizations/:orgId/invites/:inviteId`)
-*   [X] **Implementation:** Add/Update these functions in `OrganizationApiClient` class in `packages/api/src/organizations.api.ts`. Functions should call the corresponding backend edge function endpoints. Soft delete logic is handled by the backend endpoint called by `deleteOrganization`.
-    *   [X] Implemented `createOrganization`
-    *   [X] Implemented `updateOrganization`
-    *   [X] Implemented `listUserOrganizations`
-    *   [X] Implemented `getOrganizationDetails`
-    *   [X] Implemented `getOrganizationMembers`
-    *   [X] Implemented `inviteUserToOrganization`
-    *   [X] Implemented `acceptOrganizationInvite`
-    *   [X] Implemented `updateMemberRole`
-    *   [X] Implemented `removeMember`
-    *   [X] Implemented `deleteOrganization`
-    *   [X] Implemented `inviteUserById(orgId, userId, role)` (New method)
-    *   [X] Implemented `requestToJoinOrganization(orgId)`
-    *   [X] Implemented `approveJoinRequest(membershipId)`
-    *   [X] **(Note)** Verify `inviteUserToOrganization`, `acceptOrganizationInvite` implementation aligns with `invites` table logic.
-    *   [X] **(New)** Implement `cancelInvite`.
-    *   [X] Implement `denyJoinRequest` (Uses PUT `/organizations/members/:membershipId/status`)
+*   [X] **Tests:** Write/Update unit tests for `OrganizationApiClient`:
+    *   [X] **(Update)** `inviteUserByEmail(orgId, email, role)`: Mocks POST `/organizations/:orgId/invites` with email payload.
+    *   [X] **(Remove)** `inviteUserById`: No longer needed for frontend.
+    *   [X] `acceptOrganizationInvite(inviteToken)`: Mocks POST `/organizations/invites/:inviteToken/accept`.
+    *   [X] **(New/Update)** `declineOrganizationInvite(inviteToken)`: Mocks POST `/organizations/invites/:inviteToken/decline`.
+    *   [X] **(New/Update)** `getInviteDetails(inviteToken)`: Mocks GET `/organizations/invites/:inviteToken/details`. Requires auth mock.
+    *   ... (keep other tests: createOrg, updateOrg, listOrgs, getDetails, getMembers, role update, remove member, deleteOrg, requestJoin, approveJoin, denyJoin, cancelInvite, listPending)
+*   [X] **Implementation:** Add/Update functions in `OrganizationApiClient`.
+    *   [X] **(Update)** `inviteUserByEmail`: Calls backend with email/role payload.
+    *   [X] **(Remove)** `inviteUserById` method.
+    *   [X] `acceptOrganizationInvite`: Calls POST `/organizations/invites/:token/accept`.
+    *   [X] **(New/Update)** `declineOrganizationInvite`: Calls POST `/organizations/invites/:token/decline`.
+    *   [X] **(New/Update)** `getInviteDetails`: Calls GET `/organizations/invites/:token/details` (authenticated).
+    *   ... (Ensure other implementations align with backend endpoints)
 
 ### 2.5 State Management (`@paynless/store`)
 
@@ -387,37 +340,9 @@ This section outlines the frontend implementation using a dynamic, card-based "h
     *   Use the `selectCurrentUserRole` selector in components like `OrganizationSettingsPage`, `OrganizationMembersPage`, `MemberList` to conditionally render UI 
     elements or disable actions.
 
-*   [ ] **(UI Polish)** Global Styles / Theme:
-    *   [X] Apply a background blur (`backdrop-blur-sm` or similar) to `DropdownMenuContent` components globally or via theme override for better readability. 
-    *   [ ] Change "Admin" to a badge to display on Org Settings, Pending Actions, and Members cards 
-    
-### 2.8 Integration with Existing Features
+*   [X] **(UI Fixes)** Updated `Badge` and `Button` components (`src/components/ui`) to use `text-destructive-foreground` instead of `text-white` for the `destructive` variant, ensuring proper text color in light/dark modes. 
 
-*   [ ] **Org Chat vs Individual Chat** Create switcher to associate an AI chat with an org or keep it separate. 
-*   [ ] **Add Org Chats to Org** Modify Chat History to show Org AI Chat separately.
-*   [ ] **Set Chat Access level for Org & Chat** Let members & Orgs set chat access level by role, `member` or `admin`
-*   [ ] **Admins Manage AI Chat for Org** Give Admins control over deleting org chats or changing access levels 
-        *   [ ] **Approve Access** Org admins can approve/deny members ability to create new org chats 
-*   [ ] **Share AI Chats Among Org** All orgId chat histories are shared among chat members with appropriate permissions. 
-*   [ ] **Identify Impacted Features:** Chat (`chat_history`, `chats`), potentially User Profile settings if some become org-specific, Subscriptions if they become org-based.
-*   [ ] **Update Backend:**
-    *   Add `organization_id` FK column to `chats`, `chat_history`.
-    *   Update RLS for `chats`, `chat_history` to require `organization_id` matches an active, non-deleted membership.
-    *   Apply migrations. Test RLS changes.
-*   [ ] **Update API Client (`@paynless/api`):**
-    *   Modify `ChatApiClient` functions (`fetchChats`, `fetchChatHistory`, `createChat`, `sendMessage`, etc.) to accept and pass `organizationId`.
-    *   Update tests for `ChatApiClient`.
-*   [ ] **Update State Management (`@paynless/store`):**
-    *   Modify `chatStore` actions to accept `organizationId`.
-    *   Modify state structure if needed (e.g., store chats per org: `chatsByOrgId: { [orgId: string]: Chat[] }`).
-    *   Update selectors to accept `organizationId` or use `currentOrganizationId` from `organizationStore`.
-    *   Update tests for `chatStore`.
-*   [ ] **Update Frontend (`apps/web`):**
-    *   Modify components using chat features (e.g., `ChatInterface`, `ChatList`) to get `currentOrganizationId` from `organizationStore` and pass it to chat store actions/API calls.
-    *   Ensure UI reflects data scoped to the currently selected organization.
-    *   Update tests for chat components.
-
-### 2.9 Checkpoint 2: Multi-Tenancy Complete
+### 2.8 Checkpoint 2: Multi-Tenancy Complete
 
 *   [ ] **Run Tests:** Execute all tests (`pnpm test`). Ensure they pass.
 *   [ ] **Build App:** Run `pnpm build`. Ensure it completes successfully.
@@ -462,36 +387,4 @@ This section outlines the frontend implementation using a dynamic, card-based "h
 *   [ ] **Implement `PublicRoute` Component:**
     *   [ ] Create `PublicRoute.tsx` in `src/components/auth`.
     *   [ ] Implement logic to redirect authenticated users away from public-only pages (e.g., to `/dashboard`).
-    *   [ ] Apply `<PublicRoute>` wrapper to `login`, `register`, `forgot-password`, `reset-password` routes in `routes.tsx`.
-    *   [ ] Test redirection for authenticated and unauthenticated users.
-*   [ ] **Implement Auth Flow Pages:**
-    *   [ ] Create `ForgotPassword.tsx`, `ResetPassword.tsx`, `VerifyEmail.tsx` pages in `src/pages`.
-    *   [ ] Implement the UI and logic for each page, including API interactions.
-    *   [ ] Uncomment the corresponding routes in `routes.tsx`.
-    *   [ ] Write tests for each page's functionality.
-*   [ ] **Final Review & Testing:**
-    *   [ ] Comprehensive end-to-end testing of all notification and multi-tenancy features.
-    *   [ ] Code review for consistency, error handling, and security.
-    *   [ ] Update all relevant documentation (`STRUCTURE.md`, `IMPLEMENTATION_PLAN.md`, `TESTING_PLAN.md`).
----
-
-## Future Scope & Considerations
-
-The following items were discussed but deferred from this initial implementation plan to manage scope. They can be considered for future iterations:
-
-*   **Robust Email/User Identification:** Develop a consistent strategy for linking actions/data based on email addresses, potentially involving lookups against `auth.users` (requiring admin privileges or specific RLS/functions) or adding email to `user_profiles` (requires migration and careful handling of synchronization/privacy).
-*   **Granular Member Roles:** Implementing roles beyond 'admin' and 'member' (e.g., 'viewer', custom roles).
-*   **Sub-Teams:** Adding support for hierarchical teams within organizations.
-*   **Public Organization Discovery & Search:** Implementing UI for users to find `public` organizations.
-*   **Domain-Based Joining:** Logic to suggest/assign users to orgs based on email domain.
-*   **Enhanced Privacy/Visibility Settings:** Extending `organizations.visibility` beyond public/private.
-*   **Invite Token Expiration/Management:** Adding expiry dates and admin management for invites.
-*   **User Notification Preferences:** Allowing users to choose notification types and delivery channels (in-app vs. email).
-*   **Email Notifications:** Sending emails for various notification types (beyond invites).
-*   **Notification Cleanup/Archiving:** Automatic cleanup of old notifications.
-*   **Notification Grouping:** Grouping similar informational notifications in the UI (Note: complex for actionable items).
-*   **Organization-Level Billing:** Allowing an organization entity to manage billing for its members.
-*   **Resource Quotas/Limits per Organization:** Enforcing limits tied to organization billing plans.
-*   **Dedicated Audit Log:** Implementing an immutable log for organization events.
-*   **Org-Focused User Onboarding:** Designing specific flows for new users joining/creating orgs immediately upon signup.
-*   **Advanced Org Deletion Handling:** Defining specific behavior for associated data (chats, resources, etc.) when an org is soft-deleted (e.g., archiving, member status changes beyond just blocking access).
+    *   [ ] Apply `<PublicRoute>` wrapper to `login`, `register`, `
