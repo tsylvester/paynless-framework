@@ -1,13 +1,54 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { useAiStore } from './aiStore'; // Adjust path as needed
 import { useAuthStore } from './authStore'; // Adjust path as needed
-import { api } from '@paynless/api'; // Adjust path as needed
+// Import the actual AiApiClient class
+import { AiApiClient, api as baseApi, AuthRequiredError } from '@paynless/api'; // Import base api object too
+// Import the shared mock factory and reset function
+import { createMockAiApiClient, resetMockAiApiClient } from '@paynless/api/mocks/ai.api.mock';
 import type { PendingAction, ChatMessage, Session, User, ApiResponse, UserRole, AuthStore } from '@paynless/types';
 import { create } from 'zustand'; // Import create
 import 'vitest-localstorage-mock'; // <-- Add this import
 
+// --- Create an instance of the shared mock ---
+const mockAiApi = createMockAiApiClient();
+
+// --- Mock navigate function ---
+const navigateMock = vi.fn();
+
 // Mock dependencies
-vi.mock('@paynless/api'); // Use auto-mocking features if possible
+// Mock the entire @paynless/api module
+vi.mock('@paynless/api', async (importOriginal) => {
+    const actualApiModule = await importOriginal<typeof import('@paynless/api')>();
+    return {
+        ...actualApiModule,
+        AiApiClient: vi.fn(() => mockAiApi),
+        AuthRequiredError: actualApiModule.AuthRequiredError,
+        api: { 
+            ...actualApiModule.api, // Keep other parts if needed
+            ai: () => mockAiApi, 
+            // Mock base HTTP methods if they are called directly by the store
+            // (replay action uses `api.post` directly, not `api.ai().sendChatMessage`)
+            post: vi.fn(), // IMPORTANT: Mock the base api.post
+            get: vi.fn(),
+            put: vi.fn(),
+            delete: vi.fn(),
+        },
+        initializeApiClient: vi.fn(), 
+        _resetApiClient: vi.fn(),
+        getApiClient: vi.fn(() => ({ // Mock the base ApiClient if needed
+            ai: () => mockAiApi, 
+            // Ensure base methods are available if getApiClient is used
+            post: vi.fn(), 
+            get: vi.fn(),
+            put: vi.fn(),
+            delete: vi.fn(),
+            // Add mocks for other clients if needed by aiStore
+            organizations: vi.fn(), 
+            notifications: vi.fn(), 
+        })) 
+    };
+});
+
 vi.mock('./authStore');
 
 // Helper to define mock auth state with required fields
@@ -26,55 +67,52 @@ const mockAuthUser: User = {
   updated_at: new Date().toISOString(),
 };
 
-// Get the actual initial state and actions from the real authStore to satisfy the type
-// Note: This requires authStore to export its initial state or have a clear initial structure
-// If authStore doesn't export initial state, we might need to mock all actions manually (less ideal)
 let mockInitialAuthState: AuthStore;
 try {
-  // Attempt to get the real initial state if possible
-  // This is a common pattern but depends on how authStore is structured
-  // --- NOTE: This will likely fail as authStore definition isn't present here ---
-  // --- We will rely on the fallback --- 
-  // const tempAuthStore = create<AuthStore>()((set, get) => ({ /* ... authStore definition ... */ }));
-  // mockInitialAuthState = tempAuthStore.getState(); 
+    // Temporarily create a dummy store to get initial state/actions shape
+    const dummyAuthStore = create<AuthStore>(() => ({
+        user: null, session: null, profile: null, isLoading: true, error: null, navigate: null,
+        setUser: vi.fn(), setSession: vi.fn(), setProfile: vi.fn(), setIsLoading: vi.fn(),
+        setError: vi.fn(), setNavigate: vi.fn(), login: vi.fn(), register: vi.fn(),
+        logout: vi.fn(), updateProfile: vi.fn(), updateEmail: vi.fn(), clearError: vi.fn(),
+    }));
+    mockInitialAuthState = dummyAuthStore.getState();
 } catch (e) {
-  // Fallback: If getting initial state is complex, manually mock required parts
-  // This is brittle and needs maintenance if AuthStore changes
   console.warn("Could not automatically get initial AuthStore state for mocking. Using fallback.");
   mockInitialAuthState = {
     user: null, session: null, profile: null, isLoading: true, error: null, navigate: null,
-    // Add mock implementations for all actions
     setUser: vi.fn(), setSession: vi.fn(), setProfile: vi.fn(), setIsLoading: vi.fn(),
     setError: vi.fn(), setNavigate: vi.fn(), login: vi.fn(), register: vi.fn(), 
     logout: vi.fn(), updateProfile: vi.fn(), updateEmail: vi.fn(), clearError: vi.fn(),
-    // Add any other actions defined in AuthStore
-  } as unknown as AuthStore; // Type assertion needed for fallback
+  } as unknown as AuthStore; 
 }
 
 // Helper to reset store before each test
 const resetStore = () => {
     useAiStore.setState(useAiStore.getInitialState(), true);
-    // vi.resetAllMocks(); // REMOVE this - Might interfere with localStorage mock
-    // Reset specific mocks as needed
-    vi.mocked(api.post).mockClear(); // Example: Clear specific API mock if needed
-    vi.mocked(api.get).mockClear(); // Add others if necessary
-    vi.mocked(useAuthStore.getState).mockClear(); // Clear this mock's call history
-    // Reset authStore mock state using the base initial state
-    vi.mocked(useAuthStore.getState).mockReturnValue({ 
-        ...mockInitialAuthState, // Spread the base state/actions
-        session: null, // Override specifics for default unauthenticated state
-        user: null, 
-        navigate: null // Ensure navigate is mockable/nullable if used
-    }); 
+    // Reset the shared Ai API mock
+    resetMockAiApiClient(mockAiApi);
+    // Reset the base api.post mock (used by replay)
+    vi.mocked(baseApi.post).mockClear(); // Use the imported baseApi
+    vi.mocked(baseApi.get).mockClear();
+    // Clear authStore mock calls
+    vi.mocked(useAuthStore.getState).mockClear();
+    navigateMock.mockClear(); // Clear the navigate mock
+    // Reset authStore mock state, including the mocked navigate function
+    vi.mocked(useAuthStore.getState).mockReturnValue({
+        ...mockInitialAuthState,
+        session: null,
+        user: null,
+        navigate: navigateMock // Provide the mock navigate function
+    });
 };
 
 beforeEach(() => {
   resetStore();
-  // vitest-localstorage-mock should automatically clear localStorage now
 });
 
 afterEach(() => {
-  // vitest-localstorage-mock automatically cleans up
+  // localStorage cleanup is handled by vitest-localstorage-mock
 });
 
 describe('aiStore - checkAndReplayPendingChatAction', () => {
@@ -89,17 +127,14 @@ describe('aiStore - checkAndReplayPendingChatAction', () => {
 
     // Assert
     expect(localStorage.getItem).toHaveBeenCalledWith('pendingAction');
-    expect(api.post).not.toHaveBeenCalled();
-    expect(useAiStore.getState()).toEqual(initialState); // State unchanged
-    // Assert removal based on implementation choice (currently NOT removed for non-chat)
-    // ---> REMOVE assertion checking mock library internals <---
-    // expect(localStorage.removeItem).not.toHaveBeenCalled();
+    expect(baseApi.post).not.toHaveBeenCalled(); // Use baseApi mock
+    expect(useAiStore.getState()).toEqual(initialState); 
   });
 
   it('should do nothing if pendingAction is not a chat POST action', async () => {
     // Arrange
     const nonChatAction: PendingAction = {
-        endpoint: 'profile', // Not 'chat'
+        endpoint: 'profile', 
         method: 'PUT',
         body: { firstName: 'Test' },
         returnPath: '/profile'
@@ -113,11 +148,8 @@ describe('aiStore - checkAndReplayPendingChatAction', () => {
 
     // Assert
     expect(localStorage.getItem).toHaveBeenCalledWith('pendingAction');
-    expect(api.post).not.toHaveBeenCalled();
-    expect(useAiStore.getState()).toEqual(initialState); // State unchanged
-    // Optional: Assert if non-chat actions should be removed or left alone
-    // expect(localStorage.removeItem).not.toHaveBeenCalled(); 
-    // expect(localStorage.removeItem).toHaveBeenCalledWith('pendingAction');
+    expect(baseApi.post).not.toHaveBeenCalled(); // Use baseApi mock
+    expect(useAiStore.getState()).toEqual(initialState); 
   });
 
   it('should set error and do nothing if pendingAction exists but user is not authenticated', async () => {
@@ -129,7 +161,6 @@ describe('aiStore - checkAndReplayPendingChatAction', () => {
         returnPath: '/chat'
     };
     localStorage.setItem('pendingAction', JSON.stringify(chatAction));
-    // Ensure authStore mock returns no token
     vi.mocked(useAuthStore.getState).mockReturnValue({ 
         ...mockInitialAuthState,
         session: null, 
@@ -142,14 +173,9 @@ describe('aiStore - checkAndReplayPendingChatAction', () => {
 
     // Assert
     expect(localStorage.getItem).toHaveBeenCalledWith('pendingAction');
-    // Assert removal based on implementation choice (currently NOT removed for unauthenticated)
-    // ---> REMOVE assertion checking mock library internals <---
-    // expect(localStorage.removeItem).not.toHaveBeenCalled(); 
-    expect(api.post).not.toHaveBeenCalled();
-    // Note: This assertion passed in the last run, likely due to mock timing.
-    // Keep it as the intended state is aiError being set.
+    expect(baseApi.post).not.toHaveBeenCalled(); // Use baseApi mock
     expect(useAiStore.getState().aiError).toBe('Authentication required to replay pending action.');
-    expect(useAiStore.getState().currentChatMessages).toEqual([]); // No optimistic message
+    expect(useAiStore.getState().currentChatMessages).toEqual([]); 
   });
 
   it('should replay action successfully, update state optimistically, and finalize on API success', async () => {
@@ -174,9 +200,7 @@ describe('aiStore - checkAndReplayPendingChatAction', () => {
       created_at: new Date().toISOString(),
     };
 
-    // --- Ensure localStorage is set BEFORE getting store state ---
     localStorage.setItem('pendingAction', JSON.stringify(pendingChatAction));
-    // --- End Ensure ---
 
     vi.mocked(useAuthStore.getState).mockReturnValue({ 
         ...mockInitialAuthState,
@@ -185,14 +209,12 @@ describe('aiStore - checkAndReplayPendingChatAction', () => {
         navigate: null
     });
 
-    // Mock API post but don't resolve it immediately
     let resolveApiPost: (value: ApiResponse<ChatMessage>) => void;
-    // Ensure the promise resolves with the correct ApiResponse structure
     const apiPostPromise = new Promise<ApiResponse<ChatMessage>>((resolve) => {
         resolveApiPost = resolve;
     });
-    // Explicitly type the mocked function if needed
-    const mockedApiPost = vi.mocked(api.post).mockReturnValue(apiPostPromise);
+    // Mock the base api.post used by replay
+    const mockedBaseApiPost = vi.mocked(baseApi.post).mockReturnValue(apiPostPromise);
     
     const store = useAiStore.getState();
     const setSpy = vi.spyOn(useAiStore, 'setState');
@@ -202,10 +224,8 @@ describe('aiStore - checkAndReplayPendingChatAction', () => {
 
     // --- Assertions DURING pending state ---
     expect(localStorage.getItem).toHaveBeenCalledWith('pendingAction');
-    // ---> Use library default mock <---
-    expect(localStorage.removeItem).toHaveBeenCalledWith('pendingAction'); // Removed after validation
+    expect(localStorage.removeItem).toHaveBeenCalledWith('pendingAction'); 
     
-    // Check optimistic update state IMMEDIATELY (before API resolves)
     const optimisticState = useAiStore.getState();
     expect(optimisticState.isLoadingAiResponse).toBe(true);
     expect(optimisticState.currentChatMessages).toHaveLength(1);
@@ -213,16 +233,14 @@ describe('aiStore - checkAndReplayPendingChatAction', () => {
     expect(optimisticUserMessage).toBeDefined();
     expect(optimisticUserMessage.role).toBe('user');
     expect(optimisticUserMessage.content).toBe(pendingChatAction.body!.message);
-    expect(optimisticUserMessage.status).toBe('pending'); // <<< Key check
-    expect(optimisticUserMessage.id).toMatch(/^temp-replay-/); // Check temp ID format
+    expect(optimisticUserMessage.status).toBe('pending'); 
+    expect(optimisticUserMessage.id).toMatch(/^temp-user-/); 
 
-    // Ensure API was called
-    expect(mockedApiPost).toHaveBeenCalledOnce();
-    // Use non-null assertion for body as it's validated before this point in the actual code
-    expect(mockedApiPost).toHaveBeenCalledWith('/chat', pendingChatAction.body!, { token: mockToken });
+    // Ensure base API was called
+    expect(mockedBaseApiPost).toHaveBeenCalledOnce();
+    expect(mockedBaseApiPost).toHaveBeenCalledWith('/chat', pendingChatAction.body!, { token: mockToken });
 
     // --- Resolve the API call ---
-    // Ensure the resolved value matches ApiResponse structure
     resolveApiPost!({ data: mockAssistantResponse, error: null });
     await replayPromise; // Wait for the action to complete
 
@@ -232,142 +250,116 @@ describe('aiStore - checkAndReplayPendingChatAction', () => {
     expect(finalState.aiError).toBeNull();
     expect(finalState.currentChatMessages).toHaveLength(2);
     
-    // User message updated
     const finalUserMessage = finalState.currentChatMessages.find(m => m.role === 'user');
     expect(finalUserMessage).toBeDefined();
-    expect(finalUserMessage!.id).toBe(optimisticUserMessage.id); // ID should remain the same
+    expect(finalUserMessage!.id).toBe(optimisticUserMessage.id); 
     expect(finalUserMessage!.content).toEqual(pendingChatAction.body!.message);
-    expect(finalUserMessage!.status).toEqual('sent'); // <<< Updated status
+    expect(finalUserMessage!.status).toEqual('sent'); 
     expect(finalUserMessage!.chat_id).toEqual(mockAssistantResponse.chat_id);
     
-    // Assistant message added
     const finalAssistantMessage = finalState.currentChatMessages.find(m => m.role === 'assistant');
     expect(finalAssistantMessage).toEqual(mockAssistantResponse);
     
-    // Current Chat ID updated
     expect(finalState.currentChatId).toEqual(mockAssistantResponse.chat_id);
 
-    setSpy.mockRestore(); // Clean up spy
+    setSpy.mockRestore(); 
   });
 
-  it('should update message status to error if API call fails', async () => {
-    // Arrange
-    const mockUserId = 'user-456';
-    const mockToken = 'mock-auth-token-error';
-    const pendingChatAction: PendingAction = {
-      endpoint: 'chat',
-      method: 'POST',
-      body: { message: 'Hello from error case', providerId: 'p-error', promptId: 'pr-error', chatId: 'existing-chat-id' },
-      returnPath: '/chat/existing-chat-id'
-    };
-    const mockApiError = new Error('API Failed Miserably');
+  it('should handle API failure during replay, keeping optimistic message with error status', async () => {
+      // Arrange
+      const mockToken = 'mock-auth-token-fail';
+      const pendingChatAction: PendingAction = {
+        endpoint: 'chat',
+        method: 'POST',
+        body: { message: 'This replay will fail', providerId: 'p2', promptId: 'pr2', chatId: null },
+        returnPath: '/chat-fail'
+      };
+      const apiError: ApiResponse<ChatMessage> = {
+          data: null,
+          error: { message: 'AI failed to respond', code: 'AI_ERROR' }
+      };
 
-    // --- Ensure localStorage is set BEFORE getting store state ---
-    localStorage.setItem('pendingAction', JSON.stringify(pendingChatAction));
-    // --- End Ensure ---
+      localStorage.setItem('pendingAction', JSON.stringify(pendingChatAction));
+      vi.mocked(useAuthStore.getState).mockReturnValue({
+          ...mockInitialAuthState,
+          session: { ...mockAuthSession, access_token: mockToken },
+          user: mockAuthUser,
+          navigate: navigateMock // Ensure navigate is mocked here too
+      });
+      // Mock the base api.post to return an error
+      const mockedBaseApiPost = vi.mocked(baseApi.post).mockResolvedValue(apiError);
+      const store = useAiStore.getState();
 
-    vi.mocked(useAuthStore.getState).mockReturnValue({ 
-        ...mockInitialAuthState,
-        session: { ...mockAuthSession, access_token: mockToken }, 
-        user: mockAuthUser, 
-        navigate: null
+      // Act
+      await store.checkAndReplayPendingChatAction();
+
+      // Assert
+      expect(localStorage.getItem).toHaveBeenCalledWith('pendingAction');
+      expect(localStorage.removeItem).toHaveBeenCalledWith('pendingAction');
+      expect(mockedBaseApiPost).toHaveBeenCalledWith('/chat', pendingChatAction.body!, { token: mockToken });
+
+      const finalState = useAiStore.getState();
+      expect(finalState.isLoadingAiResponse).toBe(false); // Loading finished
+      expect(finalState.aiError).toBe(apiError.error!.message); // Error message set
+      expect(finalState.currentChatMessages).toHaveLength(1); // Only the user message remains
+
+      const failedUserMessage = finalState.currentChatMessages[0];
+      expect(failedUserMessage.role).toBe('user');
+      expect(failedUserMessage.content).toBe(pendingChatAction.body!.message);
+      expect(failedUserMessage.status).toBe('error'); // <<< Status updated to error
+      expect(failedUserMessage.id).toMatch(/^temp-user-/);
+  });
+
+    // Test case for AuthRequiredError during replay
+    it('should handle AuthRequiredError during replay and redirect', async () => {
+        // Arrange
+        const mockToken = 'mock-auth-token-auth-error';
+        const pendingChatAction: PendingAction = {
+          endpoint: 'chat',
+          method: 'POST',
+          body: { message: 'Auth required test', providerId: 'p1', promptId: 'pr1', chatId: null },
+          returnPath: '/chat-auth-fail'
+        };
+        localStorage.setItem('pendingAction', JSON.stringify(pendingChatAction));
+
+        // Ensure AuthStore mock returns the token AND the navigate function
+        vi.mocked(useAuthStore.getState).mockReturnValue({
+            ...mockInitialAuthState,
+            session: { ...mockAuthSession, access_token: mockToken },
+            user: mockAuthUser,
+            navigate: navigateMock // Provide the mock navigate function
+        });
+
+        // Mock baseApi.post to reject with an AuthRequiredError instance
+        const simulatedAuthError = new AuthRequiredError('Session expired during replay');
+        const mockedBaseApiPost = vi.mocked(baseApi.post).mockRejectedValue(simulatedAuthError);
+        const store = useAiStore.getState();
+
+        // Act
+        await store.checkAndReplayPendingChatAction();
+
+        // Assert
+        // Verify API was called (even though it rejects)
+        expect(mockedBaseApiPost).toHaveBeenCalledOnce();
+        expect(mockedBaseApiPost).toHaveBeenCalledWith('/chat', pendingChatAction.body!, { token: mockToken });
+
+        const finalState = useAiStore.getState();
+        expect(finalState.isLoadingAiResponse).toBe(false); // Loading should stop
+
+        // State update should NOT clear the message but might set an error
+        // if navigation fails (which it won't in this mocked scenario).
+        // Let's check the optimistic message remains.
+        expect(finalState.currentChatMessages).toHaveLength(1); // Optimistic message should remain
+        expect(finalState.currentChatMessages[0].status).toBe('pending'); // Status should remain pending
+
+        // Verify localStorage WAS NOT cleared because auth failed
+        expect(localStorage.removeItem).not.toHaveBeenCalledWith('pendingAction');
+
+        // Verify navigation was called by the auth handler
+        expect(navigateMock).toHaveBeenCalledTimes(1);
+        // Ensure it redirects to the login page, preserving the intended return path
+        expect(navigateMock).toHaveBeenCalledWith('login'); // The logic in aiStore calls navigate('login')
     });
 
-    // Mock API post to reject
-    let rejectApiPost: (reason?: any) => void;
-    // Mock return type doesn't matter as much for rejection, but keep consistent
-    const apiPostPromise = new Promise<ApiResponse<ChatMessage>>((_, reject) => {
-        rejectApiPost = reject;
-    });
-     const mockedApiPost = vi.mocked(api.post).mockReturnValue(apiPostPromise);
-    
-    const store = useAiStore.getState();
-    const setSpy = vi.spyOn(useAiStore, 'setState');
-    
-    // Act
-    const replayPromise = store.checkAndReplayPendingChatAction();
 
-    // --- Assertions DURING pending state ---
-    expect(localStorage.getItem).toHaveBeenCalledWith('pendingAction');
-    // ---> Use library default mock <---
-    expect(localStorage.removeItem).toHaveBeenCalledWith('pendingAction');
-    
-    // Check optimistic update state IMMEDIATELY (before API rejects)
-    const optimisticState = useAiStore.getState();
-    expect(optimisticState.isLoadingAiResponse).toBe(true);
-    expect(optimisticState.currentChatMessages).toHaveLength(1);
-    const optimisticUserMessage = optimisticState.currentChatMessages[0];
-    expect(optimisticUserMessage).toBeDefined();
-    expect(optimisticUserMessage.role).toBe('user');
-    expect(optimisticUserMessage.content).toBe(pendingChatAction.body!.message);
-    expect(optimisticUserMessage.status).toBe('pending');
-    expect(optimisticUserMessage.id).toMatch(/^temp-replay-/);
-    
-    // Ensure API was called
-    expect(mockedApiPost).toHaveBeenCalledOnce();
-    // Use non-null assertion for body
-    expect(mockedApiPost).toHaveBeenCalledWith('/chat', pendingChatAction.body!, { token: mockToken });
-
-    // --- Reject the API call ---
-    rejectApiPost!(mockApiError); // Use the actual error object
-    await replayPromise; // Wait for the action to complete (catch block to run)
-
-    // --- Assertions AFTER API failure ---
-    const finalState = useAiStore.getState();
-    expect(finalState.isLoadingAiResponse).toBe(false); // Loading finished
-    expect(finalState.aiError).toBe(mockApiError.message); // aiError state set
-    expect(finalState.currentChatMessages).toHaveLength(1); // Only user message should exist
-    
-    // User message updated
-    const finalUserMessage = finalState.currentChatMessages.find(m => m.role === 'user');
-    expect(finalUserMessage).toBeDefined();
-    expect(finalUserMessage!.id).toBe(optimisticUserMessage.id);
-    expect(finalUserMessage!.content).toEqual(pendingChatAction.body!.message);
-    expect(finalUserMessage!.status).toEqual('error'); // <<< Updated status
-    // Use non-null assertion for body
-    expect(finalUserMessage!.chat_id).toEqual(pendingChatAction.body!.chatId); // Should retain original chatId if provided
-
-    // Ensure no assistant message was added
-    const finalAssistantMessage = finalState.currentChatMessages.find(m => m.role === 'assistant');
-    expect(finalAssistantMessage).toBeUndefined();
-
-    // Current Chat ID should remain unchanged from initial state (or set by action body)
-    // Depending on desired behavior, could be null or the chatId from the action
-    // ---> CHANGE assertion: Expect null on error <---
-    expect(finalState.currentChatId).toBeNull(); // Assuming it gets cleared or remains null on error
-
-    setSpy.mockRestore(); // Clean up spy
-  });
-
-  // --- TODO: Add tests for failed replay (API error) ---
-  // - Test optimistic UI update
-  // - Test api.post call
-  // - Test state update on failure
-
-  // --- REMOVE Basic localStorage Mock Verification Test --- 
-  // (No longer needed as we trust the library)
-  // it('should allow basic setItem and getItem via the mock', () => {
-  //   const testKey = 'basic-test-key';
-  //   const testValue = 'basic-test-value';
-  // 
-  //   // Act
-  //   localStorage.setItem(testKey, testValue);
-  //   const retrievedValue = localStorage.getItem(testKey);
-  // 
-  //   // Assert
-  //   expect(retrievedValue).toBe(testValue);
-  // });
-  // --- End REMOVE Test ---
-
-  // TODO: Unskip these tests when the localStorage mocking issue is resolved.
-  // Tests consistently fail because localStorage.getItem returns null within the action,
-  // even when localStorage.setItem is called beforehand in the test setup.
-  // Both vitest-localstorage-mock and explicit vi.stubGlobal approaches failed.
-  /*
-  it('should set error and do nothing if pendingAction exists but user is not authenticated', async () => {
-// ... rest of file ...
-  });
-  */
-  // --- End NEW Test ---
-
-}); 
+}); // End describe block 

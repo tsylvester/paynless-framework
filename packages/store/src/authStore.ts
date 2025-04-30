@@ -5,7 +5,10 @@ import {
   UserProfile,
   ProfileResponse,
   SupabaseUser,
-  SupabaseSession
+  SupabaseSession,
+  Session,
+  User,
+  UserRole
 } from '@paynless/types'
 import { NavigateFunction } from '@paynless/types'
 import { logger } from '@paynless/utils'
@@ -13,6 +16,40 @@ import { api, getApiClient } from '@paynless/api'
 import { analytics } from '@paynless/analytics'
 import { SupabaseClient } from '@supabase/supabase-js'
 import { useNotificationStore } from './notificationStore'
+
+// +++ Add Session Mapping Helper +++
+const mapSupabaseSession = (supabaseSession: SupabaseSession | null): Session | null => {
+  if (!supabaseSession) {
+    return null;
+  }
+  // Explicitly map only the fields needed for the internal Session type
+  return {
+    access_token: supabaseSession.access_token,
+    refresh_token: supabaseSession.refresh_token,
+    expiresAt: supabaseSession.expires_at!,
+    token_type: supabaseSession.token_type,
+    expires_in: supabaseSession.expires_in,
+    // IMPORTANT: DO NOT INCLUDE supabaseSession.user here
+  };
+};
+// +++ End Helper +++
+
+// +++ User Mapping Helper +++
+const mapSupabaseUser = (supabaseUser: SupabaseUser | null): User | null => {
+  if (!supabaseUser) {
+    return null;
+  }
+  // Map only the fields needed for the internal User type
+  return {
+    id: supabaseUser.id,
+    email: supabaseUser.email,
+    role: supabaseUser.role as UserRole, // Assuming role exists and casting
+    created_at: supabaseUser.created_at,
+    updated_at: supabaseUser.updated_at,
+    // Exclude other Supabase-specific fields like app_metadata, user_metadata
+  };
+};
+// +++ End Helper +++
 
 export const useAuthStore = create<AuthStore>()((set, get) => ({
       user: null,
@@ -24,9 +61,9 @@ export const useAuthStore = create<AuthStore>()((set, get) => ({
 
       setNavigate: (navigateFn: NavigateFunction) => set({ navigate: navigateFn }),
 
-      setUser: (user: SupabaseUser | null) => set({ user }),
+      setUser: (user: User | null) => set({ user }),
 
-      setSession: (session: SupabaseSession | null) => set({ session }),
+      setSession: (session: Session | null) => set({ session }),
 
       setProfile: (profile: UserProfile | null) => set({ profile }),
 
@@ -325,73 +362,125 @@ export function initAuthListener(
 ): () => void {
   logger.debug('[AuthListener] Initializing Supabase auth listener...');
 
+  // --- Helper function to fetch profile ---
+  const _fetchAndSetProfile = async (session: SupabaseSession, userId: string) => {
+    if (!session?.access_token) {
+        logger.warn('[AuthListener Helper] No access token found, cannot fetch profile.');
+        useAuthStore.setState({ profile: null }); // Ensure profile is null if fetch is skipped
+        return;
+    }
+    const startTime = Date.now();
+    logger.debug(`[AuthListener Helper] Fetching profile for user ${userId}...`);
+    try {
+        const apiClientInstance = getApiClient();
+        const token = session.access_token;
+        const profileResponse = await apiClientInstance.get<ProfileResponse>('me', { token });
+        const profileEndTime = Date.now();
+        logger.debug(`[AuthListener Helper] Profile fetch completed. Duration: ${profileEndTime - startTime}ms`);
+
+        if (profileResponse.data?.profile) {
+            logger.debug(`[AuthListener Helper] Profile fetched successfully.`);
+            useAuthStore.setState({ profile: profileResponse.data.profile, error: null });
+
+            // --- Subscribe to Notifications ---
+            try {
+               logger.info(`[AuthListener Helper] Subscribing to notifications after profile fetch`, { userId });
+               const { subscribeToUserNotifications } = useNotificationStore.getState();
+               subscribeToUserNotifications(userId);
+            } catch (subscribeError) {
+                logger.error(`[AuthListener Helper] Failed to subscribe to notifications:`, {
+                    error: subscribeError instanceof Error ? subscribeError.message : String(subscribeError)
+                });
+            }
+            // -----------------------------------
+        } else {
+            logger.error(`[AuthListener Helper] Failed to fetch profile`, { error: profileResponse.error });
+            useAuthStore.setState({ profile: null, error: new Error(profileResponse.error?.message || 'Failed fetch profile') });
+            // Note: Subscription is NOT initiated if profile fetch fails
+        }
+    } catch (asyncError) {
+        logger.error(`[AuthListener Helper] Error during profile fetch`, { 
+            error: asyncError instanceof Error ? asyncError.message : String(asyncError) 
+        });
+         useAuthStore.setState({ profile: null, error: new Error('Failed fetch profile') });
+    } 
+  };
+  // --- End Helper ---
+
   const { data: listener } = supabaseClient.auth.onAuthStateChange(
     (event, session) => {
       try {
         logger.debug(`[AuthListener] Event: ${event}`, { session });
 
-        const currentUser = session?.user ?? null;
+        const supabaseUser = session?.user ?? null;
         const currentSession = session;
+        const mappedSession = mapSupabaseSession(currentSession);
+        const mappedUser = mapSupabaseUser(supabaseUser);
+        let shouldFetchProfile = false;
 
         switch (event) {
           case 'INITIAL_SESSION':
-            useAuthStore.setState({
-              session: currentSession,
-              user: currentUser,
-              isLoading: false,
-              error: null,
-              profile: undefined,
-            });
-            break;
           case 'SIGNED_IN':
+          case 'TOKEN_REFRESHED':
+            // Common initial state update for session-related events
             useAuthStore.setState({
-              session: currentSession,
-              user: currentUser,
+              session: mappedSession,
+              user: mappedUser,
+              profile: null,
               isLoading: false,
               error: null,
-              profile: undefined,
             });
+            shouldFetchProfile = !!(currentSession?.access_token && supabaseUser?.id);
             
-            try {
-                const pendingActionJson = localStorage.getItem('pendingAction');
-                if (pendingActionJson) {
-                    logger.debug('[AuthListener] Found pending action on SIGNED_IN. Checking return path...');
-                    const pendingAction = JSON.parse(pendingActionJson);
-                    if (pendingAction && pendingAction.returnPath) {
-                        const navigate = useAuthStore.getState().navigate;
-                        if (navigate) {
-                            logger.info(`[AuthListener] Navigating to pending action return path: ${pendingAction.returnPath}`);
-                            navigate(pendingAction.returnPath);
+            // Navigation logic specific to SIGNED_IN
+            if (event === 'SIGNED_IN') {
+                 try {
+                    const pendingActionJson = localStorage.getItem('pendingAction');
+                    if (pendingActionJson) {
+                        logger.debug('[AuthListener] Found pending action on SIGNED_IN. Checking return path...');
+                        const pendingAction = JSON.parse(pendingActionJson);
+                        if (pendingAction?.returnPath) {
+                            const navigate = useAuthStore.getState().navigate;
+                            if (navigate) {
+                                logger.info(`[AuthListener] Navigating to pending action return path: ${pendingAction.returnPath}`);
+                                navigate(pendingAction.returnPath);
+                            } else {
+                                logger.warn('[AuthListener] Pending action exists but navigate function not available to redirect.');
+                            }
                         } else {
-                            logger.warn('[AuthListener] Pending action exists but navigate function not available to redirect.');
+                            logger.warn('[AuthListener] Could not parse returnPath from pending action JSON.', { pendingActionJson });
                         }
                     } else {
-                         logger.warn('[AuthListener] Could not parse returnPath from pending action JSON.', { pendingActionJson });
+                        logger.info('[AuthListener] No pending action found on SIGNED_IN. Navigating to default route dashboard.');
+                        const navigate = useAuthStore.getState().navigate;
+                        if (navigate) {
+                            navigate('dashboard');
+                        } else {
+                            logger.warn('[AuthListener] Navigate function not available for default redirection.');
+                        }
                     }
-                } else {
-                    logger.info('[AuthListener] No pending action found on SIGNED_IN. Navigating to default route dashboard.');
-                    const navigate = useAuthStore.getState().navigate;
-                    if (navigate) {
-                        navigate('dashboard');
-                    } else {
-                        logger.warn('[AuthListener] Navigate function not available for default redirection.');
-                    }
+                } catch (e) {
+                    logger.error('[AuthListener] Error checking/parsing pendingAction for navigation:', { 
+                        error: e instanceof Error ? e.message : String(e) 
+                    });
+                    localStorage.removeItem('pendingAction');
                 }
-            } catch (e) {
-                logger.error('[AuthListener] Error checking/parsing pendingAction for navigation:', { 
-                    error: e instanceof Error ? e.message : String(e) 
-                });
-                localStorage.removeItem('pendingAction');
             }
             break;
-          case 'TOKEN_REFRESHED':
+            
+          case 'USER_UPDATED':
+            // Update user and potentially session, then trigger profile fetch
             useAuthStore.setState({
-              session: currentSession,
-              user: currentUser,
+              user: mappedUser,
+              // Also update session if provided, keeps state consistent
+              ...(currentSession && { session: mappedSession }),
+              profile: null,
               isLoading: false,
               error: null,
             });
+            shouldFetchProfile = !!(currentSession?.access_token && supabaseUser?.id);
             break;
+
           case 'SIGNED_OUT':
             useAuthStore.setState({
               user: null,
@@ -402,10 +491,23 @@ export function initAuthListener(
             });
             localStorage.removeItem('pendingAction');
             localStorage.removeItem('loadChatIdOnRedirect');
+             // Explicitly unsubscribe notifications on sign out
+             try {
+                 const unsubscribeNotifications = useNotificationStore.getState().unsubscribeFromUserNotifications;
+                 logger.info('[AuthListener SIGNED_OUT] Unsubscribing from notifications...');
+                 unsubscribeNotifications();
+             } catch (unsubscribeError) {
+                  logger.error('[AuthListener SIGNED_OUT] Error unsubscribing from notifications:', { error: unsubscribeError instanceof Error ? unsubscribeError.message : String(unsubscribeError) });
+             }
+             // Navigate to root
+             const navigate = useAuthStore.getState().navigate;
+             if (navigate) {
+                 navigate('/');
+             } else {
+                 logger.warn('[AuthListener] Navigate function not available for SIGNED_OUT redirection.');
+             }
             break;
-          case 'USER_UPDATED':
-            useAuthStore.setState({ user: currentUser });
-            break;
+
           case 'PASSWORD_RECOVERY':
             useAuthStore.setState({ isLoading: false });
             break;
@@ -415,66 +517,13 @@ export function initAuthListener(
             break;
         }
 
-        if ((event === 'INITIAL_SESSION' || event === 'SIGNED_IN') && currentSession?.access_token && currentUser?.id) { // Ensure currentUser.id exists
-            // Added timeout to allow other potential listeners to finish first and avoid race conditions
-            setTimeout(async () => { 
-                const startTime = Date.now();
-                logger.debug(`[AuthListener] Performing async tasks for ${event}`);
-                const userId = currentUser.id; // Store user ID
-                try {
-                    const apiClientInstance = getApiClient();
-                    const token = currentSession.access_token;
-
-                    logger.debug(`[AuthListener] Fetching profile for ${event}...`);
-                    const profileStartTime = Date.now();
-                    const profileResponse = await apiClientInstance.get<ProfileResponse>('me', { token });
-                    const profileEndTime = Date.now();
-                    logger.debug(`[AuthListener] Profile fetch completed for ${event}. Duration: ${profileEndTime - profileStartTime}ms`);
-                    
-                    if (profileResponse.data && profileResponse.data.profile) {
-                        logger.debug(`[AuthListener] Profile fetched successfully for ${event}`);
-                        useAuthStore.setState({ profile: profileResponse.data.profile });
-                        
-                        // --- NEW: Subscribe to Notifications ---
-                        try {
-                           // Match logger signature: message (string), metadata (object)
-                           logger.info(`[AuthListener] Subscribing to notifications after successful ${event} and profile fetch`, { userId });
-                           // Get notification store action and call it with user ID
-                           const { subscribeToUserNotifications } = useNotificationStore.getState();
-                           subscribeToUserNotifications(userId); // Pass the user ID
-                        } catch (subscribeError) {
-                            logger.error(`[AuthListener] Failed to subscribe to notifications during ${event}:`, {
-                                error: subscribeError instanceof Error ? subscribeError.message : String(subscribeError)
-                            });
-                            // Decide if we need to set an error state here or just log
-                        }
-                        // ---------------------------------------
-
-                    } else {
-                        logger.error(`[AuthListener] Failed to fetch profile for ${event}`, { error: profileResponse.error });
-                        useAuthStore.setState({ profile: null, error: new Error(profileResponse.error?.message || 'Failed fetch profile') });
-                        // Note: Subscription is NOT initiated if profile fetch fails
-                    }
-
-                } catch (asyncError) {
-                    logger.error(`[AuthListener] Error during async tasks for ${event}`, { 
-                        error: asyncError instanceof Error ? asyncError.message : String(asyncError) 
-                    });
-                } finally {
-                    const endTime = Date.now();
-                    logger.debug(`[AuthListener] Finished async tasks for ${event}. Total duration: ${endTime - startTime}ms`);
-                }
-            }, 0); // setTimeout ensures this runs after the current event loop tick
-        } else if (event === 'SIGNED_OUT') {
-             // Explicitly unsubscribe on sign out event as well
-             try {
-                 const unsubscribeNotifications = useNotificationStore.getState().unsubscribeFromUserNotifications;
-                 logger.info('[AuthListener SIGNED_OUT] Unsubscribing from notifications...');
-                 unsubscribeNotifications();
-             } catch (unsubscribeError) {
-                  logger.error('[AuthListener SIGNED_OUT] Error unsubscribing from notifications:', { error: unsubscribeError instanceof Error ? unsubscribeError.message : String(unsubscribeError) });
-             }
+        // --- Trigger Profile Fetch if needed ---
+        if (shouldFetchProfile && currentSession && supabaseUser?.id) {
+             logger.debug(`[AuthListener] Triggering profile fetch for event: ${event}`);
+            // Pass the original Supabase session and user ID
+            setTimeout(() => _fetchAndSetProfile(currentSession, supabaseUser!.id), 0);
         }
+        // --- End Profile Fetch Trigger ---
 
       } catch (callbackError) {
         logger.error('!!!!!! ERROR INSIDE onAuthStateChange CALLBACK !!!!!!', {
@@ -491,8 +540,15 @@ export function initAuthListener(
     }
   );
 
+  logger.debug('[AuthListener] Listener attached.');
+
+  // Return the unsubscribe function
   return () => {
-    logger.debug('[AuthListener] Unsubscribing Supabase auth listener.');
-    listener?.subscription.unsubscribe();
+    if (listener?.subscription) {
+      logger.debug('[AuthListener] Unsubscribing from auth state changes.');
+      listener.subscription.unsubscribe();
+    } else {
+      logger.warn('[AuthListener] Could not unsubscribe, listener object or subscription missing.');
+    }
   };
 }

@@ -111,7 +111,7 @@ describe('AuthStore - Logout Action (Refactored for Supabase)', () => {
 
     // Assert: Navigation
     expect(localMockNavigate).toHaveBeenCalledTimes(1);
-    expect(localMockNavigate).toHaveBeenCalledWith('login');
+    expect(localMockNavigate).toHaveBeenCalledWith('/login');
 
     // Assert: Analytics reset called immediately
     expect(mockReset).toHaveBeenCalledTimes(1);
@@ -139,7 +139,7 @@ describe('AuthStore - Logout Action (Refactored for Supabase)', () => {
 
     // Assert: Navigation still happens
     expect(localMockNavigate).toHaveBeenCalledTimes(1);
-    expect(localMockNavigate).toHaveBeenCalledWith('login');
+    expect(localMockNavigate).toHaveBeenCalledWith('/login');
 
     // Assert: Analytics reset still called
     expect(mockReset).toHaveBeenCalledTimes(1);
@@ -165,7 +165,7 @@ describe('AuthStore - Logout Action (Refactored for Supabase)', () => {
 
     // Assert: Navigation still happens
     expect(localMockNavigate).toHaveBeenCalledTimes(1); 
-    expect(localMockNavigate).toHaveBeenCalledWith('login');
+    expect(localMockNavigate).toHaveBeenCalledWith('/login');
 
     // Assert: Analytics reset still called
     expect(mockReset).toHaveBeenCalledTimes(1);

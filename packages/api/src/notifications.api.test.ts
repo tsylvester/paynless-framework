@@ -5,7 +5,7 @@ import { NotificationApiClient } from './notifications.api';
 // import { ApiClient } from './apiClient'; 
 import { Notification, ApiResponse, ApiError } from '@paynless/types'; // Removed StreamCallbacks, StreamDisconnectFunction
 // Import the shared mock
-import { mockApiClient, resetMockApiClient } from './mocks/mockApiClient'; 
+import { mockApiClient, resetMockApiClient } from './mocks/apiClient.mock'; 
 
 // --- Mocks ---
 

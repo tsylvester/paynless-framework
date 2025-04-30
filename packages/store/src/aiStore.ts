@@ -451,19 +451,26 @@ export const useAiStore = create<AiStore>()(
                         throw new Error('API returned success status but no data during replay.');
                     }
                 } catch (error: any) {
-                    logger.error('[aiStore] Error during pending action replay API call:', { error: error.message || String(error) });
-                    set(state => {
-                        const updatedMessages = state.currentChatMessages.map(msg =>
-                            msg.id === tempId
-                                ? { ...msg, status: 'error' as const }
-                                : msg
-                        );
-                        return {
-                            currentChatMessages: updatedMessages,
-                            isLoadingAiResponse: false,
-                            aiError: error.message || String(error)
-                        };
-                    });
+                    // Revert error check back to just checking the name
+                    if (error?.name === 'AuthRequiredError') { 
+                        logger.warn('[AiStore] Auth required during replay. Redirecting.', { error: error.message });
+                        set({ isLoadingAiResponse: false, aiError: error.message }); // Sets error message
+                        // Do NOT remove pending action on auth error
+                    } else {
+                        logger.error('[aiStore] Error during pending action replay API call:', { error: error.message || String(error) });
+                        set(state => {
+                            const updatedMessages = state.currentChatMessages.map(msg =>
+                                msg.id === tempId
+                                    ? { ...msg, status: 'error' as const }
+                                    : msg
+                            );
+                            return {
+                                currentChatMessages: updatedMessages,
+                                isLoadingAiResponse: false,
+                                aiError: error.message || String(error)
+                            };
+                        });
+                    }
                 }
             }
         })

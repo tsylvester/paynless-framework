@@ -25,6 +25,27 @@ export interface SupabaseSession {
   // Add other fields if needed from Supabase Session
 }
 
+// +++ ADDED Mapped Internal Session Type +++
+export type Session = {
+  access_token: string;
+  refresh_token: string;
+  expiresAt: number; // Mapped from expires_at (ensure conversion)
+  token_type?: string;
+  expires_in?: number;
+  // Note: Excludes the nested user object
+};
+// +++ End Mapped Session Type +++
+
+// Simple User representation based on common needs
+// Let's define this type as well for mapping
+export type User = {
+  id: string;
+  email?: string;
+  role?: UserRole; // Use the defined UserRole type
+  created_at?: string;
+  updated_at?: string;
+};
+
 // Export the DB enum type under the alias UserRole for easier consumption
 export type UserRole = Database['public']['Enums']['user_role'];
 
@@ -37,18 +58,19 @@ export type UserProfileUpdate = {
 // Define UserProfile using the DB type for consistency
 export type UserProfile = Database['public']['Tables']['user_profiles']['Row'];
 
+// Keep the original AuthStore structure, but use mapped types
 export interface AuthStore {
   // Setters
-  setUser: (user: SupabaseUser | null) => void 
-  setSession: (session: SupabaseSession | null) => void
+  setUser: (user: User | null) => void // <<< Use mapped User type
+  setSession: (session: Session | null) => void // <<< Use mapped Session type
   setProfile: (profile: UserProfile | null) => void // Uses UserProfile alias
   setIsLoading: (isLoading: boolean) => void
   setError: (error: Error | null) => void
   setNavigate: (navigateFn: NavigateFunction) => void
 
   // Core Auth Actions
-  login: (email: string, password: string) => Promise<void> 
-  register: (email: string, password: string) => Promise<void> 
+  login: (email: string, password: string) => Promise<void>
+  register: (email: string, password: string) => Promise<void>
   logout: () => Promise<void>
   updateProfile: (profileData: UserProfileUpdate) => Promise<UserProfile | null> // Uses UserProfile alias
   updateEmail: (email: string) => Promise<boolean>
@@ -57,10 +79,10 @@ export interface AuthStore {
   checkEmailExists: (email: string) => Promise<boolean>
   requestPasswordReset: (email: string) => Promise<boolean>
   handleOAuthLogin: (provider: 'google' | 'github') => Promise<void>
-  
+
   // State properties
-  session: SupabaseSession | null
-  user: SupabaseUser | null 
+  session: Session | null // <<< Use mapped Session type
+  user: User | null // <<< Use mapped User type
   profile: UserProfile | null // Uses UserProfile alias
   isLoading: boolean
   error: Error | null
@@ -79,7 +101,7 @@ export interface RegisterCredentials {
 
 // Response type for login/register endpoints (if still needed)
 export interface AuthResponse {
-  user: SupabaseUser | null 
+  user: SupabaseUser | null
   session: SupabaseSession | null
   profile: Database['public']['Tables']['user_profiles']['Row'] | null
 }
@@ -99,3 +121,22 @@ export interface PendingAction {
   body?: Record<string, unknown> | null;
   returnPath: string;
 }
+
+// +++ ADDED Error Types +++
+// Simple API error structure
+export interface ApiError {
+  message: string;
+  code?: string | number; // Optional error code (e.g., HTTP status or custom code)
+  details?: any; // Optional additional details
+}
+
+// Custom error class for authentication failures
+export class AuthRequiredError extends Error {
+  constructor(message: string = 'Authentication Required') {
+    super(message);
+    this.name = 'AuthRequiredError';
+    // Ensure the prototype chain is correctly set for instanceof checks
+    Object.setPrototypeOf(this, AuthRequiredError.prototype);
+  }
+}
+// +++ End Added Types +++
