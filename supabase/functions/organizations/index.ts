@@ -54,7 +54,11 @@ export async function handleOrganizationRequest(
   if (corsResponse) return corsResponse;
 
   let body: any = null;
-  if (req.body && req.headers.get('content-type')?.includes('application/json')) {
+  // Only attempt to parse JSON body for POST and PUT requests with the correct Content-Type
+  if ( (req.method === 'POST' || req.method === 'PUT') && 
+       req.headers.get('content-type')?.includes('application/json') && 
+       req.body ) 
+  {
     try {
       body = await req.json();
       console.log('[organizations] Handler: Request body parsed:', body);

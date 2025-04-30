@@ -311,16 +311,18 @@ This section outlines the frontend implementation using a dynamic, card-based "h
         *   [X] Test: Displays data correctly.
         *   [X] Test: Handles loading state.
         *   [X] Test: Handles null state.
-    *   [ ] `OrganizationSettingsCard.tsx`: (Admin Only, Displayed Conditionally)
+    *   [X] `OrganizationSettingsCard.tsx`: (Admin Only, Displayed Conditionally)
         *   [X] Form elements (Name, Visibility) pre-filled.
         *   [X] "Update" button triggers `updateOrganization` action.
-        *   [X] "Delete Organization" button triggers `openDeleteDialog` store action.
+        *   [X] "Delete" button triggers `openDeleteDialog` store action.
         *   [X] Test: Visibility is correctly controlled.
         *   [X] Test: Displays current settings correctly.
         *   [X] Test: Form validation works.
         *   [X] Test: Update submission calls `updateOrganization`. Handles feedback.
         *   [X] Test: Delete button calls `openDeleteDialog`.
         *   [X] Test: Handles API errors gracefully.
+        *   [X] **(UI)** Refactored layout to place Visibility dropdown and action buttons inline.
+        *   [X] **(UI)** Uses `AdminBadge` component.
     *   [X] **NEW:** `DeleteOrganizationDialog.tsx`:
         *   [X] Reads `isDeleteDialogOpen` from store.
         *   [X] Reads `currentOrganizationDetails`, `currentOrganizationId`.
@@ -332,7 +334,7 @@ This section outlines the frontend implementation using a dynamic, card-based "h
         *   [X] Test: Confirmation button calls `softDeleteOrganization`.
         *   [X] Test: Cancellation button calls `closeDeleteDialog`.
         *   [X] Test: Handles API errors during deletion.
-    *   [ ] `MemberListCard.tsx`: (Displayed Conditionally)
+    *   [X] `MemberListCard.tsx`: (Displayed Conditionally)
         *   [X] Displays table/list of **active** members from `selectCurrentMembers` (using `first_name`, `last_name`).
         *   [ ] **(UI)** Update component to use `member.user_profiles.first_name` and `last_name` instead of non-existent fields.
         *   [X] Includes controls (dropdown menus) for Admins: Change Role, Remove Member.
@@ -344,6 +346,8 @@ This section outlines the frontend implementation using a dynamic, card-based "h
         *   [X] Test: Controls are visible/enabled based on roles.
         *   [X] Test: Handles API errors gracefully. *(Placeholder tests implemented)*
         *   [ ] Test: (Optional) Includes working pagination or search/filter.
+        *   [X] **(UI)** Added refresh button to manually refetch member list.
+        *   [X] **(UI)** Uses `AdminBadge` component for admin roles.
     *   [X] `InviteMemberCard.tsx`: (Admin Only, Displayed Conditionally)
         *   [X] Form (Email, Role) to invite users.
         *   [X] Submission triggers `inviteUser` action.
@@ -351,20 +355,23 @@ This section outlines the frontend implementation using a dynamic, card-based "h
         *   [X] Test: Form validation works. *(Note: Selecting non-default role test fails - portal issue)*
         *   [X] Test: Submission triggers `inviteUser`.
         *   [X] Test: Handles success and API errors gracefully.
-    *   [ ] `PendingActionsCard.tsx`: (Admin Only, Displayed Conditionally)
-        *   [ ] Displays list/table of pending join requests (using `first_name`, `last_name` from `user_profiles`).
-        *   [ ] Displays list/table of outgoing pending invites (using `invited_email`).
+        *   [X] **(UI)** Refactored layout to place Role dropdown and Send Invite button inline.
+    *   [X] `PendingActionsCard.tsx`: (Admin Only, Displayed Conditionally)
+        *   [X] Displays list/table of pending join requests (using constructed `displayName` from `user_profiles`).
+        *   [X] Displays list/table of outgoing pending invites (using `invited_email`).
         *   [ ] **(Data)** Determine how to display inviter name for pending invites (requires join or separate fetch).
         *   [ ] **(Data)** Determine how to display *requesting user's email* for pending requests (requires joining/fetching from `auth.users` or adjusting schema/RLS - see Future Scope note on email handling).
-        *   [ ] Includes controls for Admins: Approve/Deny Request, Cancel Invite.
-        *   [ ] Test: Visibility is correctly controlled (admin only).
-        *   [ ] Test: Displays pending requests correctly (user name, date). Handles empty state.
-        *   [ ] Test: Displays pending invites correctly (email, role, date). Handles empty state.
-        *   [ ] Test: Approve Request button triggers `approveRequest`.
-        *   [ ] Test: Deny Request button triggers `denyRequest`.
-        *   [ ] Test: Cancel Invite button triggers `cancelInvite`.
-        *   [ ] Test: Handles API errors gracefully.
-        *   [ ] Test: Lists update correctly when actions are taken.
+        *   [X] Includes controls for Admins: Approve/Deny Request, Cancel Invite.
+        *   [X] Test: Visibility is correctly controlled (admin only).
+        *   [X] Test: Displays pending requests correctly (user name, date). Handles empty state.
+        *   [X] Test: Displays pending invites correctly (email, role, date). Handles empty state.
+        *   [X] Test: Approve Request button triggers `approveRequest`.
+        *   [X] Test: Deny Request button triggers `denyRequest`.
+        *   [X] Test: Cancel Invite button triggers `cancelInvite`.
+        *   [X] Test: Handles API errors gracefully.
+        *   [X] Test: Lists update correctly when actions are taken by the *current user* (via store refetch).
+        *   [X] **(UI)** Added refresh button to manually refetch pending items.
+        *   [X] **(UI)** Uses `AdminBadge` component.
 
         [ ] **Tests:**
     *   Test route loader/component logic for `/dashboard/organizations/:orgId`: Verify redirection if org is not found, deleted (check 

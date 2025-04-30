@@ -20,8 +20,9 @@ import {
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Button } from '@/components/ui/button'; // Shadcn Button
 import { useCurrentUser } from '../../hooks/useCurrentUser'; 
-import { MoreHorizontal } from "lucide-react";
+import { MoreHorizontal, RefreshCw } from "lucide-react";
 import { logger } from '@paynless/utils'; // Keep logger for potential error logging
+import { AdminBadge } from './AdminBadge'; // Import the badge
 
 export const MemberListCard: React.FC = () => {
   const {
@@ -30,6 +31,7 @@ export const MemberListCard: React.FC = () => {
     selectCurrentUserRoleInOrg,
     updateMemberRole, // <<< Get action from store
     removeMember,     // <<< Get action from store
+    fetchCurrentOrganizationMembers, // Get fetch function
     // TODO: Add removeMember and updateMemberRole actions from store
   } = useOrganizationStore();
   
@@ -37,6 +39,11 @@ export const MemberListCard: React.FC = () => {
   const isLoading = isOrgLoading || isUserLoading;
   const currentUserRole = selectCurrentUserRoleInOrg();
   const currentUserId = currentUser?.id;
+
+  const handleRefresh = () => {
+    logger.info('[MemberListCard] Refreshing members...');
+    fetchCurrentOrganizationMembers();
+  };
 
   // Placeholder handlers - Replace with actual store calls
   const handleRoleChange = (membershipId: string, newRole: 'admin' | 'member') => {
@@ -76,8 +83,11 @@ export const MemberListCard: React.FC = () => {
   if (!currentOrganizationMembers || currentOrganizationMembers.length === 0) {
     return (
       <Card>
-        <CardHeader>
+        <CardHeader className="flex flex-row items-center justify-between">
           <CardTitle>Members</CardTitle>
+           <Button variant="outline" size="icon" onClick={handleRefresh} disabled={isLoading}>
+             <RefreshCw className="h-4 w-4" />
+           </Button>
         </CardHeader>
         <CardContent>
           <p>No members found.</p>
@@ -88,8 +98,11 @@ export const MemberListCard: React.FC = () => {
 
   return (
     <Card>
-      <CardHeader>
+      <CardHeader className="flex flex-row items-center justify-between">
         <CardTitle>Members</CardTitle>
+         <Button variant="outline" size="icon" onClick={handleRefresh} disabled={isLoading}>
+           <RefreshCw className="h-4 w-4" />
+         </Button>
       </CardHeader>
       <CardContent>
         <Table className="relative w-full overflow-x-auto" data-slot="table-container">
@@ -125,7 +138,9 @@ export const MemberListCard: React.FC = () => {
                       </div>
                     </div>
                   </TableCell>
-                  <TableCell>{member.role}</TableCell>
+                  <TableCell>
+                    {member.role === 'admin' ? <AdminBadge /> : member.role}
+                  </TableCell>
                   <TableCell className="text-right">
                     {isCurrentUser ? (
                       <Button 

@@ -98,36 +98,39 @@ export const InviteMemberCard: React.FC = () => {
                 </FormItem>
               )}
             />
-            <FormField
-              control={form.control}
-              name="role"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Role</FormLabel>
-                  <Select onValueChange={field.onChange} defaultValue={field.value} name={field.name}>
-                    <FormControl>
-                      <SelectTrigger id="role" aria-label="Role"> 
-                        <SelectValue placeholder="Select role" />
-                      </SelectTrigger>
-                    </FormControl>
-                    <SelectContent className="bg-background/70 backdrop-blur-md border border-border">
-                      <SelectItem value="member">Member</SelectItem>
-                      <SelectItem value="admin">Admin</SelectItem>
-                    </SelectContent>
-                  </Select>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
+            <div className="flex items-end gap-4">
+              <div className="flex-grow">
+                <FormField
+                  control={form.control}
+                  name="role"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Role</FormLabel>
+                      <Select onValueChange={field.onChange} defaultValue={field.value} name={field.name}>
+                        <FormControl>
+                          <SelectTrigger id="role" aria-label="Role"> 
+                            <SelectValue placeholder="Select role" />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent className="bg-background/70 backdrop-blur-md border border-border">
+                          <SelectItem value="member">Member</SelectItem>
+                          <SelectItem value="admin">Admin</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              </div>
+              <Button 
+                type="submit"
+                disabled={formState.isSubmitting || isLoading}
+                className="shrink-0"
+              >
+                {formState.isSubmitting ? 'Sending...' : 'Send Invite'}
+              </Button>
+            </div>
           </CardContent>
-          <CardFooter>
-            <Button 
-              type="submit"
-              disabled={formState.isSubmitting || isLoading} // Disable on submit OR general loading
-            >
-              {formState.isSubmitting ? 'Sending...' : 'Send Invite'}
-            </Button>
-          </CardFooter>
         </form>
       </Form>
     </Card>

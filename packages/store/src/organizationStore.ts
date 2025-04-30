@@ -449,6 +449,7 @@ export const useOrganizationStore = create<OrganizationStoreImplementation>()(
                 return null;
             } else {
                 logger.info(`[OrganizationStore] User ${emailOrUserId} invited to org ${currentOrganizationId} with role ${role}.`);
+                get().fetchCurrentOrganizationMembers(); // Refetch to update pending list
                 return response.data ?? null;
             }
         } catch (err: any) {
@@ -489,6 +490,11 @@ export const useOrganizationStore = create<OrganizationStoreImplementation>()(
           } else {
             logger.info('[OrganizationStore] Invite accepted successfully', { token });
             fetchUserOrganizations(); 
+            const { currentOrganizationId } = get();
+            const acceptedOrgId = response.data?.organizationId;
+            if (acceptedOrgId && acceptedOrgId === currentOrganizationId) {
+                get().fetchCurrentOrganizationMembers();
+            }
             return true;
           }
         } catch (err: any) {
@@ -623,7 +629,7 @@ export const useOrganizationStore = create<OrganizationStoreImplementation>()(
         }
       },
       cancelInvite: async (inviteId: string): Promise<boolean> => {
-        const { _setLoading, _setError, currentOrganizationId } = get(); // Add fetchCurrentOrganizationMembers if needed
+        const { _setLoading, _setError, currentOrganizationId, fetchCurrentOrganizationMembers } = get(); // Add fetchCurrentOrganizationMembers
         _setLoading(true);
         _setError(null);
 
@@ -646,8 +652,7 @@ export const useOrganizationStore = create<OrganizationStoreImplementation>()(
                 return false;
             } else {
                 logger.info('[OrganizationStore] Invite cancelled successfully', { orgId: currentOrganizationId, inviteId });
-                // Optional: Refetch members or a dedicated pending invite list if needed
-                // fetchCurrentOrganizationMembers(); 
+                fetchCurrentOrganizationMembers(); // Refetch members/pending items
                 return true;
             }
         } catch (err: any) {

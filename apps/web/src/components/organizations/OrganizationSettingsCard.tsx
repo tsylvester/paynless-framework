@@ -18,6 +18,7 @@ import {
 } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
 import { toast } from 'sonner';
+import { AdminBadge } from './AdminBadge'; // Import the badge
 
 // Placeholder for DeleteOrganizationDialog trigger
 // import { useDeleteOrganizationDialog } from './DeleteOrganizationDialog';
@@ -120,65 +121,74 @@ export const OrganizationSettingsCard: React.FC = () => {
 
   return (
     <Card>
-      <CardHeader>
-        <CardTitle>Organization Settings (Admin)</CardTitle>
+      <CardHeader className="flex flex-row items-center">
+        <CardTitle>Organization Settings</CardTitle>
+        <AdminBadge />
         {/* Optional: Add CardDescription here */}
       </CardHeader>
       <form onSubmit={handleSubmit(onSubmit)}>
-        <CardContent className="space-y-4">
+        <CardContent className="space-y-6">
+          {/* Name Field */}
           <div className="space-y-1">
             <Label htmlFor="org-name">Organization Name</Label>
             <Input
               id="org-name"
-              {...register("name")} // Register input with RHF
-              // defaultValue is now handled by useForm
+              {...register("name")}
               disabled={formDisabled}
             />
             {errors.name && <p className="text-sm text-red-500">{errors.name.message}</p>}
           </div>
-          <div className="space-y-1">
-            <Label htmlFor="org-visibility">Visibility</Label>
-            <Controller
-              name="visibility"
-              control={control}
-              render={({ field }) => (
-                <Select
-                  onValueChange={field.onChange}
-                  defaultValue={field.value}
-                  value={field.value} // Ensure value is controlled
-                  disabled={formDisabled}
-                >
-                  <SelectTrigger id="org-visibility">
-                    <SelectValue placeholder="Select visibility" />
-                  </SelectTrigger>
-                  <SelectContent className="bg-background/70 backdrop-blur-md border border-border">
-                    <SelectItem value="private">Private</SelectItem>
-                    <SelectItem value="public">Public</SelectItem>
-                  </SelectContent>
-                </Select>
-              )}
-            />
-             {errors.visibility && <p className="text-sm text-red-500">{errors.visibility.message}</p>}
+          
+          {/* Combined Visibility and Buttons Row */}
+          <div className="flex items-end gap-4"> 
+            {/* Visibility Field */}  
+            <div className="flex-grow space-y-1"> {/* Allow dropdown to take available space */}
+              <Label htmlFor="org-visibility">Visibility</Label>
+              <Controller
+                name="visibility"
+                control={control}
+                render={({ field }) => (
+                  <Select
+                    onValueChange={field.onChange}
+                    defaultValue={field.value}
+                    value={field.value}
+                    disabled={formDisabled}
+                  >
+                    <SelectTrigger id="org-visibility">
+                      <SelectValue placeholder="Select visibility" />
+                    </SelectTrigger>
+                    <SelectContent className="bg-background/70 backdrop-blur-md border border-border">
+                      <SelectItem value="private">Private</SelectItem>
+                      <SelectItem value="public">Public</SelectItem>
+                    </SelectContent>
+                  </Select>
+                )}
+              />
+              {errors.visibility && <p className="text-sm text-red-500">{errors.visibility.message}</p>}
+            </div>
+            
+            {/* Update Button */} 
+            <Button
+              type="submit"
+              disabled={formDisabled}
+              className="shrink-0" // Prevent shrinking
+            >
+              {isSubmitting ? 'Updating...' : 'Update'} {/* Shortened text */}
+            </Button>
+            
+            {/* Delete Button */} 
+            <Button
+              variant="destructive"
+              onClick={openDeleteDialog}
+              type="button"
+              disabled={formDisabled}
+              className="shrink-0" // Prevent shrinking
+            >
+              Delete {/* Shortened text */}
+            </Button>
           </div>
+          
         </CardContent>
-        <Separator className="my-4" />
-        <CardFooter className="flex justify-between">
-          <Button
-            type="submit"
-            disabled={formDisabled} // Use combined disabled state
-          >
-            {isSubmitting ? 'Updating...' : 'Update Settings'} {/* Show loading text */}
-          </Button>
-          <Button
-            variant="destructive"
-            onClick={openDeleteDialog}
-            type="button"
-            disabled={formDisabled} // Also disable delete during update
-            // className={!isAdmin ? 'hidden' : ''} // Keep commented until role check is confirmed needed here
-          >
-            Delete Organization
-          </Button>
-        </CardFooter>
       </form>
     </Card>
   );
