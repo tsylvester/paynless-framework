@@ -23,6 +23,8 @@ export const OrganizationHubPage: React.FC = () => {
     isLoading: isOrgLoading,
     error: orgError, // Get the error state
     selectCurrentUserRoleInOrg, // ADDED: The correct selector function
+    fetchOrganizationDetails,
+    fetchCurrentOrganizationMembers,
   } = useOrganizationStore();
 
   const { user } = useCurrentUser(); // Get current user details
@@ -39,13 +41,28 @@ export const OrganizationHubPage: React.FC = () => {
     // Set the initial current organization if not already set and organizations are loaded
     // Make sure not to set if there was an error fetching
     if (!currentOrganizationId && userOrganizations.length > 0 && !orgError) {
-      setCurrentOrganizationId(userOrganizations[0].organization_id);
+      // Use the correct property 'id' from the Organization type
+      setCurrentOrganizationId(userOrganizations[0].id);
     }
     // If an error occurs *after* an org was selected, maybe clear selection?
     // else if (orgError && currentOrganizationId) {
     //   setCurrentOrganizationId(null); 
     // }
   }, [currentOrganizationId, userOrganizations, setCurrentOrganizationId, orgError]);
+
+  // NEW: Effect to fetch details/members whenever currentOrganizationId changes (and is not null)
+  // This ensures data is fetched even when the ID is set by hydration from localStorage.
+  useEffect(() => {
+    if (currentOrganizationId) {
+      fetchOrganizationDetails(currentOrganizationId);
+      fetchCurrentOrganizationMembers();
+    }
+    // Optional: If the ID becomes null, we might want to clear details/members explicitly,
+    // although the setCurrentOrganizationId action already handles this.
+    // else {
+    //   set({ currentOrganizationDetails: null, currentOrganizationMembers: [] }); 
+    // }
+  }, [currentOrganizationId, fetchOrganizationDetails, fetchCurrentOrganizationMembers]);
 
   // Initial Loading State with Skeletons
   if (isOrgLoading && userOrganizations.length === 0 && !orgError) {
@@ -96,47 +113,72 @@ export const OrganizationHubPage: React.FC = () => {
 
   return (
     <div className="container mx-auto p-4">
-      <h1 className="text-2xl font-semibold mb-6">Organizations</h1>
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Column 1: Organization List */}
-        <div className="lg:col-span-1">
+      <h1 className="text-2xl font-semibold mb-6">{/* TODO: Text here if desired */}</h1>
+      {/* Use flex layout for responsiveness */}
+      <div className="flex flex-col md:flex-row gap-4">
+        {/* Column 1: Organization List (Fixed width on medium screens and up) */}
+        <div className="md:w-1/3 lg:w-1/4 flex-shrink-0"> {/* Adjust width as needed */}
           <ErrorBoundary fallbackMessage="Could not load the organization list.">
             <OrganizationListCard />
           </ErrorBoundary>
         </div>
 
-        {/* Column 2: Management Cards for Selected Org */}
-        <div className="lg:col-span-2 space-y-6">
+        {/* Column 2: Management Cards (Takes remaining space, vertical stack) */}
+        <div className="flex-1 space-y-6">
           {currentOrganizationId ? (
-            <>
-              <ErrorBoundary fallbackMessage="Could not load organization details.">
-                <OrganizationDetailsCard />
-              </ErrorBoundary>
-              {isAdmin && (
-                <ErrorBoundary fallbackMessage="Could not load organization settings.">
-                  <OrganizationSettingsCard />
+            // If an org ID is selected, check loading/error states for its details
+            isOrgLoading ? (
+              // Display Skeletons for the management cards while loading
+              <div className="space-y-6">
+                <Skeleton className="h-32 w-full" /> {/* Details Card Skeleton */}
+                <Skeleton className="h-48 w-full" /> {/* Member List Card Skeleton */}
+                {/* Add more based on typical admin view */}
+                {/* <Skeleton className="h-24 w-full" /> Settings Card Skeleton */}
+                {/* <Skeleton className="h-24 w-full" /> Invite Card Skeleton */}
+                {/* <Skeleton className="h-32 w-full" /> Pending Actions Skeleton */}
+              </div>
+            ) : orgError ? (
+              // Display an error message if fetching details/members failed
+              <Alert variant="destructive">
+                <Terminal className="h-4 w-4" />
+                <AlertTitle>Error Loading Organization Data</AlertTitle>
+                <AlertDescription>
+                  {orgError} - Could not load data for the selected organization.
+                </AlertDescription>
+              </Alert>
+            ) : (
+              // Loading finished and no error, render the actual cards
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                <ErrorBoundary fallbackMessage="Could not load organization details.">
+                  <OrganizationDetailsCard />
                 </ErrorBoundary>
-              )}
-              <ErrorBoundary fallbackMessage="Could not load the member list.">
-                <MemberListCard />
-              </ErrorBoundary>
-              {isAdmin && (
-                <ErrorBoundary fallbackMessage="Could not load the invite member section.">
-                  <InviteMemberCard />
+                {isAdmin && (
+                  <ErrorBoundary fallbackMessage="Could not load organization settings.">
+                    <OrganizationSettingsCard />
+                  </ErrorBoundary>
+                )}
+                <ErrorBoundary fallbackMessage="Could not load the member list.">
+                  <MemberListCard />
                 </ErrorBoundary>
-              )}
-              {isAdmin && (
-                <ErrorBoundary fallbackMessage="Could not load pending actions.">
-                  <PendingActionsCard />
-                </ErrorBoundary>
-              )}
-            </>
+                {isAdmin && (
+                  <ErrorBoundary fallbackMessage="Could not load the invite member section.">
+                    <InviteMemberCard />
+                  </ErrorBoundary>
+                )}
+                {isAdmin && (
+                  <ErrorBoundary fallbackMessage="Could not load pending actions.">
+                    <PendingActionsCard />
+                  </ErrorBoundary>
+                )}
+              </div>
+            )
           ) : userOrganizations.length > 0 ? (
+            // No org selected, but the user has organizations
             <div className="text-center text-muted-foreground p-4 border rounded-md">
               Select an organization to view details.
             </div>
           ) : (
-             // No organizations yet, OrganizationListCard should show create button
+             // User has no organizations at all
             <div className="text-center text-muted-foreground p-4 border rounded-md">
               You are not part of any organizations yet. Create one!
             </div>

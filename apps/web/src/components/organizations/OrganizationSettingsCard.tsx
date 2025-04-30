@@ -151,7 +151,7 @@ export const OrganizationSettingsCard: React.FC = () => {
                   <SelectTrigger id="org-visibility">
                     <SelectValue placeholder="Select visibility" />
                   </SelectTrigger>
-                  <SelectContent>
+                  <SelectContent className="bg-background/70 backdrop-blur-md border border-border">
                     <SelectItem value="private">Private</SelectItem>
                     <SelectItem value="public">Public</SelectItem>
                   </SelectContent>

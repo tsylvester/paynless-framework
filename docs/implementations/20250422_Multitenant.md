@@ -184,7 +184,7 @@ This document outlines the steps for implementing an in-app notification system 
     *   [X] Action `fetchUserOrganizations`: Mocks API call, updates `userOrganizations` (filtering deleted), sets `isLoading`.
     *   [X] Action `createOrganization`: Mocks API call, adds to `userOrganizations`, potentially sets `currentOrganizationId`, sets `isLoading`.
     *   [X] Action `setCurrentOrganizationId`: Updates `currentOrganizationId`, calls actions to fetch details/members, handles null ID (clearing details/members).
-    *   [ ] **(NEW)** Action `setCurrentOrganizationId`: Should persist the selected ID (e.g., using Zustand persist middleware with localStorage) so it's restored on page reload.
+    *   [X] **(NEW)** Action `setCurrentOrganizationId`: Should persist the selected ID (e.g., using Zustand persist middleware with localStorage) so it's restored on page reload.
     *   [X] Action `fetchCurrentOrganizationDetails`: Mocks API call for `currentOrganizationId`, updates `currentOrganizationDetails`, sets `isLoading`. Handles case where org is deleted (clears details, maybe logs error).
     *   [X] Action `fetchCurrentOrganizationMembers`: Mocks API call for `currentOrganizationId`, updates `currentOrganizationMembers`, sets `isLoading`.
     *   [X] Action `softDeleteOrganization`: Mocks API call, removes org from `userOrganizations`, clears `currentOrganizationId` if it matches, sets `isLoading`, calls `closeDeleteDialog` on success.
@@ -213,7 +213,7 @@ This document outlines the steps for implementing an in-app notification system 
     *   [X] Implement actions for `cancelInvite`.
     *   [X] Update `inviteUser` action if API changes.
     *   [X] Update `fetchCurrentOrganizationMembers` to fetch pending items for admins.
-    *   [ ] **(NEW)** Implement Zustand persist middleware for `organizationStore` to save/restore `currentOrganizationId`.
+    *   [X] **(NEW)** Implement Zustand persist middleware for `organizationStore` to save/restore `currentOrganizationId`.
 
 ### 2.6 Frontend Components & UI (`apps/web`) - Consolidated Hub Approach (Detailed)
 
@@ -223,7 +223,7 @@ This section outlines the frontend implementation using a dynamic, card-based "h
     *   [X] Define protected routes. All key application routes (`/dashboard`, `/profile`, `/chat`, `/subscription`, `/notifications`, `/organizations`, `/organizations/:orgId`, `/admin`) are defined at the root level. Ensure proper authentication checks (`ProtectedRoute`) are applied to all necessary routes.
     *   [X] `/organizations`: **`OrganizationHubPage`** - The central page rendering `OrganizationListCard` alongside management cards for the active organization.
         *   [X] Loader/Effect: On initial load, triggers `fetchUserOrganizations`. Determines and sets initial `currentOrganizationId` (restoring from persisted state if available).
-        *   [ ] **(Layout)** Layout: Should use a responsive two-column layout (e.g., `flex flex-col md:flex-row gap-4`) with `OrganizationListCard` on the left and management cards in a flex-grid on the right.
+        *   [X] **(Layout)** Layout: Should use a responsive two-column layout (e.g., `flex flex-col md:flex-row gap-4`) with `OrganizationListCard` on the left and management cards in a flex-grid on the right.
         *   [X] Data Display: Conditionally renders management cards based on `currentOrganizationId` and user role. Shows placeholder/empty state.
         *   [X] Test (Hub Page): Correctly fetches user organizations on load.
         *   [X] Test (Hub Page): Sets a logical initial `currentOrganizationId` (e.g., first org, or restored from persistence).
@@ -234,7 +234,7 @@ This section outlines the frontend implementation using a dynamic, card-based "h
         *   [X] Test (Hub Page): Access control - Ensures only authenticated users can access this route.
     *   [X] `/organizations/:orgId`: **`OrganizationFocusedViewPage`** (Optional but Recommended) - Dedicated view for a single org's management cards.
         *   [X] Loader/Effect: Triggers `setCurrentOrganizationId` with `:orgId`. Handles routing/errors if org not found, deleted (`currentOrganizationDetails.deleted_at`), or user lacks access (not an active member).
-        *   [ ] **(Layout)** Layout: Should use a responsive flex-grid layout (e.g., `grid grid-cols-1 md:grid-cols-2 gap-4`) for the management cards.
+        *   [X] **(Layout)** Layout: Should use a responsive flex-grid layout (e.g., `grid grid-cols-1 md:grid-cols-2 gap-4`) for the management cards.
         *   [X] Test (Focused View): Correctly loads data for the specified `:orgId`.
         *   [X] Test (Focused View): Renders the correct set of management cards based on user role for *this specific org*.
         *   [X] Test (Focused View): **Access Control** - Redirects/shows error if org is not found in `userOrganizations` after fetch.
@@ -252,8 +252,8 @@ This section outlines the frontend implementation using a dynamic, card-based "h
         *   [X] Test: Handles API errors (e.g., invalid/expired token via fetch error) gracefully, showing informative messages/UI state.
 
 *   [X] **Pages (`src/pages`):**
-    *   [ ] **(Layout)** `OrganizationHubPage.tsx`: Implements `/organizations`. Orchestrates display of `OrganizationListCard` + dynamic management cards. Handles initial data load and setting context. **Update layout to be two-column flex.**
-    *   [ ] **(Layout)** `OrganizationFocusedViewPage.tsx`: Implements `/organizations/:orgId`. Handles data load for specific org and renders management cards. **Update layout to use flex-grid for cards.**
+    *   [X] **(Layout)** `OrganizationHubPage.tsx`: Implements `/organizations`. Orchestrates display of `OrganizationListCard` + dynamic management cards. Handles initial data load and setting context. **Update layout to be two-column flex.**
+    *   [X] **(Layout)** `OrganizationFocusedViewPage.tsx`: Implements `/organizations/:orgId`. Handles data load for specific org and renders management cards. **Update layout to use flex-grid for cards.**
     *   [X] `AcceptInvitePage.tsx`: Implements `/accept-invite/:token`. Handles token processing, user actions, and feedback. (Implementation mostly finished, async tests blocked).
 
 *   [ ] **Layouts (`src/components/layout`):**
@@ -381,8 +381,9 @@ This section outlines the frontend implementation using a dynamic, card-based "h
     elements or disable actions.
 
 *   [ ] **(UI Polish)** Global Styles / Theme:
-    *   [ ] Apply a background blur (`backdrop-blur-sm` or similar) to `DropdownMenuContent` components globally or via theme override for better readability. 
-
+    *   [X] Apply a background blur (`backdrop-blur-sm` or similar) to `DropdownMenuContent` components globally or via theme override for better readability. 
+    *   [ ] Change "Admin" to a badge to display on Org Settings, Pending Actions, and Members cards 
+    
 ### 2.8 Integration with Existing Features
 
 *   [ ] **Org Chat vs Individual Chat** Create switcher to associate an AI chat with an org or keep it separate. 

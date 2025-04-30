@@ -8,7 +8,6 @@ import { useOrganizationStore } from '@paynless/store';
 import { Card, CardHeader, CardTitle, CardContent, CardFooter } from '@/components/ui/card';
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
 import {
   Select,
   SelectContent,
@@ -17,7 +16,7 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { 
-    Form, FormControl, FormDescription, FormField, FormItem, FormLabel, FormMessage 
+    Form, FormControl, FormField, FormItem, FormLabel, FormMessage 
 } from "@/components/ui/form"; // Import RHF components
 import { toast } from 'sonner';
 import { logger } from '@paynless/utils';
@@ -31,6 +30,17 @@ const inviteSchema = z.object({
 type InviteFormValues = z.infer<typeof inviteSchema>;
 
 export const InviteMemberCard: React.FC = () => {
+  // Hooks MUST be called at the top level, before any conditional returns.
+  const form = useForm<InviteFormValues>({
+    resolver: zodResolver(inviteSchema),
+    defaultValues: {
+      email: '',
+      role: 'member', // Default role
+    },
+  });
+  const { formState } = form; // Get form state for disabling button
+
+  // Get store state after hooks
   const {
     inviteUser, 
     isLoading, // Use store's loading for general state if needed, formState better for button
@@ -44,16 +54,6 @@ export const InviteMemberCard: React.FC = () => {
   if (currentUserRole !== 'admin' || !currentOrganizationId) {
     return null; // Don't render for non-admins or if no org selected
   }
-
-  const form = useForm<InviteFormValues>({
-    resolver: zodResolver(inviteSchema),
-    defaultValues: {
-      email: '',
-      role: 'member', // Default role
-    },
-  });
-
-  const { formState } = form; // Get form state for disabling button
 
   const onSubmit = async (values: InviteFormValues) => {
     if (!currentOrganizationId) {
@@ -110,7 +110,7 @@ export const InviteMemberCard: React.FC = () => {
                         <SelectValue placeholder="Select role" />
                       </SelectTrigger>
                     </FormControl>
-                    <SelectContent>
+                    <SelectContent className="bg-background/70 backdrop-blur-md border border-border">
                       <SelectItem value="member">Member</SelectItem>
                       <SelectItem value="admin">Admin</SelectItem>
                     </SelectContent>

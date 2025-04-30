@@ -447,6 +447,10 @@ export async function handleListPending(
         return createErrorResponse("Error fetching pending invites.", 500, req);
     }
 
+    // +++ ADD DEFAULTING FOR INVITES +++
+    const invites = pendingInvites || []; 
+    // +++++++++++++++++++++++++++++++++++
+
     // 3. Fetch pending member requests (members with status='pending')
     const { data: pendingRequestsData, error: requestsError } = await supabaseClient
         .from('organization_members')
@@ -469,8 +473,10 @@ export async function handleListPending(
     // Ensure we return arrays even if data is null
     const pendingRequests = pendingRequestsData || [];
 
-    console.log(`[invites.ts List Pending] Found ${pendingInvites.length} invites and ${pendingRequests.length} requests for org ${orgId}.`);
-    return createSuccessResponse({ pendingInvites, pendingRequests }, 200, req);
+    // +++ USE THE DEFAULTED VARIABLE and CORRECT KEY NAME +++
+    console.log(`[invites.ts List Pending] Found ${invites.length} invites and ${pendingRequests.length} requests for org ${orgId}.`);
+    return createSuccessResponse({ invites: invites, pendingRequests }, 200, req); // Changed pendingInvites key to invites
+    // ++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 }
 
 // TODO: Implement handleCancelInvite (for admins)

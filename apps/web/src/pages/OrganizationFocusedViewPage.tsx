@@ -126,29 +126,23 @@ export const OrganizationFocusedViewPage: React.FC = () => {
       <h1 className="text-2xl font-semibold mb-6 truncate">
         {currentOrganizationDetails?.name ?? 'Organization'}
       </h1>
-      <div className="space-y-6">
-        <ErrorBoundary fallbackMessage="Could not load organization details.">
-          <OrganizationDetailsCard />
-        </ErrorBoundary>
-        {isAdmin && (
-          <ErrorBoundary fallbackMessage="Could not load organization settings.">
-            <OrganizationSettingsCard />
-          </ErrorBoundary>
-        )}
-        <ErrorBoundary fallbackMessage="Could not load the member list.">
-          <MemberListCard />
-        </ErrorBoundary>
-        {isAdmin && (
-          <ErrorBoundary fallbackMessage="Could not load the invite member section.">
-            <InviteMemberCard />
-          </ErrorBoundary>
-        )}
-        {isAdmin && (
-          <ErrorBoundary fallbackMessage="Could not load pending actions.">
-            <PendingActionsCard />
-          </ErrorBoundary>
-        )}
-      </div>
+      {/* Wrap the entire grid in an ErrorBoundary */}
+      <ErrorBoundary fallbackMessage="Could not load organization management cards.">
+          {/* Use responsive grid for management cards */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <OrganizationDetailsCard />
+              {isAdmin && (
+                  <OrganizationSettingsCard />
+              )}
+              <MemberListCard />
+              {isAdmin && (
+                  <InviteMemberCard />
+              )}
+              {isAdmin && (
+                  <PendingActionsCard />
+              )}
+          </div>
+      </ErrorBoundary>
     </div>
   );
 }; 

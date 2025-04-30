@@ -42,7 +42,7 @@ export const OrganizationListCard: React.FC = () => {
   return (
     <Card className="h-full flex flex-col">
       <CardHeader className="flex justify-between items-center">
-        <CardTitle>Your Organizations</CardTitle>
+        <CardTitle>Organizations</CardTitle>
         <Button 
           onClick={handleCreateNewClick} 
           variant="outline"
