@@ -20,7 +20,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "build": "tsc -b",
-    "clean": "rm -rf dist tsconfig.tsbuildinfo",
+    "clean": "(if exist dist rd /s /q dist) && (if exist tsconfig.tsbuildinfo del /q tsconfig.tsbuildinfo)",
     "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0"
   },
   "dependencies": {

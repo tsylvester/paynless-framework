@@ -76,14 +76,6 @@ export interface ErrorResponse {
   error: ApiError;
 }
 
-// ---> Define custom error for auth requirement <---
-export class AuthRequiredError extends Error {
-    constructor(message: string = 'Authentication required') {
-        super(message);
-        this.name = 'AuthRequiredError';
-    }
-}
-
 // --- Types for API Streaming (e.g., SSE) ---
 
 /**

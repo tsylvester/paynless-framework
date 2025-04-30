@@ -363,8 +363,9 @@ export const useAiStore = create<AiStore>()(
 
                 // --- Process Valid Chat Action ---
                 logger.info('[aiStore] Pending chat action is valid and user authenticated. Processing...');
-                localStorage.removeItem('pendingAction');
-                logger.info('[aiStore] Removed pending action from localStorage.');
+                // <<< KEEP removeItem commented out here >>>
+                // localStorage.removeItem('pendingAction'); 
+                // logger.info('[aiStore] Removed pending action from localStorage.');
 
                 // --- Refactored Helper (same as above, defined once in scope) --- 
                 const _addOptimisticUserMessage = (msgContent: string, explicitChatId?: string | null): string => {
@@ -447,6 +448,11 @@ export const useAiStore = create<AiStore>()(
                                 aiError: null,
                             };
                         });
+
+                        // <<< CORRECT: Remove pending action ONLY on successful API call and data processing >>>
+                        localStorage.removeItem('pendingAction');
+                        logger.info('[aiStore] Successfully processed and removed pending action.');
+
                     } else {
                         throw new Error('API returned success status but no data during replay.');
                     }

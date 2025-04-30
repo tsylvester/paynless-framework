@@ -195,6 +195,18 @@ export class OrganizationApiClient {
   }
 
   /**
+   * Allows the currently authenticated user to leave an organization.
+   * Uses the main client's delete method against a specific 'leave' endpoint.
+   * @param orgId - The ID of the organization to leave.
+   * @returns An ApiResponse, typically with no data on success (e.g., status 204) or an error.
+   */
+  async leaveOrganization(orgId: string): Promise<ApiResponse<void>> {
+    // Assuming the backend has an endpoint like /organizations/:orgId/members/leave
+    // The backend uses the authenticated user's context to determine which member to remove.
+    return this.client.delete<void>(`organizations/${orgId}/members/leave`);
+  }
+
+  /**
    * Soft deletes an organization.
    * Uses the main client's delete method. The backend handles setting the deleted_at timestamp.
    * @param orgId - The ID of the organization to soft delete.

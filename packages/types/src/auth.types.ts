@@ -122,14 +122,6 @@ export interface PendingAction {
   returnPath: string;
 }
 
-// +++ ADDED Error Types +++
-// Simple API error structure
-export interface ApiError {
-  message: string;
-  code?: string | number; // Optional error code (e.g., HTTP status or custom code)
-  details?: any; // Optional additional details
-}
-
 // Custom error class for authentication failures
 export class AuthRequiredError extends Error {
   constructor(message: string = 'Authentication Required') {

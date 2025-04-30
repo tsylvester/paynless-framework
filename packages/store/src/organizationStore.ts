@@ -67,7 +67,7 @@ interface InternalOrganizationActions {
 // Ensure this includes the newly added OrganizationActions from the types package
 // Also include our UI Actions
 // And include the selector method signature
-type OrganizationStoreImplementation = 
+export type OrganizationStoreImplementation = 
     OrganizationState & 
     OrganizationUIState & 
     OrganizationActions & 
@@ -413,6 +413,69 @@ export const useOrganizationStore = create<OrganizationStoreImplementation>()(
         // Implementation will be added in the GREEN step
         throw new Error('updateOrganization not implemented');
       },
+
+      // +++ Add leaveOrganization +++
+      leaveOrganization: async (orgId: string): Promise<boolean> => {
+        const { _setLoading, _setError, currentOrganizationId, userOrganizations } = get();
+        _setLoading(true);
+        _setError(null);
+
+        // Check authentication
+        const isAuthenticated = !!useAuthStore.getState().user;
+        if (!isAuthenticated) {
+          logger.warn('[OrganizationStore] leaveOrganization - User not authenticated.');
+          _setError('User not authenticated');
+          _setLoading(false);
+          return false;
+        }
+
+        try {
+          const apiClient = getApiClient();
+          const response = await apiClient.organizations.leaveOrganization(orgId);
+
+          if (response.error || response.status >= 300) {
+            const errorLog = {
+                message: response.error?.message ?? 'Unknown API Error',
+                code: response.error?.code,
+                status: response.status
+            };
+            logger.error('[OrganizationStore] leaveOrganization - API Error', { orgId, ...errorLog });
+            _setError(response.error?.message ?? 'Failed to leave organization');
+            _setLoading(false);
+            return false; // Indicate failure
+          } else {
+            // Success: Remove org from list and potentially clear current context
+            const updatedOrgs = userOrganizations.filter(org => org.id !== orgId);
+            let updatedState: Partial<OrganizationState & OrganizationUIState> = {
+                userOrganizations: updatedOrgs,
+                isLoading: false,
+                error: null,
+            };
+
+            if (currentOrganizationId === orgId) {
+              logger.info(`[OrganizationStore] Left current organization ${orgId}. Clearing context.`);
+              updatedState = {
+                ...updatedState,
+                currentOrganizationId: null,
+                currentOrganizationDetails: null,
+                currentOrganizationMembers: [],
+                currentPendingInvites: [], // Clear pending too
+                currentPendingRequests: [], // Clear pending too
+              };
+            }
+
+            set(updatedState);
+            logger.info(`[OrganizationStore] Successfully left organization ${orgId}.`);
+            return true; // Indicate success
+          }
+        } catch (err: any) {
+          logger.error('[OrganizationStore] leaveOrganization - Unexpected Error', { orgId, message: err?.message });
+          _setError(err.message ?? 'An unexpected error occurred while leaving the organization');
+          set({ isLoading: false }); // Ensure loading is false on unexpected error
+          return false; // Indicate failure
+        }
+      },
+      // +++ End leaveOrganization +++
 
       inviteUser: async (emailOrUserId: string, role: string): Promise<Invite | null> => {
         // For now, assume emailOrUserId is always an email

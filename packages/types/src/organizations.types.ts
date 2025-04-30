@@ -79,6 +79,7 @@ export interface OrganizationActions {
   createOrganization: (name: string, visibility?: 'private' | 'public') => Promise<Organization | null>;
   softDeleteOrganization: (orgId: string) => Promise<boolean>;
   updateOrganization: (orgId: string, updates: Partial<Organization>) => Promise<boolean>;
+  leaveOrganization: (orgId: string) => Promise<boolean>;
   inviteUser: (identifier: string, role: string) => Promise<Invite | null>; // Identifier can be email or userId
   updateMemberRole: (membershipId: string, role: string) => Promise<boolean>;
   removeMember: (membershipId: string) => Promise<boolean>;
