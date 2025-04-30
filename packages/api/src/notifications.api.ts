@@ -41,10 +41,17 @@ export class NotificationApiClient {
   async fetchNotifications(): Promise<ApiResponse<Notification[]>> {
     logger.debug('[NotificationApiClient] Fetching notifications...');
     const response = await this.apiClient.get<Notification[]>('notifications');
-    if (!response.error && response.data) {
-      logger.info(`[NotificationApiClient] Fetched ${response.data.length} notifications.`);
+    
+    // Handle success cases first
+    if (!response.error) { 
+        // Ensure data is always an array on success
+        response.data = response.data ?? []; 
+        logger.info(`[NotificationApiClient] Fetched ${response.data.length} notifications.`);
     } else {
+      // Handle error case
       logger.error('[NotificationApiClient] Error fetching notifications:', { error: response.error });
+      // Ensure data is undefined on error (though it likely already is)
+      response.data = undefined;
     }
     return response;
   }

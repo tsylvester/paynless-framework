@@ -460,7 +460,7 @@ describe('OrganizationApiClient', () => {
   // --- acceptOrganizationInvite --- //
   describe('acceptOrganizationInvite', () => {
     const inviteToken = 'test-invite-token';
-    const endpoint = `invites/${inviteToken}/accept`;
+    const endpoint = `organizations/invites/${inviteToken}/accept`;
     const expectedSuccessData = { 
         message: "Invite accepted successfully.", 
         membershipId: 'new-membership-id', 
@@ -475,7 +475,7 @@ describe('OrganizationApiClient', () => {
         const result = await organizationApiClient.acceptOrganizationInvite(inviteToken);
 
         expect(mockApiClient.post).toHaveBeenCalledTimes(1);
-        expect(mockApiClient.post).toHaveBeenCalledWith(endpoint, undefined); // No body expected
+        expect(mockApiClient.post).toHaveBeenCalledWith(`organizations/invites/${inviteToken}/accept`, undefined);
         expect(result).toEqual(mockResponse);
         expect(result.error).toBeUndefined();
     });
@@ -489,7 +489,7 @@ describe('OrganizationApiClient', () => {
         const result = await organizationApiClient.acceptOrganizationInvite(inviteToken);
 
         expect(mockApiClient.post).toHaveBeenCalledTimes(1);
-        expect(mockApiClient.post).toHaveBeenCalledWith(endpoint, undefined);
+        expect(mockApiClient.post).toHaveBeenCalledWith(`organizations/invites/${inviteToken}/accept`, undefined);
         expect(result).toEqual(mockResponse);
         expect(result.data).toBeUndefined();
         expect(result.error).toEqual(mockError);
@@ -504,7 +504,7 @@ describe('OrganizationApiClient', () => {
       const result = await organizationApiClient.acceptOrganizationInvite(inviteToken);
 
       expect(mockApiClient.post).toHaveBeenCalledTimes(1);
-        expect(mockApiClient.post).toHaveBeenCalledWith(endpoint, undefined);
+        expect(mockApiClient.post).toHaveBeenCalledWith(`organizations/invites/${inviteToken}/accept`, undefined);
       expect(result).toEqual(mockResponse);
         expect(result.data).toBeUndefined();
         expect(result.error).toEqual(mockError);
@@ -519,7 +519,7 @@ describe('OrganizationApiClient', () => {
       const result = await organizationApiClient.acceptOrganizationInvite(inviteToken);
 
       expect(mockApiClient.post).toHaveBeenCalledTimes(1);
-        expect(mockApiClient.post).toHaveBeenCalledWith(endpoint, undefined);
+        expect(mockApiClient.post).toHaveBeenCalledWith(`organizations/invites/${inviteToken}/accept`, undefined);
       expect(result).toEqual(mockResponse);
       expect(result.data).toBeUndefined();
         expect(result.error).toEqual(mockError);
@@ -534,7 +534,7 @@ describe('OrganizationApiClient', () => {
       const result = await organizationApiClient.acceptOrganizationInvite(inviteToken);
 
       expect(mockApiClient.post).toHaveBeenCalledTimes(1);
-        expect(mockApiClient.post).toHaveBeenCalledWith(endpoint, undefined);
+        expect(mockApiClient.post).toHaveBeenCalledWith(`organizations/invites/${inviteToken}/accept`, undefined);
       expect(result).toEqual(mockResponse);
       expect(result.data).toBeUndefined();
         expect(result.error).toEqual(mockError);

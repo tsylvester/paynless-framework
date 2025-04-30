@@ -141,8 +141,8 @@ export class OrganizationApiClient {
    */
   async declineOrganizationInvite(inviteToken: string): Promise<ApiResponse<void>> {
     // Use the injected ApiClient's post method
-    // Backend endpoint: POST /invites/:inviteToken/decline
-    return this.client.post<void, undefined>(`invites/${inviteToken}/decline`, undefined);
+    // Backend endpoint: POST /organizations/invites/:inviteToken/decline (Corrected path)
+    return this.client.post<void, undefined>(`organizations/invites/${inviteToken}/decline`, undefined);
   }
 
   /**
