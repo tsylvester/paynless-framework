@@ -262,7 +262,7 @@ importers:
         specifier: workspace:^
         version: link:../../supabase/functions
       '@testing-library/jest-dom':
-        specifier: ^6.4.8
+        specifier: ^6.6.3
         version: 6.6.3
       '@testing-library/react':
         specifier: ^16.0.0

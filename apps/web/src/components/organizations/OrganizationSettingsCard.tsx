@@ -171,7 +171,7 @@ export const OrganizationSettingsCard: React.FC = () => {
           </Button>
           <Button
             variant="destructive"
-            onClick={openDeleteDialog} // Call the store action directly
+            onClick={openDeleteDialog}
             type="button"
             disabled={formDisabled} // Also disable delete during update
             // className={!isAdmin ? 'hidden' : ''} // Keep commented until role check is confirmed needed here

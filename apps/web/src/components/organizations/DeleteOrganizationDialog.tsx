@@ -48,17 +48,18 @@ export const DeleteOrganizationDialog: React.FC = () => {
         // Optionally add a generic toast here if store doesn't show one on failure
         // toast.error(`Failed to delete "${orgName}".`);
       }
-    } catch (error) {
-      // This catch block might be redundant if the store handles errors,
-      // but good for unexpected issues.
-      logger.error('[DeleteOrganizationDialog] Unexpected error during delete confirmation', error);
+    } catch (error: unknown) {
+      let errorMessage = 'An unexpected error occurred';
+      if (error instanceof Error) {
+        errorMessage = error.message;
+      }
+      // Log the message and pass the error object as metadata if needed, or just log the message
+      logger.error(`[DeleteOrganizationDialog] Unexpected error during delete confirmation: ${errorMessage}`, { originalError: error }); // Example with metadata
+      // Or simply: logger.error(`[DeleteOrganizationDialog] Unexpected error during delete confirmation: ${errorMessage}`);
       toast.error('An unexpected error occurred while trying to delete the organization.');
     } finally {
       setIsDeleting(false);
       // Ensure dialog closes even if store action fails unexpectedly before closing it
-      if (useOrganizationStore.getState().isDeleteDialogOpen) {
-         closeDeleteDialog();
-      }
     }
   };
 
