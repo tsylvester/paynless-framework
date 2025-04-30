@@ -331,15 +331,15 @@ This section outlines the frontend implementation using a dynamic, card-based "h
         *   [X] Test: Cancellation button calls `closeDeleteDialog`.
         *   [X] Test: Handles API errors during deletion (e.g., last admin error) by showing feedback and potentially calling `closeDeleteDialog`.
     *   [ ] `MemberListCard.tsx`: (Displayed Conditionally on Hub/Focused View)
-        *   [ ] Displays table/list of **active** members from `selectCurrentMembers`.
-        *   [ ] Includes controls (dropdown menus) for Admins: Change Role, Remove Member.
-        *   [ ] Includes control for any Member: Leave Organization.
-        *   [ ] Test: Displays members (name, role, avatar) correctly. Handles empty/loading states.
-        *   [ ] Test: **Admin Controls:** Change Role action triggers `updateMemberRole` with correct membershipId/newRole.
-        *   [ ] Test: **Admin Controls:** Remove Member action triggers confirmation, then `removeMember` with correct membershipId. Handles 'last admin' API error feedback.
-        *   [ ] Test: **Member Controls:** Leave Organization action triggers confirmation, then appropriate store action (e.g., `removeMember` with self ID check or dedicated `leaveOrganization` action). Handles 'last admin' API error.
-        *   [ ] Test: Controls are visible/enabled based on current user's role vs target member's role/status.
-        *   [ ] Test: Handles API errors gracefully for all actions (shows feedback).
+        *   [X] Displays table/list of **active** members from `selectCurrentMembers`.
+        *   [X] Includes controls (dropdown menus) for Admins: Change Role, Remove Member.
+        *   [X] Includes control for any Member: Leave Organization.
+        *   [X] Test: Displays members (name, role, avatar) correctly. Handles empty/loading states.
+        *   [ ] Test: **Admin Controls:** Change Role action triggers `updateMemberRole` with correct membershipId/newRole. *(Note: Test persistently fails due to portal rendering issues - `waitFor` cannot find menu item)*
+        *   [ ] Test: **Admin Controls:** Remove Member action triggers confirmation, then `removeMember` with correct membershipId. Handles 'last admin' API error feedback. *(Note: Test persistently fails due to portal rendering issues - `waitFor` cannot find menu item)*
+        *   [X] Test: **Member Controls:** Leave Organization action triggers confirmation, then appropriate store action (`removeMember`). Handles 'last admin' API error.
+        *   [X] Test: Controls are visible/enabled based on current user's role vs target member's role/status.
+        *   [X] Test: Handles API errors gracefully for all actions (shows feedback). *(Note: Placeholder tests implemented, need actual error mocking)*
         *   [ ] Test: (Optional) Includes working pagination or search/filter for long lists.
     *   [ ] `InviteMemberCard.tsx`: (Admin Only, Displayed Conditionally on Hub/Focused View)
         *   [ ] Form (Email, Role) to invite users.

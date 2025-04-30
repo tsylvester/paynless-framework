@@ -2,7 +2,6 @@
 
 import React from 'react';
 import { useOrganizationStore } from '@paynless/store';
-import { OrganizationMemberWithProfile } from '@paynless/types';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'; // Shadcn Card
 import {
   Table,
@@ -18,150 +17,160 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
+import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Button } from '@/components/ui/button'; // Shadcn Button
 import { useCurrentUser } from '../../hooks/useCurrentUser'; 
-
-// Helper function to get initials
-const getInitials = (firstName?: string | null, lastName?: string | null): string => {
-  const firstInitial = firstName?.charAt(0) ?? '';
-  const lastInitial = lastName?.charAt(0) ?? '';
-  return `${firstInitial}${lastInitial}`.toUpperCase() || 'U'; // Default to 'U' if no names
-};
-
-// Helper function to construct full name
-const getFullName = (firstName?: string | null, lastName?: string | null): string => {
-  return [firstName, lastName].filter(Boolean).join(' ') || 'Unknown User';
-};
+import { MoreHorizontal } from "lucide-react";
+import { logger } from '@paynless/utils'; // Keep logger for potential error logging
 
 export const MemberListCard: React.FC = () => {
   const {
     currentOrganizationMembers,
-    isLoading,
-    updateMemberRole, 
-    removeMember,     
-    currentOrganizationId, // Keep for potential use in actions
+    isLoading: isOrgLoading,
+    selectCurrentUserRoleInOrg,
+    updateMemberRole, // <<< Get action from store
+    removeMember,     // <<< Get action from store
+    // TODO: Add removeMember and updateMemberRole actions from store
   } = useOrganizationStore();
   
-  const { user: currentUser } = useCurrentUser();
-  
-  // Derive current user role locally
-  const currentUserMembership = currentOrganizationMembers.find(m => m.user_id === currentUser?.id);
-  const currentUserRoleInOrg = currentUserMembership?.role;
+  const { user: currentUser, isLoading: isUserLoading } = useCurrentUser();
+  const isLoading = isOrgLoading || isUserLoading;
+  const currentUserRole = selectCurrentUserRoleInOrg();
+  const currentUserId = currentUser?.id;
 
-  // Placeholder actions
-  const handleChangeRole = (membershipId: string, currentRole: 'admin' | 'member') => {
-    const newRole = currentRole === 'admin' ? 'member' : 'admin';
-    console.log(`TODO: Change role of ${membershipId} to ${newRole}`);
-    // updateMemberRole(membershipId, newRole);
+  // Placeholder handlers - Replace with actual store calls
+  const handleRoleChange = (membershipId: string, newRole: 'admin' | 'member') => {
+    logger.debug(`[MemberListCard] Attempting role change for ${membershipId} to ${newRole}`);
+    updateMemberRole(membershipId, newRole); // <<< Use store action
+    // TODO: Add error handling/feedback based on API response
   };
 
-  const handleRemoveMember = (membershipId: string) => {
-    console.log(`TODO: Remove member ${membershipId}`);
-    // removeMember(membershipId);
+  const handleRemove = (membershipId: string) => {
+    logger.debug(`[MemberListCard] Attempting removal for ${membershipId}`);
+    // TODO: Add confirmation dialog
+    removeMember(membershipId); // <<< Use store action
+    // TODO: Add error handling/feedback
   };
 
-  const handleLeaveOrganization = (membershipId: string) => {
-    console.log(`TODO: Leave organization for membership ${membershipId}`);
-    // removeMember(membershipId);
+  const handleLeave = (membershipId: string) => {
+    // console.error(`[DEBUG] handleLeave called for ${membershipId}`); // <<< REMOVE DEBUG LOG
+    logger.debug(`[MemberListCard] Attempting leave for ${membershipId}`);
+    // TODO: Add confirmation dialog
+    removeMember(membershipId); // <<< Use store action (assuming leave = remove self)
+    // TODO: Add error handling/feedback
   };
 
-  const isLoadingMembers = isLoading; 
+  if (isLoading && (!currentOrganizationMembers || currentOrganizationMembers.length === 0)) {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle>Members</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <p>Loading members...</p>
+        </CardContent>
+      </Card>
+    );
+  }
 
-  // Define columns for shadcn Table
-  // Note: shadcn Table structure is different, often defined directly in JSX
+  if (!currentOrganizationMembers || currentOrganizationMembers.length === 0) {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle>Members</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <p>No members found.</p>
+        </CardContent>
+      </Card>
+    );
+  }
 
   return (
     <Card>
       <CardHeader>
         <CardTitle>Members</CardTitle>
-        {/* Add other header elements if needed */}
       </CardHeader>
       <CardContent>
-        {isLoadingMembers && currentOrganizationMembers.length === 0 ? (
-          <div className="flex justify-center items-center p-4">
-            {/* Use shadcn Skeleton or a simple text/spinner */}
-            Loading members...
-          </div>
-        ) : currentOrganizationMembers.length === 0 ? (
-           <p className="text-muted-foreground p-4 text-center">No members found.</p>
-        ) : (
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Name</TableHead>
-                <TableHead>Role</TableHead>
-                <TableHead className="text-right">Actions</TableHead>
-              </TableRow>
-            </TableHeader>
-            {/* Use imported OrganizationMemberWithProfile type */}
-            <TableBody>
-              {currentOrganizationMembers.map((item: OrganizationMemberWithProfile) => {
-                const profile = item.user_profiles; // Use the correct property name
-                const fullName = getFullName(profile?.first_name, profile?.last_name);
-                const initials = getInitials(profile?.first_name, profile?.last_name);
-                // Determine email - use current user's email if it's them, else placeholder
-                const displayEmail = currentUser?.id === item.user_id 
-                                     ? currentUser?.email ?? 'No email' 
-                                     : 'Email not available'; // Placeholder
-                
-                return (
-                  <TableRow key={item.id}>
-                    <TableCell className="font-medium">
-                      <div className="flex items-center gap-2">
-                         <Avatar className="h-8 w-8">
-                            {/* No avatar_url available in type */}
-                            <AvatarImage src={undefined} alt={fullName} /> 
-                            <AvatarFallback>{initials}</AvatarFallback>
-                         </Avatar>
-                         <div>
-                            <div>{fullName}</div>
-                            <div className="text-xs text-muted-foreground">{displayEmail}</div>
-                         </div>
+        <Table className="relative w-full overflow-x-auto" data-slot="table-container">
+          <TableHeader>
+            <TableRow>
+              <TableHead>Name</TableHead>
+              <TableHead>Role</TableHead>
+              <TableHead className="text-right">Actions</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {currentOrganizationMembers.map((member) => {
+              const profile = member.user_profiles;
+              const isCurrentUser = member.user_id === currentUserId;
+              const isAdmin = currentUserRole === 'admin';
+              const canAdministerMember = isAdmin && !isCurrentUser; // Admin can manage others
+              const initials = profile?.first_name && profile?.last_name
+                                ? `${profile.first_name.charAt(0)}${profile.last_name.charAt(0)}`
+                                : 'U';
+              const fullName = profile ? `${profile.first_name || ''} ${profile.last_name || ''}`.trim() : 'Unknown User';
+              const displayEmail = 'Email not available';
+
+              return (
+                <TableRow key={member.id}>
+                  <TableCell className="font-medium">
+                    <div className="flex items-center gap-2">
+                      <Avatar className="h-8 w-8" data-slot="avatar">
+                        <AvatarFallback data-slot="avatar-fallback">{initials.toUpperCase()}</AvatarFallback>
+                      </Avatar>
+                      <div>
+                        <div>{fullName}</div>
+                        <div className="text-xs text-muted-foreground">{displayEmail}</div> 
                       </div>
-                    </TableCell>
-                    <TableCell>{item.role}</TableCell>
-                    <TableCell className="text-right">
-                      {currentUser?.id === item.user_id ? (
-                       <Button 
-                         size="sm" 
-                         variant="outline" 
-                         className='text-destructive border-destructive hover:bg-destructive/10'
-                         onClick={() => handleLeaveOrganization(item.id)}
-                        >
-                          Leave
-                        </Button>
-                    ) : currentUserRoleInOrg === 'admin' ? (
+                    </div>
+                  </TableCell>
+                  <TableCell>{member.role}</TableCell>
+                  <TableCell className="text-right">
+                    {isCurrentUser ? (
+                      <Button 
+                        variant="destructive"
+                        size="sm"
+                        onClick={() => handleLeave(member.id)}
+                        disabled={isLoading} // Disable during any loading
+                      >
+                        Leave
+                      </Button>
+                    ) : canAdministerMember ? (
                       <DropdownMenu>
                         <DropdownMenuTrigger asChild>
                           <Button variant="ghost" className="h-8 w-8 p-0">
                             <span className="sr-only">Open menu</span>
+                            <MoreHorizontal className="h-4 w-4" />
                           </Button>
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="end">
-                          <DropdownMenuItem 
-                            onClick={() => handleChangeRole(item.id, item.role as 'admin' | 'member')}
-                           >
-                             {item.role === 'admin' ? 'Make Member' : 'Make Admin'}
-                          </DropdownMenuItem>
+                          {member.role === 'member' ? (
+                            <DropdownMenuItem onClick={() => handleRoleChange(member.id, 'admin')}>
+                              Make Admin
+                            </DropdownMenuItem>
+                          ) : (
+                            <DropdownMenuItem onClick={() => handleRoleChange(member.id, 'member')}>
+                              Make Member
+                            </DropdownMenuItem>
+                          )}
                           <DropdownMenuItem 
                             className="text-destructive focus:text-destructive focus:bg-destructive/10"
-                            onClick={() => handleRemoveMember(item.id)}
-                           >
+                            onClick={() => handleRemove(member.id)}
+                          >
                             Remove Member
                           </DropdownMenuItem>
                         </DropdownMenuContent>
                       </DropdownMenu>
                     ) : (
-                      <span>-</span> 
+                      <span>-</span>
                     )}
-                    </TableCell>
-                  </TableRow>
-                );
-              })}
-            </TableBody>
-          </Table>
-        )}
+                  </TableCell>
+                </TableRow>
+              );
+            })}
+          </TableBody>
+        </Table>
       </CardContent>
     </Card>
   );

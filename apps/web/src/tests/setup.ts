@@ -50,8 +50,8 @@ afterAll(() => {
 });
 
 // Initialize API client using environment variables
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+const supabaseUrl = process.env['VITE_SUPABASE_URL'];
+const supabaseAnonKey = process.env['VITE_SUPABASE_ANON_KEY'];
 
 if (!supabaseUrl || !supabaseAnonKey) {
     console.error('Error: Missing Supabase environment variables (VITE_SUPABASE_URL, VITE_SUPABASE_ANON_KEY) for test setup.');
