@@ -1,6 +1,9 @@
 'use client';
 
 import React from 'react';
+import { useForm } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
+import * as z from 'zod';
 import { useOrganizationStore } from '@paynless/store';
 import { Card, CardHeader, CardTitle, CardContent, CardFooter } from '@/components/ui/card';
 import { Button } from "@/components/ui/button"
@@ -13,30 +16,60 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
+import { 
+    Form, FormControl, FormDescription, FormField, FormItem, FormLabel, FormMessage 
+} from "@/components/ui/form"; // Import RHF components
+import { toast } from 'sonner';
+import { logger } from '@paynless/utils';
 
-// TODO: Add form handling (react-hook-form, zod) for validation
+// Define Zod schema for validation
+const inviteSchema = z.object({
+  email: z.string().email({ message: "Invalid email address." }).min(1, { message: "Email is required." }),
+  role: z.enum(['member', 'admin'], { required_error: "Role is required." }),
+});
+
+type InviteFormValues = z.infer<typeof inviteSchema>;
 
 export const InviteMemberCard: React.FC = () => {
   const {
-    inviteUser, // Action needed
-    isLoading, // Use main loading for now
+    inviteUser, 
+    isLoading, // Use store's loading for general state if needed, formState better for button
     currentOrganizationId,
+    selectCurrentUserRoleInOrg,
   } = useOrganizationStore();
 
-  // Placeholder for form submission
-  const handleInvite = (event: React.FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    console.log('TODO: Handle invite submission');
-    const formData = new FormData(event.currentTarget);
-    const email = formData.get('email') as string;
-    const role = formData.get('role') as string; // Role value from Select
+  const currentUserRole = selectCurrentUserRoleInOrg();
 
-    if (currentOrganizationId && email && role) {
-        console.log(`Inviting ${email} as ${role} to org ${currentOrganizationId}`);
-        // inviteUser(email, role); // Call the actual store action
-    } else {
-        console.error('Missing orgId, email, or role for invite');
-        // TODO: Show user-friendly error
+  // Conditionally render based on role and selected org
+  if (currentUserRole !== 'admin' || !currentOrganizationId) {
+    return null; // Don't render for non-admins or if no org selected
+  }
+
+  const form = useForm<InviteFormValues>({
+    resolver: zodResolver(inviteSchema),
+    defaultValues: {
+      email: '',
+      role: 'member', // Default role
+    },
+  });
+
+  const { formState } = form; // Get form state for disabling button
+
+  const onSubmit = async (values: InviteFormValues) => {
+    if (!currentOrganizationId) {
+        logger.error('[InviteMemberCard] Org ID missing despite check');
+        toast.error('Cannot invite member, organization context is missing.');
+        return;
+    }
+    logger.debug(`[InviteMemberCard] Attempting invite for ${values.email} as ${values.role} to org ${currentOrganizationId}`);
+    try {
+        await inviteUser(values.email, values.role);
+        toast.success(`Invite sent successfully to ${values.email}`);
+        form.reset(); // Reset form on success
+    } catch (error) {
+        logger.error('[InviteMemberCard] Invite failed:', { error });
+        const errorMessage = error instanceof Error ? error.message : 'Failed to send invite. Please try again.';
+        toast.error(errorMessage);
     }
   };
 
@@ -44,42 +77,59 @@ export const InviteMemberCard: React.FC = () => {
     <Card>
       <CardHeader>
         <CardTitle>Invite New Member</CardTitle>
-        {/* <CardDescription>Invite a new user via email.</CardDescription> */}
       </CardHeader>
-      <form onSubmit={handleInvite}>
-        <CardContent className="space-y-4">
-          <div className="space-y-2">
-            <Label htmlFor="email">Email</Label>
-            <Input 
-              id="email" 
+      <Form {...form}>
+        <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6"> 
+          <CardContent className="space-y-4">
+            <FormField
+              control={form.control}
               name="email"
-              type="email" 
-              placeholder="member@example.com" 
-              required 
-             />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="role">Role</Label>
-             <Select name="role" required defaultValue="member"> 
-              <SelectTrigger id="role">
-                <SelectValue placeholder="Select role" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="member">Member</SelectItem>
-                <SelectItem value="admin">Admin</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-        </CardContent>
-        <CardFooter>
-          <Button 
-            type="submit"
-            isLoading={isLoading} // Reflect loading state if applicable
-          >
-            Send Invite
-          </Button>
-        </CardFooter>
-      </form>
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Email</FormLabel>
+                  <FormControl>
+                    <Input 
+                        placeholder="member@example.com" 
+                        type="email"
+                        {...field} 
+                    />
+                  </FormControl>
+                  <FormMessage /> 
+                </FormItem>
+              )}
+            />
+            <FormField
+              control={form.control}
+              name="role"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Role</FormLabel>
+                  <Select onValueChange={field.onChange} defaultValue={field.value} name={field.name}>
+                    <FormControl>
+                      <SelectTrigger id="role" aria-label="Role"> 
+                        <SelectValue placeholder="Select role" />
+                      </SelectTrigger>
+                    </FormControl>
+                    <SelectContent>
+                      <SelectItem value="member">Member</SelectItem>
+                      <SelectItem value="admin">Admin</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+          </CardContent>
+          <CardFooter>
+            <Button 
+              type="submit"
+              disabled={formState.isSubmitting || isLoading} // Disable on submit OR general loading
+            >
+              {formState.isSubmitting ? 'Sending...' : 'Send Invite'}
+            </Button>
+          </CardFooter>
+        </form>
+      </Form>
     </Card>
   );
 }; 
