@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useEffect, useState, useCallback } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 import { useOrganizationStore } from '@paynless/store';
 import { Button } from '@/components/ui/button';
 import { SimpleDropdown } from '@/components/ui/SimpleDropdown';
@@ -10,7 +10,6 @@ import { logger } from '@paynless/utils';
 import { cn } from '@/lib/utils';
 
 export const OrganizationSwitcher: React.FC = () => {
-  const navigate = useNavigate();
   const {
     userOrganizations,
     currentOrganizationId,
@@ -34,31 +33,31 @@ export const OrganizationSwitcher: React.FC = () => {
     // If closing, maybe clear focus or perform other actions
   }, []);
 
+  // Determine if the list is currently loading (specifically for the initial fetch)
+  const isListLoading = isLoading && userOrganizations.length === 0;
+
   useEffect(() => {
-    if (!isLoading && userOrganizations.length === 0) {
-      logger.debug('[OrganizationSwitcher] Fetching user organizations');
-      fetchUserOrganizations();
+    const shouldFetch = userOrganizations.length === 0 && !isLoading;
+    // We don't need to check for user explicitly here, as fetchUserOrganizations internally checks auth
+    // and handles the case where the user might have logged out between renders.
+    if (shouldFetch) {
+      logger.debug('[OrganizationSwitcher] Initial fetch triggered: No orgs loaded and not currently loading.');
+      fetchUserOrganizations(); // Call without params to use store's current page/limit
     }
-  }, [fetchUserOrganizations, isLoading, userOrganizations.length]);
+  }, [userOrganizations.length, isLoading, fetchUserOrganizations]); // Dependencies
 
   const handleSelectOrganization = (orgId: string | null) => {
     // If clicking the currently selected org, deselect it (set to null)
     if (orgId === currentOrganizationId) {
       logger.info(`[OrganizationSwitcher] Deselecting current org: ${orgId}`);
       setCurrentOrganizationId(null);
-      navigate('/organizations'); // Navigate to the hub page
       setIsSwitcherOpen(false); // Close dropdown
       return; // Stop execution here
     }
 
-    // If selecting a *different* org or null (shouldn't happen with above logic, but safe)
+    // If selecting a *different* org
     logger.info(`[OrganizationSwitcher] Setting current org to: ${orgId}`);
     setCurrentOrganizationId(orgId);
-    if (orgId) {
-       navigate(`/organizations/${orgId}`);
-    } else {
-       navigate('/organizations'); 
-    }
     setIsSwitcherOpen(false); // Explicitly close
   };
 
@@ -79,9 +78,9 @@ export const OrganizationSwitcher: React.FC = () => {
           role="combobox"
           aria-expanded={isSwitcherOpen}
           className="w-[200px] justify-between"
-          disabled={isLoading}
+          disabled={isListLoading}
         >
-          {isLoading ? (
+          {isListLoading ? (
             'Loading...'
           ) : (
             <>
@@ -113,11 +112,11 @@ export const OrganizationSwitcher: React.FC = () => {
               </button>
             ))
           ) : (
-            !isLoading && (
+            !isListLoading && (
               <p className="px-2 py-1.5 text-sm text-muted-foreground">No organizations found.</p>
             )
           )}
-          {isLoading && <p className="px-2 py-1.5 text-sm text-muted-foreground">Loading...</p>}
+          {isListLoading && <p className="px-2 py-1.5 text-sm text-muted-foreground">Loading...</p>}
         </div>
 
         <hr className="my-1 border-border" />

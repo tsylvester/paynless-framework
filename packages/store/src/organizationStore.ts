@@ -9,8 +9,8 @@ import {
     MembershipRequest,
     OrganizationState,
     OrganizationActions,
-    PendingInviteWithInviter,
-    PendingRequestWithDetails,
+    //PendingInviteWithInviter,
+    //PendingRequestWithDetails,
 } from '@paynless/types';
 // Import the specific client class and the base api object
 import { 
@@ -40,22 +40,30 @@ interface OrganizationUIActions {
 // We'll use OrganizationStoreType for the create function signature
 
 // --- Initial State (Define using the imported type) ---
+// Define initial values for pagination
+const DEFAULT_PAGE = 1;
+const DEFAULT_PAGE_SIZE = 10; // <<< Change to 10
+
 // Combine the imported state with our UI state
 const initialState: OrganizationState & OrganizationUIState = {
   userOrganizations: [],
   currentOrganizationId: null,
   currentOrganizationDetails: null,
   currentOrganizationMembers: [],
-  currentPendingInvites: [] as PendingInviteWithInviter[],
-  currentPendingRequests: [] as PendingRequestWithDetails[],
+  currentPendingInvites: [], 
+  currentPendingRequests: [], 
   currentInviteDetails: null,
   isLoading: false,
   isFetchingInviteDetails: false,
   fetchInviteDetailsError: null,
   error: null,
   // UI State
-  isCreateModalOpen: false, 
+  isCreateModalOpen: false,
   isDeleteDialogOpen: false,
+  // Pagination State
+  orgListPage: DEFAULT_PAGE,
+  orgListPageSize: DEFAULT_PAGE_SIZE,
+  orgListTotalCount: 0,
 };
 
 // --- Store Implementation ---
@@ -99,46 +107,93 @@ export const useOrganizationStore = create<OrganizationStoreImplementation>()(
       openDeleteDialog: () => set({ isDeleteDialogOpen: true }),
       closeDeleteDialog: () => set({ isDeleteDialogOpen: false }),
 
-      // --- Main Actions (Existing implementations) ---
-      fetchUserOrganizations: async () => {
-        const { _setLoading, _setError } = get();
+      // --- Pagination Actions ---
+      setOrgListPage: (page: number) => {
+        logger.debug(`[OrganizationStore] Setting Org List Page: ${page}`);
+        set({ orgListPage: page });
+        get().fetchUserOrganizations({ page }); // Refetch data for the new page
+      },
+      setOrgListPageSize: (size: number) => {
+        logger.debug(`[OrganizationStore] Setting Org List Page Size: ${size}`);
+        set({ orgListPageSize: size, orgListPage: 1 }); // Reset to page 1 and set new size
+        get().fetchUserOrganizations({ page: 1, limit: size }); // Refetch data with new size
+      },
+
+      // --- Main Actions (Modified fetchUserOrganizations only) ---
+      fetchUserOrganizations: async (options?: { page?: number, limit?: number }) => {
+        const { _setLoading, _setError, orgListPage, orgListPageSize } = get();
+        const currentPage = options?.page ?? orgListPage;
+        const currentLimit = options?.limit ?? orgListPageSize;
+        logger.debug(`[OrganizationStore] Fetching User Orgs - Page: ${currentPage}, Limit: ${currentLimit}`);
+
         _setLoading(true);
         _setError(null); // Clear previous errors
 
-        // Check authentication locally before making API call, even if API uses RLS
         const isAuthenticated = !!useAuthStore.getState().user;
         if (!isAuthenticated) {
             logger.warn('[OrganizationStore] fetchUserOrganizations - User not authenticated. Aborting fetch.');
             _setError('User not authenticated');
-            set({ userOrganizations: [], isLoading: false });
+            // Reset list, total count, and page number on auth error
+            set({ userOrganizations: [], orgListTotalCount: 0, orgListPage: 1, isLoading: false }); 
             return;
         }
 
         try {
           const apiClient = getApiClient();
-          const response = await apiClient.organizations.listUserOrganizations();
+          // Pass page and limit to the API client method
+          const response = await apiClient.organizations.listUserOrganizations(currentPage, currentLimit);
 
-          if (response.error || response.status >= 300) {
-            // Log only the error message or relevant parts
-            const errorLog = { 
-                message: response.error?.message ?? 'Unknown API Error', 
-                code: response.error?.code, 
-                status: response.status 
-            };
-            logger.error('[OrganizationStore] fetchUserOrganizations - API Error', errorLog);
+          // <<< CHANGE TO INFO LEVEL >>>
+          logger.info('[OrganizationStore] fetchUserOrganizations - Raw API response', { 
+            status: response.status, 
+            error: response.error, 
+            data: JSON.stringify(response.data) // Convert data to string for logging if complex
+          });
+
+          if (response.error || response.status >= 300 || !response.data) {
+            logger.error('[OrganizationStore] fetchUserOrganizations - API Error or No Data', { error: response.error, status: response.status, hasData: !!response.data });
             _setError(response.error?.message ?? 'Failed to fetch organizations');
-            set({ userOrganizations: [] }); 
+            // Reset list and total count, keep current page/size
+            set({ userOrganizations: [], orgListTotalCount: 0 }); 
           } else {
-            // Filter out soft-deleted organizations
-            const activeOrgs = (response.data ?? []).filter((org: Organization) => !org.deleted_at);
-            set({ userOrganizations: activeOrgs });
-            _setError(null); // Explicitly clear error on success
+            // We expect PaginatedOrganizationsResponse here
+            // <<< REMOVE JSON.parse(), use response.data directly >>>
+            /*
+            let parsedData: { organizations: Organization[], totalCount: number } | null = null;
+            try {
+              // <<< PARSE THE JSON STRING HERE >>>
+              parsedData = JSON.parse(response.data as any); // Use 'as any' temporarily if TS complains about string type
+            } catch (parseError) {
+                logger.error('[OrganizationStore] fetchUserOrganizations - Failed to parse API response JSON', { rawData: response.data, error: parseError });
+                _setError('Failed to process server response.');
+                set({ userOrganizations: [], orgListTotalCount: 0 }); 
+                return; // Exit if parsing failed
+            }
+            */
+            
+            // Assume response.data is already the parsed object
+            const organizations = response.data.organizations ?? [];
+            const totalCount = response.data.totalCount ?? 0;
+            
+            logger.debug('[OrganizationStore] fetchUserOrganizations - Extracted data:', { organizations, totalCount });
+
+            const activeOrgs = organizations.filter((org: Organization) => !org.deleted_at);
+            
+            logger.debug(`[OrganizationStore] Received ${activeOrgs.length} active orgs, totalCount: ${totalCount}`);
+            set({
+              userOrganizations: activeOrgs,
+              orgListTotalCount: totalCount,
+              // Update page/size state ONLY if they were passed in options (to reflect the current fetch)
+              ...(options?.page !== undefined && { orgListPage: options.page }),
+              ...(options?.limit !== undefined && { orgListPageSize: options.limit }),
+              error: null, // Clear error on success
+            });
           }
         } catch (err: any) {
-           // Log the caught error message
            logger.error('[OrganizationStore] fetchUserOrganizations - Unexpected Error', { message: err?.message });
            _setError(err.message ?? 'An unexpected error occurred');
-           set({ userOrganizations: [] });
+           // Reset list and total count, keep current page/size
+           set({ userOrganizations: [], orgListTotalCount: 0 });
         } finally {
           _setLoading(false);
         }
@@ -175,11 +230,14 @@ export const useOrganizationStore = create<OrganizationStoreImplementation>()(
         }
         // --- END Backend Profile Update ---
 
-        // Optionally trigger fetch for details/members of the new orgId here or let UI do it
+        // <<< REMOVE FETCH TRIGGERS >>>
+        // Fetches should be triggered by page components based on ID change
+        /*
         if (orgId) {
             get().fetchOrganizationDetails(orgId);
             get().fetchCurrentOrganizationMembers();
         }
+        */
         logger.info(`[OrganizationStore] Switched current organization context to: ${orgId}`);
       },
 

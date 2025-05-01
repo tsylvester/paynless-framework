@@ -8,7 +8,6 @@ import { OrganizationSettingsCard } from '../components/organizations/Organizati
 import { MemberListCard } from '../components/organizations/MemberListCard';
 import { InviteMemberCard } from '../components/organizations/InviteMemberCard';
 import { PendingActionsCard } from '../components/organizations/PendingActionsCard';
-import { useCurrentUser } from '../hooks/useCurrentUser'; // Assuming hook to get user info
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'; // Import Alert components
 import { Terminal } from 'lucide-react'; // Example icon for Alert
 import { Skeleton } from '@/components/ui/skeleton'; // Import Skeleton
@@ -17,7 +16,6 @@ import ErrorBoundary from '../components/common/ErrorBoundary'; // Import ErrorB
 export const OrganizationHubPage: React.FC = () => {
   const { 
     userOrganizations,
-    fetchUserOrganizations,
     currentOrganizationId,
     isLoading: isOrgLoading,
     error: orgError, // Get the error state
@@ -26,15 +24,7 @@ export const OrganizationHubPage: React.FC = () => {
     fetchCurrentOrganizationMembers,
   } = useOrganizationStore();
 
-  const { user } = useCurrentUser(); // Get current user details
   const currentUserRole = selectCurrentUserRoleInOrg(); // Call the selector function to get the role
-
-  useEffect(() => {
-    // Fetch organizations when the component mounts or user changes
-    if (user) {
-      fetchUserOrganizations();
-    }
-  }, [fetchUserOrganizations, user]);
 
   // NEW: Effect to fetch details/members whenever currentOrganizationId changes (and is not null)
   // This ensures data is fetched even when the ID is set by hydration from localStorage.

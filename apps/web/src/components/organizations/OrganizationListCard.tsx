@@ -1,6 +1,6 @@
 'use client';
 
-import React from 'react';
+import React, { useEffect } from 'react';
 import { useOrganizationStore } from '@paynless/store';
 import {
   Card, CardHeader, CardTitle, CardContent
@@ -9,6 +9,8 @@ import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { PlusCircle } from 'lucide-react'; // For Create New button
 import { CreateOrganizationModal } from './CreateOrganizationModal'; // Import the modal
+import { PaginationComponent } from '../common/PaginationComponent'; // <<< Import PaginationComponent
+import { Skeleton } from '@/components/ui/skeleton'; // <<< Import Skeleton
 
 // Placeholder for CreateOrganizationModal trigger
 // import { useCreateOrganizationModal } from './CreateOrganizationModal'; 
@@ -22,7 +24,24 @@ export const OrganizationListCard: React.FC = () => {
     // TODO: Consider a specific loading state for list actions if needed
     openCreateModal,
     isCreateModalOpen, // <<< Get the state to control rendering
+    // --- Get Pagination State & Actions ---
+    orgListPage,
+    orgListPageSize,
+    orgListTotalCount,
+    setOrgListPage,
+    setOrgListPageSize,
+    fetchUserOrganizations, // Need this to fetch initially
   } = useOrganizationStore();
+
+  // Fetch initial page on mount
+  useEffect(() => {
+    // Fetch only if not loading and no orgs are present (or if pagination state suggests initial load needed)
+    // Avoid fetching if we already have orgs for the current page > 1 to prevent loops on page load
+    if (!isLoading && userOrganizations.length === 0 && orgListPage === 1) {
+        fetchUserOrganizations({ page: orgListPage, limit: orgListPageSize });
+    }
+    // Depend on fetchUserOrganizations, pageSize, but NOT page or userOrgs to avoid loops
+  }, [fetchUserOrganizations, orgListPageSize, isLoading]); 
 
   // TODO: Get function to open the Create Org Modal
   // const { onOpen: openCreateOrgModal } = useCreateOrganizationModal(); 
@@ -40,26 +59,47 @@ export const OrganizationListCard: React.FC = () => {
     openCreateModal();
   };
 
+  // Handle page change from PaginationComponent
+  const handlePageChange = (newPage: number) => {
+    setOrgListPage(newPage);
+  };
+
+  // Handle page size change from PaginationComponent
+  const handlePageSizeChange = (newSize: number) => {
+    setOrgListPageSize(newSize);
+  };
+
+  // Calculate totalPages for the PaginationComponent conditional rendering
+  // Although PaginationComponent does this internally, we might need it here
+  const totalPages = Math.ceil(orgListTotalCount / orgListPageSize);
+
   return (
     <Card className="h-full flex flex-col">
-      <CardHeader className="flex justify-between items-center">
+      <CardHeader className="flex-row flex justify-between items-center space-x-4">
         <CardTitle>Organizations</CardTitle>
         <Button 
           onClick={handleCreateNewClick} 
           variant="outline"
+          size="sm" // Make button slightly smaller
+          className="shrink-0" // Prevent button from shrinking weirdly
         >
           <PlusCircle className="mr-2 h-4 w-4" />
           Create New
         </Button>
       </CardHeader>
       <Separator />
-      <CardContent className="flex flex-col flex-grow p-4">
+      <CardContent className="flex flex-col flex-grow p-4 space-y-2"> {/* Add space-y for list items */}
         {isLoading && userOrganizations.length === 0 ? (
-          <p className="text-sm text-muted-foreground text-center">Loading...</p>
-        ) : userOrganizations.length === 0 ? (
-          <p className="text-sm text-muted-foreground text-center">No organizations found.</p>
+          // Show skeletons while loading initial list
+          <>
+            <Skeleton className="h-9 w-full" />
+            <Skeleton className="h-9 w-full" />
+            <Skeleton className="h-9 w-full" />
+          </>
+        ) : !isLoading && userOrganizations.length === 0 ? (
+          <p className="text-sm text-muted-foreground text-center py-4">No organizations found.</p>
         ) : (
-          // Replace Listbox with Buttons
+          // Map over the paginated list
           userOrganizations.map((org) => (
             <Button
               key={org.id}
@@ -72,8 +112,25 @@ export const OrganizationListCard: React.FC = () => {
             </Button>
           ))
         )}
+        {/* Spacer to push pagination down if content is short */} 
+        <div className="flex-grow"></div> 
       </CardContent>
-      {/* Render the modal component ONLY if isCreateModalOpen is true */}
+
+      {/* --- Render Pagination Component --- */}
+      {/* Only render pagination if needed (more than one page exists) */}
+      {/* Pass necessary props from the store */}
+      {/* PaginationComponent handles its own visibility based on totalPages > 1 */}
+      <PaginationComponent
+        currentPage={orgListPage}
+        pageSize={orgListPageSize}
+        totalItems={orgListTotalCount}
+        onPageChange={handlePageChange}
+        onPageSizeChange={handlePageSizeChange}
+        // Optional: Define specific page sizes if needed
+        // allowedPageSizes={[5, 10, 20]}
+      />
+      
+      {/* Render the modal component (portal recommended if not already) */}
       {isCreateModalOpen && <CreateOrganizationModal />}
       {/* Optional Footer */}
       {/* <CardFooter>

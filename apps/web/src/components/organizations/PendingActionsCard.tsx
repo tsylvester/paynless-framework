@@ -124,8 +124,9 @@ export const PendingActionsCard: React.FC = () => {
               </TableHeader>
               <TableBody>
                 {currentPendingRequests.map((req: PendingRequestWithDetails) => {
-                  const displayName = req.first_name || req.last_name 
-                                    ? `${req.first_name || ''} ${req.last_name || ''}`.trim()
+                  const profile = req.user_profiles;
+                  const displayName = profile?.first_name || profile?.last_name 
+                                    ? `${profile?.first_name || ''} ${profile?.last_name || ''}`.trim()
                                     : (req.user_email || 'User Profile Pending');
                   return (
                   <TableRow key={req.id}>
