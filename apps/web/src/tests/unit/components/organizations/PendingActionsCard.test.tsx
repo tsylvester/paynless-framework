@@ -3,7 +3,12 @@ import { render, screen, fireEvent } from '@testing-library/react';
 import { vi, describe, it, expect, beforeEach } from 'vitest';
 import { PendingActionsCard } from '@/components/organizations/PendingActionsCard';
 import { useOrganizationStore } from '@paynless/store';
-import { Invite, MembershipRequest, UserProfile } from '@paynless/types';
+import { 
+    PendingInviteWithInviter, 
+    PendingRequestWithDetails
+    // UserProfile // Keep UserProfile if needed for mocks below
+} from '@paynless/types';
+import { formatDistanceToNow } from 'date-fns'; // Keep this for date checks
 
 // Mock the Zustand store
 vi.mock('@paynless/store', () => ({
@@ -11,10 +16,10 @@ vi.mock('@paynless/store', () => ({
 }));
 
 // Helper to create mock date string easily
-const formatDate = (date: Date) => date.toLocaleDateString();
+// REMOVE: const formatDate = (date: Date) => date.toLocaleDateString(); // Using date-fns now
 
-// Mock data
-const mockInvite1: Invite = {
+// Mock data using new types
+const mockInvite1: PendingInviteWithInviter = {
   id: 'invite-123',
   invite_token: 'token123',
   organization_id: 'org-abc',
@@ -24,39 +29,44 @@ const mockInvite1: Invite = {
   status: 'pending',
   created_at: new Date('2023-10-26T10:00:00Z').toISOString(),
   expires_at: null,
+  invited_user_id: null, // Assuming null for this mock
+  // Add the required profile field
+  invited_by_profile: { 
+      first_name: 'Admin', 
+      last_name: 'Inviter' 
+  },
 };
 
-const mockInvite2: Invite = {
+const mockInvite2: PendingInviteWithInviter = {
   id: 'invite-456',
   invite_token: 'token456',
   organization_id: 'org-abc',
   invited_email: 'test2@example.com',
   role_to_assign: 'admin',
-  invited_by_user_id: 'user-admin',
+  invited_by_user_id: 'user-admin2',
   status: 'pending',
   created_at: new Date('2023-10-27T11:00:00Z').toISOString(),
   expires_at: null,
+  invited_user_id: null, // Assuming null for this mock
+   // Add the required profile field (can be null)
+  invited_by_profile: null, 
 };
 
-const mockRequest1: MembershipRequest = {
+const mockRequest1: PendingRequestWithDetails = {
   id: 'req-789',
   user_id: 'user-req1',
   organization_id: 'org-abc',
-  role: 'member', // Role requested often defaults or isn't set until approval
-  status: 'pending',
+  role: 'member', // Role requested
+  status: 'pending_approval', // Use correct status from VIEW
   created_at: new Date('2023-10-28T12:00:00Z').toISOString(),
-  user_profiles: { // Assuming a nested profile structure
-    user_id: 'user-req1',
-    first_name: 'Pending',
-    last_name: 'User1',
-    full_name: 'Pending User1', // Add full_name if used
-    email: 'pending1@example.com', // Add email if available/needed
-    avatar_url: null,
-    billing_address: null,
-    payment_method: null,
-    updated_at: new Date().toISOString(),
-  } as UserProfile,
+  // Directly add profile fields and email from the VIEW type
+  first_name: 'Pending',
+  last_name: 'User1',
+  user_email: 'pending1@example.com',
 };
+
+// UserProfile type might still be needed if used elsewhere in mocks, keep import if so
+// const mockUserProfile: UserProfile = { ... };
 
 describe('PendingActionsCard', () => {
   const mockCancelInvite = vi.fn();
@@ -73,6 +83,7 @@ describe('PendingActionsCard', () => {
       cancelInvite: mockCancelInvite,
       approveRequest: mockApproveRequest,
       denyRequest: mockDenyRequest,
+      fetchCurrentOrganizationMembers: vi.fn(), // Add mock fetch
     });
   });
 
@@ -104,15 +115,21 @@ describe('PendingActionsCard', () => {
       cancelInvite: mockCancelInvite,
       approveRequest: mockApproveRequest,
       denyRequest: mockDenyRequest,
+      fetchCurrentOrganizationMembers: vi.fn(),
     });
     render(<PendingActionsCard />);
     expect(screen.getByText(mockInvite1.invited_email)).toBeInTheDocument();
     expect(screen.getByText(mockInvite1.role_to_assign)).toBeInTheDocument();
-    expect(screen.getByText(formatDate(new Date(mockInvite1.created_at)))).toBeInTheDocument();
+    // Check for inviter name
+    expect(screen.getByText('Admin Inviter')).toBeInTheDocument(); 
+    // Check date format using date-fns (relative)
+    expect(screen.getByText(formatDistanceToNow(new Date(mockInvite1.created_at), { addSuffix: true }))).toBeInTheDocument();
     
     expect(screen.getByText(mockInvite2.invited_email)).toBeInTheDocument();
     expect(screen.getByText(mockInvite2.role_to_assign)).toBeInTheDocument();
-    expect(screen.getByText(formatDate(new Date(mockInvite2.created_at)))).toBeInTheDocument();
+    // Check for fallback inviter name
+    expect(screen.getByText('Unknown')).toBeInTheDocument(); 
+    expect(screen.getByText(formatDistanceToNow(new Date(mockInvite2.created_at), { addSuffix: true }))).toBeInTheDocument();
 
     // Check for cancel buttons with the updated text
     const cancelButtons = screen.getAllByRole('button', { name: "Cancel" });
@@ -127,11 +144,13 @@ describe('PendingActionsCard', () => {
        cancelInvite: mockCancelInvite,
        approveRequest: mockApproveRequest,
        denyRequest: mockDenyRequest,
+       fetchCurrentOrganizationMembers: vi.fn(),
     });
      render(<PendingActionsCard />);
-     // Use full_name from mock data
-     expect(screen.getByText(mockRequest1.user_profiles!.full_name!)).toBeInTheDocument(); 
-     expect(screen.getByText(formatDate(new Date(mockRequest1.created_at)))).toBeInTheDocument();
+     // Check for display name and email
+     expect(screen.getByText('Pending User1')).toBeInTheDocument(); 
+     expect(screen.getByText('pending1@example.com')).toBeInTheDocument(); 
+     expect(screen.getByText(formatDistanceToNow(new Date(mockRequest1.created_at), { addSuffix: true }))).toBeInTheDocument();
      
      expect(screen.getByRole('button', { name: /approve/i })).toBeInTheDocument();
      expect(screen.getByRole('button', { name: /deny/i })).toBeInTheDocument();

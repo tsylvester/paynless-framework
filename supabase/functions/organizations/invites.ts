@@ -508,19 +508,14 @@ export async function handleListPending(
     }
 
     // 2. Fetch pending invites (from invites where status = 'pending')
-    const { data: pendingInvites, error: invitesError } = await supabaseClient
+    const { data: invites, error: invitesError } = await supabaseClient
         .from('invites')
+        // --- Select inviter profile details --- 
         .select(`
-            id, 
-            invite_token, 
-            organization_id, 
-            invited_email, 
-            role_to_assign, 
-            invited_by_user_id, 
-            status, 
-            created_at, 
-            expires_at
+            *,
+            invited_by_profile:user_profiles!invites_invited_by_user_id_fkey ( first_name, last_name )
         `)
+        // --- End Select --- 
         .eq('organization_id', orgId)
         .eq('status', 'pending');
 
@@ -530,22 +525,25 @@ export async function handleListPending(
     }
 
     // +++ ADD DEFAULTING FOR INVITES +++
-    const invites = pendingInvites || []; 
+    const invitesData = invites || []; 
     // +++++++++++++++++++++++++++++++++++
 
-    // 3. Fetch pending member requests (members with status='pending')
-    const { data: pendingRequestsData, error: requestsError } = await supabaseClient
-        .from('organization_members')
-        .select(`
+    // 3. Fetch pending join requests (from the new view)
+    const { data: pendingRequests, error: requestsError } = await supabaseClient
+        .from('v_pending_membership_requests') // <<< Use the VIEW name
+        .select(` 
             id, 
             user_id, 
-            role, 
-            status,
+            organization_id, 
+            status, 
             created_at,
-            user_profiles ( first_name, last_name ) 
-        `)
-        .eq('organization_id', orgId)
-        .eq('status', 'pending');
+            role, 
+            first_name, 
+            last_name,
+            user_email
+        `) // <<< Select columns from the VIEW
+        .eq('organization_id', orgId);
+        // No need for .eq('status', 'pending_approval') as the VIEW is already filtered
 
     if (requestsError) {
         console.error(`[invites.ts List Pending] Error fetching pending requests for org ${orgId}:`, requestsError);
@@ -553,11 +551,11 @@ export async function handleListPending(
     }
 
     // Ensure we return arrays even if data is null
-    const pendingRequests = pendingRequestsData || [];
+    const pendingRequestsData = pendingRequests || [];
 
     // +++ USE THE DEFAULTED VARIABLE and CORRECT KEY NAME +++
-    console.log(`[invites.ts List Pending] Found ${invites.length} invites and ${pendingRequests.length} requests for org ${orgId}.`);
-    return createSuccessResponse({ invites: invites, pendingRequests }, 200, req); // Changed pendingInvites key to invites
+    console.log(`[invites.ts List Pending] Found ${invitesData.length} invites and ${pendingRequestsData.length} requests for org ${orgId}.`);
+    return createSuccessResponse({ invites: invitesData, pendingRequests: pendingRequestsData }, 200, req); // Changed invites key to invitesData
     // ++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 }
 

@@ -321,8 +321,10 @@ This section outlines the frontend implementation using a dynamic, card-based "h
     *   [X] `PendingActionsCard.tsx`: (Admin Only, Displayed Conditionally)
         *   [X] Displays list/table of pending join requests (using constructed `displayName` from `user_profiles`).
         *   [X] Displays list/table of outgoing pending invites (using `invited_email`).
-        *   [ ] **(Data)** Determine how to display inviter name for pending invites (requires join or separate fetch).
-        *   [ ] **(Data)** Determine how to display *requesting user's email* for pending requests (requires joining/fetching from `auth.users` or adjusting schema/RLS - see Future Scope note on email handling).
+        *   [X] **(Data)** Enhance backend (`handleListPending`/VIEW `v_pending_membership_requests`) to JOIN and return:
+            *   [X] Inviter's profile (`first_name`, `last_name`) for pending invites.
+            *   [X] Requesting user's email for pending requests.
+        *   [X] **(UI)** Update `PendingActionsCard.tsx` to display inviter name and requester email.
         *   [X] Includes controls for Admins: Approve/Deny Request, Cancel Invite.
         *   [X] Test: Visibility is correctly controlled (admin only).
         *   [X] Test: Displays pending requests correctly (user name, date). Handles empty state.
@@ -393,6 +395,19 @@ This section outlines the frontend implementation using a dynamic, card-based "h
     *   [ ] orgStore.invite.ts handles invite-specific actions like `acceptInvite`, `declineInvite`, `fetchInviteDetails`.
     *   [ ] orgStore.request.ts handles `requestJoin`, `approveRequest`, `denyRequest`.
     *   [ ] orgStore.ui.ts manages UI-related state, starting with the `isCreateModalOpen` state and its actions (`openCreateModal`, `closeCreateModal`), and adding `isDeleteDialogOpen`, `openDeleteDialog`, `closeDeleteDialog`.
+*   [ ] **Implement Pagination:**
+    *   [X] Add pagination controls to `OrganizationListCard` if list exceeds threshold (e.g., 10).
+    *   [ ] Add pagination controls to `MemberListCard` if list exceeds threshold (e.g., 10-20).
+    *   [X] Update corresponding store actions/API calls to support pagination parameters.
+    *   [X] Add dropdown selector for pagination sizes 
+    *   [ ] Make pagination a component for easy reuse 
+    *   [ ] Add search component
+    *   [ ] Add filter component 
+    *   [ ] Add comma parsing for multiple invites
+    *   [ ] Fix dropdown in Members card Actions field
+    *   [ ] Change Orgs page to flex-grid with multiple card sizes, 1y, 2y, 3y, 1x, 2x, 3x 
+    *   [ ] Components choose card size dynamically based on content.
+    *   [ ] Preset size list for pagination (10, 25, 50, all)
 *   [ ] **Implement `PublicRoute` Component:**
     *   [ ] Create `PublicRoute.tsx` in `src/components/auth`.
     *   [ ] Implement logic to redirect authenticated users away from public-only pages (e.g., to `/dashboard`).

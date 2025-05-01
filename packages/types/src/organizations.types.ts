@@ -50,8 +50,8 @@ export interface OrganizationState {
   currentOrganizationId: string | null;
   currentOrganizationDetails: Organization | null;
   currentOrganizationMembers: OrganizationMemberWithProfile[];
-  currentPendingInvites: Invite[]; // Use DB-derived Invite type
-  currentPendingRequests: MembershipRequest[]; // Use MembershipRequest type
+  currentPendingInvites: PendingInviteWithInviter[];
+  currentPendingRequests: PendingRequestWithDetails[];
   currentInviteDetails: InviteDetails | null; // Details of an invite being viewed/acted upon
   isLoading: boolean;
   isFetchingInviteDetails: boolean; // Loading state specifically for invite details

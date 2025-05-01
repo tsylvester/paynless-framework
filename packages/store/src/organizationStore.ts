@@ -9,6 +9,8 @@ import {
     MembershipRequest,
     OrganizationState,
     OrganizationActions,
+    PendingInviteWithInviter,
+    PendingRequestWithDetails,
 } from '@paynless/types';
 // Import the specific client class and the base api object
 import { 
@@ -44,8 +46,8 @@ const initialState: OrganizationState & OrganizationUIState = {
   currentOrganizationId: null,
   currentOrganizationDetails: null,
   currentOrganizationMembers: [],
-  currentPendingInvites: [],
-  currentPendingRequests: [],
+  currentPendingInvites: [] as PendingInviteWithInviter[],
+  currentPendingRequests: [] as PendingRequestWithDetails[],
   currentInviteDetails: null,
   isLoading: false,
   isFetchingInviteDetails: false,
