@@ -18,8 +18,16 @@ const mockAiApi = createMockAiApiClient();
 const navigateMock = vi.fn();
 
 // Mock dependencies
-// Mock the entire @paynless/api module
+// // Mock the entire @paynless/api module
+// /* // <<< REMOVE Global vi.mock START >>>
+// vi.mock('@paynless/api', async (importOriginal) => {
+//     // ... (keep mock implementation details)
+// });
+// 
+// vi.mock('./authStore');
+// */ // <<< REMOVE Global vi.mock END >>>
 
+// +++ RESTORE Global vi.mock START +++
 vi.mock('@paynless/api', async (importOriginal) => {
     // +++ Define Mock Error Class INSIDE the factory +++
     class MockAuthRequiredError extends Error {
@@ -35,7 +43,7 @@ vi.mock('@paynless/api', async (importOriginal) => {
         ...actualApiModule, // Spread original module first
         // --- Overwrite specific parts ---
         AiApiClient: vi.fn(() => mockAiApi),
-        AuthRequiredError: MockAuthRequiredError, 
+        AuthRequiredError: MockAuthRequiredError, // Export the mock error
         api: { 
             ...actualApiModule.api, 
             post: vi.fn(),
@@ -44,7 +52,6 @@ vi.mock('@paynless/api', async (importOriginal) => {
             delete: vi.fn(),
             ai: () => mockAiApi,
         },
-        // <<< Mock the getApiClient EXPORTED FUNCTION >>>
         getApiClient: vi.fn(() => ({ 
             post: vi.fn(), 
             get: vi.fn(),
@@ -59,7 +66,13 @@ vi.mock('@paynless/api', async (importOriginal) => {
     };
 });
 
-vi.mock('./authStore');
+vi.mock('./authStore', () => {
+    const mockGetState = vi.fn(); // Mock for the static getState method
+    const mockUseAuthStoreHook = vi.fn(() => ({ /* Mock return value if hook called directly */ })); 
+    mockUseAuthStoreHook.getState = mockGetState;
+    return { useAuthStore: mockUseAuthStoreHook }; // Export the correctly structured mock
+});
+// +++ RESTORE Global vi.mock END +++
 
 // Helper to define mock auth state with required fields
 const mockAuthSession: Session = {
@@ -103,7 +116,7 @@ const resetStore = () => {
     resetMockAiApiClient(mockAiApi);
     
     // +++ Reset the mocked getApiClient FUNCTION +++
-    const getApiClientMock = vi.mocked(getApiClient); // <<< Mock the imported function
+    const getApiClientMock = vi.mocked(getApiClient);
     // If getApiClient has been called, reset the mocks on its *return value*
     if (getApiClientMock.mock.results[0]?.value) {
         const mockApiClientInstance = getApiClientMock.mock.results[0].value;
@@ -116,7 +129,7 @@ const resetStore = () => {
     // +++ End Reset +++
 
     // Reset base api mocks if they are used directly elsewhere
-    vi.mocked(baseApi.post).mockClear(); 
+    vi.mocked(baseApi.post).mockClear();
     vi.mocked(baseApi.get).mockClear();
 
     // +++ Clear localStorage mocks +++
@@ -135,7 +148,7 @@ const resetStore = () => {
     });
 };
 
-beforeEach(() => {
+beforeEach(async () => {
   resetStore();
 });
 
@@ -150,12 +163,16 @@ describe('aiStore - checkAndReplayPendingChatAction', () => {
     const store = useAiStore.getState();
     const initialState = { ...store };
 
+    // // +++ Dynamically import mocked api for assertion +++
+    // const { api: mockedApi } = await import('@paynless/api');
+
     // Act
     await store.checkAndReplayPendingChatAction();
 
     // Assert
     expect(localStorage.getItem).toHaveBeenCalledWith('pendingAction');
-    expect(baseApi.post).not.toHaveBeenCalled(); // Use baseApi mock
+    // expect(mockedApi.post).not.toHaveBeenCalled(); // <<< Use dynamically imported mock
+    expect(baseApi.post).not.toHaveBeenCalled(); // <<< Revert to top-level import
     expect(useAiStore.getState()).toEqual(initialState); 
   });
 
@@ -171,12 +188,16 @@ describe('aiStore - checkAndReplayPendingChatAction', () => {
     const store = useAiStore.getState();
     const initialState = { ...store };
 
+    // // +++ Dynamically import mocked api for assertion +++
+    // const { api: mockedApi } = await import('@paynless/api');
+
     // Act
     await store.checkAndReplayPendingChatAction();
 
     // Assert
     expect(localStorage.getItem).toHaveBeenCalledWith('pendingAction');
-    expect(baseApi.post).not.toHaveBeenCalled(); // Use baseApi mock
+    // expect(mockedApi.post).not.toHaveBeenCalled(); // <<< Use dynamically imported mock
+    expect(baseApi.post).not.toHaveBeenCalled(); // <<< Revert to top-level import
     expect(useAiStore.getState()).toEqual(initialState); 
   });
 
@@ -189,19 +210,28 @@ describe('aiStore - checkAndReplayPendingChatAction', () => {
         returnPath: '/chat'
     };
     localStorage.setItem('pendingAction', JSON.stringify(chatAction));
-    vi.mocked(useAuthStore.getState).mockReturnValue({ 
+
+    // // +++ Dynamically import mocked authStore +++
+    // const { useAuthStore: mockedAuthStore } = await import('./authStore');
+    
+    // vi.mocked(mockedAuthStore.getState).mockReturnValue({ // <<< Use dynamically imported mock
+    vi.mocked(useAuthStore.getState).mockReturnValue({ // <<< Revert to top-level import
         ...mockInitialAuthState,
         session: null, 
         user: null 
     }); 
     const store = useAiStore.getState();
+    
+    // // +++ Dynamically import mocked api for assertion +++
+    // const { api: mockedApi } = await import('@paynless/api');
 
     // Act
     await store.checkAndReplayPendingChatAction();
 
     // Assert
     expect(localStorage.getItem).toHaveBeenCalledWith('pendingAction');
-    expect(baseApi.post).not.toHaveBeenCalled(); // Use baseApi mock
+    // expect(mockedApi.post).not.toHaveBeenCalled(); // <<< Keep using dynamic api mock
+    expect(baseApi.post).not.toHaveBeenCalled(); // <<< Revert to top-level import
     expect(useAiStore.getState().aiError).toBe('Authentication required to replay pending action.');
     expect(useAiStore.getState().currentChatMessages).toEqual([]); 
   });
@@ -230,7 +260,11 @@ describe('aiStore - checkAndReplayPendingChatAction', () => {
 
     localStorage.setItem('pendingAction', JSON.stringify(pendingChatAction));
 
-    vi.mocked(useAuthStore.getState).mockReturnValue({ 
+    // // +++ Dynamically import mocked authStore +++
+    // const { useAuthStore: mockedAuthStore } = await import('./authStore');
+
+    // vi.mocked(mockedAuthStore.getState).mockReturnValue({ // <<< Use dynamically imported mock
+    vi.mocked(useAuthStore.getState).mockReturnValue({ // <<< Revert to top-level import
         ...mockInitialAuthState,
         session: { ...mockAuthSession, access_token: mockToken }, 
         user: mockAuthUser,
@@ -242,7 +276,10 @@ describe('aiStore - checkAndReplayPendingChatAction', () => {
         resolveApiPost = resolve;
     });
     // Mock the base api.post used by replay
-    const mockedBaseApiPost = vi.mocked(baseApi.post).mockReturnValue(apiPostPromise);
+    // // +++ Dynamically import mocked api for setting return value +++
+    // const { api: mockedApi } = await import('@paynless/api');
+    // const mockedBaseApiPost = vi.mocked(mockedApi.post).mockReturnValue(apiPostPromise);
+    const mockedBaseApiPost = vi.mocked(baseApi.post).mockReturnValue(apiPostPromise); // <<< Revert to top-level import
     
     const store = useAiStore.getState();
     const setSpy = vi.spyOn(useAiStore, 'setState');
@@ -310,14 +347,21 @@ describe('aiStore - checkAndReplayPendingChatAction', () => {
       };
 
       localStorage.setItem('pendingAction', JSON.stringify(pendingChatAction));
-      vi.mocked(useAuthStore.getState).mockReturnValue({
+      // // +++ Dynamically import mocked authStore +++
+      // const { useAuthStore: mockedAuthStore } = await import('./authStore');
+      
+      // vi.mocked(mockedAuthStore.getState).mockReturnValue({ // <<< Use dynamically imported mock
+      vi.mocked(useAuthStore.getState).mockReturnValue({ // <<< Revert to top-level import
           ...mockInitialAuthState,
           session: { ...mockAuthSession, access_token: mockToken },
           user: mockAuthUser,
           navigate: navigateMock // Ensure navigate is mocked here too
       });
       // Mock the base api.post to return an error
-      const mockedBaseApiPost = vi.mocked(baseApi.post).mockResolvedValue(apiError);
+      // // +++ Dynamically import mocked api for setting return value +++
+      // const { api: mockedApi } = await import('@paynless/api');
+      // const mockedBaseApiPost = vi.mocked(mockedApi.post).mockResolvedValue(apiError);
+      const mockedBaseApiPost = vi.mocked(baseApi.post).mockResolvedValue(apiError); // <<< Revert to top-level import
       const store = useAiStore.getState();
 
       // Act
@@ -353,18 +397,30 @@ describe('aiStore - checkAndReplayPendingChatAction', () => {
         };
         localStorage.setItem('pendingAction', JSON.stringify(pendingChatAction));
 
-        vi.mocked(useAuthStore.getState).mockReturnValue({
+        // // +++ Dynamically import mocked authStore +++
+        // const { useAuthStore: mockedAuthStore } = await import('./authStore');
+
+        // vi.mocked(mockedAuthStore.getState).mockReturnValue({ // <<< Use dynamically imported mock
+        vi.mocked(useAuthStore.getState).mockReturnValue({ // <<< Revert to top-level import
             ...mockInitialAuthState,
             session: { ...mockAuthSession, access_token: mockToken },
             user: mockAuthUser,
             navigate: navigateMock
         });
 
-        // +++ Mock the API call directly for this test +++
-        const simulatedAuthError = new AuthRequiredError('Session expired during replay');
-        // Mock the specific API call method expected to be used by checkAndReplayPendingChatAction
-        // We need to access the 'api' export from the mocked module.
-        const apiPostMock = vi.spyOn(apiModule.api, 'post').mockRejectedValue(simulatedAuthError);
+        // // +++ Mock the API call directly for this test +++
+        // const simulatedAuthError = new AuthRequiredError('Session expired during replay'); // <<< Still uses top-level import, which is now the mock
+        // // Mock the specific API call method expected to be used by checkAndReplayPendingChatAction
+        // // We need to access the 'api' export from the mocked module.
+        // // const apiPostMock = vi.spyOn(apiModule.api, 'post').mockRejectedValue(simulatedAuthError);
+        // // +++ Dynamically import mocked api for setting return value +++
+        // const { api: mockedApi } = await import('@paynless/api'); 
+        // const apiPostMock = vi.spyOn(mockedApi, 'post').mockRejectedValue(simulatedAuthError);
+        // // +++ End Mocking +++
+
+        // +++ Mock API using top-level imports +++
+        const simulatedAuthError = new AuthRequiredError('Session expired during replay'); // <<< Use top-level (now mocked) AuthRequiredError
+        const apiPostMock = vi.spyOn(baseApi, 'post').mockRejectedValue(simulatedAuthError); // <<< Use top-level baseApi
         // +++ End Mocking +++
 
         const store = useAiStore.getState();
