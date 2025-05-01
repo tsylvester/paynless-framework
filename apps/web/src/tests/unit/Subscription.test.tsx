@@ -60,8 +60,8 @@ const authStoreInitialState = {
 
 const subscriptionStoreInitialState = {
   availablePlans: [
-      { id: 'plan-1', name: 'Basic Plan', stripePriceId: 'price_basic', amount: 1000, currency: 'usd', interval: 'month', intervalCount: 1, description: { subtitle: 'Basic Sub', features: ['Feature 1'] } } as SubscriptionPlan,
-      { id: 'plan-2', name: 'Pro Plan', stripePriceId: 'price_pro', amount: 5000, currency: 'usd', interval: 'month', intervalCount: 1, description: { subtitle: 'Pro Sub', features: ['Feature A', 'Feature B'] } } as SubscriptionPlan
+      { id: 'plan-1', name: 'Basic Plan', stripe_price_id: 'price_basic', amount: 1000, currency: 'usd', interval: 'month', interval_count: 1, description: { subtitle: 'Basic Sub', features: ['Feature 1'] } } as unknown as SubscriptionPlan,
+      { id: 'plan-2', name: 'Pro Plan', stripe_price_id: 'price_pro', amount: 5000, currency: 'usd', interval: 'month', interval_count: 1, description: { subtitle: 'Pro Sub', features: ['Feature A', 'Feature B'] } } as unknown as SubscriptionPlan
   ],
   userSubscription: {
     id: 'sub-db-id-123', 
@@ -69,8 +69,8 @@ const subscriptionStoreInitialState = {
     stripeSubscriptionId: 'stripe_sub_abc', // Make sure this exists for cancel
     currentPeriodEnd: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(), // Add date for display
     cancelAtPeriodEnd: false, // Add for display logic
-    plan: { id: 'plan-1', name: 'Basic Plan', stripePriceId: 'price_basic', amount: 1000, currency: 'usd', interval: 'month', intervalCount: 1 } 
-  } as UserSubscription,
+    plan: { id: 'plan-1', name: 'Basic Plan', stripe_price_id: 'price_basic', amount: 1000, currency: 'usd', interval: 'month', interval_count: 1 } 
+  } as unknown as UserSubscription,
   isSubscriptionLoading: false,
   hasActiveSubscription: true, // This is usually derived state, but set for mock
   isTestMode: false,

@@ -21,6 +21,7 @@ export const OrganizationListCard: React.FC = () => {
     isLoading, // Use the main store loading state for now
     // TODO: Consider a specific loading state for list actions if needed
     openCreateModal,
+    isCreateModalOpen, // <<< Get the state to control rendering
   } = useOrganizationStore();
 
   // TODO: Get function to open the Create Org Modal
@@ -72,8 +73,8 @@ export const OrganizationListCard: React.FC = () => {
           ))
         )}
       </CardContent>
-      {/* Render the modal component (it will control its own visibility) */}
-      <CreateOrganizationModal />
+      {/* Render the modal component ONLY if isCreateModalOpen is true */}
+      {isCreateModalOpen && <CreateOrganizationModal />}
       {/* Optional Footer */}
       {/* <CardFooter>
         <p>Footer content if needed</p>

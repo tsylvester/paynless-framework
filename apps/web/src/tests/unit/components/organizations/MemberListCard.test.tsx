@@ -2,6 +2,7 @@ import React from 'react';
 // Use custom render and re-exported testing-library utils
 import { render, screen, fireEvent, act, within, waitFor } from '@/tests/utils'; 
 import { vi, describe, it, expect, beforeEach, afterEach, Mock } from 'vitest';
+import userEvent from '@testing-library/user-event';
 import { MemberListCard } from '@/components/organizations/MemberListCard';
 import { useOrganizationStore } from '@paynless/store';
 import { OrganizationMemberWithProfile, UserProfile, OrganizationMember } from '@paynless/types'; // Import UserProfile type
@@ -131,9 +132,9 @@ const mockUpdateOrganization = vi.fn();
 const mockOpenDeleteDialog = vi.fn();
 
 // Helper to set up mock return values for stores
-const setupMocks = (currentUserProfile: UserProfile | null, members: OrganizationMemberWithProfile[] | null = mockMembers, isLoading = false) => {
+const setupMocks = (currentUserProfile: UserProfile | null, members: OrganizationMemberWithProfile[] = mockMembers, isLoading = false) => {
   const currentUserId = currentUserProfile?.id;
-  const currentUserMembership = members?.find(m => m.user_id === currentUserId);
+  const currentUserMembership = members.find(m => m.user_id === currentUserId);
   const currentUserRole = currentUserMembership?.role ?? null;
 
   // Use vi.mocked to get the typed mock function
@@ -217,14 +218,7 @@ describe('MemberListCard', () => {
   // --- Rendering and Display Tests ---
   it('should display the list of active members with name, role, and avatar', () => {
     // Arrange
-    setupMocks('admin'); // Current user is admin
-    // Set member list state
-    act(() => {
-        useOrganizationStore.setState({
-            currentOrganizationMembers: mockMembers, 
-            isLoading: false
-        });
-    });
+    setupMocks(adminProfile, mockMembers);
     
     // Act
     render(<MemberListCard />);
@@ -243,7 +237,7 @@ describe('MemberListCard', () => {
     expect(within(adminRow).getByText('Admin')).toBeInTheDocument(); // <<< Correct: Check within row for badge text
     
     // Check for 'member' text within the member's row
-    expect(within(memberOneRow).getByText('member', { exact: false })).toBeInTheDocument();
+    expect(within(memberOneRow).getByText('member', { exact: true })).toBeInTheDocument();
 
     // Check for Avatars (using fallback text)
     expect(screen.getByText('AU')).toBeInTheDocument();
@@ -277,6 +271,8 @@ describe('MemberListCard', () => {
 
   // --- Admin Action Tests ---
   describe('Admin Actions', () => {
+    const user = userEvent.setup();
+    
     beforeEach(() => {
       setupMocks(adminProfile); // Current user is Admin
     });
@@ -287,7 +283,7 @@ describe('MemberListCard', () => {
       const dropdownTrigger = within(targetMemberRow).getByRole('button', { name: 'Open menu' });
       
       // Click the trigger
-      fireEvent.click(dropdownTrigger); 
+      await user.click(dropdownTrigger); 
       
       // Wait for the trigger to enter the 'open' state
       await waitFor(() => {
@@ -298,10 +294,8 @@ describe('MemberListCard', () => {
       const makeAdminItem = await waitFor(() => within(document.body).findByRole('menuitem', { name: 'Make Admin' }));
       expect(makeAdminItem).toBeInTheDocument(); 
       
-      // Click the menu item - RE-ADD ACT
-      await act(async () => { 
-        fireEvent.click(makeAdminItem);
-      });
+      // Click the menu item
+      await user.click(makeAdminItem);
       expect(mockUpdateMemberRole).toHaveBeenCalledWith('mem-member-1', 'admin');
     });
 
@@ -311,7 +305,7 @@ describe('MemberListCard', () => {
       const dropdownTrigger = within(targetMemberRow).getByRole('button', { name: 'Open menu' });
       
       // Click the trigger
-      fireEvent.click(dropdownTrigger); 
+      await user.click(dropdownTrigger); 
       
       // Wait for the trigger to enter the 'open' state
       await waitFor(() => {
@@ -322,11 +316,14 @@ describe('MemberListCard', () => {
       const removeItem = await waitFor(() => within(document.body).findByRole('menuitem', { name: 'Remove Member' }));
       expect(removeItem).toBeInTheDocument(); 
       
-      // Click the menu item - RE-ADD ACT
-      // TODO: Add test for confirmation dialog once implemented
-      await act(async () => { 
-        fireEvent.click(removeItem);
-      });
+      // Click the menu item
+      await user.click(removeItem);
+      
+      // <<< ADD: Wait for dialog and click confirm >>>
+      const dialog = await screen.findByRole('alertdialog');
+      const confirmButton = await within(dialog).findByRole('button', { name: /Continue|Confirm|Remove/i });
+      await user.click(confirmButton);
+      
       expect(mockRemoveMember).toHaveBeenCalledWith('mem-member-2');
     });
 
@@ -385,6 +382,8 @@ describe('MemberListCard', () => {
 
   // --- Member Action Tests ---
   describe('Member Actions', () => {
+    const user = userEvent.setup();
+    
     beforeEach(() => {
       setupMocks(memberProfile1); // Current user is Member One
     });
@@ -402,12 +401,20 @@ describe('MemberListCard', () => {
     it('should show Leave button and call store removeMember when member clicks Leave', async () => {
       render(<MemberListCard />);
       const selfRow = findMemberRow(memberProfile1);
-      const leaveButton = within(selfRow).getByRole('button', { name: 'Leave' });
-      expect(leaveButton).toBeInTheDocument();
-      // TODO: Add test for confirmation dialog once implemented
-      await act(async () => { // Use async act consistency
-        fireEvent.click(leaveButton);
-      });
+      const leaveButtonTrigger = within(selfRow).getByRole('button', { name: 'Leave' });
+      expect(leaveButtonTrigger).toBeInTheDocument();
+      
+      // Click the trigger to open the dialog
+      // await act(async () => { // Use async act consistency
+      //   fireEvent.click(leaveButtonTrigger);
+      // });
+      await user.click(leaveButtonTrigger);
+
+      // Wait for the dialog and click confirm
+      const dialog = await screen.findByRole('alertdialog');
+      const confirmButton = await within(dialog).findByRole('button', { name: /Continue|Confirm|Leave/i });
+      await user.click(confirmButton);
+      
       expect(mockRemoveMember).toHaveBeenCalledWith('mem-member-1');
     });
 
@@ -421,9 +428,18 @@ describe('MemberListCard', () => {
       
       render(<MemberListCard />);
       const selfRow = findMemberRow(soleAdminProfile);
-      const leaveButton = within(selfRow).getByRole('button', { name: 'Leave' });
+      const leaveButtonTrigger = within(selfRow).getByRole('button', { name: 'Leave' });
+      
+      // Click trigger
+      await user.click(leaveButtonTrigger);
+      
+      // Wait for dialog & click confirm
+      const dialog = await screen.findByRole('alertdialog');
+      const confirmButton = await within(dialog).findByRole('button', { name: /Continue|Confirm|Leave/i });
+      await user.click(confirmButton);
+      
       // TODO: Mock removeMember to throw specific error, assert toast/feedback
-      await act(async () => { fireEvent.click(leaveButton); });
+      // await act(async () => { fireEvent.click(leaveButton); });
       expect(mockRemoveMember).toHaveBeenCalledWith('mem-sole-admin');
     });
     
@@ -433,9 +449,18 @@ describe('MemberListCard', () => {
       setupMocks(memberProfile1); // Regular member
       render(<MemberListCard />);
       const selfRow = findMemberRow(memberProfile1);
-      const leaveButton = within(selfRow).getByRole('button', { name: 'Leave' });
+      const leaveButtonTrigger = within(selfRow).getByRole('button', { name: 'Leave' });
+      
+      // Click trigger
+      await user.click(leaveButtonTrigger);
+      
+      // Wait for dialog & click confirm
+      const dialog = await screen.findByRole('alertdialog');
+      const confirmButton = await within(dialog).findByRole('button', { name: /Continue|Confirm|Leave/i });
+      await user.click(confirmButton);
+      
       // TODO: Mock removeMember to throw generic error, assert toast/feedback
-      await act(async () => { fireEvent.click(leaveButton); });
+      // await act(async () => { fireEvent.click(leaveButton); });
       expect(mockRemoveMember).toHaveBeenCalledWith('mem-member-1');
     });
   });
