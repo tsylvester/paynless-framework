@@ -1,7 +1,7 @@
 import React from 'react';
 import { render, screen, fireEvent, act, within, waitFor } from '@/tests/utils'; 
 import userEvent from '@testing-library/user-event';
-import { vi, describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { vi, describe, it, expect, beforeEach, afterEach, beforeAll } from 'vitest';
 import { InviteMemberCard } from '@/components/organizations/InviteMemberCard';
 import { useOrganizationStore } from '@paynless/store';
 import { useCurrentUser } from '../../../../hooks/useCurrentUser';
@@ -68,6 +68,24 @@ const setupMocks = (role: 'admin' | 'member' | null, isLoading = false, orgId: s
     });
 };
 
+// +++ Add PointerEvent stubs for Radix UI testing in JSDOM +++
+beforeAll(() => {
+  // JSDOM doesn't implement PointerEvent methods like hasPointerCapture
+  if (!window.Element.prototype.setPointerCapture) {
+    window.Element.prototype.setPointerCapture = vi.fn();
+  }
+  if (!window.Element.prototype.hasPointerCapture) {
+    window.Element.prototype.hasPointerCapture = vi.fn(() => false);
+  }
+  if (!window.Element.prototype.releasePointerCapture) {
+    window.Element.prototype.releasePointerCapture = vi.fn();
+  }
+  // +++ Add scrollIntoView stub +++
+  if (!window.Element.prototype.scrollIntoView) {
+    window.Element.prototype.scrollIntoView = vi.fn();
+  }
+});
+// +++ End PointerEvent stubs +++
 
 describe('InviteMemberCard', () => {
     beforeEach(() => {
@@ -164,14 +182,12 @@ describe('InviteMemberCard', () => {
 
         // Open select and choose 'admin' using userEvent
         await user.click(roleSelectTrigger); // Open the dropdown
-        await waitFor(() => {}); // <<< Add a small wait
-        const adminOption = await screen.findByRole('option', { name: /Admin/i }); // Wait for option
+        const adminOption = await waitFor(() => 
+            screen.getByRole('option', { name: /Admin/i })
+        );
         await user.click(adminOption); // Click the option
 
         // No need for act wrapper with userEvent click
-        // await act(async () => {
-        //   fireEvent.click(submitButton);
-        // });
         await user.click(submitButton); // Click submit button
 
         expect(mockInviteUser).toHaveBeenCalledTimes(1);
