@@ -148,7 +148,7 @@ describe('OrganizationSwitcher Component', () => {
     expect(mockNavigate).toHaveBeenCalledWith(`/organizations/${org2.id}`);
   });
 
-  it('does NOT call setCurrentOrganizationId or navigate when the current org is clicked', () => {
+  it('calls setCurrentOrganizationId(null) and navigates to /organizations when the current org is clicked', () => {
     setupStore({ currentOrganizationId: org1.id }); 
     renderWithRouter(<OrganizationSwitcher />);
     
@@ -156,8 +156,10 @@ describe('OrganizationSwitcher Component', () => {
     // This button is the one inside the dropdown list, not the trigger
     fireEvent.click(org1Button);
 
-    expect(mockSetCurrentOrganizationId).not.toHaveBeenCalled();
-    expect(mockNavigate).not.toHaveBeenCalled();
+    // Now expect it to be called with null
+    expect(mockSetCurrentOrganizationId).toHaveBeenCalledWith(null);
+    // Expect navigation to the hub page
+    expect(mockNavigate).toHaveBeenCalledWith('/organizations');
   });
 
   it('renders the "Manage Organizations" link correctly', () => {

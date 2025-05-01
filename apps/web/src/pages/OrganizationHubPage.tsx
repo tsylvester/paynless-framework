@@ -18,7 +18,6 @@ export const OrganizationHubPage: React.FC = () => {
   const { 
     userOrganizations,
     fetchUserOrganizations,
-    setCurrentOrganizationId,
     currentOrganizationId,
     isLoading: isOrgLoading,
     error: orgError, // Get the error state
@@ -36,19 +35,6 @@ export const OrganizationHubPage: React.FC = () => {
       fetchUserOrganizations();
     }
   }, [fetchUserOrganizations, user]);
-
-  useEffect(() => {
-    // Set the initial current organization if not already set and organizations are loaded
-    // Make sure not to set if there was an error fetching
-    if (!currentOrganizationId && userOrganizations.length > 0 && !orgError) {
-      // Use the correct property 'id' from the Organization type
-      setCurrentOrganizationId(userOrganizations[0].id);
-    }
-    // If an error occurs *after* an org was selected, maybe clear selection?
-    // else if (orgError && currentOrganizationId) {
-    //   setCurrentOrganizationId(null); 
-    // }
-  }, [currentOrganizationId, userOrganizations, setCurrentOrganizationId, orgError]);
 
   // NEW: Effect to fetch details/members whenever currentOrganizationId changes (and is not null)
   // This ensures data is fetched even when the ID is set by hydration from localStorage.

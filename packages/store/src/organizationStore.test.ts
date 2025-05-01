@@ -213,22 +213,42 @@ describe('OrganizationStore', () => {
      const orgId1 = 'org-1';
      const mockOrgDetailsData: Organization = mockOrg1; 
      const mockMembersWithProfile: OrganizationMemberWithProfile[] = [mockMember1, mockMember2];
+     let updateProfileMock: MockInstance;
 
-    it('should update state and trigger fetches on new ID', async () => {
+     // Setup mock for updateProfile before each test in this suite
+     beforeEach(() => {
+        updateProfileMock = vi.mocked(useAuthStore.getState()).updateProfile;
+        // Assume updateProfile succeeds by default in these tests unless overridden
+        updateProfileMock.mockResolvedValue(mockMember1Profile); 
+     });
+
+     afterEach(() => {
+        updateProfileMock.mockClear();
+     });
+
+    it('should update state, trigger fetches, and update profile on new ID', async () => {
       mockOrgApi.getOrganizationDetails.mockResolvedValue({ status: 200, data: mockOrgDetailsData as any, error: undefined });
       mockOrgApi.getOrganizationMembers.mockResolvedValue({ status: 200, data: mockMembersWithProfile, error: undefined });
       useOrganizationStore.setState({ error: 'Old error' });
+      
       await act(async () => { 
           useOrganizationStore.getState().setCurrentOrganizationId(orgId1);
-          await new Promise(setImmediate);
+          // Allow microtasks (like the async profile update) to settle
+          await new Promise(setImmediate); 
       });
+      
       const state = useOrganizationStore.getState();
-      expect(getApiClientSpy).toHaveBeenCalled();
+      expect(state.currentOrganizationId).toBe(orgId1);
       expect(state.currentOrganizationDetails).toEqual(mockOrgDetailsData); 
       expect(state.currentOrganizationMembers).toEqual(mockMembersWithProfile);
       expect(state.error).toBeNull(); 
+
+      // Verify fetches were called
       expect(mockOrgApi.getOrganizationDetails).toHaveBeenCalledWith(orgId1); 
       expect(mockOrgApi.getOrganizationMembers).toHaveBeenCalledWith(orgId1);
+
+      // Verify profile update was called
+      expect(updateProfileMock).toHaveBeenCalledWith({ last_selected_org_id: orgId1 });
     });
 
      it('should do nothing if setting the same ID', () => {
@@ -240,9 +260,11 @@ describe('OrganizationStore', () => {
        expect(getApiClientSpy).not.toHaveBeenCalled();
        expect(mockOrgApi.getOrganizationDetails).not.toHaveBeenCalled();
        expect(mockOrgApi.getOrganizationMembers).not.toHaveBeenCalled();
+       // Verify profile update was NOT called
+       expect(updateProfileMock).not.toHaveBeenCalled();
      });
 
-     it('should clear state when setting ID to null', () => {
+     it('should clear state and update profile when setting ID to null', async () => {
         useOrganizationStore.setState({ 
             currentOrganizationId: orgId1, 
             currentOrganizationDetails: mockOrg1, 
@@ -252,7 +274,12 @@ describe('OrganizationStore', () => {
         mockOrgApi.getOrganizationDetails.mockClear(); 
         mockOrgApi.getOrganizationMembers.mockClear();
         getApiClientSpy.mockClear();
-       act(() => { useOrganizationStore.getState().setCurrentOrganizationId(null); }); 
+       await act(async () => { 
+           useOrganizationStore.getState().setCurrentOrganizationId(null);
+           // Allow microtasks (like the async profile update) to settle
+           await new Promise(setImmediate); 
+       }); 
+       
        const state = useOrganizationStore.getState();
        expect(getApiClientSpy).not.toHaveBeenCalled();
        expect(state.currentOrganizationId).toBeNull();
@@ -261,6 +288,8 @@ describe('OrganizationStore', () => {
        expect(state.error).toBeNull(); 
        expect(mockOrgApi.getOrganizationDetails).not.toHaveBeenCalled();
        expect(mockOrgApi.getOrganizationMembers).not.toHaveBeenCalled();
+       // Verify profile update was called with null
+       expect(updateProfileMock).toHaveBeenCalledWith({ last_selected_org_id: null });
      });
   });
 
@@ -336,6 +365,12 @@ describe('OrganizationStore', () => {
       // Mock the subsequent calls triggered by setCurrentOrganizationId
       mockOrgApi.getOrganizationDetails.mockResolvedValue({ status: 200, data: createdOrg });
       mockOrgApi.getOrganizationMembers.mockResolvedValue({ status: 200, data: [] }); // Assuming empty members for new org initially
+
+      // --- ADD MOCK FOR PROFILE UPDATE --- 
+      const updateProfileMock = vi.mocked(useAuthStore.getState()).updateProfile;
+      // Assume profile update succeeds 
+      updateProfileMock.mockResolvedValue(mockMember1Profile); // Use existing mock data if suitable
+      // --- END ADD MOCK ---
 
       // Get the mocked navigate function directly from the current mock state
       const mockNavigate = vi.mocked(useAuthStore.getState()).navigate;

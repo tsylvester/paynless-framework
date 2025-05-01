@@ -16,6 +16,7 @@ import { api, getApiClient } from '@paynless/api'
 import { analytics } from '@paynless/analytics'
 import { SupabaseClient } from '@supabase/supabase-js'
 import { useNotificationStore } from './notificationStore'
+import { useOrganizationStore } from './organizationStore'
 
 // +++ Add Session Mapping Helper +++
 const mapSupabaseSession = (supabaseSession: SupabaseSession | null): Session | null => {
@@ -379,8 +380,22 @@ export function initAuthListener(
         logger.debug(`[AuthListener Helper] Profile fetch completed. Duration: ${profileEndTime - startTime}ms`);
 
         if (profileResponse.data?.profile) {
+            const fetchedProfile = profileResponse.data.profile;
             logger.debug(`[AuthListener Helper] Profile fetched successfully.`);
-            useAuthStore.setState({ profile: profileResponse.data.profile, error: null });
+            useAuthStore.setState({ profile: fetchedProfile, error: null });
+
+            // --- BEGIN Initialize Organization Context --- 
+            const lastSelectedOrgId = fetchedProfile.last_selected_org_id; 
+            logger.info(`[AuthListener Helper] Initializing organization context with lastSelectedOrgId: ${lastSelectedOrgId}`);
+            try {
+              useOrganizationStore.getState().setCurrentOrganizationId(lastSelectedOrgId);
+            } catch (orgStoreError) {
+              logger.error('[AuthListener Helper] Failed to set initial organization context:', {
+                 error: orgStoreError instanceof Error ? orgStoreError.message : String(orgStoreError)
+              });
+              // Decide if we need to handle this error more explicitly
+            }
+            // --- END Initialize Organization Context ---
 
             // --- Subscribe to Notifications ---
             try {
@@ -397,12 +412,20 @@ export function initAuthListener(
             logger.error(`[AuthListener Helper] Failed to fetch profile`, { error: profileResponse.error });
             useAuthStore.setState({ profile: null, error: new Error(profileResponse.error?.message || 'Failed fetch profile') });
             // Note: Subscription is NOT initiated if profile fetch fails
+            // Set org context to null if profile fails
+            try {
+                useOrganizationStore.getState().setCurrentOrganizationId(null);
+            } catch (orgStoreError) { /* log */ }
         }
     } catch (asyncError) {
         logger.error(`[AuthListener Helper] Error during profile fetch`, { 
             error: asyncError instanceof Error ? asyncError.message : String(asyncError) 
         });
          useAuthStore.setState({ profile: null, error: new Error('Failed fetch profile') });
+         // Set org context to null if profile fails
+         try {
+             useOrganizationStore.getState().setCurrentOrganizationId(null);
+         } catch (orgStoreError) { /* log */ }
     } 
   };
   // --- End Helper ---

@@ -155,6 +155,24 @@ export const useOrganizationStore = create<OrganizationStoreImplementation>()(
             currentPendingRequests: [],
             error: null, // Clear errors on context switch
         });
+
+        // --- BEGIN Backend Profile Update --- 
+        const userId = useAuthStore.getState().user?.id;
+        if (userId) {
+          // Call updateProfile from authStore asynchronously
+          // We don't await it here to avoid blocking UI state update
+          // Error handling will happen within updateProfile or be logged
+          logger.debug(`[OrganizationStore] Triggering profile update for user ${userId} with last_selected_org_id: ${orgId}`);
+          useAuthStore.getState().updateProfile({ last_selected_org_id: orgId })
+            .catch(err => {
+                // Log error if the async profile update fails, but don't set store error state here
+                logger.error('[OrganizationStore] Background profile update failed:', { userId, orgId, error: err?.message });
+            });
+        } else {
+            logger.warn('[OrganizationStore] Cannot update profile: User ID not found in authStore.');
+        }
+        // --- END Backend Profile Update ---
+
         // Optionally trigger fetch for details/members of the new orgId here or let UI do it
         if (orgId) {
             get().fetchOrganizationDetails(orgId);
@@ -392,8 +410,8 @@ export const useOrganizationStore = create<OrganizationStoreImplementation>()(
               error: null, // Clear error on success
             }));
 
-            // Switch to the new organization
-            setCurrentOrganizationId(newOrg.id);
+            // Switch to the new organization (NO await here)
+            setCurrentOrganizationId(newOrg.id); 
 
             // Navigate to the main organizations page
             const navigate = useAuthStore.getState().navigate;

@@ -42,12 +42,16 @@ export const OrganizationSwitcher: React.FC = () => {
   }, [fetchUserOrganizations, isLoading, userOrganizations.length]);
 
   const handleSelectOrganization = (orgId: string | null) => {
-    if (orgId === currentOrganizationId && isSwitcherOpen) {
-        setIsSwitcherOpen(false); // Close if clicking current org again
-        return; 
+    // If clicking the currently selected org, deselect it (set to null)
+    if (orgId === currentOrganizationId) {
+      logger.info(`[OrganizationSwitcher] Deselecting current org: ${orgId}`);
+      setCurrentOrganizationId(null);
+      navigate('/organizations'); // Navigate to the hub page
+      setIsSwitcherOpen(false); // Close dropdown
+      return; // Stop execution here
     }
-    if (orgId === currentOrganizationId) return;
 
+    // If selecting a *different* org or null (shouldn't happen with above logic, but safe)
     logger.info(`[OrganizationSwitcher] Setting current org to: ${orgId}`);
     setCurrentOrganizationId(orgId);
     if (orgId) {
@@ -98,7 +102,6 @@ export const OrganizationSwitcher: React.FC = () => {
                 key={org.id}
                 onClick={() => handleSelectOrganization(org.id)}
                 className={cn(itemBaseClasses, "justify-between")}
-                disabled={currentOrganizationId === org.id} // Optional: disable current
               >
                 <div className="flex items-center overflow-hidden">
                     <Building className="mr-2 h-4 w-4 flex-shrink-0" />

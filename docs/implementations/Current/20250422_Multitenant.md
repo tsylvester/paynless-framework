@@ -29,22 +29,22 @@ This document outlines the steps for implementing an in-app notification system 
         *   `created_at` (TIMESTAMPTZ DEFAULT now() NOT NULL)
         *   `expires_at` (TIMESTAMPTZ NULL) -- Optional expiration
 *   [X] **Migration:** Create/Update Supabase migration scripts for these tables and constraints.
-    *   [X] **(Updated)** Add/Modify migration script for the `invites` table to include `invited_user_id` (nullable UUID, FK to auth.users) and ensure `invited_email` is NOT NULL. Add indexes on `invite_token`, `organization_id`, `invited_email`, `invited_user_id`, `status`.
+    *   [X] **Add/Modify migration script for the `invites` table to include `invited_user_id` (nullable UUID, FK to auth.users) and ensure `invited_email` is NOT NULL. Add indexes on `invite_token`, `organization_id`, `invited_email`, `invited_user_id`, `status`.
 *   [X] **Test Migration:** Apply migrations locally and verify table structures, defaults, constraints, nullability, and FKs.
-    *   [X] **(Updated)** Verify `invites` table structure, especially `invited_user_id` nullability and FK.
+    *   [X] **Verify `invites` table structure, especially `invited_user_id` nullability and FK.
 
 ### 2.2 Backend Logic (Tenancy)
 
 *   [X] **RLS Policy Checks:** Confirmed existing migrations cover base requirements for `organizations`, `organization_members`. Reviewed/Updated for `invites`:
-    *   [X] **(Update)** `invites`:
+    *   [X] **`invites`:**
         *   `SELECT`: Admins of the related org can select. The invited user can select their own pending invites **IF** (`auth.uid()` matches `invited_user_id`) **OR** (`invited_user_id` IS NULL AND `auth.jwt() ->> 'email'` matches `invited_email`).
         *   `INSERT`: Admins of the related org can insert.
         *   `UPDATE`: The invited user RLS check (`auth.uid() = invited_user_id` or email match) was restored. The `handleAcceptInvite` function now uses a **Service Role client** to bypass RLS for the invite status update after internal validation, due to persistent RLS evaluation issues.
         *   `DELETE`: Admins can delete pending invites in their org.
 *   [X] **Implement RLS Policies:** Applied/Updated the RLS policies via migration scripts.
-    *   [X] **(Update)** Updated RLS policies for `invites` table per the logic above. (**Note:** `organization_members` INSERT policy prevents user self-insertion on invite accept, requiring Service Role client in `handleAcceptInvite`).
+    *   [X] **Updated RLS policies for `invites` table per the logic above. (**Note:** `organization_members` INSERT policy prevents user self-insertion on invite accept, requiring Service Role client in `handleAcceptInvite`).
 *   [X] **Test Migration:** Apply RLS migrations and verify policies.
-    *   [ ] **(Update)** Verify updated `invites` RLS policies.
+    *   [X] **Verify updated `invites` RLS policies.
 *   [X] **Implement Trigger/Function (Last Admin Check):** (Existing)
 *   [X] **Test Migration:** (Existing)
 *   [X] **Implement Trigger Functions (Notifications - Existing):** `notify_org_admins_on_join_request`, `notify_user_on_invite_acceptance`, `notify_user_on_role_change`. (Existing)
@@ -52,16 +52,16 @@ This document outlines the steps for implementing an in-app notification system 
     *   Triggered `AFTER INSERT ON invites WHEN (NEW.status = 'pending')`.
     *   **Logic:** If `NEW.invited_user_id` IS NOT NULL, insert in-app notification for that user AND send email to `NEW.invited_email`. If `NEW.invited_user_id` IS NULL, ONLY send email to `NEW.invited_email` (inviting to sign up).
 *   [X] **Test Migration:** Apply/Test notification trigger migrations.
-    *   [X] **(Updated)** Test updated `notify_user_on_invite` trigger migration logic.
+    *   [X] **Test updated `notify_user_on_invite` trigger migration logic.
 *   [X] **Implement Trigger Function (`restrict_invite_update_fields`):**
     *   Keep existing logic (prevent non-admins from changing fields other than status to accepted/declined).
     *   Verify it doesn't interfere with the `link_pending_invites_on_signup` trigger updating `invited_user_id`.
 *   [X] **Test Migration:** Apply/Test `restrict_invite_update_fields` trigger migration.
-*   [ ] **(NEW)** Implement Trigger Function (`link_pending_invites_on_signup`):
+*   [X] **(NEW)** Implement Trigger Function (`link_pending_invites_on_signup`):
     *   Triggered `AFTER INSERT ON auth.users`.
     *   **Logic:** `UPDATE public.invites SET invited_user_id = NEW.id WHERE invited_email = NEW.email AND invited_user_id IS NULL AND status = 'pending';`
     *   Needs SECURITY DEFINER or elevated privileges to update `public.invites`.
-*   [ ] **(NEW)** Test Migration: Apply/Test `link_pending_invites_on_signup` trigger migration.
+*   [X] **(NEW)** Test Migration: Apply/Test `link_pending_invites_on_signup` trigger migration.
 *   [X] **Backend Edge Functions (`supabase/functions/organizations/index.ts`):**
       *   ... (Keep existing POST/GET/PUT/DELETE /organizations, /organizations/:orgId, /organizations/:orgId/members, etc.) ...
       *   [X] **(Updated) `POST /organizations/:orgId/invites` (`handleCreateInvite`):**
@@ -116,15 +116,15 @@ This document outlines the steps for implementing an in-app notification system 
 ### 2.4 API Client (`@paynless/api`)
 
 *   [X] **Tests:** Write/Update unit tests for `OrganizationApiClient`:
-    *   [X] **(Update)** `inviteUserByEmail(orgId, email, role)`: Mocks POST `/organizations/:orgId/invites` with email payload.
-    *   [X] **(Remove)** `inviteUserById`: No longer needed for frontend.
+    *   [X] **`inviteUserByEmail(orgId, email, role)`:** Mocks POST `/organizations/:orgId/invites` with email payload.
+    *   [X] **`inviteUserById`:** Check implementation in `OrganizationApiClient`.
     *   [X] `acceptOrganizationInvite(inviteToken)`: Mocks POST `/organizations/invites/:inviteToken/accept`.
     *   [X] **(New/Update)** `declineOrganizationInvite(inviteToken)`: Mocks POST `/organizations/invites/:inviteToken/decline`.
     *   [X] **(New/Update)** `getInviteDetails(inviteToken)`: Mocks GET `/organizations/invites/:inviteToken/details`. Requires auth mock.
     *   ... (keep other tests: createOrg, updateOrg, listOrgs, getDetails, getMembers, role update, remove member, deleteOrg, requestJoin, approveJoin, denyJoin, cancelInvite, listPending)
 *   [X] **Implementation:** Add/Update functions in `OrganizationApiClient`.
-    *   [X] **(Update)** `inviteUserByEmail`: Calls backend with email/role payload.
-    *   [X] **(Remove)** `inviteUserById` method.
+    *   [X] **`inviteUserByEmail`:** Calls backend with email/role payload.
+    *   [X] **`inviteUserById` method:** Check current implementation state 
     *   [X] `acceptOrganizationInvite`: Calls POST `/organizations/invites/:token/accept`.
     *   [X] **(New/Update)** `declineOrganizationInvite`: Calls POST `/organizations/invites/:token/decline`.
     *   [X] **(New/Update)** `getInviteDetails`: Calls GET `/organizations/invites/:token/details` (authenticated).
@@ -212,12 +212,12 @@ This section outlines the frontend implementation using a dynamic, card-based "h
 *   [ ] **Layouts (`src/components/layout`):**
     *   [X] Update `Header.tsx`:
         *   [X] Ensure `OrganizationSwitcher.tsx` is included and syncs with `currentOrganizationId`.
-        *   [ ] Add `OrganizationSwitcher` to the mobile menu section for consistency.
+        *   [X] Add `OrganizationSwitcher` to the mobile menu section for consistency.
+        *   [X] **(UI Tweak)** Positioned Notifications icon next to Theme switcher in mobile menu.
         *   [X] **(Dependency)** `OrganizationSwitcher.tsx`: Update its own plan entry to reflect navigation to `/organizations/:orgId`.
-        *   [ ] **(Dependency)** `OrganizationSwitcher.tsx`: Implement "Manage All Organizations" link pointing to `/organizations`.
+        *   [X] **(Dependency)** `OrganizationSwitcher.tsx`: Implement "Manage All Organizations" link pointing to `/organizations`.
     *   [ ] Consider `OrganizationHubLayout.tsx`: (Optional Refactor)
         *   [ ] Create `OrganizationHubLayout.tsx` to encapsulate the responsive two-column grid structure from `OrganizationHubPage.tsx`.
-        *   [ ] Refactor `OrganizationHubPage.tsx` to use this layout component.
 
 *   [ ] **Components (`src/components/auth`):**
     *   [X] `ProtectedRoute.tsx`: 
@@ -228,18 +228,19 @@ This section outlines the frontend implementation using a dynamic, card-based "h
         *   [X] Renders `<CreateOrganizationModal />` alongside children to make it globally available within authenticated routes.
 
 *   [ ] **Components (`src/components/organizations`):**
-    *   [ ] `OrganizationSwitcher.tsx`: (Header Component)
+    *   [X] `OrganizationSwitcher.tsx`: (Header Component)
         *   [X] Displays organizations from `selectUserOrganizations` correctly. Handles empty state.
         *   [X] Dispatches `setCurrentOrganizationId` action correctly on selection.
         *   [X] Visually updates to reflect `currentOrganizationId` changes originating from `OrganizationListCard` or route changes.
         *   [X] Includes a button to open the `CreateOrganizationModal` (via `openCreateModal` store action).
         *   [X] Navigates to `/organizations/:orgId` on selection.
-        *   [ ] Add a "Manage All Organizations" link pointing to `/organizations`.
+        *   [X] Add a "Manage All Organizations" link pointing to `/organizations`.
         *   [X] Test: Displays organizations correctly.
         *   [X] Test: Dispatches action correctly.
         *   [X] Test: Visual updates reflect state.
         *   [X] Test: "Create Organization" button triggers `openCreateModal` store action.
         *   [X] Test: Selection navigates correctly.
+        *   [X] **(Refinement)** Allow clicking the currently selected organization in the dropdown to deselect it (sets `currentOrganizationId` to `null`).
     *   [ ] **REVISED:** `OrganizationListCard.tsx`: (Displayed on `OrganizationHubPage`)
         *   [X] Displays list of user's organizations from `selectUserOrganizations`.
         *   [X] Includes "Create New Organization" button triggering `CreateOrganizationModal`.
@@ -297,7 +298,7 @@ This section outlines the frontend implementation using a dynamic, card-based "h
         *   [X] Test: Handles API errors during deletion.
     *   [X] `MemberListCard.tsx`: (Displayed Conditionally)
         *   [X] Displays table/list of **active** members from `selectCurrentMembers` (using `first_name`, `last_name`).
-        *   [ ] **(UI)** Update component to use `member.user_profiles.first_name` and `last_name` instead of non-existent fields.
+        *   [X] **(UI)** Update component to use `member.user_profiles.first_name` and `last_name` instead of non-existent fields.
         *   [X] Includes controls (dropdown menus) for Admins: Change Role, Remove Member.
         *   [X] Includes control for any Member: Leave Organization.
         *   [X] Test: Displays members (name, role) correctly. Handles empty/loading states.
