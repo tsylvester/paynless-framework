@@ -50,7 +50,7 @@ describe('OrganizationFocusedViewPage', () => {
   // Helper to setup default store state
   const setupStore = (overrides = {}) => {
     const defaultState = {
-      userOrganizations: [{ organization_id: orgIdFromUrl, name: 'Test Org', deleted_at: null }] as Organization[],
+      userOrganizations: [{ id: orgIdFromUrl, name: 'Test Org', deleted_at: null }] as Organization[],
       fetchUserOrganizations: mockFetchUserOrganizations,
       setCurrentOrganizationId: mockSetCurrentOrganizationId,
       currentOrganizationId: null,
@@ -61,7 +61,6 @@ describe('OrganizationFocusedViewPage', () => {
       selectCurrentUserRoleInOrg: mockSelectCurrentUserRole,
       fetchOrganizationDetails: mockFetchOrganizationDetails,
       fetchCurrentOrganizationMembers: mockFetchCurrentOrganizationMembers,
-      fetchUserOrganizations: mockFetchUserOrganizations,
       ...overrides, // Apply test-specific state
     };
     mockUseOrganizationStore.mockReturnValue(defaultState);
@@ -131,59 +130,13 @@ describe('OrganizationFocusedViewPage', () => {
     // e.g., expect(skeletons[0]).toHaveClass('mb-6'); // Title skeleton
   });
 
-  // Component that throws an error to test ErrorBoundary
-  const ThrowingComponent = () => { throw new Error('Test Error'); };
-
-  // NOTE: Skipping this test as mocking/error propagation interaction in Vitest 
-  // is preventing the ErrorBoundary from catching the error correctly in this specific setup.
-  // The ErrorBoundary component itself is verified in its own unit tests.
-  // This behavior should be confirmed via integration/e2e testing.
-  it.skip('displays ErrorBoundary fallback UI when a child card fails', async () => {
-    // Use doMock for scoped mocking
-    vi.doMock('../../../components/organizations/OrganizationDetailsCard', () => ({
-      OrganizationDetailsCard: ThrowingComponent,
-    }));
-
-    // Setup store for a normal loaded state (member role is fine)
-    setupStore({
-      currentOrganizationId: orgIdFromUrl,
-      isLoading: false,
-      currentOrganizationDetails: { id: orgIdFromUrl, name: 'Test Org', deleted_at: null, created_at: '', visibility: 'private' },
-      currentOrganizationMembers: [{ id: 'mem-1', user_id: mockUser.id, role: 'member' }] as any, 
-      selectCurrentUserRole: () => 'member',
-    });
-
-    // Dynamically import the component *after* the mock is applied
-    const { OrganizationFocusedViewPage } = await import('../../../pages/OrganizationFocusedViewPage');
-
-    render(<OrganizationFocusedViewPage />);
-
-    // Check that the original component content IS NOT rendered (because the boundary should have caught the error)
-    expect(screen.queryByTestId('org-details-card')).toBeNull();
-
-    // We still expect the generic error boundary title *if* it renders, 
-    // but the primary check is that the child is gone.
-    // expect(screen.getByText('Something went wrong')).toBeInTheDocument(); 
-    // Note: This test is now weaker as it doesn't confirm the *correct* fallback UI,
-    // only that the crashing component was removed from the tree.
-
-    // IMPORTANT: Check that other parts of the page are still rendered
-    // e.g., the page title (might need to adjust query if name isn't loaded due to error)
-    expect(screen.getByRole('heading', { name: /Test Org/i })).toBeInTheDocument(); 
-    // Check that the *next* card's mock content is rendered (MemberListCard)
-    expect(screen.getByTestId('member-list-card')).toBeInTheDocument();
-
-    // Cleanup the scoped mock
-    vi.doUnmock('../../../components/organizations/OrganizationDetailsCard');
-  });
-
   it('renders correct cards for member role when loaded', () => {
     setupStore({
       currentOrganizationId: orgIdFromUrl, // Ensure correct org is set
       isLoading: false,
       currentOrganizationDetails: { id: orgIdFromUrl, name: 'Test Org', deleted_at: null, created_at: '', visibility: 'private' },
       currentOrganizationMembers: [{ id: 'mem-1', user_id: mockUser.id, role: 'member' }] as any, // Mock member data
-      selectCurrentUserRole: () => 'member',
+      selectCurrentUserRoleInOrg: () => 'member',
     });
     render(<OrganizationFocusedViewPage />);
     expect(screen.getByTestId('org-details-card')).toBeInTheDocument();
@@ -199,7 +152,7 @@ describe('OrganizationFocusedViewPage', () => {
       isLoading: false,
       currentOrganizationDetails: { id: orgIdFromUrl, name: 'Test Org', deleted_at: null, created_at: '', visibility: 'private' },
       currentOrganizationMembers: [{ id: 'mem-1', user_id: mockUser.id, role: 'admin' }] as any, 
-      selectCurrentUserRole: () => 'admin',
+      selectCurrentUserRoleInOrg: () => 'admin',
     });
     render(<OrganizationFocusedViewPage />);
     expect(screen.getByTestId('org-details-card')).toBeInTheDocument();
@@ -233,7 +186,7 @@ describe('OrganizationFocusedViewPage', () => {
     });
     render(<OrganizationFocusedViewPage />);
     await waitFor(() => {
-      expect(mockNavigate).toHaveBeenCalledWith('/organizations?error=not_found');
+      expect(mockNavigate).toHaveBeenCalledWith('/dashboard/organizations?error=deleted');
     });
   });
 
@@ -246,22 +199,29 @@ describe('OrganizationFocusedViewPage', () => {
     });
     render(<OrganizationFocusedViewPage />);
     await waitFor(() => {
-      expect(mockNavigate).toHaveBeenCalledWith('/organizations?error=not_found');
+      expect(mockNavigate).toHaveBeenCalledWith('/dashboard/organizations?error=not_member');
     });
   });
 
   it('redirects if store has an error', async () => {
     setupStore({
       currentOrganizationId: orgIdFromUrl,
-      isLoading: false, 
-      error: 'Failed to fetch details', // Simulate a store error
-      currentOrganizationDetails: null, // Error likely means no details
-      currentOrganizationMembers: [], // And no members
+      isLoading: false,
+      error: 'Failed to fetch',
+      currentOrganizationDetails: { id: orgIdFromUrl, name: 'Test Org' },
+      currentOrganizationMembers: [],
     });
     render(<OrganizationFocusedViewPage />);
     await waitFor(() => {
-      expect(mockNavigate).toHaveBeenCalledWith('/organizations?error=not_found');
+      expect(mockNavigate).toHaveBeenCalledWith('/dashboard/organizations?error=fetch_failed');
     });
   });
+
+  // it('redirects if orgId is missing from URL', () => {
+  //   mockUseParams.mockReturnValue({ orgId: undefined });
+  //   setupStore();
+  //   render(<OrganizationFocusedViewPage />);
+  //   expect(mockNavigate).toHaveBeenCalledWith('/dashboard/organizations'); // Redirect to hub if no ID
+  // });
 
 }); 
