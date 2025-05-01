@@ -210,7 +210,7 @@ This section outlines the frontend implementation using a dynamic, card-based "h
     *   [X] `AcceptInvitePage.tsx`: Implements `/accept-invite/:token`. Handles token processing, user actions, and feedback. (Implementation mostly finished, async tests blocked).
 
 *   [ ] **Layouts (`src/components/layout`):**
-    *   [ ] Update `Header.tsx`:
+    *   [X] Update `Header.tsx`:
         *   [X] Ensure `OrganizationSwitcher.tsx` is included and syncs with `currentOrganizationId`.
         *   [ ] Add `OrganizationSwitcher` to the mobile menu section for consistency.
         *   [X] **(Dependency)** `OrganizationSwitcher.tsx`: Update its own plan entry to reflect navigation to `/organizations/:orgId`.
@@ -219,18 +219,26 @@ This section outlines the frontend implementation using a dynamic, card-based "h
         *   [ ] Create `OrganizationHubLayout.tsx` to encapsulate the responsive two-column grid structure from `OrganizationHubPage.tsx`.
         *   [ ] Refactor `OrganizationHubPage.tsx` to use this layout component.
 
+*   [ ] **Components (`src/components/auth`):**
+    *   [X] `ProtectedRoute.tsx`: 
+        *   [X] Wraps authenticated routes.
+        *   [X] Handles loading state.
+        *   [X] Handles redirection for unauthenticated users.
+        *   [X] Handles role-based access control.
+        *   [X] Renders `<CreateOrganizationModal />` alongside children to make it globally available within authenticated routes.
+
 *   [ ] **Components (`src/components/organizations`):**
     *   [ ] `OrganizationSwitcher.tsx`: (Header Component)
         *   [X] Displays organizations from `selectUserOrganizations` correctly. Handles empty state.
         *   [X] Dispatches `setCurrentOrganizationId` action correctly on selection.
         *   [X] Visually updates to reflect `currentOrganizationId` changes originating from `OrganizationListCard` or route changes.
-        *   [X] Includes a navigational link to `/organizations/new` (Create Org).
+        *   [X] Includes a button to open the `CreateOrganizationModal` (via `openCreateModal` store action).
         *   [X] Navigates to `/organizations/:orgId` on selection.
         *   [ ] Add a "Manage All Organizations" link pointing to `/organizations`.
         *   [X] Test: Displays organizations correctly.
         *   [X] Test: Dispatches action correctly.
         *   [X] Test: Visual updates reflect state.
-        *   [X] Test: Create Org link works.
+        *   [X] Test: "Create Organization" button triggers `openCreateModal` store action.
         *   [X] Test: Selection navigates correctly.
     *   [ ] **REVISED:** `OrganizationListCard.tsx`: (Displayed on `OrganizationHubPage`)
         *   [X] Displays list of user's organizations from `selectUserOrganizations`.

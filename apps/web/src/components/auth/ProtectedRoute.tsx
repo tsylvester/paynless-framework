@@ -2,6 +2,7 @@ import { ReactNode } from 'react';
 import { Navigate, useLocation } from 'react-router-dom';
 import { useAuthStore } from '@paynless/store';
 import { UserRole } from '@paynless/types';
+import { CreateOrganizationModal } from '../organizations/CreateOrganizationModal';
 
 interface ProtectedRouteProps {
   children: ReactNode;
@@ -29,5 +30,11 @@ export function ProtectedRoute({ children, allowedRoles }: ProtectedRouteProps) 
     return <Navigate to="/" />;
   }
   
-  return <>{children}</>;
+  // Render children AND the modal for authenticated users
+  return (
+    <>
+      {children}
+      <CreateOrganizationModal />
+    </>
+  );
 }

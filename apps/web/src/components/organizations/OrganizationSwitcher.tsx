@@ -17,12 +17,14 @@ export const OrganizationSwitcher: React.FC = () => {
     isLoading,
     fetchUserOrganizations,
     setCurrentOrganizationId,
+    openCreateModal,
   } = useOrganizationStore((state) => ({
     userOrganizations: state.userOrganizations,
     currentOrganizationId: state.currentOrganizationId,
     isLoading: state.isLoading,
     fetchUserOrganizations: state.fetchUserOrganizations,
     setCurrentOrganizationId: state.setCurrentOrganizationId,
+    openCreateModal: state.openCreateModal,
   }));
 
   // Keep track of SimpleDropdown open state for potential callback use
@@ -129,15 +131,17 @@ export const OrganizationSwitcher: React.FC = () => {
 
         <hr className="my-1 border-border" />
 
-        {/* Create New Link */}
-        <Link
-            to="/organizations/new"
+        {/* Create New Button */}
+        <button
             className={itemBaseClasses}
-            onClick={() => setIsSwitcherOpen(false)} // Close dropdown on click
+            onClick={() => {
+                setIsSwitcherOpen(false); // Close dropdown
+                openCreateModal(); // Open the modal
+            }}
         >
           <PlusCircle className="mr-2 h-4 w-4" />
           Create Organization
-        </Link>
+        </button>
       </div>
     </SimpleDropdown>
   );

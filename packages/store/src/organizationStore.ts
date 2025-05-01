@@ -361,7 +361,8 @@ export const useOrganizationStore = create<OrganizationStoreImplementation>()(
 
       // --- Add createOrganization Action ---
       createOrganization: async (name: string, visibility: 'private' | 'public' = 'private'): Promise<Organization | null> => {
-        const { _setLoading, _setError } = get(); 
+        // Destructure setCurrentOrganizationId from get()
+        const { _setLoading, _setError, setCurrentOrganizationId } = get(); 
         _setLoading(true);
         _setError(null);
 
@@ -385,18 +386,22 @@ export const useOrganizationStore = create<OrganizationStoreImplementation>()(
             const newOrg: Organization = response.data;
             logger.info(`[OrganizationStore] Successfully created organization ${newOrg.id} (${newOrg.name}).`);
             
-            // Update state: Add new org to the list and potentially set as current
+            // Update state: Add new org to the list
             set((state) => ({
               userOrganizations: [...state.userOrganizations, newOrg],
-              // Optionally set the new org as current immediately
-              // currentOrganizationId: newOrg.id, 
-              // currentOrganizationDetails: newOrg, 
-              // currentOrganizationMembers: [], // Clear members if setting current
               error: null, // Clear error on success
             }));
 
-            // Alternative to updating state directly: Refetch the list
-            // await fetchUserOrganizations(); // Might cause a flicker
+            // Switch to the new organization
+            setCurrentOrganizationId(newOrg.id);
+
+            // Navigate to the main organizations page
+            const navigate = useAuthStore.getState().navigate;
+            if (navigate) {
+              navigate('/organizations');
+            } else {
+              logger.warn('[OrganizationStore] Navigate function not available in authStore.');
+            }
 
             return newOrg; // Return the created org object
           }

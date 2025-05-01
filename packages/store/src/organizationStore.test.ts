@@ -320,30 +320,76 @@ describe('OrganizationStore', () => {
     const newOrgName = 'New Shiny Org';
     const createdOrg: Organization = { ...mockOrg1, id: 'org-new', name: newOrgName };
 
-    it('should call API, update state, and potentially set current org on success', async () => {
+    // Spy on setCurrentOrganizationId BEFORE the test runs
+    let setCurrentOrgIdSpy: MockInstance;
+    beforeEach(() => {
+        // Resetting the store in the main beforeEach might clear the spy, so spy here?
+        // Or spy on the prototype if reset re-creates methods?
+        setCurrentOrgIdSpy = vi.spyOn(useOrganizationStore.getState(), 'setCurrentOrganizationId');
+    });
+    afterEach(() => {
+        setCurrentOrgIdSpy.mockRestore(); // Clean up spy
+    });
+
+    it('should call API, update state, set current org, and navigate on success', async () => {
       mockOrgApi.createOrganization.mockResolvedValue({ status: 201, data: createdOrg });
+      // Mock the subsequent calls triggered by setCurrentOrganizationId
+      mockOrgApi.getOrganizationDetails.mockResolvedValue({ status: 200, data: createdOrg });
+      mockOrgApi.getOrganizationMembers.mockResolvedValue({ status: 200, data: [] }); // Assuming empty members for new org initially
+
+      // Get the mocked navigate function directly from the current mock state
+      const mockNavigate = vi.mocked(useAuthStore.getState()).navigate;
+
       let returnedOrg: Organization | null = null;
       await act(async () => { 
           returnedOrg = await useOrganizationStore.getState().createOrganization(newOrgName);
       });
+
       expect(getApiClientSpy).toHaveBeenCalled();
       expect(mockOrgApi.createOrganization).toHaveBeenCalledWith({ name: newOrgName, visibility: 'private' });
       expect(returnedOrg).toEqual(createdOrg);
+      
       const state = useOrganizationStore.getState();
       expect(state.userOrganizations).toContainEqual(createdOrg); 
-      expect(state.isCreateModalOpen).toBe(false); 
+      expect(state.isCreateModalOpen).toBe(false); // This might be set by the form component, not the store action
       expect(state.error).toBeNull();
+
+      // Verify setCurrentOrganizationId was called
+      expect(setCurrentOrgIdSpy).toHaveBeenCalledWith(createdOrg.id);
+
+      // Verify navigation occurred
+      expect(mockNavigate).toHaveBeenCalledWith('/organizations');
+
+      // Verify the subsequent fetches were called by setCurrentOrganizationId
+      expect(mockOrgApi.getOrganizationDetails).toHaveBeenCalledWith(createdOrg.id);
+      expect(mockOrgApi.getOrganizationMembers).toHaveBeenCalledWith(createdOrg.id);
     });
 
     it('should set error on API failure', async () => {
       const errorMsg = 'Creation failed';
       mockOrgApi.createOrganization.mockResolvedValue({ status: 400, error: { message: errorMsg, code: '400' } });
+      
+      // Get the mocked navigate function directly from the current mock state
+      const mockNavigate = vi.mocked(useAuthStore.getState()).navigate;
+
       await act(async () => { await useOrganizationStore.getState().createOrganization(newOrgName); }); 
+      
       expect(getApiClientSpy).toHaveBeenCalled();
       expect(mockOrgApi.createOrganization).toHaveBeenCalledWith({ name: newOrgName, visibility: 'private' });
+      
       const state = useOrganizationStore.getState();
       expect(state.error).toBe(errorMsg);
-      expect(state.isCreateModalOpen).toBe(false); 
+      expect(state.isCreateModalOpen).toBe(false); // This might be set by the form component
+
+      // Ensure setCurrentOrganizationId and navigate were NOT called on failure
+      expect(setCurrentOrgIdSpy).not.toHaveBeenCalled();
+      // Check if mockNavigate is actually a mock function before asserting
+      if (vi.isMockFunction(mockNavigate)) {
+          expect(mockNavigate).not.toHaveBeenCalled();
+      } else {
+          // Handle case where navigate might legitimately not be a mock in some failure path, though unlikely here
+          // console.warn('Navigate mock was not a function in API failure test');
+      }
     });
   });
 
