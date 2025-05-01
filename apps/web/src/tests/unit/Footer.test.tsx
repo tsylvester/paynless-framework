@@ -22,11 +22,15 @@ describe('Footer Component', () => {
 
   it('should display the copyright notice', () => {
     renderFooter();
-    // Use stringContaining to ignore the dynamic year but match the rest
-    expect(screen.getByText(/Paynless Framework\. All rights reserved\./i)).toBeInTheDocument();
-    // Alternative using regex to match the copyright symbol and year
+    // Find the paragraph containing the copyright notice
+    const copyrightParagraph = screen.getByText((content, element) => {
+      // Check if the element is a paragraph and contains the copyright symbol
+      return element?.tagName.toLowerCase() === 'p' && content.includes('©');
+    });
+    expect(copyrightParagraph).toBeInTheDocument();
+    // Check the full text content using a regex to match the dynamic year and structure
     const currentYear = new Date().getFullYear();
-    expect(screen.getByText(`© ${currentYear} Paynless Framework. All rights reserved.`)).toBeInTheDocument();
+    expect(copyrightParagraph.textContent).toMatch(new RegExp(`© ${currentYear}\s*Paynless Framework\. All rights reserved\.`, 'i'));
   });
 
   it('should display navigation links', () => {
