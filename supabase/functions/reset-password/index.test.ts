@@ -37,7 +37,7 @@ function setupEnvStub(envVars: Record<string, string | undefined>) {
   envStub = stub(Deno.env, "get", (key: string) => envVars[key]);
 }
 
-function createMockDeps(overrides: Partial<ResetPasswordDependencies> = {}): ResetPasswordDependencies & { [K in keyof ResetPasswordDependencies]: Spy } {
+function createMockDeps(overrides: Partial<ResetPasswordDependencies> = {}): ResetPasswordDependencies {
   const mocks = {
     handleCorsPreflightRequest: spy((req: Request) => req.method === 'OPTIONS' ? new Response(null, { status: 204 }) : null),
     verifyApiKey: spy((req: Request) => req.headers.get('apikey') === defaultEnv.API_KEY), // Basic mock
@@ -64,17 +64,13 @@ function createMockDeps(overrides: Partial<ResetPasswordDependencies> = {}): Res
   const finalMocks = { ...mocks };
   for (const key in overrides) {
       if (Object.prototype.hasOwnProperty.call(overrides, key)) {
-          const overrideValue = overrides[key as keyof ResetPasswordDependencies];
-          // If the override is a function, wrap it in a spy
-          if (typeof overrideValue === 'function') {
-            (finalMocks as any)[key] = spy(overrideValue);
-          } else {
-            (finalMocks as any)[key] = overrideValue; // Allow overriding with non-function mocks if needed
-          }
+          // Directly assign the override. Caller is responsible for providing a spied function if needed.
+          (finalMocks as any)[key] = overrides[key as keyof ResetPasswordDependencies];
       }
   }
 
-  return finalMocks as ResetPasswordDependencies & { [K in keyof ResetPasswordDependencies]: Spy };
+  // Return type is just the base interface. Tests might need to cast to Spy.
+  return finalMocks as ResetPasswordDependencies;
 }
 
 // --- Tests ---
@@ -89,14 +85,13 @@ describe("Reset Password Handler", () => {
   });
 
   it("should handle CORS preflight requests", async () => {
-    // No env setup needed usually for OPTIONS
     const mockDeps = createMockDeps();
     const req = new Request("http://example.com/reset-password", { method: "OPTIONS" });
     const res = await handleResetPasswordRequest(req, mockDeps);
 
     assertEquals(res.status, 204);
-    assertSpyCall(mockDeps.handleCorsPreflightRequest, 0, { args: [req] });
-    assertSpyCalls(mockDeps.verifyApiKey, 0); // API key check skipped for OPTIONS
+    assertSpyCall(mockDeps.handleCorsPreflightRequest as Spy, 0, { args: [req] });
+    assertSpyCalls(mockDeps.verifyApiKey as Spy, 0); 
   });
 
   it("should return 401 for invalid API key on POST", async () => {
@@ -109,8 +104,8 @@ describe("Reset Password Handler", () => {
       const res = await handleResetPasswordRequest(req, mockDeps);
 
       assertEquals(res.status, 401);
-      assertSpyCall(mockDeps.verifyApiKey, 0); // Ensure verify was called
-      assertSpyCall(mockDeps.createUnauthorizedResponse, 0, { args: ["Invalid or missing apikey"] });
+      assertSpyCall(mockDeps.verifyApiKey as Spy, 0); // Ensure verify was called
+      assertSpyCall(mockDeps.createUnauthorizedResponse as Spy, 0, { args: ["Invalid or missing apikey"] });
   });
 
   it("should return 405 for non-POST requests (after CORS/API key)", async () => {
@@ -123,8 +118,8 @@ describe("Reset Password Handler", () => {
       const res = await handleResetPasswordRequest(req, mockDeps);
 
       assertEquals(res.status, 405);
-      assertSpyCall(mockDeps.verifyApiKey, 0); // Verify was called
-      assertSpyCall(mockDeps.createErrorResponse, 0, { args: ['Method Not Allowed', 405] });
+      assertSpyCall(mockDeps.verifyApiKey as Spy, 0); // Verify was called
+      assertSpyCall(mockDeps.createErrorResponse as Spy, 0, { args: ['Method Not Allowed', 405] });
   });
 
   // --- POST Request Tests ---
@@ -140,8 +135,8 @@ describe("Reset Password Handler", () => {
       const res = await handleResetPasswordRequest(req, mockDeps);
 
       assertEquals(res.status, 400);
-      assertSpyCall(mockDeps.createErrorResponse, 0, { args: ["Email is required", 400] });
-      assertSpyCalls(mockDeps.supabaseResetPassword, 0); // Ensure Supabase call was not made
+      assertSpyCall(mockDeps.createErrorResponse as Spy, 0, { args: ["Email is required", 400] });
+      assertSpyCalls(mockDeps.supabaseResetPassword as Spy, 0); // Ensure Supabase call was not made
   });
 
   it("should return 400 if email is not a string", async () => {
@@ -155,7 +150,7 @@ describe("Reset Password Handler", () => {
       const res = await handleResetPasswordRequest(req, mockDeps);
 
       assertEquals(res.status, 400);
-      assertSpyCall(mockDeps.createErrorResponse, 0, { args: ["Invalid email format", 400] });
+      assertSpyCall(mockDeps.createErrorResponse as Spy, 0, { args: ["Invalid email format", 400] });
   });
 
   it("should return 400 if body is invalid JSON", async () => {
@@ -169,7 +164,7 @@ describe("Reset Password Handler", () => {
       const res = await handleResetPasswordRequest(req, mockDeps);
 
       assertEquals(res.status, 400);
-      assertSpyCall(mockDeps.createErrorResponse, 0, { args: ["Invalid JSON body", 400] });
+      assertSpyCall(mockDeps.createErrorResponse as Spy, 0, { args: ["Invalid JSON body", 400] });
   });
 
   it("should return 500 if Supabase env vars are missing", async () => {
@@ -183,14 +178,15 @@ describe("Reset Password Handler", () => {
       const res = await handleResetPasswordRequest(req, mockDeps);
 
       assertEquals(res.status, 500);
-      assertSpyCall(mockDeps.createErrorResponse, 0, { args: ["Configuration error", 500] });
+      assertSpyCall(mockDeps.createErrorResponse as Spy, 0, { args: ["Configuration error", 500] });
   });
 
   it("should return 500 if Supabase client initialization fails", async () => {
       setupEnvStub(defaultEnv);
       const initError = new Error("Failed to init");
-      const mockCreateClient = spy(() => { throw initError; });
-      const mockDeps = createMockDeps({ createSupabaseClient: mockCreateClient });
+      // Ensure the override is already spied
+      const mockCreateClientOverride = spy(() => { throw initError; });
+      const mockDeps = createMockDeps({ createSupabaseClient: mockCreateClientOverride });
       const req = new Request("http://example.com/reset-password", {
           method: "POST",
           headers: { 'apikey': defaultEnv.API_KEY, 'Content-Type': 'application/json', 'origin': 'http://localhost:3000' },
@@ -199,8 +195,9 @@ describe("Reset Password Handler", () => {
       const res = await handleResetPasswordRequest(req, mockDeps);
 
       assertEquals(res.status, 500);
-      assertSpyCall(mockCreateClient, 0); // Ensure client creation was attempted
-      assertSpyCall(mockDeps.createErrorResponse, 0, { args: ["Failed to initialize service", 500] });
+      // Assert the override spy was called
+      assertSpyCall(mockCreateClientOverride, 0); 
+      assertSpyCall(mockDeps.createErrorResponse as Spy, 0, { args: ["Supabase client initialization failed", 500] });
   });
 
   it("should return 500 if Supabase resetPasswordForEmail fails", async () => {
@@ -217,9 +214,9 @@ describe("Reset Password Handler", () => {
       const res = await handleResetPasswordRequest(req, mockDeps);
 
       assertEquals(res.status, 500);
-      assertSpyCall(mockResetPassword, 0); // Ensure reset was attempted
-      assertSpyCall(mockDeps.createErrorResponse, 0, { args: ["Failed to send reset email", 500] });
-      assertSpyCalls(mockDeps.createSuccessResponse, 0);
+      assertSpyCall(mockResetPassword as Spy, 0); // Ensure reset was attempted
+      assertSpyCall(mockDeps.createErrorResponse as Spy, 0, { args: ["Failed to send reset email", 500] });
+      assertSpyCalls(mockDeps.createSuccessResponse as Spy, 0);
   });
 
   it("should return 200 and call resetPasswordForEmail on success (with origin)", async () => {
@@ -241,17 +238,17 @@ describe("Reset Password Handler", () => {
       const res = await handleResetPasswordRequest(req, mockDeps);
 
       assertEquals(res.status, 200);
-      assertSpyCall(mockDeps.createSupabaseClient, 0, { args: [defaultEnv.SUPABASE_URL, defaultEnv.SUPABASE_ANON_KEY] });
-      assertSpyCall(mockDeps.supabaseResetPassword, 0);
+      assertSpyCall(mockDeps.createSupabaseClient as Spy, 0, { args: [defaultEnv.SUPABASE_URL, defaultEnv.SUPABASE_ANON_KEY] });
+      assertSpyCall(mockDeps.supabaseResetPassword as Spy, 0);
       // Check arguments passed to the actual reset function spy
-      const resetCallArgs = mockDeps.supabaseResetPassword.calls[0].args;
+      const resetCallArgs = (mockDeps.supabaseResetPassword as Spy).calls[0].args;
       assertEquals(resetCallArgs[1], testEmail); // email
       assertEquals(resetCallArgs[2]?.redirectTo, expectedRedirectTo); // options.redirectTo
       
-      assertSpyCall(mockDeps.createSuccessResponse, 0, {
+      assertSpyCall(mockDeps.createSuccessResponse as Spy, 0, {
         args: [{ message: "Password reset email sent successfully" }]
       });
-      assertSpyCalls(mockDeps.createErrorResponse, 0);
+      assertSpyCalls(mockDeps.createErrorResponse as Spy, 0);
   });
 
   it("should return 200 and call resetPasswordForEmail on success (without origin)", async () => {
@@ -272,12 +269,124 @@ describe("Reset Password Handler", () => {
       const res = await handleResetPasswordRequest(req, mockDeps);
 
       assertEquals(res.status, 200);
-      assertSpyCall(mockDeps.supabaseResetPassword, 0);
-      const resetCallArgs = mockDeps.supabaseResetPassword.calls[0].args;
+      assertSpyCall(mockDeps.supabaseResetPassword as Spy, 0);
+      const resetCallArgs = (mockDeps.supabaseResetPassword as Spy).calls[0].args;
       assertEquals(resetCallArgs[1], testEmail); // email
       assertEquals(resetCallArgs[2]?.redirectTo, expectedRedirectTo); // options.redirectTo
       
-      assertSpyCall(mockDeps.createSuccessResponse, 0);
+      assertSpyCall(mockDeps.createSuccessResponse as Spy, 0);
+  });
+
+  it("should call supabaseResetPassword with correct email and redirect URL", async () => {
+    setupEnvStub(defaultEnv);
+    const mockResetPasswordSpy = spy(() => Promise.resolve({ error: null }));
+    const mockDeps = createMockDeps({ supabaseResetPassword: mockResetPasswordSpy });
+    const testEmail = "user@domain.com";
+    const origin = "https://app.example.com";
+    const req = new Request("http://example.com/reset-password", {
+        method: "POST",
+        headers: { 
+            'apikey': defaultEnv.API_KEY, 
+            'Content-Type': 'application/json',
+            'origin': origin
+        },
+        body: JSON.stringify({ email: testEmail })
+    });
+
+    await handleResetPasswordRequest(req, mockDeps);
+
+    // Assert supabaseResetPassword (the override spy) was called with correct args
+    assertSpyCall(mockResetPasswordSpy, 0, {
+        args: [
+            testEmail,
+            { redirectTo: `${origin}/update-password` }
+        ]
+    });
+
+    assertSpyCall(mockDeps.createSuccessResponse as Spy, 0); // Check success response
+  });
+
+  it("should return 500 if supabaseResetPassword throws an error", async () => {
+      setupEnvStub(defaultEnv);
+      const supabaseError = new AuthError("Rate limit exceeded");
+      // Ensure override is spied
+      const mockResetPassword = spy(() => Promise.resolve({ error: supabaseError }));
+      const mockDeps = createMockDeps({ supabaseResetPassword: mockResetPassword });
+      const req = new Request("http://example.com/reset-password", {
+          method: "POST",
+          headers: { 'apikey': defaultEnv.API_KEY, 'Content-Type': 'application/json', 'origin': 'http://localhost:3000' },
+          body: JSON.stringify({ email: "test@example.com" })
+      });
+      const res = await handleResetPasswordRequest(req, mockDeps);
+
+      assertEquals(res.status, 500);
+      // Assert the override spy was called
+      assertSpyCall(mockResetPassword, 0); 
+      assertSpyCall(mockDeps.createErrorResponse as Spy, 0, { args: ["Failed to send reset email", 500] });
+      assertSpyCalls(mockDeps.createSuccessResponse as Spy, 0);
+  });
+
+  it("should call supabaseResetPassword and return success", async () => {
+      setupEnvStub(defaultEnv);
+      const mockDeps = createMockDeps(); // Use default success mock for supabaseResetPassword
+      const testEmail = "user@domain.com";
+      const origin = "https://app.example.com";
+      const expectedRedirectTo = `${origin}/update-password`;
+      const req = new Request("http://example.com/reset-password", {
+          method: "POST",
+          headers: { 
+              'apikey': defaultEnv.API_KEY, 
+              'Content-Type': 'application/json',
+              'origin': origin
+          },
+          body: JSON.stringify({ email: testEmail })
+      });
+
+      const res = await handleResetPasswordRequest(req, mockDeps);
+
+      assertEquals(res.status, 200);
+      // Assert the default spy was called with correct args
+      assertSpyCall(mockDeps.supabaseResetPassword as Spy, 0, {
+          args: [
+              testEmail,
+              { redirectTo: expectedRedirectTo }
+          ]
+      });
+      
+      assertSpyCall(mockDeps.createSuccessResponse as Spy, 0, {
+          args: [{ message: "Password reset email sent successfully" }]
+      });
+      assertSpyCalls(mockDeps.createErrorResponse as Spy, 0);
+  });
+
+  it("should construct redirect URL correctly without origin header", async () => {
+      setupEnvStub(defaultEnv);
+      const mockDeps = createMockDeps(); 
+      const testEmail = "no-origin@test.com";
+      // Use default NEXT_PUBLIC_SITE_URL or fallback
+      const expectedRedirectTo = `${defaultEnv.SUPABASE_URL}/update-password`; 
+      const req = new Request("http://example.com/reset-password", {
+          method: "POST",
+          headers: { 
+              'apikey': defaultEnv.API_KEY, 
+              'Content-Type': 'application/json'
+              // No Origin header
+          },
+          body: JSON.stringify({ email: testEmail })
+      });
+
+      const res = await handleResetPasswordRequest(req, mockDeps);
+
+      assertEquals(res.status, 200);
+      // Assert the default spy was called with correct fallback redirect
+      assertSpyCall(mockDeps.supabaseResetPassword as Spy, 0, {
+          args: [ 
+              testEmail, 
+              { redirectTo: expectedRedirectTo } 
+          ]
+      });
+      
+      assertSpyCall(mockDeps.createSuccessResponse as Spy, 0);
   });
 
   // --- Add more tests here ---

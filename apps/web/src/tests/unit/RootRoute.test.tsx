@@ -1,7 +1,7 @@
 import { render, screen } from '@testing-library/react';
 import { MemoryRouter, Routes, Route } from 'react-router-dom'; // Import real components
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { RootRoute } from './RootRoute';
+import { RootRoute } from '../../routes/RootRoute';
 import type { User } from '@paynless/types';
 // Import the REAL HomePage to test against when user is null
 import { HomePage } from '../../pages/Home';

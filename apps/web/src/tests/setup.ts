@@ -9,7 +9,7 @@ import '@testing-library/jest-dom/vitest';
 import { beforeAll, afterEach, afterAll, vi } from 'vitest';
 import { setupServer } from 'msw/node';
 import { handlers } from './utils/mocks/handlers';
-import { initializeApiClient } from '@paynless/api-client';
+import { initializeApiClient } from '@paynless/api';
 import { cleanup } from '@testing-library/react';
 
 console.log('Setting up test environment...');
@@ -50,8 +50,8 @@ afterAll(() => {
 });
 
 // Initialize API client using environment variables
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+const supabaseUrl = process.env['VITE_SUPABASE_URL'];
+const supabaseAnonKey = process.env['VITE_SUPABASE_ANON_KEY'];
 
 if (!supabaseUrl || !supabaseAnonKey) {
     console.error('Error: Missing Supabase environment variables (VITE_SUPABASE_URL, VITE_SUPABASE_ANON_KEY) for test setup.');
@@ -65,20 +65,28 @@ if (!supabaseUrl || !supabaseAnonKey) {
     console.log('[setupTests] API Client Initialized.');
 }
 
-// Mock window.matchMedia
-Object.defineProperty(window, 'matchMedia', {
-  writable: true,
-  value: vi.fn().mockImplementation(query => ({
-    matches: false,
+// Mock window.matchMedia using vi.stubGlobal
+const matchMediaMock = vi.fn(query => ({
+    matches: false, // Default to light mode for tests
     media: query,
     onchange: null,
-    addListener: vi.fn(),
-    removeListener: vi.fn(),
+    addListener: vi.fn(), // Deprecated
+    removeListener: vi.fn(), // Deprecated
     addEventListener: vi.fn(),
     removeEventListener: vi.fn(),
     dispatchEvent: vi.fn(),
-  })),
-});
+}));
+vi.stubGlobal('matchMedia', matchMediaMock);
+console.log('[setupTests] Applied window.matchMedia mock using vi.stubGlobal.'); // Log confirmation
+
+// Mock ResizeObserver
+const ResizeObserverMock = vi.fn(() => ({
+    observe: vi.fn(),
+    unobserve: vi.fn(),
+    disconnect: vi.fn(),
+}));
+vi.stubGlobal('ResizeObserver', ResizeObserverMock);
+console.log('[setupTests] Applied ResizeObserver mock using vi.stubGlobal.');
 
 // Optional: Add any other global setup here
 

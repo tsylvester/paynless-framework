@@ -1,13 +1,14 @@
-import { BrowserRouter, Routes, Route, useNavigate } from 'react-router-dom'
-import { routes } from './routes/routes'
+import { useNavigate } from 'react-router-dom'
+import { router } from './routes/routes'
+import { RouterProvider } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { useEffect, useRef } from 'react'
+import { useEffect, /*useRef */ } from 'react'
 import { useAuthStore } from '@paynless/store'
 import { ThemeProvider } from './context/theme.context'
-import { AuthenticatedGate } from './components/auth/AuthenticatedGate'
 import { logger } from '@paynless/utils'
 import { useSubscriptionStore } from '@paynless/store'
 import { ChatwootIntegration } from './components/integrations/ChatwootIntegration'
+import { Toaster } from '@/components/ui/sonner'
 
 // Create a client for React Query
 const queryClient = new QueryClient({
@@ -19,35 +20,25 @@ const queryClient = new QueryClient({
   },
 })
 
-// Component to handle navigation injection
-function NavigateInjector() {
+// Component to handle navigation injection - Moved back here and exported
+export function NavigateInjector() {
   const navigate = useNavigate()
   const setNavigate = useAuthStore((state) => state.setNavigate)
 
   useEffect(() => {
     logger.info('Injecting navigate function into authStore.')
     setNavigate(navigate)
-  }, [navigate, setNavigate]) // Re-run if navigate instance changes (shouldn't usually)
+  }, [navigate, setNavigate])
 
-  return null // This component doesn't render anything
+  return null
 }
 
 // NEW: Separate App Content component
 export function AppContent() {
-  const { initialize, isLoading } = useAuthStore((state) => ({
-    initialize: state.initialize,
-    isLoading: state.isLoading,
-  }))
-  const initializedRef = useRef(false)
-  const setTestMode = useSubscriptionStore((state) => state.setTestMode) // Get action
+  const isLoading = useAuthStore((state) => state.isLoading);
 
-  useEffect(() => {
-    if (!initializedRef.current) {
-      initializedRef.current = true
-      logger.info('App initializing auth store...')
-      initialize()
-    }
-  }, [initialize])
+  //const initializedRef = useRef(false)
+  const setTestMode = useSubscriptionStore((state) => state.setTestMode) // Get action
 
   // Add useEffect for Test Mode Initialization
   useEffect(() => {
@@ -87,16 +78,8 @@ export function AppContent() {
   // Return everything that was inside BrowserRouter
   return (
     <>
-      <NavigateInjector />
-      <AuthenticatedGate>
-        <></>
-      </AuthenticatedGate>
-      <Routes>
-        {routes.map((route) => (
-          <Route key={route.path} path={route.path} element={route.element} />
-        ))}
-      </Routes>
-        <ChatwootIntegration />
+      <RouterProvider router={router} />
+      <ChatwootIntegration />
     </>
   )
 }
@@ -106,10 +89,9 @@ function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <ThemeProvider>
-        <BrowserRouter>
-          <AppContent />
-        </BrowserRouter>
+        <AppContent />
       </ThemeProvider>
+      <Toaster />
     </QueryClientProvider>
   )
 }

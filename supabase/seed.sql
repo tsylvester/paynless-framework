@@ -15,3 +15,12 @@ VALUES
 ON CONFLICT (name) DO NOTHING; -- Assuming name should be unique for prompts too
 
 -- Note: Chats and chat_messages tables are typically populated by user interaction, not seeding. 
+
+-- Seed Test Users needed for RLS policy tests
+-- Use well-known UUIDs for consistency with tests
+INSERT INTO auth.users (id, email, encrypted_password, role, aud, email_confirmed_at)
+VALUES 
+  ('a0000000-0000-0000-0000-000000000001', 'user_a@test.com', crypt('password', gen_salt('bf')), 'authenticated', 'authenticated', now()),
+  ('b0000000-0000-0000-0000-000000000002', 'user_b@test.com', crypt('password', gen_salt('bf')), 'authenticated', 'authenticated', now()),
+  ('c0000000-0000-0000-0000-000000000003', 'user_c@test.com', crypt('password', gen_salt('bf')), 'authenticated', 'authenticated', now())
+ON CONFLICT (id) DO NOTHING; -- Avoid errors if users already exist 

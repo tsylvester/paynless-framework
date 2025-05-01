@@ -1,13 +1,13 @@
 import { describe, it, expect, vi } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
-import { PlanCard } from './PlanCard';
+import { PlanCard } from '../../components/subscription/PlanCard';
 import type { SubscriptionPlan } from '@paynless/types';
 import React from 'react'; // Needed for JSX
 
 // --- Mock Data & Functions ---
 const mockPlan: SubscriptionPlan = {
   id: 'plan_basic_123',
-  stripePriceId: 'price_basic_stripe_123',
+  stripe_price_id: 'price_basic_stripe_123',
   stripeProductId: 'prod_basic_stripe',
   name: 'Basic Plan',
   description: { 
@@ -17,7 +17,7 @@ const mockPlan: SubscriptionPlan = {
   amount: 1000, // $10.00
   currency: 'usd',
   interval: 'month',
-  intervalCount: 1,
+  interval_count: 1,
   active: true,
   metadata: null,
   createdAt: new Date().toISOString(),
@@ -140,7 +140,7 @@ describe('PlanCard Component', () => {
       
       fireEvent.click(button);
       expect(mockHandleSubscribe).toHaveBeenCalledTimes(1);
-      expect(mockHandleSubscribe).toHaveBeenCalledWith(mockPlan.stripePriceId); // Check it passes price ID
+      expect(mockHandleSubscribe).toHaveBeenCalledWith(mockPlan.stripe_price_id);
       expect(mockHandleCancelSubscription).not.toHaveBeenCalled();
     });
 
@@ -153,7 +153,7 @@ describe('PlanCard Component', () => {
       
       fireEvent.click(button);
       expect(mockHandleSubscribe).toHaveBeenCalledTimes(1);
-      expect(mockHandleSubscribe).toHaveBeenCalledWith(mockPlan.stripePriceId);
+      expect(mockHandleSubscribe).toHaveBeenCalledWith(mockPlan.stripe_price_id);
       expect(mockHandleCancelSubscription).not.toHaveBeenCalled();
     });
 
@@ -177,7 +177,7 @@ describe('PlanCard Component', () => {
     });
 
      it('should use plan.id as fallback if stripePriceId is missing', () => {
-      const planWithoutStripeId = { ...mockPlan, stripePriceId: null };
+      const planWithoutStripeId = { ...mockPlan, stripe_price_id: null };
       render(<PlanCard {...defaultProps} plan={planWithoutStripeId} />);
       
       const button = screen.getByRole('button', { name: /Subscribe/i });

@@ -1,4 +1,3 @@
-import { Layout } from '../components/layout/Layout'
 import { Navigate } from 'react-router-dom'
 import { useAuthStore } from '@paynless/store'
 
@@ -12,11 +11,11 @@ export function DashboardPage() {
 
   if (isLoading) {
     return (
-      <Layout>
+      <div>
         <div className="flex justify-center items-center py-12">
           <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-primary"></div>
         </div>
-      </Layout>
+      </div>
     )
   }
 
@@ -30,7 +29,7 @@ export function DashboardPage() {
   const displayRole = profile?.role || user.role || 'user' // Default to 'user' if unknown
 
   return (
-    <Layout>
+    <div>
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="mt-8 bg-surface shadow overflow-hidden sm:rounded-lg">
           <div className="px-6 py-6 sm:px-8">
@@ -135,7 +134,7 @@ export function DashboardPage() {
             </li>
             <li>
               Be extremely careful with any changes to files in{' '}
-              <code>packages/api-client</code> or <code>packages/store/</code>.
+              <code>packages/api</code> or <code>packages/store/</code>.
             </li>
             <li>
               The <code>apps/web</code> and <code>apps/desktop</code> frontends
@@ -546,6 +545,6 @@ export function DashboardPage() {
           </div>
         </div>
       </div>
-    </Layout>
+    </div>
   )
 }

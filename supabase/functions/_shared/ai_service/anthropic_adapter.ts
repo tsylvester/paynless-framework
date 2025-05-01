@@ -2,7 +2,8 @@
 // import { Json } from "../../../../packages/types/src/index.ts";
 
 // Import types from the shared location
-import type { AiProviderAdapter, ChatMessage, ProviderModelInfo, ChatApiRequest, Json } from '../types.ts';
+import type { AiProviderAdapter, ChatMessage, ProviderModelInfo, ChatApiRequest } from '../types.ts';
+import type { Json } from '../../../functions/types_db.ts';
 
 // --- Removed Type Definitions (Copied from packages/types for Edge Function compatibility) ---
 // export type Json = ... (definitions removed)
@@ -130,7 +131,8 @@ export class AnthropicAdapter implements AiProviderAdapter {
         total_tokens: (jsonResponse.usage.input_tokens || 0) + (jsonResponse.usage.output_tokens || 0),
     } : null;
 
-    const assistantResponse: ChatMessage = {
+    // Declare as Partial initially, as id/chat_id are missing
+    const assistantResponse: Partial<ChatMessage> = {
       role: 'assistant',
       content: assistantMessageContent,
       ai_provider_id: request.providerId,
@@ -141,7 +143,8 @@ export class AnthropicAdapter implements AiProviderAdapter {
       // id, chat_id are set by the calling function (/chat)
     };
 
-    return assistantResponse;
+    // Assert the type to satisfy the Promise<ChatMessage> return type
+    return assistantResponse as ChatMessage;
   }
 
   async listModels(apiKey: string): Promise<ProviderModelInfo[]> {

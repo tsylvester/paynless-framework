@@ -24,7 +24,6 @@ import {
 } from './google_sync.ts';
 
 // Import shared types used by this function and potentially by tests
-import type { AiProviderAdapter, ProviderModelInfo } from '../_shared/types.ts';
 // DbAiProvider and SyncResult are defined below and implicitly exported when mainHandler uses them
 // Provider files should import { type DbAiProvider, type SyncResult } from './index.ts'
 
@@ -185,13 +184,13 @@ export async function mainHandler(req: Request, deps: SyncAiModelsDeps = default
 
   if (!isAuthorized) {
       console.warn('Unauthorized sync attempt received.');
-      // Use injected error response creator
-      return createErrorResponse('Unauthorized', 401);
+      // Add req argument
+      return createErrorResponse('Unauthorized', 401, req);
   }
 
   if (req.method !== 'POST') { 
-     // Use injected error response creator
-     return createErrorResponse('Method Not Allowed', 405);
+     // Add req argument
+     return createErrorResponse('Method Not Allowed', 405, req);
   }
 
   try {
@@ -199,13 +198,13 @@ export async function mainHandler(req: Request, deps: SyncAiModelsDeps = default
     const results = await runAllSyncs(deps);
     console.log('Overall sync process completed.', results);
     const overallSuccess = results.every(r => !r.error);
-    // Use injected response creator
-    return createJsonResponse({ success: overallSuccess, results }, overallSuccess ? 200 : 500);
+    // Add req argument
+    return createJsonResponse({ success: overallSuccess, results }, overallSuccess ? 200 : 500, req);
   } catch (error) {
     console.error('Sync function failed critically (mainHandler level):', error);
     const errorMessage = error instanceof Error ? error.message : String(error ?? 'Sync failed due to a critical internal server error.');
-    // Use injected error response creator
-    return createErrorResponse(errorMessage, 500);
+    // Add req argument and pass original error
+    return createErrorResponse(errorMessage, 500, req, error);
   }
 }
 

@@ -7,31 +7,6 @@ export type Json =
   | Json[]
 
 export type Database = {
-  graphql_public: {
-    Tables: {
-      [_ in never]: never
-    }
-    Views: {
-      [_ in never]: never
-    }
-    Functions: {
-      graphql: {
-        Args: {
-          operationName?: string
-          query?: string
-          variables?: Json
-          extensions?: Json
-        }
-        Returns: Json
-      }
-    }
-    Enums: {
-      [_ in never]: never
-    }
-    CompositeTypes: {
-      [_ in never]: never
-    }
-  }
   public: {
     Tables: {
       ai_providers: {
@@ -42,6 +17,7 @@ export type Database = {
           description: string | null
           id: string
           is_active: boolean
+          is_enabled: boolean
           name: string
           provider: string | null
           updated_at: string
@@ -53,6 +29,7 @@ export type Database = {
           description?: string | null
           id?: string
           is_active?: boolean
+          is_enabled?: boolean
           name: string
           provider?: string | null
           updated_at?: string
@@ -64,6 +41,7 @@ export type Database = {
           description?: string | null
           id?: string
           is_active?: boolean
+          is_enabled?: boolean
           name?: string
           provider?: string | null
           updated_at?: string
@@ -149,6 +127,143 @@ export type Database = {
           title?: string | null
           updated_at?: string
           user_id?: string | null
+        }
+        Relationships: []
+      }
+      invites: {
+        Row: {
+          created_at: string
+          expires_at: string | null
+          id: string
+          invite_token: string
+          invited_by_user_id: string | null
+          invited_email: string
+          organization_id: string
+          role_to_assign: string
+          status: string
+        }
+        Insert: {
+          created_at?: string
+          expires_at?: string | null
+          id?: string
+          invite_token: string
+          invited_by_user_id?: string | null
+          invited_email: string
+          organization_id: string
+          role_to_assign?: string
+          status?: string
+        }
+        Update: {
+          created_at?: string
+          expires_at?: string | null
+          id?: string
+          invite_token?: string
+          invited_by_user_id?: string | null
+          invited_email?: string
+          organization_id?: string
+          role_to_assign?: string
+          status?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "invites_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      notifications: {
+        Row: {
+          created_at: string
+          data: Json | null
+          id: string
+          read: boolean
+          type: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          data?: Json | null
+          id?: string
+          read?: boolean
+          type: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          data?: Json | null
+          id?: string
+          read?: boolean
+          type?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      organization_members: {
+        Row: {
+          created_at: string
+          id: string
+          organization_id: string
+          role: string
+          status: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          organization_id: string
+          role?: string
+          status?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          organization_id?: string
+          role?: string
+          status?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "organization_members_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "organization_members_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "user_profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      organizations: {
+        Row: {
+          created_at: string
+          deleted_at: string | null
+          id: string
+          name: string
+          visibility: string
+        }
+        Insert: {
+          created_at?: string
+          deleted_at?: string | null
+          id?: string
+          name: string
+          visibility?: string
+        }
+        Update: {
+          created_at?: string
+          deleted_at?: string | null
+          id?: string
+          name?: string
+          visibility?: string
         }
         Relationships: []
       }
@@ -378,7 +493,41 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      check_existing_member_by_email: {
+        Args: { target_org_id: string; target_email: string }
+        Returns: {
+          membership_status: string
+        }[]
+      }
+      create_notification_for_user: {
+        Args: {
+          target_user_id: string
+          notification_type: string
+          notification_data: Json
+        }
+        Returns: undefined
+      }
+      create_org_and_admin_member: {
+        Args: {
+          p_user_id: string
+          p_org_name: string
+          p_org_visibility: string
+        }
+        Returns: string
+      }
+      is_org_admin: {
+        Args: { org_id: string }
+        Returns: boolean
+      }
+      is_org_member: {
+        Args: {
+          p_org_id: string
+          p_user_id: string
+          required_status: string
+          required_role?: string
+        }
+        Returns: boolean
+      }
     }
     Enums: {
       user_role: "user" | "admin"
@@ -495,13 +644,9 @@ export type CompositeTypes<
     : never
 
 export const Constants = {
-  graphql_public: {
-    Enums: {},
-  },
   public: {
     Enums: {
       user_role: ["user", "admin"],
     },
   },
 } as const
-

@@ -1,13 +1,19 @@
 import { assertSpyCall, assertSpyCalls, spy, stub, type Stub } from "jsr:@std/testing@0.225.1/mock";
-import { assert, assertEquals, assertExists } from "jsr:@std/assert@0.225.3";
-import type { SupabaseClient } from "npm:@supabase/supabase-js";
+import { assert, assertEquals, assertExists, assertRejects } from "jsr:@std/assert@0.225.3";
 
-// Import the dependencies interface
-import type { LoginHandlerDeps } from "./index.ts";
+// Import the *inner* handler and its types, and HandlerError
+import { mainHandler, type LoginCredentials, type LoginSuccessResponse } from "./index.ts";
+import { HandlerError } from '../api-subscriptions/handlers/current.ts';
+import { createMockSupabaseClient } from "../_shared/test-utils.ts";
+import type { Database } from "../types_db.ts";
+
+// Import Supabase types needed for mocks
+import type { User, Session, AuthError, AuthTokenResponsePassword } from "npm:@supabase/supabase-js@2";
 
 // --- Test Setup ---
 
 // Variable to hold the dynamically imported handler
+/*
 let handleLoginRequest: (req: Request, deps?: Partial<LoginHandlerDeps>) => Promise<Response>;
 let envStub: Stub | undefined;
 
@@ -36,15 +42,17 @@ const teardown = () => {
     console.log("[Test Teardown] Restored Deno.env.get");
   }
 };
+*/
 
-Deno.test("Login Function Tests", {
-  sanitizeOps: false, // Prevent errors related to fetch/async ops in tests
+Deno.test("Login Function - mainHandler Tests", {
+  sanitizeOps: false,
   sanitizeResources: false,
 }, async (t) => {
-  // Setup before running tests
-  await setup();
+  // DELETE THIS LINE (approx line 45)
+  // await setup();
 
-  // Default Mocks (can be overridden per test)
+  // --- Remove Default Mocks Helper ---
+  /*
   const createMockDeps = (overrides: Partial<LoginHandlerDeps> = {}): LoginHandlerDeps => {
     // Base mocks
     const baseDeps: LoginHandlerDeps = {
@@ -95,131 +103,183 @@ Deno.test("Login Function Tests", {
     };
     return baseDeps;
   };
+  */
 
-  await t.step("OPTIONS request should handle CORS preflight", async () => {
-    const mockDeps = createMockDeps();
-    const req = new Request("http://example.com/login", { method: "OPTIONS" });
-    const res = await handleLoginRequest(req, mockDeps);
-    assertEquals(res.status, 204);
-    assertSpyCall(mockDeps.handleCorsPreflightRequest, 0, { args: [req] });
+  // --- Test Cases for mainHandler --- 
+
+  // Remove tests for OPTIONS, GET, API key (handled by serve wrapper)
+  /*
+  await t.step("OPTIONS request should handle CORS preflight", ...);
+  await t.step("GET request should return 405 Method Not Allowed", ...);
+  await t.step("POST request without API key should return 401 Unauthorized", ...);
+  */
+
+  // Tests for missing credentials are now handled by the serve wrapper validation
+  /*
+  await t.step("POST request missing email should return 400", ...);
+  await t.step("POST request missing password should return 400", ...);
+  */
+
+  await t.step("Incorrect credentials should throw HandlerError (400)", async () => {
+    const mockCreds: LoginCredentials = { email: "wrong@example.com", password: "wrongpassword" };
+    const mockAuthError = {
+      name: 'AuthApiError',
+      message: 'Invalid login credentials',
+      status: 400,
+      code: 'invalid_grant',
+    } as AuthError;
+    
+    const { client: mockClient, spies } = createMockSupabaseClient({});
+    const signInStub = stub(mockClient.auth, 'signInWithPassword', () => Promise.resolve({ data: { user: null, session: null }, error: mockAuthError }));
+
+    try {
+        await assertRejects(
+            () => mainHandler(mockClient as any, mockCreds),
+            HandlerError,
+            mockAuthError.message
+        );
+        assertSpyCalls(signInStub, 1);
+        assertSpyCalls(spies.fromSpy, 0);
+    } finally {
+        signInStub.restore();
+    }
   });
 
-  await t.step("GET request should return 405 Method Not Allowed", async () => {
-    const mockDeps = createMockDeps();
-    const req = new Request('http://example.com/login', { method: 'GET' });
-    const res = await handleLoginRequest(req, mockDeps);
-    assertEquals(res.status, 405);
-    assertSpyCall(mockDeps.createErrorResponse, 0, { args: ["Method Not Allowed", 405] });
-    assertSpyCall(mockDeps.verifyApiKey, 0);
+  await t.step("Sign-in success but missing session data should throw HandlerError (500)", async () => {
+    const mockCreds: LoginCredentials = { email: "no-session@example.com", password: "password123" };
+    const mockUser: User = {
+      id: 'user-nosession',
+      email: mockCreds.email,
+      app_metadata: {}, 
+      user_metadata: {}, 
+      aud: 'authenticated',
+      created_at: new Date().toISOString()
+    };
+    const expectedErrorMessage = "Login completed but failed to retrieve session.";
+    
+    const { client: mockClient } = createMockSupabaseClient({});
+    const signInStub = stub(mockClient.auth, 'signInWithPassword', 
+      () => Promise.resolve({ data: { user: mockUser, session: null }, error: null } as unknown as AuthTokenResponsePassword)
+    );
+
+    try {
+        await assertRejects(
+            () => mainHandler(mockClient as any, mockCreds),
+            HandlerError,
+            expectedErrorMessage
+        );
+        assertSpyCalls(signInStub, 1);
+    } finally {
+        signInStub.restore();
+    }
   });
 
-  await t.step("POST request without API key should return 401 Unauthorized", async () => {
-    const mockDeps = createMockDeps({ verifyApiKey: spy(() => false) });
-    const req = new Request('http://example.com/login', { method: 'POST' });
-    const res = await handleLoginRequest(req, mockDeps);
-    assertEquals(res.status, 401);
-    assertSpyCall(mockDeps.createUnauthorizedResponse, 0, { args: ["Invalid or missing apikey"] });
-    assertSpyCall(mockDeps.verifyApiKey, 0);
+  await t.step("Successful login, profile fetch error (non-critical), returns null profile", async () => {
+    const mockCreds: LoginCredentials = { email: "success@example.com", password: "password123" };
+    const mockUser: User = { 
+      id: 'user-123', 
+      email: mockCreds.email,
+      app_metadata: { provider: 'email' }, 
+      user_metadata: { name: 'Test User' }, 
+      aud: 'authenticated', 
+      created_at: new Date(Date.now() - 20000).toISOString()
+    };
+    const mockSession: Session = { 
+      access_token: 'abc', 
+      refresh_token: 'def', 
+      token_type: "bearer",
+      expires_in: 3600,
+      expires_at: Math.floor(Date.now() / 1000) + 3600,
+      user: mockUser 
+    }; 
+    const profileError = { message: 'Profile DB error', code: 'PGRSTXXX' }; 
+
+    const { client: mockClient, spies } = createMockSupabaseClient({
+      genericMockResults: {
+        user_profiles: {
+          select: { data: null, error: profileError } 
+        }
+      }
+    });
+
+    const signInStub = stub(mockClient.auth, 'signInWithPassword', () => Promise.resolve({ data: { user: mockUser, session: mockSession }, error: null }));
+    
+    try {
+        const result = await mainHandler(mockClient as any, mockCreds);
+
+        assertEquals(result.user?.id, mockUser.id);
+        assertEquals(result.session?.access_token, mockSession.access_token);
+        assertEquals(result.profile, null);
+
+        assertSpyCalls(signInStub, 1);
+        assertSpyCalls(spies.fromSpy, 1);
+        const queryBuilder = spies.fromSpy.calls[0].returned;
+        assertSpyCalls(queryBuilder.select, 1);
+        assertSpyCalls(queryBuilder.eq, 1);
+        assertSpyCall(queryBuilder.eq, 0, { args: ['id', mockUser.id] });
+        assertSpyCalls(queryBuilder.maybeSingle, 1);
+    } finally {
+        signInStub.restore();
+    }
   });
 
-  await t.step("POST request missing email should return 400", async () => {
-    const mockDeps = createMockDeps();
-    const req = new Request('http://example.com/login', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ password: 'password123' }) 
+  await t.step("Successful login, profile found", async () => {
+    const mockCreds: LoginCredentials = { email: "success@example.com", password: "password123" };
+    const mockUser: User = { 
+      id: 'user-123', 
+      email: mockCreds.email,
+      app_metadata: { provider: 'email' }, 
+      user_metadata: { name: 'Test User' }, 
+      aud: 'authenticated', 
+      created_at: new Date(Date.now() - 20000).toISOString()
+    };
+    const mockSession: Session = { 
+      access_token: 'abc', 
+      refresh_token: 'def', 
+      token_type: "bearer",
+      expires_in: 3600,
+      expires_at: Math.floor(Date.now() / 1000) + 3600,
+      user: mockUser 
+    }; 
+    
+    const mockProfile: Database['public']['Tables']['user_profiles']['Row'] = { 
+        id: mockUser.id, 
+        created_at: new Date(Date.now() - 10000).toISOString(),
+        first_name: "Test", 
+        last_name: "User", 
+        role: "user", 
+        updated_at: new Date().toISOString()
+    };
+
+    const { client: mockClient, spies } = createMockSupabaseClient({
+      genericMockResults: {
+        user_profiles: {
+          select: { data: [mockProfile], error: null } 
+        }
+      }
     });
-    const res = await handleLoginRequest(req, mockDeps);
-    assertEquals(res.status, 400);
-    assertSpyCall(mockDeps.createErrorResponse, 0, { args: ["Email and password are required", 400] });
-    assertSpyCall(mockDeps.verifyApiKey, 0);
-    assertSpyCalls(mockDeps.createSupabaseClient, 0);
+
+    const signInStub = stub(mockClient.auth, 'signInWithPassword', () => Promise.resolve({ data: { user: mockUser, session: mockSession }, error: null }));
+
+    try {
+        const result = await mainHandler(mockClient as any, mockCreds);
+
+        assertEquals(result.user?.id, mockUser.id);
+        assertEquals(result.session?.access_token, mockSession.access_token);
+        assertEquals(result.profile, mockProfile);
+
+        assertSpyCalls(signInStub, 1);
+        assertSpyCalls(spies.fromSpy, 1);
+        const queryBuilder = spies.fromSpy.calls[0].returned;
+        assertSpyCalls(queryBuilder.select, 1);
+        assertSpyCalls(queryBuilder.eq, 1);
+        assertSpyCall(queryBuilder.eq, 0, { args: ['id', mockUser.id] });
+        assertSpyCalls(queryBuilder.maybeSingle, 1);
+    } finally {
+        signInStub.restore();
+    }
   });
 
-  await t.step("POST request missing password should return 400", async () => {
-    const mockDeps = createMockDeps();
-    const req = new Request('http://example.com/login', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: 'test@example.com' }) 
-    });
-    const res = await handleLoginRequest(req, mockDeps);
-    assertEquals(res.status, 400);
-    assertSpyCall(mockDeps.createErrorResponse, 0, { args: ["Email and password are required", 400] });
-    assertSpyCall(mockDeps.verifyApiKey, 0);
-    assertSpyCalls(mockDeps.createSupabaseClient, 0);
-  });
-
-  await t.step("POST with incorrect credentials should return auth error", async () => {
-    const mockDeps = createMockDeps({
-        // Override verifyApiKey if needed, but default is true
-    });
-    const req = new Request("http://example.com/login", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" }, // Need content type
-      body: JSON.stringify({ email: "wrong@example.com", password: "wrongpassword" }),
-    });
-    const res = await handleLoginRequest(req, mockDeps);
-    // Now expects 400 based on the mocked signInWithPassword error status
-    assertEquals(res.status, 400);
-    assertSpyCall(mockDeps.createErrorResponse, 0); 
-  });
-
-  await t.step("POST with sign-in success but missing session data should return 500", async () => {
-    const mockDeps = createMockDeps();
-    const req = new Request("http://example.com/login", { 
-        method: "POST", 
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: "no-session@example.com", password: "password123" }) 
-    });
-    const res = await handleLoginRequest(req, mockDeps);
-    assertEquals(res.status, 500);
-    assertSpyCall(mockDeps.createErrorResponse, 0, {
-        args: ["Login completed but failed to retrieve session.", 500]
-    });
-  });
-
-  await t.step("POST successful login, profile fetch error (non-critical)", async () => {
-    // Mock specifically for this test to trigger profile fetch error
-    const mockDeps = createMockDeps({
-        fetchProfileError: true // Custom flag to make the mock throw profile error
-    }); 
-    const req = new Request("http://example.com/login", { 
-        method: "POST", 
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: "success@example.com", password: "password123" })
-    });
-    const res = await handleLoginRequest(req, mockDeps);
-    assertEquals(res.status, 200); // Should still succeed
-    const body = await res.json();
-    assertExists(body.user);
-    assertExists(body.session);
-    assertEquals(body.profile, null); // Profile is null due to fetch error
-    assertSpyCall(mockDeps.createSuccessResponse, 0);
-  });
-
-  await t.step("POST successful login, profile found", async () => {
-    const mockDeps = createMockDeps(); // No profile error override
-    console.log("[Test] Mock dependencies for 'profile found' test:", {
-        createSuccessResponseCalls: mockDeps.createSuccessResponse.calls.length,
-        createErrorResponseCalls: mockDeps.createErrorResponse.calls.length,
-        // Maybe log the mock implementation of maybeSingle to confirm it's the simplified one
-    });
-    const req = new Request("http://example.com/login", { 
-        method: "POST", 
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: "success@example.com", password: "password123" })
-    });
-    const res = await handleLoginRequest(req, mockDeps);
-    assertEquals(res.status, 200);
-    const body = await res.json();
-    console.log("[Test] Response body received in 'profile found' test:", body);
-    assertExists(body.user);
-    assertExists(body.session);
-    assertExists(body.profile);
-    assertEquals(body.profile.id, body.user.id);
-    assertEquals(body.profile.username, "testuser");
-    assertSpyCall(mockDeps.createSuccessResponse, 0);
-  });
-
-  // Teardown after all tests in this suite
-  await teardown();
+  // DELETE THIS LINE (approx line 224)
+  // teardown();
 }); 

@@ -1,4 +1,12 @@
-import type { AiProviderAdapter, ChatMessage, ProviderModelInfo, ChatApiRequest, Json } from '../types.ts';
+import type { 
+    AiProviderAdapter, 
+    // REMOVED: ChatMessage, // Not returned directly
+    ProviderModelInfo, 
+    ChatApiRequest, 
+    AdapterResponsePayload // Import this
+} from '../types.ts';
+import type { Json } from '../../../functions/types_db.ts';
+// REMOVED: import type { VertexAI } from 'npm:@google-cloud/vertexai'; // Remove unused import
 
 // Google Gemini API constants
 const GOOGLE_API_BASE = 'https://generativelanguage.googleapis.com/v1beta';
@@ -21,7 +29,7 @@ export class GoogleAdapter implements AiProviderAdapter {
     request: ChatApiRequest,
     modelIdentifier: string, // e.g., "google-gemini-1.5-pro-latest"
     apiKey: string
-  ): Promise<ChatMessage> {
+  ): Promise<AdapterResponsePayload> {
     // Map our internal identifier to Google's format (e.g., "models/gemini-1.5-pro-latest")
     const modelApiName = `models/${modelIdentifier.replace(/^google-/i, '')}`;
     const generateContentUrl = `${GOOGLE_API_BASE}/${modelApiName}:generateContent?key=${apiKey}`;
@@ -151,15 +159,14 @@ export class GoogleAdapter implements AiProviderAdapter {
     const tokenUsage: Json | null = null; 
     console.warn("Google Gemini adapter currently does not fetch token usage.");
 
-    const assistantResponse: ChatMessage = {
+    // Construct the response conforming to AdapterResponsePayload
+    const assistantResponse: AdapterResponsePayload = {
       role: 'assistant',
       content: assistantMessageContent,
       ai_provider_id: request.providerId,
       system_prompt_id: request.promptId !== '__none__' ? request.promptId : null,
-      token_usage: tokenUsage,
-      created_at: new Date().toISOString(),
-      user_id: null, // Explicitly set user_id to null for assistant messages
-      // id, chat_id set by /chat function
+      token_usage: tokenUsage, 
+      // REMOVED fields not provided by adapter: id, chat_id, created_at, user_id
     };
 
     return assistantResponse;

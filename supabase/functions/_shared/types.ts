@@ -1,9 +1,11 @@
 // supabase/functions/_shared/types.ts
-// Centralized types for Supabase Edge Functions, avoiding reliance on external package imports.
+// Centralized APPLICATION-LEVEL types for Supabase Edge Functions.
+// Types directly related to DB tables should be imported from ../types_db.ts
+import type { Database } from '../types_db.ts';
 
 /**
  * Represents the standard user data structure for email marketing services.
- * Copied from packages/types/src/email.marketing.types.ts
+ * Copied from packages/types/src/email.types.ts
  */
 export interface UserData {
   id: string; // Your internal user ID
@@ -17,32 +19,7 @@ export interface UserData {
   [key: string]: any; // Allows for platform-specific custom fields
 }
 
-// --- Subscription Related Types ---
-// Copied from supabase/functions/api-subscriptions/types.ts
-
-export interface SubscriptionPlan {
-  id: string;
-  stripePriceId: string;
-  name: string;
-  description: string | null;
-  amount: number;
-  currency: string;
-  interval: string;
-  intervalCount: number;
-  metadata?: Record<string, any>;
-}
-
-export interface UserSubscription {
-  id: string | null;
-  userId: string;
-  stripeCustomerId: string | null;
-  stripeSubscriptionId: string | null;
-  status: string;
-  currentPeriodStart: string | null;
-  currentPeriodEnd: string | null;
-  cancelAtPeriodEnd: boolean;
-  plan: SubscriptionPlan | null;
-}
+// --- Subscription Related API Types (Not DB Tables) ---
 
 export interface CheckoutSessionRequest {
   priceId: string;
@@ -55,7 +32,7 @@ export interface BillingPortalRequest {
 }
 
 export interface SessionResponse {
-  sessionId: string;
+  sessionId?: string; // Make optional as it might not always be present (e.g., portal)
   url: string;
 }
 
@@ -65,7 +42,7 @@ export interface SubscriptionUsageMetrics {
   reset_date?: string | null;
 }
 
-// --- Email Marketing Service Types (Mirrored from packages/types/src/email.types.ts) ---
+// --- Email Marketing Service Interface ---
 
 /**
  * Defines the common contract for interacting with different email marketing platforms.
@@ -103,33 +80,7 @@ export interface EmailMarketingService {
   removeUser?(email: string): Promise<void>;
 }
 
-// --- AI Types (Copied from packages/types) ---
-
-// Basic JSON type alias
-export type Json =
-  | string
-  | number
-  | boolean
-  | null
-  | { [key: string]: Json | undefined }
-  | Json[];
-
-/**
- * Represents a single message within a Chat.
- * Matches the chat_messages table structure.
- * id/chat_id are optional as they aren't present before DB save.
- */
-export interface ChatMessage {
-  id?: string; // Optional before DB save
-  chat_id?: string; // Optional before DB save (for new chats)
-  user_id: string | null;
-  role: 'user' | 'assistant' | 'system';
-  content: string;
-  ai_provider_id: string | null;
-  system_prompt_id: string | null;
-  token_usage: Json | null;
-  created_at: string; // This might also be optional pre-save, but adapters add it.
-}
+// --- AI Adapter/API Types (Not DB Tables) ---
 
 /**
  * Structure for sending a message via the 'chat' Edge Function.
@@ -140,6 +91,9 @@ export interface ChatApiRequest {
   providerId: string; // AiProvider['id'] (ID from ai_providers table)
   promptId: string;   // SystemPrompt['id'] or '__none__'
   chatId?: string;   // Chat['id'] (optional for new chats)
+  // NOTE: The ChatMessage type previously here is REMOVED.
+  // Adapters/functions will need to handle message structure internally
+  // or import the DB type `Database['public']['Tables']['chat_messages']['Row']` from `../types_db.ts`.
   messages: { role: 'user' | 'assistant' | 'system'; content: string }[]; // History + System Prompt
 }
 
@@ -150,7 +104,8 @@ export interface ProviderModelInfo {
   api_identifier: string; // The specific ID the provider uses for this model in API calls
   name: string;           // A user-friendly name for the model
   description?: string;    // Optional description
-  config?: Json;         // Optional non-sensitive configuration details
+  // Use `Database['public']['Tables']['ai_providers']['Row']['config']` for the actual JSON type
+  config?: any; // Use 'any' here to avoid importing Json from db-types
 }
 
 /**
@@ -162,11 +117,41 @@ export interface AiProviderAdapter {
     request: ChatApiRequest,
     modelIdentifier: string, // The specific API identifier for the model (e.g., 'gpt-4o')
     apiKey: string
-  ): Promise<ChatMessage>;
+  ): Promise<any>; // Return type changed to any - implementation needs to use DB type
 
   listModels(apiKey: string): Promise<ProviderModelInfo[]>;
 }
 
-// --- End AI Types ---
+export type ChatMessage = Database['public']['Tables']['chat_messages']['Row'] & {
+  // Keep application-level status enrichment if needed by UI directly
+  // Note: status was previously added to LocalChatMessage, consider if it belongs here
+  status?: 'pending' | 'sent' | 'error'; 
+};
 
-// --- Add other shared types below --- 
+/**
+ * Type representing the payload returned *by* an AI Provider Adapter's sendMessage method.
+ * This contains only the information the adapter can realistically provide before
+ * the message is saved to the database (which adds id, chat_id, user_id, created_at).
+ */
+export interface AdapterResponsePayload {
+  role: 'assistant'; // Adapters always return assistant messages
+  content: string;
+  ai_provider_id: string | null; // The DB ID of the provider used
+  system_prompt_id: string | null; // The DB ID of the prompt used (or null)
+  token_usage: any | null; // Use 'any' for now to avoid linter issues
+}
+
+/**
+ * Represents a full chat message record as stored in the database.
+ */
+export interface FullChatMessageRecord {
+  id: string;
+  chat_id: string;
+  user_id: string;
+  created_at: string;
+  role: 'user' | 'assistant' | 'system';
+  content: string;
+  ai_provider_id?: string | null;
+  system_prompt_id?: string | null;
+  token_usage?: any | null; // Use 'any' for now
+}

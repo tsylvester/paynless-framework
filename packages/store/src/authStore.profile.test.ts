@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { useAuthStore } from './authStore'; 
-import { api } from '@paynless/api-client';
+import { api } from '@paynless/api';
 import { act } from '@testing-library/react';
 import type { User, Session, UserProfile, UserRole, UserProfileUpdate, ApiError } from '@paynless/types';
 import { logger } from '@paynless/utils'; 
@@ -64,7 +64,7 @@ describe('AuthStore - Update Profile Action', () => {
              const result = await useAuthStore.getState().updateProfile(profileUpdate);
 
              // Assert
-             expect(putSpy).toHaveBeenCalledWith('/profile', profileUpdate, { token: mockSession.access_token });
+             expect(putSpy).toHaveBeenCalledWith('me', profileUpdate, { token: mockSession.access_token });
              const state = useAuthStore.getState();
              expect(state.profile).toEqual(updatedProfile);
              expect(state.error).toBeNull(); 
@@ -87,7 +87,7 @@ describe('AuthStore - Update Profile Action', () => {
             const result = await useAuthStore.getState().updateProfile(profileUpdate);
 
             // Assert
-            expect(putSpy).toHaveBeenCalledWith('/profile', profileUpdate, { token: mockSession.access_token });
+            expect(putSpy).toHaveBeenCalledWith('me', profileUpdate, { token: mockSession.access_token });
             const state = useAuthStore.getState();
             expect(state.profile).toEqual(mockProfile); 
             expect(state.error).toBeInstanceOf(Error);
@@ -145,13 +145,13 @@ describe('AuthStore - Update Profile Action', () => {
              const result = await useAuthStore.getState().updateProfile(profileUpdate);
 
              // Assert
-             expect(putSpy).toHaveBeenCalledWith('/profile', profileUpdate, { token: mockSession.access_token });
+             expect(putSpy).toHaveBeenCalledWith('me', profileUpdate, { token: mockSession.access_token });
              const state = useAuthStore.getState();
              expect(state.profile).toEqual(mockProfile);
              expect(state.error).toBeInstanceOf(Error);
-             expect(state.error?.message).toContain('Failed to update profile');
+             expect(state.error?.message).toBe(thrownError.message); 
              expect(state.isLoading).toBe(false);
              expect(result).toBeNull();
-             expect(logErrorSpy).toHaveBeenCalledWith('Error during profile update:', { error: thrownError });
+             expect(logErrorSpy).toHaveBeenCalledWith('Update profile: Error during API call.', { message: thrownError.message });
           });
 }); 

@@ -1,18 +1,28 @@
 // IMPORTANT: Supabase Edge Functions require relative paths for imports from shared modules.
 // Do not use path aliases (like @shared/) as they will cause deployment failures.
-import { serve } from 'https://deno.land/std@0.177.0/http/server.ts'
+import { serve } from 'https://deno.land/std@0.224.0/http/server.ts'
 import { createClient, type SupabaseClient } from 'npm:@supabase/supabase-js@2'
 // Import shared response/error handlers instead of defaultCorsHeaders directly
 import { 
     handleCorsPreflightRequest as actualHandleCorsPreflightRequest, 
     createErrorResponse as actualCreateErrorResponse, 
-    createSuccessResponse as actualCreateJsonResponse // Assuming createSuccessResponse is the equivalent JSON response creator
+    createSuccessResponse as actualCreateJsonResponse, // Assuming createSuccessResponse is the equivalent JSON response creator
+    isOriginAllowed,
+    baseCorsHeaders // Keep base for potential SSE use?
 } from '../_shared/cors-headers.ts'; 
 // Import getEnv from Deno namespace directly when needed, avoid putting in deps if not necessary for mocking
 // Import AI service factory and necessary types
-import { getAiProviderAdapter } from '../_shared/ai_service/factory.ts';
+import { getAiProviderAdapter as actualGetAiProviderAdapter } from '../_shared/ai_service/factory.ts';
 // Use import type for type-only imports
-import type { ChatMessage, ChatApiRequest as AdapterChatRequest } from '../_shared/types.ts'; // Adjusted path assuming types are in _shared
+import type { ChatApiRequest as AdapterChatRequest } from '../_shared/types.ts'; // Keep App-level request type
+import type { Database } from "../types_db.ts"; // Import Database type for DB objects
+import { verifyApiKey as actualVerifyApiKey } from '../_shared/auth.ts';
+import { logger } from '../_shared/logger.ts';
+
+// Define derived DB types needed locally
+type ChatMessageInsert = Database['public']['Tables']['chat_messages']['Insert'];
+type ChatMessageRow = Database['public']['Tables']['chat_messages']['Row'];
+type ChatRow = Database['public']['Tables']['chats']['Row'];
 
 // Define expected request body structure
 interface ChatRequest {
@@ -27,27 +37,29 @@ interface ChatRequest {
 // Define the interface for dependencies
 export interface ChatHandlerDeps {
   createSupabaseClient: typeof createClient; // Use the imported createClient type directly
-  getEnv: (key: string) => string | undefined; // Keep for mocking env vars if needed
   fetch: typeof fetch;
   // Use the imported actual handlers
   handleCorsPreflightRequest: typeof actualHandleCorsPreflightRequest;
   createJsonResponse: typeof actualCreateJsonResponse;
   createErrorResponse: typeof actualCreateErrorResponse;
   // Add getAiProviderAdapter dependency for testing/mocking
-  getAiProviderAdapter: typeof getAiProviderAdapter;
+  getAiProviderAdapter: typeof actualGetAiProviderAdapter;
+  verifyApiKey: typeof actualVerifyApiKey;
+  logger: typeof logger;
 }
 
 // Create default dependencies using actual implementations
 export const defaultDeps: ChatHandlerDeps = {
   createSupabaseClient: createClient, // Use the direct import
-  getEnv: Deno.env.get, // Use Deno's env getter directly
   fetch: fetch,
   // Use the imported actual handlers
   handleCorsPreflightRequest: actualHandleCorsPreflightRequest,
   createJsonResponse: actualCreateJsonResponse,
   createErrorResponse: actualCreateErrorResponse,
   // Provide the real factory implementation
-  getAiProviderAdapter: getAiProviderAdapter,
+  getAiProviderAdapter: actualGetAiProviderAdapter,
+  verifyApiKey: actualVerifyApiKey,
+  logger: logger
 };
 
 // --- Main Handler Logic ---
@@ -56,12 +68,12 @@ export async function mainHandler(req: Request, deps: ChatHandlerDeps = defaultD
   // Use injected deps
   const {
     createSupabaseClient: createSupabaseClientDep,
-    getEnv: getEnvDep,
-    // fetch: fetchDep, // fetchDep is not explicitly used below, fetch is called directly via adapter
     handleCorsPreflightRequest, // Use the destructured handler
     createJsonResponse,
     createErrorResponse,
     getAiProviderAdapter: getAiProviderAdapterDep, // Use the injected factory
+    verifyApiKey: verifyApiKeyDep,
+    logger: loggerDep // Assuming logger is used internally
   } = deps;
 
   // Handle CORS preflight requests using the injected handler
@@ -69,7 +81,7 @@ export async function mainHandler(req: Request, deps: ChatHandlerDeps = defaultD
   if (corsResponse) return corsResponse;
 
   if (req.method !== 'POST') {
-    return createErrorResponse('Method Not Allowed', 405);
+    return createErrorResponse('Method Not Allowed', 405, req);
   }
 
   try {
@@ -78,17 +90,17 @@ export async function mainHandler(req: Request, deps: ChatHandlerDeps = defaultD
 
     // --- Input Validation ---
     if (!requestBody.message || typeof requestBody.message !== 'string' || requestBody.message.trim() === '') {
-      return createErrorResponse('Missing or invalid "message" in request body', 400);
+      return createErrorResponse('Missing or invalid "message" in request body', 400, req);
     }
     if (!requestBody.providerId || typeof requestBody.providerId !== 'string') {
-       return createErrorResponse('Missing or invalid "providerId" in request body', 400);
+       return createErrorResponse('Missing or invalid "providerId" in request body', 400, req);
     }
     // Allow '__none__' for promptId
     if (!requestBody.promptId || typeof requestBody.promptId !== 'string') {
-      return createErrorResponse('Missing or invalid "promptId" in request body', 400);
+      return createErrorResponse('Missing or invalid "promptId" in request body', 400, req);
     }
     if (requestBody.chatId && typeof requestBody.chatId !== 'string') {
-      return createErrorResponse('Invalid "chatId" in request body', 400);
+      return createErrorResponse('Invalid "chatId" in request body', 400, req);
     }
 
     // --- Auth and Client Initialization ---
@@ -97,16 +109,17 @@ export async function mainHandler(req: Request, deps: ChatHandlerDeps = defaultD
        console.log("Chat function called without Authorization header. Returning AUTH_REQUIRED signal.")
        return createJsonResponse(
            { error: "Authentication required", code: "AUTH_REQUIRED" },
-           401 // Set status to 401 Unauthorized
+           401, // Set status to 401 Unauthorized
+           req
        );
     }
 
-    // Use injected createSupabaseClient and getEnv
-    const supabaseUrl = getEnvDep('SUPABASE_URL') ?? '';
-    const supabaseAnonKey = getEnvDep('SUPABASE_ANON_KEY') ?? '';
+    // Use Deno.env.get directly
+    const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? '';
+    const supabaseAnonKey = Deno.env.get('SUPABASE_ANON_KEY') ?? '';
     if (!supabaseUrl || !supabaseAnonKey) {
         console.error("Missing SUPABASE_URL or SUPABASE_ANON_KEY environment variables.");
-        return createErrorResponse("Server configuration error.", 500);
+        return createErrorResponse("Server configuration error.", 500, req);
     }
 
     const supabaseClient = createSupabaseClientDep(
@@ -119,7 +132,7 @@ export async function mainHandler(req: Request, deps: ChatHandlerDeps = defaultD
     const { data: { user }, error: userError } = await supabaseClient.auth.getUser();
     if (userError || !user) {
       console.error('Auth error:', userError);
-      return createErrorResponse('Invalid authentication credentials', 401);
+      return createErrorResponse('Invalid authentication credentials', 401, req);
     }
     const userId = user.id; // Store user ID for later use
     console.log('Authenticated user:', userId);
@@ -135,7 +148,7 @@ export async function mainHandler(req: Request, deps: ChatHandlerDeps = defaultD
         .single();
       if (promptError || !promptData) {
           console.error('Error fetching system prompt:', promptError);
-          return createErrorResponse(promptError?.message || 'System prompt not found or inactive.', 400);
+          return createErrorResponse(promptError?.message || 'System prompt not found or inactive.', 400, req);
       }
       systemPromptText = promptData.prompt_text;
       console.log('Fetched system prompt text.');
@@ -151,13 +164,13 @@ export async function mainHandler(req: Request, deps: ChatHandlerDeps = defaultD
 
     if (providerError || !providerData) {
         console.error('Error fetching provider details:', providerError);
-        return createErrorResponse(providerError?.message || 'AI provider not found or inactive.', 400);
+        return createErrorResponse(providerError?.message || 'AI provider not found or inactive.', 400, req);
     }
     const apiIdentifier = providerData.api_identifier;
     const provider = providerData.provider; // Get the provider string (e.g., 'openai')
     if (!provider) {
         console.error(`Provider string missing for ai_providers record ID: ${requestBody.providerId}`);
-        return createErrorResponse('AI provider configuration error on server [missing provider string].', 500);
+        return createErrorResponse('AI provider configuration error on server [missing provider string].', 500, req);
     }
     console.log(`Fetched provider details: provider=${provider}, api_identifier=${apiIdentifier}`);
 
@@ -165,7 +178,7 @@ export async function mainHandler(req: Request, deps: ChatHandlerDeps = defaultD
     const adapter = getAiProviderAdapterDep(provider);
     if (!adapter) {
         console.error(`No adapter found for provider: ${provider}`);
-        return createErrorResponse(`Unsupported AI provider: ${provider}`, 400);
+        return createErrorResponse(`Unsupported AI provider: ${provider}`, 400, req);
     }
 
     // --- Securely Get API Key based on Provider ---
@@ -177,12 +190,13 @@ export async function mainHandler(req: Request, deps: ChatHandlerDeps = defaultD
         // Add other cases as needed
         default:
             console.error(`Unknown provider string encountered for API key lookup: ${provider}`);
-            return createErrorResponse(`Internal server error: Unknown AI provider configuration for provider ${provider}.`, 500);
+            return createErrorResponse(`Internal server error: Unknown AI provider configuration for provider ${provider}.`, 500, req);
     }
-    const apiKey = getEnvDep(apiKeyEnvVarName);
+    // Use Deno.env.get directly
+    const apiKey = Deno.env.get(apiKeyEnvVarName);
     if (!apiKey) {
         console.error(`API key not found in environment variable: ${apiKeyEnvVarName} for provider ${provider}`);
-        return createErrorResponse('AI provider configuration error on server [key missing].', 500);
+        return createErrorResponse('AI provider configuration error on server [key missing].', 500, req);
     }
     console.log(`Retrieved API key from env var: ${apiKeyEnvVarName}`);
 
@@ -237,7 +251,7 @@ export async function mainHandler(req: Request, deps: ChatHandlerDeps = defaultD
 
         console.log(`Calling ${provider} adapter sendMessage with apiIdentifier: ${apiIdentifier}`);
         // Call the adapter's sendMessage method
-        const assistantResponse: ChatMessage = await adapter.sendMessage(
+        const assistantResponse: ChatMessageRow = await adapter.sendMessage(
             adapterRequest,
             apiIdentifier, // Pass the specific model API identifier (e.g., openai-gpt-4o)
             apiKey
@@ -251,71 +265,74 @@ export async function mainHandler(req: Request, deps: ChatHandlerDeps = defaultD
             const firstUserMessage = requestBody.message.substring(0, 50); // Simple title
             const { data: newChat, error: newChatError } = await supabaseClient
                 .from('chats')
-                .insert({ user_id: userId, title: `Chat: ${firstUserMessage}...` })
+                // Do NOT prepend with 'Chat: ' or 'Chat - ' or anything like that.
+                .insert({ user_id: userId, title: `${firstUserMessage}...` })
                 .select('id')
                 .single();
             if (newChatError || !newChat) {
                 console.error('Error creating new chat:', newChatError);
-                return createErrorResponse('Failed to create new chat session.', 500);
+                return createErrorResponse('Failed to create new chat session.', 500, req);
             }
             currentChatId = newChat.id;
             console.log(`Created new chat with ID: ${currentChatId}`);
         }
 
-        // 2. Save User Message
-        const userMessageRecord: Partial<ChatMessage> = {
-            chat_id: currentChatId,
-            user_id: userId,
-            role: 'user',
-            content: requestBody.message,
-            ai_provider_id: requestBody.providerId, // Link to the specific model used
-            system_prompt_id: requestBody.promptId !== '__none__' ? requestBody.promptId : null,
-            // token_usage: null, // User messages don't have token usage
-        };
-        const { error: userSaveError } = await supabaseClient.from('chat_messages').insert(userMessageRecord);
-        if (userSaveError) {
-            console.error(`Error saving user message for chat ${currentChatId}:`, userSaveError);
-            // Don't necessarily fail the whole request, but log it.
-            // The assistant response might still be useful to the user.
+        // Ensure we have a valid chat ID before proceeding
+        if (!currentChatId) {
+          console.error("Chat ID is missing before attempting to save messages.");
+          return createErrorResponse("Invalid chat session state.", 500, req);
         }
 
-        // 3. Save Assistant Message (using data from adapter response)
-        const assistantMessageRecord: Partial<ChatMessage> = {
-            chat_id: currentChatId,
-            // user_id: null, // Let DB handle default or leave null
-            role: 'assistant', // Role comes from the adapter response convention
-            content: assistantResponse.content, // From adapter response
-            ai_provider_id: requestBody.providerId, // Link to the specific model used
-            system_prompt_id: assistantResponse.system_prompt_id, // From adapter response (could be null)
-            token_usage: assistantResponse.token_usage, // From adapter response
-            // created_at will be set by the DB
+        // 4. Save user message (using ChatMessageInsert)
+        const userMessageRecord: ChatMessageInsert = {
+          chat_id: currentChatId, // Now guaranteed non-null
+          user_id: userId,
+          role: 'user',
+          content: requestBody.message,
+          ai_provider_id: requestBody.providerId,
+          system_prompt_id: requestBody.promptId !== '__none__' ? requestBody.promptId : null,
         };
-         const { data: savedAssistantMessageData, error: assistantSaveError } = await supabaseClient
-            .from('chat_messages')
-            .insert(assistantMessageRecord)
-            .select('*'); // Select all columns, result is an array
 
-        if (assistantSaveError || !savedAssistantMessageData || savedAssistantMessageData.length === 0) {
-            console.error(`Error saving assistant message for chat ${currentChatId}:`, assistantSaveError);
-            // If saving the assistant message fails, or we somehow get an empty array back
-            return createErrorResponse('Failed to save assistant response.', 500);
+        // 5. Save assistant message (using ChatMessageInsert)
+        const assistantMessageRecord: ChatMessageInsert = {
+          chat_id: currentChatId, // Now guaranteed non-null
+          user_id: null, 
+          role: 'assistant',
+          content: assistantResponse.content,
+          ai_provider_id: assistantResponse.ai_provider_id, 
+          system_prompt_id: assistantResponse.system_prompt_id,
+          token_usage: assistantResponse.token_usage, 
+        };
+
+        // Insert both messages (Remove explicit cast, rely on TS inference now)
+        const { data: savedMessages, error: saveError } = await supabaseClient
+          .from('chat_messages')
+          .insert([userMessageRecord, assistantMessageRecord])
+          .select();
+
+        if (saveError) {
+            console.error(`Error saving messages for chat ${currentChatId}:`, saveError);
+            return createErrorResponse('Failed to save messages to database.', 500, req);
+        }
+        
+        // Find the saved assistant message (should conform to ChatMessageRow)
+        const finalAssistantMessage: ChatMessageRow | undefined = savedMessages?.find(m => m.role === 'assistant'); 
+
+        if (!finalAssistantMessage) {
+            console.error("Failed to retrieve saved assistant message from DB", { currentChatId, savedMessages });
+            return createErrorResponse("Failed to save or retrieve chat response.", 500, req);
         }
 
-        // Extract the single message from the array
-        const savedAssistantMessage = savedAssistantMessageData[0];
-
-        console.log(`Saved user and assistant messages for chat ${currentChatId}`);
-
-        // Return the saved assistant message (with ID, created_at) to the client
-        // Ensure the returned object matches the ChatMessage type exactly
-        return createJsonResponse(savedAssistantMessage as ChatMessage, 200);
+        // Return only the saved assistant message (as ChatMessageRow)
+        // Ensure createJsonResponse handles the ChatMessageRow type correctly
+        return createJsonResponse({ message: finalAssistantMessage }, 200, req);
 
     } catch (error) {
         // Catch errors from adapter.sendMessage or DB operations
         console.error('Error during AI interaction or saving:', error);
         // Check if error is an Error instance before accessing message
         const errorMessage = error instanceof Error ? error.message : 'An internal error occurred during chat processing.';
-        return createErrorResponse(errorMessage, 500);
+        return createErrorResponse(errorMessage, 500, req);
     }
 
   } catch (err) {
@@ -323,7 +340,7 @@ export async function mainHandler(req: Request, deps: ChatHandlerDeps = defaultD
     console.error('Unhandled error in chat handler:', err);
     // Check if err is an Error instance before accessing message
     const errorMessage = err instanceof Error ? err.message : 'An unexpected error occurred.';
-    return createErrorResponse(errorMessage, 500);
+    return createErrorResponse(errorMessage, 500, req);
   }
 }
 

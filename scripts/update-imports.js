@@ -30,10 +30,10 @@ const importMap = {
   "'../../types/api.types'": "'@paynless/types'",
   "'../../types/route.types'": "'@paynless/types'",
   "'../../types/theme.types'": "'@paynless/types'",
-  "'../api/apiClient'": "'@paynless/api-client'",
-  "'../../api/apiClient'": "'@paynless/api-client'",
-  "'../api/clients/stripe.api'": "'@paynless/api-client'",
-  "'../../api/clients/stripe.api'": "'@paynless/api-client'",
+  "'../api/apiClient'": "'@paynless/api'",
+  "'../../api/apiClient'": "'@paynless/api'",
+  "'../api/clients/stripe.api'": "'@paynless/api'",
+  "'../../api/clients/stripe.api'": "'@paynless/api'",
   
   // Paths for packages internal imports 
   "'../apiClient'": "'./apiClient'",

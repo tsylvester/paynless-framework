@@ -1,86 +1,116 @@
 // IMPORTANT: Supabase Edge Functions require relative paths for imports from shared modules.
 // Do not use path aliases (like @shared/) as they will cause deployment failures.
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
-import { createClient as actualCreateClient } from "npm:@supabase/supabase-js";
-import type { SupabaseClient, AuthResponse, SupabaseClientOptions, AuthError } from "@supabase/supabase-js";
-import { 
-  createErrorResponse as actualCreateErrorResponse, 
-  createSuccessResponse as actualCreateSuccessResponse,
-  handleCorsPreflightRequest as actualHandleCorsPreflightRequest 
-} from "../_shared/cors-headers.ts";
+// Removed unused actualCreateClient import
+// import { createClient as actualCreateClient } from "npm:@supabase/supabase-js"; 
+import type { SupabaseClient, AuthError } from "npm:@supabase/supabase-js@2"; // Use version 2
+import { baseCorsHeaders as defaultCorsHeaders } from "../_shared/cors-headers.ts"; // Import standard CORS headers
+import { HandlerError } from '../api-subscriptions/handlers/current.ts'; // Reuse HandlerError
 import { 
     createSupabaseClient as actualCreateSupabaseClient, 
     verifyApiKey as actualVerifyApiKey, 
-    createUnauthorizedResponse as actualCreateUnauthorizedResponse 
+    // Removed createUnauthorizedResponse import
 } from "../_shared/auth.ts";
+import type { Database } from "../types_db.ts"; // Import Database types
 
-// Define dependencies
-export interface LogoutHandlerDeps {
-    handleCorsPreflightRequest: (req: Request) => Response | null;
-    verifyApiKey: typeof actualVerifyApiKey;
-    createUnauthorizedResponse: typeof actualCreateUnauthorizedResponse;
-    createErrorResponse: (message: string, status?: number) => Response;
-    createSuccessResponse: (data: unknown, status?: number) => Response;
-    createSupabaseClient: typeof actualCreateSupabaseClient;
-    signOut?: (client: SupabaseClient<any>) => Promise<{ error: AuthError | null }>;
+// --- Remove Dependency Injection Setup ---
+/*
+export interface LogoutHandlerDeps { ... }
+const defaultDeps: LogoutHandlerDeps = { ... };
+*/
+
+// --- Main Handler Logic --- 
+// This function now *only* handles the core sign-out logic
+// Assumes client is already created and authenticated based on request header
+export async function mainHandler(supabaseClient: SupabaseClient<Database>): Promise<void> { // Returns void on success
+    try {
+        console.log("[logout/mainHandler] Calling signOut...");
+        const { error } = await supabaseClient.auth.signOut();
+        console.log(`[logout/mainHandler] signOut result: error=${error?.message}`);
+        
+        if (error) {
+            console.error("[logout/mainHandler] Logout error:", error);
+            // Use error status if available (like 401 for token issues), default to 500
+            throw new HandlerError(error.message, error.status || 500, error);
+        }
+
+        console.log("[logout/mainHandler] SignOut successful.");
+        // No return value needed for success
+
+    } catch (error) {
+        // Re-throw HandlerError directly
+        if (error instanceof HandlerError) {
+            throw error;
+        }
+        // Wrap other errors
+        console.error('[logout/mainHandler] Unexpected error:', error);
+        const errorMessage = error instanceof Error ? error.message : 'An unexpected internal error occurred during sign out';
+        // Default to 500, could check error.status if available
+        const status = typeof error === 'object' && error !== null && 'status' in error && typeof error.status === 'number' ? error.status : 500;
+        throw new HandlerError(errorMessage, status, error instanceof Error ? error : undefined);
+    }
 }
 
-// Default dependencies
-const defaultDeps: LogoutHandlerDeps = {
-    handleCorsPreflightRequest: actualHandleCorsPreflightRequest,
-    verifyApiKey: actualVerifyApiKey,
-    createUnauthorizedResponse: actualCreateUnauthorizedResponse,
-    createErrorResponse: actualCreateErrorResponse,
-    createSuccessResponse: actualCreateSuccessResponse,
-    createSupabaseClient: actualCreateSupabaseClient,
-    signOut: (client) => client.auth.signOut(),
-};
-
-// Export the handler, accepting dependencies
-export async function handleLogoutRequest(
-    req: Request,
-    deps: LogoutHandlerDeps = defaultDeps
-): Promise<Response> {
-  // Use injected dependencies
-  const corsResponse = deps.handleCorsPreflightRequest(req);
-  if (corsResponse) return corsResponse;
-
-  // Verify API key first
-  if (!deps.verifyApiKey(req)) {
-      return deps.createUnauthorizedResponse("Invalid or missing apikey");
-  }
-
-  if (req.method !== 'POST') {
-      return deps.createErrorResponse('Method Not Allowed', 405);
-  }
-
-  try {
-    // Use client factory that reads Authorization header
-    console.log("[logout/index.ts] Creating client from request auth header...");
-    const supabaseClient = deps.createSupabaseClient(req);
-    console.log("[logout/index.ts] Client created. Calling signOut...");
-    
-    // Sign out the user associated with the token used by the client
-    const signOutImpl = deps.signOut || defaultDeps.signOut!;
-    const { error } = await signOutImpl(supabaseClient);
-    console.log(`[logout/index.ts] signOut result: error=${error?.message}`);
-    
-    if (error) {
-      console.error("[logout/index.ts] Logout error:", error);
-      return deps.createErrorResponse(error.message, error.status === 401 ? 401 : 500);
+// --- Serve Function --- 
+serve(async (req) => {
+    // --- Handle CORS Preflight --- 
+    if (req.method === 'OPTIONS') {
+        return new Response(null, { headers: defaultCorsHeaders, status: 204 });
     }
 
-    console.log("[logout/index.ts] SignOut successful.");
-    return deps.createSuccessResponse({ message: "Successfully signed out" });
+    try {
+        // --- API Key Validation --- 
+        const isValidApiKey = actualVerifyApiKey(req); 
+        if (!isValidApiKey) {
+            throw new HandlerError("Invalid or missing apikey", 401);
+        }
+        
+        // --- Method Validation --- 
+        if (req.method !== 'POST') {
+            throw new HandlerError('Method Not Allowed', 405);
+        }
 
-  } catch (error) {
-    console.error("[logout/index.ts] Error in logout handler:", error);
-    const message = error instanceof Error ? error.message : "Internal server error";
-    const status = error instanceof Error && error.message?.includes("Unauthorized") ? 401 : 500;
-    return deps.createErrorResponse(message, status);
-  }
-}
+        // --- Client Setup (using auth header) --- 
+        let supabaseClient: SupabaseClient<Database>;
+        try {
+             console.log("[logout/serve] Creating client from request auth header...");
+             // Pass Database type to client creation
+             supabaseClient = actualCreateSupabaseClient(req);
+             console.log("[logout/serve] Client created.");
+        } catch (authError) {
+             console.error("[logout/serve] Error creating client from auth header:", authError);
+             const message = authError instanceof Error ? authError.message : "Failed to create client from auth token";
+             // Assume 401 for client creation errors based on auth header
+             throw new HandlerError(message, 401, authError);
+        }
 
-if (import.meta.main) {
-    serve((req) => handleLogoutRequest(req, defaultDeps));
-} 
+        // --- Call Main Logic --- 
+        await mainHandler(supabaseClient);
+        
+        // --- Format Success Response --- 
+        // Simple 200 OK is sufficient for logout
+        return new Response(null, { // No body needed
+            headers: defaultCorsHeaders, 
+            status: 200,
+        });
+
+    } catch (err) {
+        // --- Format Error Response --- 
+        let errorStatus = 500;
+        let errorMessage = "Internal Server Error";
+        if (err instanceof HandlerError) {
+            errorStatus = err.status;
+            errorMessage = err.message;
+            if (err.cause) console.error("Original error cause:", err.cause);
+        } else if (err instanceof Error) {
+            errorMessage = err.message;
+        } else {
+            errorMessage = String(err); 
+        }
+        console.error("Returning error response:", { status: errorStatus, message: errorMessage });
+        return new Response(JSON.stringify({ error: errorMessage }), {
+            headers: { ...defaultCorsHeaders, 'Content-Type': 'application/json' },
+            status: errorStatus,
+        });
+    }
+}); 

@@ -1,4 +1,5 @@
-import type { AiProviderAdapter, ChatMessage, ProviderModelInfo, ChatApiRequest, Json } from '../types.ts';
+import type { AiProviderAdapter, ChatMessage, ProviderModelInfo, ChatApiRequest, AdapterResponsePayload } from '../types.ts';
+import type { Json } from '../../../functions/types_db.ts';
 
 const OPENAI_API_BASE = 'https://api.openai.com/v1';
 
@@ -11,30 +12,26 @@ export class OpenAiAdapter implements AiProviderAdapter {
     request: ChatApiRequest, // Contains previous messages if chatId was provided
     modelIdentifier: string, // e.g., "openai-gpt-4o" -> "gpt-4o"
     apiKey: string
-  ): Promise<ChatMessage> {
+  ): Promise<AdapterResponsePayload> {
+    // Use fetch directly
     const openaiUrl = `${OPENAI_API_BASE}/chat/completions`;
-    // The model identifier in the DB includes the provider prefix, remove it for the API call
+    // Remove provider prefix if present (ensure this matches your DB data convention)
     const modelApiName = modelIdentifier.replace(/^openai-/i, '');
 
-    // Construct messages payload from request
-    // Assuming request.messages already contains system prompt (if any) and history
-    const messagesPayload = [
-      // Example: Add system prompt or history manipulation if needed based on request
-      // { role: 'system', content: 'You are helpful.' },
-      ...request.messages, // Assuming ChatApiRequest will be updated to include messages
-      { role: 'user', content: request.message },
-    ].filter(msg => msg.content); // Ensure no empty messages
-
+    // Map app messages to OpenAI format
+    const openaiMessages = request.messages.map(msg => ({
+      role: msg.role,
+      content: msg.content,
+    })).filter(msg => msg.content); // Ensure no empty messages
 
     const openaiPayload = {
       model: modelApiName,
-      messages: messagesPayload,
-      // Add other parameters like temperature, max_tokens as needed
+      messages: openaiMessages,
+      // Add other parameters as needed
       // temperature: 0.7,
     };
 
-    console.log(`Sending request to OpenAI model: ${modelApiName}`);
-    // console.debug('OpenAI Payload:', JSON.stringify(openaiPayload)); // Careful with logging PII
+    console.log(`Sending fetch request to OpenAI model: ${modelApiName}`);
 
     const response = await fetch(openaiUrl, {
       method: 'POST',
@@ -47,38 +44,32 @@ export class OpenAiAdapter implements AiProviderAdapter {
 
     if (!response.ok) {
       const errorBody = await response.text();
-      console.error(`OpenAI API error (${response.status}): ${errorBody}`);
+      console.error(`OpenAI API fetch error (${response.status}): ${errorBody}`);
       throw new Error(`OpenAI API request failed: ${response.status} ${response.statusText}`);
     }
 
     const jsonResponse = await response.json();
-    // console.debug('OpenAI Response:', JSON.stringify(jsonResponse));
 
-    const assistantMessageContent = jsonResponse.choices?.[0]?.message?.content?.trim() || '';
-    if (!assistantMessageContent) {
-        console.error("OpenAI response missing message content:", jsonResponse);
-        throw new Error("Received empty response from OpenAI.");
+    const aiContent = jsonResponse.choices?.[0]?.message?.content?.trim();
+    if (!aiContent) {
+      console.error("OpenAI fetch response missing message content:", jsonResponse);
+      throw new Error('OpenAI response content is empty or missing.');
     }
 
-    // Extract token usage if available
-    const tokenUsage: Json | null = jsonResponse.usage ? {
-        prompt_tokens: jsonResponse.usage.prompt_tokens,
-        completion_tokens: jsonResponse.usage.completion_tokens,
-        total_tokens: jsonResponse.usage.total_tokens,
+    const tokenUsage = jsonResponse.usage ? {
+      prompt_tokens: jsonResponse.usage.prompt_tokens,
+      completion_tokens: jsonResponse.usage.completion_tokens,
+      total_tokens: jsonResponse.usage.total_tokens,
     } : null;
 
-    // Construct the standardized ChatMessage response
-    // The actual saving to DB happens in the main /chat function
-    const assistantResponse: ChatMessage = {
-      // id will be generated when saving to DB
-      // chat_id will be set when saving to DB
+    // Construct the response conforming to AdapterResponsePayload
+    const assistantResponse: AdapterResponsePayload = {
       role: 'assistant',
-      content: assistantMessageContent,
-      ai_provider_id: request.providerId, // Keep original provider ID from request
-      system_prompt_id: request.promptId !== '__none__' ? request.promptId : null,
+      content: aiContent,
+      ai_provider_id: request.providerId, // Pass through the provider DB ID
+      system_prompt_id: request.promptId !== '__none__' ? request.promptId : null, // Pass through prompt DB ID
       token_usage: tokenUsage,
-      created_at: new Date().toISOString(), // Use current time for response timestamp
-      user_id: null, // Explicitly set user_id to null for assistant messages
+      // REMOVED fields not provided by adapter: id, chat_id, created_at, user_id
     };
 
     return assistantResponse;

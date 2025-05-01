@@ -1,7 +1,7 @@
 import { render, screen } from '@testing-library/react';
 import { MemoryRouter, Routes, Route } from 'react-router-dom';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { ProtectedRoute } from './ProtectedRoute';
+import { ProtectedRoute } from '../../components/auth/ProtectedRoute';
 import type { User, UserRole } from '@paynless/types';
 
 // Define mock state that can be modified by tests
