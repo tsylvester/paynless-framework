@@ -344,8 +344,8 @@ This section outlines the frontend implementation using a dynamic, card-based "h
 
 ### 2.8 Checkpoint 2: Multi-Tenancy Complete
 
-*   [ ] **Run Tests:** Execute all tests (`pnpm test`). Ensure they pass.
-*   [ ] **Build App:** Run `pnpm build`. Ensure it completes successfully.
+*   [X] **Run Tests:** Execute all tests (`pnpm test`). Ensure they pass.
+*   [X] **Build App:** Run `pnpm build`. Ensure it completes successfully.
 *   [ ] **Manual Test:**
     *   Create orgs (public/private).
     *   **Invite Flow:** Invite user (by email), verify notification/email, click invite link, view `AcceptInvitePage`, accept invite, verify user added to members list, verify notifications. Repeat for declining invite. Test admin cancelling a pending invite. Test inviting existing member (should fail).
