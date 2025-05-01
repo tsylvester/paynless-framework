@@ -5,7 +5,7 @@ import { createMockOrganizationApiClient, resetMockOrganizationApiClient } from 
 // Other imports
 import { useOrganizationStore, OrganizationStoreImplementation } from './organizationStore';
 import { useAuthStore } from './authStore';
-import { Organization, OrganizationMemberWithProfile, SupabaseUser, ApiError as ApiErrorType, AuthStore, ApiResponse, Invite, PendingOrgItems, UserProfile } from '@paynless/types';
+import { Organization, OrganizationMemberWithProfile, SupabaseUser, ApiError as ApiErrorType, AuthStore, ApiResponse, Invite, PendingOrgItems, UserProfile, OrganizationUpdate } from '@paynless/types';
 // Removed unused imports
 // import { initializeApiClient, _resetApiClient, ApiClient, OrganizationApiClient } from '@paynless/api'; 
 import { logger } from '@paynless/utils';
@@ -39,7 +39,8 @@ const mockMember1Profile: UserProfile = {
     last_name: 'User',
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
-    role: 'admin'
+    role: 'admin',
+    last_selected_org_id: null
 };
 
 const mockMember1: OrganizationMemberWithProfile = {
@@ -58,7 +59,8 @@ const mockMember2Profile: UserProfile = {
     last_name: 'User',
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
-    role: 'user'
+    role: 'user',
+    last_selected_org_id: null
 };
 
 const mockMember2: OrganizationMemberWithProfile = {
@@ -487,9 +489,311 @@ describe('OrganizationStore', () => {
       });
   });
 
-  describe.skip('updateOrganization', () => { /* ... */ });
-  describe.skip('removeOrganizationMember', () => { /* Needs mockOrgApi.removeMember */ });
-  describe.skip('updateOrganizationMemberRole', () => { /* Needs mockOrgApi.updateMemberRole */ });
+  // +++ Add Tests for updateOrganization +++
+  describe('updateOrganization', () => {
+    const orgToUpdate: Organization = { ...mockOrg1, id: 'org-update' };
+    const otherOrg: Organization = mockOrg2;
+    const initialOrgs = [orgToUpdate, otherOrg];
+    const updateData: OrganizationUpdate = { name: 'Updated Org Name' };
+    const updatedOrgData: Organization = { ...orgToUpdate, ...updateData };
+
+    it('should update state and details when updating the current org', async () => {
+      // Arrange: Set current org to the one being updated
+      act(() => {
+        useOrganizationStore.setState({
+          userOrganizations: initialOrgs,
+          currentOrganizationId: orgToUpdate.id,
+          currentOrganizationDetails: orgToUpdate,
+        });
+      });
+      mockOrgApi.updateOrganization.mockResolvedValue({ status: 200, data: updatedOrgData });
+
+      // Act
+      let result = false;
+      await act(async () => {
+        result = await useOrganizationStore.getState().updateOrganization(orgToUpdate.id, updateData);
+      });
+
+      // Assert
+      expect(result).toBe(true);
+      expect(getApiClientSpy).toHaveBeenCalled();
+      expect(mockOrgApi.updateOrganization).toHaveBeenCalledWith(orgToUpdate.id, updateData);
+      
+      const state = useOrganizationStore.getState();
+      expect(state.userOrganizations).toContainEqual(updatedOrgData);
+      expect(state.userOrganizations.find(o => o.id === otherOrg.id)).toEqual(otherOrg); // Ensure other org untouched
+      expect(state.currentOrganizationDetails).toEqual(updatedOrgData);
+      expect(state.error).toBeNull();
+      expect(state.isLoading).toBe(false);
+    });
+
+    it('should update state only when updating a non-current org', async () => {
+      // Arrange: Set current org to a different one
+      act(() => {
+        useOrganizationStore.setState({
+          userOrganizations: initialOrgs,
+          currentOrganizationId: otherOrg.id,
+          currentOrganizationDetails: otherOrg,
+        });
+      });
+      mockOrgApi.updateOrganization.mockResolvedValue({ status: 200, data: updatedOrgData });
+
+      // Act
+      let result = false;
+      await act(async () => {
+        result = await useOrganizationStore.getState().updateOrganization(orgToUpdate.id, updateData);
+      });
+
+      // Assert
+      expect(result).toBe(true);
+      expect(mockOrgApi.updateOrganization).toHaveBeenCalledWith(orgToUpdate.id, updateData);
+      
+      const state = useOrganizationStore.getState();
+      expect(state.userOrganizations).toContainEqual(updatedOrgData);
+      expect(state.userOrganizations.find(o => o.id === otherOrg.id)).toEqual(otherOrg);
+      expect(state.currentOrganizationDetails).toEqual(otherOrg); // Current details should NOT change
+      expect(state.error).toBeNull();
+      expect(state.isLoading).toBe(false);
+    });
+
+    it('should set error state on API failure', async () => {
+      // Arrange
+      const errorMsg = 'Update failed';
+      act(() => {
+        useOrganizationStore.setState({
+          userOrganizations: initialOrgs,
+          currentOrganizationId: orgToUpdate.id,
+          currentOrganizationDetails: orgToUpdate,
+        });
+      });
+      mockOrgApi.updateOrganization.mockResolvedValue({ status: 400, error: { message: errorMsg, code: '400' } });
+
+      // Act
+      let result = false;
+      await act(async () => {
+        result = await useOrganizationStore.getState().updateOrganization(orgToUpdate.id, updateData);
+      });
+
+      // Assert
+      expect(result).toBe(false);
+      expect(mockOrgApi.updateOrganization).toHaveBeenCalledWith(orgToUpdate.id, updateData);
+      
+      const state = useOrganizationStore.getState();
+      expect(state.userOrganizations).toEqual(initialOrgs); // List unchanged
+      expect(state.currentOrganizationDetails).toEqual(orgToUpdate); // Details unchanged
+      expect(state.error).toBe(errorMsg);
+      expect(state.isLoading).toBe(false);
+    });
+  });
+  // +++ End Tests +++
+
+  // +++ Add Tests for updateMemberRole +++
+  describe('updateMemberRole', () => {
+    const memberToUpdate: OrganizationMemberWithProfile = mockMember2; // Regular member
+    const adminToUpdate: OrganizationMemberWithProfile = mockMember1; // Admin
+    const otherAdmin: OrganizationMemberWithProfile = { 
+      ...mockMember1, 
+      id: 'mem-admin-other', 
+      user_id: 'user-other-admin',
+      user_profiles: { ...mockMember1Profile, id: 'user-other-admin'} 
+    };
+    const lastAdminErrorMsg = 'Cannot remove last admin';
+
+    it('should update member role on success', async () => {
+      // Arrange: Start with admin and member
+      act(() => {
+        useOrganizationStore.setState({ currentOrganizationMembers: [adminToUpdate, memberToUpdate] });
+      });
+      mockOrgApi.updateMemberRole.mockResolvedValue({ status: 204 });
+
+      // Act: Promote member
+      let result = false;
+      await act(async () => {
+        result = await useOrganizationStore.getState().updateMemberRole(memberToUpdate.id, 'admin');
+      });
+
+      // Assert
+      expect(result).toBe(true);
+      expect(mockOrgApi.updateMemberRole).toHaveBeenCalledWith(memberToUpdate.id, 'admin');
+      const updatedMember = useOrganizationStore.getState().currentOrganizationMembers.find(m => m.id === memberToUpdate.id);
+      expect(updatedMember?.role).toBe('admin');
+      expect(useOrganizationStore.getState().error).toBeNull();
+      expect(useOrganizationStore.getState().isLoading).toBe(false);
+    });
+
+    it('should demote admin if not the last one', async () => {
+      // Arrange: Start with two admins
+      act(() => {
+        useOrganizationStore.setState({ currentOrganizationMembers: [adminToUpdate, otherAdmin] });
+      });
+      mockOrgApi.updateMemberRole.mockResolvedValue({ status: 204 });
+
+      // Act: Demote one admin
+      let result = false;
+      await act(async () => {
+        result = await useOrganizationStore.getState().updateMemberRole(adminToUpdate.id, 'member');
+      });
+
+      // Assert
+      expect(result).toBe(true);
+      expect(mockOrgApi.updateMemberRole).toHaveBeenCalledWith(adminToUpdate.id, 'member');
+      const updatedMember = useOrganizationStore.getState().currentOrganizationMembers.find(m => m.id === adminToUpdate.id);
+      expect(updatedMember?.role).toBe('member');
+      expect(useOrganizationStore.getState().error).toBeNull();
+    });
+
+    it('should set error and prevent demotion if last admin', async () => {
+      // Arrange: Start with only one admin
+      const initialMembers = [adminToUpdate];
+      act(() => {
+        useOrganizationStore.setState({ currentOrganizationMembers: initialMembers });
+      });
+      mockOrgApi.updateMemberRole.mockResolvedValue({ status: 403, error: { message: lastAdminErrorMsg, code: 'LAST_ADMIN' } });
+
+      // Act: Attempt to demote last admin
+      let result = true; // Default to true to ensure action sets it to false
+      await act(async () => {
+        result = await useOrganizationStore.getState().updateMemberRole(adminToUpdate.id, 'member');
+      });
+
+      // Assert
+      expect(result).toBe(false);
+      expect(mockOrgApi.updateMemberRole).toHaveBeenCalledWith(adminToUpdate.id, 'member');
+      expect(useOrganizationStore.getState().currentOrganizationMembers).toEqual(initialMembers); // State unchanged
+      expect(useOrganizationStore.getState().error).toBe(lastAdminErrorMsg);
+      expect(useOrganizationStore.getState().isLoading).toBe(false);
+    });
+
+    it('should set error state on general API failure', async () => {
+      // Arrange
+      const errorMsg = 'Update role failed';
+      const initialMembers = [adminToUpdate, memberToUpdate];
+       act(() => {
+        useOrganizationStore.setState({ currentOrganizationMembers: initialMembers });
+      });
+      mockOrgApi.updateMemberRole.mockResolvedValue({ status: 500, error: { message: errorMsg, code: '500' } });
+
+      // Act
+      let result = true;
+      await act(async () => {
+        result = await useOrganizationStore.getState().updateMemberRole(memberToUpdate.id, 'admin');
+      });
+
+      // Assert
+      expect(result).toBe(false);
+      expect(mockOrgApi.updateMemberRole).toHaveBeenCalledWith(memberToUpdate.id, 'admin');
+      expect(useOrganizationStore.getState().currentOrganizationMembers).toEqual(initialMembers); // State unchanged
+      expect(useOrganizationStore.getState().error).toBe(errorMsg);
+      expect(useOrganizationStore.getState().isLoading).toBe(false);
+    });
+  });
+  // +++ End Tests +++
+
+  // +++ Add Tests for removeMember +++
+  describe('removeMember', () => {
+    const memberToRemove: OrganizationMemberWithProfile = mockMember2; // Regular member
+    const adminToRemove: OrganizationMemberWithProfile = mockMember1; // Admin
+    const otherAdmin: OrganizationMemberWithProfile = { 
+      ...mockMember1, 
+      id: 'mem-admin-other', 
+      user_id: 'user-other-admin',
+      user_profiles: { ...mockMember1Profile, id: 'user-other-admin'} 
+    };
+    const lastAdminErrorMsg = 'Cannot remove last admin';
+
+    it('should remove member on success', async () => {
+      // Arrange: Start with admin and member
+      const initialMembers = [adminToRemove, memberToRemove];
+      act(() => {
+        useOrganizationStore.setState({ currentOrganizationMembers: initialMembers });
+      });
+      mockOrgApi.removeMember.mockResolvedValue({ status: 204 });
+
+      // Act: Remove regular member
+      let result = false;
+      await act(async () => {
+        result = await useOrganizationStore.getState().removeMember(memberToRemove.id);
+      });
+
+      // Assert
+      expect(result).toBe(true);
+      expect(mockOrgApi.removeMember).toHaveBeenCalledWith(memberToRemove.id);
+      const remainingMembers = useOrganizationStore.getState().currentOrganizationMembers;
+      expect(remainingMembers).toHaveLength(1);
+      expect(remainingMembers[0]).toEqual(adminToRemove);
+      expect(useOrganizationStore.getState().error).toBeNull();
+      expect(useOrganizationStore.getState().isLoading).toBe(false);
+    });
+
+    it('should remove admin if not the last one', async () => {
+       // Arrange: Start with two admins
+       const initialMembers = [adminToRemove, otherAdmin];
+       act(() => {
+         useOrganizationStore.setState({ currentOrganizationMembers: initialMembers });
+       });
+       mockOrgApi.removeMember.mockResolvedValue({ status: 204 });
+
+      // Act: Remove one admin
+      let result = false;
+      await act(async () => {
+        result = await useOrganizationStore.getState().removeMember(adminToRemove.id);
+      });
+
+      // Assert
+      expect(result).toBe(true);
+      expect(mockOrgApi.removeMember).toHaveBeenCalledWith(adminToRemove.id);
+      const remainingMembers = useOrganizationStore.getState().currentOrganizationMembers;
+      expect(remainingMembers).toHaveLength(1);
+      expect(remainingMembers[0]).toEqual(otherAdmin);
+      expect(useOrganizationStore.getState().error).toBeNull();
+    });
+
+    it('should set error and prevent removal if last admin', async () => {
+      // Arrange: Start with only one admin
+      const initialMembers = [adminToRemove];
+      act(() => {
+        useOrganizationStore.setState({ currentOrganizationMembers: initialMembers });
+      });
+      mockOrgApi.removeMember.mockResolvedValue({ status: 403, error: { message: lastAdminErrorMsg, code: 'LAST_ADMIN' } });
+
+      // Act: Attempt to remove last admin
+      let result = true; // Default to true to ensure action sets it to false
+      await act(async () => {
+        result = await useOrganizationStore.getState().removeMember(adminToRemove.id);
+      });
+
+      // Assert
+      expect(result).toBe(false);
+      expect(mockOrgApi.removeMember).toHaveBeenCalledWith(adminToRemove.id);
+      expect(useOrganizationStore.getState().currentOrganizationMembers).toEqual(initialMembers); // State unchanged
+      expect(useOrganizationStore.getState().error).toBe(lastAdminErrorMsg);
+      expect(useOrganizationStore.getState().isLoading).toBe(false);
+    });
+
+    it('should set error state on general API failure', async () => {
+      // Arrange
+      const errorMsg = 'Remove member failed';
+      const initialMembers = [adminToRemove, memberToRemove];
+      act(() => {
+        useOrganizationStore.setState({ currentOrganizationMembers: initialMembers });
+      });
+      mockOrgApi.removeMember.mockResolvedValue({ status: 500, error: { message: errorMsg, code: '500' } });
+
+      // Act
+      let result = true;
+      await act(async () => {
+        result = await useOrganizationStore.getState().removeMember(memberToRemove.id);
+      });
+
+      // Assert
+      expect(result).toBe(false);
+      expect(mockOrgApi.removeMember).toHaveBeenCalledWith(memberToRemove.id);
+      expect(useOrganizationStore.getState().currentOrganizationMembers).toEqual(initialMembers); // State unchanged
+      expect(useOrganizationStore.getState().error).toBe(errorMsg);
+      expect(useOrganizationStore.getState().isLoading).toBe(false);
+    });
+  });
+  // +++ End Tests +++
 
   describe('inviteUser', () => {
     const orgId = 'org-invite';
@@ -504,6 +808,7 @@ describe('OrganizationStore', () => {
       invite_token: 'token',
       created_at: new Date().toISOString(),
       invited_by_user_id: 'user-123',
+      invited_user_id: null,
       expires_at: null
     };
 

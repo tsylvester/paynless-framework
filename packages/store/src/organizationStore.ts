@@ -432,9 +432,51 @@ export const useOrganizationStore = create<OrganizationStoreImplementation>()(
         }
       },
 
-      updateOrganization: async (_orgId: string, _updates: Partial<Organization>): Promise<boolean> => {
-        // Implementation will be added in the GREEN step
-        throw new Error('updateOrganization not implemented');
+      updateOrganization: async (orgId: string, updates: Partial<Organization>): Promise<boolean> => {
+        const { _setLoading, _setError, currentOrganizationId, userOrganizations } = get();
+        _setLoading(true);
+        _setError(null);
+
+        try {
+          const apiClient = getApiClient();
+          const response = await apiClient.organizations.updateOrganization(orgId, updates);
+
+          if (response.error || response.status >= 300 || !response.data) {
+            const errorMsg = response.error?.message ?? 'Failed to update organization';
+            logger.error('[OrganizationStore] updateOrganization - API Error', { orgId, updates, error: errorMsg, status: response.status });
+            _setError(errorMsg);
+            return false; // Indicate failure
+          } else {
+            const updatedOrg = response.data;
+            logger.info(`[OrganizationStore] Successfully updated organization ${orgId}.`);
+
+            // Update the list of user organizations
+            const updatedUserOrgs = userOrganizations.map(org => 
+                org.id === orgId ? updatedOrg : org
+            );
+
+            let updatedState: Partial<OrganizationState & OrganizationUIState> = {
+                userOrganizations: updatedUserOrgs,
+                isLoading: false,
+                error: null,
+            };
+
+            // If the updated organization is the current one, update details too
+            if (currentOrganizationId === orgId) {
+                updatedState.currentOrganizationDetails = updatedOrg;
+            }
+
+            set(updatedState);
+            return true; // Indicate success
+          }
+        } catch (err: any) {
+          const errorMsg = err.message ?? 'An unexpected error occurred during organization update';
+          logger.error('[OrganizationStore] updateOrganization - Unexpected Error', { orgId, updates, message: errorMsg });
+          _setError(errorMsg);
+          return false; // Indicate failure
+        } finally {
+          _setLoading(false);
+        }
       },
 
       // +++ Add leaveOrganization +++
@@ -548,14 +590,92 @@ export const useOrganizationStore = create<OrganizationStoreImplementation>()(
         }
       },
 
-      updateMemberRole: async (_membershipId: string, _role: string): Promise<boolean> => {
-        // Implementation will be added in the GREEN step
-        throw new Error('updateMemberRole not implemented');
+      updateMemberRole: async (membershipId: string, role: string): Promise<boolean> => {
+        const { _setLoading, _setError, currentOrganizationMembers } = get();
+        _setLoading(true);
+        _setError(null);
+
+        try {
+          const apiClient = getApiClient();
+          const response = await apiClient.organizations.updateMemberRole(membershipId, role);
+
+          if (response.error || response.status >= 300) {
+            // Handle potential "last admin" error specifically if API provides hints
+            // For now, just log and set the generic error message
+            const errorMsg = response.error?.message ?? 'Failed to update member role';
+            logger.error('[OrganizationStore] updateMemberRole - API Error', { membershipId, role, error: errorMsg, status: response.status });
+            _setError(errorMsg);
+            return false; // Indicate failure
+          } else {
+            logger.info(`[OrganizationStore] Successfully updated role for membership ${membershipId} to ${role}.`);
+
+            // Update the member in the current list
+            const updatedMembers = currentOrganizationMembers.map(member => 
+              member.id === membershipId ? { ...member, role: role as 'admin' | 'member' } : member
+            );
+
+            set({ 
+              currentOrganizationMembers: updatedMembers,
+              isLoading: false,
+              error: null 
+            });
+            return true; // Indicate success
+          }
+        } catch (err: any) {
+          const errorMsg = err.message ?? 'An unexpected error occurred during role update';
+          logger.error('[OrganizationStore] updateMemberRole - Unexpected Error', { membershipId, role, message: errorMsg });
+          _setError(errorMsg);
+          return false; // Indicate failure
+        } finally {
+          // Ensure loading is set to false, but error handling is done in catch/if blocks
+          // We only set isLoading false here if it wasn't already set by an error return
+          if (get().isLoading) { 
+              set({ isLoading: false });
+          }
+        }
       },
 
-      removeMember: async (_membershipId: string): Promise<boolean> => {
-        // Implementation will be added in the GREEN step
-        throw new Error('removeMember not implemented');
+      removeMember: async (membershipId: string): Promise<boolean> => {
+        const { _setLoading, _setError, currentOrganizationMembers } = get();
+        _setLoading(true);
+        _setError(null);
+
+        try {
+          const apiClient = getApiClient();
+          const response = await apiClient.organizations.removeMember(membershipId);
+
+          if (response.error || response.status >= 300) {
+            // Handle potential "last admin" error specifically if API provides hints
+            const errorMsg = response.error?.message ?? 'Failed to remove member';
+            logger.error('[OrganizationStore] removeMember - API Error', { membershipId, error: errorMsg, status: response.status });
+            _setError(errorMsg);
+            return false; // Indicate failure
+          } else {
+            logger.info(`[OrganizationStore] Successfully removed membership ${membershipId}.`);
+
+            // Filter the member out of the current list
+            const updatedMembers = currentOrganizationMembers.filter(member => 
+              member.id !== membershipId
+            );
+
+            set({ 
+              currentOrganizationMembers: updatedMembers,
+              isLoading: false,
+              error: null 
+            });
+            return true; // Indicate success
+          }
+        } catch (err: any) {
+          const errorMsg = err.message ?? 'An unexpected error occurred during member removal';
+          logger.error('[OrganizationStore] removeMember - Unexpected Error', { membershipId, message: errorMsg });
+          _setError(errorMsg);
+          return false; // Indicate failure
+        } finally {
+          // Ensure loading is set to false if not already handled by error return
+          if (get().isLoading) { 
+              set({ isLoading: false });
+          }
+        }
       },
 
       // --- Implement acceptInvite --- 
