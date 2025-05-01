@@ -59,10 +59,15 @@ describe('SubscriptionSuccessPage Component', () => {
   });
 
   it('should render success message and icon', () => {
-    renderWithRouter(<SubscriptionSuccessPage />);
+    // Capture the render result, specifically the container
+    const { container } = renderWithRouter(<SubscriptionSuccessPage />); 
     expect(screen.getByRole('heading', { name: /Thank you/i })).toBeInTheDocument();
     expect(screen.getByText(/Your subscription has been processed successfully/i)).toBeInTheDocument();
-    expect(screen.getByTestId('layout').querySelector('svg')).toBeInTheDocument(); 
+    // Use the container returned from render
+    const icon = container.querySelector('svg');
+    expect(icon).toBeInTheDocument();
+    // Optional: Check class for more specificity if needed
+    // expect(icon).toHaveClass('lucide-circle-check-big');
   });
 
   it('should call refreshSubscription on mount if user exists', () => {
