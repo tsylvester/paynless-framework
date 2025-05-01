@@ -8,23 +8,23 @@ import { ThemeProvider } from '../../context/theme.context';
 
 // --- Mocks --- 
 
-// Mock window.matchMedia specifically for this file
-beforeAll(() => {
-  Object.defineProperty(window, 'matchMedia', {
-    writable: true,
-    value: vi.fn().mockImplementation(query => ({
-      matches: false, // Default to light mode for tests
-      media: query,
-      onchange: null,
-      addListener: vi.fn(), // Deprecated
-      removeListener: vi.fn(), // Deprecated
-      addEventListener: vi.fn(),
-      removeEventListener: vi.fn(),
-      dispatchEvent: vi.fn(),
-    })),
-  });
-  console.log('[Profile.test.tsx] Applied window.matchMedia mock.'); 
-});
+// <<< REMOVE Local window.matchMedia mock AGAIN - Rely on global setup.ts >>>
+// beforeAll(() => {
+//   Object.defineProperty(window, 'matchMedia', {
+//     writable: true,
+//     value: vi.fn().mockImplementation(query => ({
+//       matches: false, // Default to light mode for tests
+//       media: query,
+//       onchange: null,
+//       addListener: vi.fn(), // Deprecated
+//       removeListener: vi.fn(), // Deprecated
+//       addEventListener: vi.fn(),
+//       removeEventListener: vi.fn(),
+//       dispatchEvent: vi.fn(),
+//     })),
+//   });
+//   console.log('[Profile.test.tsx] Applied local window.matchMedia mock.'); 
+// });
 
 vi.mock('../components/layout/Layout', () => ({ Layout: ({ children }: { children: React.ReactNode }) => <div data-testid="layout">{children}</div> }));
 

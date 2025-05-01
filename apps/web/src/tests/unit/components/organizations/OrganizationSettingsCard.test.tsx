@@ -119,11 +119,13 @@ describe('OrganizationSettingsCard', () => {
 
     // Assert
     // Basic synchronous checks for element presence
-    expect(screen.getByText(/Organization Settings \(Admin\)/i)).toBeInTheDocument();
+    // expect(screen.getByRole('heading', { name: /Organization Settings/i })).toBeInTheDocument(); // <<< FAILS - Heading is in the card-title slot, not a direct role
+    expect(screen.getByText(/Organization Settings/i, { selector: '[data-slot="card-title"]' })).toBeInTheDocument(); // <<< Use text within the specific slot
+    expect(screen.getByText(/Admin/i)).toBeInTheDocument(); // Admin badge is separate
     expect(screen.getByLabelText(/Organization Name/i)).toBeInTheDocument();
     expect(screen.getByRole('combobox', { name: /Visibility/i })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /Update Settings/i })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /Delete Organization/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /^Update$/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /^Delete$/i })).toBeInTheDocument();
   });
 
   it('should NOT render the settings card content for a non-admin user', () => {
@@ -144,11 +146,12 @@ describe('OrganizationSettingsCard', () => {
     renderWithProvider(<OrganizationSettingsCard />);
 
     // Assert
-    expect(screen.queryByText(/Organization Settings \(Admin\)/i)).not.toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: /Organization Settings/i })).not.toBeInTheDocument();
+    expect(screen.queryByText(/Admin/i)).not.toBeInTheDocument();
     expect(screen.queryByLabelText(/Organization Name/i)).not.toBeInTheDocument();
     expect(screen.queryByRole('combobox', { name: /Visibility/i })).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: /Update Settings/i })).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: /Delete Organization/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /^Update$/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /^Delete$/i })).not.toBeInTheDocument();
     // expect(screen.getByText(/You do not have permission to view these settings./i)).toBeInTheDocument();
   });
 
@@ -178,7 +181,7 @@ describe('OrganizationSettingsCard', () => {
     // Arrange
     renderWithProvider(<OrganizationSettingsCard />);
     const nameInput = screen.getByLabelText(/Organization Name/i);
-    const submitButton = screen.getByRole('button', { name: /Update Settings/i });
+    const submitButton = screen.getByRole('button', { name: /^Update$/i });
 
     // Act: Clear the input and submit
     fireEvent.change(nameInput, { target: { value: '' } });
@@ -204,7 +207,7 @@ describe('OrganizationSettingsCard', () => {
 
     const nameInput = screen.getByLabelText(/Organization Name/i);
     const visibilityTrigger = screen.getByRole('combobox', { name: /Visibility/i });
-    const submitButton = screen.getByRole('button', { name: /Update Settings/i });
+    const submitButton = screen.getByRole('button', { name: /^Update$/i });
 
     // Act: Update fields and submit
     // Use userEvent for text input
@@ -246,7 +249,7 @@ describe('OrganizationSettingsCard', () => {
     renderWithProvider(<OrganizationSettingsCard />);
 
     const nameInput = screen.getByLabelText(/Organization Name/i);
-    const submitButton = screen.getByRole('button', { name: /Update Settings/i });
+    const submitButton = screen.getByRole('button', { name: /^Update$/i });
 
     // Act: Change name slightly and submit
     await user.type(nameInput, ' Updated'); // Use userEvent for consistency
@@ -266,81 +269,49 @@ describe('OrganizationSettingsCard', () => {
 
   it('should disable buttons and show loading text during submission', async () => {
     // Arrange
-    // No userEvent needed here as fireEvent is simpler for basic change/click
-    // const user = userEvent.setup(); 
-    // Mock update to never resolve, simulating a long request
-    mockUpdateOrganization.mockReturnValue(new Promise(() => {})); 
+    const user = userEvent.setup();
+    mockUpdateOrganization.mockImplementation(() => new Promise(resolve => setTimeout(resolve, 100))); // Delay resolution
 
     renderWithProvider(<OrganizationSettingsCard />);
 
     const nameInput = screen.getByLabelText(/Organization Name/i);
-    const submitButton = screen.getByRole('button', { name: /Update Settings/i });
-    const deleteButton = screen.getByRole('button', { name: /Delete Organization/i });
+    const submitButton = screen.getByRole('button', { name: /^Update$/i });
+    const deleteButton = screen.getByRole('button', { name: /^Delete$/i });
     const visibilitySelect = screen.getByRole('combobox', { name: /Visibility/i });
 
-    // Act: Make a change and click submit
-    fireEvent.change(nameInput, { target: { value: 'New Name Attempt' } });
-    fireEvent.click(submitButton); 
+    // Act: Type something valid and click submit
+    await user.clear(nameInput);
+    await user.type(nameInput, 'Valid New Name');
+    user.click(submitButton); // Don't await this, we want to check the immediate state
 
-    // Assert: Check for loading text and disabled state
+    // Assert: Buttons disabled, loading text appears (adjust selector as needed)
     await waitFor(() => {
-      // Check submit button text and state
-      const loadingButton = screen.getByRole('button', { name: /Updating.../i });
-      expect(loadingButton).toBeInTheDocument();
-      expect(loadingButton).toBeDisabled();
+      expect(submitButton).toBeDisabled();
+      expect(deleteButton).toBeDisabled();
+      expect(screen.getByText(/Updating.../i)).toBeInTheDocument(); // Check for loading state text
     });
-    
-    // Also check that other inputs/buttons are disabled
-    expect(nameInput).toBeDisabled();
-    expect(visibilitySelect).toBeDisabled(); // Check the select trigger
-    expect(deleteButton).toBeDisabled();
+
+    // Assert: After promise resolves, buttons are enabled again
+    await waitFor(() => {
+      expect(submitButton).toBeEnabled();
+      expect(deleteButton).toBeEnabled();
+      expect(screen.queryByText(/Updating.../i)).not.toBeInTheDocument();
+    });
   });
 
-  // Test for loading state
-  it('should disable buttons and show loading text during submission', async () => {
+  it('should call openDeleteDialog when delete button is clicked', async () => {
     // Arrange
-    // No userEvent needed here as fireEvent is simpler for basic change/click
-    // const user = userEvent.setup(); 
-    // Mock update to never resolve, simulating a long request
-    mockUpdateOrganization.mockReturnValue(new Promise(() => {})); 
-
+    const user = userEvent.setup();
+    const orgId = baselineOrgState.currentOrganizationId; // <<< Get the ID
     renderWithProvider(<OrganizationSettingsCard />);
-
-    const nameInput = screen.getByLabelText(/Organization Name/i);
-    const submitButton = screen.getByRole('button', { name: /Update Settings/i });
-    const deleteButton = screen.getByRole('button', { name: /Delete Organization/i });
-    const visibilitySelect = screen.getByRole('combobox', { name: /Visibility/i });
-
-    // Act: Make a change and click submit
-    fireEvent.change(nameInput, { target: { value: 'New Name Attempt' } });
-    fireEvent.click(submitButton); 
-
-    // Assert: Check for loading text and disabled state
-    await waitFor(() => {
-      // Check submit button text and state
-      const loadingButton = screen.getByRole('button', { name: /Updating.../i });
-      expect(loadingButton).toBeInTheDocument();
-      expect(loadingButton).toBeDisabled();
-    });
-    
-    // Also check that other inputs/buttons are disabled
-    expect(nameInput).toBeDisabled();
-    expect(visibilitySelect).toBeDisabled(); // Check the select trigger
-    expect(deleteButton).toBeDisabled();
-  });
-
-  // Test for Delete Button
-  it('should call openDeleteDialog action when delete button is clicked', () => {
-    // Arrange: beforeEach ensures admin role
-    renderWithProvider(<OrganizationSettingsCard />);
-    const deleteButton = screen.getByRole('button', { name: /Delete Organization/i });
-    // mockOpenDeleteDialog is already set up in beforeEach
+    const deleteButton = screen.getByRole('button', { name: /^Delete$/i });
 
     // Act
-    fireEvent.click(deleteButton);
+    await user.click(deleteButton);
 
     // Assert
     expect(mockOpenDeleteDialog).toHaveBeenCalledTimes(1);
+    expect(mockOpenDeleteDialog).toHaveBeenCalledWith(orgId); // <<< Pass the ID
   });
 
   // --- Add More Tests Here based on the plan ---

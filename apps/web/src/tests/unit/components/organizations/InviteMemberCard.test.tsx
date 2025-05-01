@@ -1,5 +1,6 @@
 import React from 'react';
 import { render, screen, fireEvent, act, within, waitFor } from '@/tests/utils'; 
+import userEvent from '@testing-library/user-event';
 import { vi, describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { InviteMemberCard } from '@/components/organizations/InviteMemberCard';
 import { useOrganizationStore } from '@paynless/store';
@@ -152,21 +153,26 @@ describe('InviteMemberCard', () => {
     });
 
     it('should successfully call inviteUser with email and selected role (admin) on valid submission', async () => {
+       const user = userEvent.setup();
        render(<InviteMemberCard />);
         const submitButton = screen.getByRole('button', { name: /send invite/i });
         const emailInput = screen.getByLabelText(/email/i);
         const roleSelectTrigger = screen.getByRole('combobox', { name: /role/i }); // Find by accessible name via Label
-        
-        fireEvent.change(emailInput, { target: { value: 'admin@example.com' } });
-        
-        // Open select and choose 'admin'
-        fireEvent.mouseDown(roleSelectTrigger); // Open the dropdown
-        const adminOption = await screen.findByRole('option', { name: 'Admin' });
-        fireEvent.click(adminOption);
 
-        await act(async () => {
-          fireEvent.click(submitButton);
-        });
+        // Use userEvent for typing
+        await user.type(emailInput, 'admin@example.com');
+
+        // Open select and choose 'admin' using userEvent
+        await user.click(roleSelectTrigger); // Open the dropdown
+        await waitFor(() => {}); // <<< Add a small wait
+        const adminOption = await screen.findByRole('option', { name: /Admin/i }); // Wait for option
+        await user.click(adminOption); // Click the option
+
+        // No need for act wrapper with userEvent click
+        // await act(async () => {
+        //   fireEvent.click(submitButton);
+        // });
+        await user.click(submitButton); // Click submit button
 
         expect(mockInviteUser).toHaveBeenCalledTimes(1);
         expect(mockInviteUser).toHaveBeenCalledWith('admin@example.com', 'admin');

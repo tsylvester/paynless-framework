@@ -8,7 +8,7 @@ import { z } from 'zod';
 
 // Add shadcn/ui imports
 import {
-  Card, CardHeader, CardTitle, CardContent, CardFooter
+  Card, CardHeader, CardTitle, CardContent
 } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -16,7 +16,6 @@ import { Label } from "@/components/ui/label";
 import { 
   Select, SelectTrigger, SelectValue, SelectContent, SelectItem 
 } from "@/components/ui/select";
-import { Separator } from "@/components/ui/separator";
 import { toast } from 'sonner';
 import { AdminBadge } from './AdminBadge'; // Import the badge
 
@@ -179,9 +178,9 @@ export const OrganizationSettingsCard: React.FC = () => {
             {/* Delete Button */} 
             <Button
               variant="destructive"
-              onClick={openDeleteDialog}
+              onClick={() => currentOrganizationId && openDeleteDialog()}
               type="button"
-              disabled={formDisabled}
+              disabled={formDisabled || !currentOrganizationId}
               className="shrink-0" // Prevent shrinking
             >
               Delete {/* Shortened text */}

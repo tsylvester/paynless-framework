@@ -1,64 +1,96 @@
 import React from 'react';
-import { render, screen, fireEvent } from '@testing-library/react';
-import { vi } from 'vitest';
+import { render, screen, fireEvent, act } from '@testing-library/react';
+import { vi, describe, it, expect, beforeEach, afterEach, Mock } from 'vitest';
 // Adjust relative path to the component
 import { OrganizationListCard } from '../../../../components/organizations/OrganizationListCard'; 
 import { useOrganizationStore } from '@paynless/store';
-import { Organization } from '@paynless/types';
+// Import the full type and related types
+import type { Organization, OrganizationState, UserOrganizationLink } from '@paynless/types';
 
-// Mock the Zustand store
-vi.mock('@paynless/store');
-
-// Default mock state values
-const mockSetCurrentOrganizationId = vi.fn();
-let mockState: { 
-    userOrganizations: Organization[];
-    currentOrganizationId: string | null;
-    isLoading: boolean;
-    setCurrentOrganizationId: (id: string | null) => void;
-} = {
-    userOrganizations: [],
-    currentOrganizationId: null,
-    isLoading: false,
-    setCurrentOrganizationId: mockSetCurrentOrganizationId,
-};
-
-// Mock implementation for the hook
-const useOrganizationStoreMock = useOrganizationStore as vi.Mock;
-
-// Reset mocks before each test
-beforeEach(() => {
-    vi.clearAllMocks();
-    // Reset state to default before each test
-    mockState = {
-        userOrganizations: [],
-        currentOrganizationId: null,
-        isLoading: false,
-        setCurrentOrganizationId: mockSetCurrentOrganizationId,
+// Mock the store using vi.fn() for better control
+vi.mock('@paynless/store', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('@paynless/store')>();
+    return {
+        ...actual,
+        // Ensure useOrganizationStore is a mock function we can manipulate
+        useOrganizationStore: vi.fn(), 
     };
-    // Apply the initial mock state
-    useOrganizationStoreMock.mockImplementation(() => mockState); // Return the whole state
 });
 
-// Helper to set the store state for a specific test
-const setMockStoreState = (newState: Partial<typeof mockState>) => {
-    mockState = { ...mockState, ...newState };
-    // Update the mock implementation to return the new state
-    useOrganizationStoreMock.mockImplementation(() => mockState); 
+// --- Test Setup ---
+
+// Define mock functions for actions
+const mockSetCurrentOrganizationId = vi.fn();
+const mockFetchUserOrganizations = vi.fn();
+// Add mocks for any other actions the component might *indirectly* trigger or need
+const mockFetchOrganizationDetails = vi.fn();
+const mockCreateOrganization = vi.fn(); // Placeholder if Create button gets implemented
+const mockOpenCreateModal = vi.fn(); // <<< Define dedicated mock for the action
+
+// Define a baseline mock state matching OrganizationState
+const baselineOrgState: OrganizationState = {
+    userOrganizations: [],
+    currentOrganizationId: null,
+    currentOrganizationDetails: null,
+    currentOrganizationMembers: [],
+    isLoading: false,
+    error: null,
+    // --- Mocked Actions ---
+    setCurrentOrganizationId: mockSetCurrentOrganizationId,
+    fetchUserOrganizations: mockFetchUserOrganizations,
+    fetchOrganizationDetails: mockFetchOrganizationDetails,
+    createOrganization: mockCreateOrganization,
+    openCreateModal: mockOpenCreateModal, // <<< Assign dedicated mock here
+    // Add *all* other actions from OrganizationState with vi.fn()
+    updateOrganization: vi.fn(),
+    softDeleteOrganization: vi.fn(),
+    openDeleteDialog: vi.fn(),
+    closeDeleteDialog: vi.fn(),
+    inviteUser: vi.fn(),
+    updateMemberRole: vi.fn(),
+    removeMember: vi.fn(),
+    leaveOrganization: vi.fn(),
+    fetchCurrentOrganizationMembers: vi.fn(),
+    cancelInvite: vi.fn(),
+    approveRequest: vi.fn(),
+    denyRequest: vi.fn(),
+    selectCurrentUserRoleInOrg: () => null, // Default selector mock
 };
 
+// Mock the hook implementation
+const mockedUseOrgStore = vi.mocked(useOrganizationStore);
 
-// --- Tests --- 
+// Reset mocks and state before each test
+beforeEach(() => {
+    vi.clearAllMocks();
+    // Reset the mock implementation to the baseline state
+    mockedUseOrgStore.mockReturnValue(baselineOrgState);
+    // Reset the state object itself if modified directly (safer to use setState)
+    // Object.assign(baselineOrgState, { /* reset properties if needed */ });
+});
 
+// --- Mocks for Org Data ---
+// Use UserOrganizationLink type if that's what userOrganizations holds
+const org1: UserOrganizationLink = { id: 'org-1', name: 'Org One', membership_id: 'mem-1' }; 
+const org2: UserOrganizationLink = { id: 'org-2', name: 'Org Two', membership_id: 'mem-2' };
+
+// --- Test Suite --- 
 describe('OrganizationListCard', () => {
-    const org1: Organization = { id: 'org-1', name: 'Org One', visibility: 'private', created_at: '2023-01-01T00:00:00Z', deleted_at: null };
-    const org2: Organization = { id: 'org-2', name: 'Org Two', visibility: 'private', created_at: '2023-01-02T00:00:00Z', deleted_at: null };
 
-    test('renders correctly with organizations', () => {
-        setMockStoreState({ userOrganizations: [org1, org2], isLoading: false });
+    it('renders correctly with organizations', () => {
+        // Arrange: Set state using the store's setState method
+        act(() => {
+            useOrganizationStore.setState({
+                userOrganizations: [org1, org2],
+                isLoading: false
+            });
+        });
+
+        // Act
         render(<OrganizationListCard />);
 
-        expect(screen.getByText('Your Organizations')).toBeInTheDocument();
+        // Assert
+        expect(screen.getByRole('heading', { name: /Organizations/i })).toBeInTheDocument();
         expect(screen.getByRole('button', { name: /Create New/i })).toBeInTheDocument();
         expect(screen.getByRole('button', { name: 'Org One' })).toBeInTheDocument();
         expect(screen.getByRole('button', { name: 'Org Two' })).toBeInTheDocument();
@@ -66,45 +98,67 @@ describe('OrganizationListCard', () => {
         expect(screen.queryByText('No organizations found.')).not.toBeInTheDocument();
     });
 
-    test('renders the empty state correctly', () => {
-        setMockStoreState({ userOrganizations: [], isLoading: false });
+    it('renders the empty state correctly', () => {
+        // Arrange: Default state has empty userOrganizations
+        act(() => {
+            useOrganizationStore.setState({ userOrganizations: [], isLoading: false });
+        });
+        
+        // Act
         render(<OrganizationListCard />);
 
-        expect(screen.getByText('Your Organizations')).toBeInTheDocument();
+        // Assert
+        expect(screen.getByRole('heading', { name: /Organizations/i })).toBeInTheDocument();
         expect(screen.getByRole('button', { name: /Create New/i })).toBeInTheDocument();
         expect(screen.getByText('No organizations found.')).toBeInTheDocument();
         expect(screen.queryByText('Loading...')).not.toBeInTheDocument();
     });
 
-    test('renders the loading state correctly', () => {
-        setMockStoreState({ userOrganizations: [], isLoading: true });
+    it('renders the loading state correctly', () => {
+        // Arrange
+        act(() => {
+            useOrganizationStore.setState({ userOrganizations: [], isLoading: true });
+        });
+        
+        // Act
         render(<OrganizationListCard />);
 
-        expect(screen.getByText('Your Organizations')).toBeInTheDocument();
+        // Assert
+        expect(screen.getByRole('heading', { name: /Organizations/i })).toBeInTheDocument();
         expect(screen.getByRole('button', { name: /Create New/i })).toBeInTheDocument();
         expect(screen.getByText('Loading...')).toBeInTheDocument();
         expect(screen.queryByText('No organizations found.')).not.toBeInTheDocument();
     });
 
-    test('highlights the active organization', () => {
-        setMockStoreState({ userOrganizations: [org1, org2], currentOrganizationId: org2.id, isLoading: false });
+    it('highlights the active organization', () => {
+        // Arrange
+        act(() => {
+            useOrganizationStore.setState({ 
+                userOrganizations: [org1, org2], 
+                currentOrganizationId: org2.id, 
+                isLoading: false 
+            });
+        });
+        
+        // Act
         render(<OrganizationListCard />);
-
         const orgOneButton = screen.getByRole('button', { name: 'Org One' });
         const orgTwoButton = screen.getByRole('button', { name: 'Org Two' });
 
-        // Check based on expected classes added by the variants
-        // Note: These class names might need adjustment based on the exact Button implementation
-        expect(orgOneButton.classList.contains('bg-secondary')).toBe(false); 
-        expect(orgTwoButton.classList.contains('bg-secondary')).toBe(true);
-
-        // Optionally, check that the inactive one has the ghost class if applicable
-        // expect(orgOneButton.classList.contains('hover:bg-accent')).toBe(true); // Example check for ghost
+        // Assert: Check for presence/absence of the 'bg-secondary' class
+        expect(orgOneButton).not.toHaveClass('bg-secondary');
+        expect(orgTwoButton).toHaveClass('bg-secondary');
     });
 
-    test('clicking an inactive organization dispatches setCurrentOrganizationId', () => {
-        // Arrange: Org1 is inactive, Org2 is active
-        setMockStoreState({ userOrganizations: [org1, org2], currentOrganizationId: org2.id, isLoading: false });
+    it('clicking an inactive organization calls setCurrentOrganizationId', () => {
+        // Arrange
+        act(() => {
+            useOrganizationStore.setState({ 
+                userOrganizations: [org1, org2], 
+                currentOrganizationId: org2.id, 
+                isLoading: false 
+            });
+        });
         render(<OrganizationListCard />);
         const orgOneButton = screen.getByRole('button', { name: 'Org One' });
         
@@ -116,9 +170,15 @@ describe('OrganizationListCard', () => {
         expect(mockSetCurrentOrganizationId).toHaveBeenCalledWith(org1.id);
     });
 
-    test('clicking the active organization does NOT dispatch setCurrentOrganizationId', () => {
-        // Arrange: Org2 is active
-        setMockStoreState({ userOrganizations: [org1, org2], currentOrganizationId: org2.id, isLoading: false });
+    it('clicking the active organization does NOT call setCurrentOrganizationId', () => {
+        // Arrange
+        act(() => {
+            useOrganizationStore.setState({ 
+                userOrganizations: [org1, org2], 
+                currentOrganizationId: org2.id, 
+                isLoading: false 
+            });
+        });
         render(<OrganizationListCard />);
         const orgTwoButton = screen.getByRole('button', { name: 'Org Two' });
         
@@ -129,10 +189,11 @@ describe('OrganizationListCard', () => {
         expect(mockSetCurrentOrganizationId).not.toHaveBeenCalled();
     });
 
-    test('clicking "Create New" button logs a TODO message', () => {
+    it('clicking "Create New" button calls openCreateModal action', () => {
         // Arrange
-        const consoleLogSpy = vi.spyOn(console, 'log');
-        setMockStoreState({ userOrganizations: [org1], isLoading: false }); // Need at least one org or empty state
+        act(() => {
+            useOrganizationStore.setState({ userOrganizations: [org1], isLoading: false });
+        });
         render(<OrganizationListCard />);
         const createNewButton = screen.getByRole('button', { name: /Create New/i });
 
@@ -140,12 +201,6 @@ describe('OrganizationListCard', () => {
         fireEvent.click(createNewButton);
 
         // Assert
-        expect(consoleLogSpy).toHaveBeenCalledWith('TODO: Trigger Create Organization Modal');
-
-        // Clean up spy
-        consoleLogSpy.mockRestore();
+        expect(mockOpenCreateModal).toHaveBeenCalledTimes(1);
     });
-
-    // TODO: Add more tests:
-    // - Test list updates when userOrganizations state changes
 }); 

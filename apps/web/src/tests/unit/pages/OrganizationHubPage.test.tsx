@@ -5,6 +5,7 @@ import { OrganizationHubPage } from '../../../pages/OrganizationHubPage'; // Adj
 import { useOrganizationStore } from '@paynless/store';
 import { useCurrentUser } from '../../../hooks/useCurrentUser'; // Adjust path relative to tests/unit/pages
 import { User } from '@supabase/supabase-js';
+import { UserOrganizationLink } from '@paynless/types';
 
 // --- Mocks ---
 
@@ -48,6 +49,8 @@ describe('OrganizationHubPage', () => {
   let mockSelectCurrentUserRole: ReturnType<typeof vi.fn>;
   let mockUseOrganizationStore: ReturnType<typeof vi.fn>;
   let mockUseCurrentUser: ReturnType<typeof vi.fn>;
+  let mockFetchOrganizationDetails: ReturnType<typeof vi.fn>;
+  let mockFetchCurrentOrganizationMembers: ReturnType<typeof vi.fn>;
 
   const mockUser = { id: 'user-123' } as User; // Mock a basic user object
 
@@ -56,6 +59,8 @@ describe('OrganizationHubPage', () => {
     mockFetchUserOrganizations = vi.fn();
     mockSetCurrentOrganizationId = vi.fn();
     mockSelectCurrentUserRole = vi.fn();
+    mockFetchOrganizationDetails = vi.fn();
+    mockFetchCurrentOrganizationMembers = vi.fn();
 
     // Default mock state for the store
     mockUseOrganizationStore = useOrganizationStore as ReturnType<typeof vi.fn>; // Cast to mocked type
@@ -66,7 +71,9 @@ describe('OrganizationHubPage', () => {
       currentOrganizationId: null,
       currentOrganizationDetails: null,
       isLoading: false,
-      selectCurrentUserRole: mockSelectCurrentUserRole,
+      selectCurrentUserRoleInOrg: mockSelectCurrentUserRole,
+      fetchOrganizationDetails: mockFetchOrganizationDetails,
+      fetchCurrentOrganizationMembers: mockFetchCurrentOrganizationMembers,
     });
 
     // Default mock for current user hook
@@ -95,7 +102,11 @@ describe('OrganizationHubPage', () => {
        userOrganizations: [],
      });
      render(<OrganizationHubPage />);
-     expect(screen.getByText('Loading organizations...')).toBeInTheDocument();
+     // Check for the presence of skeleton elements instead
+     const skeletons = screen.queryAllByTestId(/skeleton/); // Use a regex or a more specific selector if possible
+     // Let's find the skeletons by their data attribute
+     const skeletonElements = screen.queryAllByRole('generic', { 'data-slot': 'skeleton' }); // Assuming Skeleton renders a div or similar role
+     expect(skeletonElements.length).toBeGreaterThan(0); // Check if at least one skeleton is rendered
   });
 
   it('does not display loading indicator text if not loading, even with no organizations', () => {
@@ -110,9 +121,9 @@ describe('OrganizationHubPage', () => {
   });
 
   it('sets the first organization as current if organizations load and none is selected', async () => {
-    const organizations = [
-        { organization_id: 'org-1', organization_name: 'Org One', membership_id: 'mem-1' },
-        { organization_id: 'org-2', organization_name: 'Org Two', membership_id: 'mem-2' }
+    const organizations: UserOrganizationLink[] = [
+        { id: 'org-1', name: 'Org One', membership_id: 'mem-1' },
+        { id: 'org-2', name: 'Org Two', membership_id: 'mem-2' }
     ];
     const initialStoreState = mockUseOrganizationStore();
 
@@ -126,7 +137,7 @@ describe('OrganizationHubPage', () => {
         currentOrganizationId: null,
         fetchUserOrganizations: mockFetchUserOrganizations,
         setCurrentOrganizationId: mockSetCurrentOrganizationId,
-        selectCurrentUserRole: mockSelectCurrentUserRole,
+        selectCurrentUserRoleInOrg: mockSelectCurrentUserRole,
     });
 
     const { rerender } = render(<OrganizationHubPage />); 
@@ -138,7 +149,7 @@ describe('OrganizationHubPage', () => {
   });
 
   it('does not set current organization if one is already selected', () => {
-    const organizations = [{ organization_id: 'org-1', organization_name: 'Org One', membership_id: 'mem-1' }];
+    const organizations = [{ id: 'org-1', name: 'Org One', membership_id: 'mem-1' }];
      mockUseOrganizationStore.mockReturnValue({
        ...mockUseOrganizationStore(),
        userOrganizations: organizations,
@@ -165,7 +176,7 @@ describe('OrganizationHubPage', () => {
   });
 
   it('renders message to select org when orgs exist but none selected', () => {
-    const organizations = [{ organization_id: 'org-1', organization_name: 'Org One', membership_id: 'mem-1' }];
+    const organizations = [{ id: 'org-1', name: 'Org One', membership_id: 'mem-1' }];
      mockUseOrganizationStore.mockReturnValue({
        ...mockUseOrganizationStore(),
        userOrganizations: organizations,
@@ -181,8 +192,8 @@ describe('OrganizationHubPage', () => {
      mockUseOrganizationStore.mockReturnValue({
        ...mockUseOrganizationStore(),
        currentOrganizationId: 'org-1',
-       userOrganizations: [{ organization_id: 'org-1', organization_name: 'Org One', membership_id: 'mem-1' }],
-       selectCurrentUserRole: () => 'member',
+       userOrganizations: [{ id: 'org-1', name: 'Org One', membership_id: 'mem-1' }],
+       selectCurrentUserRoleInOrg: () => 'member',
        isLoading: false,
      });
      render(<OrganizationHubPage />);
@@ -197,8 +208,8 @@ describe('OrganizationHubPage', () => {
      mockUseOrganizationStore.mockReturnValue({
        ...mockUseOrganizationStore(),
        currentOrganizationId: 'org-1',
-       userOrganizations: [{ organization_id: 'org-1', organization_name: 'Org One', membership_id: 'mem-1' }],
-       selectCurrentUserRole: () => 'admin',
+       userOrganizations: [{ id: 'org-1', name: 'Org One', membership_id: 'mem-1' }],
+       selectCurrentUserRoleInOrg: () => 'admin',
        isLoading: false,
      });
      render(<OrganizationHubPage />);

@@ -122,6 +122,14 @@ const mockMembers: OrganizationMemberWithProfile[] = [
   },
 ];
 
+// +++ Mock implementations for store actions +++
+const mockFetchCurrentOrganizationMembers = vi.fn();
+const mockLeaveOrganization = vi.fn(); // Add mock for leave action
+// Add other mocks if needed (e.g., from baseline state in other files)
+const mockInviteUser = vi.fn(); 
+const mockUpdateOrganization = vi.fn();
+const mockOpenDeleteDialog = vi.fn();
+
 // Helper to set up mock return values for stores
 const setupMocks = (currentUserProfile: UserProfile | null, members: OrganizationMemberWithProfile[] | null = mockMembers, isLoading = false) => {
   const currentUserId = currentUserProfile?.id;
@@ -130,12 +138,36 @@ const setupMocks = (currentUserProfile: UserProfile | null, members: Organizatio
 
   // Use vi.mocked to get the typed mock function
   vi.mocked(useOrganizationStore).mockReturnValue({
+    // --- State ---
     currentOrganizationMembers: members ?? [],
-    updateMemberRole: mockUpdateMemberRole,
-    removeMember: mockRemoveMember,
-    selectCurrentUserRoleInOrg: () => currentUserRole, 
     isLoading: isLoading,
     currentOrganizationId: 'org-123',
+    currentOrganizationDetails: { // Add minimal details needed by component/hooks
+        id: 'org-123',
+        name: 'Test Org From MemberList Mock',
+        visibility: 'private',
+        created_at: new Date().toISOString(),
+        deleted_at: null,
+    },
+    userOrganizations: [], // Add empty array if needed
+    error: null, // Add error state
+
+    // --- Selectors ---
+    selectCurrentUserRoleInOrg: () => currentUserRole, 
+
+    // --- Actions ---
+    updateMemberRole: mockUpdateMemberRole,
+    removeMember: mockRemoveMember,
+    fetchCurrentOrganizationMembers: mockFetchCurrentOrganizationMembers,
+    leaveOrganization: mockLeaveOrganization,
+    // Add other actions from baseline if potentially used
+    fetchUserOrganizations: vi.fn(),
+    setCurrentOrganizationId: vi.fn(),
+    fetchOrganizationDetails: vi.fn(),
+    inviteUser: mockInviteUser,
+    updateOrganization: mockUpdateOrganization,
+    openDeleteDialog: mockOpenDeleteDialog,
+    // ... add any other actions used by the component or its children/hooks
   });
 
   // Configure the mocked hook using the imported name
@@ -146,7 +178,21 @@ const setupMocks = (currentUserProfile: UserProfile | null, members: Organizatio
 
   // Use vi.mocked for the auth store as well
   vi.mocked(useAuthStore).mockReturnValue({
-    user: { id: currentUserId }, // Simplified
+    // Provide a more complete auth state if needed
+    user: currentUserProfile ? { id: currentUserId, email: `${currentUserId}@test.com` } : null, 
+    session: currentUserProfile ? { access_token: 'mock-token', expires_in: 3600, refresh_token: 'mock-refresh', token_type: 'bearer', user: {} } : null,
+    profile: currentUserProfile, 
+    isLoading: false,
+    error: null,
+    // Add any other necessary auth state/actions
+    loginWithPassword: vi.fn(),
+    registerUser: vi.fn(),
+    logout: vi.fn(),
+    checkSession: vi.fn(),
+    updateProfile: vi.fn(),
+    getToken: async () => currentUserProfile ? 'mock-token' : null,
+    fetchUserProfile: vi.fn(), 
+    // ... other auth store properties/methods
   });
 };
 
@@ -170,45 +216,45 @@ describe('MemberListCard', () => {
 
   // --- Rendering and Display Tests ---
   it('should display the list of active members with name, role, and avatar', () => {
+    // Arrange
+    setupMocks('admin'); // Current user is admin
+    // Set member list state
+    act(() => {
+        useOrganizationStore.setState({
+            currentOrganizationMembers: mockMembers, 
+            isLoading: false
+        });
+    });
+    
+    // Act
     render(<MemberListCard />);
 
-    // Check table headers
-    expect(screen.getByRole('columnheader', { name: 'Name' })).toBeInTheDocument();
-    expect(screen.getByRole('columnheader', { name: 'Role' })).toBeInTheDocument();
-    expect(screen.getByRole('columnheader', { name: 'Actions' })).toBeInTheDocument();
+    // Assert: Verify names and presence of role indicators
+    expect(screen.getByText('Admin User')).toBeInTheDocument();
+    expect(screen.getByText('Member One')).toBeInTheDocument();
+    expect(screen.getByText('Member Two')).toBeInTheDocument();
 
-    // Check member rows
-    for (const member of mockMembers) {
-      const profile = member.user_profiles;
-      if (!profile) continue; // Skip if profile is somehow null in mock data
-      
-      const row = findMemberRow(profile);
-      expect(row).toBeInTheDocument();
-      
-      // Check avatar initials
-      const initials = `${profile.first_name?.charAt(0)}${profile.last_name?.charAt(0)}`.toUpperCase();
-      expect(within(row).getByText(initials || 'U')).toBeInTheDocument();
-      
-      // Check name and role 
-      const fullName = `${profile.first_name} ${profile.last_name}`;
-      expect(within(row).getByText(fullName)).toBeInTheDocument();
-      expect(within(row).getByText(member.role)).toBeInTheDocument();
-      
-      // Check email (assuming useCurrentUser returns profile, and component uses THAT user for email)
-      // **NOTE**: This part of the test might need adjustment based on how the *component* gets the email.
-      // If the component uses `currentUser.email` (which we assume is NOT on the profile),
-      // this check will fail or need a different mock setup.
-      // For now, we assume component displays 'Email not available' as per its current logic.
-      if (member.user_id === adminProfile.id) {
-          // Check for admin's email from the mocked hook (IF the component were to use it)
-          // expect(within(row).getByText(adminProfile.email)).toBeInTheDocument(); // This would need email on profile
-          // expect(within(row).getByText(/admin@test.com/)).toBeInTheDocument(); // Assuming component still uses currentUser.email
-          // ADJUSTED ASSERTION based on component's fallback logic:
-          expect(row).toHaveTextContent('Email not available'); 
-      } else {
-          expect(row).toHaveTextContent('Email not available'); // Non-admin rows also show this
-      }
-    }
+    // Find rows to scope role checks
+    const adminRow = screen.getByRole('row', { name: /Admin User/i });
+    const memberOneRow = screen.getByRole('row', { name: /Member One/i });
+
+    // Check for Admin badge text within the admin's row
+    // expect(screen.getByText('admin')).toBeInTheDocument(); // <<< Incorrect: Too broad, might find in dropdown
+    expect(within(adminRow).getByText('Admin')).toBeInTheDocument(); // <<< Correct: Check within row for badge text
+    
+    // Check for 'member' text within the member's row
+    expect(within(memberOneRow).getByText('member', { exact: false })).toBeInTheDocument();
+
+    // Check for Avatars (using fallback text)
+    expect(screen.getByText('AU')).toBeInTheDocument();
+    expect(screen.getByText('MO')).toBeInTheDocument();
+    expect(screen.getByText('MT')).toBeInTheDocument();
+
+    // Check presence of action buttons/menus (more detailed checks in other tests)
+    // Admin user should have 'Leave' button
+    expect(within(adminRow).getByRole('button', { name: /Leave/i })).toBeInTheDocument();
+    // Other members should have dropdown trigger (MoreHorizontal icon)
+    expect(within(memberOneRow).getByRole('button', { name: /open menu/i })).toBeInTheDocument(); 
   });
 
   it('should display a message when there are no members', () => {

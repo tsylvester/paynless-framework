@@ -41,6 +41,8 @@ describe('OrganizationFocusedViewPage', () => {
   let mockFetchUserOrganizations: Mock;
   let mockSetCurrentOrganizationId: Mock;
   let mockSelectCurrentUserRole: Mock;
+  let mockFetchOrganizationDetails: Mock;
+  let mockFetchCurrentOrganizationMembers: Mock;
 
   const mockUser = { id: 'user-123', email: 'test@example.com' } as User;
   const orgIdFromUrl = 'org-abc';
@@ -55,8 +57,11 @@ describe('OrganizationFocusedViewPage', () => {
       currentOrganizationDetails: null,
       currentOrganizationMembers: [] as OrganizationMemberWithProfile[],
       isLoading: false,
-      selectCurrentUserRole: mockSelectCurrentUserRole,
       error: null,
+      selectCurrentUserRoleInOrg: mockSelectCurrentUserRole,
+      fetchOrganizationDetails: mockFetchOrganizationDetails,
+      fetchCurrentOrganizationMembers: mockFetchCurrentOrganizationMembers,
+      fetchUserOrganizations: mockFetchUserOrganizations,
       ...overrides, // Apply test-specific state
     };
     mockUseOrganizationStore.mockReturnValue(defaultState);
@@ -70,6 +75,8 @@ describe('OrganizationFocusedViewPage', () => {
     mockFetchUserOrganizations = vi.fn();
     mockSetCurrentOrganizationId = vi.fn();
     mockSelectCurrentUserRole = vi.fn().mockReturnValue('member'); // Default to member
+    mockFetchOrganizationDetails = vi.fn();
+    mockFetchCurrentOrganizationMembers = vi.fn();
     mockNavigate = vi.fn();
 
     // Setup hook mocks
@@ -226,7 +233,7 @@ describe('OrganizationFocusedViewPage', () => {
     });
     render(<OrganizationFocusedViewPage />);
     await waitFor(() => {
-      expect(mockNavigate).toHaveBeenCalledWith('/dashboard/organizations?error=deleted');
+      expect(mockNavigate).toHaveBeenCalledWith('/organizations?error=not_found');
     });
   });
 
@@ -239,7 +246,7 @@ describe('OrganizationFocusedViewPage', () => {
     });
     render(<OrganizationFocusedViewPage />);
     await waitFor(() => {
-      expect(mockNavigate).toHaveBeenCalledWith('/dashboard/organizations?error=not_member');
+      expect(mockNavigate).toHaveBeenCalledWith('/organizations?error=not_found');
     });
   });
 
@@ -253,7 +260,7 @@ describe('OrganizationFocusedViewPage', () => {
     });
     render(<OrganizationFocusedViewPage />);
     await waitFor(() => {
-      expect(mockNavigate).toHaveBeenCalledWith('/dashboard/organizations?error=fetch_failed');
+      expect(mockNavigate).toHaveBeenCalledWith('/organizations?error=not_found');
     });
   });
 

@@ -31,7 +31,8 @@ export function PlanCard({
 
   // Check if description is an object and try to extract properties safely
   if (plan.description && typeof plan.description === 'object') {
-    const desc = plan.description as Partial<SubscriptionPlan>; // Use Partial for safe access
+    const desc = plan.description as { subtitle?: string, features?: string[] }; // Use more specific type
+    subtitle = typeof desc.subtitle === 'string' ? desc.subtitle : plan.name; // Assign subtitle or default
     features = Array.isArray(desc.features) ? desc.features : [];
   } else if (typeof plan.description === 'string' && plan.description) {
     // Basic fallback if description is still somehow a string after migration
@@ -56,7 +57,7 @@ export function PlanCard({
           </span>
           <span className="text-base font-medium text-textSecondary">
             {/* Display /mo for free plan, otherwise format interval */}
-            {isFreePlan ? '/mo' : `/${formatInterval(plan.interval, plan.intervalCount).replace('ly', '')}`}
+            {isFreePlan ? '/mo' : `/${formatInterval(plan.interval, plan.interval_count).replace('ly', '')}`}
           </span>
         </p>
         {/* Display features from JSON */}
@@ -103,7 +104,7 @@ export function PlanCard({
         ) : (
           // Button for Paid plan cards (only shown if NOT current)
           <button
-            onClick={() => handleSubscribe(plan.stripePriceId)} // Use correct camelCase field
+            onClick={() => handleSubscribe(plan.stripe_price_id)} // Use correct camelCase field
             disabled={isProcessing}
             className={`w-full inline-flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-primary hover:bg-primary/90 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary ${
               isProcessing ? 'opacity-75 cursor-not-allowed' : ''

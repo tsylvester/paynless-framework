@@ -145,7 +145,7 @@ describe('OrganizationSwitcher Component', () => {
     fireEvent.click(org2Button);
 
     expect(mockSetCurrentOrganizationId).toHaveBeenCalledWith(org2.id);
-    expect(mockNavigate).toHaveBeenCalledWith(`/dashboard/organizations/${org2.id}`);
+    expect(mockNavigate).toHaveBeenCalledWith(`/organizations/${org2.id}`);
   });
 
   it('does NOT call setCurrentOrganizationId or navigate when the current org is clicked', () => {
@@ -164,14 +164,14 @@ describe('OrganizationSwitcher Component', () => {
     renderWithRouter(<OrganizationSwitcher />);
     const manageLink = screen.getByRole('link', { name: /Manage Organizations/i });
     expect(manageLink).toBeInTheDocument();
-    expect(manageLink).toHaveAttribute('href', '/dashboard/organizations');
+    expect(manageLink).toHaveAttribute('href', '/organizations');
   });
 
   it('renders the "Create Organization" link correctly', () => {
     renderWithRouter(<OrganizationSwitcher />);
     const createLink = screen.getByRole('link', { name: /Create Organization/i });
     expect(createLink).toBeInTheDocument();
-    expect(createLink).toHaveAttribute('href', '/dashboard/organizations/new');
+    expect(createLink).toHaveAttribute('href', '/organizations/new');
   });
 
   it('displays "No organizations found" message when list is empty', () => {
