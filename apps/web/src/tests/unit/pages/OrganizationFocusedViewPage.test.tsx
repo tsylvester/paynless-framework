@@ -9,7 +9,38 @@ import { logger } from '@paynless/utils'; // Import logger for potential mocking
 import { User, Organization, OrganizationMemberWithProfile } from '@paynless/types'; // Import necessary types
 
 // --- Mocks ---
-vi.mock('@paynless/store', () => ({ useOrganizationStore: vi.fn() }));
+
+// Create a mutable object to hold the mock state and actions
+const mockStoreState = {
+  userOrganizations: [] as Organization[],
+  fetchUserOrganizations: vi.fn(),
+  setCurrentOrganizationId: vi.fn(),
+  currentOrganizationId: null as string | null,
+  currentOrganizationDetails: null as Organization | null,
+  currentOrganizationMembers: [] as OrganizationMemberWithProfile[],
+  isLoading: false,
+  error: null as string | null,
+  selectCurrentUserRoleInOrg: vi.fn(() => 'member'), // Default mock implementation
+  fetchOrganizationDetails: vi.fn(),
+  fetchCurrentOrganizationMembers: vi.fn(),
+};
+
+vi.mock('@paynless/store', () => {
+  const useOrganizationStoreMock = vi.fn((selector) => {
+    // If called with a selector, apply it to the mock state
+    if (typeof selector === 'function') {
+      return selector(mockStoreState);
+    }
+    // If called without a selector (shouldn't happen in standard use), return the whole state
+    return mockStoreState;
+  });
+
+  // Attach the getState method to the mock hook
+  useOrganizationStoreMock.getState = vi.fn(() => mockStoreState);
+
+  return { useOrganizationStore: useOrganizationStoreMock };
+});
+
 vi.mock('../../../hooks/useCurrentUser', () => ({ useCurrentUser: vi.fn() }));
 vi.mock('react-router-dom', async (importOriginal) => {
   const original = await importOriginal<typeof import('react-router-dom')>();
@@ -19,7 +50,14 @@ vi.mock('react-router-dom', async (importOriginal) => {
     useNavigate: vi.fn(),
   };
 });
-vi.mock('@paynless/utils', () => ({ logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() } })); // Mock logger methods
+vi.mock('@paynless/utils', () => ({ 
+  logger: { 
+    info: vi.fn(), 
+    warn: vi.fn(), 
+    error: vi.fn(), 
+    debug: vi.fn() 
+  } 
+}));
 
 // Mock child components
 vi.mock('../../../components/organizations/OrganizationDetailsCard', () => ({ OrganizationDetailsCard: () => <div data-testid="org-details-card">Details</div> }));
@@ -32,90 +70,101 @@ vi.mock('@/components/ui/skeleton', () => ({ Skeleton: ({ className }: { classNa
 
 // --- Test Suite ---
 describe('OrganizationFocusedViewPage', () => {
-  let mockUseOrganizationStore: Mock;
+  // Remove mockUseOrganizationStore, we interact via mockStoreState now
   let mockUseCurrentUser: Mock;
   let mockUseParams: Mock;
   let mockUseNavigate: Mock;
   let mockNavigate: Mock;
 
-  let mockFetchUserOrganizations: Mock;
-  let mockSetCurrentOrganizationId: Mock;
-  let mockSelectCurrentUserRole: Mock;
-  let mockFetchOrganizationDetails: Mock;
-  let mockFetchCurrentOrganizationMembers: Mock;
+  // Keep refs to mock functions if needed for assertions
+  let fetchUserOrganizationsMock: Mock;
+  let setCurrentOrganizationIdMock: Mock;
+  let selectCurrentUserRoleInOrgMock: Mock;
+  let fetchOrganizationDetailsMock: Mock;
+  let fetchCurrentOrganizationMembersMock: Mock;
 
   const mockUser = { id: 'user-123', email: 'test@example.com' } as User;
   const orgIdFromUrl = 'org-abc';
 
-  // Helper to setup default store state
+  // Helper to setup default store state by modifying the mockStoreState object
   const setupStore = (overrides = {}) => {
+    // Reset mock function references
+    fetchUserOrganizationsMock = mockStoreState.fetchUserOrganizations = vi.fn();
+    setCurrentOrganizationIdMock = mockStoreState.setCurrentOrganizationId = vi.fn();
+    selectCurrentUserRoleInOrgMock = mockStoreState.selectCurrentUserRoleInOrg = vi.fn().mockReturnValue('member'); // Re-apply default mock
+    fetchOrganizationDetailsMock = mockStoreState.fetchOrganizationDetails = vi.fn();
+    fetchCurrentOrganizationMembersMock = mockStoreState.fetchCurrentOrganizationMembers = vi.fn();
+
+    // Define default state structure
     const defaultState = {
       userOrganizations: [{ id: orgIdFromUrl, name: 'Test Org', deleted_at: null }] as Organization[],
-      fetchUserOrganizations: mockFetchUserOrganizations,
-      setCurrentOrganizationId: mockSetCurrentOrganizationId,
       currentOrganizationId: null,
       currentOrganizationDetails: null,
       currentOrganizationMembers: [] as OrganizationMemberWithProfile[],
       isLoading: false,
       error: null,
-      selectCurrentUserRoleInOrg: mockSelectCurrentUserRole,
-      fetchOrganizationDetails: mockFetchOrganizationDetails,
-      fetchCurrentOrganizationMembers: mockFetchCurrentOrganizationMembers,
-      ...overrides, // Apply test-specific state
     };
-    mockUseOrganizationStore.mockReturnValue(defaultState);
-    return defaultState;
+
+    // Merge defaults and overrides into the mockStoreState
+    Object.assign(mockStoreState, defaultState, overrides);
+    
+    // Ensure the getState mock always returns the *current* state object
+    (useOrganizationStore.getState as Mock).mockReturnValue(mockStoreState);
   };
 
   beforeEach(() => {
-    vi.clearAllMocks(); // Clear mocks between tests
+    vi.clearAllMocks(); // Clear mocks between tests, including those inside mockStoreState
 
-    // Setup mock functions
-    mockFetchUserOrganizations = vi.fn();
-    mockSetCurrentOrganizationId = vi.fn();
-    mockSelectCurrentUserRole = vi.fn().mockReturnValue('member'); // Default to member
-    mockFetchOrganizationDetails = vi.fn();
-    mockFetchCurrentOrganizationMembers = vi.fn();
-    mockNavigate = vi.fn();
+    // Reset the shared mock state to a clean slate before applying setupStore
+     Object.assign(mockStoreState, {
+        userOrganizations: [], fetchUserOrganizations: vi.fn(), setCurrentOrganizationId: vi.fn(),
+        currentOrganizationId: null, currentOrganizationDetails: null, currentOrganizationMembers: [],
+        isLoading: false, error: null, selectCurrentUserRoleInOrg: vi.fn(() => 'member'),
+        fetchOrganizationDetails: vi.fn(), fetchCurrentOrganizationMembers: vi.fn(),
+     });
+     // Also reset the getState mock itself
+     (useOrganizationStore.getState as Mock).mockClear();
+     (useOrganizationStore as Mock).mockClear();
 
-    // Setup hook mocks
-    mockUseOrganizationStore = useOrganizationStore as Mock;
+    // Setup other hook mocks
     mockUseCurrentUser = useCurrentUser as Mock;
     mockUseParams = useParams as Mock;
     mockUseNavigate = useNavigate as Mock;
+    mockNavigate = vi.fn();
 
-    // Default return values for hooks
-    setupStore(); // Setup default store state
     mockUseCurrentUser.mockReturnValue({ user: mockUser });
     mockUseParams.mockReturnValue({ orgId: orgIdFromUrl });
     mockUseNavigate.mockReturnValue(mockNavigate);
+
+    // Call setupStore AFTER resetting and setting up other mocks
+    setupStore(); 
   });
 
   it('sets current organization ID from URL parameter on mount', () => {
     setupStore({ currentOrganizationId: null }); // Ensure it's not already set
     render(<OrganizationFocusedViewPage />);
-    expect(mockSetCurrentOrganizationId).toHaveBeenCalledWith(orgIdFromUrl);
+    // Assert on the mock function reference we stored
+    expect(setCurrentOrganizationIdMock).toHaveBeenCalledWith(orgIdFromUrl);
   });
 
   it('fetches user organizations if not loaded on mount', () => {
     setupStore({ userOrganizations: [] });
     render(<OrganizationFocusedViewPage />);
-    expect(mockFetchUserOrganizations).toHaveBeenCalled();
+    expect(fetchUserOrganizationsMock).toHaveBeenCalled();
   });
 
   it('displays skeleton loading state while org data is loading or ID mismatch', () => {
     // Scenario 1: isLoading is true
     setupStore({ isLoading: true, currentOrganizationId: null });
     const { rerender } = render(<OrganizationFocusedViewPage />);
-    // Check for multiple skeleton elements instead of text
-    expect(screen.queryByText(/Loading organization details/i)).toBeNull(); // Text should be gone
-    expect(screen.getAllByTestId('skeleton').length).toBeGreaterThan(2); // Check for presence of multiple skeletons
+    expect(screen.queryByText(/Loading organization details/i)).toBeNull(); 
+    expect(screen.getAllByTestId('skeleton').length).toBeGreaterThan(2); 
 
     // Scenario 2: ID mismatch (store not updated yet)
     setupStore({ isLoading: false, currentOrganizationId: 'other-org' });
     rerender(<OrganizationFocusedViewPage />);
-    expect(screen.queryByText(/Loading organization details/i)).toBeNull(); // Text should be gone
-    expect(screen.getAllByTestId('skeleton').length).toBeGreaterThan(2); // Check for skeletons
+    expect(screen.queryByText(/Loading organization details/i)).toBeNull(); 
+    expect(screen.getAllByTestId('skeleton').length).toBeGreaterThan(2); 
   });
 
   // Explicit test for skeleton structure
@@ -124,19 +173,16 @@ describe('OrganizationFocusedViewPage', () => {
     render(<OrganizationFocusedViewPage />);
     
     const skeletons = screen.getAllByTestId('skeleton');
-    expect(skeletons.length).toBe(6); // Based on 1 title + 5 card skeletons in the component
-    
-    // Optionally, check classes or structure more precisely if needed
-    // e.g., expect(skeletons[0]).toHaveClass('mb-6'); // Title skeleton
+    expect(skeletons.length).toBe(6); 
   });
 
   it('renders correct cards for member role when loaded', () => {
     setupStore({
-      currentOrganizationId: orgIdFromUrl, // Ensure correct org is set
+      currentOrganizationId: orgIdFromUrl, 
       isLoading: false,
-      currentOrganizationDetails: { id: orgIdFromUrl, name: 'Test Org', deleted_at: null, created_at: '', visibility: 'private' },
-      currentOrganizationMembers: [{ id: 'mem-1', user_id: mockUser.id, role: 'member' }] as any, // Mock member data
-      selectCurrentUserRoleInOrg: () => 'member',
+      currentOrganizationDetails: { id: orgIdFromUrl, name: 'Test Org', deleted_at: null, created_at: '', visibility: 'private' } as Organization,
+      currentOrganizationMembers: [{ id: 'mem-1', user_id: mockUser.id, role: 'member' }] as any, 
+      selectCurrentUserRoleInOrg: vi.fn(() => 'member'), // Override specific selector mock if needed
     });
     render(<OrganizationFocusedViewPage />);
     expect(screen.getByTestId('org-details-card')).toBeInTheDocument();
@@ -150,9 +196,9 @@ describe('OrganizationFocusedViewPage', () => {
     setupStore({
       currentOrganizationId: orgIdFromUrl,
       isLoading: false,
-      currentOrganizationDetails: { id: orgIdFromUrl, name: 'Test Org', deleted_at: null, created_at: '', visibility: 'private' },
+      currentOrganizationDetails: { id: orgIdFromUrl, name: 'Test Org', deleted_at: null, created_at: '', visibility: 'private' } as Organization,
       currentOrganizationMembers: [{ id: 'mem-1', user_id: mockUser.id, role: 'admin' }] as any, 
-      selectCurrentUserRoleInOrg: () => 'admin',
+      selectCurrentUserRoleInOrg: vi.fn(() => 'admin'), // Override specific selector mock
     });
     render(<OrganizationFocusedViewPage />);
     expect(screen.getByTestId('org-details-card')).toBeInTheDocument();
@@ -167,8 +213,8 @@ describe('OrganizationFocusedViewPage', () => {
     setupStore({
       currentOrganizationId: orgIdFromUrl,
       isLoading: false,
-      userOrganizations: [{ organization_id: 'other-org', name: 'Another Org' }] as any, // User doesn't belong to orgIdFromUrl
-      currentOrganizationDetails: { id: orgIdFromUrl, name: 'Test Org' }, // Details might still load initially
+      userOrganizations: [{ organization_id: 'other-org', name: 'Another Org' }] as any, 
+      currentOrganizationDetails: { id: orgIdFromUrl, name: 'Test Org' } as Organization,
       currentOrganizationMembers: [],
     });
     render(<OrganizationFocusedViewPage />);
@@ -195,7 +241,7 @@ describe('OrganizationFocusedViewPage', () => {
       currentOrganizationId: orgIdFromUrl,
       isLoading: false,
       currentOrganizationDetails: { id: orgIdFromUrl, name: 'Test Org', deleted_at: null } as Organization,
-      currentOrganizationMembers: [{ id: 'mem-2', user_id: 'other-user', role: 'member' }] as any, // Current user not in list
+      currentOrganizationMembers: [{ id: 'mem-2', user_id: 'other-user', role: 'member' }] as any, 
     });
     render(<OrganizationFocusedViewPage />);
     await waitFor(() => {
@@ -208,7 +254,7 @@ describe('OrganizationFocusedViewPage', () => {
       currentOrganizationId: orgIdFromUrl,
       isLoading: false,
       error: 'Failed to fetch',
-      currentOrganizationDetails: { id: orgIdFromUrl, name: 'Test Org' },
+      currentOrganizationDetails: { id: orgIdFromUrl, name: 'Test Org' } as Organization,
       currentOrganizationMembers: [],
     });
     render(<OrganizationFocusedViewPage />);
@@ -216,12 +262,4 @@ describe('OrganizationFocusedViewPage', () => {
       expect(mockNavigate).toHaveBeenCalledWith('/dashboard/organizations?error=fetch_failed');
     });
   });
-
-  // it('redirects if orgId is missing from URL', () => {
-  //   mockUseParams.mockReturnValue({ orgId: undefined });
-  //   setupStore();
-  //   render(<OrganizationFocusedViewPage />);
-  //   expect(mockNavigate).toHaveBeenCalledWith('/dashboard/organizations'); // Redirect to hub if no ID
-  // });
-
 }); 

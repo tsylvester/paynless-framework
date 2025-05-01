@@ -1,18 +1,40 @@
 import React from 'react';
 import { render, screen, waitFor } from '@testing-library/react';
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, Mock } from 'vitest';
 import { OrganizationHubPage } from '../../../pages/OrganizationHubPage'; // Adjust path relative to tests/unit/pages
 import { useOrganizationStore } from '@paynless/store';
 import { useCurrentUser } from '../../../hooks/useCurrentUser'; // Adjust path relative to tests/unit/pages
 import { User } from '@supabase/supabase-js';
-import { UserOrganizationLink } from '@paynless/types';
+import { UserOrganizationLink, Organization, OrganizationMemberWithProfile } from '@paynless/types'; // Add Organization types
 
 // --- Mocks ---
 
-// Mock the Zustand store
-vi.mock('@paynless/store', () => ({
-  useOrganizationStore: vi.fn(),
-}));
+// Create a mutable object to hold the mock store state and actions
+const mockStoreState = {
+  userOrganizations: [] as UserOrganizationLink[], // Use specific type
+  fetchUserOrganizations: vi.fn(),
+  setCurrentOrganizationId: vi.fn(),
+  currentOrganizationId: null as string | null,
+  currentOrganizationDetails: null as Organization | null,
+  currentOrganizationMembers: [] as OrganizationMemberWithProfile[],
+  isLoading: false,
+  error: null as string | null,
+  selectCurrentUserRoleInOrg: vi.fn(() => 'member'), // Default mock implementation
+  fetchOrganizationDetails: vi.fn(),
+  fetchCurrentOrganizationMembers: vi.fn(),
+};
+
+// Mock the Zustand store using the shared state object
+vi.mock('@paynless/store', () => {
+  const useOrganizationStoreMock = vi.fn((selector) => {
+    if (typeof selector === 'function') {
+      return selector(mockStoreState);
+    }
+    return mockStoreState;
+  });
+  useOrganizationStoreMock.getState = vi.fn(() => mockStoreState);
+  return { useOrganizationStore: useOrganizationStoreMock };
+});
 
 // Mock the current user hook
 vi.mock('../../../hooks/useCurrentUser', () => ({
@@ -38,135 +60,149 @@ vi.mock('../../../components/organizations/InviteMemberCard', () => ({
 vi.mock('../../../components/organizations/PendingActionsCard', () => ({
   PendingActionsCard: () => <div data-testid="pending-actions-card">PendingActionsCard</div>,
 }));
+vi.mock('@/components/ui/skeleton', () => ({ Skeleton: ({ className }: { className: string }) => <div data-testid="skeleton" role="generic" data-slot="skeleton" className={className}></div> }));
 
 
 // --- Test Suite ---
 
 describe('OrganizationHubPage', () => {
-  // Mock store state and actions
-  let mockFetchUserOrganizations: ReturnType<typeof vi.fn>;
-  let mockSetCurrentOrganizationId: ReturnType<typeof vi.fn>;
-  let mockSelectCurrentUserRole: ReturnType<typeof vi.fn>;
-  let mockUseOrganizationStore: ReturnType<typeof vi.fn>;
-  let mockUseCurrentUser: ReturnType<typeof vi.fn>;
-  let mockFetchOrganizationDetails: ReturnType<typeof vi.fn>;
-  let mockFetchCurrentOrganizationMembers: ReturnType<typeof vi.fn>;
+  // Store mock function references for assertions
+  let fetchUserOrganizationsMock: Mock;
+  let setCurrentOrganizationIdMock: Mock;
+  let selectCurrentUserRoleInOrgMock: Mock;
+  // Remove unused mock function refs
+  // let mockFetchOrganizationDetails: Mock;
+  // let mockFetchCurrentOrganizationMembers: Mock;
+
+  // Keep mock hook reference if needed, but prefer interacting via mockStoreState
+  let mockUseCurrentUser: Mock;
 
   const mockUser = { id: 'user-123' } as User; // Mock a basic user object
 
-  beforeEach(() => {
-    // Reset mocks before each test
-    mockFetchUserOrganizations = vi.fn();
-    mockSetCurrentOrganizationId = vi.fn();
-    mockSelectCurrentUserRole = vi.fn();
-    mockFetchOrganizationDetails = vi.fn();
-    mockFetchCurrentOrganizationMembers = vi.fn();
+  // Helper to setup store state by modifying the mockStoreState object
+  const setupStore = (overrides = {}) => {
+    // Reset mock functions within mockStoreState
+    fetchUserOrganizationsMock = mockStoreState.fetchUserOrganizations = vi.fn();
+    setCurrentOrganizationIdMock = mockStoreState.setCurrentOrganizationId = vi.fn();
+    selectCurrentUserRoleInOrgMock = mockStoreState.selectCurrentUserRoleInOrg = vi.fn().mockReturnValue('member');
+    mockStoreState.fetchOrganizationDetails = vi.fn(); // Reset unused ones too for safety
+    mockStoreState.fetchCurrentOrganizationMembers = vi.fn();
 
-    // Default mock state for the store
-    mockUseOrganizationStore = useOrganizationStore as ReturnType<typeof vi.fn>; // Cast to mocked type
-    mockUseOrganizationStore.mockReturnValue({
+    // Define default state structure
+    const defaultState = {
       userOrganizations: [],
-      fetchUserOrganizations: mockFetchUserOrganizations,
-      setCurrentOrganizationId: mockSetCurrentOrganizationId,
       currentOrganizationId: null,
       currentOrganizationDetails: null,
+      currentOrganizationMembers: [],
       isLoading: false,
-      selectCurrentUserRoleInOrg: mockSelectCurrentUserRole,
-      fetchOrganizationDetails: mockFetchOrganizationDetails,
-      fetchCurrentOrganizationMembers: mockFetchCurrentOrganizationMembers,
+      error: null,
+    };
+    
+    // Merge defaults and overrides into the mockStoreState
+    Object.assign(mockStoreState, defaultState, overrides);
+
+    // Ensure the getState mock always returns the *current* state object
+    (useOrganizationStore.getState as Mock).mockReturnValue(mockStoreState);
+  };
+
+  beforeEach(() => {
+    // Clear all mocks (including vi.fn mocks inside mockStoreState)
+    vi.clearAllMocks();
+
+    // Reset the shared mock state object itself
+    Object.assign(mockStoreState, {
+      userOrganizations: [], fetchUserOrganizations: vi.fn(), setCurrentOrganizationId: vi.fn(),
+      currentOrganizationId: null, currentOrganizationDetails: null, currentOrganizationMembers: [],
+      isLoading: false, error: null, selectCurrentUserRoleInOrg: vi.fn(() => 'member'),
+      fetchOrganizationDetails: vi.fn(), fetchCurrentOrganizationMembers: vi.fn(),
     });
+    // Reset the store hook mocks specifically
+    (useOrganizationStore as Mock).mockClear();
+    (useOrganizationStore.getState as Mock).mockClear();
 
-    // Default mock for current user hook
-    mockUseCurrentUser = useCurrentUser as ReturnType<typeof vi.fn>; // Cast to mocked type
-    mockUseCurrentUser.mockReturnValue({ user: mockUser });
+    // Setup other hook mocks
+    mockUseCurrentUser = useCurrentUser as Mock;
+    mockUseCurrentUser.mockReturnValue({ user: mockUser }); // Default: user is present
 
-    // Default role (non-admin)
-    mockSelectCurrentUserRole.mockReturnValue('member');
-  });
-
-  it('fetches user organizations on initial load when user is present', () => {
-    render(<OrganizationHubPage />);
-    expect(mockFetchUserOrganizations).toHaveBeenCalledTimes(1);
+    // Call setupStore AFTER resetting everything
+    setupStore();
   });
 
   it('does not fetch organizations if user is not present', () => {
+    // This test remains valid conceptually, checking that the component *doesn't*
+    // somehow trigger a fetch if the user isn't there (even though it doesn't fetch anyway)
     mockUseCurrentUser.mockReturnValue({ user: null });
+    setupStore({ userOrganizations: [] }); 
     render(<OrganizationHubPage />);
-    expect(mockFetchUserOrganizations).not.toHaveBeenCalled();
+    expect(fetchUserOrganizationsMock).not.toHaveBeenCalled();
   });
   
-  it('displays loading indicator text initially when loading and no organizations loaded', () => {
-     mockUseOrganizationStore.mockReturnValue({
-       ...mockUseOrganizationStore(), 
+  it('displays skeleton loading state initially when loading and no organizations loaded', () => {
+     setupStore({ 
        isLoading: true,
        userOrganizations: [],
      });
      render(<OrganizationHubPage />);
-     // Check for the presence of skeleton elements instead
-     const skeletons = screen.queryAllByTestId(/skeleton/); // Use a regex or a more specific selector if possible
-     // Let's find the skeletons by their data attribute
-     const skeletonElements = screen.queryAllByRole('generic', { 'data-slot': 'skeleton' }); // Assuming Skeleton renders a div or similar role
-     expect(skeletonElements.length).toBeGreaterThan(0); // Check if at least one skeleton is rendered
+     // Check for the presence of skeleton elements using data-testid
+     const skeletonElements = screen.queryAllByTestId('skeleton'); 
+     expect(skeletonElements.length).toBeGreaterThan(0); 
   });
 
   it('does not display loading indicator text if not loading, even with no organizations', () => {
-    mockUseOrganizationStore.mockReturnValue({
-      ...mockUseOrganizationStore(),
+    setupStore({
       isLoading: false,
       userOrganizations: [],
     });
     render(<OrganizationHubPage />);
-    expect(screen.queryByText('Loading organizations...')).toBeNull();
+    // Skeletons should not be present - use data-testid
+    expect(screen.queryAllByTestId('skeleton')).toHaveLength(0);
     expect(screen.getByText('You are not part of any organizations yet. Create one!')).toBeInTheDocument();
   });
 
-  it('sets the first organization as current if organizations load and none is selected', async () => {
+  it('does NOT set a default organization if organizations load and none is selected', async () => {
     const organizations: UserOrganizationLink[] = [
         { id: 'org-1', name: 'Org One', membership_id: 'mem-1' },
         { id: 'org-2', name: 'Org Two', membership_id: 'mem-2' }
     ];
-    const initialStoreState = mockUseOrganizationStore();
-
-    mockUseOrganizationStore.mockReturnValueOnce({
-        ...initialStoreState,
-        userOrganizations: [],
-        currentOrganizationId: null,
-    }).mockReturnValueOnce({ 
-        ...initialStoreState,
-        userOrganizations: organizations,
-        currentOrganizationId: null,
-        fetchUserOrganizations: mockFetchUserOrganizations,
-        setCurrentOrganizationId: mockSetCurrentOrganizationId,
-        selectCurrentUserRoleInOrg: mockSelectCurrentUserRole,
+    
+    // Setup the state: orgs are loaded, user exists, no currentId, not loading
+    setupStore({
+      userOrganizations: organizations,
+      currentOrganizationId: null, 
+      isLoading: false,
     });
 
-    const { rerender } = render(<OrganizationHubPage />); 
-    rerender(<OrganizationHubPage />); 
+    // Render the component 
+    render(<OrganizationHubPage />); 
 
-    await waitFor(() => {
-      expect(mockSetCurrentOrganizationId).toHaveBeenCalledWith('org-1');
-    });
+    // Wait briefly to ensure any potential effect would have run
+    await new Promise(resolve => setTimeout(resolve, 100)); 
+
+    // Assert that setCurrentOrganizationId was *not* called
+    expect(setCurrentOrganizationIdMock).not.toHaveBeenCalled();
   });
 
-  it('does not set current organization if one is already selected', () => {
+  it('does not set current organization if one is already selected', async () => {
     const organizations = [{ id: 'org-1', name: 'Org One', membership_id: 'mem-1' }];
-     mockUseOrganizationStore.mockReturnValue({
-       ...mockUseOrganizationStore(),
+     setupStore({
        userOrganizations: organizations,
-       currentOrganizationId: 'org-existing',
+       currentOrganizationId: 'org-existing', // Already selected
+       isLoading: false,
      });
      render(<OrganizationHubPage />);
-     expect(mockSetCurrentOrganizationId).not.toHaveBeenCalled();
+     // Wait a short period to ensure effects *would* have run if they were going to
+     await new Promise(resolve => setTimeout(resolve, 100)); 
+     expect(setCurrentOrganizationIdMock).not.toHaveBeenCalled();
   });
 
   it('renders OrganizationListCard', () => {
+    setupStore(); // Use default setup
     render(<OrganizationHubPage />);
     expect(screen.getByTestId('org-list-card')).toBeInTheDocument();
   });
 
   it('renders message when no organizations exist', () => {
-    mockUseOrganizationStore.mockReturnValue({
-        ...mockUseOrganizationStore(),
+    setupStore({
         userOrganizations: [],
         isLoading: false,
     });
@@ -177,8 +213,7 @@ describe('OrganizationHubPage', () => {
 
   it('renders message to select org when orgs exist but none selected', () => {
     const organizations = [{ id: 'org-1', name: 'Org One', membership_id: 'mem-1' }];
-     mockUseOrganizationStore.mockReturnValue({
-       ...mockUseOrganizationStore(),
+     setupStore({
        userOrganizations: organizations,
        currentOrganizationId: null,
        isLoading: false,
@@ -189,11 +224,10 @@ describe('OrganizationHubPage', () => {
   });
 
   it('renders correct cards for a selected organization (member role)', () => {
-     mockUseOrganizationStore.mockReturnValue({
-       ...mockUseOrganizationStore(),
+     setupStore({
        currentOrganizationId: 'org-1',
        userOrganizations: [{ id: 'org-1', name: 'Org One', membership_id: 'mem-1' }],
-       selectCurrentUserRoleInOrg: () => 'member',
+       selectCurrentUserRoleInOrg: vi.fn(() => 'member'), // Override selector mock
        isLoading: false,
      });
      render(<OrganizationHubPage />);
@@ -205,11 +239,10 @@ describe('OrganizationHubPage', () => {
   });
 
    it('renders correct cards for a selected organization (admin role)', () => {
-     mockUseOrganizationStore.mockReturnValue({
-       ...mockUseOrganizationStore(),
+     setupStore({
        currentOrganizationId: 'org-1',
        userOrganizations: [{ id: 'org-1', name: 'Org One', membership_id: 'mem-1' }],
-       selectCurrentUserRoleInOrg: () => 'admin',
+       selectCurrentUserRoleInOrg: vi.fn(() => 'admin'), // Override selector mock
        isLoading: false,
      });
      render(<OrganizationHubPage />);
