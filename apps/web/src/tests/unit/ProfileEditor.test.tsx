@@ -3,7 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { useAuthStore } from '@paynless/store'; // Import actual store
 import type { UserProfile, UserProfileUpdate } from '@paynless/types';
-import { ProfileEditor } from './ProfileEditor';
+import { ProfileEditor } from '../../components/profile/ProfileEditor';
 
 // Mock the updateProfile function
 const mockUpdateProfile = vi.fn();

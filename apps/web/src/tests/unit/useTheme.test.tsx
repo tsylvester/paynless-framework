@@ -1,7 +1,7 @@
 import { renderHook, act } from '@testing-library/react';
 import React from 'react';
 import { describe, it, expect, vi } from 'vitest';
-import { useTheme } from './useTheme';
+import { useTheme } from '../../context/ThemeContext';
 // Import the actual context and provider
 import { ThemeContext, ThemeProvider } from '../context/theme.context'; 
 // Import supporting types used by the real context

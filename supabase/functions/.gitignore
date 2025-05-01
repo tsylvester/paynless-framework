@@ -1,0 +1,2 @@
+# Ignore Node.js modules directory created by pnpm workspace setup
+node_modules/ 

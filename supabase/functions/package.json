@@ -1,0 +1,6 @@
+{
+  "name": "@paynless/db-types",
+  "version": "0.0.0",
+  "private": true,
+  "types": "./types_db.ts"
+} 

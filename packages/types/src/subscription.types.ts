@@ -1,29 +1,35 @@
 // src/types/subscription.types.ts
-export interface SubscriptionPlan {
-  id: string;
-  stripePriceId: string;
-  name: string;
-  description: string | { subtitle?: string; features?: string[] } | null;
-  amount: number;
-  currency: string;
-  interval: string;
-  intervalCount: number;
-  features?: string[];
-  metadata?: Record<string, any>;
-}
+import type { Database } from '@paynless/db-types';
 
-export interface UserSubscription {
-  id: string | null;
-  userId: string;
-  stripeCustomerId: string | null;
-  stripeSubscriptionId: string | null;
-  status: SubscriptionStatus;
-  currentPeriodStart: string | null;
-  currentPeriodEnd: string | null;
-  cancelAtPeriodEnd: boolean;
-  plan: SubscriptionPlan | null;
-}
+// --- Database Table Aliases ---
 
+/**
+ * Represents a subscription plan offered.
+ * Derived from the `subscription_plans` table.
+ */
+export type SubscriptionPlan = Database['public']['Tables']['subscription_plans']['Row'];
+
+/**
+ * Represents a user's specific subscription status and details.
+ * Derived from the `user_subscriptions` table.
+ * Note: The `plan` property is manually added/resolved in application logic, 
+ * as the DB type only contains `plan_id`.
+ */
+export type UserSubscription = Database['public']['Tables']['user_subscriptions']['Row'] & {
+  plan?: SubscriptionPlan | null; // Keep application-level enrichment separate
+};
+// TODO: Revisit if a View combining user_subscriptions and subscription_plans is created later.
+
+/**
+ * Represents a record of a subscription-related financial transaction.
+ * Derived from the `subscription_transactions` table.
+ */
+export type SubscriptionTransaction = Database['public']['Tables']['subscription_transactions']['Row'];
+
+// --- Application/API Specific Types ---
+
+// Keep status types - Assuming these are TEXT fields with CHECK constraints in DB,
+// not ENUM types that would be generated in Database['public']['Enums'].
 export type SubscriptionStatus = 
   | 'free'
   | 'active'
@@ -33,18 +39,6 @@ export type SubscriptionStatus =
   | 'incomplete'
   | 'incomplete_expired'
   | 'trialing';
-
-export interface SubscriptionTransaction {
-  id: string;
-  userId: string;
-  subscriptionId: string | null;
-  stripeInvoiceId: string | null;
-  stripePaymentIntentId: string | null;
-  amount: number;
-  currency: string;
-  status: TransactionStatus;
-  created_at: string;
-}
 
 export type TransactionStatus = 
   | 'succeeded'
@@ -85,5 +79,29 @@ export interface PortalSessionResponse {
 
 // Define response type for fetching subscription plans
 export interface SubscriptionPlansResponse {
-  plans: SubscriptionPlan[];
+  plans: SubscriptionPlan[]; // Uses the aliased DB type
+}
+
+// --- Subscription API Specific Types (Moved from _shared/types.ts) ---
+
+export interface CheckoutSessionRequest {
+  priceId: string;
+  successUrl: string;
+  cancelUrl: string;
+}
+
+export interface BillingPortalRequest {
+  returnUrl: string;
+}
+
+export interface SessionResponse {
+  sessionId?: string; // Make optional as it might not always be present (e.g., portal)
+  url: string;
+}
+
+// Renamed from _shared/types.ts to avoid conflict with the other SubscriptionUsageMetrics
+export interface ApiSubscriptionUsageMetrics {
+  current: number;
+  limit: number;
+  reset_date?: string | null;
 }

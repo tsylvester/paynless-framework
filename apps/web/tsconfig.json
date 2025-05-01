@@ -18,7 +18,7 @@
     "isolatedModules": true,
     "noEmit": true,
     "jsx": "react-jsx",
-    "types": ["vite/client", "node"],
+    "types": ["vite/client", "node", "vitest/globals"],
     "baseUrl": ".",
     "paths": {
       "@/*": ["./src/*"]
@@ -33,15 +33,12 @@
   "exclude": [
     "node_modules", 
     "dist", 
-    "src/tests", 
-    "src/**/*.test.ts", 
-    "src/**/*.test.tsx", 
     "src/setupTests.ts",
     "vite.config.ts",
     "vitest.config.ts"
   ],
   "references": [
-    { "path": "../../packages/api-client" },
+    { "path": "../../packages/api" },
     { "path": "../../packages/store" },
     { "path": "../../packages/types" },
     { "path": "../../packages/utils" }

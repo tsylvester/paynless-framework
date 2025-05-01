@@ -2,7 +2,7 @@ import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 // Import vitest types for test config
 import type { UserConfig } from 'vitest/config';
-import path from 'path'; // Keep path for alias
+import path from 'node:path'; // Keep path for alias
 
 // https://vitejs.dev/config/
 export default defineConfig({
@@ -28,7 +28,7 @@ export default defineConfig({
     preserveSymlinks: false,
     alias: {
       // Keep aliases for local workspace packages
-      '@paynless/api-client': path.resolve(__dirname, '../../packages/api-client/src'),
+      '@paynless/api': path.resolve(__dirname, '../../packages/api/src'),
       '@paynless/store': path.resolve(__dirname, '../../packages/store/src'),
       // Add aliases for other local packages if needed
       '@': path.resolve(__dirname, './src'),

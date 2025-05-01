@@ -1,7 +1,7 @@
 export interface ApiError {
   code: string;
   message: string;
-  details?: unknown;
+  details?: any;
 }
 
 /**
@@ -56,14 +56,45 @@ export interface ApiEndpoint {
 /**
  * Utility type for responses from API endpoints
  */
-export type ApiResponse<T> = 
-  | { status: number; data: T; error?: ApiError }
-  | { status: number; data?: never; error: ApiError };
+export type ApiResponse<T> = SuccessResponse<T> | ErrorResponse;
 
-// ---> Define custom error for auth requirement <---
-export class AuthRequiredError extends Error {
-    constructor(message: string = 'Authentication required') {
-        super(message);
-        this.name = 'AuthRequiredError';
-    }
+/**
+ * Represents the standard structure for successful API responses.
+ */
+export interface SuccessResponse<T> {
+  status: number;
+  data?: T;
+  error?: undefined;
 }
+
+/**
+ * Represents the standard structure for error API responses.
+ */
+export interface ErrorResponse {
+  status: number;
+  data?: undefined;
+  error: ApiError;
+}
+
+// --- Types for API Streaming (e.g., SSE) ---
+
+/**
+ * Defines the structure for callback functions used with API streaming connections.
+ *
+ * @template T The expected type of data received in messages.
+ */
+export interface StreamCallbacks<T> {
+    /** Function called when a new message (correctly parsed) is received. */
+    onMessage: (data: T) => void;
+    /** Function called when any error occurs (connection, parsing, etc.). */
+    onError: (error: Event | Error) => void;
+    /** Optional function called when the stream connection is successfully opened. */
+    onOpen?: () => void;
+}
+
+/**
+ * Represents the function returned by a streaming connection method, used to disconnect.
+ */
+export type StreamDisconnectFunction = () => void;
+
+// ---------------------------------------------

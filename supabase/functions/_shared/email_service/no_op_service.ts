@@ -4,6 +4,7 @@ import type {
 } from "../types.ts"; // Updated import path
 // Note: Adjust the relative path based on your final structure if needed
 import { logger } from "../logger.ts"; // Assuming logger is in the _shared root
+import { EmailMarketingService as EmailMarketingServiceType } from "../types.ts"; // Updated import path
 
 /**
  * A no-operation implementation of the EmailMarketingService.

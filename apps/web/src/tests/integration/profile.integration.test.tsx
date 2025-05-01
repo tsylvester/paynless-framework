@@ -5,7 +5,7 @@ import { http, HttpResponse } from 'msw';
 // Use shared render function
 import { render as customRender } from '../utils/render';
 // Use shared MSW server instance
-import { server } from '../../mocks/server'; // Use server from root mocks
+import { server } from '../mocks/server'; // Corrected Path
 // Import components to test
 import { ProfilePage } from '../../pages/Profile';
 // Import actual store

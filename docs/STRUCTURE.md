@@ -12,12 +12,12 @@ The architecture follows these principles:
 
 ### Core Pattern: API Client Singleton
 
-**Decision (April 2025):** To ensure consistency and simplify integration across multiple frontend platforms (web, mobile) and shared packages (like Zustand stores), the `@paynless/api-client` package follows a **Singleton pattern**.
+**Decision (April 2025):** To ensure consistency and simplify integration across multiple frontend platforms (web, mobile) and shared packages (like Zustand stores), the `@paynless/api` package follows a **Singleton pattern**.
 
 *   **Initialization:** The client is configured and initialized *once* per application lifecycle using `initializeApiClient(config)`. Each platform provides the necessary configuration.
-*   **Access:** All parts of the application (stores, UI components, platform-specific code) access the single, pre-configured client instance by importing the exported `api` object: `import { api } from '@paynless/api-client';`.
+*   **Access:** All parts of the application (stores, UI components, platform-specific code) access the single, pre-configured client instance by importing the exported `api` object: `import { api } from '@paynless/api';`.
 *   **No DI for Stores:** Shared stores (Zustand) should *not* use dependency injection (e.g., an `init` method) to receive the API client. They should import and use the `api` singleton directly.
-*   **Testing:** Unit testing components or stores that use the `api` singleton requires mocking the module import using the test framework's capabilities (e.g., `vi.mock('@paynless/api-client', ...)`).
+*   **Testing:** Unit testing components or stores that use the `api` singleton requires mocking the module import using the test framework's capabilities (e.g., `vi.mock('@paynless/api', ...)`).
 *   **Consistency Note:** Older stores (`authStore`, `subscriptionStore`) may still use an outdated DI pattern and require refactoring to align with this singleton approach.
 
 
@@ -59,7 +59,24 @@ The application exposes the following primary API endpoints through Supabase Edg
 ### Internal / Triggers
 - `/on-user-created`: Function triggered by Supabase Auth on new user creation (handles profile creation and **optional email marketing sync**).
 
-*(Note: This list is based on the `supabase/functions/` directory structure and inferred functionality. Specific HTTP methods and request/response details require inspecting function code or the `api-client` package.)*
+### [NEW] Notifications & Multi-Tenancy (Organizations)
+- `/notifications`: (GET) Fetches notifications for the current user.
+- `/notifications/:notificationId`: (PATCH) Marks a specific notification as read.
+- `/notifications/mark-all-read`: (POST) Marks all user's notifications as read.
+- `/organizations`: (POST) Creates a new organization.
+- `/organizations`: (GET) Lists organizations the current user is a member of.
+- `/organizations/:orgId`: (GET) Fetches details for a specific organization.
+- `/organizations/:orgId`: (PATCH) Updates organization details (name, visibility) (Admin only).
+- `/organizations/:orgId`: (DELETE) Soft-deletes an organization (Admin only).
+- `/organizations/:orgId/members`: (GET) Lists members of a specific organization.
+- `/organizations/:orgId/invite`: (POST) Invites a user to an organization (Admin only, may involve Edge Function).
+- `/invites/accept/:token`: (POST/GET) Accepts an organization invitation (may involve Edge Function).
+- `/organizations/:orgId/join`: (POST) Requests to join an organization.
+- `/memberships/:membershipId/approve`: (POST) Approves a pending join request (Admin only).
+- `/memberships/:membershipId/role`: (PATCH) Updates a member's role (Admin only).
+- `/memberships/:membershipId`: (DELETE) Removes a member from an organization (Admin or self).
+
+*(Note: This list is based on the `supabase/functions/` directory structure and inferred functionality. Specific HTTP methods and request/response details require inspecting function code or the `api` package.)*
 
 ## Database Schema (Simplified)
 
@@ -153,6 +170,43 @@ The core database tables defined in `supabase/migrations/` include:
   - `token_usage` (jsonb, nullable) - *Stores request/response tokens from AI API*
   - `created_at` (timestamptz)
 
+### [NEW] Notifications & Multi-Tenancy Schema
+
+- **`public.organizations`** (Represents a team, workspace, or organization)
+  - `id` (uuid, PK, default `gen_random_uuid()`)
+  - `name` (text, NOT NULL)
+  - `visibility` (text, NOT NULL, CHECK (`visibility` IN ('private', 'public')), default `'private'`) - *Controls discoverability. Chosen `TEXT CHECK` for future extensibility (e.g., 'unlisted').*
+  - `deleted_at` (timestamp with time zone, default `NULL`) - *For soft deletion*
+  - `created_at`, `updated_at` (timestamptz)
+
+- **`public.organization_members`** (Junction table linking users to organizations)
+  - `id` (uuid, PK, default `gen_random_uuid()`)
+  - `user_id` (uuid, NOT NULL, FK references `auth.users(id) ON DELETE CASCADE`)
+  - `organization_id` (uuid, NOT NULL, FK references `organizations(id) ON DELETE CASCADE`)
+  - `role` (text, NOT NULL, CHECK (`role` IN ('admin', 'member'))) - *Initial roles, extensible later.*
+  - `status` (text, NOT NULL, CHECK (`status` IN ('pending', 'active', 'removed')))
+  - `created_at`, `updated_at` (timestamptz)
+  - *Index:* (`user_id`, `organization_id`) UNIQUE
+
+- **`public.notifications`** (Stores in-app notifications for users)
+  - `id` (uuid, PK, default `gen_random_uuid()`)
+  - `user_id` (uuid, NOT NULL, FK references `auth.users(id) ON DELETE CASCADE`)
+  - `type` (text, NOT NULL) - *e.g., 'join_request', 'invite_sent', 'role_changed'*
+  - `data` (jsonb, nullable) - *Stores context like `target_path`, `org_id`, `requesting_user_id`, `membership_id` for linking and display.*
+  - `read` (boolean, NOT NULL, default `false`)
+  - `created_at` (timestamptz)
+  - *Index:* (`user_id`, `read`, `created_at`)
+
+### [NEW] Backend Logic (Notifications & Tenancy)
+
+- **Row-Level Security (RLS):**
+  - `organizations`: Policies enforce that users can only see/interact with non-deleted orgs they are active members of. Visibility checks might apply. Admins have broader permissions within their org.
+  - `organization_members`: Policies enforce access based on org membership and role. Admins manage memberships within their org.
+  - `notifications`: Policies ensure users only access their own notifications.
+  - *Existing Tables*: RLS on tables like `chats`, `chat_messages`, etc., will be updated to check for `organization_id` based on the user's active membership in a non-deleted organization.
+- **Triggers/Functions:**
+  - **Notification Triggers:** Database triggers (e.g., `notify_org_admins_on_join_request` on `AFTER INSERT ON organization_members`) will automatically create entries in the `notifications` table for relevant users (e.g., org admins) when specific events occur (join request, role change, etc.). These triggers populate the `notifications.data` field with necessary context.
+  - **Last Admin Check:** A `BEFORE UPDATE OR DELETE` trigger or function on `organization_members` prevents the last active admin of a non-deleted organization from being removed or having their role changed to non-admin.
 
 ## Project Structure (Monorepo)
 
@@ -188,12 +242,12 @@ The project is organized as a monorepo using pnpm workspaces:
 │   └── macos/              # Desktop Application (Placeholder) //do not remove
 │
 ├── packages/               # Shared libraries/packages
-│   ├── api-client/         # Frontend API client logic (Singleton)
+│   ├── api/         # Frontend API client logic (Singleton)
 │   │   └── src/
 │   │       ├── apiClient.ts      # Base API client (fetch wrapper, singleton)
 │   │       ├── stripe.api.ts     # Stripe/Subscription specific client methods
 │   │       └── ai.api.ts         # AI Chat specific client methods
-│   ├── analytics-client/   # Frontend analytics client logic (PostHog, Null adapter)
+│   ├── analytics/   # Frontend analytics client logic (PostHog, Null adapter)
 │   │   └── src/
 │   │       ├── index.ts          # Main service export & factory
 │   │       ├── nullAdapter.ts    # No-op analytics implementation
@@ -203,6 +257,8 @@ The project is organized as a monorepo using pnpm workspaces:
 │   │       ├── authStore.ts        # Auth state & actions
 │   │       ├── subscriptionStore.ts # Subscription state & actions
 │   │       └── aiStore.ts          # AI Chat state & actions
+│   │       ├── notificationStore.ts # [NEW] In-app notification state & actions
+│   │       └── organizationStore.ts # [NEW] Organization/Multi-tenancy state & actions
 │   ├── types/              # Shared TypeScript types and interfaces
 │   │   └── src/
 │   │       ├── api.types.ts
@@ -216,7 +272,7 @@ The project is organized as a monorepo using pnpm workspaces:
 │   │       ├── route.types.ts
 │   │       ├── vite-env.d.ts
 │   │       └── index.ts            # Main export for types
-│   ├── platform-capabilities/ # Service for abstracting platform-specific APIs (FS, etc.)
+│   ├── platform/ # Service for abstracting platform-specific APIs (FS, etc.)
 │   │   └── src/
 │   │       ├── index.ts          # Main service export & detection
 │   │       ├── webPlatformCapabilities.ts # Web provider (stub)
@@ -314,13 +370,13 @@ supabase/functions/
 
 This section details the key exports from the shared packages to help AI tools understand the available functionality. *(Note: Details require inspecting package source code)*
 
-### 1. `packages/api-client` (API Interaction)
+### 1. `packages/api` (API Interaction)
 
 Manages all frontend interactions with the backend Supabase Edge Functions. It follows a **Singleton pattern**.
 
 - **`initializeApiClient(config: ApiInitializerConfig): void`**: Initializes the singleton instance. Must be called once at application startup.
   - `config: { supabaseUrl: string; supabaseAnonKey: string; }`
-- **`api` object (Singleton Accessor)**: Provides methods for making API requests. Import and use this object directly: `import { api } from '@paynless/api-client';`
+- **`api` object (Singleton Accessor)**: Provides methods for making API requests. Import and use this object directly: `import { api } from '@paynless/api';`
   - **`api.get<ResponseType>(endpoint: string, options?: FetchOptions): Promise<ApiResponse<ResponseType>>`**: Performs a GET request.
   - **`api.post<ResponseType, RequestBodyType>(endpoint: string, body: RequestBodyType, options?: FetchOptions): Promise<ApiResponse<ResponseType>>`**: Performs a POST request.
   - **`api.put<ResponseType, RequestBodyType>(endpoint: string, body: RequestBodyType, options?: FetchOptions): Promise<ApiResponse<ResponseType>>`**: Performs a PUT request.
@@ -336,7 +392,7 @@ Manages all frontend interactions with the backend Supabase Edge Functions. It f
 - **`ApiResponse<T>` type** (defined in `@paynless/types`): Standard response wrapper.
   - `{ status: number; data?: T; error?: ApiErrorType; }`
 
-- **`ApiError` class** (defined in `@paynless/api-client`): Custom error class used internally by the client.
+- **`ApiError` class** (defined in `@paynless/api`): Custom error class used internally by the client.
 - **`AuthRequiredError` class** (defined in `@paynless/types`): Specific error for auth failures detected by the client.
 
 #### `StripeApiClient` (Accessed via `api.billing()`)
@@ -527,7 +583,7 @@ Contains centralized type definitions used across the monorepo. Exports all type
 - **`route.types.ts`**: Types related to application routing.
 - **`vite-env.d.ts`**: Vite environment types.
 
-### 5. `packages/platform-capabilities` (Platform Abstraction)
+### 5. `packages/platform` (Platform Abstraction)
 
 Provides a service to abstract platform-specific functionalities (like filesystem access) for use in shared UI code.
 

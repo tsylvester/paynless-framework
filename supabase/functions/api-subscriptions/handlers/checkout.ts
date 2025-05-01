@@ -1,109 +1,132 @@
 // IMPORTANT: Supabase Edge Functions require relative paths for imports from shared modules.
 // Do not use path aliases (like @shared/) as they will cause deployment failures.
-// Import SupabaseClient directly from the source package
+// Fix: Import SupabaseClient with Database type
 import { type SupabaseClient } from "npm:@supabase/supabase-js@2";
+import type { Database } from '../../types_db.ts';
 import Stripe from "npm:stripe";
-import type { createErrorResponse as CreateErrorResponseType, createSuccessResponse as CreateSuccessResponseType } from "../../_shared/responses.ts";
+// Fix: Import API types and HandlerError
 import { CheckoutSessionRequest, SessionResponse } from "../../_shared/types.ts";
+import { HandlerError } from "./current.ts"; // Reuse HandlerError
 
-// Define a dependencies interface
-interface CheckoutDeps {
-  createErrorResponse: typeof CreateErrorResponseType;
-  createSuccessResponse: typeof CreateSuccessResponseType;
-}
+// Remove old imports and Deps interface
+// import type { createErrorResponse as CreateErrorResponseType, createSuccessResponse as CreateSuccessResponseType } from "../../_shared/responses.ts"; // Removed
+// 
+// interface CheckoutDeps {
+//   createErrorResponse: typeof CreateErrorResponseType;
+//   createSuccessResponse: typeof CreateSuccessResponseType;
+// } // Removed
 
 /**
- * Create a checkout session for subscription
+ * Create a checkout session for subscription.
+ * Returns SessionResponse data on success, throws HandlerError on failure.
  */
 export const createCheckoutSession = async (
-  supabase: SupabaseClient,
+  supabase: SupabaseClient<Database>, // Use Database type
   stripe: Stripe,
   userId: string,
-  request: CheckoutSessionRequest,
-  isTestMode: boolean,
-  deps: CheckoutDeps // Add dependencies argument
-): Promise<Response> => {
-  // Destructure dependencies for easier use
-  const { createErrorResponse, createSuccessResponse } = deps;
-  console.log(`[checkout.handler] START - User: ${userId}, Price: ${request?.priceId}`); // Log entry
+  requestData: CheckoutSessionRequest, // Rename request
+  isTestMode: boolean
+  // Remove deps parameter
+): Promise<SessionResponse> => {
+  // Remove destructuring of removed deps
+  // const { createErrorResponse, createSuccessResponse } = deps;
+  console.log(`[checkout.handler] START - User: ${userId}, Price: ${requestData?.priceId}`); // Use renamed requestData
 
   try {
     // 1. Get parameters directly from the request body
-    const { priceId, successUrl, cancelUrl } = request;
-    console.log("[checkout.handler] Parsed request body params"); // Log step
+    const { priceId, successUrl, cancelUrl } = requestData; // Use renamed requestData
+    console.log("[checkout.handler] Parsed request body params"); 
     
     // 2. Validate required parameters from request
     if (!priceId || !successUrl || !cancelUrl) {
-      console.error("Missing required parameters in request body for checkout", { 
-          priceId: !!priceId, 
-          successUrl: !!successUrl, 
-          cancelUrl: !!cancelUrl 
-      });
-      return createErrorResponse("Missing required parameters or server config for checkout URLs", 400);
+      const missingParams = { priceId: !!priceId, successUrl: !!successUrl, cancelUrl: !!cancelUrl };
+      console.error("Missing required parameters in request body for checkout", missingParams);
+      // Fix: Throw HandlerError
+      throw new HandlerError("Missing required parameters for checkout", 400, { missingParams });
     }
-    console.log("[checkout.handler] Params validated"); // Log step
+    console.log("[checkout.handler] Params validated"); 
     
     // Get user details
-    console.log("[checkout.handler] Fetching user profile..."); // Log step
+    console.log("[checkout.handler] Fetching user profile..."); 
+    // Fix: Define return type for profile query
+    type UserProfile = Pick<Database['public']['Tables']['user_profiles']['Row'], 'first_name' | 'last_name'> | null;
     const { data: userData, error: userError } = await supabase
       .from("user_profiles")
       .select("first_name, last_name")
       .eq("id", userId)
-      .single();
+      .returns<UserProfile[]>() // Use array type
+      .maybeSingle();
     
     if (userError) {
-      return createErrorResponse(userError.message, 400);
+      console.error("Error fetching user profile:", userError);
+      // Fix: Throw HandlerError
+      throw new HandlerError(userError.message || "Failed to fetch user profile", 500, userError);
     }
-    console.log("[checkout.handler] User profile fetched"); // Log step
+    if (!userData) {
+        console.error("User profile not found for ID:", userId);
+        throw new HandlerError("User profile not found", 404);
+    }
+    console.log("[checkout.handler] User profile fetched"); 
     
     // Get user subscription to check for existing Stripe customer ID
-    console.log("[checkout.handler] Fetching user subscription..."); // Log step
+    console.log("[checkout.handler] Fetching user subscription..."); 
+    // Fix: Define return type for subscription query
+    type UserSubscriptionCustomerID = Pick<Database['public']['Tables']['user_subscriptions']['Row'], 'stripe_customer_id'> | null;
     const { data: subscription, error: subscriptionError } = await supabase
       .from("user_subscriptions")
       .select("stripe_customer_id")
       .eq("user_id", userId)
-      .single();
+      .returns<UserSubscriptionCustomerID[]>()
+      .maybeSingle();
     
     if (subscriptionError) {
-      return createErrorResponse(subscriptionError.message, 400);
+      console.error("Error fetching user subscription:", subscriptionError);
+      // Fix: Throw HandlerError
+      throw new HandlerError(subscriptionError.message || "Failed to fetch user subscription", 500, subscriptionError);
     }
-    console.log(`[checkout.handler] User subscription fetched. Existing customer ID: ${subscription?.stripe_customer_id}`); // Log step
+    // Note: subscription can be null if it doesn't exist yet, which is handled below
+    console.log(`[checkout.handler] User subscription fetched. Existing customer ID: ${subscription?.stripe_customer_id}`); 
     
     // Get or create Stripe customer
     let customerId = subscription?.stripe_customer_id;
     
     if (!customerId) {
-      console.log("[checkout.handler] No existing customer ID found. Creating Stripe customer..."); // Log step
-      const { data: authData } = await supabase.auth.getUser();
+      console.log("[checkout.handler] No existing customer ID found. Creating Stripe customer..."); 
+      // Fix: Get user email from auth - handle potential null user
+      const { data: authData, error: authError } = await supabase.auth.getUser();
+      if (authError || !authData.user) {
+           console.error("Failed to get authenticated user for Stripe customer creation:", authError);
+           throw new HandlerError(authError?.message || "Authentication error", 500, authError);
+      }
       
       const customer = await stripe.customers.create({
-        email: authData.user?.email,
+        email: authData.user.email,
         name: [userData.first_name, userData.last_name].filter(Boolean).join(" ") || undefined,
         metadata: {
           isTestMode: isTestMode.toString(),
+          supabaseUserId: userId, // Store Supabase User ID
         },
       });
-      console.log(`[checkout.handler] Stripe customer created: ${customer.id}`); // Log step
+      console.log(`[checkout.handler] Stripe customer created: ${customer.id}`); 
       
       customerId = customer.id;
       
       // Upsert user subscription with Stripe customer ID
-      console.log(`[checkout.handler] Upserting subscription with customer ID ${customerId}...`); // Log step
+      console.log(`[checkout.handler] Upserting subscription with customer ID ${customerId}...`); 
       const { error: upsertError } = await supabase
         .from("user_subscriptions")
         .upsert({ 
             user_id: userId, 
             stripe_customer_id: customerId, 
-            status: "incomplete" // Add required status field 
+            status: "incomplete" 
         }, { onConflict: 'user_id' });
 
       if (upsertError) {
           console.error(`Failed to upsert stripe_customer_id for user ${userId}:`, upsertError);
-          // Decide if this should be a blocking error or just a warning
-          // For now, let's throw to make it clear if saving fails
-          throw new Error("Failed to save Stripe customer ID to user subscription.");
+          // Fix: Throw HandlerError
+          throw new HandlerError("Failed to save Stripe customer ID to user subscription.", 500, upsertError);
       }
-      console.log("[checkout.handler] Subscription upserted successfully."); // Log step
+      console.log("[checkout.handler] Subscription upserted successfully."); 
     }
     
     // Create checkout session using URLs from request
@@ -116,21 +139,29 @@ export const createCheckoutSession = async (
         client_reference_id: userId,
         metadata: { isTestMode: isTestMode.toString() },
     };
-    console.log("[checkout.handler] Preparing to create Stripe session with payload:", JSON.stringify(sessionPayload)); // Log payload
+    console.log("[checkout.handler] Preparing to create Stripe session with payload:", JSON.stringify(sessionPayload)); 
     
     const session = await stripe.checkout.sessions.create(sessionPayload);
-    console.log(`[checkout.handler] Stripe session created successfully. ID: ${session.id}, URL: ${session.url}`); // Log success + details
+    console.log(`[checkout.handler] Stripe session created successfully. ID: ${session.id}, URL: ${session.url}`); 
     
-    // 3. Return the full session URL provided by Stripe
-    const response: { sessionUrl: string | null } = {
-      sessionUrl: session.url, // Use the URL from the Stripe session object
+    // 3. Return the session response data
+    // Fix: Adapt return type (SessionResponse expects url, optional sessionId)
+    const response: SessionResponse = {
+      sessionId: session.id, // Include session ID if available
+      url: session.url ?? '', // Ensure URL is not null
     };
     
-    console.log("[checkout.handler] Returning success response to client."); // Log before return
-    return createSuccessResponse(response);
+    console.log("[checkout.handler] Returning success response data.");
+    return response; // Return data directly
+
   } catch (err) {
-    console.error("[checkout.handler] Error caught:", err); // Enhance catch log
-    const message = err instanceof Error ? err.message : "An unexpected error occurred";
-    return createErrorResponse(message, 500, err); 
+    // Fix: Handle/re-throw HandlerError or wrap other errors
+    if (err instanceof HandlerError) {
+      throw err;
+    }
+    console.error("[checkout.handler] Error caught:", err);
+    const message = err instanceof Error ? err.message : String(err);
+    const status = (err instanceof Stripe.errors.StripeError) ? (err.statusCode ?? 500) : 500;
+    throw new HandlerError(message, status, err);
   }
 };

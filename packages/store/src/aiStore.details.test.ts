@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach, type SpyInstance } from 'vitest';
 import { useAiStore } from './aiStore';
-import { api } from '@paynless/api-client';
+import { api } from '@paynless/api';
 import { act } from '@testing-library/react';
 import {
     // AiProvider,
@@ -24,8 +24,8 @@ const mockSendChatMessage = vi.fn();
 const mockGetChatHistory = vi.fn();
 const mockGetChatMessages = vi.fn(); 
 
-vi.mock('@paynless/api-client', async (importOriginal) => {
-    const actual = await importOriginal<typeof import('@paynless/api-client')>();
+vi.mock('@paynless/api', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('@paynless/api')>();
     return {
         ...actual, 
         api: {
@@ -90,8 +90,8 @@ describe('aiStore - loadChatDetails', () => {
         // Define constants for mock data
         const mockChatId = 'c123';
         const mockToken = 'valid-token-for-details';
-        const mockUser: User = { id: 'user-123', email: 'test@test.com', created_at: 't', updated_at: 't', role: UserRole.USER };
-        const mockSession: Session = { access_token: mockToken, refresh_token: 'r', expiresAt: Date.now() / 1000 + 3600 };
+        const mockUser: User = { id: 'user-123', email: 'test@test.com', role: 'user', created_at: '2023-01-01', updated_at: '2023-01-01' };
+        const mockSession: Session = { access_token: mockToken, refresh_token: 'rt', expiresAt: Date.now() / 1000 + 3600 };
         const mockMessages: ChatMessage[] = [
             { id: 'm1', chat_id: mockChatId, user_id: mockUser.id, role: 'user', content: 'Q', ai_provider_id: null, system_prompt_id: null, token_usage: null, created_at: 't1' },
             { id: 'm2', chat_id: mockChatId, user_id: null, role: 'assistant', content: 'A', ai_provider_id: 'p1', system_prompt_id: 's1', token_usage: null, created_at: 't2' },

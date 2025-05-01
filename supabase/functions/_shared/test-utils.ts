@@ -1,11 +1,13 @@
 // IMPORTANT: Supabase Edge Functions require relative paths for imports from shared modules.
 // Do not use path aliases (like @shared/) as they will cause deployment failures.
-import { createClient, SupabaseClient } from "npm:@supabase/supabase-js@^2.0.0";
+import { createClient, SupabaseClient } from "npm:@supabase/supabase-js@^2.43.4";
 import { spy, stub, type Spy } from "jsr:@std/testing/mock"; // Add Deno mock imports
 // Remove unstable directive, no longer needed after removing KV mocks
 // /// <reference lib="deno.unstable" />
 // Import ChatMessage type
 import type { ChatMessage } from "../../../packages/types/src/ai.types.ts";
+// --- Import RealtimeChannel type --- 
+import type { RealtimeChannel } from "npm:@supabase/supabase-js@^2.43.4";
 
 // Check for essential Supabase variables, but don't throw if missing during import
 // These checks will now rely on the environment being correctly set by `deno test --env`
@@ -135,7 +137,7 @@ export async function cleanupUser(email: string, adminClient?: SupabaseClient): 
 export interface MockQueryBuilderState {
     tableName: string;
     operation: 'select' | 'insert' | 'update' | 'delete'; 
-    filters: { column: string; value: any; type: 'eq' | 'in' }[]; 
+    filters: { column?: string; value?: any; type: 'eq' | 'in' | 'match' | 'is'; criteria?: object }[]; // Added 'is' type
     selectColumns: string | null;
     insertData: any[] | object | null; 
     updateData: object | null;
@@ -164,17 +166,35 @@ export interface MockSupabaseDataConfig {
             select?: { data: any[] | null; error?: any | null; count?: number | null; status?: number; statusText?: string } | ((state: MockQueryBuilderState) => Promise<{ data: any[] | null; error?: any | null; count?: number | null; status?: number; statusText?: string }>);
             insert?: { data: any[] | null; error?: any | null; count?: number | null; status?: number; statusText?: string } | ((state: MockQueryBuilderState) => Promise<{ data: any[] | null; error?: any | null; count?: number | null; status?: number; statusText?: string }>);
             update?: { data: any[] | null; error?: any | null; count?: number | null; status?: number; statusText?: string } | ((state: MockQueryBuilderState) => Promise<{ data: any[] | null; error?: any | null; count?: number | null; status?: number; statusText?: string }>);
+            upsert?: { data: any[] | null; error?: any | null; count?: number | null; status?: number; statusText?: string } | ((state: MockQueryBuilderState) => Promise<{ data: any[] | null; error?: any | null; count?: number | null; status?: number; statusText?: string }>);
             delete?: { data: any[] | null; error?: any | null; count?: number | null; status?: number; statusText?: string } | ((state: MockQueryBuilderState) => Promise<{ data: any[] | null; error?: any | null; count?: number | null; status?: number; statusText?: string }>);
         };
     };
+    
+    // --- NEW: Generic Mocking for RPC --- 
+    rpcResults?: {
+        [functionName: string]: { data?: any; error?: any } | (() => Promise<{ data?: any; error?: any }>);
+    };
+    adminAuthConfig?: { // <-- Add this optional property
+        getUserById?: (userId: string) => Promise<any>; // Adjust return type if needed
+        // Add other admin auth methods if needed for testing
+    };
 }
+
+// --- Define a type for the minimal mock channel ---
+type MockChannel = {
+    on: Spy<MockChannel, [any, any]>; // Returns self
+    subscribe: Spy<MockChannel, [any?]>; // Returns self
+    unsubscribe: Spy<Promise<'ok' | 'error' | 'timed out'>, []>; // Returns promise
+    topic: string;
+};
 
 /** Creates a mocked Supabase client instance for unit testing (Revised & Extended) */
 export function createMockSupabaseClient(
     config: MockSupabaseDataConfig = {}
 ): {
     client: SupabaseClient;
-    spies: { getUserSpy: Spy<any>; fromSpy: Spy<any>; /* Add more if needed */ };
+    spies: { getUserSpy: Spy<any>; fromSpy: Spy<any>; rpcSpy: Spy<any>; removeChannelSpy: Spy<any> };
 } {
     // --- Mock Auth ---
     const mockAuth = {
@@ -189,24 +209,28 @@ export function createMockSupabaseClient(
     interface MockQueryBuilder {
         select: Spy<any>;
         insert: Spy<any>;
-        update: Spy<any>; // Add update if missing
-        delete: Spy<any>; // Add delete
+        update: Spy<any>;
+        delete: Spy<any>;
         eq: Spy<any>;
-        in: Spy<any>; // Add 'in' filter
+        in: Spy<any>;
+        is: Spy<any>; // <-- Add 'is' filter
+        match: Spy<any>;
         order: Spy<any>;
+        returns: Spy<any>;
+        upsert: Spy<any>;
         single: Spy<any>;
-        then: Spy<any>; // Keep 'then' for compatibility with some existing mocks
+        maybeSingle: Spy<any>;
+        then: Spy<any>;
     }
 
     const fromSpy = spy((tableName: string) => {
         const _queryBuilderState = {
             tableName: tableName,
-            operation: 'select' as 'select' | 'insert' | 'update' | 'delete', // Track the intended operation
-            filters: [] as { column: string; value: any; type: 'eq' | 'in' }[], 
-            selectColumns: '*' as string | null, // Can be null if not a select op
+            operation: 'select' as 'select' | 'insert' | 'update' | 'delete',
+            filters: [] as { column?: string; value?: any; type: 'eq' | 'in' | 'match' | 'is'; criteria?: object }[], // Added 'is' type
+            selectColumns: '*' as string | null,
             insertData: null as any[] | object | null, 
             updateData: null as object | null,
-            // Add flags for modifiers if needed, e.g., single: false
         };
 
         const mockQueryBuilder: MockQueryBuilder = {} as MockQueryBuilder;
@@ -237,36 +261,52 @@ export function createMockSupabaseClient(
             console.log(`[Mock QB ${tableName}] .update() called with:`, data);
              _queryBuilderState.operation = 'update';
             _queryBuilderState.updateData = data;
-            _queryBuilderState.selectColumns = null; // Not a select op initially
-            return mockQueryBuilder; // Return self for chaining .select() after update
+            _queryBuilderState.selectColumns = null;
+            return mockQueryBuilder;
         });
         
         mockQueryBuilder.delete = spy(() => {
             console.log(`[Mock QB ${tableName}] .delete() called`);
             _queryBuilderState.operation = 'delete';
-             _queryBuilderState.selectColumns = null; // Not a select op
-            // Delete is often terminal but can sometimes chain? Assume terminal for now.
-            // To make it chainable, it should return mockQueryBuilder.
-            // For terminal: directly return the promise resolution logic.
-             return Promise.resolve().then(() => resolveQuery()); // Make it awaitable/thenable
+            return mockQueryBuilder;
         });
 
         mockQueryBuilder.eq = spy((column: string, value: any) => {
-             console.log(`[Mock QB ${tableName}] .eq(${column}, ${value}) called`);
+            console.log(`[Mock QB ${tableName}] .eq(${column}, ${value}) called`);
             _queryBuilderState.filters.push({ column, value, type: 'eq' });
             return mockQueryBuilder;
         });
         
         mockQueryBuilder.in = spy((column: string, values: any[]) => {
-             console.log(`[Mock QB ${tableName}] .in(${column}, [${values.join(',')}]) called`);
+            console.log(`[Mock QB ${tableName}] .in(${column}, [${values.length} items]) called`);
              _queryBuilderState.filters.push({ column, value: values, type: 'in' });
              return mockQueryBuilder;
-         });
+        });
 
+        mockQueryBuilder.match = spy((criteria: object) => {
+            console.log(`[Mock QB ${tableName}] .match() called with criteria:`, criteria);
+            _queryBuilderState.filters.push({ criteria, type: 'match' }); // Store criteria directly
+            return mockQueryBuilder;
+        });
+
+        // NEW: Implement the 'is' filter
+        mockQueryBuilder.is = spy((column: string, value: any) => {
+            // Value is typically null, true, or false
+            console.log(`[Mock QB ${tableName}] .is(${column}, ${value}) called`); 
+            _queryBuilderState.filters.push({ column, value, type: 'is' });
+            return mockQueryBuilder;
+        });
+
+        // --- Other Modifiers (Return `this`) ---
         mockQueryBuilder.order = spy((_column: string, _options?: any) => {
             console.log(`[Mock QB ${tableName}] .order() called`);
             // Logic to store order state could be added if needed
             return mockQueryBuilder; 
+        });
+
+        mockQueryBuilder.returns = spy(() => {
+            // Track returns modifier if needed for specific tests (e.g., upsert with ignoreDuplicates)
+            return mockQueryBuilder;
         });
 
         // --- Terminal Methods / Resolution Logic ---
@@ -365,47 +405,151 @@ export function createMockSupabaseClient(
             }
         });
 
-        // Mock .single()
-        // This method *should* reject if the query resolution resulted in an error object.
+        // Modifier to get a single row
         mockQueryBuilder.single = spy(async () => {
-             if (config.simulateDbError) return { data: null, error: config.simulateDbError }; // Keep simple error override
-             console.log(`[Mock QB ${tableName}] .single() called. Resolving query...`);
-             try {
+            console.log(`[Mock QB ${tableName}] .single() called. Resolving query...`);
+            // Define a minimal mock PostgrestError for simulation ONLY for row count issues
+            class MockPostgrestErrorPGRST116 extends Error { // Rename for clarity
+                details: string | null;
+                hint: string | null;
+                code: string;
+                status: number;
+                statusText: string;
+                    constructor(message: string, hint: string) {
+                    super(message);
+                    this.name = 'MockPostgrestErrorPGRST116';
+                    this.status = 406;
+                    this.statusText = "Not Acceptable";
+                    this.details = null;
+                    this.hint = hint;
+                    this.code = "PGRST116";
+                }
+            }
+            
+            try {
+                // Step 1: Resolve the underlying query
+                const { data, error, status, statusText, count } = await resolveQuery(); // Include count/status if needed
+                
+                // --- FIX: Return error object if underlying query failed --- 
+                if (error) {
+                    console.log(`[Mock QB ${tableName}] Query (for single) resolved with DB error. Returning error object.`);
+                    // Mimic real client: return the error object, don't throw here
+                    return { data: null, error: error, status: status ?? 500, statusText: statusText ?? "Internal Server Error", count: 0 }; 
+                }
+                
+                // Step 2: If query succeeded, check row count for .single()
+                
+                // --- FIX: Throw specific error if no data found --- 
+                if (!data || data.length === 0) {
+                     console.warn(`[Mock QB ${tableName}] Query (for single) resolved with no data. Throwing MockPostgrestErrorPGRST116.`);
+                     throw new MockPostgrestErrorPGRST116("JSON object requested, multiple (or no) rows returned", "Results contain 0 rows");
+                }
+                
+                // --- FIX: Throw specific error if multiple rows found ---
+                if (data.length > 1) {
+                    console.warn(`[Mock QB ${tableName}] Query (for single) resolved with multiple rows (${data.length}). Throwing MockPostgrestErrorPGRST116.`);
+                    throw new MockPostgrestErrorPGRST116("JSON object requested, multiple (or no) rows returned", `Results contain ${data.length} rows`);
+                }
+                
+                // If query succeeded AND exactly one row was found, return it
+                console.log(`[Mock QB ${tableName}] Query (for single) resolved successfully with one row.`);
+                return { data: data[0], error: null, status: status ?? 200, statusText: statusText ?? "OK", count: 1 }; 
+            } catch (err) {
+                 // Catch errors thrown by the row count checks or resolveQuery itself
+                console.error(`[Mock QB ${tableName}] Error originated or caught within .single() implementation:`, err);
+                 // Re-throw the error 
+                throw err; 
+            }
+        });
+
+        // Mock .maybeSingle()
+        // Resolves with { data: object | null, error: Error | null }
+        mockQueryBuilder.maybeSingle = spy(async () => {
+            console.log(`[Mock QB ${tableName}] .maybeSingle() called. Resolving query...`);
+            try {
                 const result = await resolveQuery();
-                // .single() expects { data: object | null, error: Error | null }
+                // maybeSingle resolves with error object if underlying query failed
                 if (result.error) {
-                    console.log(`[Mock QB ${tableName}] Query (for single) resolved with DB error. Rejecting promise.`);
-                    // Unlike .then(), .single() should REJECT if the underlying query had an error.
-                     const errorMsg = typeof result.error === 'object' && result.error !== null && 'message' in result.error 
-                                       ? String(result.error.message) 
-                                       : String(result.error ?? 'Unknown mock DB error in .single');
-                     throw new Error(errorMsg); // Throw error to reject the promise
+                    console.log(`[Mock QB ${tableName}] Query (for maybeSingle) resolved with DB error. Resolving promise with error object.`);
+                    return { data: null, error: result.error };
                 } else if (result.data && result.data.length > 1) {
                     // Simulate PostgREST error for multiple rows found
-                    console.warn(`[Mock QB ${tableName}] .single() found multiple rows. Simulating PostgREST error.`);
-                    throw new Error('Multiple rows returned for single row query'); // Throw PGRST116
+                    console.warn(`[Mock QB ${tableName}] .maybeSingle() found multiple rows. Simulating PostgREST error.`);
+                    // Create a mock PostgREST error object
+                    const error = new Error('Multiple rows returned for maybeSingle row query');
+                    (error as any).code = 'PGRST116'; // Add code like real PostgREST error
+                    return { data: null, error: error };
                 } else {
-                    console.log(`[Mock QB ${tableName}] Query (for single) resolved successfully.`);
-                    return { data: result.data?.[0] ?? null, error: null }; // Resolve successfully
+                    console.log(`[Mock QB ${tableName}] Query (for maybeSingle) resolved successfully.`);
+                    return { data: result.data?.[0] ?? null, error: null }; // Resolve successfully with first item or null
                 }
             } catch (e) {
-                console.error(`[Mock QB ${tableName}] Error during query resolution or processing in .single():`, e);
-                // Ensure we throw an actual Error instance
-                throw e instanceof Error ? e : new Error(String(e ?? 'Unknown error in .single()'));
+                 console.error(`[Mock QB ${tableName}] Error during query resolution or processing in .maybeSingle():`, e);
+                 // Ensure we throw an actual Error instance if resolveQuery itself throws unexpectedly
+                 const error = e instanceof Error ? e : new Error(String(e ?? 'Unknown error in .maybeSingle()'));
+                 // Return error in the resolved object structure
+                 return { data: null, error: error }; 
             }
         });
 
         return mockQueryBuilder;
     });
 
+    // --- NEW: Mock RPC --- 
+    const rpcSpy = spy(async (functionName: string, args?: any) => {
+        console.log(`[Mock RPC] .rpc('${functionName}') called with args:`, args);
+        const rpcConfig = config.rpcResults?.[functionName];
+
+        if (typeof rpcConfig === 'function') {
+            console.log(`[Mock RPC ${functionName}] Using function config.`);
+            try {
+                return await rpcConfig(); // Execute the configured function
+            } catch (e) {
+                console.error(`[Mock RPC ${functionName}] Error executing mock function:`, e);
+                return { data: null, error: e };
+            }
+        } else if (rpcConfig) {
+            console.log(`[Mock RPC ${functionName}] Using object config.`);
+            return { data: rpcConfig.data ?? null, error: rpcConfig.error ?? null };
+        } else {
+            // No specific config found for this RPC function
+            const errorMessage = `[Mock RPC] No mock result configured for RPC function: ${functionName}`;
+            console.warn(errorMessage);
+            return { data: null, error: new Error(errorMessage) };
+        }
+    });
+
+    // --- Define spy ONLY for removeChannel --- 
+    const removeChannelSpy = spy((_channel: RealtimeChannel) => Promise.resolve<'ok' | 'error' | 'timed out'>('ok'));
+
+    // --- Assemble Mock Client ---
     const mockClient = {
         auth: mockAuth,
         from: fromSpy,
+        rpc: rpcSpy, // Assign the new rpcSpy
+        // --- Add a PLAIN function implementation for channel ---
+        channel: (channelName: string): RealtimeChannel => {
+            // --- Use the explicit MockChannel type --- 
+            const minimalMockChannel: MockChannel = {
+                topic: `realtime:${channelName}`,
+                // Assign spies, returning the correctly typed object
+                on: spy((_event: any, _callback: any) => minimalMockChannel),
+                subscribe: spy((_callback?: any) => minimalMockChannel),
+                unsubscribe: spy(() => Promise.resolve<'ok' | 'error' | 'timed out'>('ok')),
+            };
+            return minimalMockChannel as unknown as RealtimeChannel;
+        },
+        removeChannel: removeChannelSpy, // Assign the spy for removeChannel
     } as unknown as SupabaseClient;
 
     return {
         client: mockClient,
-        spies: { getUserSpy: mockAuth.getUser, fromSpy: fromSpy },
+        spies: {
+            getUserSpy: mockAuth.getUser,
+            fromSpy: fromSpy,
+            rpcSpy: rpcSpy, // Return the rpcSpy
+            removeChannelSpy: removeChannelSpy, 
+        },
     };
 }
 

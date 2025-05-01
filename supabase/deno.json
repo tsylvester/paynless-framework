@@ -2,7 +2,29 @@
   "importMap": "./import_map.json",
   "nodeModulesDir": "auto",
   "compilerOptions": {
-      "jsx": "react-jsx",
-      "jsxImportSource": "npm:react"
+    "jsx": "react-jsx",
+    "jsxImportSource": "npm:react"
+  },
+  "tasks": {
+    "test": "deno test --allow-all --no-check",
+    "test:watch": "deno test --allow-all --no-check --watch",
+    "serve:login": "deno run --allow-all --no-check functions/login/index.ts",
+    "lint": "deno lint",
+    "fmt": "deno fmt"
+  },
+  "lint": {
+    "rules": {
+      "tags": ["recommended"],
+      "exclude": ["no-explicit-any"]
     }
-} 
+  },
+  "fmt": {
+    "options": {
+      "useTabs": false,
+      "lineWidth": 80,
+      "indentWidth": 2,
+      "singleQuote": false,
+      "proseWrap": "preserve"
+    }
+  }
+}

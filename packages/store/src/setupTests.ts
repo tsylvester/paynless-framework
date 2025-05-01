@@ -1,6 +1,6 @@
 import { vi, beforeEach } from 'vitest';
 
-// Mock the entire api-client module
+// Mock the entire api module
 const mockApi = {
   get: vi.fn(),
   post: vi.fn(),
@@ -19,7 +19,7 @@ const mockStripeApiClient = {
     getUsageMetrics: vi.fn(),
 };
 
-vi.mock('@paynless/api-client', () => ({
+vi.mock('@paynless/api', () => ({
   api: mockApi,
   initializeApiClient: vi.fn(), // Mock initialization if needed by tests
   ApiError: class MockApiError extends Error { // Mock the custom error class

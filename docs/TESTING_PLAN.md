@@ -24,8 +24,8 @@ To ensure features are built correctly and integrated reliably the first time, w
 
 *   **Supabase Functions (`supabase/functions/`):** Start by testing the core handler logic. Mock dependencies like the Supabase client (`supabase/functions/_shared/supabase-client.ts`), external services (like Stripe or the future Kit service), and environment variables (`Deno.env`). Test success paths, error handling (e.g., invalid input, failed service calls), and response formatting.
 *   **Shared Packages (`packages/`):
-    *   `api-client` / `analytics-client` / `platform-capabilities` / `email_service` Adapters: Test adapter methods individually. Mock external dependencies (e.g., `fetch`, `posthog-js`, `@tauri-apps/api`, environment variables). Cover happy paths, configuration errors (missing keys), and API error responses.
-    *   `store` (Zustand): Test actions by mocking the API client (`@paynless/api-client`) calls they make. Assert correct state changes (`isLoading`, `error`, data properties) before, during (optimistic UI), and after the mocked async operations resolve or reject.
+    *   `api` / `analytics` / `platform` / `email_service` Adapters: Test adapter methods individually. Mock external dependencies (e.g., `fetch`, `posthog-js`, `@tauri-apps/api`, environment variables). Cover happy paths, configuration errors (missing keys), and API error responses.
+    *   `store` (Zustand): Test actions by mocking the API client (`@paynless/api`) calls they make. Assert correct state changes (`isLoading`, `error`, data properties) before, during (optimistic UI), and after the mocked async operations resolve or reject.
     *   `utils` / `types`: Primarily tested implicitly through their usage, but core utilities (`logger`) should have dedicated unit tests.
 *   **UI Components (`apps/web/`):** Use Vitest with Testing Library. Test rendering based on different props and states. Mock imported hooks (stores, router) and services (`platformCapabilitiesService`, `analytics`). Simulate user events (`fireEvent`) and assert that the correct actions are dispatched or UI changes occur.
 
@@ -35,10 +35,10 @@ Following this cycle helps catch errors early, ensures comprehensive test covera
 
 1. **Incomplete Stripe E2E Flow (IMPORTANT):** Stripe has been tested in Test Mode but not confirmed live Live Mode with real transactions. 
 2. **Chosen Pattern for `apiClient` Consumption & Testing (April 2024):**
-    *   **Pattern:** The `@paynless/api-client` package utilizes a **Singleton pattern**. It is initialized once per application run (`initializeApiClient`) and accessed via the exported `api` object (`import { api } from '@paynless/api-client';`).
+    *   **Pattern:** The `@paynless/api` package utilizes a **Singleton pattern**. It is initialized once per application run (`initializeApiClient`) and accessed via the exported `api` object (`import { api } from '@paynless/api';`).
     *   **Rationale:** This approach is preferred for this multi-platform architecture as it simplifies client consumption across shared code (stores) and different frontend platforms (web, mobile), centralizes configuration, and guarantees a single instance for managing state like auth tokens.
     *   **Consumption:** All consumers (stores, UI components, etc.) should import and use the `api` singleton directly rather than relying on dependency injection (DI) via props or `init` methods for the API client.
-    *   **Testing:** Unit testing consumers that depend on the `apiClient` requires mocking the module import using the test runner's capabilities (e.g., `vi.mock('@paynless/api-client', ...)` in Vitest). This allows replacing the singleton with a mock during tests.
+    *   **Testing:** Unit testing consumers that depend on the `apiClient` requires mocking the module import using the test runner's capabilities (e.g., `vi.mock('@paynless/api', ...)` in Vitest). This allows replacing the singleton with a mock during tests.
     *   **Consistency Task:** Older stores (`authStore`, `subscriptionStore`) currently use an outdated DI (`init`) pattern. They **must** be refactored to align with the singleton import pattern and `vi.mock` testing strategy for consistency.
 3. **Test Structure Refactor (April 2024):** Standardized `apps/web/src/tests/` structure:
     *   `unit/`: Pure unit tests only (`*.unit.test.tsx`).
@@ -55,7 +55,8 @@ Following this cycle helps catch errors early, ensures comprehensive test covera
 5. **Real Stores in Integration Tests:** Integration tests now import and use the actual `useAuthStore` and `useSubscriptionStore` to test the full flow with MSW-mocked API calls.
 6. **Mock Stores in Unit Tests:** Unit tests needing store isolation should mock the stores locally using `vi.mock` / `vi.spyOn`, potentially utilizing mock factories from `utils/mocks/stores/`.
 7. **MSW Handler Consolidation & Base URL:** All default global MSW handlers reside in `utils/mocks/handlers.ts`. **Crucially**, this file MUST derive the `API_BASE_URL` from environment variables (`process.env.VITE_SUPABASE_URL`) to match the `apiClient`'s configuration. Hardcoded URLs (`http://test.host`) will cause `unhandled request` errors.
-8. **MSW Handler Overrides (`server.use`) & `resetHandlers()` (Integration Test Context):**
+8. **[NEW] MSW Handlers Required for ALL API Calls:** Components making API calls (even indirectly, e.g., `Header` -> `Notifications` -> `GET /notifications`) require corresponding request handlers in MSW (`apps/web/src/tests/utils/mocks/handlers.ts`). Missing handlers will cause `[MSW] Error: intercepted a request without a matching request handler:` errors in the test log, even if the test doesn't directly assert on the call's result. Add handlers for all expected calls, even if they just return a simple default (e.g., `ctx.json([])` for `GET /notifications`).
+9. **MSW Handler Overrides (`server.use`) & `resetHandlers()` (Integration Test Context):**
     *   **Problem:** Attempts to use `server.use()` within individual test cases (`it(...)` in `ai.integration.test.tsx`) to override globally defined handlers (from `handlers.ts`) consistently failed. The global handlers ran instead of the test-specific overrides, regardless of whether `resetHandlers` was managed globally (`setup.ts`) or locally (`describe` block).
     *   **Working Pattern (for Success Cases):**
         *   Define common success-case handlers globally (`handlers.ts`), ensuring correct base URL from env vars.
@@ -66,32 +67,33 @@ Following this cycle helps catch errors early, ensures comprehensive test covera
         *   Temporarily skipping these tests.
         *   Mocking the specific `apiClient` method (e.g., `vi.spyOn(api, 'get').mockRejectedValue(...)`) *instead of* using MSW for that specific error test, acknowledging the mix of mocking strategies.
         *   Further investigation into the root cause of `server.use()` failures in specific contexts.
-9. **Local Runtime Auth (`verify_jwt`):** The local Supabase runtime *does* respect function-specific `[functions.<name>] verify_jwt = false` settings in `config.toml`. This is crucial for allowing API key auth functions (`/login`, `/register`) to bypass the runtime's potentially overzealous default JWT checks. Failure symptom: `401 Unauthorized` with runtime logs showing "Missing authorization header".
-10. **Dependency Injection & `serve`:** Using the DI pattern (`deps = defaultDeps`) for unit testability is viable, *but* the `serve` call at the end of the function file *must* explicitly pass the defaults: `serve((req) => handler(req, defaultDeps))`. Failure symptom: `TypeError` inside the function runtime.
-11. **Deno Imports (`npm:`, `std` version):** Deno requires explicit handling for imports:
+10. **[NEW] Mocking Browser APIs (`window.matchMedia`):** When components rely on browser APIs not present in JSDOM (like `window.matchMedia` used by `ThemeProvider`), mocking is required. The most reliable approach found was using `vi.stubGlobal('matchMedia', mockImplementation)` within the global `setup.ts`. Attempts using `Object.defineProperty` directly in `setup.ts` or within individual test files (`beforeAll`) proved less effective or inconsistent.
+11. **Local Runtime Auth (`verify_jwt`):** The local Supabase runtime *does* respect function-specific `[functions.<name>] verify_jwt = false` settings in `config.toml`. This is crucial for allowing API key auth functions (`/login`, `/register`) to bypass the runtime's potentially overzealous default JWT checks. Failure symptom: `401 Unauthorized` with runtime logs showing "Missing authorization header".
+12. **Dependency Injection & `serve`:** Using the DI pattern (`deps = defaultDeps`) for unit testability is viable, *but* the `serve` call at the end of the function file *must* explicitly pass the defaults: `serve((req) => handler(req, defaultDeps))`. Failure symptom: `TypeError` inside the function runtime.
+13. **Deno Imports (`npm:`, `std` version):** Deno requires explicit handling for imports:
     *   Use the `npm:` prefix for Node packages like `@supabase/supabase-js` (e.g., `npm:@supabase/supabase-js`).
     *   Use a recent, compatible version of the Deno Standard Library (`std`) matching the runtime (e.g., `std@0.224.0` for `serve`). Failure symptoms: `worker boot error` (relative path), `ReferenceError` (undefined function).
-12. **Environment Variables & `supabase start`:** As documented below under "Known Limitations", `supabase start` (even CLI v2.20.5) does **not** reliably inject environment variables from `.env` files into the function runtime for local integration testing. `--env-file` is not supported by `start`. Manual loading attempts fail due to permissions.
-13. **Deno Test Leaks:** `fetch` calls in tests must have their response bodies consumed (`await res.json()`, `.text()`) or closed (`await res.body?.cancel()`) to avoid resource leak errors.
-14. **Profile Auto-Creation:** Local Supabase setup automatically creates `user_profiles` rows. Tests modifying profiles must use `update` after initial user creation.
-15. **Back-testing/Regression:** Refactoring or changes require re-running affected unit/integration tests. Unit tests need updating post-integration changes.
-16. **Mocking SupabaseClient (TS2345):** Directly mocking the `SupabaseClient` in unit tests can lead to TS2345 errors (type incompatibility, often due to protected properties like `supabaseUrl`) if the mock object doesn't perfectly match the client's complex type signature. This is especially true if tests in the same file need to mock different *parts* of the client (e.g., `.from()` vs. `.functions.invoke()`), leading to inconsistent mock object shapes.
+14. **Environment Variables & `supabase start`:** As documented below under "Known Limitations", `supabase start` (even CLI v2.20.5) does **not** reliably inject environment variables from `.env` files into the function runtime for local integration testing. `--env-file` is not supported by `start`. Manual loading attempts fail due to permissions.
+15. **Deno Test Leaks:** `fetch` calls in tests must have their response bodies consumed (`await res.json()`, `.text()`) or closed (`await res.body?.cancel()`) to avoid resource leak errors.
+16. **Profile Auto-Creation:** Local Supabase setup automatically creates `user_profiles` rows. Tests modifying profiles must use `update` after initial user creation.
+17. **Back-testing/Regression:** Refactoring or changes require re-running affected unit/integration tests. Unit tests need updating post-integration changes.
+18. **Mocking SupabaseClient (TS2345):** Directly mocking the `SupabaseClient` in unit tests can lead to TS2345 errors (type incompatibility, often due to protected properties like `supabaseUrl`) if the mock object doesn't perfectly match the client's complex type signature. This is especially true if tests in the same file need to mock different *parts* of the client (e.g., `.from()` vs. `.functions.invoke()`), leading to inconsistent mock object shapes.
     *   **Solution:** Introduce a **Service Abstraction Layer**. Define a simple interface declaring only the methods needed by the handler. Implement the interface using the real `SupabaseClient`. Refactor the handler to depend on the interface. Unit test the handler by mocking the *simple interface*, which avoids the TS2345 error. (See `stripe-webhook/handlers/product.ts` and its service/test for an example). Test the service implementation's direct Supabase calls separately.
-17. **Refactoring UI/Store Interaction Pattern:** We identified inconsistencies in how UI components (`LoginForm`, `RegisterForm`, `ProfileEditor`, subscription pages) interact with Zustand stores (`authStore`, `subscriptionStore`) regarding side effects like API calls, loading states, error handling, and navigation. The previous pattern involved components managing local loading/error state and sometimes triggering navigation *after* store actions completed.
+19. **Refactoring UI/Store Interaction Pattern:** We identified inconsistencies in how UI components (`LoginForm`, `RegisterForm`, `ProfileEditor`, subscription pages) interact with Zustand stores (`authStore`, `subscriptionStore`) regarding side effects like API calls, loading states, error handling, and navigation. The previous pattern involved components managing local loading/error state and sometimes triggering navigation *after* store actions completed.
     *   **New Pattern:** To improve separation of concerns, predictability, and testability, we are refactoring towards a pattern where:
         *   Zustand store actions encapsulate the *entire* flow: initiating the API call, managing the central `isLoading` state, managing the central `error` state, and handling internal app navigation (e.g., `navigate('dashboard')` after successful login) directly within the action upon success.
         *   UI components become simpler, primarily dispatching store actions and reacting to the centralized loading and error states provided by the store hooks (`useAuthStore(state => state.isLoading)`, etc.) to render feedback. Local loading/error state in components is removed.
         *   For actions requiring *external* redirection (like Stripe Checkout/Portal), the store action will still return the necessary URL, and the calling UI component will perform the `window.location.href` redirect.
     *   **Impact:** This requires refactoring `authStore` (`login`, `register`, `updateProfile`), `subscriptionStore` (checkout, portal, cancel, resume actions), and the corresponding UI components (`LoginForm`, `RegisterForm`, `ProfileEditor`, `SubscriptionPage`). *(Note: Some progress made on testing strategy refactor for LoginForm/SubscriptionPage by mocking stores, but full pattern implementation pending).*
     *   **Testing Implication:** Unit tests for affected stores and components, along with MSW integration tests (Phase 3.2) for Login, Register, Profile, and Subscription flows, will require significant updates and re-validation after this refactoring.
-18. **Vitest Unhandled Rejections (Component Tests):** When testing React components that interact with mocked asynchronous actions that *reject* (e.g., simulating API errors in `LoginForm.test.tsx`), Vitest consistently reports "Unhandled Rejection" errors and causes the test suite to exit with an error code, *even when the tests correctly assert the rejection and pass all assertions*. Multiple handling strategies (`expect().rejects`, `try/catch` within `act`, `try/catch` outside `act`, explicit `.catch()`) failed to suppress these specific runner errors. For now, we accept this as a Vitest runner artifact; the relevant tests (like `LoginForm.test.tsx`) are considered functionally correct despite the runner's error code.
-19. **Multi-Platform Capability Abstraction & Testing:** To support platform-specific features (like filesystem access on Desktop via Tauri/Rust) across Web, Mobile (React Native), and Desktop targets, a **Capability Abstraction** pattern is adopted.
+20. **Vitest Unhandled Rejections (Component Tests):** When testing React components that interact with mocked asynchronous actions that *reject* (e.g., simulating API errors in `LoginForm.test.tsx`), Vitest consistently reports "Unhandled Rejection" errors and causes the test suite to exit with an error code, *even when the tests correctly assert the rejection and pass all assertions*. Multiple handling strategies (`expect().rejects`, `try/catch` within `act`, `try/catch` outside `act`, explicit `.catch()`) failed to suppress these specific runner errors. For now, we accept this as a Vitest runner artifact; the relevant tests (like `LoginForm.test.tsx`) are considered functionally correct despite the runner's error code.
+21. **Multi-Platform Capability Abstraction & Testing:** To support platform-specific features (like filesystem access on Desktop via Tauri/Rust) across Web, Mobile (React Native), and Desktop targets, a **Capability Abstraction** pattern is adopted.
     *   **Architecture:** A central service (`platformCapabilitiesService` in a shared package) detects the runtime platform and exposes a consistent interface (e.g., `{ fileSystem: FileSystemCapabilities | null, ... }`). Platform-specific providers (TypeScript wrappers calling Tauri `invoke`, Web APIs, RN Modules) implement these interfaces. Shared UI components check for capability availability (`if (capabilities.fileSystem)`) before using features.
     *   **Testing Implications:**
         *   **Unit Tests:** The capability service itself needs unit testing with mocked platform detection. Shared components using the service must be tested by mocking the service to simulate different platforms (capabilities available vs. unavailable) and verifying conditional logic/rendering and calls to the correct service methods. TypeScript capability providers should be unit tested, mocking underlying APIs/modules (`invoke`, Web APIs, RN modules). Rust command handlers require Rust unit tests (`#[test]`).
         *   **Integration Tests:** Crucially require *platform-specific* integration testing. For Tauri, this means testing the TS -> `invoke` -> Rust -> Native API flow within a Tauri environment (e.g., using `tauri-driver`). For Web/RN, test interaction with Web APIs or Native Modules in their respective environments.
         *   **E2E Tests:** Must be run on each target platform (Web, Windows Desktop, Mac Desktop, Linux Desktop, iOS, Android) to validate the full user flow involving platform-specific features. Requires appropriate E2E tooling for each platform (Playwright/Cypress for Web, Tauri-specific tooling, Detox/Appium for Mobile).
-20. **[NEW] Zustand Store Dependency Mocking (`aiStore` <-> `authStore` Example - May 2024):**
+22. **[NEW] Zustand Store Dependency Mocking (`aiStore` <-> `authStore` Example - May 2024):**
     *   **Problem:** Unit tests for `aiStore` actions that depend on state from `authStore` (e.g., `session` for tokens) consistently failed with `TypeError: Cannot read properties of undefined (reading 'session')`, even when attempts were made to set the `authStore` mock state using `useAuthStore.setState` in nested `beforeEach` blocks (a pattern observed working in `subscriptionStore.test.ts`).
     *   **Working Pattern:** The reliable solution was to use `vi.mocked(useAuthStore.getState).mockReturnValue(...)` within the nested `beforeEach` specific to the test suite requiring the dependent state. This directly controls the state object returned when `aiStore` calls `useAuthStore.getState()`.
     *   **Implementation:**
@@ -105,6 +107,45 @@ Following this cycle helps catch errors early, ensures comprehensive test covera
         4.  Assert the final state (e.g., `isLoading: false`) after the `await`.
     *   **Persistent Type Errors:** Encountered persistent `Type '"user"' is not assignable to type 'UserRole'` errors in mock data within `aiStore` tests despite trying various formats. Decided to ignore these after multiple attempts, prioritizing functional correctness, potentially indicating minor inconsistencies in type definitions.
 
+*   **[NEW] Handling `vi.mock` Hoisting Issues (May 2024):**
+    *   **Problem:** When using `vi.mock('module/path', factoryFn)` where the `factoryFn` needs to reference variables (e.g., imported mock functions) defined at the top level of the test file, Vitest's hoisting mechanism can cause runtime errors (`ReferenceError: Cannot access 'variableName' before initialization`). This happens because the mock factory might execute *before* the top-level variable assignments are fully processed.
+    *   **Working Pattern:** To reliably avoid this:
+        1.  **Import Mocks First:** Ensure all mock functions or variables needed by the factory function are imported or defined *at the very top* of the test file, before any `vi.mock` calls.
+        2.  **Use Synchronous Factory:** The factory function provided to `vi.mock` should be synchronous (`() => ({...})`) rather than asynchronous (`async () => ({...})`) if possible.
+        3.  **Reference Top-Level Imports:** Directly reference the top-level imported mocks/variables within the object returned by the synchronous factory. Avoid using `vi.importActual` *inside* the factory if the goal is simply to structure the mock, as this can sometimes reintroduce timing complexities.
+    *   **Example (`organizationStore.test.ts`):**
+        ```typescript
+        // 1. Import mocks at the TOP
+        import {
+            mockListUserOrganizations,
+            mockGetOrganizationDetails,
+            // ... other mocks
+        } from '../../api/src/mocks/organizations.mock.ts';
+        import { initializeApiClient, _resetApiClient, api as apiActual } from '@paynless/api'; // Import actual for typing/structure if needed
+
+        // ... other imports
+
+        // 2. Use synchronous factory referencing top-level imports
+        vi.mock('@paynless/api', () => ({
+            initializeApiClient: vi.fn(),
+            _resetApiClient: vi.fn(),
+            api: {
+                organizations: {
+                    // 3. Reference imported mocks directly
+                    listUserOrganizations: mockListUserOrganizations,
+                    getOrganizationDetails: mockGetOrganizationDetails,
+                    // ... other mocked methods
+                },
+                // Mock other parts of the 'api' object as needed
+                auth: {}, 
+                billing: {},
+                getSupabaseClient: vi.fn(() => ({ auth: {} }))
+            },
+        }));
+
+        // ... rest of test file ...
+        ```
+
 *   **[NEW] Phase 5: Anonymous Chat Auth Refactor Verification:** Added specific backend and E2E test cases for the anonymous secret header and related flows.
 
 *   **[NEW] Deno Function Testing Learnings (May 2024 - sync-ai-models):**
@@ -113,6 +154,41 @@ Following this cycle helps catch errors early, ensures comprehensive test covera
     *   **Spy Assertions:** Checking spy call counts (`assertEquals(spy.calls.length, 1)`) can sometimes be more reliable than asserting specific call arguments (`assertSpyCall`) immediately after the invocation, especially across `await` boundaries or when dealing with complex mock object interactions.
     *   **Mock Error Propagation:** When a mocked promise rejects (e.g., simulating a DB error), the way the error propagates through subsequent `catch` blocks in the code under test might differ slightly from live execution. Assertions may need to check for the stringified original mock error (`String(mockErrorObject)`) instead of the message from a potentially re-thrown `new Error("...")` if the re-throw doesn't occur as expected in the test context.
     *   **Test Data Consistency:** Ensure mock data used in tests (e.g., mock database records) aligns with data conventions established by other parts of the system (e.g., provider prefixes like `openai-` added to identifiers by adapters). Inconsistent test data can lead to misleading failures.
+
+*   **[NEW] Notification System Testing Strategy:**
+    *   **Backend (Triggers/RLS):**
+        *   Test trigger functions (e.g., `notify_org_admins_on_join_request`) using SQL unit tests or Supabase local dev tools to verify correct insertion into `notifications` table, including accurate population of the `data` JSONB field with context (`target_path`, relevant IDs).
+        *   Test RLS policies on `notifications` using `supabase test db` or equivalent to ensure users can only select/update their own notifications.
+    *   **API Client (`@paynless/api`):**
+        *   Unit test new functions (`fetchNotifications`, `markNotificationAsRead`, `markAllNotificationsAsRead`) by mocking the Supabase client (`apiClient`).
+    *   **State Management (`@paynless/store/notificationStore`):**
+        *   Unit test Zustand store actions, mocking the API client calls. Verify correct state transitions for notification list, unread count, loading, and error states.
+        *   Test selectors for `notifications` list and `unreadCount`.
+    *   **Frontend (`Notifications.tsx` Component - Vitest/RTL):**
+        *   Test rendering based on store state (no user, empty list, list with items, unread badge).
+        *   Test initial fetch logic on mount (mock store action/API client).
+        *   Test Realtime subscription setup (`useEffect`): Mock Supabase client `.channel()`, `.on()`, `.subscribe()`, and `.removeChannel()` to verify correct setup and cleanup.
+        *   Test handling of incoming Realtime payloads (mocking the callback) and verify corresponding store actions are called.
+        *   Test user interactions: Clicking "mark as read" (item/all), clicking an actionable notification (verify `data.target_path` parsing and mock `react-router` navigation trigger).
+
+*   **[NEW] Multi-Tenancy (Organizations) Testing Strategy:**
+    *   **Backend (Schema/RLS/Triggers):**
+        *   Test RLS policies on `organizations`, `organization_members`, and *updated* policies on related tables (e.g., `chats`) using `supabase test db` or equivalent. Verify access control based on membership status (`active`), role (`admin`/`member`), organization visibility (`public`/`private`), and soft deletion (`deleted_at IS NULL`).
+        *   Test the "last admin" check logic (trigger/function) thoroughly with various scenarios (single admin, multiple admins, attempts to leave/demote).
+    *   **API Client (`@paynless/api`):**
+        *   Unit test all new organization-related functions (`createOrganization`, `listUserOrganizations`, `getOrganizationDetails`, `getOrganizationMembers`, `inviteUser...`, `acceptInvite...`, `requestToJoin...`, `approveJoinRequest...`, `updateMemberRole...`, `removeMember...`, `deleteOrganization`), mocking the Supabase client and Edge Function invocations where necessary. Ensure tests cover admin-only actions and handling of potential errors (e.g., last admin check failure).
+    *   **State Management (`@paynless/store/organizationStore`):**
+        *   Unit test Zustand store actions, mocking API client calls. Verify state transitions for `userOrganizations` (filtering deleted), `currentOrganizationId`, `currentOrganizationDetails` (including visibility), `currentOrganizationMembers`, loading, error states. Test selectors for current org context and user role within the current org.
+        *   Test the `setCurrentOrganizationId` action triggers fetching of details/members.
+        *   Test the `softDeleteOrganization` action correctly removes the org from local state after API success.
+    *   **Frontend Components (Vitest/RTL):**
+        *   Test `OrganizationSwitcher`: Mock store, verify rendering, test selection logic triggers store action/navigation.
+        *   Test Organization Forms (`CreateOrganizationForm`): Mock API calls, test validation, visibility options.
+        *   Test Organization Pages (`/dashboard/organizations/...`): Test routing guards (require membership, non-deleted org). Test components for Settings (edit name/visibility, delete button - admin only), Member Management (`MemberList`, `InviteMemberModal`, role changes, removal - admin only, handling last admin error display), Invite/Join flows.
+        *   Test conditional rendering based on user role within the current organization context (fetched from the store).
+    *   **Integration (MSW/Manual):**
+        *   Use MSW to mock backend API endpoints for frontend integration tests covering flows like creating an org, switching context, inviting/joining, managing members, and soft-deleting.
+        *   Manual testing (as outlined in Checkpoint 2) is crucial for verifying RLS and complex interaction flows end-to-end.
 
 ✅ **How to Test Incrementally and Correctly (Layered Testing Strategy)**
 *This remains our guiding principle.*
@@ -139,6 +215,26 @@ Following this cycle helps catch errors early, ensures comprehensive test covera
 🌐 **4. End-to-End Validation**
 - Once the system passes unit and integration layers (acknowledging local limitations), run full end-to-end (E2E) tests.
 - Fix or update E2E tests and supporting mocks if needed.
+
+---
+
+## Testing Resources & Libraries
+
+*   **Vitest:** Our primary test runner for JavaScript/TypeScript code (stores, components, utils).
+    *   Configuration: `vitest.config.ts` in relevant packages.
+    *   [Vitest Documentation](https://vitest.dev/)
+*   **Testing Library:** Used for testing React components (`@testing-library/react`).
+    *   [React Testing Library Documentation](https://testing-library.com/docs/react-testing-library/intro/)
+*   **Zustand:** Our state management library.
+    *   [Zustand Testing Guide](https://zustand.docs.pmnd.rs/guides/testing)
+*   **Mock Service Worker (MSW):** Used for mocking API requests in integration tests.
+    *   Configuration: `apps/web/src/tests/mocks/` and `apps/web/src/tests/setup.ts`.
+    *   [MSW Documentation](https://mswjs.io/docs/)
+*   **vitest-localstorage-mock:** Used to reliably mock `localStorage` in Vitest tests.
+    *   Setup via `setupFiles` in `vitest.config.ts`.
+    *   [vitest-localstorage-mock on npm](https://www.npmjs.com/package/vitest-localstorage-mock)
+*   **Deno Standard Library:** Used for testing Supabase Edge Functions.
+    *   [Deno Standard Library Documentation](https://deno.land/std)
 
 ---
 
@@ -223,7 +319,7 @@ Following this cycle helps catch errors early, ensures comprehensive test covera
 
 *   **Phase 2: Shared Packages (`packages/`)**
     *   **2.1 Unit Tests:**
-        *   [✅] `packages/api-client` (All sub-clients: `apiClient`, `stripe.api`, `ai.api` tests passing)
+        *   [✅] `packages/api` (All sub-clients: `apiClient`, `stripe.api`, `ai.api` tests passing)
         *   [✅] `packages/store` (Vitest setup complete)
             *   [✅] `authStore.ts` (All actions covered across multiple `authStore.*.test.ts` files)
                 *   **NOTE:** Replay logic tests (in `register.test.ts`, `login.test.ts`) and session/state restoration tests (in `initialize.test.ts`) related to `_checkAndReplayPendingAction` and the `initialize` action are currently unreliable/skipped/adjusted due to known issues in the underlying store functions. These tests need revisiting after the functions are fixed.
@@ -242,11 +338,11 @@ Following this cycle helps catch errors early, ensures comprehensive test covera
         *   [✅] `packages/utils` (`logger.ts` tests passing)
         *   [✅] `packages/types` *(Implicitly tested via usage)*.
             *   [✅] *(Analytics)* Verify `AnalyticsClient` interface exists in `analytics.types.ts`.
-        *   [✅] `packages/analytics-client` *(Setup Complete)*
+        *   [✅] `packages/analytics` *(Setup Complete)*
             *   [✅] Unit Test `nullAdapter.ts` (interface compliance, callable methods).
             *   [✅] Unit Test `posthogAdapter.ts` (mock `posthog-js`, verify calls to `init`, `identify`, `capture`, `reset`, etc.).
             *   [✅] Unit Test `index.ts` (service logic: verify null adapter default [✅], verify PostHog selection [✅]).
-        *   [ ] `packages/utils` or `packages/platform-capabilities`: Unit test `platformCapabilitiesService` (mock platform detection).
+        *   [ ] `packages/utils` or `packages/platform`: Unit test `platformCapabilitiesService` (mock platform detection).
         *   [ ] Unit test TypeScript capability providers (mock underlying APIs like `invoke`, Web APIs, RN Modules).
     *   **2.2 Integration Tests:** (Frontend MSW-based tests are covered in Phase 3.2)
 

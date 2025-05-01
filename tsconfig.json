@@ -3,7 +3,7 @@
   "references": [
     { "path": "packages/types" },
     { "path": "packages/utils" },
-    { "path": "packages/api-client" },
+    { "path": "packages/api" },
     { "path": "packages/store" },
     { "path": "apps/web" }
   ]

@@ -6,6 +6,10 @@ export interface ThemeColors {
   textPrimary: string;
   textSecondary: string;
   border: string;
+  successBackground: string;
+  successForeground: string;
+  attentionBackground: string;
+  attentionForeground: string;
 }
 
 export interface Theme {

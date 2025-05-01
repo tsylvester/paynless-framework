@@ -3,7 +3,7 @@
 /** @type {import('tailwindcss').Config} */
 
 // Log the CWD to diagnose path issues
-console.log('[tailwind.config.js] CWD:', process.cwd());
+//console.log('[tailwind.config.js] CWD:', process.cwd());
 
 export default {
   content: [

@@ -1,6 +1,6 @@
 // IMPORTANT: Supabase Edge Functions require relative paths for imports from shared modules.
 // Do not use path aliases (like @shared/) as they will cause deployment failures.
-import { corsHeaders } from './cors-headers.ts';
+import { createErrorResponse } from './cors-headers.ts';
 import { createClient as actualCreateClient } from "npm:@supabase/supabase-js@2";
 import type { SupabaseClient, SupabaseClientOptions, AuthError } from "npm:@supabase/supabase-js@2";
 
@@ -145,13 +145,14 @@ export async function isAuthenticatedWithClient(req: Request, supabase: Supabase
  * Create an unauthorized response
  */
 export function createUnauthorizedResponse(message: string): Response {
+  console.warn("[auth.ts] createUnauthorizedResponse: Creating basic 401 response without full CORS headers.");
   return new Response(
     JSON.stringify({ error: { code: "unauthorized", message } }),
     {
       status: 401,
       headers: {
-        ...corsHeaders,
         "Content-Type": "application/json",
+        "Access-Control-Allow-Origin": "*"
       },
     }
   );

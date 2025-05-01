@@ -8,7 +8,7 @@ import { syncOpenAIModels, type SyncOpenAIDeps } from "./openai_sync.ts";
 // NOTE: getCurrentDbModels is now mocked via deps, but keep types
 import { type SyncResult, type DbAiProvider } from "./index.ts"; 
 // Import type for OpenAI API response simulation
-import type { ProviderModelInfo } from "../_shared/types.ts";
+import type { ProviderModelInfo } from "../../_shared/ai_service/types.ts";
 
 // Import shared types and test utils
 import { 

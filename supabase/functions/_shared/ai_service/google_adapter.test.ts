@@ -1,7 +1,7 @@
 import { assertEquals, assertExists, assertRejects, assertInstanceOf, assert } from "https://deno.land/std@0.224.0/assert/mod.ts";
 import { spy, stub, type Stub } from "https://deno.land/std@0.224.0/testing/mock.ts";
 import { GoogleAdapter, googleAdapter } from './google_adapter.ts';
-import type { ChatApiRequest, ChatMessage, ProviderModelInfo, Json } from '../types.ts';
+import type { ChatApiRequest } from '../types.ts';
 
 // --- Test Data ---
 const MOCK_API_KEY = 'google-test-api-key';
@@ -150,8 +150,7 @@ Deno.test("GoogleAdapter sendMessage - Success", async () => {
     assertEquals(result.content, 'A region in spacetime where gravity is so strong nothing escapes, not even light.'); // Trimmed
     assertEquals(result.ai_provider_id, MOCK_CHAT_REQUEST_GOOGLE.providerId);
     assertEquals(result.system_prompt_id, MOCK_CHAT_REQUEST_GOOGLE.promptId);
-    assertEquals(result.token_usage, null); // Currently null for Google adapter
-    assertExists(result.created_at);
+    assertExists(result.token_usage); // Check that token usage is returned
 
   } finally {
     mockFetch.restore();

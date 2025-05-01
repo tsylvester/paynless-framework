@@ -1,8 +1,10 @@
 # pnpm-workspace.yaml
 packages:
-  # all packages in direct subdirs of packages/
+  # Standard packages
   - 'packages/*'
-  # all packages in direct subdirs of apps/
+  # Apps
   - 'apps/*'
+  # Supabase functions (for sharing types)
+  - 'supabase/functions'
   # exclude packages that are inside test directories
   - '!**/test/**' 

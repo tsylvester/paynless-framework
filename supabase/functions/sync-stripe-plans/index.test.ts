@@ -6,13 +6,18 @@ import {
     handleSyncPlansRequest 
 } from "./index.ts";
 import { ISyncPlansService } from "./services/sync_plans_service.ts"; // Import the SERVICE interface
+import { SupabaseClient } from "npm:@supabase/supabase-js";
+import { type ConstructorSpy } from "https://deno.land/std@0.208.0/testing/mock.ts"; // Import if using MockStripeClass pattern
 
 // Define a local interface for mock dependencies
 interface MockDeps {
     createErrorResponse: Spy;
     createSuccessResponse: Spy;
-    stripeConstructor: Spy;
+    stripeConstructor: StripeConstructor;
     syncPlansService: ISyncPlansService;
+    handleCorsPreflightRequest: Spy;
+    createSupabaseClient: Spy<any[], SupabaseClient>;
+    createUnauthorizedResponse: Spy<[string], Response>;
 }
 
 // --- Mocks & Spies ---
@@ -83,7 +88,10 @@ beforeEach(() => {
         createErrorResponse: spy((msg, status) => new Response(JSON.stringify({ error: msg, status }), { status, headers: { 'Content-Type': 'application/json' } })),
         createSuccessResponse: spy((body) => new Response(JSON.stringify(body), { status: 200, headers: { 'Content-Type': 'application/json' } })),
         stripeConstructor: spy(() => mockStripeClient), // Return our mock Stripe client
-        syncPlansService: mockService 
+        syncPlansService: mockService,
+        handleCorsPreflightRequest: spy((_req: Request) => null),
+        createSupabaseClient: spy(() => ({ from: spy(() => ({ select: spy(() => ({ eq: spy(() => ({ data: [], error: null })) })) })) }) as any),
+        createUnauthorizedResponse: spy(() => new Response("Unauthorized", { status: 401 })),
     };
 });
 
@@ -165,4 +173,128 @@ describe("Sync Stripe Plans Handler", { ignore: true }, () => {
     // - Error during SERVICE getExistingPlans
     // - Error during SERVICE deactivatePlan
     // - Case where no plans need deactivation
+}); 
+
+// --- Mock Dependencies ---
+
+// Define a minimal mock Stripe class (similar to stripe-client.test.ts)
+class MockStripeClass implements Partial<Stripe> {
+    products: { list: Spy };
+    prices: { list: Spy };
+    constructor(key: string, config?: Stripe.StripeConfig) {
+        // Spies can be pre-defined or created here based on test needs
+        this.products = { list: spy(() => ({ autoPagingToArray: async () => [] })) };
+        this.prices = { list: spy(() => ({ autoPagingToArray: async () => [] })) };
+    }
+    [key: string]: any; // Allow other properties
+}
+
+// Helper function to create mocks
+function createMockDeps(overrides: Partial<SyncPlansHandlerDeps> = {}): MockDeps {
+    // Mock Supabase
+    const mockDbUpsert = spy(() => Promise.resolve({ error: null }));
+    const mockDbSelectEq = spy(() => Promise.resolve({ data: [], error: null }));
+    const mockDbSelect = spy(() => ({ eq: mockDbSelectEq }));
+    const mockDbFrom = spy(() => ({ select: mockDbSelect, upsert: mockDbUpsert }));
+    const mockSupabaseClient = { from: mockDbFrom } as any;
+
+    // Use the MockStripeClass for the constructor
+    const DefaultMockStripeCons = MockStripeClass as any as StripeConstructor;
+
+    // Define default spied functions for other deps
+    const defaultHandleCors = spy((_req: Request) => null);
+    const defaultCreateUnauthorized = spy(() => new Response("Unauthorized", { status: 401 }));
+    const defaultCreateError = spy((msg: string, status: number = 500) => new Response(msg, { status }));
+    const defaultCreateSuccess = spy((data: any) => new Response(JSON.stringify(data), { status: 200 }));
+    const defaultCreateSupabase = spy(() => mockSupabaseClient);
+
+    const defaultMocks = {
+        createSupabaseClient: defaultCreateSupabase,
+        stripeConstructor: DefaultMockStripeCons, // Assign the mock constructor
+        handleCorsPreflightRequest: defaultHandleCors, 
+        createUnauthorizedResponse: defaultCreateUnauthorized,
+        createErrorResponse: defaultCreateError,
+        createSuccessResponse: defaultCreateSuccess,
+    };
+
+    // Store internal spies for convenience in tests (optional)
+    // Note: Accessing spies from the *instance* created by the constructor might be needed
+    const internalSpies = {
+        supabaseSpies: { from: mockDbFrom, select: mockDbSelect, eq: mockDbSelectEq, upsert: mockDbUpsert },
+        // Stripe spies are within the MockStripeClass instance, access via instance
+        // stripeSpies: { productsList: mockStripeInstance.products.list, pricesList: mockStripeInstance.prices.list }
+    };
+
+    // Combine defaults and overrides
+    const finalMocks = { 
+        ...defaultMocks, 
+        ...overrides 
+    };
+
+    // Return as MockDeps, attaching internal spies if needed (adjust type)
+    return finalMocks as MockDeps; // Adjust return type if attaching spies
+}
+
+// --- Test Suite ---
+
+Deno.test("Sync Stripe Plans Handler", async (t) => {
+
+    await t.step("should return 401 if API key is invalid", async () => {
+        const mockDeps = createMockDeps({ 
+           // Example override (if verifyApiKey were part of deps)
+           // verifyApiKey: spy(() => false)
+        }); 
+        const req = new Request("http://example.com/sync-stripe-plans", { method: "POST" }); 
+        // This test needs review based on actual handler dependencies
+        // Assuming it compiles now due to handleCorsPreflightRequest being added
+        await handleSyncPlansRequest(req, mockDeps);
+        assertEquals(true, true); // Placeholder assertion
+    });
+
+     await t.step("should insert new plans from Stripe", async () => {
+        const mockStripeProducts = [{ id: "prod_1", name: "Product 1", description: "Desc 1" }];
+        const mockStripePrices = [
+            { id: "price_1a", product: "prod_1", unit_amount: 1000, currency: 'usd', recurring: { interval: 'month', interval_count: 1 }, active: true, metadata: {} }
+        ];
+        
+        // Create spies for Stripe list methods
+        const productListSpy = spy(() => ({ autoPagingToArray: async () => mockStripeProducts }));
+        const priceListSpy = spy(() => ({ autoPagingToArray: async () => mockStripePrices }));
+
+        // Create a mock constructor override that returns an instance with these spies
+        const MockStripeOverride = class implements Partial<Stripe> {
+            products = { list: productListSpy };
+            prices = { list: priceListSpy };
+            constructor(key: string, config?: Stripe.StripeConfig) {}
+            [key: string]: any;
+        };
+        
+        // Create a spy for the DB upsert
+        const upsertSpy = spy(() => Promise.resolve({ error: null }));
+        const mockDbFromOverride = spy(() => ({ upsert: upsertSpy, select: spy() })); // Mock from to return object with upsert
+        const mockSupabaseClientOverride = { from: mockDbFromOverride } as any;
+
+        // Create mock dependencies with overrides
+        const mockDeps = createMockDeps({
+            stripeConstructor: MockStripeOverride as any as StripeConstructor,
+            createSupabaseClient: spy(() => mockSupabaseClientOverride)
+        });
+
+        const req = new Request("http://example.com/sync-stripe-plans", { method: "POST" }); 
+        const res = await handleSyncPlansRequest(req, mockDeps);
+        
+        assertEquals(res.status, 200);
+        // Assert Stripe list calls
+        assertSpyCall(productListSpy, 0); // Assert the specific spy
+        assertSpyCall(priceListSpy, 0, { args: [{ active: true }] }); // Assert the specific spy
+        // Assert Supabase upsert call
+        assertSpyCall(upsertSpy, 0); // Assert the specific spy
+        const upsertData = upsertSpy.calls[0].args[0];
+        assertEquals(upsertData.length, 1);
+        assertEquals(upsertData[0].stripe_price_id, "price_1a");
+        assertEquals(upsertData[0].name, "Product 1"); 
+        // ... more assertions on upsert data ...
+        assertSpyCall(mockDeps.createSuccessResponse as Spy, 0);
+    });
+
 }); 

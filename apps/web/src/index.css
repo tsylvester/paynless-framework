@@ -1,6 +1,29 @@
 /* Define CSS Variables FIRST */
 @layer base {
   :root {
+    /* Standard Tailwind variables (shadcn/ui might expect these) */
+    --background: 255 255 255;
+    --foreground: 0 0 0;
+    --card: 255 255 255;
+    --card-foreground: 0 0 0;
+    --popover: 255 255 255;
+    --popover-foreground: 0 0 0;
+    --primary: 0 122 255; /* Match your custom below */
+    --primary-foreground: 255 255 255; /* Default white for primary */
+    --secondary: 52 199 89; /* Match your custom below */
+    --secondary-foreground: 255 255 255; /* Default white for secondary */
+    --muted: 242 242 247; /* Similar to your surface */
+    --muted-foreground: 60 60 67; /* Similar to your textSecondary */
+    --accent: 242 242 247; /* Can be similar to surface/muted */
+    --accent-foreground: 0 0 0;
+    --destructive: 255 59 48; /* Default red */
+    --destructive-foreground: 255 255 255;
+    --border: 199 199 204; /* Match your custom below */
+    --input: 199 199 204; /* Often matches border */
+    --ring: 0 122 255; /* Match your custom primary */
+    --radius: 0.5rem; /* Default radius */
+
+    /* Your custom variables (These will take precedence for your classes) */
     --color-primary: 0 122 255; /* RGB values for #007AFF */
     --color-secondary: 52 199 89; /* RGB values for #34C759 */
     --color-background: 255 255 255; /* RGB values for #FFFFFF */
@@ -11,6 +34,28 @@
   }
   
   .dark {
+    /* Standard Tailwind variables for dark mode */
+    --background: 0 0 0;
+    --foreground: 255 255 255;
+    --card: 28 28 30; /* Similar to your surface */
+    --card-foreground: 255 255 255;
+    --popover: 28 28 30;
+    --popover-foreground: 255 255 255;
+    --primary: 10 132 255; /* Match your custom below */
+    --primary-foreground: 255 255 255;
+    --secondary: 50 215 75; /* Match your custom below */
+    --secondary-foreground: 0 0 0; /* Often black/dark for light green */
+    --muted: 28 28 30;
+    --muted-foreground: 235 235 245; /* Similar to your textSecondary */
+    --accent: 28 28 30;
+    --accent-foreground: 255 255 255;
+    --destructive: 255 69 58; /* Default dark red */
+    --destructive-foreground: 255 255 255;
+    --border: 58 58 60; /* Match your custom below */
+    --input: 58 58 60;
+    --ring: 10 132 255; /* Match your custom primary */
+
+    /* Your custom dark variables (These will take precedence) */
     --color-primary: 10 132 255; /* RGB values for #0A84FF */
     --color-secondary: 50 215 75; /* RGB values for #32D74B */
     --color-background: 0 0 0; /* RGB values for #000000 */
