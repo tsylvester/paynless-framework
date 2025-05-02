@@ -7,27 +7,50 @@ interface AdminAuthLookup {
     getUserById: (userId: string) => Promise<{ data: { user: any } | null; error: any | null }>;
 }
 
-// --- Default implementation using environment variables --- 
-const defaultAdminAuthLookup: AdminAuthLookup = {
-    getUserById: async (userId: string) => {
-        const supabaseUrl = Deno.env.get('SUPABASE_URL');
-        const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
-        if (!supabaseUrl || !serviceRoleKey) {
-            console.error('[invites.ts Default Admin Lookup] Admin Supabase credentials not found.');
-            // Throw a specific error type or message that can be handled upstream if needed
-            throw new Error('Server configuration error: Admin credentials missing.');
-        }
-        // Create temporary admin client ONLY for this lookup
-        // NOTE: Consider potential performance impact if called very frequently.
-        // Caching the admin client instance might be better in high-load scenarios,
-        // but requires careful handling of potential stale state or errors.
-        const adminClient = createClient(supabaseUrl, serviceRoleKey);
-        console.log(`[invites.ts Default Admin Lookup] Looking up user ID: ${userId}`);
-        const result = await adminClient.auth.admin.getUserById(userId);
-        console.log(`[invites.ts Default Admin Lookup] Result for ${userId}:`, { error: result.error, hasUser: !!result.data?.user });
-        return result;
+// --- Define Service Interface for User Lookup ---
+interface UserLookupService {
+  lookupByEmail(email: string): Promise<{ data: { user: { id: string; email: string; } | null }; error: any | null }>;
+}
+
+// --- Default Implementation using Service Role --- 
+class DefaultUserLookupService implements UserLookupService {
+  async lookupByEmail(email: string): Promise<{ data: { user: { id: string; email: string; } | null }; error: any | null }> {
+    console.log(`[invites.ts DefaultUserLookupService] Looking up email: ${email}`);
+    const supabaseUrl = Deno.env.get('SUPABASE_URL');
+    const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+    if (!supabaseUrl || !serviceRoleKey) {
+        console.error('[invites.ts DefaultUserLookupService] Admin Supabase credentials not found.');
+        return { data: { user: null }, error: new Error('Server configuration error: Admin credentials missing.') };
     }
-};
+    try {
+        const adminClient = createClient(supabaseUrl, serviceRoleKey);
+        const { data: listData, error: listError } = await adminClient.auth.admin.listUsers({ 
+            page: 1, 
+            perPage: 1000 
+        });
+
+        if (listError) {
+             console.error(`[invites.ts DefaultUserLookupService] Error listing users:`, listError);
+             return { data: { user: null }, error: listError };
+        }
+        
+        const existingUser = listData.users?.find(u => u.email?.toLowerCase() === email.toLowerCase());
+
+        if (existingUser) {
+            console.log(`[invites.ts DefaultUserLookupService] Found user ID: ${existingUser.id} for email: ${email}`);
+            return { data: { user: { id: existingUser.id, email: existingUser.email ?? email } }, error: null }; 
+        } else {
+            console.log(`[invites.ts DefaultUserLookupService] No user found for email: ${email}`);
+            return { data: { user: null }, error: null };
+        }
+    } catch (catchError) {
+         console.error(`[invites.ts DefaultUserLookupService] Caught exception looking up email ${email}:`, catchError);
+         return { data: { user: null }, error: catchError instanceof Error ? catchError : new Error(String(catchError)) };
+    }
+  }
+}
+// Create a singleton instance of the default service
+const defaultUserLookupService = new DefaultUserLookupService();
 
 // Helper function to lookup user by email using Service Role
 // Returns { user: { id: string, email: string } | null, error: any | null }
@@ -73,13 +96,14 @@ async function getUserByEmailServiceRole(email: string): Promise<{ data: { user:
 }
 
 // Handler for POST /organizations/:orgId/invites (Create Invite - Unified Flow)
+// Add optional lookup function dependency for easier testing
 export async function handleCreateInvite(
     req: Request, 
     supabaseClient: SupabaseClient<Database>, // Inviting user's client
     invitingUser: User, 
     orgId: string,
-    body: { email: string; role: string } // Only email and role expected
-    // adminAuthLookup is no longer needed here, we use getUserByEmailServiceRole
+    body: { email: string; role: string }, // Only email and role expected
+    userLookupService: UserLookupService = defaultUserLookupService // Inject service
 ): Promise<Response> {
     console.log(`[invites.ts handleCreateInvite] Handling POST /organizations/${orgId}/invites...`);
 
@@ -107,7 +131,7 @@ export async function handleCreateInvite(
     
     // 3. Check if target user exists using Service Role
     let targetUserId: string | null = null;
-    const { data: targetUserData, error: lookupError } = await getUserByEmailServiceRole(email);
+    const { data: targetUserData, error: lookupError } = await userLookupService.lookupByEmail(email);
 
     if (lookupError) {
         // Handle specific errors like config error vs. Supabase API error
@@ -242,7 +266,9 @@ export async function handleAcceptInvite(
     supabaseClient: SupabaseClient<Database>,
     user: User, 
     inviteToken: string,
-    _body: any // Body is not used for accept
+    _body: any, // Body is not used for accept
+    // Injectable admin client for testing
+    injectedAdminClient?: SupabaseClient<Database> 
 ): Promise<Response> {
     console.log(`[invites.ts] Handling ACCEPT invite for token: ${inviteToken}`);
 
@@ -296,14 +322,23 @@ export async function handleAcceptInvite(
     console.log(`[invites.ts Accept] Attempting to update invite ID: ${invite.id} to status 'accepted' using service role.`);
     let membershipId: string | null = null;
     try {
-        const supabaseUrl = Deno.env.get('SUPABASE_URL');
-        const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
-        if (!supabaseUrl || !serviceRoleKey) {
-            console.error('[invites.ts Accept] Service role credentials missing for status update.');
-            // Throw an error that will be caught below
-            throw new Error('Server configuration error: Service role key not found.');
+        // Use injected client if provided, otherwise create one from env vars
+        const adminClient = injectedAdminClient ?? (() => {
+            const supabaseUrl = Deno.env.get('SUPABASE_URL');
+            const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+            if (!supabaseUrl || !serviceRoleKey) {
+                console.error('[invites.ts Accept] Service role credentials missing for status update.');
+                throw new Error('Server configuration error: Service role key not found.');
+            }
+            return createClient<Database>(supabaseUrl, serviceRoleKey);
+        })();
+        
+        // Ensure adminClient is valid before proceeding
+        if (!adminClient) {
+             // This should technically be caught by the error thrown above, but safeguard
+             console.error('[invites.ts Accept] Failed to initialize admin client.');
+             throw new Error('Internal server error creating admin client.');
         }
-        const adminClient = createClient<Database>(supabaseUrl, serviceRoleKey);
 
         // 4a. Update invite status to 'accepted'
         const { error: updateError } = await adminClient
