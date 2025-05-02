@@ -27,7 +27,8 @@
     "npm:react@*": "19.1.0",
     "npm:sinon@*": "20.0.0",
     "npm:stripe@*": "18.0.0",
-    "npm:stripe@14.11.0": "14.11.0"
+    "npm:stripe@14.11.0": "14.11.0",
+    "npm:stripe@18.0.0": "18.0.0"
   },
   "jsr": {
     "@std/assert@0.225.3": {
