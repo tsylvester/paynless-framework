@@ -136,12 +136,16 @@ export async function cleanupUser(email: string, adminClient?: SupabaseClient): 
 // Export this type so it can be used in test mock functions
 export interface MockQueryBuilderState {
     tableName: string;
-    operation: 'select' | 'insert' | 'update' | 'delete'; 
+    operation: 'select' | 'insert' | 'update' | 'delete';
     filters: { column?: string; value?: any; type: 'eq' | 'in' | 'match' | 'is'; criteria?: object }[]; // Added 'is' type
     selectColumns: string | null;
-    insertData: any[] | object | null; 
+    insertData: any[] | object | null;
     updateData: object | null;
+    // Add pagination state
+    rangeFrom?: number;
+    rangeTo?: number;
     // Add order state etc. if needed
+    orClause?: string; // Add optional property for OR clause string
 }
 
 /** Configurable data/handlers for the mock Supabase client (Revised & Extended) */
@@ -221,6 +225,8 @@ export function createMockSupabaseClient(
         single: Spy<any>;
         maybeSingle: Spy<any>;
         then: Spy<any>;
+        range: Spy<any>; // <-- Add range method
+        or: Spy<any>; // <-- Add OR method
     }
 
     const fromSpy = spy((tableName: string) => {
@@ -229,8 +235,11 @@ export function createMockSupabaseClient(
             operation: 'select' as 'select' | 'insert' | 'update' | 'delete',
             filters: [] as { column?: string; value?: any; type: 'eq' | 'in' | 'match' | 'is'; criteria?: object }[], // Added 'is' type
             selectColumns: '*' as string | null,
-            insertData: null as any[] | object | null, 
+            insertData: null as any[] | object | null,
             updateData: null as object | null,
+            rangeFrom: 0 as number,
+            rangeTo: 0 as number,
+            orClause: undefined as string | undefined,
         };
 
         const mockQueryBuilder: MockQueryBuilder = {} as MockQueryBuilder;
@@ -306,6 +315,20 @@ export function createMockSupabaseClient(
 
         mockQueryBuilder.returns = spy(() => {
             // Track returns modifier if needed for specific tests (e.g., upsert with ignoreDuplicates)
+            return mockQueryBuilder;
+        });
+
+        mockQueryBuilder.range = spy((from: number, to: number) => {
+            console.log(`[Mock QB ${tableName}] .range(${from}, ${to}) called`);
+            _queryBuilderState.rangeFrom = from;
+            _queryBuilderState.rangeTo = to;
+            return mockQueryBuilder; 
+        });
+
+        mockQueryBuilder.or = spy((filterString: string) => {
+            // Basic mock: just log and record the filter string
+            console.log(`[Mock QB ${tableName}] .or(${filterString}) called`);
+            _queryBuilderState.orClause = filterString; // Store it separately
             return mockQueryBuilder;
         });
 

@@ -1,7 +1,7 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, MockInstance } from 'vitest';
 import { OrganizationApiClient } from './organizations.api';
 import { ApiClient } from './apiClient'; // Import base client type
-import { ApiResponse, ApiError, Organization, OrganizationInsert, OrganizationUpdate, OrganizationMemberWithProfile } from '@paynless/types';
+import { ApiResponse, ApiError, Organization, OrganizationInsert, OrganizationUpdate, OrganizationMemberWithProfile, Invite, PendingOrgItems, PendingInviteWithInviter, PendingRequestWithDetails, PaginatedOrganizationsResponse, PaginatedMembersResponse, UserProfile } from '@paynless/types';
 
 // --- Mock the ApiClient dependency directly --- 
 const mockApiClient = {
@@ -145,24 +145,27 @@ describe('OrganizationApiClient', () => {
 
        vi.mocked(mockApiClient.get).mockResolvedValue(mockResponse);
 
-      const result = await organizationApiClient.listUserOrganizations(userId);
+      const result = await organizationApiClient.listUserOrganizations();
 
       expect(mockApiClient.get).toHaveBeenCalledTimes(1);
       expect(mockApiClient.get).toHaveBeenCalledWith('organizations');
       expect(result).toEqual(mockResponse);
     });
 
-    it('should return empty array in data if API returns success with no orgs', async () => {
-      const mockResponse: ApiResponse<Organization[]> = { status: 200, data: [] }; // Correct data type
+    it('should return paginated structure with empty array/zero count if API returns success with no orgs', async () => {
+      // FIX: Mock the PaginatedOrganizationsResponse structure
+      const mockPaginatedResponse: PaginatedOrganizationsResponse = { organizations: [], totalCount: 0 };
+      const mockResponse: ApiResponse<PaginatedOrganizationsResponse> = { status: 200, data: mockPaginatedResponse };
 
       vi.mocked(mockApiClient.get).mockResolvedValue(mockResponse);
 
-      const result = await organizationApiClient.listUserOrganizations(userId);
+      const result = await organizationApiClient.listUserOrganizations();
 
       expect(mockApiClient.get).toHaveBeenCalledTimes(1);
       expect(mockApiClient.get).toHaveBeenCalledWith('organizations');
       expect(result).toEqual(mockResponse);
-      expect(result.data).toEqual([]);
+      // FIX: Assert the paginated structure
+      expect(result.data).toEqual({ organizations: [], totalCount: 0 });
     });
 
     it('should return error response if apiClient.get fails', async () => {
@@ -171,7 +174,7 @@ describe('OrganizationApiClient', () => {
 
       vi.mocked(mockApiClient.get).mockResolvedValue(mockResponse);
 
-      const result = await organizationApiClient.listUserOrganizations(userId);
+      const result = await organizationApiClient.listUserOrganizations();
 
       expect(mockApiClient.get).toHaveBeenCalledTimes(1);
       expect(result).toEqual(mockResponse);
@@ -234,47 +237,43 @@ describe('OrganizationApiClient', () => {
 
   // --- getOrganizationMembers --- //
   describe('getOrganizationMembers', () => {
-    it('should call apiClient.get with correct endpoint and return members with profiles', async () => {
-      // Define mock member data using the imported type
-      const mockMembers: OrganizationMemberWithProfile[] = [
-        {
-          id: 'mem1', organization_id: orgId, user_id: 'user1', role: 'admin', status: 'active', created_at: 'd1',
-          user_profiles: { id: 'user1', first_name: 'Admin', last_name: 'User', email: 'admin@test.com', role: 'user', created_at: 'dp1', updated_at: 'dp1', deleted_at: null, avatar_url: null } // Nested profile
-        },
-        {
-          id: 'mem2', organization_id: orgId, user_id: 'user2', role: 'member', status: 'active', created_at: 'd2',
-          user_profiles: { id: 'user2', first_name: 'Member', last_name: 'User', email: 'member@test.com', role: 'user', created_at: 'dp2', updated_at: 'dp2', deleted_at: null, avatar_url: null }
-        },
-         {
-          id: 'mem3', organization_id: orgId, user_id: 'user3', role: 'member', status: 'pending', created_at: 'd3',
-          user_profiles: null // Example of a member without a linked profile
-        },
-      ];
-      const mockResponse: ApiResponse<OrganizationMemberWithProfile[]> = { status: 200, data: mockMembers };
+    const endpoint = `organizations/${orgId}/members`;
 
-      vi.mocked(mockApiClient.get).mockResolvedValue(mockResponse);
+    it('should call apiClient.get with correct endpoint (no params) and return paginated members', async () => {
+      // Mock the specific response structure
+      const mockApiResponse: ApiResponse<PaginatedMembersResponse> = { status: 200, data: { members: [], totalCount: 1 } }; 
+      
+      vi.mocked(mockApiClient.get).mockResolvedValue(mockApiResponse);
 
       const result = await organizationApiClient.getOrganizationMembers(orgId);
 
       expect(mockApiClient.get).toHaveBeenCalledTimes(1);
-      expect(mockApiClient.get).toHaveBeenCalledWith(`organizations/${orgId}/members`);
-      expect(result).toEqual(mockResponse);
-      expect(result.data).toHaveLength(3);
-      expect(result.data?.[0].user_profiles?.first_name).toBe('Admin'); // Check nested data
-      expect(result.data?.[2].user_profiles).toBeNull();
+      // Verify the endpoint WITHOUT query params
+      expect(mockApiClient.get).toHaveBeenCalledWith(endpoint); 
+      expect(result).toEqual(mockApiResponse);
+      expect(result.data?.members).toEqual([]);
+      expect(result.data?.totalCount).toEqual(1);
     });
 
-    it('should return empty array in data if API returns success with no members', async () => {
-      const mockResponse: ApiResponse<OrganizationMemberWithProfile[]> = { status: 200, data: [] };
+    it('should call apiClient.get with correct endpoint including page and limit parameters', async () => {
+      const page = 2;
+      const limit = 5;
+      const endpointWithParams = `${endpoint}?page=${page}&limit=${limit}`;
+      const mockApiResponse: ApiResponse<PaginatedMembersResponse> = { 
+          status: 200, 
+          data: { members: [], totalCount: 1 } // Assume empty members for page 2, but correct total count
+      }; 
 
-      vi.mocked(mockApiClient.get).mockResolvedValue(mockResponse);
+      vi.mocked(mockApiClient.get).mockResolvedValue(mockApiResponse);
 
-      const result = await organizationApiClient.getOrganizationMembers(orgId);
+      const result = await organizationApiClient.getOrganizationMembers(orgId, page, limit);
 
       expect(mockApiClient.get).toHaveBeenCalledTimes(1);
-      expect(mockApiClient.get).toHaveBeenCalledWith(`organizations/${orgId}/members`);
-      expect(result).toEqual(mockResponse);
-      expect(result.data).toEqual([]);
+      // Verify the endpoint WITH query params
+      expect(mockApiClient.get).toHaveBeenCalledWith(endpointWithParams);
+      expect(result).toEqual(mockApiResponse);
+      expect(result.data?.members).toEqual([]);
+      expect(result.data?.totalCount).toEqual(1);
     });
 
     it('should return error response if organization not found (404)', async () => {
@@ -610,14 +609,14 @@ describe('OrganizationApiClient', () => {
     const statusEndpoint = `organizations/members/${membershipId}/status`; // Actual backend endpoint
 
     it('should call the correct endpoint on successful approval', async () => {
-        mockApiClient.put.mockResolvedValue({ status: 204, data: null }); // Approve might return 204 or updated member
+        vi.mocked(mockApiClient.put).mockResolvedValue({ status: 204, data: null }); 
         await organizationApiClient.approveJoinRequest(membershipId);
         expect(mockApiClient.put).toHaveBeenCalledWith(statusEndpoint, { status: 'active' }); // Assert PUT .../status with status: active
     });
 
     // --- Add Deny Test Case --- 
     it('should call the correct endpoint on successful denial', async () => {
-        mockApiClient.put.mockResolvedValue({ status: 204, data: null }); // Deny returns 204
+        vi.mocked(mockApiClient.put).mockResolvedValue({ status: 204, data: null }); 
         // Assuming a denyJoinRequest function exists or will be added
         await organizationApiClient.denyJoinRequest(membershipId); 
         expect(mockApiClient.put).toHaveBeenCalledWith(statusEndpoint, { status: 'removed' }); // Assert PUT .../status with status: removed
@@ -629,7 +628,7 @@ describe('OrganizationApiClient', () => {
         const mockErrorObject: ApiError = { message: 'Membership not found', code: '404' }; 
         // Mock resolved value with an error response, not a rejection
         const mockResponse: ApiResponse<void> = { status: 404, error: mockErrorObject }; 
-        mockApiClient.put.mockResolvedValue(mockResponse);
+        vi.mocked(mockApiClient.put).mockResolvedValue(mockResponse);
 
         // Call the function and assert the response object
         const result = await organizationApiClient.approveJoinRequest(membershipId);

@@ -71,6 +71,10 @@ export interface OrganizationState {
   orgListPage: number;
   orgListPageSize: number;
   orgListTotalCount: number;
+  // Added for member list pagination
+  memberCurrentPage: number;
+  memberPageSize: number;
+  memberTotalCount: number;
 }
 
 // Type for the details needed on the Invite Accept page
@@ -85,6 +89,12 @@ export interface PaginatedOrganizationsResponse {
     totalCount: number;
 }
 
+// Type definition for the paginated response from getOrganizationMembers
+export interface PaginatedMembersResponse {
+    members: OrganizationMemberWithProfile[];
+    totalCount: number;
+}
+
 // Uses DB-derived Invite and the defined MembershipRequest
 // This type is used by the API client for getPendingOrgActions
 export interface PendingOrgItems {
@@ -95,13 +105,13 @@ export interface PendingOrgItems {
 export interface OrganizationActions {
   fetchUserOrganizations: (options?: { page?: number, limit?: number }) => Promise<void>;
   setCurrentOrganizationId: (orgId: string | null) => void;
-  fetchOrganizationDetails: (orgId: string) => Promise<void>;
-  fetchCurrentOrganizationMembers: () => Promise<void>;
-  createOrganization: (name: string, visibility?: 'private' | 'public') => Promise<Organization | null>;
+  fetchCurrentOrganizationDetails: () => Promise<void>;
+  fetchCurrentOrganizationMembers: (options?: { page?: number; limit?: number }) => Promise<void>;
+  createOrganization: (name: string, visibility: 'public' | 'private') => Promise<boolean>;
   softDeleteOrganization: (orgId: string) => Promise<boolean>;
-  updateOrganization: (orgId: string, updates: Partial<Organization>) => Promise<boolean>;
+  updateOrganization: (orgId: string, data: Partial<{ name: string; visibility: 'public' | 'private' }>) => Promise<boolean>;
+  inviteUser: (email: string, role: 'admin' | 'member') => Promise<boolean>;
   leaveOrganization: (orgId: string) => Promise<boolean>;
-  inviteUser: (identifier: string, role: string) => Promise<Invite | null>; 
   updateMemberRole: (membershipId: string, role: string) => Promise<boolean>;
   removeMember: (membershipId: string) => Promise<boolean>;
   acceptInvite: (token: string) => Promise<boolean>;

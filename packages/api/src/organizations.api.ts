@@ -4,12 +4,12 @@ import {
   Organization, 
   OrganizationInsert, 
   OrganizationUpdate, 
-  OrganizationMemberWithProfile, 
   Invite, 
   PendingOrgItems, 
   PaginatedOrganizationsResponse,
   PendingInviteWithInviter,
-  PendingRequestWithDetails
+  PendingRequestWithDetails,
+  PaginatedMembersResponse
 } from '@paynless/types'; // <<< Import types
 
 export class OrganizationApiClient {
@@ -110,19 +110,45 @@ export class OrganizationApiClient {
   }
 
   /**
-   * Fetches the members of a specific organization, including their profiles.
+   * Fetches the members of a specific organization, including their profiles, supporting pagination.
    * Uses the main client's get method.
    * @param orgId - The ID of the organization whose members to fetch.
-   * @returns An ApiResponse containing an array of members with profiles or an error.
+   * @param page - Optional page number for pagination.
+   * @param limit - Optional page size limit for pagination.
+   * @returns An ApiResponse containing paginated member details and total count, or an error.
    */
-  async getOrganizationMembers(orgId: string): Promise<ApiResponse<OrganizationMemberWithProfile[]>> {
-    // Use the injected ApiClient's get method
-    const response = await this.client.get<OrganizationMemberWithProfile[]>(`organizations/${orgId}/members`);
-    // Ensure data is always an array on success
-    if (response.status >= 200 && response.status < 300 && !response.error) {
-        response.data = response.data ?? [];
+  async getOrganizationMembers(
+    orgId: string, 
+    page?: number, 
+    limit?: number
+  ): Promise<ApiResponse<PaginatedMembersResponse>> {
+    // Build query parameters object
+    const searchParams = new URLSearchParams();
+    if (page !== undefined) searchParams.append('page', String(page));
+    if (limit !== undefined) searchParams.append('limit', String(limit));
+
+    // Construct URL with query parameters
+    const queryString = searchParams.toString();
+    const url = `organizations/${orgId}/members${queryString ? `?${queryString}` : ''}`;
+
+    // Use the injected ApiClient's get method with the constructed URL and new type
+    const response = await this.client.get<PaginatedMembersResponse>(url); 
+    
+    // Ensure data structure is correct on success (Optional, but good practice)
+    if (response.status >= 200 && response.status < 300 && !response.error && response.data) {
+        // Ensure the nested properties exist, default to empty/zero if not
+        response.data = {
+            members: response.data.members ?? [],
+            totalCount: response.data.totalCount ?? 0,
+        };
+    } else if (response.status >= 200 && response.status < 300 && !response.error) {
+        // Handle case where response.data itself might be null/undefined on success
+        response.data = {
+            members: [],
+            totalCount: 0,
+        };
     }
-    return response;
+    return response; // Return the processed response
   }
 
   /**
