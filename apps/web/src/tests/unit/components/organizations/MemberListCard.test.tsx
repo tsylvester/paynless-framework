@@ -1,6 +1,6 @@
 import React from 'react';
 // Use custom render and re-exported testing-library utils
-import { render, screen, fireEvent, act, within, waitFor } from '@/tests/utils'; 
+import { render, screen, act, within, waitFor } from '@/tests/utils'; 
 import { vi, describe, it, expect, beforeEach, afterEach, Mock } from 'vitest';
 import userEvent from '@testing-library/user-event';
 import { MemberListCard } from '@/components/organizations/MemberListCard';
@@ -8,7 +8,7 @@ import { useOrganizationStore } from '@paynless/store';
 import { OrganizationMemberWithProfile, UserProfile, OrganizationMember } from '@paynless/types'; // Import UserProfile type
 import { useAuthStore } from '@paynless/store';
 import { useCurrentUser } from '../../../../hooks/useCurrentUser'; // <<< RE-ADD THIS IMPORT
-// import { toast } from 'sonner'; // Unused currently
+import { toast } from 'sonner'; // Import toast
 // import { User } from '@supabase/supabase-js'; // No longer needed
 
 // --- PREPARE MOCKS ---
@@ -47,81 +47,80 @@ vi.mock('../../../../hooks/useCurrentUser', () => {
   };
 });
 
+// --- Mock Pagination Component ---
+// Keep track of passed props and allow simulating callbacks
+
+// Define an interface for expected pagination props in the test
+interface MockPaginationProps {
+    currentPage: number;
+    pageSize: number;
+    totalItems: number;
+    onPageChange: (page: number) => void;
+    onPageSizeChange: (size: number) => void;
+    // Add other potential props if needed, e.g., allowedPageSizes
+}
+
+let paginationProps: Partial<MockPaginationProps> = {}; // Use partial as it might not be set initially
+let simulatePageChange: ((page: number) => void) | null = null;
+let simulatePageSizeChange: ((size: number) => void) | null = null;
+
+vi.mock('@/components/common/PaginationComponent', () => ({
+  PaginationComponent: vi.fn((props) => {
+    paginationProps = props; // Store props passed to the mock
+    // Store callbacks to allow simulation from tests
+    simulatePageChange = props.onPageChange; 
+    simulatePageSizeChange = props.onPageSizeChange;
+    // Render something identifiable for presence check
+    return <div data-testid="mock-pagination" />; 
+  }),
+}));
+
+
 // --- Mock Data & Setup ---
 const mockUpdateMemberRole = vi.fn();
 const mockRemoveMember = vi.fn();
 
-// Mocks now represent UserProfile structure
-const adminProfile: UserProfile = {
-  id: 'user-admin',
-  first_name: 'Admin', 
-  last_name: 'User',
-  role: 'admin', // Added missing fields
-  created_at: new Date().toISOString(),
-  updated_at: new Date().toISOString(),
-  // Add other fields from UserProfile if necessary (e.g., username, website, avatar_url)
+// Function to generate mock members easily
+const createMockMember = (index: number, role: 'admin' | 'member' = 'member'): OrganizationMemberWithProfile => {
+    const userId = `user-${role}-${index}`;
+    const profile: UserProfile = {
+        id: userId,
+        first_name: role === 'admin' ? 'Admin' : 'Member',
+        last_name: `User${index}`,
+        role: role === 'admin' ? 'admin' : 'user',
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        last_selected_org_id: null, // Add missing property
+    };
+    const member: OrganizationMember = {
+        id: `mem-${role}-${index}`,
+        user_id: userId,
+        organization_id: 'org-123',
+        role: role,
+        status: 'active',
+        created_at: new Date().toISOString(),
+    };
+    return { ...member, user_profiles: profile };
 };
 
-const memberProfile1: UserProfile = {
-  id: 'user-member-1',
-  first_name: 'Member',
-  last_name: 'One',
-  role: 'user', // Added missing fields
-  created_at: new Date().toISOString(),
-  updated_at: new Date().toISOString(),
-};
-
-const memberProfile2: UserProfile = {
-  id: 'user-member-2',
-  first_name: 'Member',
-  last_name: 'Two',
-  role: 'user', // Added missing fields
-  created_at: new Date().toISOString(),
-  updated_at: new Date().toISOString(),
-};
-
-// Define base member data conforming to OrganizationMember type
-const baseAdminMember: OrganizationMember = {
-  id: 'mem-admin', // Assuming 'id' IS the membership ID here based on type
-  user_id: adminProfile.id,
-  organization_id: 'org-123',
-  role: 'admin',
-  status: 'active',
-  created_at: new Date().toISOString(),
-};
-
-const baseMember1: OrganizationMember = {
-  id: 'mem-member-1',
-  user_id: memberProfile1.id,
-  organization_id: 'org-123',
-  role: 'member',
-  status: 'active',
-  created_at: new Date().toISOString(),
-};
-
-const baseMember2: OrganizationMember = {
-  id: 'mem-member-2',
-  user_id: memberProfile2.id,
-  organization_id: 'org-123',
-  role: 'member',
-  status: 'active',
-  created_at: new Date().toISOString(),
-};
-
-const mockMembers: OrganizationMemberWithProfile[] = [
-  {
-    ...baseAdminMember, // Spread base member fields
-    user_profiles: { ...adminProfile }, // Add the joined profile
-  },
-  {
-    ...baseMember1,
-    user_profiles: { ...memberProfile1 },
-  },
-  {
-    ...baseMember2,
-    user_profiles: { ...memberProfile2 },
-  },
+// Default mock members (less than typical page size)
+const defaultMockMembers: OrganizationMemberWithProfile[] = [
+  createMockMember(0, 'admin'),
+  createMockMember(1),
+  createMockMember(2),
 ];
+
+// Helper to create a larger list for pagination tests
+const createLargeMockMemberList = (count: number): OrganizationMemberWithProfile[] => {
+    const members: OrganizationMemberWithProfile[] = [createMockMember(0, 'admin')]; // Start with admin
+    for (let i = 1; i < count; i++) {
+        members.push(createMockMember(i));
+    }
+    return members;
+};
+
+// Default page size for tests
+const DEFAULT_TEST_PAGE_SIZE = 10;
 
 // +++ Mock implementations for store actions +++
 const mockFetchCurrentOrganizationMembers = vi.fn();
@@ -132,14 +131,22 @@ const mockUpdateOrganization = vi.fn();
 const mockOpenDeleteDialog = vi.fn();
 
 // Helper to set up mock return values for stores
-const setupMocks = (currentUserProfile: UserProfile | null, members: OrganizationMemberWithProfile[] = mockMembers, isLoading = false) => {
+const setupMocks = (
+    currentUserProfile: UserProfile | null, 
+    members: OrganizationMemberWithProfile[] = defaultMockMembers, 
+    isLoading = false,
+    // Add pagination state defaults
+    initialPage = 1,
+    initialPageSize = DEFAULT_TEST_PAGE_SIZE,
+    totalMembers = members.length 
+) => {
   const currentUserId = currentUserProfile?.id;
   const currentUserMembership = members.find(m => m.user_id === currentUserId);
   const currentUserRole = currentUserMembership?.role ?? null;
 
   // Use vi.mocked to get the typed mock function
   vi.mocked(useOrganizationStore).mockReturnValue({
-    // --- State ---
+    // --- State ---\
     currentOrganizationMembers: members ?? [],
     isLoading: isLoading,
     currentOrganizationId: 'org-123',
@@ -152,19 +159,23 @@ const setupMocks = (currentUserProfile: UserProfile | null, members: Organizatio
     },
     userOrganizations: [], // Add empty array if needed
     error: null, // Add error state
+    // Add member pagination state
+    memberCurrentPage: initialPage,
+    memberPageSize: initialPageSize,
+    memberTotalCount: totalMembers,
 
-    // --- Selectors ---
+    // --- Selectors ---\
     selectCurrentUserRoleInOrg: () => currentUserRole, 
 
-    // --- Actions ---
+    // --- Actions ---\
     updateMemberRole: mockUpdateMemberRole,
     removeMember: mockRemoveMember,
-    fetchCurrentOrganizationMembers: mockFetchCurrentOrganizationMembers,
+    fetchCurrentOrganizationMembers: mockFetchCurrentOrganizationMembers, // Use the mock
     leaveOrganization: mockLeaveOrganization,
     // Add other actions from baseline if potentially used
     fetchUserOrganizations: vi.fn(),
     setCurrentOrganizationId: vi.fn(),
-    fetchOrganizationDetails: vi.fn(),
+    fetchCurrentOrganizationDetails: vi.fn(),
     inviteUser: mockInviteUser,
     updateOrganization: mockUpdateOrganization,
     openDeleteDialog: mockOpenDeleteDialog,
@@ -205,10 +216,19 @@ const findMemberRow = (profile: UserProfile): HTMLElement => {
     });
 }
 
+// Get the admin profile from the default list for convenience
+const adminProfile = defaultMockMembers[0].user_profiles!;
+const memberProfile1 = defaultMockMembers[1].user_profiles!;
+const memberProfile2 = defaultMockMembers[2].user_profiles!;
+
+
 describe('MemberListCard', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    // Default setup before each test (admin user)
+    paginationProps = {}; // Reset pagination props tracker
+    simulatePageChange = null;
+    simulatePageSizeChange = null;
+    // Default setup before each test (admin user, default members)
     setupMocks(adminProfile);
   });
 
@@ -216,39 +236,49 @@ describe('MemberListCard', () => {
   });
 
   // --- Rendering and Display Tests ---
-  it('should display the list of active members with name, role, and avatar', () => {
+  // MODIFIED: Only check for members expected on the first page
+  it('should display the first page of active members with name, role, and avatar', () => {
     // Arrange
-    setupMocks(adminProfile, mockMembers);
+    const totalMembers = 15;
+    const pageSize = DEFAULT_TEST_PAGE_SIZE; // 10
+    const largeMemberList = createLargeMockMemberList(totalMembers); // Full list (15)
+    const firstPageMembers = largeMemberList.slice(0, pageSize); // Get only first page (10)
+    
+    // Setup mocks: Provide ONLY the first page members, but the correct TOTAL count
+    setupMocks(
+        adminProfile, 
+        firstPageMembers, // Pass only page 1 members
+        false,            // isLoading
+        1,                // initialPage
+        pageSize,         // initialPageSize
+        totalMembers      // TOTAL member count
+    ); 
     
     // Act
     render(<MemberListCard />);
 
-    // Assert: Verify names and presence of role indicators
-    expect(screen.getByText('Admin User')).toBeInTheDocument();
-    expect(screen.getByText('Member One')).toBeInTheDocument();
-    expect(screen.getByText('Member Two')).toBeInTheDocument();
-
-    // Find rows to scope role checks
-    const adminRow = screen.getByRole('row', { name: /Admin User/i });
-    const memberOneRow = screen.getByRole('row', { name: /Member One/i });
-
-    // Check for Admin badge text within the admin's row
-    // expect(screen.getByText('admin')).toBeInTheDocument(); // <<< Incorrect: Too broad, might find in dropdown
-    expect(within(adminRow).getByText('Admin')).toBeInTheDocument(); // <<< Correct: Check within row for badge text
+    // Assert: Verify names and presence of role indicators for PAGE 1 MEMBERS ONLY
+    // Assuming pageSize = 10, we expect AdminUser0 to MemberUser9
+    expect(screen.getByText('Admin User0')).toBeInTheDocument(); 
+    expect(screen.getByText('Member User1')).toBeInTheDocument();
+    expect(screen.getByText('Member User9')).toBeInTheDocument(); // Check last member on first page
     
-    // Check for 'member' text within the member's row
-    expect(within(memberOneRow).getByText('member', { exact: true })).toBeInTheDocument();
+    // Assert member NOT on the first page is NOT rendered initially
+    // This should now pass because Member User10 is not in firstPageMembers
+    expect(screen.queryByText('Member User10')).not.toBeInTheDocument(); 
 
-    // Check for Avatars (using fallback text)
-    expect(screen.getByText('AU')).toBeInTheDocument();
-    expect(screen.getByText('MO')).toBeInTheDocument();
-    expect(screen.getByText('MT')).toBeInTheDocument();
+    // ... (keep avatar checks if needed, adjust for dynamic names) ...
+    expect(screen.getByText('AU')).toBeInTheDocument(); // Correct initials
+    // Use getAllByText and check the count for duplicated initials
+    const memberAvatars = screen.getAllByText('MU');
+    expect(memberAvatars).toHaveLength(9); // Expect 9 members on the first page (index 1-9)
 
-    // Check presence of action buttons/menus (more detailed checks in other tests)
-    // Admin user should have 'Leave' button
+    // ... (keep checks for admin's own row actions) ...
+    const adminRow = screen.getByRole('row', { name: /Admin User0/i });
     expect(within(adminRow).getByRole('button', { name: /Leave/i })).toBeInTheDocument();
-    // Other members should have dropdown trigger (MoreHorizontal icon)
-    expect(within(memberOneRow).getByRole('button', { name: /open menu/i })).toBeInTheDocument(); 
+    // Check dropdown exists for another member on the first page
+    const memberRow = screen.getByRole('row', { name: /Member User1/i });
+    expect(within(memberRow).getByRole('button', { name: /open menu/i })).toBeInTheDocument();
   });
 
   it('should display a message when there are no members', () => {
@@ -269,51 +299,143 @@ describe('MemberListCard', () => {
   // Note: Test for loading state *with* existing members (showing table + skeleton) 
   // would require component changes to support that.
 
+  // --- Pagination Tests ---
+  describe('Pagination', () => {
+    const pageSize = DEFAULT_TEST_PAGE_SIZE; // Use constant
+
+    it('should render PaginationComponent when total members exceed page size', () => {
+      const members = createLargeMockMemberList(pageSize + 5); // e.g., 15 members
+      setupMocks(adminProfile, members);
+      render(<MemberListCard />);
+      // Check if our mock pagination component was rendered
+      expect(screen.getByTestId('mock-pagination')).toBeInTheDocument(); 
+    });
+
+    it('should NOT render PaginationComponent when total members are less than or equal to page size', () => {
+      const members = createLargeMockMemberList(pageSize); // Exactly page size
+      setupMocks(adminProfile, members);
+      render(<MemberListCard />);
+      expect(screen.queryByTestId('mock-pagination')).not.toBeInTheDocument();
+      
+      // Also test with fewer members
+      render(<MemberListCard />); // Uses defaultMockMembers (3)
+      expect(screen.queryByTestId('mock-pagination')).not.toBeInTheDocument();
+    });
+
+    it('should pass correct props to PaginationComponent', () => {
+      const totalMembers = pageSize + 5;
+      const members = createLargeMockMemberList(totalMembers);
+      setupMocks(adminProfile, members);
+      render(<MemberListCard />);
+
+      expect(screen.getByTestId('mock-pagination')).toBeInTheDocument();
+      // Check the props captured by the mock
+      expect(paginationProps).toEqual(
+        expect.objectContaining({
+          currentPage: 1, // Should initialize to 1
+          pageSize: pageSize, // Assuming default is 10
+          totalItems: totalMembers,
+          // Check that callbacks are functions
+          onPageChange: expect.any(Function), 
+          onPageSizeChange: expect.any(Function),
+        })
+      );
+    });
+
+    it('should call fetchCurrentOrganizationMembers with correct page when onPageChange is triggered', async () => {
+      const totalMembers = pageSize + 5;
+      const members = createLargeMockMemberList(totalMembers);
+      setupMocks(adminProfile, members, false, 1, pageSize, totalMembers); 
+      render(<MemberListCard />);
+      
+      expect(screen.getByTestId('mock-pagination')).toBeInTheDocument();
+      vi.mocked(mockFetchCurrentOrganizationMembers).mockClear(); 
+      
+      // Simulate page change via the stored callback
+      expect(simulatePageChange).toBeInstanceOf(Function);
+      await act(async () => {
+        simulatePageChange!(2); // Simulate changing to page 2
+      });
+
+      // Expect fetch action to be called again (the component should handle page number internally)
+      expect(mockFetchCurrentOrganizationMembers).toHaveBeenCalledTimes(1); 
+      // Assert it was called with the new page and existing page size
+      expect(mockFetchCurrentOrganizationMembers).toHaveBeenCalledWith({ page: 2, limit: pageSize });
+    });
+
+    it('should call fetchCurrentOrganizationMembers with new size and page 1 when onPageSizeChange is triggered', async () => {
+      const totalMembers = pageSize + 5;
+      const members = createLargeMockMemberList(totalMembers);
+      setupMocks(adminProfile, members, false, 1, pageSize, totalMembers);
+      render(<MemberListCard />);
+       
+      expect(screen.getByTestId('mock-pagination')).toBeInTheDocument();
+      vi.mocked(mockFetchCurrentOrganizationMembers).mockClear(); 
+      
+      // Simulate page size change
+      expect(simulatePageSizeChange).toBeInstanceOf(Function);
+      await act(async () => {
+        simulatePageSizeChange!(25); // Simulate changing page size
+      });
+
+      // Expect fetch action to be called again
+      expect(mockFetchCurrentOrganizationMembers).toHaveBeenCalledTimes(1); 
+      // Assert it was called with page 1 and the new page size
+      expect(mockFetchCurrentOrganizationMembers).toHaveBeenCalledWith({ page: 1, limit: 25 });
+    });
+  });
+
   // --- Admin Action Tests ---
   describe('Admin Actions', () => {
     const user = userEvent.setup();
     
     beforeEach(() => {
-      setupMocks(adminProfile); // Current user is Admin
+      // Use default members list (small) for these tests unless pagination interaction is needed
+      setupMocks(adminProfile); 
     });
 
-    it('should allow admin to change another member\'s role via dropdown', async () => {
+    it(`should allow admin to change another member's role via dropdown`, async () => {
       render(<MemberListCard />);
-      const targetMemberRow = findMemberRow(memberProfile1);
+      // Use memberProfile1 from the default small list
+      const targetMemberRow = findMemberRow(memberProfile1); 
       const dropdownTrigger = within(targetMemberRow).getByRole('button', { name: 'Open menu' });
       
       // Click the trigger
       await user.click(dropdownTrigger); 
       
-      // Wait for the trigger to enter the 'open' state
+      // Wait for the trigger to enter the 'open' state (optional but good practice)
       await waitFor(() => {
         expect(dropdownTrigger).toHaveAttribute('data-state', 'open');
       });
       
-      // Wait for the menu item to appear and then find it
-      const makeAdminItem = await waitFor(() => within(document.body).findByRole('menuitem', { name: 'Make Admin' }));
+      // Wait for the dropdown content to appear in the body, then find the item within it
+      const dropdownContent = await waitFor(() => screen.getByRole('menu')); // Wait for the menu container
+      const makeAdminItem = within(dropdownContent).getByRole('menuitem', { name: 'Make Admin' }); // Find item inside
       expect(makeAdminItem).toBeInTheDocument(); 
       
       // Click the menu item
       await user.click(makeAdminItem);
-      expect(mockUpdateMemberRole).toHaveBeenCalledWith('mem-member-1', 'admin');
+      // Expect call with the correct membership ID from the default list
+      expect(mockUpdateMemberRole).toHaveBeenCalledWith(defaultMockMembers[1].id, 'admin'); 
     });
 
     it('should call store removeMember when admin removes another member', async () => {
       render(<MemberListCard />);
-      const targetMemberRow = findMemberRow(memberProfile2);
+      // Use memberProfile2 from the default small list
+      const targetMemberRow = findMemberRow(memberProfile2); 
       const dropdownTrigger = within(targetMemberRow).getByRole('button', { name: 'Open menu' });
       
       // Click the trigger
       await user.click(dropdownTrigger); 
       
-      // Wait for the trigger to enter the 'open' state
+      // Wait for the trigger to enter the 'open' state (optional)
       await waitFor(() => {
         expect(dropdownTrigger).toHaveAttribute('data-state', 'open');
       });
       
-      // Wait for the menu item to appear and then find it
-      const removeItem = await waitFor(() => within(document.body).findByRole('menuitem', { name: 'Remove Member' }));
+      // Wait for the dropdown content to appear, then find the item within it
+      const dropdownContent = await waitFor(() => screen.getByRole('menu')); // Wait for menu container
+      const removeItem = within(dropdownContent).getByRole('menuitem', { name: 'Remove Member' }); // Find item inside
       expect(removeItem).toBeInTheDocument(); 
       
       // Click the menu item
@@ -324,58 +446,22 @@ describe('MemberListCard', () => {
       const confirmButton = await within(dialog).findByRole('button', { name: /Continue|Confirm|Remove/i });
       await user.click(confirmButton);
       
-      expect(mockRemoveMember).toHaveBeenCalledWith('mem-member-2');
+      // Expect call with the correct membership ID from the default list
+      expect(mockRemoveMember).toHaveBeenCalledWith(defaultMockMembers[2].id); 
     });
 
-    it('should NOT show dropdown menu for the admin\'s own row', () => {
+    it(`should NOT show dropdown menu for the admin's own row`, () => {
       render(<MemberListCard />);
       const adminRow = findMemberRow(adminProfile);
       expect(within(adminRow).queryByRole('button', { name: 'Open menu' })).not.toBeInTheDocument();
       expect(within(adminRow).getByRole('button', { name: 'Leave' })).toBeInTheDocument();
     });
 
-    // Tests for API error handling (last admin, generic)
-    // These might also start passing if the waitFor helps find the elements
-    it('should handle \'last admin\' error when trying to change role of last admin', async () => {
-      // TODO: Setup mocks where updateMemberRole throws 'last admin' error
-      setupMocks(adminProfile); 
-      render(<MemberListCard />);
-      // If findByRole works now, we could try the interaction:
-      // const targetMemberRow = findMemberRow(adminProfile); // Should be only one admin
-      // const dropdownTrigger = within(targetMemberRow).getByRole('button', { name: 'Open menu' }); 
-      // fireEvent.click(dropdownTrigger);
-      // const makeMemberItem = await waitFor(() => within(document.body).findByRole('menuitem', { name: 'Make Member' }));
-      // await act(async () => { fireEvent.click(makeMemberItem); });
-      // expect(toast.error).toHaveBeenCalled(); // <<< ASSERT feedback (when implemented)
-      console.log('SKIPPING: Cannot test changing last admin role with current UI/placeholder logic.');
-    });
-    
-    it('should handle \'last admin\' error when trying to remove the last admin', async () => {
-      // TODO: Setup mocks where removeMember throws 'last admin' error
-      setupMocks(adminProfile); 
-      render(<MemberListCard />);
-      // If findByRole works now, we could try the interaction:
-      // const targetMemberRow = findMemberRow(memberProfile1); 
-      // const dropdownTrigger = within(targetMemberRow).getByRole('button', { name: 'Open menu' });
-      // fireEvent.click(dropdownTrigger);
-      // const removeItem = await waitFor(() => within(document.body).findByRole('menuitem', { name: 'Remove Member' }));
-      // await act(async () => { fireEvent.click(removeItem); });
-      // expect(toast.error).toHaveBeenCalled(); // <<< ASSERT feedback (when implemented)
-       console.log('SKIPPING: Cannot test removing last admin with current UI/placeholder logic.');
-    });
-    
+    // Tests for API error handling (last admin, generic) are deferred until implementation
     it('should handle generic API errors gracefully for admin actions (e.g., show toast)', async () => {
       // TODO: Setup mocks where updateMemberRole/removeMember throws generic error
-      // mockUpdateMemberRole.mockRejectedValue(new Error('Network Error'));
       setupMocks(adminProfile);
       render(<MemberListCard />);
-      // If findByRole works now, we could try the interaction:
-      // const targetMemberRow = findMemberRow(memberProfile1); 
-      // const dropdownTrigger = within(targetMemberRow).getByRole('button', { name: 'Open menu' });
-      // fireEvent.click(dropdownTrigger);
-      // const makeAdminItem = await waitFor(() => within(document.body).findByRole('menuitem', { name: 'Make Admin' }));
-      // await act(async () => { fireEvent.click(makeAdminItem); });
-      // expect(toast.error).toHaveBeenCalled(); // <<< ASSERT feedback (when implemented)
       console.log('SKIPPING: Cannot test generic admin action error handling with current UI/placeholder logic.');
     });
   });
@@ -385,7 +471,7 @@ describe('MemberListCard', () => {
     const user = userEvent.setup();
     
     beforeEach(() => {
-      setupMocks(memberProfile1); // Current user is Member One
+      setupMocks(memberProfile1); // Current user is Member One (from default list)
     });
 
     it('should NOT show dropdown menu controls for non-admins viewing other members', () => {
@@ -415,32 +501,35 @@ describe('MemberListCard', () => {
       const confirmButton = await within(dialog).findByRole('button', { name: /Continue|Confirm|Leave/i });
       await user.click(confirmButton);
       
-      expect(mockRemoveMember).toHaveBeenCalledWith('mem-member-1');
+      // Expect call with correct membership ID
+      expect(mockRemoveMember).toHaveBeenCalledWith(defaultMockMembers[1].id); 
     });
 
     // Tests for API error handling (last admin, generic) are deferred until implementation
-    it('should handle \'last admin\' error when the sole admin tries to leave', async () => {
+    it("should handle 'last admin' error when the sole admin tries to leave", async () => {
        // TODO: Setup mocks where removeMember throws 'last admin' error
-       // For now, just check console log
-      const soleAdminProfile = { ...adminProfile, id: 'user-sole-admin' };
-      const soleAdminMember = { ...baseAdminMember, id: 'mem-sole-admin', user_id: soleAdminProfile.id, user_profiles: soleAdminProfile };
-      setupMocks(soleAdminProfile, [soleAdminMember]); // Only one member, who is admin
-      
-      render(<MemberListCard />);
-      const selfRow = findMemberRow(soleAdminProfile);
-      const leaveButtonTrigger = within(selfRow).getByRole('button', { name: 'Leave' });
-      
-      // Click trigger
-      await user.click(leaveButtonTrigger);
-      
-      // Wait for dialog & click confirm
-      const dialog = await screen.findByRole('alertdialog');
-      const confirmButton = await within(dialog).findByRole('button', { name: /Continue|Confirm|Leave/i });
-      await user.click(confirmButton);
-      
-      // TODO: Mock removeMember to throw specific error, assert toast/feedback
-      // await act(async () => { fireEvent.click(leaveButton); });
-      expect(mockRemoveMember).toHaveBeenCalledWith('mem-sole-admin');
+       // Mock the store action to simulate the API returning the 'last admin' error
+       mockRemoveMember.mockResolvedValue(false);
+
+       const soleAdminMember = createMockMember(0, 'admin');
+       const soleAdminProfile = soleAdminMember.user_profiles!;
+       setupMocks(soleAdminProfile, [soleAdminMember]); // Only one member, who is admin
+       const user = userEvent.setup(); // Setup userEvent
+       
+       render(<MemberListCard />);
+       const selfRow = findMemberRow(soleAdminProfile);
+       const leaveButtonTrigger = within(selfRow).getByRole('button', { name: 'Leave' });
+       await user.click(leaveButtonTrigger);
+
+       // Wait for dialog & click confirm
+       const dialog = await screen.findByRole('alertdialog');
+       const confirmButton = await within(dialog).findByRole('button', { name: /Continue|Confirm|Leave/i });
+       await user.click(confirmButton);
+       
+       // TODO: Mock removeMember to throw specific error, assert toast/feedback
+       expect(mockRemoveMember).toHaveBeenCalledWith(soleAdminMember.id);
+       // Assert that an error toast was shown
+       expect(vi.mocked(toast.error)).toHaveBeenCalledWith(expect.stringContaining('last admin'));
     });
     
     it('should handle generic API errors gracefully for leave action (e.g., show toast)', async () => {
@@ -461,7 +550,7 @@ describe('MemberListCard', () => {
       
       // TODO: Mock removeMember to throw generic error, assert toast/feedback
       // await act(async () => { fireEvent.click(leaveButton); });
-      expect(mockRemoveMember).toHaveBeenCalledWith('mem-member-1');
+      expect(mockRemoveMember).toHaveBeenCalledWith(defaultMockMembers[1].id);
     });
   });
 });

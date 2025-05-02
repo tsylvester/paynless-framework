@@ -59,24 +59,30 @@ The application exposes the following primary API endpoints through Supabase Edg
 ### Internal / Triggers
 - `/on-user-created`: Function triggered by Supabase Auth on new user creation (handles profile creation and **optional email marketing sync**).
 
-### [NEW] Notifications & Multi-Tenancy (Organizations)
-- `/notifications`: (GET) Fetches notifications for the current user.
-- `/notifications/:notificationId`: (PATCH) Marks a specific notification as read.
-- `/notifications/mark-all-read`: (POST) Marks all user's notifications as read.
-- `/organizations`: (POST) Creates a new organization.
-- `/organizations`: (GET) Lists organizations the current user is a member of.
-- `/organizations/:orgId`: (GET) Fetches details for a specific organization.
-- `/organizations/:orgId`: (PATCH) Updates organization details (name, visibility) (Admin only).
-- `/organizations/:orgId`: (DELETE) Soft-deletes an organization (Admin only).
-- `/organizations/:orgId/members`: (GET) Lists members of a specific organization.
-- `/organizations/:orgId/invite`: (POST) Invites a user to an organization (Admin only, may involve Edge Function).
-- `/invites/accept/:token`: (POST/GET) Accepts an organization invitation (may involve Edge Function).
-- `/organizations/:orgId/join`: (POST) Requests to join an organization.
-- `/memberships/:membershipId/approve`: (POST) Approves a pending join request (Admin only).
-- `/memberships/:membershipId/role`: (PATCH) Updates a member's role (Admin only).
-- `/memberships/:membershipId`: (DELETE) Removes a member from an organization (Admin or self).
+### Notifications
+- `GET /notifications`: Fetches notifications for the current user.
+- `PUT /notifications/:notificationId`: Marks a specific notification as read.
+- `POST /notifications/mark-all-read`: Marks all user's notifications as read.
 
-*(Note: This list is based on the `supabase/functions/` directory structure and inferred functionality. Specific HTTP methods and request/response details require inspecting function code or the `api` package.)*
+### Multi-Tenancy (Organizations)
+- `POST /organizations`: Creates a new organization.
+- `GET /organizations`: Lists organizations the current user is a member of (supports pagination).
+- `GET /organizations/:orgId`: Fetches details for a specific organization.
+- `PUT /organizations/:orgId`: Updates organization details (name, visibility) (Admin only).
+- `DELETE /organizations/:orgId`: Soft-deletes an organization (Admin only).
+- `GET /organizations/:orgId/members`: Lists members of a specific organization (supports pagination).
+- `PUT /organizations/:orgId/members/:membershipId/role`: Updates a member's role (Admin only).
+- `DELETE /organizations/:orgId/members/:memberId`: Removes a member from an organization (Admin or self).
+- `POST /organizations/:orgId/invites`: Invites a user (by email or user_id) to an organization (Admin only).
+- `GET /organizations/:orgId/pending`: Lists pending invites and join requests for an organization (Admin only).
+- `DELETE /organizations/:orgId/invites/:inviteId`: Cancels a pending invite (Admin only).
+- `POST /organizations/:orgId/requests`: Creates a request to join a public organization.
+- `PUT /organizations/members/:membershipId/status`: Approves or denies a pending join request (Admin only).
+- `GET /organizations/invites/:token/details`: Fetches details for a specific invite token (Invited user only).
+- `POST /organizations/invites/:token/accept`: Accepts an organization invitation (Invited user only).
+- `POST /organizations/invites/:token/decline`: Declines an organization invitation (Invited user only).
+
+*(Note: This list is based on the `supabase/functions/` directory structure and verified function handlers. Specific request/response details require inspecting function code or the `api` package.)*
 
 ## Database Schema (Simplified)
 
@@ -172,41 +178,65 @@ The core database tables defined in `supabase/migrations/` include:
 
 ### [NEW] Notifications & Multi-Tenancy Schema
 
+- **`public.notifications`** (Stores in-app notifications for users)
+  - `id` (uuid, PK, default `gen_random_uuid()`)
+  - `user_id` (uuid, NOT NULL, FK references `auth.users(id) ON DELETE CASCADE`)
+  - `type` (text, NOT NULL) - *e.g., 'organization_invite', 'org_join_request', 'org_role_changed'*
+  - `data` (jsonb, nullable) - *Stores context like `subject`, `message`, `target_path`, `org_id`, `inviter_name` etc.*
+  - `read` (boolean, NOT NULL, default `false`)
+  - `created_at` (timestamptz, NOT NULL, default `now()`)
+  - *Indexes:* (`user_id`, `created_at` DESC), (`user_id`, `read`)
+
 - **`public.organizations`** (Represents a team, workspace, or organization)
   - `id` (uuid, PK, default `gen_random_uuid()`)
   - `name` (text, NOT NULL)
-  - `visibility` (text, NOT NULL, CHECK (`visibility` IN ('private', 'public')), default `'private'`) - *Controls discoverability. Chosen `TEXT CHECK` for future extensibility (e.g., 'unlisted').*
+  - `visibility` (text, NOT NULL, CHECK (`visibility` IN ('private', 'public')), default `'private'`)
   - `deleted_at` (timestamp with time zone, default `NULL`) - *For soft deletion*
-  - `created_at`, `updated_at` (timestamptz)
+  - `created_at` (timestamp with time zone, default `now()` NOT NULL)
+  - `updated_at` (timestamp with time zone, NOT NULL, default `now()`) - *Added*
 
 - **`public.organization_members`** (Junction table linking users to organizations)
   - `id` (uuid, PK, default `gen_random_uuid()`)
   - `user_id` (uuid, NOT NULL, FK references `auth.users(id) ON DELETE CASCADE`)
   - `organization_id` (uuid, NOT NULL, FK references `organizations(id) ON DELETE CASCADE`)
-  - `role` (text, NOT NULL, CHECK (`role` IN ('admin', 'member'))) - *Initial roles, extensible later.*
+  - `role` (text, NOT NULL, CHECK (`role` IN ('admin', 'member')))
   - `status` (text, NOT NULL, CHECK (`status` IN ('pending', 'active', 'removed')))
-  - `created_at`, `updated_at` (timestamptz)
-  - *Index:* (`user_id`, `organization_id`) UNIQUE
+  - `created_at` (timestamp with time zone, default `now()` NOT NULL)
+  - `updated_at` (timestamp with time zone, NOT NULL, default `now()`) - *Added*
+  - *Indexes:* (`user_id`), (`organization_id`), (`user_id`, `organization_id`) UNIQUE
 
-- **`public.notifications`** (Stores in-app notifications for users)
-  - `id` (uuid, PK, default `gen_random_uuid()`)
-  - `user_id` (uuid, NOT NULL, FK references `auth.users(id) ON DELETE CASCADE`)
-  - `type` (text, NOT NULL) - *e.g., 'join_request', 'invite_sent', 'role_changed'*
-  - `data` (jsonb, nullable) - *Stores context like `target_path`, `org_id`, `requesting_user_id`, `membership_id` for linking and display.*
-  - `read` (boolean, NOT NULL, default `false`)
-  - `created_at` (timestamptz)
-  - *Index:* (`user_id`, `read`, `created_at`)
+- **`public.invites`** (Stores invitations for users to join organizations)
+  - `id` (uuid PK DEFAULT `gen_random_uuid()`)
+  - `invite_token` (TEXT UNIQUE NOT NULL DEFAULT `extensions.uuid_generate_v4()`)
+  - `organization_id` (UUID NOT NULL REFERENCES public.organizations(id) ON DELETE CASCADE)
+  - `invited_email` (TEXT NOT NULL)
+  - `invited_user_id` (UUID NULLABLE REFERENCES auth.users(id) ON DELETE SET NULL)
+  - `role_to_assign` (TEXT NOT NULL CHECK (`role_to_assign` IN ('admin', 'member')))
+  - `invited_by_user_id` (UUID NOT NULL REFERENCES public.users(id) ON DELETE SET NULL)
+  - `status` (TEXT NOT NULL CHECK (`status` IN ('pending', 'accepted', 'declined', 'expired')) DEFAULT `'pending'`)
+  - `created_at` (TIMESTAMPTZ DEFAULT `now()` NOT NULL)
+  - `expires_at` (TIMESTAMPTZ NULL)
+  - *Indexes:* (`invite_token`), (`organization_id`), (`invited_email`), (`invited_user_id`), (`status`), (`organization_id`, `invited_email` where `status`='pending'), (`organization_id`, `invited_user_id` where `status`='pending')
 
 ### [NEW] Backend Logic (Notifications & Tenancy)
 
 - **Row-Level Security (RLS):**
-  - `organizations`: Policies enforce that users can only see/interact with non-deleted orgs they are active members of. Visibility checks might apply. Admins have broader permissions within their org.
-  - `organization_members`: Policies enforce access based on org membership and role. Admins manage memberships within their org.
-  - `notifications`: Policies ensure users only access their own notifications.
-  - *Existing Tables*: RLS on tables like `chats`, `chat_messages`, etc., will be updated to check for `organization_id` based on the user's active membership in a non-deleted organization.
+  - `notifications`: Users can only access their own notifications.
+  - `organizations`: Users can only SELECT/UPDATE/DELETE non-deleted orgs they are active members of (role-based permissions for UPDATE/DELETE). Authenticated users can INSERT.
+  - `organization_members`: Users can SELECT memberships for orgs they are members of. Admins can manage memberships within their org (INSERT/UPDATE/DELETE, respecting last admin check). Users can DELETE their own membership (leave).
+  - `invites`: Admins can manage invites (SELECT/INSERT/UPDATE/DELETE) for their org. Invited users (matched by ID or email) can SELECT/UPDATE (status only) their own pending invites.
+  - *Existing Tables*: RLS on tables like `chats`, `chat_messages`, etc., **needs review** to ensure they correctly scope data based on the user's `currentOrganizationId` or active organization memberships, possibly via helper functions or policy adjustments.
 - **Triggers/Functions:**
-  - **Notification Triggers:** Database triggers (e.g., `notify_org_admins_on_join_request` on `AFTER INSERT ON organization_members`) will automatically create entries in the `notifications` table for relevant users (e.g., org admins) when specific events occur (join request, role change, etc.). These triggers populate the `notifications.data` field with necessary context.
-  - **Last Admin Check:** A `BEFORE UPDATE OR DELETE` trigger or function on `organization_members` prevents the last active admin of a non-deleted organization from being removed or having their role changed to non-admin.
+  - **Notification Triggers:** Database triggers (`handle_new_invite_notification`, `handle_new_join_request`, `handle_member_role_change`, `handle_member_removed`) create entries in `notifications` upon specific events in `invites` or `organization_members`.
+  - **Invite Management Triggers:**
+    - `restrict_invite_update_fields`: Prevents non-admins from changing fields other than `status` on invites.
+    - `link_pending_invites_on_signup`: Updates `invites.invited_user_id` when a user signs up with a matching email.
+  - **Membership Management:**
+    - **Last Admin Check:** A trigger prevents the last active admin of a non-deleted organization from being removed or demoted.
+  - **Helper Functions:**
+    - `is_org_member(org_id, user_id, status, role)`: Checks membership status/role in an org (used by RLS).
+    - `is_org_admin(org_id)`: Checks if current user is admin of org (used by RLS).
+    - `check_existing_member_by_email(org_id, email)`: Checks if email belongs to existing member/pending request (used by backend).
 
 ## Project Structure (Monorepo)
 
@@ -218,12 +248,50 @@ The project is organized as a monorepo using pnpm workspaces:
 │   ├── web/                # React Web Application (Vite + React Router)
 │   │   └── src/
 │   │       ├── assets/         # Static assets (images, fonts, etc.)
-│   │       ├── components/     # UI Components specific to web app (e.g., ai/, core/, layout/)
+│   │       ├── components/     # UI Components specific to web app
+│   │       │   ├── ai/
+│   │       │   ├── auth/
+│   │       │   ├── billing/
+│   │       │   ├── common/
+│   │       │   ├── core/
+│   │       │   ├── integrations/
+│   │       │   ├── layout/       # Includes header, sidebar
+│   │       │   ├── marketing/
+│   │       │   ├── profile/
+│   │       │   ├── routes/
+│   │       │   ├── subscription/
+│   │       │   ├── organizations/ # << NEW
+│   │       │   │   ├── AdminBadge.tsx
+│   │       │   │   ├── CreateOrganizationForm.tsx
+│   │       │   │   ├── CreateOrganizationModal.tsx
+│   │       │   │   ├── DeleteOrganizationDialog.tsx
+│   │       │   │   ├── InviteMemberCard.tsx
+│   │       │   │   ├── MemberListCard.tsx
+│   │       │   │   ├── OrganizationDetailsCard.tsx
+│   │       │   │   ├── OrganizationListCard.tsx
+│   │       │   │   ├── OrganizationSettingsCard.tsx
+│   │       │   │   ├── OrganizationSwitcher.tsx
+│   │       │   │   └── PendingActionsCard.tsx
+│   │       │   ├── ui/           # Re-exported shadcn/ui components
+│   │       │   └── Notifications.tsx # << CORRECTED: Top-level component for notifications
+│   │       │   └── NotificationCard.tsx # << NEW: Component for individual notification display
 │   │       ├── config/         # App-specific config (e.g., routes)
 │   │       ├── context/        # React context providers
 │   │       ├── hooks/          # Custom React hooks
 │   │       ├── lib/            # Utility functions (e.g., cn)
 │   │       ├── pages/          # Page components (routed via React Router)
+│   │       │   ├── AcceptInvitePage.tsx
+│   │       │   ├── AiChat.tsx
+│   │       │   ├── Dashboard.tsx
+│   │       │   ├── Home.tsx
+│   │       │   ├── Login.tsx
+│   │       │   ├── Notifications.tsx
+│   │       │   ├── OrganizationFocusedViewPage.tsx
+│   │       │   ├── OrganizationHubPage.tsx
+│   │       │   ├── Profile.tsx
+│   │       │   ├── Register.tsx
+│   │       │   ├── Subscription.tsx
+│   │       │   └── SubscriptionSuccess.tsx
 │   │       ├── routes/         # Route definitions and protected routes
 │   │       ├── tests/          # Web App Tests (Vitest)
 │   │       │   ├── unit/         # Unit tests (*.unit.test.tsx)
@@ -246,7 +314,9 @@ The project is organized as a monorepo using pnpm workspaces:
 │   │   └── src/
 │   │       ├── apiClient.ts      # Base API client (fetch wrapper, singleton)
 │   │       ├── stripe.api.ts     # Stripe/Subscription specific client methods
-│   │       └── ai.api.ts         # AI Chat specific client methods
+│   │       ├── ai.api.ts         # AI Chat specific client methods
+│   │       ├── notifications.api.ts # << NEW - Notification fetching/updates/realtime
+│   │       └── organizations.api.ts # << NEW - Organization & Member management methods
 │   ├── analytics/   # Frontend analytics client logic (PostHog, Null adapter)
 │   │   └── src/
 │   │       ├── index.ts          # Main service export & factory
@@ -257,8 +327,8 @@ The project is organized as a monorepo using pnpm workspaces:
 │   │       ├── authStore.ts        # Auth state & actions
 │   │       ├── subscriptionStore.ts # Subscription state & actions
 │   │       └── aiStore.ts          # AI Chat state & actions
-│   │       ├── notificationStore.ts # [NEW] In-app notification state & actions
-│   │       └── organizationStore.ts # [NEW] Organization/Multi-tenancy state & actions
+│   │       ├── notificationStore.ts # << NEW - In-app notification state & actions
+│   │       └── organizationStore.ts # << NEW - Organization/Multi-tenancy state & actions
 │   ├── types/              # Shared TypeScript types and interfaces
 │   │   └── src/
 │   │       ├── api.types.ts
@@ -312,6 +382,8 @@ The project is organized as a monorepo using pnpm workspaces:
 │   │   ├── sync-ai-models/   # Sync AI models to DB (Placeholder)
 │   │   ├── sync-stripe-plans/ # Sync Stripe plans to DB
 │   │   ├── system-prompts/   # Fetch system prompts
+│   │   ├── notifications/    # << NEW - Notification backend logic
+│   │   ├── organizations/    # << NEW - Organization backend logic
 │   │   ├── tools/            # Internal tooling scripts (e.g., env sync)
 │   │   ├── deno.jsonc
 │   │   ├── deno.lock
@@ -362,7 +434,7 @@ supabase/functions/
 ├── session/             # Handles session validation/information (needs verification)
 ├── stripe-webhook/      # Handles incoming Stripe events
 ├── sync-ai-models/      # [Admin/Internal] Syncs AI models from providers to DB (Placeholder/Inactive?)
-├── sync-stripe-plans/   # [Admin/Internal] Syncs Stripe Products/Prices to DB
+├── sync-stripe-plans/   # [Admin/Internal] Syncs Stripe plans to DB
 └── system-prompts/      # Fetches active system prompts
 ```
 
@@ -582,6 +654,54 @@ Contains centralized type definitions used across the monorepo. Exports all type
 - **`theme.types.ts`**: Types related to theming.
 - **`route.types.ts`**: Types related to application routing.
 - **`vite-env.d.ts`**: Vite environment types.
+
+### 5. `packages/platform` (Platform Abstraction)
+
+Provides a service to abstract platform-specific functionalities (like filesystem access) for use in shared UI code.
+
+- **`getPlatformCapabilities(): PlatformCapabilities`**: Detects the current platform (web, tauri, etc.) and returns an object describing available capabilities. Result is memoized.
+  - Consumers check `capabilities.fileSystem.isAvailable` before attempting to use filesystem methods.
+- **Providers (Internal):**
+  - `webPlatformCapabilities.ts`: Implements capabilities available in a standard web browser (currently FS is `isAvailable: false`).
+  - `tauriPlatformCapabilities.ts`: Implements capabilities available in the Tauri desktop environment (currently FS is `isAvailable: false`, planned to call Rust backend).
+- **`resetMemoizedCapabilities(): void`**: Clears the cached capabilities result (useful for testing).
+
+### 6. `supabase/functions/_shared/` (Backend Shared Utilities)
+
+Contains shared Deno code used by multiple Edge Functions (CORS handling, Supabase client creation, auth helpers, Stripe client initialization, **email marketing service**). Refer to the files within this directory for specific utilities.
+
+## Core Packages Breakdown
+
+### `@paynless/api`
+- **Purpose:** Provides typed methods for interacting with the backend Supabase Edge Functions. Implemented as a **Singleton** initialized once per app.
+- **Key Classes/Methods:**
+  - `ApiClient`: Base class handling fetch, auth headers, error handling, response parsing.
+  - `StripeApiClient`: Methods like `getCurrentSubscription`, `createCheckoutSession`, `createBillingPortalSession`, `getPlans`.
+  - `AiApiClient`: Methods like `sendMessage`, `getChatHistory`, `getChatDetails`, `getAiProviders`, `getSystemPrompts`.
+  - `NotificationApiClient`: Methods like `fetchNotifications`, `markNotificationRead`, `markAllNotificationsAsRead`, `subscribeToNotifications`, `unsubscribeFromNotifications`.
+  - `OrganizationApiClient`: Methods like `createOrganization`, `updateOrganization`, `listUserOrganizations`, `getOrganizationDetails`, `getOrganizationMembers`, `inviteUserByEmail`, `acceptOrganizationInvite`, `declineOrganizationInvite`, `requestToJoinOrganization`, `approveJoinRequest`, `updateMemberRole`, `removeMember`, `leaveOrganization`, `deleteOrganization`, `cancelInvite`, `denyJoinRequest`, `getPendingOrgActions`, `getInviteDetails`.
+
+### `@paynless/store`
+- **Purpose:** Manages global application state using Zustand.
+- **Key Stores:**
+  - `useAuthStore`: Handles user authentication state, profile data, login/register/logout actions, profile updates.
+  - `useSubscriptionStore`: Manages subscription status, available plans, and actions like initiating checkout or portal sessions.
+  - `useAiStore`: Manages AI chat state including providers, prompts, conversation history, current messages, and sending messages.
+  - `useNotificationStore`: Manages in-app notifications, unread count, fetching/marking read, and handling realtime updates via Supabase channels.
+  - `useOrganizationStore`: Manages multi-tenancy state including user's organizations list, current organization context (ID, details, members, pending actions), pagination, invite details, and actions for all organization/member/invite/request operations. Also manages related UI state (modals).
+
+### `@paynless/types`
+- **Purpose:** Centralizes TypeScript type definitions (interfaces, types) used across the monorepo.
+  - **`api.types.ts`**: `ApiResponse`, `ApiErrorType`, `FetchOptions`, `AuthRequiredError`, etc.
+  - **`auth.types.ts`**: `User`, `Session`, `UserProfile`, `UserProfileUpdate`, `AuthStore`, `AuthResponse`, etc.
+  - **`subscription.types.ts`**: `SubscriptionPlan`, `UserSubscription`, `SubscriptionStore`, `SubscriptionUsageMetrics`, `CheckoutSessionResponse`, `PortalSessionResponse`, `SubscriptionPlansResponse`, etc.
+  - **`ai.types.ts`**: `AiProvider`, `SystemPrompt`, `Chat`, `ChatMessage`, `ChatApiRequest`, `AiState`, `AiStore`, etc.
+  - **`analytics.types.ts`**: `AnalyticsClient`, `AnalyticsEvent`, `AnalyticsUserTraits`.
+  - **`platform.types.ts`**: `PlatformCapabilities`, `FileSystemCapabilities`.
+  - **`email.types.ts`**: `SubscriberInfo`, `EmailMarketingService`. **[NEW]**
+  - **`theme.types.ts`**: Types related to theming.
+  - **`route.types.ts`**: Types related to application routing.
+  - **`vite-env.d.ts`**: Vite environment types.
 
 ### 5. `packages/platform` (Platform Abstraction)
 

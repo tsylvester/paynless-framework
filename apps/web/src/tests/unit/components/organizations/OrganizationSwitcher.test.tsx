@@ -145,10 +145,11 @@ describe('OrganizationSwitcher Component', () => {
     fireEvent.click(org2Button);
 
     expect(mockSetCurrentOrganizationId).toHaveBeenCalledWith(org2.id);
-    expect(mockNavigate).toHaveBeenCalledWith(`/organizations/${org2.id}`);
+    // Navigation is no longer expected here
+    expect(mockNavigate).not.toHaveBeenCalled(); 
   });
 
-  it('does NOT call setCurrentOrganizationId or navigate when the current org is clicked', () => {
+  it('calls setCurrentOrganizationId(null) and navigates to /organizations when the current org is clicked', () => {
     setupStore({ currentOrganizationId: org1.id }); 
     renderWithRouter(<OrganizationSwitcher />);
     
@@ -156,8 +157,10 @@ describe('OrganizationSwitcher Component', () => {
     // This button is the one inside the dropdown list, not the trigger
     fireEvent.click(org1Button);
 
-    expect(mockSetCurrentOrganizationId).not.toHaveBeenCalled();
-    expect(mockNavigate).not.toHaveBeenCalled();
+    // Now expect it to be called with null
+    expect(mockSetCurrentOrganizationId).toHaveBeenCalledWith(null);
+    // Navigation is no longer expected here
+    expect(mockNavigate).not.toHaveBeenCalled(); 
   });
 
   it('renders the "Manage Organizations" link correctly', () => {
@@ -167,11 +170,22 @@ describe('OrganizationSwitcher Component', () => {
     expect(manageLink).toHaveAttribute('href', '/organizations');
   });
 
-  it('renders the "Create Organization" link correctly', () => {
+  it('renders the "Create Organization" button correctly and handles click', () => {
+    // Get the mocked function from the store setup
+    const mockOpenModal = vi.fn(); 
+    setupStore({ openCreateModal: mockOpenModal }); 
     renderWithRouter(<OrganizationSwitcher />);
-    const createLink = screen.getByRole('link', { name: /Create Organization/i });
-    expect(createLink).toBeInTheDocument();
-    expect(createLink).toHaveAttribute('href', '/organizations/new');
+    
+    // Find by role="button"
+    const createButton = screen.getByRole('button', { name: /Create Organization/i }); 
+    expect(createButton).toBeInTheDocument();
+    
+    // Remove href check
+    // expect(createLink).toHaveAttribute('href', '/organizations/new');
+
+    // Add check for click handler
+    fireEvent.click(createButton);
+    expect(mockOpenModal).toHaveBeenCalledTimes(1);
   });
 
   it('displays "No organizations found" message when list is empty', () => {

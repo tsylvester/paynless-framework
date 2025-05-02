@@ -11,7 +11,15 @@ export async function handleListMembers(
 ): Promise<Response> {
     console.log(`[members.ts] Handling GET /organizations/${orgId}/members (list)...`);
 
-    // RLS on organization_members should ensure user is part of the org
+    // 1. Extract Pagination Params
+    const url = new URL(req.url);
+    const page = parseInt(url.searchParams.get('page') || '1');
+    const limit = parseInt(url.searchParams.get('limit') || '10'); // Default limit 10
+    const from = (page - 1) * limit;
+    const to = from + limit - 1;
+    console.log(`[members.ts] Pagination: page=${page}, limit=${limit}, from=${from}, to=${to}`);
+
+    // 2. RLS on organization_members should ensure user is part of the org
     // Preliminary check if user is an active member to return 403 if not
     const { count: memberCheckCount, error: checkError } = await supabaseClient
         .from('organization_members')
@@ -30,8 +38,8 @@ export async function handleListMembers(
         return createErrorResponse("Forbidden: You do not have permission to view members of this organization.", 403, req);
     }
     
-    // Fetch members with profile details
-    const { data: members, error: membersError } = await supabaseClient
+    // 3. Fetch paginated members with profile details and total count
+    const { data: members, error: membersError, count: totalCount } = await supabaseClient
         .from('organization_members')
         .select(`
             id, 
@@ -39,16 +47,22 @@ export async function handleListMembers(
             role, 
             status,
             created_at,
-            user_profiles ( first_name, last_name ) 
-        `)
-        .eq('organization_id', orgId);
+            user_profiles ( first_name, last_name )
+        `, { count: 'exact' })
+        .eq('organization_id', orgId)
+        .range(from, to);
 
     if (membersError) {
         console.error(`[members.ts] Error fetching members for org ${orgId}:`, membersError);
         return createErrorResponse('Failed to retrieve members.', 500, req);
     }
 
-    return createSuccessResponse(members || [], 200, req);
+    // 4. Structure and return paginated response
+    const responsePayload = {
+        members: members || [],
+        totalCount: totalCount || 0,
+    };
+    return createSuccessResponse(responsePayload, 200, req);
 }
 
 // Handler for PUT /organizations/:orgId/members/:membershipId/role (Update Role)

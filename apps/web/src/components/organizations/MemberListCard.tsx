@@ -1,8 +1,7 @@
 'use client';
 
-import React from 'react';
 import { useOrganizationStore } from '@paynless/store';
-import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'; // Shadcn Card
+import { Card, CardHeader, CardTitle, CardContent, CardFooter } from '@/components/ui/card'; // Shadcn Card, Add CardFooter
 import {
   Table,
   TableHeader,
@@ -34,6 +33,8 @@ import { useCurrentUser } from '../../hooks/useCurrentUser';
 import { MoreHorizontal, RefreshCw } from "lucide-react";
 import { logger } from '@paynless/utils'; // Keep logger for potential error logging
 import { AdminBadge } from './AdminBadge'; // Import the badge
+import { PaginationComponent } from '@/components/common/PaginationComponent'; // Import PaginationComponent
+import { toast } from 'sonner'; // Ensure this import exists and is used
 
 export const MemberListCard: React.FC = () => {
   const {
@@ -43,7 +44,9 @@ export const MemberListCard: React.FC = () => {
     updateMemberRole, // <<< Get action from store
     removeMember,     // <<< Get action from store
     fetchCurrentOrganizationMembers, // Get fetch function
-    // TODO: Add removeMember and updateMemberRole actions from store
+    memberCurrentPage,
+    memberPageSize,
+    memberTotalCount,
   } = useOrganizationStore();
   
   const { user: currentUser, isLoading: isUserLoading } = useCurrentUser();
@@ -53,7 +56,15 @@ export const MemberListCard: React.FC = () => {
 
   const handleRefresh = () => {
     logger.info('[MemberListCard] Refreshing members...');
-    fetchCurrentOrganizationMembers();
+    fetchCurrentOrganizationMembers({ page: 1, limit: memberPageSize });
+  };
+
+  const handlePageChange = (page: number) => {
+    fetchCurrentOrganizationMembers({ page, limit: memberPageSize });
+  };
+
+  const handlePageSizeChange = (size: number) => {
+    fetchCurrentOrganizationMembers({ page: 1, limit: size });
   };
 
   // Placeholder handlers - Replace with actual store calls
@@ -70,12 +81,14 @@ export const MemberListCard: React.FC = () => {
     // TODO: Add error handling/feedback
   };
 
-  const handleLeave = (membershipId: string) => {
-    // console.error(`[DEBUG] handleLeave called for ${membershipId}`); // <<< REMOVE DEBUG LOG
+  const handleLeave = async (membershipId: string) => {
     logger.debug(`[MemberListCard] Attempting leave for ${membershipId}`);
-    // TODO: Add confirmation dialog
-    removeMember(membershipId); // <<< Use store action (assuming leave = remove self)
-    // TODO: Add error handling/feedback
+    const success = await removeMember(membershipId); 
+    if (!success) {
+      toast.error("Failed to leave organization. You might be the last admin.");
+    } else {
+      toast.success("Successfully left the organization."); 
+    }
   };
 
   if (isLoading && (!currentOrganizationMembers || currentOrganizationMembers.length === 0)) {
@@ -91,7 +104,7 @@ export const MemberListCard: React.FC = () => {
     );
   }
 
-  if (!currentOrganizationMembers || currentOrganizationMembers.length === 0) {
+  if (!isLoading && memberTotalCount === 0) {
     return (
       <Card>
         <CardHeader className="flex flex-row items-center justify-between">
@@ -241,6 +254,17 @@ export const MemberListCard: React.FC = () => {
           </TableBody>
         </Table>
       </CardContent>
+      {memberTotalCount > memberPageSize && (
+        <CardFooter>
+          <PaginationComponent
+            currentPage={memberCurrentPage}
+            pageSize={memberPageSize}
+            totalItems={memberTotalCount}
+            onPageChange={handlePageChange}
+            onPageSizeChange={handlePageSizeChange}
+          />
+        </CardFooter>
+      )}
     </Card>
   );
 }; 

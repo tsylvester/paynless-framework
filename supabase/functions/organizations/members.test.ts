@@ -30,12 +30,21 @@ const createMockRequest = (method: string, path: string, body?: Record<string, u
 Deno.test("GET /organizations/:orgId/members", async (t) => {
     const mockOrgId = 'org-get-members';
     const mockUser = { id: 'user-gets-members' };
-    const mockMembers = [
-        { id: 'mem1', user_id: mockUser.id, role: 'admin', status: 'active', profiles: { full_name: 'Admin User' } },
-        { id: 'mem2', user_id: 'member-id-2', role: 'member', status: 'active', profiles: { full_name: 'Member Two' } }
+    const mockMembersData = [
+        { id: 'mem1', user_id: mockUser.id, role: 'admin', status: 'active', user_profiles: { first_name: 'Admin', last_name: 'User' } },
+        { id: 'mem2', user_id: 'member-id-2', role: 'member', status: 'active', user_profiles: { first_name: 'Member', last_name: 'Two' } },
+        // Add more members to properly test pagination (e.g., 15 total)
+        ...Array.from({ length: 13 }, (_, i) => ({ 
+            id: `mem${i + 3}`,
+            user_id: `user-id-${i + 3}`,
+            role: 'member',
+            status: 'active',
+            user_profiles: { first_name: `Member ${i + 3}`, last_name: 'User' }
+        }))
     ];
+    const totalMockMembers = mockMembersData.length; // 15
 
-    await t.step("should return 200 with list of members for an org member", async () => {
+    await t.step("should return 200 with first page of members and total count by default", async () => {
         // Arrange
         const config: MockSupabaseDataConfig = {
             mockUser: mockUser,
@@ -52,9 +61,13 @@ Deno.test("GET /organizations/:orgId/members", async (t) => {
                         
                         // Check for the actual member list query
                          const orgIdFilter = state.filters.find((f: any) => f.column === 'organization_id' && f.type === 'eq');
-                        if (orgIdFilter?.value === mockOrgId && state.selectColumns?.includes('profiles')) { 
-                            assert(state.selectColumns?.includes('profiles'), 'Select should include profiles');
-                            return Promise.resolve({ data: mockMembers, error: null });
+                        if (orgIdFilter?.value === mockOrgId && state.selectColumns?.includes('user_profiles')) { 
+                            // *** Assert default pagination range ***
+                            assertEquals(state.rangeFrom, 0, "Default range should start at 0");
+                            assertEquals(state.rangeTo, 9, "Default range should end at 9 (limit 10)");
+                            // Return only the first page of data, but the correct total count
+                            const pageData = mockMembersData.slice(state.rangeFrom, (state.rangeTo ?? 0) + 1);
+                            return Promise.resolve({ data: pageData, error: null, count: totalMockMembers });
                         }
                         return Promise.resolve({ data: null, error: new Error('Unexpected select in GET members test') });
                     }
@@ -70,10 +83,65 @@ Deno.test("GET /organizations/:orgId/members", async (t) => {
         // Assert
         assertEquals(res.status, 200);
         const json = await res.json();
-        assert(Array.isArray(json));
-        assertEquals(json.length, mockMembers.length);
-        assertEquals(json[0].user_id, mockMembers[0].user_id);
-        assertEquals(json[0].profiles.full_name, mockMembers[0].profiles.full_name);
+        // *** Assert paginated response structure ***
+        assert(typeof json === 'object' && json !== null, "Response should be an object");
+        assert(Array.isArray(json.members), "Response should have a 'members' array");
+        assertEquals(json.members.length, 10, "Should return default page size (10)"); // Default limit is 10
+        assertEquals(json.totalCount, totalMockMembers, "Should return correct total count");
+        assertEquals(json.members[0].id, mockMembersData[0].id);
+    });
+
+    await t.step("should return 200 with specific page of members based on query params", async () => {
+        // Arrange
+        const page = 2;
+        const limit = 5;
+        const expectedRangeFrom = (page - 1) * limit; // 5
+        const expectedRangeTo = expectedRangeFrom + limit - 1; // 9
+
+        const config: MockSupabaseDataConfig = {
+            mockUser: mockUser,
+            genericMockResults: {
+                organization_members: {
+                    select: (state: MockQueryBuilderState) => {
+                        // Check for the preliminary membership check first
+                        const isMembershipCheck = state.filters.some(f => f.column === 'user_id' && f.value === mockUser.id)
+                                               && state.filters.some(f => f.column === 'status' && f.value === 'active')
+                                               && state.selectColumns === 'id';
+                        if (isMembershipCheck) {
+                             return Promise.resolve({ data: null, error: null, count: 1 }); // User is a member
+                        }
+                        
+                        // Check for the actual member list query
+                         const orgIdFilter = state.filters.find((f: any) => f.column === 'organization_id' && f.type === 'eq');
+                        if (orgIdFilter?.value === mockOrgId && state.selectColumns?.includes('user_profiles')) {
+                            // *** Assert specific pagination range ***
+                            assertEquals(state.rangeFrom, expectedRangeFrom, `Range should start at ${expectedRangeFrom}`);
+                            assertEquals(state.rangeTo, expectedRangeTo, `Range should end at ${expectedRangeTo}`);
+                            // Return the correct slice of data and total count
+                            const pageData = mockMembersData.slice(state.rangeFrom ?? 0, (state.rangeTo ?? 0) + 1);
+                            return Promise.resolve({ data: pageData, error: null, count: totalMockMembers });
+                        }
+                        return Promise.resolve({ data: null, error: new Error('Unexpected select in GET members pagination test') });
+                    }
+                }
+            }
+        };
+        const { client: mockClient } = createMockSupabaseClient(config);
+        // *** Create request WITH query params ***
+        const req = createMockRequest("GET", `/organizations/${mockOrgId}/members?page=${page}&limit=${limit}`);
+
+        // Act
+        const res = await handleListMembers(req, mockClient, mockUser as User, mockOrgId);
+
+        // Assert
+        assertEquals(res.status, 200);
+        const json = await res.json();
+        assert(typeof json === 'object' && json !== null, "Response should be an object");
+        assert(Array.isArray(json.members), "Response should have a 'members' array");
+        assertEquals(json.members.length, limit, `Should return ${limit} members for page ${page}`); 
+        assertEquals(json.totalCount, totalMockMembers, "Should return correct total count");
+        // Check if the first member on this page is correct (index 5 of original data)
+        assertEquals(json.members[0].id, mockMembersData[expectedRangeFrom].id);
     });
 
     await t.step("should return 403 if user not member", async () => {

@@ -1,7 +1,7 @@
 // IMPORTANT: Supabase Edge Functions require relative paths for imports from shared modules.
 // Do not use path aliases (like @shared/) as they will cause deployment failures.
-import ActualStripe from "npm:stripe@14.11.0";
-import type Stripe from "npm:stripe@14.11.0";
+import ActualStripe from "npm:stripe@18.0.0";
+import type Stripe from "npm:stripe@18.0.0";
 
 // --- START: Local .env.local loading workaround ---
 // Supabase CLI `start` does not reliably inject .env vars into the function runtime (v2.20.5).
@@ -82,13 +82,15 @@ export const getStripeClient = (
 
   // Throw error if the required key is missing from the environment
   if (!secretKey) {
-    // Reverted error message
     throw new Error(`Stripe ${isTestMode ? "test" : "live"} secret key environment variable (${keyEnvVarName}) is not defined. Check .env.local or deployment secrets.`);
   }
   
-  return new stripeConstructor(secretKey, {
-    apiVersion: "2025-03-31.basil",
-  });
+  // Only configure the API version explicitly, let Stripe handle the rest.
+  const config: Stripe.StripeConfig = {
+    apiVersion: "2025-03-31.basil", // Use the version expected by v18.0.0
+  };
+
+  return new stripeConstructor(secretKey, config);
 };
 
 /**

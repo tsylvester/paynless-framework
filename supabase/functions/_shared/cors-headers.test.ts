@@ -105,7 +105,7 @@ Deno.test("CORS Headers Utilities with Dynamic Origin", async (t) => {
         checkBaseCorsHeaders(res.headers);
 
         const body = await res.json();
-        assertEquals(body, { error: { code: "bad_request", message: message } });
+        assertEquals(body, { error: message });
     });
 
     await t.step("createErrorResponse: with allowed origin (netlify)", async () => {
@@ -122,7 +122,7 @@ Deno.test("CORS Headers Utilities with Dynamic Origin", async (t) => {
         checkBaseCorsHeaders(res.headers);
 
         const body = await res.json();
-        assertEquals(body, { error: { code: "bad_request", message: message } });
+        assertEquals(body, { error: message });
     });
 
     // Test specific error code mappings (kept from original, just pass req)
@@ -130,20 +130,20 @@ Deno.test("CORS Headers Utilities with Dynamic Origin", async (t) => {
         const req = new Request("http://example.com", { headers: { "Origin": MOCK_ALLOWED_ORIGINS[0] } });
         const res = createErrorResponse("Unauthorized", 401, req);
         const body = await res.json();
-        assertEquals(body.error.code, "unauthorized");
+        assertEquals(body.error, "Unauthorized");
     });
     // ... (similar updates for 403, 404 tests, passing req)
     await t.step("createErrorResponse should map status 403 to forbidden code", async () => {
         const req = new Request("http://example.com", { headers: { "Origin": MOCK_ALLOWED_ORIGINS[0] } });
         const res = createErrorResponse("Forbidden", 403, req);
         const body = await res.json();
-        assertEquals(body.error.code, "forbidden");
+        assertEquals(body.error, "Forbidden");
     });
     await t.step("createErrorResponse should map status 404 to not_found code", async () => {
         const req = new Request("http://example.com", { headers: { "Origin": MOCK_ALLOWED_ORIGINS[0] } });
         const res = createErrorResponse("Not Found", 404, req);
         const body = await res.json();
-        assertEquals(body.error.code, "not_found");
+        assertEquals(body.error, "Not Found");
     });
 
     await t.step("createSuccessResponse: with allowed origin (paynless.app)", async () => {

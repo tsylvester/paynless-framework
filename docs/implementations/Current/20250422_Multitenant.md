@@ -29,22 +29,22 @@ This document outlines the steps for implementing an in-app notification system 
         *   `created_at` (TIMESTAMPTZ DEFAULT now() NOT NULL)
         *   `expires_at` (TIMESTAMPTZ NULL) -- Optional expiration
 *   [X] **Migration:** Create/Update Supabase migration scripts for these tables and constraints.
-    *   [X] **(Updated)** Add/Modify migration script for the `invites` table to include `invited_user_id` (nullable UUID, FK to auth.users) and ensure `invited_email` is NOT NULL. Add indexes on `invite_token`, `organization_id`, `invited_email`, `invited_user_id`, `status`.
+    *   [X] **Add/Modify migration script for the `invites` table to include `invited_user_id` (nullable UUID, FK to auth.users) and ensure `invited_email` is NOT NULL. Add indexes on `invite_token`, `organization_id`, `invited_email`, `invited_user_id`, `status`.
 *   [X] **Test Migration:** Apply migrations locally and verify table structures, defaults, constraints, nullability, and FKs.
-    *   [X] **(Updated)** Verify `invites` table structure, especially `invited_user_id` nullability and FK.
+    *   [X] **Verify `invites` table structure, especially `invited_user_id` nullability and FK.
 
 ### 2.2 Backend Logic (Tenancy)
 
 *   [X] **RLS Policy Checks:** Confirmed existing migrations cover base requirements for `organizations`, `organization_members`. Reviewed/Updated for `invites`:
-    *   [X] **(Update)** `invites`:
+    *   [X] **`invites`:**
         *   `SELECT`: Admins of the related org can select. The invited user can select their own pending invites **IF** (`auth.uid()` matches `invited_user_id`) **OR** (`invited_user_id` IS NULL AND `auth.jwt() ->> 'email'` matches `invited_email`).
         *   `INSERT`: Admins of the related org can insert.
         *   `UPDATE`: The invited user RLS check (`auth.uid() = invited_user_id` or email match) was restored. The `handleAcceptInvite` function now uses a **Service Role client** to bypass RLS for the invite status update after internal validation, due to persistent RLS evaluation issues.
         *   `DELETE`: Admins can delete pending invites in their org.
 *   [X] **Implement RLS Policies:** Applied/Updated the RLS policies via migration scripts.
-    *   [X] **(Update)** Updated RLS policies for `invites` table per the logic above. (**Note:** `organization_members` INSERT policy prevents user self-insertion on invite accept, requiring Service Role client in `handleAcceptInvite`).
+    *   [X] **Updated RLS policies for `invites` table per the logic above. (**Note:** `organization_members` INSERT policy prevents user self-insertion on invite accept, requiring Service Role client in `handleAcceptInvite`).
 *   [X] **Test Migration:** Apply RLS migrations and verify policies.
-    *   [ ] **(Update)** Verify updated `invites` RLS policies.
+    *   [X] **Verify updated `invites` RLS policies.
 *   [X] **Implement Trigger/Function (Last Admin Check):** (Existing)
 *   [X] **Test Migration:** (Existing)
 *   [X] **Implement Trigger Functions (Notifications - Existing):** `notify_org_admins_on_join_request`, `notify_user_on_invite_acceptance`, `notify_user_on_role_change`. (Existing)
@@ -52,16 +52,16 @@ This document outlines the steps for implementing an in-app notification system 
     *   Triggered `AFTER INSERT ON invites WHEN (NEW.status = 'pending')`.
     *   **Logic:** If `NEW.invited_user_id` IS NOT NULL, insert in-app notification for that user AND send email to `NEW.invited_email`. If `NEW.invited_user_id` IS NULL, ONLY send email to `NEW.invited_email` (inviting to sign up).
 *   [X] **Test Migration:** Apply/Test notification trigger migrations.
-    *   [X] **(Updated)** Test updated `notify_user_on_invite` trigger migration logic.
+    *   [X] **Test updated `notify_user_on_invite` trigger migration logic.
 *   [X] **Implement Trigger Function (`restrict_invite_update_fields`):**
     *   Keep existing logic (prevent non-admins from changing fields other than status to accepted/declined).
     *   Verify it doesn't interfere with the `link_pending_invites_on_signup` trigger updating `invited_user_id`.
 *   [X] **Test Migration:** Apply/Test `restrict_invite_update_fields` trigger migration.
-*   [ ] **(NEW)** Implement Trigger Function (`link_pending_invites_on_signup`):
+*   [X] **(NEW)** Implement Trigger Function (`link_pending_invites_on_signup`):
     *   Triggered `AFTER INSERT ON auth.users`.
     *   **Logic:** `UPDATE public.invites SET invited_user_id = NEW.id WHERE invited_email = NEW.email AND invited_user_id IS NULL AND status = 'pending';`
     *   Needs SECURITY DEFINER or elevated privileges to update `public.invites`.
-*   [ ] **(NEW)** Test Migration: Apply/Test `link_pending_invites_on_signup` trigger migration.
+*   [X] **(NEW)** Test Migration: Apply/Test `link_pending_invites_on_signup` trigger migration.
 *   [X] **Backend Edge Functions (`supabase/functions/organizations/index.ts`):**
       *   ... (Keep existing POST/GET/PUT/DELETE /organizations, /organizations/:orgId, /organizations/:orgId/members, etc.) ...
       *   [X] **(Updated) `POST /organizations/:orgId/invites` (`handleCreateInvite`):**
@@ -116,15 +116,15 @@ This document outlines the steps for implementing an in-app notification system 
 ### 2.4 API Client (`@paynless/api`)
 
 *   [X] **Tests:** Write/Update unit tests for `OrganizationApiClient`:
-    *   [X] **(Update)** `inviteUserByEmail(orgId, email, role)`: Mocks POST `/organizations/:orgId/invites` with email payload.
-    *   [X] **(Remove)** `inviteUserById`: No longer needed for frontend.
+    *   [X] **`inviteUserByEmail(orgId, email, role)`:** Mocks POST `/organizations/:orgId/invites` with email payload.
+    *   [X] **`inviteUserById`:** Check implementation in `OrganizationApiClient`.
     *   [X] `acceptOrganizationInvite(inviteToken)`: Mocks POST `/organizations/invites/:inviteToken/accept`.
     *   [X] **(New/Update)** `declineOrganizationInvite(inviteToken)`: Mocks POST `/organizations/invites/:inviteToken/decline`.
     *   [X] **(New/Update)** `getInviteDetails(inviteToken)`: Mocks GET `/organizations/invites/:inviteToken/details`. Requires auth mock.
     *   ... (keep other tests: createOrg, updateOrg, listOrgs, getDetails, getMembers, role update, remove member, deleteOrg, requestJoin, approveJoin, denyJoin, cancelInvite, listPending)
 *   [X] **Implementation:** Add/Update functions in `OrganizationApiClient`.
-    *   [X] **(Update)** `inviteUserByEmail`: Calls backend with email/role payload.
-    *   [X] **(Remove)** `inviteUserById` method.
+    *   [X] **`inviteUserByEmail`:** Calls backend with email/role payload.
+    *   [X] **`inviteUserById` method:** Check current implementation state 
     *   [X] `acceptOrganizationInvite`: Calls POST `/organizations/invites/:token/accept`.
     *   [X] **(New/Update)** `declineOrganizationInvite`: Calls POST `/organizations/invites/:token/decline`.
     *   [X] **(New/Update)** `getInviteDetails`: Calls GET `/organizations/invites/:token/details` (authenticated).
@@ -210,28 +210,37 @@ This section outlines the frontend implementation using a dynamic, card-based "h
     *   [X] `AcceptInvitePage.tsx`: Implements `/accept-invite/:token`. Handles token processing, user actions, and feedback. (Implementation mostly finished, async tests blocked).
 
 *   [ ] **Layouts (`src/components/layout`):**
-    *   [ ] Update `Header.tsx`:
+    *   [X] Update `Header.tsx`:
         *   [X] Ensure `OrganizationSwitcher.tsx` is included and syncs with `currentOrganizationId`.
-        *   [ ] Add `OrganizationSwitcher` to the mobile menu section for consistency.
+        *   [X] Add `OrganizationSwitcher` to the mobile menu section for consistency.
+        *   [X] **(UI Tweak)** Positioned Notifications icon next to Theme switcher in mobile menu.
         *   [X] **(Dependency)** `OrganizationSwitcher.tsx`: Update its own plan entry to reflect navigation to `/organizations/:orgId`.
-        *   [ ] **(Dependency)** `OrganizationSwitcher.tsx`: Implement "Manage All Organizations" link pointing to `/organizations`.
+        *   [X] **(Dependency)** `OrganizationSwitcher.tsx`: Implement "Manage All Organizations" link pointing to `/organizations`.
     *   [ ] Consider `OrganizationHubLayout.tsx`: (Optional Refactor)
         *   [ ] Create `OrganizationHubLayout.tsx` to encapsulate the responsive two-column grid structure from `OrganizationHubPage.tsx`.
-        *   [ ] Refactor `OrganizationHubPage.tsx` to use this layout component.
+
+*   [ ] **Components (`src/components/auth`):**
+    *   [X] `ProtectedRoute.tsx`: 
+        *   [X] Wraps authenticated routes.
+        *   [X] Handles loading state.
+        *   [X] Handles redirection for unauthenticated users.
+        *   [X] Handles role-based access control.
+        *   [X] Renders `<CreateOrganizationModal />` alongside children to make it globally available within authenticated routes.
 
 *   [ ] **Components (`src/components/organizations`):**
-    *   [ ] `OrganizationSwitcher.tsx`: (Header Component)
+    *   [X] `OrganizationSwitcher.tsx`: (Header Component)
         *   [X] Displays organizations from `selectUserOrganizations` correctly. Handles empty state.
         *   [X] Dispatches `setCurrentOrganizationId` action correctly on selection.
         *   [X] Visually updates to reflect `currentOrganizationId` changes originating from `OrganizationListCard` or route changes.
-        *   [X] Includes a navigational link to `/organizations/new` (Create Org).
-        *   [X] Navigates to `/organizations/:orgId` on selection.
-        *   [ ] Add a "Manage All Organizations" link pointing to `/organizations`.
+        *   [X] Includes a button to open the `CreateOrganizationModal` (via `openCreateModal` store action).
+        *   [ ] Does not navigate to `/organizations/:orgId` on selection, only set state.  
+        *   [X] Add a "Manage All Organizations" link pointing to `/organizations`.
         *   [X] Test: Displays organizations correctly.
         *   [X] Test: Dispatches action correctly.
         *   [X] Test: Visual updates reflect state.
-        *   [X] Test: Create Org link works.
-        *   [X] Test: Selection navigates correctly.
+        *   [X] Test: "Create Organization" button triggers `openCreateModal` store action.
+        *   [ ] Test: Selection does not navigate. 
+        *   [X] **(Refinement)** Allow clicking the currently selected organization in the dropdown to deselect it (sets `currentOrganizationId` to `null`).
     *   [ ] **REVISED:** `OrganizationListCard.tsx`: (Displayed on `OrganizationHubPage`)
         *   [X] Displays list of user's organizations from `selectUserOrganizations`.
         *   [X] Includes "Create New Organization" button triggering `CreateOrganizationModal`.
@@ -242,7 +251,7 @@ This section outlines the frontend implementation using a dynamic, card-based "h
         *   [X] Test: Correctly highlights the active organization based on `currentOrganizationId`.
         *   [X] Test: Clicking an inactive list item dispatches `setCurrentOrganizationId`.
         *   [X] Test: Clicking an active list item does NOT dispatch `setCurrentOrganizationId`.
-        *   [ ] Test: The list accurately reflects the `userOrganizations` state, updating automatically.
+        *   [X] Test: The list accurately reflects the `userOrganizations` state, updating automatically.
     *   [X] **NEW:** `CreateOrganizationModal.tsx`:
         *   [X] Contains `CreateOrganizationForm.tsx`.
         *   [X] Triggered by "Create New" button in `OrganizationListCard` (via store state).
@@ -289,7 +298,7 @@ This section outlines the frontend implementation using a dynamic, card-based "h
         *   [X] Test: Handles API errors during deletion.
     *   [X] `MemberListCard.tsx`: (Displayed Conditionally)
         *   [X] Displays table/list of **active** members from `selectCurrentMembers` (using `first_name`, `last_name`).
-        *   [ ] **(UI)** Update component to use `member.user_profiles.first_name` and `last_name` instead of non-existent fields.
+        *   [X] **(UI)** Update component to use `member.user_profiles.first_name` and `last_name` instead of non-existent fields.
         *   [X] Includes controls (dropdown menus) for Admins: Change Role, Remove Member.
         *   [X] Includes control for any Member: Leave Organization.
         *   [X] Test: Displays members (name, role) correctly. Handles empty/loading states.
@@ -312,8 +321,10 @@ This section outlines the frontend implementation using a dynamic, card-based "h
     *   [X] `PendingActionsCard.tsx`: (Admin Only, Displayed Conditionally)
         *   [X] Displays list/table of pending join requests (using constructed `displayName` from `user_profiles`).
         *   [X] Displays list/table of outgoing pending invites (using `invited_email`).
-        *   [ ] **(Data)** Determine how to display inviter name for pending invites (requires join or separate fetch).
-        *   [ ] **(Data)** Determine how to display *requesting user's email* for pending requests (requires joining/fetching from `auth.users` or adjusting schema/RLS - see Future Scope note on email handling).
+        *   [X] **(Data)** Enhance backend (`handleListPending`/VIEW `v_pending_membership_requests`) to JOIN and return:
+            *   [X] Inviter's profile (`first_name`, `last_name`) for pending invites.
+            *   [X] Requesting user's email for pending requests.
+        *   [X] **(UI)** Update `PendingActionsCard.tsx` to display inviter name and requester email.
         *   [X] Includes controls for Admins: Approve/Deny Request, Cancel Invite.
         *   [X] Test: Visibility is correctly controlled (admin only).
         *   [X] Test: Displays pending requests correctly (user name, date). Handles empty state.
@@ -326,18 +337,18 @@ This section outlines the frontend implementation using a dynamic, card-based "h
         *   [X] **(UI)** Added refresh button to manually refetch pending items.
         *   [X] **(UI)** Uses `AdminBadge` component.
 
-        [ ] **Tests:**
-    *   Test route loader/component logic for `/dashboard/organizations/:orgId`: Verify redirection if org is not found, deleted (check 
+        [X] **Tests:**
+    *   [X] Test route loader/component logic for `/organizations/:orgId`: Verify redirection if org is not found, deleted (check 
     `currentOrganizationDetails` from store after fetch), or user is not a member (`currentOrganizationMembers`).
-    *   Test `OrganizationSwitcher`: Verify it updates `currentOrganizationId` in the store and navigation occurs (if designed to navigate).
-    *   Test conditional rendering within org pages: Ensure admin-only controls (delete org, change roles, approve requests) are hidden/disabled for non-admins 
+    *   [X] Test `OrganizationSwitcher`: Verify it updates `currentOrganizationId` in the store. Test also verifies navigation does *not* occur on selection (handled elsewhere).
+    *   [X] Test conditional rendering within org pages: Ensure admin-only controls (delete org, change roles, approve requests) are hidden/disabled for non-admins 
     based on `selectCurrentUserRole` from store.
-*   [ ] **Implementation:**
-    *   Use `react-router` loaders or `useEffect` hooks in org-specific pages/layouts to fetch data via store actions (`fetchCurrentOrganizationDetails`, 
+*   [X] **Implementation:**
+    *   [X] Use `react-router` loaders or `useEffect` hooks in org-specific pages/layouts to fetch data via store actions (`fetchCurrentOrganizationDetails`, 
     `fetchCurrentOrganizationMembers`). Check the fetched state (details for existence/`deleted_at`, members for current user presence) and use `useNavigate` to 
     redirect if access is denied.
-    *   Connect `OrganizationSwitcher` dropdown selection to the `setCurrentOrganizationId` store action.
-    *   Use the `selectCurrentUserRole` selector in components like `OrganizationSettingsPage`, `OrganizationMembersPage`, `MemberList` to conditionally render UI 
+    *   [X] Connect `OrganizationSwitcher` dropdown selection to the `setCurrentOrganizationId` store action.
+    *   [X] Use the `selectCurrentUserRole` selector in components like `OrganizationSettingsPage`, `OrganizationMembersPage`, `MemberList` to conditionally render UI 
     elements or disable actions.
 
 *   [X] **(UI Fixes)** Updated `Badge` and `Button` components (`src/components/ui`) to use `text-destructive-foreground` instead of `text-white` for the `destructive` variant, ensuring proper text color in light/dark modes. 
@@ -346,7 +357,7 @@ This section outlines the frontend implementation using a dynamic, card-based "h
 
 *   [X] **Run Tests:** Execute all tests (`pnpm test`). Ensure they pass.
 *   [X] **Build App:** Run `pnpm build`. Ensure it completes successfully.
-*   [ ] **Manual Test:**
+*   [X] **Manual Test:**
     *   Create orgs (public/private).
     *   **Invite Flow:** Invite user (by email), verify notification/email, click invite link, view `AcceptInvitePage`, accept invite, verify user added to members list, verify notifications. Repeat for declining invite. Test admin cancelling a pending invite. Test inviting existing member (should fail).
     *   Test org switcher and data scoping (chats, etc.).
@@ -359,32 +370,19 @@ This section outlines the frontend implementation using a dynamic, card-based "h
     *   Verify the deleted org disappears from lists/switchers.
     *   Verify direct access to the deleted org's pages/data is blocked.
     *   Verify actions within the deleted org context fail gracefully.
-*   [ ] **Update Docs:** Mark Phase 2 tasks as complete in `IMPLEMENTATION_PLAN.md`. Update `STRUCTURE.md`.
-*   [ ] **Commit:** `feat: implement multi-tenancy support (#issue_number)`
-*   [ ] **Remind User:** "Multi-tenancy support is implemented. Please perform thorough testing, especially around roles, RLS, visibility, and the 'last admin' check. Remember to update impacted tests. Review and commit: `git add . && git commit -m 'feat: implement multi-tenancy support'`"
+*   [X] **Update Docs:** Mark Phase 2 tasks as complete in `IMPLEMENTATION_PLAN.md`. Update `STRUCTURE.md`.
+*   [X] **Commit:** `feat: implement multi-tenancy support (#issue_number)`
+*   [X] **Remind User:** "Multi-tenancy support is implemented. Please perform thorough testing, especially around roles, RLS, visibility, and the 'last admin' check. Remember to update impacted tests. Review and commit: `git add . && git commit -m 'feat: implement multi-tenancy support'`"
 
 ---
 
 ## Phase 3: Final Review 
 
-*   [ ] **Code Review:** Review all new code for clarity, efficiency, adherence to `DEV_PLAN.md`, and potential bugs (especially around RLS and state management).
-*   [ ] **Test Coverage:** Review test coverage. Add tests for any critical paths missed.
-*   [ ] **Final Test Run:** Execute all tests one last time.
-*   [ ] **Final Build:** Perform a final `pnpm build`.
+*   [X] **Code Review:** Review all new code for clarity, efficiency, adherence to `DEV_PLAN.md`, and potential bugs (especially around RLS and state management).
+*   [X] **Test Coverage:** Review test coverage. Add tests for any critical paths missed.
+*   [X] **Final Test Run:** Execute all tests one last time.
+*   [X] **Final Build:** Perform a final `pnpm build`.
 *   [ ] **Update `README.md`:** Add information about the new notification and multi-tenancy features.
 *   [ ] **Final Commit:** `chore: finalize notification and multi-tenancy implementation (#issue_number)`
 *   [ ] **Remind User:** "The implementation is complete and documented. Please ensure all tests pass and the build is successful. Consider deploying to a staging environment for further validation before merging to main. Final commit suggestion: `git add . && git commit -m 'chore: finalize notification and multi-tenancy implementation'`"
 
-### 3.1 Cleanup for Production (Deferred Tasks)
-
-*   [ ] **Refactor `OrganizationStore` into Slices**
-    *   [ ] orgStore.ts combined interface, initial state, and core
-    *   [ ] orgStore.list.ts fetching and managing `userOrganizations`
-    *   [ ] orgStore.current.ts manages `currentOrganizationId`, `currentOrganizationDetails`, and `currentOrganizationMembers` and related fetches/updates
-    *   [ ] orgStore.invite.ts handles invite-specific actions like `acceptInvite`, `declineInvite`, `fetchInviteDetails`.
-    *   [ ] orgStore.request.ts handles `requestJoin`, `approveRequest`, `denyRequest`.
-    *   [ ] orgStore.ui.ts manages UI-related state, starting with the `isCreateModalOpen` state and its actions (`openCreateModal`, `closeCreateModal`), and adding `isDeleteDialogOpen`, `openDeleteDialog`, `closeDeleteDialog`.
-*   [ ] **Implement `PublicRoute` Component:**
-    *   [ ] Create `PublicRoute.tsx` in `src/components/auth`.
-    *   [ ] Implement logic to redirect authenticated users away from public-only pages (e.g., to `/dashboard`).
-    *   [ ] Apply `<PublicRoute>` wrapper to `login`, `register`, `

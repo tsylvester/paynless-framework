@@ -12,7 +12,8 @@ export default defineConfig({
         },
       },
       // Force use of source code
-      inline: [/^@paynless\/api/],
+      // Ensure all workspace packages are inlined for tests
+      inline: [/@paynless\//], // Regex to match @paynless/api, @paynless/store, etc.
     },
     // Watch for changes in api
     forceRerunTriggers: ['../../packages/api/src/**/*'],

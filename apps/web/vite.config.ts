@@ -29,7 +29,7 @@ export default defineConfig({
     alias: {
       // Keep aliases for local workspace packages
       '@paynless/api': path.resolve(__dirname, '../../packages/api/src'),
-      '@paynless/store': path.resolve(__dirname, '../../packages/store/src'),
+      '@paynless/store': path.resolve(__dirname, '../../packages/store/src/index.ts'),
       // Add aliases for other local packages if needed
       '@': path.resolve(__dirname, './src'),
     },
