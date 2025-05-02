@@ -10,9 +10,15 @@ let mockAuthState: { user: Partial<User> | null; isLoading: boolean } = {
   isLoading: true,
 };
 
-// Mock useAuthStore
+// Mock useAuthStore AND useOrganizationStore
 vi.mock('@paynless/store', () => ({
   useAuthStore: () => mockAuthState, 
+  // Provide a basic mock for useOrganizationStore to satisfy dependencies
+  useOrganizationStore: () => ({ 
+    currentOrganizationId: null,
+    selectCurrentUserRoleInOrg: () => null, // Mock any functions called
+    // Add other minimal state properties if needed by downstream components
+  })
 }));
 
 const LoadingComponent = () => <div>Auth Loading...</div>;

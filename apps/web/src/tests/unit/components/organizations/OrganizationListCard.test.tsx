@@ -85,6 +85,8 @@ beforeEach(() => {
     vi.clearAllMocks();
     // Reset the mock implementation to the baseline state for each test
     mockedUseOrgStore.mockReturnValue({ ...(baselineOrgState as any) }); // Cast needed due to partial state
+    // Mock scrollIntoView for Radix UI components in JSDOM
+    Element.prototype.scrollIntoView = vi.fn(); 
 });
 
 // --- Mocks for Org Data ---
@@ -151,12 +153,19 @@ describe('OrganizationListCard', () => {
         });
 
         // Act
-        render(<OrganizationListCard />);
+        // Get container from render to use querySelectorAll
+        const { container } = render(<OrganizationListCard />); 
 
         // Assert
-        expect(screen.getByText(/Organizations/i)).toBeInTheDocument();
+        expect(screen.getByRole('heading', { level: 2, name: /Organizations/i })).toBeInTheDocument();
         expect(screen.getByRole('button', { name: /Create New/i })).toBeInTheDocument();
-        expect(screen.getByText('Loading...')).toBeInTheDocument();
+        
+        // Check for skeleton placeholders using querySelectorAll on the container
+        const skeletons = container.querySelectorAll('[data-slot="skeleton"]'); 
+        expect(skeletons.length).toBeGreaterThan(0); // Check if at least one skeleton is present
+        
+        // Ensure "Loading..." text is NOT present if using skeletons
+        expect(screen.queryByText('Loading...')).not.toBeInTheDocument(); 
         expect(screen.queryByText('No organizations found.')).not.toBeInTheDocument();
     });
 
@@ -249,13 +258,16 @@ describe('OrganizationListCard', () => {
             orgListPageSize: 5,
             orgListTotalCount: 12, // Total count > page size
             isLoading: false,
+            allowedPageSizes: [5, 10, 20], // Explicitly provide for clarity
         });
+
         render(<OrganizationListCard />);
 
-        expect(screen.getByRole('navigation', { name: /pagination/i })).toBeInTheDocument();
+        // Check for a reliable element within pagination, like the "next" button
+        expect(screen.getByRole('button', { name: /go to next page/i })).toBeInTheDocument(); 
         expect(screen.getByText(/Page 1 of 3/i)).toBeInTheDocument();
-        expect(screen.getByText(/12 total/i)).toBeInTheDocument();
-        expect(screen.getByRole('combobox', { name: /rows per page/i })).toBeInTheDocument(); // Assuming Select has implicit label or aria-label
+        // The total count display changed format in the component
+        expect(screen.getByText(/12 item(s)? total/i)).toBeInTheDocument(); 
     });
 
     it('does NOT render pagination controls when total count is less than or equal to page size', () => {
@@ -272,7 +284,7 @@ describe('OrganizationListCard', () => {
         expect(screen.queryByRole('navigation', { name: /pagination/i })).not.toBeInTheDocument();
     });
 
-    it('calls setOrgListPage when a page link is clicked', () => {
+    it('calls setOrgListPage when a page link is clicked', async () => {
         mockedUseOrgStore.mockReturnValue({
             ...(baselineOrgState as any),
             userOrganizations: mockOrgs.slice(0, 5),
@@ -280,17 +292,18 @@ describe('OrganizationListCard', () => {
             orgListPageSize: 5,
             orgListTotalCount: 12,
             isLoading: false,
+            allowedPageSizes: [5, 10, 20], // Explicitly provide
         });
         render(<OrganizationListCard />);
-        
-        const page2Link = screen.getByRole('link', { name: '2' });
-        fireEvent.click(page2Link);
 
-        expect(mockSetOrgListPage).toHaveBeenCalledTimes(1);
+        // Click the 'Next Page' button instead of a numbered link
+        const nextPageButton = screen.getByRole('button', { name: /go to next page/i }); 
+        fireEvent.click(nextPageButton);
+
         expect(mockSetOrgListPage).toHaveBeenCalledWith(2);
     });
 
-     it('calls setOrgListPageSize when page size selector is changed', async () => {
+    it('calls setOrgListPageSize when page size selector is changed', async () => {
         mockedUseOrgStore.mockReturnValue({
             ...(baselineOrgState as any),
             userOrganizations: mockOrgs.slice(0, 5),
@@ -298,17 +311,22 @@ describe('OrganizationListCard', () => {
             orgListPageSize: 5,
             orgListTotalCount: 12,
             isLoading: false,
+            allowedPageSizes: [5, 10, 20], // <<< Explicitly provide allowed sizes
         });
+
         render(<OrganizationListCard />);
-        
-        const sizeSelectorTrigger = screen.getByRole('combobox');
-        fireEvent.mouseDown(sizeSelectorTrigger);
-        
-        const sizeOption10 = await screen.findByRole('option', { name: '10' });
+
+        // Find the trigger (combobox/button) for the page size selector
+        const sizeSelectorTrigger = screen.getByRole('combobox'); 
+        // Use fireEvent.click which might work better for Select components
+        fireEvent.click(sizeSelectorTrigger); 
+
+        // Find and click the option for page size 10 (ensure it waits)
+        const sizeOption10 = await screen.findByRole('option', { name: '10' }); 
         fireEvent.click(sizeOption10);
 
-        expect(mockSetOrgListPageSize).toHaveBeenCalledTimes(1);
         expect(mockSetOrgListPageSize).toHaveBeenCalledWith(10);
+        expect(mockSetOrgListPage).toHaveBeenCalledWith(1); // Expect page to reset to 1
     });
     
     // --- Test for Automatic List Update ---

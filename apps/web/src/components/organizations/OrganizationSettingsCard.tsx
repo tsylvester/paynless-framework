@@ -178,7 +178,7 @@ export const OrganizationSettingsCard: React.FC = () => {
             {/* Delete Button */} 
             <Button
               variant="destructive"
-              onClick={() => currentOrganizationId && openDeleteDialog()}
+              onClick={() => currentOrganizationId && openDeleteDialog(currentOrganizationId)}
               type="button"
               disabled={formDisabled || !currentOrganizationId}
               className="shrink-0" // Prevent shrinking

@@ -76,7 +76,7 @@ export const OrganizationListCard: React.FC = () => {
   return (
     <Card className="h-full flex flex-col">
       <CardHeader className="flex-row flex justify-between items-center space-x-4">
-        <CardTitle>Organizations</CardTitle>
+        <CardTitle role="heading" aria-level="2">Organizations</CardTitle>
         <Button 
           onClick={handleCreateNewClick} 
           variant="outline"
