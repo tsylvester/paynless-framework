@@ -1,3 +1,9 @@
+We're starting a new feature branch on this project and have a casual list of product requirements. We need to transform this into a formal list of product requirements so that we can create a workplan with a full checklist of exact specific detailed ordered steps to follow so that the product is built professionally, reliably, safely, securely, extensibly, and correctly the first time. 
+
+Can you help me transform this list of requirements into a more fulsome, accurate, professional explanation of what we're attempting? 
+
+Once we have an accepted PRD we'll take the next step of making the checklist. 
+
 # AI Chat Improvements
 
 ## Integrate Chat into Orgs 
