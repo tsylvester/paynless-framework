@@ -248,7 +248,8 @@ Deno.test("Login Function - mainHandler Tests", {
         first_name: "Test", 
         last_name: "User", 
         role: "user", 
-        updated_at: new Date().toISOString()
+        updated_at: new Date().toISOString(),
+        last_selected_org_id: null
     };
 
     const { client: mockClient, spies } = createMockSupabaseClient({
