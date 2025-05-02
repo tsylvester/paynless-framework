@@ -378,42 +378,11 @@ This section outlines the frontend implementation using a dynamic, card-based "h
 
 ## Phase 3: Final Review 
 
-*   [ ] **Code Review:** Review all new code for clarity, efficiency, adherence to `DEV_PLAN.md`, and potential bugs (especially around RLS and state management).
-*   [ ] **Test Coverage:** Review test coverage. Add tests for any critical paths missed.
-*   [ ] **Final Test Run:** Execute all tests one last time.
-*   [ ] **Final Build:** Perform a final `pnpm build`.
+*   [X] **Code Review:** Review all new code for clarity, efficiency, adherence to `DEV_PLAN.md`, and potential bugs (especially around RLS and state management).
+*   [X] **Test Coverage:** Review test coverage. Add tests for any critical paths missed.
+*   [X] **Final Test Run:** Execute all tests one last time.
+*   [X] **Final Build:** Perform a final `pnpm build`.
 *   [ ] **Update `README.md`:** Add information about the new notification and multi-tenancy features.
 *   [ ] **Final Commit:** `chore: finalize notification and multi-tenancy implementation (#issue_number)`
 *   [ ] **Remind User:** "The implementation is complete and documented. Please ensure all tests pass and the build is successful. Consider deploying to a staging environment for further validation before merging to main. Final commit suggestion: `git add . && git commit -m 'chore: finalize notification and multi-tenancy implementation'`"
 
-### 3.1 Cleanup for Production (Deferred Tasks)
-
-*   [ ] **Refactor `OrganizationStore` into Slices**
-    *   [ ] orgStore.ts combined interface, initial state, and core
-    *   [ ] orgStore.list.ts fetching and managing `userOrganizations`
-    *   [ ] orgStore.current.ts manages `currentOrganizationId`, `currentOrganizationDetails`, and `currentOrganizationMembers` and related fetches/updates
-    *   [ ] orgStore.invite.ts handles invite-specific actions like `acceptInvite`, `declineInvite`, `fetchInviteDetails`.
-    *   [ ] orgStore.request.ts handles `requestJoin`, `approveRequest`, `denyRequest`.
-    *   [ ] orgStore.ui.ts manages UI-related state, starting with the `isCreateModalOpen` state and its actions (`openCreateModal`, `closeCreateModal`), and adding `isDeleteDialogOpen`, `openDeleteDialog`, `closeDeleteDialog`.
-*   [X] **Implement Pagination Component:**
-    *   [X] Create reusable `PaginationComponent` (`apps/web/src/components/common/PaginationComponent.tsx`) with props for `currentPage`, `pageSize`, `totalItems`, `onPageChange`, `onPageSizeChange`, `allowedPageSizes`.
-    *   [X] Implement TDD: Create `PaginationComponent.test.tsx` with tests covering rendering logic, button clicks/disabling, and page size selection.
-        *   **Note:** Tests for `onPageSizeChange` and rendering specific page size options (`findByRole('option', ...)` after trigger click) are currently failing due to difficulties interacting with the Radix UI Select dropdown portal in the test environment. Accepting these failures for now.
-    *   [X] Component renders standard controls: `<< < {PageSizeDropdown} > >>`, `Page x of y`, `Total Items`.
-    *   [X] Component does not render if `totalPages <= 1`.
-    *   [X] Page size change resets `currentPage` to 1 via `onPageChange(1)`.
-*   [X] **Integrate Pagination:**
-    *   [X] Add pagination controls to `OrganizationListCard` if list exceeds threshold (e.g., 10).
-    *   [X] Add pagination controls to `MemberListCard` if list exceeds threshold (e.g., 10-20).
-    *   [X] Update corresponding store actions/API calls to support pagination parameters.
-    *   [ ] Add search component
-    *   [ ] Add filter component 
-    *   [ ] Add comma parsing for multiple invites
-    *   [ ] Fix dropdown in Members card Actions field
-    *   [ ] Change Orgs page to flex-grid with multiple card sizes, 1y, 2y, 3y, 1x, 2x, 3x 
-    *   [ ] Components choose card size dynamically based on content.
-    *   [X] Preset size list for pagination (10, 25, 50, all)
-*   [ ] **Implement `PublicRoute` Component:**
-    *   [ ] Create `PublicRoute.tsx` in `src/components/auth`.
-    *   [ ] Implement logic to redirect authenticated users away from public-only pages (e.g., to `/dashboard`).
-    *   [ ] Apply `<PublicRoute>` wrapper to `login`, `register`, `
