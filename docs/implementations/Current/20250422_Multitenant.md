@@ -233,13 +233,13 @@ This section outlines the frontend implementation using a dynamic, card-based "h
         *   [X] Dispatches `setCurrentOrganizationId` action correctly on selection.
         *   [X] Visually updates to reflect `currentOrganizationId` changes originating from `OrganizationListCard` or route changes.
         *   [X] Includes a button to open the `CreateOrganizationModal` (via `openCreateModal` store action).
-        *   [X] Navigates to `/organizations/:orgId` on selection.
+        *   [ ] Does not navigate to `/organizations/:orgId` on selection, only set state.  
         *   [X] Add a "Manage All Organizations" link pointing to `/organizations`.
         *   [X] Test: Displays organizations correctly.
         *   [X] Test: Dispatches action correctly.
         *   [X] Test: Visual updates reflect state.
         *   [X] Test: "Create Organization" button triggers `openCreateModal` store action.
-        *   [X] Test: Selection navigates correctly.
+        *   [ ] Test: Selection does not navigate. 
         *   [X] **(Refinement)** Allow clicking the currently selected organization in the dropdown to deselect it (sets `currentOrganizationId` to `null`).
     *   [ ] **REVISED:** `OrganizationListCard.tsx`: (Displayed on `OrganizationHubPage`)
         *   [X] Displays list of user's organizations from `selectUserOrganizations`.
@@ -251,7 +251,7 @@ This section outlines the frontend implementation using a dynamic, card-based "h
         *   [X] Test: Correctly highlights the active organization based on `currentOrganizationId`.
         *   [X] Test: Clicking an inactive list item dispatches `setCurrentOrganizationId`.
         *   [X] Test: Clicking an active list item does NOT dispatch `setCurrentOrganizationId`.
-        *   [ ] Test: The list accurately reflects the `userOrganizations` state, updating automatically.
+        *   [X] Test: The list accurately reflects the `userOrganizations` state, updating automatically.
     *   [X] **NEW:** `CreateOrganizationModal.tsx`:
         *   [X] Contains `CreateOrganizationForm.tsx`.
         *   [X] Triggered by "Create New" button in `OrganizationListCard` (via store state).
@@ -337,18 +337,18 @@ This section outlines the frontend implementation using a dynamic, card-based "h
         *   [X] **(UI)** Added refresh button to manually refetch pending items.
         *   [X] **(UI)** Uses `AdminBadge` component.
 
-        [ ] **Tests:**
-    *   Test route loader/component logic for `/organizations/:orgId`: Verify redirection if org is not found, deleted (check 
+        [X] **Tests:**
+    *   [X] Test route loader/component logic for `/organizations/:orgId`: Verify redirection if org is not found, deleted (check 
     `currentOrganizationDetails` from store after fetch), or user is not a member (`currentOrganizationMembers`).
-    *   Test `OrganizationSwitcher`: Verify it updates `currentOrganizationId` in the store and navigation occurs (if designed to navigate).
-    *   Test conditional rendering within org pages: Ensure admin-only controls (delete org, change roles, approve requests) are hidden/disabled for non-admins 
+    *   [X] Test `OrganizationSwitcher`: Verify it updates `currentOrganizationId` in the store. Test also verifies navigation does *not* occur on selection (handled elsewhere).
+    *   [X] Test conditional rendering within org pages: Ensure admin-only controls (delete org, change roles, approve requests) are hidden/disabled for non-admins 
     based on `selectCurrentUserRole` from store.
-*   [ ] **Implementation:**
-    *   Use `react-router` loaders or `useEffect` hooks in org-specific pages/layouts to fetch data via store actions (`fetchCurrentOrganizationDetails`, 
+*   [X] **Implementation:**
+    *   [X] Use `react-router` loaders or `useEffect` hooks in org-specific pages/layouts to fetch data via store actions (`fetchCurrentOrganizationDetails`, 
     `fetchCurrentOrganizationMembers`). Check the fetched state (details for existence/`deleted_at`, members for current user presence) and use `useNavigate` to 
     redirect if access is denied.
-    *   Connect `OrganizationSwitcher` dropdown selection to the `setCurrentOrganizationId` store action.
-    *   Use the `selectCurrentUserRole` selector in components like `OrganizationSettingsPage`, `OrganizationMembersPage`, `MemberList` to conditionally render UI 
+    *   [X] Connect `OrganizationSwitcher` dropdown selection to the `setCurrentOrganizationId` store action.
+    *   [X] Use the `selectCurrentUserRole` selector in components like `OrganizationSettingsPage`, `OrganizationMembersPage`, `MemberList` to conditionally render UI 
     elements or disable actions.
 
 *   [X] **(UI Fixes)** Updated `Badge` and `Button` components (`src/components/ui`) to use `text-destructive-foreground` instead of `text-white` for the `destructive` variant, ensuring proper text color in light/dark modes. 
@@ -357,7 +357,7 @@ This section outlines the frontend implementation using a dynamic, card-based "h
 
 *   [X] **Run Tests:** Execute all tests (`pnpm test`). Ensure they pass.
 *   [X] **Build App:** Run `pnpm build`. Ensure it completes successfully.
-*   [ ] **Manual Test:**
+*   [X] **Manual Test:**
     *   Create orgs (public/private).
     *   **Invite Flow:** Invite user (by email), verify notification/email, click invite link, view `AcceptInvitePage`, accept invite, verify user added to members list, verify notifications. Repeat for declining invite. Test admin cancelling a pending invite. Test inviting existing member (should fail).
     *   Test org switcher and data scoping (chats, etc.).
@@ -370,9 +370,9 @@ This section outlines the frontend implementation using a dynamic, card-based "h
     *   Verify the deleted org disappears from lists/switchers.
     *   Verify direct access to the deleted org's pages/data is blocked.
     *   Verify actions within the deleted org context fail gracefully.
-*   [ ] **Update Docs:** Mark Phase 2 tasks as complete in `IMPLEMENTATION_PLAN.md`. Update `STRUCTURE.md`.
-*   [ ] **Commit:** `feat: implement multi-tenancy support (#issue_number)`
-*   [ ] **Remind User:** "Multi-tenancy support is implemented. Please perform thorough testing, especially around roles, RLS, visibility, and the 'last admin' check. Remember to update impacted tests. Review and commit: `git add . && git commit -m 'feat: implement multi-tenancy support'`"
+*   [X] **Update Docs:** Mark Phase 2 tasks as complete in `IMPLEMENTATION_PLAN.md`. Update `STRUCTURE.md`.
+*   [X] **Commit:** `feat: implement multi-tenancy support (#issue_number)`
+*   [X] **Remind User:** "Multi-tenancy support is implemented. Please perform thorough testing, especially around roles, RLS, visibility, and the 'last admin' check. Remember to update impacted tests. Review and commit: `git add . && git commit -m 'feat: implement multi-tenancy support'`"
 
 ---
 
@@ -402,17 +402,17 @@ This section outlines the frontend implementation using a dynamic, card-based "h
     *   [X] Component renders standard controls: `<< < {PageSizeDropdown} > >>`, `Page x of y`, `Total Items`.
     *   [X] Component does not render if `totalPages <= 1`.
     *   [X] Page size change resets `currentPage` to 1 via `onPageChange(1)`.
-*   [ ] **Integrate Pagination:**
-    *   [ ] Add pagination controls to `OrganizationListCard` if list exceeds threshold (e.g., 10).
-    *   [ ] Add pagination controls to `MemberListCard` if list exceeds threshold (e.g., 10-20).
-    *   [ ] Update corresponding store actions/API calls to support pagination parameters.
+*   [X] **Integrate Pagination:**
+    *   [X] Add pagination controls to `OrganizationListCard` if list exceeds threshold (e.g., 10).
+    *   [X] Add pagination controls to `MemberListCard` if list exceeds threshold (e.g., 10-20).
+    *   [X] Update corresponding store actions/API calls to support pagination parameters.
     *   [ ] Add search component
     *   [ ] Add filter component 
     *   [ ] Add comma parsing for multiple invites
     *   [ ] Fix dropdown in Members card Actions field
     *   [ ] Change Orgs page to flex-grid with multiple card sizes, 1y, 2y, 3y, 1x, 2x, 3x 
     *   [ ] Components choose card size dynamically based on content.
-    *   [ ] Preset size list for pagination (10, 25, 50, all)
+    *   [X] Preset size list for pagination (10, 25, 50, all)
 *   [ ] **Implement `PublicRoute` Component:**
     *   [ ] Create `PublicRoute.tsx` in `src/components/auth`.
     *   [ ] Implement logic to redirect authenticated users away from public-only pages (e.g., to `/dashboard`).

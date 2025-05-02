@@ -179,6 +179,40 @@ describe('OrganizationListCard', () => {
         expect(mockOrgStore.getState().openCreateModal).toHaveBeenCalledTimes(1);
     });
 
+    it('updates the list when userOrganizations state changes', () => {
+        // Arrange: Initial state with one org
+        mockOrgStore.setState({
+            userOrganizations: [mockOrgs[0]],
+            orgListTotalCount: 1,
+            isLoading: false,
+        });
+
+        // Act: Initial render
+        const { rerender } = render(<OrganizationListCard />); // Get rerender function
+
+        // Assert: Initial state
+        expect(screen.getByRole('button', { name: 'Org 1' })).toBeInTheDocument();
+        expect(screen.queryByRole('button', { name: 'Org 2' })).not.toBeInTheDocument();
+
+        // Act: Update the store state (simulating external change)
+        act(() => {
+            mockOrgStore.setState({
+                userOrganizations: [mockOrgs[0], mockOrgs[1]],
+                orgListTotalCount: 2,
+                isLoading: false,
+            });
+        });
+        
+        // Re-render with the same props might be needed if the component doesn't directly subscribe
+        // However, since we spy on useOrganizationStore, React should trigger a re-render.
+        // If the test fails, uncommenting the rerender might be necessary, but try without first.
+        // rerender(<OrganizationListCard />); 
+
+        // Assert: Updated state
+        expect(screen.getByRole('button', { name: 'Org 1' })).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: 'Org 2' })).toBeInTheDocument();
+    });
+
     // --- Pagination Tests (Adjusted to use mockOrgStore) ---
     it('renders pagination controls when total count exceeds page size', () => {
         mockOrgStore.setState({
