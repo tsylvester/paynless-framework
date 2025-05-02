@@ -328,7 +328,7 @@ describe('OrganizationStore', () => {
      });
   });
 
-  describe('fetchOrganizationDetails', () => {
+  describe('fetchCurrentOrganizationDetails', () => {
       const orgId = 'org-fetch-details';
       const mockDetails: Organization = { ...mockOrg1, id: orgId };
 

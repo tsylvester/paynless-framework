@@ -20,7 +20,7 @@ const mockStoreState = {
   isLoading: false,
   error: null as string | null,
   selectCurrentUserRoleInOrg: vi.fn(() => 'member'), // Default mock implementation
-  fetchOrganizationDetails: vi.fn(),
+  fetchCurrentOrganizationDetails: vi.fn(),
   fetchCurrentOrganizationMembers: vi.fn(),
 };
 
@@ -70,10 +70,7 @@ describe('OrganizationHubPage', () => {
   let fetchUserOrganizationsMock: Mock;
   let setCurrentOrganizationIdMock: Mock;
   let selectCurrentUserRoleInOrgMock: Mock;
-  // Remove unused mock function refs
-  // let mockFetchOrganizationDetails: Mock;
-  // let mockFetchCurrentOrganizationMembers: Mock;
-
+  let fetchCurrentOrganizationDetailsMock: Mock;
   // Keep mock hook reference if needed, but prefer interacting via mockStoreState
   let mockUseCurrentUser: Mock;
 
@@ -85,7 +82,7 @@ describe('OrganizationHubPage', () => {
     fetchUserOrganizationsMock = mockStoreState.fetchUserOrganizations = vi.fn();
     setCurrentOrganizationIdMock = mockStoreState.setCurrentOrganizationId = vi.fn();
     selectCurrentUserRoleInOrgMock = mockStoreState.selectCurrentUserRoleInOrg = vi.fn().mockReturnValue('member');
-    mockStoreState.fetchOrganizationDetails = vi.fn(); // Reset unused ones too for safety
+    mockStoreState.fetchCurrentOrganizationDetails = vi.fn(); // Reset unused ones too for safety
     mockStoreState.fetchCurrentOrganizationMembers = vi.fn();
 
     // Define default state structure
@@ -114,7 +111,7 @@ describe('OrganizationHubPage', () => {
       userOrganizations: [], fetchUserOrganizations: vi.fn(), setCurrentOrganizationId: vi.fn(),
       currentOrganizationId: null, currentOrganizationDetails: null, currentOrganizationMembers: [],
       isLoading: false, error: null, selectCurrentUserRoleInOrg: vi.fn(() => 'member'),
-      fetchOrganizationDetails: vi.fn(), fetchCurrentOrganizationMembers: vi.fn(),
+      fetchCurrentOrganizationDetails: vi.fn(), fetchCurrentOrganizationMembers: vi.fn(),
     });
     // Reset the store hook mocks specifically
     (useOrganizationStore as Mock).mockClear();

@@ -126,4 +126,20 @@ export interface OrganizationActions {
   setOrgListPageSize: (size: number) => void;
 }
 
+// --- State Interface (REMOVED - Imported from @paynless/types) ---
+// We need to augment the imported state for UI elements NOT defined in the type package
+export interface OrganizationUIState {
+  isCreateModalOpen: boolean;
+  isDeleteDialogOpen: boolean;
+}
+
+// --- Actions Interface (REMOVED - Imported from @paynless/types) ---
+// We need to augment the imported actions for UI elements NOT defined in the type package
+export interface OrganizationUIActions {
+  openCreateModal: () => void;
+  closeCreateModal: () => void;
+  openDeleteDialog: () => void;
+  closeDeleteDialog: () => void;
+}
+
 export type OrganizationStoreType = OrganizationState & OrganizationActions;

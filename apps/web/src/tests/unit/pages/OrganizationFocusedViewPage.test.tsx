@@ -21,7 +21,7 @@ const mockStoreState = {
   isLoading: false,
   error: null as string | null,
   selectCurrentUserRoleInOrg: vi.fn(() => 'member'), // Default mock implementation
-  fetchOrganizationDetails: vi.fn(),
+  fetchCurrentOrganizationDetails: vi.fn(),
   fetchCurrentOrganizationMembers: vi.fn(),
 };
 
@@ -80,7 +80,7 @@ describe('OrganizationFocusedViewPage', () => {
   let fetchUserOrganizationsMock: Mock;
   let setCurrentOrganizationIdMock: Mock;
   let selectCurrentUserRoleInOrgMock: Mock;
-  let fetchOrganizationDetailsMock: Mock;
+  let fetchCurrentOrganizationDetailsMock: Mock;
   let fetchCurrentOrganizationMembersMock: Mock;
 
   const mockUser = { id: 'user-123', email: 'test@example.com' } as User;
@@ -92,7 +92,7 @@ describe('OrganizationFocusedViewPage', () => {
     fetchUserOrganizationsMock = mockStoreState.fetchUserOrganizations = vi.fn();
     setCurrentOrganizationIdMock = mockStoreState.setCurrentOrganizationId = vi.fn();
     selectCurrentUserRoleInOrgMock = mockStoreState.selectCurrentUserRoleInOrg = vi.fn().mockReturnValue('member'); // Re-apply default mock
-    fetchOrganizationDetailsMock = mockStoreState.fetchOrganizationDetails = vi.fn();
+    fetchCurrentOrganizationDetailsMock = mockStoreState.fetchCurrentOrganizationDetails = vi.fn();
     fetchCurrentOrganizationMembersMock = mockStoreState.fetchCurrentOrganizationMembers = vi.fn();
 
     // Define default state structure
@@ -120,7 +120,7 @@ describe('OrganizationFocusedViewPage', () => {
         userOrganizations: [], fetchUserOrganizations: vi.fn(), setCurrentOrganizationId: vi.fn(),
         currentOrganizationId: null, currentOrganizationDetails: null, currentOrganizationMembers: [],
         isLoading: false, error: null, selectCurrentUserRoleInOrg: vi.fn(() => 'member'),
-        fetchOrganizationDetails: vi.fn(), fetchCurrentOrganizationMembers: vi.fn(),
+        fetchCurrentOrganizationDetails: vi.fn(), fetchCurrentOrganizationMembers: vi.fn(),
      });
      // Also reset the getState mock itself
      (useOrganizationStore.getState as Mock).mockClear();

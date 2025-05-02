@@ -1,9 +1,9 @@
 import { create } from 'zustand';
 import { vi } from 'vitest';
-import type { AiState } from '@paynless/store'; // Assuming AiState is the type name
+import type { aiStore } from '@paynless/store'; // Assuming AiState is the type name
 
 // Define a baseline state for AI, similar to the one in Home.test.tsx
-const baselineAiState: Partial<AiState> = {
+const baselineAiState: Partial<aiStore> = {
   availableProviders: [],
   currentChatMessages: [],
   currentChatId: null,
@@ -11,11 +11,11 @@ const baselineAiState: Partial<AiState> = {
   aiError: null,
 };
 
-export const createMockAiStore = (initialState?: Partial<AiState>) => {
+export const createMockAiStore = (initialState?: Partial<aiStore>) => {
   // Merge baseline with provided initial state
   const mergedInitialState = { ...baselineAiState, ...initialState };
 
-  return create<AiState>((set) => ({
+  return create<aiStore>((set) => ({
     // State properties
     availableProviders: mergedInitialState.availableProviders,
     currentChatMessages: mergedInitialState.currentChatMessages,

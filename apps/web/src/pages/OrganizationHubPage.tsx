@@ -20,7 +20,7 @@ export const OrganizationHubPage: React.FC = () => {
     isLoading: isOrgLoading,
     error: orgError, // Get the error state
     selectCurrentUserRoleInOrg, // ADDED: The correct selector function
-    fetchOrganizationDetails,
+    fetchCurrentOrganizationDetails,
     fetchCurrentOrganizationMembers,
   } = useOrganizationStore();
 
@@ -30,7 +30,7 @@ export const OrganizationHubPage: React.FC = () => {
   // This ensures data is fetched even when the ID is set by hydration from localStorage.
   useEffect(() => {
     if (currentOrganizationId) {
-      fetchOrganizationDetails(currentOrganizationId);
+      fetchCurrentOrganizationDetails();
       fetchCurrentOrganizationMembers();
     }
     // Optional: If the ID becomes null, we might want to clear details/members explicitly,
@@ -38,7 +38,7 @@ export const OrganizationHubPage: React.FC = () => {
     // else {
     //   set({ currentOrganizationDetails: null, currentOrganizationMembers: [] }); 
     // }
-  }, [currentOrganizationId, fetchOrganizationDetails, fetchCurrentOrganizationMembers]);
+  }, [currentOrganizationId, fetchCurrentOrganizationDetails, fetchCurrentOrganizationMembers]);
 
   // Initial Loading State with Skeletons
   if (isOrgLoading && userOrganizations.length === 0 && !orgError) {

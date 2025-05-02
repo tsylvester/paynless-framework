@@ -57,8 +57,8 @@ export const OrganizationFocusedViewPage: React.FC = () => {
     if (currentOrganizationId && currentOrganizationId === orgId) {
       logger.debug(`[FocusedView] Fetching details & members for orgId: ${currentOrganizationId}`);
       // Need to get these actions from the store
-      const { fetchOrganizationDetails, fetchCurrentOrganizationMembers } = useOrganizationStore.getState();
-      fetchOrganizationDetails(currentOrganizationId);
+      const { fetchCurrentOrganizationDetails, fetchCurrentOrganizationMembers } = useOrganizationStore.getState();
+      fetchCurrentOrganizationDetails();
       fetchCurrentOrganizationMembers();
     }
   }, [currentOrganizationId, orgId]); // Depend on currentOrganizationId and orgId from URL

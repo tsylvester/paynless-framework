@@ -175,7 +175,7 @@ const setupMocks = (
     // Add other actions from baseline if potentially used
     fetchUserOrganizations: vi.fn(),
     setCurrentOrganizationId: vi.fn(),
-    fetchOrganizationDetails: vi.fn(),
+    fetchCurrentOrganizationDetails: vi.fn(),
     inviteUser: mockInviteUser,
     updateOrganization: mockUpdateOrganization,
     openDeleteDialog: mockOpenDeleteDialog,

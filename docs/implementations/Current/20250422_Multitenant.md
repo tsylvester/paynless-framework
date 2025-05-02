@@ -338,7 +338,7 @@ This section outlines the frontend implementation using a dynamic, card-based "h
         *   [X] **(UI)** Uses `AdminBadge` component.
 
         [ ] **Tests:**
-    *   Test route loader/component logic for `/dashboard/organizations/:orgId`: Verify redirection if org is not found, deleted (check 
+    *   Test route loader/component logic for `/organizations/:orgId`: Verify redirection if org is not found, deleted (check 
     `currentOrganizationDetails` from store after fetch), or user is not a member (`currentOrganizationMembers`).
     *   Test `OrganizationSwitcher`: Verify it updates `currentOrganizationId` in the store and navigation occurs (if designed to navigate).
     *   Test conditional rendering within org pages: Ensure admin-only controls (delete org, change roles, approve requests) are hidden/disabled for non-admins 

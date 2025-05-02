@@ -8,6 +8,8 @@ import {
     MembershipRequest,
     OrganizationState,
     OrganizationActions,
+    OrganizationUIState,
+    OrganizationUIActions,
 } from '@paynless/types';
 // Import the specific client class and the base api object
 import { 
@@ -16,21 +18,7 @@ import {
 import { useAuthStore } from './authStore'; // To get user ID
 import { logger } from '@paynless/utils';
 
-// --- State Interface (REMOVED - Imported from @paynless/types) ---
-// We need to augment the imported state for UI elements NOT defined in the type package
-interface OrganizationUIState {
-    isCreateModalOpen: boolean;
-    isDeleteDialogOpen: boolean;
-}
 
-// --- Actions Interface (REMOVED - Imported from @paynless/types) ---
-// We need to augment the imported actions for UI elements NOT defined in the type package
-interface OrganizationUIActions {
-    openCreateModal: () => void;
-    closeCreateModal: () => void;
-    openDeleteDialog: () => void;
-    closeDeleteDialog: () => void;
-}
 
 // --- Store Type (Use imported type) ---
 // type OrganizationStore = OrganizationState & OrganizationActions; 
@@ -236,14 +224,6 @@ export const useOrganizationStore = create<OrganizationStoreImplementation>()(
         }
         // --- END Backend Profile Update ---
 
-        // <<< REMOVE FETCH TRIGGERS >>>
-        // Fetches should be triggered by page components based on ID change
-        /*
-        if (orgId) {
-            get().fetchOrganizationDetails(orgId);
-            get().fetchCurrentOrganizationMembers();
-        }
-        */
         logger.info(`[OrganizationStore] Switched current organization context to: ${orgId}`);
       },
 

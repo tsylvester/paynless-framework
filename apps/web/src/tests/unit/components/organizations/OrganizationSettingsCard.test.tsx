@@ -300,7 +300,7 @@ describe('OrganizationSettingsCard', () => {
   it('should call openDeleteDialog when delete button is clicked', async () => {
     // Arrange
     const user = userEvent.setup();
-    const orgId = baselineOrgState.currentOrganizationId; // <<< Get the ID
+    const orgId = baselineOrgState.currentOrganizationId; // Use ID from baseline
     renderWithProvider(<OrganizationSettingsCard />);
     const deleteButton = screen.getByRole('button', { name: /^Delete$/i });
 
@@ -308,8 +308,11 @@ describe('OrganizationSettingsCard', () => {
     await user.click(deleteButton);
 
     // Assert
-    expect(mockOpenDeleteDialog).toHaveBeenCalledTimes(1);
-    expect(mockOpenDeleteDialog).toHaveBeenCalledWith(orgId); // <<< Pass the ID
+    await waitFor(() => {
+      // Check the mock function fetched *from the store state*
+      expect(useOrganizationStore.getState().openDeleteDialog).toHaveBeenCalledTimes(1);
+      expect(useOrganizationStore.getState().openDeleteDialog).toHaveBeenCalledWith(orgId);
+    });
   });
 
   // --- Add More Tests Here based on the plan ---
