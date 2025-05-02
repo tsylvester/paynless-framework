@@ -8,17 +8,16 @@ import { syncOpenAIModels, type SyncOpenAIDeps } from "./openai_sync.ts";
 // NOTE: getCurrentDbModels is now mocked via deps, but keep types
 import { type SyncResult, type DbAiProvider } from "./index.ts"; 
 // Import type for OpenAI API response simulation
-import type { ProviderModelInfo } from "../../_shared/ai_service/types.ts";
 
 // Import shared types and test utils
 import { 
     createMockSupabaseClient, 
     type MockSupabaseDataConfig,
-    // No longer need fetch helpers directly in this test file
-    // setMockFetchResponse, 
-    // stubFetchForTestScope, 
-    type MockQueryBuilderState
+    MockQueryBuilderState
 } from "../_shared/test-utils.ts";
+
+import { assertThrows } from "jsr:@std/testing/asserts";
+import type { AiProviderAdapter, ProviderModelInfo, AiProvider } from "../../../packages/types/src/ai.types.ts";
 
 // Helper to create mock dependencies
 const createMockSyncDeps = (overrides: Partial<SyncOpenAIDeps> = {}): SyncOpenAIDeps => ({

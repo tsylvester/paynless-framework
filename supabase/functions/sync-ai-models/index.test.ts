@@ -52,7 +52,10 @@ Deno.test("sync-ai-models mainHandler", {
         const response = await mainHandler(request, mockDeps);
 
         assertEquals(response.status, 401);
-        assertSpyCall(mockDeps.createErrorResponse as Spy, 0, { args: ['Unauthorized', 401] });
+        const errorResponseSpy = mockDeps.createErrorResponse as Spy;
+        assertSpyCalls(errorResponseSpy, 1);
+        assertEquals(errorResponseSpy.calls[0].args[0], "Unauthorized");
+        assertEquals(errorResponseSpy.calls[0].args[1], 401);
         assertSpyCalls(mockDeps.doOpenAiSync as Spy, 0); // Sync should not run
     });
 
@@ -69,7 +72,10 @@ Deno.test("sync-ai-models mainHandler", {
         const response = await mainHandler(request, mockDeps);
 
         assertEquals(response.status, 401);
-        assertSpyCall(mockDeps.createErrorResponse as Spy, 0, { args: ['Unauthorized', 401] });
+        const errorResponseSpy = mockDeps.createErrorResponse as Spy;
+        assertSpyCalls(errorResponseSpy, 1);
+        assertEquals(errorResponseSpy.calls[0].args[0], "Unauthorized");
+        assertEquals(errorResponseSpy.calls[0].args[1], 401);
         assertSpyCalls(mockDeps.doOpenAiSync as Spy, 0); 
     });
 
@@ -132,7 +138,10 @@ Deno.test("sync-ai-models mainHandler", {
         const response = await mainHandler(request, mockDeps);
 
         assertEquals(response.status, 405);
-        assertSpyCall(mockDeps.createErrorResponse as Spy, 0, { args: ['Method Not Allowed', 405] });
+        const errorResponseSpy = mockDeps.createErrorResponse as Spy;
+        assertSpyCalls(errorResponseSpy, 1);
+        assertEquals(errorResponseSpy.calls[0].args[0], "Method Not Allowed");
+        assertEquals(errorResponseSpy.calls[0].args[1], 405);
         assertSpyCalls(mockDeps.doOpenAiSync as Spy, 0); // Sync should not run
     });
 

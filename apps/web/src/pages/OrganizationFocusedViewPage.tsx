@@ -52,6 +52,18 @@ export const OrganizationFocusedViewPage: React.FC = () => {
   }, [orgId, currentOrganizationId, setCurrentOrganizationId]);
 
   useEffect(() => {
+    // Fetch details and members whenever the currentOrganizationId is set (and matches orgId)
+    // This handles both initial load via URL and changes via switcher (if applicable on this page)
+    if (currentOrganizationId && currentOrganizationId === orgId) {
+      logger.debug(`[FocusedView] Fetching details & members for orgId: ${currentOrganizationId}`);
+      // Need to get these actions from the store
+      const { fetchCurrentOrganizationDetails, fetchCurrentOrganizationMembers } = useOrganizationStore.getState();
+      fetchCurrentOrganizationDetails();
+      fetchCurrentOrganizationMembers();
+    }
+  }, [currentOrganizationId, orgId]); // Depend on currentOrganizationId and orgId from URL
+
+  useEffect(() => {
     // Validation checks after data might have loaded based on orgId change
     if (!isOrgLoading && orgId && currentOrganizationId === orgId) {
         // Check 1: Is the requested orgId among the user's organizations?

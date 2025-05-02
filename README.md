@@ -29,6 +29,12 @@ The framework comes pre-configured with essential features:
 *   **User Analytics:** Pluggable analytics client (`@paynless/analytics`) with PostHog prebuilt, prepared for Mixpanel or others.
 *   **Email Marketing Sync:** Trigger-based system to sync new users to email marketing platforms like Kit (prebuilt), prepared for other email marketing platforms.
 *   **Customer Service:** Chatwoot prebuild for helping users. 
+*   **In-App Notifications:** A real-time notification system allowing users to receive updates within the application (e.g., organization invites, role changes). Includes UI components for displaying and managing notifications.
+*   **Multi-Tenancy (Organizations/Teams):** Support for users to create and belong to multiple organizations or teams. Includes features for:
+    *   Organization creation and management (settings, visibility).
+    *   Member management (inviting users via email, accepting/declining invites, managing roles - admin/member, removing members).
+    *   Role-based access control (RBAC) enforced via RLS policies and backend checks.
+    *   Organization switcher UI for easy context switching.
 
 ## Development
 *   **Development Experience:**

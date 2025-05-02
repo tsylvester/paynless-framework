@@ -175,7 +175,8 @@ export function Header() {
       {/* Mobile menu */}
       {isMenuOpen && (
         <div className="sm:hidden bg-surface border-t border-border">
-          <div className="flex justify-end px-4 pt-2">
+          <div className="flex justify-end items-center px-4 pt-2 space-x-2">
+            <Notifications />
             <button
               onClick={() =>
                 setColorMode(colorMode === 'light' ? 'dark' : 'light')
@@ -227,6 +228,9 @@ export function Header() {
               >
                 Chat
               </Link>
+              <div className="px-4 py-2">
+                <OrganizationSwitcher />
+              </div>
               <Link
                 to="/profile"
                 className="block px-4 py-2 text-base font-medium text-textSecondary hover:bg-primary/5 hover:text-textPrimary"

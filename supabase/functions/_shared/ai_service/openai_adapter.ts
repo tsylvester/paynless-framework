@@ -24,6 +24,11 @@ export class OpenAiAdapter implements AiProviderAdapter {
       content: msg.content,
     })).filter(msg => msg.content); // Ensure no empty messages
 
+    // Add the current user message if it exists
+    if (request.message) {
+      openaiMessages.push({ role: 'user', content: request.message });
+    }
+
     const openaiPayload = {
       model: modelApiName,
       messages: openaiMessages,

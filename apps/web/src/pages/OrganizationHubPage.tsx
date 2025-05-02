@@ -8,7 +8,6 @@ import { OrganizationSettingsCard } from '../components/organizations/Organizati
 import { MemberListCard } from '../components/organizations/MemberListCard';
 import { InviteMemberCard } from '../components/organizations/InviteMemberCard';
 import { PendingActionsCard } from '../components/organizations/PendingActionsCard';
-import { useCurrentUser } from '../hooks/useCurrentUser'; // Assuming hook to get user info
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'; // Import Alert components
 import { Terminal } from 'lucide-react'; // Example icon for Alert
 import { Skeleton } from '@/components/ui/skeleton'; // Import Skeleton
@@ -17,44 +16,21 @@ import ErrorBoundary from '../components/common/ErrorBoundary'; // Import ErrorB
 export const OrganizationHubPage: React.FC = () => {
   const { 
     userOrganizations,
-    fetchUserOrganizations,
-    setCurrentOrganizationId,
     currentOrganizationId,
     isLoading: isOrgLoading,
     error: orgError, // Get the error state
     selectCurrentUserRoleInOrg, // ADDED: The correct selector function
-    fetchOrganizationDetails,
+    fetchCurrentOrganizationDetails,
     fetchCurrentOrganizationMembers,
   } = useOrganizationStore();
 
-  const { user } = useCurrentUser(); // Get current user details
   const currentUserRole = selectCurrentUserRoleInOrg(); // Call the selector function to get the role
-
-  useEffect(() => {
-    // Fetch organizations when the component mounts or user changes
-    if (user) {
-      fetchUserOrganizations();
-    }
-  }, [fetchUserOrganizations, user]);
-
-  useEffect(() => {
-    // Set the initial current organization if not already set and organizations are loaded
-    // Make sure not to set if there was an error fetching
-    if (!currentOrganizationId && userOrganizations.length > 0 && !orgError) {
-      // Use the correct property 'id' from the Organization type
-      setCurrentOrganizationId(userOrganizations[0].id);
-    }
-    // If an error occurs *after* an org was selected, maybe clear selection?
-    // else if (orgError && currentOrganizationId) {
-    //   setCurrentOrganizationId(null); 
-    // }
-  }, [currentOrganizationId, userOrganizations, setCurrentOrganizationId, orgError]);
 
   // NEW: Effect to fetch details/members whenever currentOrganizationId changes (and is not null)
   // This ensures data is fetched even when the ID is set by hydration from localStorage.
   useEffect(() => {
     if (currentOrganizationId) {
-      fetchOrganizationDetails(currentOrganizationId);
+      fetchCurrentOrganizationDetails();
       fetchCurrentOrganizationMembers();
     }
     // Optional: If the ID becomes null, we might want to clear details/members explicitly,
@@ -62,7 +38,7 @@ export const OrganizationHubPage: React.FC = () => {
     // else {
     //   set({ currentOrganizationDetails: null, currentOrganizationMembers: [] }); 
     // }
-  }, [currentOrganizationId, fetchOrganizationDetails, fetchCurrentOrganizationMembers]);
+  }, [currentOrganizationId, fetchCurrentOrganizationDetails, fetchCurrentOrganizationMembers]);
 
   // Initial Loading State with Skeletons
   if (isOrgLoading && userOrganizations.length === 0 && !orgError) {

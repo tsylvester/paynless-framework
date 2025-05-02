@@ -105,8 +105,7 @@ describe('OrganizationSettingsCard', () => {
       useAuthStore.setState({
         ...baselineAuthState,
         // Set the user ID needed by the selector
-        // @ts-expect-error - Mocking simplified user object
-        user: { id: 'user-admin' }
+        user: { id: 'user-admin' } // Type checked by store definition
       }, true); 
     });
   });
@@ -135,8 +134,7 @@ describe('OrganizationSettingsCard', () => {
       // Update auth store user ID
       useAuthStore.setState({ 
         ...useAuthStore.getState(), // Keep existing profile etc.
-        // @ts-expect-error - Mocking simplified user object
-        user: { id: 'user-member' }
+        user: { id: 'user-member' } // Type checked by store definition
       }); 
     });
 
@@ -277,7 +275,7 @@ describe('OrganizationSettingsCard', () => {
     const nameInput = screen.getByLabelText(/Organization Name/i);
     const submitButton = screen.getByRole('button', { name: /^Update$/i });
     const deleteButton = screen.getByRole('button', { name: /^Delete$/i });
-    const visibilitySelect = screen.getByRole('combobox', { name: /Visibility/i });
+    // const visibilitySelect = screen.getByRole('combobox', { name: /Visibility/i }); // Unused variable
 
     // Act: Type something valid and click submit
     await user.clear(nameInput);
@@ -302,7 +300,7 @@ describe('OrganizationSettingsCard', () => {
   it('should call openDeleteDialog when delete button is clicked', async () => {
     // Arrange
     const user = userEvent.setup();
-    const orgId = baselineOrgState.currentOrganizationId; // <<< Get the ID
+    const orgId = baselineOrgState.currentOrganizationId; // Use ID from baseline
     renderWithProvider(<OrganizationSettingsCard />);
     const deleteButton = screen.getByRole('button', { name: /^Delete$/i });
 
@@ -310,8 +308,11 @@ describe('OrganizationSettingsCard', () => {
     await user.click(deleteButton);
 
     // Assert
-    expect(mockOpenDeleteDialog).toHaveBeenCalledTimes(1);
-    expect(mockOpenDeleteDialog).toHaveBeenCalledWith(orgId); // <<< Pass the ID
+    await waitFor(() => {
+      // Check the mock function fetched *from the store state*
+      expect(useOrganizationStore.getState().openDeleteDialog).toHaveBeenCalledTimes(1);
+      expect(useOrganizationStore.getState().openDeleteDialog).toHaveBeenCalledWith(orgId);
+    });
   });
 
   // --- Add More Tests Here based on the plan ---

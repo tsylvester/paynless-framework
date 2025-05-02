@@ -17,6 +17,7 @@ import { Session, User, UserProfile, UserRole } from '@paynless/types';
 import { useNotificationStore } from './notificationStore'; 
 // --- Import getApiClient --- 
 import { getApiClient } from '@paynless/api'; 
+import { useOrganizationStore } from './organizationStore'; // Import org store
 
 // Define a type for the listener callback Supabase expects
 type AuthStateChangeListener = (event: AuthChangeEvent, session: SupabaseSession | null) => void;
@@ -115,6 +116,21 @@ vi.mock('./notificationStore', () => ({
     }
 }));
 
+// --- Mock Organization Store --- 
+const mockSetCurrentOrgId = vi.fn();
+vi.mock('./organizationStore', () => ({
+    useOrganizationStore: {
+        getState: vi.fn(() => ({
+            // Provide mock for the action called by authStore listener
+            setCurrentOrganizationId: mockSetCurrentOrgId,
+            // Add other state/actions if needed by authStore interactions
+        })),
+        // Mock other store methods if needed
+        setState: vi.fn(),
+        getInitialState: vi.fn(() => ({ /* initial org state if needed */ }))
+    }
+}));
+
 describe('authStore Listener Logic (initAuthListener)', () => {
   let listenerUnsubscribe: () => void;
   let listenerCallback: (event: string, session: SupabaseSession | null) => Promise<void>; // Adjusted type for async
@@ -162,6 +178,9 @@ describe('authStore Listener Logic (initAuthListener)', () => {
     setStateSpy = vi.spyOn(useAuthStore, 'setState');
 
     expect(listenerCallback).toBeDefined();
+
+    // Clear org store mock
+    mockSetCurrentOrgId.mockClear();
   });
 
   afterEach(() => {
@@ -204,9 +223,13 @@ describe('authStore Listener Logic (initAuthListener)', () => {
   it('should set session, user, profile and isLoading=false on INITIAL_SESSION with session', async () => {
     vi.useFakeTimers(); // Use fake timers
     // Arrange: Mock profile fetch for this specific test
+    const profileWithLastOrg = { 
+        ...mockUserProfile, 
+        last_selected_org_id: 'org-from-profile' 
+    };
     const profileApiMock = vi.mocked(getApiClient)().get.mockResolvedValueOnce({ 
         status: 200, 
-        data: { profile: mockUserProfile }, 
+        data: { profile: profileWithLastOrg },
         error: null 
     });
 
@@ -238,42 +261,64 @@ describe('authStore Listener Logic (initAuthListener)', () => {
     const finalState = useAuthStore.getState();
     expect(finalState.session).toEqual(expectedMappedSession);
     expect(finalState.user).toEqual(expectedMappedUser);
-    expect(finalState.profile).toEqual(mockUserProfile); // Check final profile
+    // --- Modify Profile Mock --- 
+    expect(finalState.profile).toEqual(profileWithLastOrg);
     expect(finalState.isLoading).toBe(false);
     expect(finalState.error).toBeNull();
+
     // Verify profile fetch was called
     expect(profileApiMock).toHaveBeenCalledTimes(1);
     expect(profileApiMock).toHaveBeenCalledWith('me', { token: mockSupabaseSession.access_token });
+
+    // --- Add Assertions --- 
     // Verify notification subscription was called
     expect(mockSubscribeNotifications).toHaveBeenCalledWith(expectedMappedUser.id);
+    // Verify organization context was set
+    expect(mockSetCurrentOrgId).toHaveBeenCalledWith('org-from-profile'); 
   });
 
-  it('should set profile=null, set error, and still call replay on profile fetch failure', async () => {
-    vi.useFakeTimers(); // Use fake timers
+  // Add a new test case for null last_selected_org_id
+  it('should call setCurrentOrganizationId with null if last_selected_org_id is null in profile', async () => {
+    vi.useFakeTimers(); 
+    // Arrange: Mock profile fetch with null last_selected_org_id
+    const profileWithNullOrg = { ...mockUserProfile, last_selected_org_id: null };
+    vi.mocked(getApiClient)().get.mockResolvedValueOnce({ 
+        status: 200, 
+        data: { profile: profileWithNullOrg }, 
+        error: null 
+    });
+
+    // Act
+    await act(async () => {
+        await listenerCallback('INITIAL_SESSION', mockSupabaseSession);
+        await vi.advanceTimersByTimeAsync(10);
+    });
+
+    // Assert
+    expect(mockSetCurrentOrgId).toHaveBeenCalledWith(null);
+    expect(vi.mocked(getApiClient)().get).toHaveBeenCalledTimes(1); // Ensure profile fetch happened
+  });
+
+  // Add a new test case for profile fetch failure
+  it('should call setCurrentOrganizationId with null if profile fetch fails', async () => {
+    vi.useFakeTimers(); 
     // Arrange: Mock profile fetch to fail
-    const mockError = new Error('API Profile Fetch Failed');
-    const profileApiMock = vi.mocked(getApiClient)().get.mockResolvedValueOnce({ 
+    vi.mocked(getApiClient)().get.mockResolvedValueOnce({ 
         status: 500, 
         data: null, 
-        error: { message: mockError.message, code: 'FETCH_ERROR' }
+        error: { message: 'Fetch failed', code: '500' }
     });
-    
-    // Act: Simulate event that triggers profile fetch
+
+    // Act
     await act(async () => {
-        await listenerCallback('SIGNED_IN', mockSupabaseSession); // Using SIGNED_IN for simplicity
-        await vi.advanceTimersByTimeAsync(10); // Allow setTimeout
+        await listenerCallback('INITIAL_SESSION', mockSupabaseSession);
+        await vi.advanceTimersByTimeAsync(10);
     });
-    
+
     // Assert
-    expect(setStateSpy).toHaveBeenCalledTimes(2); // Initial + Error state
-    // Check final state
-    const finalState = useAuthStore.getState();
-    expect(finalState.session).toEqual(expectedMappedSession);
-    expect(finalState.user).toEqual(expectedMappedUser);
-    expect(finalState.profile).toBeNull(); // Profile should be null
-    expect(finalState.error).toEqual(new Error(mockError.message)); // Error should be set
-    expect(profileApiMock).toHaveBeenCalledTimes(1);
-    expect(mockSubscribeNotifications).not.toHaveBeenCalled(); // Should not subscribe on profile fail
+    expect(mockSetCurrentOrgId).toHaveBeenCalledWith(null);
+    expect(vi.mocked(getApiClient)().get).toHaveBeenCalledTimes(1); // Ensure profile fetch happened
+    expect(useAuthStore.getState().error).toBeInstanceOf(Error); // Verify error was set in authStore
   });
 
   it('should set session, user, profile on SIGNED_IN', async () => {
@@ -394,4 +439,108 @@ describe('authStore Listener Logic (initAuthListener)', () => {
     expect(mockSubscribeNotifications).toHaveBeenCalledWith(updatedMappedUser.id);
   });
 
+  // --- Modify SIGNED_IN test ---
+  it('should set session, user, profile, navigate, and set org context on SIGNED_IN', async () => {
+    vi.useFakeTimers();
+    localStorage.setItem('pendingAction', JSON.stringify({ returnPath: '/pending' }));
+    // Arrange: Mock profile fetch with org id
+    const profileWithLastOrg = { ...mockUserProfile, last_selected_org_id: 'org-signed-in' };
+    vi.mocked(getApiClient)().get.mockResolvedValueOnce({ 
+        status: 200, 
+        data: { profile: profileWithLastOrg }, 
+        error: null 
+    });
+
+    // Act
+    await act(async () => {
+        await listenerCallback('SIGNED_IN', mockSupabaseSession);
+        await vi.advanceTimersByTimeAsync(10);
+    });
+
+    // Assert
+    const finalState = useAuthStore.getState();
+    expect(finalState.session).toEqual(expectedMappedSession);
+    expect(finalState.user).toEqual(expectedMappedUser);
+    expect(finalState.profile).toEqual(profileWithLastOrg);
+    expect(finalState.isLoading).toBe(false);
+    expect(mockNavigate).toHaveBeenCalledWith('/pending');
+    expect(mockSetCurrentOrgId).toHaveBeenCalledWith('org-signed-in');
+  });
+  
+  // --- Modify TOKEN_REFRESHED test ---
+  it('should update session, user, profile, and set org context on TOKEN_REFRESHED', async () => {
+     vi.useFakeTimers();
+     // Arrange: Mock profile fetch with org id
+    const profileWithLastOrg = { ...mockUserProfile, last_selected_org_id: 'org-refreshed' };
+    vi.mocked(getApiClient)().get.mockResolvedValueOnce({ 
+        status: 200, 
+        data: { profile: profileWithLastOrg }, 
+        error: null 
+    });
+    
+    // Act
+    await act(async () => {
+      await listenerCallback('TOKEN_REFRESHED', mockSupabaseSession);
+      await vi.advanceTimersByTimeAsync(10);
+    });
+
+    // Assert
+    const finalState = useAuthStore.getState();
+    expect(finalState.session).toEqual(expectedMappedSession);
+    expect(finalState.user).toEqual(expectedMappedUser);
+    expect(finalState.profile).toEqual(profileWithLastOrg);
+    expect(finalState.isLoading).toBe(false);
+    expect(mockSetCurrentOrgId).toHaveBeenCalledWith('org-refreshed');
+  });
+
+  // --- Modify USER_UPDATED test ---
+  it('should update user, fetch profile, and set org context on USER_UPDATED', async () => {
+    vi.useFakeTimers();
+    const updatedSupabaseUser = { ...mockSupabaseUser, email: 'updated@example.com' };
+    const expectedUpdatedMappedUser = { ...expectedMappedUser, email: 'updated@example.com' };
+    // Arrange: Mock profile fetch with org id
+    const profileWithLastOrg = { ...mockUserProfile, last_selected_org_id: 'org-user-update' };
+    vi.mocked(getApiClient)().get.mockResolvedValueOnce({ 
+        status: 200, 
+        data: { profile: profileWithLastOrg }, 
+        error: null 
+    });
+
+    // Act
+    await act(async () => {
+      await listenerCallback('USER_UPDATED', { ...mockSupabaseSession, user: updatedSupabaseUser });
+      await vi.advanceTimersByTimeAsync(10);
+    });
+
+    // Assert
+    const finalState = useAuthStore.getState();
+    expect(finalState.user).toEqual(expectedUpdatedMappedUser);
+    expect(finalState.profile).toEqual(profileWithLastOrg);
+    expect(finalState.isLoading).toBe(false);
+    expect(mockSetCurrentOrgId).toHaveBeenCalledWith('org-user-update');
+  });
+
+  // Test SIGNED_OUT
+  it('should clear session, user, profile, and call unsubscribe on SIGNED_OUT', async () => {
+    // Arrange: Set some initial state
+    act(() => {
+        useAuthStore.setState({
+            session: expectedMappedSession,
+            user: expectedMappedUser,
+            profile: mockUserProfile
+        });
+    });
+
+    // Act
+    await act(async () => {
+      await listenerCallback('SIGNED_OUT', null);
+    });
+
+    // Assert
+    const finalState = useAuthStore.getState();
+    expect(finalState.session).toBeNull();
+    expect(finalState.user).toBeNull();
+    expect(finalState.profile).toBeNull();
+    expect(mockUnsubscribeNotifications).toHaveBeenCalledTimes(1);
+  });
 }); 

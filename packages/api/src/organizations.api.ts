@@ -1,5 +1,16 @@
 import { ApiClient } from './apiClient'; // <<< Import base ApiClient
-import { ApiResponse, Organization, OrganizationInsert, OrganizationUpdate, OrganizationMemberWithProfile, Invite, PendingOrgItems } from '@paynless/types'; // <<< Import types
+import { 
+  ApiResponse, 
+  Organization, 
+  OrganizationInsert, 
+  OrganizationUpdate, 
+  Invite, 
+  PendingOrgItems, 
+  PaginatedOrganizationsResponse,
+  PendingInviteWithInviter,
+  PendingRequestWithDetails,
+  PaginatedMembersResponse
+} from '@paynless/types'; // <<< Import types
 
 export class OrganizationApiClient {
   // Store the main ApiClient instance
@@ -43,19 +54,42 @@ export class OrganizationApiClient {
   }
 
   /**
-   * Lists all non-deleted organizations the current user is an active member of.
+   * Lists non-deleted organizations the current user is an active member of, supporting pagination.
    * Uses the main client's get method.
-   * @param _userId - (No longer used) The ID of the user.
-   * @returns An ApiResponse containing an array of organization details or an error.
+   * @param page - Optional page number for pagination.
+   * @param limit - Optional page size limit for pagination.
+   * @returns An ApiResponse containing paginated organization details and total count, or an error.
    */
-  async listUserOrganizations(): Promise<ApiResponse<Organization[]>> {
-    // userId might not be needed if the backend endpoint implicitly uses the authenticated user
-    // Use the injected ApiClient's get method
-    const response = await this.client.get<Organization[]>('organizations');
+  async listUserOrganizations(
+      page?: number, 
+      limit?: number
+  ): Promise<ApiResponse<PaginatedOrganizationsResponse>> {
+    // Build query parameters object
+    const searchParams = new URLSearchParams();
+    if (page !== undefined) searchParams.append('page', String(page));
+    if (limit !== undefined) searchParams.append('limit', String(limit));
+
+    // Construct URL with query parameters
+    const queryString = searchParams.toString();
+    const url = queryString ? `organizations?${queryString}` : 'organizations';
     
-    // Ensure data is always an array on success, even if API returns null/undefined
-    if (response.status >= 200 && response.status < 300 && !response.error) {
-        response.data = response.data ?? [];
+    // Use the injected ApiClient's get method with the constructed URL
+    // Explicitly type the generic parameter for the get method
+    const response = await this.client.get<PaginatedOrganizationsResponse>(url); 
+    
+    // Ensure data structure is correct on success (Optional, but good practice)
+    if (response.status >= 200 && response.status < 300 && !response.error && response.data) {
+        // Ensure the nested properties exist, default to empty/zero if not
+        response.data = {
+            organizations: response.data.organizations ?? [],
+            totalCount: response.data.totalCount ?? 0,
+        };
+    } else if (response.status >= 200 && response.status < 300 && !response.error) {
+        // Handle case where response.data itself might be null/undefined on success
+         response.data = {
+            organizations: [],
+            totalCount: 0,
+        };
     }
     return response;
   }
@@ -76,19 +110,45 @@ export class OrganizationApiClient {
   }
 
   /**
-   * Fetches the members of a specific organization, including their profiles.
+   * Fetches the members of a specific organization, including their profiles, supporting pagination.
    * Uses the main client's get method.
    * @param orgId - The ID of the organization whose members to fetch.
-   * @returns An ApiResponse containing an array of members with profiles or an error.
+   * @param page - Optional page number for pagination.
+   * @param limit - Optional page size limit for pagination.
+   * @returns An ApiResponse containing paginated member details and total count, or an error.
    */
-  async getOrganizationMembers(orgId: string): Promise<ApiResponse<OrganizationMemberWithProfile[]>> {
-    // Use the injected ApiClient's get method
-    const response = await this.client.get<OrganizationMemberWithProfile[]>(`organizations/${orgId}/members`);
-    // Ensure data is always an array on success
-    if (response.status >= 200 && response.status < 300 && !response.error) {
-        response.data = response.data ?? [];
+  async getOrganizationMembers(
+    orgId: string, 
+    page?: number, 
+    limit?: number
+  ): Promise<ApiResponse<PaginatedMembersResponse>> {
+    // Build query parameters object
+    const searchParams = new URLSearchParams();
+    if (page !== undefined) searchParams.append('page', String(page));
+    if (limit !== undefined) searchParams.append('limit', String(limit));
+
+    // Construct URL with query parameters
+    const queryString = searchParams.toString();
+    const url = `organizations/${orgId}/members${queryString ? `?${queryString}` : ''}`;
+
+    // Use the injected ApiClient's get method with the constructed URL and new type
+    const response = await this.client.get<PaginatedMembersResponse>(url); 
+    
+    // Ensure data structure is correct on success (Optional, but good practice)
+    if (response.status >= 200 && response.status < 300 && !response.error && response.data) {
+        // Ensure the nested properties exist, default to empty/zero if not
+        response.data = {
+            members: response.data.members ?? [],
+            totalCount: response.data.totalCount ?? 0,
+        };
+    } else if (response.status >= 200 && response.status < 300 && !response.error) {
+        // Handle case where response.data itself might be null/undefined on success
+        response.data = {
+            members: [],
+            totalCount: 0,
+        };
     }
-    return response;
+    return response; // Return the processed response
   }
 
   /**
@@ -244,17 +304,31 @@ export class OrganizationApiClient {
    * @param orgId - The ID of the organization.
    * @returns An ApiResponse containing lists of pending invites and requests or an error.
    */
-  async getPendingOrgActions(orgId: string): Promise<ApiResponse<PendingOrgItems>> {
+  async getPendingOrgActions(orgId: string): Promise<ApiResponse<{ invites: PendingInviteWithInviter[], requests: PendingRequestWithDetails[] }>> {
     // Backend endpoint: GET /organizations/:orgId/pending (example)
-    const response = await this.client.get<PendingOrgItems>(`organizations/${orgId}/pending`);
+    // The actual fetch might return base types; casting/assuming enrichment happens in backend or needs client-side mapping
+    const response = await this.client.get<PendingOrgItems>(`organizations/${orgId}/pending`); 
+    
+    // IMPORTANT: If backend doesn't return enriched types, this cast is unsafe.
+    // The backend function MUST perform the JOINs to include user_profiles and invited_by_profile.
+    // For now, we cast the response data assuming the backend provides the enriched structure.
+    const enrichedData = response.data as { invites: PendingInviteWithInviter[], requests: PendingRequestWithDetails[] } | undefined;
+
     // Ensure data structure is correct on success, providing empty arrays if parts are missing
     if (response.status >= 200 && response.status < 300 && !response.error) {
         response.data = {
-            invites: response.data?.invites ?? [],
-            requests: response.data?.requests ?? []
+            invites: enrichedData?.invites ?? [],
+            requests: enrichedData?.requests ?? []
+        };
+    } else if (response.status >= 200 && response.status < 300 && !response.error) {
+         // Handle case where response.data itself might be null/undefined on success
+         response.data = {
+            invites: [],
+            requests: []
         };
     }
-    return response;
+    // Cast the entire response to match the function's Promise signature
+    return response as ApiResponse<{ invites: PendingInviteWithInviter[], requests: PendingRequestWithDetails[] }>;
   }
 
   /**

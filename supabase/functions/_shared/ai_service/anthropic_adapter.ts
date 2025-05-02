@@ -23,6 +23,25 @@ const ANTHROPIC_VERSION = '2023-06-01';
  */
 export class AnthropicAdapter implements AiProviderAdapter {
 
+  // Hardcoded list as fallback for listModels
+  private readonly hardcodedModels: ProviderModelInfo[] = [
+      {
+        api_identifier: "anthropic-claude-3-opus-20240229",
+        name: "Claude 3 Opus",
+        description: undefined
+      },
+      {
+        api_identifier: "anthropic-claude-3-sonnet-20240229",
+        name: "Claude 3 Sonnet",
+        description: undefined
+      },
+      {
+        api_identifier: "anthropic-claude-3-haiku-20240307",
+        name: "Claude 3 Haiku",
+        description: undefined
+      }
+  ];
+
   async sendMessage(
     request: ChatApiRequest,
     modelIdentifier: string, // e.g., "anthropic-claude-3-opus-20240229"
@@ -78,7 +97,7 @@ export class AnthropicAdapter implements AiProviderAdapter {
         console.error('Anthropic request format error: Last message must be from user after filtering.', anthropicMessages);
         // Depending on the desired behavior, we could potentially remove the last assistant message.
         // For now, throwing an error is safer as it indicates a potential issue upstream.
-        throw new Error('Cannot send request to Anthropic: message history format invalid after filtering.');
+        throw new Error('Cannot send request to Anthropic: message history format invalid.');
     }
 
     const anthropicPayload = {
@@ -151,46 +170,39 @@ export class AnthropicAdapter implements AiProviderAdapter {
     const modelsUrl = `${ANTHROPIC_API_BASE}/models`; // Correct endpoint
     console.log("Fetching models dynamically from Anthropic...");
 
-    try {
-      const response = await fetch(modelsUrl, {
-        method: 'GET',
-        headers: {
-          'x-api-key': apiKey,
-          'anthropic-version': ANTHROPIC_VERSION, 
-        },
-      });
+    const response = await fetch(modelsUrl, {
+      method: 'GET',
+      headers: {
+        'x-api-key': apiKey,
+        'anthropic-version': ANTHROPIC_VERSION, 
+      },
+    });
 
-      if (!response.ok) {
-        const errorBody = await response.text();
-        console.error(`Anthropic API error fetching models (${response.status}): ${errorBody}`);
-        throw new Error(`Anthropic API request failed fetching models: ${response.status} ${response.statusText}`);
-      }
-
-      const jsonResponse = await response.json();
-      
-      // Assuming response structure has a 'data' array based on docs
-      if (!jsonResponse?.data || !Array.isArray(jsonResponse.data)) {
-          console.error("Anthropic listModels response missing or invalid 'data' array:", jsonResponse);
-          throw new Error("Invalid response format received from Anthropic models API.");
-      }
-
-      const models: ProviderModelInfo[] = jsonResponse.data.map((item: any) => ({
-          // Prepend 'anthropic-' for consistency with other adapters/DB entries
-          api_identifier: `anthropic-${item.id}`, 
-          name: item.display_name || item.id, // Use display_name, fallback to id
-          description: null // API does not provide description
-      }));
-
-      console.log(`Found ${models.length} models from Anthropic.`);
-      return models;
-    } catch (error) {
-        console.error("Failed to fetch or parse models from Anthropic:", error);
-        // Decide on behavior: throw error or return empty list?
-        // Throwing might be better to signal a sync failure clearly.
-        throw error; // Re-throw the caught error 
+    if (!response.ok) {
+      const errorBody = await response.text();
+      console.error(`Anthropic API error fetching models (${response.status}): ${errorBody}`);
+      throw new Error(`Anthropic API request failed fetching models: ${response.status} ${response.statusText}`);
     }
+
+    const jsonResponse = await response.json();
+    
+    // Assuming response structure has a 'data' array based on docs
+    if (!jsonResponse?.data || !Array.isArray(jsonResponse.data)) {
+        console.error("Anthropic listModels response missing or invalid 'data' array:", jsonResponse);
+        throw new Error("Invalid response format received from Anthropic models API.");
+    }
+
+    const models: ProviderModelInfo[] = jsonResponse.data.map((item: any) => ({
+        // Prepend 'anthropic-' for consistency with other adapters/DB entries
+        api_identifier: `anthropic-${item.id}`, 
+        name: item.name || item.id, // Use name if available, fallback to id
+        description: undefined // API does not provide description, use undefined
+    }));
+
+    console.log(`Found ${models.length} models from Anthropic dynamically.`);
+    return models;
   }
 }
 
 // Export an instance or the class itself
-export const anthropicAdapter = new AnthropicAdapter(); 
+export const anthropicAdapter = new AnthropicAdapter();

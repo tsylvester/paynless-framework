@@ -219,13 +219,40 @@ Deno.test("AnthropicAdapter sendMessage - Consecutive User Messages", async () =
 });
 
 Deno.test("AnthropicAdapter sendMessage - History Ends With Assistant", async () => {
-    const adapter = new AnthropicAdapter();
-    // No fetch mock needed here, the error should be thrown before the API call
-    await assertRejects(
-        () => adapter.sendMessage(MOCK_CHAT_REQUEST_ENDS_ASSISTANT, MOCK_MODEL_ID, MOCK_API_KEY),
-        Error,
-        "Cannot send request to Anthropic: message history format invalid."
+    // History ends with assistant, BUT we add a new user message, making the sequence valid.
+    // Therefore, validation should pass, and fetch should be called.
+    // The test needs to mock a successful response.
+    const mockFetch = stub(globalThis, "fetch", () =>
+      Promise.resolve(
+        new Response(JSON.stringify(MOCK_ANTHROPIC_SUCCESS_RESPONSE), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      )
     );
+    
+    try {
+        const adapter = new AnthropicAdapter();
+        const result = await adapter.sendMessage(MOCK_CHAT_REQUEST_ENDS_ASSISTANT, MOCK_MODEL_ID, MOCK_API_KEY);
+
+        // Assert fetch was called
+        assertEquals(mockFetch.calls.length, 1);
+        const fetchArgs = mockFetch.calls[0].args;
+        const body = JSON.parse(fetchArgs[1]?.body as string);
+        assertEquals(body.messages.length, 3); // History + new message
+        assertEquals(body.messages[0].role, 'user');
+        assertEquals(body.messages[1].role, 'assistant');
+        assertEquals(body.messages[2].role, 'user'); // The new message
+        assertEquals(body.messages[2].content, 'This should fail'); 
+
+        // Assert result (using the standard mock success response)
+        assertExists(result);
+        assertEquals(result.role, 'assistant');
+        assertEquals(result.content, 'Okay, how can I help you today?');
+
+    } finally {
+        mockFetch.restore();
+    }
 });
 
 Deno.test("AnthropicAdapter sendMessage - History Ends With Assistant (Invalid Format)", async () => {
@@ -248,38 +275,32 @@ Deno.test("AnthropicAdapter sendMessage - History Ends With Assistant (Invalid F
         }
     } finally {
         // CRITICAL: Check fetch call count *before* restoring.
-        // This assertion MUST pass if the pre-flight validation worked.
-        assertEquals(mockFetch.calls.length, 0, "Fetch should NOT have been called due to invalid input format.");
-        mockFetch.restore(); // Restore fetch regardless of outcome
+        assertEquals(mockFetch.calls.length, 0, "Fetch should NOT have been called due to validation error.");
+        // Restore the original fetch function AFTER checking call count
+        mockFetch.restore();
+        // Now assert the error message
+        assertExists(thrownError, "sendMessage should have thrown an error.");
+        assertInstanceOf(thrownError, Error, "Thrown object should be an Error instance.");
+        // Check if the error message matches the one thrown by the validation logic
+        assertEquals(thrownError.message, "Cannot send request to Anthropic: message history format invalid.", "Error message mismatch.");
     }
-
-    // Assert that an Error was caught and it has the correct message
-    assertExists(thrownError, "Error was expected but none was caught or assigned.");
-    assertInstanceOf(thrownError, Error, "Caught object was not an Error instance.");
-    assertEquals(thrownError.message, "Cannot send request to Anthropic: message history format invalid.");
 });
 
-Deno.test("AnthropicAdapter listModels - Success (Hardcoded)", async () => {
-    // No fetch call is expected as list is hardcoded currently
-    const mockFetch = spy(globalThis, "fetch");
+Deno.test("AnthropicAdapter listModels - Failure on API Error", async () => {
+    // This test verifies that listModels throws an error if the API call fails.
+    // We expect listModels to TRY fetching, fail (no mock = real call = 401),
+    // and throw the resulting error.
+    const adapter = new AnthropicAdapter();
 
-    try {
-        const adapter = new AnthropicAdapter();
-        const models = await adapter.listModels(MOCK_API_KEY);
+    // Assert that the call rejects because the underlying fetch will fail (e.g., 401)
+    await assertRejects(
+      async () => await adapter.listModels('invalid-api-key'), // Use an invalid key to ensure failure
+      Error, // Expect an Error object to be thrown
+      "Anthropic API request failed fetching models: 401" // Check for part of the expected error message
+    );
 
-        assertEquals(mockFetch.calls.length, 0); // Verify fetch was NOT called
-
-        assertExists(models);
-        assertEquals(models.length, 3); // Check number of hardcoded models
-        assertEquals(models[0].api_identifier, 'anthropic-claude-3-opus-20240229');
-        assertEquals(models[0].name, 'Anthropic Claude 3 Opus');
-        assertEquals(models[1].api_identifier, 'anthropic-claude-3-sonnet-20240229');
-        assertEquals(models[2].api_identifier, 'anthropic-claude-3-haiku-20240307');
-
-    } finally {
-        // Restore spy if needed, though not strictly necessary if no calls made
-        mockFetch.restore();
-    }
+    // No need to check the returned value as it should throw.
+    // No need for spy/restore here as we aren't checking fetch calls specifically, just the rejection.
 });
 
 // Test the exported instance

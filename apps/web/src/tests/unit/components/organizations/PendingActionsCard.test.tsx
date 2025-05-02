@@ -1,9 +1,14 @@
 import React from 'react';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, within } from '@testing-library/react';
 import { vi, describe, it, expect, beforeEach } from 'vitest';
 import { PendingActionsCard } from '@/components/organizations/PendingActionsCard';
 import { useOrganizationStore } from '@paynless/store';
-import { Invite, MembershipRequest, UserProfile } from '@paynless/types';
+import { 
+    PendingInviteWithInviter, 
+    PendingRequestWithDetails,
+    UserProfile // Import UserProfile type
+} from '@paynless/types';
+import { formatDistanceToNow } from 'date-fns'; // Keep this for date checks
 
 // Mock the Zustand store
 vi.mock('@paynless/store', () => ({
@@ -11,10 +16,20 @@ vi.mock('@paynless/store', () => ({
 }));
 
 // Helper to create mock date string easily
-const formatDate = (date: Date) => date.toLocaleDateString();
+// REMOVE: const formatDate = (date: Date) => date.toLocaleDateString(); // Using date-fns now
 
-// Mock data
-const mockInvite1: Invite = {
+// Mock data using new types
+const mockAdminUserProfile: UserProfile = {
+    id: 'user-admin', 
+    created_at: new Date().toISOString(), 
+    updated_at: new Date().toISOString(), 
+    first_name: 'Admin', 
+    last_name: 'Inviter',
+    last_selected_org_id: null, // or provide a value if needed by component
+    role: 'user' // default role, adjust if admin logic differs
+};
+
+const mockInvite1: PendingInviteWithInviter = {
   id: 'invite-123',
   invite_token: 'token123',
   organization_id: 'org-abc',
@@ -24,39 +39,48 @@ const mockInvite1: Invite = {
   status: 'pending',
   created_at: new Date('2023-10-26T10:00:00Z').toISOString(),
   expires_at: null,
+  invited_user_id: null, 
+  // Use the full profile mock
+  invited_by_profile: mockAdminUserProfile,
 };
 
-const mockInvite2: Invite = {
+const mockInvite2: PendingInviteWithInviter = {
   id: 'invite-456',
   invite_token: 'token456',
   organization_id: 'org-abc',
   invited_email: 'test2@example.com',
   role_to_assign: 'admin',
-  invited_by_user_id: 'user-admin',
+  invited_by_user_id: 'user-admin2',
   status: 'pending',
   created_at: new Date('2023-10-27T11:00:00Z').toISOString(),
   expires_at: null,
+  invited_user_id: null, 
+  invited_by_profile: null, // Keep null case
 };
 
-const mockRequest1: MembershipRequest = {
+const mockRequest1: PendingRequestWithDetails = {
   id: 'req-789',
   user_id: 'user-req1',
   organization_id: 'org-abc',
-  role: 'member', // Role requested often defaults or isn't set until approval
-  status: 'pending',
+  role: 'member', 
+  status: 'pending_approval', 
   created_at: new Date('2023-10-28T12:00:00Z').toISOString(),
-  user_profiles: { // Assuming a nested profile structure
-    user_id: 'user-req1',
-    first_name: 'Pending',
-    last_name: 'User1',
-    full_name: 'Pending User1', // Add full_name if used
-    email: 'pending1@example.com', // Add email if available/needed
-    avatar_url: null,
-    billing_address: null,
-    payment_method: null,
-    updated_at: new Date().toISOString(),
-  } as UserProfile,
+  // Nest profile details correctly
+  user_profiles: {
+      id: 'user-req1',
+      first_name: 'Pending',
+      last_name: 'User1',
+      // Add other required UserProfile fields with dummy data if needed by type
+      created_at: new Date().toISOString(), 
+      updated_at: new Date().toISOString(), 
+      last_selected_org_id: null,
+      role: 'user'
+  },
+  user_email: 'pending1@example.com',
 };
+
+// UserProfile type might still be needed if used elsewhere in mocks, keep import if so
+// const mockUserProfile: UserProfile = { ... };
 
 describe('PendingActionsCard', () => {
   const mockCancelInvite = vi.fn();
@@ -73,6 +97,7 @@ describe('PendingActionsCard', () => {
       cancelInvite: mockCancelInvite,
       approveRequest: mockApproveRequest,
       denyRequest: mockDenyRequest,
+      fetchCurrentOrganizationMembers: vi.fn(), // Add mock fetch
     });
   });
 
@@ -84,8 +109,13 @@ describe('PendingActionsCard', () => {
       cancelInvite: mockCancelInvite,
       approveRequest: mockApproveRequest,
       denyRequest: mockDenyRequest,
+      fetchCurrentOrganizationMembers: vi.fn(), // Ensure fetch is mocked here too
     });
     render(<PendingActionsCard />);
+    // Check for skeleton presence instead of text if component uses skeletons for loading
+    // const skeletons = screen.queryAllByTestId('skeleton'); 
+    // expect(skeletons.length).toBeGreaterThan(0);
+    // OR check for text if it uses text
     expect(screen.getByText('Loading requests...')).toBeInTheDocument();
     expect(screen.getByText('Loading invites...')).toBeInTheDocument();
   });
@@ -104,19 +134,31 @@ describe('PendingActionsCard', () => {
       cancelInvite: mockCancelInvite,
       approveRequest: mockApproveRequest,
       denyRequest: mockDenyRequest,
+      fetchCurrentOrganizationMembers: vi.fn(),
     });
     render(<PendingActionsCard />);
-    expect(screen.getByText(mockInvite1.invited_email)).toBeInTheDocument();
-    expect(screen.getByText(mockInvite1.role_to_assign)).toBeInTheDocument();
-    expect(screen.getByText(formatDate(new Date(mockInvite1.created_at)))).toBeInTheDocument();
-    
-    expect(screen.getByText(mockInvite2.invited_email)).toBeInTheDocument();
-    expect(screen.getByText(mockInvite2.role_to_assign)).toBeInTheDocument();
-    expect(screen.getByText(formatDate(new Date(mockInvite2.created_at)))).toBeInTheDocument();
 
-    // Check for cancel buttons with the updated text
-    const cancelButtons = screen.getAllByRole('button', { name: "Cancel" });
-    expect(cancelButtons).toHaveLength(2);
+    // Find row for invite 1 and assert within it
+    const row1 = screen.getByText(mockInvite1.invited_email).closest('tr');
+    expect(row1).not.toBeNull();
+    if (row1) {
+      expect(within(row1).getByText(mockInvite1.role_to_assign)).toBeInTheDocument();
+      // Construct expected inviter name from profile
+      const inviter1Name = `${mockInvite1.invited_by_profile!.first_name} ${mockInvite1.invited_by_profile!.last_name}`;
+      expect(within(row1).getByText(inviter1Name)).toBeInTheDocument(); 
+      expect(within(row1).getByText(formatDistanceToNow(new Date(mockInvite1.created_at), { addSuffix: true }))).toBeInTheDocument();
+      expect(within(row1).getByRole('button', { name: "Cancel" })).toBeInTheDocument();
+    }
+    
+    // Find row for invite 2 and assert within it
+    const row2 = screen.getByText(mockInvite2.invited_email).closest('tr');
+    expect(row2).not.toBeNull();
+    if (row2) {
+      expect(within(row2).getByText(mockInvite2.role_to_assign)).toBeInTheDocument();
+      expect(within(row2).getByText('Unknown')).toBeInTheDocument(); // Inviter fallback (profile is null)
+      expect(within(row2).getByText(formatDistanceToNow(new Date(mockInvite2.created_at), { addSuffix: true }))).toBeInTheDocument();
+      expect(within(row2).getByRole('button', { name: "Cancel" })).toBeInTheDocument();
+    }
   });
 
   it('renders pending requests correctly', () => {
@@ -127,18 +169,31 @@ describe('PendingActionsCard', () => {
        cancelInvite: mockCancelInvite,
        approveRequest: mockApproveRequest,
        denyRequest: mockDenyRequest,
+       fetchCurrentOrganizationMembers: vi.fn(),
     });
      render(<PendingActionsCard />);
-     // Use full_name from mock data
-     expect(screen.getByText(mockRequest1.user_profiles!.full_name!)).toBeInTheDocument(); 
-     expect(screen.getByText(formatDate(new Date(mockRequest1.created_at)))).toBeInTheDocument();
      
-     expect(screen.getByRole('button', { name: /approve/i })).toBeInTheDocument();
-     expect(screen.getByRole('button', { name: /deny/i })).toBeInTheDocument();
+     // Find the row based on email (use non-null assertion for mock data)
+     const requestRow = screen.getByText(mockRequest1.user_email!).closest('tr');
+     expect(requestRow).not.toBeNull();
+
+     if (requestRow) {
+       // Check for first and last name within the row (use non-null assertions for mock data)
+       // Combine first and last name for the assertion
+       const fullName = `${mockRequest1.user_profiles!.first_name!} ${mockRequest1.user_profiles!.last_name!}`;
+       expect(within(requestRow).getByText(fullName)).toBeInTheDocument();
+       // Check email is also there 
+       expect(within(requestRow).getByText(mockRequest1.user_email!)).toBeInTheDocument(); 
+       // Check relative date
+       expect(within(requestRow).getByText(formatDistanceToNow(new Date(mockRequest1.created_at), { addSuffix: true }))).toBeInTheDocument();
+       // Check buttons
+       expect(within(requestRow).getByRole('button', { name: /approve/i })).toBeInTheDocument();
+       expect(within(requestRow).getByRole('button', { name: /deny/i })).toBeInTheDocument();
+     }
   });
 
   it('calls cancelInvite with correct ID when cancel button is clicked', async () => {
-    mockCancelInvite.mockResolvedValue(true); // Simulate successful cancellation
+    mockCancelInvite.mockResolvedValue(true); 
     (useOrganizationStore as unknown as ReturnType<typeof vi.fn>).mockReturnValue({
       currentPendingInvites: [mockInvite1],
       currentPendingRequests: [],
@@ -146,11 +201,15 @@ describe('PendingActionsCard', () => {
       cancelInvite: mockCancelInvite,
       approveRequest: mockApproveRequest,
       denyRequest: mockDenyRequest,
+      fetchCurrentOrganizationMembers: vi.fn(), // Mock fetch
     });
 
     render(<PendingActionsCard />);
-    // Find button by exact text "Cancel"
-    const cancelButton = screen.getByRole('button', { name: "Cancel" }); 
+    
+    // Find the specific cancel button within the row for mockInvite1
+    const row1 = screen.getByText(mockInvite1.invited_email).closest('tr');
+    expect(row1).not.toBeNull();
+    const cancelButton = within(row1!).getByRole('button', { name: "Cancel" }); 
     fireEvent.click(cancelButton);
 
     // Check that the store action was called
@@ -159,7 +218,7 @@ describe('PendingActionsCard', () => {
   });
 
    it('calls approveRequest with correct ID when approve button is clicked', () => {
-     mockApproveRequest.mockResolvedValue(true); // Simulate success
+     mockApproveRequest.mockResolvedValue(true); 
      (useOrganizationStore as unknown as ReturnType<typeof vi.fn>).mockReturnValue({
        currentPendingInvites: [],
        currentPendingRequests: [mockRequest1],
@@ -167,10 +226,14 @@ describe('PendingActionsCard', () => {
        cancelInvite: mockCancelInvite,
        approveRequest: mockApproveRequest,
        denyRequest: mockDenyRequest,
+       fetchCurrentOrganizationMembers: vi.fn(), // Mock fetch
      });
 
      render(<PendingActionsCard />);
-     const approveButton = screen.getByRole('button', { name: /approve/i });
+     // Find button within the specific request row
+     const requestRow = screen.getByText(mockRequest1.user_email!).closest('tr');
+     expect(requestRow).not.toBeNull();
+     const approveButton = within(requestRow!).getByRole('button', { name: /approve/i });
      fireEvent.click(approveButton);
 
      expect(mockApproveRequest).toHaveBeenCalledTimes(1);
@@ -178,7 +241,7 @@ describe('PendingActionsCard', () => {
    });
 
    it('calls denyRequest with correct ID when deny button is clicked', () => {
-     mockDenyRequest.mockResolvedValue(true); // Simulate success
+     mockDenyRequest.mockResolvedValue(true); 
      (useOrganizationStore as unknown as ReturnType<typeof vi.fn>).mockReturnValue({
        currentPendingInvites: [],
        currentPendingRequests: [mockRequest1],
@@ -186,10 +249,14 @@ describe('PendingActionsCard', () => {
        cancelInvite: mockCancelInvite,
        approveRequest: mockApproveRequest,
        denyRequest: mockDenyRequest,
+       fetchCurrentOrganizationMembers: vi.fn(), // Mock fetch
      });
 
      render(<PendingActionsCard />);
-     const denyButton = screen.getByRole('button', { name: /deny/i });
+     // Find button within the specific request row
+     const requestRow = screen.getByText(mockRequest1.user_email!).closest('tr');
+     expect(requestRow).not.toBeNull();
+     const denyButton = within(requestRow!).getByRole('button', { name: /deny/i });
      fireEvent.click(denyButton);
 
      expect(mockDenyRequest).toHaveBeenCalledTimes(1);
@@ -205,7 +272,7 @@ describe('PendingActionsCard', () => {
         cancelInvite: mockCancelInvite,
         approveRequest: mockApproveRequest,
         denyRequest: mockDenyRequest,
-        fetchCurrentOrganizationMembers: mockFetchMembers, // Provide the mock fetch function
+        fetchCurrentOrganizationMembers: mockFetchMembers, 
       });
 
       render(<PendingActionsCard />);

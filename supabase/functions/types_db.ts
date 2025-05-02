@@ -138,6 +138,7 @@ export type Database = {
           invite_token: string
           invited_by_user_id: string | null
           invited_email: string
+          invited_user_id: string | null
           organization_id: string
           role_to_assign: string
           status: string
@@ -149,6 +150,7 @@ export type Database = {
           invite_token: string
           invited_by_user_id?: string | null
           invited_email: string
+          invited_user_id?: string | null
           organization_id: string
           role_to_assign?: string
           status?: string
@@ -160,6 +162,7 @@ export type Database = {
           invite_token?: string
           invited_by_user_id?: string | null
           invited_email?: string
+          invited_user_id?: string | null
           organization_id?: string
           role_to_assign?: string
           status?: string
@@ -410,6 +413,7 @@ export type Database = {
           first_name: string | null
           id: string
           last_name: string | null
+          last_selected_org_id: string | null
           role: Database["public"]["Enums"]["user_role"]
           updated_at: string
         }
@@ -418,6 +422,7 @@ export type Database = {
           first_name?: string | null
           id: string
           last_name?: string | null
+          last_selected_org_id?: string | null
           role?: Database["public"]["Enums"]["user_role"]
           updated_at?: string
         }
@@ -426,10 +431,19 @@ export type Database = {
           first_name?: string | null
           id?: string
           last_name?: string | null
+          last_selected_org_id?: string | null
           role?: Database["public"]["Enums"]["user_role"]
           updated_at?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "user_profiles_last_selected_org_id_fkey"
+            columns: ["last_selected_org_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       user_subscriptions: {
         Row: {
@@ -490,7 +504,35 @@ export type Database = {
       }
     }
     Views: {
-      [_ in never]: never
+      v_pending_membership_requests: {
+        Row: {
+          created_at: string | null
+          first_name: string | null
+          id: string | null
+          last_name: string | null
+          organization_id: string | null
+          role: string | null
+          status: string | null
+          user_email: string | null
+          user_id: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "organization_members_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "organization_members_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "user_profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Functions: {
       check_existing_member_by_email: {

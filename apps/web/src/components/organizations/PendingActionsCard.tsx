@@ -4,11 +4,16 @@ import React from 'react';
 import { useOrganizationStore } from '@paynless/store';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Button } from "@/components/ui/button"
-import { Invite, MembershipRequest } from '@paynless/types'; // Assuming these types exist
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { logger } from '@paynless/utils'; // Import logger
 import { RefreshCw } from 'lucide-react'; // Import refresh icon
 import { AdminBadge } from './AdminBadge'; // Import the badge
+import { Badge } from '@/components/ui/badge';
+import { 
+    PendingInviteWithInviter,
+    PendingRequestWithDetails
+} from '@paynless/types';
+import { formatDistanceToNow } from 'date-fns';
 
 // TODO: Refine pending item display (e.g., user info for requests, email/role for invites)
 
@@ -103,7 +108,7 @@ export const PendingActionsCard: React.FC = () => {
       <CardContent className="space-y-6">
         {/* Pending Join Requests */}
         <div>
-          <h4 className="mb-2 font-medium">Join Requests</h4>
+          <h4 className="text-sm font-semibold mb-2">Join Requests</h4>
           {isLoadingPending && currentPendingRequests.length === 0 ? (
             <p className="text-muted-foreground text-sm">Loading requests...</p>
           ) : currentPendingRequests.length === 0 ? (
@@ -118,16 +123,18 @@ export const PendingActionsCard: React.FC = () => {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {currentPendingRequests.map((req: MembershipRequest) => {
+                {currentPendingRequests.map((req: PendingRequestWithDetails) => {
                   const profile = req.user_profiles;
-                  const displayName = profile?.first_name && profile?.last_name 
-                                      ? `${profile.first_name} ${profile.last_name}` 
-                                      : profile?.first_name || profile?.last_name || req.user_id; // Fallback logic
+                  const displayName = profile?.first_name || profile?.last_name 
+                                    ? `${profile?.first_name || ''} ${profile?.last_name || ''}`.trim()
+                                    : (req.user_email || 'User Profile Pending');
                   return (
                   <TableRow key={req.id}>
-                    {/* Use constructed display name */}
-                    <TableCell>{displayName}</TableCell>
-                    <TableCell>{new Date(req.created_at).toLocaleDateString()}</TableCell>
+                    <TableCell>
+                      {displayName}
+                      {req.user_email && <span className="block text-xs text-muted-foreground">{req.user_email}</span>}
+                    </TableCell>
+                    <TableCell>{formatDistanceToNow(new Date(req.created_at), { addSuffix: true })}</TableCell>
                     <TableCell className="text-right space-x-2">
                       <Button size="sm" variant="outline" color="success" onClick={() => handleApproveRequest(req.id)}>Approve</Button>
                       <Button size="sm" variant="destructive" onClick={() => handleDenyRequest(req.id)}>Deny</Button>
@@ -141,7 +148,7 @@ export const PendingActionsCard: React.FC = () => {
 
         {/* Pending Invites */}
         <div>
-          <h4 className="mb-2 font-medium">Sent Invites</h4>
+          <h4 className="text-sm font-semibold mb-2 mt-4">Pending Invitations</h4>
            {isLoadingPending && currentPendingInvites.length === 0 ? (
             <p className="text-muted-foreground text-sm">Loading invites...</p>
           ) : currentPendingInvites.length === 0 ? (
@@ -152,16 +159,22 @@ export const PendingActionsCard: React.FC = () => {
                 <TableRow>
                   <TableHead>Email</TableHead>
                   <TableHead>Role</TableHead>
+                  <TableHead>Invited By</TableHead>
                   <TableHead>Date</TableHead>
                   <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {currentPendingInvites.map((invite: Invite) => (
+                {currentPendingInvites.map((invite: PendingInviteWithInviter) => {
+                  const inviterName = invite.invited_by_profile 
+                                    ? `${invite.invited_by_profile.first_name || ''} ${invite.invited_by_profile.last_name || ''}`.trim()
+                                    : 'Unknown';
+                  return (
                   <TableRow key={invite.id}>
                     <TableCell>{invite.invited_email}</TableCell>
-                    <TableCell>{invite.role_to_assign}</TableCell>
-                    <TableCell>{new Date(invite.created_at).toLocaleDateString()}</TableCell>
+                    <TableCell><Badge variant="secondary">{invite.role_to_assign}</Badge></TableCell>
+                    <TableCell>{inviterName}</TableCell>
+                    <TableCell>{formatDistanceToNow(new Date(invite.created_at), { addSuffix: true })}</TableCell>
                     <TableCell className="text-right">
                       <Button 
                         size="sm" 
@@ -173,11 +186,16 @@ export const PendingActionsCard: React.FC = () => {
                       </Button>
                     </TableCell>
                   </TableRow>
-                ))}
+                );})}
               </TableBody>
             </Table>
           )}
         </div>
+
+        {/* No Pending Actions Message */}
+        {currentPendingInvites.length === 0 && currentPendingRequests.length === 0 && (
+          <p className="text-sm text-muted-foreground">No pending invites or join requests.</p>
+        )}
       </CardContent>
     </Card>
   );

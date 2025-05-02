@@ -53,6 +53,7 @@ export type UserRole = Database['public']['Enums']['user_role'];
 export type UserProfileUpdate = {
   first_name?: string | null; // Match DB nullability
   last_name?: string | null; // Match DB nullability
+  last_selected_org_id?: string | null; // <<< ADD THIS LINE BACK
 }
 
 // Define UserProfile using the DB type for consistency

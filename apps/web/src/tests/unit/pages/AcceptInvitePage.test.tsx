@@ -93,11 +93,9 @@ describe('AcceptInvitePage', () => {
     setupStore(); // Setup default store
     mockUseParams.mockReturnValue({ token: tokenFromUrl });
     mockUseNavigate.mockReturnValue(mockNavigate);
-    vi.useFakeTimers(); // Use fake timers for setTimeout
   });
 
   afterEach(() => {
-    vi.useRealTimers(); // Restore real timers after each test
   });
 
   it('renders invitation message and buttons if token exists AND details loaded', () => {
@@ -143,16 +141,17 @@ describe('AcceptInvitePage', () => {
 
     expect(mockAcceptInvite).toHaveBeenCalledWith(tokenFromUrl);
 
-    expect(toast.success).toHaveBeenCalledWith('Invite accepted! Redirecting...');
+    await waitFor(() => {
+        expect(toast.success).toHaveBeenCalledWith('Invite accepted! Redirecting...');
+    });
 
     await waitFor(() => {
         expect(acceptButton).not.toBeDisabled();
     });
 
-    await act(async () => {
-        vi.advanceTimersByTime(2000); 
+    await waitFor(() => {
+        expect(mockNavigate).toHaveBeenCalledWith('/dashboard/organizations');
     });
-    expect(mockNavigate).toHaveBeenCalledWith('/dashboard/organizations');
   });
 
   it('calls declineInvite action when Decline button is clicked', async () => {
@@ -175,10 +174,9 @@ describe('AcceptInvitePage', () => {
         expect(declineButton).not.toBeDisabled();
     });
 
-    await act(async () => {
-        vi.advanceTimersByTime(2000);
+    await waitFor(() => {
+        expect(mockNavigate).toHaveBeenCalledWith('/dashboard');
     });
-    expect(mockNavigate).toHaveBeenCalledWith('/dashboard');
   });
 
   it('displays error feedback if acceptInvite fails', async () => {
@@ -204,10 +202,9 @@ describe('AcceptInvitePage', () => {
         expect(acceptButton).not.toBeDisabled();
     });
 
-    await act(async () => {
-        vi.advanceTimersByTime(2000);
+    await waitFor(() => {
+        expect(mockNavigate).not.toHaveBeenCalled();
     });
-    expect(mockNavigate).not.toHaveBeenCalled();
   });
 
   it('displays error feedback if declineInvite fails', async () => {
@@ -233,10 +230,9 @@ describe('AcceptInvitePage', () => {
         expect(declineButton).not.toBeDisabled();
     });
 
-    await act(async () => {
-        vi.advanceTimersByTime(2000);
+    await waitFor(() => {
+        expect(mockNavigate).not.toHaveBeenCalled();
     });
-    expect(mockNavigate).not.toHaveBeenCalled();
   });
 
   it('calls fetchInviteDetails on mount with token', () => {

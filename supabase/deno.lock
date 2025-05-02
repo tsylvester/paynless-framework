@@ -27,7 +27,8 @@
     "npm:react@*": "19.1.0",
     "npm:sinon@*": "20.0.0",
     "npm:stripe@*": "18.0.0",
-    "npm:stripe@14.11.0": "14.11.0"
+    "npm:stripe@14.11.0": "14.11.0",
+    "npm:stripe@18.0.0": "18.0.0"
   },
   "jsr": {
     "@std/assert@0.225.3": {
@@ -867,6 +868,7 @@
     "https://deno.land/std@0.224.0/path/windows/parse.ts": "08804327b0484d18ab4d6781742bf374976de662f8642e62a67e93346e759707",
     "https://deno.land/std@0.224.0/path/windows/relative.ts": "3e1abc7977ee6cc0db2730d1f9cb38be87b0ce4806759d271a70e4997fc638d7",
     "https://deno.land/std@0.224.0/path/windows/resolve.ts": "8dae1dadfed9d46ff46cc337c9525c0c7d959fb400a6308f34595c45bdca1972",
+    "https://deno.land/std@0.224.0/path/windows/separator.ts": "e51c5522140eff4f8402617c5c68a201fdfa3a1a8b28dc23587cff931b665e43",
     "https://deno.land/std@0.224.0/path/windows/to_file_url.ts": "40e560ee4854fe5a3d4d12976cef2f4e8914125c81b11f1108e127934ced502e",
     "https://deno.land/std@0.224.0/path/windows/to_namespaced_path.ts": "4ffa4fb6fae321448d5fe810b3ca741d84df4d7897e61ee29be961a6aac89a4c",
     "https://deno.land/std@0.224.0/testing/asserts.ts": "d0cdbabadc49cc4247a50732ee0df1403fdcd0f95360294ad448ae8c240f3f5c",
