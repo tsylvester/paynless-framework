@@ -88,7 +88,23 @@ const ResizeObserverMock = vi.fn(() => ({
 vi.stubGlobal('ResizeObserver', ResizeObserverMock);
 console.log('[setupTests] Applied ResizeObserver mock using vi.stubGlobal.');
 
-// Optional: Add any other global setup here
+// --- ADD PointerEvent Mocks for Radix UI --- 
+// JSDOM doesn't implement PointerEvent methods needed by Radix
+if (typeof Element.prototype.hasPointerCapture === 'undefined') {
+  Element.prototype.hasPointerCapture = vi.fn().mockReturnValue(false);
+}
+if (typeof Element.prototype.releasePointerCapture === 'undefined') {
+  Element.prototype.releasePointerCapture = vi.fn();
+}
+console.log('[setupTests] Applied PointerEvent mocks (has/releasePointerCapture).');
+// --- End PointerEvent Mocks ---
 
-// Log fetch at the end of setup for comparison
-console.log('[setupTests] globalThis.fetch AT END of setupTests.ts:', globalThis.fetch); 
+// --- ADD scrollIntoView Mock --- 
+if (typeof Element.prototype.scrollIntoView === 'undefined') {
+  Element.prototype.scrollIntoView = vi.fn();
+}
+console.log('[setupTests] Applied scrollIntoView mock.');
+// --- End scrollIntoView Mock ---
+
+// Log fetch status AFTER potentially setting up MSW
+console.log(`[setupTests] globalThis.fetch AT END of setupTests.ts: ${globalThis.fetch}`); 

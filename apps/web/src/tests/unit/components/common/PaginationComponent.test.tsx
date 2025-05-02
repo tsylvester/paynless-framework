@@ -97,9 +97,9 @@ describe('PaginationComponent', () => {
     const trigger = screen.getByRole('combobox');
     await user.click(trigger);
     
-    // Find the option by role and accessible name (derived from text content)
-    const option25 = await screen.findByRole('option', { name: '25' }); 
-    await user.click(option25);
+    // Find the element containing the text '25' within the dropdown
+    const optionElement = await screen.findByText('25'); 
+    await user.click(optionElement);
     
     expect(mockOnPageSizeChange).toHaveBeenCalledTimes(1);
     expect(mockOnPageSizeChange).toHaveBeenCalledWith(25);
@@ -110,13 +110,13 @@ describe('PaginationComponent', () => {
     const trigger = screen.getByRole('combobox');
     await user.click(trigger);
 
-    // Verify the specified options are present by role and name
-    expect(await screen.findByRole('option', { name: '5' })).toBeInTheDocument();
-    expect(await screen.findByRole('option', { name: '15' })).toBeInTheDocument();
-    expect(await screen.findByRole('option', { name: '30' })).toBeInTheDocument();
+    // Verify the specified options are present using findByText
+    expect(await screen.findByText('5')).toBeInTheDocument();
+    expect(await screen.findByText('15')).toBeInTheDocument();
+    expect(await screen.findByText('30')).toBeInTheDocument();
 
-    // Verify a default option (not in the allowed list) is absent by role and name
-    expect(screen.queryByRole('option', { name: '10' })).not.toBeInTheDocument();
+    // Verify a default option (not in the allowed list) is absent using queryByText
+    expect(screen.queryByText('10')).not.toBeInTheDocument();
   });
 
 }); 

@@ -1,11 +1,9 @@
+import { describe, it, expect, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import { BrowserRouter } from 'react-router-dom';
-import { describe, it, expect, vi } from 'vitest';
-import { LoginPage } from '../../pages/Login';
 
-// --- Mocks ---
-
-// ADD DIAGNOSTIC MOCK for the store FIRST
+// --- Mocks --- 
+// Store mock MUST be hoisted
 vi.mock('@paynless/store', () => ({
   useAuthStore: vi.fn(() => ({
     login: vi.fn(),
@@ -15,19 +13,12 @@ vi.mock('@paynless/store', () => ({
   // Add mocks for other store hooks if Login.tsx imports them
 }));
 
-// Define the mock component 
-const MockLoginForm = () => (
-  <div data-testid="mock-login-form">
-    <input type="email" placeholder="Email" />
-    <input type="password" placeholder="Password" />
-    <button>Log In</button>
-  </div>
-);
+// REMOVE LoginForm mock
+// const MockLoginForm = () => (...);
+// vi.mock('../components/auth/LoginForm', () => ({...})); 
 
-// Keep this mock as is for LoginForm
-vi.mock('../components/auth/LoginForm', () => ({
-    LoginForm: MockLoginForm, 
-}));
+// Now import the component under test AFTER mocks
+import { LoginPage } from '../../pages/Login';
 
 // REMOVE Layout mock - LoginPage doesn't render it directly
 // vi.mock('../components/layout/Layout', () => ({
@@ -44,21 +35,25 @@ describe('LoginPage Component', () => {
     );
   };
 
-  it('should render the LoginForm component', () => {
+  // Updated test: Check for real form elements/identifiers
+  it('should render the login form container and heading', () => {
     renderLoginPage();
-    // Check if the mocked LoginForm is present (using its test ID)
-    expect(screen.getByTestId('mock-login-form')).toBeInTheDocument();
-    // Remove layout check
-    // expect(screen.getByTestId('layout')).toBeInTheDocument(); 
+    // Check for the form itself using its test id
+    expect(screen.getByTestId('login-form')).toBeInTheDocument(); 
+    // Check for the heading within the form
+    expect(screen.getByRole('heading', { name: /Welcome Back/i })).toBeInTheDocument();
   });
 
-  // Renamed previous first test, keep this focused on mocked elements
-  it('should render mocked form elements', () => { 
+  // Updated test: Check for REAL form input elements
+  it('should render email, password inputs, and submit button', () => { 
     renderLoginPage();
-    // Check for elements known to be in the mocked LoginForm
-    expect(screen.getByPlaceholderText('Email')).toBeInTheDocument();
-    expect(screen.getByPlaceholderText('Password')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /log in/i })).toBeInTheDocument();
+    // Check for elements using their labels or accessible roles
+    expect(screen.getByLabelText(/email/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/password/i)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /sign in/i })).toBeInTheDocument();
+    // Check placeholders if needed, using the actual ones
+    expect(screen.getByPlaceholderText('you@example.com')).toBeInTheDocument();
+    expect(screen.getByPlaceholderText(/••••••••/)).toBeInTheDocument(); // Regex for bullet points
   });
 
 }); 
