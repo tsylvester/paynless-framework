@@ -22,9 +22,13 @@
 *   [✅] Figure out how to parse chat responses better, they get messy if the assistant uses markdown 
 *   [✅] Consolidate authStore with Zustand, remove the direct localSession interactions.
 *   [✅] Fix super long login delay on chat flow 
+*   [X] Fix the UI tests 
 
 **Incomplete Features** // Or In Progress
-
+*   [ ] **Implement `PublicRoute` Component:**
+    *   [ ] Create `PublicRoute.tsx` in `src/components/auth`.
+    *   [ ] Implement logic to redirect authenticated users away from public-only pages (e.g., to `/dashboard`).
+    *   [ ] Apply `<PublicRoute>` wrapper to `login`, `register`, `
 *   [🚧] Notification System (Phase 1 - see `docs/implementations/20250422_Notifications_and_Tenants.md`)
 *   [🚧] Multi-Tenancy Support (Organizations/Teams) (Phase 2 - see `docs/implementations/20250422_Notifications_and_Tenants.md`)
 *   [ ] Manage Billing sends user to portal but doesn't return user after action.
@@ -54,27 +58,15 @@
 *   [ ] Add dark mode logo 
 *   [ ] User avatars and banners 
 *   [ ] Fix the types sync script
-*   [ ] Fix the UI tests 
 *   [ ] DRY const _addOptimisticUserMessage in aiStore.ts
 *   [ ] Sanitize packages/types, _shared/types.ts, and db_types.ts
 
-**Chat Improvements**
-*   [ ] Fix homepage to load default choices correctly again
-*   [ ] Fix chat history to dynamically reload 
-*   [ ] Fix auto navigate on replay 
-*   [ ] Fix chat to scroll correctly on new submissions 
-*   [ ] Save system prompt to chat so it sets correctly when chat loads 
-*   [ ] More interactions for AI chat
-    *   [ ] File attachment
-    *   [ ] File download 
-    *   [ ] Chat download 
-    *   [ ] Chat-to-image
-    
 **Notification Improvements**
 *   [ ] User Notification Preferences (In-app/Email channels, Opt-outs)
 *   [ ] Email Notifications (Beyond Invites)
 *   [ ] Automatic Notification Cleanup/Archiving
 *   [ ] Notification Grouping (Complex for actionable items)
+*   [ ] Delete notifications
 
 **Organization Improvements**
 *   [ ] Granular Member Roles (Beyond Admin/Member)
@@ -88,3 +80,28 @@
 *   [ ] Dedicated Audit Log for Organization Events
 *   [ ] Specific Org-Focused User Onboarding Flows
 *   [ ] Advanced Org Deletion Data Handling (Archiving, etc.)
+*   [ ] Add comma parsing for multiple invites
+*   [ ] Fix dropdown in Members card Actions field
+*   [ ] Change Orgs page to flex-grid with multiple card sizes, 1y, 2y, 3y, 1x, 2x, 3x 
+*   [ ] Components choose card size dynamically based on content.
+
+**UI/UX Refinement**
+*   [ ] Add search component
+*   [ ] Add filter component 
+
+**Email Improvements**
+*   [ ] Fix Kit signup so register button calls Kit sign up
+*   [ ] Add password reset via email
+*   [ ] Add magic link sign in via email 
+*   [ ] Add email for notifications
+*   [ ] Add email for org invites for invitees
+*   [ ] Add email for org reqs & changes for admins 
+
+**Refactor Org Store**
+*   [ ] **Refactor `OrganizationStore` into Slices**
+    *   [ ] orgStore.ts combined interface, initial state, and core
+    *   [ ] orgStore.list.ts fetching and managing `userOrganizations`
+    *   [ ] orgStore.current.ts manages `currentOrganizationId`, `currentOrganizationDetails`, and `currentOrganizationMembers` and related fetches/updates
+    *   [ ] orgStore.invite.ts handles invite-specific actions like `acceptInvite`, `declineInvite`, `fetchInviteDetails`.
+    *   [ ] orgStore.request.ts handles `requestJoin`, `approveRequest`, `denyRequest`.
+    *   [ ] orgStore.ui.ts manages UI-related state, starting with the `isCreateModalOpen` state and its actions (`openCreateModal`, `closeCreateModal`), and adding `isDeleteDialogOpen`, `openDeleteDialog`, `closeDeleteDialog`.
