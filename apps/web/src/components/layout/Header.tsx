@@ -1,7 +1,6 @@
 import { useState } from 'react'
 import { Link, useNavigate, useLocation } from 'react-router-dom'
 import { useAuthStore } from '@paynless/store'
-import { useApi } from '@paynless/api'
 import { useTheme } from '../../hooks/useTheme'
 import {
   LogOut,
@@ -24,7 +23,6 @@ export function Header() {
     profile: state.profile,
     logout: state.logout,
   }))
-  const apiClient = useApi()
 
   const { colorMode, setColorMode } = useTheme()
   const navigate = useNavigate()
@@ -32,8 +30,8 @@ export function Header() {
   const [isMenuOpen, setIsMenuOpen] = useState(false)
 
   const handleLogout = async () => {
-    const supabase = apiClient?.getSupabaseClient();
-    await logout(supabase?.auth || null);
+    await logout()
+    navigate('login')
   }
 
   // Check if a route is active

@@ -3,7 +3,6 @@ import { Link } from 'react-router-dom'
 import { Mail, Lock, AlertCircle } from 'lucide-react'
 import { logger } from '@paynless/utils'
 import { useAuthStore } from '@paynless/store'
-import { useApi } from '@paynless/api'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Button } from '@/components/ui/button'
@@ -11,7 +10,6 @@ import { Button } from '@/components/ui/button'
 export function LoginForm() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
-  const apiClient = useApi()
 
   const { login, isLoading, error } = useAuthStore((state) => ({
     login: state.login,
@@ -22,18 +20,13 @@ export function LoginForm() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
 
-    if (!email || !password || !apiClient) {
-      logger.warn('Login form submitted with empty fields or missing apiClient')
+    if (!email || !password) {
+      logger.warn('Login form submitted with empty fields')
       return
-    }
-    const supabase = apiClient.getSupabaseClient()
-    if (!supabase) {
-        logger.error('handleSubmit in LoginForm: Failed to get Supabase client from ApiClient')
-        return
     }
 
     logger.info('Attempting to login user via form', { email })
-    await login(supabase.auth, email, password)
+    await login(email, password)
   }
 
   return (

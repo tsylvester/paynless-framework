@@ -50,20 +50,6 @@ function App() {
     )
   }, [setTestMode]) // Run once on mount
 
-  // Add useEffect for Auth Listener Initialization
-  useEffect(() => {
-    if (apiClient && !initializedRef.current) {
-      logger.info('[AppContent] Initializing Supabase auth listener...');
-      const unsubscribe = initAuthListener(apiClient.getSupabaseClient());
-      initializedRef.current = true; // Mark as initialized
-      // Cleanup function to unsubscribe when the component unmounts
-      return () => {
-        logger.info('[AppContent] Unsubscribing Supabase auth listener...');
-        unsubscribe();
-      };
-    }
-  }, [apiClient]); // Depend on apiClient
-
   return (
     <QueryClientProvider client={queryClient}>
       <ThemeProvider>
