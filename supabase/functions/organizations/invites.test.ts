@@ -5,7 +5,7 @@ import {
     MockSupabaseDataConfig, 
     MockQueryBuilderState 
 } from "../_shared/test-utils.ts";
-import { User } from "@supabase/supabase-js";
+import { SupabaseClient, createClient } from "npm:@supabase/supabase-js@^2.43.4";
 
 // Helper to create a mock request (copied from original index.test.ts)
 const createMockRequest = (method: string, path: string, body?: Record<string, unknown>): Request => {
@@ -41,23 +41,47 @@ Deno.test("Organization Invites API", async (t) => {
 
         await t.step("should return 201 on successful invite by admin", async () => {
             // Arrange
-            const mockUser = { id: adminUserId };
-            const mockNewInvite = {
+            const mockUser = { id: adminUserId, email: 'admin@example.com' }; // Add email for inviter_email
+            const mockInviterProfile = { id: adminUserId, first_name: 'Admin', last_name: 'User' };
+            const mockInviteId = 'invite-123';
+            const mockInviteToken = 'mock-token-uuid'; 
+            const expectedInviterEmail = mockUser.email;
+            const expectedFirstName = mockInviterProfile.first_name;
+            const expectedLastName = mockInviterProfile.last_name;
+            let capturedInsertData: any = null; // Variable to capture insert data
+
+            const mockNewInviteResponse = { // Mock response structure after insert
                 id: mockInviteId,
                 organization_id: mockOrgId,
                 invited_email: inviteEmail,
                 role_to_assign: inviteRole,
                 invited_by_user_id: adminUserId,
-                invite_token: mockInviteToken, // Include token in the expected response
+                invite_token: mockInviteToken, 
                 status: 'pending',
-                created_at: new Date().toISOString()
+                created_at: new Date().toISOString(),
+                // Include the fields we expect to be added
+                inviter_email: expectedInviterEmail,
+                inviter_first_name: expectedFirstName,
+                inviter_last_name: expectedLastName
             };
             const config: MockSupabaseDataConfig = {
                 mockUser: mockUser,
                 rpcResults: {
-                    is_org_admin: () => Promise.resolve({ data: true, error: null })
+                    is_org_admin: () => Promise.resolve({ data: true, error: null }),
+                    // Add mock for member check by email (simulate NOT member)
+                    check_existing_member_by_email: () => Promise.resolve({ data: [], error: null }) 
                 },
                 genericMockResults: {
+                    user_profiles: { // <<< Add mock for profile fetch
+                        select: (state: MockQueryBuilderState) => {
+                            if (state.filters.some(f => f.column === 'id' && f.value === adminUserId)) {
+                                console.log('[Test Mock 201] Mocking profile fetch for inviter.');
+                                return Promise.resolve({ data: [mockInviterProfile], error: null, count: 1 });
+                            }
+                            console.warn('[Test Mock 201] user_profiles.select did not match expected query. State:', state);
+                            return Promise.resolve({ data: [], error: null, count: 0 });
+                        }
+                    },
                     organization_members: {
                         // Mock existing member check: No existing member found
                         select: (state: MockQueryBuilderState) => {
@@ -79,12 +103,18 @@ Deno.test("Organization Invites API", async (t) => {
                              // Allow other selects (e.g. the select after insert)
                             return Promise.resolve({ data: null, error: null }); 
                         },
-                        // Mock insert: Success
+                        // Mock insert: Success - Capture data
                         insert: (state: MockQueryBuilderState) => {
-                            // Assertions removed - they are not needed here and likely caused issues
-                            // with how the test utility handles chained .select().single()
-                            console.log('[Test Mock 201] Mock insert called, returning mockNewInvite.');
-                            return Promise.resolve({ data: [mockNewInvite], error: null, count: 1 });
+                            console.log('[Test Mock 201] Mock insert called. Capturing data...');
+                            // Capture the object directly, as insert().select().single() likely provides the object
+                            if (typeof state.insertData === 'object' && state.insertData !== null) {
+                                capturedInsertData = state.insertData;
+                            } else {
+                                console.error('[Test Mock 201] Insert mock did not receive expected object data.', state.insertData);
+                                capturedInsertData = null;
+                            }
+                            // Return mock response reflecting the successful insert + select
+                            return Promise.resolve({ data: [mockNewInviteResponse], error: null, count: 1 });
                         }
                     }
                 }
@@ -94,17 +124,30 @@ Deno.test("Organization Invites API", async (t) => {
             const body = { email: inviteEmail, role: inviteRole };
 
             // Act
-            const mockLookupService = { lookupByEmail: (_email: string) => Promise.resolve({ data: { user: { id: 'found-user-id-201', email: inviteEmail } }, error: null }) };
-            const res = await handleCreateInvite(req, mockClient, mockUser as User, mockOrgId, body, mockLookupService);
+            // Mock the user lookup service (assuming invited user doesn't exist for simplicity here)
+            const mockLookupService = { lookupByEmail: (_email: string) => Promise.resolve({ data: { user: null }, error: null }) };
+            const res = await handleCreateInvite(req, mockClient, mockUser, mockOrgId, body, mockLookupService);
 
-            // Assert
+            // Assert Response
             assertEquals(res.status, 201);
             const json = await res.json();
             assertEquals(json.id, mockInviteId);
             assertEquals(json.invited_email, inviteEmail);
-            assertEquals(json.role_to_assign, inviteRole);
-            assertEquals(json.status, 'pending');
-            assertEquals(json.invite_token, mockInviteToken); // Check token in response
+            // Assert that the response includes the denormalized fields
+            assertEquals(json.inviter_email, expectedInviterEmail);
+            assertEquals(json.inviter_first_name, expectedFirstName);
+            assertEquals(json.inviter_last_name, expectedLastName);
+            
+            // Assert Inserted Data (captured via mock)
+            assertExists(capturedInsertData, "Insert mock did not capture data");
+            assertEquals(capturedInsertData.invited_email, inviteEmail);
+            assertEquals(capturedInsertData.role_to_assign, inviteRole);
+            assertEquals(capturedInsertData.invited_by_user_id, adminUserId);
+            assertEquals(capturedInsertData.organization_id, mockOrgId);
+            assertEquals(capturedInsertData.inviter_email, expectedInviterEmail, "Captured insert data missing/wrong inviter_email");
+            assertEquals(capturedInsertData.inviter_first_name, expectedFirstName, "Captured insert data missing/wrong inviter_first_name");
+            assertEquals(capturedInsertData.inviter_last_name, expectedLastName, "Captured insert data missing/wrong inviter_last_name");
+            assertEquals(capturedInsertData.status, 'pending'); // Assuming default is pending
         });
 
         await t.step("should return 403 if non-admin attempts invite", async () => {
@@ -121,7 +164,7 @@ Deno.test("Organization Invites API", async (t) => {
             const body = { email: inviteEmail, role: inviteRole };
 
             // Act
-            const res = await handleCreateInvite(req, mockClient, mockUser as User, mockOrgId, body);
+            const res = await handleCreateInvite(req, mockClient, mockUser, mockOrgId, body);
 
             // Assert
             assertEquals(res.status, 403);
@@ -186,7 +229,7 @@ Deno.test("Organization Invites API", async (t) => {
             const mockLookupService = {
                 lookupByEmail: (_email: string) => Promise.resolve({ data: { user: null }, error: null })
             };
-            const res = await handleCreateInvite(req, mockClient, mockUser as User, mockOrgId, body, mockLookupService);
+            const res = await handleCreateInvite(req, mockClient, mockUser, mockOrgId, body, mockLookupService);
 
             // Assert
             assertEquals(res.status, 409); // Conflict
@@ -211,7 +254,7 @@ Deno.test("Organization Invites API", async (t) => {
              const { client: mockClient1 } = createMockSupabaseClient(config1);
              const invalidEmailBody = { email: 'invalid-email', role: inviteRole };
              const req1 = createMockRequest("POST", `/organizations/${mockOrgId}/invites`, invalidEmailBody);
-             const res1 = await handleCreateInvite(req1, mockClient1, mockUser as User, mockOrgId, invalidEmailBody, mockUserLookupService);
+             const res1 = await handleCreateInvite(req1, mockClient1, mockUser, mockOrgId, invalidEmailBody, mockUserLookupService);
              assertEquals(res1.status, 400);
              const json1 = await res1.json();
              assertEquals(json1.error, "Valid email address is required.");
@@ -225,7 +268,7 @@ Deno.test("Organization Invites API", async (t) => {
              const { client: mockClient2 } = createMockSupabaseClient(config2);
              const invalidRoleBody = { email: inviteEmail, role: 'invalid-role' };
              const req2 = createMockRequest("POST", `/organizations/${mockOrgId}/invites`, invalidRoleBody);
-             const res2 = await handleCreateInvite(req2, mockClient2, mockUser as User, mockOrgId, invalidRoleBody, mockUserLookupService);
+             const res2 = await handleCreateInvite(req2, mockClient2, mockUser, mockOrgId, invalidRoleBody, mockUserLookupService);
              assertEquals(res2.status, 400);
              const json2 = await res2.json();
              assertEquals(json2.error, "Invalid role specified. Must be \"admin\" or \"member\".");
@@ -299,7 +342,7 @@ Deno.test("Organization Invites API", async (t) => {
             const res = await handleCreateInvite(
                req, 
                mockClient, 
-               mockUser as User, 
+               mockUser, 
                mockOrgId, 
                body,
                mockLookupService
@@ -348,7 +391,7 @@ Deno.test("Organization Invites API", async (t) => {
             const body = { email: nonExistentUserEmail, role: inviteRole };
 
             // Act
-            const res = await handleCreateInvite(req, mockClient, mockUser as User, mockOrgId, body, mockLookupService);
+            const res = await handleCreateInvite(req, mockClient, mockUser, mockOrgId, body, mockLookupService);
 
             // Assert
             // The function now returns 201 even if user doesn't exist, 
@@ -380,7 +423,7 @@ Deno.test("Organization Invites API", async (t) => {
              // Act
              // Inject mock service (even though it won't be called due to prior validation error)
              const mockLookupService = { lookupByEmail: () => Promise.resolve({ data: { user: null }, error: null }) };
-             const res = await handleCreateInvite(req, mockClient, mockUser as User, mockOrgId, invalidBody, mockLookupService);
+             const res = await handleCreateInvite(req, mockClient, mockUser, mockOrgId, invalidBody, mockLookupService);
 
              // Assert
              // Test currently passes valid email, ignores extra field, and proceeds
@@ -399,7 +442,7 @@ Deno.test("Organization Invites API", async (t) => {
             const req = createMockRequest("POST", `/organizations/${mockOrgId}/invites`, invalidBody);
 
             // Act
-            const res = await handleCreateInvite(req, mockClient, mockUser as User, mockOrgId, invalidBody);
+            const res = await handleCreateInvite(req, mockClient, mockUser, mockOrgId, invalidBody);
 
             // Assert
             assertEquals(res.status, 400);
@@ -493,7 +536,7 @@ Deno.test("Organization Invites API", async (t) => {
             const req = createMockRequest("POST", `/invites/${mockInviteToken}/accept`); 
             
             // Act
-            const res = await handleAcceptInvite(req, mockClient, mockUser as User, mockInviteToken, null, mockAdminClient);
+            const res = await handleAcceptInvite(req, mockClient, mockUser, mockInviteToken, null, mockAdminClient);
 
             // Assert
             assertEquals(res.status, 200); 
@@ -525,7 +568,7 @@ Deno.test("Organization Invites API", async (t) => {
             const req = createMockRequest("POST", `/invites/${mockInviteToken}/accept`);
             
             // Act
-            const res = await handleAcceptInvite(req, mockClient, mockUser as User, mockInviteToken, null);
+            const res = await handleAcceptInvite(req, mockClient, mockUser, mockInviteToken, null);
 
             // Assert
             assertEquals(res.status, 403);
@@ -548,7 +591,7 @@ Deno.test("Organization Invites API", async (t) => {
             const req = createMockRequest("POST", `/invites/invalid-token/accept`);
             
             // Act
-            const res = await handleAcceptInvite(req, mockClient, mockUser as User, 'invalid-token', null);
+            const res = await handleAcceptInvite(req, mockClient, mockUser, 'invalid-token', null);
 
             // Assert
             assertEquals(res.status, 404);
@@ -578,7 +621,7 @@ Deno.test("Organization Invites API", async (t) => {
             const req = createMockRequest("POST", `/invites/${mockInviteToken}/accept`);
             
             // Act
-            const res = await handleAcceptInvite(req, mockClient, mockUser as User, mockInviteToken, null);
+            const res = await handleAcceptInvite(req, mockClient, mockUser, mockInviteToken, null);
 
             // Assert
             assertEquals(res.status, 410); // Gone
@@ -618,7 +661,7 @@ Deno.test("Organization Invites API", async (t) => {
             const req = createMockRequest("POST", `/invites/${mockInviteToken}/accept`);
             
             // Act
-            const res = await handleAcceptInvite(req, mockClient, mockUser as User, mockInviteToken, null);
+            const res = await handleAcceptInvite(req, mockClient, mockUser, mockInviteToken, null);
 
             // Assert
             assertEquals(res.status, 409); // Conflict
@@ -678,7 +721,7 @@ Deno.test("Organization Invites API", async (t) => {
             const req = createMockRequest("POST", `/invites/${mockInviteToken}/decline`);
             
             // Act
-            const res = await handleDeclineInvite(req, mockClient, mockUser as User, mockInviteToken, null);
+            const res = await handleDeclineInvite(req, mockClient, mockUser, mockInviteToken, null);
 
             // Assert
             // Expect 204 No Content upon successful decline
@@ -707,7 +750,7 @@ Deno.test("Organization Invites API", async (t) => {
             const req = createMockRequest("POST", `/invites/${mockInviteToken}/decline`);
             
             // Act
-            const res = await handleDeclineInvite(req, mockClient, mockUser as User, mockInviteToken, null);
+            const res = await handleDeclineInvite(req, mockClient, mockUser, mockInviteToken, null);
 
             // Assert
             assertEquals(res.status, 403);
@@ -730,7 +773,7 @@ Deno.test("Organization Invites API", async (t) => {
             const req = createMockRequest("POST", `/invites/invalid-token/decline`);
             
             // Act
-            const res = await handleDeclineInvite(req, mockClient, mockUser as User, 'invalid-token', null);
+            const res = await handleDeclineInvite(req, mockClient, mockUser, 'invalid-token', null);
 
             // Assert
             assertEquals(res.status, 404);
@@ -760,7 +803,7 @@ Deno.test("Organization Invites API", async (t) => {
             const req = createMockRequest("POST", `/invites/${mockInviteToken}/decline`);
             
             // Act
-            const res = await handleDeclineInvite(req, mockClient, mockUser as User, mockInviteToken, null);
+            const res = await handleDeclineInvite(req, mockClient, mockUser, mockInviteToken, null);
 
             // Assert
             assertEquals(res.status, 410); // Gone
@@ -780,7 +823,10 @@ Deno.test("Organization Invites API", async (t) => {
             organization_id: mockOrgId,
             invited_email: 'pending1@example.com',
             role_to_assign: 'member',
-            invited_by_user_id: 'another-admin',
+            invited_by_user_id: 'another-admin-1',
+            inviter_email: 'inviter1@example.com',
+            inviter_first_name: 'Inviter', 
+            inviter_last_name: 'One',
             invite_token: 'token-pending-1',
             status: 'pending',
             created_at: new Date().toISOString()
@@ -790,7 +836,10 @@ Deno.test("Organization Invites API", async (t) => {
             organization_id: mockOrgId,
             invited_email: 'pending2@example.com',
             role_to_assign: 'admin',
-            invited_by_user_id: 'another-admin',
+            invited_by_user_id: 'another-admin-2',
+            inviter_email: 'inviter2@example.com', 
+            inviter_first_name: null,
+            inviter_last_name: 'Two',
             invite_token: 'token-pending-2',
             status: 'pending',
             created_at: new Date().toISOString()
@@ -833,47 +882,64 @@ Deno.test("Organization Invites API", async (t) => {
                 },
                 genericMockResults: {
                     invites: {
-                        // Mock select for pending invites: Returns two invites
+                        // Mock select for pending invites: Returns two invites with new structure
                         select: (state: MockQueryBuilderState) => {
                              const isCorrectOrg = state.filters.some(f => f.column === 'organization_id' && f.value === mockOrgId);
                              const isPending = state.filters.some(f => f.column === 'status' && f.value === 'pending');
                              if (isCorrectOrg && isPending) {
-                                // TODO: Add join for invited_by_user profile if needed by handler
+                                // Return the updated mock data directly
                                 return Promise.resolve({ data: [mockPendingInvite1, mockPendingInvite2], error: null, count: 2 });
                              }
                              return Promise.resolve({ data: [], error: null, count: 0 }); // Default empty
                         }
                     },
-                    organization_members: {
-                         // Mock select for pending members: Returns two requests
+                    v_pending_membership_requests: { // <<< Add mock for the view
                         select: (state: MockQueryBuilderState) => {
                             const isCorrectOrg = state.filters.some(f => f.column === 'organization_id' && f.value === mockOrgId);
-                            const isPending = state.filters.some(f => f.column === 'status' && f.value === 'pending');
-                            // Check if it includes profile join - adjust selector string if needed
-                            const hasProfileJoin = state.selectColumns?.includes('profiles'); 
-                            
-                            if (isCorrectOrg && isPending && hasProfileJoin) {
+                            // Add other filters if needed based on the actual query in handleListPending
+                            if (isCorrectOrg) {
+                                console.log('[Test Mock 200 List] Mocking v_pending_membership_requests select.');
+                                // Return the mock requests defined earlier in the test
                                 return Promise.resolve({ data: [mockPendingRequest1, mockPendingRequest2], error: null, count: 2 });
                             }
-                            return Promise.resolve({ data: [], error: null, count: 0 }); // Default empty
+                            console.warn('[Test Mock 200 List] v_pending_membership_requests select did not match expected query. State:', state);
+                            return Promise.resolve({ data: [], error: null, count: 0 });
                         }
                     }
                 }
             };
             const { client: mockClient } = createMockSupabaseClient(config);
-            // Assuming handleListPending exists and is imported
-            // Need to create the function signature first
-            // const req = createMockRequest("GET", `/organizations/${mockOrgId}/pending`);
-            // const res = await handleListPending(req, mockClient, mockUser as User, mockOrgId);
+            const req = createMockRequest("GET", `/organizations/${mockOrgId}/pending`);
+            
+            // Act
+            const res = await handleListPending(req, mockClient, mockUser, mockOrgId);
 
-            // Assert (Initial placeholder - will fail until handler exists)
-            // assertEquals(res.status, 200);
-            // const json = await res.json();
-            // assertEquals(json.pendingInvites.length, 2);
-            // assertEquals(json.pendingRequests.length, 2);
-            // assertEquals(json.pendingInvites[0].id, mockPendingInvite1.id);
-            // assertEquals(json.pendingRequests[0].id, mockPendingRequest1.id);
-            assert(true); // Placeholder assertion
+            // Assert
+            assertEquals(res.status, 200);
+            const json = await res.json();
+            assertExists(json.invites, "Response should contain 'invites' array");
+            assertExists(json.pendingRequests, "Response should contain 'pendingRequests' array");
+            assertEquals(json.invites.length, 2);
+            assertEquals(json.pendingRequests.length, 2); // Assuming mock setup returns 2 requests
+            
+            // Check structure of the first invite
+            const invite1 = json.invites[0];
+            assertEquals(invite1.id, mockPendingInvite1.id);
+            assertEquals(invite1.inviter_email, mockPendingInvite1.inviter_email);
+            assertEquals(invite1.inviter_first_name, mockPendingInvite1.inviter_first_name);
+            assertEquals(invite1.inviter_last_name, mockPendingInvite1.inviter_last_name);
+            assertEquals(invite1.invited_by_profile, undefined, "invited_by_profile should not exist");
+            
+            // Check structure of the second invite
+            const invite2 = json.invites[1];
+            assertEquals(invite2.id, mockPendingInvite2.id);
+            assertEquals(invite2.inviter_email, mockPendingInvite2.inviter_email);
+            assertEquals(invite2.inviter_first_name, mockPendingInvite2.inviter_first_name);
+            assertEquals(invite2.inviter_last_name, mockPendingInvite2.inviter_last_name);
+            assertEquals(invite2.invited_by_profile, undefined, "invited_by_profile should not exist");
+            
+            // Check one request for basic structure (assuming mock setup is correct)
+            assertEquals(json.pendingRequests[0].id, mockPendingRequest1.id);
         });
 
         // TODO: Add more test steps for other scenarios (invites only, requests only, empty, 403, etc.)
@@ -889,9 +955,6 @@ Deno.test("Organization Invites API", async (t) => {
                     },
                     v_pending_membership_requests: { // Explicitly mock requests view
                         select: () => Promise.resolve({ data: [], error: null, count: 0 })
-                    },
-                    organization_members: {
-                        select: () => Promise.resolve({ data: [], error: null, count: 0 }) // No requests
                     }
                 }
             };
@@ -899,7 +962,7 @@ Deno.test("Organization Invites API", async (t) => {
             const req = createMockRequest("GET", `/organizations/${mockOrgId}/pending`);
             
             // Act
-            const res = await handleListPending(req, mockClient, mockUser as User, mockOrgId);
+            const res = await handleListPending(req, mockClient, mockUser, mockOrgId);
 
             // Assert
             assertEquals(res.status, 200);
@@ -923,9 +986,6 @@ Deno.test("Organization Invites API", async (t) => {
                     },
                     v_pending_membership_requests: { // Explicitly mock requests view
                         select: () => Promise.resolve({ data: [mockPendingRequest1], error: null, count: 1 }) // Only one request
-                    },
-                    organization_members: {
-                        select: () => Promise.resolve({ data: [mockPendingRequest1], error: null, count: 1 }) // Only one request
                     }
                 }
             };
@@ -933,7 +993,7 @@ Deno.test("Organization Invites API", async (t) => {
             const req = createMockRequest("GET", `/organizations/${mockOrgId}/pending`);
             
             // Act
-            const res = await handleListPending(req, mockClient, mockUser as User, mockOrgId);
+            const res = await handleListPending(req, mockClient, mockUser, mockOrgId);
 
             // Assert
             assertEquals(res.status, 200);
@@ -957,9 +1017,6 @@ Deno.test("Organization Invites API", async (t) => {
                     },
                     v_pending_membership_requests: { // Explicitly mock requests view
                         select: () => Promise.resolve({ data: [], error: null, count: 0 })
-                    },
-                    organization_members: {
-                        select: () => Promise.resolve({ data: [], error: null, count: 0 }) // No requests
                     }
                 }
             };
@@ -967,7 +1024,7 @@ Deno.test("Organization Invites API", async (t) => {
             const req = createMockRequest("GET", `/organizations/${mockOrgId}/pending`);
             
             // Act
-            const res = await handleListPending(req, mockClient, mockUser as User, mockOrgId);
+            const res = await handleListPending(req, mockClient, mockUser, mockOrgId);
 
             // Assert
             assertEquals(res.status, 200);
@@ -993,7 +1050,7 @@ Deno.test("Organization Invites API", async (t) => {
             const req = createMockRequest("GET", `/organizations/${mockOrgId}/pending`);
             
             // Act
-            const res = await handleListPending(req, mockClient, mockUser as User, mockOrgId);
+            const res = await handleListPending(req, mockClient, mockUser, mockOrgId);
 
             // Assert
             assertEquals(res.status, 403);
@@ -1015,7 +1072,7 @@ Deno.test("Organization Invites API", async (t) => {
             const req = createMockRequest("GET", `/organizations/${mockOrgId}/pending`);
             
             // Act
-            const res = await handleListPending(req, mockClient, mockUser as User, mockOrgId);
+            const res = await handleListPending(req, mockClient, mockUser, mockOrgId);
 
             // Assert
             assertEquals(res.status, 500);
@@ -1061,7 +1118,7 @@ Deno.test("Organization Invites API", async (t) => {
             const req = createMockRequest("DELETE", `/organizations/${mockOrgId}/invites/${pendingInviteId}`);
 
             // Act
-            const res = await handleCancelInvite(req, mockClient, mockUser as User, mockOrgId, pendingInviteId);
+            const res = await handleCancelInvite(req, mockClient, mockUser, mockOrgId, pendingInviteId);
 
             // Assert
             assertEquals(res.status, 204);
@@ -1081,7 +1138,7 @@ Deno.test("Organization Invites API", async (t) => {
             const req = createMockRequest("DELETE", `/organizations/${mockOrgId}/invites/${pendingInviteId}`);
 
             // Act
-            const res = await handleCancelInvite(req, mockClient, mockUser as User, mockOrgId, pendingInviteId);
+            const res = await handleCancelInvite(req, mockClient, mockUser, mockOrgId, pendingInviteId);
 
             // Assert
             assertEquals(res.status, 403);
@@ -1108,7 +1165,7 @@ Deno.test("Organization Invites API", async (t) => {
             const req = createMockRequest("DELETE", `/organizations/${mockOrgId}/invites/${nonExistentInviteId}`);
 
             // Act
-            const res = await handleCancelInvite(req, mockClient, mockUser as User, mockOrgId, nonExistentInviteId);
+            const res = await handleCancelInvite(req, mockClient, mockUser, mockOrgId, nonExistentInviteId);
 
             // Assert
             assertEquals(res.status, 404);
@@ -1135,7 +1192,7 @@ Deno.test("Organization Invites API", async (t) => {
             const req = createMockRequest("DELETE", `/organizations/${mockOrgId}/invites/${acceptedInviteId}`);
 
             // Act
-            const res = await handleCancelInvite(req, mockClient, mockUser as User, mockOrgId, acceptedInviteId);
+            const res = await handleCancelInvite(req, mockClient, mockUser, mockOrgId, acceptedInviteId);
 
             // Assert
             assertEquals(res.status, 404);
@@ -1158,7 +1215,7 @@ Deno.test("Organization Invites API", async (t) => {
             const req = createMockRequest("DELETE", `/organizations/${mockOrgId}/invites/${pendingInviteId}`);
 
             // Act
-            const res = await handleCancelInvite(req, mockClient, mockUser as User, mockOrgId, pendingInviteId);
+            const res = await handleCancelInvite(req, mockClient, mockUser, mockOrgId, pendingInviteId);
 
             // Assert
             assertEquals(res.status, 500); // Expect 500 due to RPC error, even though handler returns 403 text
@@ -1191,7 +1248,7 @@ Deno.test("Organization Invites API", async (t) => {
             const req = createMockRequest("DELETE", `/organizations/${mockOrgId}/invites/${pendingInviteId}`);
 
             // Act
-            const res = await handleCancelInvite(req, mockClient, mockUser as User, mockOrgId, pendingInviteId);
+            const res = await handleCancelInvite(req, mockClient, mockUser, mockOrgId, pendingInviteId);
 
             // Assert
             assertEquals(res.status, 500);

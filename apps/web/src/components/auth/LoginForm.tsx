@@ -1,5 +1,5 @@
-import React, { useState } from 'react'
-import { Link } from 'react-router-dom'
+import React, { useState, useEffect } from 'react'
+import { Link, useNavigate } from 'react-router-dom'
 import { Mail, Lock, AlertCircle } from 'lucide-react'
 import { logger } from '@paynless/utils'
 import { useAuthStore } from '@paynless/store'
@@ -10,12 +10,21 @@ import { Button } from '@/components/ui/button'
 export function LoginForm() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
+  const navigate = useNavigate()
 
-  const { login, isLoading, error } = useAuthStore((state) => ({
+  const { login, isLoading, error, user } = useAuthStore((state) => ({
     login: state.login,
     isLoading: state.isLoading,
     error: state.error,
+    user: state.user,
   }))
+
+  useEffect(() => {
+    if (user) {
+      logger.info('[LoginForm] User authenticated, navigating to dashboard.')
+      navigate('/dashboard')
+    }
+  }, [user, navigate])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()

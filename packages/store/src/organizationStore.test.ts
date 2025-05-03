@@ -5,7 +5,7 @@ import { createMockOrganizationApiClient, resetMockOrganizationApiClient } from 
 // Other imports
 import { useOrganizationStore, OrganizationStoreImplementation, DEFAULT_PAGE_SIZE } from './organizationStore';
 import { useAuthStore } from './authStore';
-import { Organization, OrganizationMemberWithProfile, SupabaseUser, ApiError as ApiErrorType, AuthStore, ApiResponse, Invite, PendingOrgItems, UserProfile, OrganizationUpdate, PaginatedMembersResponse } from '@paynless/types';
+import { Organization, OrganizationMemberWithProfile, SupabaseUser, ApiError as ApiErrorType, AuthStore, ApiResponse, Invite, PendingOrgItems, UserProfile, OrganizationUpdate, PaginatedMembersResponse, PendingInviteWithInviter, PendingRequestWithDetails } from '@paynless/types';
 // Removed unused imports
 // import { initializeApiClient, _resetApiClient, ApiClient, OrganizationApiClient } from '@paynless/api'; 
 import { logger } from '@paynless/utils';
@@ -322,6 +322,67 @@ describe('OrganizationStore', () => {
           await act(async () => { await useOrganizationStore.getState().fetchCurrentOrganizationMembers(); }); 
           expect(getApiClientSpy).toHaveBeenCalled();
           // FIX: Use hardcoded value for limit in assertion
+          expect(mockOrgApi.getOrganizationMembers).toHaveBeenCalledWith(orgId, defaultTestPage, 10); 
+          expect(useOrganizationStore.getState().currentOrganizationMembers).toEqual([]);
+          expect(useOrganizationStore.getState().error).toBe(errorMsg);
+     });
+
+     const mockInvite1Profile: UserProfile = {
+       id: 'user-admin', created_at: new Date().toISOString(), updated_at: new Date().toISOString(), first_name: 'Admin', last_name: 'Inviter', last_selected_org_id: null, role: 'user'
+     };
+     
+     // +++ Define NEW Mock Data for Pending Items +++
+     const mockPendingInvite1: PendingInviteWithInviter = {
+       id: 'pending-invite-1', organization_id: 'org-1', invited_email: 'pending1@example.com', role_to_assign: 'member', 
+       invited_by_user_id: 'user-admin', status: 'pending', created_at: new Date().toISOString(), expires_at: null, invited_user_id: null,
+       inviter_email: 'admin@inviter.com', inviter_first_name: 'Admin', inviter_last_name: 'Inviter',
+     };
+     const mockPendingInvite2: PendingInviteWithInviter = {
+       id: 'pending-invite-2', organization_id: 'org-1', invited_email: 'pending2@example.com', role_to_assign: 'admin', 
+       invited_by_user_id: 'user-other', status: 'pending', created_at: new Date().toISOString(), expires_at: null, invited_user_id: null,
+       inviter_email: 'other@inviter.com', inviter_first_name: null, inviter_last_name: null,
+     };
+     const mockPendingRequest1: PendingRequestWithDetails = {
+       id: 'pending-req-1', organization_id: 'org-1', user_id: 'user-req', role: 'member', status: 'pending_approval', 
+       created_at: new Date().toISOString(), 
+       user_profiles: { id: 'user-req', first_name: 'Request', last_name: 'User', created_at: new Date().toISOString(), updated_at: new Date().toISOString(), last_selected_org_id: null, role: 'user' },
+       user_email: 'request@example.com'
+     };
+     const mockPendingItemsPayload: PendingOrgItems = {
+       invites: [mockPendingInvite1, mockPendingInvite2],
+       requests: [mockPendingRequest1],
+     };
+     // +++ End NEW Mock Data +++
+
+     // +++ Define Mock Data for Members (used in this describe block) +++
+     const mockMembersWithProfile: OrganizationMemberWithProfile[] = [mockMember1, mockMember2];
+     // +++ End Member Mock Data +++
+
+     it('should update members AND pending items on success', async () => {
+       // Mock BOTH API calls
+       const membersResponse = { members: mockMembersWithProfile, totalCount: mockMembersWithProfile.length };
+       mockOrgApi.getOrganizationMembers.mockResolvedValue({ status: 200, data: membersResponse, error: undefined });
+       mockOrgApi.getPendingOrgActions.mockResolvedValue({ status: 200, data: mockPendingItemsPayload, error: undefined });
+
+       useOrganizationStore.setState({ currentOrganizationId: 'org-1' });
+       await act(async () => { await useOrganizationStore.getState().fetchCurrentOrganizationMembers(); }); 
+
+       expect(mockOrgApi.getOrganizationMembers).toHaveBeenCalledTimes(1);
+       expect(mockOrgApi.getPendingOrgActions).toHaveBeenCalledTimes(1);
+       const state = useOrganizationStore.getState();
+       expect(state.currentOrganizationMembers).toEqual(mockMembersWithProfile);
+       // UPDATE Assertion to use new mock data
+       expect(state.currentPendingInvites).toEqual(mockPendingItemsPayload.invites);
+       expect(state.currentPendingRequests).toEqual(mockPendingItemsPayload.requests);
+       expect(state.isLoading).toBe(false);
+       expect(state.error).toBeNull();
+     });
+
+     it('should set error on failure', async () => {
+          const errorMsg = 'Cannot get members';
+          mockOrgApi.getOrganizationMembers.mockResolvedValue({ status: 500, error: { message: errorMsg, code: '500' } });
+          await act(async () => { await useOrganizationStore.getState().fetchCurrentOrganizationMembers(); }); 
+          expect(getApiClientSpy).toHaveBeenCalled();
           expect(mockOrgApi.getOrganizationMembers).toHaveBeenCalledWith(orgId, defaultTestPage, 10); 
           expect(useOrganizationStore.getState().currentOrganizationMembers).toEqual([]);
           expect(useOrganizationStore.getState().error).toBe(errorMsg);
