@@ -1,4 +1,6 @@
-### 2.8 Integrate Chat into Orgs 
+# AI Chat Improvements
+
+## Integrate Chat into Orgs 
 
 *   [ ] **Org Chat vs Individual Chat** Create switcher to associate an AI chat with an org or keep it separate. 
 *   [ ] **Add Org Chats to Org** Modify Chat History to show Org AI Chat separately.
@@ -23,3 +25,31 @@
     *   Modify components using chat features (e.g., `ChatInterface`, `ChatList`) to get `currentOrganizationId` from `organizationStore` and pass it to chat store actions/API calls.
     *   Ensure UI reflects data scoped to the currently selected organization.
     *   Update tests for chat components.
+
+## Chat Improvements
+*   [ ] Fix homepage to load default choices correctly again
+*   [ ] Fix chat history to dynamically add & display new chats in list
+*   [ ] Fix auto navigate on replay 
+*   [ ] Fix chat to scroll correctly on new submissions 
+*   [ ] Save system prompt to chat so it sets correctly when chat loads 
+*   [ ] Pass system prompt choice through replay action so it starts chat in the right state 
+*   [ ] More interactions for AI chat
+    *   [ ] File attachment
+    *   [ ] File download 
+*   [ ] Chat export for download 
+    *   [ ] Chat-to-image
+    *   [ ] Select & export sections to a file
+*   [ ] Convert to shadcn components
+*   [ ] Add loading skeletons
+*   [ ] Add error boundaries
+*   [ ] Add rewind/reprompt
+    *   [ ] User can rewind chat to specific exchange
+    *   [ ] User can edit prompt
+    *   [ ] User can resubmit prompt 
+    *   [ ] Chat history is updated to reflect changed state 
+*   [ ] Add markdown support to user prompt submission
+*   [ ] Add token tracking for chat
+    *   [ ] Estimate tokens for chat submission & display to user 
+    *   [ ] Parse token cost for responses & display to user
+    *   [ ] Track and display chat token cost (broken out as user, agent, total)
+    

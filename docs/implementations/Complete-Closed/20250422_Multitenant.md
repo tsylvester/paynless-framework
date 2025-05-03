@@ -382,7 +382,7 @@ This section outlines the frontend implementation using a dynamic, card-based "h
 *   [X] **Test Coverage:** Review test coverage. Add tests for any critical paths missed.
 *   [X] **Final Test Run:** Execute all tests one last time.
 *   [X] **Final Build:** Perform a final `pnpm build`.
-*   [ ] **Update `README.md`:** Add information about the new notification and multi-tenancy features.
-*   [ ] **Final Commit:** `chore: finalize notification and multi-tenancy implementation (#issue_number)`
-*   [ ] **Remind User:** "The implementation is complete and documented. Please ensure all tests pass and the build is successful. Consider deploying to a staging environment for further validation before merging to main. Final commit suggestion: `git add . && git commit -m 'chore: finalize notification and multi-tenancy implementation'`"
+*   [X] **Update `README.md`:** Add information about the new notification and multi-tenancy features.
+*   [X] **Final Commit:** `chore: finalize notification and multi-tenancy implementation (#issue_number)`
+*   [X] **Remind User:** "The implementation is complete and documented. Please ensure all tests pass and the build is successful. Consider deploying to a staging environment for further validation before merging to main. Final commit suggestion: `git add . && git commit -m 'chore: finalize notification and multi-tenancy implementation'`"
 
