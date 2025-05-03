@@ -84,8 +84,8 @@ export const useSubscriptionStore = create<SubscriptionStore>()(
         try {
           const [plansResponse, subResponse] = await Promise.all([
             // Pass token explicitly
-            api.billing().getSubscriptionPlans({ token }),
-            api.billing().getUserSubscription({ token })
+            useApi().billing.getSubscriptionPlans({ token }),
+            useApi().billing.getUserSubscription({ token })
           ]);
           
           // ---> Add Logging <---
@@ -180,7 +180,7 @@ export const useSubscriptionStore = create<SubscriptionStore>()(
           const successUrl = `${currentOrigin}/subscriptionsuccess`;
           const cancelUrl = `${currentOrigin}/`;
           
-          const response = await api.billing().createCheckoutSession(
+          const response = await useApi().billing.createCheckoutSession(
             priceId, 
             isTestMode, 
             successUrl,
@@ -226,9 +226,10 @@ export const useSubscriptionStore = create<SubscriptionStore>()(
           const isTestMode = get().isTestMode;
           // Construct the return URL from the current location
           // TODO: Replace with platform-aware URL (e.g., custom scheme for desktop/mobile) using platform service
+          // TODO: Replace with platform-aware URL (e.g., custom scheme for desktop/mobile) using platform service
           const returnUrl = `${window.location.origin}/subscription`; // Stripe needs the full absolute URL
           // Pass token explicitly and the returnUrl
-          const response = await api.billing().createPortalSession(isTestMode, returnUrl, { token });
+          const response = await useApi().billing.createPortalSession(isTestMode, returnUrl, { token });
           if (response.error || !response.data?.url) {
              throw new Error(response.error?.message || 'Failed to get billing portal URL');
           }
@@ -267,7 +268,7 @@ export const useSubscriptionStore = create<SubscriptionStore>()(
         set({ isSubscriptionLoading: true, error: null });
 
         try {
-          const response = await api.billing().cancelSubscription(subscriptionId, { token });
+          const response = await useApi().billing.cancelSubscription(subscriptionId, { token });
           if (response.error) {
             throw new Error(response.error.message || 'Failed to cancel subscription');
           }
@@ -307,7 +308,7 @@ export const useSubscriptionStore = create<SubscriptionStore>()(
         set({ isSubscriptionLoading: true, error: null });
 
         try {
-          const response = await api.billing().resumeSubscription(subscriptionId, { token });
+          const response = await useApi().billing.resumeSubscription(subscriptionId, { token });
           if (response.error) {
             throw new Error(response.error.message || 'Failed to resume subscription');
           }
@@ -342,7 +343,7 @@ export const useSubscriptionStore = create<SubscriptionStore>()(
         
         try {
           // Pass token explicitly
-          const response = await api.billing().getUsageMetrics(metric, { token });
+          const response = await useApi().billing.getUsageMetrics(metric, { token });
           if (response.error || !response.data) {
             throw new Error(response.error?.message || 'Failed to get usage metrics');
           }

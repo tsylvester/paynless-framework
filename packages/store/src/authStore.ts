@@ -10,7 +10,6 @@ import {
   User,
   UserRole
 } from '@paynless/types'
-import { NavigateFunction } from '@paynless/types'
 import { logger } from '@paynless/utils'
 import { api, getApiClient } from '@paynless/api'
 import { analytics } from '@paynless/analytics'
@@ -60,17 +59,17 @@ export const useAuthStore = create<AuthStore>()((set, get) => ({
       error: null,
       navigate: null as NavigateFunction | null,
 
-      setNavigate: (navigateFn: NavigateFunction) => set({ navigate: navigateFn }),
+  setNavigate: (navigateFn: NavigateFunction) => set({ navigate: navigateFn }),
 
-      setUser: (user: User | null) => set({ user }),
+  setUser: (user: User | null) => set({ user }),
 
-      setSession: (session: Session | null) => set({ session }),
+  setSession: (session: Session | null) => set({ session }),
 
-      setProfile: (profile: UserProfile | null) => set({ profile }),
+  setProfile: (profile: UserProfile | null) => set({ profile }),
 
-      setIsLoading: (isLoading: boolean) => set({ isLoading }),
+  setIsLoading: (isLoading: boolean) => set({ isLoading }),
 
-      setError: (error: Error | null) => set({ error }),
+  setError: (error: Error | null) => set({ error }),
 
       clearError: () => set({ error: null }),
 
@@ -157,44 +156,34 @@ export const useAuthStore = create<AuthStore>()((set, get) => ({
         }
         // -----------------------------------------
 
-        // Check if there's a session in the store state first
-        const currentSession = get().session;
+    const currentSession = get().session;
 
-        if (currentSession) {
-          // Only attempt Supabase signOut if we think we have a session
-          try {
-            // Get Supabase client instance
-            const supabase = api.getSupabaseClient(); 
-            if (!supabase) {
-              logger.error('Logout cannot call Supabase: client not available.');
-            } else {
-              const { error: signOutError } = await supabase.auth.signOut()
-              if (signOutError) {
-                  logger.error(
-                      'Supabase signOut failed, proceeding with local cleanup.',
-                      { error: signOutError.message }
-                  )
-              }
-            }
-          } catch (error) {
-            logger.error(
-              'Logout Supabase call failed unexpectedly, proceeding with local cleanup.',
-              { error: error instanceof Error ? error.message : String(error) }
-            )
-          }
+    if (currentSession) {
+      try {
+        if (!authClient) {
+          logger.error('Logout cannot call Supabase: authClient not provided.');
         } else {
-          // Log warning if logout is called without a session in the store
-           logger.warn('Logout called but no session token found. Clearing local state only.');
+          const { error: signOutError } = await authClient.signOut()
+          if (signOutError) {
+              logger.error('Supabase signOut failed, proceeding with local cleanup.', { error: signOutError.message })
+          }
         }
-        
-        // Actions common to both paths (logged in or not)
-        try { 
-          // Always clear local state items NOT managed by listener/persist
-          localStorage.removeItem('pendingAction')
-          localStorage.removeItem('loadChatIdOnRedirect')
-        } catch(storageError) {
-           logger.error('Error clearing localStorage during logout', { error: storageError instanceof Error ? storageError.message : String(storageError) });
-        }
+      } catch (error) {
+        logger.error(
+          'Logout Supabase call failed unexpectedly, proceeding with local cleanup.',
+          { error: error instanceof Error ? error.message : String(error) }
+        )
+      }
+    } else {
+      logger.warn('Logout called but no session token found. Clearing local state only.');
+    }
+    
+    try { 
+      localStorage.removeItem('pendingAction')
+      localStorage.removeItem('loadChatIdOnRedirect')
+    } catch(storageError) {
+       logger.error('Error clearing localStorage during logout', { error: storageError instanceof Error ? storageError.message : String(storageError) });
+    }
 
         // Navigate to login - This should always happen
         const navigate = get().navigate
@@ -208,125 +197,75 @@ export const useAuthStore = create<AuthStore>()((set, get) => ({
         }
       },
 
-      updateProfile: async (
-        profileData: UserProfileUpdate
-      ): Promise<UserProfile | null> => {
-        set({ error: null })
-        const token = get().session?.access_token
-        const currentProfile = get().profile
+  updateProfile: async (dataClient: ISupabaseDataClient, userId: string, profileData: UserProfileUpdate): Promise<UserProfile | null> => {
+    set({ error: null })
 
-        if (!token) {
-          logger.error(
-            'updateProfile: Cannot update profile, user not authenticated.'
-          )
-          set({ error: new Error('Authentication required'), isLoading: false }) 
-          return null
-        }
+    if (!userId) {
+      logger.error(
+        'updateProfile: Cannot update profile, user not authenticated or ID missing.'
+      )
+      set({ error: new Error('Authentication required'), isLoading: false }) 
+      return null
+    }
 
-        // Then check if profile is loaded
-        if (!currentProfile) {
-          logger.error(
-            'updateProfile: Cannot update profile, no current profile loaded.'
-          )
-          set({
-            error: new Error('Profile not loaded'),
-            isLoading: false 
-          })
-          return null
-        }
+    set({ isLoading: true });
+    try {
+      const { data: updatedProfileData, error: updateError } = await dataClient
+        .from('user_profiles')
+        .update(profileData)
+        .eq('id', userId)
+        .select()
+        .single();
 
-        // Set loading true only if proceeding to API call
-        set({ isLoading: true });
-        try {
-          const response = await api.put<UserProfile, UserProfileUpdate>(
-            'me',
-            profileData,
-            { token }
-          )
+      if (updateError) {
+        logger.error('updateProfile: Failed to update profile in Supabase', { error: updateError });
+        set({ error: new Error(updateError.message || 'Failed to update profile'), isLoading: false });
+        return null;
+      }
 
-          if (!response.error && response.data) {
-            const updatedProfile = response.data
-            set({
-              profile: updatedProfile,
-              error: null,
-            })
-            logger.info('Profile updated successfully.')
-            return updatedProfile
-          } else {
-            const errorMessage =
-              response.error?.message || 'Failed to update profile'
-            throw new Error(errorMessage)
-          }
-        } catch (error) {
-          const finalError =
-            error instanceof Error
-              ? error
-              : new Error('Failed to update profile (API error)')
-          logger.error('Update profile: Error during API call.', {
-            message: finalError.message,
-          })
-          set({ error: finalError })
-          return null
-        } finally {
-            set({ isLoading: false });
-        }
-      },
+      if (!updatedProfileData) {
+        logger.error('updateProfile: No profile data returned after update');
+        set({ error: new Error('No profile data returned after update'), isLoading: false });
+        return null;
+      }
 
-      updateEmail: async (newEmail: string): Promise<boolean> => {
-        set({ error: null })
-        const token = get().session?.access_token
+      const updatedProfile = updatedProfileData as UserProfile; 
+      logger.info('updateProfile: Profile updated successfully', { userId });
+      set({ profile: updatedProfile, isLoading: false, error: null });
+      return updatedProfile;
+      
+    } catch (err) {
+      const error = err instanceof Error ? err : new Error('An unknown error occurred during profile update')
+      logger.error('updateProfile: Unknown error', { error: error.message });
+      set({ error, isLoading: false })
+      return null
+    } finally {
+      set({ isLoading: false })
+    }
+  },
 
-        if (!token) {
-          const error = new Error('Authentication required to update email.')
-          set({ error })
-          return false // Indicate failure
-        }
+  updateEmail: async (authClient: ISupabaseAuthClient, newEmail: string): Promise<boolean> => {
+    set({ error: null })
+    
+    set({ isLoading: true })
+    try {
+      const { error: updateError } = await authClient.updateUser({ email: newEmail });
+      if (updateError) throw updateError;
 
-        logger.info('[AuthStore] Attempting to update email...', {
-          email: newEmail,
-        })
+      logger.info('Email update initiated via Supabase. User may need to confirm.');
+      set({ isLoading: false });
+      return true;
 
-        try {
-          // Call the new Supabase Edge Function
-          const response = await api.post<
-            { success: boolean },
-            { email: string }
-          >(
-            'update-email', // Endpoint name for the new function
-            { email: newEmail },
-            { token }
-          )
-
-          if (!response.error && response.data?.success) {
-            logger.info(
-              '[AuthStore] Email update request successful. Verification email likely sent.'
-            )
-            set({ error: null })
-            // Note: The user object in the store might not reflect the change immediately.
-            // Supabase Auth handles the email change flow (verification).
-            // We might need to fetch the user again or rely on Supabase listeners if immediate UI update is needed.
-            // For now, we just return success.
-            return true // Indicate success
-          } else {
-            const errorMessage =
-              response.error?.message || 'Failed to update email via API'
-            logger.error('[AuthStore] Email update API call failed:', {
-              error: errorMessage,
-            })
-            throw new Error(errorMessage)
-          }
-        } catch (error) {
-          const finalError =
-            error instanceof Error
-              ? error
-              : new Error('Unknown error during email update')
-          logger.error('[AuthStore] updateEmail action failed:', {
-            message: finalError.message,
-          })
-          set({ error: finalError })
-          return false // Indicate failure
-        }
-      },
+    } catch (error) {
+      const finalError =
+        error instanceof Error ? error : new Error('Unknown email update error');
+      logger.error('Update email error', { message: finalError.message });
+      set({ error: finalError, isLoading: false });
+      return false;
+    } finally {
+       set({ isLoading: false }); 
+    }
+  },
 
       uploadAvatar: async (_file: File): Promise<string | null> => {
         // Implementation for uploading avatar
@@ -575,3 +514,5 @@ export function initAuthListener(
     }
   };
 }
+
+export const useAuthStoreDevtools = devtools(useAuthStore)

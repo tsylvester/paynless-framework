@@ -1,4 +1,5 @@
 import type { Database } from '@paynless/db-types';
+import { IApiClient } from './api.types';
 // --- Database Table Aliases ---
 
 /**
@@ -145,18 +146,18 @@ export interface AiState {
  * Represents the actions available in the AI store.
  */
 export interface AiActions {
-  loadAiConfig: () => Promise<void>;
-  sendMessage: (data: {
+  loadAiConfig: (apiClient: IApiClient) => Promise<void>;
+  sendMessage: (apiClient: IApiClient, data: {
     message: string; 
-    providerId: AiProvider['id']; // Use aliased type
-    promptId: SystemPrompt['id']; // Use aliased type
-    chatId?: Chat['id'] | null; // Use aliased type
-  }) => Promise<ChatMessage | null>; // Use aliased type
-  loadChatHistory: () => Promise<void>;
-  loadChatDetails: (chatId: Chat['id']) => Promise<void>; // Use aliased type
+    providerId: AiProvider['id']; 
+    promptId: SystemPrompt['id']; 
+    chatId?: Chat['id'] | null; 
+  }) => Promise<ChatMessage | null>;
+  loadChatHistory: (apiClient: IApiClient) => Promise<void>;
+  loadChatDetails: (apiClient: IApiClient, chatId: Chat['id']) => Promise<void>;
   startNewChat: () => void;
   clearAiError: () => void;
-  checkAndReplayPendingChatAction: () => Promise<void>;
+  checkAndReplayPendingChatAction: (apiClient: IApiClient) => Promise<void>;
 }
 
 // Combined type for the store

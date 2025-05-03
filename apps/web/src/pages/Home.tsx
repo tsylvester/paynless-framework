@@ -19,6 +19,7 @@ import {
 } from 'lucide-react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useAuthStore, useAiStore } from '@paynless/store'
+import { useApi } from '@paynless/api'
 import { useState, useEffect, useRef } from 'react'
 import { logger } from '@paynless/utils'
 import { ModelSelector } from '../components/ai/ModelSelector'
@@ -27,35 +28,46 @@ import { AiChatbox } from '../components/ai/AiChatbox'
 import { useTheme } from '../hooks/useTheme'
 
 export function HomePage() {
-  const { user, session } = useAuthStore()
+  const { user, session, isLoading: isAuthLoading } = useAuthStore()
   const navigate = useNavigate()
   const { colorMode } = useTheme()
+  const apiClient = useApi()
 
   const loadAiConfig = useAiStore((state) => state.loadAiConfig)
-  const sendMessage = useAiStore((state) => state.sendMessage)
-  const startNewChat = useAiStore((state) => state.startNewChat)
-  const availableProviders = useAiStore((state) => state.availableProviders)
+  const { 
+    startNewChat, 
+    availableProviders, 
+    isConfigLoading: isAiConfigLoading,
+    aiError
+  } = useAiStore(state => ({
+    startNewChat: state.startNewChat,
+    availableProviders: state.availableProviders,
+    isConfigLoading: state.isConfigLoading,
+    aiError: state.aiError
+  }))
 
-  const [selectedProviderId, setSelectedProviderId] = useState<string | null>(
-    null
-  )
+  const [selectedProviderId, setSelectedProviderId] = useState<string | null>(null)
   const [selectedPromptId, setSelectedPromptId] = useState<string | null>(null)
 
   const hasSetDefaults = useRef(false)
+  const configLoadedRef = useRef(false)
 
   useEffect(() => {
-    loadAiConfig()
-    startNewChat()
-    hasSetDefaults.current = false
-  }, [loadAiConfig, startNewChat])
+    if (!isAuthLoading && !configLoadedRef.current && apiClient) {
+      logger.info('[HomePage] Auth loaded, initiating AI config load and new chat...')
+      loadAiConfig(apiClient)
+      startNewChat()
+      configLoadedRef.current = true
+      hasSetDefaults.current = false
+    }
+  }, [isAuthLoading, loadAiConfig, startNewChat, apiClient])
 
   useEffect(() => {
-    if (!hasSetDefaults.current && availableProviders.length > 0) {
+    if (!isAiConfigLoading && !hasSetDefaults.current && availableProviders.length > 0) {
       logger.info('[HomePage] Attempting to set default AI selections...')
       const defaultProvider = availableProviders.find(
         (p) => p.name === 'OpenAI GPT-4o'
       )
-
       const defaultPromptId = '__none__'
 
       if (defaultProvider) {
@@ -69,14 +81,20 @@ export function HomePage() {
       } else {
         logger.warn(
           "[HomePage] Could not find default provider by name 'OpenAI GPT-4o'.",
-          {
-            foundProvider: !!defaultProvider,
-            providerCount: availableProviders.length,
-          }
+          { providerCount: availableProviders.length }
         )
+        if (availableProviders.length > 0 && !selectedProviderId) {
+          setSelectedProviderId(availableProviders[0].id)
+          setSelectedPromptId(defaultPromptId)
+          hasSetDefaults.current = true
+          logger.info('[HomePage] Using first available provider as fallback.', {
+            providerId: availableProviders[0].id,
+            promptId: defaultPromptId,
+          })
+        }
       }
     }
-  }, [availableProviders])
+  }, [availableProviders, isAiConfigLoading, selectedProviderId])
 
   return (
     <div>
@@ -151,23 +169,32 @@ export function HomePage() {
               Experience the power of AI with our integrated chat interface
             </p>
           </div>
-          <div className="max-w-4xl mx-auto bg-background rounded-xl border border-border shadow-sm hover:shadow-md transition-all duration-300 p-8">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
-              <ModelSelector
-                selectedProviderId={selectedProviderId}
-                onProviderChange={setSelectedProviderId}
-              />
-              <PromptSelector
-                selectedPromptId={selectedPromptId}
-                onPromptChange={setSelectedPromptId}
+          {isAiConfigLoading ? (
+            <div className="text-center p-8 text-textSecondary">Loading AI options...</div>
+          ) : aiError ? (
+            <div className="text-center p-8 text-destructive bg-destructive/10 border border-destructive/30 rounded-md">
+              <p className="font-semibold mb-2">Error Loading AI Configuration</p>
+              <p className="text-sm">{aiError}</p>
+            </div>
+          ) : (
+            <div className="max-w-4xl mx-auto bg-background rounded-xl border border-border shadow-sm hover:shadow-md transition-all duration-300 p-8">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
+                <ModelSelector
+                  selectedProviderId={selectedProviderId}
+                  onProviderChange={setSelectedProviderId}
+                />
+                <PromptSelector
+                  selectedPromptId={selectedPromptId}
+                  onPromptChange={setSelectedPromptId}
+                />
+              </div>
+              <AiChatbox
+                providerId={selectedProviderId}
+                promptId={selectedPromptId}
+                isAnonymous={true}
               />
             </div>
-            <AiChatbox
-              providerId={selectedProviderId}
-              promptId={selectedPromptId}
-              isAnonymous={true}
-            />
-          </div>
+          )}
         </div>
       </div>
 

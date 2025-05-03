@@ -13,6 +13,7 @@ export default function AiChatPage() {
       user: state.user, 
       isLoading: state.isLoading // Get the auth loading state
   }));
+  const apiClient = useApi();
   
   const {
     loadAiConfig,
@@ -45,33 +46,34 @@ export default function AiChatPage() {
   // Load config (public)
   useEffect(() => {
     logger.info('[AiChatPage] Config effect running.');
-    loadAiConfig(); // Always load config
-  }, [loadAiConfig]);
+    if (apiClient) {
+        loadAiConfig(apiClient);
+    }
+  }, [loadAiConfig, apiClient]);
 
   // Load history (auth-required)
   useEffect(() => {
     logger.info('[AiChatPage] History effect running.', { isAuthLoading, hasUser: !!user });
-    if (!isAuthLoading && user) {
+    if (!isAuthLoading && user && apiClient) {
         logger.info('[AiChatPage] Auth finished and user found, loading history...');
-        loadChatHistory();
+        loadChatHistory(apiClient);
     } else if (isAuthLoading) {
         logger.info('[AiChatPage] Auth still loading, waiting to load history...');
     } else {
         logger.warn('[AiChatPage] Auth finished but no user found, skipping chat history load.');
     }
-  }, [loadChatHistory, user, isAuthLoading]);
+  }, [loadChatHistory, user, isAuthLoading, apiClient]);
 
   // ---> NEW: Check for pending chat action on mount <---
   useEffect(() => {
     logger.info('[AiChatPage] Checking for pending chat action on mount...');
-    // Check if the function exists before calling, as it might not during initial setup/TDD
-    if (checkAndReplayPendingChatAction) { 
-      checkAndReplayPendingChatAction();
+    if (checkAndReplayPendingChatAction && apiClient) {
+      checkAndReplayPendingChatAction(apiClient);
     } else {
       logger.warn('[AiChatPage] checkAndReplayPendingChatAction function not found in aiStore yet.')
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [checkAndReplayPendingChatAction]); // Depend on the action function itself
+  }, [checkAndReplayPendingChatAction, apiClient]);
 
   // Set default selections when providers/prompts load
   useEffect(() => {
@@ -89,15 +91,14 @@ export default function AiChatPage() {
   // ---> START MODIFICATION: Check for redirect ID on mount <---
   useEffect(() => {
     const chatIdToLoad = localStorage.getItem('loadChatIdOnRedirect');
-    if (chatIdToLoad) {
-      // If an ID is found, remove it and load that specific chat
+    if (chatIdToLoad && apiClient) {
       localStorage.removeItem('loadChatIdOnRedirect');
       logger.info(`[AiChatPage] Found chatId ${chatIdToLoad} in localStorage, loading details...`);
-      loadChatDetails(chatIdToLoad);
+      loadChatDetails(apiClient, chatIdToLoad);
     } 
     // Run only once on mount
     // eslint-disable-next-line react-hooks/exhaustive-deps 
-  }, []); 
+  }, [loadChatDetails, apiClient]); 
   // ---> END MODIFICATION <---
 
   const handleProviderChange = (providerId: string | null) => {
@@ -120,10 +121,10 @@ export default function AiChatPage() {
   };
 
   const handleLoadChat = (chatId: string) => {
-    if (chatId === currentChatId) return; // Avoid reloading the same chat
+    if (chatId === currentChatId || !apiClient) return;
     logger.info(`[AiChatPage] Loading chat details for: ${chatId}`);
     analytics.track('Chat: History Item Selected', { chatId });
-    loadChatDetails(chatId);
+    loadChatDetails(apiClient, chatId);
     // TODO: Determine how to set provider/prompt when loading history.
     // Maybe store last used provider/prompt with the chat?
     // For now, reset to default.

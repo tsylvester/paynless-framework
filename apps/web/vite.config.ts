@@ -6,26 +6,36 @@ import path from 'node:path'; // Keep path for alias
 
 // https://vitejs.dev/config/
 export default defineConfig({
-  plugins: [react()],
+  plugins: [tsconfigPaths(), react()],
   optimizeDeps: {
-    // Explicitly include problematic transitive dependencies based on errors
     include: [
       '@tanstack/query-core',
       'react-router',
       'use-sync-external-store/shim/with-selector.js',
       '@remix-run/router',
       'scheduler',
-      // Include direct dependencies that require these as well, just in case
       '@tanstack/react-query',
       'react-router-dom',
       'zustand',
+      '@paynless/store',
+      // No longer include platform source
+      // Include necessary Tauri APIs (may be needed by other deps? Keep exclude too)
+      // '@tauri-apps/api/core',
+      // '@tauri-apps/api/dialog',
+      // '@tauri-apps/api/tauri',
+      // '@tauri-apps/api',
     ],
-    // Add any necessary excludes back if they were part of a working config
-    // exclude: ['lucide-react'],
+    // Keep exclude for Tauri APIs
+    exclude: [
+      '@tauri-apps/api',
+      '@tauri-apps/api/core',
+      '@tauri-apps/api/dialog',
+      '@tauri-apps/api/tauri',
+    ],
   },
   resolve: {
-    // Setting preserveSymlinks to false might help resolve hoisted deps
     preserveSymlinks: false,
+    // Restore explicit aliases for workspace packages
     alias: {
       // Keep aliases for local workspace packages
       '@paynless/api': path.resolve(__dirname, '../../packages/api/src'),
@@ -50,10 +60,23 @@ export default defineConfig({
     // Output directly to a dist folder inside the desktop app project
     outDir: 'dist',
     emptyOutDir: true, // Ensure it's clean before building
+    sourcemap: true, // Enable sourcemaps for easier debugging
+    rollupOptions: {
+      external: [
+        // Explicitly mark Tauri API imports as external for the web build
+        // This prevents Rollup from trying to resolve them.
+        /^@tauri-apps\/api(\/.*)?$/,
+      ],
+    },
   },
   // Ensure server settings don't conflict if they exist
   server: {
     port: 5173, // Example, keep your original port
     strictPort: true,
+    host: true, // Allow external access in dev (e.g., for Tauri)
+    // Add fs.allow for accessing the shared package source
+    fs: {
+      allow: ['../../'],
+    },
   },
 });

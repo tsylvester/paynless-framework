@@ -15,30 +15,9 @@ import { analytics } from '@paynless/analytics'
 //logger.configure({ minLevel: LogLevel.ERROR });
 //logger.info("Logger configured to minimum level: ERROR"); // This line itself won't show now
 
-// --- Initialize API Client ---
-const supabaseUrl = import.meta.env['VITE_SUPABASE_URL']
-const supabaseAnonKey = import.meta.env['VITE_SUPABASE_ANON_KEY']
-//console.log('supabaseUrl', supabaseUrl)
-//console.log('supabaseAnonKey', supabaseAnonKey)
-if (!supabaseUrl || !supabaseAnonKey) {
-  logger.error('Supabase URL or Anon Key is missing in environment variables.')
-  // Potentially render an error message or throw an error
-} else {
-  initializeApiClient({ supabaseUrl, supabaseAnonKey })
-  // --- Initialize Auth Listener Immediately After API Client --- 
-  try {
-    logger.info('[main.tsx] Initializing auth state listener...');
-    const supabaseClient = api.getSupabaseClient();
-    // TODO: Manage this unsubscribe function properly on app unmount
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    const unsubscribe = initAuthListener(supabaseClient); 
-    logger.info('[main.tsx] Auth state listener initialized.');
-    // You could assign to window for dev debugging if needed:
-    // window.unsubscribeAuth = unsubscribe;
-  } catch (error) {
-    logger.error('[main.tsx] Failed to initialize auth state listener:', { error });
-  }
-}
+// --- Get Supabase config from environment variables --- 
+const supabaseUrl = import.meta.env['VITE_SUPABASE_URL'];
+const supabaseAnonKey = import.meta.env['VITE_SUPABASE_ANON_KEY'];
 
 // Initialize Google Analytics (GA4)
 const gaMeasurementId = import.meta.env['VITE_GA_MEASUREMENT_ID']
@@ -50,8 +29,19 @@ if (gaMeasurementId) {
   logger.warn('VITE_GA_MEASUREMENT_ID is not set. Google Analytics disabled.')
 }
 
+// ---> Wrap App with ApiProvider and PlatformCapabilitiesProvider <--- 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <App />
+    {/* Pass config to ApiProvider. Handle missing keys potentially with fallback UI */}
+    {supabaseUrl && supabaseAnonKey ? (
+      <ApiProvider supabaseUrl={supabaseUrl} supabaseAnonKey={supabaseAnonKey}>
+        <PlatformProvider>
+          <App />
+        </PlatformProvider>
+      </ApiProvider>
+    ) : (
+      // Render an error message or fallback if config is missing
+      <div>Error: Supabase configuration is missing.</div>
+    )}
   </StrictMode>
 )

@@ -1,3 +1,11 @@
+import {
+    AiProvider,
+    SystemPrompt,
+    Chat,
+    ChatMessage,
+    ChatApiRequest
+} from './ai.types';
+
 export interface ApiError {
   code: string;
   message: string;

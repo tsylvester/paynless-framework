@@ -9,12 +9,12 @@ import {
     AiState, 
     AiStore, // Import the combined type
     PendingAction, // <<< Add this import
-    AuthRequiredError // <<< Add this import
+    AuthRequiredError, // <<< Add this import
+    IApiClient // <-- Import IApiClient from types
 } from '@paynless/types';
 import { api } from '@paynless/api';
 import { logger } from '@paynless/utils';
 import { useAuthStore } from './authStore';
-
 // --- Constants ---
 // --- Removed ANONYMOUS_MESSAGE_LIMIT ---
 
@@ -41,14 +41,19 @@ export const useAiStore = create<AiStore>()(
             ...initialAiStateValues,
 
             // --- Action Definitions ---
-            loadAiConfig: async () => {
+            loadAiConfig: async (apiClient: IApiClient) => {
                 logger.info('Loading AI config...');
-                // Use plain set without immer
                 set({ isConfigLoading: true, aiError: null }); 
                 try {
+                    // No need to log apiClient existence here now, it's guaranteed if passed
+                    // logger.info('[aiStore] Checking api object before call:', { 
+                    //     apiObjectExists: !!apiClient, 
+                    //     apiAiExists: !!apiClient?.ai,
+                    // }); 
+                    
                     const [providersResponse, promptsResponse] = await Promise.all([
-                        api.ai().getAiProviders(),
-                        api.ai().getSystemPrompts(),
+                        apiClient.ai.getAiProviders(),
+                        apiClient.ai.getSystemPrompts(),
                     ]);
                     let errorMessages: string[] = [];
                     let loadedProviders: AiProvider[] = [];
@@ -69,22 +74,25 @@ export const useAiStore = create<AiStore>()(
                     }
                     
                     if (errorMessages.length > 0) {
-                        // Combine errors properly
                         throw new Error(errorMessages.join(' \n'));
                     }
                     
-                    // Use plain set without immer
                     set({
                         availableProviders: loadedProviders, 
                         availablePrompts: loadedPrompts,   
                         isConfigLoading: false,
-                        aiError: null // Clear error on success
+                        aiError: null
                     });
                     
                     logger.info(`AI Config loaded successfully. Providers: ${loadedProviders.length}, Prompts: ${loadedPrompts.length}`);
+
                 } catch (error: any) {
-                    logger.error('Error loading AI config:', { error: error.message });
-                    // Use plain set without immer
+                    // No need to log apiClient existence here now
+                    logger.error('Error loading AI config:', { 
+                        error: error.message, 
+                        // apiObjectExists: !!apiClient, 
+                        // apiAiExists: !!apiClient?.ai 
+                    });
                     set({
                         availableProviders: [], 
                         availablePrompts: [],  
@@ -94,7 +102,7 @@ export const useAiStore = create<AiStore>()(
                 }
             },
 
-            sendMessage: async (data) => {
+            sendMessage: async (apiClient: IApiClient, data) => {
                 const { message, providerId, promptId, chatId: inputChatId } = data;
                 const { currentChatId: existingChatId } = get(); // Get current chatId from state
 
@@ -140,7 +148,8 @@ export const useAiStore = create<AiStore>()(
                 const options: FetchOptions = { token }; 
                 
                 try {
-                    const response: ApiResponse<ChatMessage> = await api.ai().sendChatMessage(requestData, options);
+                    // Use passed apiClient
+                    const response: ApiResponse<ChatMessage> = await apiClient.ai.sendChatMessage(requestData, options);
 
                     if (response.error) {
                         throw new Error(response.error.message || 'API returned an error');
@@ -247,7 +256,7 @@ export const useAiStore = create<AiStore>()(
                 }
             },
 
-            loadChatHistory: async () => {
+            loadChatHistory: async (apiClient: IApiClient) => {
                 const token = useAuthStore.getState().session?.access_token;
                 if (!token) {
                     set({ aiError: 'Authentication token not found.', isHistoryLoading: false });
@@ -255,8 +264,8 @@ export const useAiStore = create<AiStore>()(
                 }
                 set({ isHistoryLoading: true, aiError: null });
                 try {
-                    // Pass token directly as a string if that's what the API expects
-                    const response = await api.ai().getChatHistory(token); 
+                    // Use passed apiClient
+                    const response = await apiClient.ai.getChatHistory(token); 
                     if (response.error) {
                         throw new Error(response.error.message || 'Failed to load chat history');
                     }
@@ -277,7 +286,7 @@ export const useAiStore = create<AiStore>()(
                 }
             },
 
-            loadChatDetails: async (chatId) => {
+            loadChatDetails: async (apiClient: IApiClient, chatId) => {
                 if (!chatId) {
                     set({ aiError: 'Chat ID is required to load details.', isDetailsLoading: false });
                     return;
@@ -289,8 +298,8 @@ export const useAiStore = create<AiStore>()(
                 }
                 set({ isDetailsLoading: true, aiError: null, currentChatId: chatId }); // Optimistically set chatId
                 try {
-                    // Pass token directly as a string
-                    const response = await api.ai().getChatMessages(chatId, token); 
+                    // Use passed apiClient
+                    const response = await apiClient.ai.getChatMessages(chatId, token); 
                     if (response.error) {
                          throw new Error(response.error.message || 'Failed to load chat details');
                     }
@@ -329,7 +338,7 @@ export const useAiStore = create<AiStore>()(
                  set({ aiError: null });
             },
             
-            checkAndReplayPendingChatAction: async () => {
+            checkAndReplayPendingChatAction: async (apiClient: IApiClient) => {
                 logger.info('[aiStore] Checking for pending chat action...');
                 const pendingActionJson = localStorage.getItem('pendingAction');
 
@@ -408,7 +417,8 @@ export const useAiStore = create<AiStore>()(
                  // --- END ADD OPTIMISTIC UPDATE ---
 
                 try {
-                    const response: ApiResponse<ChatMessage> = await api.post(
+                    // Use passed apiClient.post
+                    const response: ApiResponse<ChatMessage> = await apiClient.post(
                         '/chat',
                         action.body,
                         { token }
