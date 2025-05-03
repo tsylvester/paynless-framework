@@ -1,0 +1,11 @@
+[workspace]
+members = [
+    "apps/windows/src-tauri", # Path to the Tauri app crate
+    "apps/windows/src-tauri/crates/core-crypto" # UPDATED Path to the new crypto crate location
+]
+
+# Optional: Define shared dependencies or profiles
+[profile.release]
+lto = true
+codegen-units = 1
+panic = 'abort' 

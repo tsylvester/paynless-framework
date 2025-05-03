@@ -1,4 +1,4 @@
-import { PlatformCapabilities } from '@paynless/types';
+import { Platform } from '@paynless/types';
 
 // Helper function for detection
 const detectPlatform = (): 'web' | 'tauri' | 'react-native' | 'unknown' => {
@@ -21,7 +21,7 @@ const detectPlatform = (): 'web' | 'tauri' | 'react-native' | 'unknown' => {
 // Optional OS detection (can be expanded)
 // For Tauri, you might use the os module: import { type } from '@tauri-apps/api/os';
 // For web/RN, navigator.platform might give hints but is less reliable.
-const detectOs = (): PlatformCapabilities['os'] => {
+const detectOs = (): Platform['os'] => {
   // Implementation depends on platform and desired granularity
   // Example (very basic web detection):
   // if (typeof navigator !== 'undefined') {
@@ -32,14 +32,14 @@ const detectOs = (): PlatformCapabilities['os'] => {
   return undefined; // Or more specific detection using Tauri APIs if platform === 'tauri'
 };
 
-let memoizedCapabilities: PlatformCapabilities | null = null;
+let memoizedCapabilities: Platform | null = null;
 
 /**
  * Determines the current platform capabilities.
  * Caches the result after the first call.
  * @returns An object describing the available platform features.
  */
-export function getPlatformCapabilities(): PlatformCapabilities {
+export function getPlatformCapabilities(): Platform {
   if (memoizedCapabilities) {
     return memoizedCapabilities;
   }

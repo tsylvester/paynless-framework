@@ -5,6 +5,8 @@
     { "path": "packages/utils" },
     { "path": "packages/api" },
     { "path": "packages/store" },
-    { "path": "apps/web" }
+    { "path": "apps/web" },
+    { "path": "packages/platform" },
+    { "path": "packages/analytics" }
   ]
 }

@@ -55,14 +55,13 @@ export class AiApiClient {
      * Sends a chat message to the backend.
      * Handles both anonymous (isPublic: true) and authenticated requests.
      */
-    async sendChatMessage(data: ChatApiRequest, options: FetchOptions): Promise<ApiResponse<ChatMessage>> {
+    async sendChatMessage(data: ChatApiRequest, options?: FetchOptions): Promise<ApiResponse<ChatMessage>> {
         // Validate essential data (can add more specific checks)
         if (!data.message || !data.providerId || !data.promptId) {
             const error: ApiError = { code: 'VALIDATION_ERROR', message: 'Missing required fields in chat message request' };
             return { error, status: 400 };
         }
-        // The base apiClient.post will handle adding the token from options if provided
-        // Provide both ResponseType and RequestBodyType
+        // Pass data and potentially undefined options to the underlying post method
         return this.apiClient.post<ChatMessage, ChatApiRequest>('chat', data, options);
     }
 
