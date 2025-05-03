@@ -1,5 +1,9 @@
 import { Platform } from '@paynless/types';
 
+// --- Re-export Context and Hook ---
+export { PlatformProvider, usePlatform } from './context';
+// -----------------------------------
+
 // Helper function for detection
 const detectPlatform = (): 'web' | 'tauri' | 'react-native' | 'unknown' => {
   // Check for Tauri specific global

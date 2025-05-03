@@ -8,8 +8,6 @@ import type { Platform } from '@paynless/types';
 
 // Import static web provider function
 import { getWebCapabilities } from './web';
-// Import the *factory function* for Tauri capabilities
-// import { createTauriFileSystemCapabilities } from './tauriPlatformCapabilities';
 
 // --- Define Default Initial State ---
 // Exporting this might be useful for consumers or tests

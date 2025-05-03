@@ -9,6 +9,8 @@ import { logger } from '@paynless/utils'
 import { useSubscriptionStore } from '@paynless/store'
 import { ChatwootIntegration } from './components/integrations/ChatwootIntegration'
 import { Toaster } from '@/components/ui/sonner'
+import { PlatformProvider } from '@paynless/platform'
+import { PlatformFeatureTester } from './components/debug/PlatformFeatureTester'
 
 // Create a client for React Query
 const queryClient = new QueryClient({
@@ -53,6 +55,7 @@ function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <ThemeProvider>
+        <PlatformProvider>
         {/* Conditional rendering moved here */}
         {isLoading ? (
           <div className="flex dark:bg-black justify-center items-center min-h-screen">
@@ -82,7 +85,9 @@ function App() {
             <RouterProvider router={router} />
             <ChatwootIntegration />
           </>
-        )}
+        )}          
+        <PlatformFeatureTester />
+        </PlatformProvider>
         {/* Toaster remains outside conditional render */}
         <Toaster />
       </ThemeProvider>
