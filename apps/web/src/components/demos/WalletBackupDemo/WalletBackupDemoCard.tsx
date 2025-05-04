@@ -1,7 +1,6 @@
 import React, { useState } from 'react';
 import { usePlatform } from '@paynless/platform';
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { Skeleton } from "@/components/ui/skeleton";
 import { Info, AlertCircle } from 'lucide-react';
 
 import { MnemonicInputArea } from './MnemonicInputArea';
@@ -12,7 +11,7 @@ import ErrorBoundary from '@/components/common/ErrorBoundary';
 interface WalletBackupDemoCardProps {}
 
 export const WalletBackupDemoCard: React.FC<WalletBackupDemoCardProps> = () => {
-  const { platformCapabilities, isLoadingCapabilities, capabilityError } = usePlatform();
+  const platformCapabilities = usePlatform();
   const [mnemonic, setMnemonic] = useState<string>('');
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [statusVariant, setStatusVariant] = useState<'info' | 'success' | 'error'>('info');
@@ -21,9 +20,8 @@ export const WalletBackupDemoCard: React.FC<WalletBackupDemoCardProps> = () => {
   const fileSystem = platformCapabilities?.fileSystem;
   const isFileSystemAvailable = fileSystem?.isAvailable === true;
 
-  // Determine overall disabled state
-  const isDisabled = isLoadingCapabilities || !isFileSystemAvailable || !!capabilityError || isActionLoading;
-  const isExportDisabled = !mnemonic || isDisabled; // Export also requires mnemonic
+  const isDisabled = !isFileSystemAvailable || isActionLoading;
+  const isExportDisabled = !mnemonic || isDisabled;
 
   const handleImport = async () => {
     if (!fileSystem || !isFileSystemAvailable) return;
@@ -31,10 +29,8 @@ export const WalletBackupDemoCard: React.FC<WalletBackupDemoCardProps> = () => {
     setIsActionLoading(true);
     setStatusMessage(null);
     try {
-      // Use array destructuring, handle potentially empty array
       const [selectedFilePath] = (await fileSystem.pickFile({
         multiple: false,
-        // Add filter if desired, e.g., { name: 'Text Files', extensions: ['txt'] }
       })) ?? [];
 
       if (!selectedFilePath) {
@@ -46,7 +42,6 @@ export const WalletBackupDemoCard: React.FC<WalletBackupDemoCardProps> = () => {
       const fileContent = await fileSystem.readFile(selectedFilePath);
       const importedMnemonic = new TextDecoder().decode(fileContent);
 
-      // Basic validation (could be enhanced)
       if (!importedMnemonic || importedMnemonic.trim().split(/\s+/).length < 12) {
         throw new Error('Invalid mnemonic phrase format in file.');
       }
@@ -70,7 +65,6 @@ export const WalletBackupDemoCard: React.FC<WalletBackupDemoCardProps> = () => {
     setStatusMessage(null);
     try {
       const savePath = await fileSystem.pickSaveFile({
-        // defaultPath: 'wallet-backup.txt' // Optional default path
       });
 
       if (!savePath) {
@@ -98,60 +92,29 @@ export const WalletBackupDemoCard: React.FC<WalletBackupDemoCardProps> = () => {
       <div className="p-4 border rounded-lg space-y-4">
         <h2 className="text-lg font-semibold">Wallet Backup/Recovery Demo</h2>
 
-        {/* === Capability Loading State === */}
-        {isLoadingCapabilities && (
-          <div className="space-y-3">
-            <Skeleton className="h-10 w-full" />
-            <div className="flex space-x-2">
-              <Skeleton className="h-9 w-1/2" />
-              <Skeleton className="h-9 w-1/2" />
-            </div>
-            <Skeleton className="h-8 w-3/4" />
-          </div>
+        {!isFileSystemAvailable && (
+           <Alert variant="default">
+             <Info className="h-4 w-4" />
+             <AlertTitle>File System Unavailable</AlertTitle>
+             <AlertDescription>
+                File operations require the Desktop app environment and may be unavailable.
+             </AlertDescription>
+           </Alert>
         )}
 
-        {/* === Capability Error State === */} 
-        {capabilityError && !isLoadingCapabilities && (
-          <Alert variant="destructive">
-            <AlertCircle className="h-4 w-4" />
-            <AlertTitle>Error Loading Capabilities</AlertTitle>
-            <AlertDescription>
-              {capabilityError.message}
-            </AlertDescription>
-          </Alert>
-           // No need to render other controls if capabilities failed to load
-        )}
-
-        {/* === Capabilities Loaded State === */} 
-        {!isLoadingCapabilities && !capabilityError && (
-          <>
-            {/* --- Unavailable Message --- */}
-            {!isFileSystemAvailable && (
-               <Alert variant="warning">
-                 <Info className="h-4 w-4" />
-                 <AlertTitle>Desktop App Required</AlertTitle>
-                 <AlertDescription>
-                    File operations require the Desktop app.
-                 </AlertDescription>
-               </Alert>
-            )}
-
-             {/* --- Main Controls (Rendered even if unavailable, but disabled) --- */} 
-            <MnemonicInputArea
-              value={mnemonic}
-              onChange={setMnemonic}
-              disabled={isDisabled}
-            />
-            <FileActionButtons
-              onImport={handleImport}
-              onExport={handleExport}
-              disabled={isDisabled} // Pass combined disabled state
-              isExportDisabled={isExportDisabled} // Pass specific export disabled state
-              isLoading={isActionLoading}
-            />
-            <StatusDisplay message={statusMessage} variant={statusVariant} />
-          </>
-        )}
+        <MnemonicInputArea
+          value={mnemonic}
+          onChange={setMnemonic}
+          disabled={isDisabled}
+        />
+        <FileActionButtons
+          onImport={handleImport}
+          onExport={handleExport}
+          disabled={isDisabled}
+          isExportDisabled={isExportDisabled}
+          isLoading={isActionLoading}
+        />
+        <StatusDisplay message={statusMessage} variant={statusVariant} />
       </div>
     </ErrorBoundary>
   );
