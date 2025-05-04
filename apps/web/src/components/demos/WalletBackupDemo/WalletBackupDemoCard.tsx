@@ -4,6 +4,7 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Info, AlertCircle } from 'lucide-react';
 
 import { MnemonicInputArea } from './MnemonicInputArea';
+import { GenerateMnemonicButton } from './GenerateMnemonicButton';
 import { FileActionButtons } from './FileActionButtons';
 import { StatusDisplay } from './StatusDisplay';
 import ErrorBoundary from '@/components/common/ErrorBoundary';
@@ -22,6 +23,12 @@ export const WalletBackupDemoCard: React.FC<WalletBackupDemoCardProps> = () => {
 
   const isDisabled = !isFileSystemAvailable || isActionLoading;
   const isExportDisabled = !mnemonic || isDisabled;
+
+  const handleGenerate = () => {
+    console.log('Generate Mnemonic Clicked (Placeholder)');
+    setStatusMessage('Generate button clicked (placeholder). Implement generation logic.');
+    setStatusVariant('info');
+  };
 
   const handleImport = async () => {
     if (!fileSystem || !isFileSystemAvailable) return;
@@ -107,6 +114,12 @@ export const WalletBackupDemoCard: React.FC<WalletBackupDemoCardProps> = () => {
           onChange={setMnemonic}
           disabled={isDisabled}
         />
+        <div className="flex space-x-2">
+          <GenerateMnemonicButton 
+            onGenerate={handleGenerate} 
+            disabled={isDisabled} 
+          />
+        </div>
         <FileActionButtons
           onImport={handleImport}
           onExport={handleExport}

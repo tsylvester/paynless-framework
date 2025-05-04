@@ -28,12 +28,12 @@
 *   **[1.2] `MnemonicInputArea` Implementation & Tests [✅]:**
     *   [X] Create the `MnemonicInputArea.tsx` sub-component file.
     *   **[1.2.1] Write Unit Tests (`MnemonicInputArea.test.tsx`) [TEST-UNIT] [X]:**
-        *   [ ] Create test file: `apps/web/src/components/demos/WalletBackupDemo/MnemonicInputArea.test.tsx`.
-        *   [ ] Test Case 1: Renders the `Textarea` component.
-        *   [ ] Test Case 2: Displays the `value` prop correctly in the textarea.
-        *   [ ] Test Case 3: Calls the `onChange` prop function with the new value when text is entered.
-        *   [ ] Test Case 4: Applies the `disabled` attribute to the textarea when the `disabled` prop is true.
-        *   [ ] Test Case 5: Does not apply the `disabled` attribute when the `disabled` prop is false.
+        *   [X] Create test file: `apps/web/src/components/demos/WalletBackupDemo/MnemonicInputArea.test.tsx`.
+        *   [X] Test Case 1: Renders the `Textarea` component.
+        *   [X] Test Case 2: Displays the `value` prop correctly in the textarea.
+        *   [X] Test Case 3: Calls the `onChange` prop function with the new value when text is entered.
+        *   [X] Test Case 4: Applies the `disabled` attribute to the textarea when the `disabled` prop is true.
+        *   [X] Test Case 5: Does not apply the `disabled` attribute when the `disabled` prop is false.
         *   [X] Commit failing tests: "test(UI): Add unit tests for MnemonicInputArea component".
     *   **[1.2.2] Implement Component Logic [UI] [X]:**
         *   [X] In `MnemonicInputArea.tsx`, implement the component using `Textarea` from `@/components/ui/textarea`.
@@ -42,20 +42,20 @@
     *   **[1.2.3] Commit `MnemonicInputArea` [COMMIT] [✅]:**
         *   [X] Commit working component and passing tests: "feat(UI): Implement MnemonicInputArea component and tests".
 
-*   **[1.3] `GenerateMnemonicButton` Implementation & Tests [🚧]:** (New Step)
-    *   **[1.3.1] Write Unit Tests (`GenerateMnemonicButton.test.tsx`) [TEST-UNIT] [ ]:**
-        *   [ ] Create test file: `apps/web/src/components/demos/WalletBackupDemo/GenerateMnemonicButton.test.tsx`.
-        *   [ ] Test Case 1: Renders a button with text "Generate Mnemonic".
-        *   [ ] Test Case 2: Calls the `onGenerate` prop function when clicked (and not disabled).
-        *   [ ] Test Case 3: Applies the `disabled` attribute when the `disabled` prop is true.
-        *   [ ] Commit failing tests: "test(UI): Add unit tests for GenerateMnemonicButton component".
-    *   **[1.3.2] Implement Component Logic [UI] [ ]:**
-        *   [ ] Create the `GenerateMnemonicButton.tsx` file.
-        *   [ ] Implement the component using `Button` from `@/components/ui/button`.
-        *   [ ] Ensure props (`onGenerate`, `disabled`) are handled correctly.
-        *   [ ] Verify all unit tests pass.
-    *   **[1.3.3] Commit `GenerateMnemonicButton` [COMMIT] [ ]:**
-        *   [ ] Commit working component and passing tests: "feat(UI): Implement GenerateMnemonicButton component and tests".
+*   **[1.3] `GenerateMnemonicButton` Implementation & Tests [✅]:** (New Step)
+    *   **[1.3.1] Write Unit Tests (`GenerateMnemonicButton.test.tsx`) [TEST-UNIT] [X]:**
+        *   [X] Create test file: `apps/web/src/components/demos/WalletBackupDemo/GenerateMnemonicButton.test.tsx`.
+        *   [X] Test Case 1: Renders a button with text "Generate Mnemonic".
+        *   [X] Test Case 2: Calls the `onGenerate` prop function when clicked (and not disabled).
+        *   [X] Test Case 3: Applies the `disabled` attribute when the `disabled` prop is true.
+        *   [X] Commit failing tests: "test(UI): Add unit tests for GenerateMnemonicButton component".
+    *   **[1.3.2] Implement Component Logic [UI] [X]:**
+        *   [X] Create the `GenerateMnemonicButton.tsx` file.
+        *   [X] Implement the component using `Button` from `@/components/ui/button`.
+        *   [X] Ensure props (`onGenerate`, `disabled`) are handled correctly.
+        *   [X] Verify all unit tests pass.
+    *   **[1.3.3] Commit `GenerateMnemonicButton` [COMMIT] [X]:**
+        *   [X] Commit working component and passing tests: "feat(UI): Implement GenerateMnemonicButton component and tests".
 
 *   **[1.4] `FileActionButtons` Implementation & Tests [🚧]:** (Was 1.3)
     *   [X] Create the `FileActionButtons.tsx` sub-component file.
