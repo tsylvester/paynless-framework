@@ -25,7 +25,7 @@ export function Header() {
     profile: state.profile,
     logout: state.logout,
   }))
-  const capabilities = usePlatform()
+  const { capabilities } = usePlatform()
 
   const { colorMode, setColorMode } = useTheme()
   const navigate = useNavigate()
@@ -281,16 +281,28 @@ export function Header() {
             <div className="pt-2 pb-3 space-y-1">
               <Link
                 to="/login"
-                className="block pl-3 pr-4 py-2 border-l-4 text-base font-medium border-transparent text-textSecondary hover:bg-surface hover:border-border hover:text-textPrimary"
+                className="border-transparent text-textSecondary hover:bg-primary/5 hover:border-border hover:text-textPrimary block pl-3 pr-4 py-2 border-l-4 text-base font-medium"
+                onClick={() => setIsMenuOpen(false)}
               >
                 Login
               </Link>
               <Link
                 to="/register"
-                className="block pl-3 pr-4 py-2 border-l-4 text-base font-medium border-transparent text-textSecondary hover:bg-surface hover:border-border hover:text-textPrimary"
+                className="border-transparent text-textSecondary hover:bg-primary/5 hover:border-border hover:text-textPrimary block pl-3 pr-4 py-2 border-l-4 text-base font-medium"
+                onClick={() => setIsMenuOpen(false)}
               >
                 Register
               </Link>
+              {capabilities?.platform === 'tauri' && (
+                <Link
+                  to="/dev/wallet"
+                  className="border-transparent text-textSecondary hover:bg-primary/5 hover:border-border hover:text-textPrimary block pl-3 pr-4 py-2 border-l-4 text-base font-medium"
+                  onClick={() => setIsMenuOpen(false)}
+                >
+                  <FlaskConical className="inline-block h-4 w-4 mr-2" />
+                  Dev Wallet
+                </Link>
+              )}
             </div>
           )}
         </div>

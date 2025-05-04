@@ -1,8 +1,8 @@
 import React, { useState } from 'react';
 import { usePlatform } from '@paynless/platform';
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { Skeleton } from "@/components/ui/skeleton"
-import { Info, AlertTriangle } from 'lucide-react';
+import { Skeleton } from "@/components/ui/skeleton";
+import { Info, AlertCircle } from 'lucide-react';
 
 import { MnemonicInputArea } from './MnemonicInputArea';
 import { GenerateMnemonicButton } from './GenerateMnemonicButton';
@@ -13,16 +13,16 @@ import ErrorBoundary from '@/components/common/ErrorBoundary';
 interface WalletBackupDemoCardProps {}
 
 export const WalletBackupDemoCard: React.FC<WalletBackupDemoCardProps> = () => {
-  const platformCapabilities = usePlatform();
+  const { capabilities, isLoadingCapabilities, capabilityError } = usePlatform();
   const [mnemonic, setMnemonic] = useState<string>('');
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [statusVariant, setStatusVariant] = useState<'info' | 'success' | 'error'>('info');
   const [isActionLoading, setIsActionLoading] = useState<boolean>(false);
 
-  const fileSystem = platformCapabilities?.fileSystem;
+  const fileSystem = capabilities?.fileSystem;
   const isFileSystemAvailable = fileSystem?.isAvailable === true;
 
-  const isDisabled = !isFileSystemAvailable || isActionLoading;
+  const isDisabled = !isFileSystemAvailable || isActionLoading || isLoadingCapabilities || !!capabilityError;
   const isExportDisabled = !mnemonic || isDisabled;
 
   const handleGenerate = () => {
@@ -32,7 +32,7 @@ export const WalletBackupDemoCard: React.FC<WalletBackupDemoCardProps> = () => {
   };
 
   const handleImport = async () => {
-    if (!fileSystem || !isFileSystemAvailable) return;
+    if (!fileSystem || !isFileSystemAvailable || isLoadingCapabilities || capabilityError) return;
 
     setIsActionLoading(true);
     setStatusMessage(null);
@@ -67,7 +67,7 @@ export const WalletBackupDemoCard: React.FC<WalletBackupDemoCardProps> = () => {
   };
 
   const handleExport = async () => {
-    if (!fileSystem || !isFileSystemAvailable || !mnemonic) return;
+    if (!fileSystem || !isFileSystemAvailable || !mnemonic || isLoadingCapabilities || capabilityError) return;
 
     setIsActionLoading(true);
     setStatusMessage(null);
@@ -95,11 +95,50 @@ export const WalletBackupDemoCard: React.FC<WalletBackupDemoCardProps> = () => {
     }
   };
 
-  return (
-    <ErrorBoundary fallbackMessage="An unexpected error occurred in the Wallet Backup component.">
-      <div className="p-4 border rounded-lg space-y-4">
-        <h2 className="text-lg font-semibold">Wallet Backup/Recovery Demo</h2>
+  const renderContent = () => {
+    if (isLoadingCapabilities) {
+      return (
+        <div className="space-y-4">
+          <Skeleton className="h-8 w-1/2" />
+          <Skeleton className="h-20 w-full" />
+          <div className="flex space-x-2">
+             <Skeleton className="h-10 w-32" />
+          </div>
+           <div className="flex space-x-2">
+             <Skeleton className="h-10 w-48" />
+             <Skeleton className="h-10 w-48" />
+          </div>
+          <Skeleton className="h-10 w-full" />
+        </div>
+      );
+    }
 
+    if (capabilityError) {
+      return (
+        <Alert variant="destructive">
+          <AlertCircle className="h-4 w-4" />
+          <AlertTitle>Error Loading Capabilities</AlertTitle>
+          <AlertDescription>
+            {capabilityError.message || 'An unknown error occurred while detecting platform features.'}
+          </AlertDescription>
+        </Alert>
+      );
+    }
+
+    if (!capabilities) {
+         return (
+             <Alert variant="default">
+                 <Info className="h-4 w-4" />
+                 <AlertTitle>Platform Unknown</AlertTitle>
+                 <AlertDescription>
+                    Could not determine platform capabilities.
+                 </AlertDescription>
+             </Alert>
+         );
+    }
+
+    return (
+      <>
         {!isFileSystemAvailable && (
            <Alert variant="default">
              <Info className="h-4 w-4" />
@@ -130,6 +169,15 @@ export const WalletBackupDemoCard: React.FC<WalletBackupDemoCardProps> = () => {
           />
         </div>
         <StatusDisplay message={statusMessage} variant={statusVariant} />
+      </>
+    );
+  };
+
+  return (
+    <ErrorBoundary fallbackMessage="An unexpected error occurred in the Wallet Backup component.">
+      <div className="p-4 border rounded-lg space-y-4">
+        <h2 className="text-lg font-semibold">Wallet Backup/Recovery Demo</h2>
+        {renderContent()} 
       </div>
     </ErrorBoundary>
   );

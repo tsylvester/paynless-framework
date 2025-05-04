@@ -1,37 +1,74 @@
 import React, { useState } from 'react';
 import { usePlatform } from '@paynless/platform';
 import { logger } from '@paynless/utils';
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Skeleton } from "@/components/ui/skeleton";
+import { AlertCircle } from 'lucide-react';
 
 /**
  * Example component demonstrating use of platform capabilities.
  */
 export const PlatformFeatureTester: React.FC = () => {
-  const capabilities = usePlatform();
+  const { capabilities, isLoadingCapabilities, capabilityError } = usePlatform();
   const [textContent, setTextContent] = useState('Test content to save');
 
   // --- Handle Loading State --- 
-  if (!capabilities) {
-    return <div>Loading platform capabilities...</div>;
-  }
-  // --- Platform-Specific Rendering & Actions --- 
-  // --- <<< ADD CHECK FOR WEB PLATFORM >>> ---
-  if (capabilities.platform === 'web') {
-    // Optionally return a placeholder, or null to render nothing
-    // return <div>Platform Feature Tester is not applicable in a web browser.</div>;
-    return null; 
+  if (isLoadingCapabilities) {
+    return (
+      <div style={{ border: '1px solid gray', padding: '10px', margin: '10px' }} className="space-y-2">
+        <Skeleton className="h-8 w-3/4" />
+        <Skeleton className="h-6 w-1/2" />
+        <Skeleton className="h-20 w-full" />
+        <div className="flex space-x-2">
+          <Skeleton className="h-10 w-48" />
+          <Skeleton className="h-10 w-48" />
+        </div>
+      </div>
+    );
   }
 
-  // --- Platform-Specific Rendering & Actions (Now only runs if not web) --- 
+  // --- Handle Error State --- 
+  if (capabilityError) {
+    return (
+      <div style={{ border: '1px solid red', padding: '10px', margin: '10px' }}>
+        <Alert variant="destructive">
+          <AlertCircle className="h-4 w-4" />
+          <AlertTitle>Error Loading Platform Capabilities</AlertTitle>
+          <AlertDescription>
+            {capabilityError.message || 'An unknown error occurred.'}
+          </AlertDescription>
+        </Alert>
+      </div>
+    );
+  }
+  
+  // --- Handle Null Capabilities State (Shouldn't happen if !isLoading && !error, but good practice) --- 
+  if (!capabilities) {
+     return (
+      <div style={{ border: '1px solid orange', padding: '10px', margin: '10px' }}>
+        <p>Capabilities object is unexpectedly null.</p>
+       </div>
+     );
+  }
+
+  // --- Platform-Specific Rendering & Actions (capabilities object is now guaranteed) --- 
   const { platform, fileSystem } = capabilities;
 
-  // --- Pick File Handler --- 
+  // Render null if web (already handled by check below but explicit is okay)
+  if (platform === 'web') {
+     return null; 
+  }
+  
+  // File System check (fileSystem is now guaranteed, check its availability)
+  const isFileSystemAvailable = fileSystem.isAvailable;
+
+  // --- Handlers (Now use isFileSystemAvailable directly) --- 
   const handlePickFile = async () => {
-    if (fileSystem.isAvailable) {
+    if (isFileSystemAvailable) {
       logger.info(`[${platform}] Attempting to pick file...`);
-      // Request a single file explicitly, expect string[] | null
       const filePaths = await fileSystem.pickFile({ accept: '.txt', multiple: false }); 
       if (filePaths && filePaths.length > 0) {
-        const filePath = filePaths[0]; // Take the first file path
+        const filePath = filePaths[0];
         logger.info(`[${platform}] File picked: ${filePath}`);
         try {
           const contentBytes = await fileSystem.readFile(filePath);
@@ -39,7 +76,6 @@ export const PlatformFeatureTester: React.FC = () => {
           setTextContent(decodedContent);
           logger.info(`[${platform}] File content length: ${contentBytes.byteLength} bytes`);
         } catch (err) {
-          // Check if err is an Error before logging
           const logData = err instanceof Error ? { error: err.message } : { error: String(err) };
           logger.error(`[${platform}] Error reading file:`, logData);
         }
@@ -51,9 +87,8 @@ export const PlatformFeatureTester: React.FC = () => {
     }
   };
 
-  // --- Save File Handler (NEW) ---
   const handleSaveFile = async () => {
-    if (fileSystem.isAvailable) {
+    if (isFileSystemAvailable) {
       logger.info(`[${platform}] Attempting to save file...`);
       try {
         const filePath = await fileSystem.pickSaveFile({ accept: '.txt' });
@@ -66,7 +101,6 @@ export const PlatformFeatureTester: React.FC = () => {
           logger.info(`[${platform}] File saving cancelled.`); 
         }
       } catch (err) {
-        // Check if err is an Error before logging
         const logData = err instanceof Error ? { error: err.message } : { error: String(err) };
         logger.error(`[${platform}] Error saving file:`, logData);
       }
@@ -75,13 +109,13 @@ export const PlatformFeatureTester: React.FC = () => {
     }
   };
 
+  // --- Main Render (Only if loaded, no error, and capabilities exist) ---
   return (
     <div style={{ border: '1px solid blue', padding: '10px', margin: '10px' }}>
       <h2>Platform Feature Tester</h2>
       <p>Detected Platform: <strong>{platform}</strong></p>
-      <p>File System Available: <strong>{fileSystem.isAvailable.toString()}</strong></p>
+      <p>File System Available: <strong>{isFileSystemAvailable.toString()}</strong></p>
 
-      {/* Text area to show/edit content */}
       <textarea 
         value={textContent}
         onChange={(e) => setTextContent(e.target.value)}
@@ -89,10 +123,10 @@ export const PlatformFeatureTester: React.FC = () => {
         cols={50}
         style={{ display: 'block', margin: '10px 0' }}
         aria-label="Text Content"
+        disabled={!isFileSystemAvailable}
       />
 
-      {/* Conditionally render the buttons */}
-      {fileSystem.isAvailable ? (
+      {isFileSystemAvailable ? (
         <div style={{ display: 'flex', gap: '10px' }}>
           <button onClick={handlePickFile}>
             Pick & Load Text File (Desktop)
@@ -102,16 +136,8 @@ export const PlatformFeatureTester: React.FC = () => {
           </button>
         </div>
       ) : (
-        <p>(File operation buttons hidden on platforms without filesystem capability)</p>
+        <p>(File operations require the Desktop app environment and are unavailable)</p>
       )}
-
-      {/* <<< REMOVE REDUNDANT WEB FALLBACK >>> */}
-      {/* {platform === 'web' && (
-        <div style={{ marginTop: '10px' }}>
-          <label htmlFor="web-file-input">Choose file (Web standard): </label>
-          <input type="file" id="web-file-input" accept='.txt' />
-        </div>
-      )} */}
     </div>
   );
 }; 

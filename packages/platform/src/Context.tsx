@@ -14,7 +14,7 @@ export const DEFAULT_INITIAL_CAPABILITIES: PlatformCapabilities = {
 };
 
 // *** Updated Context Type ***
-interface CapabilitiesContextValue {
+export interface CapabilitiesContextValue {
   capabilities: PlatformCapabilities | null; // Can be null initially or on error
   isLoadingCapabilities: boolean;
   capabilityError: Error | null;
