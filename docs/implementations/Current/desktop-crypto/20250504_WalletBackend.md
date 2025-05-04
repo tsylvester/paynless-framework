@@ -43,29 +43,55 @@
     *   [✅] **Fix Build Issues:** Resolved Tauri v2 plugin dependency conflicts and capability registration errors (`Permission opener:default not found`) by upgrading Tauri versions, adding `build.rs`, `.setup()` hook, and ensuring correct capability definition/window labeling.
     *   [ ] [COMMIT] Commit `storage-interface`, `core-crypto` updates, backend command handlers, tests, and build fixes with message "feat(Backend): Implement Tauri commands for mnemonic import/export and fix build issues".
 
-*   **[2.3] Integrate Backend Calls into Frontend:**
-    *   [ ] Modify `WalletBackupDemo.tsx` (or rename/refactor to `WalletManager.tsx`).
-    *   [ ] Import the `invoke` function from `@tauri-apps/api/core`.
-    *   [ ] Update `handleImport`:
-        *   [ ] After reading the mnemonic string from the file, instead of just setting state, call `invoke('import_mnemonic', { mnemonic: importedString })`.
-        *   [ ] Handle the Promise result: Update UI based on success or specific errors returned from the backend (e.g., "Invalid Mnemonic", "Storage Failed").
-    *   [ ] Update `handleExport`:
-        *   [ ] Instead of reading the mnemonic from the text area, call `invoke('export_mnemonic')`.
-        *   [ ] Handle the Promise result: If successful (returns mnemonic string), proceed with `pickSaveFile` and `writeFile` using the *retrieved* mnemonic. Update UI based on success or errors (e.g., "Authentication Failed", "Failed to retrieve seed").
-    *   [ ] Remove direct setting of mnemonic state from file read; the source of truth for export is now the backend.
-    *   [ ] Adapt loading/error states to reflect Tauri command invocation.
-    *   [ ] [COMMIT] Commit frontend integration of Tauri commands with message "feat(UI): Integrate Tauri commands into WalletBackupDemo for import/export".
+*   **[✅] Integrate Backend Calls into Frontend:**
+    *   [✅] Modify `WalletBackupDemoCard.tsx` (kept name for now).
+    *   [✅] Import the `invoke` function from `@tauri-apps/api/core` (and installed the package).
+    *   [✅] Update `importMnemonicFile` (within the component):
+        *   [✅] After reading the mnemonic string from the file, call `invoke('import_mnemonic', { mnemonic: importedString })`.
+        *   [✅] Handle the Promise result: Update UI based on success or specific errors returned from the backend.
+    *   [✅] Update `handleExport`:
+        *   [✅] Call `invoke('export_mnemonic')` to retrieve the mnemonic string from the backend.
+        *   [✅] Handle the Promise result: If successful, proceed with `pickSaveFile` and `writeFile` using the *retrieved* mnemonic. Update UI based on success or errors.
+    *   [✅] Remove direct setting of mnemonic state from file read; the source of truth for export is now the backend (kept local state for display only).
+    *   [✅] Adapt loading/error states to reflect Tauri command invocation.
+    *   [✅] Update `WalletBackupDemoCard.test.tsx` to mock `invoke` and verify new flows.
+    *   [ ] [COMMIT] Commit frontend integration of Tauri commands and test updates with message "feat(UI): Integrate Tauri commands into WalletBackupDemoCard" and "test(UI): Update WalletBackupDemoCard tests to mock invoke".
 
-*   **[2.4] Enhance Security & UX:**
-    *   [ ] Implement necessary UI elements for security checks during export (e.g., password confirmation dialog).
-    *   [ ] Provide clearer user feedback differentiating file I/O errors from backend cryptographic/storage errors.
-    *   [ ] Consider UI implications if multiple wallets/identities are supported in the future.
-    *   [ ] Review and refine the overall workflow for security and usability.
+*   **[2.4] Enhance Security, Reliability & UX:**
+    *   **[2.4.1] Authentication & Authorization Strategy (Security):**
+        *   [ ] **Define Mechanism:** Determine and document the chosen authentication method required *before* executing the `export_mnemonic` command. Evaluate options:
+            *   Simple Password Prompt (UI-driven, requires secure handling if sent to backend).
+            *   OS-level Authentication Hook (Leveraging platform features via Tauri/plugins).
+            *   Master Password/PIN stored securely (Requires robust *local* secure storage).
+            *   Supabase Re-authentication (Requires secure frontend -> Supabase -> frontend -> Tauri command flow, adds network dependency).
+        *   [ ] **Implement Placeholder:** Add necessary UI elements (e.g., password input, auth button) as placeholders for the chosen mechanism. Disable export functionality until authentication is successful (deferring full backend integration of the check).
+        *   [ ] **Security Review:** Document potential attack vectors related to export (e.g., shoulder surfing, malware interception) and how the chosen strategy mitigates them.
+    *   **[2.4.2] Robust Error Handling & Feedback (Reliability, UX):**
+        *   [ ] **Map Backend Errors:** Explicitly map every defined Rust error variant (`MnemonicImportError`, `MnemonicExportError`, anticipated `StorageError` variants) to distinct, clear, user-friendly messages in the frontend `StatusDisplay`.
+        *   [ ] **Differentiate Error Sources:** Ensure UI messages clearly distinguish between frontend validation, file I/O, backend crypto, backend storage, and Tauri communication errors.
+        *   [ ] **Consistent Loading States:** Verify `isActionLoading` accurately reflects the entire duration of async operations (invoke + file system). Prevent race conditions.
+        *   [ ] **Granular Status Updates:** Implement finer-grained status messages during longer operations (e.g., "Validating...", "Storing...", "Retrieving...", "Saving...").
+    *   **[2.4.3] Improve UX Workflow (UX, Safety):**
+        *   [ ] **Clear Intent:** Review button labels, placeholder texts, and info messages for clarity.
+        *   [ ] **Confirmation Dialogs (Optional):** Consider confirmation (`dialog.ask`) before potential overwrites (like import). *Decision: Assess necessity.*
+        *   [ ] **Accessibility Review:** Perform basic accessibility check (keyboard nav, focus, ARIA) for new UI elements.
+    *   **[2.4.4] Design for Extensibility & Modularity (Modularity, Extensibility):**
+        *   [ ] **Single Wallet Limitation:** Explicitly document the current single-wallet assumption.
+        *   [ ] **Multi-Wallet Considerations:** Outline design changes needed for future multi-wallet support.
+        *   [ ] **Component Refactoring Review:** Assess if `WalletBackupDemoCard.tsx` needs refactoring due to increased complexity.
+    *   **[2.4.5] Plan Secure Storage Implementation (Security, Reliability):**
+        *   [ ] **Strategy Definition:** Research and decide on the specific mechanism for the *real* `SecureStorage` trait implementation (replacing mock). **Decision: DO NOT use Supabase DB for mnemonic storage.** Focus on *local* secure storage:
+            *   OS Keychain/Keystore (via `keyring-rs` crate or dedicated Tauri plugin like `tauri-plugin-stronghold` [if mature]).
+            *   Filesystem encryption (using Rust crypto, requires robust key management derived from user password/PIN).
+        *   [ ] **Document Tradeoffs:** Analyze security/usability tradeoffs of the chosen *local* storage approach.
+        *   [ ] **Define Dependencies:** List necessary crates/plugins for the chosen implementation.
+        *   *(Note: Actual implementation deferred to a later task/phase, this is planning).*
+    *   [ ] **[COMMIT]** Commit enhancements with message "refactor(UI/Plan): Enhance security, reliability, and UX plan for WalletBackupDemoCard".
 
 *   **[2.5] Integration Testing:**
     *   [ ] Write integration tests (potentially using Tauri's testing utilities or manual E2E tests initially) covering the full import/export flows:
-        *   Frontend UI -> Tauri Command Invocation -> Rust Handler Execution (`core-crypto` + `storage-interface` interaction) -> Frontend UI Update.
+        *   Frontend UI -> Tauri Command Invocation -> Rust Handler Execution (`core-crypto` + *mock* `storage-interface` interaction initially) -> Frontend UI Update.
     *   [ ] Test handling of backend errors propagated to the frontend.
-    *   [ ] Test security checks during export.
+    *   [ ] Test security checks during export (once implemented).
 
 This phase transforms the demo into a core application feature, bridging the frontend UI with the secure backend cryptographic and storage logic. 
