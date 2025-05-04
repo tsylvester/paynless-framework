@@ -494,43 +494,44 @@ This implementation plan follows a phased approach:
 *   [✅] In `apps/web/src/components/layout/Header.tsx`:
     *   [✅] Add conditional link to `/dev/config` in desktop dropdown.
     *   [✅] Add conditional link to `/dev/config` in mobile menu.
-*   [ ] Commit changes with message "feat(Routing): Add route and UI links for ConfigFileManager dev tool".
+*   [✅] Commit changes with message "feat(Routing): Add route and UI links for ConfigFileManager dev tool".
 
-### STEP-5.7: Add Drag-and-Drop File Import [UI][TS][TEST-UNIT] [ ] (NEW)
+### STEP-5.7: Add Drag-and-Drop File Import [UI][TS][TEST-UNIT] [✅] (NEW)
 *   **Goal:** Allow users to drag files onto components to trigger import/load actions.
-*   [ ] **Platform Listener:**
-    *   [ ] In `packages/platform/src/tauri.ts` (or a new `events.ts` module), add logic to listen for the `tauri://file-drop` event.
-    *   [ ] Implement a mechanism to dispatch the dropped file paths to the relevant active component (e.g., using a simple event emitter or state management).
-    *   [ ] Update `PlatformProvider` (`context.tsx`) to initialize this listener when on Tauri.
-    *   [ ] Add/Update tests for this event listening logic.
-*   [ ] **DropZone Component:**
-    *   [ ] Create file `apps/web/src/components/common/DropZone.tsx`.
-    *   [ ] Implement a visual component that indicates a drop target.
-    *   [ ] Add props for handling hover states (`onDragOver`, `onDragLeave`) and the drop event (`onDrop`). The `onDrop` prop should likely receive the file path(s).
-*   [ ] **DropZone Tests:**
-    *   [ ] Create test file `DropZone.test.tsx`.
-    *   [ ] Write unit tests verifying rendering, hover states, and callback invocation.
-*   [ ] **Integrate into `ConfigFileManager`:**
-    *   [ ] Import and render `DropZone` within `ConfigFileManager.tsx`.
-    *   [ ] Implement the `onDrop` handler to receive the file path and call the existing `handleLoadConfig` logic (or a refactored version) to process the dropped file.
-    *   [ ] Update `ConfigFileManager.test.tsx` to simulate drop events and verify file loading.
-*   [ ] **Integrate into `WalletBackupDemoCard`:**
-    *   [ ] Import and render `DropZone` within `WalletBackupDemoCard.tsx`.
-    *   [ ] Implement the `onDrop` handler to receive the file path and call the existing `handleImport` logic.
-    *   [ ] Update `WalletBackupDemoCard.test.tsx` to simulate drop events and verify mnemonic import.
-*   [ ] **Commit:** Commit changes with message "feat(UI): Add drag-and-drop file import functionality".
+*   [✅] **Platform Listener:**
+    *   [✅] In `packages/platform/src/events.ts`, defined event types (`file-drop`, `file-drag-hover`, `file-drag-cancel`).
+    *   [✅] Implemented a mechanism (event emitter `platformEventEmitter`) to dispatch events.
+    *   [✅] Updated `PlatformProvider` (`context.tsx`) to initialize Tauri's `onDragDropEvent` listener and emit events via the emitter.
+    *   [✅] Added/Updated tests (`context.test.tsx`) for this event listening logic.
+*   [✅] **DropZone Component:**
+    *   [✅] Created file `apps/web/src/components/common/DropZone.tsx`.
+    *   [✅] Implemented a visual component indicating drop target, controlled by emitter events.
+*   [✅] **DropZone Tests:**
+    *   [✅] Created test file `DropZone.test.tsx`.
+    *   [✅] Wrote unit tests verifying rendering and hover states based on simulated emitter events.
+*   [✅] **Integrate into `ConfigFileManager`:**
+    *   [✅] Imported and rendered `DropZone` within `ConfigFileManager.tsx`.
+    *   [✅] Implemented `useEffect` to subscribe to `platformEventEmitter` for `file-drop` events.
+    *   [✅] Refactored loading logic into `loadFile` helper, called by the event listener.
+    *   [✅] Updated `ConfigFileManager.test.tsx` to verify `DropZone` presence (mocked).
+*   [✅] **Integrate into `WalletBackupDemoCard`:**
+    *   [✅] Imported and rendered `DropZone` within `WalletBackupDemoCard.tsx`.
+    *   [✅] Implemented `useEffect` to subscribe to `platformEventEmitter` for `file-drop` events.
+    *   [✅] Refactored import logic into `importMnemonicFile` helper, called by the event listener.
+    *   [✅] Updated `WalletBackupDemoCard.test.tsx` to verify `DropZone` presence (mocked).
+*   [✅] **Commit:** Commit changes with message "feat(UI): Add drag-and-drop file import functionality".
 
-### STEP-5.8: Add "Clear Selection" Buttons [UI][TEST-UNIT] [ ] (NEW)
+### STEP-5.8: Add "Clear Selection" Buttons [UI][TEST-UNIT] [✅] (NEW)
 *   **Goal:** Allow users to easily reset the state of the demo/utility components.
-*   [ ] **`WalletBackupDemoCard`:**
-    *   [ ] Add a "Clear" button to the UI.
-    *   [ ] Implement `handleClear` function to reset mnemonic, status, and loading state.
-    *   [ ] Update unit tests to verify button existence and state reset on click.
-*   [ ] **`ConfigFileManager`:**
-    *   [ ] Add a "Clear" button to the UI.
-    *   [ ] Implement `handleClear` function to reset loaded content, input content, selected directory, status, and loading state.
-    *   [ ] Update unit tests to verify button existence and state reset on click.
-*   [ ] **Commit:** Commit changes with message "feat(UI): Add clear selection button to dev tools".
+*   [✅] **`WalletBackupDemoCard`:**
+    *   [✅] Added a "Clear" button to the UI.
+    *   [✅] Implemented `handleClear` function to reset mnemonic, status, and loading state.
+    *   [✅] Updated unit tests to verify button existence and state reset on click.
+*   [✅] **`ConfigFileManager`:**
+    *   [✅] Added a "Clear" button to the UI.
+    *   [✅] Implemented `handleClear` function to reset loaded content, input content, selected directory, status, and loading state.
+    *   [✅] Updated unit tests to verify button existence and state reset on click.
+*   [✅] **Commit:** Commit changes with message "feat(UI): Add clear selection button to dev tools".
 
 ---
 
@@ -558,38 +559,38 @@ This implementation plan follows a phased approach:
 
 ### STEP-6.2: Code Review [🚧]
 
-#### STEP-6.2.1: Review Shared Packages (`types`, `platform`) [COMMIT] [ ]
-*   [ ] Review interfaces, service logic, provider implementations for clarity, correctness, efficiency.
-*   [ ] Address feedback.
-*   [ ] Commit changes.
+#### STEP-6.2.1: Review Shared Packages (`types`, `platform`) [COMMIT] [✅]
+*   [✅] Review interfaces, service logic, provider implementations for clarity, correctness, efficiency.
+*   [✅] Address feedback.
+*   [✅] Commit changes.
 
-#### STEP-6.2.2: Review Rust Code (`src-tauri`) [COMMIT] [ ]
-*   [ ] Review command implementations, error handling, testing.
-*   [ ] Address feedback.
-*   [ ] Commit changes.
+#### STEP-6.2.2: Review Rust Code (`src-tauri`) [COMMIT] [✅]
+*   [✅] Review plugin registrations in `main.rs`.
+*   [✅] Verify removal of obsolete custom commands.
+*   [✅] Commit changes.
 
-#### STEP-6.2.3: Review Frontend Integration (`apps/web`) [COMMIT] [ ]
-*   [ ] Review capability state consumption, loading/error handling, conditional rendering, component logic.
-*   [ ] Address feedback.
-*   [ ] Commit changes.
+#### STEP-6.2.3: Review Frontend Integration (`apps/web`) [COMMIT] [✅]
+*   [✅] Review capability state consumption, loading/error handling, conditional rendering in `ConfigFileManager`, `WalletBackupDemoCard`, `Header`.
+*   [✅] Address feedback.
+*   [✅] Commit changes.
 
 ---
 
 ## Phase 7: Documentation [🚧 Not Started]
 
-### STEP-7.1: Update Development Documentation [🚧]
+### STEP-7.1: Update Development Documentation [✅]
 
-#### STEP-7.1.1: Document Platform Capability Service [COMMIT] [ ]
-*   [ ] Add a new documentation page explaining the Platform Capability Abstraction Layer.
-*   [ ] Describe the purpose and structure of the `packages/platform` service.
-*   [ ] Document the `PlatformCapabilities` interface and the provider pattern.
-*   [ ] Explain how to add support for new capabilities or platforms.
-*   [ ] Commit documentation with message "docs: Document platform capability service architecture".
+#### STEP-7.1.1: Document Platform Capability Service [COMMIT] [✅]
+*   [✅] Add a new documentation page explaining the Platform Capability Abstraction Layer (`docs/development/PlatformCapabilities.md`).
+*   [✅] Describe the purpose and structure of the `packages/platform` service.
+*   [✅] Document the `PlatformCapabilities` interface and the provider pattern.
+*   [✅] Explain how to add support for new capabilities or platforms.
+*   [ ] Commit documentation with message "docs: Document platform capability service architecture". \*Note: Commit step pending final user action*\
 
-#### STEP-7.1.2: Document Usage in UI Components [COMMIT] [ ]
-*   [ ] Provide examples of how UI components should consume the service.
-*   [ ] Emphasize checking `isLoadingCapabilities`, `capabilityError`, and `isAvailable` flags.
-*   [ ] Show examples of conditional rendering and calling capability methods.
-*   [ ] Commit documentation with message "docs: Document usage pattern for capability service in UI components".
+#### STEP-7.1.2: Document Usage in UI Components [COMMIT] [✅]
+*   [✅] Provide examples of how UI components should consume the service (`docs/development/PlatformCapabilities.md`).
+*   [✅] Emphasize checking `isLoadingCapabilities`, `capabilityError`, and `isAvailable` flags.
+*   [✅] Show examples of conditional rendering and calling capability methods.
+*   [ ] Commit documentation with message "docs: Document usage pattern for capability service in UI components". \*Note: Commit step pending final user action*\
 
 --- 

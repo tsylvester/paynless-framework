@@ -351,7 +351,7 @@ Following this cycle helps catch errors early, ensures comprehensive test covera
         *   [✅] **Component Review:** `LoginForm`, `RegisterForm`, `ProfileEditor`, `SubscriptionPage`, `AiChatbox`, `ModelSelector`, `PromptSelector` exist and follow store interaction pattern.
         *   [ ] `apps/web/src/components/ai/` *(Unit test new AI components)*
         *   [🚧] Other `apps/web/src/` Components/Pages/Hooks: *(Status needs re-evaluation)*
-        *   [ ] Components using `platformCapabilitiesService`: Mock the service to test conditional rendering and logic for different platforms/capabilities.
+        *   [✅] Components using `platformCapabilitiesService` (`ConfigFileManager`, `WalletBackupDemoCard`, `Header`): Mock the service (`usePlatform` hook) to test conditional rendering and logic for different platforms/capabilities.
     *   **3.2 Integration Tests (MSW):**
         *   [✅] **Refactoring Complete:** Structure standardized, utilities/handlers consolidated.
         *   [🚧] **API Integration (Mocked):** Key user flows tested with MSW.
