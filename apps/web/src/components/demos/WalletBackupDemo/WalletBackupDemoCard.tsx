@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { invoke } from '@tauri-apps/api/core';
 import { usePlatform } from '@paynless/platform';
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -63,12 +64,18 @@ export const WalletBackupDemoCard: React.FC<WalletBackupDemoCardProps> = () => {
         throw new Error('Invalid mnemonic phrase format in file.');
       }
 
+      await invoke('import_mnemonic', { mnemonic: importedMnemonic });
+
       setMnemonic(importedMnemonic);
       setStatusMessage(STATUS_IMPORT_SUCCESS);
       setStatusVariant('success');
     } catch (error) {
       console.error("Import Mnemonic Error:", error);
-      const message = error instanceof Error ? STATUS_IMPORT_ERROR(error.message) : STATUS_UNKNOWN_ERROR;
+      const message = typeof error === 'string' 
+        ? STATUS_IMPORT_ERROR(error) 
+        : error instanceof Error 
+          ? STATUS_IMPORT_ERROR(error.message) 
+          : STATUS_UNKNOWN_ERROR;
       setStatusMessage(message);
       setStatusVariant('error');
     } finally {
@@ -123,23 +130,33 @@ export const WalletBackupDemoCard: React.FC<WalletBackupDemoCardProps> = () => {
     setIsActionLoading(true);
     setStatusMessage(null);
     try {
-      const savePath = await fileSystem.pickSaveFile({
-      });
+      // Invoke backend command to get the mnemonic
+      const retrievedMnemonic = await invoke<string>('export_mnemonic');
+
+      // If invoke didn't throw and returned a string, proceed with saving
+      const savePath = await fileSystem.pickSaveFile({});
 
       if (!savePath) {
         setStatusMessage(STATUS_EXPORT_CANCELLED);
         setStatusVariant('info');
+        // Set loading false here as we are returning early
+        setIsActionLoading(false);
         return;
       }
 
-      const fileData = new TextEncoder().encode(mnemonic);
+      const fileData = new TextEncoder().encode(retrievedMnemonic); // Use retrieved mnemonic
       await fileSystem.writeFile(savePath, fileData);
 
       setStatusMessage(STATUS_EXPORT_SUCCESS);
       setStatusVariant('success');
     } catch (error) {
       console.error("Export Error:", error);
-      const message = error instanceof Error ? STATUS_EXPORT_ERROR(error.message) : STATUS_UNKNOWN_ERROR;
+      // Backend errors are typically strings, frontend errors are Error objects
+      const message = typeof error === 'string'
+        ? STATUS_EXPORT_ERROR(error)
+        : error instanceof Error
+          ? STATUS_EXPORT_ERROR(error.message)
+          : STATUS_UNKNOWN_ERROR;
       setStatusMessage(message);
       setStatusVariant('error');
     } finally {

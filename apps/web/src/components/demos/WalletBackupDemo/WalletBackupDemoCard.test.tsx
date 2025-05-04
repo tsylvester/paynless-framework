@@ -9,6 +9,14 @@ import type { CapabilitiesContextValue } from '@paynless/types';
 // Mock the usePlatform hook
 vi.mock('@paynless/platform');
 
+// Mock Tauri core API
+vi.mock('@tauri-apps/api/core', () => ({
+  invoke: vi.fn(),
+}));
+
+// Import invoke AFTER mocking
+import { invoke } from '@tauri-apps/api/core'; 
+
 // Mock sub-components (Keep these simple for testing the container)
 vi.mock('./MnemonicInputArea', () => ({
   MnemonicInputArea: vi.fn(({ disabled, value, onChange }) => (
@@ -217,6 +225,13 @@ describe('WalletBackupDemoCard Component', () => {
       isLoadingCapabilities: false,
       capabilityError: null,
     };
+    const validMnemonic = 'legal winner thank year wave sausage worth useful legal winner thank yellow';
+    const mockFilePath = '/fake/mnemonic.txt';
+
+    beforeEach(() => {
+      // Ensure invoke mock is reset before each test in this suite
+      vi.mocked(invoke).mockClear();
+    });
 
     it('should handle user cancellation during file picking', async () => {
       vi.mocked(mockAvailableFileSystem.pickFile).mockResolvedValue(null);
@@ -256,29 +271,29 @@ describe('WalletBackupDemoCard Component', () => {
       expect(screen.getByTestId('mnemonic-input')).toHaveValue('');
     });
 
-    it('should successfully import mnemonic from file', async () => {
-      const mockFilePath = '/fake/mnemonic.txt';
-      const mockMnemonic = 'word1 word2 word3 word4 word5 word6 word7 word8 word9 word10 word11 word12';
-      const mockEncodedMnemonic = new TextEncoder().encode(mockMnemonic);
-
+    it('should successfully import a valid mnemonic file', async () => {
+      const fileContent = new TextEncoder().encode(validMnemonic);
       vi.mocked(mockAvailableFileSystem.pickFile).mockResolvedValue([mockFilePath]);
-      // Mock readFile used by importMnemonicFile
-      vi.mocked(mockAvailableFileSystem.readFile).mockResolvedValue(mockEncodedMnemonic);
+      vi.mocked(mockAvailableFileSystem.readFile).mockResolvedValue(fileContent);
+      vi.mocked(invoke).mockResolvedValue(undefined); // Mock successful import_mnemonic
 
       renderComponent(mockAvailableState);
       const importButton = within(screen.getByTestId('file-action-buttons')).getByRole('button', { name: /Import/i });
-
       fireEvent.click(importButton);
 
       await waitFor(() => {
-         expect(screen.getByTestId('mnemonic-input')).toHaveValue(mockMnemonic);
+        expect(mockAvailableFileSystem.pickFile).toHaveBeenCalledTimes(1);
+        expect(mockAvailableFileSystem.readFile).toHaveBeenCalledWith(mockFilePath);
+        // Verify invoke was called correctly
+        expect(invoke).toHaveBeenCalledWith('import_mnemonic', { mnemonic: validMnemonic });
+        expect(invoke).toHaveBeenCalledTimes(1);
       });
 
+      // Check state and status
+      expect(screen.getByTestId('mnemonic-input')).toHaveValue(validMnemonic);
       const statusDisplay = screen.getByTestId('status-display');
-      expect(within(statusDisplay).getByText('Success')).toBeInTheDocument();
       expect(statusDisplay).toHaveTextContent('Mnemonic imported successfully!');
-      // Export button should now be enabled
-      expect(within(screen.getByTestId('file-action-buttons')).getByRole('button', { name: /Export/i })).toBeEnabled();
+      expect(statusDisplay).toHaveAttribute('data-variant', 'success');
     });
 
     it('should handle invalid mnemonic format in imported file', async () => {
@@ -301,6 +316,68 @@ describe('WalletBackupDemoCard Component', () => {
       expect(within(statusDisplay).getByText('Error')).toBeInTheDocument();
       expect(screen.getByTestId('mnemonic-input')).toHaveValue('');
     });
+
+    it('should handle invalid mnemonic format read from file (frontend validation)', async () => {
+      const mockFilePath = '/fake/invalid-mnemonic.txt';
+      const invalidMnemonic = 'too short';
+      const mockEncodedMnemonic = new TextEncoder().encode(invalidMnemonic);
+      vi.mocked(mockAvailableFileSystem.pickFile).mockResolvedValue([mockFilePath]);
+      vi.mocked(mockAvailableFileSystem.readFile).mockResolvedValue(mockEncodedMnemonic);
+
+      renderComponent(mockAvailableState);
+      const importButton = within(screen.getByTestId('file-action-buttons')).getByRole('button', { name: /Import/i });
+      fireEvent.click(importButton);
+
+      await waitFor(() => {
+        expect(invoke).not.toHaveBeenCalled(); // Invoke should not be called
+      });
+      const statusDisplay = screen.getByTestId('status-display');
+      expect(statusDisplay).toHaveTextContent('Invalid mnemonic phrase format in file.');
+      expect(statusDisplay).toHaveAttribute('data-variant', 'error');
+    });
+    
+    it('should handle backend validation errors during import', async () => {
+      const fileContent = new TextEncoder().encode(validMnemonic); // Use the valid mnemonic content
+      vi.mocked(mockAvailableFileSystem.pickFile).mockResolvedValue([mockFilePath]);
+      vi.mocked(mockAvailableFileSystem.readFile).mockResolvedValue(fileContent);
+      // Mock invoke rejecting with a specific backend error string
+      const backendError = 'InvalidMnemonicChecksum'; // Example error
+      vi.mocked(invoke).mockRejectedValue(backendError);
+
+      renderComponent(mockAvailableState);
+      const importButton = within(screen.getByTestId('file-action-buttons')).getByRole('button', { name: /Import/i });
+      fireEvent.click(importButton);
+
+      await waitFor(() => {
+        expect(invoke).toHaveBeenCalledWith('import_mnemonic', { mnemonic: validMnemonic });
+      });
+
+      const statusDisplay = screen.getByTestId('status-display');
+      expect(statusDisplay).toHaveTextContent(`Import Error: ${backendError}`);
+      expect(statusDisplay).toHaveAttribute('data-variant', 'error');
+      expect(screen.getByTestId('mnemonic-input')).toHaveValue(''); // Mnemonic should not be set
+    });
+
+    it('should handle backend storage errors during import', async () => {
+      const fileContent = new TextEncoder().encode(validMnemonic);
+      vi.mocked(mockAvailableFileSystem.pickFile).mockResolvedValue([mockFilePath]);
+      vi.mocked(mockAvailableFileSystem.readFile).mockResolvedValue(fileContent);
+      const backendError = 'StorageFailedToSaveSeed'; // Example error
+      vi.mocked(invoke).mockRejectedValue(backendError);
+
+      renderComponent(mockAvailableState);
+      const importButton = within(screen.getByTestId('file-action-buttons')).getByRole('button', { name: /Import/i });
+      fireEvent.click(importButton);
+
+      await waitFor(() => {
+        expect(invoke).toHaveBeenCalledWith('import_mnemonic', { mnemonic: validMnemonic });
+      });
+
+      const statusDisplay = screen.getByTestId('status-display');
+      expect(statusDisplay).toHaveTextContent(`Import Error: ${backendError}`);
+      expect(statusDisplay).toHaveAttribute('data-variant', 'error');
+      expect(screen.getByTestId('mnemonic-input')).toHaveValue(''); // Mnemonic should not be set
+    });
   });
 
   describe('Export Functionality', () => {
@@ -309,60 +386,128 @@ describe('WalletBackupDemoCard Component', () => {
       isLoadingCapabilities: false,
       capabilityError: null,
     };
-    const mockMnemonic = 'word1 word2 word3 word4 word5 word6 word7 word8 word9 word10 word11 word12';
+    const initialMnemonic = 'legal winner thank year wave sausage worth useful legal winner thank yellow';
+    const exportedMnemonicFromBackend = 'different export winner thank wave sausage worth useful legal winner thank yellow test'; // Simulate backend returning potentially different data
+    const mockSavePath = '/fake/export-mnemonic.txt';
 
     beforeEach(() => {
-        // Pre-fill mnemonic for export tests
-        renderComponent(mockAvailableState);
-        const textArea = screen.getByTestId('mnemonic-input');
-        fireEvent.change(textArea, { target: { value: mockMnemonic } });
-        // Wait for export button to potentially enable (it should in this state)
-        return waitFor(() => expect(screen.getByTestId('export-button')).toBeEnabled());
+      // Ensure invoke mock is reset before each test in this suite
+      vi.mocked(invoke).mockClear();
+      // Reset FS mocks as well
+      vi.mocked(mockAvailableFileSystem.pickSaveFile).mockClear();
+      vi.mocked(mockAvailableFileSystem.writeFile).mockClear();
+    });
+
+    it('should successfully export mnemonic to a file', async () => {
+      // Mock invoke resolving with the specific mnemonic
+      vi.mocked(invoke).mockResolvedValue(exportedMnemonicFromBackend); 
+      vi.mocked(mockAvailableFileSystem.pickSaveFile).mockResolvedValue(mockSavePath);
+      vi.mocked(mockAvailableFileSystem.writeFile).mockResolvedValue(undefined);
+
+      renderComponent(mockAvailableState);
+      // Set initial mnemonic in the input to enable the button
+      const textArea = screen.getByTestId('mnemonic-input');
+      fireEvent.change(textArea, { target: { value: initialMnemonic } });
+
+      // Wait for export button to be enabled
+      const exportButton = await screen.findByRole('button', { name: /Export/i });
+      expect(exportButton).toBeEnabled();
+      fireEvent.click(exportButton);
+
+      // Expected encoded data based on backend response
+      const expectedEncodedData = new TextEncoder().encode(exportedMnemonicFromBackend);
+
+      await waitFor(() => {
+        // Verify invoke was called first
+        expect(invoke).toHaveBeenCalledWith('export_mnemonic');
+        expect(invoke).toHaveBeenCalledTimes(1);
+
+        // Verify file system calls happened AFTER invoke
+        expect(mockAvailableFileSystem.pickSaveFile).toHaveBeenCalledTimes(1);
+        expect(mockAvailableFileSystem.writeFile).toHaveBeenCalledWith(mockSavePath, expectedEncodedData);
+      });
+
+      // Check status message
+      const statusDisplay = screen.getByTestId('status-display');
+      expect(statusDisplay).toHaveTextContent('Mnemonic exported successfully!');
+      expect(statusDisplay).toHaveAttribute('data-variant', 'success');
+    });
+
+    it('should handle backend errors during export', async () => {
+      const backendError = 'FailedToRetrieveMnemonic'; // Example error
+      vi.mocked(invoke).mockRejectedValue(backendError); // Mock invoke rejecting
+
+      renderComponent(mockAvailableState);
+      // Set initial mnemonic to enable the button
+      const textArea = screen.getByTestId('mnemonic-input');
+      fireEvent.change(textArea, { target: { value: initialMnemonic } });
+
+      const exportButton = await screen.findByRole('button', { name: /Export/i });
+      fireEvent.click(exportButton);
+
+      await waitFor(() => {
+        expect(invoke).toHaveBeenCalledWith('export_mnemonic');
+      });
+
+      // Verify file system functions NOT called
+      expect(mockAvailableFileSystem.pickSaveFile).not.toHaveBeenCalled();
+      expect(mockAvailableFileSystem.writeFile).not.toHaveBeenCalled();
+
+      // Check error status
+      const statusDisplay = screen.getByTestId('status-display');
+      expect(statusDisplay).toHaveTextContent(`Export Error: ${backendError}`);
+      expect(statusDisplay).toHaveAttribute('data-variant', 'error');
     });
 
     it('should handle user cancellation during file saving', async () => {
-        vi.mocked(mockAvailableFileSystem.pickSaveFile!).mockResolvedValue(null);
-        const exportButton = screen.getByTestId('export-button');
-        fireEvent.click(exportButton);
+      // Mock invoke succeeding first
+      vi.mocked(invoke).mockResolvedValue(exportedMnemonicFromBackend);
+      // Mock user cancelling the save dialog
+      vi.mocked(mockAvailableFileSystem.pickSaveFile).mockResolvedValue(null);
 
-        await waitFor(() => {
-            expect(mockAvailableFileSystem.pickSaveFile).toHaveBeenCalledTimes(1);
-        });
-        expect(mockAvailableFileSystem.writeFile).not.toHaveBeenCalled();
-        const statusDisplay = await screen.findByTestId('status-display');
-        expect(statusDisplay).toHaveTextContent(/File save cancelled/i);
-        expect(statusDisplay).toHaveAttribute('data-variant', 'info');
+      renderComponent(mockAvailableState);
+      const textArea = screen.getByTestId('mnemonic-input');
+      fireEvent.change(textArea, { target: { value: initialMnemonic } });
+      const exportButton = await screen.findByRole('button', { name: /Export/i });
+      fireEvent.click(exportButton);
+
+      await waitFor(() => {
+        expect(invoke).toHaveBeenCalledTimes(1);
+        expect(mockAvailableFileSystem.pickSaveFile).toHaveBeenCalledTimes(1);
+      });
+
+      // Ensure writeFile was NOT called
+      expect(mockAvailableFileSystem.writeFile).not.toHaveBeenCalled();
+      // Check status message
+      const statusDisplay = screen.getByTestId('status-display');
+      expect(statusDisplay).toHaveTextContent('File save cancelled.');
+      expect(statusDisplay).toHaveAttribute('data-variant', 'info');
     });
 
     it('should handle errors during file writing', async () => {
-        const writeError = new Error('Disk full');
-        vi.mocked(mockAvailableFileSystem.pickSaveFile!).mockResolvedValue('/save/path.txt');
-        vi.mocked(mockAvailableFileSystem.writeFile!).mockRejectedValue(writeError);
-        const exportButton = screen.getByTestId('export-button');
-        fireEvent.click(exportButton);
+      const writeError = new Error('Disk full');
+      // Mock invoke succeeding first
+      vi.mocked(invoke).mockResolvedValue(exportedMnemonicFromBackend);
+      vi.mocked(mockAvailableFileSystem.pickSaveFile).mockResolvedValue(mockSavePath);
+      // Mock writeFile to reject
+      vi.mocked(mockAvailableFileSystem.writeFile).mockRejectedValue(writeError);
 
-        await waitFor(() => {
-            expect(mockAvailableFileSystem.writeFile).toHaveBeenCalled();
-        });
-        const statusDisplay = await screen.findByTestId('status-display');
-        expect(statusDisplay).toHaveTextContent(writeError.message);
-        expect(statusDisplay).toHaveAttribute('data-variant', 'error');
-    });
+      renderComponent(mockAvailableState);
+      const textArea = screen.getByTestId('mnemonic-input');
+      fireEvent.change(textArea, { target: { value: initialMnemonic } });
+      const exportButton = await screen.findByRole('button', { name: /Export/i });
+      fireEvent.click(exportButton);
 
-    it('should successfully export mnemonic to file', async () => {
-        const mockSavePath = '/save/success.txt';
-        vi.mocked(mockAvailableFileSystem.pickSaveFile!).mockResolvedValue(mockSavePath);
-        vi.mocked(mockAvailableFileSystem.writeFile!).mockResolvedValue(undefined);
-        const exportButton = screen.getByTestId('export-button');
-        fireEvent.click(exportButton);
+      const expectedEncodedData = new TextEncoder().encode(exportedMnemonicFromBackend);
+      await waitFor(() => {
+        expect(invoke).toHaveBeenCalledTimes(1);
+        expect(mockAvailableFileSystem.writeFile).toHaveBeenCalledWith(mockSavePath, expectedEncodedData);
+      });
 
-        await waitFor(() => {
-            const expectedData = new TextEncoder().encode(mockMnemonic);
-            expect(mockAvailableFileSystem.writeFile).toHaveBeenCalledWith(mockSavePath, expectedData);
-        });
-        const statusDisplay = await screen.findByTestId('status-display');
-        expect(statusDisplay).toHaveTextContent(/Mnemonic exported successfully/i);
-        expect(statusDisplay).toHaveAttribute('data-variant', 'success');
+      // Check error status
+      const statusDisplay = screen.getByTestId('status-display');
+      expect(statusDisplay).toHaveTextContent(`Export Error: ${writeError.message}`);
+      expect(statusDisplay).toHaveAttribute('data-variant', 'error');
     });
   });
 
