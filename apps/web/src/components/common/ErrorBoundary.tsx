@@ -14,21 +14,21 @@ interface State {
 }
 
 class ErrorBoundary extends Component<Props, State> {
-  public state: State = {
+  override state: State = {
     hasError: false,
   };
 
-  public static getDerivedStateFromError(error: Error): State {
+  static getDerivedStateFromError(error: Error): State {
     // Update state so the next render will show the fallback UI.
     return { hasError: true, error };
   }
 
-  public componentDidCatch(error: Error, errorInfo: ErrorInfo) {
-    // You can also log the error to an error reporting service
-    logger.error("[ErrorBoundary] Uncaught error:", error, errorInfo);
+  public override componentDidCatch(error: Error, errorInfo: ErrorInfo) {
+    // Log the error assuming logger takes message and context/error object
+    logger.error("[ErrorBoundary] Uncaught error:", { error, errorInfo });
   }
 
-  public render() {
+  public override render() {
     if (this.state.hasError) {
       // You can render any custom fallback UI
       return (
@@ -38,7 +38,7 @@ class ErrorBoundary extends Component<Props, State> {
           <AlertDescription>
             {this.props.fallbackMessage || 'This part of the application encountered an error.'}
             {/* Optional: Show error details in development */}
-            {process.env.NODE_ENV === 'development' && this.state.error && (
+            {process.env['NODE_ENV'] === 'development' && this.state.error && (
               <pre className="mt-2 text-xs whitespace-pre-wrap">
                 {this.state.error.toString()}
                 {/* <br /> */}

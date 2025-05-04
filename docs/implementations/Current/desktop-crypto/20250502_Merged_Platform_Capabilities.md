@@ -339,33 +339,18 @@ This implementation plan follows a phased approach:
 
 *   **Goal:** Integrate the refactored service/context into the main application setup and ensure UI components use the service correctly for conditional rendering and invoking platform-specific actions.
 *   **Location:** `apps/web/src/...`
-*   **Prerequisite:** Phase R completed.
+*   **Prerequisite:** Phase R and Phase 4 completed.
 
-### STEP-5.1: Integrate Service Call into App Initialization [TS] [🚧]
+### STEP-5.1: Integrate Service Call into App Initialization [TS] [✅ Pre-existing]
+*   **Status:** `PlatformProvider` was found already wrapping the main application content in `apps/web/src/App.tsx`.
 
-#### STEP-5.1.1: Define State for Capabilities and Loading [TEST-UNIT] [COMMIT]
-*   [ ] In the main App component (`App.tsx`, `main.ts`, or a dedicated context/store provider).
-*   [ ] Create unit tests for the initial state and expected state transitions.
-*   [ ] Define state variables:
-    *   [ ] `platformCapabilities: PlatformCapabilities | null = null;` (Start as null until loaded)
-    *   [ ] `isLoadingCapabilities: boolean = true;`
-    *   [ ] `capabilityError: string | null = null;` (For storing potential errors)
-*   [ ] Run unit tests for initial state.
-*   [ ] Build frontend.
-*   [ ] Commit changes with message "feat(TS): Define state for platform capabilities loading".
+#### STEP-5.1.1: Define State for Capabilities and Loading [TEST-UNIT] [COMMIT] [✅ N/A]
+*   **Status:** Not applicable as `PlatformProvider` handles internal loading state.
 
-#### STEP-5.1.2: Implement Initial Capability Fetching Logic [TEST-UNIT] [COMMIT]
-*   [ ] In the main App component or provider, using `useEffect` (React) or equivalent.
-*   [ ] Create unit tests for this effect (mocking `getPlatformCapabilities`).
-*   [ ] Implement the effect:
-    ```typescript
-    import { getPlatformCapabilities } from 'packages/platform'; // Adjust import
-    import { useState, useEffect } from 'react'; // Or framework equivalent
+#### STEP-5.1.2: Implement Initial Capability Fetching Logic [TEST-UNIT] [COMMIT] [✅ N/A]
+*   **Status:** Not applicable as `PlatformProvider` handles fetching.
 
-    // Inside your main component/provider
-    const [platformCapabilities, setPlatformCapabilities] = useState<PlatformCapabilities | null>(null);
-    const [isLoadingCapabilities, setIsLoadingCapabilities] = useState(true);
-    const [capabilityError, setCapabilityError] = useState<string | null>(null);
+### STEP-5.2: Implement UI Loading/Error States [UI] [��]
 
     useEffect(() => {
       let isMounted = true;
@@ -393,9 +378,9 @@ This implementation plan follows a phased approach:
 *   [ ] Build frontend.
 *   [ ] Commit changes with message "feat(TS): Implement initial fetch of platform capabilities".
 
-### STEP-5.2: Implement UI Loading/Error States [UI] [🚧]
+### STEP-5.3: Implement UI Loading/Error States [UI] [🚧]
 
-#### STEP-5.2.1: Implement Global Loading/Error Handling [TEST-UNIT] [COMMIT]
+#### STEP-5.3.1: Implement Global Loading/Error Handling [TEST-UNIT] [COMMIT]
 *   [ ] In the main App layout.
 *   [ ] Create unit tests for loading/error display.
 *   [ ] Use the `isLoadingCapabilities` and `capabilityError` state:
@@ -405,13 +390,23 @@ This implementation plan follows a phased approach:
 *   [ ] Build frontend. Test visually.
 *   [ ] Commit changes with message "feat(UI): Implement global loading/error states for capability detection".
 
-### STEP-5.3: Refactor/Build UI Components [UI] [🚧]
+#### STEP-5.3.2: Define Component-Level Handling Strategy [TEST-UNIT] [COMMIT]
+*   [ ] **Strategy:** Prioritize handling loading (`isLoadingCapabilities`) and error states (`capabilityError`, file operation errors) directly within the components that consume `usePlatform`.
+*   [ ] **Error Boundaries:** For components performing critical platform operations (e.g., file saving/loading), wrap them in the existing `ErrorBoundary.tsx` component (`apps/web/src/components/common/ErrorBoundary.tsx`) to catch unexpected rendering or lifecycle errors within the component itself, preventing app-wide crashes.
+*   [ ] **User Feedback:** Ensure components provide clear, user-friendly messages and appropriate UI for different states:
+    *   Loading: Show skeleton UI elements representing the component's structure while data/capabilities are loading.
+    *   Capability Unavailable: Explain *why* a feature is disabled (e.g., "File access requires the Desktop app.").
+    *   Operational Errors: Display specific error messages when file operations fail (e.g., "Failed to save file: Permission denied.").
+*   [ ] **Testing:** Update component unit tests (`STEP-5.3.2`) to explicitly cover rendering under these loading (skeleton UI), error, and unavailable capability scenarios, including testing the `ErrorBoundary` wrapper interaction.
+*   [ ] Commit changes with message "feat(UI): Define strategy for component-level capability loading/error handling using skeletons and existing ErrorBoundary".
 
-#### STEP-5.3.1: Identify/Create Example Component (e.g., `ConfigFileManager`) [COMMIT]
+### STEP-5.4: Refactor/Build UI Components [UI] [🚧]
+
+#### STEP-5.4.1: Identify/Create Example Component (e.g., `ConfigFileManager`) [COMMIT]
 *   [ ] Identify an existing component needing file access or create a new placeholder component (`apps/web/src/components/features/ConfigFileManager.tsx`).
 *   [ ] Commit placeholder if created.
 
-#### STEP-5.3.2: Write Component Unit Tests [TEST-UNIT] [COMMIT]
+#### STEP-5.4.2: Write Component Unit Tests [TEST-UNIT] [COMMIT]
 *   [ ] Create test file (`ConfigFileManager.test.tsx`).
 *   [ ] Write tests covering different capability scenarios:
     *   [ ] Test Case 1: Web Environment - Provide mock capabilities (`platform: 'web'`, `fileSystem: { isAvailable: false }`). Assert Desktop buttons are hidden/disabled. Assert standard web inputs are shown (if applicable).
@@ -421,7 +416,7 @@ This implementation plan follows a phased approach:
     *   [ ] Test Case 5: Error State - Provide `capabilityError: 'some error'`. Assert appropriate fallback UI or disabled state.
 *   [ ] Commit failing tests with message "test(UI): Add unit tests for ConfigFileManager component with platform capabilities".
 
-#### STEP-5.3.3: Implement Component Logic Using Capability Service [TEST-UNIT] [COMMIT]
+#### STEP-5.4.3: Implement Component Logic Using Capability Service [TEST-UNIT] [COMMIT]
 *   [ ] In `ConfigFileManager.tsx`.
 *   [ ] Consume the `platformCapabilities`, `isLoadingCapabilities`, `capabilityError` state (e.g., via context or props).
 *   [ ] Implement conditional rendering based on `isLoadingCapabilities` and `capabilityError` first.
