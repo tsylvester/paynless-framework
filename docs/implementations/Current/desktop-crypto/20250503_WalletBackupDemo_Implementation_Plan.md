@@ -23,13 +23,13 @@
     *   [X] Define basic component structure for `WalletBackupDemoCard`.
     *   [X] Update tests for TDD: Add failing tests for loading, unavailable, and available states.
     *   [ ] Add the `WalletBackupDemoCard` component to a relevant storybook or development page for easy visualization.
-    *   [ ] [COMMIT] Commit initial card component structure and tests with message "feat(UI): Add initial WalletBackupDemoCard structure and tests".
+    *   [C] [COMMIT] Commit initial card component structure and tests with message "feat(UI): Add initial WalletBackupDemoCard structure and tests".
 
 *   **[1.2] UI Element Implementation (Sub-Components):**
     *   [X] Create the `MnemonicInputArea.tsx` sub-component file with `Textarea` and props (`value`, `onChange`, `disabled`).
     *   [X] Create the `FileActionButtons.tsx` sub-component file with Import/Export `Button`s and props (`onImport`, `onExport`, `disabled`, `isExportDisabled`, `isLoading`).
     *   [X] Create the `StatusDisplay.tsx` sub-component file with `Alert` for displaying status/error messages and props (`message`, `variant`).
-    *   [ ] [COMMIT] Commit sub-component implementations with message "feat(UI): Implement WalletBackupDemo sub-components (MnemonicInputArea, FileActionButtons, StatusDisplay)".
+    *   [C] [COMMIT] Commit sub-component implementations with message "feat(UI): Implement WalletBackupDemo sub-components (MnemonicInputArea, FileActionButtons, StatusDisplay)".
 
 *   **[1.3] Integrate Platform Capabilities & Sub-Components:**
     *   [X] In `WalletBackupDemoCard.tsx`:
@@ -43,7 +43,7 @@
         *   [X] Wrap the main content in the `ErrorBoundary` component.
     *   [X] Update tests for loading state in `WalletBackupDemoCard.test.tsx` to assert skeleton presence.
     *   [X] Verify tests for loading, unavailable, and available states pass.
-    *   [ ] [COMMIT] Commit platform hook integration and sub-component rendering in WalletBackupDemoCard with message "feat(UI): Integrate usePlatform and sub-components into WalletBackupDemoCard".
+    *   [X] [COMMIT] Commit platform hook integration and sub-component rendering in WalletBackupDemoCard with message "feat(UI): Integrate usePlatform and sub-components into WalletBackupDemoCard".
 
 *   **[1.4] Implement Import Functionality:**
     *   [X] In `WalletBackupDemoCard.test.tsx`:
@@ -70,23 +70,23 @@
         *   [X] Pass `handleImport` to `FileActionButtons` component.
         *   [X] Implement rendering logic for `capabilityError` state.
     *   [X] Verify all import tests pass.
-    *   [ ] [COMMIT] Commit import functionality and tests with message "feat(UI): Implement mnemonic import functionality in WalletBackupDemoCard".
+    *   [X] [COMMIT] Commit import functionality and tests with message "feat(UI): Implement mnemonic import functionality in WalletBackupDemoCard".
 
 *   **[1.5] Implement Export Functionality:**
-    *   [ ] In `WalletBackupDemoCard.test.tsx`:
-        *   [ ] Add tests for the export workflow (similar structure to import tests, mocking `pickSaveFile` and `writeFile`).
-    *   [ ] In `WalletBackupDemoCard.tsx`:
-        *   [ ] Implement the `async handleExport` function:
-            *   [ ] Set `isActionLoading` to true, clear status message.
-            *   [ ] Get current `mnemonic` from state. Handle empty case.
-            *   [ ] Perform `isAvailable` check.
-            *   [ ] Call `platformCapabilities.fileSystem.pickSaveFile`. Handle null return.
-            *   [ ] Convert mnemonic string to `Uint8Array` using `TextEncoder`.
-            *   [ ] Call `platformCapabilities.fileSystem.writeFile`. Handle errors.
-            *   [ ] Set success/error status message and variant.
-            *   [ ] Set `isActionLoading` to false in `finally` block.
-        *   [ ] Pass `handleExport` to `FileActionButtons` component.
-    *   [ ] Verify all export tests pass.
+    *   [X] In `WalletBackupDemoCard.test.tsx`:
+        *   [X] Add tests for the export workflow (similar structure to import tests, mocking `pickSaveFile` and `writeFile`).
+    *   [X] In `WalletBackupDemoCard.tsx`:
+        *   [X] Implement the `async handleExport` function:
+            *   [X] Set `isActionLoading` to true, clear status message.
+            *   [X] Get current `mnemonic` from state. Handle empty case.
+            *   [X] Perform `isAvailable` check.
+            *   [X] Call `platformCapabilities.fileSystem.pickSaveFile`. Handle null return.
+            *   [X] Convert mnemonic string to `Uint8Array` using `TextEncoder`.
+            *   [X] Call `platformCapabilities.fileSystem.writeFile`. Handle errors.
+            *   [X] Set success/error status message and variant.
+            *   [X] Set `isActionLoading` to false in `finally` block.
+        *   [X] Pass `handleExport` to `FileActionButtons` component.
+    *   [X] Verify all export tests pass.
     *   [ ] [COMMIT] Commit export functionality and tests with message "feat(UI): Implement mnemonic export functionality in WalletBackupDemoCard".
 
 *   **[1.6] Refine State Handling & Feedback (Covered by 1.4 & 1.5):**

@@ -295,4 +295,129 @@ describe('WalletBackupDemoCard Component', () => {
     expect(importButton).toBeEnabled(); // Should be enabled after error
   });
 
+  // --- Export Functionality Tests --- 
+
+  it('should keep export button disabled if mnemonic is empty', () => {
+    const mockAvailableState: UsePlatformReturnType = {
+      platformCapabilities: { platform: 'tauri', os: 'windows', fileSystem: mockAvailableFileSystem },
+      isLoadingCapabilities: false,
+      capabilityError: null,
+    };
+    renderComponent(mockAvailableState);
+    const exportButton = screen.getByRole('button', { name: /Export Mnemonic to File/i });
+    expect(exportButton).toBeDisabled();
+  });
+
+  it('should handle user cancellation during file saving', async () => {
+    const mockMnemonic = 'word1 word2 word3 word4 word5 word6 word7 word8 word9 word10 word11 word12';
+    const pickSaveFileMock = vi.fn().mockResolvedValue(null); // Simulate cancellation
+    const writeFileMock = vi.fn();
+    const mockAvailableState: UsePlatformReturnType = {
+      platformCapabilities: {
+        platform: 'tauri',
+        os: 'windows',
+        fileSystem: { ...mockAvailableFileSystem, pickSaveFile: pickSaveFileMock, writeFile: writeFileMock }
+      },
+      isLoadingCapabilities: false,
+      capabilityError: null,
+    };
+    renderComponent(mockAvailableState);
+    const exportButton = screen.getByRole('button', { name: /Export Mnemonic to File/i });
+    const textArea = screen.getByRole('textbox', { name: /mnemonic phrase/i });
+
+    // Simulate typing mnemonic to enable export
+    fireEvent.change(textArea, { target: { value: mockMnemonic } });
+    await waitFor(() => expect(exportButton).toBeEnabled());
+
+    // Click export
+    fireEvent.click(exportButton);
+
+    // Wait for mock and assertions
+    await waitFor(() => {
+      expect(pickSaveFileMock).toHaveBeenCalledTimes(1);
+    });
+
+    expect(writeFileMock).not.toHaveBeenCalled();
+    expect(screen.queryByRole('alert', { name: /error/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('alert', { name: /success/i })).not.toBeInTheDocument();
+    const infoAlert = await screen.findByRole('alert', { name: /info/i });
+    expect(infoAlert).toBeInTheDocument();
+    expect(within(infoAlert).getByText(/File save cancelled./i)).toBeInTheDocument();
+    expect(exportButton).toBeEnabled(); // Should be re-enabled
+  });
+
+  it('should handle errors during file writing', async () => {
+    const mockMnemonic = 'word1 word2 word3 word4 word5 word6 word7 word8 word9 word10 word11 word12';
+    const mockSavePath = '/fake/save/path/backup.txt';
+    const pickSaveFileMock = vi.fn().mockResolvedValue(mockSavePath);
+    const writeFileMock = vi.fn().mockRejectedValue(new Error('Disk write error'));
+    const mockAvailableState: UsePlatformReturnType = {
+      platformCapabilities: {
+        platform: 'tauri',
+        os: 'windows',
+        fileSystem: { ...mockAvailableFileSystem, pickSaveFile: pickSaveFileMock, writeFile: writeFileMock }
+      },
+      isLoadingCapabilities: false,
+      capabilityError: null,
+    };
+    renderComponent(mockAvailableState);
+    const exportButton = screen.getByRole('button', { name: /Export Mnemonic to File/i });
+    const textArea = screen.getByRole('textbox', { name: /mnemonic phrase/i });
+
+    // Simulate typing mnemonic
+    fireEvent.change(textArea, { target: { value: mockMnemonic } });
+    await waitFor(() => expect(exportButton).toBeEnabled());
+
+    // Click export
+    fireEvent.click(exportButton);
+
+    // Wait for error alert
+    const errorAlert = await screen.findByRole('alert', { name: /error/i });
+    expect(errorAlert).toBeInTheDocument();
+
+    // Check mocks and error message
+    expect(pickSaveFileMock).toHaveBeenCalledTimes(1);
+    const expectedData = new TextEncoder().encode(mockMnemonic);
+    expect(writeFileMock).toHaveBeenCalledWith(mockSavePath, expectedData);
+    expect(within(errorAlert).getByText(/Disk write error/i)).toBeInTheDocument();
+    expect(exportButton).toBeEnabled(); // Should be re-enabled
+  });
+
+  it('should successfully export mnemonic to file', async () => {
+    const mockMnemonic = 'word1 word2 word3 word4 word5 word6 word7 word8 word9 word10 word11 word12';
+    const mockSavePath = '/fake/save/path/backup.txt';
+    const pickSaveFileMock = vi.fn().mockResolvedValue(mockSavePath);
+    const writeFileMock = vi.fn().mockResolvedValue(undefined); // writeFile returns void on success
+    const mockAvailableState: UsePlatformReturnType = {
+      platformCapabilities: {
+        platform: 'tauri',
+        os: 'windows',
+        fileSystem: { ...mockAvailableFileSystem, pickSaveFile: pickSaveFileMock, writeFile: writeFileMock }
+      },
+      isLoadingCapabilities: false,
+      capabilityError: null,
+    };
+    renderComponent(mockAvailableState);
+    const exportButton = screen.getByRole('button', { name: /Export Mnemonic to File/i });
+    const textArea = screen.getByRole('textbox', { name: /mnemonic phrase/i });
+
+    // Simulate typing mnemonic
+    fireEvent.change(textArea, { target: { value: mockMnemonic } });
+    await waitFor(() => expect(exportButton).toBeEnabled());
+
+    // Click export
+    fireEvent.click(exportButton);
+
+    // Wait for success alert
+    const successAlert = await screen.findByRole('alert', { name: /success/i });
+    expect(successAlert).toBeInTheDocument();
+
+    // Check mocks and success message
+    expect(pickSaveFileMock).toHaveBeenCalledTimes(1);
+    const expectedData = new TextEncoder().encode(mockMnemonic);
+    expect(writeFileMock).toHaveBeenCalledWith(mockSavePath, expectedData);
+    expect(within(successAlert).getByText(/Mnemonic exported successfully!/i)).toBeInTheDocument();
+    expect(exportButton).toBeEnabled(); // Should be re-enabled
+  });
+
 }); 
