@@ -5,19 +5,29 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { createTauriFileSystemCapabilities } from './tauri';
 import type { FileSystemCapabilities } from '@paynless/types';
 
-// Mock the necessary Tauri API modules
-vi.mock('@tauri-apps/api/core', () => ({
-  invoke: vi.fn(),
-}));
+// Mock the necessary Tauri plugin modules
 
+// Mock Dialog Plugin
 vi.mock('@tauri-apps/plugin-dialog', () => ({
   open: vi.fn(),
   save: vi.fn(),
 }));
 
+// Mock FS Plugin
+vi.mock('@tauri-apps/plugin-fs', () => ({
+  readFile: vi.fn(),
+  writeFile: vi.fn(),
+}));
+
 // Import the mocked functions AFTER the mocks are defined
-import { invoke } from '@tauri-apps/api/core';
 import { open, save } from '@tauri-apps/plugin-dialog';
+import { readFile, writeFile } from '@tauri-apps/plugin-fs';
+
+// Get typed mock functions
+const mockedOpen = vi.mocked(open);
+const mockedSave = vi.mocked(save);
+const mockedReadFile = vi.mocked(readFile);
+const mockedWriteFile = vi.mocked(writeFile);
 
 describe('createTauriFileSystemCapabilities', () => {
   let capabilities: FileSystemCapabilities;
@@ -45,76 +55,75 @@ describe('createTauriFileSystemCapabilities', () => {
   });
 
   // --- readFile Tests ---
-  it('readFile should call invoke and return Uint8Array', async () => {
+  it('readFile should call readFile and return Uint8Array', async () => {
     const mockPath = 'test/read.txt';
-    const mockResponse = [1, 2, 3];
-    (invoke as ReturnType<typeof vi.fn>).mockResolvedValue(mockResponse);
+    const mockResponseData = new Uint8Array([1, 2, 3]);
+    mockedReadFile.mockResolvedValue(mockResponseData);
 
     const result = await capabilities.readFile(mockPath);
 
-    expect(invoke).toHaveBeenCalledWith('plugin:capabilities|read_file', { path: mockPath });
+    expect(mockedReadFile).toHaveBeenCalledWith(mockPath);
     expect(result).toBeInstanceOf(Uint8Array);
-    expect(Array.from(result)).toEqual(mockResponse);
+    expect(result).toEqual(mockResponseData);
   });
 
-  it('readFile should throw and log error on invoke failure', async () => {
+  it('readFile should throw and log error on readFile failure', async () => {
     const mockError = 'Read failed';
-    (invoke as ReturnType<typeof vi.fn>).mockRejectedValue(mockError);
+    mockedReadFile.mockRejectedValue(mockError);
 
-    await expect(capabilities.readFile('fail.txt')).rejects.toThrow(`Failed to read file via Tauri: ${mockError}`);
-    expect(consoleErrorSpy).toHaveBeenCalled();
+    await expect(capabilities.readFile('fail.txt')).rejects.toThrow(`Failed to read file via Tauri FS plugin: ${mockError}`);
+    expect(consoleErrorSpy).toHaveBeenCalledWith(expect.stringContaining('(fs plugin) Error'), mockError);
   });
 
   // --- writeFile Tests ---
-  it('writeFile should call invoke with converted data array', async () => {
+  it('writeFile should call writeFile with path and data', async () => {
     const mockPath = 'test/write.dat';
     const mockData = new Uint8Array([10, 20]);
-    const expectedInvokeData = [10, 20]; // number[]
-    (invoke as ReturnType<typeof vi.fn>).mockResolvedValue(undefined);
+    mockedWriteFile.mockResolvedValue(undefined);
 
     await capabilities.writeFile(mockPath, mockData);
 
-    expect(invoke).toHaveBeenCalledWith('plugin:capabilities|write_file', { path: mockPath, data: expectedInvokeData });
+    expect(mockedWriteFile).toHaveBeenCalledWith(mockPath, mockData);
   });
 
-  it('writeFile should throw and log error on invoke failure', async () => {
+  it('writeFile should throw and log error on writeFile failure', async () => {
     const mockError = 'Write failed';
-    (invoke as ReturnType<typeof vi.fn>).mockRejectedValue(mockError);
+    mockedWriteFile.mockRejectedValue(mockError);
 
-    await expect(capabilities.writeFile('fail.dat', new Uint8Array())).rejects.toThrow(`Failed to write file via Tauri: ${mockError}`);
-    expect(consoleErrorSpy).toHaveBeenCalled();
+    await expect(capabilities.writeFile('fail.dat', new Uint8Array())).rejects.toThrow(`Failed to write file via Tauri FS plugin: ${mockError}`);
+    expect(consoleErrorSpy).toHaveBeenCalledWith(expect.stringContaining('(fs plugin) Error'), mockError);
   });
 
   // --- pickFile Tests ---
   it('pickFile (single) should call open and return string array', async () => {
     const mockPath = '/selected/file.txt';
-    (open as ReturnType<typeof vi.fn>).mockResolvedValue(mockPath);
+    mockedOpen.mockResolvedValue(mockPath);
 
     const result = await capabilities.pickFile({ accept: '.txt' });
 
-    expect(open).toHaveBeenCalledWith({ multiple: false, filters: [{ name: 'File', extensions: ['txt'] }] });
+    expect(mockedOpen).toHaveBeenCalledWith({ multiple: false, filters: [{ name: 'File', extensions: ['txt'] }], directory: false });
     expect(result).toEqual([mockPath]);
   });
 
   it('pickFile (multiple) should call open and return string array', async () => {
     const mockPaths = ['/selected/file1.png', '/selected/file2.png'];
-    (open as ReturnType<typeof vi.fn>).mockResolvedValue(mockPaths);
+    mockedOpen.mockResolvedValue(mockPaths);
 
     const result = await capabilities.pickFile({ accept: '.png', multiple: true });
 
-    expect(open).toHaveBeenCalledWith({ multiple: true, filters: [{ name: 'File', extensions: ['png'] }] });
+    expect(mockedOpen).toHaveBeenCalledWith({ multiple: true, filters: [{ name: 'File', extensions: ['png'] }], directory: false });
     expect(result).toEqual(mockPaths);
   });
 
   it('pickFile should return null if open returns null', async () => {
-    (open as ReturnType<typeof vi.fn>).mockResolvedValue(null);
+    mockedOpen.mockResolvedValue(null);
     const result = await capabilities.pickFile();
     expect(result).toBeNull();
   });
   
    it('pickFile should return null and log on open failure', async () => {
     const mockError = 'Dialog closed';
-    (open as ReturnType<typeof vi.fn>).mockRejectedValue(mockError);
+    mockedOpen.mockRejectedValue(mockError);
 
     const result = await capabilities.pickFile();
     expect(result).toBeNull();
@@ -122,60 +131,61 @@ describe('createTauriFileSystemCapabilities', () => {
   });
 
   // --- pickDirectory Tests ---
-  it('pickDirectory (single) should call invoke and return string array', async () => {
+  it('pickDirectory (single) should call open with directory:true and return string array', async () => {
     const mockPath = '/selected/dir';
-    (invoke as ReturnType<typeof vi.fn>).mockResolvedValue(mockPath);
+    mockedOpen.mockResolvedValue(mockPath);
 
     const result = await capabilities.pickDirectory({ multiple: false });
 
-    expect(invoke).toHaveBeenCalledWith('plugin:capabilities|pick_directory', { multiple: false });
+    expect(mockedOpen).toHaveBeenCalledWith({ multiple: false, directory: true });
     expect(result).toEqual([mockPath]);
   });
 
-  it('pickDirectory (multiple) should call invoke and return string array', async () => {
+  it('pickDirectory (multiple) should call open with directory:true and return string array', async () => {
     const mockPaths = ['/selected/dir1', '/selected/dir2'];
-    (invoke as ReturnType<typeof vi.fn>).mockResolvedValue(mockPaths);
+    mockedOpen.mockResolvedValue(mockPaths);
 
     const result = await capabilities.pickDirectory({ multiple: true });
 
-    expect(invoke).toHaveBeenCalledWith('plugin:capabilities|pick_directory', { multiple: true });
+    expect(mockedOpen).toHaveBeenCalledWith({ multiple: true, directory: true });
     expect(result).toEqual(mockPaths);
   });
 
-  it('pickDirectory should return null if invoke returns null', async () => {
-    (invoke as ReturnType<typeof vi.fn>).mockResolvedValue(null);
+  it('pickDirectory should return null if open returns null', async () => {
+    mockedOpen.mockResolvedValue(null);
     const result = await capabilities.pickDirectory();
     expect(result).toBeNull();
   });
   
-   it('pickDirectory should throw and log error on invoke failure', async () => {
+   it('pickDirectory should return null and log error on open failure', async () => {
     const mockError = 'Failed to pick';
-    (invoke as ReturnType<typeof vi.fn>).mockRejectedValue(mockError);
+    mockedOpen.mockRejectedValue(mockError);
 
-    await expect(capabilities.pickDirectory()).rejects.toThrow(`Failed to pick directory via Tauri: ${mockError}`);
-    expect(consoleErrorSpy).toHaveBeenCalled();
+    const result = await capabilities.pickDirectory();
+    expect(result).toBeNull();
+    expect(consoleErrorSpy).toHaveBeenCalledWith(expect.stringContaining('pickDirectory (dialog plugin) Error'), mockError);
   });
 
   // --- pickSaveFile Tests ---
   it('pickSaveFile should call save and return path', async () => {
     const mockPath = '/save/here.json';
-    (save as ReturnType<typeof vi.fn>).mockResolvedValue(mockPath);
+    mockedSave.mockResolvedValue(mockPath);
 
     const result = await capabilities.pickSaveFile({ defaultPath: '/save/here.json', accept: '.json' });
 
-    expect(save).toHaveBeenCalledWith({ defaultPath: '/save/here.json', filters: [{ name: 'File', extensions: ['json'] }] });
+    expect(mockedSave).toHaveBeenCalledWith({ defaultPath: '/save/here.json', filters: [{ name: 'File', extensions: ['json'] }] });
     expect(result).toBe(mockPath);
   });
 
   it('pickSaveFile should return null if save returns null', async () => {
-    (save as ReturnType<typeof vi.fn>).mockResolvedValue(null);
+    mockedSave.mockResolvedValue(null);
     const result = await capabilities.pickSaveFile();
     expect(result).toBeNull();
   });
 
    it('pickSaveFile should return null and log on save failure', async () => {
     const mockError = 'Save cancelled';
-    (save as ReturnType<typeof vi.fn>).mockRejectedValue(mockError);
+    mockedSave.mockRejectedValue(mockError);
 
     const result = await capabilities.pickSaveFile();
     expect(result).toBeNull();

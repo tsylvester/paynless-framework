@@ -203,7 +203,7 @@ This implementation plan follows a phased approach:
     *   [✅] Built and ran the `web` application.
     *   [✅] Verified component behavior in standard web browser (rendered null).
     *   [✅] Built and ran the `desktop` application (`pnpm --filter desktop tauri dev`).
-    *   [✅] Verified component rendered in Tauri, but file buttons non-functional (Confirms Rust backend needed - Phase 4).
+    *   [✅] Verified component rendered and file operations functional after plugin refactor.
 *   [✅] Commit changes with message "refactor(UI): Update capability consumers post-service refactor".
 
 ---
@@ -281,12 +281,13 @@ This implementation plan follows a phased approach:
 
 ---
 
-## Phase 4: Tauri Platform Provider (Rust Layer) [🚧 In Progress]
+## Phase 4: Tauri Platform Provider (Rust Layer) [✅ Refactored to Plugins]
 
 *   **Goal:** Implement the Rust functions (`tauri::command`s) that perform the actual native operations invoked by the Tauri TypeScript provider.
+*   **Status:** Refactored in STEP-4.3 to use standard `tauri-plugin-fs` and `tauri-plugin-dialog` instead of custom commands.
 *   **Location:** `apps/windows/src-tauri/src/`.
 
-### STEP-4.1: Implement Rust File System Commands [PROV-RUST-Tauri] [🚧]
+### STEP-4.1: Implement Rust File System Commands [PROV-RUST-Tauri] [✅ Refactored]
 
 #### STEP-4.1.1: Create Rust Module and Add Dependencies [COMMIT] [✅]
 *   [✅] Verified `apps/windows/src-tauri/src/capabilities.rs` exists.
@@ -312,13 +313,25 @@ This implementation plan follows a phased approach:
 *   [✅] Built the Tauri application (`cargo build`) - Passed.
 *   [✅] Commit changes with message "feat(PROV-RUST-Tauri): Implement pick_directory command".
 
-### STEP-4.2: Register Rust Commands [PROV-RUST-Tauri] [✅]
+### STEP-4.2: Register Rust Commands [PROV-RUST-Tauri] [✅ Refactored]
 
 #### STEP-4.2.1: Update Invoke Handler [TEST-INT] [COMMIT] [✅]
 *   [✅] In `apps/windows/src-tauri/src/main.rs`.
 *   [✅] Added `capabilities::pick_directory` to `tauri::generate_handler!`.
 *   [✅] Built the Tauri application (`pnpm tauri dev` restart) - Compiled successfully.
 *   [✅] Commit changes with message "feat(PROV-RUST-Tauri): Register pick_directory command".
+
+### STEP-4.3: Refactor to Use Standard Plugins [PROV-TS-Tauri] [PROV-RUST-Tauri] [TEST-UNIT] [COMMIT] [✅]
+*   [✅] Added `tauri-plugin-fs` dependency (`Cargo.toml`, `package.json`).
+*   [✅] Registered `tauri_plugin_fs` and `tauri_plugin_dialog` in `main.rs` / `lib.rs`.
+*   [✅] Added `fs:default` and `fs:write-all` permissions to `capabilities/default.json`.
+*   [✅] Refactored `tauri.ts` (`readFile`, `writeFile`, `pickDirectory`) to use FS and Dialog plugin APIs.
+*   [✅] Removed corresponding custom commands and tests from `capabilities.rs`.
+*   [✅] Removed custom command registrations from `main.rs` / `lib.rs`.
+*   [✅] Updated `tauri.test.ts` to mock plugin APIs instead of `invoke`.
+*   [✅] Ran `@paynless/platform` tests - Passed.
+*   [✅] Manual verification in `PlatformFeatureTester` successful.
+*   [✅] Commit changes with message "refactor(PROV): Use standard plugins for FS/Dialog ops".
 
 ---
 

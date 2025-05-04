@@ -8,6 +8,8 @@ mod capabilities;
 fn main() {
     // Use tauri::Builder to create and run the app
     tauri::Builder::default()
+        .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_fs::init())
         .invoke_handler(tauri::generate_handler![
             // Crypto commands
             crypto_commands::generate_signing_keypair_hex,
@@ -15,11 +17,7 @@ fn main() {
             crypto_commands::verify_hex,
             crypto_commands::generate_nonce_hex,
             crypto_commands::encrypt_symmetric_hex,
-            crypto_commands::decrypt_symmetric_hex,
-            // Capability commands
-            capabilities::read_file,
-            capabilities::write_file,
-            capabilities::pick_directory
+            crypto_commands::decrypt_symmetric_hex
         ])
         // TODO: add setup hooks if needed
         .run(tauri::generate_context!())

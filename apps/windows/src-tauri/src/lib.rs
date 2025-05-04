@@ -10,9 +10,9 @@ fn greet(name: &str) -> String {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
-        .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
-        .invoke_handler(tauri::generate_handler![greet, capabilities::read_file, capabilities::write_file])
-        .run(tauri::generate_context!())
+        .plugin(tauri_plugin_fs::init())
+        .invoke_handler(tauri::generate_handler![greet])
+        .run(tauri::generate_context!("tauri.conf.json"))
         .expect("error while running tauri application");
 }

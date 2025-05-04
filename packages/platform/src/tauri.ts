@@ -1,16 +1,14 @@
-// Import Tauri APIs directly within this module
-import { invoke } from '@tauri-apps/api/core';
+// Import Tauri APIs and plugin functions
+// Removed unused invoke import
 import { open, save } from '@tauri-apps/plugin-dialog';
+// Correct FS plugin function imports
+import { readFile, writeFile } from '@tauri-apps/plugin-fs'; 
 
 // Import types for the capabilities interface
 import type { FileSystemCapabilities } from '@paynless/types';
 
-// Command names (ensure consistency with Rust registration in main.rs)
-const RUST_COMMANDS = {
-  READ_FILE: 'read_file',         // Corrected name
-  WRITE_FILE: 'write_file',       // Corrected name
-  PICK_DIRECTORY: 'pick_directory', // Corrected name
-};
+// No longer need RUST_COMMANDS constant for these standard ops
+// const RUST_COMMANDS = { ... };
 
 // Utility function to parse accept string into Tauri filters
 function parseAcceptToFilters(accept?: string): { name: string; extensions: string[] }[] | undefined {
@@ -20,7 +18,6 @@ function parseAcceptToFilters(accept?: string): { name: string; extensions: stri
     .map(ext => ext.trim().replace(/^\./, '')) // Remove leading dot
     .filter(ext => ext.length > 0);
   if (extensions.length === 0) return undefined;
-  // Defaulting name to 'File' but could be parameterized if needed
   return [{ name: 'File', extensions }]; 
 }
 
@@ -31,71 +28,72 @@ export function createTauriFileSystemCapabilities(): FileSystemCapabilities {
 
     async readFile(path: string): Promise<Uint8Array> {
       try {
-        const data = await invoke<number[]>(RUST_COMMANDS.READ_FILE, { path });
-        return new Uint8Array(data);
+        // Use FS plugin's readFile (expects only path for binary reading)
+        // Signature confirms it returns Promise<Uint8Array>
+        const data = await readFile(path); 
+        // No type check needed here due to return signature
+        return data;
       } catch (error) {
-        console.error('Tauri readFile Error:', error);
-        // Consider specific error types or messages
-        throw new Error(`Failed to read file via Tauri: ${error}`);
+        console.error('Tauri readFile (fs plugin) Error:', error);
+        throw new Error(`Failed to read file via Tauri FS plugin: ${error}`);
       }
     },
 
     async writeFile(path: string, data: Uint8Array): Promise<void> {
       try {
-        // Convert Uint8Array to number[] for invoke
-        const dataArray = Array.from(data);
-        await invoke(RUST_COMMANDS.WRITE_FILE, { path, data: dataArray });
+        // Use FS plugin's writeFile (pass path and data as separate arguments)
+        await writeFile(path, data); 
       } catch (error) {
-        console.error('Tauri writeFile Error:', error);
-        throw new Error(`Failed to write file via Tauri: ${error}`);
+        console.error('Tauri writeFile (fs plugin) Error:', error);
+        throw new Error(`Failed to write file via Tauri FS plugin: ${error}`);
       }
     },
 
     async pickFile(options?: { accept?: string; multiple?: boolean }): Promise<string[] | null> {
       try {
         const filters = parseAcceptToFilters(options?.accept);
-        const multiple = options?.multiple ?? false; // Default to false if undefined
-        
-        const result = await open({ multiple, filters });
+        const multiple = options?.multiple ?? false;
+        // Use Dialog plugin's open
+        const result = await open({ multiple, filters, directory: false }); 
         
         if (result === null) {
-          return null; // User cancelled
+          return null;
         }
-        // Ensure result is always an array
+        // Ensure result is always an array of strings
         return Array.isArray(result) ? result : [result];
       } catch (error) {
-        // Tauri dialogs usually reject with an error message if cancelled by user/system
         console.log('Tauri pickFile Dialog cancelled or errored:', error);
-        return null; // Treat errors/cancellations as null return
+        return null;
       }
     },
 
     async pickDirectory(options?: { multiple?: boolean }): Promise<string[] | null> {
       try {
         const multiple = options?.multiple ?? false;
-        // Note: Tauri's standard API doesn't have a direct `pickFolders` in `@tauri-apps/plugin-dialog` yet.
-        // We rely on a custom Rust command.
-        const result = await invoke<string | string[] | null>(RUST_COMMANDS.PICK_DIRECTORY, { multiple });
+        // Use Dialog plugin's open with directory: true
+        const result = await open({ multiple, directory: true }); 
 
         if (result === null) {
-          return null; // User cancelled or error in Rust command
+          return null;
         }
         // Ensure result is always an array of strings
         return Array.isArray(result) ? result : [result];
       } catch (error) {
-        console.error('Tauri pickDirectory Error:', error);
-        throw new Error(`Failed to pick directory via Tauri: ${error}`);
+        console.error('Tauri pickDirectory (dialog plugin) Error:', error);
+        // Check for cancellation-like errors vs actual errors if needed
+        return null; // Treat errors/cancellations as null return for now
       }
     },
 
     async pickSaveFile(options?: { defaultPath?: string; accept?: string }): Promise<string | null> {
       try {
         const filters = parseAcceptToFilters(options?.accept);
-        const result = await save({ defaultPath: options?.defaultPath, filters });
-        return result; // `save` directly returns string | null
+        // Use Dialog plugin's save
+        const result = await save({ defaultPath: options?.defaultPath, filters }); 
+        return result;
       } catch (error) {
         console.log('Tauri pickSaveFile Dialog cancelled or errored:', error);
-        return null; // Treat errors/cancellations as null return
+        return null;
       }
     },
   };
