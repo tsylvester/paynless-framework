@@ -26,4 +26,11 @@ export interface PlatformCapabilities {
   // Add other future capability groups here using the same pattern:
   // Example: readonly windowManagement: WindowManagementCapabilities | CapabilityUnavailable;
   // Example: readonly notifications: NotificationCapabilities | CapabilityUnavailable;
+}
+
+// *** Added CapabilitiesContextValue interface ***
+export interface CapabilitiesContextValue {
+  capabilities: PlatformCapabilities | null; // Can be null initially or on error
+  isLoadingCapabilities: boolean;
+  capabilityError: Error | null;
 } 

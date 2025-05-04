@@ -93,38 +93,38 @@
     *   **[1.5.3] Commit `StatusDisplay` [COMMIT] [X]:** (Renumbered)
         *   [X] Commit working component and passing tests: "feat(UI): Implement StatusDisplay component and tests".
 
-*   **[1.6] Integrate Sub-Components into `WalletBackupDemoCard` [🚧]:** (Was 1.5)
+*   **[1.6] Integrate Sub-Components into `WalletBackupDemoCard` [✅]:** (Was 1.5)
     *   *Prerequisite: Steps 1.2, 1.3, 1.4, 1.5 completed.*
-    *   [ ] In `WalletBackupDemoCard.tsx`:
-        *   [ ] Import and use the `usePlatform` hook.
-        *   [ ] Add state management (e.g., `useState`) for `mnemonic`, `statusMessage`, `statusVariant`, `isActionLoading`.
-        *   [ ] Implement logic to determine `isFileSystemAvailable` and `isDisabled` based on hook results and action state.
-        *   [ ] Implement conditional rendering for loading state (using `Skeleton` components).
-        *   [ ] Implement conditional rendering for capability error state.
-        *   [ ] Implement conditional rendering for unavailable state (showing message).
-        *   [ ] Render the now implemented sub-components (`MnemonicInputArea`, `GenerateMnemonicButton`, `FileActionButtons`, `StatusDisplay`), passing the necessary state and handlers (placeholder handlers for import/export) as props.
-        *   [ ] Wrap the main content in the `ErrorBoundary` component.
-    *   [ ] Update tests in `WalletBackupDemoCard.test.tsx` to verify sub-components are rendered correctly in available/unavailable states (mocking platform hook).
-    *   [ ] Verify tests pass.
-    *   [ ] [COMMIT] Commit sub-component integration in WalletBackupDemoCard with message "feat(UI): Integrate sub-components into WalletBackupDemoCard".
+    *   [X] In `WalletBackupDemoCard.tsx`:
+        *   [X] Import and use the `usePlatform` hook.
+        *   [X] Add state management (e.g., `useState`) for `mnemonic`, `statusMessage`, `statusVariant`, `isActionLoading`.
+        *   [X] Implement logic to determine `isFileSystemAvailable` and `isDisabled` based on hook results and action state.
+        *   [X] Implement conditional rendering for loading state (using `Skeleton` components).
+        *   [X] Implement conditional rendering for capability error state.
+        *   [X] Implement conditional rendering for unavailable state (showing message).
+        *   [X] Render the now implemented sub-components (`MnemonicInputArea`, `GenerateMnemonicButton`, `FileActionButtons`, `StatusDisplay`), passing the necessary state and handlers (placeholder handlers for import/export) as props.
+        *   [X] Wrap the main content in the `ErrorBoundary` component.
+    *   [X] Update tests in `WalletBackupDemoCard.test.tsx` to verify sub-components are rendered correctly in available/unavailable states (mocking platform hook).
+    *   [X] Verify tests pass.
+    *   [X] [COMMIT] Commit sub-component integration in WalletBackupDemoCard with message "feat(UI): Integrate sub-components into WalletBackupDemoCard".
 
-*   **[1.7] Implement Mnemonic Generation Logic in `WalletBackupDemoCard` [🚧]:** (New Step)
+*   **[1.7] Implement Mnemonic Generation Logic in `WalletBackupDemoCard` [✅]:** (New Step)
     *   *Prerequisite: Step 1.6 completed.*
-    *   [ ] Add dependency (`ethers` or `bip39`) to `apps/web` (`pnpm --filter web add ethers` or `pnpm --filter web add bip39`).
-    *   [ ] In `WalletBackupDemoCard.test.tsx`:
-        *   [ ] Add tests for the generation workflow:
-            *   [ ] Simulate Generate button click.
-            *   [ ] Verify `mnemonic` state is updated with a valid-looking phrase (e.g., 12 or 24 words). 
-            *   [ ] Verify success status is displayed.
-    *   [ ] In `WalletBackupDemoCard.tsx`:
-        *   [ ] Implement `handleGenerate` function:
-            *   [ ] Import the generation function (e.g., `ethers.Wallet.createRandom().mnemonic.phrase` or `bip39.generateMnemonic()`).
-            *   [ ] Call the function to get a new mnemonic.
-            *   [ ] Update `mnemonic` state using `setMnemonic`.
-            *   [ ] Set success status message.
-        *   [ ] Pass `handleGenerate` to the `GenerateMnemonicButton` component.
-    *   [ ] Verify all generation tests pass.
-    *   [ ] [COMMIT] Commit mnemonic generation functionality and tests with message "feat(UI): Implement mnemonic generation in WalletBackupDemoCard".
+    *   [X] Add dependency (`ethers` or `bip39`) to `apps/web` (`pnpm --filter web add ethers` or `pnpm --filter web add bip39`).
+    *   [X] In `WalletBackupDemoCard.test.tsx`:
+        *   [X] Add tests for the generation workflow:
+            *   [X] Simulate Generate button click.
+            *   [X] Verify `mnemonic` state is updated with a valid-looking phrase (e.g., 12 or 24 words). 
+            *   [X] Verify success status is displayed.
+    *   [X] In `WalletBackupDemoCard.tsx`:
+        *   [X] Implement `handleGenerate` function:
+            *   [X] Import the generation function (e.g., `ethers.Wallet.createRandom().mnemonic.phrase` or `bip39.generateMnemonic()`).
+            *   [X] Call the function to get a new mnemonic.
+            *   [X] Update `mnemonic` state using `setMnemonic`.
+            *   [X] Set success status message.
+        *   [X] Pass `handleGenerate` to the `GenerateMnemonicButton` component.
+        *   [X] Verify all generation tests pass.
+        *   [X] [COMMIT] Commit mnemonic generation functionality and tests with message "feat(UI): Implement mnemonic generation in WalletBackupDemoCard".
 
 *   **[1.8] Implement Import Functionality in `WalletBackupDemoCard` [🚧]:** (Was 1.6)
     *   *Prerequisite: Step 1.7 completed.*
@@ -175,76 +175,4 @@
 *   **[1.10] Manual Verification [🚧]:** (Was 1.8)
     *   *Prerequisite: Step 1.9 completed.*
     *   [X] Run the application in a web browser. Verify the component displays the "unavailable" state correctly.
-    *   [X] Run the application in Tauri (`pnpm --filter desktop tauri dev`).
-    *   [X] Verify the component displays the "available" state correctly (buttons enabled).
-    *   [ ] Test the Generate flow: Click generate, verify phrase appears, verify export button enables. Verify subsequent clicks generate new phrases.
-    *   [ ] Test the Import flow: Select a text file, verify content appears in the text area. Test cancellation. Verify loading/success/error states.
-    *   [ ] Test the Export flow: Enter text, click export, save the file. Verify the file contains the entered text. Test cancellation. Verify loading/success/error states.
-    *   [ ] Document verification results.
-    *   [ ] [COMMIT] Commit manual verification results/fixes with message "test(UI): Manual verification of WalletBackupDemoCard functionality".
-
-This completes the implementation of the `WalletBackupDemo` component placeholder using a structured approach.
-
----
-
-## Phase 2: Backend Integration & Feature Completion (Future Work)
-
-**Goal:** Transition the `WalletBackupDemo` component from a placeholder demonstrating platform file I/O into a fully functional, secure wallet backup and recovery feature by integrating it with the Rust backend via Tauri commands. This involves implementing the necessary backend logic using `core-crypto` and the `storage-layer` interface.
-
-**Prerequisites:**
-*   Phase 1 (Placeholder Implementation) completed and verified.
-*   `core-crypto` crate implemented and tested (as per `docs/implementations/Current/desktop-crypto/genesis/4. implementation/20250426_crypto_core.md`).
-*   `storage-layer` crate defined with interfaces for secure seed storage (even if initial implementation uses less secure fallback).
-*   Tauri setup allowing command definitions and invocation.
-
-**Tasks:**
-
-*   **[2.1] Define Tauri Commands:**
-    *   [ ] Define a Tauri command (e.g., `import_mnemonic`) that accepts a mnemonic phrase string.
-        *   Responsibility: Validate the mnemonic, derive the master seed (using `core-crypto`), securely store the seed (using `storage-layer`), and return success/failure or potentially basic wallet info.
-    *   [ ] Define a Tauri command (e.g., `export_mnemonic`) that requires authentication/authorization.
-        *   Responsibility: Securely retrieve the master seed (from `storage-layer`), potentially re-derive the mnemonic if only the seed is stored (using `core-crypto`), and return the mnemonic string. Requires careful security considerations.
-    *   [ ] Define command signatures (arguments, return types) including robust error types.
-    *   [ ] Document these commands (e.g., in `tauri-bridge.md` or similar).
-
-*   **[2.2] Implement Rust Backend Logic:**
-    *   [ ] Within the appropriate Rust backend module (e.g., `storage-layer`, `wallet-manager`, or directly in `tauri-bridge` handlers if simple):
-        *   [ ] Implement the `import_mnemonic` command handler:
-            *   [ ] Use `core-crypto` to validate the mnemonic phrase format and checksum.
-            *   [ ] Use `core-crypto` (BIP-39 logic) to derive the master seed from the validated mnemonic.
-            *   [ ] Call the `storage-layer` interface function to securely store the derived master seed.
-            *   [ ] Implement robust error handling (invalid mnemonic, storage failure).
-        *   [ ] Implement the `export_mnemonic` command handler:
-            *   [ ] Implement necessary security checks (e.g., password confirmation, device attestation - depends on security model).
-            *   [ ] Call the `storage-layer` interface function to retrieve the securely stored master seed.
-            *   [ ] If only the seed is stored, use `core-crypto` (BIP-39 logic) to convert the seed back to a mnemonic phrase.
-            *   [ ] Implement robust error handling (retrieval failure, derivation failure, security check failure).
-    *   [ ] Add unit tests for these backend handlers, mocking `storage-layer` and `core-crypto` where necessary.
-    *   [ ] [COMMIT] Commit backend command handlers and tests with message "feat(Backend): Implement Tauri commands for mnemonic import/export".
-
-*   **[2.3] Integrate Backend Calls into Frontend:**
-    *   [ ] Modify `WalletBackupDemo.tsx` (or rename/refactor to `WalletManager.tsx`).
-    *   [ ] Import the `invoke` function from `@tauri-apps/api/core`.
-    *   [ ] Update `handleImport`:
-        *   [ ] After reading the mnemonic string from the file, instead of just setting state, call `invoke('import_mnemonic', { mnemonic: importedString })`.
-        *   [ ] Handle the Promise result: Update UI based on success or specific errors returned from the backend (e.g., "Invalid Mnemonic", "Storage Failed").
-    *   [ ] Update `handleExport`:
-        *   [ ] Instead of reading the mnemonic from the text area, call `invoke('export_mnemonic')`.
-        *   [ ] Handle the Promise result: If successful (returns mnemonic string), proceed with `pickSaveFile` and `writeFile` using the *retrieved* mnemonic. Update UI based on success or errors (e.g., "Authentication Failed", "Failed to retrieve seed").
-    *   [ ] Remove direct setting of mnemonic state from file read; the source of truth for export is now the backend.
-    *   [ ] Adapt loading/error states to reflect Tauri command invocation.
-    *   [ ] [COMMIT] Commit frontend integration of Tauri commands with message "feat(UI): Integrate Tauri commands into WalletBackupDemo for import/export".
-
-*   **[2.4] Enhance Security & UX:**
-    *   [ ] Implement necessary UI elements for security checks during export (e.g., password confirmation dialog).
-    *   [ ] Provide clearer user feedback differentiating file I/O errors from backend cryptographic/storage errors.
-    *   [ ] Consider UI implications if multiple wallets/identities are supported in the future.
-    *   [ ] Review and refine the overall workflow for security and usability.
-
-*   **[2.5] Integration Testing:**
-    *   [ ] Write integration tests (potentially using Tauri's testing utilities or manual E2E tests initially) covering the full import/export flows:
-        *   Frontend UI -> Tauri Command Invocation -> Rust Handler Execution (`core-crypto` + `storage-layer` interaction) -> Frontend UI Update.
-    *   [ ] Test handling of backend errors propagated to the frontend.
-    *   [ ] Test security checks during export.
-
-This phase transforms the demo into a core application feature, bridging the frontend UI with the secure backend cryptographic and storage logic. 
+    *   [X] Run the application in Tauri (`

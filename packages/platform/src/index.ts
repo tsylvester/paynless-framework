@@ -107,6 +107,3 @@ export async function getPlatformCapabilities(): Promise<PlatformCapabilities> {
 export function resetMemoizedCapabilities(): void {
   memoizedCapabilities = null;
 }
-
-// Re-export core types
-export * from '@paynless/types';

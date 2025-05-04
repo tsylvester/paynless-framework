@@ -13,14 +13,10 @@ export const DEFAULT_INITIAL_CAPABILITIES: PlatformCapabilities = {
   fileSystem: { isAvailable: false },
 };
 
-// *** Updated Context Type ***
-export interface CapabilitiesContextValue {
-  capabilities: PlatformCapabilities | null; // Can be null initially or on error
-  isLoadingCapabilities: boolean;
-  capabilityError: Error | null;
-}
+// *** Import the type instead ***
+import type { CapabilitiesContextValue } from '@paynless/types';
 
-// Context Definition using the new type
+// Context Definition using the imported type
 const context = createContext<CapabilitiesContextValue | undefined>(undefined);
 
 // Provider Component

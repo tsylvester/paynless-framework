@@ -4,7 +4,7 @@ import WalletBackupDemoCard from './WalletBackupDemoCard';
 import { usePlatform } from '@paynless/platform';
 import type { PlatformCapabilities, FileSystemCapabilities, CapabilityUnavailable } from '@paynless/types';
 // Import the actual context hook return type for mocking
-import type { CapabilitiesContextValue } from '@paynless/platform';
+import type { CapabilitiesContextValue } from '@paynless/types';
 
 // Mock the usePlatform hook
 vi.mock('@paynless/platform');
@@ -341,20 +341,65 @@ describe('WalletBackupDemoCard Component', () => {
     });
   });
 
-  // Add test for Generate Button placeholder click if needed
-  it('should show info message when Generate button is clicked (placeholder)', () => {
+  // *** Add tests for Mnemonic Generation ***
+  describe('Generate Functionality', () => {
     const mockAvailableState: CapabilitiesContextValue = {
       capabilities: { platform: 'tauri', os: 'windows', fileSystem: mockAvailableFileSystem },
       isLoadingCapabilities: false,
       capabilityError: null,
     };
-    renderComponent(mockAvailableState);
-    const generateButton = screen.getByTestId('generate-button');
-    fireEvent.click(generateButton);
 
-    const statusDisplay = screen.getByTestId('status-display');
-    expect(statusDisplay).toHaveTextContent(/Generate button clicked/i);
-    expect(statusDisplay).toHaveAttribute('data-variant', 'info');
+    it('should update mnemonic input and show success on Generate click', async () => {
+      renderComponent(mockAvailableState);
+      const generateButton = screen.getByTestId('generate-button');
+      const textArea = screen.getByTestId('mnemonic-input');
+
+      expect(textArea).toHaveValue(''); // Start empty
+
+      fireEvent.click(generateButton);
+
+      // Wait for state update
+      await waitFor(() => {
+        expect(textArea).not.toHaveValue('');
+      });
+
+      // Basic validation: Check word count (should be 12 or 24 for standard BIP-39)
+      const generatedMnemonic = (textArea as HTMLTextAreaElement).value;
+      const wordCount = generatedMnemonic.trim().split(/\s+/).length;
+      expect([12, 24]).toContain(wordCount);
+
+      // Check for success status
+      const statusDisplay = screen.getByTestId('status-display');
+      expect(statusDisplay).toHaveTextContent(/Mnemonic generated successfully/i);
+      expect(statusDisplay).toHaveAttribute('data-variant', 'success');
+    });
+
+    it('should generate a new mnemonic on subsequent clicks', async () => {
+       renderComponent(mockAvailableState);
+       const generateButton = screen.getByTestId('generate-button');
+       const textArea = screen.getByTestId('mnemonic-input');
+
+       // Click once
+       fireEvent.click(generateButton);
+       let firstMnemonic = '';
+       await waitFor(() => {
+           firstMnemonic = (textArea as HTMLTextAreaElement).value;
+           expect(firstMnemonic).not.toBe('');
+       });
+
+       // Click again
+       fireEvent.click(generateButton);
+       let secondMnemonic = '';
+        await waitFor(() => {
+           secondMnemonic = (textArea as HTMLTextAreaElement).value;
+           expect(secondMnemonic).not.toBe('');
+       });
+       
+       // Verify they are different
+       expect(secondMnemonic).not.toEqual(firstMnemonic);
+       const wordCount = secondMnemonic.trim().split(/\s+/).length;
+       expect([12, 24]).toContain(wordCount);
+    });
   });
 
 }); 

@@ -3,6 +3,7 @@ import { usePlatform } from '@paynless/platform';
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Info, AlertCircle } from 'lucide-react';
+import * as bip39 from 'bip39';
 
 import { MnemonicInputArea } from './MnemonicInputArea';
 import { GenerateMnemonicButton } from './GenerateMnemonicButton';
@@ -26,9 +27,16 @@ export const WalletBackupDemoCard: React.FC<WalletBackupDemoCardProps> = () => {
   const isExportDisabled = !mnemonic || isDisabled;
 
   const handleGenerate = () => {
-    console.log('Generate Mnemonic Clicked (Placeholder)');
-    setStatusMessage('Generate button clicked (placeholder). Implement generation logic.');
-    setStatusVariant('info');
+    try {
+      const newMnemonic = bip39.generateMnemonic();
+      setMnemonic(newMnemonic);
+      setStatusMessage('Mnemonic generated successfully!');
+      setStatusVariant('success');
+    } catch (error) {
+      console.error("Mnemonic Generation Error:", error);
+      setStatusMessage(error instanceof Error ? error.message : 'An unknown error occurred during generation.');
+      setStatusVariant('error');
+    }
   };
 
   const handleImport = async () => {
@@ -99,12 +107,11 @@ export const WalletBackupDemoCard: React.FC<WalletBackupDemoCardProps> = () => {
     if (isLoadingCapabilities) {
       return (
         <div className="space-y-4">
-          <Skeleton className="h-8 w-1/2" />
           <Skeleton className="h-20 w-full" />
           <div className="flex space-x-2">
              <Skeleton className="h-10 w-32" />
           </div>
-           <div className="flex space-x-2">
+           <div className="flex flex-col md:flex-row md:space-x-2 space-y-2 md:space-y-0">
              <Skeleton className="h-10 w-48" />
              <Skeleton className="h-10 w-48" />
           </div>
@@ -154,7 +161,6 @@ export const WalletBackupDemoCard: React.FC<WalletBackupDemoCardProps> = () => {
           onChange={setMnemonic}
           disabled={isDisabled}
         />
-        {/* Container for buttons with responsive flex layout */}
         <div className="flex flex-col md:flex-row md:space-x-2 space-y-2 md:space-y-0">
           <GenerateMnemonicButton 
             onGenerate={handleGenerate} 
