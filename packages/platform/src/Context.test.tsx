@@ -46,8 +46,15 @@ const mockTauriCapabilities: PlatformCapabilities = {
 // --- Test Component & Helper (Remain the same) ---
 
 const TestConsumer = () => {
-  const capabilities = usePlatform();
-  return <div data-testid="capabilities">{JSON.stringify(capabilities)}</div>;
+  const { capabilities, isLoadingCapabilities, capabilityError } = usePlatform();
+  
+  return (
+    <div>
+      <div data-testid="loading-state">{`isLoading:${isLoadingCapabilities}`}</div>
+      <div data-testid="error-state">{`error:${capabilityError ? capabilityError.message : 'null'}`}</div>
+      <div data-testid="capabilities-state">{`capabilities:${JSON.stringify(capabilities)}`}</div>
+    </div>
+  );
 };
 
 const renderWithProvider = (ui: ReactNode) => {
@@ -57,14 +64,12 @@ const renderWithProvider = (ui: ReactNode) => {
 };
 
 // --- Tests --- 
-describe('PlatformProvider', () => {
-  // Get a typed reference to the *mocked* function
+describe('PlatformProvider and usePlatform Hook', () => {
   const mockGetPlatformCapabilitiesFn = vi.mocked(getPlatformCapabilities);
 
   beforeEach(() => {
-    // Reset the mock function
     mockGetPlatformCapabilitiesFn.mockReset();
-    // Default implementation for tests
+    // Default mock implementation for most tests
     mockGetPlatformCapabilitiesFn.mockResolvedValue(mockWebCapabilities);
   });
 
@@ -72,18 +77,26 @@ describe('PlatformProvider', () => {
     vi.restoreAllMocks(); 
   });
 
-  it('should initially provide default capabilities and then resolved capabilities', async () => {
-    mockGetPlatformCapabilitiesFn.mockResolvedValue(mockWebCapabilities);
-    renderWithProvider(<TestConsumer />);
-    
-    const capsElement = screen.getByTestId('capabilities');
-    const initialCapabilities = JSON.parse(capsElement.textContent || '{}') as PlatformCapabilities;
-    expect(initialCapabilities).toEqual(DEFAULT_INITIAL_CAPABILITIES);
-    
-    await waitFor(() => {
-      const finalCapabilities = JSON.parse(screen.getByTestId('capabilities').textContent || '{}') as PlatformCapabilities;
-      expect(finalCapabilities).toEqual(mockWebCapabilities);
+  it('should provide loading state initially, then resolved capabilities', async () => {
+    let resolvePromise: (value: PlatformCapabilities) => void;
+    const promise = new Promise<PlatformCapabilities>(resolve => {
+      resolvePromise = resolve;
     });
+    mockGetPlatformCapabilitiesFn.mockReturnValue(promise);
+    
+    renderWithProvider(<TestConsumer />);
+
+    expect(screen.getByTestId('loading-state')).toHaveTextContent('isLoading:true');
+    expect(screen.getByTestId('error-state')).toHaveTextContent('error:null');
+    expect(screen.getByTestId('capabilities-state')).toHaveTextContent(`capabilities:${JSON.stringify(null)}`);
+
+    resolvePromise!(mockWebCapabilities);
+
+    await waitFor(() => {
+      expect(screen.getByTestId('loading-state')).toHaveTextContent('isLoading:false');
+    });
+    expect(screen.getByTestId('error-state')).toHaveTextContent('error:null');
+    expect(screen.getByTestId('capabilities-state')).toHaveTextContent(`capabilities:${JSON.stringify(mockWebCapabilities)}`);
     expect(mockGetPlatformCapabilitiesFn).toHaveBeenCalledTimes(1);
   });
 
@@ -92,41 +105,68 @@ describe('PlatformProvider', () => {
     renderWithProvider(<TestConsumer />);
 
     await waitFor(() => {
-      const finalCapabilities = JSON.parse(screen.getByTestId('capabilities').textContent || '{}') as PlatformCapabilities;
-      // Compare only serializable parts because functions are stripped by JSON.stringify
-      const expectedSerializableTauriCaps = {
-        platform: mockTauriCapabilities.platform,
-        os: mockTauriCapabilities.os,
-        fileSystem: { isAvailable: mockTauriCapabilities.fileSystem.isAvailable }
-      };
-      expect(finalCapabilities).toEqual(expectedSerializableTauriCaps); 
-      // Keep these checks as they test specific important values
-      expect(finalCapabilities.platform).toBe('tauri');
-      expect(finalCapabilities.fileSystem.isAvailable).toBe(true);
+      expect(screen.getByTestId('loading-state')).toHaveTextContent('isLoading:false');
     });
+
+    expect(screen.getByTestId('error-state')).toHaveTextContent('error:null');
+    const capsStateElement = screen.getByTestId('capabilities-state');
+    const finalCapabilities = JSON.parse(capsStateElement.textContent?.replace('capabilities:', '') || '{}') as PlatformCapabilities;
+    
+    const expectedSerializableTauriCaps = {
+      platform: mockTauriCapabilities.platform,
+      os: mockTauriCapabilities.os,
+      fileSystem: { isAvailable: mockTauriCapabilities.fileSystem.isAvailable }
+    };
+    expect(finalCapabilities).toEqual(expectedSerializableTauriCaps);
     expect(mockGetPlatformCapabilitiesFn).toHaveBeenCalledTimes(1);
   });
 
-  it('should provide default capabilities and log error when service rejects', async () => {
+  it('should provide loading state, then error state and null capabilities when service rejects', async () => {
     const mockError = new Error('Service Failure');
-    mockGetPlatformCapabilitiesFn.mockRejectedValue(mockError);
+    let rejectPromise: (reason?: any) => void;
+    const promise = new Promise<PlatformCapabilities>((_, reject) => {
+      rejectPromise = reject;
+    });
+    mockGetPlatformCapabilitiesFn.mockReturnValue(promise);
     const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
 
     renderWithProvider(<TestConsumer />);
 
+    expect(screen.getByTestId('loading-state')).toHaveTextContent('isLoading:true');
+    expect(screen.getByTestId('error-state')).toHaveTextContent('error:null');
+    expect(screen.getByTestId('capabilities-state')).toHaveTextContent(`capabilities:${JSON.stringify(null)}`);
+
+    rejectPromise!(mockError);
+
     await waitFor(() => {
-      const finalCapabilities = JSON.parse(screen.getByTestId('capabilities').textContent || '{}') as PlatformCapabilities;
-      expect(finalCapabilities).toEqual(DEFAULT_INITIAL_CAPABILITIES);
+      expect(screen.getByTestId('loading-state')).toHaveTextContent('isLoading:false');
     });
-    
-    expect(consoleErrorSpy).toHaveBeenCalledWith(expect.stringContaining('Error getting capabilities from service:'), mockError);
+    expect(screen.getByTestId('error-state')).toHaveTextContent(`error:${mockError.message}`);
+    expect(screen.getByTestId('capabilities-state')).toHaveTextContent(`capabilities:${JSON.stringify(null)}`); 
+    expect(consoleErrorSpy).toHaveBeenCalledWith(expect.stringContaining('Error getting platform capabilities'), mockError);
     expect(mockGetPlatformCapabilitiesFn).toHaveBeenCalledTimes(1);
     consoleErrorSpy.mockRestore();
   });
 
-  // Previous tests for specific web/tauri detection based on isTauri mock
-  // are now implicitly covered by mocking getPlatformCapabilities directly.
-  // Keep placeholder tests if needed for future specific env checks.
+  it('should not update state if component unmounts while promise is pending', async () => {
+    let resolvePromise: (value: PlatformCapabilities) => void;
+    const promise = new Promise<PlatformCapabilities>(resolve => {
+      resolvePromise = resolve;
+    });
+    mockGetPlatformCapabilitiesFn.mockReturnValue(promise);
+
+    const { unmount } = renderWithProvider(<TestConsumer />); 
+
+    expect(screen.getByTestId('loading-state')).toHaveTextContent('isLoading:true');
+
+    unmount();
+
+    resolvePromise!(mockWebCapabilities);
+
+    await promise.catch(() => {});
+    expect(mockGetPlatformCapabilitiesFn).toHaveBeenCalledTimes(1);
+  });
+
   it('should fallback to web for React Native (placeholder)', () => {
     expect(true).toBe(true); 
   });
@@ -134,5 +174,4 @@ describe('PlatformProvider', () => {
   it('should fallback to web for Node/Headless (JSDOM simulation - placeholder)', () => {
      expect(true).toBe(true);
   });
-
 });

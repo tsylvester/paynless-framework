@@ -13,9 +13,15 @@ export const DEFAULT_INITIAL_CAPABILITIES: PlatformCapabilities = {
   fileSystem: { isAvailable: false },
 };
 
-// Context Definition (Remains the same)
-type CapabilitiesContextType = PlatformCapabilities | null; 
-const context = createContext<CapabilitiesContextType>(DEFAULT_INITIAL_CAPABILITIES);
+// *** Updated Context Type ***
+interface CapabilitiesContextValue {
+  capabilities: PlatformCapabilities | null; // Can be null initially or on error
+  isLoadingCapabilities: boolean;
+  capabilityError: Error | null;
+}
+
+// Context Definition using the new type
+const context = createContext<CapabilitiesContextValue | undefined>(undefined);
 
 // Provider Component
 interface PlatformProviderProps {
@@ -23,56 +29,67 @@ interface PlatformProviderProps {
 }
 
 export const PlatformProvider: React.FC<PlatformProviderProps> = ({ children }) => {
-  // State now holds PlatformCapabilities, initialized with default
-  const [capabilities, setCapabilities] = useState<PlatformCapabilities>(DEFAULT_INITIAL_CAPABILITIES);
+  // *** State now includes loading and error ***
+  const [capabilities, setCapabilities] = useState<PlatformCapabilities | null>(null); // Start as null
+  const [isLoadingCapabilities, setIsLoadingCapabilities] = useState<boolean>(true);
+  const [capabilityError, setCapabilityError] = useState<Error | null>(null);
 
   useEffect(() => {
     let isMounted = true;
+    setIsLoadingCapabilities(true); // Set loading true at the start of effect
+    setCapabilityError(null); // Clear previous errors
+    // Start with null capabilities until resolved
+    // setCapabilities(null); // Already initialized as null
 
-    // Reset memoization potentially on mount for fresh data in dev?
-    // resetMemoizedCapabilities(); // Optional: uncomment for debugging
-
-    // Call the centralized async function to get capabilities
     getPlatformCapabilities()
       .then(resolvedCaps => {
         if (isMounted) {
           console.log('PlatformProvider: Received capabilities from service:', resolvedCaps);
           setCapabilities(resolvedCaps);
+          setCapabilityError(null); // Clear error on success
         }
       })
       .catch(err => {
-        console.error('PlatformProvider: Error getting capabilities from service:', err);
+        console.error('PlatformProvider: Error getting platform capabilities:', err);
         if (isMounted) {
-          // Set error state and potentially keep default (unavailable) capabilities
-          setCapabilities(DEFAULT_INITIAL_CAPABILITIES); 
+          // Set error state and keep capabilities null (or set to default)
+          setCapabilityError(err instanceof Error ? err : new Error(String(err)));
+          setCapabilities(null); // Or potentially setCapabilities(DEFAULT_INITIAL_CAPABILITIES);
         }
       })
       .finally(() => {
+        // Ensure loading is set to false regardless of success/error, if mounted
+        if (isMounted) {
+          setIsLoadingCapabilities(false);
+        }
       });
 
-    // Cleanup function to prevent state updates on unmounted component
+    // Cleanup function
     return () => {
       isMounted = false;
     };
     
-  // Empty dependency array ensures this runs once on mount
   }, []); 
 
-  // Provide the current capabilities state (or potentially loading/error info)
-  // The hook now primarily accesses 'capabilities'
-  // isLoading and error could also be added to context if needed globally
+  // *** Provide the full state object ***
+  const contextValue: CapabilitiesContextValue = {
+    capabilities,
+    isLoadingCapabilities,
+    capabilityError,
+  };
+
   return (
-    <context.Provider value={capabilities}>
+    <context.Provider value={contextValue}>
       {children}
     </context.Provider>
   );
 };
 
-// Hook Definition (Remains the same, returns PlatformCapabilities)
-export const usePlatform = (): PlatformCapabilities => {
-  const capabilitiesContextValue = useContext(context);
-  if (capabilitiesContextValue === null) {
+// *** Updated Hook Definition ***
+export const usePlatform = (): CapabilitiesContextValue => {
+  const contextValue = useContext(context);
+  if (contextValue === undefined) {
     throw new Error('usePlatform must be used within a PlatformProvider');
   }
-  return capabilitiesContextValue;
+  return contextValue;
 }; 
