@@ -1,127 +1,111 @@
 # Implementation Plan: WalletBackupDemo Component
 
-**Goal:** Implement a demonstration UI component (`WalletBackupDemo`) to showcase the integration of the Platform Capability Abstraction Layer (`@paynless/platform`) for essential file system operations (reading, writing, picking files/save locations) within the context of a core application need: mnemonic phrase backup and recovery. This component will serve as a pattern for integrating platform capabilities into other features while adhering to the project's layered architecture and security principles.
+**Goal:** Implement a demonstration UI component (`WalletBackupDemoCard` and its sub-components) to showcase the integration of the Platform Capability Abstraction Layer (`@paynless/platform`) for essential file system operations (reading, writing, picking files/save locations) within the context of a core application need: mnemonic phrase backup and recovery. This component will serve as a pattern for integrating platform capabilities into other features while adhering to the project's layered architecture and security principles.
 
-**Scope:** This plan focuses *solely* on the frontend implementation of the `WalletBackupDemo` component and its interaction with the `@paynless/platform` service. It **explicitly excludes** the implementation of any cryptographic validation, seed derivation, or secure storage logic; those functionalities belong in the Rust backend (`core-crypto`, `storage-layer`) and will be accessed via Tauri bridge commands in production components.
+**Scope:** This plan focuses *solely* on the frontend implementation of the `WalletBackupDemoCard` and its sub-components (`MnemonicInputArea`, `FileActionButtons`, `StatusDisplay`) and their interaction with the `@paynless/platform` service. It **explicitly excludes** the implementation of any cryptographic validation, seed derivation, or secure storage logic; those functionalities belong in the Rust backend (`core-crypto`, `storage-layer`) and will be accessed via Tauri bridge commands in production components.
 
 ## Guiding Principles
 
 *   **Clear Demonstration:** The component should clearly illustrate the use of `usePlatform` hook and the relevant `fileSystem` capabilities (`pickFile`, `readFile`, `pickSaveFile`, `writeFile`).
 *   **Layered Architecture Adherence:** The component interacts only with the platform abstraction layer, not directly with Tauri APIs or backend crypto logic.
+*   **Component Structure:** Follow project conventions by breaking the feature into smaller, focused sub-components orchestrated by a container card.
 *   **User Experience:** Provide clear feedback to the user during operations (loading states using skeletons, success messages, informative error messages). Handle user cancellation gracefully.
 *   **Safety:** Utilize platform dialogs for user confirmation of file read/write locations. Use `ErrorBoundary` for robustness.
-*   **Maintainability:** Keep the component focused and well-structured.
+*   **Maintainability:** Keep components focused and well-structured.
 
 ## Implementation Plan
 
 **Phase 1: WalletBackupDemo Component Implementation**
 
 *   **[1.1] Component Setup & Structure:**
-    *   [ ] Create the component file: `apps/web/src/components/demos/WalletBackupDemo.tsx` (or similar appropriate location).
-    *   [ ] Create the corresponding unit test file: `apps/web/src/components/demos/WalletBackupDemo.test.tsx`.
-    *   [ ] Define basic component structure (e.g., using `React.FC`).
-    *   [ ] Add the component to a relevant storybook or development page for easy visualization.
-    *   [ ] [COMMIT] Commit initial component shell with message "feat(UI): Add initial WalletBackupDemo component structure".
+    *   [X] Create the main container component file: `apps/web/src/components/demos/WalletBackupDemo/WalletBackupDemoCard.tsx`.
+    *   [X] Create the corresponding unit test file: `apps/web/src/components/demos/WalletBackupDemo/WalletBackupDemoCard.test.tsx`.
+    *   [X] Define basic component structure for `WalletBackupDemoCard`.
+    *   [X] Update tests for TDD: Add failing tests for loading, unavailable, and available states.
+    *   [ ] Add the `WalletBackupDemoCard` component to a relevant storybook or development page for easy visualization.
+    *   [ ] [COMMIT] Commit initial card component structure and tests with message "feat(UI): Add initial WalletBackupDemoCard structure and tests".
 
-*   **[1.2] UI Element Implementation:**
-    *   [ ] Add a `TextArea` component (e.g., from `@/components/ui/textarea`) for displaying/entering the mnemonic phrase.
-    *   [ ] Add state management (e.g., `useState`) to hold the mnemonic string displayed in the text area.
-    *   [ ] Add an "Import Mnemonic from File" `Button` component.
-    *   [ ] Add an "Export Mnemonic to File" `Button` component.
-    *   [ ] Add designated areas (e.g., using `Alert` components or simple text) to display status messages (loading, success, error).
-    *   [ ] Implement basic skeleton UI elements to be shown during loading states.
-    *   [ ] [COMMIT] Commit UI elements with message "feat(UI): Implement basic UI elements for WalletBackupDemo".
+*   **[1.2] UI Element Implementation (Sub-Components):**
+    *   [X] Create the `MnemonicInputArea.tsx` sub-component file with `Textarea` and props (`value`, `onChange`, `disabled`).
+    *   [X] Create the `FileActionButtons.tsx` sub-component file with Import/Export `Button`s and props (`onImport`, `onExport`, `disabled`, `isExportDisabled`, `isLoading`).
+    *   [X] Create the `StatusDisplay.tsx` sub-component file with `Alert` for displaying status/error messages and props (`message`, `variant`).
+    *   [ ] [COMMIT] Commit sub-component implementations with message "feat(UI): Implement WalletBackupDemo sub-components (MnemonicInputArea, FileActionButtons, StatusDisplay)".
 
-*   **[1.3] Integrate Platform Capabilities:**
-    *   [ ] Import and use the `usePlatform` hook from `@paynless/platform` within the component.
-    *   [ ] Add component state to track loading status (e.g., `isLoading: boolean`, `isImporting: boolean`, `isExporting: boolean`) and error messages (`error: string | null`).
-    *   [ ] Conditionally render UI elements based on `platformCapabilities.fileSystem.isAvailable`:
-        *   [ ] Disable "Import" and "Export" buttons if `isAvailable` is false.
-        *   [ ] Show an informative message if `isAvailable` is false (e.g., "File operations require the Desktop app.").
-    *   [ ] Display skeleton UI if `isLoadingCapabilities` from `usePlatform` is true.
-    *   [ ] [COMMIT] Commit platform hook integration and conditional rendering with message "feat(UI): Integrate usePlatform hook into WalletBackupDemo".
+*   **[1.3] Integrate Platform Capabilities & Sub-Components:**
+    *   [X] In `WalletBackupDemoCard.tsx`:
+        *   [X] Import and use the `usePlatform` hook.
+        *   [X] Add state management (e.g., `useState`) for `mnemonic`, `statusMessage`, `statusVariant`, `isActionLoading`.
+        *   [X] Implement logic to determine `isFileSystemAvailable` and `isDisabled` based on hook results and action state.
+        *   [X] Implement conditional rendering for loading state (using `Skeleton` components).
+        *   [X] Implement conditional rendering for capability error state.
+        *   [X] Implement conditional rendering for unavailable state (showing message).
+        *   [X] Render the sub-components (`MnemonicInputArea`, `FileActionButtons`, `StatusDisplay`), passing the necessary state and handlers (placeholder handlers for now) as props.
+        *   [X] Wrap the main content in the `ErrorBoundary` component.
+    *   [X] Update tests for loading state in `WalletBackupDemoCard.test.tsx` to assert skeleton presence.
+    *   [X] Verify tests for loading, unavailable, and available states pass.
+    *   [ ] [COMMIT] Commit platform hook integration and sub-component rendering in WalletBackupDemoCard with message "feat(UI): Integrate usePlatform and sub-components into WalletBackupDemoCard".
 
 *   **[1.4] Implement Import Functionality:**
-    *   [ ] Create an `async` function `handleImport`.
-    *   [ ] Add an `onClick` handler to the "Import" button that calls `handleImport`.
-    *   [ ] Inside `handleImport`:
-        *   [ ] Set loading state (`isImporting = true`), clear previous errors.
-        *   [ ] Check `platformCapabilities.fileSystem.isAvailable` (type guard). Return early if false.
-        *   [ ] Call `platformCapabilities.fileSystem.pickFile({ accept: '.txt', multiple: false })`.
-        *   [ ] Handle potential errors from `pickFile` (e.g., user cancellation, platform error) and update error state.
-        *   [ ] If a file path (`string[]`) is returned and not empty/null:
-            *   [ ] Call `platformCapabilities.fileSystem.readFile(filePath[0])`.
-            *   [ ] Handle potential errors from `readFile`.
-            *   [ ] If `readFile` succeeds (returns `Uint8Array`):
-                *   [ ] Convert the `Uint8Array` to a string (e.g., using `TextDecoder`).
-                *   [ ] Update the component's mnemonic state with the string content.
-                *   [ ] Display a success message.
-            *   [ ] Catch any exceptions during the process, update error state.
-        *   [ ] Finally, set loading state (`isImporting = false`).
-    *   [ ] [COMMIT] Commit import functionality with message "feat(UI): Implement mnemonic import functionality in WalletBackupDemo".
+    *   [X] In `WalletBackupDemoCard.test.tsx`:
+        *   [X] Add tests for the import workflow:
+            *   [X] Mock `platformCapabilities.fileSystem.pickFile` to return null (user cancel).
+            *   [X] Simulate Import button click, verify no state change / appropriate status.
+            *   [X] Mock `pickFile` to return a file path.
+            *   [X] Mock `platformCapabilities.fileSystem.readFile` to throw an error.
+            *   [X] Simulate Import click, verify loading state, verify `pickFile` and `readFile` called, verify error status displayed.
+            *   [X] Mock `readFile` to return valid mnemonic data (`Uint8Array`).
+            *   [X] Simulate Import click, verify loading state, verify `pickFile` and `readFile` called, verify `mnemonic` state updated, verify success status displayed.
+            *   [X] Add test for invalid mnemonic format (e.g., < 12 words).
+            *   [X] Add test for platform hook returning `capabilityError`.
+    *   [X] In `WalletBackupDemoCard.tsx`:
+        *   [X] Implement the `async handleImport` function:
+            *   [X] Set `isActionLoading` to true, clear status message.
+            *   [X] Perform `isAvailable` check.
+            *   [X] Call `platformCapabilities.fileSystem.pickFile`. Handle null return.
+            *   [X] Call `platformCapabilities.fileSystem.readFile`. Handle errors.
+            *   [X] Convert result using `TextDecoder`, update `mnemonic` state via `setMnemonic`.
+            *   [X] Add basic validation for mnemonic format.
+            *   [X] Set success/error status message and variant via `setStatusMessage`/`setStatusVariant`.
+            *   [X] Set `isActionLoading` to false in a `finally` block.
+        *   [X] Pass `handleImport` to `FileActionButtons` component.
+        *   [X] Implement rendering logic for `capabilityError` state.
+    *   [X] Verify all import tests pass.
+    *   [ ] [COMMIT] Commit import functionality and tests with message "feat(UI): Implement mnemonic import functionality in WalletBackupDemoCard".
 
 *   **[1.5] Implement Export Functionality:**
-    *   [ ] Create an `async` function `handleExport`.
-    *   [ ] Add an `onClick` handler to the "Export" button that calls `handleExport`.
-    *   [ ] Inside `handleExport`:
-        *   [ ] Set loading state (`isExporting = true`), clear previous errors.
-        *   [ ] Get the current mnemonic string from component state. Handle case where it's empty.
-        *   [ ] Check `platformCapabilities.fileSystem.isAvailable` (type guard). Return early if false.
-        *   [ ] Call `platformCapabilities.fileSystem.pickSaveFile({ defaultPath: 'wallet-backup.txt' })`.
-        *   [ ] Handle potential errors from `pickSaveFile` (e.g., user cancellation, platform error) and update error state.
-        *   [ ] If a save path (`string`) is returned and not null:
-            *   [ ] Convert the mnemonic string to `Uint8Array` (e.g., using `TextEncoder`).
-            *   [ ] Call `platformCapabilities.fileSystem.writeFile(savePath, data)`.
-            *   [ ] Handle potential errors from `writeFile`.
-            *   [ ] If `writeFile` succeeds, display a success message.
-            *   [ ] Catch any exceptions during the process, update error state.
-        *   [ ] Finally, set loading state (`isExporting = false`).
-    *   [ ] [COMMIT] Commit export functionality with message "feat(UI): Implement mnemonic export functionality in WalletBackupDemo".
+    *   [ ] In `WalletBackupDemoCard.test.tsx`:
+        *   [ ] Add tests for the export workflow (similar structure to import tests, mocking `pickSaveFile` and `writeFile`).
+    *   [ ] In `WalletBackupDemoCard.tsx`:
+        *   [ ] Implement the `async handleExport` function:
+            *   [ ] Set `isActionLoading` to true, clear status message.
+            *   [ ] Get current `mnemonic` from state. Handle empty case.
+            *   [ ] Perform `isAvailable` check.
+            *   [ ] Call `platformCapabilities.fileSystem.pickSaveFile`. Handle null return.
+            *   [ ] Convert mnemonic string to `Uint8Array` using `TextEncoder`.
+            *   [ ] Call `platformCapabilities.fileSystem.writeFile`. Handle errors.
+            *   [ ] Set success/error status message and variant.
+            *   [ ] Set `isActionLoading` to false in `finally` block.
+        *   [ ] Pass `handleExport` to `FileActionButtons` component.
+    *   [ ] Verify all export tests pass.
+    *   [ ] [COMMIT] Commit export functionality and tests with message "feat(UI): Implement mnemonic export functionality in WalletBackupDemoCard".
 
-*   **[1.6] Implement State Handling & Feedback:**
-    *   [ ] Ensure loading states correctly display skeleton UI or loading indicators within buttons.
-    *   [ ] Ensure error messages are clearly displayed when errors occur during import/export or if capabilities are unavailable.
-    *   [ ] Ensure success messages are displayed appropriately.
-    *   [ ] Clear error/success messages when a new operation starts.
-    *   [ ] Wrap the core component logic/return statement in the existing `ErrorBoundary` component (`apps/web/src/components/common/ErrorBoundary.tsx`) to catch unexpected runtime errors.
-    *   [ ] [COMMIT] Commit refined state handling and feedback with message "refactor(UI): Improve state handling and feedback in WalletBackupDemo".
+*   **[1.6] Refine State Handling & Feedback (Covered by 1.4 & 1.5):**
+    *   *Note: State handling (loading, error, success) is implemented directly within the import/export steps.*
+    *   *Note: ErrorBoundary wrapping was done in Step 1.3.*
 
-*   **[1.7] Unit Testing:**
-    *   [ ] In `WalletBackupDemo.test.tsx`.
-    *   [ ] Mock the `usePlatform` hook.
-    *   [ ] Write tests covering various scenarios:
-        *   [ ] Rendering correctly when capabilities are loading (`isLoadingCapabilities: true`).
-        *   [ ] Rendering correctly when capabilities are unavailable (`fileSystem: { isAvailable: false }`). Buttons disabled, message shown.
-        *   [ ] Rendering correctly when capabilities are available (`fileSystem: { isAvailable: true, ...mocks }`). Buttons enabled.
-        *   [ ] Simulating "Import" click:
-            *   Verify `pickFile` is called.
-            *   Test handling of `pickFile` returning null (cancellation).
-            *   Test handling of `pickFile` returning a path, verify `readFile` is called.
-            *   Test handling of `readFile` error.
-            *   Test successful import: verify mnemonic state is updated, success message shown.
-            *   Verify loading/skeleton states during import.
-        *   [ ] Simulating "Export" click:
-            *   Verify `pickSaveFile` is called.
-            *   Test handling of `pickSaveFile` returning null (cancellation).
-            *   Test handling of `pickSaveFile` returning a path, verify `writeFile` is called with correct data.
-            *   Test handling of `writeFile` error.
-            *   Test successful export: verify success message shown.
-            *   Verify loading/skeleton states during export.
-        *   [ ] Test error message display for different failure points.
-        *   [ ] Test interaction with the `ErrorBoundary` wrapper (if possible to simulate).
-    *   [ ] Ensure all tests pass.
-    *   [ ] [COMMIT] Commit unit tests with message "test(UI): Add unit tests for WalletBackupDemo".
+*   **[1.7] Unit Testing (Covered by 1.4 & 1.5):**
+    *   *Note: Unit tests are added incrementally alongside the functionality in steps 1.4 and 1.5.*
 
 *   **[1.8] Manual Verification:**
     *   [ ] Run the application in a web browser. Verify the component displays the "unavailable" state correctly.
     *   [ ] Run the application in Tauri (`pnpm --filter desktop tauri dev`).
     *   [ ] Verify the component displays the "available" state correctly (buttons enabled).
-    *   [ ] Test the Import flow: Select a text file, verify content appears in the text area. Test cancellation.
-    *   [ ] Test the Export flow: Enter text, click export, save the file. Verify the file contains the entered text. Test cancellation.
-    *   [ ] Test error conditions (e.g., try importing a binary file if possible, attempt to save to a restricted location if possible - though platform dialogs might prevent this).
+    *   [ ] Test the Import flow: Select a text file, verify content appears in the text area. Test cancellation. Verify loading/success/error states.
+    *   [ ] Test the Export flow: Enter text, click export, save the file. Verify the file contains the entered text. Test cancellation. Verify loading/success/error states.
     *   [ ] Document verification results.
+    *   [ ] [COMMIT] Commit manual verification results/fixes with message "test(UI): Manual verification of WalletBackupDemoCard functionality".
 
-This completes the implementation of the `WalletBackupDemo` component placeholder. 
+This completes the implementation of the `WalletBackupDemo` component placeholder using a structured approach.
 
 ---
 
