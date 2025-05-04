@@ -272,6 +272,13 @@ The project is organized as a monorepo using pnpm workspaces:
 │   │       │   │   ├── OrganizationSettingsCard.tsx
 │   │       │   │   ├── OrganizationSwitcher.tsx
 │   │       │   │   └── PendingActionsCard.tsx
+│   │       │   ├── demos/ # << NEW - Demonstration components
+│   │       │   │   └── WalletBackupDemo/ # << NEW - Demo for platform FS capabilities
+│   │       │   │       ├── FileActionButtons.tsx
+│   │       │   │       ├── GenerateMnemonicButton.tsx
+│   │       │   │       ├── MnemonicInputArea.tsx
+│   │       │   │       ├── StatusDisplay.tsx
+│   │       │   │       └── WalletBackupDemoCard.tsx
 │   │       │   ├── ui/           # Re-exported shadcn/ui components
 │   │       │   └── Notifications.tsx # << CORRECTED: Top-level component for notifications
 │   │       │   └── NotificationCard.tsx # << NEW: Component for individual notification display
@@ -344,9 +351,10 @@ The project is organized as a monorepo using pnpm workspaces:
 │   │       └── index.ts            # Main export for types
 │   ├── platform/ # Service for abstracting platform-specific APIs (FS, etc.)
 │   │   └── src/
-│   │       ├── index.ts          # Main service export & detection
-│   │       ├── webPlatformCapabilities.ts # Web provider (stub)
-│   │       └── tauriPlatformCapabilities.ts # Tauri provider (stub)
+│   │       ├── index.ts          # Main service export & detection logic
+│   │       ├── context.tsx       # PlatformProvider context and usePlatform hook
+│   │       ├── web.ts            # Web platform provider (implements capabilities for standard browser)
+│   │       └── tauri.ts          # Tauri platform provider (uses Tauri plugins for native features like FS/Dialog)
 │   └── utils/              # Shared utility functions
 │       └── src/
 │           └── logger.ts         # Logging utility (singleton)
@@ -661,6 +669,8 @@ Provides a service to abstract platform-specific functionalities (like filesyste
 
 - **`getPlatformCapabilities(): PlatformCapabilities`**: Detects the current platform (web, tauri, etc.) and returns an object describing available capabilities. Result is memoized.
   - Consumers check `capabilities.fileSystem.isAvailable` before attempting to use filesystem methods.
+- **`PlatformProvider` Component & `usePlatform` Hook (from `context.tsx`)**: Wraps the application (or parts of it) to provide capability state (`capabilities`, `isLoadingCapabilities`, `capabilityError`) via the hook.
+  - Consumers use the hook to access state and check `capabilities.fileSystem.isAvailable` before attempting filesystem methods.
 - **Providers (Internal):**
   - `webPlatformCapabilities.ts`: Implements capabilities available in a standard web browser (currently FS is `isAvailable: false`).
   - `tauriPlatformCapabilities.ts`: Implements capabilities available in the Tauri desktop environment (currently FS is `isAvailable: false`, planned to call Rust backend).
