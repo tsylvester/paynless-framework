@@ -2,7 +2,12 @@ import React, { createContext, useContext, useState, useEffect, ReactNode, useMe
 // Remove unused Tauri API import if not needed directly here anymore
 // import { isTauri } from '@tauri-apps/api/core'; 
 import type { PlatformCapabilities } from '@paynless/types';
-import { listen } from '@tauri-apps/api/event'; // Import listen
+// Import listen
+// Removed: import { listen } from '@tauri-apps/api/event'; 
+// Import Event type from @tauri-apps/api/event
+import { Event as TauriEvent } from '@tauri-apps/api/event'; 
+// Import window-specific types
+import { getCurrentWindow, DragDropEvent } from '@tauri-apps/api/window'; 
 import { platformEventEmitter } from './events'; // Import emitter
 
 // *** Import the centralized service function ***
@@ -69,23 +74,46 @@ export const PlatformProvider: React.FC<PlatformProviderProps> = ({ children }) 
     
   }, []); 
 
-  // Effect to set up Tauri event listeners
+  // *** ADDED new listener using onDragDropEvent ***
   useEffect(() => {
-    let unlisten: (() => void) | undefined;
+    let unlistenDragDrop: (() => void) | undefined;
 
     if (capabilities?.platform === 'tauri') {
-      console.log('[PlatformProvider] Setting up Tauri event listeners...');
+      console.log('[PlatformProvider] Setting up Tauri onDragDropEvent listener...');
       const setupListener = async () => {
         try {
-          unlisten = await listen<string[]>('tauri://file-drop', (event) => {
-            console.log('[PlatformProvider] File drop event received:', event.payload);
-            if (event.payload && event.payload.length > 0) {
-              platformEventEmitter.emit('file-drop', event.payload);
+          // Use getCurrentWindow() to get the window instance
+          const currentWindow = getCurrentWindow(); 
+          // The event itself is the payload, no nested .payload
+          unlistenDragDrop = await currentWindow.onDragDropEvent((event: TauriEvent<DragDropEvent>) => {
+            console.log('[PlatformProvider] onDragDropEvent received:', event.payload.type, event.payload);
+            // Map Tauri event types to our event emitter events
+            switch (event.payload.type) {
+              case 'enter': // File dragged into the window area
+              case 'over': // File dragged over the window area
+                // Indicate hover state to UI
+                platformEventEmitter.emit('file-drag-hover');
+                break;
+              case 'drop':
+                // Pass file paths to UI
+                if (event.payload.paths && event.payload.paths.length > 0) {
+                  platformEventEmitter.emit('file-drop', event.payload.paths);
+                }
+                // Also signal end of hover after drop
+                platformEventEmitter.emit('file-drag-cancel'); 
+                break;
+              case 'leave': // File dragged out of the window area
+                // Indicate end of hover state
+                platformEventEmitter.emit('file-drag-cancel');
+                break;
+              default:
+                // Should not happen with current types, but good practice
+                break;
             }
           });
-          console.log('[PlatformProvider] File drop listener attached.');
+          console.log('[PlatformProvider] onDragDropEvent listener attached.');
         } catch (error) {
-          console.error('[PlatformProvider] Failed to attach file-drop listener:', error);
+          console.error('[PlatformProvider] Failed to attach onDragDropEvent listener:', error);
         }
       };
       setupListener();
@@ -93,9 +121,9 @@ export const PlatformProvider: React.FC<PlatformProviderProps> = ({ children }) 
 
     // Cleanup function
     return () => {
-      if (unlisten) {
-        console.log('[PlatformProvider] Cleaning up Tauri file drop listener.');
-        unlisten();
+      if (unlistenDragDrop) {
+        console.log('[PlatformProvider] Cleaning up Tauri onDragDropEvent listener.');
+        unlistenDragDrop(); // Corrected variable name
       }
     };
   }, [capabilities?.platform]); // Re-run if platform detection changes

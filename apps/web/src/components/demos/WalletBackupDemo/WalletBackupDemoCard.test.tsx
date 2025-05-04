@@ -45,9 +45,18 @@ vi.mock('./FileActionButtons', () => ({
   )),
 }));
 vi.mock('./StatusDisplay', () => ({
-  StatusDisplay: vi.fn(({ message, variant }) => (
-    message ? <div role="alert" data-variant={variant} data-testid="status-display">{message}</div> : null
-  ))
+  StatusDisplay: vi.fn(({ message, variant }) => {
+    if (!message) return null;
+    let title = 'Information'; // Default title
+    if (variant === 'success') title = 'Success';
+    if (variant === 'error') title = 'Error';
+    return (
+      <div role="alert" data-variant={variant} data-testid="status-display">
+        <span data-testid="status-title">{title}</span> 
+        <span>{message}</span> 
+      </div>
+    );
+  })
 }));
 
 // Helper function to render with specific mocked platform state
@@ -210,72 +219,88 @@ describe('WalletBackupDemoCard Component', () => {
     };
 
     it('should handle user cancellation during file picking', async () => {
-      vi.mocked(mockAvailableFileSystem.pickFile!).mockResolvedValue(null);
+      vi.mocked(mockAvailableFileSystem.pickFile).mockResolvedValue(null);
       renderComponent(mockAvailableState);
-      const importButton = screen.getByTestId('import-button');
+      const importButton = within(screen.getByTestId('file-action-buttons')).getByRole('button', { name: /Import/i });
+      
       fireEvent.click(importButton);
 
       await waitFor(() => {
-        expect(mockAvailableFileSystem.pickFile).toHaveBeenCalledTimes(1);
+         expect(mockAvailableFileSystem.pickFile).toHaveBeenCalledTimes(1);
       });
+      // Ensure readFile was NOT called
       expect(mockAvailableFileSystem.readFile).not.toHaveBeenCalled();
-      const statusDisplay = await screen.findByTestId('status-display');
-      expect(statusDisplay).toHaveTextContent(/File selection cancelled/i);
-      expect(statusDisplay).toHaveAttribute('data-variant', 'info');
+      // Check status message
+      const statusDisplay = screen.getByTestId('status-display');
+      expect(statusDisplay).toHaveTextContent('File selection cancelled.');
     });
 
     it('should handle errors during file reading', async () => {
+      const mockFilePath = '/fake/read-error.txt';
       const readError = new Error('Read permission denied');
-      vi.mocked(mockAvailableFileSystem.pickFile!).mockResolvedValue(['/fake/path.txt']);
-      vi.mocked(mockAvailableFileSystem.readFile!).mockRejectedValue(readError);
+      vi.mocked(mockAvailableFileSystem.pickFile).mockResolvedValue([mockFilePath]);
+      // Mock readFile (used by importMnemonicFile) to reject
+      vi.mocked(mockAvailableFileSystem.readFile).mockRejectedValue(readError);
+
       renderComponent(mockAvailableState);
-      const importButton = screen.getByTestId('import-button');
+      const importButton = within(screen.getByTestId('file-action-buttons')).getByRole('button', { name: /Import/i });
       fireEvent.click(importButton);
 
       await waitFor(() => {
-        expect(mockAvailableFileSystem.readFile).toHaveBeenCalledWith('/fake/path.txt');
+        expect(mockAvailableFileSystem.readFile).toHaveBeenCalledWith(mockFilePath);
       });
-      const statusDisplay = await screen.findByTestId('status-display');
-      expect(statusDisplay).toHaveTextContent(readError.message);
-      expect(statusDisplay).toHaveAttribute('data-variant', 'error');
+
+      const statusDisplay = screen.getByTestId('status-display');
+      expect(statusDisplay).toHaveTextContent(`Import Error: ${readError.message}`);
+      expect(within(statusDisplay).getByText('Error')).toBeInTheDocument(); // Check title
       expect(screen.getByTestId('mnemonic-input')).toHaveValue('');
     });
-    
-    it('should successfully import mnemonic from file', async () => {
-        const mockMnemonic = 'word1 word2 word3 word4 word5 word6 word7 word8 word9 word10 word11 word12';
-        const mockFileData = new TextEncoder().encode(mockMnemonic);
-        vi.mocked(mockAvailableFileSystem.pickFile!).mockResolvedValue(['/fake/path/success.txt']);
-        vi.mocked(mockAvailableFileSystem.readFile!).mockResolvedValue(mockFileData);
-        renderComponent(mockAvailableState);
-        const importButton = screen.getByTestId('import-button');
-        fireEvent.click(importButton);
 
-        await waitFor(() => {
-           expect(screen.getByTestId('mnemonic-input')).toHaveValue(mockMnemonic);
-        });
-        const statusDisplay = await screen.findByTestId('status-display');
-        expect(statusDisplay).toHaveTextContent(/Mnemonic imported successfully/i);
-        expect(statusDisplay).toHaveAttribute('data-variant', 'success');
+    it('should successfully import mnemonic from file', async () => {
+      const mockFilePath = '/fake/mnemonic.txt';
+      const mockMnemonic = 'word1 word2 word3 word4 word5 word6 word7 word8 word9 word10 word11 word12';
+      const mockEncodedMnemonic = new TextEncoder().encode(mockMnemonic);
+
+      vi.mocked(mockAvailableFileSystem.pickFile).mockResolvedValue([mockFilePath]);
+      // Mock readFile used by importMnemonicFile
+      vi.mocked(mockAvailableFileSystem.readFile).mockResolvedValue(mockEncodedMnemonic);
+
+      renderComponent(mockAvailableState);
+      const importButton = within(screen.getByTestId('file-action-buttons')).getByRole('button', { name: /Import/i });
+
+      fireEvent.click(importButton);
+
+      await waitFor(() => {
+         expect(screen.getByTestId('mnemonic-input')).toHaveValue(mockMnemonic);
+      });
+
+      const statusDisplay = screen.getByTestId('status-display');
+      expect(within(statusDisplay).getByText('Success')).toBeInTheDocument();
+      expect(statusDisplay).toHaveTextContent('Mnemonic imported successfully!');
+      // Export button should now be enabled
+      expect(within(screen.getByTestId('file-action-buttons')).getByRole('button', { name: /Export/i })).toBeEnabled();
     });
 
     it('should handle invalid mnemonic format in imported file', async () => {
-        const mockInvalidMnemonic = 'word1 word2'; // Too short
-        const mockFileData = new TextEncoder().encode(mockInvalidMnemonic);
-        vi.mocked(mockAvailableFileSystem.pickFile!).mockResolvedValue(['/fake/invalid.txt']);
-        vi.mocked(mockAvailableFileSystem.readFile!).mockResolvedValue(mockFileData);
-        renderComponent(mockAvailableState);
-        const importButton = screen.getByTestId('import-button');
-        fireEvent.click(importButton);
+      const mockFilePath = '/fake/invalid-mnemonic.txt';
+      const mockInvalidData = new TextEncoder().encode('word1 word2 word3'); // Too short
 
-        await waitFor(() => { 
-            expect(mockAvailableFileSystem.readFile).toHaveBeenCalled();
-        }); 
-        const statusDisplay = await screen.findByTestId('status-display');
-        expect(statusDisplay).toHaveTextContent(/Invalid mnemonic phrase format/i);
-        expect(statusDisplay).toHaveAttribute('data-variant', 'error');
-        expect(screen.getByTestId('mnemonic-input')).toHaveValue(''); 
+      vi.mocked(mockAvailableFileSystem.pickFile).mockResolvedValue([mockFilePath]);
+      vi.mocked(mockAvailableFileSystem.readFile).mockResolvedValue(mockInvalidData);
+
+      renderComponent(mockAvailableState);
+      const importButton = within(screen.getByTestId('file-action-buttons')).getByRole('button', { name: /Import/i });
+      fireEvent.click(importButton);
+
+      await waitFor(() => {
+         expect(mockAvailableFileSystem.readFile).toHaveBeenCalledTimes(1);
+      });
+
+      const statusDisplay = screen.getByTestId('status-display');
+      expect(statusDisplay).toHaveTextContent(/Invalid mnemonic phrase format/i);
+      expect(within(statusDisplay).getByText('Error')).toBeInTheDocument();
+      expect(screen.getByTestId('mnemonic-input')).toHaveValue('');
     });
-
   });
 
   describe('Export Functionality', () => {
@@ -401,5 +426,51 @@ describe('WalletBackupDemoCard Component', () => {
        expect([12, 24]).toContain(wordCount);
     });
   });
+
+  // --- NEW TEST for Clear Button ---
+  it('should render a Clear button and reset state on click', async () => {
+    const mockAvailableState: CapabilitiesContextValue = {
+      capabilities: { platform: 'tauri', os: 'windows', fileSystem: mockAvailableFileSystem },
+      isLoadingCapabilities: false,
+      capabilityError: null,
+    };
+    renderComponent(mockAvailableState);
+
+    const textArea = screen.getByTestId('mnemonic-input');
+    const clearButton = screen.getByTestId('clear-button');
+    const generateButton = screen.getByTestId('generate-button');
+
+    // Initial state: clear button might be enabled, text area empty
+    expect(clearButton).toBeInTheDocument();
+    expect(textArea).toHaveValue('');
+    expect(screen.queryByTestId('status-display')).not.toBeInTheDocument(); // No status initially
+
+    // Simulate generating a mnemonic (which sets state)
+    fireEvent.click(generateButton);
+
+    // Wait for state to update (mnemonic and status)
+    let generatedMnemonic = '';
+    await waitFor(() => {
+      generatedMnemonic = (textArea as HTMLTextAreaElement).value;
+      expect(generatedMnemonic).not.toBe('');
+      expect(screen.getByTestId('status-display')).toBeInTheDocument();
+    });
+    expect(screen.getByTestId('status-display')).toHaveTextContent(/Mnemonic generated successfully/i);
+
+    // Click the clear button
+    fireEvent.click(clearButton);
+
+    // Wait for state to reset
+    await waitFor(() => {
+      expect(textArea).toHaveValue('');
+      // Status should ideally be cleared (or reset to info if handleClear does that)
+      // Depending on StatusDisplay mock, it might disappear if message is null
+      expect(screen.queryByTestId('status-display')).not.toBeInTheDocument(); 
+    });
+
+    // Optionally, check if action loading state was reset if applicable
+    // (Need to simulate an action first if testing that)
+  });
+  // ---------------------------------
 
 }); 

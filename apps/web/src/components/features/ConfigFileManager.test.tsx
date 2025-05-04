@@ -4,7 +4,6 @@ import ConfigFileManager from './ConfigFileManager';
 import { usePlatform } from '@paynless/platform';
 import type { FileSystemCapabilities, CapabilityUnavailable, CapabilitiesContextValue } from '@paynless/types';
 import { within } from '@testing-library/react'; // Import within
-
 // Mock the usePlatform hook
 vi.mock('@paynless/platform');
 
@@ -36,6 +35,23 @@ const mockAvailableState: CapabilitiesContextValue = {
     isLoadingCapabilities: false,
     capabilityError: null,
 };
+
+// Mock StatusDisplay (using the correct relative path)
+vi.mock('../demos/WalletBackupDemo/StatusDisplay', () => ({
+  StatusDisplay: vi.fn(({ message, variant }) => {
+    if (!message) return null; // Return null if message is null/empty
+    let title = 'Information'; // Default title
+    if (variant === 'success') title = 'Success';
+    if (variant === 'error') title = 'Error';
+    // Render minimal structure for testing purposes
+    return (
+      <div role="alert" data-variant={variant} data-testid="status-display">
+        <span>{title}</span>
+        <span>{message}</span>
+      </div>
+    );
+  }),
+}));
 
 describe('ConfigFileManager Component', () => {
   beforeEach(() => {
@@ -397,5 +413,59 @@ describe('ConfigFileManager Component', () => {
     });
   });
   // -------------------------------------------
+
+  // --- NEW TEST for Clear Button ---
+  it('should render Clear button and reset state on click', async () => {
+    const mockAvailableState: CapabilitiesContextValue = {
+      capabilities: { platform: 'tauri', os: 'windows', fileSystem: mockAvailableFileSystem },
+      isLoadingCapabilities: false,
+      capabilityError: null,
+    };
+    renderComponent(mockAvailableState);
+
+    const clearButton = screen.getByTestId('clear-button');
+    const loadButton = screen.getByRole('button', { name: /Load Config/i });
+    const dirButton = screen.getByRole('button', { name: /Select Directory/i });
+    const textArea = screen.getByTestId('config-input-area');
+
+    // Check initial state
+    expect(clearButton).toBeInTheDocument();
+    expect(textArea).toHaveValue('');
+    expect(screen.queryByTestId('file-content-display')).not.toBeInTheDocument();
+
+    // --- Simulate setting state --- 
+    // 1. Load some content
+    const mockFilePath = '/fake/config-to-load.json';
+    const mockDecodedContent = '{"config": "value"}';
+    const mockEncodedContent = new TextEncoder().encode(mockDecodedContent);
+    vi.mocked(mockAvailableFileSystem.pickFile).mockResolvedValueOnce([mockFilePath]);
+    vi.mocked(mockAvailableFileSystem.readFile).mockResolvedValueOnce(mockEncodedContent);
+    fireEvent.click(loadButton);
+    await waitFor(() => {
+      expect(screen.getByTestId('file-content-display')).toBeInTheDocument();
+      expect(textArea).toHaveValue(mockDecodedContent);
+    });
+
+    // 2. Select a directory
+    const mockDirPath = ['/fake/selected-dir'];
+    vi.mocked(mockAvailableFileSystem.pickDirectory).mockResolvedValueOnce(mockDirPath);
+    fireEvent.click(dirButton);
+    await waitFor(() => {
+      expect(screen.getByTestId('status-display')).toHaveTextContent(`Selected directory: ${mockDirPath[0]}`);
+    });
+
+    // --- Click Clear Button --- 
+    fireEvent.click(clearButton);
+
+    // --- Assert state is reset (ONLY inside waitFor) ---
+    await waitFor(() => {
+      // Check everything that should be cleared
+      expect(textArea).toHaveValue('');
+      expect(screen.queryByTestId('file-content-display')).not.toBeInTheDocument();
+      // Assert the status display element is completely gone
+      expect(screen.queryByTestId('status-display')).not.toBeInTheDocument();
+    });
+  });
+  // ---------------------------------
 
 }); 

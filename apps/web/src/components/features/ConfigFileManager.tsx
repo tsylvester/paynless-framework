@@ -3,7 +3,7 @@ import { usePlatform } from '@paynless/platform';
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from '@/components/ui/button';
 import { Skeleton } from "@/components/ui/skeleton";
-import { Info, AlertCircle, Upload, Download, FolderOpen } from 'lucide-react';
+import { Info, AlertCircle, Upload, Download, FolderOpen, Trash2 } from 'lucide-react';
 import ErrorBoundary from '@/components/common/ErrorBoundary';
 import { StatusDisplay } from '../demos/WalletBackupDemo/StatusDisplay';
 import { FileDataDisplay } from '../common/FileDataDisplay';
@@ -54,6 +54,18 @@ export const ConfigFileManager: React.FC<ConfigFileManagerProps> = ({ configName
   const STATUS_DIR_SELECT_CANCELLED = 'Directory selection cancelled.';
   const STATUS_DIR_SELECT_ERROR = (msg: string) => `Directory Select Error: ${msg}`;
   const STATUS_DROP_LOAD_ERROR = (msg: string) => `Drop Load Error: ${msg}`;
+
+  // --- NEW Clear Handler ---
+  const handleClear = () => {
+    console.log('[ConfigFileManager] Clearing state...');
+    setStatusMessage(null); // Clear status message
+    setStatusVariant('info');
+    setIsActionLoading(false);
+    setLoadedConfigContent(null); // Clear loaded content display
+    setConfigInputContent(''); // Clear text input area
+    setSelectedDirectoryPath(null); // Clear selected directory
+  };
+  // -----------------------
 
   // --- Refactored File Loading Logic ---
   const loadFile = async (filePath: string) => {
@@ -268,6 +280,16 @@ export const ConfigFileManager: React.FC<ConfigFileManagerProps> = ({ configName
           </Button>
           <Button onClick={handleSelectDirectory} disabled={isDisabled}>
             <FolderOpen className="mr-2 h-4 w-4" /> Select Directory
+          </Button>
+          {/* Add Clear button */}
+          <Button 
+            variant="outline" 
+            onClick={handleClear}
+            disabled={isLoadingCapabilities || !!capabilityError} // Disable only if capabilities loading/error
+            className="ml-auto" // Position to the right
+            data-testid="clear-button" // Add test ID
+          >
+            <Trash2 className="mr-2 h-4 w-4" /> Clear
           </Button>
         </div>
         {/* Status should appear within the main content block */}

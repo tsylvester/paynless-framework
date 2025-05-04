@@ -520,6 +520,18 @@ This implementation plan follows a phased approach:
     *   [ ] Update `WalletBackupDemoCard.test.tsx` to simulate drop events and verify mnemonic import.
 *   [ ] **Commit:** Commit changes with message "feat(UI): Add drag-and-drop file import functionality".
 
+### STEP-5.8: Add "Clear Selection" Buttons [UI][TEST-UNIT] [ ] (NEW)
+*   **Goal:** Allow users to easily reset the state of the demo/utility components.
+*   [ ] **`WalletBackupDemoCard`:**
+    *   [ ] Add a "Clear" button to the UI.
+    *   [ ] Implement `handleClear` function to reset mnemonic, status, and loading state.
+    *   [ ] Update unit tests to verify button existence and state reset on click.
+*   [ ] **`ConfigFileManager`:**
+    *   [ ] Add a "Clear" button to the UI.
+    *   [ ] Implement `handleClear` function to reset loaded content, input content, selected directory, status, and loading state.
+    *   [ ] Update unit tests to verify button existence and state reset on click.
+*   [ ] **Commit:** Commit changes with message "feat(UI): Add clear selection button to dev tools".
+
 ---
 
 ## Phase 6: Testing & Refinement [🚧]

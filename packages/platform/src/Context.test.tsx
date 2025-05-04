@@ -22,6 +22,43 @@ vi.mock('./index', async (importOriginal) => {
 // *** Import the mocked function AFTER vi.mock ***
 import { getPlatformCapabilities } from './index';
 
+// *** Mock window and event emitter ***
+const mockOnDragDropEvent = vi.fn();
+const mockUnlisten = vi.fn();
+// Variable to capture the actual listener callback passed by the component
+let capturedListenerCallback: Function | null = null; 
+vi.mock('@tauri-apps/api/window', () => ({
+  getCurrentWindow: vi.fn(() => ({
+    // Use mockImplementation to capture the callback AND call the outer spy
+    onDragDropEvent: vi.fn( (callback) => {
+      // Call the outer spy so assertions against it work
+      mockOnDragDropEvent(callback); 
+      capturedListenerCallback = callback; // Capture the callback
+      return Promise.resolve(mockUnlisten); // Still return the unlisten function
+    }),
+    // ... add other window methods if needed by other tests ...
+  })),
+  // Export DragDropEvent type if needed (usually just interfaces/types, might not be needed for mock)
+}));
+
+// Define spy *before* mocking the module that uses it
+// const mockEmit = vi.fn(); 
+
+// REMOVED: vi.mock('@paynless/platform/events', ...) factory
+
+// Import the ACTUAL emitter first
+import { platformEventEmitter } from './events';
+
+// Import the mocked window function
+import { getCurrentWindow } from '@tauri-apps/api/window';
+
+// Import jest-dom matchers
+import '@testing-library/jest-dom/vitest';
+
+// Define the spy *after* importing the actual emitter
+// Initialize with spyOn immediately
+const mockEmit = vi.spyOn(platformEventEmitter, 'emit').mockImplementation(() => {}); 
+
 // --- Test Data (Mock capabilities remain the same) ---
 
 const mockWebCapabilities: PlatformCapabilities = {
@@ -174,4 +211,117 @@ describe('PlatformProvider and usePlatform Hook', () => {
   it('should fallback to web for Node/Headless (JSDOM simulation - placeholder)', () => {
      expect(true).toBe(true);
   });
+
+  // --- NEW Test Suite for Drag and Drop Listener ---
+  describe('Tauri Drag and Drop Event Handling', () => {
+    beforeEach(() => {
+      // Ensure capabilities resolve to Tauri for these tests
+      mockGetPlatformCapabilitiesFn.mockResolvedValue(mockTauriCapabilities);
+      // Clear mocks related to this specific feature before each test
+      mockOnDragDropEvent.mockClear(); // Clear the capture mock itself if needed
+      mockUnlisten.mockClear();
+      capturedListenerCallback = null; // Reset captured callback
+      // Clear the emit spy directly
+      mockEmit.mockClear();
+    });
+
+    it('should attach onDragDropEvent listener when platform is Tauri and clean up on unmount', async () => {
+      const { unmount } = renderWithProvider(<TestConsumer />);
+
+      // Wait for capabilities to load
+      await waitFor(() => {
+        expect(screen.getByTestId('loading-state')).toHaveTextContent('isLoading:false');
+      });
+
+      // Check if listener was attached
+      expect(getCurrentWindow).toHaveBeenCalledTimes(1); 
+      expect(mockOnDragDropEvent).toHaveBeenCalledTimes(1);
+      expect(mockUnlisten).not.toHaveBeenCalled(); // Not cleaned up yet
+
+      // Unmount
+      unmount();
+
+      // Check if cleanup function was called
+      expect(mockUnlisten).toHaveBeenCalledTimes(1);
+    });
+
+    it('should emit file-drag-hover on "enter" and "over" events', async () => {
+      renderWithProvider(<TestConsumer />);
+      await waitFor(() => expect(mockOnDragDropEvent).toHaveBeenCalled());
+
+      // Use the captured listener callback
+      const listenerCallback = capturedListenerCallback; 
+      if (!listenerCallback) throw new Error('Listener callback was not captured');
+
+      const mockEnterEvent = { type: 'enter', paths: [], position: { x: 0, y: 0 } };
+      const mockOverEvent = { type: 'over', paths: [], position: { x: 0, y: 0 } };
+
+      // Simulate enter
+      listenerCallback({ payload: mockEnterEvent }); // Wrap in { payload: ... }
+      // Assert on the predefined mock spy
+      expect(mockEmit).toHaveBeenCalledWith('file-drag-hover');
+
+      // Simulate over
+      listenerCallback({ payload: mockOverEvent }); // Wrap in { payload: ... }
+      // Check total calls and specifically the second call
+      expect(mockEmit).toHaveBeenCalledTimes(2);
+      expect(mockEmit).toHaveBeenNthCalledWith(2, 'file-drag-hover');
+    });
+
+    it('should emit file-drag-cancel on "leave" event', async () => {
+      renderWithProvider(<TestConsumer />);
+      await waitFor(() => expect(mockOnDragDropEvent).toHaveBeenCalled());
+
+      // Use the captured listener callback
+      const listenerCallback = capturedListenerCallback; 
+      if (!listenerCallback) throw new Error('Listener callback was not captured');
+
+      const mockLeaveEvent = { type: 'leave', position: { x: 0, y: 0 } }; // Leave doesn't have paths
+
+      // Simulate leave
+      listenerCallback({ payload: mockLeaveEvent }); // Wrap in { payload: ... }
+      // Assert on the predefined mock spy
+      expect(mockEmit).toHaveBeenNthCalledWith(3, 'file-drag-cancel');
+    });
+
+    it('should emit file-drop and file-drag-cancel on "drop" event with paths', async () => {
+      renderWithProvider(<TestConsumer />);
+      await waitFor(() => expect(mockOnDragDropEvent).toHaveBeenCalled());
+
+      // Use the captured listener callback
+      const listenerCallback = capturedListenerCallback;
+      if (!listenerCallback) throw new Error('Listener callback was not captured');
+
+      const mockPaths = ['/path/to/file1.txt', '/path/to/file2.png'];
+      const mockDropEvent = { type: 'drop', paths: mockPaths, position: { x: 0, y: 0 } };
+
+      // Simulate drop
+      listenerCallback({ payload: mockDropEvent }); // Wrap in { payload: ... }
+
+      // Assert on the predefined mock spy
+      expect(mockEmit).toHaveBeenNthCalledWith(4, 'file-drop', mockPaths);
+      expect(mockEmit).toHaveBeenNthCalledWith(5, 'file-drag-cancel');
+      // Check total calls
+      expect(mockEmit).toHaveBeenCalledTimes(5);
+    });
+
+    it('should emit only file-drag-cancel on "drop" event without paths', async () => {
+      renderWithProvider(<TestConsumer />);
+      await waitFor(() => expect(mockOnDragDropEvent).toHaveBeenCalled());
+
+      // Use the captured listener callback
+      const listenerCallback = capturedListenerCallback;
+      if (!listenerCallback) throw new Error('Listener callback was not captured');
+
+      const mockDropEventNoPaths = { type: 'drop', paths: [], position: { x: 0, y: 0 } };
+
+      // Simulate drop with no paths
+      listenerCallback({ payload: mockDropEventNoPaths }); // Wrap in { payload: ... }
+
+      // Assert on the predefined mock spy
+      expect(mockEmit).toHaveBeenNthCalledWith(6, 'file-drag-cancel');
+      expect(mockEmit).toHaveBeenCalledTimes(6); // Total calls up to this point
+    });
+  });
+
 });
