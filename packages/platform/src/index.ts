@@ -7,7 +7,7 @@ import {
 import { isTauri } from '@tauri-apps/api/core'; // Use official Tauri detector
 
 // --- Re-export Context and Hook ---
-export { PlatformProvider, usePlatform } from './context';
+export { PlatformProvider, usePlatform } from './Context';
 // -----------------------------------
 
 // Platform Detection (using Tauri API)
