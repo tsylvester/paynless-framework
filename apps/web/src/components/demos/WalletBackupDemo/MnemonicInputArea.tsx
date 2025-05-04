@@ -12,12 +12,17 @@ export const MnemonicInputArea: React.FC<MnemonicInputAreaProps> = ({
   onChange,
   disabled,
 }) => {
+  // Handler to extract value from event and pass to prop function
+  const handleChange = (event: React.ChangeEvent<HTMLTextAreaElement>) => {
+    onChange(event.target.value);
+  };
+
   return (
     <Textarea
       aria-label="mnemonic phrase"
       placeholder="Enter or import your 12 or 24 word mnemonic phrase..."
       value={value}
-      onChange={(e) => onChange(e.target.value)}
+      onChange={handleChange} // Use the local handler
       rows={3}
       disabled={disabled}
       className="resize-none" // Optional: prevent resizing

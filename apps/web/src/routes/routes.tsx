@@ -124,16 +124,25 @@ const routes: RouteObject[] = [
         ),
       },
       // --- Tauri Only Routes (Dev/Debug) --- 
+      // TEMPORARILY COMMENT OUT WRAPPER FOR TESTING REDIRECT
+      // {
+      //   element: <TauriOnlyWrapper />, 
+      //   children: [
+      //     // ... other routes inside ...
+      //   ]
+      // },
+
+      // --- Temporarily place route outside wrapper --- 
       {
-        element: <TauriOnlyWrapper />, // Apply the wrapper
-        children: [
-          {
-            path: 'dev/wallet-backup',
-            element: <WalletBackupDemoCard /> // The actual demo page
-          },
-          // Add other Tauri-only dev routes here in the future
-        ]
+        path: 'dev/wallet', 
+        element: (
+          <ProtectedRoute>
+             <WalletBackupDemoCard />
+          </ProtectedRoute>
+        )
       },
+      // --- End Temporary Placement --- 
+
       { path: '*', element: <Navigate to="/" replace /> },
     ],
   },

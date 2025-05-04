@@ -15,23 +15,71 @@
 
 ## Implementation Plan
 
-**Phase 1: WalletBackupDemo Component Implementation**
+**Phase 1: WalletBackupDemo Component Implementation [🚧 In Progress]**
 
-*   **[1.1] Component Setup & Structure:**
+*   **[1.1] `WalletBackupDemoCard` Setup & Structure [🚧]:**
     *   [X] Create the main container component file: `apps/web/src/components/demos/WalletBackupDemo/WalletBackupDemoCard.tsx`.
     *   [X] Create the corresponding unit test file: `apps/web/src/components/demos/WalletBackupDemo/WalletBackupDemoCard.test.tsx`.
     *   [X] Define basic component structure for `WalletBackupDemoCard`.
     *   [X] Update tests for TDD: Add failing tests for loading, unavailable, and available states.
     *   [ ] Add the `WalletBackupDemoCard` component to a relevant storybook or development page for easy visualization.
-    *   [C] [COMMIT] Commit initial card component structure and tests with message "feat(UI): Add initial WalletBackupDemoCard structure and tests".
+    *   [ ] [COMMIT] Commit initial card component structure and tests with message "feat(UI): Add initial WalletBackupDemoCard structure and tests".
 
-*   **[1.2] UI Element Implementation (Sub-Components):**
-    *   [X] Create the `MnemonicInputArea.tsx` sub-component file with `Textarea` and props (`value`, `onChange`, `disabled`).
-    *   [X] Create the `FileActionButtons.tsx` sub-component file with Import/Export `Button`s and props (`onImport`, `onExport`, `disabled`, `isExportDisabled`, `isLoading`).
-    *   [X] Create the `StatusDisplay.tsx` sub-component file with `Alert` for displaying status/error messages and props (`message`, `variant`).
-    *   [C] [COMMIT] Commit sub-component implementations with message "feat(UI): Implement WalletBackupDemo sub-components (MnemonicInputArea, FileActionButtons, StatusDisplay)".
+*   **[1.2] `MnemonicInputArea` Implementation & Tests [🚧]:**
+    *   [X] Create the `MnemonicInputArea.tsx` sub-component file.
+    *   **[1.2.1] Write Unit Tests (`MnemonicInputArea.test.tsx`) [TEST-UNIT] [ ]:**
+        *   [ ] Create test file: `apps/web/src/components/demos/WalletBackupDemo/MnemonicInputArea.test.tsx`.
+        *   [ ] Test Case 1: Renders the `Textarea` component.
+        *   [ ] Test Case 2: Displays the `value` prop correctly in the textarea.
+        *   [ ] Test Case 3: Calls the `onChange` prop function with the new value when text is entered.
+        *   [ ] Test Case 4: Applies the `disabled` attribute to the textarea when the `disabled` prop is true.
+        *   [ ] Test Case 5: Does not apply the `disabled` attribute when the `disabled` prop is false.
+        *   [ ] Commit failing tests: "test(UI): Add unit tests for MnemonicInputArea component".
+    *   **[1.2.2] Implement Component Logic [UI] [ ]:**
+        *   [ ] In `MnemonicInputArea.tsx`, implement the component using `Textarea` from `@/components/ui/textarea`.
+        *   [ ] Ensure props (`value`, `onChange`, `disabled`) are correctly passed to the underlying `Textarea`.
+        *   [ ] Verify all unit tests from [1.2.1] pass.
+    *   **[1.2.3] Commit `MnemonicInputArea` [COMMIT] [ ]:**
+        *   [ ] Commit working component and passing tests: "feat(UI): Implement MnemonicInputArea component and tests".
 
-*   **[1.3] Integrate Platform Capabilities & Sub-Components:**
+*   **[1.3] `FileActionButtons` Implementation & Tests [🚧]:**
+    *   [X] Create the `FileActionButtons.tsx` sub-component file.
+    *   **[1.3.1] Write Unit Tests (`FileActionButtons.test.tsx`) [TEST-UNIT] [ ]:**
+        *   [ ] Create test file: `apps/web/src/components/demos/WalletBackupDemo/FileActionButtons.test.tsx`.
+        *   [ ] Test Case 1: Renders "Import" and "Export" buttons.
+        *   [ ] Test Case 2: Calls `onImport` prop when Import button is clicked (and not disabled/loading).
+        *   [ ] Test Case 3: Calls `onExport` prop when Export button is clicked (and not disabled/loading).
+        *   [ ] Test Case 4: Disables both buttons when `disabled` prop is true.
+        *   [ ] Test Case 5: Disables *only* the Export button when `isExportDisabled` is true (and `disabled` is false).
+        *   [ ] Test Case 6: Shows `Loader2` spinner and disables both buttons when `isLoading` prop is true.
+        *   [ ] Commit failing tests: "test(UI): Add unit tests for FileActionButtons component".
+    *   **[1.3.2] Implement Component Logic [UI] [ ]:**
+        *   [ ] In `FileActionButtons.tsx`, implement the component using `Button` from `@/components/ui/button` and `Loader2` from `lucide-react`.
+        *   [ ] Implement the logic for combined disabled states based on `disabled`, `isExportDisabled`, and `isLoading` props.
+        *   [ ] Implement conditional rendering for the `Loader2` spinner.
+        *   [ ] Verify all unit tests from [1.3.1] pass.
+    *   **[1.3.3] Commit `FileActionButtons` [COMMIT] [ ]:**
+        *   [ ] Commit working component and passing tests: "feat(UI): Implement FileActionButtons component and tests".
+
+*   **[1.4] `StatusDisplay` Implementation & Tests [🚧]:**
+    *   [X] Create the `StatusDisplay.tsx` sub-component file.
+    *   **[1.4.1] Write Unit Tests (`StatusDisplay.test.tsx`) [TEST-UNIT] [ ]:**
+        *   [ ] Create test file: `apps/web/src/components/demos/WalletBackupDemo/StatusDisplay.test.tsx`.
+        *   [ ] Test Case 1: Renders nothing when `message` prop is null or empty.
+        *   [ ] Test Case 2: Renders `Alert` with correct `message` prop.
+        *   [ ] Test Case 3: Renders correct icon (`Info`, `CheckCircle`, `AlertCircle`) based on `variant` prop (`info`, `success`, `error`).
+        *   [ ] Test Case 4: Renders correct `AlertTitle` based on `variant`.
+        *   [ ] Test Case 5: Applies correct `variant` prop ('default' or 'destructive') to the `Alert` component.
+        *   [ ] Commit failing tests: "test(UI): Add unit tests for StatusDisplay component".
+    *   **[1.4.2] Implement Component Logic [UI] [ ]:**
+        *   [ ] In `StatusDisplay.tsx`, implement the component using `Alert`, `AlertTitle`, `AlertDescription` from `@/components/ui/alert` and icons from `lucide-react`.
+        *   [ ] Implement the logic to select the correct icon, title, and alert variant based on the `variant` prop.
+        *   [ ] Verify all unit tests from [1.4.1] pass.
+    *   **[1.4.3] Commit `StatusDisplay` [COMMIT] [ ]:**
+        *   [ ] Commit working component and passing tests: "feat(UI): Implement StatusDisplay component and tests".
+
+*   **[1.5] Integrate Sub-Components into `WalletBackupDemoCard` [🚧]:** (Was 1.3)
+    *   *Prerequisite: Steps 1.2, 1.3, 1.4 completed.*
     *   [X] In `WalletBackupDemoCard.tsx`:
         *   [X] Import and use the `usePlatform` hook.
         *   [X] Add state management (e.g., `useState`) for `mnemonic`, `statusMessage`, `statusVariant`, `isActionLoading`.
@@ -39,13 +87,14 @@
         *   [X] Implement conditional rendering for loading state (using `Skeleton` components).
         *   [X] Implement conditional rendering for capability error state.
         *   [X] Implement conditional rendering for unavailable state (showing message).
-        *   [X] Render the sub-components (`MnemonicInputArea`, `FileActionButtons`, `StatusDisplay`), passing the necessary state and handlers (placeholder handlers for now) as props.
+        *   [X] Render the now implemented sub-components (`MnemonicInputArea`, `FileActionButtons`, `StatusDisplay`), passing the necessary state and handlers (placeholder handlers for import/export) as props.
         *   [X] Wrap the main content in the `ErrorBoundary` component.
-    *   [X] Update tests for loading state in `WalletBackupDemoCard.test.tsx` to assert skeleton presence.
-    *   [X] Verify tests for loading, unavailable, and available states pass.
-    *   [X] [COMMIT] Commit platform hook integration and sub-component rendering in WalletBackupDemoCard with message "feat(UI): Integrate usePlatform and sub-components into WalletBackupDemoCard".
+    *   [ ] Update tests in `WalletBackupDemoCard.test.tsx` to verify sub-components are rendered correctly in available/unavailable states (mocking platform hook).
+    *   [ ] Verify tests pass.
+    *   [ ] [COMMIT] Commit sub-component integration in WalletBackupDemoCard with message "feat(UI): Integrate sub-components into WalletBackupDemoCard". *(Status updated)*
 
-*   **[1.4] Implement Import Functionality:**
+*   **[1.6] Implement Import Functionality in `WalletBackupDemoCard` [🚧]:** (Was 1.4)
+    *   *Prerequisite: Step 1.5 completed.*
     *   [X] In `WalletBackupDemoCard.test.tsx`:
         *   [X] Add tests for the import workflow:
             *   [X] Mock `platformCapabilities.fileSystem.pickFile` to return null (user cancel).
@@ -69,12 +118,13 @@
             *   [X] Set `isActionLoading` to false in a `finally` block.
         *   [X] Pass `handleImport` to `FileActionButtons` component.
         *   [X] Implement rendering logic for `capabilityError` state.
-    *   [X] Verify all import tests pass.
-    *   [X] [COMMIT] Commit import functionality and tests with message "feat(UI): Implement mnemonic import functionality in WalletBackupDemoCard".
+    *   [ ] Verify all import tests pass (or update tests if needed).
+    *   [ ] [COMMIT] Commit import functionality and tests with message "feat(UI): Implement mnemonic import functionality in WalletBackupDemoCard". *(Status updated)*
 
-*   **[1.5] Implement Export Functionality:**
+*   **[1.7] Implement Export Functionality in `WalletBackupDemoCard` [🚧]:** (Was 1.5)
+    *   *Prerequisite: Step 1.6 completed.*
     *   [X] In `WalletBackupDemoCard.test.tsx`:
-        *   [X] Add tests for the export workflow (similar structure to import tests, mocking `pickSaveFile` and `writeFile`).
+        *   [X] Add tests for the export workflow (mocking platform functions). *(Marking X as tests were written, but may need updates)*
     *   [X] In `WalletBackupDemoCard.tsx`:
         *   [X] Implement the `async handleExport` function:
             *   [X] Set `isActionLoading` to true, clear status message.
@@ -86,20 +136,14 @@
             *   [X] Set success/error status message and variant.
             *   [X] Set `isActionLoading` to false in `finally` block.
         *   [X] Pass `handleExport` to `FileActionButtons` component.
-    *   [X] Verify all export tests pass.
-    *   [ ] [COMMIT] Commit export functionality and tests with message "feat(UI): Implement mnemonic export functionality in WalletBackupDemoCard".
+    *   [ ] Verify all export tests pass (or update tests if needed).
+    *   [ ] [COMMIT] Commit export functionality and tests with message "feat(UI): Implement mnemonic export functionality in WalletBackupDemoCard". *(Status updated)*
 
-*   **[1.6] Refine State Handling & Feedback (Covered by 1.4 & 1.5):**
-    *   *Note: State handling (loading, error, success) is implemented directly within the import/export steps.*
-    *   *Note: ErrorBoundary wrapping was done in Step 1.3.*
-
-*   **[1.7] Unit Testing (Covered by 1.4 & 1.5):**
-    *   *Note: Unit tests are added incrementally alongside the functionality in steps 1.4 and 1.5.*
-
-*   **[1.8] Manual Verification:**
-    *   [ ] Run the application in a web browser. Verify the component displays the "unavailable" state correctly.
-    *   [ ] Run the application in Tauri (`pnpm --filter desktop tauri dev`).
-    *   [ ] Verify the component displays the "available" state correctly (buttons enabled).
+*   **[1.8] Manual Verification [🚧]:** (Was 1.8)
+    *   *Prerequisite: Step 1.7 completed.*
+    *   [X] Run the application in a web browser. Verify the component displays the "unavailable" state correctly.
+    *   [X] Run the application in Tauri (`pnpm --filter desktop tauri dev`).
+    *   [X] Verify the component displays the "available" state correctly (buttons enabled).
     *   [ ] Test the Import flow: Select a text file, verify content appears in the text area. Test cancellation. Verify loading/success/error states.
     *   [ ] Test the Export flow: Enter text, click export, save the file. Verify the file contains the entered text. Test cancellation. Verify loading/success/error states.
     *   [ ] Document verification results.

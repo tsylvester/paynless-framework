@@ -137,11 +137,11 @@ export function Header() {
                     </Link>
                     {capabilities?.platform === 'tauri' && (
                       <Link
-                        to="/dev/wallet-backup-demo"
+                        to="/dev/wallet"
                         className="block px-4 py-2 text-sm text-textSecondary hover:bg-primary/10 hover:text-primary"
                       >
                         <FlaskConical className="inline-block h-4 w-4 mr-2" />
-                        Dev Wallet Demo
+                        Dev Wallet
                       </Link>
                     )}
                     <button
@@ -261,12 +261,12 @@ export function Header() {
               </Link>
               {capabilities?.platform === 'tauri' && (
                 <Link
-                  to="/dev/wallet-backup-demo"
+                  to="/dev/wallet"
                   className="block px-4 py-2 text-base font-medium text-textSecondary hover:bg-primary/5 hover:text-textPrimary"
                   onClick={() => setIsMenuOpen(false)}
                 >
                   <FlaskConical className="inline-block h-5 w-5 mr-2" />
-                  Dev Wallet Demo
+                  Dev Wallet
                 </Link>
               )}
               <button

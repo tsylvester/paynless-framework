@@ -350,7 +350,7 @@ This implementation plan follows a phased approach:
 #### STEP-5.1.2: Implement Initial Capability Fetching Logic [TEST-UNIT] [COMMIT] [✅ N/A]
 *   **Status:** Not applicable as `PlatformProvider` handles fetching.
 
-### STEP-5.2: Implement UI Loading/Error States [UI] [��]
+### STEP-5.2: Implement UI Loading/Error States [UI] [🚧]
 
     useEffect(() => {
       let isMounted = true;
@@ -429,6 +429,22 @@ This implementation plan follows a phased approach:
 *   [ ] Run unit tests. Refine component implementation until all tests pass.
 *   [ ] Build frontend.
 *   [ ] Commit changes with message "feat(UI): Implement ConfigFileManager using platform capability service".
+
+### STEP-5.5: Integrate Capability Checks in Core UI (e.g., Header) [✅]
+
+#### STEP-5.5.1: Add Conditional Link for Dev Tools in Header [UI] [✅]
+*   [✅] In `Header.tsx`, import and use `usePlatform`.
+*   [✅] Get `capabilities` state.
+*   [✅] Wrap the "Dev Wallet Demo" link in the user dropdown (desktop and mobile menus) with a conditional check: `capabilities?.platform === 'tauri'`.
+
+#### STEP-5.5.2: Add Unit Tests for Conditional Header Link [TEST-UNIT] [✅]
+*   [✅] In `Header.test.tsx`.
+*   [✅] Mock the `usePlatform` hook.
+*   [✅] Add test suite for 'Web Platform': Mock platform as 'web', assert link is *not* present.
+*   [✅] Add test suite for 'Tauri Platform': Mock platform as 'tauri', assert the *conditions* for rendering the link are met (verifying `usePlatform` returns 'tauri'). (Note: Direct assertion of link presence post-click proved unreliable in unit tests).
+
+#### STEP-5.5.3: Commit Header Changes [COMMIT] [✅]
+*   [✅] Commit changes with message "feat(ui): add conditional dev link and tests for tauri platform".
 
 ---
 

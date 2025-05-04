@@ -175,13 +175,10 @@ describe('Header Component', () => {
                 renderHeader(); 
             });
 
-            it('should NOT render Dev Wallet Demo link in dropdown area (Web)', async () => {
-                 // Since dropdown interaction is unreliable, we can only verify the platform state
-                 expect(usePlatform()).toEqual(platformMock); 
-                 // We infer that the link won't be rendered due to the platform value.
-                 // A more robust check would require E2E testing.
-                 // We can still check that the link isn't immediately visible without interaction:
-                 expect(screen.queryByRole('link', { name: /dev wallet demo/i })).not.toBeInTheDocument();
+            it('should NOT render Dev Wallet link in dropdown area (Web)', async () => {
+                 expect(usePlatform()).toEqual(platformMock);
+                 // Check for the new text
+                 expect(screen.queryByRole('link', { name: /dev wallet/i })).not.toBeInTheDocument();
              });
         });
 
@@ -210,14 +207,12 @@ describe('Header Component', () => {
             });
 
              it('should be configured for Tauri platform rendering', () => {
-                 // Verify that the component received the Tauri capabilities
-                 // This confirms the condition for rendering the link is met.
                  expect(usePlatform()).toEqual(platformMock);
                  expect((usePlatform as any)().platform).toBe('tauri');
-                 // We infer the link *should* be rendered within the dropdown based on this.
-                 // Verifying its actual presence requires E2E or component-specific testing.
-                 // We check it isn't immediately visible without interaction:
-                 expect(screen.queryByRole('link', { name: /dev wallet demo/i })).not.toBeInTheDocument();
+                 // Check for the new text not being immediately visible
+                 expect(screen.queryByRole('link', { name: /dev wallet/i })).not.toBeInTheDocument();
+                 // Although we can't reliably test finding it *after* click here,
+                 // we know the conditions are met for it to be rendered within the dropdown.
              });
         });
     });
