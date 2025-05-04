@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
 import { usePlatform } from '@paynless/platform';
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { Info, AlertCircle } from 'lucide-react';
+import { Skeleton } from "@/components/ui/skeleton"
+import { Info, AlertTriangle } from 'lucide-react';
 
 import { MnemonicInputArea } from './MnemonicInputArea';
 import { GenerateMnemonicButton } from './GenerateMnemonicButton';
@@ -114,19 +115,20 @@ export const WalletBackupDemoCard: React.FC<WalletBackupDemoCardProps> = () => {
           onChange={setMnemonic}
           disabled={isDisabled}
         />
-        <div className="flex space-x-2">
+        {/* Container for buttons with responsive flex layout */}
+        <div className="flex flex-col md:flex-row md:space-x-2 space-y-2 md:space-y-0">
           <GenerateMnemonicButton 
             onGenerate={handleGenerate} 
             disabled={isDisabled} 
           />
+          <FileActionButtons
+            onImport={handleImport}
+            onExport={handleExport}
+            disabled={isDisabled}
+            isExportDisabled={isExportDisabled}
+            isLoading={isActionLoading}
+          />
         </div>
-        <FileActionButtons
-          onImport={handleImport}
-          onExport={handleExport}
-          disabled={isDisabled}
-          isExportDisabled={isExportDisabled}
-          isLoading={isActionLoading}
-        />
         <StatusDisplay message={statusMessage} variant={statusVariant} />
       </div>
     </ErrorBoundary>

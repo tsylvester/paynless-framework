@@ -11,11 +11,7 @@ export const GenerateMnemonicButton: React.FC<GenerateMnemonicButtonProps> = ({
   disabled,
 }) => {
   return (
-    <Button 
-      variant="secondary" // Use a different variant to distinguish
-      onClick={onGenerate}
-      disabled={disabled}
-    >
+    <Button onClick={onGenerate} disabled={disabled} variant="primary">
       Generate Mnemonic
     </Button>
   );

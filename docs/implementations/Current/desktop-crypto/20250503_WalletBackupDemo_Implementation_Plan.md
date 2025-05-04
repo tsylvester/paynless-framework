@@ -59,39 +59,39 @@
 
 *   **[1.4] `FileActionButtons` Implementation & Tests [🚧]:** (Was 1.3)
     *   [X] Create the `FileActionButtons.tsx` sub-component file.
-    *   **[1.4.1] Write Unit Tests (`FileActionButtons.test.tsx`) [TEST-UNIT] [ ]:** (Renumbered)
-        *   [ ] Create test file: `apps/web/src/components/demos/WalletBackupDemo/FileActionButtons.test.tsx`.
-        *   [ ] Test Case 1: Renders "Import" and "Export" buttons.
-        *   [ ] Test Case 2: Calls `onImport` prop when Import button is clicked (and not disabled/loading).
-        *   [ ] Test Case 3: Calls `onExport` prop when Export button is clicked (and not disabled/loading).
-        *   [ ] Test Case 4: Disables both buttons when `disabled` prop is true.
-        *   [ ] Test Case 5: Disables *only* the Export button when `isExportDisabled` is true (and `disabled` is false).
-        *   [ ] Test Case 6: Shows `Loader2` spinner and disables both buttons when `isLoading` prop is true.
-        *   [ ] Commit failing tests: "test(UI): Add unit tests for FileActionButtons component".
-    *   **[1.4.2] Implement Component Logic [UI] [ ]:** (Renumbered)
-        *   [ ] In `FileActionButtons.tsx`, implement the component using `Button` from `@/components/ui/button` and `Loader2` from `lucide-react`.
-        *   [ ] Implement the logic for combined disabled states based on `disabled`, `isExportDisabled`, and `isLoading` props.
-        *   [ ] Implement conditional rendering for the `Loader2` spinner.
-        *   [ ] Verify all unit tests pass.
-    *   **[1.4.3] Commit `FileActionButtons` [COMMIT] [ ]:** (Renumbered)
-        *   [ ] Commit working component and passing tests: "feat(UI): Implement FileActionButtons component and tests".
+    *   **[1.4.1] Write Unit Tests (`FileActionButtons.test.tsx`) [TEST-UNIT] [X]:** (Renumbered)
+        *   [X] Create test file: `apps/web/src/components/demos/WalletBackupDemo/FileActionButtons.test.tsx`.
+        *   [X] Test Case 1: Renders "Import" and "Export" buttons.
+        *   [X] Test Case 2: Calls `onImport` prop when Import button is clicked (and not disabled/loading).
+        *   [X] Test Case 3: Calls `onExport` prop when Export button is clicked (and not disabled/loading).
+        *   [X] Test Case 4: Disables both buttons when `disabled` prop is true.
+        *   [X] Test Case 5: Disables *only* the Export button when `isExportDisabled` is true (and `disabled` is false).
+        *   [X] Test Case 6: Shows `Loader2` spinner and disables both buttons when `isLoading` prop is true.
+        *   [X] Commit failing tests: "test(UI): Add unit tests for FileActionButtons component".
+    *   **[1.4.2] Implement Component Logic [UI] [X]:** (Renumbered)
+        *   [X] In `FileActionButtons.tsx`, implement the component using `Button` from `@/components/ui/button` and `Loader2` from `lucide-react`.
+        *   [X] Implement the logic for combined disabled states based on `disabled`, `isExportDisabled`, and `isLoading` props.
+        *   [X] Implement conditional rendering for the `Loader2` spinner.
+        *   [X] Verify all unit tests pass.
+    *   **[1.4.3] Commit `FileActionButtons` [COMMIT] [X]:** (Renumbered)
+        *   [X] Commit working component and passing tests: "feat(UI): Implement FileActionButtons component and tests".
 
-*   **[1.5] `StatusDisplay` Implementation & Tests [🚧]:** (Was 1.4)
+*   **[1.5] `StatusDisplay` Implementation & Tests [✅]:** (Was 1.4)
     *   [X] Create the `StatusDisplay.tsx` sub-component file.
-    *   **[1.5.1] Write Unit Tests (`StatusDisplay.test.tsx`) [TEST-UNIT] [ ]:** (Renumbered)
-        *   [ ] Create test file: `apps/web/src/components/demos/WalletBackupDemo/StatusDisplay.test.tsx`.
-        *   [ ] Test Case 1: Renders nothing when `message` prop is null or empty.
-        *   [ ] Test Case 2: Renders `Alert` with correct `message` prop.
-        *   [ ] Test Case 3: Renders correct icon (`Info`, `CheckCircle`, `AlertCircle`) based on `variant` prop (`info`, `success`, `error`).
-        *   [ ] Test Case 4: Renders correct `AlertTitle` based on `variant`.
-        *   [ ] Test Case 5: Applies correct `variant` prop ('default' or 'destructive') to the `Alert` component.
-        *   [ ] Commit failing tests: "test(UI): Add unit tests for StatusDisplay component".
-    *   **[1.5.2] Implement Component Logic [UI] [ ]:** (Renumbered)
-        *   [ ] In `StatusDisplay.tsx`, implement the component using `Alert`, `AlertTitle`, `AlertDescription` from `@/components/ui/alert` and icons from `lucide-react`.
-        *   [ ] Implement the logic to select the correct icon, title, and alert variant based on the `variant` prop.
-        *   [ ] Verify all unit tests pass.
-    *   **[1.5.3] Commit `StatusDisplay` [COMMIT] [ ]:** (Renumbered)
-        *   [ ] Commit working component and passing tests: "feat(UI): Implement StatusDisplay component and tests".
+    *   **[1.5.1] Write Unit Tests (`StatusDisplay.test.tsx`) [TEST-UNIT] [X]:** (Renumbered)
+        *   [X] Create test file: `apps/web/src/components/demos/WalletBackupDemo/StatusDisplay.test.tsx`.
+        *   [X] Test Case 1: Renders nothing when `message` prop is null or empty.
+        *   [X] Test Case 2: Renders `Alert` with correct `message` prop.
+        *   [X] Test Case 3: Renders correct icon (`Info`, `CheckCircle`, `AlertCircle`) based on `variant` prop (`info`, `success`, `error`).
+        *   [X] Test Case 4: Renders correct `AlertTitle` based on `variant`.
+        *   [X] Test Case 5: Applies correct `variant` prop ('default' or 'destructive') to the `Alert` component.
+        *   [X] Commit failing tests: "test(UI): Add unit tests for StatusDisplay component".
+    *   **[1.5.2] Implement Component Logic [UI] [X]:** (Renumbered)
+        *   [X] In `StatusDisplay.tsx`, implement the component using `Alert`, `AlertTitle`, `AlertDescription` from `@/components/ui/alert` and icons from `lucide-react`.
+        *   [X] Implement the logic to select the correct icon, title, and alert variant based on the `variant` prop.
+        *   [X] Verify all unit tests pass.
+    *   **[1.5.3] Commit `StatusDisplay` [COMMIT] [X]:** (Renumbered)
+        *   [X] Commit working component and passing tests: "feat(UI): Implement StatusDisplay component and tests".
 
 *   **[1.6] Integrate Sub-Components into `WalletBackupDemoCard` [🚧]:** (Was 1.5)
     *   *Prerequisite: Steps 1.2, 1.3, 1.4, 1.5 completed.*

@@ -1,31 +1,47 @@
 import React from 'react';
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import {
+  Alert,
+  AlertDescription,
+  AlertTitle,
+} from "@/components/ui/alert"
 import { Info, CheckCircle, AlertCircle } from 'lucide-react';
 
-type StatusVariant = 'info' | 'success' | 'error';
-
-interface StatusDisplayProps {
+export interface StatusDisplayProps {
   message: string | null;
-  variant: StatusVariant;
+  variant: 'info' | 'success' | 'error';
 }
 
-export const StatusDisplay: React.FC<StatusDisplayProps> = ({ message, variant }) => {
+const statusConfig = {
+  info: {
+    Icon: Info,
+    title: 'Information',
+    alertVariant: 'default' as const, // Map to Shadcn Alert variant
+  },
+  success: {
+    Icon: CheckCircle,
+    title: 'Success',
+    alertVariant: 'default' as const,
+  },
+  error: {
+    Icon: AlertCircle,
+    title: 'Error',
+    alertVariant: 'destructive' as const,
+  },
+};
+
+export const StatusDisplay: React.FC<StatusDisplayProps> = ({
+  message,
+  variant,
+}) => {
   if (!message) {
-    return null; // Don't render anything if there's no message
+    return null; // Render nothing if no message
   }
 
-  const alertVariant = variant === 'error' ? 'destructive' : 'default';
-  const Icon = variant === 'success' ? CheckCircle :
-               variant === 'error' ? AlertCircle :
-               Info; // Default to Info
-  const title = variant === 'success' ? 'Success' :
-                variant === 'error' ? 'Error' :
-                'Info';
-  const iconColor = variant === 'success' ? 'text-green-500' : '';
+  const { Icon, title, alertVariant } = statusConfig[variant];
 
   return (
     <Alert variant={alertVariant}>
-      <Icon className={`h-4 w-4 ${iconColor}`} />
+      <Icon className="h-4 w-4" />
       <AlertTitle>{title}</AlertTitle>
       <AlertDescription>{message}</AlertDescription>
     </Alert>

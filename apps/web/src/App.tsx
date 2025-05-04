@@ -83,7 +83,7 @@ function App() {
           // RouterProvider and integrations moved here
           <>
             <RouterProvider router={router} />
-            <ChatwootIntegration />
+            {/*<ChatwootIntegration />*/}
           </>
         )}          
         <PlatformFeatureTester />
