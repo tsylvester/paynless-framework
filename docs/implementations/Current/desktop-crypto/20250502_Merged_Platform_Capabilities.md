@@ -42,7 +42,7 @@ This implementation plan follows a phased approach:
 4.  **Phase 2: Web Platform Provider:** (✅ Superseded by Phase R)
 5.  **Phase 3: Tauri Platform Provider (TypeScript Layer):** (✅ Superseded by Phase R)
 6.  **Phase 4: Tauri Platform Provider (Rust Layer):** Implement Tauri Rust commands. (🚧 In Progress)
-7.  **Phase 5: Frontend Integration & UI:** Integrate service into UI, handle loading/errors, implement conditional rendering. (🚧 Not Started)
+7.  **Phase 5: Frontend Integration & UI:** Integrate service into UI, handle loading/errors, implement conditional rendering. (🚧 In Progress)
 8.  **Phase 6: Testing & Refinement:** Comprehensive testing and adjustments. (🚧 Not Started)
 9.  **Phase 7: Documentation:** Document the new layer and patterns. (🚧 Not Started)
 
@@ -335,7 +335,7 @@ This implementation plan follows a phased approach:
 
 ---
 
-## Phase 5: Frontend Integration & UI [🚧 Not Started]
+## Phase 5: Frontend Integration & UI [🚧 In Progress]
 
 *   **Goal:** Integrate the refactored service/context into the main application setup and ensure UI components use the service correctly for conditional rendering and invoking platform-specific actions.
 *   **Location:** `apps/web/src/...`
@@ -378,27 +378,27 @@ This implementation plan follows a phased approach:
 *   [ ] Build frontend.
 *   [ ] Commit changes with message "feat(TS): Implement initial fetch of platform capabilities".
 
-### STEP-5.3: Implement UI Loading/Error States [UI] [🚧]
+### STEP-5.3: Implement UI Loading/Error States [UI] [✅]
 
-#### STEP-5.3.1: Implement Global Loading/Error Handling [TEST-UNIT] [COMMIT]
-*   [ ] In the main App layout.
+#### STEP-5.3.1: Implement Global Loading/Error Handling [TEST-UNIT] [COMMIT] [✅]
+*   [✅] In the main App layout (`App.tsx`).
 *   [ ] Create unit tests for loading/error display.
-*   [ ] Use the `isLoadingCapabilities` and `capabilityError` state:
-    *   [ ] If `isLoadingCapabilities` is true, potentially show a global loading indicator (e.g., splash screen, main layout skeleton) or delay rendering main content.
-    *   [ ] If `capabilityError` is not null, display a user-friendly error message (e.g., a banner) indicating platform features might be limited.
+*   [✅] Use the `isLoadingCapabilities` and `capabilityError` state:
+    *   [✅] If `isLoadingCapabilities` is true, show a global loading indicator.
+    *   [✅] If `capabilityError` is not null, display a global error banner.
 *   [ ] Run unit tests.
 *   [ ] Build frontend. Test visually.
-*   [ ] Commit changes with message "feat(UI): Implement global loading/error states for capability detection".
+*   [✅] Commit changes with message "feat(UI): Implement global loading/error states for capability detection".
 
-#### STEP-5.3.2: Define Component-Level Handling Strategy [TEST-UNIT] [COMMIT]
-*   [ ] **Strategy:** Prioritize handling loading (`isLoadingCapabilities`) and error states (`capabilityError`, file operation errors) directly within the components that consume `usePlatform`.
-*   [ ] **Error Boundaries:** For components performing critical platform operations (e.g., file saving/loading), wrap them in the existing `ErrorBoundary.tsx` component (`apps/web/src/components/common/ErrorBoundary.tsx`) to catch unexpected rendering or lifecycle errors within the component itself, preventing app-wide crashes.
-*   [ ] **User Feedback:** Ensure components provide clear, user-friendly messages and appropriate UI for different states:
+#### STEP-5.3.2: Define Component-Level Handling Strategy [TEST-UNIT] [COMMIT] [✅]
+*   [✅] **Strategy:** Prioritize handling loading (`isLoadingCapabilities`) and error states (`capabilityError`, file operation errors) directly within the components that consume `usePlatform`.
+*   [✅] **Error Boundaries:** For components performing critical platform operations (e.g., file saving/loading), wrap them in the existing `ErrorBoundary.tsx` component (`apps/web/src/components/common/ErrorBoundary.tsx`) to catch unexpected rendering or lifecycle errors within the component itself, preventing app-wide crashes.
+*   [✅] **User Feedback:** Ensure components provide clear, user-friendly messages and appropriate UI for different states:
     *   Loading: Show skeleton UI elements representing the component's structure while data/capabilities are loading.
     *   Capability Unavailable: Explain *why* a feature is disabled (e.g., "File access requires the Desktop app.").
     *   Operational Errors: Display specific error messages when file operations fail (e.g., "Failed to save file: Permission denied.").
-*   [ ] **Testing:** Update component unit tests (`STEP-5.3.2`) to explicitly cover rendering under these loading (skeleton UI), error, and unavailable capability scenarios, including testing the `ErrorBoundary` wrapper interaction.
-*   [ ] Commit changes with message "feat(UI): Define strategy for component-level capability loading/error handling using skeletons and existing ErrorBoundary".
+*   [✅] **Testing:** Update component unit tests (`STEP-5.4.2`) to explicitly cover rendering under these loading (skeleton UI), error, and unavailable capability scenarios, including testing the `ErrorBoundary` wrapper interaction.
+*   [✅] Commit changes with message "feat(UI): Define strategy for component-level capability loading/error handling using skeletons and existing ErrorBoundary".
 
 ### STEP-5.4: Refactor/Build UI Components [UI] [🚧]
 

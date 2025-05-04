@@ -18,10 +18,11 @@
     "clean": "rm -rf dist tsconfig.tsbuildinfo"
   },
   "dependencies": {
-    "date-fns": "^3.5.0",
     "@paynless/types": "workspace:*",
+    "date-fns": "^3.5.0",
     "pino": "^9.3.2",
-    "pino-pretty": "^11.2.1"
+    "pino-pretty": "^11.2.1",
+    "vite-plugin-node-polyfills": "^0.23.0"
   },
   "devDependencies": {
     "@types/node": "^20.11.24",
@@ -30,4 +31,4 @@
     "vitest": "^1.6.1"
   },
   "license": "ISC"
-} 
+}

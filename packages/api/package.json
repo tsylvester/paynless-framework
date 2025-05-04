@@ -28,6 +28,7 @@
     "@paynless/utils": "workspace:*",
     "@supabase/supabase-js": "^2.49.4",
     "axios": "^1.6.7",
+    "vite-plugin-node-polyfills": "^0.23.0",
     "zustand": "^4.5.2"
   },
   "devDependencies": {
