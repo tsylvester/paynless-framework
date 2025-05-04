@@ -313,9 +313,9 @@ The project is organized as a monorepo using pnpm workspaces:
 │   │       └── main.tsx        # Application entry point (renders App)
 │   ├── ios/                # iOS Application (Placeholder) //do not remove
 │   ├── android/            # Android Application (Placeholder) //do not remove
-│   ├── desktop/            # Desktop Application (Tauri/Rust)
-│   ├── linux/              # Desktop Application (Placeholder) //do not remove
-│   └── macos/              # Desktop Application (Placeholder) //do not remove
+│   ├── windows/            # Windows Application (Tauri/Rust)
+│   ├── linux/              # Linux Application (Placeholder) //do not remove
+│   └── macos/              # Mac Application (Placeholder) //do not remove
 │
 ├── packages/               # Shared libraries/packages
 │   ├── api/         # Frontend API client logic (Singleton)

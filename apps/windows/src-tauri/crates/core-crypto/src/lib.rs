@@ -5,6 +5,9 @@ use chacha20poly1305::{
 use thiserror::Error;
 use sha3::{Digest, Sha3_256};
 use signature::Error as SignatureTraitError;
+// Separate bip39 imports
+use bip39::Mnemonic;
+use bip39::Language;
 
 // Define a type alias for our standard hash output (32 bytes for SHA3-256)
 pub type Hash = [u8; 32];
@@ -47,6 +50,10 @@ pub enum CryptoError {
     KeyExchangeError(String),
     #[error("Key derivation failed: {0}")]
     KeyDerivationError(String),
+    #[error("Invalid mnemonic phrase: {0}")]
+    MnemonicValidationError(String),
+    #[error("Failed to convert mnemonic to seed: {0}")]
+    MnemonicToSeedError(String),
 }
 
 // Implement From trait to allow '?' conversion from signature::Error
@@ -426,6 +433,36 @@ pub fn derive_token_signing_keypair(
     Ok((signing_key.into(), verifying_key.into()))
 }
 
+// --- Mnemonic Handling (BIP-39) ---
+
+/// Validates a BIP-39 mnemonic phrase (word count, word validity, checksum).
+/// Uses the English wordlist by default.
+///
+/// # Arguments
+/// * `mnemonic_phrase` - The mnemonic phrase string to validate.
+///
+/// # Returns
+/// * `Ok(())` if the mnemonic is valid.
+/// * `Err(CryptoError::MnemonicValidationError)` if validation fails.
+pub fn validate_mnemonic(mnemonic_phrase: &str) -> Result<(), CryptoError> {
+    Mnemonic::parse_in(Language::English, mnemonic_phrase)
+        .map(|_| ()) // Discard the Mnemonic object on success
+        .map_err(|e| CryptoError::MnemonicValidationError(e.to_string()))
+}
+
+/// Converts a valid BIP-39 mnemonic phrase into its corresponding 64-byte seed.
+/// Uses the English wordlist and an empty passphrase by default.
+///
+/// # Returns
+/// * `Ok<[u8; 64]>` containing the derived 64-byte seed.
+/// * `Err(CryptoError::MnemonicToSeedError)` if conversion fails (e.g., invalid mnemonic).
+pub fn mnemonic_to_seed(mnemonic_phrase: &str) -> Result<[u8; 64], CryptoError> {
+    let mnemonic = Mnemonic::parse_in(Language::English, mnemonic_phrase)
+        .map_err(|e| CryptoError::MnemonicToSeedError(format!("Invalid mnemonic: {}", e)))?;
+    // Use the Mnemonic::to_seed method which returns [u8; 64]
+    Ok(mnemonic.to_seed("")) // Use empty passphrase as standard
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -803,4 +840,81 @@ mod tests {
         let (token_sk2, _) = derive_token_signing_keypair(&cmk2).unwrap();
         assert_ne!(token_sk1.0, token_sk2.0);
     }
-}
+
+    // --- Mnemonic Tests (adjust if needed) ---
+    #[test]
+    fn test_validate_mnemonic_valid() {
+        let valid_mnemonic = "radar blur cabbage chef fix engine embark frames garbage bracket ruling image";
+        assert!(validate_mnemonic(valid_mnemonic).is_ok());
+
+        let valid_mnemonic_24 = "legal winner thank year wave sausage worth useful legal winner thank year wave sausage worth useful legal winner thank year wave sausage worth title";
+        assert!(validate_mnemonic(valid_mnemonic_24).is_ok());
+    }
+
+    #[test]
+    fn test_validate_mnemonic_invalid_checksum() {
+        let invalid_mnemonic = "radar blur cabbage chef fix engine embark frames garbage bracket ruling top"; // last word wrong
+        let result = validate_mnemonic(invalid_mnemonic);
+        assert!(result.is_err());
+        match result {
+            Err(CryptoError::MnemonicValidationError(msg)) => {
+                // Error message might vary slightly between parse/from_phrase
+                assert!(msg.contains("checksum") || msg.contains("invalid mnemonic phrase"));
+            }
+            _ => panic!("Expected MnemonicValidationError"),
+        }
+    }
+
+    #[test]
+    fn test_validate_mnemonic_invalid_word() {
+        let invalid_mnemonic = "radar blur cabbage chef fix engine embark frames garbage bracket ruling zzz"; // invalid word
+        let result = validate_mnemonic(invalid_mnemonic);
+        assert!(result.is_err());
+        match result {
+            Err(CryptoError::MnemonicValidationError(msg)) => {
+                assert!(msg.contains("not in wordlist") || msg.contains("invalid mnemonic phrase"));
+            }
+            _ => panic!("Expected MnemonicValidationError"),
+        }
+    }
+
+    #[test]
+    fn test_validate_mnemonic_invalid_length() {
+        let invalid_mnemonic = "radar blur cabbage chef"; // Too short
+        let result = validate_mnemonic(invalid_mnemonic);
+        assert!(result.is_err());
+        match result {
+            Err(CryptoError::MnemonicValidationError(msg)) => {
+                 assert!(msg.contains("word count") || msg.contains("invalid mnemonic phrase"));
+            }
+            _ => panic!("Expected MnemonicValidationError"),
+        }
+    }
+
+    #[test]
+    fn test_mnemonic_to_seed_conversion() {
+        let mnemonic = "radar blur cabbage chef fix engine embark frames garbage bracket ruling image";
+        let result = mnemonic_to_seed(mnemonic);
+        assert!(result.is_ok());
+        let seed = result.unwrap();
+        assert_eq!(seed.len(), 64); // BIP-39 seeds are 512 bits (64 bytes)
+
+        // Example expected seed hex for the above mnemonic (verify with external tool if needed)
+        let expected_seed_hex = "c8461859f479021518f663c6157e1478a7a61c46940f4317f6f20491c12b97431e13b89d783a6118401197e510c56859730e61bc584e569f55a651c16089f737";
+        assert_eq!(hex::encode(seed), expected_seed_hex);
+    }
+
+    #[test]
+    fn test_mnemonic_to_seed_invalid_mnemonic() {
+        let invalid_mnemonic = "radar blur cabbage chef fix engine embark frames garbage bracket ruling top";
+        let result = mnemonic_to_seed(invalid_mnemonic);
+        assert!(result.is_err());
+        match result {
+            Err(CryptoError::MnemonicToSeedError(msg)) => {
+                assert!(msg.contains("Invalid mnemonic"));
+            }
+            _ => panic!("Expected MnemonicToSeedError"),
+        }
+    }
+
+} // end tests module

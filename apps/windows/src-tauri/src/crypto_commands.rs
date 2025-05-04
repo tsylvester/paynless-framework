@@ -25,10 +25,15 @@ pub fn generate_signing_keypair_hex() -> Result<(String, String), String> {
 
 #[command]
 pub fn sign_hex(secret_key_hex: String, message: Vec<u8>) -> Result<String, String> {
-    let secret_bytes = hex::decode(secret_key_hex).map_err(|e| format!("Invalid secret key hex: {}", e))?;
-    let secret_key_array: [u8; SIGNING_SECRET_KEY_BYTES] = secret_bytes
-        .try_into()
-        .map_err(|_| format!("Invalid secret key length, expected {}", SIGNING_SECRET_KEY_BYTES))?;
+    let secret_bytes =
+        hex::decode(secret_key_hex).map_err(|e| format!("Invalid secret key hex: {}", e))?;
+    let secret_key_array: [u8; SIGNING_SECRET_KEY_BYTES] =
+        secret_bytes.try_into().map_err(|_| {
+            format!(
+                "Invalid secret key length, expected {}",
+                SIGNING_SECRET_KEY_BYTES
+            )
+        })?;
 
     // Construct using the ::from_bytes constructor from core-crypto
     let core_secret_key = SigningSecretKey::from_bytes(secret_key_array);
@@ -39,19 +44,30 @@ pub fn sign_hex(secret_key_hex: String, message: Vec<u8>) -> Result<String, Stri
 }
 
 #[command]
-pub fn verify_hex(public_key_hex: String, message: Vec<u8>, signature_hex: String) -> Result<(), String> {
-    let public_bytes = hex::decode(public_key_hex).map_err(|e| format!("Invalid public key hex: {}", e))?;
-    let signature_bytes = hex::decode(signature_hex).map_err(|e| format!("Invalid signature hex: {}", e))?;
+pub fn verify_hex(
+    public_key_hex: String,
+    message: Vec<u8>,
+    signature_hex: String,
+) -> Result<(), String> {
+    let public_bytes =
+        hex::decode(public_key_hex).map_err(|e| format!("Invalid public key hex: {}", e))?;
+    let signature_bytes =
+        hex::decode(signature_hex).map_err(|e| format!("Invalid signature hex: {}", e))?;
 
-    let public_key_array: [u8; SIGNING_PUBLIC_KEY_BYTES] = public_bytes
-        .try_into()
-        .map_err(|_| format!("Invalid public key length, expected {}", SIGNING_PUBLIC_KEY_BYTES))?;
+    let public_key_array: [u8; SIGNING_PUBLIC_KEY_BYTES] =
+        public_bytes.try_into().map_err(|_| {
+            format!(
+                "Invalid public key length, expected {}",
+                SIGNING_PUBLIC_KEY_BYTES
+            )
+        })?;
     let signature_array: [u8; SIGNATURE_BYTES] = signature_bytes
         .try_into()
         .map_err(|_| format!("Invalid signature length, expected {}", SIGNATURE_BYTES))?;
 
     // Construct using the ::try_from_bytes constructors (which validate)
-    let core_public_key = SigningPublicKey::try_from_bytes(&public_key_array).map_err(map_crypto_err)?;
+    let core_public_key =
+        SigningPublicKey::try_from_bytes(&public_key_array).map_err(map_crypto_err)?;
     let core_signature = Signature::try_from_bytes(&signature_array).map_err(map_crypto_err)?;
 
     verify(&core_public_key, &message, &core_signature).map_err(map_crypto_err)
@@ -101,4 +117,4 @@ pub fn decrypt_symmetric_hex(
 
     // decrypt_symmetric expects arrays directly, no wrapper types
     decrypt_symmetric(&key_array, &ciphertext, &nonce_array, None).map_err(map_crypto_err)
-} 
+}

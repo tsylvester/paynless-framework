@@ -15,19 +15,29 @@ name = "windows_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]
-tauri-build = { version = "2.0.0-beta.12", features = [] }
+tauri-build = { version = "^2.0.0", features = [] }
 
 [dependencies]
-tauri = { version = "2.0.0", features = [] }
+tauri = { version = "^2.0.0", features = [] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
-tauri-plugin-opener = "2.2.6"
+# Local Crates
 core-crypto = { path = "./crates/core-crypto" }
-hex = "0.4"
-ed25519-dalek = { version = "2.1.1", features = ["rand_core"] }
+storage-interface = { path = "./crates/storage-interface" }
+thiserror = "1.0" # Needed by error types exposed in commands
+hex = "0.4" # For command argument decoding
+
+# Tauri Plugins (Ensure versions match tauri core if necessary)
 tauri-plugin-dialog = "2"
 tauri-plugin-fs = "2"
+tauri-plugin-opener = "2"
 
 [dev-dependencies]
+tokio = { version = "1", features = ["macros", "rt-multi-thread"] } # For async tests
 tempfile = "3.10.1"
+
+# Features section removed as it wasn't present in the conflicting file and seems outdated
+# [features]
+# default = ["custom-protocol"]
+# custom-protocol = ["tauri/custom-protocol"]
 

@@ -12,4 +12,4 @@ use tauri::AppHandle;
 #[cfg(test)]
 mod tests {
     // No tests needed here anymore
-} 
+}

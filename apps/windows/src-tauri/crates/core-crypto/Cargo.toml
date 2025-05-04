@@ -31,6 +31,7 @@ thiserror = "1.0"
 
 # Serialization (Likely needed for keys/tokens eventually)
 serde = { version = "1.0", features = ["derive"], optional = true }
+bip39 = "2.1.0"
 # base64 = { version = "0.21", optional = true }
 
 # Mnemonic / Seed Handling (Might live elsewhere, but potentially useful here)

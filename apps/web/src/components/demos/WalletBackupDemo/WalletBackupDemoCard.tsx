@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { usePlatform } from '@paynless/platform';
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Info, AlertCircle, FlaskConical, FileCog, Trash2 } from 'lucide-react';
+import { Info, AlertCircle, Trash2 } from 'lucide-react';
 import * as bip39 from 'bip39';
 
 import { TextInputArea } from '@/components/common/TextInputArea';
@@ -29,8 +29,6 @@ export const WalletBackupDemoCard: React.FC<WalletBackupDemoCardProps> = () => {
   const isDisabled = !isFileSystemAvailable || isActionLoading || isLoadingCapabilities || !!capabilityError;
   const isExportDisabled = !mnemonic || isDisabled;
 
-  const STATUS_DIR_SELECT_CANCELLED = 'Directory selection cancelled.';
-  const STATUS_DIR_SELECT_ERROR = (msg: string) => `Directory Select Error: ${msg}`;
   const STATUS_DROP_LOAD_ERROR = (msg: string) => `Drop Load Error: ${msg}`;
 
   const STATUS_IMPORT_SUCCESS = 'Mnemonic imported successfully!';
@@ -251,7 +249,6 @@ export const WalletBackupDemoCard: React.FC<WalletBackupDemoCardProps> = () => {
             isExportDisabled={isExportDisabled}
             isLoading={isActionLoading}
           />
-        </div>
         <Button 
           variant="outline" 
           onClick={handleClear}
@@ -260,7 +257,8 @@ export const WalletBackupDemoCard: React.FC<WalletBackupDemoCardProps> = () => {
           data-testid="clear-button"
         >
           <Trash2 className="mr-2 h-4 w-4" /> Clear
-        </Button>
+        </Button>        
+        </div>
         <StatusDisplay message={statusMessage} variant={statusVariant} />
       </>
     );

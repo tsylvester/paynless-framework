@@ -13,7 +13,8 @@
     "withGlobalTauri": true,
     "windows": [
       {
-        "title": "windows"
+        "title": "windows",
+        "label": "main"
       }
     ],
     "security": {
