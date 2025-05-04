@@ -42,9 +42,9 @@ describe('ConfigFileManager Component', () => {
     vi.clearAllMocks();
     // Reset mocks on the file system object
     if (mockAvailableFileSystem.isAvailable) {
-        vi.mocked(mockAvailableFileSystem.pickFile).mockClear().mockResolvedValue(null); // Default mock behaviour (cancelled)
+        vi.mocked(mockAvailableFileSystem.pickFile).mockClear().mockResolvedValue(null);
         vi.mocked(mockAvailableFileSystem.readFile).mockClear().mockResolvedValue(new Uint8Array());
-        vi.mocked(mockAvailableFileSystem.pickSaveFile).mockClear().mockResolvedValue(null); // Default mock behaviour (cancelled)
+        vi.mocked(mockAvailableFileSystem.pickSaveFile).mockClear().mockResolvedValue(null);
         vi.mocked(mockAvailableFileSystem.writeFile).mockClear().mockResolvedValue(undefined);
     }
   });
@@ -104,8 +104,13 @@ describe('ConfigFileManager Component', () => {
   });
 
   it('should render enabled buttons when file system is available', () => {
-    renderComponent(mockAvailableState); // Use the pre-defined available state
-    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    renderComponent(mockAvailableState);
+    // Check that the *specific* unavailability alert is NOT present
+    expect(screen.queryByText(/Desktop Only/i)).not.toBeInTheDocument();
+    // Check that the capability error alert is also NOT present
+    expect(screen.queryByText(/Capability Error/i)).not.toBeInTheDocument();
+
+    // Ensure skeletons are gone
     const skeletons = document.querySelectorAll('.animate-pulse');
     expect(skeletons.length).toBe(0);
     expect(screen.getByRole('button', { name: /Load Config/i })).toBeEnabled();
@@ -115,42 +120,220 @@ describe('ConfigFileManager Component', () => {
   // --- Interaction Tests ---
 
   describe('Load Button Interactions', () => {
-    it('should NOT call pickFile yet when Load Config button is clicked (placeholder)', async () => {
+    // ----- Test for successful load flow -----
+    it('should call readFile, decode content, display it, and populate the text area', async () => {
+        const mockFilePath = '/fake/config-to-load.json';
+        const mockDecodedContent = '{"config": "value", "nested": { "key": 123 } }';
+        const mockEncodedContent = new TextEncoder().encode(mockDecodedContent);
+
+        // Override mocks for this specific test
+        vi.mocked(mockAvailableFileSystem.pickFile).mockResolvedValue([mockFilePath]);
+        vi.mocked(mockAvailableFileSystem.readFile).mockResolvedValue(mockEncodedContent);
+
+        renderComponent(mockAvailableState);
+        const loadButton = screen.getByRole('button', { name: /Load Config/i });
+
+        fireEvent.click(loadButton);
+
+        // Wait for readFile to be called
+        await waitFor(() => {
+             expect(mockAvailableFileSystem.readFile).toHaveBeenCalledTimes(1);
+             expect(mockAvailableFileSystem.readFile).toHaveBeenCalledWith(mockFilePath);
+        });
+
+        // Assert that FileDataDisplay is rendered with the decoded content
+        const displayArea = screen.getByTestId('file-content-display');
+        expect(displayArea).toBeInTheDocument();
+        expect(displayArea.innerHTML).toBe(mockDecodedContent);
+
+        // Check TextInputArea is populated with the content
+        const textArea = screen.getByTestId('config-input-area');
+        expect(textArea).toBeInTheDocument();
+        expect(textArea).toHaveValue(mockDecodedContent);
+
+        // Also check the success status message
+         await waitFor(() => {
+             const statusDisplay = screen.getByTestId('status-display');
+             // Check that title and description are present
+             expect(within(statusDisplay).getByText('Success')).toBeInTheDocument(); 
+             expect(within(statusDisplay).getByText(/File loaded successfully/i)).toBeInTheDocument();
+         });
+    });
+    // ---------------------------
+
+    // Test user cancelling the file picker
+    it('should show cancellation message and not call readFile if pickFile is cancelled', async () => {
+      // Ensure pickFile resolves to null (simulating cancellation)
+      vi.mocked(mockAvailableFileSystem.pickFile).mockResolvedValue(null);
+
       renderComponent(mockAvailableState);
       const loadButton = screen.getByRole('button', { name: /Load Config/i });
 
       fireEvent.click(loadButton);
 
-      await waitFor(() => {});
+      // Wait for status update and ensure readFile is not called
+      await waitFor(() => {
+        expect(mockAvailableFileSystem.pickFile).toHaveBeenCalledTimes(1);
+        expect(mockAvailableFileSystem.readFile).not.toHaveBeenCalled();
+      });
 
-      expect(mockAvailableFileSystem.pickFile).not.toHaveBeenCalled();
-      expect(mockAvailableFileSystem.readFile).not.toHaveBeenCalled();
+      // Assert the status display shows the cancellation message
+      const statusDisplay = screen.getByTestId('status-display'); 
+      await waitFor(() => {
+        expect(statusDisplay).toHaveTextContent(/File selection cancelled/i);
+      });
     });
 
-    // Add tests here later for when pickFile *returns* a path,
-    // triggering readFile (once the component implements this)
-    // it('should call readFile if a file is picked', async () => { ... });
-    // it('should handle readFile errors', async () => { ... });
+    // ----- NEW FAILING TEST for readFile error -----
+    it('should show error message if readFile fails', async () => {
+        const mockFilePath = '/fake/error-config.json';
+        const mockReadError = new Error('Permission denied');
+        // Mock pickFile to succeed
+        vi.mocked(mockAvailableFileSystem.pickFile).mockResolvedValue([mockFilePath]);
+        // Mock readFile to fail
+        vi.mocked(mockAvailableFileSystem.readFile).mockRejectedValue(mockReadError);
+
+        renderComponent(mockAvailableState);
+        const loadButton = screen.getByRole('button', { name: /Load Config/i });
+
+        fireEvent.click(loadButton);
+
+        // Wait for status update
+        await waitFor(() => {
+          expect(mockAvailableFileSystem.pickFile).toHaveBeenCalledTimes(1);
+          expect(mockAvailableFileSystem.readFile).toHaveBeenCalledTimes(1);
+        });
+
+        // Assert the status display shows the error message
+        const statusDisplay = screen.getByTestId('status-display');
+        expect(statusDisplay).toHaveTextContent(/Load Error: Permission denied/i);
+    });
+    // ---------------------------------------------
 
   });
 
   describe('Save Button Interactions', () => {
-     it('should NOT call pickSaveFile yet when Save Config button is clicked (placeholder)', async () => {
+    // ----- Test for successful save -----
+    it('should call writeFile with the correct path and content from text area', async () => {
+        const mockSavePath = '/fake/config-to-save.json';
+        const mockContentToSave = '{"userSetting": true}';
+        const mockEncodedContentToSave = new TextEncoder().encode(mockContentToSave);
+        // Mock pickSaveFile to succeed
+        vi.mocked(mockAvailableFileSystem.pickSaveFile).mockResolvedValue(mockSavePath);
+        // Mock writeFile to succeed (we'll check args later)
+        vi.mocked(mockAvailableFileSystem.writeFile).mockResolvedValue(undefined);
+
+        renderComponent(mockAvailableState);
+
+        // Simulate user typing content into the TextInputArea
+        const textArea = screen.getByTestId('config-input-area');
+        fireEvent.change(textArea, { target: { value: mockContentToSave } });
+
+        const saveButton = screen.getByRole('button', { name: /Save Config/i });
+
+        fireEvent.click(saveButton);
+
+        // Wait for pickSaveFile and writeFile to be called
+        await waitFor(() => {
+          expect(mockAvailableFileSystem.pickSaveFile).toHaveBeenCalledTimes(1);
+          expect(mockAvailableFileSystem.writeFile).toHaveBeenCalledTimes(1);
+        });
+
+        // Assert that writeFile IS called with the path AND the encoded content from the text area
+        await waitFor(() => {
+          expect(mockAvailableFileSystem.writeFile).toHaveBeenCalledWith(mockSavePath, mockEncodedContentToSave);
+        });
+
+        // Assert status display shows success
+        const statusDisplay = screen.getByTestId('status-display');
+        // Find the description within the alert and check its content
+        const description = within(statusDisplay).getByText(/Config saved successfully/i); 
+        expect(description).toBeInTheDocument();
+    });
+    // ---------------------------------------------
+
+    // Test user cancelling the save file picker
+    it('should show cancellation message and not call writeFile if pickSaveFile is cancelled', async () => {
+      // Ensure pickSaveFile resolves to null
+      vi.mocked(mockAvailableFileSystem.pickSaveFile).mockResolvedValue(null);
+
       renderComponent(mockAvailableState);
+
+      // Simulate having content to save
+      const textArea = screen.getByTestId('config-input-area');
+      fireEvent.change(textArea, { target: { value: 'some content' } });
+
       const saveButton = screen.getByRole('button', { name: /Save Config/i });
 
       fireEvent.click(saveButton);
 
-      await waitFor(() => {});
+      // Wait for status update and ensure writeFile is not called
+      await waitFor(() => {
+        expect(mockAvailableFileSystem.pickSaveFile).toHaveBeenCalledTimes(1);
+        expect(mockAvailableFileSystem.writeFile).not.toHaveBeenCalled();
+      });
 
-      expect(mockAvailableFileSystem.pickSaveFile).not.toHaveBeenCalled();
-      expect(mockAvailableFileSystem.writeFile).not.toHaveBeenCalled();
+      // Assert the status display shows the cancellation message
+      // This assertion should fail initially
+      const statusDisplay = screen.getByTestId('status-display'); 
+      expect(statusDisplay).toHaveTextContent(/File save cancelled/i);
     });
 
-    // Add tests here later for when pickSaveFile *returns* a path,
-    // triggering writeFile (once the component implements this)
-    // it('should call writeFile if a save path is picked', async () => { ... });
-    // it('should handle writeFile errors', async () => { ... });
+    // ----- NEW TEST for saving with empty content -----
+    it('should show error and not call pickSaveFile if content is empty', async () => {
+      renderComponent(mockAvailableState);
+      const saveButton = screen.getByRole('button', { name: /Save Config/i });
+
+      // Ensure text area is empty (default state)
+      expect(screen.getByTestId('config-input-area')).toHaveValue('');
+
+      fireEvent.click(saveButton);
+
+      // Assert pickSaveFile and writeFile were NOT called
+      expect(mockAvailableFileSystem.pickSaveFile).not.toHaveBeenCalled();
+      expect(mockAvailableFileSystem.writeFile).not.toHaveBeenCalled();
+
+      // Assert error status is shown
+      await waitFor(() => {
+        const statusDisplay = screen.getByTestId('status-display');
+        expect(statusDisplay).toHaveTextContent(/No content to save/i);
+        // Check title is correct for error variant
+        expect(within(statusDisplay).getByText('Error')).toBeInTheDocument(); 
+      });
+    });
+
+    // ----- Test for writeFile error -----
+    it('should show error message if writeFile fails', async () => {
+        const mockSavePath = '/fake/error-save.json';
+        const mockWriteError = new Error('Disk is full');
+        // Mock pickSaveFile to succeed
+        vi.mocked(mockAvailableFileSystem.pickSaveFile).mockResolvedValue(mockSavePath);
+        // Mock writeFile to fail
+        vi.mocked(mockAvailableFileSystem.writeFile).mockRejectedValue(mockWriteError);
+
+        renderComponent(mockAvailableState);
+
+        // Simulate having content to save
+        const textArea = screen.getByTestId('config-input-area');
+        fireEvent.change(textArea, { target: { value: 'some content to cause error' } });
+
+        const saveButton = screen.getByRole('button', { name: /Save Config/i });
+
+        fireEvent.click(saveButton);
+
+        // Wait for status update
+        await waitFor(() => {
+          expect(mockAvailableFileSystem.pickSaveFile).toHaveBeenCalledTimes(1);
+          expect(mockAvailableFileSystem.writeFile).toHaveBeenCalledTimes(1);
+        });
+
+        // Assert the status display shows the error message
+        // This assertion should fail initially
+        const statusDisplay = screen.getByTestId('status-display');
+        expect(statusDisplay).toHaveTextContent(/Save Error: Disk is full/i);
+        // expect(statusDisplay).toHaveAttribute('data-variant', 'error');
+    });
+    // ---------------------------------------------
 
   });
 

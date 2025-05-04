@@ -5,7 +5,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Info, AlertCircle } from 'lucide-react';
 import * as bip39 from 'bip39';
 
-import { MnemonicInputArea } from './MnemonicInputArea';
+import { TextInputArea } from '@/components/common/TextInputArea';
 import { GenerateMnemonicButton } from './GenerateMnemonicButton';
 import { FileActionButtons } from './FileActionButtons';
 import { StatusDisplay } from './StatusDisplay';
@@ -156,10 +156,14 @@ export const WalletBackupDemoCard: React.FC<WalletBackupDemoCardProps> = () => {
            </Alert>
         )}
 
-        <MnemonicInputArea
+        <TextInputArea
+          label="Mnemonic Phrase (12 or 24 words)"
+          id="mnemonic-input-area"
+          placeholder="Enter or generate your BIP-39 mnemonic phrase here..."
           value={mnemonic}
           onChange={setMnemonic}
           disabled={isDisabled}
+          dataTestId="mnemonic-input"
         />
         <div className="flex flex-col md:flex-row md:space-x-2 space-y-2 md:space-y-0">
           <GenerateMnemonicButton 

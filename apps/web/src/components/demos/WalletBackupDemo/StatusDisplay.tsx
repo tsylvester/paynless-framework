@@ -33,17 +33,13 @@ export const StatusDisplay: React.FC<StatusDisplayProps> = ({
   message,
   variant,
 }) => {
-  if (!message) {
-    return null; // Render nothing if no message
-  }
-
   const { Icon, title, alertVariant } = statusConfig[variant];
 
   return (
-    <Alert variant={alertVariant}>
+    <Alert variant={alertVariant} data-testid="status-display">
       <Icon className="h-4 w-4" />
       <AlertTitle>{title}</AlertTitle>
-      <AlertDescription>{message}</AlertDescription>
+      {message && <AlertDescription>{message}</AlertDescription>}
     </Alert>
   );
 }; 

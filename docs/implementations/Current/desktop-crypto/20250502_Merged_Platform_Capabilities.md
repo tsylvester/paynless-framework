@@ -402,33 +402,68 @@ This implementation plan follows a phased approach:
 
 ### STEP-5.4: Refactor/Build UI Components [UI] [🚧]
 
-#### STEP-5.4.1: Identify/Create Example Component (e.g., `ConfigFileManager`) [COMMIT]
-*   [ ] Identify an existing component needing file access or create a new placeholder component (`apps/web/src/components/features/ConfigFileManager.tsx`).
-*   [ ] Commit placeholder if created.
+#### STEP-5.4.1: Identify/Create Example Component (e.g., `ConfigFileManager`) [COMMIT] [✅]
+*   [✅] Identified component: `apps/web/src/components/features/ConfigFileManager.tsx`.
+*   [✅] Committed placeholder component.
 
-#### STEP-5.4.2: Write Component Unit Tests [TEST-UNIT] [COMMIT]
-*   [ ] Create test file (`ConfigFileManager.test.tsx`).
-*   [ ] Write tests covering different capability scenarios:
-    *   [ ] Test Case 1: Web Environment - Provide mock capabilities (`platform: 'web'`, `fileSystem: { isAvailable: false }`). Assert Desktop buttons are hidden/disabled. Assert standard web inputs are shown (if applicable).
-    *   [ ] Test Case 2: Tauri Environment - Provide mock capabilities (`platform: 'tauri'`, `fileSystem: { isAvailable: true, pickSaveFile: mockFn, writeFile: mockFn }`). Assert Desktop buttons are visible/enabled.
-    *   [ ] Test Case 3: Tauri Interaction - Simulate clicking Desktop 'Save' button. Assert the mocked `pickSaveFile` and `writeFile` methods on the mock capabilities object are called correctly.
-    *   [ ] Test Case 4: Loading State - Provide `isLoadingCapabilities: true` (or `platformCapabilities: null`). Assert a loading indicator is shown within the component.
-    *   [ ] Test Case 5: Error State - Provide `capabilityError: 'some error'`. Assert appropriate fallback UI or disabled state.
-*   [ ] Commit failing tests with message "test(UI): Add unit tests for ConfigFileManager component with platform capabilities".
+#### STEP-5.4.2: Write Component Unit Tests [TEST-UNIT] [COMMIT] [✅]
+*   [✅] Created test file (`ConfigFileManager.test.tsx`).
+*   [✅] Wrote tests covering different capability scenarios:
+    *   [✅] Test Case 1: Web Environment (Unavailable State)
+    *   [✅] Test Case 2: Tauri Environment (Available State - Enabled Buttons)
+    *   [🚧] Test Case 3: Tauri Interaction (Load/Save): Assertions for placeholder logic complete. Assertions for actual file operations pending component logic implementation.
+    *   [✅] Test Case 4: Loading State
+    *   [✅] Test Case 5: Error State
+*   [✅] Added initial failing test for next logic step (calling `readFile`).
+*   [✅] Commit completed tests with message "test(UI): Add unit tests for ConfigFileManager component placeholder".
 
-#### STEP-5.4.3: Implement Component Logic Using Capability Service [TEST-UNIT] [COMMIT]
-*   [ ] In `ConfigFileManager.tsx`.
-*   [ ] Consume the `platformCapabilities`, `isLoadingCapabilities`, `capabilityError` state (e.g., via context or props).
-*   [ ] Implement conditional rendering based on `isLoadingCapabilities` and `capabilityError` first.
-*   [ ] If capabilities are loaded and no error:
-    *   [ ] Use `platformCapabilities.fileSystem.isAvailable` to conditionally render Desktop-specific buttons/UI vs. Web-specific UI.
-    *   [ ] Add `onClick` handlers for Desktop buttons.
-    *   [ ] Inside handlers, check `if (platformCapabilities.fileSystem.isAvailable)` again (type guard) before calling methods like `platformCapabilities.fileSystem.pickSaveFile(...)` and `platformCapabilities.fileSystem.writeFile(...)`.
-    *   [ ] Add state within the component to handle the async nature of file operations (e.g., `isSaving: true`).
-    *   [ ] Implement appropriate error handling for the file operation promises.
-*   [ ] Run unit tests. Refine component implementation until all tests pass.
+#### STEP-5.4.A: Create `FileDataDisplay` Component [UI] [COMMIT] [✅] (NEW)
+*   [✅] Create file `apps/web/src/components/common/FileDataDisplay.tsx`.
+*   [✅] Implement a simple component taking `content: string` and optional `title: string` props.
+*   [✅] Render the content in a styled, read-only container (e.g., `<pre>` within a bordered `<div>`).
+*   [✅] Commit component with message "feat(UI): Add FileDataDisplay component".
+
+#### STEP-5.4.B: Write `FileDataDisplay` Unit Tests [TEST-UNIT] [COMMIT] [✅] (NEW)
+*   [✅] Create test file `FileDataDisplay.test.tsx`.
+*   [✅] Write unit tests verifying title and content rendering.
+*   [✅] Commit tests with message "test(UI): Add unit tests for FileDataDisplay component".
+
+#### STEP-5.4.C: Refactor `MnemonicInputArea` to `TextInputArea` [REFACTOR][UI][TEST-UNIT] [✅] (NEW)
+*   **Goal:** Make the existing input area reusable.
+*   [✅] Rename `MnemonicInputArea.tsx` to `TextInputArea.tsx` and move to `apps/web/src/components/common/`.
+*   [✅] Rename `MnemonicInputArea.test.tsx` to `TextInputArea.test.tsx` and move accordingly.
+*   [✅] Update component name and internal code/comments from `MnemonicInputArea` to `TextInputArea`.
+*   [✅] Generalize props: Add `label` and `placeholder` props. Ensure `aria-label` uses the `label` prop.
+*   [✅] Update `WalletBackupDemoCard.tsx` to import and use the refactored `TextInputArea` component, passing appropriate `label` and `placeholder`.
+*   [✅] Update `TextInputArea.test.tsx` to reflect the generalized component and props. Remove any mnemonic-specific assertions.
+*   [✅] Run tests for `TextInputArea` and `WalletBackupDemoCard` to ensure they pass.
+*   [✅] Commit changes with message "refactor(UI): Generalize MnemonicInputArea to reusable TextInputArea component".
+
+#### STEP-5.4.3: Implement Component Logic Using Capability Service (`ConfigFileManager`) [TEST-UNIT] [COMMIT] [✅]
+*   [✅] In `ConfigFileManager.tsx`.
+*   [✅] Consume the `platformCapabilities`, `isLoadingCapabilities`, `capabilityError` state.
+*   [✅] Implement conditional rendering based on `isLoadingCapabilities` and `capabilityError`.
+*   [✅] Use `platformCapabilities.fileSystem.isAvailable` to conditionally render buttons.
+*   [✅] Implement basic `onClick` handlers for Load/Save buttons.
+*   [✅] Implement basic interaction logic (calling `pickFile`/`readFile`, `pickSaveFile`/`writeFile`).
+*   [✅] Add basic state for action loading and status messages (`isActionLoading`, `statusMessage`, `statusVariant`).
+*   [✅] Use `StatusDisplay` component for feedback.
+*   [✅] Add state to hold loaded file content as string (`loadedConfigContent: string | null`).
+*   [✅] Add state to hold input content for saving (`configInputContent: string`).
+*   [✅] Render the new `TextInputArea` component, controlled by `configInputContent` state.
+*   [✅] In `handleLoadConfig` success path:
+    *   [✅] Decode the `Uint8Array` from `readFile` to string (`new TextDecoder().decode(...)`).
+    *   [✅] Attempt to parse the string as JSON (wrap in `try/catch`).
+    *   [✅] Update `loadedConfigContent` state with the decoded string (or formatted JSON). Handle parsing errors.
+    *   [✅] **Also update `configInputContent` state** with the loaded, decoded string so it appears in the textarea for editing/saving.
+*   [✅] In `handleSaveConfig`:
+    *   [✅] Get the data to save **from the `configInputContent` state**.
+    *   [✅] Encode the data to `Uint8Array` (`new TextEncoder().encode(...)`).
+    *   [✅] Pass the encoded data to `fileSystem.writeFile()`.
+*   [✅] Render the `FileDataDisplay` component conditionally, passing `loadedConfigContent`.
+*   [✅] Run unit tests (including new tests for textarea interaction and updated save tests). Refine implementation until all tests pass.
 *   [ ] Build frontend.
-*   [ ] Commit changes with message "feat(UI): Implement ConfigFileManager using platform capability service".
+*   [ ] Commit changes with message "feat(UI): Implement ConfigFileManager data handling using TextInputArea and FileDataDisplay".
 
 ### STEP-5.5: Integrate Capability Checks in Core UI (e.g., Header) [✅]
 
