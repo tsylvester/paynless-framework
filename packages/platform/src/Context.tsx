@@ -4,7 +4,7 @@ import React, { createContext, useContext, useState, useEffect, ReactNode } from
 import type { PlatformCapabilities } from '@paynless/types';
 
 // *** Import the centralized service function ***
-import { getPlatformCapabilities, resetMemoizedCapabilities } from './index';
+import { getPlatformCapabilities } from './index';
 
 // Define Default Initial State (Remains the same)
 export const DEFAULT_INITIAL_CAPABILITIES: PlatformCapabilities = {
@@ -25,9 +25,6 @@ interface PlatformProviderProps {
 export const PlatformProvider: React.FC<PlatformProviderProps> = ({ children }) => {
   // State now holds PlatformCapabilities, initialized with default
   const [capabilities, setCapabilities] = useState<PlatformCapabilities>(DEFAULT_INITIAL_CAPABILITIES);
-  // State to track if fetching is done (can be used for loading indicators)
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     let isMounted = true;
@@ -41,21 +38,16 @@ export const PlatformProvider: React.FC<PlatformProviderProps> = ({ children }) 
         if (isMounted) {
           console.log('PlatformProvider: Received capabilities from service:', resolvedCaps);
           setCapabilities(resolvedCaps);
-          setError(null); // Clear any previous error
         }
       })
       .catch(err => {
         console.error('PlatformProvider: Error getting capabilities from service:', err);
         if (isMounted) {
           // Set error state and potentially keep default (unavailable) capabilities
-          setError(err instanceof Error ? err.message : 'Unknown error fetching capabilities');
-          setCapabilities(DEFAULT_INITIAL_CAPABILITIES); // Fallback to default
+          setCapabilities(DEFAULT_INITIAL_CAPABILITIES); 
         }
       })
       .finally(() => {
-        if (isMounted) {
-          setIsLoading(false); // Mark loading complete regardless of outcome
-        }
       });
 
     // Cleanup function to prevent state updates on unmounted component

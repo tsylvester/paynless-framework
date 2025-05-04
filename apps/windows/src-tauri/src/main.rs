@@ -18,7 +18,8 @@ fn main() {
             crypto_commands::decrypt_symmetric_hex,
             // Capability commands
             capabilities::read_file,
-            capabilities::write_file
+            capabilities::write_file,
+            capabilities::pick_directory
         ])
         // TODO: add setup hooks if needed
         .run(tauri::generate_context!())

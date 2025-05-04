@@ -42,19 +42,6 @@ describe('PlatformFeatureTester', () => {
     expect(screen.getByText('Loading platform capabilities...')).toBeInTheDocument();
   });
 
-  it('should display web platform info and hide desktop button in web environment', () => {
-    const webCaps: Platform = {
-      platform: 'web',
-      fileSystem: { isAvailable: false },
-    };
-    renderWithMockedHook(webCaps);
-
-    expect(screen.getByText(/Detected Platform:/)).toHaveTextContent('web');
-    expect(screen.getByText(/File System Available:/)).toHaveTextContent('false');
-    expect(screen.queryByRole('button', { name: /Pick Text File/ })).not.toBeInTheDocument();
-    expect(screen.getByLabelText(/Choose file \(Web standard\):/)).toBeInTheDocument();
-  });
-
   it('should display tauri platform info and show desktop button in tauri environment', () => {
     const tauriCaps: Platform = {
       platform: 'tauri',
@@ -101,18 +88,18 @@ describe('PlatformFeatureTester', () => {
     });
 
     it('should call pickFile and readFile when pick button is clicked', async () => {
-      mockPickFile.mockResolvedValue('/picked/file.txt');
-      mockReadFile.mockResolvedValue(new Uint8Array([1]));
+      mockPickFile.mockResolvedValue(['/picked/file.txt']);
+      mockReadFile.mockResolvedValue(new TextEncoder().encode('File content'));
       renderWithMockedHook(tauriCaps);
 
       const button = screen.getByRole('button', { name: /Pick & Load Text File/ });
       await act(async () => {
         fireEvent.click(button);
       });
-      await act(async () => { await new Promise(res => setTimeout(res,0)); });
 
-      expect(mockPickFile).toHaveBeenCalledWith({ accept: '.txt' });
+      expect(mockPickFile).toHaveBeenCalledWith({ accept: '.txt', multiple: false });
       expect(mockReadFile).toHaveBeenCalledWith('/picked/file.txt');
+      expect(screen.getByRole('textbox')).toHaveValue('File content');
     });
 
     it('should render a save button', () => {

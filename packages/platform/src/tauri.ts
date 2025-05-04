@@ -5,11 +5,11 @@ import { open, save } from '@tauri-apps/plugin-dialog';
 // Import types for the capabilities interface
 import type { FileSystemCapabilities } from '@paynless/types';
 
-// Command names (ensure consistency with Rust)
+// Command names (ensure consistency with Rust registration in main.rs)
 const RUST_COMMANDS = {
-  READ_FILE: 'plugin:capabilities|read_file',
-  WRITE_FILE: 'plugin:capabilities|write_file',
-  PICK_DIRECTORY: 'plugin:capabilities|pick_directory', // New command
+  READ_FILE: 'read_file',         // Corrected name
+  WRITE_FILE: 'write_file',       // Corrected name
+  PICK_DIRECTORY: 'pick_directory', // Corrected name
 };
 
 // Utility function to parse accept string into Tauri filters

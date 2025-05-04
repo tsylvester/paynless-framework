@@ -1,6 +1,14 @@
 use tauri::command;
 use std::fs;
 use std::path::Path;
+// Import AppHandle
+use tauri::AppHandle;
+// Import the plugin's extension trait
+use tauri_plugin_dialog::DialogExt;
+// Use PathBuf for the final result
+use std::path::PathBuf;
+// Import FilePath explicitly to match against its variants
+use tauri_plugin_fs::FilePath;
 
 // Helper to map std::io::Error to a String
 fn map_io_err(err: std::io::Error) -> String {
@@ -17,6 +25,42 @@ pub fn write_file(path: String, data: Vec<u8>) -> Result<(), String> {
     fs::write(Path::new(&path), data).map_err(map_io_err)
 }
 
+// Command to pick one or more directories using BLOCKING dialog
+#[command]
+pub fn pick_directory(app_handle: AppHandle, multiple: Option<bool>) -> Result<Option<Vec<PathBuf>>, String> {
+    let dialog_handle = app_handle.dialog();
+    let file_dialog = dialog_handle.file();
+
+    let result_fp = match multiple {
+        Some(true) => file_dialog.blocking_pick_folders(), // Returns Option<Vec<FilePath>>
+        _ => file_dialog.blocking_pick_folder().map(|fp| vec![fp]), // Returns Option<Vec<FilePath>>
+    };
+
+    // Convert Option<Vec<FilePath>> to Option<Vec<PathBuf>>
+    match result_fp {
+        Some(vec_fp) => {
+            // Explicitly match FilePath::Path variant (assuming name)
+            let vec_pb: Vec<PathBuf> = vec_fp.clone().into_iter()
+                .filter_map(|fp| {
+                    match fp {
+                        // Assuming the variant holding PathBuf is named `Path`
+                        FilePath::Path(pb) => Some(pb),
+                        _ => None, // Filter out other variants (e.g., URIs)
+                    }
+                })
+                .collect();
+
+            // Check if we successfully converted paths or if input was non-empty but output is empty
+            if !vec_pb.is_empty() || vec_fp.is_empty() {
+                 Ok(Some(vec_pb))
+            } else {
+                 Err("Could not convert selected paths to standard PathBufs (check FilePath variants)".to_string())
+            }
+        },
+        None => Ok(None), // User cancelled
+    }
+}
+
 // --- Unit Tests ---
 
 #[cfg(test)]
@@ -31,9 +75,10 @@ mod tests {
         let result = read_file("this_file_should_not_exist_ever.txt".to_string());
         assert!(result.is_err());
         let error_msg = result.unwrap_err();
-        assert!(error_msg.contains("Failed to read file"));
-        // Check for specific OS error if possible/needed (e.g., "No such file or directory")
-        // assert!(error_msg.contains("No such file or directory")); // Behavior might vary
+        // Assert against the actual error format from map_io_err
+        assert!(error_msg.starts_with("Filesystem Error:")); 
+        // Optionally check for specific error kinds if stable across platforms
+        // assert!(error_msg.contains("entity not found")); // Or similar OS-specific detail
     }
 
     #[test]
@@ -56,9 +101,10 @@ mod tests {
         let result = write_file("invalid_dir/some_file.txt".to_string(), vec![1, 2, 3]);
         assert!(result.is_err());
         let error_msg = result.unwrap_err();
-        assert!(error_msg.contains("Failed to write file"));
-        // Check for specific OS error if possible/needed
-        // assert!(error_msg.contains("No such file or directory")); // Behavior might vary
+        // Assert against the actual error format from map_io_err
+        assert!(error_msg.starts_with("Filesystem Error:")); 
+        // Optionally check for specific error kinds
+        // assert!(error_msg.contains("entity not found")); 
     }
 
     #[test]

@@ -28,8 +28,10 @@ export const PlatformFeatureTester: React.FC = () => {
   const handlePickFile = async () => {
     if (fileSystem.isAvailable) {
       logger.info(`[${platform}] Attempting to pick file...`);
-      const filePath = await fileSystem.pickFile({ accept: '.txt' });
-      if (filePath) {
+      // Request a single file explicitly, expect string[] | null
+      const filePaths = await fileSystem.pickFile({ accept: '.txt', multiple: false }); 
+      if (filePaths && filePaths.length > 0) {
+        const filePath = filePaths[0]; // Take the first file path
         logger.info(`[${platform}] File picked: ${filePath}`);
         try {
           const contentBytes = await fileSystem.readFile(filePath);
@@ -42,7 +44,7 @@ export const PlatformFeatureTester: React.FC = () => {
           logger.error(`[${platform}] Error reading file:`, logData);
         }
       } else {
-        logger.info(`[${platform}] File picking cancelled.`);
+        logger.info(`[${platform}] File picking cancelled or no file selected.`);
       }
     } else {
       logger.warn('File picking not available on this platform.');

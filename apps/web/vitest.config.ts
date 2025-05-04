@@ -17,8 +17,6 @@ export default defineConfig({
     },
     // Watch for changes in api
     forceRerunTriggers: ['../../packages/api/src/**/*'],
-    // Watch for changes in api
-    forceRerunTriggers: ['../../packages/api/src/**/*'],
     // Explicit setup
     setupFiles: ['./src/tests/setup.ts'],
     environment: 'jsdom',
