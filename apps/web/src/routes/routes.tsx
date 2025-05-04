@@ -17,6 +17,10 @@ import { OrganizationFocusedViewPage } from '../pages/OrganizationFocusedViewPag
 //import { VerifyEmail } from '../pages/VerifyEmail';
 import { HomePage } from '../pages/Home';
 
+// Import the new wrapper and the demo component
+import { TauriOnlyWrapper } from '../components/routes/TauriOnlyWrapper';
+import { WalletBackupDemoCard } from '../components/demos/WalletBackupDemo/WalletBackupDemoCard';
+
 const routes: RouteObject[] = [
   {
     path: '/',
@@ -118,6 +122,17 @@ const routes: RouteObject[] = [
             <div>Admin Page Content Placeholder</div>
           </ProtectedRoute>
         ),
+      },
+      // --- Tauri Only Routes (Dev/Debug) --- 
+      {
+        element: <TauriOnlyWrapper />, // Apply the wrapper
+        children: [
+          {
+            path: 'dev/wallet-backup',
+            element: <WalletBackupDemoCard /> // The actual demo page
+          },
+          // Add other Tauri-only dev routes here in the future
+        ]
       },
       { path: '*', element: <Navigate to="/" replace /> },
     ],
