@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { usePlatform } from '@paynless/platform';
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from '@/components/ui/button';
@@ -8,6 +8,8 @@ import ErrorBoundary from '@/components/common/ErrorBoundary';
 import { StatusDisplay } from '../demos/WalletBackupDemo/StatusDisplay';
 import { FileDataDisplay } from '../common/FileDataDisplay';
 import { TextInputArea } from '../common/TextInputArea';
+import { DropZone } from '../common/DropZone';
+import { platformEventEmitter, FileDropPayload } from '@paynless/platform';
 
 interface ConfigFileManagerProps {
   // Props TBD based on actual config needs
@@ -51,6 +53,32 @@ export const ConfigFileManager: React.FC<ConfigFileManagerProps> = ({ configName
   const STATUS_DIR_SELECT_SUCCESS = (path: string) => `Selected directory: ${path}`;
   const STATUS_DIR_SELECT_CANCELLED = 'Directory selection cancelled.';
   const STATUS_DIR_SELECT_ERROR = (msg: string) => `Directory Select Error: ${msg}`;
+  const STATUS_DROP_LOAD_ERROR = (msg: string) => `Drop Load Error: ${msg}`;
+
+  // --- Refactored File Loading Logic ---
+  const loadFile = async (filePath: string) => {
+    if (!fileSystem || !isFileSystemAvailable || isActionLoading) return;
+    console.log(`[ConfigFileManager] Loading file: ${filePath}`);
+    setIsActionLoading(true);
+    setStatusMessage(STATUS_READING_FILE(filePath));
+    setStatusVariant('info');
+    try {
+      const fileContent = await fileSystem.readFile(filePath);
+      setStatusMessage(STATUS_LOAD_SUCCESS);
+      setStatusVariant('success');
+      const decodedContent = new TextDecoder().decode(fileContent);
+      setLoadedConfigContent(decodedContent);
+      setConfigInputContent(decodedContent);
+    } catch (error) {
+      console.error("Load File Error:", error);
+      const message = error instanceof Error ? STATUS_LOAD_ERROR(error.message) : STATUS_UNKNOWN_ERROR;
+      setStatusMessage(message);
+      setStatusVariant('error');
+    } finally {
+      setIsActionLoading(false); 
+    }
+  };
+  // -------------------------------------
 
   const handleLoadConfig = async () => {
     if (!fileSystem || !isFileSystemAvailable || isActionLoading) return;
@@ -59,46 +87,28 @@ export const ConfigFileManager: React.FC<ConfigFileManagerProps> = ({ configName
     setStatusMessage(STATUS_PICKING_FILE);
     setStatusVariant('info');
     try {
-      const selectedPaths = await fileSystem.pickFile({
-        multiple: false,
-      });
-
+      const selectedPaths = await fileSystem.pickFile({ multiple: false });
       const selectedFilePath = selectedPaths?.[0];
       if (!selectedFilePath) {
         setStatusMessage(STATUS_LOAD_CANCELLED);
         setStatusVariant('info');
-        setIsActionLoading(false);
+        // No need to set loading false here, loadFile does it
         return;
       }
+      // Call the refactored loading function
+      await loadFile(selectedFilePath);
 
-      setStatusMessage(STATUS_READING_FILE(selectedFilePath));
-      setStatusVariant('info');
-      const fileContent = await fileSystem.readFile(selectedFilePath);
-
-      setStatusMessage(STATUS_LOAD_SUCCESS);
-      setStatusVariant('success');
-      // Decode content and update state
-      try {
-        const decodedContent = new TextDecoder().decode(fileContent);
-        setLoadedConfigContent(decodedContent);
-        setConfigInputContent(decodedContent);
-        // Optional: Attempt to parse as JSON for logging/validation?
-        // const jsonData = JSON.parse(decodedContent);
-        // console.log("Parsed JSON data:", jsonData);
-      } catch (decodeError) {
-         console.error("Decoding/Parsing Error:", decodeError);
-         setStatusMessage('File loaded, but failed to decode or parse content.');
-         setStatusVariant('error');
-         setLoadedConfigContent(null); // Clear content on decode error
-      }
-
-    } catch (error) {
-      console.error("Load Config Error:", error);
-      const message = error instanceof Error ? STATUS_LOAD_ERROR(error.message) : STATUS_UNKNOWN_ERROR;
-      setStatusMessage(message);
-      setStatusVariant('error');
+    } catch (error) { // Catch errors from pickFile itself
+       console.error("Pick File Error:", error);
+       const message = error instanceof Error ? STATUS_LOAD_ERROR(error.message) : STATUS_UNKNOWN_ERROR;
+       setStatusMessage(message);
+       setStatusVariant('error');
     } finally {
-      setIsActionLoading(false);
+       // Ensure loading is stopped if pickFile fails before loadFile is called
+       // or if pickFile is cancelled and returns early.
+       // loadFile handles its own finally block.
+       // Check if still loading JUST IN CASE loadFile wasn't called (e.g. cancelled)
+       if(isActionLoading) setIsActionLoading(false); 
     }
   };
 
@@ -180,6 +190,37 @@ export const ConfigFileManager: React.FC<ConfigFileManagerProps> = ({ configName
     }
   };
 
+  // --- Effect for File Drop Listener ---
+  useEffect(() => {
+    if (!isFileSystemAvailable) return; // Only listen if FS is available
+
+    const handleFileDrop = (payload: FileDropPayload) => {
+      console.log('[ConfigFileManager] Received file drop:', payload);
+      // Assuming we only care about the first dropped file for config loading
+      const filePath = payload[0]; 
+      if (filePath) {
+        // Reset status before loading dropped file
+        setStatusMessage(null);
+        setSelectedDirectoryPath(null);
+        loadFile(filePath).catch(err => {
+            // Handle potential errors during the async loadFile itself
+            console.error("Error during loadFile from drop:", err);
+            setStatusMessage(STATUS_DROP_LOAD_ERROR(err instanceof Error ? err.message : 'Unknown error'));
+            setStatusVariant('error');
+        });
+      }
+    };
+
+    console.log('[ConfigFileManager] Subscribing to file-drop event.');
+    platformEventEmitter.on('file-drop', handleFileDrop);
+
+    return () => {
+      console.log('[ConfigFileManager] Unsubscribing from file-drop event.');
+      platformEventEmitter.off('file-drop', handleFileDrop);
+    };
+  }, [isFileSystemAvailable]); // Depend on file system availability
+  // ---------------------------------------
+
   const renderContent = () => {
     if (isLoadingCapabilities) {
       return (
@@ -246,6 +287,10 @@ export const ConfigFileManager: React.FC<ConfigFileManagerProps> = ({ configName
             placeholder="Load a configuration file or paste content here to save..."
             dataTestId="config-input-area" // Add test ID
           />
+        )}
+        {/* Add DropZone */} 
+        {isFileSystemAvailable && (
+           <DropZone className="mt-4 mb-4" />
         )}
       </>
     );

@@ -107,3 +107,7 @@ export async function getPlatformCapabilities(): Promise<PlatformCapabilities> {
 export function resetMemoizedCapabilities(): void {
   memoizedCapabilities = null;
 }
+
+// Re-export event emitter and types
+export { platformEventEmitter } from './events';
+export type { PlatformEvents, FileDropPayload } from './events';

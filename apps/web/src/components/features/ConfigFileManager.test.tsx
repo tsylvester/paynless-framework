@@ -120,96 +120,90 @@ describe('ConfigFileManager Component', () => {
   // --- Interaction Tests ---
 
   describe('Load Button Interactions', () => {
-    // ----- Test for successful load flow -----
-    it('should call readFile, decode content, display it, and populate the text area', async () => {
+    // Test successful load via button click (uses pickFile then loadFile)
+    it('should call pickFile then loadFile, decode content, display it, and populate the text area', async () => {
         const mockFilePath = '/fake/config-to-load.json';
         const mockDecodedContent = '{"config": "value", "nested": { "key": 123 } }';
         const mockEncodedContent = new TextEncoder().encode(mockDecodedContent);
 
-        // Override mocks for this specific test
+        // Mock pickFile to return a path
         vi.mocked(mockAvailableFileSystem.pickFile).mockResolvedValue([mockFilePath]);
+        // Mock readFile used by loadFile
         vi.mocked(mockAvailableFileSystem.readFile).mockResolvedValue(mockEncodedContent);
 
         renderComponent(mockAvailableState);
         const loadButton = screen.getByRole('button', { name: /Load Config/i });
 
+        // Initial state check (optional)
+        expect(screen.queryByTestId('file-content-display')).not.toBeInTheDocument();
+        expect(screen.getByTestId('config-input-area')).toHaveValue('');
+
         fireEvent.click(loadButton);
 
-        // Wait for readFile to be called
+        // Wait for readFile to be called (indicates loadFile was executed)
         await waitFor(() => {
+             expect(mockAvailableFileSystem.pickFile).toHaveBeenCalledTimes(1); // Ensure picker was called
              expect(mockAvailableFileSystem.readFile).toHaveBeenCalledTimes(1);
              expect(mockAvailableFileSystem.readFile).toHaveBeenCalledWith(mockFilePath);
         });
 
-        // Assert that FileDataDisplay is rendered with the decoded content
+        // Assert displays are updated
         const displayArea = screen.getByTestId('file-content-display');
         expect(displayArea).toBeInTheDocument();
         expect(displayArea.innerHTML).toBe(mockDecodedContent);
-
-        // Check TextInputArea is populated with the content
         const textArea = screen.getByTestId('config-input-area');
-        expect(textArea).toBeInTheDocument();
         expect(textArea).toHaveValue(mockDecodedContent);
 
         // Also check the success status message
-         await waitFor(() => {
-             const statusDisplay = screen.getByTestId('status-display');
-             // Check that title and description are present
-             expect(within(statusDisplay).getByText('Success')).toBeInTheDocument(); 
-             expect(within(statusDisplay).getByText(/File loaded successfully/i)).toBeInTheDocument();
-         });
+        await waitFor(() => {
+            const statusDisplay = screen.getByTestId('status-display');
+            // Check that title and description are present
+            expect(within(statusDisplay).getByText('Success')).toBeInTheDocument(); 
+            expect(within(statusDisplay).getByText(/File loaded successfully/i)).toBeInTheDocument();
+        });
     });
-    // ---------------------------
-
-    // Test user cancelling the file picker
+    // Test for pickFile cancellation (should not call loadFile/readFile)
     it('should show cancellation message and not call readFile if pickFile is cancelled', async () => {
-      // Ensure pickFile resolves to null (simulating cancellation)
       vi.mocked(mockAvailableFileSystem.pickFile).mockResolvedValue(null);
-
       renderComponent(mockAvailableState);
       const loadButton = screen.getByRole('button', { name: /Load Config/i });
-
       fireEvent.click(loadButton);
 
-      // Wait for status update and ensure readFile is not called
+      // Wait for pickFile to resolve
       await waitFor(() => {
         expect(mockAvailableFileSystem.pickFile).toHaveBeenCalledTimes(1);
-        expect(mockAvailableFileSystem.readFile).not.toHaveBeenCalled();
       });
+      // Ensure readFile was NOT called
+      expect(mockAvailableFileSystem.readFile).not.toHaveBeenCalled();
 
-      // Assert the status display shows the cancellation message
-      const statusDisplay = screen.getByTestId('status-display'); 
+      const statusDisplay = screen.getByTestId('status-display');
       await waitFor(() => {
-        expect(statusDisplay).toHaveTextContent(/File selection cancelled/i);
+        expect(statusDisplay).toHaveTextContent('File selection cancelled.');
       });
     });
 
-    // ----- NEW FAILING TEST for readFile error -----
-    it('should show error message if readFile fails', async () => {
+    // Test for readFile error during loadFile
+    it('should show error message if readFile fails during load', async () => {
         const mockFilePath = '/fake/error-config.json';
         const mockReadError = new Error('Permission denied');
-        // Mock pickFile to succeed
         vi.mocked(mockAvailableFileSystem.pickFile).mockResolvedValue([mockFilePath]);
-        // Mock readFile to fail
         vi.mocked(mockAvailableFileSystem.readFile).mockRejectedValue(mockReadError);
 
         renderComponent(mockAvailableState);
         const loadButton = screen.getByRole('button', { name: /Load Config/i });
-
         fireEvent.click(loadButton);
 
-        // Wait for status update
+        // Wait for readFile attempt
         await waitFor(() => {
-          expect(mockAvailableFileSystem.pickFile).toHaveBeenCalledTimes(1);
           expect(mockAvailableFileSystem.readFile).toHaveBeenCalledTimes(1);
         });
 
-        // Assert the status display shows the error message
+        // Assert error status
         const statusDisplay = screen.getByTestId('status-display');
-        expect(statusDisplay).toHaveTextContent(/Load Error: Permission denied/i);
+        await waitFor(() => {
+          expect(statusDisplay).toHaveTextContent(/Load Error: Permission denied/i);
+        });
     });
-    // ---------------------------------------------
-
   });
 
   describe('Save Button Interactions', () => {

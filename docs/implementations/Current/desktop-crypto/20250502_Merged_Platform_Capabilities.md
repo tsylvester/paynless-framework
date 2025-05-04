@@ -522,27 +522,27 @@ This implementation plan follows a phased approach:
 
 ---
 
-## Phase 6: Testing & Refinement [🚧 Not Started]
+## Phase 6: Testing & Refinement [🚧]
 
 *   **Prerequisite:** Phase 4 and 5 completed.
 
-### STEP-6.1: Manual Integration Testing [TEST-INT] [🚧]
+### STEP-6.1: Manual Integration Testing [TEST-INT] [✅]
 
-#### STEP-6.1.1: Test in Web Environment [COMMIT] [ ]
-*   [ ] Run the web app standalone (`pnpm --filter web dev`).
-*   [ ] Navigate to the component using capabilities (e.g., `ConfigFileManager`).
-*   [ ] Verify: Desktop-specific UI is hidden/disabled. Web fallback UI works as expected.
-*   [ ] Commit verification results with message "test(INT): Verified web environment UI for capability components".
+#### STEP-6.1.1: Test in Web Environment [COMMIT] [✅]
+*   [✅] Run the web app standalone (`pnpm --filter web dev`).
+*   [✅] Navigate to the component using capabilities (e.g., `ConfigFileManager`).
+*   [✅] Verify: Desktop-specific UI is hidden/disabled. Web fallback UI works as expected.
+*   [✅] Commit verification results with message "test(INT): Verified web environment UI for capability components".
 
-#### STEP-6.1.2: Test in Tauri Environment [COMMIT] [ ]
-*   [ ] Run the desktop app (`pnpm --filter desktop tauri dev`).
-*   [ ] Navigate to the component.
-*   [ ] Verify: Loading state shows briefly (if applicable). Desktop-specific UI is visible/enabled.
-*   [ ] Interact with Desktop features (e.g., click 'Save File' button).
-*   [ ] Verify: Tauri dialogs appear correctly. Files are read/written correctly to the chosen locations.
-*   [ ] Verify: Error handling within the component works if file operations fail (e.g., cancel dialog, disk full).
-*   [ ] Commit verification results with message "test(INT): Verified Tauri environment UI and functionality for capability components".
-*   [ ] Specifically test `pickDirectory`.
+#### STEP-6.1.2: Test in Tauri Environment [COMMIT] [✅]
+*   [✅] Run the desktop app (`pnpm --filter desktop tauri dev`).
+*   [✅] Navigate to the component.
+*   [✅] Verify: Loading state shows briefly (if applicable). Desktop-specific UI is visible/enabled.
+*   [✅] Interact with Desktop features (e.g., click 'Save File' button).
+*   [✅] Verify: Tauri dialogs appear correctly. Files are read/written correctly to the chosen locations.
+*   [✅] Verify: Error handling within the component works if file operations fail (e.g., cancel dialog, disk full).
+*   [✅] Commit verification results with message "test(INT): Verified Tauri environment UI and functionality for capability components".
+*   [✅] Specifically test `pickDirectory`.
 
 ### STEP-6.2: Code Review [🚧]
 

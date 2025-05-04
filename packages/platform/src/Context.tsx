@@ -1,7 +1,9 @@
-import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import React, { createContext, useContext, useState, useEffect, ReactNode, useMemo } from 'react';
 // Remove unused Tauri API import if not needed directly here anymore
 // import { isTauri } from '@tauri-apps/api/core'; 
 import type { PlatformCapabilities } from '@paynless/types';
+import { listen } from '@tauri-apps/api/event'; // Import listen
+import { platformEventEmitter } from './events'; // Import emitter
 
 // *** Import the centralized service function ***
 import { getPlatformCapabilities } from './index';
@@ -67,15 +69,45 @@ export const PlatformProvider: React.FC<PlatformProviderProps> = ({ children }) 
     
   }, []); 
 
-  // *** Provide the full state object ***
-  const contextValue: CapabilitiesContextValue = {
-    capabilities,
-    isLoadingCapabilities,
-    capabilityError,
-  };
+  // Effect to set up Tauri event listeners
+  useEffect(() => {
+    let unlisten: (() => void) | undefined;
+
+    if (capabilities?.platform === 'tauri') {
+      console.log('[PlatformProvider] Setting up Tauri event listeners...');
+      const setupListener = async () => {
+        try {
+          unlisten = await listen<string[]>('tauri://file-drop', (event) => {
+            console.log('[PlatformProvider] File drop event received:', event.payload);
+            if (event.payload && event.payload.length > 0) {
+              platformEventEmitter.emit('file-drop', event.payload);
+            }
+          });
+          console.log('[PlatformProvider] File drop listener attached.');
+        } catch (error) {
+          console.error('[PlatformProvider] Failed to attach file-drop listener:', error);
+        }
+      };
+      setupListener();
+    }
+
+    // Cleanup function
+    return () => {
+      if (unlisten) {
+        console.log('[PlatformProvider] Cleaning up Tauri file drop listener.');
+        unlisten();
+      }
+    };
+  }, [capabilities?.platform]); // Re-run if platform detection changes
+
+  const value = useMemo(() => ({
+     capabilities,
+     isLoadingCapabilities,
+     capabilityError,
+   }), [capabilities, isLoadingCapabilities, capabilityError]);
 
   return (
-    <context.Provider value={contextValue}>
+    <context.Provider value={value}>
       {children}
     </context.Provider>
   );
