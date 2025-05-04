@@ -585,12 +585,12 @@ This implementation plan follows a phased approach:
 *   [✅] Describe the purpose and structure of the `packages/platform` service.
 *   [✅] Document the `PlatformCapabilities` interface and the provider pattern.
 *   [✅] Explain how to add support for new capabilities or platforms.
-*   [ ] Commit documentation with message "docs: Document platform capability service architecture". \*Note: Commit step pending final user action*\
+*   [✅] Commit documentation with message "docs: Document platform capability service architecture". \*Note: Commit step pending final user action*\
 
 #### STEP-7.1.2: Document Usage in UI Components [COMMIT] [✅]
 *   [✅] Provide examples of how UI components should consume the service (`docs/development/PlatformCapabilities.md`).
 *   [✅] Emphasize checking `isLoadingCapabilities`, `capabilityError`, and `isAvailable` flags.
 *   [✅] Show examples of conditional rendering and calling capability methods.
-*   [ ] Commit documentation with message "docs: Document usage pattern for capability service in UI components". \*Note: Commit step pending final user action*\
+*   [✅] Commit documentation with message "docs: Document usage pattern for capability service in UI components". \*Note: Commit step pending final user action*\
 
 --- 
