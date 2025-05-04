@@ -1,10 +1,12 @@
 import { describe, it, expect } from 'vitest';
-import { ios } from './ios';
+import { getIosCapabilities } from './ios';
+import type { OperatingSystem } from '@paynless/types';
 
-describe('ios', () => {
-  it('should report fileSystem as unavailable', () => {
-    expect(ios.isAvailable).toBe(false);
+describe('getIosCapabilities', () => {
+  it('should return correct iOS stub capabilities structure', () => {
+    const capabilities = getIosCapabilities();
+    expect(capabilities.os).toBe('ios');
+    expect(capabilities.fileSystem.isAvailable).toBe(false);
+    expect((capabilities.fileSystem as any).readFile).toBeUndefined();
   });
-
-  // Add tests for any *actual* web capabilities if implemented later
 }); 

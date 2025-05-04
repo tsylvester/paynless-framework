@@ -1,144 +1,74 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
-import { isTauri } from '@tauri-apps/api/core'; // Only import isTauri
-// REMOVED direct imports for dialog and tauri namespaces
-// import { dialog } from '@tauri-apps/api/dialog';
-// import { tauri } from '@tauri-apps/api/tauri';
-import type { Platform } from '@paynless/types';
-// NOTE: Removed event listener imports
+// Remove unused Tauri API import if not needed directly here anymore
+// import { isTauri } from '@tauri-apps/api/core'; 
+import type { PlatformCapabilities } from '@paynless/types';
 
-// Import static web provider function
-import { getWebCapabilities } from './web';
+// *** Import the centralized service function ***
+import { getPlatformCapabilities, resetMemoizedCapabilities } from './index';
 
-// --- Define Default Initial State ---
-// Exporting this might be useful for consumers or tests
-export const DEFAULT_INITIAL_CAPABILITIES: Platform = {
-  platform: 'unknown', // Start as unknown
-  os: undefined,
+// Define Default Initial State (Remains the same)
+export const DEFAULT_INITIAL_CAPABILITIES: PlatformCapabilities = {
+  platform: 'unknown',
+  os: 'unknown',
   fileSystem: { isAvailable: false },
-  // Initialize other capability groups here if they exist
-  // e.g., notifications: { isAvailable: false },
 };
 
-// --- Context Definition ---
-// The context type remains the same, but it should never actually be null now.
-// However, keeping the type allows flexibility if we revert or change strategy.
-type CapabilitiesContextType = Platform | null; 
-
-// Initialize context with the default non-null state
+// Context Definition (Remains the same)
+type CapabilitiesContextType = PlatformCapabilities | null; 
 const context = createContext<CapabilitiesContextType>(DEFAULT_INITIAL_CAPABILITIES);
 
-// --- Provider Component ---
-
+// Provider Component
 interface PlatformProviderProps {
   children: ReactNode;
 }
 
-// Remove the old global interface declaration for __TAURI_IPC__
-// declare global {
-//   interface Window {
-//     __TAURI_IPC__?: (message: unknown) => void;
-//     // __TAURI_METADATA__ could also be added here if used
-//   }
-// }
-
-// Component function MUST be synchronous
 export const PlatformProvider: React.FC<PlatformProviderProps> = ({ children }) => {
-  // Initialize state with the default non-null object
-  const [capabilities, setCapabilities] = useState<Platform>(DEFAULT_INITIAL_CAPABILITIES);
-  // Add state to track API initialization
-  const [apiInitialized, setApiInitialized] = useState(false);
+  // State now holds PlatformCapabilities, initialized with default
+  const [capabilities, setCapabilities] = useState<PlatformCapabilities>(DEFAULT_INITIAL_CAPABILITIES);
+  // State to track if fetching is done (can be used for loading indicators)
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     let isMounted = true;
 
-    // Only run initialization once
-    if (apiInitialized) {
-      // logger.debug('[PlatformCapabilitiesProvider] API already initialized, skipping effect run.');
-      return; 
-    }
+    // Reset memoization potentially on mount for fresh data in dev?
+    // resetMemoizedCapabilities(); // Optional: uncomment for debugging
 
-    (async () => {
-      // --- Platform Detection Logic --- (Keep existing detection)
-      let detectedPlatform: 'tauri' | 'web' | 'unknown';
-      if (isTauri()) {
-        detectedPlatform = 'tauri';
-      } else if (typeof window !== 'undefined') {
-        detectedPlatform = 'web';
-      } else {
-        detectedPlatform = 'unknown';
-      }
-      const currentPlatform = detectedPlatform;
-      console.log(`Platform: detected via isTauri as: ${currentPlatform}`);
-      // -------------------------------
-
-      // Start building the final capabilities state based on detection
-      // Use a temporary variable to build the state before setting it
-      let finalCaps: Platform = {
-        ...DEFAULT_INITIAL_CAPABILITIES, // Start with defaults
-        platform: currentPlatform, 
-        os: undefined, // Reset OS, determine if needed later
-      };
-
-
-      if (currentPlatform === 'unknown') {
-        console.log('Platform: Unknown platform, keeping base capabilities.');
-        // No state update needed if it remains the same as default initial
-        // if (isMounted) setCapabilities(finalCaps); // Only set if different or needed
-        return; 
-      }
-
-      try {
-        if (currentPlatform === 'web') {
-          // Call the function to get the capabilities object
-          const webCaps = getWebCapabilities();
-          finalCaps.fileSystem = webCaps.fileSystem;
-          console.log('Platform: Using static Web capabilities.');
-        } else if (currentPlatform === 'tauri') {
-          console.log('Platform: Dynamically importing Tauri capabilities factory...');
-          const { createTauriFileSystemCapabilities } = await import('./tauri');
-          // ---> Call factory without dependencies <--- 
-          const tauriCaps = createTauriFileSystemCapabilities(); 
-          finalCaps.fileSystem = tauriCaps;
-          // Potentially detect OS here if needed using tauri API
-          // const { type } = await import('@tauri-apps/api/os');
-          // finalCaps.os = await type(); // Example OS detection
-          console.log('Platform: Tauri capabilities created and assigned.');
-        }
-        
-        // Set the final determined state
+    // Call the centralized async function to get capabilities
+    getPlatformCapabilities()
+      .then(resolvedCaps => {
         if (isMounted) {
-          console.log('Platform: Setting final capabilities state:', finalCaps);
-          setCapabilities(finalCaps);
-
-          // Initialize API Client and Listener AFTER setting capabilities
-          if (!apiInitialized) {
-            // ... API and Listener Init Logic ...
-             setApiInitialized(true); // Mark as initialized
-          } 
+          console.log('PlatformProvider: Received capabilities from service:', resolvedCaps);
+          setCapabilities(resolvedCaps);
+          setError(null); // Clear any previous error
         }
-      } catch (loadError) {
-        console.error('Error loading or determining specific platform capabilities:', loadError);
-        // Fallback: Keep the detected platform but ensure capabilities are marked unavailable
-        const fallbackCaps: Platform = {
-           ...DEFAULT_INITIAL_CAPABILITIES, // Start with defaults
-           platform: currentPlatform, // Keep detected platform
-           // Ensure filesystem is marked as unavailable on error
-           fileSystem: { isAvailable: false }, 
-        };
+      })
+      .catch(err => {
+        console.error('PlatformProvider: Error getting capabilities from service:', err);
         if (isMounted) {
-          console.log('Platform: Setting fallback capabilities state after error:', fallbackCaps);
-          setCapabilities(fallbackCaps);
+          // Set error state and potentially keep default (unavailable) capabilities
+          setError(err instanceof Error ? err.message : 'Unknown error fetching capabilities');
+          setCapabilities(DEFAULT_INITIAL_CAPABILITIES); // Fallback to default
         }
-      }
-    })(); // End of async IIFE
+      })
+      .finally(() => {
+        if (isMounted) {
+          setIsLoading(false); // Mark loading complete regardless of outcome
+        }
+      });
 
+    // Cleanup function to prevent state updates on unmounted component
     return () => {
       isMounted = false;
     };
-  }, [apiInitialized]); // End of useEffect
+    
+  // Empty dependency array ensures this runs once on mount
+  }, []); 
 
-  // Render children immediately, provide default value while loading
-  // The context value will update once capabilities are loaded.
+  // Provide the current capabilities state (or potentially loading/error info)
+  // The hook now primarily accesses 'capabilities'
+  // isLoading and error could also be added to context if needed globally
   return (
     <context.Provider value={capabilities}>
       {children}
@@ -146,14 +76,11 @@ export const PlatformProvider: React.FC<PlatformProviderProps> = ({ children }) 
   );
 };
 
-// --- Hook Definition ---
-export const usePlatform = (): Platform => {
-  // Rename the variable holding the context value
+// Hook Definition (Remains the same, returns PlatformCapabilities)
+export const usePlatform = (): PlatformCapabilities => {
   const capabilitiesContextValue = useContext(context);
-  // Check the renamed variable
   if (capabilitiesContextValue === null) {
     throw new Error('usePlatform must be used within a PlatformProvider');
   }
-  // Return the renamed variable
   return capabilitiesContextValue;
 }; 

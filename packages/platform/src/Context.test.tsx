@@ -4,72 +4,51 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import {
   PlatformProvider,
   usePlatform,
-  // Import the default state if it's exported, otherwise define it here
-  // Assuming a default state structure like this:
-  // DEFAULT_INITIAL_CAPABILITIES // No default exported yet, define below
+  DEFAULT_INITIAL_CAPABILITIES
 } from './context';
-import type { Platform } from '@paynless/types';
-import * as core from '@tauri-apps/api/core';
+import type { PlatformCapabilities, FileSystemCapabilities } from '@paynless/types';
 
-// --- Mocks Setup ---
+// *** Mock the centralized service function from ./index ***
+const mockGetPlatformCapabilities = vi.fn();
+vi.mock('./index', async (importOriginal) => {
+  const original = await importOriginal<typeof import('./index')>();
+  return {
+    ...original, // Keep other exports like resetMemoizedCapabilities if needed
+    getPlatformCapabilities: mockGetPlatformCapabilities,
+  };
+});
 
-// Static mock for isTauri - Now a function returning false
-vi.mock('@tauri-apps/api/core', () => ({
-  isTauri: vi.fn(() => false),
-}));
+// --- Test Data (Define mock capabilities) ---
 
-// Mock @tauri-apps/api (dummy DI functions)
-vi.mock('@tauri-apps/api', () => ({
-  dialog: {
-    open: vi.fn(),
-    save: vi.fn(),
-  },
-  tauri: {
-    invoke: vi.fn(),
-  },
-}));
-
-// Mock the factory function from ./tauriPlatformCapabilities
-const mockTauriCapabilities = {
-  isAvailable: true as const, 
-  readFile: vi.fn(),
-  writeFile: vi.fn(),
-  pickFile: vi.fn(),
-  pickSaveFile: vi.fn(),
-};
-vi.mock('./tauriPlatformCapabilities', () => ({
-  createTauriFileSystemCapabilities: vi.fn(() => mockTauriCapabilities),
-}));
-
-// Define the expected default initial state structure
-{/* <<< REMOVE REDUNDANT WEB FALLBACK >>> 
-const testDefaultInitialCapabilities: PlatformCapabilities = {
-  platform: 'unknown', // Defaulting to 'unknown' initially
-  os: undefined,
+const mockWebCapabilities: PlatformCapabilities = {
+  platform: 'web',
+  os: 'linux', // Example OS
   fileSystem: { isAvailable: false },
 };
-*/}
 
-// Define the expected state for the Web platform
-const testWebCapabilities: Platform = {
-  platform: 'web',
-  os: undefined,
-  fileSystem: { isAvailable: false }, // Matches webFileSystemCapabilities
+const mockTauriCapabilities: PlatformCapabilities = {
+  platform: 'tauri',
+  os: 'windows', // Example OS
+  fileSystem: {
+    isAvailable: true,
+    // Add dummy methods if needed for type checking, though usually not required
+    // if only checking the structure received by the consumer.
+    readFile: vi.fn(),
+    writeFile: vi.fn(),
+    pickFile: vi.fn(),
+    pickDirectory: vi.fn(),
+    pickSaveFile: vi.fn(),
+  },
 };
 
 // --- Test Component & Helper ---
 
-// Helper component to consume the context
 const TestConsumer = () => {
   const capabilities = usePlatform();
-  // No need for null check here anymore if the hook guarantees non-null
-  // if (capabilities === null) {
-  //   return <div>Loading...</div>; // This state should not occur if initialized non-null
-  // }
+  // Render the received capabilities for testing
   return <div data-testid="capabilities">{JSON.stringify(capabilities)}</div>;
 };
 
-// Helper to render with provider
 const renderWithProvider = (ui: ReactNode) => {
   return render(
     <PlatformProvider>{ui}</PlatformProvider>
@@ -77,125 +56,79 @@ const renderWithProvider = (ui: ReactNode) => {
 };
 
 describe('PlatformProvider', () => {
+
   beforeEach(() => {
-    vi.clearAllMocks();
+    // Reset the mock before each test
+    mockGetPlatformCapabilities.mockReset();
+    // Default mock implementation (e.g., resolves to web)
+    mockGetPlatformCapabilities.mockResolvedValue(mockWebCapabilities);
   });
 
   afterEach(() => {
-    // Remove the attempt to reset the property directly
-    // try { (core as any).isTauri = false; } catch (e) {}
-    vi.restoreAllMocks(); // This will reset the mock function's implementation
+    vi.restoreAllMocks(); 
   });
 
-  it('should provide default web capabilities synchronously on initial render in JSDOM', () => {
-    // In JSDOM (isTauri=false, window=true), the useEffect resolves to 'web' very quickly.
-    // So, the state read immediately after render is typically already the 'web' state.
+  it('should initially provide default capabilities and then resolved capabilities', async () => {
+    // Mock the service call to resolve with specific web capabilities
+    mockGetPlatformCapabilities.mockResolvedValue(mockWebCapabilities);
+
     renderWithProvider(<TestConsumer />);
+
+    // Check initial state (might still show default before async effect completes)
+    // Note: Depending on timing, this might sometimes see the resolved state immediately.
     const capsElement = screen.getByTestId('capabilities');
-    const initialCapabilities = JSON.parse(capsElement.textContent || '{}') as Platform;
-    // Assert against the expected *web* state, which is the effective initial state here.
-    expect(initialCapabilities).toEqual(testWebCapabilities);
-  });
-
-  // Test for the default (web) case
-  it('should eventually provide web capabilities when isTauri is false', async () => {
-    // No spy needed, relies on default static mock
-    renderWithProvider(<TestConsumer />);
+    const initialCapabilities = JSON.parse(capsElement.textContent || '{}') as PlatformCapabilities;
+    expect(initialCapabilities).toEqual(DEFAULT_INITIAL_CAPABILITIES);
+    
+    // Wait for the async effect to complete and check final state
     await waitFor(() => {
-      const capsElement = screen.getByTestId('capabilities');
-      const capabilities = JSON.parse(capsElement.textContent || '') as Platform;
-      expect(capabilities.platform).toBe('web');
-      expect(capabilities.fileSystem.isAvailable).toBe(false);
+      const finalCapabilities = JSON.parse(screen.getByTestId('capabilities').textContent || '{}') as PlatformCapabilities;
+      expect(finalCapabilities).toEqual(mockWebCapabilities);
     });
+
+    // Ensure the service function was called
+    expect(mockGetPlatformCapabilities).toHaveBeenCalledTimes(1);
   });
 
-  // Test for the default (web) case - explicit
-  it('should detect web environment (window defined, isTauri is false)', async () => {
-    // No spy needed, relies on default static mock
-    renderWithProvider(<TestConsumer />);
-    await waitFor(() => {
-      const capsElement = screen.getByTestId('capabilities');
-      const capabilities = JSON.parse(capsElement.textContent || '') as Platform;
-      expect(capabilities.platform).toBe('web');
-      expect(capabilities.fileSystem.isAvailable).toBe(false);
-    });
-  });
-
-  // Test for Tauri case - Change the mock function's return value
-  it('should detect Tauri environment when isTauri is true', async () => {
-    // Change the mock function's return value for this test
-    vi.mocked(core.isTauri).mockReturnValue(true);
-
-    // Mock the factory return value
-    const { createTauriFileSystemCapabilities } = await import('./tauri');
-    vi.mocked(createTauriFileSystemCapabilities).mockReturnValue(mockTauriCapabilities);
+  it('should provide Tauri capabilities when service resolves with them', async () => {
+    // Mock the service call to resolve with Tauri capabilities
+    mockGetPlatformCapabilities.mockResolvedValue(mockTauriCapabilities);
 
     renderWithProvider(<TestConsumer />);
 
+    // Wait for the async effect and check final state
     await waitFor(() => {
-      const capsElement = screen.getByTestId('capabilities');
-      const capabilities = JSON.parse(capsElement.textContent || '') as Platform;
-      expect(capabilities.platform).toBe('tauri');
-      expect(capabilities.fileSystem.isAvailable).toBe(true);
-      expect(createTauriFileSystemCapabilities).toHaveBeenCalled();
+      const finalCapabilities = JSON.parse(screen.getByTestId('capabilities').textContent || '{}') as PlatformCapabilities;
+      expect(finalCapabilities).toEqual(mockTauriCapabilities);
+      // Check specific properties as well
+      expect(finalCapabilities.platform).toBe('tauri');
+      expect(finalCapabilities.fileSystem.isAvailable).toBe(true);
     });
 
-    // Verify the mock function was called
-    expect(core.isTauri).toHaveBeenCalled();
+    expect(mockGetPlatformCapabilities).toHaveBeenCalledTimes(1);
   });
 
-  // Test for error handling in Tauri case - Change the mock function's return value
-  it('should handle errors when loading Tauri capabilities module (when isTauri is true)', async () => {
-    vi.mocked(core.isTauri).mockReturnValue(true);
-    const loadError = new Error('Failed to create Tauri capabilities');
-    const { createTauriFileSystemCapabilities } = await import('./tauri');
-    vi.mocked(createTauriFileSystemCapabilities).mockImplementation(() => {
-      throw loadError;
-    });
+  it('should provide default capabilities and log error when service rejects', async () => {
+    const mockError = new Error('Service Failure');
+    // Mock the service call to reject
+    mockGetPlatformCapabilities.mockRejectedValue(mockError);
     const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
 
     renderWithProvider(<TestConsumer />);
 
+    // Wait for the async effect to complete (or fail)
     await waitFor(() => {
-      const finalCapsElement = screen.getByTestId('capabilities');
-      const capabilities = JSON.parse(finalCapsElement.textContent || '{}') as Platform;
-      expect(capabilities.platform).toBe('tauri'); 
-      expect(capabilities.fileSystem.isAvailable).toBe(false);
-      // Update the expected error message to match the implementation
-      expect(consoleErrorSpy).toHaveBeenCalledWith('Error loading or determining specific platform capabilities:', loadError);
+      const finalCapabilities = JSON.parse(screen.getByTestId('capabilities').textContent || '{}') as PlatformCapabilities;
+      // Should fall back to the default initial state
+      expect(finalCapabilities).toEqual(DEFAULT_INITIAL_CAPABILITIES);
     });
-
-    expect(core.isTauri).toHaveBeenCalled();
+    
+    // Check that the error was logged
+    expect(consoleErrorSpy).toHaveBeenCalledWith(expect.stringContaining('Error getting capabilities from service:'), mockError);
+    expect(mockGetPlatformCapabilities).toHaveBeenCalledTimes(1);
     consoleErrorSpy.mockRestore();
   });
 
-  // --- Placeholder Tests (Implementing first one) ---
-
-  // This test might be redundant if the first 'web' test covers it.
-  // Purpose: Explicitly test non-Tauri path in a browser-like JSDOM env.
-  it('should explicitly detect web environment (window defined, isTauri is false)', async () => {
-    // Relies on the default static mock (isTauri: false)
-    // JSDOM environment provides a window object by default.
-
-    renderWithProvider(<TestConsumer />);
-
-    await waitFor(() => {
-      const capsElement = screen.getByTestId('capabilities');
-      expect(capsElement).toBeInTheDocument();
-      const capabilities = JSON.parse(capsElement.textContent || '') as Platform;
-      expect(capabilities.platform).toBe('web');
-      expect(capabilities.fileSystem.isAvailable).toBe(false);
-    });
-  });
-
-  it('should fallback to web for React Native (placeholder)', () => {
-    // TODO: Mock environment for React Native (e.g., navigator.product)
-    expect(true).toBe(true); // Placeholder updated
-  });
-
-  it('should fallback to web for Node/Headless (JSDOM simulation - placeholder)', () => {
-    // TODO: Mock environment for Node (e.g., ensure window is undefined?)
-     expect(true).toBe(true); // Placeholder updated
-  });
+  // Add more tests if specific loading states or other behaviors need verification
 
 });
