@@ -12,6 +12,7 @@ import {
   Sun,
   Moon,
   FlaskConical,
+  FileCog,
 } from 'lucide-react'
 import { Notifications } from '../Notifications'
 import { SimpleDropdown } from '../ui/SimpleDropdown'
@@ -144,6 +145,15 @@ export function Header() {
                         Dev Wallet
                       </Link>
                     )}
+                    {capabilities?.platform === 'tauri' && (
+                      <Link
+                        to="/dev/config"
+                        className="block px-4 py-2 text-sm text-textSecondary hover:bg-primary/10 hover:text-primary"
+                      >
+                        <FileCog className="inline-block h-4 w-4 mr-2" />
+                        Dev Config
+                      </Link>
+                    )}
                     <button
                       onClick={handleLogout}
                       className="block w-full text-left px-4 py-2 text-sm text-textSecondary hover:bg-primary/10 hover:text-primary"
@@ -269,6 +279,16 @@ export function Header() {
                   Dev Wallet
                 </Link>
               )}
+              {capabilities?.platform === 'tauri' && (
+                <Link
+                  to="/dev/config"
+                  className="block px-4 py-2 text-base font-medium text-textSecondary hover:bg-primary/5 hover:text-textPrimary"
+                  onClick={() => setIsMenuOpen(false)}
+                >
+                  <FileCog className="inline-block h-5 w-5 mr-2" />
+                  Dev Config
+                </Link>
+              )}
               <button
                 onClick={() => { handleLogout(); setIsMenuOpen(false); }}
                 className="block w-full text-left px-4 py-2 text-base font-medium text-textSecondary hover:bg-primary/5 hover:text-textPrimary"
@@ -301,6 +321,16 @@ export function Header() {
                 >
                   <FlaskConical className="inline-block h-4 w-4 mr-2" />
                   Dev Wallet
+                </Link>
+              )}
+              {capabilities?.platform === 'tauri' && (
+                <Link
+                  to="/dev/config"
+                  className="border-transparent text-textSecondary hover:bg-primary/5 hover:border-border hover:text-textPrimary block pl-3 pr-4 py-2 border-l-4 text-base font-medium"
+                  onClick={() => setIsMenuOpen(false)}
+                >
+                  <FileCog className="inline-block h-4 w-4 mr-2" />
+                  Dev Config
                 </Link>
               )}
             </div>

@@ -18,8 +18,9 @@ import { OrganizationFocusedViewPage } from '../pages/OrganizationFocusedViewPag
 import { HomePage } from '../pages/Home';
 
 // Import the new wrapper and the demo component
-import { TauriOnlyWrapper } from '../components/routes/TauriOnlyWrapper';
+//import { TauriOnlyWrapper } from '../components/routes/TauriOnlyWrapper';
 import { WalletBackupDemoCard } from '../components/demos/WalletBackupDemo/WalletBackupDemoCard';
+import { ConfigFileManager } from '@/components/features/ConfigFileManager';
 
 const routes: RouteObject[] = [
   {
@@ -138,6 +139,14 @@ const routes: RouteObject[] = [
         element: (
           <ProtectedRoute>
              <WalletBackupDemoCard />
+          </ProtectedRoute>
+        )
+      },
+      {
+        path: 'dev/config', 
+        element: (
+          <ProtectedRoute>
+             <ConfigFileManager />
           </ProtectedRoute>
         )
       },

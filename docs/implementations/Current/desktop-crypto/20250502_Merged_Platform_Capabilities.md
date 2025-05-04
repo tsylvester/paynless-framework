@@ -481,6 +481,17 @@ This implementation plan follows a phased approach:
 #### STEP-5.5.3: Commit Header Changes [COMMIT] [✅]
 *   [✅] Commit changes with message "feat(ui): add conditional dev link and tests for tauri platform".
 
+### STEP-5.6: Add Route for ConfigFileManager [TS] [COMMIT] [✅] (NEW)
+*   [✅] In `apps/web/src/routes/routes.tsx`.
+*   [✅] Import the `ConfigFileManager` component.
+*   [✅] Define a new route, e.g., `/dev/config`.
+*   [✅] Place the route definition within the existing `TauriOnlyWrapper` route children.
+*   [✅] Wrap the `ConfigFileManager` element with `<ProtectedRoute>`.
+*   [✅] In `apps/web/src/components/layout/Header.tsx`:
+    *   [✅] Add conditional link to `/dev/config` in desktop dropdown.
+    *   [✅] Add conditional link to `/dev/config` in mobile menu.
+*   [ ] Commit changes with message "feat(Routing): Add route and UI links for ConfigFileManager dev tool".
+
 ---
 
 ## Phase 6: Testing & Refinement [🚧 Not Started]
