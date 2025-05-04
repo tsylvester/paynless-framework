@@ -3,7 +3,7 @@ import { usePlatform } from '@paynless/platform';
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from '@/components/ui/button';
 import { Skeleton } from "@/components/ui/skeleton";
-import { Info, AlertCircle, Upload, Download } from 'lucide-react';
+import { Info, AlertCircle, Upload, Download, FolderOpen } from 'lucide-react';
 import ErrorBoundary from '@/components/common/ErrorBoundary';
 import { StatusDisplay } from '../demos/WalletBackupDemo/StatusDisplay';
 import { FileDataDisplay } from '../common/FileDataDisplay';
@@ -29,6 +29,8 @@ export const ConfigFileManager: React.FC<ConfigFileManagerProps> = ({ configName
   const [loadedConfigContent, setLoadedConfigContent] = useState<string | null>(null);
   // Add state for the editable config content in the text area
   const [configInputContent, setConfigInputContent] = useState<string>('');
+  // Add state for selected directory path
+  const [selectedDirectoryPath, setSelectedDirectoryPath] = useState<string | null>(null);
 
   const fileSystem = capabilities?.fileSystem;
   const isFileSystemAvailable = fileSystem?.isAvailable === true;
@@ -46,6 +48,9 @@ export const ConfigFileManager: React.FC<ConfigFileManagerProps> = ({ configName
   const STATUS_SAVE_CANCELLED = 'File save cancelled.';
   const STATUS_SAVE_ERROR = (msg: string) => `Save Error: ${msg}`;
   const STATUS_UNKNOWN_ERROR = 'An unknown error occurred.';
+  const STATUS_DIR_SELECT_SUCCESS = (path: string) => `Selected directory: ${path}`;
+  const STATUS_DIR_SELECT_CANCELLED = 'Directory selection cancelled.';
+  const STATUS_DIR_SELECT_ERROR = (msg: string) => `Directory Select Error: ${msg}`;
 
   const handleLoadConfig = async () => {
     if (!fileSystem || !isFileSystemAvailable || isActionLoading) return;
@@ -144,6 +149,37 @@ export const ConfigFileManager: React.FC<ConfigFileManagerProps> = ({ configName
     }
   };
 
+  const handleSelectDirectory = async () => {
+    if (!fileSystem || !isFileSystemAvailable || isActionLoading) return;
+
+    setIsActionLoading(true);
+    setStatusMessage('Selecting directory...');
+    setStatusVariant('info');
+    setSelectedDirectoryPath(null); // Clear previous selection
+    try {
+      const selectedPaths = await fileSystem.pickDirectory({}); // Add options if needed
+
+      const selectedDirPath = selectedPaths?.[0]; // Assuming single selection for now
+      if (!selectedDirPath) {
+        setStatusMessage(STATUS_DIR_SELECT_CANCELLED);
+        setStatusVariant('info');
+        return;
+      }
+
+      setSelectedDirectoryPath(selectedDirPath);
+      setStatusMessage(STATUS_DIR_SELECT_SUCCESS(selectedDirPath));
+      setStatusVariant('info'); // Use info for selection confirmation
+
+    } catch (error) {
+      console.error("Select Directory Error:", error);
+      const message = error instanceof Error ? STATUS_DIR_SELECT_ERROR(error.message) : STATUS_UNKNOWN_ERROR;
+      setStatusMessage(message);
+      setStatusVariant('error');
+    } finally {
+      setIsActionLoading(false);
+    }
+  };
+
   const renderContent = () => {
     if (isLoadingCapabilities) {
       return (
@@ -188,6 +224,9 @@ export const ConfigFileManager: React.FC<ConfigFileManagerProps> = ({ configName
           </Button>
           <Button onClick={handleSaveConfig} disabled={isDisabled}>
             <Download className="mr-2 h-4 w-4" /> Save Config
+          </Button>
+          <Button onClick={handleSelectDirectory} disabled={isDisabled}>
+            <FolderOpen className="mr-2 h-4 w-4" /> Select Directory
           </Button>
         </div>
         {/* Status should appear within the main content block */}

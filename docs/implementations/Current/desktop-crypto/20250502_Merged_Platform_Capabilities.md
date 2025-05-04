@@ -462,8 +462,12 @@ This implementation plan follows a phased approach:
     *   [✅] Pass the encoded data to `fileSystem.writeFile()`.
 *   [✅] Render the `FileDataDisplay` component conditionally, passing `loadedConfigContent`.
 *   [✅] Run unit tests (including new tests for textarea interaction and updated save tests). Refine implementation until all tests pass.
+*   [ ] Add a "Select Directory" button.
+*   [ ] Implement a handler (`handleSelectDirectory`) that calls `fileSystem.pickDirectory`.
+*   [ ] Add state to store and display the selected directory path.
+*   [ ] Add unit tests for the new button and handler (success, cancellation, error).
 *   [ ] Build frontend.
-*   [ ] Commit changes with message "feat(UI): Implement ConfigFileManager data handling using TextInputArea and FileDataDisplay".
+*   [ ] Commit changes with message "feat(UI): Implement ConfigFileManager data handling using TextInputArea and FileDataDisplay, add pickDirectory".
 
 ### STEP-5.5: Integrate Capability Checks in Core UI (e.g., Header) [✅]
 
@@ -491,6 +495,30 @@ This implementation plan follows a phased approach:
     *   [✅] Add conditional link to `/dev/config` in desktop dropdown.
     *   [✅] Add conditional link to `/dev/config` in mobile menu.
 *   [ ] Commit changes with message "feat(Routing): Add route and UI links for ConfigFileManager dev tool".
+
+### STEP-5.7: Add Drag-and-Drop File Import [UI][TS][TEST-UNIT] [ ] (NEW)
+*   **Goal:** Allow users to drag files onto components to trigger import/load actions.
+*   [ ] **Platform Listener:**
+    *   [ ] In `packages/platform/src/tauri.ts` (or a new `events.ts` module), add logic to listen for the `tauri://file-drop` event.
+    *   [ ] Implement a mechanism to dispatch the dropped file paths to the relevant active component (e.g., using a simple event emitter or state management).
+    *   [ ] Update `PlatformProvider` (`context.tsx`) to initialize this listener when on Tauri.
+    *   [ ] Add/Update tests for this event listening logic.
+*   [ ] **DropZone Component:**
+    *   [ ] Create file `apps/web/src/components/common/DropZone.tsx`.
+    *   [ ] Implement a visual component that indicates a drop target.
+    *   [ ] Add props for handling hover states (`onDragOver`, `onDragLeave`) and the drop event (`onDrop`). The `onDrop` prop should likely receive the file path(s).
+*   [ ] **DropZone Tests:**
+    *   [ ] Create test file `DropZone.test.tsx`.
+    *   [ ] Write unit tests verifying rendering, hover states, and callback invocation.
+*   [ ] **Integrate into `ConfigFileManager`:**
+    *   [ ] Import and render `DropZone` within `ConfigFileManager.tsx`.
+    *   [ ] Implement the `onDrop` handler to receive the file path and call the existing `handleLoadConfig` logic (or a refactored version) to process the dropped file.
+    *   [ ] Update `ConfigFileManager.test.tsx` to simulate drop events and verify file loading.
+*   [ ] **Integrate into `WalletBackupDemoCard`:**
+    *   [ ] Import and render `DropZone` within `WalletBackupDemoCard.tsx`.
+    *   [ ] Implement the `onDrop` handler to receive the file path and call the existing `handleImport` logic.
+    *   [ ] Update `WalletBackupDemoCard.test.tsx` to simulate drop events and verify mnemonic import.
+*   [ ] **Commit:** Commit changes with message "feat(UI): Add drag-and-drop file import functionality".
 
 ---
 

@@ -337,4 +337,71 @@ describe('ConfigFileManager Component', () => {
 
   });
 
+  // --- NEW Describe Block for Directory Picking ---
+  describe('Select Directory Button Interactions', () => {
+    it('should render the Select Directory button when filesystem is available', () => {
+      renderComponent(mockAvailableState);
+      expect(screen.getByRole('button', { name: /Select Directory/i })).toBeEnabled();
+    });
+
+    it('should call pickDirectory when Select Directory button is clicked', async () => {
+      renderComponent(mockAvailableState);
+      const selectDirButton = screen.getByRole('button', { name: /Select Directory/i });
+
+      fireEvent.click(selectDirButton);
+
+      await waitFor(() => {
+        expect(mockAvailableFileSystem.pickDirectory).toHaveBeenCalledTimes(1);
+      });
+    });
+
+    it('should display selected directory path on success', async () => {
+      const mockDirPath = ['/fake/selected-dir'];
+      vi.mocked(mockAvailableFileSystem.pickDirectory).mockResolvedValue(mockDirPath);
+
+      renderComponent(mockAvailableState);
+      const selectDirButton = screen.getByRole('button', { name: /Select Directory/i });
+
+      fireEvent.click(selectDirButton);
+
+      // Expect StatusDisplay to show the selected path
+      await waitFor(() => {
+        const statusDisplay = screen.getByTestId('status-display');
+        expect(statusDisplay).toHaveTextContent(`Selected directory: ${mockDirPath[0]}`);
+        expect(within(statusDisplay).getByText('Information')).toBeInTheDocument(); // Check title
+      });
+    });
+
+    it('should show cancellation message if pickDirectory is cancelled', async () => {
+      vi.mocked(mockAvailableFileSystem.pickDirectory).mockResolvedValue(null);
+
+      renderComponent(mockAvailableState);
+      const selectDirButton = screen.getByRole('button', { name: /Select Directory/i });
+
+      fireEvent.click(selectDirButton);
+
+      const statusDisplay = screen.getByTestId('status-display');
+      await waitFor(() => {
+        expect(statusDisplay).toHaveTextContent('Directory selection cancelled.');
+      });
+    });
+
+    it('should show error message if pickDirectory fails', async () => {
+      const mockPickError = new Error('Cannot access directory');
+      vi.mocked(mockAvailableFileSystem.pickDirectory).mockRejectedValue(mockPickError);
+
+      renderComponent(mockAvailableState);
+      const selectDirButton = screen.getByRole('button', { name: /Select Directory/i });
+
+      fireEvent.click(selectDirButton);
+
+      const statusDisplay = screen.getByTestId('status-display');
+      await waitFor(() => {
+        expect(statusDisplay).toHaveTextContent(`Directory Select Error: ${mockPickError.message}`);
+         expect(within(statusDisplay).getByText('Error')).toBeInTheDocument(); // Check title
+      });
+    });
+  });
+  // -------------------------------------------
+
 }); 
