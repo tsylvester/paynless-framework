@@ -82,7 +82,7 @@ export const createErrorResponse = (
  additionalHeaders: Record<string, string> = {}
 ): Response => {
   // Logging logic from responses.ts
-  const logParts: any[] = [`API Error (${status}): ${message}`];
+  const logParts: unknown[] = [`API Error (${status}): ${message}`];
   if (error instanceof Error) {
     logParts.push("\nError Details:", error.stack || error.message);
   } else if (error) {
@@ -118,7 +118,7 @@ export const createErrorResponse = (
 * @returns A Response object.
 */
 export const createSuccessResponse = (
- data: any, // Keep as any to match previous flexibility
+ data: unknown, // Use unknown instead of any
  status = 200,
  request: Request, // request is now mandatory
  additionalHeaders: Record<string, string> = {}

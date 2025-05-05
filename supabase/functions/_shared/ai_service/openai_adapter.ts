@@ -3,6 +3,14 @@ import type { Json } from '../../../functions/types_db.ts';
 
 const OPENAI_API_BASE = 'https://api.openai.com/v1';
 
+// Define a minimal type for the items in the OpenAI models list
+interface OpenAIModelItem {
+  id: string;
+  owned_by?: string;
+  // Add other potential fields if needed for filtering/display, but keep minimal
+  [key: string]: unknown; // Allow other fields but treat as unknown
+}
+
 /**
  * Implements AiProviderAdapter for OpenAI models.
  */
@@ -105,7 +113,7 @@ export class OpenAiAdapter implements AiProviderAdapter {
     const models: ProviderModelInfo[] = [];
 
     if (jsonResponse.data && Array.isArray(jsonResponse.data)) {
-      jsonResponse.data.forEach((model: any) => {
+      jsonResponse.data.forEach((model: OpenAIModelItem) => {
         // We are interested in chat completion models, often contain 'gpt'
         // This filtering might need refinement based on OpenAI's model ID conventions
         if (model.id && (model.id.includes('gpt') || model.id.includes('instruct'))) { // Simple filter

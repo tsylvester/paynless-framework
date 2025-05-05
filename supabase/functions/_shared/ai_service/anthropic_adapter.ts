@@ -18,6 +18,14 @@ const ANTHROPIC_API_BASE = 'https://api.anthropic.com/v1';
 // It is strongly recommended to use the latest version, check Anthropic docs
 const ANTHROPIC_VERSION = '2023-06-01'; 
 
+// Minimal interface for Anthropic Model items
+interface AnthropicModelItem {
+  id: string;
+  name?: string;
+  // Add other potential fields if needed
+  [key: string]: unknown; // Allow other fields but treat as unknown
+}
+
 /**
  * Implements AiProviderAdapter for Anthropic models (Claude).
  */
@@ -192,9 +200,9 @@ export class AnthropicAdapter implements AiProviderAdapter {
         throw new Error("Invalid response format received from Anthropic models API.");
     }
 
-    const models: ProviderModelInfo[] = jsonResponse.data.map((item: any) => ({
+    const models: ProviderModelInfo[] = jsonResponse.data.map((item: AnthropicModelItem) => ({
         // Prepend 'anthropic-' for consistency with other adapters/DB entries
-        api_identifier: `anthropic-${item.id}`, 
+        api_identifier: `anthropic-${item.id}`,
         name: item.name || item.id, // Use name if available, fallback to id
         description: undefined // API does not provide description, use undefined
     }));

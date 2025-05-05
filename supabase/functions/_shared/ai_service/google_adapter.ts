@@ -20,6 +20,16 @@ interface GoogleContent {
     parts: GoogleContentPart[];
 }
 
+// Minimal interface for Google Model items
+interface GoogleModelItem {
+  name: string;
+  displayName?: string;
+  description?: string;
+  supportedGenerationMethods?: string[];
+  // Add other fields if needed
+  [key: string]: unknown;
+}
+
 /**
  * Implements AiProviderAdapter for Google Gemini models.
  */
@@ -190,7 +200,7 @@ export class GoogleAdapter implements AiProviderAdapter {
     const models: ProviderModelInfo[] = [];
 
     if (jsonResponse.models && Array.isArray(jsonResponse.models)) {
-      jsonResponse.models.forEach((model: any) => {
+      jsonResponse.models.forEach((model: GoogleModelItem) => {
         // Filter for models that support 'generateContent' (for chat-like interactions)
         // And potentially filter out older/preview models unless desired
         if (model.name && model.supportedGenerationMethods?.includes('generateContent') && model.name.includes('gemini')) { 

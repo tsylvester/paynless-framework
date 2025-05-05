@@ -5,7 +5,8 @@
 import Stripe from "npm:stripe";
 import {
   SupabaseClient,
-  PostgrestResponse
+  PostgrestResponse,
+  PostgrestError
 } from "jsr:@supabase/supabase-js@^2.4";
 import { Database } from "../../types_db.ts"; // Adjust path relative to service file
 import { logger } from "../../_shared/logger.ts"; // Use relative path to shared logger
@@ -49,14 +50,14 @@ export interface ISyncPlansService {
    * Fetches existing plans from the database for deactivation check.
    * @returns An object containing the plan data or an error.
    */
-  getExistingPlans(): Promise<{ data: ExistingPlanData[] | null; error: any | null }>;
+  getExistingPlans(): Promise<{ data: ExistingPlanData[] | null; error: PostgrestError | null }>;
 
    /**
    * Deactivates a single plan by its Stripe Price ID.
    * @param priceId The Stripe Price ID of the plan to deactivate.
    * @returns An object containing only the potential error from the update.
    */
-   deactivatePlan(priceId: string): Promise<{ error: any | null }>;
+   deactivatePlan(priceId: string): Promise<{ error: PostgrestError | null }>;
 }
 
 /**
@@ -87,7 +88,7 @@ export class SyncPlansService implements ISyncPlansService {
     }
   }
 
-  async getExistingPlans(): Promise<{ data: ExistingPlanData[] | null; error: any | null }> {
+  async getExistingPlans(): Promise<{ data: ExistingPlanData[] | null; error: PostgrestError | null }> {
     logger.info(`[SyncPlansService] Fetching existing plans...`);
     const { data, error } = await this.supabase
       .from('subscription_plans')
@@ -95,7 +96,8 @@ export class SyncPlansService implements ISyncPlansService {
 
     if (error) {
        logger.error("[SyncPlansService] Could not fetch existing plans:", { errorMessage: error.message });
-       return { data: null, error: { message: `Failed to fetch existing plans: ${error.message}` } };
+       // Return the original PostgrestError object
+       return { data: null, error: error };
     } else {
         logger.info(`[SyncPlansService] Found ${data?.length ?? 0} plans in DB.`);
     }
@@ -103,7 +105,7 @@ export class SyncPlansService implements ISyncPlansService {
     return { data: data as unknown as ExistingPlanData[] | null, error };
   }
 
-  async deactivatePlan(priceId: string): Promise<{ error: any | null }> {
+  async deactivatePlan(priceId: string): Promise<{ error: PostgrestError | null }> {
     logger.info(`[SyncPlansService] Deactivating plan with stripe_price_id: ${priceId}`);
     const { error } = await this.supabase
       .from('subscription_plans')

@@ -1,5 +1,25 @@
 import { logger } from './logger';
 
+// Minimal interfaces for expected response shapes
+interface OpenAIResponseShape {
+  choices?: Array<{
+    message?: {
+      content?: string | null;
+    };
+  }>;
+}
+
+interface AnthropicContentBlock {
+    type: string;
+    text?: string;
+    // Anthropic might have other block types, ignore them here
+    [key: string]: unknown; // Allow other properties but treat as unknown
+}
+
+interface AnthropicResponseShape {
+  content?: AnthropicContentBlock[];
+}
+
 /**
  * Parses the assistant's message content from raw API response data.
  * 
@@ -15,7 +35,7 @@ export function parseAssistantContent(responseData: unknown, apiIdentifier: stri
         }
 
         if (apiIdentifier?.startsWith('openai-')) {
-            const openAIResponse = responseData as Record<string, any>;
+            const openAIResponse = responseData as OpenAIResponseShape;
             const content = openAIResponse?.choices?.[0]?.message?.content;
             if (typeof content === 'string') {
                 return content.trim();
@@ -24,8 +44,8 @@ export function parseAssistantContent(responseData: unknown, apiIdentifier: stri
                  return null;
             }
         } else if (apiIdentifier?.startsWith('anthropic-')) {
-             const anthropicResponse = responseData as { content?: Array<Record<string, unknown>> };
-             const textContent = anthropicResponse?.content?.find((block: Record<string, unknown>) => block.type === 'text')?.text;
+             const anthropicResponse = responseData as AnthropicResponseShape;
+             const textContent = anthropicResponse?.content?.find(block => block.type === 'text')?.text;
              if (typeof textContent === 'string') {
                  return textContent.trim();
              } else {
