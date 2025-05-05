@@ -66,42 +66,42 @@ The implementation plan uses the following labels to categorize work steps:
 * [X] Run `pnpm install` to update dependencies
 * [X] Verify the project builds correctly after dependency updates
 
-#### STEP-0.1.3: Validate CI & Development Tooling [Based on OpenAI 0.4]
+#### STEP-0.1.3: Validate CI & Development Tooling [Based on OpenAI 0.4] [✅]
 * [X] **[SETUP]** Create/Configure CI workflow (e.g., `.github/workflows/build-test-lint.yml`) to trigger on `feature/*` branches.
-* [ ] **[STOP]** Ensure the configured CI pipeline **successfully builds the project and passes lint checks** on the new branch once triggered.
-    * [ ] *Note: Acknowledge existing test failures. These will be addressed incrementally during feature development and dedicated testing phases. Focus now is on build/lint success and CI trigger validation. All known `no-explicit-any` errors in source files have been fixed.* 
-* [ ] **[TEST]** Push an empty commit (`git commit --allow-empty -m "chore: test CI trigger"`) and observe CI run to confirm it triggers correctly.
-* [ ] **[COMMIT]** N/A (No code changes, but confirms tooling basics work)
+* [X] **[STOP]** Ensure the configured CI pipeline **successfully builds the project and passes lint checks** on the new branch once triggered.
+    * [X] *Note: Acknowledge existing test failures. These will be addressed incrementally during feature development and dedicated testing phases. Focus now is on build/lint success and CI trigger validation. CI build and lint passed successfully.* 
+* [X] **[TEST]** Push an empty commit (`git commit --allow-empty -m "chore: test CI trigger"`) and observe CI run to confirm it triggers correctly.
+* [X] **[COMMIT]** N/A (No code changes, but confirms tooling basics work)
 
 ### STEP-0.2: Project Structure Planning [🚧]
 
-#### STEP-0.2.1: Review Existing Folder Structure
-* [ ] Review the current project architecture to identify where new components will be added
-* [ ] Document file paths for all components that will be modified or created
+#### STEP-0.2.1: Review Existing Folder Structure [✅]
+* [X] Review the current project architecture to identify where new components will be added
+* [X] Document file paths for all components that will be modified or created *(Initial paths documented in `Documentation/0-2-1-FilePaths.md`)*
 
-#### STEP-0.2.2: Plan Component Architecture
-* [ ] Create component architecture diagram showing relationships between:
-  * [ ] Database schema changes
-  * [ ] API client methods
-  * [ ] State management stores
-  * [ ] UI components
-* [ ] Document all new types and interfaces that will be needed
-* [ ] Define data flow patterns between components
+#### STEP-0.2.2: Plan Component Architecture [✅]
+* [X] Create component architecture diagram showing relationships between: *(Diagram omitted, core flow documented in `Documentation/0-2-2-ArchitectureAndTypes.md`)*
+  * [X] Database schema changes
+  * [X] API client methods
+  * [X] State management stores
+  * [X] UI components
+* [X] Document all new types and interfaces that will be needed *(Documented in `Documentation/0-2-2-ArchitectureAndTypes.md`)*
+* [X] Define data flow patterns between components *(Documented in `Documentation/0-2-2-ArchitectureAndTypes.md`)*
 
-#### STEP-0.2.3: Define Analytics Events [ANALYTICS]
-* [ ] Define all analytics events that will be tracked:
-  * [ ] `chat_context_selected` - When a user selects a chat context (Personal or Organization)
-  * [ ] `organization_chat_created` - When a new organization chat is created
-  * [ ] `organization_chat_viewed` - When an organization chat is viewed
-  * [ ] `organization_chat_deleted` - When an organization chat is deleted
-  * [ ] `member_chat_creation_toggled` - When an admin toggles the ability for members to create organization chats
-  * [ ] `chat_rewind_used` - When a user rewinds a chat to edit a previous prompt
-  * [ ] `token_usage_viewed` - When a user views token usage information
-* [ ] Document event parameters for each analytics event
+#### STEP-0.2.3: Define Analytics Events [ANALYTICS] [✅]
+* [X] Define all analytics events that will be tracked *(Defined in `Documentation/0-2-3-AnalyticsEvents.md`)*:
+  * [X] `chat_context_selected`
+  * [X] `organization_chat_created`
+  * [X] `organization_chat_viewed`
+  * [X] `organization_chat_deleted`
+  * [X] `member_chat_creation_toggled`
+  * [X] `chat_rewind_used`
+  * [X] `token_usage_viewed`
+* [X] Document event parameters for each analytics event *(Documented in `Documentation/0-2-3-AnalyticsEvents.md`)*
 
-### STEP-0.3: Technical Design Finalization [🚧]
+### STEP-0.3: Technical Design Finalization [🚫]
 
-#### STEP-0.3.1: Finalize Database Schema Changes
+#### STEP-0.3.1: Finalize Database Schema Changes [🚫]
 * [ ] Document the complete database schema changes required:
   * [ ] `organization_id` addition to `chats` table
   * [ ] `system_prompt_id` addition to `chats` table
@@ -110,17 +110,17 @@ The implementation plan uses the following labels to categorize work steps:
 * [ ] Define indexing strategy for efficient queries
 * [ ] Document all foreign key relationships and constraints
 
-#### STEP-0.3.2: Finalize API Changes
+#### STEP-0.3.2: Finalize API Changes [🚫]
 * [ ] Document all API client method signature changes
 * [ ] Define request/response types for new or modified endpoints
 * [ ] Document error handling strategies
 
-#### STEP-0.3.3: Finalize Store Changes
+#### STEP-0.3.3: Finalize Store Changes [🚫]
 * [ ] Document changes to `useAiStore` state structure
 * [ ] Document new selectors and actions
 * [ ] Define interaction patterns with `useOrganizationStore`
 
-#### STEP-0.3.4: Create Test Plan
+#### STEP-0.3.4: Create Test Plan [🚫]
 * [ ] Define unit test requirements for each new component
 * [ ] Define integration test scenarios for key workflows
 * [ ] Create a test matrix covering all components and scenarios
@@ -128,10 +128,10 @@ The implementation plan uses the following labels to categorize work steps:
 --- 
 
 **Phase 0 Complete Checkpoint:**
-*   [ ] Feature branch created, draft PR opened.
-*   [ ] Necessary package dependencies updated and verified.
-*   [ ] Project structure reviewed, component architecture planned.
-*   [ ] Analytics events defined.
-*   [ ] Technical design (DB, API, Store) finalized.
-*   [ ] Test plan created.
-*   [ ] All Phase 0 commits made. 
+*   [X] Feature branch created, draft PR opened.
+*   [X] Necessary package dependencies updated and verified.
+*   [X] Project structure reviewed, component architecture planned.
+*   [X] Analytics events defined.
+*   [🚫] Technical design (DB, API, Store) finalized. *(Paused)*
+*   [🚫] Test plan created. *(Paused)*
+*   [X] All Phase 0 commits made. 
