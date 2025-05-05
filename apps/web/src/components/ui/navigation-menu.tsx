@@ -121,7 +121,6 @@ function NavigationMenuViewport({
   )
 }
 
-// eslint-disable-next-line react-refresh/only-export-components
 const NavigationMenuLink = React.forwardRef<
   HTMLAnchorElement,
   React.ComponentProps<typeof NavigationMenuPrimitive.Link>
