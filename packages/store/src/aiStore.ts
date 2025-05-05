@@ -55,15 +55,19 @@ export const useAiStore = create<AiStore>()(
                     let loadedPrompts: SystemPrompt[] = [];
 
                     // Check providers response
-                    if (!providersResponse.error && providersResponse.data && Array.isArray((providersResponse.data as any).providers)) {
-                        loadedProviders = (providersResponse.data as any).providers;
+                    // Define expected payload structure
+                    type ProvidersPayload = { providers: AiProvider[] };
+                    if (!providersResponse.error && providersResponse.data && typeof providersResponse.data === 'object' && providersResponse.data !== null && 'providers' in providersResponse.data && Array.isArray((providersResponse.data as ProvidersPayload).providers)) {
+                        loadedProviders = (providersResponse.data as ProvidersPayload).providers;
                     } else if (providersResponse.error) {
                         errorMessages.push(providersResponse.error?.message || 'Failed to load AI providers.');
                     }
                     
                     // Check prompts response
-                    if (!promptsResponse.error && promptsResponse.data && Array.isArray((promptsResponse.data as any).prompts)) {
-                        loadedPrompts = (promptsResponse.data as any).prompts;
+                    // Define expected payload structure
+                    type PromptsPayload = { prompts: SystemPrompt[] };
+                    if (!promptsResponse.error && promptsResponse.data && typeof promptsResponse.data === 'object' && promptsResponse.data !== null && 'prompts' in promptsResponse.data && Array.isArray((promptsResponse.data as PromptsPayload).prompts)) {
+                        loadedPrompts = (promptsResponse.data as PromptsPayload).prompts;
                     } else if (promptsResponse.error) {
                         errorMessages.push(promptsResponse.error?.message || 'Failed to load system prompts.');
                     }
@@ -82,13 +86,14 @@ export const useAiStore = create<AiStore>()(
                     });
                     
                     logger.info(`AI Config loaded successfully. Providers: ${loadedProviders.length}, Prompts: ${loadedPrompts.length}`);
-                } catch (error: any) {
-                    logger.error('Error loading AI config:', { error: error.message });
+                } catch (error: unknown) {
+                    const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred while loading AI configuration.';
+                    logger.error('Error loading AI config:', { error: errorMessage });
                     // Use plain set without immer
                     set({
                         availableProviders: [], 
                         availablePrompts: [],  
-                        aiError: error.message || 'An unknown error occurred while loading AI configuration.',
+                        aiError: errorMessage,
                         isConfigLoading: false,
                     });
                 }
@@ -174,26 +179,21 @@ export const useAiStore = create<AiStore>()(
                         throw new Error('API returned success status but no data.');
                     }
 
-                } catch (err: any) {
+                } catch (err: unknown) {
                     let errorHandled = false;
                     let requiresLogin = false;
-                    let errorMessage = err?.message || String(err) || 'Unknown error';
+                    // Safely access message
+                    let errorMessage = (err instanceof Error ? err.message : String(err)) || 'Unknown error'; 
 
                     // Check 1: Was it the specific AuthRequiredError thrown by apiClient?
-                    if (err instanceof AuthRequiredError || err?.name === 'AuthRequiredError') {
+                    // Check name property as well for robustness
+                    if (err instanceof AuthRequiredError || (typeof err === 'object' && err !== null && 'name' in err && err.name === 'AuthRequiredError')) {
                         logger.warn('sendMessage caught AuthRequiredError. Initiating login flow...');
                         requiresLogin = true;
-                        errorMessage = err.message || 'Authentication required'; // Use specific message
+                        // Use specific message if available, otherwise fall back
+                        errorMessage = (err instanceof Error ? err.message : null) || 'Authentication required'; 
                     }
-                    // Check 2: Was it a generic error thrown *after* apiClient returned a standard 401 response?
-                    // We check the original requestData context, assuming the generic error message
-                    // might match the one from the 401 ApiResponse. This is slightly indirect.
-                    // A potentially cleaner way might involve inspecting a custom property on the thrown generic error,
-                    // but let's stick closer to the original structure for now.
-                    // ---> THIS CHECK IS LIKELY INSUFFICIENT <--- 
-                    // Let's simplify: The primary signal is the AuthRequiredError. If that's not thrown,
-                    // the current design means we treat other errors as non-auth-related for the replay mechanism.
-                    // We rely on apiClient ONLY throwing AuthRequiredError when replay/login is needed.
+                    // Check 2: (Simplified - rely on AuthRequiredError being thrown explicitly)
 
                     // If AuthRequiredError was caught, try to save pending action and navigate
                     if (requiresLogin) {
@@ -456,14 +456,14 @@ export const useAiStore = create<AiStore>()(
                     } else {
                         throw new Error('API returned success status but no data during replay.');
                     }
-                } catch (error: any) {
+                } catch (error: unknown) {
                     // Revert error check back to just checking the name
-                    if (error?.name === 'AuthRequiredError') { 
+                    if (error instanceof AuthRequiredError) { 
                         logger.warn('[AiStore] Auth required during replay. Redirecting.', { error: error.message });
                         set({ isLoadingAiResponse: false, aiError: error.message }); // Sets error message
                         // Do NOT remove pending action on auth error
                     } else {
-                        logger.error('[aiStore] Error during pending action replay API call:', { error: error.message || String(error) });
+                        logger.error('[aiStore] Error during pending action replay API call:', { error: error instanceof Error ? error.message : String(error) });
                         set(state => {
                             const updatedMessages = state.currentChatMessages.map(msg =>
                                 msg.id === tempId
@@ -473,7 +473,7 @@ export const useAiStore = create<AiStore>()(
                             return {
                                 currentChatMessages: updatedMessages,
                                 isLoadingAiResponse: false,
-                                aiError: error.message || String(error)
+                                aiError: error instanceof Error ? error.message : String(error)
                             };
                         });
                     }

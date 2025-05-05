@@ -178,9 +178,10 @@ export const useOrganizationStore = create<OrganizationStoreImplementation>()(
               error: null, // Clear error on success
             });
           }
-        } catch (err: any) {
-           logger.error('[OrganizationStore] fetchUserOrganizations - Unexpected Error', { message: err?.message });
-           _setError(err.message ?? 'An unexpected error occurred');
+        } catch (err: unknown) {
+           const errorMessage = err instanceof Error ? err.message : 'An unexpected error occurred';
+           logger.error('[OrganizationStore] fetchUserOrganizations - Unexpected Error', { message: errorMessage });
+           _setError(errorMessage);
            // Reset list and total count, keep current page/size
            set({ userOrganizations: [], orgListTotalCount: 0 });
         } finally {
@@ -836,7 +837,7 @@ export const useOrganizationStore = create<OrganizationStoreImplementation>()(
                 return null;
             } else {
                 logger.info(`[OrganizationStore] User ${userId} requested to join org ${orgId}.`);
-                return response.data ?? null;
+                return response.data as MembershipRequest | null;
             }
         } catch (err: any) {
             const errorMsg = err.message ?? 'An unexpected error occurred during join request';

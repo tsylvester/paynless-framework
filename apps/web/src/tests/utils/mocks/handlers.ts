@@ -1,5 +1,5 @@
 import { http, HttpResponse } from 'msw';
-import type { AuthResponse, ProfileResponse, UserProfile, SubscriptionPlan, UserSubscription, Chat, ChatMessage } from '@paynless/types';
+import type { AuthResponse, ProfileResponse, UserProfile, SubscriptionPlan, UserSubscription, Chat, ChatMessage, UserProfileUpdate } from '@paynless/types';
 
 // Base URL used in tests - <<< Use Environment Variable >>>
 const supabaseUrlFromEnv = process.env.VITE_SUPABASE_URL;
@@ -29,7 +29,9 @@ export const handlers = [
   // --- Auth endpoints ---
   // Corrected path: /login
   http.post(`${API_BASE_URL}/login`, async ({ request }) => {
-    const { email, password } = await request.json() as any;
+    // Define payload type inline
+    type LoginPayload = { email: string, password: string };
+    const { email, password } = await request.json() as LoginPayload;
 
     if (email === 'test@example.com' && password === 'wrongpass') {
       return HttpResponse.json({ error: { message: 'Invalid credentials' } }, { status: 401 });
@@ -49,7 +51,9 @@ export const handlers = [
 
   // Corrected path: /register
   http.post(`${API_BASE_URL}/register`, async ({ request }) => {
-    const { email } = await request.json() as any;
+    // Define payload type inline
+    type RegisterPayload = { email: string, password?: string }; // Assuming password might be optional, adjust if needed
+    const { email } = await request.json() as RegisterPayload;
 
     if (email === 'test@example.com') {
       return HttpResponse.json({ error: { message: 'Email already exists' } }, { status: 400 }); // Use 409 Conflict?
@@ -82,7 +86,8 @@ export const handlers = [
       return HttpResponse.json({ error: { message: 'Unauthorized' } }, { status: 401 });
     }
 
-    const updatedData = await request.json() as any;
+    // Use imported UserProfileUpdate type
+    const updatedData = await request.json() as UserProfileUpdate;
     const response: UserProfile = { ...mockUserProfile, ...updatedData };
     return HttpResponse.json(response, { status: 200 });
   }),
@@ -109,7 +114,9 @@ export const handlers = [
        if (!authHeader || !authHeader.startsWith('Bearer ')) {
            return HttpResponse.json({ error: { message: 'Unauthorized' } }, { status: 401 });
        }
-       const body = await request.json() as any;
+       // Define payload type inline
+       type CheckoutPayload = { priceId: string };
+       const body = await request.json() as CheckoutPayload;
        if (!body?.priceId) {
             return HttpResponse.json({ error: { message: 'Missing priceId' } }, { status: 400 });
        }
@@ -150,8 +157,9 @@ export const handlers = [
 
   http.post(`${API_BASE_URL}/chat`, async ({ request }) => {
     console.log(`[MSW Global] Handling POST ${API_BASE_URL}/chat`);
-    // Return a generic success response
-    const body = await request.json() as any;
+    // Define payload type inline
+    type ChatRequestPayload = { chatId?: string; message: string; [key: string]: unknown }; // Allow other keys for flexibility
+    const body = await request.json() as ChatRequestPayload;
     return HttpResponse.json({ 
         id: 'm-global', 
         chat_id: body.chatId || 'new-chat-global', 

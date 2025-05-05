@@ -216,7 +216,7 @@ export class OrganizationApiClient {
     // Assuming the backend needs no specific payload from the client for this action.
     // The backend infers the user from the auth context.
     // Adjust expected return type <T> if backend provides data (e.g., pending membership record)
-    return this.client.post<any, undefined>(`organizations/${orgId}/requests`, undefined);
+    return this.client.post<unknown, undefined>(`organizations/${orgId}/requests`, undefined);
   }
 
   /**

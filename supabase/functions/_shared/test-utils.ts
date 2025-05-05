@@ -81,7 +81,7 @@ export function createAdminClient(): SupabaseClient {
 }
 
 // Create a test user
-export async function createUser(email: string, password: string): Promise<{ user: any; error: any }> {
+export async function createUser(email: string, password: string): Promise<{ user: User | undefined; error: AuthError | null }> {
     const supabaseAdmin = createAdminClient();
     console.log(`Creating user: ${email}`);
     const { data, error } = await supabaseAdmin.auth.admin.createUser({
@@ -94,7 +94,7 @@ export async function createUser(email: string, password: string): Promise<{ use
     } else {
         console.log(`User ${email} created successfully.`);
     }
-    return { user: data?.user, error };
+    return { user: data?.user, error: error || null };
 }
 
 // Clean up (delete) a test user
@@ -112,7 +112,7 @@ export async function cleanupUser(email: string, adminClient?: SupabaseClient): 
     }
 
     const users = listData?.users || [];
-    const userToDelete = users.find(user => user.email === email);
+    const userToDelete = users.find((user: User) => user.email === email);
 
     if (!userToDelete) {
         console.warn(`User ${email} not found for cleanup.`);

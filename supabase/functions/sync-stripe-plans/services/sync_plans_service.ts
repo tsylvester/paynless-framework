@@ -44,7 +44,7 @@ export interface ISyncPlansService {
    * @param plans Array of plan data matching the DB schema.
    * @returns The PostgrestResponse from the upsert operation.
    */
-  upsertPlans(plans: PlanUpsertData[]): Promise<any>;
+  upsertPlans(plans: PlanUpsertData[]): Promise<{ error: PostgrestError | null }>;
 
   /**
    * Fetches existing plans from the database for deactivation check.
@@ -70,7 +70,7 @@ export class SyncPlansService implements ISyncPlansService {
     this.supabase = supabaseClient;
   }
 
-  async upsertPlans(plans: PlanUpsertData[]): Promise<any> {
+  async upsertPlans(plans: PlanUpsertData[]): Promise<{ error: PostgrestError | null }> {
      logger.info(`[SyncPlansService] Upserting ${plans.length} plans...`);
      const result = await this.supabase
       .from('subscription_plans')
@@ -80,11 +80,11 @@ export class SyncPlansService implements ISyncPlansService {
     if (result.error) {
       logger.error(`[SyncPlansService] Supabase upsert error:`, { error: result.error });
       // Return a structure mimicking PostgrestResponseFailure
-      return { data: null, error: result.error, count: null, status: 500, statusText: 'Internal Server Error' } as PostgrestResponse<any>;
+      return { error: result.error };
     } else {
       logger.info(`[SyncPlansService] Upsert successful. ${result.count ?? 0} rows affected.`);
       // Return null or a simple success object, as Promise<any> is expected
-      return null; // Or { success: true, count: result.count };
+      return { error: null };
     }
   }
 

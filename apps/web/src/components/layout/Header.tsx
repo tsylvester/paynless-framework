@@ -16,6 +16,7 @@ import { SimpleDropdown } from '../ui/SimpleDropdown'
 import { OrganizationSwitcher } from '../organizations/OrganizationSwitcher'
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { getInitials } from '@paynless/utils'
+import { UserProfile } from '@paynless/types'
 
 export function Header() {
   const { user, profile, logout } = useAuthStore((state) => ({
@@ -106,7 +107,7 @@ export function Header() {
                       className="flex items-center space-x-2 p-1 rounded-lg hover:bg-surface"
                     >
                       <Avatar className="h-8 w-8">
-                        <AvatarImage src={(profile as any)?.avatarUrl} alt={profile?.first_name || user.email || 'User'} />
+                        <AvatarImage src={profile?.avatarUrl} alt={profile?.first_name || user.email || 'User'} />
                         <AvatarFallback>
                           {getInitials(profile?.first_name, profile?.last_name) || <User size={16}/>}
                         </AvatarFallback>
@@ -195,7 +196,7 @@ export function Header() {
             <div className="pt-2 pb-3 space-y-1">
               <div className="flex items-center px-4 mb-3">
                 <Avatar className="h-10 w-10 mr-3">
-                  <AvatarImage src={(profile as any)?.avatarUrl} alt={profile?.first_name || user.email || 'User'} />
+                  <AvatarImage src={profile?.avatarUrl} alt={profile?.first_name || user.email || 'User'} />
                   <AvatarFallback>
                     {getInitials(profile?.first_name, profile?.last_name) || <User size={20}/>}
                   </AvatarFallback>

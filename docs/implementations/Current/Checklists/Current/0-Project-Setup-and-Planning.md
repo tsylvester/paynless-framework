@@ -69,7 +69,7 @@ The implementation plan uses the following labels to categorize work steps:
 #### STEP-0.1.3: Validate CI & Development Tooling [Based on OpenAI 0.4]
 * [X] **[SETUP]** Create/Configure CI workflow (e.g., `.github/workflows/build-test-lint.yml`) to trigger on `feature/*` branches.
 * [ ] **[STOP]** Ensure the configured CI pipeline **successfully builds the project and passes lint checks** on the new branch once triggered.
-    * [ ] *Note: Acknowledge existing test failures. These will be addressed incrementally during feature development and dedicated testing phases. Focus now is on build/lint success and CI trigger validation.* 
+    * [ ] *Note: Acknowledge existing test failures. These will be addressed incrementally during feature development and dedicated testing phases. Focus now is on build/lint success and CI trigger validation. All known `no-explicit-any` errors in source files have been fixed.* 
 * [ ] **[TEST]** Push an empty commit (`git commit --allow-empty -m "chore: test CI trigger"`) and observe CI run to confirm it triggers correctly.
 * [ ] **[COMMIT]** N/A (No code changes, but confirms tooling basics work)
 

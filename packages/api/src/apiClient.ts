@@ -38,13 +38,13 @@ function isApiErrorType(obj: unknown): obj is ApiErrorType {
 
 // Config interface for the constructor
 interface ApiClientConstructorOptions {
-    supabase: SupabaseClient<any>;
-    supabaseUrl: string; // Pass the URL explicitly
-    supabaseAnonKey: string; // <<< Add anon key here
+    supabase: SupabaseClient<Database>;
+    supabaseUrl: string;
+    supabaseAnonKey: string;
 }
 
 export class ApiClient {
-    private supabase: SupabaseClient<any>;
+    private supabase: SupabaseClient<Database>;
     private functionsUrl: string;
     private supabaseAnonKey: string; // <<< Add storage for anon key
 
@@ -212,7 +212,7 @@ export class ApiClient {
      * at the application root. Do NOT use this to bypass the ApiClient for other operations.
      * @returns The SupabaseClient instance.
      */
-    public getSupabaseClient(): SupabaseClient<any> {
+    public getSupabaseClient(): SupabaseClient<Database> {
         return this.supabase;
     }
 }
@@ -237,13 +237,13 @@ export function initializeApiClient(config: ApiInitializerConfig) {
      throw new Error('Supabase URL and Anon Key are required to initialize ApiClient');
   }
   // Create Supabase client inside the initializer
-  const supabase = createClient<any>(config.supabaseUrl, config.supabaseAnonKey);
+  const supabase = createClient<Database>(config.supabaseUrl, config.supabaseAnonKey);
   
   // Pass both client and URL to constructor
   apiClientInstance = new ApiClient({ 
       supabase: supabase, 
       supabaseUrl: config.supabaseUrl,
-      supabaseAnonKey: config.supabaseAnonKey // <<< Pass anon key here
+      supabaseAnonKey: config.supabaseAnonKey
   });
   logger.info('ApiClient Singleton Initialized.');
 }
@@ -274,6 +274,7 @@ export const api = {
     ai: () => getApiClient().ai, 
     billing: () => getApiClient().billing,
     notifications: () => getApiClient().notifications,
-    getSupabaseClient: (): SupabaseClient<any> => 
+    organizations: () => getApiClient().organizations,
+    getSupabaseClient: (): SupabaseClient<Database> => 
         getApiClient().getSupabaseClient(),
 }; 
