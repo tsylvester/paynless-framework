@@ -42,5 +42,17 @@ export default tseslint.config(
         },
       ],
     },
+  },
+  {
+    files: [
+        '**/*.test.{ts,tsx}', 
+        '**/tests/**/*.{ts,tsx}', // Include files under any 'tests' dir
+        '**/mocks/**/*.{ts,tsx}', // Include files under any 'mocks' dir
+        '**/*.mock.{ts,tsx}',   // Include files ending in .mock.ts/tsx
+    ],
+    rules: {
+      '@typescript-eslint/no-unused-vars': 'off',
+      '@typescript-eslint/no-explicit-any': 'off',
+    }
   }
 );

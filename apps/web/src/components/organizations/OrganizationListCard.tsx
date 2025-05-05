@@ -1,7 +1,9 @@
 'use client';
 
 import React, { useEffect } from 'react';
+// import { Link } from 'react-router-dom'; // Remove unused Link
 import { useOrganizationStore } from '@paynless/store';
+import { logger } from '@paynless/utils'; // Added logger import
 import {
   Card, CardHeader, CardTitle, CardContent
 } from "@/components/ui/card";
@@ -37,11 +39,15 @@ export const OrganizationListCard: React.FC = () => {
   useEffect(() => {
     // Fetch only if not loading and no orgs are present (or if pagination state suggests initial load needed)
     // Avoid fetching if we already have orgs for the current page > 1 to prevent loops on page load
-    if (!isLoading && userOrganizations.length === 0 && orgListPage === 1) {
-        fetchUserOrganizations({ page: orgListPage, limit: orgListPageSize });
+    if (!isLoading) { 
+      logger.info(
+        `[OrganizationListCard] Fetching orgs - Page: ${orgListPage}, Size: ${orgListPageSize}`,
+      )
+      // Correct the call signature here
+      fetchUserOrganizations({ page: orgListPage, limit: orgListPageSize });
     }
-    // Depend on fetchUserOrganizations, pageSize, but NOT page or userOrgs to avoid loops
-  }, [fetchUserOrganizations, orgListPageSize, isLoading]); 
+    // Depend on fetchUserOrganizations, pageSize, but NOT page or userOrgs to avoid loops <-- Comment might be outdated regarding page
+  }, [fetchUserOrganizations, orgListPageSize, isLoading, orgListPage]); // Keep orgListPage here
 
   // TODO: Get function to open the Create Org Modal
   // const { onOpen: openCreateOrgModal } = useCreateOrganizationModal(); 
@@ -71,12 +77,13 @@ export const OrganizationListCard: React.FC = () => {
 
   // Calculate totalPages for the PaginationComponent conditional rendering
   // Although PaginationComponent does this internally, we might need it here
-  const totalPages = Math.ceil(orgListTotalCount / orgListPageSize);
+  //const totalPages = Math.ceil(orgListTotalCount / orgListPageSize);
+  // const totalPages = Math.ceil(orgListTotalCount / orgListPageSize); // Remove unused variable assignment
 
   return (
     <Card className="h-full flex flex-col">
       <CardHeader className="flex-row flex justify-between items-center space-x-4">
-        <CardTitle role="heading" aria-level="2">Organizations</CardTitle>
+        <CardTitle role="heading">Organizations</CardTitle>
         <Button 
           onClick={handleCreateNewClick} 
           variant="outline"

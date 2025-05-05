@@ -96,7 +96,6 @@ export default function AiChatPage() {
       loadChatDetails(chatIdToLoad);
     } 
     // Run only once on mount
-    // eslint-disable-next-line react-hooks/exhaustive-deps 
   }, []); 
   // ---> END MODIFICATION <---
 

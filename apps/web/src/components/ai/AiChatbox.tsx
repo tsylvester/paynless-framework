@@ -151,19 +151,20 @@ export const AiChatbox: React.FC<AiChatboxProps> = ({
                   rehypePlugins={[rehypeSanitize]}
                   components={{
                     code(props) {
-                      const {children, className, node, ...rest} = props
-                      const match = /language-(\\w+)/.exec(className || '')
+                      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+                      const {children, className, node, ref, ...rest} = props // Explicitly pull out ref
+                      const match = /language-(\w+)/.exec(className || '')
                       return match ? (
                         <SyntaxHighlighter
-                          {...rest}
+                          {...rest} // Spread props WITHOUT ref
                           PreTag="div"
-                          children={String(children).replace(/\\n$/, '')}
+                          children={String(children).replace(/\n$/, '')}
                           language={match[1]}
                           style={okaidia} // Choose your style
                           className="whitespace-pre-wrap break-words"
                         />
                       ) : (
-                        <code {...rest} className={cn(className, "whitespace-pre-wrap break-words")}>
+                        <code ref={ref} {...rest} className={cn(className, "whitespace-pre-wrap break-words")}> // Pass ref to the fallback code tag
                           {children}
                         </code>
                       )
