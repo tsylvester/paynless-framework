@@ -34,8 +34,12 @@ jobs:
       - name: Install dependencies
         run: pnpm install
 
-      - name: Lint
-        run: pnpm lint
+      - name: Lint types package # Temporarily isolate
+        run: pnpm --filter @paynless/types lint
+
+      - name: Lint other packages # If the above works, run the rest
+        # This filters out the types package and runs lint on the others recursively
+        run: pnpm --filter "!@paynless/types" -r run lint --if-present
 
       - name: Build
         # Adjust if your build command is different or needs filtering
