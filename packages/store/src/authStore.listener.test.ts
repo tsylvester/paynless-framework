@@ -73,7 +73,7 @@ const mockUserProfile: UserProfile = {
 };
 
 // --- Mocks for Dependencies ---
-let listenerCallback: AuthStateChangeListener | null = null;
+// let listenerCallback: AuthStateChangeListener | null = null; // Moved definition inside describe block
 const mockUnsubscribe = vi.fn();
 
 // Add mock navigate function
@@ -133,6 +133,7 @@ vi.mock('./organizationStore', () => ({
 
 describe('authStore Listener Logic (initAuthListener)', () => {
   let listenerUnsubscribe: () => void;
+  // Define listenerCallback here, it's specific to the test suite scope
   let listenerCallback: (event: string, session: SupabaseSession | null) => Promise<void>; // Adjusted type for async
   let setStateSpy: MockInstance;
 

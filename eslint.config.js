@@ -41,10 +41,10 @@ export default tseslint.config(
   },
   {
     files: [
-        '**/*.test.{ts,tsx}', 
-        '**/tests/**/*.{ts,tsx}', // Include files under any 'tests' dir
-        '**/mocks/**/*.{ts,tsx}', // Include files under any 'mocks' dir
-        '**/*.mock.{ts,tsx}',   // Include files ending in .mock.ts/tsx
+        '**/*.test.*', // Broadened to catch any extension after .test
+        '**/tests/**/*.{ts,tsx}', 
+        '**/mocks/**/*.{ts,tsx}',
+        '**/*.mock.{ts,tsx}',
     ],
     rules: {
       '@typescript-eslint/no-unused-vars': 'off',
