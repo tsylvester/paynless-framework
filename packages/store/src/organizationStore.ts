@@ -529,6 +529,7 @@ export const useOrganizationStore = create<OrganizationStoreImplementation>()(
                 org.id === orgId ? updatedOrg : org
             );
 
+            // eslint-disable-next-line prefer-const
             let updatedState: Partial<OrganizationState & OrganizationUIState> = {
                 userOrganizations: updatedUserOrgs,
                 isLoading: false,
