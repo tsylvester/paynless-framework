@@ -7,7 +7,7 @@
     "dev": "vite",
     "build": "vite build",
     "clean": "rm -rf dist",
-    "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
+    "lint": "eslint . --report-unused-disable-directives --max-warnings 0",
     "preview": "vite preview",
     "test": "vitest run",
     "test:watch": "vitest"
