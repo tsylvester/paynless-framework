@@ -26,6 +26,9 @@ importers:
       copyfiles:
         specifier: ^2.4.1
         version: 2.4.1
+      globals:
+        specifier: ^15.8.0
+        version: 15.15.0
       jiti:
         specifier: 2.4.2
         version: 2.4.2
