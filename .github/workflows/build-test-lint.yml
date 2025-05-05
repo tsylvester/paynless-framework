@@ -39,16 +39,16 @@ jobs:
           echo "Linting @paynless/types..."
           pnpm --filter @paynless/types lint
           echo "Linting @paynless/utils..."
-          pnpm --filter @paynless/utils lint --if-present # Use --if-present here in case utils doesn't have it
+          pnpm --filter @paynless/utils lint
           echo "Linting @paynless/api..."
-          pnpm --filter @paynless/api lint --if-present
+          pnpm --filter @paynless/api lint
           echo "Linting @paynless/store..."
-          pnpm --filter @paynless/store lint --if-present
+          pnpm --filter @paynless/store lint
           echo "Linting @paynless/web..."
           pnpm --filter @paynless/web lint
           # Add other packages here if needed, e.g.:
           # echo "Linting @paynless/db-types..."
-          # pnpm --filter @paynless/db-types lint --if-present
+          # pnpm --filter @paynless/db-types lint
 
       - name: Build
         # Adjust if your build command is different or needs filtering

@@ -15,7 +15,7 @@
   "scripts": {
     "build": "tsc -b",
     "clean": "rm -rf dist tsconfig.tsbuildinfo",
-    "lint": "eslint . --ext .ts,.tsx",
+    "lint": "eslint src/**/*.{ts,tsx} --max-warnings 0",
     "test": "vitest run"
   },
   "dependencies": {
