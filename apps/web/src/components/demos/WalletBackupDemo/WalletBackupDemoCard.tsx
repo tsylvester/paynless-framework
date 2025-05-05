@@ -1,5 +1,4 @@
 import React, { useState, useEffect } from 'react';
-import { invoke } from '@tauri-apps/api/core';
 import { usePlatform } from '@paynless/platform';
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -8,12 +7,13 @@ import * as bip39 from 'bip39';
 
 import { TextInputArea } from '@/components/common/TextInputArea';
 import { GenerateMnemonicButton } from './GenerateMnemonicButton';
-import { FileActionButtons } from './FileActionButtons';
 import { StatusDisplay } from './StatusDisplay';
 import ErrorBoundary from '@/components/common/ErrorBoundary';
 import { DropZone } from '@/components/common/DropZone';
 import { platformEventEmitter, FileDropPayload } from '@paynless/platform';
 import { Button } from '@/components/ui/button';
+import { ExportMnemonicButton } from './ExportMnemonicButton';
+import { ImportMnemonicButton } from './ImportMnemonicButton';
 
 interface WalletBackupDemoCardProps {}
 
@@ -28,19 +28,9 @@ export const WalletBackupDemoCard: React.FC<WalletBackupDemoCardProps> = () => {
   const isFileSystemAvailable = fileSystem?.isAvailable === true;
 
   const isDisabled = !isFileSystemAvailable || isActionLoading || isLoadingCapabilities || !!capabilityError;
-  const isExportDisabled = !mnemonic || isDisabled;
 
-  const STATUS_DROP_LOAD_ERROR = (msg: string) => `Drop Load Error: ${msg}`;
-
-  const STATUS_IMPORT_SUCCESS = 'Mnemonic imported successfully!';
-  const STATUS_IMPORT_CANCELLED = 'File selection cancelled.';
-  const STATUS_IMPORT_ERROR = (msg: string) => `Import Error: ${msg}`;
-  const STATUS_EXPORT_SUCCESS = 'Mnemonic exported successfully!';
-  const STATUS_EXPORT_CANCELLED = 'File save cancelled.';
-  const STATUS_EXPORT_ERROR = (msg: string) => `Export Error: ${msg}`;
   const STATUS_GENERATE_SUCCESS = 'Mnemonic generated successfully!';
   const STATUS_GENERATE_ERROR = (msg: string) => `Generation Error: ${msg}`;
-
   const STATUS_UNKNOWN_ERROR = 'An unknown error occurred.';
 
   const handleClear = () => {
@@ -49,38 +39,6 @@ export const WalletBackupDemoCard: React.FC<WalletBackupDemoCardProps> = () => {
     setStatusMessage(null);
     setStatusVariant('info');
     setIsActionLoading(false);
-  };
-
-  const importMnemonicFile = async (filePath: string) => {
-    if (!fileSystem || !isFileSystemAvailable || isLoadingCapabilities || capabilityError) return;
-    console.log(`[WalletBackupDemo] Importing mnemonic from: ${filePath}`);
-    setIsActionLoading(true);
-    setStatusMessage(null);
-    try {
-      const fileContent = await fileSystem.readFile(filePath);
-      const importedMnemonic = new TextDecoder().decode(fileContent).trim();
-
-      if (!importedMnemonic || importedMnemonic.split(/\s+/).length < 12) {
-        throw new Error('Invalid mnemonic phrase format in file.');
-      }
-
-      await invoke('import_mnemonic', { mnemonic: importedMnemonic });
-
-      setMnemonic(importedMnemonic);
-      setStatusMessage(STATUS_IMPORT_SUCCESS);
-      setStatusVariant('success');
-    } catch (error) {
-      console.error("Import Mnemonic Error:", error);
-      const message = typeof error === 'string' 
-        ? STATUS_IMPORT_ERROR(error) 
-        : error instanceof Error 
-          ? STATUS_IMPORT_ERROR(error.message) 
-          : STATUS_UNKNOWN_ERROR;
-      setStatusMessage(message);
-      setStatusVariant('error');
-    } finally {
-      setIsActionLoading(false);
-    }
   };
 
   const handleGenerate = () => {
@@ -97,71 +55,25 @@ export const WalletBackupDemoCard: React.FC<WalletBackupDemoCardProps> = () => {
     }
   };
 
-  const handleImport = async () => {
-    if (!fileSystem || !isFileSystemAvailable || isLoadingCapabilities || capabilityError) return;
-
-    setIsActionLoading(true);
-    setStatusMessage(null);
-    try {
-      const [selectedFilePath] = (await fileSystem.pickFile({
-        multiple: false,
-      })) ?? [];
-
-      if (!selectedFilePath) {
-        setStatusMessage(STATUS_IMPORT_CANCELLED);
-        setStatusVariant('info');
-        setIsActionLoading(false);
-        return;
-      }
-      
-      await importMnemonicFile(selectedFilePath);
-    } catch (error) {
-      console.error("Pick File Error for Import:", error); 
-      const message = error instanceof Error ? STATUS_IMPORT_ERROR(error.message) : STATUS_UNKNOWN_ERROR;
-      setStatusMessage(message);
-      setStatusVariant('error');
-      setIsActionLoading(false);
-    }
+  const handleExportSuccess = (message: string) => {
+    setStatusMessage(message);
+    setStatusVariant('success');
   };
 
-  const handleExport = async () => {
-    if (!fileSystem || !isFileSystemAvailable || !mnemonic || isLoadingCapabilities || capabilityError) return;
+  const handleExportError = (message: string) => {
+    setStatusMessage(message);
+    setStatusVariant('error');
+  };
 
-    setIsActionLoading(true);
-    setStatusMessage(null);
-    try {
-      // Invoke backend command to get the mnemonic
-      const retrievedMnemonic = await invoke<string>('export_mnemonic');
+  const handleImportSuccess = (message: string, importedMnemonic: string) => {
+    setMnemonic(importedMnemonic);
+    setStatusMessage(message);
+    setStatusVariant('success');
+  };
 
-      // If invoke didn't throw and returned a string, proceed with saving
-      const savePath = await fileSystem.pickSaveFile({});
-
-      if (!savePath) {
-        setStatusMessage(STATUS_EXPORT_CANCELLED);
-        setStatusVariant('info');
-        // Set loading false here as we are returning early
-        setIsActionLoading(false);
-        return;
-      }
-
-      const fileData = new TextEncoder().encode(retrievedMnemonic); // Use retrieved mnemonic
-      await fileSystem.writeFile(savePath, fileData);
-
-      setStatusMessage(STATUS_EXPORT_SUCCESS);
-      setStatusVariant('success');
-    } catch (error) {
-      console.error("Export Error:", error);
-      // Backend errors are typically strings, frontend errors are Error objects
-      const message = typeof error === 'string'
-        ? STATUS_EXPORT_ERROR(error)
-        : error instanceof Error
-          ? STATUS_EXPORT_ERROR(error.message)
-          : STATUS_UNKNOWN_ERROR;
-      setStatusMessage(message);
-      setStatusVariant('error');
-    } finally {
-      setIsActionLoading(false);
-    }
+  const handleImportError = (message: string) => {
+    setStatusMessage(message);
+    setStatusVariant('error');
   };
 
   useEffect(() => {
@@ -171,11 +83,8 @@ export const WalletBackupDemoCard: React.FC<WalletBackupDemoCardProps> = () => {
       console.log('[WalletBackupDemo] Received file drop:', payload);
       const filePath = payload[0];
       if (filePath) {
-        importMnemonicFile(filePath).catch(err => {
-          console.error("Error during importMnemonicFile from drop:", err);
-          setStatusMessage(STATUS_DROP_LOAD_ERROR(err instanceof Error ? err.message : 'Unknown error'));
-          setStatusVariant('error');
-        });
+        setStatusMessage('File dropped. Please click "Import Mnemonic" to process.');
+        setStatusVariant('info');
       }
     };
 
@@ -257,19 +166,25 @@ export const WalletBackupDemoCard: React.FC<WalletBackupDemoCardProps> = () => {
         <div className="flex flex-col md:flex-row md:space-x-2 space-y-2 md:space-y-0">
           <GenerateMnemonicButton 
             onGenerate={handleGenerate} 
-            disabled={isDisabled} 
-          />
-          <FileActionButtons
-            onImport={handleImport}
-            onExport={handleExport}
             disabled={isDisabled}
-            isExportDisabled={isExportDisabled}
-            isLoading={isActionLoading}
+            dataTestId="generate-button"
           />
+          <ImportMnemonicButton 
+            fileSystem={capabilities?.fileSystem}
+            isDisabled={isDisabled}
+            onSuccess={handleImportSuccess}
+            onError={handleImportError}
+          />
+          <ExportMnemonicButton 
+             fileSystem={capabilities?.fileSystem}
+             isDisabled={isDisabled || !mnemonic}
+             onSuccess={handleExportSuccess}
+             onError={handleExportError}
+           />
         <Button 
           variant="outline" 
           onClick={handleClear}
-          disabled={isLoadingCapabilities || !!capabilityError}
+          disabled={isDisabled || isLoadingCapabilities || !!capabilityError}
           className="mt-2 md:mt-0 md:ml-auto"
           data-testid="clear-button"
         >

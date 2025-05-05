@@ -59,13 +59,10 @@
 
 *   **[2.4] Enhance Security, Reliability & UX:**
     *   **[2.4.1] Authentication & Authorization Strategy (Security):**
-        *   [ ] **Define Mechanism:** Determine and document the chosen authentication method required *before* executing the `export_mnemonic` command. Evaluate options:
-            *   Simple Password Prompt (UI-driven, requires secure handling if sent to backend).
-            *   OS-level Authentication Hook (Leveraging platform features via Tauri/plugins).
-            *   Master Password/PIN stored securely (Requires robust *local* secure storage).
-            *   Supabase Re-authentication (Requires secure frontend -> Supabase -> frontend -> Tauri command flow, adds network dependency).
-        *   [ ] **Implement Placeholder:** Add necessary UI elements (e.g., password input, auth button) as placeholders for the chosen mechanism. Disable export functionality until authentication is successful (deferring full backend integration of the check).
-        *   [ ] **Security Review:** Document potential attack vectors related to export (e.g., shoulder surfing, malware interception) and how the chosen strategy mitigates them.
+        *   [->] **Define Mechanism:** Target OS-level Authentication (Touch ID, Windows Hello, etc.) as the preferred mechanism for authorizing `export_mnemonic`. Decision deferred pending research into suitable cross-platform Tauri plugins (see Task 2.4.6).
+            *   *Initial Evaluation Completed:* Simple Password Prompt (placeholder only), OS-level Auth (Target), Master Password/PIN (requires secure storage first), Supabase Re-auth (adds network dependency, less ideal).
+        *   [ ] **Implement Placeholder UI:** Implement a simple password input dialog triggered before export as a temporary placeholder. This dialog will *not* perform backend validation yet but will establish the UI flow. Export proceeds after dialog confirmation for now.
+        *   [ ] **Security Review:** Document potential attack vectors related to export (e.g., shoulder surfing, malware interception) and how the *final* OS auth strategy aims to mitigate them.
     *   **[2.4.2] Robust Error Handling & Feedback (Reliability, UX):**
         *   [ ] **Map Backend Errors:** Explicitly map every defined Rust error variant (`MnemonicImportError`, `MnemonicExportError`, anticipated `StorageError` variants) to distinct, clear, user-friendly messages in the frontend `StatusDisplay`.
         *   [ ] **Differentiate Error Sources:** Ensure UI messages clearly distinguish between frontend validation, file I/O, backend crypto, backend storage, and Tauri communication errors.
@@ -86,12 +83,17 @@
         *   [ ] **Document Tradeoffs:** Analyze security/usability tradeoffs of the chosen *local* storage approach.
         *   [ ] **Define Dependencies:** List necessary crates/plugins for the chosen implementation.
         *   *(Note: Actual implementation deferred to a later task/phase, this is planning).*
-    *   [ ] **[COMMIT]** Commit enhancements with message "refactor(UI/Plan): Enhance security, reliability, and UX plan for WalletBackupDemoCard".
+    *   **[2.4.6] Future OS Authentication Integration (Deferred Implementation):**
+        *   [ ] **Research Plugins:** Investigate and select a suitable, reliable, cross-platform Tauri plugin or native integration strategy for OS-level authentication (e.g., `tauri-plugin-authenticator`, platform-specific APIs).
+        *   [ ] **Frontend Integration:** Replace the placeholder password dialog with the chosen OS authentication trigger in the frontend export flow.
+        *   [ ] **Backend Integration (If Necessary):** Adapt backend logic if the chosen OS auth method requires additional verification steps.
+        *   [ ] **Testing:** Update integration tests (Task 2.5) to cover the final OS authentication flow.
+    *   [ ] **[COMMIT]** Commit enhancements with message "refactor(UI/Plan): Enhance security, reliability, and UX plan for WalletBackupDemoCard, implement placeholder auth UI".
 
 *   **[2.5] Integration Testing:**
     *   [ ] Write integration tests (potentially using Tauri's testing utilities or manual E2E tests initially) covering the full import/export flows:
         *   Frontend UI -> Tauri Command Invocation -> Rust Handler Execution (`core-crypto` + *mock* `storage-interface` interaction initially) -> Frontend UI Update.
     *   [ ] Test handling of backend errors propagated to the frontend.
-    *   [ ] Test security checks during export (once implemented).
+    *   [ ] Test security checks during export (once final auth implemented in 2.4.6).
 
 This phase transforms the demo into a core application feature, bridging the frontend UI with the secure backend cryptographic and storage logic. 

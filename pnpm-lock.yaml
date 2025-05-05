@@ -173,6 +173,9 @@ importers:
       '@tauri-apps/api':
         specifier: ^2.5.0
         version: 2.5.0
+      '@tauri-apps/plugin-dialog':
+        specifier: ^2.0.0-beta.8
+        version: 2.2.1
       axios:
         specifier: ^1.6.7
         version: 1.8.4
