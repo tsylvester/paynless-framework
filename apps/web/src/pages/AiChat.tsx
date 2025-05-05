@@ -70,7 +70,6 @@ export default function AiChatPage() {
     } else {
       logger.warn('[AiChatPage] checkAndReplayPendingChatAction function not found in aiStore yet.')
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [checkAndReplayPendingChatAction]); // Depend on the action function itself
 
   // Set default selections when providers/prompts load
@@ -95,8 +94,8 @@ export default function AiChatPage() {
       logger.info(`[AiChatPage] Found chatId ${chatIdToLoad} in localStorage, loading details...`);
       loadChatDetails(chatIdToLoad);
     } 
-    // Run only once on mount
-  }, []); 
+    // Add loadChatDetails as a dependency
+  }, [loadChatDetails]); 
   // ---> END MODIFICATION <---
 
   const handleProviderChange = (providerId: string | null) => {

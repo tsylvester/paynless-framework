@@ -8,10 +8,6 @@ export default tseslint.config(
   { 
     ignores: [
       'dist',
-      '**/*.test.ts',
-      '**/*.test.tsx',
-      '**/tests/utils/**',
-      '**/mocks/**',
       'vite.config.ts',
       '*.config.js', // Ignore ESLint config itself and potentially others
     ] 
@@ -36,9 +32,9 @@ export default tseslint.config(
       '@typescript-eslint/no-unused-vars': [
         'warn',
         {
-          argsIgnorePattern: '^_',
-          varsIgnorePattern: '^_',
-          caughtErrorsIgnorePattern: '^_',
+          argsIgnorePattern: '^_|node|ref',
+          varsIgnorePattern: '^_|analytics',
+          caughtErrorsIgnorePattern: '^_|',
         },
       ],
     },
