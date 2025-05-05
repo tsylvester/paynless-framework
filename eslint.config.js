@@ -10,6 +10,7 @@ export default tseslint.config(
       'dist',
       'vite.config.ts',
       '*.config.js', // Ignore ESLint config itself and potentially others
+      'apps/web/src/components/ui/**/*', // Ignore Shadcn UI components
     ] 
   },
   {
