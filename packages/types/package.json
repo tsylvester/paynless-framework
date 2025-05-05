@@ -13,8 +13,8 @@
     }
   },
   "scripts": {
-    "lint": "eslint . --max-warnings 0",
-    "lint:fix": "eslint . --fix",
+    "lint": "eslint src/**/*.ts --max-warnings 0",
+    "lint:fix": "eslint src/**/*.ts --fix",
     "build": "tsc -b",
     "clean": "rm -rf dist tsconfig.tsbuildinfo"
   },
