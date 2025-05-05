@@ -2,6 +2,7 @@
   "name": "paynless-framework-monorepo",
   "version": "0.1.0",
   "private": true,
+  "type": "module",
   "description": "Monorepo for the Paynless framework backend, shared packages, and apps.",
   "scripts": {
     "dev": "pnpm --parallel --filter \"./apps/*\" dev",
