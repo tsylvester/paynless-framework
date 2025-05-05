@@ -159,7 +159,7 @@ export class OrganizationApiClient {
    * @param role - The role to assign to the invitee (e.g., 'member', 'admin').
    * @returns An ApiResponse, typically with no data on success (e.g., status 204) or an error.
    */
-  async inviteUserByEmail(orgId: string, email: string, role: string): Promise<ApiResponse<any>> {
+  async inviteUserByEmail(orgId: string, email: string, role: string): Promise<ApiResponse<Invite>> {
     const payload = { email, role };
     // Use the injected ApiClient's post method
     // Assuming backend returns the created Invite object
@@ -174,7 +174,7 @@ export class OrganizationApiClient {
    * @param role - The role to assign to the invitee (e.g., 'member', 'admin').
    * @returns An ApiResponse containing invite details or an error.
    */
-  async inviteUserById(orgId: string, userId: string, role: string): Promise<ApiResponse<any>> {
+  async inviteUserById(orgId: string, userId: string, role: string): Promise<ApiResponse<Invite>> {
     const payload = { invitedUserId: userId, role }; // Use 'invitedUserId' as key
     // Assuming backend returns the created Invite object
     return this.client.post<Invite, typeof payload>(`organizations/${orgId}/invites`, payload);
@@ -211,7 +211,7 @@ export class OrganizationApiClient {
    * @param orgId - The ID of the organization to request joining.
    * @returns An ApiResponse, typically with no data on success (e.g., status 204) or an error.
    */
-  async requestToJoinOrganization(orgId: string): Promise<ApiResponse<any>> {
+  async requestToJoinOrganization(orgId: string): Promise<ApiResponse<unknown>> {
     // Backend endpoint: POST /organizations/:orgId/requests
     // Assuming the backend needs no specific payload from the client for this action.
     // The backend infers the user from the auth context.
@@ -320,13 +320,8 @@ export class OrganizationApiClient {
             invites: enrichedData?.invites ?? [],
             requests: enrichedData?.requests ?? []
         };
-    } else if (response.status >= 200 && response.status < 300 && !response.error) {
-         // Handle case where response.data itself might be null/undefined on success
-         response.data = {
-            invites: [],
-            requests: []
-        };
     }
+    
     // Cast the entire response to match the function's Promise signature
     return response as ApiResponse<{ invites: PendingInviteWithInviter[], requests: PendingRequestWithDetails[] }>;
   }

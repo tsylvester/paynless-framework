@@ -12,6 +12,7 @@ import { AiApiClient } from './ai.api';
 import { NotificationApiClient } from './notifications.api'; // Import new client
 import { OrganizationApiClient } from './organizations.api'; // <<< Import Org client
 import { logger } from '@paynless/utils';
+import type { Database } from '@paynless/db-types'; // Keep this for createClient
 
 // Define ApiError class locally for throwing (can extend the type)
 export class ApiError extends Error {
@@ -21,6 +22,18 @@ export class ApiError extends Error {
     this.name = 'ApiError';
     this.code = code;
     }
+}
+
+// Helper type guard to check if an object looks like our standard ApiErrorType
+function isApiErrorType(obj: unknown): obj is ApiErrorType {
+  return (
+    typeof obj === 'object' && 
+    obj !== null &&
+    ('code' in obj) && // Check for code property
+    ('message' in obj) // Check for message property
+    // We don't strictly need to check the types of code/message here for the guard,
+    // but we assume they match ApiErrorType if the properties exist.
+  );
 }
 
 // Config interface for the constructor
@@ -102,14 +115,19 @@ export class ApiClient {
             const contentType = response.headers.get('Content-Type');
             logger.info('[apiClient] Response Content-Type:', { contentType });
             
-            let responseData: any;
+            let responseData: unknown;
             try {
                 responseData = contentType?.includes('application/json') 
                                     ? await response.json() 
                                     : await response.text(); 
-            } catch (parseError: any) {
-                logger.error('[apiClient] Failed to parse response body:', { error: parseError.message });
-                throw new ApiError(parseError.message || 'Failed to parse response body', response.status);
+            } catch (parseError: unknown) {
+                 logger.error('[apiClient] Failed to parse response body:', { error: (parseError as Error)?.message ?? String(parseError) });
+                 // Use the imported ApiErrorType structure for consistency when throwing
+                 const errorPayload: ApiErrorType = {
+                    code: String(response.status), // Use status as code if parsing failed
+                    message: (parseError as Error)?.message ?? 'Failed to parse response body'
+                 };
+                throw new ApiError(errorPayload.message, errorPayload.code);
             }
 
             // ---> Add specific debug log for 401 response data (using WARN level) <--- 
@@ -117,35 +135,28 @@ export class ApiClient {
                 logger.warn('[apiClient] Raw responseData for 401 status:', { responseData });
             }
 
-            // ---> NEW: Throw AuthRequiredError ONLY on specific 401 + code <---
-            // The calling function (e.g., store) is responsible for handling the consequences (like saving pending action).
-            if (response.status === 401 && !options.isPublic && responseData?.code === 'AUTH_REQUIRED') {
+            // ---> Handle AUTH_REQUIRED error <---
+            // Use the refined type guard
+            if (response.status === 401 && !options.isPublic && isApiErrorType(responseData) && responseData.code === 'AUTH_REQUIRED') {
                 logger.warn('[apiClient] Received 401 with AUTH_REQUIRED code. Throwing AuthRequiredError...');
-                // Use a generic message or attempt to get one from the body if available
-                const errorMessage = (typeof responseData === 'object' && responseData?.message)
-                                    ? responseData.message
-                                    : 'Authentication required';
+                const errorMessage = responseData.message ?? 'Authentication required'; // Message property is now safely accessed
                 throw new AuthRequiredError(errorMessage);
             }
 
-            // ---> Check for other non-OK responses (including other 401s) <---
+            // ---> Check for other non-OK responses <---
             if (!response.ok) {
-                // Log the response data for debugging OTHER errors
                  logger.warn(`[apiClient] Received non-OK (${response.status}) response body:`, { responseData });
 
-                // --- Original error handling for other non-OK responses ---
                 let errorPayload: ApiErrorType;
-                if (typeof responseData === 'object' && responseData !== null) {
-                    if (responseData.code && responseData.message) {
-                         errorPayload = responseData as ApiErrorType;
-                    } else if (responseData.error && typeof responseData.error === 'string') {
-                         errorPayload = { code: String(response.status), message: responseData.error };
-                    } else {
-                        const messageFromBody = typeof responseData === 'object' && responseData?.message ? responseData.message : null;
-                        const errorMessage = messageFromBody || response.statusText || 'Unknown API Error';
-                        errorPayload = { code: String(response.status), message: errorMessage };
-                    }
+                // Use the refined type guard before accessing properties
+                if (isApiErrorType(responseData)) {
+                     // Now we know it has code and message, matching ApiErrorType
+                     errorPayload = responseData;
+                } else if (typeof responseData === 'object' && responseData !== null && 'error' in responseData && typeof responseData.error === 'string') {
+                     // Handle simple { error: string } responses
+                     errorPayload = { code: String(response.status), message: responseData.error };
                 } else {
+                    // Handle other cases (e.g., plain text response)
                     const errorMessage = typeof responseData === 'string' && responseData.trim() !== ''
                                         ? responseData
                                         : response.statusText || 'Unknown API Error';
@@ -158,7 +169,7 @@ export class ApiClient {
             // Success case
             return { status: response.status, data: responseData as T };
 
-        } catch (error: any) {
+        } catch (error: unknown) {
              // ---> Check if it's the specific AuthRequiredError we threw <---
             if (error instanceof AuthRequiredError) {
                 logger.warn("AuthRequiredError caught by API Client. Re-throwing for store handler...");
@@ -168,10 +179,12 @@ export class ApiClient {
             }
 
             // ---> Otherwise, handle as a network/unexpected error <---
-            logger.error(`Network or fetch error on ${endpoint}:`, { error: error?.message });
+            // Check if error is an instance of Error before accessing .message
+            const errorMessage = error instanceof Error ? error.message : 'Network error';
+            logger.error(`Network or fetch error on ${endpoint}:`, { error: errorMessage });
             return {
-                status: 0,
-                error: { code: 'NETWORK_ERROR', message: error.message || 'Network error' }
+                status: 0, // Indicate network/fetch error with status 0 or similar
+                error: { code: 'NETWORK_ERROR', message: errorMessage }
             };
         }
     }

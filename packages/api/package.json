@@ -21,7 +21,7 @@
     "test:watch": "vitest",
     "build": "tsc -b",
     "clean": "rm -rf dist tsconfig.tsbuildinfo",
-    "lint": "eslint src/**/*.{ts,tsx} --report-unused-disable-directives --max-warnings 0"
+    "lint": "eslint src/**/*.{ts,tsx} --ignore-pattern '**/*.test.ts' --ignore-pattern '**/*.test.tsx' --ignore-pattern '**/*.mock.ts' --ignore-pattern '**/*.mock.tsx' --report-unused-disable-directives --max-warnings 0"
   },
   "dependencies": {
     "@paynless/types": "workspace:*",

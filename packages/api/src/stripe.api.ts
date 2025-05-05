@@ -1,5 +1,4 @@
 // src/api/clients/stripe.api.ts
-/// <reference types="@paynless/types" />
 
 import type { ApiClient } from './apiClient';
 import type { ApiResponse, SubscriptionPlan, UserSubscription, SubscriptionUsageMetrics, CheckoutSessionResponse, PortalSessionResponse, FetchOptions } from '@paynless/types';
@@ -134,7 +133,7 @@ export class StripeApiClient {
   async cancelSubscription(subscriptionId: string, options?: FetchOptions): Promise<ApiResponse<void>> {
     try {
       logger.info('Cancelling subscription', { subscriptionId });
-      const result = await this.apiClient.post<void, {}>(`api-subscriptions/${subscriptionId}/cancel`, {}, options);
+      const result = await this.apiClient.post<void, null>(`api-subscriptions/${subscriptionId}/cancel`, null, options);
        if (result.error) {
          logger.warn('Cancelling subscription API returned an error', { error: result.error, subscriptionId });
       }
@@ -152,7 +151,7 @@ export class StripeApiClient {
   async resumeSubscription(subscriptionId: string, options?: FetchOptions): Promise<ApiResponse<void>> {
     try {
       logger.info('Resuming subscription', { subscriptionId });
-      const result = await this.apiClient.post<void, {}>(`api-subscriptions/${subscriptionId}/resume`, {}, options);
+      const result = await this.apiClient.post<void, null>(`api-subscriptions/${subscriptionId}/resume`, null, options);
       if (result.error) {
          logger.warn('Resuming subscription API returned an error', { error: result.error, subscriptionId });
       }
