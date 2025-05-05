@@ -356,6 +356,15 @@ export const useAuthStore = create<AuthStore>()((set, get) => ({
         // Implementation for handling OAuth login
         // This is a placeholder and should be implemented
       },
+
+      updateProfileWithAvatar: async (
+        _profileData: UserProfileUpdate,
+        // _file: File | null // Commented out as it's unused for now
+      ): Promise<UserProfile | null> => {
+        // Implementation for updating profile with avatar
+        // This is a placeholder and should be implemented
+        return null;
+      },
     }))
 
 export function initAuthListener(

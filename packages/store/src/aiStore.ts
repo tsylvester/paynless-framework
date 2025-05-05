@@ -50,7 +50,7 @@ export const useAiStore = create<AiStore>()(
                         api.ai().getAiProviders(),
                         api.ai().getSystemPrompts(),
                     ]);
-                    let errorMessages: string[] = [];
+                    const errorMessages: string[] = [];
                     let loadedProviders: AiProvider[] = [];
                     let loadedPrompts: SystemPrompt[] = [];
 
@@ -266,11 +266,11 @@ export const useAiStore = create<AiStore>()(
                         isHistoryLoading: false,
                         aiError: null,
                     });
-                } catch (error: any) {
-                    logger.error('Error loading chat history:', { error: error.message });
+                } catch (error: unknown) {
+                    logger.error('Error loading chat history:', { error: error instanceof Error ? error.message : String(error) });
                     // Use plain set without immer
                     set({
-                        aiError: error.message || 'An unexpected error occurred while loading chat history.',
+                        aiError: error instanceof Error ? error.message : 'An unexpected error occurred while loading chat history.',
                         chatHistoryList: [],
                         isHistoryLoading: false,
                     });
@@ -301,11 +301,11 @@ export const useAiStore = create<AiStore>()(
                         currentChatId: chatId, // Confirm chatId
                         aiError: null,
                     });
-                } catch (error: any) {
-                    logger.error('Error loading chat details:', { chatId, error: error.message });
+                } catch (error: unknown) {
+                    logger.error('Error loading chat details:', { chatId, error: error instanceof Error ? error.message : String(error) });
                     // Use plain set without immer
                     set({
-                        aiError: error.message || 'An unexpected error occurred while loading chat details.',
+                        aiError: error instanceof Error ? error.message : 'An unexpected error occurred while loading chat details.',
                         currentChatMessages: [],
                         currentChatId: null, // Clear chatId on error
                         isDetailsLoading: false,

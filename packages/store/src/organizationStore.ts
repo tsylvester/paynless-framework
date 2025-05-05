@@ -257,9 +257,9 @@ export const useOrganizationStore = create<OrganizationStoreImplementation>()(
             set({ currentOrganizationDetails: response.data }); // Set details on success
             _setError(null); // Explicitly clear error
           }
-        } catch (err: any) {
-          logger.error('[OrganizationStore] fetchCurrentOrganizationDetails - Unexpected Error', { orgId: currentOrganizationId, message: err?.message });
-          _setError(err.message ?? 'An unexpected error occurred');
+        } catch (err: unknown) {
+          logger.error('[OrganizationStore] fetchCurrentOrganizationDetails - Unexpected Error', { orgId: currentOrganizationId, message: err instanceof Error ? err.message : String(err) });
+          _setError(err instanceof Error ? err.message : 'An unexpected error occurred');
           set({ currentOrganizationDetails: null }); // Clear details on error
         } finally {
           _setLoading(false);
@@ -382,9 +382,9 @@ export const useOrganizationStore = create<OrganizationStoreImplementation>()(
                     });
                     _setError(null); // Clear main error state if pending fetch succeeded after members fetch
                 }
-            } catch (pendingErr: any) {
+            } catch (pendingErr: unknown) {
                  // Log error but don't overwrite the primary members list or main error state
-                logger.error('[OrganizationStore] fetchCurrentOrganizationMembers - Unexpected Error (Pending Actions)', { orgId: currentOrganizationId, message: pendingErr?.message });
+                logger.error('[OrganizationStore] fetchCurrentOrganizationMembers - Unexpected Error (Pending Actions)', { orgId: currentOrganizationId, message: pendingErr instanceof Error ? pendingErr.message : String(pendingErr) });
                  // Set pending lists to empty on error, but keep active members
                 set({ currentPendingInvites: [], currentPendingRequests: [] }); 
             }
@@ -393,9 +393,9 @@ export const useOrganizationStore = create<OrganizationStoreImplementation>()(
               set({ currentPendingInvites: [], currentPendingRequests: [] });
           }
 
-        } catch (err: any) {
-          logger.error('[OrganizationStore] fetchCurrentOrganizationMembers - Unexpected Error', { orgId: currentOrganizationId, message: err?.message });
-          _setError(err.message ?? 'An unexpected error occurred');
+        } catch (err: unknown) {
+          logger.error('[OrganizationStore] fetchCurrentOrganizationMembers - Unexpected Error', { orgId: currentOrganizationId, message: err instanceof Error ? err.message : String(err) });
+          _setError(err instanceof Error ? err.message : 'An unexpected error occurred');
           set({ currentOrganizationMembers: [], memberTotalCount: 0, currentPendingInvites: [], currentPendingRequests: [] }); // Clear members, count & pending on error
         } finally {
           _setLoading(false);
@@ -446,9 +446,9 @@ export const useOrganizationStore = create<OrganizationStoreImplementation>()(
             closeDeleteDialog(); // Call close action on success
             return true; // Indicate success
           }
-        } catch (err: any) {
-          logger.error('[OrganizationStore] softDeleteOrganization - Unexpected Error', { orgId, message: err?.message });
-          _setError(err.message ?? 'An unexpected error occurred during deletion');
+        } catch (err: unknown) {
+          logger.error('[OrganizationStore] softDeleteOrganization - Unexpected Error', { orgId, message: err instanceof Error ? err.message : String(err) });
+          _setError(err instanceof Error ? err.message : 'An unexpected error occurred during deletion');
           set({ isLoading: false }); // Ensure loading is false on unexpected error
           return false; // Indicate failure
         } 
@@ -496,9 +496,9 @@ export const useOrganizationStore = create<OrganizationStoreImplementation>()(
 
             return true; // Return boolean success
           }
-        } catch (err: any) {
-          logger.error('[OrganizationStore] createOrganization - Unexpected Error', { name, visibility, message: err?.message });
-          _setError(err.message ?? 'An unexpected error occurred while creating the organization');
+        } catch (err: unknown) {
+          logger.error('[OrganizationStore] createOrganization - Unexpected Error', { name, visibility, message: err instanceof Error ? err.message : String(err) });
+          _setError(err instanceof Error ? err.message : 'An unexpected error occurred while creating the organization');
           return false; // FIX: Return boolean
         } finally {
           _setLoading(false);
@@ -542,8 +542,8 @@ export const useOrganizationStore = create<OrganizationStoreImplementation>()(
             set(updatedState);
             return true; // Indicate success
           }
-        } catch (err: any) {
-          const errorMsg = err.message ?? 'An unexpected error occurred during organization update';
+        } catch (err: unknown) {
+          const errorMsg = err instanceof Error ? err.message : 'An unexpected error occurred during organization update';
           logger.error('[OrganizationStore] updateOrganization - Unexpected Error', { orgId, updates, message: errorMsg });
           _setError(errorMsg);
           return false; // Indicate failure
@@ -605,9 +605,9 @@ export const useOrganizationStore = create<OrganizationStoreImplementation>()(
             logger.info(`[OrganizationStore] Successfully left organization ${orgId}.`);
             return true; // Indicate success
           }
-        } catch (err: any) {
-          logger.error('[OrganizationStore] leaveOrganization - Unexpected Error', { orgId, message: err?.message });
-          _setError(err.message ?? 'An unexpected error occurred while leaving the organization');
+        } catch (err: unknown) {
+          logger.error('[OrganizationStore] leaveOrganization - Unexpected Error', { orgId, message: err instanceof Error ? err.message : String(err) });
+          _setError(err instanceof Error ? err.message : 'An unexpected error occurred while leaving the organization');
           set({ isLoading: false }); // Ensure loading is false on unexpected error
           return false; // Indicate failure
         }
@@ -693,8 +693,8 @@ export const useOrganizationStore = create<OrganizationStoreImplementation>()(
             });
             return true; // Indicate success
           }
-        } catch (err: any) {
-          const errorMsg = err.message ?? 'An unexpected error occurred during role update';
+        } catch (err: unknown) {
+          const errorMsg = err instanceof Error ? err.message : 'An unexpected error occurred during role update';
           logger.error('[OrganizationStore] updateMemberRole - Unexpected Error', { membershipId, role, message: errorMsg });
           _setError(errorMsg);
           return false; // Indicate failure
@@ -737,8 +737,8 @@ export const useOrganizationStore = create<OrganizationStoreImplementation>()(
             });
             return true; // Indicate success
           }
-        } catch (err: any) {
-          const errorMsg = err.message ?? 'An unexpected error occurred during member removal';
+        } catch (err: unknown) {
+          const errorMsg = err instanceof Error ? err.message : 'An unexpected error occurred during member removal';
           logger.error('[OrganizationStore] removeMember - Unexpected Error', { membershipId, message: errorMsg });
           _setError(errorMsg);
           return false; // Indicate failure
@@ -775,8 +775,8 @@ export const useOrganizationStore = create<OrganizationStoreImplementation>()(
             }
             return true;
           }
-        } catch (err: any) {
-          const errorMsg = err.message ?? 'An unexpected error occurred during invite acceptance';
+        } catch (err: unknown) {
+          const errorMsg = err instanceof Error ? err.message : 'An unexpected error occurred during invite acceptance';
           logger.error('[OrganizationStore] acceptInvite - Unexpected Error', { token, message: errorMsg });
           _setError(errorMsg);
           return false;
@@ -804,8 +804,8 @@ export const useOrganizationStore = create<OrganizationStoreImplementation>()(
             // No state update usually needed, maybe refetch pending invites if shown to user?
             return true;
           }
-        } catch (err: any) {
-          const errorMsg = err.message ?? 'An unexpected error occurred during invite decline';
+        } catch (err: unknown) {
+          const errorMsg = err instanceof Error ? err.message : 'An unexpected error occurred during invite decline';
           logger.error('[OrganizationStore] declineInvite - Unexpected Error', { token, message: errorMsg });
           _setError(errorMsg);
           return false;
@@ -839,8 +839,8 @@ export const useOrganizationStore = create<OrganizationStoreImplementation>()(
                 logger.info(`[OrganizationStore] User ${userId} requested to join org ${orgId}.`);
                 return response.data as MembershipRequest | null;
             }
-        } catch (err: any) {
-            const errorMsg = err.message ?? 'An unexpected error occurred during join request';
+        } catch (err: unknown) {
+            const errorMsg = err instanceof Error ? err.message : 'An unexpected error occurred during join request';
             logger.error('[OrganizationStore] requestJoin - Unexpected Error', { orgId, message: errorMsg });
             _setError(errorMsg);
             return null;
@@ -868,8 +868,8 @@ export const useOrganizationStore = create<OrganizationStoreImplementation>()(
                 fetchCurrentOrganizationMembers(); 
                 return true;
             }
-        } catch (err: any) {
-            const errorMsg = err.message ?? 'An unexpected error occurred during request approval';
+        } catch (err: unknown) {
+            const errorMsg = err instanceof Error ? err.message : 'An unexpected error occurred during request approval';
             logger.error('[OrganizationStore] approveRequest - Unexpected Error', { membershipId, message: errorMsg });
             _setError(errorMsg);
             return false;
@@ -897,8 +897,8 @@ export const useOrganizationStore = create<OrganizationStoreImplementation>()(
                 fetchCurrentOrganizationMembers(); 
                 return true;
             }
-        } catch (err: any) {
-            const errorMsg = err.message ?? 'An unexpected error occurred during request denial';
+        } catch (err: unknown) {
+            const errorMsg = err instanceof Error ? err.message : 'An unexpected error occurred during request denial';
             logger.error('[OrganizationStore] denyRequest - Unexpected Error', { membershipId, message: errorMsg });
             _setError(errorMsg);
             return false;
@@ -933,8 +933,8 @@ export const useOrganizationStore = create<OrganizationStoreImplementation>()(
                 fetchCurrentOrganizationMembers(); // Refetch members/pending items
                 return true;
             }
-        } catch (err: any) {
-            const errorMsg = err.message ?? 'An unexpected error occurred during invite cancellation';
+        } catch (err: unknown) {
+            const errorMsg = err instanceof Error ? err.message : 'An unexpected error occurred during invite cancellation';
             logger.error('[OrganizationStore] cancelInvite - Unexpected Error', { orgId: currentOrganizationId, inviteId, message: errorMsg });
             _setError(errorMsg);
             return false;
@@ -960,9 +960,9 @@ export const useOrganizationStore = create<OrganizationStoreImplementation>()(
                 set({ currentInviteDetails: details, isFetchingInviteDetails: false });
                 return details;
             }
-        } catch (err: any) {
-            logger.error('[OrganizationStore] fetchInviteDetails - Unexpected Error', { token, message: err?.message });
-            set({ fetchInviteDetailsError: err.message ?? 'An unexpected error occurred fetching invite details.', isFetchingInviteDetails: false });
+        } catch (err: unknown) {
+            logger.error('[OrganizationStore] fetchInviteDetails - Unexpected Error', { token, message: err instanceof Error ? err.message : String(err) });
+            set({ fetchInviteDetailsError: err instanceof Error ? err.message : 'An unexpected error occurred fetching invite details.', isFetchingInviteDetails: false });
             return null;
         }
       },
