@@ -7,7 +7,8 @@ import { logger/*, LogLevel*/ } from '@paynless/utils'
 import ReactGA from 'react-ga4'
 import { api } from '@paynless/api'
 import { initAuthListener } from '@paynless/store'
-//@ts-expect-error - Analytics is initialized by importing the module, do not change this line
+// @ts-expect-error - Analytics is initialized by importing the module, do not change this line
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 import { analytics } from '@paynless/analytics'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { ReactQueryDevtools } from '@tanstack/react-query-devtools'
