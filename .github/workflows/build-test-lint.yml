@@ -1,0 +1,45 @@
+name: Build, Lint, and Test
+
+on:
+  push:
+    branches:
+      - main
+      - develop # Add other main branches if applicable
+      - 'feature/**'
+  pull_request:
+    branches:
+      - main
+      - develop # Add other main branches if applicable
+
+jobs:
+  build_lint_test:
+    name: Build, Lint & Test
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9 # Specify your pnpm version if needed
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20' # Specify your Node.js version
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install
+
+      - name: Lint
+        run: pnpm lint
+
+      - name: Build
+        # Adjust if your build command is different or needs filtering
+        run: pnpm build
+
+      - name: Test
+        run: pnpm test 
