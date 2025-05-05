@@ -16,7 +16,7 @@ export interface UserData {
   lastSignInAt?: string; // ISO string format
   // Add other standard fields you might want to sync
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  [key: string]: any; // Allows for platform-specific custom fields
+  [key: string]: unknown; // Allows for platform-specific custom fields
 }
 
 // --- Subscription Related API Types (Not DB Tables) ---
@@ -105,7 +105,7 @@ export interface ProviderModelInfo {
   name: string;           // A user-friendly name for the model
   description?: string;    // Optional description
   // Use `Database['public']['Tables']['ai_providers']['Row']['config']` for the actual JSON type
-  config?: any; // Use 'any' here to avoid importing Json from db-types
+  config?: Database['public']['Tables']['ai_providers']['Row']['config']; // Use specific DB Json type
 }
 
 /**
@@ -138,7 +138,7 @@ export interface AdapterResponsePayload {
   content: string;
   ai_provider_id: string | null; // The DB ID of the provider used
   system_prompt_id: string | null; // The DB ID of the prompt used (or null)
-  token_usage: any | null; // Use 'any' for now to avoid linter issues
+  token_usage: Database['public']['Tables']['chat_messages']['Row']['token_usage']; // Use specific DB Json type
 }
 
 /**
@@ -153,5 +153,5 @@ export interface FullChatMessageRecord {
   content: string;
   ai_provider_id?: string | null;
   system_prompt_id?: string | null;
-  token_usage?: any | null; // Use 'any' for now
+  token_usage?: Database['public']['Tables']['chat_messages']['Row']['token_usage']; // Use specific DB Json type
 }
