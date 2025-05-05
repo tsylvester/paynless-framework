@@ -141,7 +141,7 @@ describe('SubscriptionPage Integration Tests', () => {
       const mockCurrentSub: UserSubscription = { id: 'sub-active', userId: mockUser.id, status: 'active', plan: mockPlansData[1] };
       server.use(http.get(`${API_BASE_URL}/api-subscriptions/current`, () => HttpResponse.json(mockCurrentSub, { status: 200 })));
       const originalLocation = window.location;
-      // @ts-ignore
+      // @ts-expect-error - Need to mock window.location.assign
       delete window.location;
       window.location = { assign: vi.fn() } as any;
       customRender(<SubscriptionPage onSubscribe={vi.fn()} />);

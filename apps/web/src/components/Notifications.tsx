@@ -41,8 +41,8 @@ export const Notifications: React.FC = () => {
             logger.debug('[Notifications] User ID found, triggering fetchNotifications store action.');
             fetchNotifications();
         }
-        // Depend only on user?.id. fetchNotifications from Zustand store has a stable reference.
-    }, [user?.id]); // Removed fetchNotifications from dependencies
+        // Add fetchNotifications as dependency
+    }, [user?.id, fetchNotifications]);
 
     // Remove the entire useEffect block that handled stream connection/disconnection
     /*

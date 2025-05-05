@@ -241,14 +241,14 @@ describe('AI Feature Integration Tests', () => {
         await promise;
 
         // Assert: Final state
-        state = useAiStore.getState();
-        expect(state.isLoadingAiResponse).toBe(false);
-        expect(state.aiError).toBeNull();
-        expect(state.currentChatMessages).toHaveLength(2);
-        const assistantMsg = state.currentChatMessages.find(m => m.role === 'assistant');
+        const finalState = useAiStore.getState();
+        expect(finalState.isLoadingAiResponse).toBe(false);
+        expect(finalState.aiError).toBeNull();
+        expect(finalState.currentChatMessages).toHaveLength(2);
+        const assistantMsg = finalState.currentChatMessages.find(m => m.role === 'assistant');
         // <<< Check against GLOBAL mock data >>>
         expect(assistantMsg?.content).toBe('Global mock response'); 
-        expect(state.currentChatId).toBeDefined(); // Global handler creates/uses chatId
+        expect(finalState.currentChatId).toBeDefined(); // Global handler creates/uses chatId
     });
 
     // <<< Un-skip and use vi.spyOn for error test >>>
@@ -272,11 +272,11 @@ describe('AI Feature Integration Tests', () => {
         });
 
         // Assert: Final state
-        let state = useAiStore.getState();
-        expect(state.isLoadingAiResponse).toBe(false);
-        expect(state.aiError).toBe(errorResponse.error?.message); // <<< Use mocked error message
-        expect(state.currentChatMessages).toHaveLength(0); // Optimistic message removed
-        expect(state.currentChatId).toBeNull(); // Chat ID shouldn't be set
+        const finalState = useAiStore.getState();
+        expect(finalState.isLoadingAiResponse).toBe(false);
+        expect(finalState.aiError).toBe(errorResponse.error?.message); // <<< Use mocked error message
+        expect(finalState.currentChatMessages).toHaveLength(0); // Optimistic message removed
+        expect(finalState.currentChatId).toBeNull(); // Chat ID shouldn't be set
     });
 
     // TODO: Add tests from TESTING_PLAN.md Phase 3.2 -> AI Chat

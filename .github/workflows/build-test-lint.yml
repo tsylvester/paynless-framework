@@ -35,20 +35,7 @@ jobs:
         run: pnpm install
 
       - name: Lint Packages Individually
-        run: |
-          echo "Linting @paynless/types..."
-          pnpm --filter @paynless/types lint
-          echo "Linting @paynless/utils..."
-          pnpm --filter @paynless/utils lint
-          echo "Linting @paynless/api..."
-          pnpm --filter @paynless/api lint
-          echo "Linting @paynless/store..."
-          pnpm --filter @paynless/store lint
-          echo "Linting @paynless/web..."
-          pnpm --filter @paynless/web lint
-          # Add other packages here if needed, e.g.:
-          # echo "Linting @paynless/db-types..."
-          # pnpm --filter @paynless/db-types lint
+        run: pnpm -r run lint --if-present
 
       - name: Build
         # Adjust if your build command is different or needs filtering

@@ -30,7 +30,8 @@ describe('Footer Component', () => {
     expect(copyrightParagraph).toBeInTheDocument();
     // Check the full text content using a regex to match the dynamic year and structure
     const currentYear = new Date().getFullYear();
-    expect(copyrightParagraph.textContent).toMatch(new RegExp(`© ${currentYear}\s*Paynless Framework\. All rights reserved\.`, 'i'));
+    // Simple regex, removing unnecessary escapes
+    expect(copyrightParagraph.textContent).toMatch(`© ${currentYear} Paynless Framework. All rights reserved.`);
   });
 
   it('should display navigation links', () => {

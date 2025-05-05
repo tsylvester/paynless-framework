@@ -7,7 +7,8 @@ import type { User } from '@paynless/types';
 import { HomePage } from '../../pages/Home';
 
 // Define mock state
-let mockAuthState: { user: Partial<User> | null } = {
+// Use const as it's not reassigned, only its property is modified
+const mockAuthState: { user: Partial<User> | null } = {
   user: null,
 };
 

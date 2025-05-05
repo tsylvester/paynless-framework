@@ -16,6 +16,7 @@ import { Label } from "@/components/ui/label"
 
 const Form = FormProvider
 
+// eslint-disable-next-line react-refresh/only-export-components
 type FormFieldContextValue<
   TFieldValues extends FieldValues = FieldValues,
   TName extends FieldPath<TFieldValues> = FieldPath<TFieldValues>,
@@ -23,6 +24,7 @@ type FormFieldContextValue<
   name: TName
 }
 
+// eslint-disable-next-line react-refresh/only-export-components
 const FormFieldContext = React.createContext<FormFieldContextValue>(
   {} as FormFieldContextValue
 )
@@ -40,6 +42,7 @@ const FormField = <
   )
 }
 
+// eslint-disable-next-line react-refresh/only-export-components
 const useFormField = () => {
   const fieldContext = React.useContext(FormFieldContext)
   const itemContext = React.useContext(FormItemContext)
