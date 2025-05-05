@@ -424,6 +424,7 @@ export const useOrganizationStore = create<OrganizationStoreImplementation>()(
           } else {
             // Success: Remove org from list and potentially clear current context
             const updatedOrgs = userOrganizations.filter(org => org.id !== orgId);
+            // eslint-disable-next-line prefer-const
             let updatedState: Partial<OrganizationState & OrganizationUIState> = { 
                 userOrganizations: updatedOrgs,
                 isLoading: false,
