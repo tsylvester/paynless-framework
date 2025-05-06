@@ -1,7 +1,7 @@
 // IMPORTANT: Supabase Edge Functions require relative paths for imports from shared modules.
 // Do not use path aliases (like @shared/) as they will cause deployment failures.
 import { serve } from 'https://deno.land/std@0.177.0/http/server.ts'
-import { createClient, type SupabaseClient, type AuthError } from 'npm:@supabase/supabase-js@2'
+import { createClient, type SupabaseClient, type AuthError, type GoTrueClient } from 'npm:@supabase/supabase-js@2'
 // Remove CORS header import
 // import { corsHeaders as defaultCorsHeaders } from '../_shared/cors-headers.ts'
 // Import Chat type from shared types
@@ -123,7 +123,9 @@ serve(async (req) => {
       supabaseAnonKey,
       { global: { headers: { Authorization: authHeader } } }
     );
-    const { data: { user }, error: userError } = await supabaseClient.auth.getUser();
+    // Cast to GoTrueClient before calling getUser
+    const authClient = supabaseClient.auth as GoTrueClient;
+    const { data: { user }, error: userError } = await authClient.getUser();
     if (userError || !user) {
       throw new HandlerError('Invalid authentication credentials', 401, userError as AuthError);
     }

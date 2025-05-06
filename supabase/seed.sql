@@ -24,3 +24,31 @@ VALUES
   ('b0000000-0000-0000-0000-000000000002', 'user_b@test.com', crypt('password', gen_salt('bf')), 'authenticated', 'authenticated', now()),
   ('c0000000-0000-0000-0000-000000000003', 'user_c@test.com', crypt('password', gen_salt('bf')), 'authenticated', 'authenticated', now())
 ON CONFLICT (id) DO NOTHING; -- Avoid errors if users already exist 
+
+-- Seed data for local development and testing
+
+-- Example: Insert a default organization if needed
+-- INSERT INTO public.organizations (id, name) VALUES
+-- ('your-default-org-id', 'Default Organization')
+-- ON CONFLICT (id) DO NOTHING;
+
+-- Example: Insert default user roles if you have a roles table
+-- INSERT INTO public.roles (id, name) VALUES
+-- (1, 'admin'),
+-- (2, 'member')
+-- ON CONFLICT (id) DO NOTHING;
+
+-- Add Dummy AI Provider for testing
+INSERT INTO public.ai_providers (id, name, provider, api_identifier, is_active)
+VALUES 
+    ('11111111-1111-1111-1111-111111111111', 'Dummy Test Provider', 'openai', 'gpt-dummy', true)
+ON CONFLICT (id) DO NOTHING;
+
+-- Add Dummy System Prompt for testing
+INSERT INTO public.system_prompts (id, name, prompt_text, is_active)
+VALUES
+    ('22222222-2222-2222-2222-222222222222', 'Dummy Test Prompt', 'You are a dummy assistant.', true)
+ON CONFLICT (id) DO NOTHING;
+
+
+-- You can add other baseline data here 

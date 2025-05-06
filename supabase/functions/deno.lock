@@ -23,6 +23,7 @@
     "npm:@langchain/core@*": "0.3.48_openai@4.91.1__zod@3.24.2_zod@3.24.2",
     "npm:@supabase/auth-js@2.69.1": "2.69.1",
     "npm:@supabase/functions-js@2.4.4": "2.4.4",
+    "npm:@supabase/gotrue-js@^2.6.3": "2.69.1",
     "npm:@supabase/node-fetch@2.6.15": "2.6.15",
     "npm:@supabase/postgrest-js@1.19.4": "1.19.4",
     "npm:@supabase/realtime-js@2.11.2": "2.11.2",
@@ -36,7 +37,8 @@
     "npm:openai@^4.52.5": "4.91.1_zod@3.24.2",
     "npm:sinon@^17.0.1": "17.0.2",
     "npm:stripe@*": "18.0.0",
-    "npm:stripe@14.11.0": "14.11.0"
+    "npm:stripe@14.11.0": "14.11.0",
+    "npm:stripe@18.0.0": "18.0.0"
   },
   "jsr": {
     "@std/assert@0.225.3": {
@@ -834,6 +836,7 @@
     "https://deno.land/std@0.177.0/testing/_diff.ts": "1a3c044aedf77647d6cac86b798c6417603361b66b54c53331b312caeb447aea",
     "https://deno.land/std@0.177.0/testing/_format.ts": "a69126e8a469009adf4cf2a50af889aca364c349797e63174884a52ff75cf4c7",
     "https://deno.land/std@0.177.0/testing/asserts.ts": "984ab0bfb3faeed92ffaa3a6b06536c66811185328c5dd146257c702c41b01ab",
+    "https://deno.land/std@0.177.0/testing/mock.ts": "220ed9b8151cb2cac141043d4cfea7c47673fab5d18d1c1f0943297c8afb5d13",
     "https://deno.land/std@0.192.0/fmt/colors.ts": "d67e3cd9f472535241a8e410d33423980bec45047e343577554d3356e1f0ef4e",
     "https://deno.land/std@0.192.0/testing/_diff.ts": "1a3c044aedf77647d6cac86b798c6417603361b66b54c53331b312caeb447aea",
     "https://deno.land/std@0.192.0/testing/_format.ts": "a69126e8a469009adf4cf2a50af889aca364c349797e63174884a52ff75cf4c7",
@@ -877,6 +880,8 @@
     "https://deno.land/std@0.224.0/http/server.ts": "f9313804bf6467a1704f45f76cb6cd0a3396a3b31c316035e6a4c2035d1ea514",
     "https://esm.sh/@supabase/auth-js@2.69.1/denonext/auth-js.mjs": "fb31c3925437753f5a8a90fc57ea24dc5b68b2b295e696123b1b6a635b7b3ada",
     "https://esm.sh/@supabase/functions-js@2.4.4/denonext/functions-js.mjs": "7adeb257410ef3c4a8a1eb9b4ff416c0075d1c32860ca04913c8a9dace1de6a6",
+    "https://esm.sh/@supabase/gotrue-js@2.60.0": "7e5e5dcbfc6b60d0db3ccd329958859b122ed7cfd8c7de71421b0d4bf832bb37",
+    "https://esm.sh/@supabase/gotrue-js@2.60.0/denonext/gotrue-js.mjs": "cc7e95134547e23bc5b8d044e91a872c12f2f61e4257d19c00f7950c889dbdce",
     "https://esm.sh/@supabase/node-fetch@2.6.15/denonext/node-fetch.mjs": "0bae9052231f4f6dbccc7234d05ea96923dbf967be12f402764580b6bf9f713d",
     "https://esm.sh/@supabase/node-fetch@2.6.15?target=denonext": "4d28c4ad97328403184353f68434f2b6973971507919e9150297413664919cf3",
     "https://esm.sh/@supabase/postgrest-js@1.19.4/denonext/postgrest-js.mjs": "2073b5552ba10c7a8302bffffae771e3aede1daf833382355dae239fb0ab2576",

@@ -1,11 +1,20 @@
 // IMPORTANT: Supabase Edge Functions require relative paths for imports from shared modules.
 // Do not use path aliases (like @shared/) as they will cause deployment failures.
 import { createErrorResponse } from './cors-headers.ts';
-import { createClient as actualCreateClient } from "npm:@supabase/supabase-js@2";
-import type { SupabaseClient, SupabaseClientOptions, AuthError } from "npm:@supabase/supabase-js@2";
+import { createClient as actualCreateClient, SupabaseClient, SupabaseClientOptions, GoTrueClient } from "npm:@supabase/supabase-js";
+import type { Database } from '../types_db.ts';
+// Remove unused GenericSchema import
+// import type { GenericSchema } from "npm:@supabase/supabase-js@2/dist/module/lib/types";
 
 // Define the dependency type (the createClient function signature)
-type CreateClientFn = (url: string, key: string, options?: SupabaseClientOptions<any>) => SupabaseClient<any>;
+// Simplify the type to focus on the essential signature for DI
+type CreateClientFn = (
+  url: string,
+  key: string,
+  // Use a less strict type for options within this internal definition
+  // Specify 'public' schema as it's the most common case
+  options?: SupabaseClientOptions<"public">
+) => SupabaseClient<Database>; // Ensure it returns a client typed with our Database
 
 /**
  * Initialize Supabase client from request authorization
@@ -48,11 +57,12 @@ export const createSupabaseAdminClient = (
  * Get authenticated user ID from a pre-initialized Supabase client.
  * Modified to accept the client instance directly for easier testing.
  */
-export const getUserIdFromClient = async (supabase: SupabaseClient): Promise<string> => {
+export const getUserIdFromClient = async (supabase: SupabaseClient<Database>): Promise<string> => {
   console.log("getUserIdFromClient called");
   try {
     console.log("Attempting to get user from auth");
-    const { data, error } = await supabase.auth.getUser();
+    const authClient = supabase.auth as GoTrueClient;
+    const { data, error } = await authClient.getUser();
     
     if (error) {
       console.error("Auth error getting user:", error);
@@ -107,7 +117,7 @@ export function verifyApiKey(req: Request): boolean {
  * Verify the request has a valid JWT token using a pre-initialized client.
  * Modified to accept the client instance directly for easier testing.
  */
-export async function isAuthenticatedWithClient(req: Request, supabase: SupabaseClient): Promise<{ 
+export async function isAuthenticatedWithClient(req: Request, supabase: SupabaseClient<Database>): Promise<{ 
   isValid: boolean; 
   userId?: string;
   error?: string;
@@ -124,7 +134,8 @@ export async function isAuthenticatedWithClient(req: Request, supabase: Supabase
     }
 
     // Verify the token using the provided client
-    const { data: { user }, error } = await supabase.auth.getUser(token);
+    const authClient = supabase.auth as GoTrueClient;
+    const { data: { user }, error } = await authClient.getUser(token);
 
     if (error || !user) {
       console.error('Token verification failed:', error);

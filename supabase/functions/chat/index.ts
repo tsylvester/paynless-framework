@@ -1,14 +1,12 @@
 // IMPORTANT: Supabase Edge Functions require relative paths for imports from shared modules.
 // Do not use path aliases (like @shared/) as they will cause deployment failures.
-import { serve } from 'https://deno.land/std@0.224.0/http/server.ts'
-import { createClient, type SupabaseClient } from 'npm:@supabase/supabase-js@2'
+// Removed commented Deno serve import
+import { createClient, type SupabaseClient, type GoTrueClient } from 'npm:@supabase/supabase-js';
 // Import shared response/error handlers instead of defaultCorsHeaders directly
 import { 
     handleCorsPreflightRequest as actualHandleCorsPreflightRequest, 
     createErrorResponse as actualCreateErrorResponse, 
     createSuccessResponse as actualCreateJsonResponse, // Assuming createSuccessResponse is the equivalent JSON response creator
-    isOriginAllowed,
-    baseCorsHeaders // Keep base for potential SSE use?
 } from '../_shared/cors-headers.ts'; 
 // Import getEnv from Deno namespace directly when needed, avoid putting in deps if not necessary for mocking
 // Import AI service factory and necessary types
@@ -18,11 +16,12 @@ import type { ChatApiRequest as AdapterChatRequest } from '../_shared/types.ts';
 import type { Database } from "../types_db.ts"; // Import Database type for DB objects
 import { verifyApiKey as actualVerifyApiKey } from '../_shared/auth.ts';
 import { logger } from '../_shared/logger.ts';
+// ADD BACK serve import
+import { serve } from 'https://deno.land/std@0.177.0/http/server.ts'; 
 
 // Define derived DB types needed locally
 type ChatMessageInsert = Database['public']['Tables']['chat_messages']['Insert'];
 type ChatMessageRow = Database['public']['Tables']['chat_messages']['Row'];
-type ChatRow = Database['public']['Tables']['chats']['Row'];
 
 // Define expected request body structure
 interface ChatRequest {
@@ -30,55 +29,73 @@ interface ChatRequest {
   providerId: string; // uuid
   promptId: string;   // uuid or '__none__'
   chatId?: string;   // uuid, optional for new chats
+  organizationId?: string; // uuid, optional for org chats
+}
+
+// --- Read Env Vars (Top Level - ONLY for non-secrets needed by DI/boot) ---
+// These will be '' when run under `supabase functions serve` due to SUPABASE_ prefix skipping
+const SUPABASE_URL_ENV = Deno.env.get('SUPABASE_URL') ?? ''; 
+const SUPABASE_ANON_KEY_ENV = Deno.env.get('SUPABASE_ANON_KEY') ?? '';
+
+if (!SUPABASE_URL_ENV || !SUPABASE_ANON_KEY_ENV) {
+    // This console.error will likely trigger during `supabase functions serve` 
+    // but the function might still work if createClient picks up implicit env vars.
+    console.warn("Initial Deno.env.get for SUPABASE_URL or SUPABASE_ANON_KEY returned empty. This is expected for `supabase functions serve`.");
 }
 
 // --- Dependency Injection Setup ---
 
 // Define the interface for dependencies
 export interface ChatHandlerDeps {
-  createSupabaseClient: typeof createClient; // Use the imported createClient type directly
+  createSupabaseClient: typeof createClient; 
   fetch: typeof fetch;
-  // Use the imported actual handlers
   handleCorsPreflightRequest: typeof actualHandleCorsPreflightRequest;
   createJsonResponse: typeof actualCreateJsonResponse;
   createErrorResponse: typeof actualCreateErrorResponse;
-  // Add getAiProviderAdapter dependency for testing/mocking
   getAiProviderAdapter: typeof actualGetAiProviderAdapter;
   verifyApiKey: typeof actualVerifyApiKey;
   logger: typeof logger;
+  // REMOVE supabaseUrl and supabaseAnonKey from interface
 }
 
-// Create default dependencies using actual implementations
-export const defaultDeps: ChatHandlerDeps = {
-  createSupabaseClient: createClient, // Use the direct import
-  fetch: fetch,
-  // Use the imported actual handlers
-  handleCorsPreflightRequest: actualHandleCorsPreflightRequest,
-  createJsonResponse: actualCreateJsonResponse,
-  createErrorResponse: actualCreateErrorResponse,
-  // Provide the real factory implementation
-  getAiProviderAdapter: actualGetAiProviderAdapter,
-  verifyApiKey: actualVerifyApiKey,
-  logger: logger
+// Create default dependencies - REMOVE API key params and supabaseUrl/AnonKey params
+export function getDefaultDeps(): ChatHandlerDeps { // REMOVED PARAMS
+  return {
+    createSupabaseClient: createClient, 
+    fetch: fetch,
+    handleCorsPreflightRequest: actualHandleCorsPreflightRequest,
+    createJsonResponse: actualCreateJsonResponse,
+    createErrorResponse: actualCreateErrorResponse,
+    getAiProviderAdapter: actualGetAiProviderAdapter,
+    verifyApiKey: actualVerifyApiKey,
+    logger: logger,
+    // REMOVE supabaseUrl and supabaseAnonKey properties from returned object
+  };
 };
 
 // --- Main Handler Logic ---
 
-export async function mainHandler(req: Request, deps: ChatHandlerDeps = defaultDeps): Promise<Response> {
-  // Use injected deps
+export async function mainHandler(req: Request, deps?: ChatHandlerDeps): Promise<Response> {
+  // Initialize deps if not provided
+  const resolvedDeps = deps || getDefaultDeps();
+
+  // Use injected deps 
   const {
-    createSupabaseClient: createSupabaseClientDep,
-    handleCorsPreflightRequest, // Use the destructured handler
+    createSupabaseClient: createSupabaseClientDep, // Reverted: Use DI again
+    handleCorsPreflightRequest, 
     createJsonResponse,
     createErrorResponse,
-    getAiProviderAdapter: getAiProviderAdapterDep, // Use the injected factory
-    verifyApiKey: verifyApiKeyDep,
-    logger: loggerDep // Assuming logger is used internally
-  } = deps;
+    getAiProviderAdapter: getAiProviderAdapterDep, 
+  } = resolvedDeps; 
 
   // Handle CORS preflight requests using the injected handler
   const corsResponse = handleCorsPreflightRequest(req);
   if (corsResponse) return corsResponse;
+
+  // Read non-SUPABASE_ prefixed env vars for URL and Key
+  // These should be set in .env.local for `supabase functions serve`
+  const projectUrlForLocalServe = Deno.env.get('MY_PROJECT_URL');
+  const projectAnonKeyForLocalServe = Deno.env.get('MY_PROJECT_ANON_KEY');
 
   if (req.method !== 'POST') {
     return createErrorResponse('Method Not Allowed', 405, req);
@@ -102,6 +119,9 @@ export async function mainHandler(req: Request, deps: ChatHandlerDeps = defaultD
     if (requestBody.chatId && typeof requestBody.chatId !== 'string') {
       return createErrorResponse('Invalid "chatId" in request body', 400, req);
     }
+    if (requestBody.organizationId && typeof requestBody.organizationId !== 'string') {
+      return createErrorResponse('Invalid "organizationId" in request body', 400, req);
+    }
 
     // --- Auth and Client Initialization ---
     const authHeader = req.headers.get('Authorization');
@@ -114,22 +134,29 @@ export async function mainHandler(req: Request, deps: ChatHandlerDeps = defaultD
        );
     }
 
-    // Use Deno.env.get directly
-    const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? '';
-    const supabaseAnonKey = Deno.env.get('SUPABASE_ANON_KEY') ?? '';
-    if (!supabaseUrl || !supabaseAnonKey) {
-        console.error("Missing SUPABASE_URL or SUPABASE_ANON_KEY environment variables.");
-        return createErrorResponse("Server configuration error.", 500, req);
+    // Initialize client: 
+    // For `functions serve`, use MY_PROJECT_... vars if available.
+    // For `deno test` or deployed, createSupabaseClientDep('', '', ...) will allow implicit env pickup.
+    let supabaseClient: SupabaseClient<Database>;
+    if (projectUrlForLocalServe && projectAnonKeyForLocalServe && Deno.env.get('SUPA_ENV') === 'local') {
+      console.log('Using MY_PROJECT_URL and MY_PROJECT_ANON_KEY for local Supabase client.');
+      supabaseClient = createSupabaseClientDep(
+        projectUrlForLocalServe,
+        projectAnonKeyForLocalServe,
+        { global: { headers: { Authorization: authHeader } } }
+      );
+    } else {
+      console.log('Using default createSupabaseClientDep (empty strings for URL/Key for implicit env pickup).');
+      supabaseClient = createSupabaseClientDep(
+        '', // Rely on runtime or test environment to provide these if not using MY_PROJECT_... vars
+        '',
+        { global: { headers: { Authorization: authHeader } } }
+      );
     }
 
-    const supabaseClient = createSupabaseClientDep(
-      supabaseUrl,
-      supabaseAnonKey,
-      { global: { headers: { Authorization: authHeader } } }
-    );
-
     // --- Verify user authentication ---
-    const { data: { user }, error: userError } = await supabaseClient.auth.getUser();
+    const authClient = supabaseClient.auth as GoTrueClient; // Cast to GoTrueClient
+    const { data: { user }, error: userError } = await authClient.getUser();
     if (userError || !user) {
       console.error('Auth error:', userError);
       return createErrorResponse('Invalid authentication credentials', 401, req);
@@ -181,24 +208,39 @@ export async function mainHandler(req: Request, deps: ChatHandlerDeps = defaultD
         return createErrorResponse(`Unsupported AI provider: ${provider}`, 400, req);
     }
 
-    // --- Securely Get API Key based on Provider ---
+    // --- Securely Get API Key based on Provider (READING DIRECTLY) ---
     let apiKeyEnvVarName: string;
-    switch (provider.toLowerCase()) { // Use the fetched provider string
-        case 'openai': apiKeyEnvVarName = 'OPENAI_API_KEY'; break;
-        case 'anthropic': apiKeyEnvVarName = 'ANTHROPIC_API_KEY'; break;
-        case 'google': apiKeyEnvVarName = 'GOOGLE_API_KEY'; break;
-        // Add other cases as needed
+    let apiKey: string | undefined;
+    
+    switch (provider.toLowerCase()) { 
+        case 'openai': 
+            apiKeyEnvVarName = 'OPENAI_API_KEY'; 
+            apiKey = Deno.env.get(apiKeyEnvVarName); // Read directly
+            break;
+        case 'anthropic': 
+            apiKeyEnvVarName = 'ANTHROPIC_API_KEY'; 
+            apiKey = Deno.env.get(apiKeyEnvVarName); // Read directly
+            break;
+        case 'google': 
+            apiKeyEnvVarName = 'GOOGLE_API_KEY'; 
+            apiKey = Deno.env.get(apiKeyEnvVarName); // Read directly
+            break;
         default:
             console.error(`Unknown provider string encountered for API key lookup: ${provider}`);
             return createErrorResponse(`Internal server error: Unknown AI provider configuration for provider ${provider}.`, 500, req);
     }
-    // Use Deno.env.get directly
-    const apiKey = Deno.env.get(apiKeyEnvVarName);
-    if (!apiKey) {
-        console.error(`API key not found in environment variable: ${apiKeyEnvVarName} for provider ${provider}`);
-        return createErrorResponse('AI provider configuration error on server [key missing].', 500, req);
+    
+    // Check if the key was found, BUT bypass check if running locally
+    const isLocalEnv = Deno.env.get('SUPA_ENV') === 'local';
+    if (!apiKey && !isLocalEnv) {
+        console.error(`API key not found in environment variable: ${apiKeyEnvVarName} for provider ${provider} (direct read). Not running in local env.`);
+        return createErrorResponse('AI provider configuration error on server [key missing - direct read].', 500, req);
+    } else if (!apiKey && isLocalEnv) {
+        console.warn(`API key ${apiKeyEnvVarName} not found, but proceeding because SUPA_ENV=local. AI call will likely fail.`);
+        // Allow execution to continue, but the key will be undefined
+    } else {
+        console.log(`Retrieved API key directly from env var: ${apiKeyEnvVarName}`);
     }
-    console.log(`Retrieved API key from env var: ${apiKeyEnvVarName}`);
 
     // --- Fetch Chat History (if chatId provided) ---
     let chatHistory: { role: 'user' | 'assistant' | 'system'; content: string }[] = [];
@@ -223,7 +265,7 @@ export async function mainHandler(req: Request, deps: ChatHandlerDeps = defaultD
         } else if (messages) {
             // Map DB messages to the simple format expected by adapters/API
             // Ensure role is correctly typed
-            chatHistory = messages.map(msg => ({ 
+            chatHistory = messages.map((msg: Pick<ChatMessageRow, 'role' | 'content'>) => ({ // Add type to msg
                 role: msg.role as ('user' | 'assistant' | 'system'), 
                 content: msg.content 
             }));
@@ -251,10 +293,11 @@ export async function mainHandler(req: Request, deps: ChatHandlerDeps = defaultD
 
         console.log(`Calling ${provider} adapter sendMessage with apiIdentifier: ${apiIdentifier}`);
         // Call the adapter's sendMessage method
+        // Pass empty string for apiKey if it's undefined (only possible in local env)
         const assistantResponse: ChatMessageRow = await adapter.sendMessage(
             adapterRequest,
-            apiIdentifier, // Pass the specific model API identifier (e.g., openai-gpt-4o)
-            apiKey
+            apiIdentifier, 
+            apiKey || '' // Pass empty string if undefined
         );
         console.log('Received response from adapter.');
 
@@ -266,7 +309,12 @@ export async function mainHandler(req: Request, deps: ChatHandlerDeps = defaultD
             const { data: newChat, error: newChatError } = await supabaseClient
                 .from('chats')
                 // Do NOT prepend with 'Chat: ' or 'Chat - ' or anything like that.
-                .insert({ user_id: userId, title: `${firstUserMessage}...` })
+                .insert({ 
+                    user_id: userId, 
+                    title: `${firstUserMessage}...`,
+                    organization_id: requestBody.organizationId || null, // Add organization_id
+                    system_prompt_id: requestBody.promptId === '__none__' ? null : requestBody.promptId // Add system_prompt_id
+                })
                 .select('id')
                 .single();
             if (newChatError || !newChat) {
@@ -316,7 +364,7 @@ export async function mainHandler(req: Request, deps: ChatHandlerDeps = defaultD
         }
         
         // Find the saved assistant message (should conform to ChatMessageRow)
-        const finalAssistantMessage: ChatMessageRow | undefined = savedMessages?.find(m => m.role === 'assistant'); 
+        const finalAssistantMessage: ChatMessageRow | undefined = savedMessages?.find((m: ChatMessageRow) => m.role === 'assistant'); // Add type to m
 
         if (!finalAssistantMessage) {
             console.error("Failed to retrieve saved assistant message from DB", { currentChatId, savedMessages });
@@ -345,8 +393,8 @@ export async function mainHandler(req: Request, deps: ChatHandlerDeps = defaultD
 }
 
 // --- Serve Function ---
-// Use the mainHandler with default dependencies when serving
-serve((req) => mainHandler(req, defaultDeps))
-// console.log(`Function "chat" up and running!`) // Moved log to top
+// Use the mainHandler. Default dependencies will now be constructed 
+// using the top-level environment variables read when the module loaded.
+serve((req: Request) => mainHandler(req)) // Add type to req
 
 console.log(`Function "chat" up and running!`) 

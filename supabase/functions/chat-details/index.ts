@@ -1,7 +1,7 @@
 // IMPORTANT: Supabase Edge Functions require relative paths for imports from shared modules.
 // Do not use path aliases (like @shared/) as they will cause deployment failures.
 import { serve } from 'https://deno.land/std@0.177.0/http/server.ts'
-import { createClient, type SupabaseClient } from 'npm:@supabase/supabase-js@2'
+import { createClient, type SupabaseClient, type GoTrueClient } from 'npm:@supabase/supabase-js@2'
 // import type { AuthError } from 'npm:@supabase/gotrue-js@2'; // Reverted change
 // Reuse HandlerError if available and appropriate, or define one
 // Assuming reuse from api-subscriptions for now
@@ -55,7 +55,7 @@ async function getChatMessagesHandler(supabaseClient: SupabaseClient<Database>, 
 
 // --- Serve Function --- 
 // This wrapper handles request validation, routing, auth, client creation, and response formatting
-serve(async (req: Request, connInfo: any) => { // connInfo might contain path params depending on framework
+serve(async (req: Request, _connInfo: any): Promise<Response> => { // Ensure connInfo is unused or typed; explicitly type return as Promise<Response>
   // --- Handle CORS Preflight --- 
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: defaultCorsHeaders, status: 204 });
@@ -65,7 +65,14 @@ serve(async (req: Request, connInfo: any) => { // connInfo might contain path pa
     // --- Basic Request Validation ---
     // Allow GET and DELETE
     if (req.method !== 'GET' && req.method !== 'DELETE') { // <<< Allow DELETE
-      throw new HandlerError('Method Not Allowed', 405);
+      // Ensure this path returns a Response created by HandlerError or similar
+      // throw new HandlerError('Method Not Allowed', 405); // This throw will be caught and turned into a Response
+      // To be absolutely explicit for the type checker, though the catch block handles it:
+      const err = new HandlerError('Method Not Allowed', 405);
+      return new Response(JSON.stringify({ error: err.message }), {
+        headers: { ...defaultCorsHeaders, 'Content-Type': 'application/json' },
+        status: err.status,
+      });
     }
     
     // --- Extract chatId from path --- 
@@ -74,30 +81,53 @@ serve(async (req: Request, connInfo: any) => { // connInfo might contain path pa
     const chatId = pathSegments[pathSegments.length - 1]; 
     console.log(`Extracted chatId from path: ${chatId} for method ${req.method}`);
     if (!chatId || chatId === 'chat-details') { 
-         throw new HandlerError('Missing or invalid chatId in request path', 400);
+        // throw new HandlerError('Missing or invalid chatId in request path', 400); // Caught by general catch
+        const err = new HandlerError('Missing or invalid chatId in request path', 400);
+        return new Response(JSON.stringify({ error: err.message }), {
+            headers: { ...defaultCorsHeaders, 'Content-Type': 'application/json' },
+            status: err.status,
+        });
     }
     // Optional: Validate if chatId looks like a UUID
 
     // --- Authentication & Client Setup ---
     const authHeader = req.headers.get('Authorization');
     if (!authHeader) {
-       throw new HandlerError('Missing Authorization header', 401);
+       // throw new HandlerError('Missing Authorization header', 401); // Caught by general catch
+       const err = new HandlerError('Missing Authorization header', 401);
+       // Special handling for 401 to match local runtime behavior if needed
+       const responseBody = JSON.stringify({ msg: err.message }); // Match observed local 401 format
+       return new Response(responseBody, {
+           headers: { ...defaultCorsHeaders, 'Content-Type': 'application/json' },
+           status: err.status,
+       });
     }
     const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? '';
     const supabaseAnonKey = Deno.env.get('SUPABASE_ANON_KEY') ?? '';
     if (!supabaseUrl || !supabaseAnonKey) {
-         throw new HandlerError("Server configuration error.", 500);
+        // throw new HandlerError("Server configuration error.", 500); // Caught by general catch
+        const err = new HandlerError("Server configuration error.", 500);
+        return new Response(JSON.stringify({ error: err.message }), {
+            headers: { ...defaultCorsHeaders, 'Content-Type': 'application/json' },
+            status: err.status,
+        });
     }
     const supabaseClient = createClient<Database>(
       supabaseUrl,
       supabaseAnonKey,
       { global: { headers: { Authorization: authHeader } } }
     );
-    const { data: { user }, error: userError } = await supabaseClient.auth.getUser();
+    // Cast to GoTrueClient before calling getUser
+    const authClient = supabaseClient.auth as GoTrueClient;
+    const { data: { user }, error: userError } = await authClient.getUser();
     if (userError || !user) {
-        // Remove explicit cast to AuthError
         const errorDetails = userError ? (userError.message || 'Invalid authentication credentials') : 'Invalid authentication credentials';
-        throw new HandlerError(errorDetails, 401, userError || undefined); 
+        // throw new HandlerError(errorDetails, 401, userError || undefined); // Caught by general catch
+        const err = new HandlerError(errorDetails, 401, userError || undefined);
+        return new Response(JSON.stringify({ error: err.message }), {
+            headers: { ...defaultCorsHeaders, 'Content-Type': 'application/json' },
+            status: err.status,
+        });
     }
 
     // --- Handle based on Method ---
@@ -111,13 +141,21 @@ serve(async (req: Request, connInfo: any) => { // connInfo might contain path pa
             .maybeSingle(); 
 
         if (chatAccessError) {
-            console.error(`Error checking chat access for chat ${chatId} (GET):`, chatAccessError);
-            throw new HandlerError('Error verifying chat access.', 500, chatAccessError);
+            // throw new HandlerError('Error verifying chat access.', 500, chatAccessError); // Caught by general catch
+            const err = new HandlerError('Error verifying chat access.', 500, chatAccessError);
+            return new Response(JSON.stringify({ error: err.message }), {
+                headers: { ...defaultCorsHeaders, 'Content-Type': 'application/json' },
+                status: err.status,
+            });
         }
         
         if (!chatAccess) {
-            console.warn(`Access denied or chat not found for user ${user.id} on chat ${chatId} (GET)`);
-            throw new HandlerError('Chat not found or access denied', 404);
+            // throw new HandlerError('Chat not found or access denied', 404); // Caught by general catch
+            const err = new HandlerError('Chat not found or access denied', 404);
+            return new Response(JSON.stringify({ error: err.message }), {
+                headers: { ...defaultCorsHeaders, 'Content-Type': 'application/json' },
+                status: err.status,
+            });
         }
         
         console.log(`Access granted for user ${user.id} on chat ${chatId} (GET)`);
@@ -145,15 +183,22 @@ serve(async (req: Request, connInfo: any) => { // connInfo might contain path pa
             .maybeSingle();
 
         if (chatAccessError) {
-            console.error(`Error checking chat access for chat ${chatId} (DELETE pre-check):`, chatAccessError);
-            throw new HandlerError('Error verifying chat access before delete.', 500, chatAccessError);
+            // throw new HandlerError('Error verifying chat access before delete.', 500, chatAccessError); // Caught by general catch
+            const err = new HandlerError('Error verifying chat access before delete.', 500, chatAccessError);
+            return new Response(JSON.stringify({ error: err.message }), {
+                headers: { ...defaultCorsHeaders, 'Content-Type': 'application/json' },
+                status: err.status,
+            });
         }
         
         // If chatAccess is null, RLS denied access or chat doesn't exist for this user.
         if (!chatAccess) {
-            console.warn(`Access denied or chat not found for user ${user.id} on chat ${chatId} (DELETE pre-check)`);
-            // Return 404, aligning with the expected behavior when trying to access a non-existent/forbidden resource.
-            throw new HandlerError('Chat not found or access denied', 404);
+            // throw new HandlerError('Chat not found or access denied', 404); // Caught by general catch
+            const err = new HandlerError('Chat not found or access denied', 404);
+            return new Response(JSON.stringify({ error: err.message }), {
+                headers: { ...defaultCorsHeaders, 'Content-Type': 'application/json' },
+                status: err.status,
+            });
         }
         console.log(`Access verified for chat ${chatId} (DELETE pre-check)`);
         // End Preliminary Access Check
@@ -168,8 +213,12 @@ serve(async (req: Request, connInfo: any) => { // connInfo might contain path pa
 
         if (fetchError || !chatDetails) {
              // This shouldn't happen if the pre-check passed, but handle defensively.
-             console.error(`Failed to fetch chat details for explicit deletion check on chat ${chatId}:`, fetchError);
-             throw new HandlerError('Failed to fetch chat details for deletion check.', 500, fetchError);
+             // throw new HandlerError('Failed to fetch chat details for deletion check.', 500, fetchError); // Caught by general catch
+             const err = new HandlerError('Failed to fetch chat details for deletion check.', 500, fetchError);
+             return new Response(JSON.stringify({ error: err.message }), {
+                 headers: { ...defaultCorsHeaders, 'Content-Type': 'application/json' },
+                 status: err.status,
+             });
         }
 
         let isAllowed = false;
@@ -177,8 +226,12 @@ serve(async (req: Request, connInfo: any) => { // connInfo might contain path pa
              console.log(`Explicit check: Chat ${chatId} belongs to org ${chatDetails.organization_id}. Checking admin status.`);
              const { data: isAdmin, error: adminCheckError } = await supabaseClient.rpc('is_org_admin', { org_id: chatDetails.organization_id });
              if (adminCheckError) {
-                console.error(`Error checking admin status for user ${user.id} on org ${chatDetails.organization_id}:`, adminCheckError);
-                throw new HandlerError('Failed to verify organization permissions.', 500, adminCheckError);
+                // throw new HandlerError('Failed to verify organization permissions.', 500, adminCheckError); // Caught by general catch
+                const err = new HandlerError('Failed to verify organization permissions.', 500, adminCheckError);
+                return new Response(JSON.stringify({ error: err.message }), {
+                    headers: { ...defaultCorsHeaders, 'Content-Type': 'application/json' },
+                    status: err.status,
+                });
              }
              isAllowed = !!isAdmin; // Explicitly check if user is admin
              if (isAllowed) {
@@ -198,8 +251,12 @@ serve(async (req: Request, connInfo: any) => { // connInfo might contain path pa
         }
 
         if (!isAllowed) {
-            // Throw 403 if the explicit check fails
-            throw new HandlerError('Permission denied to delete this chat (Explicit Check).', 403);
+            // throw new HandlerError('Permission denied to delete this chat (Explicit Check).', 403); // Caught by general catch
+            const err = new HandlerError('Permission denied to delete this chat (Explicit Check).', 403);
+            return new Response(JSON.stringify({ error: err.message }), {
+                headers: { ...defaultCorsHeaders, 'Content-Type': 'application/json' },
+                status: err.status,
+            });
         }
         // --- END Explicit Permission Check ---
 
@@ -214,9 +271,12 @@ serve(async (req: Request, connInfo: any) => { // connInfo might contain path pa
         if (deleteError) {
             // If an error occurs *here* despite the explicit check passing, it's unexpected.
             // It could be a concurrent modification or a deeper RLS issue.
-            console.error(`Error during DELETE operation for chat ${chatId} (AFTER explicit check):`, deleteError);
-            // We already checked permission, so return 500 for unexpected DB errors.
-            throw new HandlerError(deleteError.message || 'Failed to delete chat after explicit check.', 500, deleteError);
+            // throw new HandlerError(deleteError.message || 'Failed to delete chat after explicit check.', 500, deleteError); // Caught by general catch
+            const err = new HandlerError(deleteError.message || 'Failed to delete chat after explicit check.', 500, deleteError);
+            return new Response(JSON.stringify({ error: err.message }), {
+                headers: { ...defaultCorsHeaders, 'Content-Type': 'application/json' },
+                status: err.status,
+            });
         }
 
         // If explicit check passed and no error from DB delete call, assume success.
@@ -228,6 +288,14 @@ serve(async (req: Request, connInfo: any) => { // connInfo might contain path pa
           status: 204, // No Content
         });
     }
+    // Fallback return, though all logical paths (GET/DELETE) should have returned or thrown.
+    // This satisfies the type checker if it can't infer that all paths are covered.
+    // In practice, this should not be reached if req.method is GET or DELETE.
+    const finalError = new HandlerError('Reached unexpected end of handler.', 500);
+    return new Response(JSON.stringify({ error: finalError.message }), {
+        headers: { ...defaultCorsHeaders, 'Content-Type': 'application/json' },
+        status: finalError.status,
+    });
 
   } catch (err) {
     // --- Format Error Response (Same for GET/DELETE) --- 
@@ -242,9 +310,8 @@ serve(async (req: Request, connInfo: any) => { // connInfo might contain path pa
     } else {
       errorMessage = String(err); 
     }
-    // Special handling for 401 to match local runtime behavior if needed
     const responseBody = (errorStatus === 401 && errorMessage === 'Missing Authorization header') 
-        ? JSON.stringify({ msg: errorMessage }) // Match observed local 401 format
+        ? JSON.stringify({ msg: errorMessage }) 
         : JSON.stringify({ error: errorMessage });
         
     console.error("Returning error response:", { status: errorStatus, message: errorMessage });
