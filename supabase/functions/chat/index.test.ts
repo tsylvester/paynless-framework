@@ -13,6 +13,7 @@ import { getAiProviderAdapter as actualGetAiProviderAdapter } from '../_shared/a
 import {
   createMockSupabaseClient,
   type MockSupabaseDataConfig,
+  type MockQueryBuilderState
 } from "../_shared/test-utils.ts";
 import { stub as stdStub } from "https://deno.land/std@0.177.0/testing/mock.ts";
 // Import main handler, deps type, and the REAL defaultDeps for comparison/base
@@ -59,39 +60,26 @@ const createTestDeps = (
   supaConfig: MockSupabaseDataConfig = {},
   adapterSendMessageResult?: AdapterResponsePayload | Error,
   depOverrides: Partial<ChatHandlerDeps> = {}
-): ChatHandlerDeps => {
-  const { client: mockSupabaseClient } = createMockSupabaseClient(supaConfig);
+): ChatHandlerDeps & { mockSupabaseClientInstance: SupabaseClient } => {
+  const { client: mockSupabaseClient, spies: mockClientSpies } = createMockSupabaseClient(supaConfig);
   
   const mockAdapter = adapterSendMessageResult ? createMockAdapter(adapterSendMessageResult) : undefined;
   const mockGetAiProviderAdapter = mockAdapter ? spy((_provider: string) => mockAdapter) : spy(actualGetAiProviderAdapter); 
 
-  const baseDeps = realDefaultDeps(); // from getDefaultDeps()
+  const baseDeps = realDefaultDeps();
 
-  // Start with essentials from baseDeps that we don't usually override in these tests
   const deps: ChatHandlerDeps = {
-    fetch: baseDeps.fetch, // Explicitly take from base
+    fetch: baseDeps.fetch,
     handleCorsPreflightRequest: baseDeps.handleCorsPreflightRequest,
     createJsonResponse: baseDeps.createJsonResponse,
     createErrorResponse: baseDeps.createErrorResponse,
-    verifyApiKey: baseDeps.verifyApiKey, // Assuming this is usually not mocked per test
-    logger: baseDeps.logger, // Assuming this is usually not mocked per test
-    
-    // Test-specific mocks
+    verifyApiKey: baseDeps.verifyApiKey,
+    logger: baseDeps.logger,
     createSupabaseClient: spy(() => mockSupabaseClient) as any, 
     getAiProviderAdapter: mockGetAiProviderAdapter, 
-    
-    // Environment variables for the test context, overriding what baseDeps might have
-    supabaseUrl: mockSupabaseUrl,
-    supabaseAnonKey: mockAnonKey,
-    openaiApiKey: mockOpenAiKey,
-    anthropicApiKey: mockAnthropicKey, 
-    googleApiKey: mockGoogleKey,
-
-    // Apply any further specific overrides from the test call
-    // This could override fetch, logger, etc. if a specific test needs to
     ...depOverrides, 
   };
-  return deps;
+  return { ...deps, mockSupabaseClientInstance: mockSupabaseClient };
 };
 
 // --- Test Suite ---
@@ -110,6 +98,7 @@ Deno.test("Chat Function Tests (Adapter Refactor)", async (t) => {
     const testAsstMsgId = 'msg-asst-bbb';
     const testAiContent = 'Mock AI response content from adapter';
     const now = new Date().toISOString();
+    const testUserMessageContent = "Hello there AI!"; // Content from the test request
 
     const mockAdapterSuccessResponse: AdapterResponsePayload = { // Use correct type
         role: 'assistant',
@@ -137,7 +126,7 @@ Deno.test("Chat Function Tests (Adapter Refactor)", async (t) => {
         id: testUserMsgId,
         chat_id: testChatId,
         role: 'user',
-        content: "Hello there AI!", // Content from the test request
+        content: testUserMessageContent,
         created_at: now, 
         user_id: testUserId,
         ai_provider_id: testProviderId,
@@ -250,7 +239,7 @@ Deno.test("Chat Function Tests (Adapter Refactor)", async (t) => {
             const deps = createTestDeps(mockSupaConfig, mockAdapterSuccessResponse);
 
             const requestBody = {
-                message: "Hello there AI!", // Match content used in mockUserDbRow
+                message: testUserMessageContent,
                 providerId: testProviderId,
                 promptId: testPromptId,
             };
@@ -780,39 +769,112 @@ Deno.test("Chat Function Tests (Adapter Refactor)", async (t) => {
             console.log("--- Anthropic Provider POST test passed ---");
         });
 
-        // *** Keep this test commented out due to stubbing conflicts ***
-        // await t.step("POST request with missing API key env var returns 500", async () => {
-        //     // Save the original implementation of the existing stub
-        //     const originalEnvGet = envGetStub.original;
+        // +++++ UNIT TEST FOR REWIND FUNCTIONALITY +++++
+        await t.step("POST request with rewindFromMessageId should deactivate subsequent messages and add new ones", async () => {
+            console.log("--- Running Rewind Functionality Unit Test ---");
 
-        //     try {
-        //          // Temporarily change the behavior of the *existing* stub
-        //          envGetStub.callsFake((key: string): string | undefined => {
-        //             // Log stub calls
-        //             console.log(`[Test Env Stub - Temp Override] Deno.env.get called with: ${key}`); 
-        //             if (key === 'SUPABASE_URL') return mockSupabaseUrl;
-        //             if (key === 'SUPABASE_ANON_KEY') return mockAnonKey;
-        //             // Return undefined ONLY for the key we are testing
-        //             if (key === 'OPENAI_API_KEY') return undefined;
-        //             // Call the original stub implementation for other keys
-        //             // Use .call to ensure correct 'this' context if needed
-        //             return originalEnvGet.call(Deno.env, key); 
-        //         });
+            const rewindChatId = 'chat-rewind-abc';
+            const userMsg1Content = "User Message 1 for rewind";
+            const aiMsg1Content = "AI Response 1 for rewind";
+            const userMsg2Content = "User Message 2 for rewind (to be inactive)";
+            const aiMsg2Content = "AI Response 2 for rewind (to be inactive)";
+            const userMsg3Content = "User Message 3 for rewind (new)";
+            const aiMsg3Content = "AI Response 3 for rewind (new)";
+            const rewindFromMsgId = "ai-msg-1-id"; // ID of AI Response 1
+            const initialTimestamp = new Date().getTime();
+            const msgTimestamp = (offsetSeconds: number) => new Date(initialTimestamp + offsetSeconds * 1000).toISOString();
+            const systemPromptText = 'Test system prompt for rewind';
 
-        //         const deps = createTestDeps(mockSupaConfig);
-        //         const req = new Request('http://localhost/chat', { 
-        //              method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer test-jwt-token' },
-        //              body: JSON.stringify({ message: "test", providerId: testProviderId, promptId: testPromptId }),
-        //          });
-        //         const response = await mainHandler(req, deps);
-        //         assertEquals(response.status, 500);
-        //         assertEquals((await response.json()).error, 'AI provider configuration error on server [key missing].');
-        //     } finally {
-        //         // Restore the original behavior of the envGetStub
-        //         envGetStub.callsFake(originalEnvGet);
-        //         console.log("[Test Env Stub - Temp Override] Restored original behavior.");
-        //     }
-        // });
+            const initialMessages: ChatMessageRow[] = [
+                { id: "user-msg-1-id", chat_id: rewindChatId, user_id: testUserId, role: 'user', content: userMsg1Content, created_at: msgTimestamp(0), is_active_in_thread: true, ai_provider_id: null, system_prompt_id: null, token_usage: null },
+                { id: rewindFromMsgId, chat_id: rewindChatId, user_id: null, role: 'assistant', content: aiMsg1Content, created_at: msgTimestamp(1), is_active_in_thread: true, ai_provider_id: testProviderId, system_prompt_id: testPromptId, token_usage: {prompt_tokens:1, completion_tokens:1, total_tokens:2}},
+                { id: "user-msg-2-id", chat_id: rewindChatId, user_id: testUserId, role: 'user', content: userMsg2Content, created_at: msgTimestamp(2), is_active_in_thread: true, ai_provider_id: null, system_prompt_id: null, token_usage: null },
+                { id: "ai-msg-2-id", chat_id: rewindChatId, user_id: null, role: 'assistant', content: aiMsg2Content, created_at: msgTimestamp(3), is_active_in_thread: true, ai_provider_id: testProviderId, system_prompt_id: testPromptId, token_usage: {prompt_tokens:1, completion_tokens:1, total_tokens:2} },
+            ];
+            const newAiResponsePayload: AdapterResponsePayload = {
+                role: 'assistant', content: aiMsg3Content, ai_provider_id: testProviderId, system_prompt_id: testPromptId, token_usage: { prompt_tokens: 10, completion_tokens: 20, total_tokens: 30 },
+            };
+            const newUserMsgDbRow: ChatMessageRow = {
+                id: "user-msg-3-id", chat_id: rewindChatId, user_id: testUserId, role: 'user', content: userMsg3Content, created_at: msgTimestamp(4), is_active_in_thread: true, ai_provider_id: testProviderId, system_prompt_id: testPromptId, token_usage: null
+            };
+            const newAiMsgDbRow: ChatMessageRow = {
+                id: "ai-msg-3-id", chat_id: rewindChatId, user_id: null, role: 'assistant', content: aiMsg3Content, created_at: msgTimestamp(5), is_active_in_thread: true, ai_provider_id: testProviderId, system_prompt_id: testPromptId, token_usage: newAiResponsePayload.token_usage
+            };
+
+            let selectCallCount = 0;
+            const supaConfigForRewind: MockSupabaseDataConfig = {
+                mockUser: { id: testUserId, app_metadata: {}, user_metadata: {}, aud: 'authenticated', created_at: now },
+                getUserResult: { data: { user: { id: testUserId, app_metadata: {}, user_metadata: {}, aud: 'authenticated', created_at: now } }, error: null },
+                genericMockResults: {
+                    'system_prompts': { select: { data: [{ id: testPromptId, prompt_text: systemPromptText }], error: null, status: 200, count: 1 } },
+                    'ai_providers': { select: { data: [{ id: testProviderId, api_identifier: testApiIdentifier, provider: testProviderString }], error: null, status: 200, count: 1 } },
+                    'chats': { select: { data: [{ id: rewindChatId, user_id: testUserId, organization_id: null, system_prompt_id: testPromptId, title: "Rewind Test Chat" }], error: null, status: 200, count: 1 } },
+                    'chat_messages': {
+                        select: spy(async (state: MockQueryBuilderState) => {
+                            selectCallCount++;
+                            // Type for f in state.filters.some(...)
+                            type FilterType = typeof state.filters[0]; 
+                            if (selectCallCount === 1 && state.filters.some((f: FilterType) => f.column === 'id' && f.value === rewindFromMsgId) && state.operation === 'select') { 
+                                console.log("[Test Mock chat_messages.select spy] Call 1: Matched fetch for rewindFromMessageId details.");
+                                return { data: [initialMessages.find(m => m.id === rewindFromMsgId)!], error: null, status: 200, count: 1 };
+                            }
+                            if (selectCallCount === 2 && state.filters.some((f: FilterType) => f.column === 'is_active_in_thread' && f.value === true) && state.operation === 'select') { 
+                                console.log("[Test Mock chat_messages.select spy] Call 2: Matched fetch for active history for AI.");
+                                return { data: [initialMessages[0], initialMessages[1]], error: null, status: 200, count: 2 };
+                            }
+                            console.warn("[Test Mock chat_messages.select spy] Unexpected call or state:", selectCallCount, state);
+                            return { data: [], error: new Error('Unexpected select call in mock'), status: 500, count: 0 };
+                        }),
+                        update: { data: [/*ids of updated messages*/], error: null, status: 200, count: 2 },
+                        insert: { data: [newUserMsgDbRow, newAiMsgDbRow], error: null, status: 201, count: 2 }
+                    }
+                }
+            };
+
+            const testDepsResult = createTestDeps(supaConfigForRewind, newAiResponsePayload);
+            const deps = testDepsResult; // The ChatHandlerDeps part
+            const mockSupabaseClientInstance = testDepsResult.mockSupabaseClientInstance as any; // The client instance
+
+            const requestBody = { chatId: rewindChatId, message: userMsg3Content, providerId: testProviderId, promptId: testPromptId, rewindFromMessageId: rewindFromMsgId };
+            const req = new Request('http://localhost/chat', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer test-token` }, body: JSON.stringify(requestBody) });
+            const response = await mainHandler(req, deps);
+            assertEquals(response.status, 200);
+            const responseBody = await response.json();
+            assertObjectMatch(responseBody.message, {
+                content: aiMsg3Content,
+                chat_id: rewindChatId,
+                role: 'assistant',
+                token_usage: newAiResponsePayload.token_usage
+            });
+
+            // Assertions on Supabase client calls
+            // 1. Assert update was called to deactivate messages
+            // Access the spy from the mockSupabaseClientInstance that createMockSupabaseClient setup
+            const updateSpy = mockSupabaseClientInstance.from('chat_messages').update as Spy<any, any[], any>; // Assuming .update is a spy
+            assertSpyCalls(updateSpy, 1); // Should be called once to deactivate messages
+            assertEquals(updateSpy.calls[0].args[0], { is_active_in_thread: false });
+            // Further assertions on .eq() and .gt() would require the mock query builder to record these chained calls on the spy object, or for the spy on update to receive this chain state.
+            // This part is tricky with the current generic mock setup for unit tests if it doesn't deeply spy on chained methods.
+
+            // 2. Assert AI adapter was called with correct history
+            const adapterSpy = deps.getAiProviderAdapter(testProviderString)!.sendMessage as Spy<any, any[], any>;
+            assertSpyCalls(adapterSpy, 1);
+            const adapterArgs = adapterSpy.calls[0].args[0] as AdapterChatRequest;
+            assertEquals(adapterArgs.message, userMsg3Content);
+            assertEquals(adapterArgs.chatId, rewindChatId);
+            assertEquals(adapterArgs.messages.length, 3); 
+            assertEquals(adapterArgs.messages[0].role, 'system');
+            assertEquals(adapterArgs.messages[0].content, systemPromptText);
+            assertEquals(adapterArgs.messages[1].content, userMsg1Content);
+            assertEquals(adapterArgs.messages[2].content, aiMsg1Content);
+            
+            // 3. Assert insert was called for new messages
+            const insertSpy = mockSupabaseClientInstance.from('chat_messages').insert as Spy<any, any[], any>; // Assuming .insert is a spy
+            assertSpyCalls(insertSpy, 1);
+            assertEquals(insertSpy.calls[0].args[0].length, 2); // User3 and AI3
+            assertObjectMatch(insertSpy.calls[0].args[0][0], { content: userMsg3Content, role: 'user', is_active_in_thread: true });
+            assertObjectMatch(insertSpy.calls[0].args[0][1], { content: aiMsg3Content, role: 'assistant', is_active_in_thread: true, token_usage: newAiResponsePayload.token_usage });
+        });
 
     } finally {
         console.log("Restored original Deno.env.get.");

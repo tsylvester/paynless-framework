@@ -254,18 +254,39 @@ The implementation plan uses the following labels to categorize work steps:
 ### STEP-1.5: Update Backend API Endpoints (Write Operations - Delete & Chat Creation via `/chat`)
 
 #### STEP-1.5.1: [TEST-INT] Define Edge Function Integration Tests for Writes
-* [ ] Write tests for `DELETE /chat-details/:chatId`: (Tests remain similar to before)
+* [X] Write tests for `DELETE /chat-details/:chatId` (handled in `supabase/functions/chat-details/test/chat-details.integration.test.ts`):
     *   Simulate delete requests for org/personal chats with correct/incorrect permissions/context. Verify RLS allows/denies. Check DB state.
-* [ ] Write tests for `POST /chat`:
+* [ ] Write tests for `POST /chat` (handled in `supabase/functions/chat/test/chat.integration.test.ts`):
     *   **New Chat Scenario:** Simulate request with no `chatId`, but with `message`, `providerId`, `system_prompt_id`, and `organizationId` (or null). Verify RLS on `chats` INSERT allows/denies. Verify `chats` record created. Verify `chat_messages` user message created. Verify AI call mocked/stubbed. Verify assistant message created. Verify response includes *new `chatId`* and assistant message.
     *   **Existing Chat Scenario:** Simulate request with `chatId`, `message`, `providerId`. Verify RLS on `chats` SELECT allows access. Verify user/assistant messages added to existing chat. Verify response contains assistant message.
-    *   **Rewind Scenario (From Gemini Phase 3):** Test the `POST /chat-details/:chatId/rewind` endpoint.
+    *   **Rewind Scenario:** Test rewind functionality, handled by `POST /chat` by including a `rewindFromMessageId` in the request body.
+        *   Verify that messages in the chat created after the message identified by `rewindFromMessageId` are marked as `is_active_in_thread = false`.
+        *   Verify that a new user message (from the current request) and a new AI assistant response are created and marked as `is_active_in_thread = true`.
+        *   Verify token usage is tracked for the new messages.
 * [ ] Example Test Paths (Based on OpenAI 1.5.1):
-    *   `supabase/functions/chat/test/chat.integration.test.ts`
-    *   `supabase/functions/chat-details/test/chatDetails.integration.test.ts` (Include rewind tests here)
+    *   `supabase/functions/chat/test/chat.integration.test.ts` (Covers New Chat, Existing Chat Update, and Rewind scenarios)
+    *   `supabase/functions/chat-details/test/chat-details.integration.test.ts` (Covers DELETE scenarios for this step; GET scenarios are in STEP-1.4.5)
 * [ ] Expect tests to fail (RED).
 
-#### STEP-1.5.2: [BE] Modify Write Edge Functions
+#### STEP-1.5.2: [TEST-UNIT] Define & Implement Unit Tests for Write Edge Functions
+*   [ ] For `supabase/functions/chat/index.ts` (`mainHandler`):
+    *   [ ] Mock Supabase client calls and AI provider adapter.
+    *   [ ] Test logic for creating a new personal chat.
+    *   [ ] Test logic for creating a new organization chat (considering `org_id` and creation permissions).
+    *   [ ] Test logic for adding a message to an existing chat.
+    *   [ ] Test logic for the rewind functionality (given `rewindFromMessageId`):
+        *   [ ] Verifying correct messages are marked inactive.
+        *   [ ] Verifying new user and assistant messages are added correctly.
+        *   [ ] Verifying token usage calculation and storage.
+    *   [ ] Test parsing of request body parameters (`chatId`, `organizationId`, `rewindFromMessageId`, etc.).
+    *   [ ] Test error handling for invalid inputs or failed operations.
+*   [ ] For `supabase/functions/chat-details/index.ts` (handler for `DELETE`):
+    *   [ ] Mock Supabase client calls.
+    *   [ ] Test logic for deleting a chat (verifying correct parameters passed to Supabase client).
+    *   [ ] Test error handling.
+*   [ ] Ensure tests are written (RED), then implement/modify function logic to make them pass (GREEN).
+
+#### STEP-1.5.3: [BE] Modify Write Edge Functions
 * [ ] Modify `supabase/functions/chat-details/index.ts` to handle `DELETE` (as per Claude STEP-2.4.4):\
     *   Get `chatId`, `organizationId`. Verify auth.
     *   Perform `supabaseClient.from('chats').delete().eq('id', chatId)`. RLS enforces permission.
@@ -295,10 +316,12 @@ The implementation plan uses the following labels to categorize work steps:
         *   Call AI Provider.\
         *   `INSERT INTO chat_messages` for assistant response (with `token_usage`).\
         *   Return `{ assistantMessage: {...} }`.
-* [ ] **Step 1.5.7: [TEST-INT] Run Edge Function Write Tests & Refactor**
+
+#### STEP-1.5.4: [TEST-INT] Run Edge Function Write Tests & Refactor
     *   [ ] Run integration tests. Debug `/chat` and `/chat-details` DELETE logic until pass (GREEN).\
     *   [ ] **[REFACTOR]** Ensure `/chat` handles new/existing/rewind cases robustly. Clean up error handling. Ensure response format is consistent. Refactor AI call logic if needed.
-* [ ] **Step 1.5.8: [COMMIT] Commit Write Edge Function Updates**
+
+#### STEP-1.5.5: [COMMIT] Commit Write Edge Function Updates
     *   [ ] Stage `supabase/functions/chat/index.ts`, `supabase/functions/chat-details/index.ts`.
     *   [ ] Commit with message: `feat(BE): Modify POST /chat & DELETE /chat-details for org context, rewind, tokens w/ tests`
 
@@ -317,3 +340,4 @@ The implementation plan uses the following labels to categorize work steps:
 *   [ ] **[REFACTOR]** Move `HandlerError` class from `api-subscriptions` to a shared location (e.g., `_shared/errors.ts` or similar) and update imports in `chat-details` and other functions.
 *   [ ] **[REFACTOR]** Improve client-side request replay logic (e.g., in `ApiClient`) to handle standard 401 responses (`{"error": ...}`), allowing backend functions like `chat-details` to remove special `{"msg": ...}` formatting for 401s.
 *   [ ] **[REFACTOR]** Add stricter validation (e.g., regex check) for the `chatId` path parameter in the `chat-details` Edge Function to ensure it conforms to a UUID format.
+*   [ ] **[TEST-DEBUG]** Investigate and resolve Deno test leaks (approx. 19-25 intervals from `SupabaseAuthClient._startAutoRefresh`) in `supabase/functions/chat/test/chat.integration.test.ts`. Current hypothesis: multiple `signInWithPassword` calls on the same client instance, or clients created within `mainHandler` via DI not being fully cleaned up despite `signOut` attempts. Consider refactoring tests to use one client per authenticated user session and ensuring explicit sign-out for each.

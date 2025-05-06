@@ -5,6 +5,7 @@
     "jsr:@std/assert@0.225.3": "0.225.3",
     "jsr:@std/assert@1": "1.0.12",
     "jsr:@std/assert@^1.0.12": "1.0.12",
+    "jsr:@std/dotenv@*": "0.225.3",
     "jsr:@std/internal@1": "1.0.6",
     "jsr:@std/internal@^1.0.6": "1.0.6",
     "jsr:@std/testing@*": "1.0.11",
@@ -38,6 +39,9 @@
       "dependencies": [
         "jsr:@std/internal@^1.0.6"
       ]
+    },
+    "@std/dotenv@0.225.3": {
+      "integrity": "a95e5b812c27b0854c52acbae215856d9cce9d4bbf774d938c51d212711e8d4a"
     },
     "@std/internal@1.0.6": {
       "integrity": "9533b128f230f73bd209408bb07a4b12f8d4255ab2a4d22a1fd6d87304aca9a4"

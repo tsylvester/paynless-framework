@@ -4,18 +4,23 @@
 import { createClient, type SupabaseClient, type GoTrueClient } from 'npm:@supabase/supabase-js';
 // Import shared response/error handlers instead of defaultCorsHeaders directly
 import { 
-    handleCorsPreflightRequest as actualHandleCorsPreflightRequest, 
-    createErrorResponse as actualCreateErrorResponse, 
-    createSuccessResponse as actualCreateJsonResponse, // Assuming createSuccessResponse is the equivalent JSON response creator
+    handleCorsPreflightRequest, 
+    createErrorResponse, 
+    createSuccessResponse, // Assuming createSuccessResponse is the equivalent JSON response creator
 } from '../_shared/cors-headers.ts'; 
 // Import getEnv from Deno namespace directly when needed, avoid putting in deps if not necessary for mocking
 // Import AI service factory and necessary types
-import { getAiProviderAdapter as actualGetAiProviderAdapter } from '../_shared/ai_service/factory.ts';
+// REMOVE: import { GetAiProviderAdapter } from '../_shared/types.ts';
+import { getAiProviderAdapter } from '../_shared/ai_service/factory.ts'; // Import the actual factory function
 // Use import type for type-only imports
-import type { ChatApiRequest as AdapterChatRequest } from '../_shared/types.ts'; // Keep App-level request type
+import type { 
+    ChatApiRequest, 
+    ChatHandlerDeps, 
+    AdapterResponsePayload 
+} from '../_shared/types.ts'; 
 import type { Database } from "../types_db.ts"; // Import Database type for DB objects
-import { verifyApiKey as actualVerifyApiKey } from '../_shared/auth.ts';
-import { logger } from '../_shared/logger.ts';
+import { verifyApiKey } from '../_shared/auth.ts';
+import { logger } from '../_shared/logger.ts'; // Import the logger instance
 // ADD BACK serve import
 import { serve } from 'https://deno.land/std@0.177.0/http/server.ts'; 
 
@@ -30,6 +35,7 @@ interface ChatRequest {
   promptId: string;   // uuid or '__none__'
   chatId?: string;   // uuid, optional for new chats
   organizationId?: string; // uuid, optional for org chats
+  rewindFromMessageId?: string; // uuid, optional for rewinding a chat thread
 }
 
 // --- Read Env Vars (Top Level - ONLY for non-secrets needed by DI/boot) ---
@@ -45,33 +51,23 @@ if (!SUPABASE_URL_ENV || !SUPABASE_ANON_KEY_ENV) {
 
 // --- Dependency Injection Setup ---
 
-// Define the interface for dependencies
-export interface ChatHandlerDeps {
-  createSupabaseClient: typeof createClient; 
-  fetch: typeof fetch;
-  handleCorsPreflightRequest: typeof actualHandleCorsPreflightRequest;
-  createJsonResponse: typeof actualCreateJsonResponse;
-  createErrorResponse: typeof actualCreateErrorResponse;
-  getAiProviderAdapter: typeof actualGetAiProviderAdapter;
-  verifyApiKey: typeof actualVerifyApiKey;
-  logger: typeof logger;
-  // REMOVE supabaseUrl and supabaseAnonKey from interface
-}
+// REMOVE local interface ChatHandlerDeps and comments like "REMOVE supabaseUrl..."
+// The interface is now imported.
 
 // Create default dependencies - REMOVE API key params and supabaseUrl/AnonKey params
-export function getDefaultDeps(): ChatHandlerDeps { // REMOVED PARAMS
+// Ensure this function correctly returns the imported ChatHandlerDeps type.
+export function getDefaultDeps(): ChatHandlerDeps { // This should now use the imported ChatHandlerDeps
   return {
     createSupabaseClient: createClient, 
     fetch: fetch,
-    handleCorsPreflightRequest: actualHandleCorsPreflightRequest,
-    createJsonResponse: actualCreateJsonResponse,
-    createErrorResponse: actualCreateErrorResponse,
-    getAiProviderAdapter: actualGetAiProviderAdapter,
-    verifyApiKey: actualVerifyApiKey,
-    logger: logger,
-    // REMOVE supabaseUrl and supabaseAnonKey properties from returned object
-  };
-};
+    handleCorsPreflightRequest: handleCorsPreflightRequest,
+    createJsonResponse: createSuccessResponse,
+    createErrorResponse: createErrorResponse,
+    getAiProviderAdapter: getAiProviderAdapter, // Use the imported factory function
+    verifyApiKey: verifyApiKey,
+    logger: logger, // Use the imported logger instance
+  }
+}
 
 // --- Main Handler Logic ---
 
@@ -121,6 +117,12 @@ export async function mainHandler(req: Request, deps?: ChatHandlerDeps): Promise
     }
     if (requestBody.organizationId && typeof requestBody.organizationId !== 'string') {
       return createErrorResponse('Invalid "organizationId" in request body', 400, req);
+    }
+    if (requestBody.rewindFromMessageId && typeof requestBody.rewindFromMessageId !== 'string') {
+      return createErrorResponse('Invalid "rewindFromMessageId" in request body', 400, req);
+    }
+    if (requestBody.rewindFromMessageId && !requestBody.chatId) {
+      return createErrorResponse('"chatId" is required when "rewindFromMessageId" is provided', 400, req);
     }
 
     // --- Auth and Client Initialization ---
@@ -246,33 +248,89 @@ export async function mainHandler(req: Request, deps?: ChatHandlerDeps): Promise
     let chatHistory: { role: 'user' | 'assistant' | 'system'; content: string }[] = [];
     let currentChatId = requestBody.chatId;
 
+    // Perform rewind logic first if rewindFromMessageId is provided
+    if (requestBody.rewindFromMessageId && currentChatId) {
+        logger.info(`Rewind requested for chat ${currentChatId} from message ${requestBody.rewindFromMessageId}`);
+
+        // 1. Fetch the 'created_at' of the message to rewind from
+        const { data: rewindPointMessage, error: rewindPointError } = await supabaseClient
+            .from('chat_messages')
+            .select('created_at')
+            .eq('id', requestBody.rewindFromMessageId)
+            .eq('chat_id', currentChatId) // Ensure the message belongs to the chat
+            .single();
+
+        if (rewindPointError || !rewindPointMessage) {
+            logger.error(`Error fetching rewind point message ${requestBody.rewindFromMessageId} in chat ${currentChatId}: ${rewindPointError?.message}`);
+            return createErrorResponse('Rewind point message not found or not accessible.', 404, req);
+        }
+        const rewindTimestamp = rewindPointMessage.created_at;
+
+        console.log(`DEBUG Rewind PRE-SELECT: chatId = ${currentChatId}, rewindTimestamp = ${rewindTimestamp}`); // Log vars before SELECT
+        // DEBUGGING: Select messages that *should* be updated
+        const { data: messagesToDeactivate, error: selectToDeactivateError } = await supabaseClient
+            .from('chat_messages')
+            .select('id, content, created_at, is_active_in_thread')
+            .eq('chat_id', currentChatId)
+            .gt('created_at', rewindTimestamp);
+
+        if (selectToDeactivateError) {
+            console.error(`DEBUG Rewind: Error selecting messages for deactivation check: ${selectToDeactivateError.message}`);
+        } else {
+            console.log(`DEBUG Rewind: Messages that meet deactivation criteria (chatId: ${currentChatId}, created_at > ${rewindTimestamp}):`);
+            (messagesToDeactivate || []).forEach(msg => {
+                console.log(`  - ID: ${msg.id}, Content: "${msg.content}", CreatedAt: ${msg.created_at}, Active: ${msg.is_active_in_thread}`);
+            });
+            console.log(`DEBUG Rewind: Found ${messagesToDeactivate?.length || 0} messages to potentially deactivate.`);
+        }
+        // END DEBUGGING
+
+        console.log(`DEBUG Rewind PRE-UPDATE: chatId = ${currentChatId}, rewindTimestamp = ${rewindTimestamp}`); // Log vars before UPDATE
+        // 2. Update subsequent messages to be inactive
+        const { error: deactivateError, count: actualDeactivatedRowCount } = await supabaseClient
+            .from('chat_messages')
+            .update({ is_active_in_thread: false }, { count: 'exact' })
+            .eq('chat_id', currentChatId)
+            .gt('created_at', rewindTimestamp);
+
+        // Updated log to show the actual count and any error
+        console.log(`Deactivation UPDATE executed. ChatID: ${currentChatId}, AfterTimestamp: ${rewindTimestamp}, Error: ${JSON.stringify(deactivateError)}, Rows affected: ${actualDeactivatedRowCount}`);
+
+        if (deactivateError) {
+            console.error('Error deactivating messages during rewind:', deactivateError);
+            return createErrorResponse('Rewind failed: could not update messages.', 500, req);
+        }
+        // The currentChatId remains the same for the rewind operation.
+    }
+
+    // Fetch active chat history if chatId is present
+    // This will now correctly fetch pruned history in case of a rewind, as messages would have been updated.
     if (currentChatId) {
-        console.log(`Fetching history for chat ID: ${currentChatId}`);
+        logger.info(`Fetching active history for chat ID: ${currentChatId}`);
         const { data: messages, error: historyError } = await supabaseClient
             .from('chat_messages')
             .select('role, content')
-            // Ensure we only select messages from the specified chat
-            // RLS policy should ensure the user owns this chat implicitly
             .eq('chat_id', currentChatId)
+            .eq('is_active_in_thread', true) // <<< ALWAYS FETCH ACTIVE MESSAGES
             .order('created_at', { ascending: true });
 
         if (historyError) {
-            console.error(`Error fetching chat history for chat ${currentChatId}:`, historyError);
-            // Don't fail the whole request, maybe the chat ID was invalid but it's a new chat intent?
-            // Or maybe RLS prevented access? Treat as if no history exists.
-            // Consider if a stricter error response is needed here.
-            currentChatId = undefined; // Treat as a new chat if history fetch fails
+            logger.error(`Error fetching active chat history for chat ${currentChatId}: ${historyError.message}`);
+            // If history fetch fails after a rewind op, this is problematic.
+            // If it's not a rewind, and it's a new chat an RLS error on select might happen if chat doesn't exist yet. But we create chat later.
+            // If it is an existing chat, RLS should allow if user has access.
+            // For now, if it fails, we will proceed as if no history, which means AI gets less context.
+            // This is different from the original logic of currentChatId = undefined; 
+            // because in rewind, we KNOW the chat exists.
         } else if (messages) {
-            // Map DB messages to the simple format expected by adapters/API
-            // Ensure role is correctly typed
-            chatHistory = messages.map((msg: Pick<ChatMessageRow, 'role' | 'content'>) => ({ // Add type to msg
+            chatHistory = messages.map((msg: Pick<ChatMessageRow, 'role' | 'content'>) => ({
                 role: msg.role as ('user' | 'assistant' | 'system'), 
                 content: msg.content 
             }));
-            console.log(`Fetched ${chatHistory.length} messages for history.`);
+            logger.info(`Fetched ${chatHistory.length} active messages for history for chat ${currentChatId}.`);
         }
     } else {
-        console.log('No chatId provided, starting new chat.');
+        logger.info('No chatId provided, starting new chat.');
     }
 
     // --- Construct Adapter Payload & Call Adapter ---
@@ -283,7 +341,7 @@ export async function mainHandler(req: Request, deps?: ChatHandlerDeps): Promise
             ...chatHistory,
         ];
 
-        const adapterRequest: AdapterChatRequest = {
+        const adapterRequest: ChatApiRequest = {
             message: requestBody.message,
             providerId: requestBody.providerId, // Pass the DB record ID
             promptId: requestBody.promptId,
@@ -294,7 +352,7 @@ export async function mainHandler(req: Request, deps?: ChatHandlerDeps): Promise
         console.log(`Calling ${provider} adapter sendMessage with apiIdentifier: ${apiIdentifier}`);
         // Call the adapter's sendMessage method
         // Pass empty string for apiKey if it's undefined (only possible in local env)
-        const assistantResponse: ChatMessageRow = await adapter.sendMessage(
+        const assistantResponse: AdapterResponsePayload = await adapter.sendMessage(
             adapterRequest,
             apiIdentifier, 
             apiKey || '' // Pass empty string if undefined
@@ -398,3 +456,6 @@ export async function mainHandler(req: Request, deps?: ChatHandlerDeps): Promise
 serve((req: Request) => mainHandler(req)) // Add type to req
 
 console.log(`Function "chat" up and running!`) 
+
+// ADD THIS LINE TO RE-EXPORT THE TYPE
+export type { ChatHandlerDeps }; 

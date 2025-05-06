@@ -1,23 +1,13 @@
 // Import SupabaseClient type and the shared helper function
-import { type SupabaseClient } from 'npm:@supabase/supabase-js@2'; 
-import { createSupabaseClient as sharedCreateSupabaseClient } from '../_shared/auth.ts';
+import { createSupabaseClient } from '../_shared/auth.ts';
+import type { ChatHandlerDeps } from '../_shared/types.ts';
 // Other shared imports
-import { corsHeaders as defaultCorsHeaders } from '../_shared/cors-headers.ts';
+import { handleCorsPreflightRequest } from '../_shared/cors-headers.ts';
 // No longer need direct env access here, shared function handles it
 // No longer need direct createClient import here
 
 // Define the interface for dependencies
 // This allows mocking for tests
-export interface ChatHandlerDeps {
-  // Update signature to match the shared helper
-  createSupabaseClient: (req: Request) => SupabaseClient;
-  // getEnv is no longer needed directly by chat function using this pattern
-  // getEnv: (key: string) => string | undefined; 
-  fetch: typeof fetch;
-  corsHeaders: Record<string, string>;
-  createJsonResponse: (data: unknown, status?: number, headers?: Record<string, string>) => Response;
-  createErrorResponse: (message: string, status?: number, headers?: Record<string, string>) => Response;
-}
 
 // Define the structure for an AI Provider (can be moved to a shared types file later)
 // Ensure this matches the structure expected by the chat function and potential DB results
@@ -42,7 +32,7 @@ export const defaultProvider: AiProviderConfig = {
 // Helper function for creating JSON responses (moved here or keep shared)
 export function createJsonResponse(data: unknown, status = 200, headers = {}): Response {
   return new Response(JSON.stringify(data), {
-    headers: { ...defaultCorsHeaders, 'Content-Type': 'application/json', ...headers },
+    headers: { ...handleCorsPreflightRequest, 'Content-Type': 'application/json', ...headers },
     status: status,
   });
 }
@@ -50,7 +40,7 @@ export function createJsonResponse(data: unknown, status = 200, headers = {}): R
 // Helper function for creating error responses (moved here or keep shared)
 export function createErrorResponse(message: string, status = 500, headers = {}): Response {
   return new Response(JSON.stringify({ error: message }), {
-    headers: { ...defaultCorsHeaders, 'Content-Type': 'application/json', ...headers },
+    headers: { ...handleCorsPreflightRequest, 'Content-Type': 'application/json', ...headers },
     status: status,
   });
 }
@@ -58,11 +48,11 @@ export function createErrorResponse(message: string, status = 500, headers = {})
 // Create default dependencies using actual implementations
 export const defaultDeps: ChatHandlerDeps = {
   // Use the shared helper function from auth.ts
-  createSupabaseClient: sharedCreateSupabaseClient,
+  createSupabaseClient: createSupabaseClient,
   // Remove getEnv if no longer directly needed
   // getEnv: Deno.env.get,
   fetch: fetch,
-  corsHeaders: defaultCorsHeaders,
+  corsHeaders: handleCorsPreflightRequest,
   createJsonResponse: createJsonResponse,
   createErrorResponse: createErrorResponse,
 }; 

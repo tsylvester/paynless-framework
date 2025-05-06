@@ -1,7 +1,6 @@
 // IMPORTANT: Supabase Edge Functions require relative paths for imports from shared modules.
 // Do not use path aliases (like @shared/) as they will cause deployment failures.
-import { createErrorResponse } from './cors-headers.ts';
-import { createClient as actualCreateClient, SupabaseClient, SupabaseClientOptions, GoTrueClient } from "npm:@supabase/supabase-js";
+import { createClient, SupabaseClient, SupabaseClientOptions, GoTrueClient } from "@supabase/supabase-js";
 import type { Database } from '../types_db.ts';
 // Remove unused GenericSchema import
 // import type { GenericSchema } from "npm:@supabase/supabase-js@2/dist/module/lib/types";
@@ -22,7 +21,7 @@ type CreateClientFn = (
  */
 export const createSupabaseClient = (
     req: Request,
-    createClientFn: CreateClientFn = actualCreateClient // Default to actual implementation
+    createClientFn: CreateClientFn = createClient // Default to actual implementation
 ): SupabaseClient => {
   const authHeader = req.headers.get("Authorization");
   const supabaseUrl = Deno.env.get("SUPABASE_URL") ?? "";
@@ -39,7 +38,7 @@ export const createSupabaseClient = (
  * Uses injected createClient function.
  */
 export const createSupabaseAdminClient = (
-    createClientFn: CreateClientFn = actualCreateClient // Default to actual implementation
+    createClientFn: CreateClientFn = createClient // Default to actual implementation
 ): SupabaseClient => {
   const supabaseUrl = Deno.env.get("SUPABASE_URL") ?? "";
   const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";

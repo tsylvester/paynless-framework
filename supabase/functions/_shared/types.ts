@@ -2,6 +2,34 @@
 // Centralized APPLICATION-LEVEL types for Supabase Edge Functions.
 // Types directly related to DB tables should be imported from ../types_db.ts
 import type { Database } from '../types_db.ts';
+import type { handleCorsPreflightRequest, createSuccessResponse, createErrorResponse } from './cors-headers.ts';
+import { createClient } from "npm:@supabase/supabase-js";
+
+/**
+ * Logging levels
+ */
+export enum LogLevel {
+  DEBUG = 'debug',
+  INFO = 'info',
+  WARN = 'warn',
+  ERROR = 'error',
+}  
+
+/**
+* Configuration for the logger
+*/
+export interface LoggerConfig {
+  minLevel: LogLevel;
+  enableConsole: boolean;
+  captureErrors: boolean;
+}
+
+/**
+ * Interface for log entry metadata
+ */
+export interface LogMetadata {
+  [key: string]: unknown;
+}
 
 /**
  * Represents the standard user data structure for email marketing services.
@@ -117,7 +145,7 @@ export interface AiProviderAdapter {
     request: ChatApiRequest,
     modelIdentifier: string, // The specific API identifier for the model (e.g., 'gpt-4o')
     apiKey: string
-  ): Promise<any>; // Return type changed to any - implementation needs to use DB type
+  ): Promise<AdapterResponsePayload>; // Return type changed to AdapterResponsePayload
 
   listModels(apiKey: string): Promise<ProviderModelInfo[]>;
 }
@@ -154,4 +182,40 @@ export interface FullChatMessageRecord {
   ai_provider_id?: string | null;
   system_prompt_id?: string | null;
   token_usage?: Database['public']['Tables']['chat_messages']['Row']['token_usage']; // Use specific DB Json type
+}
+
+/**
+ * Interface describing the signature of the getAiProviderAdapter function.
+ */
+export interface GetAiProviderAdapter {
+  (provider: string): AiProviderAdapter | null;
+}
+
+/**
+ * Interface describing the signature of the verifyApiKey function.
+ */
+export interface VerifyApiKey {
+  (req: Request): boolean;
+}
+
+/**
+ * Interface describing the public contract of a Logger instance.
+ */
+export interface ILogger {
+  debug: (message: string, metadata?: LogMetadata) => void;
+  info: (message: string, metadata?: LogMetadata) => void;
+  warn: (message: string, metadata?: LogMetadata) => void;
+  error: (message: string | Error, metadata?: LogMetadata) => void;
+  // setLogLevel?: (level: LogLevel) => void; // Example if needed
+}
+
+export interface ChatHandlerDeps {
+  createSupabaseClient: typeof createClient;
+  fetch: typeof fetch; // Global fetch type
+  handleCorsPreflightRequest: typeof handleCorsPreflightRequest;
+  createJsonResponse: typeof createSuccessResponse; // Use the corrected type name
+  createErrorResponse: typeof createErrorResponse;
+  getAiProviderAdapter: GetAiProviderAdapter; // Use the new specific type
+  verifyApiKey: VerifyApiKey;
+  logger: ILogger;
 }
