@@ -281,10 +281,10 @@ The implementation plan uses the following labels to categorize work steps:
         *   [✅] Run the integration tests defined in Step 1.4.5 for `chat-history`. Debug/modify edge function logic until tests pass (GREEN).
         *   [✅] Run the integration tests defined in Step 1.4.5 for `chat-details`. Debug/modify edge function logic until tests pass (GREEN).
         *   [✅] **[REFACTOR]** Review the `chat-history` edge function code. Ensure proper error handling, authentication checks, and clear Supabase query construction.
-        *   [ ] **[REFACTOR]** Review the `chat-details` edge function code.
-    *   [ ] **Step 1.4.8: [COMMIT] Commit Read Edge Function Updates**
-        *   [ ] Stage `supabase/functions/chat-history/index.ts`, `supabase/functions/chat-details/index.ts`.
-        *   [ ] Commit with message: `feat(BE): Update chat read Edge Functions for org context & rewind w/ tests`
+        *   [✅] **[REFACTOR]** Review the `chat-details` edge function code.
+    *   [✅] **Step 1.4.8: [COMMIT] Commit Read Edge Function Updates**
+        *   [✅] Stage `supabase/functions/chat-history/index.ts`, `supabase/functions/chat-details/index.ts`.
+        *   [✅] Commit with message: `feat(BE): Update chat read Edge Functions for org context & rewind w/ tests`
 
 ### STEP-1.5: Update Backend API Endpoints (Write Operations - Delete & Chat Creation via `/chat`)
 
@@ -344,5 +344,13 @@ The implementation plan uses the following labels to categorize work steps:
 *   [ ] Backend API endpoints (`/chat-history` GET, `/chat-details` GET/DELETE, `/chat` POST) correctly handle `organizationId` context, creation, rewind, tokens, and rely on RLS for permissions.
 *   [ ] Code has been refactored, and commits made.
 *   [ ] Run `npm test` in `packages/api`, run Edge Function tests. Restart dev server.
+
+---
+
+## Phase 1 Post-Implementation Cleanup
+
+*   [ ] **[REFACTOR]** Move `HandlerError` class from `api-subscriptions` to a shared location (e.g., `_shared/errors.ts` or similar) and update imports in `chat-details` and other functions.
+*   [ ] **[REFACTOR]** Improve client-side request replay logic (e.g., in `ApiClient`) to handle standard 401 responses (`{"error": ...}`), allowing backend functions like `chat-details` to remove special `{"msg": ...}` formatting for 401s.
+*   [ ] **[REFACTOR]** Add stricter validation (e.g., regex check) for the `chatId` path parameter in the `chat-details` Edge Function to ensure it conforms to a UUID format.
 
 </rewritten_file> 
