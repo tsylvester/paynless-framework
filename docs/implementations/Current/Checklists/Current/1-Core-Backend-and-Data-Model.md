@@ -269,17 +269,17 @@ The implementation plan uses the following labels to categorize work steps:
 
 #### STEP-1.5.2: [TEST-UNIT] Define & Implement Unit Tests for Write Edge Functions
 *   [ ] For `supabase/functions/chat/index.ts` (`mainHandler`):
-    *   [ ] **Review & Convert/Enhance existing Vitest unit tests (`chat.test.ts`) to Deno.**
-    *   [ ] Mock Supabase client calls and AI provider adapter.
-    *   [ ] Test logic for creating a new personal chat.
-    *   [ ] Test logic for creating a new organization chat (considering `org_id` and creation permissions).
-    *   [ ] Test logic for adding a message to an existing chat.
-    *   [ ] Test logic for the rewind functionality (given `rewindFromMessageId`):
-        *   [ ] Verifying correct messages are marked inactive.
-        *   [ ] Verifying new user and assistant messages are added correctly.
-        *   [ ] Verifying token usage calculation and storage.
-    *   [ ] Test parsing of request body parameters (`chatId`, `organizationId`, `rewindFromMessageId`, etc.).
-    *   [ ] Test error handling for invalid inputs or failed operations.
+    *   [✅] **Review & Convert/Enhance existing Vitest unit tests (`chat.test.ts`) to Deno.**
+    *   [✅] Mock Supabase client calls and AI provider adapter.
+    *   [✅] Test logic for creating a new personal chat.
+    *   [✅] Test logic for creating a new organization chat (considering `org_id` and creation permissions).
+    *   [✅] Test logic for adding a message to an existing chat.
+    *   [🚧] Test logic for the rewind functionality (given `rewindFromMessageId`):
+        *   [✅] Verifying correct messages are marked inactive (test assertion defined, e.g., `updateSpy` call).
+        *   [✅] Verifying new user and assistant messages are added correctly (test assertions defined, e.g., `insertSpy` calls).
+        *   [✅] Verifying token usage calculation and storage for new messages (test assertion defined).
+    *   [✅] Test parsing of request body parameters (`chatId`, `organizationId`, `rewindFromMessageId`, etc.).
+    *   [✅] Test error handling for invalid inputs or failed operations.
 *   [ ] For `supabase/functions/chat-details/index.ts` (handler for `DELETE`):
     *   [ ] **Review & Convert/Enhance existing Vitest unit tests (`chat-details.test.ts`) to Deno.**
     *   [ ] Mock Supabase client calls.

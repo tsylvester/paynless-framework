@@ -174,11 +174,74 @@ export async function mainHandler(req: Request, deps: ChatHandlerDeps = defaultD
     }
     console.log(`Retrieved API key from env var: ${apiKeyEnvVarName}`);
 
-    // --- Fetch Chat History (if chatId provided) ---
+    // --- Rewind Logic / Fetch Chat History ---
     let chatHistory: { role: 'user' | 'assistant' | 'system'; content: string }[] = [];
-    let currentChatId = requestBody.chatId;
+    let currentChatId = requestBody.chatId; // Can be undefined for new chats
 
-    if (currentChatId) {
+    // --- START REWIND BLOCK ---
+    if (requestBody.rewindFromMessageId && currentChatId) {
+        console.log(`Rewind operation initiated for chat ID: ${currentChatId}, from message ID: ${requestBody.rewindFromMessageId}`);
+        try {
+            // 1. Get the created_at of the message to rewind from
+            const { data: rewindPointMessage, error: rewindPointError } = await supabaseClient
+                .from('chat_messages')
+                .select('created_at')
+                .eq('id', requestBody.rewindFromMessageId)
+                .eq('chat_id', currentChatId) // Ensure it's in the same chat
+                .single();
+
+            if (rewindPointError || !rewindPointMessage) {
+                console.error(`Error fetching rewind point message ${requestBody.rewindFromMessageId} in chat ${currentChatId}:`, rewindPointError);
+                return createErrorResponse(rewindPointError?.message || 'Rewind point message not found.', 404, req);
+            }
+            const rewindPointCreatedAt = rewindPointMessage.created_at;
+            console.log(`Rewind point created_at: ${rewindPointCreatedAt}`);
+
+            // 2. Deactivate messages after the rewind point
+            const { error: updateError } = await supabaseClient
+                .from('chat_messages')
+                .update({ is_active_in_thread: false })
+                .eq('chat_id', currentChatId)
+                .gt('created_at', rewindPointCreatedAt);
+
+            if (updateError) {
+                console.error(`Error deactivating messages during rewind for chat ${currentChatId}:`, updateError);
+                return createErrorResponse(updateError.message || 'Failed to update messages during rewind.', 500, req);
+            }
+            console.log(`Successfully deactivated messages after rewind point for chat ${currentChatId}.`);
+
+            // 3. Fetch active history up to (and including) the rewind point message for AI context
+            // Note: The actual message being "rewound from" might be an AI or user.
+            // The history should include messages *up to* this point that were active.
+            const { data: activeHistory, error: historyError } = await supabaseClient
+                .from('chat_messages')
+                .select('role, content')
+                .eq('chat_id', currentChatId)
+                .eq('is_active_in_thread', true) // Should consider messages that *were* active
+                .lte('created_at', rewindPointCreatedAt) // Up to and including the rewind point
+                .order('created_at', { ascending: true });
+            
+            if (historyError) {
+                console.error(`Error fetching active history for rewind in chat ${currentChatId}:`, historyError);
+                // If history fetch fails, it's hard to proceed reliably with rewind.
+                return createErrorResponse(historyError.message || 'Failed to fetch history for rewind.', 500, req);
+            }
+            if (activeHistory) {
+                 chatHistory = activeHistory.map(msg => ({ 
+                    role: msg.role as ('user' | 'assistant' | 'system'), 
+                    content: msg.content 
+                }));
+                console.log(`Fetched ${chatHistory.length} active messages for rewind context up to ${rewindPointCreatedAt}.`);
+            }
+            // currentChatId remains the same
+
+        } catch (rewindError) {
+            console.error('Unexpected error during rewind setup:', rewindError);
+            return createErrorResponse(rewindError instanceof Error ? rewindError.message : 'Rewind operation failed.', 500, req);
+        }
+    } else if (currentChatId) {
+    // --- END REWIND BLOCK ---
+    // --- Existing Chat History Fetch (No Rewind) ---
         console.log(`Fetching history for chat ID: ${currentChatId}`);
         const { data: messages, error: historyError } = await supabaseClient
             .from('chat_messages')
@@ -210,9 +273,10 @@ export async function mainHandler(req: Request, deps: ChatHandlerDeps = defaultD
     // --- Construct Adapter Payload & Call Adapter ---
     try {
         // Prepare history, adding system prompt if present
+        // If rewinding, chatHistory is already set. If not, it might be empty or from normal history fetch.
         const messagesForAdapter = [
             ...(systemPromptText ? [{ role: 'system' as const, content: systemPromptText }] : []),
-            ...chatHistory,
+            ...chatHistory, // This will be the rewind history if applicable, or normal history otherwise
         ];
 
         const adapterRequest: ChatApiRequest = {
@@ -237,18 +301,27 @@ export async function mainHandler(req: Request, deps: ChatHandlerDeps = defaultD
         if (!currentChatId) {
             // Create a new chat entry
             const firstUserMessage = requestBody.message.substring(0, 50); // Simple title
+            
+            const newChatData: Database['public']['Tables']['chats']['Insert'] = {
+                user_id: userId,
+                title: `${firstUserMessage}...`
+            };
+
+            if (requestBody.organizationId) {
+                newChatData.organization_id = requestBody.organizationId;
+            }
+
             const { data: newChat, error: newChatError } = await supabaseClient
                 .from('chats')
-                // Do NOT prepend with 'Chat: ' or 'Chat - ' or anything like that.
-                .insert({ user_id: userId, title: `${firstUserMessage}...` })
+                .insert(newChatData) // Use the constructed newChatData
                 .select('id')
                 .single();
             if (newChatError || !newChat) {
                 console.error('Error creating new chat:', newChatError);
-                return createErrorResponse('Failed to create new chat session.', 500, req);
+                return createErrorResponse(newChatError?.message || 'Failed to create new chat session.', 500, req);
             }
             currentChatId = newChat.id;
-            console.log(`Created new chat with ID: ${currentChatId}`);
+            console.log(`Created new chat with ID: ${currentChatId}${requestBody.organizationId ? ` in org ${requestBody.organizationId}` : ''}`);
         }
 
         // Ensure we have a valid chat ID before proceeding
@@ -259,23 +332,25 @@ export async function mainHandler(req: Request, deps: ChatHandlerDeps = defaultD
 
         // 4. Save user message (using ChatMessageInsert)
         const userMessageRecord: ChatMessageInsert = {
-          chat_id: currentChatId, // Now guaranteed non-null
+          chat_id: currentChatId, 
           user_id: userId,
           role: 'user',
           content: requestBody.message,
           ai_provider_id: requestBody.providerId,
           system_prompt_id: requestBody.promptId !== '__none__' ? requestBody.promptId : null,
+          is_active_in_thread: true, // New messages in a rewind are active
         };
 
         // 5. Save assistant message (using ChatMessageInsert)
         const assistantMessageRecord: ChatMessageInsert = {
-          chat_id: currentChatId, // Now guaranteed non-null
+          chat_id: currentChatId, 
           user_id: null, 
           role: 'assistant',
           content: assistantResponse.content,
           ai_provider_id: assistantResponse.ai_provider_id, 
           system_prompt_id: assistantResponse.system_prompt_id,
           token_usage: assistantResponse.token_usage, 
+          is_active_in_thread: true, // New messages in a rewind are active
         };
 
         // Insert both messages (Remove explicit cast, rely on TS inference now)

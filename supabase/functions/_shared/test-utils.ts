@@ -437,12 +437,27 @@ export function createMockSupabaseClient(
             try {
                 const { data, error, status, statusText, count } = await resolveQuery() as { data: any[] | null; error: any | null; status?: number; statusText?: string; count?: number | null }; 
                 
-                if (error) {
+                // If the original mock config intended to return an error (even if it's null), respect that first.
+                const genericTableConfig = config.genericMockResults?.[_queryBuilderState.tableName];
+                let explicitErrorFromConfig = false;
+                if (genericTableConfig && typeof genericTableConfig === 'object') {
+                    const operationConfig = genericTableConfig[_queryBuilderState.operation as keyof typeof genericTableConfig];
+                    if (operationConfig && typeof operationConfig === 'object' && 'error' in operationConfig) {
+                        explicitErrorFromConfig = true;
+                    }
+                }
+
+                if (explicitErrorFromConfig && error === null && (!data || data.length === 0)) { 
+                    console.log(`[Mock QB ${tableName}] .single() resolved with explicitly configured 'error: null' and no data. Returning as is.`);
+                    return { data: null, error: null, status: status ?? 200, statusText: statusText ?? "OK", count: 0 };
+                }
+
+                if (error) { 
                     console.log(`[Mock QB ${tableName}] Query (for single) resolved with DB error. Returning error object.`);
                     return { data: null, error: error, status: status ?? 500, statusText: statusText ?? "Internal Server Error", count: count ?? 0 }; 
                 }
                 
-                if (!data || data.length === 0) {
+                if (!data || data.length === 0) { 
                      console.warn(`[Mock QB ${tableName}] Query (for single) resolved with no data. Returning PostgREST-like error object.`);
                      return { 
                         data: null, 
