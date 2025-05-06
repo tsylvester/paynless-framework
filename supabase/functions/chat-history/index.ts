@@ -2,8 +2,7 @@
 // Do not use path aliases (like @shared/) as they will cause deployment failures.
 import { serve } from 'https://deno.land/std@0.177.0/http/server.ts'
 import { createClient, type SupabaseClient, type AuthError, type GoTrueClient } from 'npm:@supabase/supabase-js@2'
-// Remove CORS header import
-// import { corsHeaders as defaultCorsHeaders } from '../_shared/cors-headers.ts'
+import { baseCorsHeaders } from '../_shared/cors-headers.ts'
 // Import Chat type from shared types
 // import type { Chat } from '../_shared/types.ts'; 
 // Reuse HandlerError
@@ -17,13 +16,6 @@ export interface ChatHistoryItem {
   title: string | null;
   updated_at: string;
 }
-
-// Define default CORS headers locally
-const defaultCorsHeaders = {
-  'Access-Control-Allow-Origin': '*', 
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type', 
-  'Access-Control-Allow-Methods': 'GET, OPTIONS' // Explicitly allow GET and OPTIONS
-}; 
 
 // Remove Dependency Injection Setup
 /*
@@ -40,7 +32,7 @@ export async function mainHandler(supabaseClient: SupabaseClient<Database>, user
     // --- Build Query --- 
     let query = supabaseClient
       .from('chats')
-      .select('id, title, updated_at');
+      .select('id, title, updated_at, user_id, organization_id');
 
     // Apply filter based on organizationId presence
     if (organizationId) {
@@ -98,7 +90,7 @@ export async function mainHandler(supabaseClient: SupabaseClient<Database>, user
 serve(async (req) => {
   // --- Handle CORS Preflight --- 
   if (req.method === 'OPTIONS') {
-    return new Response(null, { headers: defaultCorsHeaders, status: 204 });
+    return new Response(null, { headers: baseCorsHeaders, status: 204 });
   }
 
   try {
@@ -140,7 +132,7 @@ serve(async (req) => {
     
     // --- Format Success Response --- 
     return new Response(JSON.stringify(data), {
-      headers: { ...defaultCorsHeaders, 'Content-Type': 'application/json' },
+      headers: { ...baseCorsHeaders, 'Content-Type': 'application/json' },
       status: 200,
     });
 
@@ -159,7 +151,7 @@ serve(async (req) => {
     }
     console.error("Returning error response:", { status: errorStatus, message: errorMessage });
     return new Response(JSON.stringify({ error: errorMessage }), {
-      headers: { ...defaultCorsHeaders, 'Content-Type': 'application/json' },
+      headers: { ...baseCorsHeaders, 'Content-Type': 'application/json' },
       status: errorStatus,
     });
   }

@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { logger, Logger, LogLevel } from './logger'; // Adjust path if needed
+import { logger, Logger } from './logger'; // Adjust path if needed
+import { LogLevel } from '@paynless/types';
 
 // Mock console methods
 const consoleSpies = {

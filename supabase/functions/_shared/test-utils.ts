@@ -138,7 +138,7 @@ export async function cleanupUser(email: string, adminClient?: SupabaseClient): 
 export interface MockQueryBuilderState {
     tableName: string;
     operation: 'select' | 'insert' | 'update' | 'delete';
-    filters: { column?: string; value?: any; type: 'eq' | 'in' | 'match' | 'is'; criteria?: object }[];
+    filters: { column?: string; value?: any; type: string; criteria?: object }[];
     selectColumns: string | null;
     insertData: any[] | object | null;
     updateData: object | null;
@@ -227,6 +227,10 @@ export function createMockSupabaseClient(
         in: Spy<any>;
         is: Spy<any>;
         match: Spy<any>;
+        gt: Spy<any>;
+        gte: Spy<any>;
+        lt: Spy<any>;
+        lte: Spy<any>;
         order: Spy<any>;
         returns: Spy<any>;
         upsert: Spy<any>;
@@ -238,10 +242,10 @@ export function createMockSupabaseClient(
     }
 
     const fromSpy = spy((tableName: string) => {
-        const _queryBuilderState = {
+        const _queryBuilderState: MockQueryBuilderState = {
             tableName: tableName,
             operation: 'select' as 'select' | 'insert' | 'update' | 'delete',
-            filters: [] as { column?: string; value?: any; type: 'eq' | 'in' | 'match' | 'is'; criteria?: object }[],
+            filters: [] as { column?: string; value?: any; type: string; criteria?: object }[],
             selectColumns: '*' as string | null,
             insertData: null as any[] | object | null,
             updateData: null as object | null,
@@ -299,17 +303,37 @@ export function createMockSupabaseClient(
 
         mockQueryBuilder.match = spy((criteria: object) => {
             console.log(`[Mock QB ${tableName}] .match() called with criteria:`, criteria);
-            _queryBuilderState.filters.push({ criteria, type: 'match' });
+            _queryBuilderState.filters.push({ type: 'match', criteria });
             return mockQueryBuilder;
         });
 
-        mockQueryBuilder.is = spy((column: string, value: any) => {
+        mockQueryBuilder.is = spy((column: string, value: null | boolean) => {
             console.log(`[Mock QB ${tableName}] .is(${column}, ${value}) called`); 
             _queryBuilderState.filters.push({ column, value, type: 'is' });
             return mockQueryBuilder;
         });
 
-        mockQueryBuilder.order = spy((_column: string, _options?: any) => {
+        mockQueryBuilder.gt = spy((column: string, value: any) => {
+            _queryBuilderState.filters.push({ column, value, type: 'gt' });
+            return mockQueryBuilder;
+        });
+
+        mockQueryBuilder.gte = spy((column: string, value: any) => {
+            _queryBuilderState.filters.push({ column, value, type: 'gte' });
+            return mockQueryBuilder;
+        });
+
+        mockQueryBuilder.lt = spy((column: string, value: any) => {
+            _queryBuilderState.filters.push({ column, value, type: 'lt' });
+            return mockQueryBuilder;
+        });
+
+        mockQueryBuilder.lte = spy((column: string, value: any) => {
+            _queryBuilderState.filters.push({ column, value, type: 'lte' });
+            return mockQueryBuilder;
+        });
+
+        mockQueryBuilder.order = spy((column: string, options?: { ascending?: boolean; nullsFirst?: boolean }) => {
             console.log(`[Mock QB ${tableName}] .order() called`);
             return mockQueryBuilder; 
         });

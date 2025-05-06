@@ -27,7 +27,7 @@ export class OpenAiAdapter implements AiProviderAdapter {
     const modelApiName = modelIdentifier.replace(/^openai-/i, '');
 
     // Map app messages to OpenAI format
-    const openaiMessages = request.messages.map(msg => ({
+    const openaiMessages = (request.messages ?? []).map(msg => ({
       role: msg.role,
       content: msg.content,
     })).filter(msg => msg.content); // Ensure no empty messages

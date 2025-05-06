@@ -116,13 +116,15 @@ export interface EmailMarketingService {
  */
 export interface ChatApiRequest {
   message: string;
-  providerId: string; // AiProvider['id'] (ID from ai_providers table)
-  promptId: string;   // SystemPrompt['id'] or '__none__'
-  chatId?: string;   // Chat['id'] (optional for new chats)
-  // NOTE: The ChatMessage type previously here is REMOVED.
-  // Adapters/functions will need to handle message structure internally
-  // or import the DB type `Database['public']['Tables']['chat_messages']['Row']` from `../types_db.ts`.
-  messages: { role: 'user' | 'assistant' | 'system'; content: string }[]; // History + System Prompt
+  providerId: string; // uuid for ai_providers table
+  promptId: string;   // uuid for system_prompts table, or '__none__'
+  chatId?: string;   // uuid, optional for new chats
+  messages?: { // For sending history to adapter, optional
+    role: 'system' | 'user' | 'assistant';
+    content: string;
+  }[];
+  organizationId?: string; // uuid, optional for org chats - ADDED
+  rewindFromMessageId?: string; // uuid, optional for rewinding - ADDED
 }
 
 /**
@@ -167,6 +169,7 @@ export interface AdapterResponsePayload {
   ai_provider_id: string | null; // The DB ID of the provider used
   system_prompt_id: string | null; // The DB ID of the prompt used (or null)
   token_usage: Database['public']['Tables']['chat_messages']['Row']['token_usage']; // Use specific DB Json type
+  created_at?: string;
 }
 
 /**

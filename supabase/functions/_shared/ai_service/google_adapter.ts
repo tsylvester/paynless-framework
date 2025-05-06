@@ -51,7 +51,7 @@ export class GoogleAdapter implements AiProviderAdapter {
     const googleContents: GoogleContent[] = [];
 
     // Combine history and new message
-    let combinedMessages = [...request.messages];
+    const combinedMessages = [...(request.messages ?? [])];
     if (request.message) {
         combinedMessages.push({ role: 'user', content: request.message });
     }
@@ -120,7 +120,7 @@ export class GoogleAdapter implements AiProviderAdapter {
       console.error(`Google Gemini API error (${response.status}): ${errorBody}`);
       
       // Construct base message
-      let baseErrorMessage = `Google Gemini API request failed: ${response.status}`;
+      const baseErrorMessage = `Google Gemini API request failed: ${response.status}`;
       
       // Append parsed message if available
       let detailedMessage = '';

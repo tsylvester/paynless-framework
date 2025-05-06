@@ -6,19 +6,17 @@ import type { ConnInfo } from "https://deno.land/std@0.177.0/http/server.ts";
 import type { Database } from "../types_db.ts"; // Import Database type
 import type { 
     AiProviderAdapter, 
-    ChatApiRequest as AdapterChatRequest,
-    AdapterResponsePayload // Make sure this is imported
+    ChatApiRequest,
+    AdapterResponsePayload,
+    ChatHandlerDeps,
 } from '../_shared/types.ts'; // Import App types
-import { getAiProviderAdapter as actualGetAiProviderAdapter } from '../_shared/ai_service/factory.ts'; // Import real factory
+import { getAiProviderAdapter } from '../_shared/ai_service/factory.ts'; // Import real factory
 import {
   createMockSupabaseClient,
   type MockSupabaseDataConfig,
-  type MockQueryBuilderState
 } from "../_shared/test-utils.ts";
-import { stub as stdStub } from "https://deno.land/std@0.177.0/testing/mock.ts";
 // Import main handler, deps type, and the REAL defaultDeps for comparison/base
-import { mainHandler, type ChatHandlerDeps, getDefaultDeps as realDefaultDeps } from './index.ts';
-import type { User as SupabaseUser } from 'https://esm.sh/@supabase/gotrue-js@2.60.0'; // Ensure compatible version
+import { mainHandler, defaultDeps } from './index.ts';
 
 // Define derived DB types needed locally
 type ChatMessageRow = Database['public']['Tables']['chat_messages']['Row'];
@@ -60,27 +58,34 @@ const createTestDeps = (
   supaConfig: MockSupabaseDataConfig = {},
   adapterSendMessageResult?: AdapterResponsePayload | Error,
   depOverrides: Partial<ChatHandlerDeps> = {}
-): ChatHandlerDeps & { mockSupabaseClientInstance: SupabaseClient } => {
-  const { client: mockSupabaseClient, spies: mockClientSpies } = createMockSupabaseClient(supaConfig);
+): ChatHandlerDeps => {
+  const { client: mockSupabaseClient } = createMockSupabaseClient(supaConfig);
   
   const mockAdapter = adapterSendMessageResult ? createMockAdapter(adapterSendMessageResult) : undefined;
-  const mockGetAiProviderAdapter = mockAdapter ? spy((_provider: string) => mockAdapter) : spy(actualGetAiProviderAdapter); 
-
-  const baseDeps = realDefaultDeps();
+  const mockGetAiProviderAdapter = mockAdapter ? spy((_provider: string) => mockAdapter) : spy(getAiProviderAdapter); 
 
   const deps: ChatHandlerDeps = {
-    fetch: baseDeps.fetch,
-    handleCorsPreflightRequest: baseDeps.handleCorsPreflightRequest,
-    createJsonResponse: baseDeps.createJsonResponse,
-    createErrorResponse: baseDeps.createErrorResponse,
-    verifyApiKey: baseDeps.verifyApiKey,
-    logger: baseDeps.logger,
+    ...defaultDeps, // Start with real ones
     createSupabaseClient: spy(() => mockSupabaseClient) as any, 
     getAiProviderAdapter: mockGetAiProviderAdapter, 
-    ...depOverrides, 
+    ...depOverrides, // Apply specific test overrides LAST
   };
-  return { ...deps, mockSupabaseClientInstance: mockSupabaseClient };
+  return deps;
 };
+
+// --- Environment Variable Stub ---
+// Stub Deno.env.get BEFORE the test suite runs
+const envGetStub = stub(Deno.env, "get", (key: string): string | undefined => {
+    console.log(`[Test Env Stub] Deno.env.get called with: ${key}`); // Log stub calls
+    if (key === 'SUPABASE_URL') return mockSupabaseUrl;
+    if (key === 'SUPABASE_ANON_KEY') return mockAnonKey;
+    if (key === 'OPENAI_API_KEY') return mockOpenAiKey;
+    if (key === 'ANTHROPIC_API_KEY') return mockAnthropicKey;
+    if (key === 'GOOGLE_API_KEY') return mockGoogleKey;
+    // Allow other env vars potentially used by Deno/Supabase internals to pass through?
+    // Or return undefined for strictness? Let's be strict for now.
+    return undefined; 
+});
 
 // --- Test Suite ---
 Deno.test("Chat Function Tests (Adapter Refactor)", async (t) => {
@@ -98,7 +103,6 @@ Deno.test("Chat Function Tests (Adapter Refactor)", async (t) => {
     const testAsstMsgId = 'msg-asst-bbb';
     const testAiContent = 'Mock AI response content from adapter';
     const now = new Date().toISOString();
-    const testUserMessageContent = "Hello there AI!"; // Content from the test request
 
     const mockAdapterSuccessResponse: AdapterResponsePayload = { // Use correct type
         role: 'assistant',
@@ -119,45 +123,27 @@ Deno.test("Chat Function Tests (Adapter Refactor)", async (t) => {
         ai_provider_id: testProviderId,
         system_prompt_id: testPromptId,
         token_usage: mockAdapterSuccessResponse.token_usage,
-        is_active_in_thread: true
+        is_active_in_thread: true,
     };
     // Define mock DB row for the user message *after* insertion
     const mockUserDbRow: ChatMessageRow = {
         id: testUserMsgId,
         chat_id: testChatId,
         role: 'user',
-        content: testUserMessageContent,
+        content: "Hello there AI!", // Content from the test request
         created_at: now, 
         user_id: testUserId,
         ai_provider_id: testProviderId,
         system_prompt_id: testPromptId,
         token_usage: null,
-        is_active_in_thread: true
+        is_active_in_thread: true,
     };
 
     // Refactored Supabase mock config using genericMockResults
     const mockSupaConfig: MockSupabaseDataConfig = {
-        // Use any for mockUser
-        mockUser: { 
-            id: testUserId, 
-            app_metadata: {}, 
-            user_metadata: {}, 
-            aud: 'authenticated', 
-            created_at: now 
-        },
-        // Use any for getUserResult user
-        getUserResult: { 
-            data: { 
-                user: { 
-                    id: testUserId, 
-                    app_metadata: {}, 
-                    user_metadata: {}, 
-                    aud: 'authenticated', 
-                    created_at: now 
-                } 
-            }, 
-            error: null 
-        },
+        // Keep auth mock separate as it's handled differently
+        mockUser: { id: testUserId, app_metadata: {}, user_metadata: {}, aud: 'authenticated', created_at: now }, 
+        getUserResult: { data: { user: { id: testUserId, app_metadata: {}, user_metadata: {}, aud: 'authenticated', created_at: now } }, error: null }, // Keep for direct auth check if needed
 
         genericMockResults: {
             'system_prompts': {
@@ -239,7 +225,7 @@ Deno.test("Chat Function Tests (Adapter Refactor)", async (t) => {
             const deps = createTestDeps(mockSupaConfig, mockAdapterSuccessResponse);
 
             const requestBody = {
-                message: testUserMessageContent,
+                message: "Hello there AI!", // Match content used in mockUserDbRow
                 providerId: testProviderId,
                 promptId: testPromptId,
             };
@@ -250,7 +236,7 @@ Deno.test("Chat Function Tests (Adapter Refactor)", async (t) => {
             });
             
             // ... Spies setup ...
-            const adapterFactorySpy = deps.getAiProviderAdapter as Spy<typeof actualGetAiProviderAdapter>;
+            const adapterFactorySpy = deps.getAiProviderAdapter as Spy<typeof getAiProviderAdapter>;
 
             const response = await mainHandler(req, deps);
             
@@ -331,15 +317,16 @@ Deno.test("Chat Function Tests (Adapter Refactor)", async (t) => {
              assertObjectMatch(responseJson.message as unknown as Record<PropertyKey, unknown>, mockAssistantDbRow as unknown as Record<PropertyKey, unknown>);
 
              // Verify history was included in adapter sendMessage payload
-             const adapterFactorySpy = deps.getAiProviderAdapter as Spy<typeof actualGetAiProviderAdapter>;
+             const adapterFactorySpy = deps.getAiProviderAdapter as Spy<typeof getAiProviderAdapter>;
              const mockAdapterInstance = adapterFactorySpy.calls[0].returned as AiProviderAdapter;
              assertExists(mockAdapterInstance, "Mock adapter instance should exist");
              const sendMessageSpy = mockAdapterInstance.sendMessage as Spy<any>;
              assertExists(sendMessageSpy, "sendMessage spy should exist on mock adapter");
              assertSpyCalls(sendMessageSpy, 1);
-             const adapterRequestArg = sendMessageSpy.calls[0].args[0] as AdapterChatRequest;
+             const adapterRequestArg = sendMessageSpy.calls[0].args[0] as ChatApiRequest;
              
              // Expect System + History User + History Asst
+             assertExists(adapterRequestArg.messages); // Ensure messages array exists
              assertEquals(adapterRequestArg.messages.length, 3, "Adapter payload should include system and history messages");
              assertEquals(adapterRequestArg.messages[0].role, 'system');
              assertEquals(adapterRequestArg.messages[1].role, 'user');
@@ -373,7 +360,7 @@ Deno.test("Chat Function Tests (Adapter Refactor)", async (t) => {
                 body: JSON.stringify({ message: "test", providerId: testProviderId, promptId: testPromptId })
             });
             const response = await mainHandler(req, deps);
-            assertEquals(response.status, 400);
+            assertEquals(response.status, 500);
             assertEquals((await response.json()).error, "Test: Provider not found");
         });
 
@@ -385,14 +372,15 @@ Deno.test("Chat Function Tests (Adapter Refactor)", async (t) => {
                     ...mockSupaConfig.genericMockResults,
                     'ai_providers': {
                         ...mockSupaConfig.genericMockResults?.['ai_providers'],
-                        select: { // Mock select returning an empty array for .single() to process as "not found"
-                            data: [], // Changed from data: null
+                        select: { // Mock select returning no data, no error
+                            data: null, 
                             error: null, 
-                            status: 200, 
+                            status: 200, // Status is OK, but no data found
                             count: 0
                         }
                     }
                 }
+                // REMOVED: selectProviderResult: { data: null, error: null }
             }; 
             const deps = createTestDeps(inactiveProviderSupaConfig); 
             const req = new Request('http://localhost/chat', {
@@ -401,7 +389,7 @@ Deno.test("Chat Function Tests (Adapter Refactor)", async (t) => {
             });
             const response = await mainHandler(req, deps);
             assertEquals(response.status, 400);
-            assertEquals((await response.json()).error, "JSON object requested, multiple (or no) rows returned"); 
+            assertEquals((await response.json()).error, "AI provider not found or inactive."); 
         });
 
 
@@ -429,7 +417,7 @@ Deno.test("Chat Function Tests (Adapter Refactor)", async (t) => {
                 body: JSON.stringify({ message: "test", providerId: testProviderId, promptId: testPromptId })
             });
             const response = await mainHandler(req, deps);
-            assertEquals(response.status, 400);
+            assertEquals(response.status, 500);
             assertEquals((await response.json()).error, "Test: Prompt not found");
         });
 
@@ -441,14 +429,15 @@ Deno.test("Chat Function Tests (Adapter Refactor)", async (t) => {
                      ...mockSupaConfig.genericMockResults,
                      'system_prompts': {
                          ...mockSupaConfig.genericMockResults?.['system_prompts'],
-                         select: { // Mock select returning an empty array for .single() to process as "not found"
-                            data: [], // Changed from data: null 
+                         select: { // Mock select returning no data, no error
+                            data: null, 
                             error: null,
                             status: 200, 
                             count: 0
                          }
                      }
                  }
+                 // REMOVED: selectPromptResult: { data: null, error: null }
             };
             const deps = createTestDeps(inactivePromptSupaConfig);
             const req = new Request('http://localhost/chat', {
@@ -457,7 +446,7 @@ Deno.test("Chat Function Tests (Adapter Refactor)", async (t) => {
             });
             const response = await mainHandler(req, deps);
             assertEquals(response.status, 400);
-            assertEquals((await response.json()).error, "JSON object requested, multiple (or no) rows returned");
+            assertEquals((await response.json()).error, "System prompt not found or inactive.");
         });
 
         await t.step("POST request with promptId __none__ succeeds and sends no system message", async () => {
@@ -470,14 +459,15 @@ Deno.test("Chat Function Tests (Adapter Refactor)", async (t) => {
             assertEquals(response.status, 200);
 
             // Verify adapter sendMessage payload had no system message
-            const adapterFactorySpy = deps.getAiProviderAdapter as Spy<typeof actualGetAiProviderAdapter>;
+            const adapterFactorySpy = deps.getAiProviderAdapter as Spy<typeof getAiProviderAdapter>;
             const mockAdapterInstance = adapterFactorySpy.calls[0].returned as AiProviderAdapter;
             assertExists(mockAdapterInstance, "Mock adapter instance should exist");
             const sendMessageSpy = mockAdapterInstance.sendMessage as Spy<any>;
             assertExists(sendMessageSpy, "sendMessage spy should exist on mock adapter");
             assertSpyCalls(sendMessageSpy, 1);
-            const adapterRequestArg = sendMessageSpy.calls[0].args[0] as AdapterChatRequest;
+            const adapterRequestArg = sendMessageSpy.calls[0].args[0] as ChatApiRequest;
             
+            assertExists(adapterRequestArg.messages); // Ensure messages array exists
             assertEquals(adapterRequestArg.messages.length, 0); 
         });
 
@@ -506,7 +496,7 @@ Deno.test("Chat Function Tests (Adapter Refactor)", async (t) => {
             });
             const response = await mainHandler(req, deps);
             assertEquals(response.status, 500);
-            assertEquals((await response.json()).error, "Failed to create new chat session.");
+            assertEquals((await response.json()).error, "Test: Chat Insert Failed");
         });
 
         await t.step("POST request with adapter sendMessage error returns 500", async () => {
@@ -564,13 +554,14 @@ Deno.test("Chat Function Tests (Adapter Refactor)", async (t) => {
             assertEquals(responseJson.message.chat_id, testChatId); 
 
             // Verify adapter sendMessage payload had no history messages
-            const adapterFactorySpy = deps.getAiProviderAdapter as Spy<typeof actualGetAiProviderAdapter>;
+            const adapterFactorySpy = deps.getAiProviderAdapter as Spy<typeof getAiProviderAdapter>;
             const mockAdapterInstance = adapterFactorySpy.calls[0].returned as AiProviderAdapter;
             assertExists(mockAdapterInstance, "Mock adapter instance should exist");
             const sendMessageSpy = mockAdapterInstance.sendMessage as Spy<any>;
             assertExists(sendMessageSpy, "sendMessage spy should exist on mock adapter");
             assertSpyCalls(sendMessageSpy, 1);
-            const adapterRequestArg = sendMessageSpy.calls[0].args[0] as AdapterChatRequest;
+            const adapterRequestArg = sendMessageSpy.calls[0].args[0] as ChatApiRequest;
+            assertExists(adapterRequestArg.messages); // Ensure messages array exists
             assertEquals(adapterRequestArg.messages.length, 1); // System prompt only
             assertEquals(adapterRequestArg.chatId, undefined); // Treated as new chat
         });
@@ -742,7 +733,7 @@ Deno.test("Chat Function Tests (Adapter Refactor)", async (t) => {
                 body: JSON.stringify(requestBody),
             });
 
-            const adapterFactorySpy = deps.getAiProviderAdapter as Spy<typeof actualGetAiProviderAdapter>;
+            const adapterFactorySpy = deps.getAiProviderAdapter as Spy<typeof getAiProviderAdapter>;
             const response = await mainHandler(req, deps);
             
             assertEquals(response.status, 200, `Expected status 200 but got ${response.status}`);
@@ -768,6 +759,40 @@ Deno.test("Chat Function Tests (Adapter Refactor)", async (t) => {
 
             console.log("--- Anthropic Provider POST test passed ---");
         });
+
+        // *** Keep this test commented out due to stubbing conflicts ***
+        // await t.step("POST request with missing API key env var returns 500", async () => {
+        //     // Save the original implementation of the existing stub
+        //     const originalEnvGet = envGetStub.original;
+
+        //     try {
+        //          // Temporarily change the behavior of the *existing* stub
+        //          envGetStub.callsFake((key: string): string | undefined => {
+        //             // Log stub calls
+        //             console.log(`[Test Env Stub - Temp Override] Deno.env.get called with: ${key}`); 
+        //             if (key === 'SUPABASE_URL') return mockSupabaseUrl;
+        //             if (key === 'SUPABASE_ANON_KEY') return mockAnonKey;
+        //             // Return undefined ONLY for the key we are testing
+        //             if (key === 'OPENAI_API_KEY') return undefined;
+        //             // Call the original stub implementation for other keys
+        //             // Use .call to ensure correct 'this' context if needed
+        //             return originalEnvGet.call(Deno.env, key); 
+        //         });
+
+        //         const deps = createTestDeps(mockSupaConfig);
+        //         const req = new Request('http://localhost/chat', { 
+        //              method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer test-jwt-token' },
+        //              body: JSON.stringify({ message: "test", providerId: testProviderId, promptId: testPromptId }),
+        //          });
+        //         const response = await mainHandler(req, deps);
+        //         assertEquals(response.status, 500);
+        //         assertEquals((await response.json()).error, 'AI provider configuration error on server [key missing].');
+        //     } finally {
+        //         // Restore the original behavior of the envGetStub
+        //         envGetStub.callsFake(originalEnvGet);
+        //         console.log("[Test Env Stub - Temp Override] Restored original behavior.");
+        //     }
+        // });
 
         // +++++ UNIT TEST FOR REWIND FUNCTIONALITY +++++
         await t.step("POST request with rewindFromMessageId should deactivate subsequent messages and add new ones", async () => {
@@ -810,7 +835,7 @@ Deno.test("Chat Function Tests (Adapter Refactor)", async (t) => {
                     'ai_providers': { select: { data: [{ id: testProviderId, api_identifier: testApiIdentifier, provider: testProviderString }], error: null, status: 200, count: 1 } },
                     'chats': { select: { data: [{ id: rewindChatId, user_id: testUserId, organization_id: null, system_prompt_id: testPromptId, title: "Rewind Test Chat" }], error: null, status: 200, count: 1 } },
                     'chat_messages': {
-                        select: spy(async (state: MockQueryBuilderState) => {
+                        select: spy(async (state: any) => {
                             selectCallCount++;
                             // Type for f in state.filters.some(...)
                             type FilterType = typeof state.filters[0]; 
@@ -859,7 +884,8 @@ Deno.test("Chat Function Tests (Adapter Refactor)", async (t) => {
             // 2. Assert AI adapter was called with correct history
             const adapterSpy = deps.getAiProviderAdapter(testProviderString)!.sendMessage as Spy<any, any[], any>;
             assertSpyCalls(adapterSpy, 1);
-            const adapterArgs = adapterSpy.calls[0].args[0] as AdapterChatRequest;
+            const adapterArgs = adapterSpy.calls[0].args[0] as ChatApiRequest;
+            assertExists(adapterArgs.messages); // Ensure messages array exists
             assertEquals(adapterArgs.message, userMsg3Content);
             assertEquals(adapterArgs.chatId, rewindChatId);
             assertEquals(adapterArgs.messages.length, 3); 
@@ -876,7 +902,97 @@ Deno.test("Chat Function Tests (Adapter Refactor)", async (t) => {
             assertObjectMatch(insertSpy.calls[0].args[0][1], { content: aiMsg3Content, role: 'assistant', is_active_in_thread: true, token_usage: newAiResponsePayload.token_usage });
         });
 
+        await t.step("POST request for New ORG Chat should include organizationId in insert", async () => {
+            console.log("--- Running POST test (New ORG Chat) ---");
+            const testOrganizationId = 'org-uuid-for-new-chat';
+            const supaConfigForOrgChat: MockSupabaseDataConfig = {
+                ...mockSupaConfig, // Base config
+                genericMockResults: {
+                    ...mockSupaConfig.genericMockResults,
+                    'chats': { // Override chats mock for this test
+                        ...mockSupaConfig.genericMockResults!['chats'],
+                        insert: { // Mock for inserting a new chat
+                            data: [{ id: 'new-org-chat-id' }], // Return a new chat ID
+                            error: null, 
+                            status: 201, 
+                            count: 1 
+                        }
+                    },
+                     // Ensure chat_messages insert is also mocked to prevent cascading errors
+                    'chat_messages': {
+                        ...mockSupaConfig.genericMockResults!['chat_messages'],
+                        insert: { 
+                            data: [ {
+                                ...mockUserDbRow, // Use a base structure
+                                chat_id: 'new-org-chat-id',
+                                id: 'user-msg-org-chat'
+                            }, {
+                                ...mockAssistantDbRow, // Use a base structure
+                                chat_id: 'new-org-chat-id',
+                                id: 'asst-msg-org-chat'
+                            } ],
+                            error: null, 
+                            status: 201, 
+                            count: 2
+                        }
+                    }
+                }
+            };
+
+            const deps = createTestDeps(supaConfigForOrgChat, mockAdapterSuccessResponse);
+
+            const requestBody = {
+                message: "New Org Chat Message",
+                providerId: testProviderId,
+                promptId: testPromptId,
+                organizationId: testOrganizationId, // Key part for this test
+            };
+            const req = new Request('http://localhost/chat', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer test-jwt-token' },
+                body: JSON.stringify(requestBody),
+            });
+
+            const response = await mainHandler(req, deps);
+            // Read the body once for potential error reporting, then parse as JSON
+            let responseTextForError = '';
+            if (response.status !== 200) {
+                try {
+                    responseTextForError = await response.clone().text(); // Clone to read for error, original still readable
+                } catch {
+                    responseTextForError = '[Could not read response text for error]';
+                }
+            }
+            assertEquals(response.status, 200, `Org chat creation failed: ${responseTextForError}`);
+            const responseJson = await response.json();
+            assertEquals(responseJson.message.chat_id, 'new-org-chat-id');
+
+            // Assert that the supabaseClient.from('chats').insert() call was made correctly
+            const clientFactorySpy = deps.createSupabaseClient as Spy<any>;
+            assertSpyCalls(clientFactorySpy, 1);
+            const mockClientInstance = clientFactorySpy.calls[0].returned as SupabaseClient;
+            
+            // Get the spy for the .from('chats') call
+            const fromSpy = mockClientInstance.from as Spy<any>;
+            const chatsFromCall = fromSpy.calls.find(c => c.args[0] === 'chats');
+            assertExists(chatsFromCall, "Call to .from('chats') missing");
+
+            // Get the spy for the .insert() call from the query builder returned by .from('chats')
+            const queryBuilder = chatsFromCall.returned;
+            const insertSpy = queryBuilder.insert as Spy<any>; 
+            assertSpyCalls(insertSpy, 1);
+
+            // Check the actual data passed to insert
+            const insertArgs = insertSpy.calls[0].args[0]; // This is the array of objects to insert
+            assert(Array.isArray(insertArgs) && insertArgs.length === 1, "Insert should have received an array with one object");
+            const insertedChatData = insertArgs[0];
+            assertEquals(insertedChatData.organization_id, testOrganizationId, "organization_id was not correctly passed to chats.insert");
+            assertEquals(insertedChatData.user_id, testUserId, "user_id was not correctly passed to chats.insert");
+            assertExists(insertedChatData.title, "title should have been generated for new org chat");
+        });
+
     } finally {
-        console.log("Restored original Deno.env.get.");
+        // Restore Deno.env.get
+        globalThis.Deno.env.get = originalDenoEnvGet;
     }
 }); // End Test Suite

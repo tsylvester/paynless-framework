@@ -1,17 +1,7 @@
-// Removed direct package import
-// import { Json } from "../../../../packages/types/src/index.ts";
-
 // Import types from the shared location
-import type { AiProviderAdapter, ChatMessage, ProviderModelInfo, ChatApiRequest, AdapterResponsePayload } from '../types.ts';
-import type { Database, Json } from '../../types_db.ts';
+import type { AiProviderAdapter, ProviderModelInfo, ChatApiRequest, AdapterResponsePayload } from '../types.ts';
+import type { Database } from '../../types_db.ts';
 
-// --- Removed Type Definitions (Copied from packages/types for Edge Function compatibility) ---
-// export type Json = ... (definitions removed)
-// export interface ChatMessage { ... } (definitions removed)
-// export interface ChatApiRequest { ... } (definitions removed)
-// export interface ProviderModelInfo { ... } (definitions removed)
-// export interface AiProviderAdapter { ... } (definitions removed)
-// --- End Removed Type Definitions ---
 
 // Anthropic API constants
 const ANTHROPIC_API_BASE = 'https://api.anthropic.com/v1';
@@ -59,7 +49,7 @@ export class AnthropicAdapter implements AiProviderAdapter {
     const modelApiName = modelIdentifier.replace(/^anthropic-/i, '');
     let systemPrompt = '';
     const anthropicMessages: { role: 'user' | 'assistant'; content: string }[] = [];
-    let combinedMessages = [...request.messages];
+    const combinedMessages = [...(request.messages ?? [])];
     if (request.message) {
         combinedMessages.push({ role: 'user', content: request.message });
     }
@@ -130,6 +120,7 @@ export class AnthropicAdapter implements AiProviderAdapter {
       ai_provider_id: request.providerId, // This is the DB ID of the provider
       system_prompt_id: request.promptId !== '__none__' ? request.promptId : null, // DB ID of system prompt
       token_usage: tokenUsage,
+      created_at: new Date().toISOString(),
     };
 
     return adapterResponse; // Return the correctly typed object

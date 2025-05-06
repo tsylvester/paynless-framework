@@ -1,6 +1,20 @@
 {
   "name": "@paynless/db-types",
-  "version": "0.0.0",
+  "version": "0.0.1",
   "private": true,
-  "types": "./types_db.ts"
+  "main": "dist/types_db.js",
+  "types": "dist/types_db.d.ts",
+  "files": [
+    "dist",
+    "types_db.ts"
+  ],
+  "devDependencies": {
+    "@supabase/supabase-js": "^2", 
+    "@types/node": "^20",
+    "typescript": "~5"
+  },
+  "scripts": {
+    "install:npm": "npm install",
+    "build": "tsc -b tsconfig.json"
+  }
 } 

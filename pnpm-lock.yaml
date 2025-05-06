@@ -515,7 +515,17 @@ importers:
         specifier: ^1.6.1
         version: 1.6.1(@types/node@20.17.30)(@vitest/ui@1.6.1)(jsdom@26.0.0)
 
-  supabase/functions: {}
+  supabase/functions:
+    devDependencies:
+      '@supabase/supabase-js':
+        specifier: ^2
+        version: 2.49.4
+      '@types/node':
+        specifier: ^20
+        version: 20.17.30
+      typescript:
+        specifier: ~5
+        version: 5.7.3
 
 packages:
 
