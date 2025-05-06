@@ -27,6 +27,7 @@ export type ChatMessage = Database['public']['Tables']['chat_messages']['Row'] &
   // Keep application-level status enrichment if needed by UI directly
   // Note: status was previously added to LocalChatMessage, consider if it belongs here
   status?: 'pending' | 'sent' | 'error'; 
+  is_active_in_thread?: boolean;
 };
 
 // --- Application/API/Adapter/Store Specific Types ---

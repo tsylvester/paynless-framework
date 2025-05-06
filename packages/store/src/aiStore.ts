@@ -126,6 +126,7 @@ export const useAiStore = create<AiStore>()(
                          system_prompt_id: null,
                          token_usage: null, 
                          created_at: new Date(parseInt(tempId.split('-')[2])).toISOString(),
+                         is_active_in_thread: true
                     };
                     set(state => ({ 
                         currentChatMessages: [...state.currentChatMessages, userMsg]
@@ -387,6 +388,7 @@ export const useAiStore = create<AiStore>()(
                          system_prompt_id: null,
                          token_usage: null, 
                          created_at: new Date(parseInt(tempId.split('-')[2])).toISOString(),
+                         is_active_in_thread: true
                     };
                     set(state => ({ 
                         currentChatMessages: [...state.currentChatMessages, userMsg]

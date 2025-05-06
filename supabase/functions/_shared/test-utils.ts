@@ -1,13 +1,14 @@
 // IMPORTANT: Supabase Edge Functions require relative paths for imports from shared modules.
 // Do not use path aliases (like @shared/) as they will cause deployment failures.
 import { createClient, SupabaseClient } from "npm:@supabase/supabase-js@^2.43.4";
+import type { User as SupabaseUser } from "npm:@supabase/gotrue-js@^2.6.3"; // Import User from gotrue-js
 import { spy, stub, type Spy } from "jsr:@std/testing/mock"; // Add Deno mock imports
 // Remove unstable directive, no longer needed after removing KV mocks
 // /// <reference lib="deno.unstable" />
 // Import ChatMessage type
 import type { ChatMessage } from "../../../packages/types/src/ai.types.ts";
-// --- Import RealtimeChannel type --- 
-import type { RealtimeChannel } from "npm:@supabase/supabase-js@^2.43.4";
+// --- Remove RealtimeChannel import --- 
+// import type { RealtimeChannel } from "npm:@supabase/supabase-js@^2.43.4";
 
 // Check for essential Supabase variables, but don't throw if missing during import
 // These checks will now rely on the environment being correctly set by `deno test --env`
@@ -81,10 +82,10 @@ export function createAdminClient(): SupabaseClient {
 }
 
 // Create a test user
-export async function createUser(email: string, password: string): Promise<{ user: User | undefined; error: AuthError | null }> {
+export async function createUser(email: string, password: string): Promise<{ user: SupabaseUser | undefined; error: Error | null }> {
     const supabaseAdmin = createAdminClient();
     console.log(`Creating user: ${email}`);
-    const { data, error } = await supabaseAdmin.auth.admin.createUser({
+    const { data, error } = await (supabaseAdmin.auth as any).admin.createUser({
         email: email,
         password: password,
         email_confirm: true, // Automatically confirm email for testing
@@ -94,7 +95,7 @@ export async function createUser(email: string, password: string): Promise<{ use
     } else {
         console.log(`User ${email} created successfully.`);
     }
-    return { user: data?.user, error: error || null };
+    return { user: data?.user as SupabaseUser | undefined, error: error ? new Error(error.message) : null };
 }
 
 // Clean up (delete) a test user
@@ -102,28 +103,28 @@ export async function cleanupUser(email: string, adminClient?: SupabaseClient): 
     const supabaseAdmin = adminClient || createAdminClient();
     console.log(`Attempting to clean up user: ${email}`);
 
-    // Find user by email first - necessary because deleteUser needs the ID
-    // Fetch the first page of users (default is 50, should be enough for tests)
-    const { data: listData, error: listError } = await supabaseAdmin.auth.admin.listUsers();
+    // Find user by email first
+    const { data: listData, error: listError } = await (supabaseAdmin.auth as any).admin.listUsers();
 
     if (listError) {
         console.error(`Error listing users to find ${email} for cleanup:`, listError);
         return; // Exit cleanup if we can't list users
     }
 
+    // Type user explicitly if possible, otherwise use any
     const users = listData?.users || [];
-    const userToDelete = users.find((user: User) => user.email === email);
+    const userToDelete = users.find((user: SupabaseUser) => user.email === email);
 
     if (!userToDelete) {
         console.warn(`User ${email} not found for cleanup.`);
         return;
     }
 
-    // Found the user, proceed with deletion using their ID
     const userId = userToDelete.id;
     console.log(`Found user ID ${userId} for ${email}. Proceeding with deletion.`);
 
-    const { error: deleteError } = await supabaseAdmin.auth.admin.deleteUser(userId);
+    // Cast auth to any for deleteUser
+    const { error: deleteError } = await (supabaseAdmin.auth as any).admin.deleteUser(userId);
 
     if (deleteError) {
         console.error(`Error deleting user ${email} (ID: ${userId}):`, deleteError);
@@ -151,15 +152,15 @@ export interface MockQueryBuilderState {
 /** Configurable data/handlers for the mock Supabase client (Revised & Extended) */
 export interface MockSupabaseDataConfig {
     // Existing specific results (retain for compatibility)
-    getUserResult?: { data: { user: { id: string } | null }; error: any };
+    getUserResult?: { data: { user: any | null }; error: any };
     selectPromptResult?: { data: { id: string; prompt_text: string } | null; error: any };
-    selectProviderResult?: { data: { id: string; api_identifier: string } | null; error: any };
+    selectProviderResult?: { data: { id: string; api_identifier: string; provider: string; } | null; error: any };
     selectChatHistoryResult?: { data: Array<{ role: string; content: string }> | null; error: any };
     insertChatResult?: { data: { id: string } | null; error: any };
-    insertUserMessageResult?: { data: ChatMessage | null; error: any }; 
+    insertUserMessageResult?: { data: ChatMessage | null; error: any };
     insertAssistantMessageResult?: { data: ChatMessage | null; error: any };
     // User for auth mock
-    mockUser?: { id: string };
+    mockUser?: any;
     // Error simulation
     simulateDbError?: Error | null; 
     simulateAuthError?: Error | null;
@@ -543,7 +544,7 @@ export function createMockSupabaseClient(
     });
 
     // --- Define spy ONLY for removeChannel --- 
-    const removeChannelSpy = spy((_channel: RealtimeChannel) => Promise.resolve<'ok' | 'error' | 'timed out'>('ok'));
+    const removeChannelSpy = spy((_channel: any) => Promise.resolve<'ok' | 'error' | 'timed out'>('ok')); // Use 'any' as RealtimeChannel is removed
 
     // --- Assemble Mock Client ---
     const mockClient = {
@@ -551,7 +552,7 @@ export function createMockSupabaseClient(
         from: fromSpy,
         rpc: rpcSpy, // Assign the new rpcSpy
         // --- Add a PLAIN function implementation for channel ---
-        channel: (channelName: string): RealtimeChannel => {
+        channel: (channelName: string): any => { // Use 'any' as RealtimeChannel is removed
             // --- Use the explicit MockChannel type --- 
             const minimalMockChannel: MockChannel = {
                 topic: `realtime:${channelName}`,
@@ -560,7 +561,7 @@ export function createMockSupabaseClient(
                 subscribe: spy((_callback?: any) => minimalMockChannel),
                 unsubscribe: spy(() => Promise.resolve<'ok' | 'error' | 'timed out'>('ok')),
             };
-            return minimalMockChannel as unknown as RealtimeChannel;
+            return minimalMockChannel as unknown as any; // Use 'any' as RealtimeChannel is removed
         },
         removeChannel: removeChannelSpy, // Assign the spy for removeChannel
     } as unknown as SupabaseClient;

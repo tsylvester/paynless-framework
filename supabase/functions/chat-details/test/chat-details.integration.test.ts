@@ -10,6 +10,8 @@ import type { Database } from '../../../functions/types_db.ts'; // Adjust path a
 
 // Use the generated type for chat messages
 type ChatMessage = Database['public']['Tables']['chat_messages']['Row'];
+// Use the generated type for chats
+type Chat = Database['public']['Tables']['chats']['Row'];
 
 // --- Test Configuration ---
 const TEST_PASSWORD = 'password'; // <<< Add constant for password
@@ -40,18 +42,19 @@ async function createTestUser(adminClient: SupabaseClient<Database>, email: stri
   return data.user;
 }
 
-// Function to create a test organization and add the owner as admin member
-async function createTestOrg(adminClient: SupabaseClient<Database>, name: string, ownerId: string): Promise<{ id: string; name: string }> {
+// Function to create a test organization and add the owner as specified member
+async function createTestOrg(adminClient: SupabaseClient<Database>, name: string, ownerId: string, role: 'admin' | 'member' = 'admin'): Promise<{ id: string; name: string }> {
     const { data: orgData, error: orgError } = await adminClient.from('organizations').insert({ name: name }).select('id, name').single();
     if (orgError) throw new Error(`Failed to create test org "${name}": ${orgError.message}`);
     if (!orgData) throw new Error('Failed to create test org: No data returned.');
     console.log(`Created organization: ${orgData.id} (${orgData.name})`);
-    const { error: memberError } = await adminClient.from('organization_members').insert({ organization_id: orgData.id, user_id: ownerId, role: 'admin', status: 'active' });
+    // Use the provided role
+    const { error: memberError } = await adminClient.from('organization_members').insert({ organization_id: orgData.id, user_id: ownerId, role: role, status: 'active' }); 
     if (memberError) {
         await adminClient.from('organizations').delete().eq('id', orgData.id);
-        throw new Error(`Failed to add owner ${ownerId} to org ${orgData.id}: ${memberError.message}`);
+        throw new Error(`Failed to add owner ${ownerId} to org ${orgData.id} with role ${role}: ${memberError.message}`);
     }
-    console.log(`Added owner ${ownerId} as admin to organization: ${orgData.id}`);
+    console.log(`Added owner ${ownerId} as ${role} to organization: ${orgData.id}`);
     await new Promise(resolve => setTimeout(resolve, 200)); 
     return orgData;
 }
@@ -78,6 +81,20 @@ async function createTestMessage(adminClient: SupabaseClient<Database>, chatId: 
      if (!data) throw new Error('Failed to create test message: No data returned.');
      
      return data as ChatMessage; // Cast assuming returned data matches interface
+}
+
+// *** NEW HELPER *** Function to check if a chat exists
+async function checkChatExists(adminClient: SupabaseClient<Database>, chatId: string): Promise<boolean> {
+    const { data, error } = await adminClient
+        .from('chats')
+        .select('id')
+        .eq('id', chatId)
+        .maybeSingle();
+    if (error) {
+        console.error(`Error checking if chat ${chatId} exists:`, error);
+        return false; // Treat error as non-existent for safety, or re-throw
+    }
+    return !!data;
 }
 
 // Function to clean up test data
@@ -261,5 +278,154 @@ describe('Edge Function Integration Tests: GET /chat-details/:chatId', () => {
   });
 
   // --- Add more tests for org chats, permissions, etc. later ---
+
+}); 
+
+describe('Edge Function Integration Tests: DELETE /chat-details/:chatId', () => {
+  let supabaseAdmin: SupabaseClient<Database>;
+  let userClient: SupabaseClient<Database>;
+  let testUser: User | null = null;
+  let otherUser: User | null = null;
+  const usersToDelete: string[] = [];
+
+  beforeAll(async () => {
+    supabaseAdmin = createClient<Database>(supabaseUrl, supabaseServiceRoleKey);
+    userClient = createClient<Database>(supabaseUrl, supabaseAnonKey);
+    try {
+      const userEmail = `test-user-details-${Date.now()}@integration.test`;
+      testUser = await createTestUser(supabaseAdmin, userEmail);
+      usersToDelete.push(testUser.id);
+      console.log('Created primary test user:', testUser.id);
+
+      const otherUserEmail = `other-user-details-${Date.now()}@integration.test`;
+      otherUser = await createTestUser(supabaseAdmin, otherUserEmail);
+      usersToDelete.push(otherUser.id);
+      console.log('Created secondary test user:', otherUser.id);
+
+    } catch (error) { 
+      console.error("Error during chat-details test setup (creating user):", error);
+      throw error;
+    }
+  });
+
+  afterAll(async () => {
+    if (usersToDelete.length > 0) {
+      await cleanupTestData(supabaseAdmin, usersToDelete);
+    }
+  });
+
+  it('[DELETE] should allow user to delete their own personal chat', async () => {
+    if (!testUser || !testUser.email) throw new Error('Test user not created');
+    
+    // 1. Setup: Create a personal chat for testUser
+    const personalChat = await createTestChat(supabaseAdmin, testUser.id, null, 'Personal Chat To Delete');
+    const chatId = personalChat.id;
+    expect(await checkChatExists(supabaseAdmin, chatId)).toBe(true);
+
+    // 2. Get auth token
+    const { data: signInData, error: signInError } = await userClient.auth.signInWithPassword({ email: testUser.email, password: TEST_PASSWORD });
+    expect(signInError).toBeNull();
+    const authToken = signInData!.session!.access_token;
+
+    // 3. Send DELETE request
+    const response = await fetch(`${chatDetailsBaseEndpoint}/${chatId}`, {
+      method: 'DELETE',
+      headers: {
+        'apikey': supabaseAnonKey,
+        'Authorization': `Bearer ${authToken}`,
+      },
+    });
+
+    // 4. Assertions
+    expect(response.status).toBe(204); // No Content
+    expect(await checkChatExists(supabaseAdmin, chatId)).toBe(false); // Verify deleted
+  });
+
+  it('[DELETE] should return 404 when user tries to delete another user\'s personal chat', async () => {
+    if (!testUser || !testUser.email) throw new Error('Primary test user not created');
+    if (!otherUser) throw new Error('Secondary test user not created');
+    
+    // 1. Setup: Create a personal chat for otherUser
+    const otherUsersChat = await createTestChat(supabaseAdmin, otherUser.id, null, 'Other User Chat');
+    const chatId = otherUsersChat.id;
+    expect(await checkChatExists(supabaseAdmin, chatId)).toBe(true);
+
+    // 2. Get auth token for testUser
+    const { data: signInData, error: signInError } = await userClient.auth.signInWithPassword({ email: testUser.email, password: TEST_PASSWORD });
+    expect(signInError).toBeNull();
+    const authToken = signInData!.session!.access_token;
+
+    // 3. Send DELETE request as testUser for otherUser's chat
+    const response = await fetch(`${chatDetailsBaseEndpoint}/${chatId}`, {
+      method: 'DELETE',
+      headers: {
+        'apikey': supabaseAnonKey,
+        'Authorization': `Bearer ${authToken}`,
+      },
+    });
+
+    // 4. Assertions
+    expect(response.status).toBe(404); // RLS should make it seem not found
+    expect(await checkChatExists(supabaseAdmin, chatId)).toBe(true); // Verify NOT deleted
+  });
+
+  it('[DELETE] should return 403 when org MEMBER tries to delete org chat', async () => {
+    if (!testUser || !testUser.email) throw new Error('Test user not created');
+
+    // 1. Setup: Create Org, add testUser as MEMBER, create chat
+    const testOrg = await createTestOrg(supabaseAdmin, `Delete Org Test Member ${Date.now()}`, testUser.id, 'member'); // <<< Specify role
+    const orgChat = await createTestChat(supabaseAdmin, null, testOrg.id, 'Org Chat Member Delete Test');
+    const chatId = orgChat.id;
+    expect(await checkChatExists(supabaseAdmin, chatId)).toBe(true);
+
+    // 2. Get auth token for testUser
+    const { data: signInData, error: signInError } = await userClient.auth.signInWithPassword({ email: testUser.email, password: TEST_PASSWORD });
+    expect(signInError).toBeNull();
+    const authToken = signInData!.session!.access_token;
+
+    // 3. Send DELETE request as member
+    const response = await fetch(`${chatDetailsBaseEndpoint}/${chatId}`, {
+      method: 'DELETE',
+      headers: {
+        'apikey': supabaseAnonKey,
+        'Authorization': `Bearer ${authToken}`,
+      },
+    });
+
+    // 4. Assertions
+    expect(response.status).toBe(403); // Forbidden - RLS requires admin
+    const body = await response.json();
+    // Check for the specific error message thrown by the explicit check
+    expect(body.error).toBe('Permission denied to delete this chat (Explicit Check).'); 
+    expect(await checkChatExists(supabaseAdmin, chatId)).toBe(true); // Verify NOT deleted
+  });
+
+  it('[DELETE] should allow org ADMIN to delete org chat', async () => {
+    if (!testUser || !testUser.email) throw new Error('Test user not created');
+
+    // 1. Setup: Create Org, add testUser as ADMIN, create chat
+    const testOrg = await createTestOrg(supabaseAdmin, `Delete Org Test Admin ${Date.now()}`, testUser.id, 'admin'); // <<< Specify role (or default)
+    const orgChat = await createTestChat(supabaseAdmin, null, testOrg.id, 'Org Chat Admin Delete Test');
+    const chatId = orgChat.id;
+    expect(await checkChatExists(supabaseAdmin, chatId)).toBe(true);
+
+    // 2. Get auth token for testUser
+    const { data: signInData, error: signInError } = await userClient.auth.signInWithPassword({ email: testUser.email, password: TEST_PASSWORD });
+    expect(signInError).toBeNull();
+    const authToken = signInData!.session!.access_token;
+
+    // 3. Send DELETE request as admin
+    const response = await fetch(`${chatDetailsBaseEndpoint}/${chatId}`, {
+      method: 'DELETE',
+      headers: {
+        'apikey': supabaseAnonKey,
+        'Authorization': `Bearer ${authToken}`,
+      },
+    });
+
+    // 4. Assertions
+    expect(response.status).toBe(204); // No Content
+    expect(await checkChatExists(supabaseAdmin, chatId)).toBe(false); // Verify deleted
+  });
 
 }); 
