@@ -217,13 +217,13 @@ describe('AiApiClient', () => {
     // Tests for getChatHistory
     describe('getChatHistory', () => {
         const mockToken = 'test-auth-token'; // Define a mock token
+        const mockOrgId = 'org-789';
 
-        it('should call apiClient.get with the correct endpoint and token', async () => {
+        it('should call apiClient.get with the correct endpoint and token when no orgId is provided', async () => {
             // Arrange
              const mockResponse: ApiResponse<Chat[]> = {
-                success: true,
                 data: [],
-                statusCode: 200,
+                status: 200
             };
             (mockApiClient.get as vi.Mock).mockResolvedValue(mockResponse);
 
@@ -234,6 +234,26 @@ describe('AiApiClient', () => {
             expect(mockApiClient.get).toHaveBeenCalledTimes(1);
             // Verify endpoint AND options object with token
             expect(mockApiClient.get).toHaveBeenCalledWith('chat-history', { token: mockToken }); 
+        });
+        
+        // New Test Case for organizationId
+        it('should call apiClient.get with the correct endpoint including organizationId when provided', async () => {
+            // Arrange
+             const mockResponse: ApiResponse<Chat[]> = {
+                data: [],
+                status: 200
+            };
+            (mockApiClient.get as vi.Mock).mockResolvedValue(mockResponse);
+
+            // Act: Call with mock token and organizationId
+            // Note: Method signature will need update later for this to compile
+            // @ts-expect-error - Temporarily ignore error until method signature is updated
+            await aiApiClient.getChatHistory(mockToken, mockOrgId); 
+
+            // Assert
+            expect(mockApiClient.get).toHaveBeenCalledTimes(1);
+            const expectedEndpoint = `chat-history?organizationId=${mockOrgId}`;
+            expect(mockApiClient.get).toHaveBeenCalledWith(expectedEndpoint, { token: mockToken });
         });
 
         it('should return the chat history array on successful response', async () => {
@@ -279,6 +299,7 @@ describe('AiApiClient', () => {
     describe('getChatMessages', () => {
         const chatId = 'c123';
         const mockToken = 'test-auth-token'; // <<< Add mock token
+        const mockOrgId = 'org-abc'; // <<< Add mock orgId
         const mockMessages: ChatMessage[] = [
             { id: 'm1', chat_id: chatId, role: 'user', content: 'Hi', user_id: 'u1', ai_provider_id: null, system_prompt_id: null, token_usage: null, created_at: 't1' },
             { id: 'm2', chat_id: chatId, role: 'assistant', content: 'Hello', user_id: null, ai_provider_id: 'p1', system_prompt_id: 'sp1', token_usage: null, created_at: 't2' },
@@ -301,10 +322,9 @@ describe('AiApiClient', () => {
             expect(mockApiClient.get).not.toHaveBeenCalled(); 
         });
 
-        it('should call apiClient.get with the correct endpoint including chatId', async () => {
+        it('should call apiClient.get with the correct endpoint including chatId when no orgId is provided', async () => {
             // Arrange
             const mockResponse: ApiResponse<ChatMessage[]> = {
-                // success: true, 
                 data: mockMessages,
                 status: 200,
             };
@@ -320,10 +340,29 @@ describe('AiApiClient', () => {
             expect(mockApiClient.get).toHaveBeenCalledWith(`chat-details/${chatId}`, { token: mockToken }); // <<< Verify token in options
         });
 
+        // New Test Case for organizationId
+        it('should call apiClient.get with the correct endpoint including chatId and organizationId when provided', async () => {
+            // Arrange
+            const mockResponse: ApiResponse<ChatMessage[]> = {
+                data: mockMessages,
+                status: 200,
+            };
+            (mockApiClient.get as vi.Mock).mockResolvedValue(mockResponse);
+
+            // Act: Call with chatId, token, and organizationId
+            // Note: Method signature will need update later for this to compile
+            // @ts-expect-error - Temporarily ignore error until method signature is updated
+            await aiApiClient.getChatMessages(chatId, mockToken, mockOrgId); 
+
+            // Assert
+            expect(mockApiClient.get).toHaveBeenCalledTimes(1);
+            const expectedEndpoint = `chat-details/${chatId}?organizationId=${mockOrgId}`;
+            expect(mockApiClient.get).toHaveBeenCalledWith(expectedEndpoint, { token: mockToken });
+        });
+
         it('should return the messages array on successful response', async () => {
             // Arrange
              const mockResponse: ApiResponse<ChatMessage[]> = {
-                // success: true, // Remove success property if not used
                 data: mockMessages, // Data is the array directly
                 status: 200,
             };
@@ -342,7 +381,6 @@ describe('AiApiClient', () => {
             // Arrange
             const mockError: ApiError = { code: 'FETCH_FAILED', message: 'Failed to fetch messages' };
              const mockErrorResponse: ApiResponse<ChatMessage[]> = {
-                // success: false, // Remove success property if not used
                 error: mockError,
                 status: 404, // Use status
             };

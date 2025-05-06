@@ -67,23 +67,30 @@ export class AiApiClient {
     }
 
     /**
-     * Fetches the chat history list for the current user.
+     * Fetches the chat history list for the current user or an organization.
      * @param token - The user's authentication token.
+     * @param organizationId - Optional ID of the organization to fetch history for.
      */
-    async getChatHistory(token: string): Promise<ApiResponse<Chat[]>> {
+    async getChatHistory(token: string, organizationId?: string | null): Promise<ApiResponse<Chat[]>> {
         if (!token) {
             const error: ApiError = { code: 'AUTH_ERROR', message: 'Authentication token is required' };
             return { error, status: 401 };
         }
         const options: FetchOptions = { token };
-        return this.apiClient.get<Chat[]>('chat-history', options);
+        let endpoint = 'chat-history';
+        if (organizationId) {
+            endpoint += `?organizationId=${encodeURIComponent(organizationId)}`;
+        }
+        return this.apiClient.get<Chat[]>(endpoint, options);
     }
 
     /**
      * Fetches all messages for a specific chat.
      * @param chatId - The ID of the chat to fetch messages for.
+     * @param token - The user's authentication token.
+     * @param organizationId - Optional ID of the organization the chat belongs to (for context).
      */
-    async getChatMessages(chatId: string, token: string): Promise<ApiResponse<ChatMessage[]>> {
+    async getChatMessages(chatId: string, token: string, organizationId?: string | null): Promise<ApiResponse<ChatMessage[]>> {
         if (!chatId) {
             const error: ApiError = { code: 'VALIDATION_ERROR', message: 'Chat ID is required' };
             return { error, status: 400 };
@@ -92,8 +99,12 @@ export class AiApiClient {
             const error: ApiError = { code: 'AUTH_ERROR', message: 'Authentication token is required' };
             return { error, status: 401 };
         }
-        // Pass the token in options
         const options: FetchOptions = { token };
-        return this.apiClient.get<ChatMessage[]>(`chat-details/${chatId}`, options);
+        let endpoint = `chat-details/${chatId}`;
+        if (organizationId) {
+            // Add organizationId as a query parameter
+            endpoint += `?organizationId=${encodeURIComponent(organizationId)}`;
+        }
+        return this.apiClient.get<ChatMessage[]>(endpoint, options);
     }
 } 

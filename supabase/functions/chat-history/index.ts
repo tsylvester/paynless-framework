@@ -32,19 +32,35 @@ const defaultDeps: ChatHistoryHandlerDeps = { ... };
 */
 
 // --- Main Handler Logic ---
-// This function now *only* handles the core logic for a validated GET request
-export async function mainHandler(supabaseClient: SupabaseClient<Database>, userId: string): Promise<ChatHistoryItem[]> { 
-  // Method/Auth checks handled by serve wrapper
+// Modify mainHandler to accept optional organizationId
+export async function mainHandler(supabaseClient: SupabaseClient<Database>, userId: string, organizationId?: string | null): Promise<ChatHistoryItem[]> { 
   try {
-    console.log(`Fetching chat history for user: ${userId}`);
+    console.log(`Fetching chat history for user: ${userId}` + (organizationId ? ` Org: ${organizationId}` : ' (Personal)'));
+
+    // --- Build Query --- 
+    let query = supabaseClient
+      .from('chats')
+      .select('id, title, updated_at');
+
+    // Apply filter based on organizationId presence
+    if (organizationId) {
+      // RLS POLICY `chats_org_select` already enforces SELECT access based on user's membership in organizationId
+      // So we just need to match the org ID here.
+      query = query.eq('organization_id', organizationId);
+      console.log('Applying organization filter');
+    } else {
+      // RLS POLICY `chats_personal_select` already enforces SELECT access based on user_id == auth.uid() for personal chats
+      // Need to explicitly filter for NULL organization_id
+      query = query.is('organization_id', null);
+      // We might add .eq('user_id', userId) for extra safety, but RLS should cover it.
+      // query = query.eq('user_id', userId); 
+      console.log('Applying personal (null org) filter');
+    }
 
     // --- Fetch Chat History ---
-    // RLS policy on 'chats' table restricts rows to the authenticated user
-    const { data: chats, error: fetchError } = await supabaseClient
-      .from('chats')
-      .select('id, title, updated_at') // Select specific fields for history list
+    const { data: chats, error: fetchError } = await query
       .order('updated_at', { ascending: false })
-      .returns<ChatHistoryItem[]>(); // Ensure correct return type
+      .returns<ChatHistoryItem[]>();
 
     if (fetchError) {
         console.error(`Error fetching chat history for user ${userId}:`, fetchError);
@@ -57,7 +73,7 @@ export async function mainHandler(supabaseClient: SupabaseClient<Database>, user
         throw new HandlerError(fetchError.message || 'Failed to fetch chat history from database.', 500, fetchError);
     }
 
-    console.log(`Found ${chats?.length ?? 0} chat(s) for user ${userId}`);
+    console.log(`Found ${chats?.length ?? 0} chat(s) for user ${userId}` + (organizationId ? ` in org ${organizationId}` : ' (personal)'));
 
     // --- Return Chat History --- 
     // Return the array directly (or empty array if null)
@@ -112,8 +128,13 @@ serve(async (req) => {
       throw new HandlerError('Invalid authentication credentials', 401, userError as AuthError);
     }
     
+    // --- Extract organizationId from query params --- 
+    const url = new URL(req.url);
+    const organizationId = url.searchParams.get('organizationId');
+    console.log('Request received with organizationId:', organizationId);
+
     // --- Call Main Logic --- 
-    const data = await mainHandler(supabaseClient, user.id);
+    const data = await mainHandler(supabaseClient, user.id, organizationId);
     
     // --- Format Success Response --- 
     return new Response(JSON.stringify(data), {

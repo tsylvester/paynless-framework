@@ -20,73 +20,41 @@ const defaultCorsHeaders = {
 }; 
 
 // --- Main Handler Logic ---
-// This function now *only* handles the core logic for a validated GET request
-// It expects chatId to be extracted and validated by the caller (serve wrapper)
-export async function mainHandler(supabaseClient: SupabaseClient<Database>, userId: string, chatId: string): Promise<ChatMessage[]> {
-  // Auth and Method checks are handled by the serve wrapper
-  
+// Fetches ACTIVE messages for a specific chat AFTER access check
+async function mainHandler(supabaseClient: SupabaseClient<Database>, chatId: string): Promise<ChatMessage[]> { 
   try {
-    console.log(`User ${userId} fetching details for chat ID: ${chatId}`);
+    console.log(`Fetching active messages for chat: ${chatId}`);
 
-    // --- Fetch Chat Messages ---
-    const { data: messages, error: fetchError } = await supabaseClient
-      .from('chat_messages')
-      .select('*') // Select all fields for messages
-      .eq('chat_id', chatId)
-      // Ensure RLS handles user_id check
-      .order('created_at', { ascending: true })
-      .returns<ChatMessage[]>(); // Ensure return type is correct
+    // RLS on chat_messages relies on the preliminary check via can_select_chat helper
+    // Query messages, filtering for active ones
+    const { data: messages, error: messagesError } = await supabaseClient
+       .from('chat_messages')
+       .select('*') 
+       .eq('chat_id', chatId)
+       .eq('is_active_in_thread', true) // <<< Filter for active messages
+       .order('created_at', { ascending: true })
+       .returns<ChatMessage[]>(); // Type assertion
 
-    // --- Handle Fetch Errors / Check Chat Existence --- 
-    if (fetchError) {
-      console.error(`Error fetching messages for chat ${chatId} (User: ${userId}):`, fetchError);
-      if (fetchError.code === 'PGRST116') { // Check if it's a "not found" type error
-          const { error: chatCheckError } = await supabaseClient.from('chats').select('id', { count: 'exact', head: true }).eq('id', chatId);
-          if (chatCheckError) { 
-              throw new HandlerError('Chat not found or access denied.', 404, chatCheckError);
-          }
-          // Treat as empty if chat exists but messages not found/forbidden by RLS?
-      } else {
-           throw new HandlerError(fetchError.message || 'Failed to fetch messages from database.', 500, fetchError);
-      }
+    if (messagesError) {
+        console.error(`Error fetching messages for chat ${chatId}:`, messagesError);
+        // Handle specific errors if needed, e.g., RLS denial on messages (though unlikely if chat access passed)
+        throw new HandlerError(messagesError.message || 'Failed to fetch messages.', 500, messagesError);
     }
 
-    // If fetch succeeded but returned null/empty, verify chat exists before returning empty/404
-    if (!messages || messages.length === 0) {
-      const { error: chatCheckError, count } = await supabaseClient
-            .from('chats')
-            .select('id', { count: 'exact', head: true })
-            .eq('id', chatId);
-            
-      if (chatCheckError || count === 0) {
-           console.log(`Chat ${chatId} not found or inaccessible for user ${userId}.`);
-           throw new HandlerError('Chat not found or access denied.', 404, chatCheckError ?? undefined);
-      }
-      console.log(`Chat ${chatId} found for user ${userId}, but it has no messages.`);
-      return []; // Return empty array if chat exists but has no messages
-    }
-
-    console.log(`Found ${messages.length} message(s) for chat ${chatId}`);
-
-    // --- Return Messages --- 
-    return messages; // Return the array directly
+    console.log(`Found ${messages?.length ?? 0} active message(s) for chat ${chatId}`);
+    return messages || [];
 
   } catch (error) {
-    // Re-throw HandlerError directly
-    if (error instanceof HandlerError) {
-      throw error;
-    }
-    // Wrap other errors
+    if (error instanceof HandlerError) throw error;
     console.error('Chat details mainHandler error:', error);
     const errorMessage = error instanceof Error ? error.message : 'An unexpected internal error occurred';
-    const status = typeof error === 'object' && error !== null && 'status' in error && typeof error.status === 'number' ? error.status : 500;
-    throw new HandlerError(errorMessage, status, error instanceof Error ? error : undefined);
+    throw new HandlerError(errorMessage, 500, error instanceof Error ? error : undefined);
   }
 }
 
 // --- Serve Function --- 
 // This wrapper handles request validation, routing, auth, client creation, and response formatting
-serve(async (req) => {
+serve(async (req: Request, connInfo: any) => { // connInfo might contain path params depending on framework
   // --- Handle CORS Preflight --- 
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: defaultCorsHeaders, status: 204 });
@@ -97,12 +65,20 @@ serve(async (req) => {
     if (req.method !== 'GET') {
       throw new HandlerError('Method Not Allowed', 405);
     }
+    
+    // --- Extract chatId from path --- 
+    // Supabase functions typically pass path params via Deno.serve options or a framework context.
+    // Assuming a pattern like `/chat-details/:chatId` matched by the deployment route.
+    // Need to parse it from the URL or use the framework's context.
     const url = new URL(req.url);
-    const pathParts = url.pathname.split('/');
-    const chatId = pathParts[pathParts.length - 1];
-    if (!chatId || chatId === 'chat-details') { 
-        throw new HandlerError('Missing or invalid chatId in URL path.', 400);
+    const pathSegments = url.pathname.split('/');
+    // Assuming the path is /functions/v1/chat-details/<chatId>
+    const chatId = pathSegments[pathSegments.length - 1]; 
+    console.log('Extracted chatId from path:', chatId);
+    if (!chatId || chatId === 'chat-details') { // Basic check if extraction failed
+         throw new HandlerError('Missing or invalid chatId in request path', 400);
     }
+    // Optional: Validate if chatId looks like a UUID
 
     // --- Authentication & Client Setup ---
     const authHeader = req.headers.get('Authorization');
@@ -112,7 +88,6 @@ serve(async (req) => {
     const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? '';
     const supabaseAnonKey = Deno.env.get('SUPABASE_ANON_KEY') ?? '';
     if (!supabaseUrl || !supabaseAnonKey) {
-         console.error("Missing SUPABASE_URL or SUPABASE_ANON_KEY environment variables.");
          throw new HandlerError("Server configuration error.", 500);
     }
     const supabaseClient = createClient<Database>(
@@ -124,9 +99,32 @@ serve(async (req) => {
     if (userError || !user) {
       throw new HandlerError('Invalid authentication credentials', 401, userError as AuthError);
     }
+
+    // --- Preliminary Access Check on Parent Chat using RLS ---
+    console.log(`Performing access check for user ${user.id} on chat ${chatId}`);
+    // This query leverages the existing SELECT RLS policy on the `chats` table.
+    // The policy implicitly handles personal vs. organizational checks based on `is_org_member`.
+    const { data: chatAccess, error: chatAccessError } = await supabaseClient
+        .from('chats')
+        .select('id') // Select minimal data
+        .eq('id', chatId)
+        .maybeSingle(); // Expect 0 or 1 row
+
+    if (chatAccessError) {
+        console.error(`Error checking chat access for chat ${chatId}:`, chatAccessError);
+        throw new HandlerError('Error verifying chat access.', 500, chatAccessError);
+    }
     
-    // --- Call Main Logic --- 
-    const data = await mainHandler(supabaseClient, user.id, chatId);
+    if (!chatAccess) {
+        console.warn(`Access denied or chat not found for user ${user.id} on chat ${chatId}`);
+        // Return 404 Not Found, as the user either doesn't have access or the chat doesn't exist.
+        throw new HandlerError('Chat not found or access denied', 404);
+    }
+    
+    console.log(`Access granted for user ${user.id} on chat ${chatId}`);
+    
+    // --- Call Main Logic (if access check passes) --- 
+    const data = await mainHandler(supabaseClient, chatId);
     
     // --- Format Success Response --- 
     return new Response(JSON.stringify(data), {
@@ -147,8 +145,13 @@ serve(async (req) => {
     } else {
       errorMessage = String(err); 
     }
+    // Special handling for 401 to match local runtime behavior if needed
+    const responseBody = (errorStatus === 401 && errorMessage === 'Missing Authorization header') 
+        ? JSON.stringify({ msg: errorMessage }) // Match observed local 401 format
+        : JSON.stringify({ error: errorMessage });
+        
     console.error("Returning error response:", { status: errorStatus, message: errorMessage });
-    return new Response(JSON.stringify({ error: errorMessage }), {
+    return new Response(responseBody, {
       headers: { ...defaultCorsHeaders, 'Content-Type': 'application/json' },
       status: errorStatus,
     });
