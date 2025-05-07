@@ -1,21 +1,12 @@
-import { describe, it, expect, vi, beforeEach, afterEach, type SpyInstance } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { useAiStore } from './aiStore';
-import { api } from '@paynless/api';
 import { act } from '@testing-library/react';
 import {
-    // AiProvider,
-    // SystemPrompt,
     Chat,
-    // ChatMessage,
-    // ChatApiRequest,
-    ApiResponse,
     User,
     Session,
-    UserProfile,
-    UserRole
 } from '@paynless/types';
 import { useAuthStore } from './authStore';
-import { AuthRequiredError } from '@paynless/types';
 
 // --- Restore API Client Factory Mock --- 
 const mockGetAiProviders = vi.fn(); 
@@ -119,7 +110,7 @@ describe('aiStore - loadChatHistory', () => {
             let promise;
             act(() => { 
                 // Call without orgId for personal context
-                promise = useAiStore.getState().loadChatHistory(/* no orgId */);
+                promise = useAiStore.getState().loadChatHistory();
                 // MODIFIED: Check new loading state
                 expect(useAiStore.getState().isLoadingHistoryByContext.personal).toBe(true);
             });
@@ -144,7 +135,7 @@ describe('aiStore - loadChatHistory', () => {
 
              // Act
              await act(async () => { 
-                await useAiStore.getState().loadChatHistory(/* no orgId */);
+                await useAiStore.getState().loadChatHistory();
              });
 
              // Assert
@@ -165,7 +156,7 @@ describe('aiStore - loadChatHistory', () => {
 
              // Act: Wrap async action
              await act(async () => { 
-                await useAiStore.getState().loadChatHistory(/* no orgId */);
+                await useAiStore.getState().loadChatHistory();
              });
 
              // Assert
@@ -191,7 +182,7 @@ describe('aiStore - loadChatHistory', () => {
             
             // Act: Wrap async action
             await act(async () => { 
-                await useAiStore.getState().loadChatHistory(/* no orgId */);
+                await useAiStore.getState().loadChatHistory();
             });
 
             // Assert

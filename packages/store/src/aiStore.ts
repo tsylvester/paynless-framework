@@ -276,57 +276,72 @@ export const useAiStore = create<AiStore>()(
             },
 
             // MODIFIED: loadChatHistory - basic refactor for build. Full org context in next steps.
-            loadChatHistory: async () => {
-                const contextKey = 'personal'; 
+            loadChatHistory: async (organizationId?: string | null) => { // <<< Add organizationId parameter
                 const token = useAuthStore.getState().session?.access_token;
+                const isOrgContext = typeof organizationId === 'string' && organizationId.trim() !== '';
+                const contextKey = isOrgContext ? organizationId : 'personal'; // Use orgId as key if present, else 'personal'
 
                 if (!token) {
-                    set(state => ({ 
-                        aiError: 'Authentication token not found.', 
+                    set(state => ({
+                        aiError: 'Authentication token not found.',
                         isLoadingHistoryByContext: {
                             ...state.isLoadingHistoryByContext,
-                            [contextKey]: false,
+                            ...(isOrgContext && organizationId 
+                                ? { orgs: { ...state.isLoadingHistoryByContext.orgs, [organizationId]: false } }
+                                : { personal: false })
                         }
                     }));
                     return;
                 }
 
-                set(state => ({ 
+                set(state => ({
                     isLoadingHistoryByContext: {
                         ...state.isLoadingHistoryByContext,
-                        [contextKey]: true,
-                    }, 
-                    aiError: null 
+                        ...(isOrgContext && organizationId
+                            ? { orgs: { ...state.isLoadingHistoryByContext.orgs, [organizationId]: true } }
+                            : { personal: true })
+                    },
+                    aiError: null
                 }));
 
                 try {
-                    const response = await api.ai().getChatHistory(token ); 
+                    // Pass organizationId (or undefined if not an org context) to the API client
+                    const response = await api.ai().getChatHistory(token, isOrgContext ? organizationId : undefined);
                     if (response.error) {
-                        throw new Error(response.error.message || 'Failed to load chat history');
+                        throw new Error(response.error.message || `Failed to load chat history for ${contextKey}`);
                     }
-                    
+
                     set(state => ({
                         chatsByContext: {
                             ...state.chatsByContext,
-                            [contextKey]: response.data || [],
+                            ...(isOrgContext && organizationId
+                                ? { orgs: { ...state.chatsByContext.orgs, [organizationId]: response.data || [] } }
+                                : { personal: response.data || [] })
                         },
                         isLoadingHistoryByContext: {
                             ...state.isLoadingHistoryByContext,
-                            [contextKey]: false,
+                            ...(isOrgContext && organizationId
+                                ? { orgs: { ...state.isLoadingHistoryByContext.orgs, [organizationId]: false } }
+                                : { personal: false })
                         },
                         aiError: null,
                     }));
                 } catch (error: unknown) {
-                    logger.error('Error loading chat history:', { context: contextKey, error: error instanceof Error ? error.message : String(error) });
+                    const errorMessage = error instanceof Error ? error.message : `An unexpected error occurred while loading chat history for ${contextKey}.`;
+                    logger.error('Error loading chat history:', { context: contextKey, error: errorMessage });
                     set(state => ({
-                        aiError: error instanceof Error ? error.message : 'An unexpected error occurred while loading chat history.',
+                        aiError: errorMessage,
                         chatsByContext: {
                             ...state.chatsByContext,
-                            [contextKey]: [], // Clear on error for this context
+                            ...(isOrgContext && organizationId
+                                ? { orgs: { ...state.chatsByContext.orgs, [organizationId]: [] } } // Clear on error for this context
+                                : { personal: [] }) // Clear on error for personal context
                         },
                         isLoadingHistoryByContext: {
                             ...state.isLoadingHistoryByContext,
-                            [contextKey]: false,
+                            ...(isOrgContext && organizationId
+                                ? { orgs: { ...state.isLoadingHistoryByContext.orgs, [organizationId]: false } }
+                                : { personal: false })
                         },
                     }));
                 }

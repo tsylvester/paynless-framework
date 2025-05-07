@@ -169,7 +169,7 @@ export interface AiActions {
     promptId: SystemPrompt['id']; // Use aliased type
     chatId?: Chat['id'] | null; // Use aliased type
   }) => Promise<ChatMessage | null>; // Use aliased type
-  loadChatHistory: () => Promise<void>;
+  loadChatHistory: (organizationId?: string | null) => Promise<void>;
   loadChatDetails: (chatId: Chat['id']) => Promise<void>; // Use aliased type
   startNewChat: () => void;
   clearAiError: () => void;
