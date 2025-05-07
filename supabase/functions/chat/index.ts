@@ -297,8 +297,7 @@ export async function mainHandler(req: Request, deps: ChatHandlerDeps = defaultD
         };
 
         console.log(`Calling ${provider} adapter sendMessage with apiIdentifier: ${apiIdentifier}`);
-        // Call the adapter's sendMessage method
-        const assistantResponse: AdapterResponsePayload = await adapter.sendMessage(
+        const aiResponsePayload = await adapter.sendMessage(
             adapterRequest,
             apiIdentifier, // Pass the specific model API identifier (e.g., openai-gpt-4o)
             apiKey
@@ -331,41 +330,46 @@ export async function mainHandler(req: Request, deps: ChatHandlerDeps = defaultD
             }
             currentChatId = newChat.id;
             console.log(`Created new chat with ID: ${currentChatId}${requestBody.organizationId ? ` in org ${requestBody.organizationId}` : ''}`);
+            if (!currentChatId) { // Re-check after potential creation
+                console.error("Chat ID is still missing after creation attempt.");
+                return createErrorResponse("Failed to establish chat session for saving messages.", 500, req);
+            }
         }
 
-        // Ensure we have a valid chat ID before proceeding
-        if (!currentChatId) {
-          console.error("Chat ID is missing before attempting to save messages.");
-          return createErrorResponse("Invalid chat session state.", 500, req);
-        }
-
-        // 4. Save user message (using ChatMessageInsert)
-        const userMessageRecord: ChatMessageInsert = {
-          chat_id: currentChatId, 
-          user_id: userId,
-          role: 'user',
-          content: requestBody.message,
-          ai_provider_id: requestBody.providerId,
-          system_prompt_id: requestBody.promptId !== '__none__' ? requestBody.promptId : null,
-          is_active_in_thread: true, // New messages in a rewind are active
+        const userMessageData: ChatMessageInsert = {
+            chat_id: currentChatId, 
+            user_id: userId,
+            role: 'user',
+            content: requestBody.message,
+            ai_provider_id: requestBody.providerId,
+            system_prompt_id: requestBody.promptId !== '__none__' ? requestBody.promptId : null,
+            is_active_in_thread: true,
         };
 
-        // 5. Save assistant message (using ChatMessageInsert)
-        const assistantMessageRecord: ChatMessageInsert = {
-          chat_id: currentChatId, 
-          user_id: null, 
-          role: 'assistant',
-          content: assistantResponse.content,
-          ai_provider_id: assistantResponse.ai_provider_id, 
-          system_prompt_id: assistantResponse.system_prompt_id,
-          token_usage: assistantResponse.token_usage, 
-          is_active_in_thread: true, // New messages in a rewind are active
+        // Process token usage from the adapter's response
+        const rawTokenUsage = aiResponsePayload.token_usage as { prompt_tokens?: number; completion_tokens?: number; [key: string]: unknown } | null;
+        const processedTokenUsage = rawTokenUsage?.prompt_tokens !== undefined && rawTokenUsage?.completion_tokens !== undefined
+          ? {
+              prompt_tokens: rawTokenUsage.prompt_tokens,
+              completion_tokens: rawTokenUsage.completion_tokens,
+            }
+          : null;
+
+        const assistantMessageToSave: ChatMessageInsert = {
+            chat_id: currentChatId, 
+            user_id: null, 
+            role: 'assistant',
+            content: aiResponsePayload.content,
+            is_active_in_thread: true,
+            token_usage: processedTokenUsage, // Assign the processed token usage here
+            ai_provider_id: requestBody.providerId, 
+            system_prompt_id: requestBody.promptId !== '__none__' ? requestBody.promptId : null,
         };
 
         // Insert both messages (Remove explicit cast, rely on TS inference now)
         const { data: savedMessages, error: saveError } = await supabaseClient
           .from('chat_messages')
-          .insert([userMessageRecord, assistantMessageRecord])
+          .insert([userMessageData, assistantMessageToSave])
           .select();
 
         if (saveError) {

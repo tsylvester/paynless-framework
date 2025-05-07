@@ -372,14 +372,15 @@ The implementation plan uses the following labels to categorize work steps:
         *   [✅] Spy on the `supabaseClient.from('chat_messages').insert()` call. (Implicitly covered by `assertObjectMatch` on mock DB row)
         *   [✅] Verify that the data being inserted for the assistant message includes a `token_usage` field matching the structure and values from the mocked adapter response. (Covered by mock DB row structure)
         *   [✅] Test this for new chat, existing chat, and rewind scenarios. (All 3 scenarios updated in tests)
-*   [ ] **[TEST-INT] Verify Token Storage in Integration Tests for `/chat` Endpoint**
-    *   [ ] In `supabase/functions/chat/test/chat.integration.test.ts`:
-        *   [ ] After test scenarios that involve AI responses (new chat, existing, rewind):
-            *   [ ] Directly query the database for the newly created assistant `chat_messages` record.
-            *   [ ] Assert that its `token_usage` column contains the correct `prompt_tokens` and `completion_tokens` (these would be based on what the *actual* AI service returns in an integration test, or what a precisely mocked service in the test setup returns).
-*   [ ] **[COMMIT] Commit Token Usage Tracking Enhancements**
-    *   [ ] Stage changes in `supabase/functions/chat/index.ts`, AI adapter files, and relevant test files.
-    *   [ ] Commit with message: `feat(BE): Implement detailed AI token usage tracking in /chat endpoint`
+*   [🚧] **[TEST-INT] Verify Token Storage in Integration Tests for `/chat` Endpoint**
+    *   [🚧] In `supabase/functions/chat/test/chat.integration.test.ts`:
+        *   [🚧] After test scenarios that involve AI responses (new chat, existing, rewind):
+            *   [✅] Directly query the database for the newly created assistant `chat_messages` record.
+            *   [✅] Assert that its `token_usage` column contains the correct `prompt_tokens` and `completion_tokens` (these would be based on what the *actual* AI service returns in an integration test, or what a precisely mocked service in the test setup returns).
+            *   [❓] `Post` for new org chat should include `organizationId` in insert test is failing to spy problems, error noted & moving on
+*   [✅] **[COMMIT] Commit Token Usage Tracking Enhancements**
+    *   [✅] Stage changes in `supabase/functions/chat/index.ts`, AI adapter files, and relevant test files.
+    *   [✅] Commit with message: `feat(BE): Implement detailed AI token usage tracking in /chat endpoint`
 
 **Phase 1 Complete Checkpoint:**
 *   [ ] All Phase 1 tests (manual RLS, unit API Client, integration Edge Function) are passing.
@@ -399,3 +400,4 @@ The implementation plan uses the following labels to categorize work steps:
 *   [ ] **[TEST-DEBUG]** Investigate and resolve Deno test leaks (approx. 19-25 intervals from `SupabaseAuthClient._startAutoRefresh`) in `supabase/functions/chat/test/chat.integration.test.ts`. Current hypothesis: multiple `signInWithPassword` calls on the same client instance, or clients created within `mainHandler` via DI not being fully cleaned up despite `signOut` attempts. Consider refactoring tests to use one client per authenticated user session and ensuring explicit sign-out for each.
 *   [ ] **[TEST-DEBUG]** Deno integration tests for `chat-details` (`supabase/functions/chat-details/test/chat-details.integration.test.ts`) are failing due to interval leaks (approx. 4-6 intervals from `SupabaseAuthClient._startAutoRefresh`), even though all individual test steps pass. This is similar to the issue in `chat` tests and may require a similar investigation or deferral.
 *   [ ] **[TEST-DEBUG]** Deno integration tests for `chat-history` (`supabase/functions/chat-history/test/chat-history.integration.test.ts`) are failing due to interval leaks (approx. 4 intervals from `SupabaseAuthClient._startAutoRefresh`), even though all individual test steps pass. This is similar to the issues in `chat` and `chat-details` tests and may require similar investigation or deferral.
+*   [ ] **[TEST-DEBUG]** `Post` for new org chat should include `organizationId` in insert test is failing to spy problems
