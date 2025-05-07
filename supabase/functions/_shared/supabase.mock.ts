@@ -192,13 +192,18 @@ class MockQueryBuilder implements IMockQueryBuilder {
     single(): Promise<MockResolveQueryResult> { return this._executeMethodLogic('single', []) as Promise<MockResolveQueryResult>; }
     maybeSingle(): Promise<MockResolveQueryResult> { return this._executeMethodLogic('maybeSingle', []) as Promise<MockResolveQueryResult>; }
     then(
-        onfulfilled?: ((value: { data: unknown[] | null; error: Error | null; count: number | null; status: number; statusText: string; }) => unknown | PromiseLike<unknown>) | null | undefined,
+        onfulfilled?: ((value: { data: unknown[] | null; error: Error | MockPGRSTError | null; count: number | null; status: number; statusText: string; }) => unknown | PromiseLike<unknown>) | null | undefined,
         onrejected?: ((reason: unknown) => unknown | PromiseLike<unknown>) | null | undefined
     ): Promise<unknown> { 
-        // The _resolveQuery method called by _executeMethodLogic already shapes the data for the .then() case
-        // to be unknown[] | null. So, the actual value passed to onfulfilled will conform.
-        // The type of this.methodSpies.then might need adjustment if it's too specific.
-        return this._executeMethodLogic('then', [onfulfilled, onrejected]) as Promise<unknown>;
+        console.log(`[Mock QB ${this._state.tableName}] Direct .then() called.`);
+        const promise = this._resolveQuery(); // Returns Promise<MockResolveQueryResult>
+        
+        return promise.then(
+            onfulfilled ? 
+                (value: MockResolveQueryResult) => onfulfilled(value as { data: unknown[] | null; error: Error | MockPGRSTError | null; count: number | null; status: number; statusText: string; }) 
+                : undefined,
+            onrejected
+        );
     }
 
     private _initializeSpies() {
@@ -208,9 +213,13 @@ class MockQueryBuilder implements IMockQueryBuilder {
             'contains', 'containedBy', 'rangeGt', 'rangeGte', 'rangeLt', 'rangeLte',
             'rangeAdjacent', 'overlaps', 'textSearch', 'match', 'or', 'filter', 'not',
             'order', 'limit', 'range',
-            'single', 'maybeSingle', 'then', 'returns'
+            'single', 'maybeSingle', /*'then',*/ 'returns' // Temporarily exclude 'then' from spying
         ];
         interfaceMethods.forEach(methodName => {
+            if (methodName === 'then') { // Skip spying on 'then'
+                console.log('[Mock QB Initializer] Skipping spy for .then() method.');
+                return; // Continue to next method
+            }
             if (typeof this[methodName] === 'function') {
                 this.methodSpies[methodName] = spy(this, methodName as keyof MockQueryBuilder) as unknown as Spy<(...args: unknown[]) => unknown>;
             } else {
@@ -255,7 +264,6 @@ class MockQueryBuilder implements IMockQueryBuilder {
             case 'range': this._state.rangeFrom = args[0] as number; this._state.rangeTo = args[1] as number; return this;
             case 'single': return this._resolveQuery(true, false);
             case 'maybeSingle': return this._resolveQuery(false, true);
-            case 'then': return this._resolveQuery(false, false);
             case 'returns': return this;
             default: {
                 console.warn(`[Mock QB ${this._state.tableName}] Method .${methodName} not explicitly in switch. Returning 'this'.`);
@@ -265,97 +273,94 @@ class MockQueryBuilder implements IMockQueryBuilder {
     }
 
     private async _resolveQuery(isSingle = false, isMaybeSingle = false): Promise<MockResolveQueryResult> {
-        console.log(`[Mock QB ${this._state.tableName}] Resolving query. Operation: ${this._state.operation}, State:`, JSON.stringify(this._state));
+        console.log(`[Mock QB ${this._state.tableName}] Resolving query. Operation: ${this._state.operation}, State: ${JSON.stringify(this._state)}`);
+
+        let result: MockResolveQueryResult = { data: [], error: null, count: 0, status: 200, statusText: 'OK' };
         const tableConfig = this._genericMockResultsConfig?.[this._state.tableName];
         const operationConfig = tableConfig?.[this._state.operation];
-        let result: MockResolveQueryResult;
 
         if (typeof operationConfig === 'function') {
             console.log(`[Mock QB ${this._state.tableName}] Using function config for ${this._state.operation}`);
             try {
-                 const funcResult = await operationConfig(this._state);
-                 result = {
-                    data: funcResult.data,
-                    error: funcResult.error ?? null,
-                    count: funcResult.count ?? null,
-                    status: funcResult.status ?? (funcResult.error ? 500 : 200),
-                    statusText: funcResult.statusText ?? (funcResult.error ? 'Error from Mock Function' : 'OK')
-                 };
+                // The mock function is responsible for returning the complete MockResolveQueryResult structure
+                result = await (operationConfig as (state: MockQueryBuilderState) => Promise<MockResolveQueryResult>)(this._state);
             } catch (e) {
-                console.error(`[Mock QB ${this._state.tableName}] Error executing function config for ${this._state.operation}:`, e);
-                result = { data: null, error: e instanceof Error ? e : new Error(String(e)), count: 0, status: 500, statusText: 'Function Mock Error' };
+                console.error(`[Mock QB ${this._state.tableName}] Error executing mock function for ${this._state.operation}:`, e);
+                result = { 
+                    data: null, 
+                    error: e instanceof Error ? e : new Error(String(e)), 
+                    count: 0, 
+                    status: 500, 
+                    statusText: 'Error from Mock Function' 
+                };
             }
-        } else if (operationConfig && typeof operationConfig === 'object' && 'data' in operationConfig) {
+        } else if (typeof operationConfig === 'object' && operationConfig !== null) {
             console.log(`[Mock QB ${this._state.tableName}] Using object config for ${this._state.operation}`);
-            result = {
+            result = { // Ensure all parts of MockResolveQueryResult are provided
                 data: operationConfig.data !== undefined ? operationConfig.data : null,
                 error: operationConfig.error !== undefined ? operationConfig.error : null,
                 count: operationConfig.count !== undefined ? operationConfig.count : null,
-                status: operationConfig.status !== undefined ? operationConfig.status : (operationConfig.error ? 500 : 200),
-                statusText: operationConfig.statusText !== undefined ? operationConfig.statusText : (operationConfig.error ? 'Error From Mock Object' : 'OK')
+                status: operationConfig.status !== undefined ? operationConfig.status : 200,
+                statusText: operationConfig.statusText !== undefined ? operationConfig.statusText : 'OK'
             };
         } else {
-            console.warn(`[Mock QB ${this._state.tableName}] No mock config found for operation ${this._state.operation} on table ${this._state.tableName}. Returning empty success.`);
-            result = { data: this._state.operation === 'select' ? [] : null, error: null, count: 0, status: 200, statusText: 'OK (No Mock Config)' };
+            // Default behavior if no specific mock is found for the operation
+            console.warn(`[Mock QB ${this._state.tableName}] No specific mock found for operation ${this._state.operation}. Returning default empty success.`);
+            // Default result is already initialized
         }
-
-        // Single/MaybeSingle logic affects how data is structured from the raw result
-        if (this._state.operation === 'select' || this._state.operation === 'insert' || this._state.operation === 'update' || this._state.operation === 'upsert') {
-            if (isSingle || isMaybeSingle) {
-                if (result.error) {
-                    result.data = null;
-                } else if (result.data && Array.isArray(result.data)) {
-                    if (result.data.length > 1 && isSingle) {
-                        result.error = { name: 'PGRST116', message: 'Query returned more than one row', code: 'PGRST116' }; 
-                        result.data = null; result.status = 406; result.statusText = 'Not Acceptable';
-                    } else if (result.data.length >= 1) {
-                        result.data = result.data[0]; // Data becomes single object
-                    } else {
-                        result.data = null; // Data becomes null
-                        if (isSingle) {
-                            // ... (existing PGRST116 for no rows if error not explicitly null)
-                            const opConfig = this._genericMockResultsConfig?.[this._state.tableName]?.[this._state.operation];
-                            let errorExplicitlyNull = false;
-                            if(opConfig && typeof opConfig === 'object' && 'error' in opConfig && opConfig.error === null && ('data' in opConfig && opConfig.data === null)) {
-                                errorExplicitlyNull = true;
-                            }
-                            if (!errorExplicitlyNull) {
-                                result.error = { name: 'PGRST116', message: 'Query returned no rows', code: 'PGRST116' }; 
-                                result.status = 406; result.statusText = 'Not Acceptable';
-                            }
-                        }
-                    }
-                } else if (result.data === null && isSingle) { 
-                    // ... (existing PGRST116 for no rows if data was null and error not explicitly null)
-                     const opConfig = this._genericMockResultsConfig?.[this._state.tableName]?.[this._state.operation];
-                     let errorExplicitlyNull = false;
-                     if(opConfig && typeof opConfig === 'object' && 'error' in opConfig && opConfig.error === null) {
-                         errorExplicitlyNull = true;
-                     }
-                     if (!errorExplicitlyNull) {
-                        result.error = { name: 'PGRST116', message: 'Query returned no rows (data was null)', code: 'PGRST116' };
-                        result.status = 406; result.statusText = 'Not Acceptable';
-                     }
-                } // If result.data is a single object and (isSingle or isMaybeSingle), it's fine as is.
-            } else { // This is for the general .then() case (not single/maybeSingle)
-                // IMockQueryBuilder.then expects data: any[] | null
-                if (result.data !== null && !Array.isArray(result.data)) {
-                    // If data is a single object, wrap it in an array for .then()
-                    result.data = [result.data];
-                } else if (result.data === undefined) {
-                    // If data is undefined, ensure it's null for the interface
-                    result.data = null;
-                }
-                // If result.data is already an array or null, it's fine.
+        
+        // Simulate PostgREST behavior for .single() and .maybeSingle()
+        // This shaping happens *after* the mock result is obtained.
+        if (isSingle && result.data && Array.isArray(result.data)) {
+            result.data = result.data.length > 0 ? result.data[0] : null;
+        } else if (isMaybeSingle && result.data && Array.isArray(result.data)) {
+            result.data = result.data.length > 0 ? result.data[0] : null;
+            // For maybeSingle, if no rows, PostgREST returns an empty array, but error is null.
+            // If data became null from a single element array that was null, that's fine.
+            // If data was initially an empty array, it becomes null.
+            // If the mock explicitly set an error, that should be preserved.
+            if (result.data === null && !result.error) { // If data is null (empty array originally) and no explicit error
+                // PostgREST returns 200 with empty data array for maybeSingle, not null data.
+                // However, Supabase client's .maybeSingle() returns data as null if no row, error as null.
+                // So, data: null, error: null is the expected outcome for the *client*.
+                // The mock should just return data: null for this case.
             }
         }
 
         console.log(`[Mock QB ${this._state.tableName}] Final resolved query result (after single/maybe/then shaping):`, JSON.stringify(result));
-        if (result.error) {
-            const errorToThrow = typeof result.error === 'string' ? { name: 'PGRST116', message: result.error } : result.error;
-            throw {...errorToThrow, data: result.data, count: result.count, status: result.status, statusText: result.statusText };
+
+        // Handle errors: ensure error is an Error object, then RETURN the result, DO NOT THROW.
+        if (isSingle && result.data === null && !result.error) {
+            // If single() was called, data is null (no row found), and no error was set by the mock,
+            // then PostgREST would typically return a PGRST116 error.
+            // We set this error directly on the result object to be returned.
+            console.log(`[Mock QB ${this._state.tableName}] _resolveQuery: .single() called, data is null, no mock error. Setting PGRST116.`);
+            result.error = { name: 'PGRST116', message: 'Query returned no rows (data was null after .single())', code: 'PGRST116' };
+            result.status = 406; // Not Acceptable
+            result.statusText = 'Not Acceptable';
+            result.count = 0;
+        } else if (result.error) {
+            // If the mock function provided an error, ensure it's a proper Error-like object.
+            // This case is for when the mock itself returns an error object in its result.
+            if (!(result.error instanceof Error) && typeof result.error === 'object' && result.error !== null && 'message' in result.error) {
+                 // Attempt to make it more Error-like if it's a plain object with a message
+                 const errObj = result.error as { message: string, name?: string, code?: string, details?: string, hint?: string };
+                 result.error = new Error(errObj.message) as Error & MockPGRSTError;
+                 if (errObj.name) (result.error as MockPGRSTError).name = errObj.name;
+                 if (errObj.code) (result.error as MockPGRSTError).code = errObj.code;
+                 if (errObj.details) (result.error as MockPGRSTError).details = errObj.details;
+                 if (errObj.hint) (result.error as MockPGRSTError).hint = errObj.hint;
+            } else if (!(result.error instanceof Error)) {
+                // If it's not an Error and not an object with a message, stringify it.
+                result.error = new Error(String(result.error));
+            }
+            console.log(`[Mock QB ${this._state.tableName}] _resolveQuery: Mock returned an error:`, JSON.stringify(result.error));
+            // Ensure status reflects error, if not already set by mock
+            if (result.status === 200 || result.status === 201) result.status = result.error.name === 'PGRST116' ? 406 : 500; 
         }
-        return result;
+        
+        console.log(`[Mock QB ${this._state.tableName}] _resolveQuery: Returning result object:`, JSON.stringify(result));
+        return result; // Always return the result object; do not throw from here.
     }
 }
 

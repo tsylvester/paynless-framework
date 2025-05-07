@@ -1,7 +1,8 @@
 // IMPORTANT: Supabase Edge Functions require relative paths for imports from shared modules.
 // Do not use path aliases (like @shared/) as they will cause deployment failures.
 import { serve } from 'https://deno.land/std@0.177.0/http/server.ts'
-import { createClient, type SupabaseClient, type AuthError, type GoTrueClient } from 'npm:@supabase/supabase-js@2'
+// Define actualCreateClient before use
+import { createClient as actualCreateClient, type SupabaseClient, type AuthError, type GoTrueClient } from 'npm:@supabase/supabase-js@2'
 import { baseCorsHeaders } from '../_shared/cors-headers.ts'
 // Import Chat type from shared types
 // import type { Chat } from '../_shared/types.ts'; 
@@ -17,142 +18,149 @@ export interface ChatHistoryItem {
   updated_at: string;
 }
 
-// Remove Dependency Injection Setup
-/*
-export interface ChatHistoryHandlerDeps { ... }
-const defaultDeps: ChatHistoryHandlerDeps = { ... };
-*/
+// --- Response Helper Functions (similar to chat-details) ---
+const actualCreateJsonResponse = (body: unknown, status: number, headers?: HeadersInit) => {
+  return new Response(JSON.stringify(body), {
+    headers: { ...baseCorsHeaders, 'Content-Type': 'application/json', ...headers },
+    status,
+  });
+};
 
-// --- Main Handler Logic ---
-// Modify mainHandler to accept optional organizationId
-export async function mainHandler(supabaseClient: SupabaseClient<Database>, userId: string, organizationId?: string | null): Promise<ChatHistoryItem[]> { 
+const actualCreateErrorResponse = (message: string, status: number, _req?: Request, originalError?: Error | unknown) => {
+    console.error(`API Error (Chat History - ${status}):`, message, originalError || '');
+    return new Response(JSON.stringify({ error: message }), {
+        headers: { ...baseCorsHeaders, 'Content-Type': 'application/json' },
+        status,
+    });
+};
+
+// --- Define Dependencies and Defaults ---
+export interface ChatHistoryHandlerDeps {
+  createSupabaseClient: typeof actualCreateClient;
+  createJsonResponse: typeof actualCreateJsonResponse;
+  createErrorResponse: typeof actualCreateErrorResponse;
+}
+
+export const defaultDeps: ChatHistoryHandlerDeps = {
+  createSupabaseClient: actualCreateClient,
+  createJsonResponse: actualCreateJsonResponse,
+  createErrorResponse: actualCreateErrorResponse,
+};
+
+// --- Core Logic to Fetch Chat History (Renamed and adapted) ---
+async function fetchChatHistoryLogic(
+    supabaseClient: SupabaseClient<Database>, 
+    userId: string, 
+    organizationId: string | null, // Explicitly null if not provided
+    deps: ChatHistoryHandlerDeps // For using createErrorResponse if needed internally, though less common here
+): Promise<ChatHistoryItem[]> {
+  // Original mainHandler logic an be placed here, using deps.createErrorResponse for consistency if throwing HandlerError
+  // For now, keep existing try/catch and HandlerError usage from original mainHandler
   try {
     console.log(`Fetching chat history for user: ${userId}` + (organizationId ? ` Org: ${organizationId}` : ' (Personal)'));
 
-    // --- Build Query --- 
     let query = supabaseClient
       .from('chats')
       .select('id, title, updated_at, user_id, organization_id');
 
-    // Apply filter based on organizationId presence
     if (organizationId) {
-      // RLS POLICY `chats_org_select` already enforces SELECT access based on user's membership in organizationId
-      // So we just need to match the org ID here.
       query = query.eq('organization_id', organizationId);
       console.log('Applying organization filter');
     } else {
-      // RLS POLICY `chats_personal_select` already enforces SELECT access based on user_id == auth.uid() for personal chats
-      // Need to explicitly filter for NULL organization_id
       query = query.is('organization_id', null);
-      // We might add .eq('user_id', userId) for extra safety, but RLS should cover it.
-      // query = query.eq('user_id', userId); 
+      // query = query.eq('user_id', userId); // RLS should handle this for personal
       console.log('Applying personal (null org) filter');
     }
 
-    // --- Fetch Chat History ---
     const { data: chats, error: fetchError } = await query
       .order('updated_at', { ascending: false })
       .returns<ChatHistoryItem[]>();
 
     if (fetchError) {
         console.error(`Error fetching chat history for user ${userId}:`, fetchError);
-        // Handle specific errors like permission denied if necessary
         if (fetchError.code === 'PGRST116' || fetchError.message.includes('permission denied')) {
-            // Although RLS *should* prevent this, handle defensively
             throw new HandlerError('Unauthorized: Could not retrieve chat history.', 403, fetchError);
         }
-        // Throw generic DB error
         throw new HandlerError(fetchError.message || 'Failed to fetch chat history from database.', 500, fetchError);
     }
-
     console.log(`Found ${chats?.length ?? 0} chat(s) for user ${userId}` + (organizationId ? ` in org ${organizationId}` : ' (personal)'));
-
-    // --- Return Chat History --- 
-    // Return the array directly (or empty array if null)
     return chats || [];
-
   } catch (error) {
-    // Re-throw HandlerError directly
-    if (error instanceof HandlerError) {
-      throw error;
-    }
-    // Wrap other errors
-    console.error('Chat history mainHandler error:', error);
+    if (error instanceof HandlerError) throw error;
+    console.error('fetchChatHistoryLogic error:', error);
     const errorMessage = error instanceof Error ? error.message : 'An unexpected internal error occurred';
-    // Default to 500, could check error.status if available
     const status = typeof error === 'object' && error !== null && 'status' in error && typeof error.status === 'number' ? error.status : 500;
+    // Use deps.createErrorResponse style throw if we centralize HandlerError creation via deps
     throw new HandlerError(errorMessage, status, error instanceof Error ? error : undefined);
   }
 }
 
-// --- Serve Function --- 
-// This wrapper handles request validation, routing, auth, client creation, and response formatting
-serve(async (req) => {
-  // --- Handle CORS Preflight --- 
+// --- New Exportable Main Handler (Edge Function Entry Point Structure) ---
+export async function mainHandler(req: Request, deps: ChatHistoryHandlerDeps = defaultDeps): Promise<Response> {
+  const { 
+    createSupabaseClient, 
+    createJsonResponse, 
+    createErrorResponse 
+  } = deps;
+
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: baseCorsHeaders, status: 204 });
   }
 
   try {
-    // --- Basic Request Validation ---
     if (req.method !== 'GET') {
-      throw new HandlerError('Method Not Allowed', 405);
+      return createErrorResponse('Method Not Allowed', 405, req);
     }
 
-    // --- Authentication & Client Setup ---
     const authHeader = req.headers.get('Authorization');
     if (!authHeader) {
-       throw new HandlerError('Missing Authorization header', 401);
+       return createErrorResponse('Missing Authorization header', 401, req);
     }
     const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? '';
     const supabaseAnonKey = Deno.env.get('SUPABASE_ANON_KEY') ?? '';
     if (!supabaseUrl || !supabaseAnonKey) {
          console.error("Missing SUPABASE_URL or SUPABASE_ANON_KEY environment variables.");
-         throw new HandlerError("Server configuration error.", 500);
+         return createErrorResponse("Server configuration error.", 500, req);
     }
-    const supabaseClient = createClient<Database>(
+    const supabaseClient = createSupabaseClient(
       supabaseUrl,
       supabaseAnonKey,
       { global: { headers: { Authorization: authHeader } } }
     );
-    // Cast to GoTrueClient before calling getUser
-    const authClient = supabaseClient.auth as GoTrueClient;
+    const authClient = supabaseClient.auth as GoTrueClient; // Cast for getUser
     const { data: { user }, error: userError } = await authClient.getUser();
     if (userError || !user) {
-      throw new HandlerError('Invalid authentication credentials', 401, userError as AuthError);
+      // Use the more specific error from AuthError if available
+      const message = userError?.message || 'Invalid authentication credentials';
+      return createErrorResponse(message, 401, req, userError as AuthError);
     }
     
-    // --- Extract organizationId from query params --- 
     const url = new URL(req.url);
-    const organizationId = url.searchParams.get('organizationId');
-    console.log('Request received with organizationId:', organizationId);
+    const organizationId = url.searchParams.get('organizationId'); // Will be string or null
+    console.log('Request received with organizationId parameter:', organizationId);
 
-    // --- Call Main Logic --- 
-    const data = await mainHandler(supabaseClient, user.id, organizationId);
+    // Call the core logic function
+    const data = await fetchChatHistoryLogic(supabaseClient, user.id, organizationId, deps);
     
-    // --- Format Success Response --- 
-    return new Response(JSON.stringify(data), {
-      headers: { ...baseCorsHeaders, 'Content-Type': 'application/json' },
-      status: 200,
-    });
+    return createJsonResponse(data, 200);
 
   } catch (err) {
-    // --- Format Error Response --- 
     let errorStatus = 500;
     let errorMessage = "Internal Server Error";
+
     if (err instanceof HandlerError) {
       errorStatus = err.status;
       errorMessage = err.message;
-      if (err.cause) console.error("Original error cause:", err.cause);
+      if (err.cause) console.error("Original error cause (Chat History):", err.cause);
     } else if (err instanceof Error) {
        errorMessage = err.message;
     } else {
       errorMessage = String(err); 
     }
-    console.error("Returning error response:", { status: errorStatus, message: errorMessage });
-    return new Response(JSON.stringify({ error: errorMessage }), {
-      headers: { ...baseCorsHeaders, 'Content-Type': 'application/json' },
-      status: errorStatus,
-    });
+    console.error(`Returning error response (Chat History - ${errorStatus}):`, errorMessage);
+    return createErrorResponse(errorMessage, errorStatus, req, err);
   }
-}); 
+}
+
+// --- Serve Function (Simplified) --- 
+serve((req) => mainHandler(req, defaultDeps)); 

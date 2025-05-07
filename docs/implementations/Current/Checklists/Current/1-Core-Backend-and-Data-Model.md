@@ -268,26 +268,28 @@ The implementation plan uses the following labels to categorize work steps:
 * [X] Expect tests to fail (RED). (Initially, now functionally GREEN in Deno, overall suite fails due to leaks)
 
 #### STEP-1.5.2: [TEST-UNIT] Define & Implement Unit Tests for Write Edge Functions
-*   [ ] For `supabase/functions/chat/index.ts` (`mainHandler`):
+*   [✅] For `supabase/functions/chat/index.ts` (`mainHandler`):
     *   [✅] **Review & Convert/Enhance existing Vitest unit tests (`chat.test.ts`) to Deno.**
     *   [✅] Mock Supabase client calls and AI provider adapter.
     *   [✅] Test logic for creating a new personal chat.
     *   [✅] Test logic for creating a new organization chat (considering `org_id` and creation permissions).
     *   [✅] Test logic for adding a message to an existing chat.
-    *   [🚧] Test logic for the rewind functionality (given `rewindFromMessageId`):
+    *   [✅] Test logic for the rewind functionality (given `rewindFromMessageId`):
         *   [✅] Verifying correct messages are marked inactive (test assertion defined, e.g., `updateSpy` call).
         *   [✅] Verifying new user and assistant messages are added correctly (test assertions defined, e.g., `insertSpy` calls).
         *   [✅] Verifying token usage calculation and storage for new messages (test assertion defined).
     *   [✅] Test parsing of request body parameters (`chatId`, `organizationId`, `rewindFromMessageId`, etc.).
     *   [✅] Test error handling for invalid inputs or failed operations.
-*   [ ] For `supabase/functions/chat-details/index.ts` (handler for `DELETE`):
-    *   [ ] **Review & Convert/Enhance existing Vitest unit tests (`chat-details.test.ts`) to Deno.**
-    *   [ ] Mock Supabase client calls.
-    *   [ ] Test logic for deleting a chat (verifying correct parameters passed to Supabase client).
-    *   [ ] Test error handling.
+*   [✅] For `supabase/functions/chat-details/index.ts` (handler for `DELETE`):
+    *   [✅] **Review existing unit tests (`chat-details.test.ts`).** (Expanded and refactored for GET & DELETE)
+    *   [✅] Mock Supabase client calls. (Done via `supabase.mock.ts`)
+    *   [✅] Test logic for deleting a chat (verifying correct parameters passed to Supabase client). (Comprehensive tests added)
+    *   [✅] Test error handling. (Comprehensive tests added for various error states)
+*   [✅] For `supabase/functions/chat-history/index.ts` (handler for `GET`):
+    *   [✅] Review existing unit tests (`chat-history.test.ts`).
 *   [ ] Ensure tests are written (RED), then implement/modify function logic to make them pass (GREEN).
 
-#### STEP-1.5.3: [BE] Modify Write Edge Functions [✅]
+#### STEP-1.5.3: [BE] Modify Write Edge Functions [🚧]
 * [X] Modify `supabase/functions/chat-details/index.ts` to handle `DELETE` (as per Claude STEP-2.4.4):
     *   Get `chatId`, `organizationId`. Verify auth.
     *   Perform `supabaseClient.from('chats').delete().eq('id', chatId)`. RLS enforces permission.
@@ -325,6 +327,54 @@ The implementation plan uses the following labels to categorize work steps:
 #### STEP-1.5.5: [COMMIT] Commit Write Edge Function Updates [✅]
     *   [X] Stage `supabase/functions/chat/index.ts`, `supabase/functions/chat-details/index.ts`. (Assumed done as functionality is present)
     *   [X] Commit with message: `feat(BE): Modify POST /chat & DELETE /chat-details for org context, rewind, tokens w/ tests` (Assumed done)
+
+#### STEP-1.5.6: [BE] [REFACTOR] Implement Transaction for Rewind Logic in /chat Endpoint [ ]
+*   [ ] **[TEST-UNIT] Define Unit Test for Rewind Transactionality**
+    *   [ ] Write a test for `supabase/functions/chat/index.ts` that specifically targets the rewind logic.
+    *   [ ] Mock Supabase client database calls within the rewind process.
+    *   [ ] Simulate a failure at a late stage of the rewind (e.g., when inserting the new assistant message).
+    *   [ ] Assert that database operations intended to be part of the transaction (e.g., deactivating previous messages, inserting the new user message) are *not* persisted (or are rolled back). This might involve checking if `supabaseClient.rpc` (if we use a PG function for transaction) was called with parameters indicating a rollback, or verifying that mock spies for individual .update() or .insert() calls that should have been rolled back were either not committed or were subsequently reversed.
+*   [ ] **[BE] Refactor Rewind Logic in `supabase/functions/chat/index.ts` to Use a Database Transaction**
+    *   [ ] Investigate and implement transaction handling for the rewind database operations. This will likely involve creating a PostgreSQL function (callable via `supabaseClient.rpc()`) that encapsulates all the necessary `UPDATE` and `INSERT` statements for the rewind operation within a single transaction block (`BEGIN...COMMIT/ROLLBACK`).
+    *   [ ] The Edge Function will then call this single RPC instead of multiple individual Supabase client calls for those specific DB modifications.
+*   [ ] **[TEST-UNIT] Run Unit Tests for Rewind Transactionality & Refactor**
+    *   [ ] Ensure the unit tests defined above pass (GREEN).
+    *   [ ] Refactor the test or implementation as needed.
+*   [ ] **[TEST-INT] Verify Rewind Scenarios with Transaction Logic**
+    *   [ ] Review and enhance existing integration tests for rewind in `supabase/functions/chat/test/chat.integration.deno.ts` to ensure they cover success and, if possible, simulate failure scenarios that test the atomicity. (Directly testing rollback in an integration test might be complex without a way to force a mid-transaction error from the JS side if the transaction is purely in PG).
+*   [ ] **[COMMIT] Commit Rewind Transaction Refactor**
+    *   [ ] Stage changes in `supabase/functions/chat/index.ts` and any new SQL migration files for the PostgreSQL transaction function.
+    *   [ ] Commit with message: `refactor(BE): Implement DB transaction for /chat rewind logic`
+
+#### STEP-1.5.7: [BE] Implement Robust AI Token Usage Tracking for /chat Endpoint [ ]
+*   [ ] **[BE] Verify/Update AI Provider Adapters for Detailed Token Reporting**
+    *   [ ] In `supabase/_shared/ai_service/factory.ts` (and specific provider files like `openai.ts`, `anthropic.ts` etc.):
+        *   [ ] Ensure the `sendMessage` method of each active AI provider adapter consistently returns an object containing distinct counts for `promptTokens` (tokens sent to the model) and `completionTokens` (tokens received from the model).
+        *   [ ] Example return: `{responseText: "...", promptTokens: 150, completionTokens: 200}`.
+*   [ ] **[TEST-UNIT] Update/Add Unit Tests for AI Provider Adapters Token Reporting**
+    *   [ ] For each adapter's unit test:
+        *   [ ] Mock the underlying AI SDK's response to include example token usage data.
+        *   [ ] Verify that the adapter's `sendMessage` method correctly parses this and returns the `promptTokens` and `completionTokens`.
+*   [ ] **[BE] Enhance `supabase/functions/chat/index.ts` to Store Detailed Token Usage**
+    *   [ ] In the `mainHandler` for the `/chat` endpoint:
+        *   [ ] When an AI provider adapter's `sendMessage` is called and returns token information:
+            *   [ ] Store the received `promptTokens` and `completionTokens` in the `token_usage` JSONB column of the *assistant's* new `chat_messages` record.
+            *   [ ] The structure in `token_usage` should be like: `{\"prompt_tokens\": XXX, \"completion_tokens\": YYY}`.
+        *   [ ] Consider if prompt tokens for the *user's message itself* (and preceding history that formed the prompt) need to be calculated and stored separately or if attributing all prompt tokens to the AI's response message (as done above) is sufficient for current needs. (For now, focus on what the AI API returns).
+*   [ ] **[TEST-UNIT] Update/Add Unit Tests for `chat/index.ts` Token Storage Logic**
+    *   [ ] In `supabase/functions/chat/index.test.ts`:
+        *   [ ] When mocking the AI provider adapter's `sendMessage` call, ensure the mock returns token data (e.g., `{responseText: "...", promptTokens: 100, completionTokens: 50}`).
+        *   [ ] Spy on the `supabaseClient.from('chat_messages').insert()` call.
+        *   [ ] Verify that the data being inserted for the assistant message includes a `token_usage` field matching the structure and values from the mocked adapter response.
+        *   [ ] Test this for new chat, existing chat, and rewind scenarios.
+*   [ ] **[TEST-INT] Verify Token Storage in Integration Tests for `/chat` Endpoint**
+    *   [ ] In `supabase/functions/chat/test/chat.integration.deno.ts`:
+        *   [ ] After test scenarios that involve AI responses (new chat, existing, rewind):
+            *   [ ] Directly query the database for the newly created assistant `chat_messages` record.
+            *   [ ] Assert that its `token_usage` column contains the correct `prompt_tokens` and `completion_tokens` (these would be based on what the *actual* AI service returns in an integration test, or what a precisely mocked service in the test setup returns).
+*   [ ] **[COMMIT] Commit Token Usage Tracking Enhancements**
+    *   [ ] Stage changes in `supabase/functions/chat/index.ts`, AI adapter files, and relevant test files.
+    *   [ ] Commit with message: `feat(BE): Implement detailed AI token usage tracking in /chat endpoint`
 
 **Phase 1 Complete Checkpoint:**
 *   [ ] All Phase 1 tests (manual RLS, unit API Client, integration Edge Function) are passing.

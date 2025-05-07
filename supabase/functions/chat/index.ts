@@ -190,10 +190,18 @@ export async function mainHandler(req: Request, deps: ChatHandlerDeps = defaultD
                 .eq('chat_id', currentChatId) // Ensure it's in the same chat
                 .single();
 
-            if (rewindPointError || !rewindPointMessage) {
+            if (rewindPointError) { // Handle actual database/network errors first
                 console.error(`Error fetching rewind point message ${requestBody.rewindFromMessageId} in chat ${currentChatId}:`, rewindPointError);
-                return createErrorResponse(rewindPointError?.message || 'Rewind point message not found.', 404, req);
+                // Use rewindPointError.message if available, otherwise a generic message
+                return createErrorResponse(rewindPointError.message || 'Failed to retrieve rewind point message details.', 500, req);
             }
+            
+            if (!rewindPointMessage) { // Handle case where message is simply not found (no DB error, but data is null)
+                console.log(`Rewind point message ${requestBody.rewindFromMessageId} not found in chat ${currentChatId}.`);
+                return createErrorResponse('Rewind point message not found.', 404, req);
+            }
+            
+            // If we've reached here, rewindPointMessage is valid and rewindPointError was null.
             const rewindPointCreatedAt = rewindPointMessage.created_at;
             console.log(`Rewind point created_at: ${rewindPointCreatedAt}`);
 
@@ -213,6 +221,7 @@ export async function mainHandler(req: Request, deps: ChatHandlerDeps = defaultD
             // 3. Fetch active history up to (and including) the rewind point message for AI context
             // Note: The actual message being "rewound from" might be an AI or user.
             // The history should include messages *up to* this point that were active.
+            console.log(`[mainHandler Rewind] About to fetch active history for chat ${currentChatId} up to ${rewindPointCreatedAt}`);
             const { data: activeHistory, error: historyError } = await supabaseClient
                 .from('chat_messages')
                 .select('role, content')
