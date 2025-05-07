@@ -86,144 +86,240 @@ describe('aiStore - loadChatHistory', () => {
         });
     });
 
-    // --- Tests for loadChatHistory ---
-    describe('loadChatHistory', () => {
-        // Define constants for mock data
-        const mockChats: Chat[] = [
-            { id: 'c1', user_id: 'u1', title: 'Chat 1', created_at: 't1', updated_at: 't2', organization_id: null, system_prompt_id: null },
-        ];
-        const mockToken = 'valid-token-for-history';
-        const mockUser: User = { id: 'user-123', email: 'test@test.com', role: 'user', created_at: '2023-01-01', updated_at: '2023-01-01' };
-        const mockSession: Session = { access_token: mockToken, refresh_token: 'rt', expiresAt: Date.now() / 1000 + 3600 };
+    const mockToken = 'valid-token';
+    const mockUser: User = { id: 'user-123', email: 'test@test.com', /* other required fields */ created_at: 'now', updated_at: 'now', role: 'user' };
+    const mockSession: Session = { access_token: mockToken, refresh_token: 'rt', expiresAt: Date.now() / 1000 + 3600 };
+    const mockPersonalChats: Chat[] = [
+        { id: 'pc1', user_id: 'u1', title: 'Personal Chat 1', created_at: 't1', updated_at: 't2', organization_id: null, system_prompt_id: null },
+        { id: 'pc2', user_id: 'u1', title: 'Personal Chat 2', created_at: 't3', updated_at: 't4', organization_id: null, system_prompt_id: null },
+    ];
 
-        // Nested beforeEach using mockReturnValue for authStore.getState
+    // --- Tests for Personal Chat History ---    
+    describe('when loading personal chat history (organizationId is null/undefined)', () => {
         beforeEach(() => {
-             // Ensure useAuthStore is mocked before trying to mock getState
-             if (vi.isMockFunction(useAuthStore)) { 
-                // Mock the return value of getState for this suite
+             if (vi.isMockFunction(useAuthStore.getState)) {
                 vi.mocked(useAuthStore.getState).mockReturnValue({
                     user: mockUser,
                     session: mockSession,
-                    profile: null, // Provide default values for other state parts
-                    isLoading: false,
-                    error: null,
-                    navigate: mockNavigateGlobal, // Use the global mock
-                    // Mock necessary actions if they were called directly by aiStore
-                    // (Based on current aiStore code, only state is accessed)
-                    setNavigate: vi.fn(),
-                    login: vi.fn(),
-                    logout: vi.fn(),
-                    register: vi.fn(),
-                    setProfile: vi.fn(),
-                    setUser: vi.fn(),
-                    setSession: vi.fn(),
-                    setIsLoading: vi.fn(),
-                    setError: vi.fn(),
-                    initialize: vi.fn(),
-                    refreshSession: vi.fn(),
-                    updateProfile: vi.fn(),
-                    clearError: vi.fn(),
-                    // Add any other potentially accessed state/functions
-                } as any); // Use 'as any' for simplicity if type is complex
-            } else {
-                console.warn("useAuthStore mock was not found for mocking getState in loadChatHistory tests.");
-            }
+                    // ... other authStore state
+                } as any);
+            } 
         });
         
-        it('should set loading state and call API client', async () => {
-            // Arrange
+        it('should set personal loading state and call API client without orgId', async () => {
             mockGetChatHistory.mockResolvedValue({
-                data: mockChats,
+                data: mockPersonalChats,
                 status: 200,
                 error: null
             });
-            // Check initial state before action
             expect(useAiStore.getState().isLoadingHistoryByContext.personal).toBe(false);
 
-            // Act
-            const promise = useAiStore.getState().loadChatHistory();
+            const promise = useAiStore.getState().loadChatHistory(); // Implicitly personal
 
-            // Assert loading state immediately after call, before await
             expect(useAiStore.getState().isLoadingHistoryByContext.personal).toBe(true);
             
-            // Wait for the promise to resolve within act
-            await act(async () => {
-                await promise;
-            });
+            await act(async () => { await promise; });
 
-            // Assert final state
             expect(useAiStore.getState().isLoadingHistoryByContext.personal).toBe(false);
             expect(mockGetChatHistory).toHaveBeenCalledTimes(1);
-            expect(mockGetChatHistory).toHaveBeenCalledWith(mockToken);
+            expect(mockGetChatHistory).toHaveBeenCalledWith(mockToken, undefined); // Or null, depending on how you want to call for personal
         });
 
-        it('should update chatHistoryList on success', async () => {
-             // Arrange
+        it('should update personal chatsByContext on success', async () => {
              mockGetChatHistory.mockResolvedValue({
-                 data: mockChats,
+                 data: mockPersonalChats,
                  status: 200,
                  error: null
              });
 
-             // Act
              await act(async () => { 
-                await useAiStore.getState().loadChatHistory();
+                await useAiStore.getState().loadChatHistory(); // Implicitly personal
              });
 
-             // Assert
              const state = useAiStore.getState();
-             expect(state.chatsByContext.personal).toEqual(mockChats);
+             expect(state.chatsByContext.personal).toEqual(mockPersonalChats);
              expect(state.aiError).toBeNull();
         });
 
-         it('should set aiError on failure', async () => {
-             // Arrange
-             const errorMsg = 'Failed to load history';
+         it('should set aiError and clear personal chats on failure', async () => {
+             const errorMsg = 'Failed to load personal history';
              mockGetChatHistory.mockResolvedValue({
                  data: null,
                  status: 500,
                  error: { message: errorMsg }
              });
+             // Pre-populate to ensure it gets cleared
+             useAiStore.setState(state => ({ chatsByContext: { ...state.chatsByContext, personal: mockPersonalChats }}));
 
-             // Act: Wrap async action
              await act(async () => { 
-                await useAiStore.getState().loadChatHistory();
+                await useAiStore.getState().loadChatHistory(); // Implicitly personal
              });
 
-             // Assert
              const state = useAiStore.getState();
              expect(state.aiError).toBe(errorMsg);
              expect(state.chatsByContext.personal).toEqual([]);
              expect(state.isLoadingHistoryByContext.personal).toBe(false);
-             expect(mockGetChatHistory).toHaveBeenCalledTimes(1);
-             expect(mockGetChatHistory).toHaveBeenCalledWith(mockToken);
         });
 
-        it('should set aiError if no auth token is available', async () => {
-            // Arrange: Override authStore.getState for this specific test
-            if (vi.isMockFunction(useAuthStore)) { 
-                // Get the current mock return value to merge with
-                const currentMockState = useAuthStore.getState();
-                vi.mocked(useAuthStore.getState).mockReturnValueOnce({
-                    ...currentMockState, // Keep other state/mocks
-                    session: null, // Override session to null
-                });
-            } else {
-                 console.warn("useAuthStore mock was not found for mocking getState in 'no auth token' test.");
-            }
-            
-            // Act: Wrap async action
+        it('should update personal chatsByContext on success and not affect pre-existing org chats', async () => {
+            // Arrange: Pre-populate some org chats
+            const otherOrgId = 'org-other-789';
+            const preExistingOrgChats: Chat[] = [
+                { id: 'oxo1', user_id: 'u1', title: 'Existing Other Org Chat', created_at: 'tox1', updated_at: 'tox2', organization_id: otherOrgId, system_prompt_id: null }
+            ];
+            useAiStore.setState(state => ({
+                chatsByContext: { ...state.chatsByContext, orgs: { ...state.chatsByContext.orgs, [otherOrgId]: preExistingOrgChats } }
+            }));
+
+            mockGetChatHistory.mockResolvedValue({
+                data: mockPersonalChats, // mockPersonalChats defined in outer describe
+                status: 200,
+                error: null
+            });
+
+            // Act
             await act(async () => { 
-                await useAiStore.getState().loadChatHistory();
+                await useAiStore.getState().loadChatHistory(); // Personal
             });
 
             // Assert
+            const state = useAiStore.getState();
+            expect(state.chatsByContext.personal).toEqual(mockPersonalChats);
+            expect(state.chatsByContext.orgs[otherOrgId]).toEqual(preExistingOrgChats); // Verify other org chats are untouched
+            expect(state.aiError).toBeNull();
+        });
+
+        it('should set aiError if no auth token is available for personal history', async () => {
+            if (vi.isMockFunction(useAuthStore.getState)) {
+                vi.mocked(useAuthStore.getState).mockReturnValueOnce({ session: null } as any);
+            }
+            
+            await act(async () => { 
+                await useAiStore.getState().loadChatHistory(); // Implicitly personal
+            });
+
             const state = useAiStore.getState();
             expect(state.aiError).toBe('Authentication token not found.'); 
             expect(state.isLoadingHistoryByContext.personal).toBe(false);
             expect(state.chatsByContext.personal).toEqual([]);
             expect(mockGetChatHistory).not.toHaveBeenCalled();
         });
-    }); // End loadChatHistory describe
+    });
 
-}); // End main describe block
+    // --- Tests for Organization Chat History --- 
+    describe('when loading organization-specific chat history', () => {
+        const mockOrgId = 'org-abc-123';
+        const mockOrgChats: Chat[] = [
+            { id: 'oc1', user_id: 'u1', title: 'Org Chat 1', created_at: 't1', updated_at: 't2', organization_id: mockOrgId, system_prompt_id: null },
+        ];
+
+        beforeEach(() => {
+             if (vi.isMockFunction(useAuthStore.getState)) {
+                vi.mocked(useAuthStore.getState).mockReturnValue({
+                    user: mockUser,
+                    session: mockSession,
+                    // ... other authStore state
+                } as any);
+            } 
+        });
+
+        it('should set org-specific loading state and call API client with orgId', async () => {
+            mockGetChatHistory.mockResolvedValue({
+                data: mockOrgChats,
+                status: 200,
+                error: null
+            });
+            expect(useAiStore.getState().isLoadingHistoryByContext.orgs[mockOrgId]).toBeUndefined(); // Or false if pre-initialized
+
+            const promise = useAiStore.getState().loadChatHistory(mockOrgId);
+
+            expect(useAiStore.getState().isLoadingHistoryByContext.orgs[mockOrgId]).toBe(true);
+            
+            await act(async () => { await promise; });
+
+            expect(useAiStore.getState().isLoadingHistoryByContext.orgs[mockOrgId]).toBe(false);
+            expect(mockGetChatHistory).toHaveBeenCalledTimes(1);
+            expect(mockGetChatHistory).toHaveBeenCalledWith(mockToken, mockOrgId);
+        });
+
+        it('should update org-specific chatsByContext on success', async () => {
+            mockGetChatHistory.mockResolvedValue({
+                data: mockOrgChats,
+                status: 200,
+                error: null
+            });
+
+            await act(async () => { 
+               await useAiStore.getState().loadChatHistory(mockOrgId);
+            });
+
+            const state = useAiStore.getState();
+            expect(state.chatsByContext.orgs[mockOrgId]).toEqual(mockOrgChats);
+            expect(state.chatsByContext.personal).toEqual([]); // Personal should be unaffected
+            expect(state.aiError).toBeNull();
+        });
+
+        it('should update org-specific chatsByContext on success and not affect pre-existing personal chats', async () => {
+            // Arrange: Pre-populate some personal chats
+            const preExistingPersonalChats: Chat[] = [
+                { id: 'px1', user_id: 'u1', title: 'Existing Personal Chat', created_at: 'tp1', updated_at: 'tp2', organization_id: null, system_prompt_id: null }
+            ];
+            useAiStore.setState(state => ({
+                chatsByContext: { ...state.chatsByContext, personal: preExistingPersonalChats }
+            }));
+
+            mockGetChatHistory.mockResolvedValue({
+                data: mockOrgChats, // mockOrgChats is defined in the describe block
+                status: 200,
+                error: null
+            });
+
+            // Act
+            await act(async () => { 
+               await useAiStore.getState().loadChatHistory(mockOrgId);
+            });
+
+            // Assert
+            const state = useAiStore.getState();
+            expect(state.chatsByContext.orgs[mockOrgId]).toEqual(mockOrgChats);
+            expect(state.chatsByContext.personal).toEqual(preExistingPersonalChats); // Verify personal chats are untouched
+            expect(state.aiError).toBeNull();
+        });
+
+        it('should set aiError and clear org-specific chats on failure', async () => {
+            const errorMsg = 'Failed to load org history';
+            mockGetChatHistory.mockResolvedValue({
+                data: null,
+                status: 500,
+                error: { message: errorMsg }
+            });
+            // Pre-populate to ensure it gets cleared
+            useAiStore.setState(state => ({ chatsByContext: { ...state.chatsByContext, orgs: { ...state.chatsByContext.orgs, [mockOrgId]: mockOrgChats } }}));
+
+            await act(async () => { 
+               await useAiStore.getState().loadChatHistory(mockOrgId);
+            });
+
+            const state = useAiStore.getState();
+            expect(state.aiError).toBe(errorMsg);
+            expect(state.chatsByContext.orgs[mockOrgId]).toEqual([]);
+            expect(state.isLoadingHistoryByContext.orgs[mockOrgId]).toBe(false);
+        });
+
+        it('should set aiError if no auth token is available for org history', async () => {
+            if (vi.isMockFunction(useAuthStore.getState)) {
+                vi.mocked(useAuthStore.getState).mockReturnValueOnce({ session: null } as any);
+            }
+            
+            await act(async () => { 
+                await useAiStore.getState().loadChatHistory(mockOrgId);
+            });
+
+            const state = useAiStore.getState();
+            expect(state.aiError).toBe('Authentication token not found.'); 
+            expect(state.isLoadingHistoryByContext.orgs[mockOrgId]).toBe(false); // or undefined if not touched
+            expect(state.chatsByContext.orgs[mockOrgId]).toBeUndefined(); // Or empty array if pre-initialized and then cleared
+            expect(mockGetChatHistory).not.toHaveBeenCalled();
+        });
+    });
+});

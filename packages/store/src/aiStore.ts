@@ -251,48 +251,70 @@ export const useAiStore = create<AiStore>()(
                 }
             },
 
-            loadChatHistory: async () => {
+            loadChatHistory: async (organizationId?: string | null) => {
                 const token = useAuthStore.getState().session?.access_token;
                 if (!token) {
-                    set({ aiError: 'Authentication token not found.', isLoadingHistoryByContext: { personal: false, orgs: {} } });
+                    set({
+                        aiError: 'Authentication token not found.',
+                        isLoadingHistoryByContext: organizationId
+                            ? { ...get().isLoadingHistoryByContext, orgs: { ...get().isLoadingHistoryByContext.orgs, [organizationId]: false } }
+                            : { ...get().isLoadingHistoryByContext, personal: false },
+                    });
                     return;
                 }
-                set({ isLoadingHistoryByContext: { personal: true, orgs: {} }, aiError: null });
+
+                const currentLoadingState = get().isLoadingHistoryByContext;
+                if (organizationId) {
+                    set({ isLoadingHistoryByContext: { ...currentLoadingState, orgs: { ...currentLoadingState.orgs, [organizationId]: true } }, aiError: null });
+                } else {
+                    set({ isLoadingHistoryByContext: { ...currentLoadingState, personal: true }, aiError: null });
+                }
+
                 try {
-                    // Pass token directly as a string if that's what the API expects
-                    const response = await api.ai().getChatHistory(token); 
+                    // Pass token and optional organizationId to the API client
+                    const response = await api.ai().getChatHistory(token, organizationId);
                     if (response.error) {
                         throw new Error(response.error.message || 'Failed to load chat history');
                     }
 
-                    const allChats = response.data || [];
-                    const personalChats = allChats.filter(chat => chat.organization_id === null);
-                    const orgChatsFromResponse = allChats.filter(chat => chat.organization_id !== null);
+                    const chatsForContext = response.data || [];
 
-                    const orgsGrouped: { [orgId: string]: Chat[] } = orgChatsFromResponse.reduce((acc, chat) => {
-                        // organization_id is non-null here due to the filter
-                        const orgId = chat.organization_id!;
-                        if (!acc[orgId]) {
-                            acc[orgId] = [];
-                        }
-                        acc[orgId].push(chat);
-                        return acc;
-                    }, {} as { [orgId: string]: Chat[] });
-
-                    // Use plain set without immer
-                    set({
-                        chatsByContext: { personal: personalChats, orgs: orgsGrouped },
-                        isLoadingHistoryByContext: { personal: false, orgs: {} },
-                        aiError: null,
-                    });
+                    if (organizationId) {
+                        set(state => ({
+                            chatsByContext: {
+                                ...state.chatsByContext,
+                                orgs: { ...state.chatsByContext.orgs, [organizationId]: chatsForContext },
+                            },
+                            isLoadingHistoryByContext: { ...state.isLoadingHistoryByContext, orgs: { ...state.isLoadingHistoryByContext.orgs, [organizationId]: false } },
+                            aiError: null,
+                        }));
+                    } else {
+                        set(state => ({
+                            chatsByContext: {
+                                ...state.chatsByContext,
+                                personal: chatsForContext,
+                            },
+                            isLoadingHistoryByContext: { ...state.isLoadingHistoryByContext, personal: false },
+                            aiError: null,
+                        }));
+                    }
                 } catch (error: unknown) {
-                    logger.error('Error loading chat history:', { error: error instanceof Error ? error.message : String(error) });
-                    // Use plain set without immer
-                    set({
-                        aiError: error instanceof Error ? error.message : 'An unexpected error occurred while loading chat history.',
-                        chatsByContext: { personal: [], orgs: {} },
-                        isLoadingHistoryByContext: { personal: false, orgs: {} },
-                    });
+                    const errorMessage = error instanceof Error ? error.message : 'An unexpected error occurred while loading chat history.';
+                    logger.error('Error loading chat history:', { context: organizationId || 'personal', error: errorMessage });
+                    
+                    if (organizationId) {
+                        set(state => ({
+                            aiError: errorMessage,
+                            chatsByContext: { ...state.chatsByContext, orgs: { ...state.chatsByContext.orgs, [organizationId]: [] } }, // Clear data for this org on error
+                            isLoadingHistoryByContext: { ...state.isLoadingHistoryByContext, orgs: { ...state.isLoadingHistoryByContext.orgs, [organizationId]: false } },
+                        }));
+                    } else {
+                        set(state => ({
+                            aiError: errorMessage,
+                            chatsByContext: { ...state.chatsByContext, personal: [] }, // Clear personal data on error
+                            isLoadingHistoryByContext: { ...state.isLoadingHistoryByContext, personal: false },
+                        }));
+                    }
                 }
             },
 
