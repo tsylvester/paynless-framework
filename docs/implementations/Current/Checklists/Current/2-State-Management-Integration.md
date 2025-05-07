@@ -90,34 +90,34 @@ The implementation plan uses the following labels to categorize work steps:
 * [⏸️] **[REFACTOR]** ~~Ensure selectors are memoized where appropriate (e.g., using Zustand middleware or `reselect`).~~ // NOTE: Deferred to dedicated memoization step later in plan.
 * [ ] Commit changes with message "feat(STORE): Update useAiStore selectors for org context, rewind, tokens w/ tests"
 
-#### STEP-2.1.3: Update `loadChatHistory` Action [TEST-UNIT] [COMMIT]
-* [ ] Define test cases for `loadChatHistory` action:
-    *   Verify it accepts `organizationId: string | null`.
-    *   Verify it sets the correct loading state (e.g., `isLoadingByContext[organizationId ?? 'personal'] = true`).
-    *   Verify it calls `api.ai().getChatHistory(organizationId)` (mock API call).
-    *   Verify it updates the correct state partition (e.g., `chatsByContext[organizationId ?? 'personal']`) with the response data.
-    *   Verify it clears the loading state on success/error.
-    *   Verify error handling.
-* [ ] Write/Update tests in `packages/store/src/aiStore.unit.test.ts`. Expect failure (RED).
-* [ ] Update `loadChatHistory` action in `packages/store/src/aiStore.ts` based on the defined logic.
-* [ ] Run unit tests. Debug until pass (GREEN).
-* [ ] **[REFACTOR]** Review error handling and state updates.
-* [ ] Commit changes with message "feat(STORE): Update loadChatHistory action for organization context w/ tests"
+#### STEP-2.1.3: Update `loadChatHistory` Action [TEST-UNIT] [COMMIT] [✅]
+* [✅] Define test cases for `loadChatHistory` action:
+    *   [✅] Verify it accepts `organizationId: string | null`.
+    *   [✅] Verify it sets the correct loading state (e.g., `isLoadingByContext[organizationId ?? 'personal'] = true`).
+    *   [✅] Verify it calls `api.ai().getChatHistory(token, organizationId)` (mock API call).
+    *   [✅] Verify it updates the correct state partition (e.g., `chatsByContext[organizationId ?? 'personal']`) with the response data.
+    *   [✅] Verify it clears the loading state on success/error.
+    *   [✅] Verify error handling.
+* [✅] Write/Update tests in `packages/store/src/aiStore.unit.test.ts`. Expect failure (RED).
+* [✅] Update `loadChatHistory` action in `packages/store/src/aiStore.ts` based on the defined logic.
+* [✅] Run unit tests. Debug until pass (GREEN).
+* [✅] **[REFACTOR]** Review error handling and state updates.
+* [✅] Commit changes with message "feat(STORE): Update loadChatHistory action for organization context w/ tests"
 
-#### STEP-2.1.4: Update `loadChatDetails` Action [TEST-UNIT] [COMMIT]
-* [ ] Define test cases for `loadChatDetails` action:
-    *   Verify it accepts `chatId: string` and `organizationId: string | null`.
-    *   Verify it sets `isDetailsLoading = true`.
-    *   Verify it calls `api.ai().getChatMessages(chatId, organizationId)` (mock API call).
-    *   Verify it updates `messagesByChatId[chatId]` with the response data (active messages only).
-    *   Verify it sets `currentChatId = chatId`.
-    *   Verify it clears `isDetailsLoading` on success/error.
-    *   Verify error handling.
-* [ ] Write/Update tests in `packages/store/src/aiStore.unit.test.ts`. Expect failure (RED).
-* [ ] Update `loadChatDetails` action in `packages/store/src/aiStore.ts`.
-* [ ] Run unit tests. Debug until pass (GREEN).
-* [ ] **[REFACTOR]** Review state updates and error handling.
-* [ ] Commit changes with message "feat(STORE): Update loadChatDetails action for org context and rewind w/ tests"
+#### STEP-2.1.4: Update `loadChatDetails` Action [TEST-UNIT] [COMMIT] [✅]
+* [✅] Define test cases for `loadChatDetails` action:
+    *   [✅] Verify it accepts `chatId: string`.
+    *   [✅] Verify it sets `isDetailsLoading = true`.
+    *   [✅] Verify it calls `api.ai().getChatMessages(chatId, token)` (mock API call).
+    *   [✅] Verify it updates `messagesByChatId[chatId]` with the response data (active messages only).
+    *   [✅] Verify it sets `currentChatId = chatId`.
+    *   [✅] Verify it clears `isDetailsLoading` on success/error.
+    *   [✅] Verify error handling.
+* [✅] Write/Update tests in `packages/store/src/aiStore.unit.test.ts`. Expect failure (RED).
+* [✅] Update `loadChatDetails` action in `packages/store/src/aiStore.ts`.
+* [✅] Run unit tests. Debug until pass (GREEN).
+* [✅] **[REFACTOR]** Review state updates and error handling.
+* [✅] Commit changes with message "feat(STORE): Update loadChatDetails action for org context and rewind w/ tests"
 
 #### STEP-2.1.5: Update `startNewChat` Action [TEST-UNIT] [COMMIT]
 * [ ] Define test cases for `startNewChat` action:
@@ -161,75 +161,4 @@ The implementation plan uses the following labels to categorize work steps:
     *   Client-side estimation function/hook interaction (if estimation is done via store action).
     *   Storing `token_usage` data correctly when messages are added/updated.
     *   Cumulative token calculation logic/selector tests.
-* [ ] Write/Update tests in `packages/store/src/aiStore.unit.test.ts`. Expect failure (RED).
-* [ ] Implement token tracking logic within `useAiStore` (e.g., helper functions called by actions, selectors for calculation).
-* [ ] Run unit tests. Debug until pass (GREEN).
-* [ ] Commit changes with message "feat(STORE): Implement token tracking logic and state management w/ tests"
-
-#### STEP-2.1.9: Add Rewind Feature Actions/State [TEST-UNIT] [COMMIT]
-*   [ ] Define test cases for rewind-specific actions (`setRewindTarget`, `clearRewindTarget`) and state (`rewindTargetMessageId`).
-*   [ ] Write/Update tests in `packages/store/src/aiStore.unit.test.ts`. Expect failure (RED).
-*   [ ] Add state properties and actions to `useAiStore` for managing rewind mode.
-*   [ ] Ensure `sendMessage` correctly uses this state when making the API call.
-*   [ ] Run unit tests. Debug until pass (GREEN).
-*   [ ] Commit: `feat(STORE): Add state and actions for chat rewind feature w/ tests`
-
-### STEP-2.2: Integrate with Organization Store (`useOrganizationStore`) [STORE] [🚧]
-
-#### STEP-2.2.1: Add Organization Chat Settings to Organization Store [TEST-UNIT] [COMMIT]
-* [ ] Create unit tests for organization chat settings functionality in `useOrganizationStore`.
-* [ ] Update `packages/store/src/organizationStore.ts`:
-  * [ ] Add `allowMemberChatCreation: boolean | null` to the organization state properties.
-  * [ ] Ensure actions like `loadOrganizationDetails` fetch this property from the API (`api.organizations().getOrganizationSettings` or similar).
-  * [ ] Add selector `selectCanCreateOrganizationChats()`: Checks `allowMemberChatCreation` and potentially `currentUserRoleInOrg`. Handle loading/null states.
-  * [ ] Add action `updateOrganizationSettings(orgId: string, settings: { allow_member_chat_creation: boolean })`:
-      *   Calls `api.organizations().updateOrganizationSettings(orgId, settings)` (mock API call).
-      *   Updates the local store state (`organizationDetailsMap`) on success.
-      *   Integrates `member_chat_creation_toggled` analytics event trigger.
-      *   Handles loading/error states.
-* [ ] Write/Update tests in `packages/store/src/organizationStore.unit.test.ts`. Expect failure (RED).
-* [ ] Implement the changes in `useOrganizationStore`.
-* [ ] Run unit tests. Debug until pass (GREEN).
-* [ ] Commit changes with message "feat(STORE): Add organization chat settings management to useOrganizationStore w/ tests & analytics"
-
-#### STEP-2.2.2: Create Integration Between Stores [TEST-UNIT] [COMMIT]
-* [ ] Define test cases for the store integration (e.g., using `zustand/middleware` testing utilities or manual state checking).
-* [ ] Update `packages/store/src/aiStore.ts`:
-  * [ ] Import and use `useOrganizationStore`.
-  * [ ] Initialize `currentOrganizationId` state based on `useOrganizationStore.getState().currentOrganizationId`.
-  * [ ] Subscribe to changes in `useOrganizationStore`'s `currentOrganizationId`. When it changes:
-      *   Update `useAiStore`'s internal `currentOrganizationId`.
-      *   Trigger `loadChatHistory` action with the new `currentOrganizationId`.
-* [ ] Write/Update tests in `packages/store/src/aiStore.unit.test.ts` or a dedicated integration test file. Expect failure (RED).
-* [ ] Implement the subscription logic in `useAiStore`.
-* [ ] Run tests. Debug until pass (GREEN).
-* [ ] Commit changes with message "feat(STORE): Integrate useAiStore context with useOrganizationStore w/ tests"
-
-#### STEP-2.2.3: Add/Verify Remaining Analytics Integration [ANALYTICS] [COMMIT]
-* [ ] Review all actions in `useAiStore` and `useOrganizationStore`.
-* [ ] Verify all analytics events defined in Phase 0 (STEP-0.2.3) are correctly implemented within the relevant store actions, including parameters:
-    * `useAiStore`: `chat_context_selected` (triggered by subscription), `organization_chat_created`, `organization_chat_deleted`, `chat_rewind_used`.
-    * `useOrganizationStore`: `member_chat_creation_toggled`.
-    * *Note:* Events like `organization_chat_viewed` and `token_usage_viewed` might be better suited for the UI layer when the relevant component mounts or data is displayed.
-* [ ] Add any missing triggers.
-* [ ] Commit changes with message "feat(ANALYTICS): Ensure all required analytics events are triggered from store actions"
-
-### STEP-2.3: Implement Memoized Selectors [REFACTOR] [TEST-UNIT] [COMMIT]
-*   [✅] Install `reselect` dependency in `packages/store`. (Already done)
-*   [ ] Create/Update selector files (e.g., `aiStore.selectors.ts`, `organizationStore.selectors.ts`) using `reselect`'s `createSelector`.
-    *   [ ] Identify selectors in `useAiStore` that derive data (e.g., `selectChatHistoryList`, `selectCurrentChatMessages`) or depend on external state (`useOrganizationStore`) and memoize them.
-    *   [ ] Review selectors in `useOrganizationStore` (e.g., `selectCurrentUserRoleInOrg`) and memoize if beneficial.
-    *   [ ] (Optional/Review) Review `useSubscriptionStore` selectors for potential memoization benefits.
-*   [ ] Refactor store implementations (`aiStore.ts`, `organizationStore.ts`) to remove non-memoized selector functions if they were previously defined inline.
-*   [ ] Update unit tests (`aiStore.selectors.test.ts`, etc.) to import and test the standalone memoized selectors, passing state as needed.
-*   [ ] Run all `@paynless/store` tests to ensure memoization didn't break functionality.
-*   [ ] Commit changes with message "refactor(STORE): Implement memoized selectors using reselect".
-
-**Phase 2 Complete Checkpoint:**
-*   [ ] All Phase 2 tests (Store unit tests, integration tests) passing.
-*   [ ] `useAiStore` correctly manages state for personal/organization chats, token usage, and rewind.
-*   [ ] `useOrganizationStore` manages chat-related settings.
-*   [ ] Stores are correctly integrated, and context switching updates `useAiStore`.
-*   [ ] Analytics events are triggered appropriately from store actions.
-*   [ ] Code refactored, and commits made.
-*   [ ] Run `npm test` in `packages/store`. 
+* [ ] Write/Update tests in `

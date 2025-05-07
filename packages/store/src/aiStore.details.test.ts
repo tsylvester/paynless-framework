@@ -56,15 +56,17 @@ const resetAiStore = () => {
     useAiStore.setState({
         availableProviders: [],
         availablePrompts: [],
-        currentChatMessages: [],
+        messagesByChatId: {},
+        chatsByContext: { personal: [], orgs: {} },
         currentChatId: null,
         isLoadingAiResponse: false,
         isConfigLoading: false,
-        isHistoryLoading: false,
+        isLoadingHistoryByContext: { personal: false, orgs: {} },
         isDetailsLoading: false,
-        chatHistoryList: [],
+        newChatContext: null,
+        rewindTargetMessageId: null,
         aiError: null,
-    }); // Merge state
+    });
 };
 
 // Define a global navigate mock
@@ -93,8 +95,8 @@ describe('aiStore - loadChatDetails', () => {
         const mockUser: User = { id: 'user-123', email: 'test@test.com', role: 'user', created_at: '2023-01-01', updated_at: '2023-01-01' };
         const mockSession: Session = { access_token: mockToken, refresh_token: 'rt', expiresAt: Date.now() / 1000 + 3600 };
         const mockMessages: ChatMessage[] = [
-            { id: 'm1', chat_id: mockChatId, user_id: mockUser.id, role: 'user', content: 'Q', ai_provider_id: null, system_prompt_id: null, token_usage: null, created_at: 't1' },
-            { id: 'm2', chat_id: mockChatId, user_id: null, role: 'assistant', content: 'A', ai_provider_id: 'p1', system_prompt_id: 's1', token_usage: null, created_at: 't2' },
+            { id: 'm1', chat_id: mockChatId, user_id: mockUser.id, role: 'user', content: 'Q', ai_provider_id: null, system_prompt_id: null, token_usage: { "prompt_tokens": 50, "completion_tokens": 0, "total_tokens": 50 }, created_at: 't1', is_active_in_thread: true },
+            { id: 'm2', chat_id: mockChatId, user_id: null, role: 'assistant', content: 'A', ai_provider_id: 'p1', system_prompt_id: 's1', token_usage: { "prompt_tokens": 20, "completion_tokens": 80, "total_tokens": 100 }, created_at: 't2', is_active_in_thread: true },
         ];
 
         // Nested beforeEach using mockReturnValue for authStore.getState
@@ -129,7 +131,7 @@ describe('aiStore - loadChatDetails', () => {
         it('should set isDetailsLoading to true initially and false on completion (success)', async () => {
             // Arrange
             mockGetChatMessages.mockResolvedValue({
-                data: { mockMessages },
+                data: mockMessages,
                 status: 200,
                 error: null
             });
@@ -238,7 +240,8 @@ describe('aiStore - loadChatDetails', () => {
 
             // Assert
             const state = useAiStore.getState();
-            expect(state.currentChatMessages).toEqual(mockMessages);
+            expect(state.messagesByChatId[mockChatId]).toEqual(mockMessages);
+            expect(state.messagesByChatId[mockChatId]?.[0]?.token_usage).toEqual({ "prompt_tokens": 50, "completion_tokens": 0, "total_tokens": 50 });
             expect(state.currentChatId).toBe(mockChatId);
             expect(state.aiError).toBeNull();
             expect(state.isDetailsLoading).toBe(false);
@@ -261,7 +264,7 @@ describe('aiStore - loadChatDetails', () => {
             // Assert
             const state = useAiStore.getState();
             expect(state.aiError).toBe(errorMsg);
-            expect(state.currentChatMessages).toEqual([]);
+            expect(state.messagesByChatId[mockChatId]).toEqual([]);
             expect(state.currentChatId).toBeNull();
             expect(state.isDetailsLoading).toBe(false);
         });
@@ -279,7 +282,7 @@ describe('aiStore - loadChatDetails', () => {
             // Assert
             const state = useAiStore.getState();
             expect(state.aiError).toBe(errorMsg);
-            expect(state.currentChatMessages).toEqual([]);
+            expect(state.messagesByChatId[mockChatId]).toEqual([]);
             expect(state.currentChatId).toBeNull();
             expect(state.isDetailsLoading).toBe(false);
         });
