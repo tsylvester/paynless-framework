@@ -263,8 +263,8 @@ The implementation plan uses the following labels to categorize work steps:
         *   Verify that a new user message (from the current request) and a new AI assistant response are created and marked as `is_active_in_thread = true`. (Covered by Deno tests)
         *   Verify token usage is tracked for the new messages. (Covered by Deno tests)
 * [X] Example Test Paths (Based on OpenAI 1.5.1):
-    *   `supabase/functions/chat/test/chat.integration.deno.ts` (Covers New Chat, Existing Chat Update, and Rewind scenarios)
-    *   `supabase/functions/chat-details/test/chat-details.integration.deno.ts` (Covers DELETE scenarios for this step; GET scenarios are in STEP-1.4.5)
+    *   `supabase/functions/chat/test/chat.integration.test.ts` (Covers New Chat, Existing Chat Update, and Rewind scenarios)
+    *   `supabase/functions/chat-details/test/chat-details.integration.test.ts` (Covers DELETE scenarios for this step; GET scenarios are in STEP-1.4.5)
 * [X] Expect tests to fail (RED). (Initially, now functionally GREEN in Deno, overall suite fails due to leaks)
 
 #### STEP-1.5.2: [TEST-UNIT] Define & Implement Unit Tests for Write Edge Functions
@@ -341,34 +341,39 @@ The implementation plan uses the following labels to categorize work steps:
     *   [ ] Ensure the unit tests defined above pass (GREEN).
     *   [ ] Refactor the test or implementation as needed.
 *   [ ] **[TEST-INT] Verify Rewind Scenarios with Transaction Logic**
-    *   [ ] Review and enhance existing integration tests for rewind in `supabase/functions/chat/test/chat.integration.deno.ts` to ensure they cover success and, if possible, simulate failure scenarios that test the atomicity. (Directly testing rollback in an integration test might be complex without a way to force a mid-transaction error from the JS side if the transaction is purely in PG).
+    *   [ ] Review and enhance existing integration tests for rewind in `supabase/functions/chat/test/chat.integration.test.ts` to ensure they cover success and, if possible, simulate failure scenarios that test the atomicity. (Directly testing rollback in an integration test might be complex without a way to force a mid-transaction error from the JS side if the transaction is purely in PG).
 *   [ ] **[COMMIT] Commit Rewind Transaction Refactor**
     *   [ ] Stage changes in `supabase/functions/chat/index.ts` and any new SQL migration files for the PostgreSQL transaction function.
     *   [ ] Commit with message: `refactor(BE): Implement DB transaction for /chat rewind logic`
 
-#### STEP-1.5.7: [BE] Implement Robust AI Token Usage Tracking for /chat Endpoint [ ]
-*   [ ] **[BE] Verify/Update AI Provider Adapters for Detailed Token Reporting**
-    *   [ ] In `supabase/_shared/ai_service/factory.ts` (and specific provider files like `openai.ts`, `anthropic.ts` etc.):
-        *   [ ] Ensure the `sendMessage` method of each active AI provider adapter consistently returns an object containing distinct counts for `promptTokens` (tokens sent to the model) and `completionTokens` (tokens received from the model).
-        *   [ ] Example return: `{responseText: "...", promptTokens: 150, completionTokens: 200}`.
-*   [ ] **[TEST-UNIT] Update/Add Unit Tests for AI Provider Adapters Token Reporting**
-    *   [ ] For each adapter's unit test:
-        *   [ ] Mock the underlying AI SDK's response to include example token usage data.
-        *   [ ] Verify that the adapter's `sendMessage` method correctly parses this and returns the `promptTokens` and `completionTokens`.
-*   [ ] **[BE] Enhance `supabase/functions/chat/index.ts` to Store Detailed Token Usage**
-    *   [ ] In the `mainHandler` for the `/chat` endpoint:
-        *   [ ] When an AI provider adapter's `sendMessage` is called and returns token information:
-            *   [ ] Store the received `promptTokens` and `completionTokens` in the `token_usage` JSONB column of the *assistant's* new `chat_messages` record.
-            *   [ ] The structure in `token_usage` should be like: `{\"prompt_tokens\": XXX, \"completion_tokens\": YYY}`.
+#### STEP-1.5.7: [BE] Implement Robust AI Token Usage Tracking for /chat Endpoint [🚧]
+*   [✅] **[BE] Verify/Update AI Provider Adapters for Detailed Token Reporting**
+    *   [✅] In `supabase/functions/_shared/ai_service/factory.ts` (and specific provider files):
+        *   [✅] Ensure the `sendMessage` method of each active AI provider adapter consistently returns an object containing distinct counts for `promptTokens` (tokens sent to the model) and `completionTokens` (tokens received from the model). Example: `{responseText: "...", promptTokens: 150, completionTokens: 200}`.
+            *   [✅] OpenAI Adapter (`openai_adapter.ts`) - Confirmed.
+            *   [✅] Anthropic Adapter (`anthropic_adapter.ts`) - Confirmed.
+            *   [✅] Google Adapter (`google_adapter.ts`): Implementation for token counting via API added.
+*   [✅] **[TEST-UNIT] Update/Add Unit Tests for AI Provider Adapters Token Reporting**
+    *   [✅] For each adapter's unit test:
+        *   [✅] Mock the underlying AI SDK's response to include example token usage data.
+        *   [✅] Verify that the adapter's `sendMessage` method correctly parses this and returns the `promptTokens` and `completionTokens`.
+            *   [✅] OpenAI Adapter (`openai_adapter.test.ts`) - Specific assertions added.
+            *   [✅] Anthropic Adapter (`anthropic_adapter.test.ts`) - Specific assertions added to all success cases.
+            *   [✅] Google Adapter (`google_adapter.test.ts`) - New test "Success with Token Counting" added and existing success test updated.
+*   [✅] **[BE] Enhance `supabase/functions/chat/index.ts` to Store Detailed Token Usage**
+    *   [✅] In the `mainHandler` for the `/chat` endpoint:
+        *   [✅] When an AI provider adapter's `sendMessage` is called and returns token information:
+            *   [✅] Store the received `promptTokens` and `completionTokens` in the `token_usage` JSONB column of the *assistant's* new `chat_messages` record.
+            *   [✅] The structure in `token_usage` should be like: `{"prompt_tokens": XXX, "completion_tokens": YYY}`.
         *   [ ] Consider if prompt tokens for the *user's message itself* (and preceding history that formed the prompt) need to be calculated and stored separately or if attributing all prompt tokens to the AI's response message (as done above) is sufficient for current needs. (For now, focus on what the AI API returns).
-*   [ ] **[TEST-UNIT] Update/Add Unit Tests for `chat/index.ts` Token Storage Logic**
-    *   [ ] In `supabase/functions/chat/index.test.ts`:
-        *   [ ] When mocking the AI provider adapter's `sendMessage` call, ensure the mock returns token data (e.g., `{responseText: "...", promptTokens: 100, completionTokens: 50}`).
-        *   [ ] Spy on the `supabaseClient.from('chat_messages').insert()` call.
-        *   [ ] Verify that the data being inserted for the assistant message includes a `token_usage` field matching the structure and values from the mocked adapter response.
-        *   [ ] Test this for new chat, existing chat, and rewind scenarios.
+*   [✅] **[TEST-UNIT] Update/Add Unit Tests for `chat/index.ts` Token Storage Logic**
+    *   [✅] In `supabase/functions/chat/index.test.ts`:
+        *   [✅] When mocking the AI provider adapter's `sendMessage` call, ensure the mock returns token data (e.g., `{responseText: "...", promptTokens: 100, completionTokens: 50}`).
+        *   [✅] Spy on the `supabaseClient.from('chat_messages').insert()` call. (Implicitly covered by `assertObjectMatch` on mock DB row)
+        *   [✅] Verify that the data being inserted for the assistant message includes a `token_usage` field matching the structure and values from the mocked adapter response. (Covered by mock DB row structure)
+        *   [✅] Test this for new chat, existing chat, and rewind scenarios. (All 3 scenarios updated in tests)
 *   [ ] **[TEST-INT] Verify Token Storage in Integration Tests for `/chat` Endpoint**
-    *   [ ] In `supabase/functions/chat/test/chat.integration.deno.ts`:
+    *   [ ] In `supabase/functions/chat/test/chat.integration.test.ts`:
         *   [ ] After test scenarios that involve AI responses (new chat, existing, rewind):
             *   [ ] Directly query the database for the newly created assistant `chat_messages` record.
             *   [ ] Assert that its `token_usage` column contains the correct `prompt_tokens` and `completion_tokens` (these would be based on what the *actual* AI service returns in an integration test, or what a precisely mocked service in the test setup returns).
@@ -392,5 +397,5 @@ The implementation plan uses the following labels to categorize work steps:
 *   [ ] **[REFACTOR]** Improve client-side request replay logic (e.g., in `ApiClient`) to handle standard 401 responses (`{"error": ...}`), allowing backend functions like `chat-details` to remove special `{"msg": ...}` formatting for 401s.
 *   [ ] **[REFACTOR]** Add stricter validation (e.g., regex check) for the `chatId` path parameter in the `chat-details` Edge Function to ensure it conforms to a UUID format.
 *   [ ] **[TEST-DEBUG]** Investigate and resolve Deno test leaks (approx. 19-25 intervals from `SupabaseAuthClient._startAutoRefresh`) in `supabase/functions/chat/test/chat.integration.test.ts`. Current hypothesis: multiple `signInWithPassword` calls on the same client instance, or clients created within `mainHandler` via DI not being fully cleaned up despite `signOut` attempts. Consider refactoring tests to use one client per authenticated user session and ensuring explicit sign-out for each.
-*   [ ] **[TEST-DEBUG]** Deno integration tests for `chat-details` (`supabase/functions/chat-details/test/chat-details.integration.deno.ts`) are failing due to interval leaks (approx. 4-6 intervals from `SupabaseAuthClient._startAutoRefresh`), even though all individual test steps pass. This is similar to the issue in `chat` tests and may require a similar investigation or deferral.
-*   [ ] **[TEST-DEBUG]** Deno integration tests for `chat-history` (`supabase/functions/chat-history/test/chat-history.integration.deno.ts`) are failing due to interval leaks (approx. 4 intervals from `SupabaseAuthClient._startAutoRefresh`), even though all individual test steps pass. This is similar to the issues in `chat` and `chat-details` tests and may require similar investigation or deferral.
+*   [ ] **[TEST-DEBUG]** Deno integration tests for `chat-details` (`supabase/functions/chat-details/test/chat-details.integration.test.ts`) are failing due to interval leaks (approx. 4-6 intervals from `SupabaseAuthClient._startAutoRefresh`), even though all individual test steps pass. This is similar to the issue in `chat` tests and may require a similar investigation or deferral.
+*   [ ] **[TEST-DEBUG]** Deno integration tests for `chat-history` (`supabase/functions/chat-history/test/chat-history.integration.test.ts`) are failing due to interval leaks (approx. 4 intervals from `SupabaseAuthClient._startAutoRefresh`), even though all individual test steps pass. This is similar to the issues in `chat` and `chat-details` tests and may require similar investigation or deferral.

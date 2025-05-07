@@ -35,6 +35,37 @@ interface GoogleModelItem {
  */
 export class GoogleAdapter implements AiProviderAdapter {
 
+  private async _countTokens(
+    modelApiName: string,
+    apiKey: string,
+    contents: GoogleContent[],
+    fetchFn: typeof fetch = fetch // Allow fetch to be injectable for testing
+  ): Promise<number | null> {
+    const countTokensUrl = `${GOOGLE_API_BASE}/${modelApiName}:countTokens?key=${apiKey}`;
+    console.log(`Counting tokens for model: ${modelApiName} with ${contents.length} content blocks.`);
+    try {
+      const response = await fetchFn(countTokensUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ contents }), // API expects { "contents": [...] }
+      });
+
+      if (!response.ok) {
+        const errorBody = await response.text();
+        console.error(`Google Gemini API error during countTokens (${response.status}): ${errorBody}`);
+        // Do not throw here, allow main sendMessage to proceed with null tokens
+        return null;
+      }
+      const jsonResponse = await response.json();
+      return jsonResponse.totalTokens as number;
+    } catch (error) {
+      console.error('Failed to count tokens:', error);
+      return null;
+    }
+  }
+
   async sendMessage(
     request: ChatApiRequest,
     modelIdentifier: string, // e.g., "google-gemini-1.5-pro-latest"
@@ -162,12 +193,34 @@ export class GoogleAdapter implements AiProviderAdapter {
         throw new Error("Received invalid or empty response from Google Gemini.");
     }
 
-    // --- Token Usage --- 
+    // --- Token Usage ---
     // Google Gemini API (generateContent) typically doesn't return token count directly in the main response.
     // You often need to make a separate call to countTokens.
     // For simplicity here, we'll omit token usage, but it could be added with another API call.
-    const tokenUsage: Json | null = null; 
-    console.warn("Google Gemini adapter currently does not fetch token usage.");
+    // const tokenUsage: Json | null = null;
+    // console.warn("Google Gemini adapter currently does not fetch token usage.");
+
+    let promptTokens: number | null = null;
+    let completionTokens: number | null = null;
+
+    try {
+      promptTokens = await this._countTokens(modelApiName, apiKey, googlePayload.contents);
+      if (assistantMessageContent) {
+        const completionContents: GoogleContent[] = [{ role: 'model', parts: [{ text: assistantMessageContent }] }];
+        completionTokens = await this._countTokens(modelApiName, apiKey, completionContents);
+      }
+    } catch (tokenError) {
+      // Log error but don't let token counting failure break the main response
+      console.error("Error during token counting calls:", tokenError);
+    }
+    
+    const tokenUsage: Json | null = (promptTokens !== null || completionTokens !== null) 
+      ? {
+          prompt_tokens: promptTokens || 0,
+          completion_tokens: completionTokens || 0,
+          total_tokens: (promptTokens || 0) + (completionTokens || 0),
+        }
+      : null;
 
     // Construct the response conforming to AdapterResponsePayload
     const assistantResponse: AdapterResponsePayload = {
