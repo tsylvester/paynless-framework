@@ -3,6 +3,7 @@ import {
 	AiProvider,
 	SystemPrompt,
 	ChatMessage,
+	Chat,
 	ChatApiRequest,
 	FetchOptions,
     ApiResponse,
@@ -14,7 +15,6 @@ import {
 import { api } from '@paynless/api';
 import { logger } from '@paynless/utils';
 import { useAuthStore } from './authStore';
-import { useOrganizationStore } from './organizationStore'; // Ensure this is uncommented and used
 
 // --- Constants ---
 // --- Removed ANONYMOUS_MESSAGE_LIMIT ---
@@ -23,28 +23,16 @@ import { useOrganizationStore } from './organizationStore'; // Ensure this is un
 const initialAiStateValues: AiState = {
     availableProviders: [],
     availablePrompts: [],
+    chatsByContext: { personal: [], orgs: {} },
+    messagesByChatId: {},
     currentChatId: null,
     isLoadingAiResponse: false,
     isConfigLoading: false,
+    isLoadingHistoryByContext: { personal: false, orgs: {} },
     isDetailsLoading: false,
-    aiError: null,
-
-    // New context-aware state
-    chatsByContext: { 
-        personal: [], 
-        orgs: {}
-    },
-    messagesByChatId: {},
-    isLoadingHistoryByContext: { 
-        personal: false, 
-        orgs: {}
-    },
     newChatContext: null,
     rewindTargetMessageId: null,
-    
-    // Token tracking placeholders - will be initialized if defined in AiState
-    // chatTokenUsage: undefined, 
-    // sessionTokenUsage: undefined,
+    aiError: null,
 };
 
 // Use the imported AiStore type
@@ -58,6 +46,7 @@ export const useAiStore = create<AiStore>()(
             // --- Action Definitions ---
             loadAiConfig: async () => {
                 logger.info('Loading AI config...');
+                // Use plain set without immer
                 set({ isConfigLoading: true, aiError: null }); 
                 try {
                     const [providersResponse, promptsResponse] = await Promise.all([
@@ -91,6 +80,7 @@ export const useAiStore = create<AiStore>()(
                         throw new Error(errorMessages.join(' \n'));
                     }
                     
+                    // Use plain set without immer
                     set({
                         availableProviders: loadedProviders, 
                         availablePrompts: loadedPrompts,   
@@ -102,6 +92,7 @@ export const useAiStore = create<AiStore>()(
                 } catch (error: unknown) {
                     const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred while loading AI configuration.';
                     logger.error('Error loading AI config:', { error: errorMessage });
+                    // Use plain set without immer
                     set({
                         availableProviders: [], 
                         availablePrompts: [],  
@@ -113,17 +104,19 @@ export const useAiStore = create<AiStore>()(
 
             sendMessage: async (data) => {
                 const { message, providerId, promptId, chatId: inputChatId } = data;
-                // MODIFIED: Get current state once
-                const currentState = get();
-                const existingChatId = currentState.currentChatId;
-                //const currentMessagesByChatId = currentState.messagesByChatId;
-                //const newChatContext = currentState.newChatContext; // Will be used in later steps
+                const { currentChatId: existingChatId } = get(); // Get current chatId from state
 
                 const token = useAuthStore.getState().session?.access_token;
 
-                const _addOptimisticUserMessage = (msgContent: string, explicitChatIdForOptimistic?: string | null): string => {
+                // --- Refactored Helper --- 
+                // Now accepts optional explicitChatId
+                const _addOptimisticUserMessage = (msgContent: string, explicitChatId?: string | null): string => {
                     const tempId = `temp-user-${Date.now()}`;
-                    const chatIdToUse = explicitChatIdForOptimistic || existingChatId || `temp-chat-${Date.now()}`;
+                    const existingChatId = get().currentChatId; // Get current state ID
+                    // Use explicit ID if provided, else fallback to existing or temp string
+                    const chatIdToUse = (typeof explicitChatId === 'string' && explicitChatId) 
+                                        ? explicitChatId 
+                                        : (existingChatId || `temp-chat-${Date.now()}`); // Fallback to new temp ID
                     
                     const userMsg: ChatMessage = {
                          id: tempId, 
@@ -139,22 +132,20 @@ export const useAiStore = create<AiStore>()(
                          is_active_in_thread: true
                     };
                     set(state => ({ 
-                        messagesByChatId: {
-                            ...state.messagesByChatId,
-                            [chatIdToUse]: [...(state.messagesByChatId[chatIdToUse] || []), userMsg],
-                        }
+                        messagesByChatId: { ...state.messagesByChatId, [chatIdToUse]: [...(state.messagesByChatId[chatIdToUse] || []), userMsg] }
                     }));
                     logger.info('[sendMessage] Added optimistic user message', { id: tempId, chatId: chatIdToUse });
                     return tempId;
                 };
+                // --- End Refactored Helper ---
 
                 set({ isLoadingAiResponse: true, aiError: null });
-                
-                const effectiveChatIdForApi = inputChatId ?? existingChatId ?? undefined;
-                const tempUserMessageId = _addOptimisticUserMessage(message, effectiveChatIdForApi);
-                const optimisticMsgChatId = get().messagesByChatId[effectiveChatIdForApi || `temp-chat-${Date.now()}`]?.find(m => m.id === tempUserMessageId)?.chat_id || effectiveChatIdForApi;
 
-                const requestData: ChatApiRequest = { message, providerId, promptId, chatId: effectiveChatIdForApi };
+                // Call helper without explicit chatId - it will use current state or temp
+                const tempUserMessageId = _addOptimisticUserMessage(message); 
+
+                const effectiveChatId = inputChatId ?? existingChatId ?? undefined;
+                const requestData: ChatApiRequest = { message, providerId, promptId, chatId: effectiveChatId };
                 const options: FetchOptions = { token }; 
                 
                 try {
@@ -166,35 +157,27 @@ export const useAiStore = create<AiStore>()(
 
                     if (response.data) {
                         const assistantMessage = response.data;
-                        const actualChatId = assistantMessage.chat_id; // This is the source of truth for the chat_id
-
+                        // Use plain set without immer - more complex state update
                         set(state => {
-                            const updatedMessagesForChat = (state.messagesByChatId[actualChatId] || [])
-                                .map(msg => 
-                                    msg.id === tempUserMessageId ? { ...msg, chat_id: actualChatId, status: 'sent' as const } : msg
+                            const newChatId = assistantMessage.chat_id;
+                            let updatedMessages = state.messagesByChatId[existingChatId || ''];
+                            // Fix: Update chat_id of the user message if a newChatId is received,
+                            // regardless of whether existingChatId was present.
+                            if (newChatId) { 
+                                updatedMessages = updatedMessages.map(msg => 
+                                    msg.id === tempUserMessageId ? { ...msg, chat_id: newChatId } : msg
                                 );
-                            
-                            const newMessagesByChatId = { ...state.messagesByChatId };
-                            if (optimisticMsgChatId && optimisticMsgChatId !== actualChatId && optimisticMsgChatId.startsWith('temp-chat-')) {
-                                delete newMessagesByChatId[optimisticMsgChatId];
                             }
-                            
-                            newMessagesByChatId[actualChatId] = [...updatedMessagesForChat, assistantMessage];
+                            // Add the assistant message
+                            updatedMessages.push(assistantMessage);
 
-                            let newCurrentChatId = state.currentChatId;
-                            if (!existingChatId && actualChatId) {
-                                newCurrentChatId = actualChatId;
-                            }
-                            
                             return {
-                                messagesByChatId: newMessagesByChatId,
-                                currentChatId: newCurrentChatId, 
+                                currentChatId: newChatId || existingChatId || null,
+                                currentChatMessages: updatedMessages,
                                 isLoadingAiResponse: false,
-                                aiError: null, 
-                                newChatContext: null, 
                             };
                         });
-                        logger.info('Message sent and response received:', { messageId: assistantMessage.id, chatId: actualChatId });
+                        logger.info('Message sent and response received:', { messageId: assistantMessage.id });
                         return assistantMessage;
                     } else {
                         throw new Error('API returned success status but no data.');
@@ -214,17 +197,17 @@ export const useAiStore = create<AiStore>()(
                         // Use specific message if available, otherwise fall back
                         errorMessage = (err instanceof Error ? err.message : null) || 'Authentication required'; 
                     }
+                    // Check 2: (Simplified - rely on AuthRequiredError being thrown explicitly)
 
                     // If AuthRequiredError was caught, try to save pending action and navigate
                     if (requiresLogin) {
-                        // ... (localStorage logic for pendingAction remains largely the same)
                         let storageSuccess = false;
                         try {
                             const pendingAction = {
                                 endpoint: 'chat',
                                 method: 'POST',
-                                body: { ...requestData, chatId: effectiveChatIdForApi ?? null },
-                                returnPath: 'chat'
+                                body: { ...requestData, chatId: effectiveChatId ?? null },
+                                returnPath: 'chat' // Or dynamically get current path
                             };
                             localStorage.setItem('pendingAction', JSON.stringify(pendingAction));
                             logger.info('Stored pending chat action:', pendingAction);
@@ -247,26 +230,19 @@ export const useAiStore = create<AiStore>()(
                         }
                         // If storage failed, we also proceed to show an error state
                     }
-                    // MODIFIED: Clean up optimistic message from messagesByChatId
-                    set(state => {
-                        const chatIdOfOptimisticMsg = optimisticMsgChatId || existingChatId; // Best guess for where the optimistic message was placed
-                        const updatedMessagesByChatId = { ...state.messagesByChatId };
 
-                        if (chatIdOfOptimisticMsg && updatedMessagesByChatId[chatIdOfOptimisticMsg]) {
-                            updatedMessagesByChatId[chatIdOfOptimisticMsg] = updatedMessagesByChatId[chatIdOfOptimisticMsg].filter(
-                                (msg: ChatMessage) => msg.id !== tempUserMessageId
-                            );
-                            if (updatedMessagesByChatId[chatIdOfOptimisticMsg].length === 0) {
-                                delete updatedMessagesByChatId[chatIdOfOptimisticMsg];
-                            }
-                        }
-                        
+                    // State update: Clean up optimistic message. Set error ONLY if login wasn't triggered/successful.
+                    set(state => {
+                        const finalMessages = state.messagesByChatId[existingChatId || ''].filter(
+                            (msg) => msg.id !== tempUserMessageId
+                        );
                         const finalError = errorHandled ? null : errorMessage;
+
                         if (!errorHandled) {
                              logger.error('Error during send message API call (catch block):', { error: finalError });
                         }
                         return {
-                            messagesByChatId: updatedMessagesByChatId,
+                            messagesByChatId: { ...state.messagesByChatId, [existingChatId || '']: finalMessages },
                             aiError: finalError,
                             isLoadingAiResponse: false,
                          };
@@ -275,79 +251,51 @@ export const useAiStore = create<AiStore>()(
                 }
             },
 
-            // MODIFIED: loadChatHistory - basic refactor for build. Full org context in next steps.
-            loadChatHistory: async (organizationId?: string | null) => { // <<< Add organizationId parameter
+            loadChatHistory: async () => {
                 const token = useAuthStore.getState().session?.access_token;
-                const isOrgContext = typeof organizationId === 'string' && organizationId.trim() !== '';
-                const contextKey = isOrgContext ? organizationId : 'personal'; // Use orgId as key if present, else 'personal'
-
                 if (!token) {
-                    set(state => ({
-                        aiError: 'Authentication token not found.',
-                        isLoadingHistoryByContext: {
-                            ...state.isLoadingHistoryByContext,
-                            ...(isOrgContext && organizationId 
-                                ? { orgs: { ...state.isLoadingHistoryByContext.orgs, [organizationId]: false } }
-                                : { personal: false })
-                        }
-                    }));
+                    set({ aiError: 'Authentication token not found.', isLoadingHistoryByContext: { personal: false, orgs: {} } });
                     return;
                 }
-
-                set(state => ({
-                    isLoadingHistoryByContext: {
-                        ...state.isLoadingHistoryByContext,
-                        ...(isOrgContext && organizationId
-                            ? { orgs: { ...state.isLoadingHistoryByContext.orgs, [organizationId]: true } }
-                            : { personal: true })
-                    },
-                    aiError: null
-                }));
-
+                set({ isLoadingHistoryByContext: { personal: true, orgs: {} }, aiError: null });
                 try {
-                    // Pass organizationId (or undefined if not an org context) to the API client
-                    const response = await api.ai().getChatHistory(token, isOrgContext ? organizationId : undefined);
+                    // Pass token directly as a string if that's what the API expects
+                    const response = await api.ai().getChatHistory(token); 
                     if (response.error) {
-                        throw new Error(response.error.message || `Failed to load chat history for ${contextKey}`);
+                        throw new Error(response.error.message || 'Failed to load chat history');
                     }
 
-                    set(state => ({
-                        chatsByContext: {
-                            ...state.chatsByContext,
-                            ...(isOrgContext && organizationId
-                                ? { orgs: { ...state.chatsByContext.orgs, [organizationId]: response.data || [] } }
-                                : { personal: response.data || [] })
-                        },
-                        isLoadingHistoryByContext: {
-                            ...state.isLoadingHistoryByContext,
-                            ...(isOrgContext && organizationId
-                                ? { orgs: { ...state.isLoadingHistoryByContext.orgs, [organizationId]: false } }
-                                : { personal: false })
-                        },
+                    const allChats = response.data || [];
+                    const personalChats = allChats.filter(chat => chat.organization_id === null);
+                    const orgChatsFromResponse = allChats.filter(chat => chat.organization_id !== null);
+
+                    const orgsGrouped: { [orgId: string]: Chat[] } = orgChatsFromResponse.reduce((acc, chat) => {
+                        // organization_id is non-null here due to the filter
+                        const orgId = chat.organization_id!;
+                        if (!acc[orgId]) {
+                            acc[orgId] = [];
+                        }
+                        acc[orgId].push(chat);
+                        return acc;
+                    }, {} as { [orgId: string]: Chat[] });
+
+                    // Use plain set without immer
+                    set({
+                        chatsByContext: { personal: personalChats, orgs: orgsGrouped },
+                        isLoadingHistoryByContext: { personal: false, orgs: {} },
                         aiError: null,
-                    }));
+                    });
                 } catch (error: unknown) {
-                    const errorMessage = error instanceof Error ? error.message : `An unexpected error occurred while loading chat history for ${contextKey}.`;
-                    logger.error('Error loading chat history:', { context: contextKey, error: errorMessage });
-                    set(state => ({
-                        aiError: errorMessage,
-                        chatsByContext: {
-                            ...state.chatsByContext,
-                            ...(isOrgContext && organizationId
-                                ? { orgs: { ...state.chatsByContext.orgs, [organizationId]: [] } } // Clear on error for this context
-                                : { personal: [] }) // Clear on error for personal context
-                        },
-                        isLoadingHistoryByContext: {
-                            ...state.isLoadingHistoryByContext,
-                            ...(isOrgContext && organizationId
-                                ? { orgs: { ...state.isLoadingHistoryByContext.orgs, [organizationId]: false } }
-                                : { personal: false })
-                        },
-                    }));
+                    logger.error('Error loading chat history:', { error: error instanceof Error ? error.message : String(error) });
+                    // Use plain set without immer
+                    set({
+                        aiError: error instanceof Error ? error.message : 'An unexpected error occurred while loading chat history.',
+                        chatsByContext: { personal: [], orgs: {} },
+                        isLoadingHistoryByContext: { personal: false, orgs: {} },
+                    });
                 }
             },
 
-            // MODIFIED: loadChatDetails
             loadChatDetails: async (chatId) => {
                 if (!chatId) {
                     set({ aiError: 'Chat ID is required to load details.', isDetailsLoading: false });
@@ -358,54 +306,48 @@ export const useAiStore = create<AiStore>()(
                     set({ aiError: 'Authentication token not found.', isDetailsLoading: false });
                     return;
                 }
-                // Optimistically set currentChatId, isDetailsLoading remains
-                set({ isDetailsLoading: true, aiError: null, currentChatId: chatId }); 
+                set({ isDetailsLoading: true, aiError: null, currentChatId: chatId }); // Optimistically set chatId
                 try {
-                    // API call might need orgId in the future
+                    // Pass token directly as a string
                     const response = await api.ai().getChatMessages(chatId, token); 
                     if (response.error) {
                          throw new Error(response.error.message || 'Failed to load chat details');
                     }
-                    set(state => ({
-                        messagesByChatId: {
-                            ...state.messagesByChatId,
-                            [chatId]: response.data || [], // Update messages for this specific chat ID
-                        },
+                    // Use plain set without immer
+                     set({
+                        messagesByChatId: { ...get().messagesByChatId, [chatId]: response.data || [] }, // Handle potentially missing messages key
                         isDetailsLoading: false,
-                        // currentChatId: chatId, // Already set optimistically
+                        currentChatId: chatId, // Confirm chatId
                         aiError: null,
-                    }));
+                    });
                 } catch (error: unknown) {
                     logger.error('Error loading chat details:', { chatId, error: error instanceof Error ? error.message : String(error) });
+                    // Use plain set without immer
                     set({
                         aiError: error instanceof Error ? error.message : 'An unexpected error occurred while loading chat details.',
-                        // messagesByChatId remains as is, or clear for this chatId? For now, keep.
-                        // currentChatId: null, // Don't clear currentChatId on error, user might want to retry
+                        messagesByChatId: { ...get().messagesByChatId, [chatId]: [] },
+                        currentChatId: null, // Clear chatId on error
                         isDetailsLoading: false,
                     });
                 }
             },
 
-            // MODIFIED: startNewChat
-            startNewChat: (/* organizationId: string | null = null */) => {
-                 // The organizationId param will be used in STEP-2.1.5
-                 // For now, it primarily clears the current chat focus and sets up for a new personal one.
+            startNewChat: () => {
+                 // Use plain set without immer
                  set({ 
                     currentChatId: null, 
-                    // messagesByChatId: {}, // Don't clear all messages, only current chat focus is lost
+                    messagesByChatId: get().messagesByChatId, // Keep existing messages, currentChatId: null indicates new chat
                     aiError: null, 
-                    isLoadingAiResponse: false,
-                    newChatContext: 'personal', // Default to personal, orgId will override this later
-                    rewindTargetMessageId: null, // Clear rewind state
+                    isLoadingAiResponse: false 
                 });
-                logger.info('Started new chat session locally (cleared currentChatId, set newChatContext).');
+                logger.info('Started new chat session locally.');
             },
 
             clearAiError: () => {
+                 // Use plain set without immer
                  set({ aiError: null });
             },
             
-            // MODIFIED: checkAndReplayPendingChatAction - more complex, initial pass for build
             checkAndReplayPendingChatAction: async () => {
                 logger.info('[aiStore] Checking for pending chat action...');
                 const pendingActionJson = localStorage.getItem('pendingAction');
@@ -414,7 +356,7 @@ export const useAiStore = create<AiStore>()(
                     logger.info('[aiStore] No pending action found.');
                     return;
                 }
-                // ... (parsing and validation of action remain similar)
+
                 let action: PendingAction | null = null;
                 try {
                     action = JSON.parse(pendingActionJson);
@@ -424,31 +366,42 @@ export const useAiStore = create<AiStore>()(
                     return;
                 }
 
-                if (!action || action.endpoint !== 'chat' || action.method !== 'POST' || !action.body || typeof action.body['message'] !== 'string') {
+                // Validate if it's a chat POST action - Added null check for body
+                if (!action || action.endpoint !== 'chat' || action.method !== 'POST' || !action.body || typeof action.body['message'] !== 'string') { // Use bracket notation and check type
                     logger.warn('[aiStore] Pending action found, but not a valid chat POST. Ignoring.', { action });
                     return;
                 }
 
+                // --- Authentication Check ---
                 const token = useAuthStore.getState().session?.access_token;
                 if (!token) {
                     logger.error('[aiStore] Cannot replay pending action: User is not authenticated (no token).');
                     set({ aiError: 'Authentication required to replay pending action.' });
                     return;
                 }
+
+                // --- Process Valid Chat Action ---
                 logger.info('[aiStore] Pending chat action is valid and user authenticated. Processing...');
-                
-                // MODIFIED: Optimistic update for replay
-                const _addOptimisticReplayMessage = (msgContent: string, replayChatId?: string | null): string => {
-                    const tempId = `temp-replay-${Date.now()}`;
-                    const chatIdToUse = replayChatId || `temp-chat-replay-${Date.now()}`;
+                // <<< KEEP removeItem commented out here >>>
+                // localStorage.removeItem('pendingAction'); 
+                // logger.info('[aiStore] Removed pending action from localStorage.');
+
+                // --- Refactored Helper (same as above, defined once in scope) --- 
+                const _addOptimisticUserMessage = (msgContent: string, explicitChatId?: string | null): string => {
+                    const tempId = `temp-user-${Date.now()}`;
+                    const existingChatId = get().currentChatId; // Get current state ID
+                    // Use explicit ID if provided, else fallback to existing or temp string
+                    const chatIdToUse = (typeof explicitChatId === 'string' && explicitChatId) 
+                                        ? explicitChatId 
+                                        : (existingChatId || `temp-chat-replay-${Date.now()}`); // Unique temp ID for replay
                     
                     const userMsg: ChatMessage = {
                          id: tempId, 
-                         chat_id: chatIdToUse,
+                         chat_id: chatIdToUse, // Use determined chat ID
                          user_id: useAuthStore.getState().user?.id || 'unknown-replay-user', 
                          role: 'user', 
                          content: msgContent, 
-                         status: 'pending',
+                         status: 'pending', // Add status
                          ai_provider_id: null, 
                          system_prompt_id: null,
                          token_usage: null, 
@@ -456,22 +409,23 @@ export const useAiStore = create<AiStore>()(
                          is_active_in_thread: true
                     };
                     set(state => ({ 
-                        messagesByChatId: {
-                            ...state.messagesByChatId,
-                            [chatIdToUse]: [...(state.messagesByChatId[chatIdToUse] || []), userMsg],
-                        }
+                        messagesByChatId: { ...state.messagesByChatId, [chatIdToUse]: [...(state.messagesByChatId[chatIdToUse] || []), userMsg] }
                     }));
                     logger.info('[replayAction] Added optimistic user message', { id: tempId, chatId: chatIdToUse });
                     return tempId;
                 };
+                 // --- End Refactored Helper ---
 
                  set({ isLoadingAiResponse: true, aiError: null });
 
+                 // --- BEGIN ADD OPTIMISTIC UPDATE (using helper) ---
                  const userMessageContent = action?.body?.['message'] as string ?? '[Message content not found]';
+                 // Extract chatId from the action, which might be string or null/undefined
                  const chatIdFromAction = (typeof action?.body?.['chatId'] === 'string' ? action.body['chatId'] : null);
-                 const tempId = _addOptimisticReplayMessage(userMessageContent, chatIdFromAction);
-                 const optimisticReplayMsgChatId = get().messagesByChatId[chatIdFromAction || `temp-chat-replay-${Date.now()}`]?.find(m => m.id === tempId)?.chat_id || chatIdFromAction;
-
+                 // Call the refactored helper, passing the chatId from the action
+                 const tempId = _addOptimisticUserMessage(userMessageContent, chatIdFromAction);
+                 logger.info('[aiStore] Added optimistic pending message for replay via helper.', { tempId });
+                 // --- END ADD OPTIMISTIC UPDATE ---
 
                 try {
                     const response: ApiResponse<ChatMessage> = await api.post(
@@ -486,56 +440,36 @@ export const useAiStore = create<AiStore>()(
 
                     if (response.data) {
                         const assistantMessage = response.data;
-                        const actualChatId = assistantMessage.chat_id;
                         logger.info('[aiStore] Pending action replay successful. Received AI response.', { assistantMessage });
 
                         set(state => {
-                            const newMessagesByChatId = { ...state.messagesByChatId };
+                            const newChatId = assistantMessage.chat_id;
                             
-                            // Update optimistic message
-                            const existingMessagesForActualChat = (newMessagesByChatId[actualChatId] || []);
-                            let updatedMessagesForActualChat = existingMessagesForActualChat
-                                .map(msg => 
-                                    msg.id === tempId 
-                                        ? { ...msg, status: 'sent' as const, chat_id: actualChatId } 
-                                        : msg
-                                );
-                            
-                            // If the optimistic message was under a different temporary chat ID
-                            if (optimisticReplayMsgChatId && optimisticReplayMsgChatId !== actualChatId && optimisticReplayMsgChatId.startsWith('temp-chat-replay-')) {
-                                if (newMessagesByChatId[optimisticReplayMsgChatId]) {
-                                     // Ensure the temp message is removed from the old temp list
-                                    newMessagesByChatId[optimisticReplayMsgChatId] = newMessagesByChatId[optimisticReplayMsgChatId].filter(m => m.id !== tempId);
-                                    if (newMessagesByChatId[optimisticReplayMsgChatId].length === 0) {
-                                        delete newMessagesByChatId[optimisticReplayMsgChatId];
-                                    }
-                                }
-                                 // If the actualChatId list didn't contain the tempId (because it was a new chat ID), add it now corrected.
-                                if (!existingMessagesForActualChat.find(m => m.id === tempId)) {
-                                    const tempUserMsgCorrected = { // Create the user message again, but with correct chatId
-                                        id: tempId, chat_id: actualChatId, user_id: useAuthStore.getState().user?.id || 'unknown-replay-user', role: 'user', content: userMessageContent, status: 'sent' as const, ai_provider_id: null, system_prompt_id: null,token_usage: null, created_at: new Date(parseInt(tempId.split('-')[2])).toISOString(), is_active_in_thread: true
-                                    };
-                                    updatedMessagesForActualChat = [tempUserMsgCorrected, ...updatedMessagesForActualChat];
-                                }
-                            }
-                            
-                            // Add assistant message
-                            updatedMessagesForActualChat.push(assistantMessage);
-                            
-                            // Ensure no duplicates if somehow the optimistic user message wasn't correctly updated and remained
-                             const finalMessagesForChat = updatedMessagesForActualChat.filter((msg, index, self) =>
-                                index === self.findIndex((m) => m.id === msg.id || (m.id === tempId && msg.id === tempId)) // check id
+                            // --- Update existing optimistic message ---
+                            const updatedMessages = state.messagesByChatId[chatIdFromAction || ''].map(msg => 
+                                msg.id === tempId 
+                                    ? { ...msg, status: 'sent' as const, chat_id: newChatId } 
+                                    : msg
                             );
 
-                            newMessagesByChatId[actualChatId] = finalMessagesForChat;
+                            // --- Add the assistant message ---
+                            updatedMessages.push(assistantMessage);
                             
+                            // --- Filter out potential duplicates (just in case) ---
+                            // This ensures we don't have duplicate assistant messages if the API were ever called twice by mistake
+                            const finalMessages = updatedMessages.filter((msg, index, self) =>
+                                index === self.findIndex((m) => m.id === msg.id)
+                            );
+
                             return {
-                                messagesByChatId: newMessagesByChatId,
-                                currentChatId: actualChatId || state.currentChatId, // Update currentChatId if a new chat was created/focused
+                                messagesByChatId: { ...state.messagesByChatId, [chatIdFromAction || '']: finalMessages },
+                                currentChatId: newChatId || state.currentChatId,
                                 isLoadingAiResponse: false,
                                 aiError: null,
                             };
                         });
+
+                        // <<< CORRECT: Remove pending action ONLY on successful API call and data processing >>>
                         localStorage.removeItem('pendingAction');
                         logger.info('[aiStore] Successfully processed and removed pending action.');
 
@@ -543,68 +477,28 @@ export const useAiStore = create<AiStore>()(
                         throw new Error('API returned success status but no data during replay.');
                     }
                 } catch (error: unknown) {
+                    // Revert error check back to just checking the name
                     if (error instanceof AuthRequiredError) { 
                         logger.warn('[AiStore] Auth required during replay. Redirecting.', { error: error.message });
-                        set({ isLoadingAiResponse: false, aiError: error.message }); 
+                        set({ isLoadingAiResponse: false, aiError: error.message }); // Sets error message
+                        // Do NOT remove pending action on auth error
                     } else {
                         logger.error('[aiStore] Error during pending action replay API call:', { error: error instanceof Error ? error.message : String(error) });
                         set(state => {
-                            const chatIdOfOptimisticMsg = optimisticReplayMsgChatId || chatIdFromAction;
-                            const updatedMessagesByChatId = { ...state.messagesByChatId };
-                            if (chatIdOfOptimisticMsg && updatedMessagesByChatId[chatIdOfOptimisticMsg]) {
-                                updatedMessagesByChatId[chatIdOfOptimisticMsg] = updatedMessagesByChatId[chatIdOfOptimisticMsg].map(msg =>
-                                    msg.id === tempId
-                                        ? { ...msg, status: 'error' as const }
-                                        : msg
-                                );
-                            }
+                            const updatedMessages = state.messagesByChatId[chatIdFromAction || ''].map(msg =>
+                                msg.id === tempId
+                                    ? { ...msg, status: 'error' as const }
+                                    : msg
+                            );
                             return {
-                                messagesByChatId: updatedMessagesByChatId,
+                                messagesByChatId: { ...state.messagesByChatId, [chatIdFromAction || '']: updatedMessages },
                                 isLoadingAiResponse: false,
                                 aiError: error instanceof Error ? error.message : String(error)
                             };
                         });
                     }
                 }
-            },
-
-            // --- Selectors ---
-            selectChatHistoryList: () => {
-                const { chatsByContext } = get();
-                const currentOrganizationId = useOrganizationStore.getState().currentOrganizationId;
-
-                if (currentOrganizationId) {
-                    return chatsByContext.orgs[currentOrganizationId] || [];
-                } else {
-                    return chatsByContext.personal || [];
-                }
-            },
-
-            selectCurrentChatMessages: () => {
-                const { messagesByChatId, currentChatId } = get();
-                if (!currentChatId || !messagesByChatId[currentChatId]) {
-                    return [];
-                }
-                return messagesByChatId[currentChatId].filter(msg => msg.is_active_in_thread);
-            },
-
-            selectIsHistoryLoading: () => {
-                const { isLoadingHistoryByContext } = get();
-                const currentOrganizationId = useOrganizationStore.getState().currentOrganizationId;
-
-                if (currentOrganizationId) {
-                    return isLoadingHistoryByContext.orgs[currentOrganizationId] || false;
-                } else {
-                    return isLoadingHistoryByContext.personal || false;
-                }
-            },
-
-            selectIsDetailsLoading: () => get().isDetailsLoading,
-            selectIsLoadingAiResponse: () => get().isLoadingAiResponse,
-            selectAiError: () => get().aiError,
-            selectRewindTargetMessageId: () => get().rewindTargetMessageId,
-            selectIsRewinding: () => !!get().rewindTargetMessageId,
-
+            }
         })
     // )
 );
