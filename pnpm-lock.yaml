@@ -434,6 +434,9 @@ importers:
       jwt-decode:
         specifier: ^4.0.0
         version: 4.0.0
+      reselect:
+        specifier: ^5.1.1
+        version: 5.1.1
       zustand:
         specifier: ^4.5.2
         version: 4.5.6(@types/react@18.3.20)(immer@10.1.1)(react@18.3.1)
@@ -4901,6 +4904,9 @@ packages:
   requires-port@1.0.0:
     resolution: {integrity: sha512-KigOCHcocU3XODJxsu8i/j8T9tzT4adHiecwORRQ0ZZFcp7ahwXuRU1m+yuO90C5ZUyGeGfocHDI14M3L3yDAQ==}
 
+  reselect@5.1.1:
+    resolution: {integrity: sha512-K/BG6eIky/SBpzfHZv/dd+9JBFiS4SWV7FIujVyJRux6e45+73RaUHXLmIR1f7WOMaQ0U1km6qwklRQxpJJY0w==}
+
   resolve-from@4.0.0:
     resolution: {integrity: sha512-pb/MYmXstAkysRFx8piNI1tGFNQIFA3vkE3Gq4EuA1dF6gHp/+vgZqsCGJapvy8N3Q+4o7FwvquPJcnZ7RYy4g==}
     engines: {node: '>=4'}
@@ -8223,7 +8229,7 @@ snapshots:
       pathe: 1.1.2
       picocolors: 1.1.1
       sirv: 2.0.4
-      vitest: 1.6.1(@types/node@22.14.0)(@vitest/ui@1.6.1)(jsdom@26.0.0)
+      vitest: 1.6.1(@types/node@20.17.30)(@vitest/ui@1.6.1)(jsdom@26.0.0)
 
   '@vitest/utils@1.6.1':
     dependencies:
@@ -10665,6 +10671,8 @@ snapshots:
   require-directory@2.1.1: {}
 
   requires-port@1.0.0: {}
+
+  reselect@5.1.1: {}
 
   resolve-from@4.0.0: {}
 

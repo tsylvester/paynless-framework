@@ -72,7 +72,7 @@ The implementation plan uses the following labels to categorize work steps:
 * [✅] Commit changes with message "refactor(STORE): Update useAiStore state structure for org context, tokens, rewind w/ tests"
 
 #### STEP-2.1.2: Update AI Store Selectors [TEST-UNIT] [COMMIT]
-* [ ] Define test cases for selectors based on the chosen state structure:
+* [✅] Define test cases for selectors based on the chosen state structure:
     *   `selectChatHistoryList`: Mock `useOrganizationStore` if needed. Test returning correct chat list based on `currentOrganizationId` (null for personal, orgId for orgs). Test empty lists.
     *   `selectCurrentChatMessages`: Test returns messages for `state.currentChatId` from `state.messagesByChatId`, ensuring only messages where `is_active_in_thread = true` are included (for rewind).
     *   `selectIsHistoryLoading`: Test returns correct loading state based on context.
@@ -81,13 +81,13 @@ The implementation plan uses the following labels to categorize work steps:
     *   `selectAiError`: Test returns current AI error.
     *   Add selectors for token usage (e.g., `selectCurrentTokenEstimate`, `selectSessionTokenUsage`).
     *   Add selectors related to rewind state (e.g., `selectIsRewinding`, `selectRewindTargetMessageId`).
-* [ ] Write/Update these tests in `packages/store/src/aiStore.unit.test.ts`. Expect failure (RED).
-* [ ] Update selectors in `packages/store/src/aiStore.ts`:
+* [✅] Write/Update these tests in `packages/store/src/aiStore.unit.test.ts`. Expect failure (RED).
+* [✅] Update selectors in `packages/store/src/aiStore.ts`:
     *   Implement/Refactor `selectChatHistoryList` using `useOrganizationStore.getState().currentOrganizationId` and the chosen state structure.
     *   Implement/Refactor `selectCurrentChatMessages`, ensuring the `is_active_in_thread` filter.
     *   Implement/Refactor other selectors defined above.
-* [ ] Run unit tests to verify selectors behave correctly. Debug until pass (GREEN).
-* [ ] **[REFACTOR]** Ensure selectors are memoized where appropriate (e.g., using Zustand middleware or `reselect`).
+* [✅] Run unit tests to verify selectors behave correctly. Debug until pass (GREEN).
+* [⏸️] **[REFACTOR]** ~~Ensure selectors are memoized where appropriate (e.g., using Zustand middleware or `reselect`).~~ // NOTE: Deferred to dedicated memoization step later in plan.
 * [ ] Commit changes with message "feat(STORE): Update useAiStore selectors for org context, rewind, tokens w/ tests"
 
 #### STEP-2.1.3: Update `loadChatHistory` Action [TEST-UNIT] [COMMIT]
@@ -213,6 +213,17 @@ The implementation plan uses the following labels to categorize work steps:
     * *Note:* Events like `organization_chat_viewed` and `token_usage_viewed` might be better suited for the UI layer when the relevant component mounts or data is displayed.
 * [ ] Add any missing triggers.
 * [ ] Commit changes with message "feat(ANALYTICS): Ensure all required analytics events are triggered from store actions"
+
+### STEP-2.3: Implement Memoized Selectors [REFACTOR] [TEST-UNIT] [COMMIT]
+*   [✅] Install `reselect` dependency in `packages/store`. (Already done)
+*   [ ] Create/Update selector files (e.g., `aiStore.selectors.ts`, `organizationStore.selectors.ts`) using `reselect`'s `createSelector`.
+    *   [ ] Identify selectors in `useAiStore` that derive data (e.g., `selectChatHistoryList`, `selectCurrentChatMessages`) or depend on external state (`useOrganizationStore`) and memoize them.
+    *   [ ] Review selectors in `useOrganizationStore` (e.g., `selectCurrentUserRoleInOrg`) and memoize if beneficial.
+    *   [ ] (Optional/Review) Review `useSubscriptionStore` selectors for potential memoization benefits.
+*   [ ] Refactor store implementations (`aiStore.ts`, `organizationStore.ts`) to remove non-memoized selector functions if they were previously defined inline.
+*   [ ] Update unit tests (`aiStore.selectors.test.ts`, etc.) to import and test the standalone memoized selectors, passing state as needed.
+*   [ ] Run all `@paynless/store` tests to ensure memoization didn't break functionality.
+*   [ ] Commit changes with message "refactor(STORE): Implement memoized selectors using reselect".
 
 **Phase 2 Complete Checkpoint:**
 *   [ ] All Phase 2 tests (Store unit tests, integration tests) passing.
