@@ -120,27 +120,24 @@ export const useAiStore = create<AiStore>()(
 
             sendMessage: async (data) => {
                 const { message, providerId, promptId, chatId: inputChatId } = data;
-                const { currentChatId: existingChatId } = get(); // Get current chatId from state
+                const { currentChatId: existingChatIdFromState, rewindTargetMessageId: currentRewindTargetId } = get(); // Get rewindTargetMessageId
 
                 const token = useAuthStore.getState().session?.access_token;
 
-                // --- Refactored Helper --- 
-                // Now accepts optional explicitChatId
-                const _addOptimisticUserMessage = (msgContent: string, explicitChatId?: string | null): string => {
+                const _addOptimisticUserMessage = (msgContent: string, explicitChatId?: string | null): { tempId: string, chatIdUsed: string } => {
                     const tempId = `temp-user-${Date.now()}`;
-                    const existingChatId = get().currentChatId; // Get current state ID
-                    // Use explicit ID if provided, else fallback to existing or temp string
-                    const chatIdToUse = (typeof explicitChatId === 'string' && explicitChatId) 
+                    const currentChatIdFromGetter = get().currentChatId; // Get current state ID within the helper
+                    const chatIdUsed = (typeof explicitChatId === 'string' && explicitChatId) 
                                         ? explicitChatId 
-                                        : (existingChatId || `temp-chat-${Date.now()}`); // Fallback to new temp ID
+                                        : (currentChatIdFromGetter || `temp-chat-${Date.now()}`);
                     
                     const userMsg: ChatMessage = {
                          id: tempId, 
-                         chat_id: chatIdToUse, // Use determined chat ID
+                         chat_id: chatIdUsed, 
                          user_id: useAuthStore.getState().user?.id || 'optimistic-user', 
                          role: 'user', 
                          content: msgContent, 
-                         status: 'pending', // Add status
+                         status: 'pending', 
                          ai_provider_id: null, 
                          system_prompt_id: null,
                          token_usage: null, 
@@ -148,20 +145,40 @@ export const useAiStore = create<AiStore>()(
                          is_active_in_thread: true
                     };
                     set(state => ({ 
-                        messagesByChatId: { ...state.messagesByChatId, [chatIdToUse]: [...(state.messagesByChatId[chatIdToUse] || []), userMsg] }
+                        messagesByChatId: { 
+                            ...state.messagesByChatId, 
+                            [chatIdUsed]: [...(state.messagesByChatId[chatIdUsed] || []), userMsg] 
+                        }
                     }));
-                    logger.info('[sendMessage] Added optimistic user message', { id: tempId, chatId: chatIdToUse });
-                    return tempId;
+                    logger.info('[sendMessage] Added optimistic user message', { id: tempId, chatId: chatIdUsed });
+                    return { tempId, chatIdUsed };
                 };
-                // --- End Refactored Helper ---
 
                 set({ isLoadingAiResponse: true, aiError: null });
 
-                // Call helper without explicit chatId - it will use current state or temp
-                const tempUserMessageId = _addOptimisticUserMessage(message); 
+                const { tempId: tempUserMessageId, chatIdUsed: optimisticMessageChatId } = _addOptimisticUserMessage(message, inputChatId); 
 
-                const effectiveChatId = inputChatId ?? existingChatId ?? undefined;
-                const requestData: ChatApiRequest = { message, providerId, promptId, chatId: effectiveChatId };
+                const effectiveChatIdForApi = inputChatId ?? existingChatIdFromState ?? undefined;
+                
+                // Determine organizationId for the API call
+                let organizationIdForApi: string | undefined | null = undefined;
+                if (!effectiveChatIdForApi) { // It's a new chat
+                    organizationIdForApi = get().newChatContext; // Get from state, could be null or orgId
+                } else {
+                    // For existing chats, orgId is implicit in the chatId, API/backend handles this.
+                    // We don't need to explicitly find the orgId from chatsByContext here.
+                    organizationIdForApi = undefined; // Explicitly undefined for existing chats in request
+                }
+
+                const requestData: ChatApiRequest = { 
+                    message, 
+                    providerId, 
+                    promptId, 
+                    chatId: effectiveChatIdForApi, 
+                    organizationId: organizationIdForApi, // Add organizationId to the request
+                    // Conditionally add rewindFromMessageId
+                    ...(effectiveChatIdForApi && currentRewindTargetId && { rewindFromMessageId: currentRewindTargetId })
+                };
                 const options: FetchOptions = { token }; 
                 
                 try {
@@ -173,27 +190,111 @@ export const useAiStore = create<AiStore>()(
 
                     if (response.data) {
                         const assistantMessage = response.data;
-                        // Use plain set without immer - more complex state update
+                        let finalChatIdForLog: string | null | undefined = null; // Variable for logging
+
                         set(state => {
-                            const newChatId = assistantMessage.chat_id;
-                            let updatedMessages = state.messagesByChatId[existingChatId || ''];
-                            // Fix: Update chat_id of the user message if a newChatId is received,
-                            // regardless of whether existingChatId was present.
-                            if (newChatId) { 
-                                updatedMessages = updatedMessages.map(msg => 
-                                    msg.id === tempUserMessageId ? { ...msg, chat_id: newChatId } : msg
-                                );
+                            const actualNewChatId = assistantMessage.chat_id; 
+                            const finalChatId = actualNewChatId || existingChatIdFromState;
+                            finalChatIdForLog = finalChatId; // Assign for logging outside this scope
+
+                            if (!finalChatId) {
+                                logger.error('[sendMessage] Critical error: finalChatId is undefined after successful API call.');
+                                // When returning early, ensure all necessary parts of state are preserved or intentionally set
+                                return { 
+                                    ...state, 
+                                    isLoadingAiResponse: false, 
+                                    aiError: 'Internal error: Chat ID missing post-send.'
+                                };
                             }
-                            // Add the assistant message
-                            updatedMessages.push(assistantMessage);
+
+                            let messagesForChatProcessing = [...(state.messagesByChatId[optimisticMessageChatId] || [])];
+                            const isRewindOperation = !!(effectiveChatIdForApi && currentRewindTargetId);
+
+                            if (isRewindOperation && finalChatId) {
+                                // Rewind logic: Rebuild message history
+                                const originalMessagesForChat = state.messagesByChatId[finalChatId] || [];
+                                const rewindTargetIndex = originalMessagesForChat.findIndex(msg => msg.id === currentRewindTargetId);
+
+                                let newHistoryBase: ChatMessage[] = [];
+                                if (rewindTargetIndex !== -1) {
+                                    newHistoryBase = originalMessagesForChat.slice(0, rewindTargetIndex);
+                                }
+
+                                // Find the optimistic user message (it should be the last one added for this chat)
+                                const optimisticUserMessage = messagesForChatProcessing.find(msg => msg.id === tempUserMessageId);
+                                if (optimisticUserMessage) {
+                                    newHistoryBase.push({ ...optimisticUserMessage, chat_id: finalChatId, status: 'sent' as const });
+                                }
+                                newHistoryBase.push(assistantMessage); 
+                                messagesForChatProcessing = newHistoryBase;
+
+                            } else {
+                                // Standard logic: Update optimistic and add assistant message
+                                messagesForChatProcessing = messagesForChatProcessing.map(msg =>
+                                    msg.id === tempUserMessageId
+                                        ? { ...msg, chat_id: finalChatId, status: 'sent' as const }
+                                        : msg
+                                );
+                                messagesForChatProcessing.push(assistantMessage);
+                            }
+
+                            const newMessagesByChatId = { ...state.messagesByChatId };
+
+                            if (optimisticMessageChatId !== finalChatId && newMessagesByChatId[optimisticMessageChatId]) {
+                                newMessagesByChatId[finalChatId] = messagesForChatProcessing;
+                                delete newMessagesByChatId[optimisticMessageChatId];
+                            } else {
+                                newMessagesByChatId[finalChatId] = messagesForChatProcessing;
+                            }
+                            
+                            let updatedChatsByContext = { ...state.chatsByContext };
+                            // If it was a new chat, add it to chatsByContext
+                            if (optimisticMessageChatId !== finalChatId) {
+                                const newChatEntry: Chat = {
+                                    id: finalChatId,
+                                    // Derive title from first message? Requires access to the first user message here.
+                                    // For simplicity, let's use a placeholder or the assistant's first few words.
+                                    // The user message is: requestData.message
+                                    title: requestData.message.substring(0, 50) + (requestData.message.length > 50 ? '...' : ''), 
+                                    user_id: useAuthStore.getState().user?.id || null, 
+                                    organization_id: organizationIdForApi ?? null, // Default undefined to null
+                                    created_at: new Date().toISOString(), 
+                                    updated_at: new Date().toISOString(),
+                                    system_prompt_id: requestData.promptId || null,
+                                    // Add other non-nullable fields from Chat type with default/null values if necessary
+                                };
+
+                                if (organizationIdForApi) {
+                                    // Add to existing org list or create new org list
+                                    const orgChats = [...(updatedChatsByContext.orgs[organizationIdForApi] || []), newChatEntry];
+                                    updatedChatsByContext = {
+                                        ...updatedChatsByContext,
+                                        orgs: { ...updatedChatsByContext.orgs, [organizationIdForApi]: orgChats }
+                                    };
+                                } else {
+                                    // Add to personal list
+                                    updatedChatsByContext = {
+                                        ...updatedChatsByContext,
+                                        personal: [...updatedChatsByContext.personal, newChatEntry]
+                                    };
+                                }
+                            } else {
+                                // TODO: Optionally update the 'updated_at' for an existing chat in chatsByContext?
+                                // Requires finding the chat in the list and updating it.
+                            }
 
                             return {
-                                currentChatId: newChatId || existingChatId || null,
-                                currentChatMessages: updatedMessages,
+                                ...state, 
+                                messagesByChatId: newMessagesByChatId,
+                                chatsByContext: updatedChatsByContext, // Set the updated context
+                                currentChatId: finalChatId, 
                                 isLoadingAiResponse: false,
+                                aiError: null,
+                                newChatContext: null, 
+                                rewindTargetMessageId: isRewindOperation ? null : state.rewindTargetMessageId, // Clear on successful rewind
                             };
                         });
-                        logger.info('Message sent and response received:', { messageId: assistantMessage.id });
+                        logger.info('Message sent and response received:', { messageId: assistantMessage.id, chatId: finalChatIdForLog, rewound: !!(effectiveChatIdForApi && currentRewindTargetId) });
                         return assistantMessage;
                     } else {
                         throw new Error('API returned success status but no data.');
@@ -222,9 +323,10 @@ export const useAiStore = create<AiStore>()(
                             const pendingAction = {
                                 endpoint: 'chat',
                                 method: 'POST',
-                                body: { ...requestData, chatId: effectiveChatId ?? null },
-                                returnPath: 'chat' // Or dynamically get current path
+                                body: { ...requestData, chatId: effectiveChatIdForApi ?? null },
+                                returnPath: 'chat' 
                             };
+                            logger.info('[sendMessage] Attempting to call localStorage.setItem with pendingAction:', pendingAction);
                             localStorage.setItem('pendingAction', JSON.stringify(pendingAction));
                             logger.info('Stored pending chat action:', pendingAction);
                             storageSuccess = true;
@@ -249,7 +351,9 @@ export const useAiStore = create<AiStore>()(
 
                     // State update: Clean up optimistic message. Set error ONLY if login wasn't triggered/successful.
                     set(state => {
-                        const finalMessages = state.messagesByChatId[existingChatId || ''].filter(
+                        // Use optimisticMessageChatId to ensure we are looking at the correct chat's messages
+                        const messagesForChat = state.messagesByChatId[optimisticMessageChatId] || [];
+                        const finalMessages = messagesForChat.filter(
                             (msg) => msg.id !== tempUserMessageId
                         );
                         const finalError = errorHandled ? null : errorMessage;
@@ -258,7 +362,7 @@ export const useAiStore = create<AiStore>()(
                              logger.error('Error during send message API call (catch block):', { error: finalError });
                         }
                         return {
-                            messagesByChatId: { ...state.messagesByChatId, [existingChatId || '']: finalMessages },
+                            messagesByChatId: { ...state.messagesByChatId, [optimisticMessageChatId]: finalMessages },
                             aiError: finalError,
                             isLoadingAiResponse: false,
                          };
