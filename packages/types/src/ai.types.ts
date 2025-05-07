@@ -171,7 +171,7 @@ export interface AiActions {
   }) => Promise<ChatMessage | null>; // Use aliased type
   loadChatHistory: (organizationId?: string | null) => Promise<void>;
   loadChatDetails: (chatId: Chat['id']) => Promise<void>; // Use aliased type
-  startNewChat: () => void;
+  startNewChat: (organizationId?: string | null) => void;
   clearAiError: () => void;
   checkAndReplayPendingChatAction: () => Promise<void>;
 }

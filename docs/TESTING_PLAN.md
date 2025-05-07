@@ -239,6 +239,57 @@ Following this cycle helps catch errors early, ensures comprehensive test covera
 
 ---
 
+## Troubleshooting Zustand Store Actions in Vitest: The "is not a function" Error
+
+**Symptom:**
+Tests for Zustand store actions fail with a `TypeError: useMyStore.getState().myAction is not a function`, even though `myAction` is clearly defined in the store. This can be particularly perplexing if the error appears inconsistently or only in certain test files.
+
+**Root Cause (Common Pitfall):**
+The most common cause is an incorrect state reset strategy within test helper functions (e.g., `resetMyStore` in `beforeEach`). If `useMyStore.setState(initialStateObject, true)` is used (where `true` means "replace the entire state"), and `initialStateObject` only contains state *properties* (e.g., `{ count: 0, user: null }`) but not the action *definitions* from the original `create()(...)` call, the actions will be wiped from the store instance for that test's scope.
+
+**Solution:**
+Ensure your store reset helper function uses `setState` to *merge* the initial/default state properties, rather than replace the entire store. This preserves the actions.
+
+**Example (`resetMyStore` helper):**
+
+```typescript
+// In your test file (e.g., myStore.test.ts)
+import { useMyStore, MyState } from './myStore'; // Assuming MyState includes only state props
+
+const defaultTestState: MyState = {
+  // all your default state properties
+  count: 0,
+  user: null,
+  // ... other state properties
+};
+
+// Correct reset helper
+const resetMyStore = (overrides: Partial<MyState> = {}) => {
+  useMyStore.setState({ ...defaultTestState, ...overrides }, false); // Or simply omit `, false` as it's default
+};
+
+// Incorrect reset helper (causes actions to disappear)
+// const resetMyStoreBad = (overrides: Partial<MyState> = {}) => {
+//   useMyStore.setState({ ...defaultTestState, ...overrides }, true); // 'true' replaces, wiping actions
+// };
+
+beforeEach(() => {
+  act(() => {
+    resetMyStore();
+  });
+});
+```
+
+**Key Takeaway:**
+When resetting Zustand stores in tests, always ensure you are merging state properties (`setState(..., false)` or `setState(...)`) rather than replacing the entire store instance (`setState(..., true)`), unless you are intentionally providing a complete store object that *includes* all action definitions.
+
+**Secondary Consideration: API Mocks**
+While the `setState` issue is primary for "is not a function" on actions, ensure your API mocks (`vi.mock(...)`) are appropriate for the test.
+*   For actions that *do not* directly make API calls, a simpler mock (inline `vi.fn()` for API methods, no `importOriginal`) is often cleaner and sufficient.
+*   For actions that *do* make API calls, or if store initialization depends on the actual API module, a more detailed mock using `await vi.importActual()` and spreading the original module might be necessary to ensure the store initializes correctly while allowing you to control specific API method behaviors.
+
+---
+
 ## Testing Resources & Libraries
 
 *   **Vitest:** Our primary test runner for JavaScript/TypeScript code (stores, components, utils).

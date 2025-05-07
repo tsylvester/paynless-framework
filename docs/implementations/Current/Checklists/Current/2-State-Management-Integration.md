@@ -119,17 +119,18 @@ The implementation plan uses the following labels to categorize work steps:
 * [✅] **[REFACTOR]** Review state updates and error handling.
 * [✅] Commit changes with message "feat(STORE): Update loadChatDetails action for org context and rewind w/ tests"
 
-#### STEP-2.1.5: Update `startNewChat` Action [TEST-UNIT] [COMMIT]
-* [ ] Define test cases for `startNewChat` action:
-    *   Verify it accepts `organizationId: string | null`.
-    *   Verify it sets `state.currentChatId = null`.
-    *   Verify it clears the current chat messages state (e.g., clears `messagesByChatId[oldChatId]` or relies on selector).
-    *   Verify it sets the context for the new chat (e.g., `state.newChatContext = organizationId`).
-    *   Verify it potentially resets other relevant state (e.g., `rewindTargetMessageId`, `aiError`).
-* [ ] Write/Update tests in `packages/store/src/aiStore.unit.test.ts`. Expect failure (RED).
-* [ ] Update `startNewChat` action in `packages/store/src/aiStore.ts`.
-* [ ] Run unit tests. Debug until pass (GREEN).
-* [ ] Commit changes with message "feat(STORE): Update startNewChat action for organization context"
+#### STEP-2.1.5: Update `startNewChat` Action [TEST-UNIT] [COMMIT] [✅]
+* [✅] Define test cases for `startNewChat` action:
+    *   [✅] Verify it accepts `organizationId: string | null`.
+    *   [✅] Verify it sets `state.currentChatId = null`.
+    *   [✅] Verify it does NOT clear messages from `messagesByChatId` for other chats.
+    *   [✅] Verify it sets the context for the new chat (e.g., `state.newChatContext = organizationId` or `null` for personal).
+    *   [✅] Verify it resets other relevant chat-specific state (e.g., `rewindTargetMessageId`, `aiError`, `isLoadingAiResponse`).
+* [✅] Write/Update tests in `packages/store/src/aiStore.startNewChat.test.ts` (New file created). Expect failure (RED).
+* [✅] Update `startNewChat` action in `packages/store/src/aiStore.ts` (Done prior to test fixing in this session).
+* [✅] Run unit tests. Debug until pass (GREEN).
+* [✅] **[REFACTOR]** Review `startNewChat` action for clarity and ensure no unintended side effects (Action is simple and deemed robust after review).
+* [✅] Commit changes with message "feat(STORE): Update startNewChat action for organization context w/ tests"
 
 #### STEP-2.1.6: Update `sendMessage` Action [TEST-UNIT] [COMMIT]
 * [ ] Define test cases for `sendMessage` covering:
