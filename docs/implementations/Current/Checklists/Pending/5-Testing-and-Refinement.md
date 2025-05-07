@@ -169,6 +169,21 @@ This implementation plan follows a phased approach, with each phase building on 
 * [ ] Commit changes with message "perf: Optimize chat performance based on load testing"
 
 ---
+### STEP-6.6: Complete Prior Stage Cleanup Tasks [ ]
+
+#### STEP-6.6.1 Phase 1 Cleanup 
+*   [ ] **[REFACTOR]** Move `HandlerError` class from `api-subscriptions` to a shared location (e.g., `_shared/errors.ts` or similar) and update imports in `chat-details` and other functions.
+*   [ ] **[REFACTOR]** Improve client-side request replay logic (e.g., in `ApiClient`) to handle standard 401 responses (`{"error": ...}`), allowing backend functions like `chat-details` to remove special `{"msg": ...}` formatting for 401s.
+*   [ ] **[REFACTOR]** Add stricter validation (e.g., regex check) for the `chatId` path parameter in the `chat-details` Edge Function to ensure it conforms to a UUID format.
+*   [ ] **[TEST-DEBUG]** Investigate and resolve Deno test leaks (approx. 19-25 intervals from `SupabaseAuthClient._startAutoRefresh`) in `supabase/functions/chat/test/chat.integration.test.ts`. Current hypothesis: multiple `signInWithPassword` calls on the same client instance, or clients created within `mainHandler` via DI not being fully cleaned up despite `signOut` attempts. Consider refactoring tests to use one client per authenticated user session and ensuring explicit sign-out for each.
+*   [ ] **[TEST-DEBUG]** Deno integration tests for `chat-details` (`supabase/functions/chat-details/test/chat-details.integration.test.ts`) are failing due to interval leaks (approx. 4-6 intervals from `SupabaseAuthClient._startAutoRefresh`), even though all individual test steps pass. This is similar to the issue in `chat` tests and may require a similar investigation or deferral.
+*   [ ] **[TEST-DEBUG]** Deno integration tests for `chat-history` (`supabase/functions/chat-history/test/chat-history.integration.test.ts`) are failing due to interval leaks (approx. 4 intervals from `SupabaseAuthClient._startAutoRefresh`), even though all individual test steps pass. This is similar to the issues in `chat` and `chat-details` tests and may require similar investigation or deferral.
+*   [ ] **[TEST-DEBUG]** `Post` for new org chat should include `organizationId` in insert test is failing to spy problems
+
+#### STEP-6.6.2 Phase 2 Cleanup 
+#### STEP-6.6.3 Phase 3 Cleanup 
+#### STEP-6.6.4 Phase 4 Cleanup 
+#### STEP-6.6.5 Phase 5 Cleanup 
 
 **Phase 6 Complete Checkpoint:**
 *   [ ] All Phase 6 tests (Unit, Integration, Manual E2E, performance tests) passing.

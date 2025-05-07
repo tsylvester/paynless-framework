@@ -587,6 +587,12 @@ export type Database = {
       }
     }
     Functions: {
+      can_select_chat: {
+        Args: {
+          check_chat_id: string
+        }
+        Returns: boolean
+      }
       check_existing_member_by_email: {
         Args: {
           target_org_id: string
@@ -633,6 +639,32 @@ export type Database = {
           required_role?: string
         }
         Returns: boolean
+      }
+      perform_chat_rewind: {
+        Args: {
+          p_chat_id: string
+          p_rewind_from_message_id: string
+          p_user_id: string
+          p_new_user_message_content: string
+          p_new_user_message_ai_provider_id: string
+          p_new_user_message_system_prompt_id: string
+          p_new_assistant_message_content: string
+          p_new_assistant_message_token_usage: Json
+          p_new_assistant_message_ai_provider_id: string
+          p_new_assistant_message_system_prompt_id: string
+        }
+        Returns: {
+          id: string
+          chat_id: string
+          user_id: string
+          role: string
+          content: string
+          created_at: string
+          is_active_in_thread: boolean
+          token_usage: Json
+          ai_provider_id: string
+          system_prompt_id: string
+        }[]
       }
     }
     Enums: {

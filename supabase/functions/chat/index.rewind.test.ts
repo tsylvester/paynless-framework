@@ -2,16 +2,12 @@ import { assert, assertEquals, assertExists, assertObjectMatch } from "jsr:@std/
 import { spy, type Spy, assertSpyCalls, stub } from "jsr:@std/testing@0.225.1/mock"; 
 import { createClient, type SupabaseClient } from "npm:@supabase/supabase-js";
 import type { ConnInfo } from "https://deno.land/std@0.177.0/http/server.ts";
-import type { Database } from "../types_db.ts"; 
+import type { Database, Json } from "../types_db.ts"; 
 import type { 
     AiProviderAdapter, 
     ChatApiRequest,
     AdapterResponsePayload,
     ChatHandlerDeps,
-    IMockQueryBuilder,
-    IMockSupabaseAuth,
-    IMockSupabaseClient,
-    IMockClientSpies,
     MockSupabaseClientSetup,
     User 
 } from '../_shared/types.ts'; 
@@ -25,6 +21,20 @@ import { mainHandler, defaultDeps } from './index.ts';
 import { logger } from '../_shared/logger.ts';
 
 type ChatMessageRow = Database['public']['Tables']['chat_messages']['Row'];
+
+// At the top level of the file, near other type definitions:
+type PerformChatRewindParams = {
+    p_chat_id: string;
+    p_rewind_from_message_id: string;
+    p_user_id: string;
+    p_new_user_message_content: string;
+    p_new_user_message_ai_provider_id: string;
+    p_new_user_message_system_prompt_id: string | null;
+    p_new_assistant_message_content: string;
+    p_new_assistant_message_token_usage: Json | null;
+    p_new_assistant_message_ai_provider_id: string;
+    p_new_assistant_message_system_prompt_id: string | null;
+};
 
 // --- Mock Data (subset needed for rewind test) ---
 const mockSupabaseUrl = 'http://localhost:54321';
@@ -83,145 +93,173 @@ const envGetStub = stub(Deno.env, "get", (key: string): string | undefined => {
 Deno.test("Chat Function Rewind Test (Isolated)", async (t) => {
     try {
         // +++++ UNIT TEST FOR REWIND FUNCTIONALITY +++++
-        await t.step("POST request with rewindFromMessageId should deactivate subsequent messages and add new ones", async () => {
-            console.log("--- Running Rewind Functionality Unit Test (Isolated) ---");
+        await t.step("POST request with rewindFromMessageId should call RPC and use its result", async () => {
+            console.log("--- Running Rewind Functionality Unit Test (RPC) ---");
 
-            const rewindChatId = 'chat-rewind-abc';
-            const userMsg1Content = "User Message 1 for rewind";
-            const aiMsg1Content = "AI Response 1 for rewind";
-            const userMsg2Content = "User Message 2 for rewind (to be inactive)";
-            const aiMsg2Content = "AI Response 2 for rewind (to be inactive)";
-            const userMsg3Content = "User Message 3 for rewind (new)";
-            const aiMsg3Content = "AI Response 3 for rewind (new)";
-            const rewindFromMsgId = "ai-msg-1-id"; 
+            const rewindChatId = 'chat-rewind-rpc-abc';
+            const userMsg1Content = "User Message 1 for RPC rewind";
+            const aiMsg1Content = "AI Response 1 for RPC rewind";
+            // Messages to be made inactive by RPC - not directly asserted but implicitly part of rewind point
+            // const userMsg2Content = "User Message 2 for RPC rewind (to be inactive)";
+            // const aiMsg2Content = "AI Response 2 for RPC rewind (to be inactive)";
+            const userMsg3NewContent = "User Message 3 for RPC rewind (new user input)"; // This is the new message in the request
+            const aiMsg3NewContentFromAdapter = "AI Response 3 from adapter for RPC rewind (new from AI)"; // This is what the AI adapter returns
+            const rewindFromMsgId = "ai-msg-1-rpc-id"; 
             const initialTimestamp = new Date().getTime();
             const msgTimestamp = (offsetSeconds: number) => new Date(initialTimestamp + offsetSeconds * 1000).toISOString();
-            const systemPromptText = 'Test system prompt for rewind';
+            const systemPromptText = 'Test system prompt for RPC rewind';
 
-            const initialMessages: ChatMessageRow[] = [
-                { id: "user-msg-1-id", chat_id: rewindChatId, user_id: testUserId, role: 'user', content: userMsg1Content, created_at: msgTimestamp(0), is_active_in_thread: true, ai_provider_id: null, system_prompt_id: null, token_usage: null },
-                { id: rewindFromMsgId, chat_id: rewindChatId, user_id: null, role: 'assistant', content: aiMsg1Content, created_at: msgTimestamp(1), is_active_in_thread: true, ai_provider_id: testProviderId, system_prompt_id: testPromptId, token_usage: {prompt_tokens:1, completion_tokens:1, total_tokens:2}},
-                { id: "user-msg-2-id", chat_id: rewindChatId, user_id: testUserId, role: 'user', content: userMsg2Content, created_at: msgTimestamp(2), is_active_in_thread: true, ai_provider_id: null, system_prompt_id: null, token_usage: null },
-                { id: "ai-msg-2-id", chat_id: rewindChatId, user_id: null, role: 'assistant', content: aiMsg2Content, created_at: msgTimestamp(3), is_active_in_thread: true, ai_provider_id: testProviderId, system_prompt_id: testPromptId, token_usage: {prompt_tokens:1, completion_tokens:1, total_tokens:2} },
+            // History that should be passed to the AI adapter
+            const historyForAIAdapter: ChatMessageRow[] = [
+                { id: "user-msg-1-rpc-id", chat_id: rewindChatId, user_id: testUserId, role: 'user', content: userMsg1Content, created_at: msgTimestamp(0), is_active_in_thread: true, ai_provider_id: null, system_prompt_id: null, token_usage: null },
+                { id: rewindFromMsgId, chat_id: rewindChatId, user_id: null, role: 'assistant', content: aiMsg1Content, created_at: msgTimestamp(1), is_active_in_thread: true, ai_provider_id: testProviderId, system_prompt_id: testPromptId, token_usage: {prompt_tokens:1, completion_tokens:1}},
             ];
-            const newAiResponsePayload: AdapterResponsePayload = {
-                role: 'assistant', content: aiMsg3Content, ai_provider_id: testProviderId, system_prompt_id: testPromptId, token_usage: { prompt_tokens: 10, completion_tokens: 20, total_tokens: 30 },
-            };
-            const newUserMsgDbRow: ChatMessageRow = {
-                id: "user-msg-3-id", chat_id: rewindChatId, user_id: testUserId, role: 'user', content: userMsg3Content, created_at: msgTimestamp(4), is_active_in_thread: true, ai_provider_id: testProviderId, system_prompt_id: testPromptId, token_usage: null
-            };
-            const newAiMsgDbRow: ChatMessageRow = {
-                id: "ai-msg-3-id", chat_id: rewindChatId, user_id: null, role: 'assistant', content: aiMsg3Content, created_at: msgTimestamp(5), is_active_in_thread: true, ai_provider_id: testProviderId, system_prompt_id: testPromptId, token_usage: newAiResponsePayload.token_usage
+            
+            // This is the new message content from the request body
+            const newRequestUserMessageContent = userMsg3NewContent;
+
+            // This is what the AI adapter will return
+            const newAiResponseFromAdapterPayload: AdapterResponsePayload = {
+                role: 'assistant', content: aiMsg3NewContentFromAdapter, ai_provider_id: testProviderId, system_prompt_id: testPromptId, token_usage: { prompt_tokens: 10, completion_tokens: 20 },
             };
 
+            // This is the expected structure of the *final assistant message* returned by the RPC call
+            const mockAssistantMessageFromRpc: ChatMessageRow = {
+                id: "ai-msg-3-rpc-id", // New ID for the message created by RPC
+                chat_id: rewindChatId, 
+                user_id: null, 
+                role: 'assistant',
+                content: aiMsg3NewContentFromAdapter, // Content from AI adapter
+                created_at: msgTimestamp(5), // Timestamp will be set by DB
+                is_active_in_thread: true,
+                token_usage: newAiResponseFromAdapterPayload.token_usage, // from AI adapter
+                ai_provider_id: testProviderId,
+                system_prompt_id: testPromptId,
+            };
+            
             let selectCallCount = 0;
-            const supaConfigForRewind: MockSupabaseDataConfig = {
+            const supaConfigForRewindRpc: MockSupabaseDataConfig = {
                 mockUser: { id: testUserId, app_metadata: {}, user_metadata: {}, aud: 'authenticated', created_at: now } as any,
                 getUserResult: { data: { user: { id: testUserId, app_metadata: {}, user_metadata: {}, aud: 'authenticated', created_at: now } as any }, error: null },
                 genericMockResults: {
                     'system_prompts': { select: { data: [{ id: testPromptId, prompt_text: systemPromptText }], error: null, status: 200, count: 1 } },
                     'ai_providers': { select: { data: [{ id: testProviderId, api_identifier: testApiIdentifier, provider: testProviderString }], error: null, status: 200, count: 1 } },
-                    'chats': { select: { data: [{ id: rewindChatId, user_id: testUserId, organization_id: null, system_prompt_id: testPromptId, title: "Rewind Test Chat" } as any], error: null, status: 200, count: 1 } },
+                    // 'chats' select might be needed if the handler tries to re-verify chat existence, but for rewind, it already has chatId.
+                    // Let's assume it's not strictly needed for the core rewind logic path if chatId is present.
                     'chat_messages': {
                         select: spy(async (state: MockQueryBuilderState) => { 
                             selectCallCount++;
-                            console.log(`[Test Mock chat_messages.select] Called. selectCallCount: ${selectCallCount}, Operation: ${state.operation}, Filters: ${JSON.stringify(state.filters)}`);
+                            console.log(`[Test Mock chat_messages.select RPC] Called. selectCallCount: ${selectCallCount}, Filters: ${JSON.stringify(state.filters)}`);
                             type FilterType = typeof state.filters[0]; 
 
-                            // First select call: Fetching the rewind point message
-                            if (selectCallCount === 1 && state.operation === 'select' && state.filters.some((f: FilterType) => f.column === 'id' && f.value === rewindFromMsgId)) { 
-                                console.log(`[Test Mock chat_messages.select] Matched selectCallCount 1 for rewindFromMsgId: ${rewindFromMsgId}`);
-                                const rewindMessage = initialMessages.find(m => m.id === rewindFromMsgId);
-                                return { data: rewindMessage ? [rewindMessage as any] : [], error: null, status: 200, count: rewindMessage ? 1 : 0 };
+                            // First select call: Fetching the rewind point message's created_at
+                            if (selectCallCount === 1 && state.filters.some((f: FilterType) => f.column === 'id' && f.value === rewindFromMsgId) && state.selectColumns === 'created_at') { 
+                                console.log(`[Test Mock chat_messages.select RPC] Matched selectCallCount 1 for rewindFromMsgId: ${rewindFromMsgId}`);
+                                const rewindMessage = historyForAIAdapter.find(m => m.id === rewindFromMsgId); // Get from our defined history
+                                return { data: rewindMessage ? [{ created_at: rewindMessage.created_at } as any] : [], error: null, status: 200, count: rewindMessage ? 1 : 0 };
                             }
 
-                            // Second select call: Fetching active history for AI context after rewind
-                            // Query in mainHandler: .eq('chat_id', currentChatId).eq('is_active_in_thread', true).lte('created_at', rewindPointCreatedAt)
-                            if (selectCallCount === 2 && state.operation === 'select' && 
+                            // Second select call: Fetching active history for AI context based on rewindPointCreatedAt
+                            if (selectCallCount === 2 && 
                                 state.filters.some((f: FilterType) => f.column === 'chat_id' && f.value === rewindChatId) &&
                                 state.filters.some((f: FilterType) => f.column === 'is_active_in_thread' && f.value === true) &&
-                                state.filters.some((f: FilterType) => f.column === 'created_at' && f.type === 'lte') // Check for lte on created_at
+                                state.filters.some((f: FilterType) => f.column === 'created_at' && f.type === 'lte') 
                             ) { 
-                                console.log('[Test Mock chat_messages.select] Matched selectCallCount 2 for fetching active history.');
-                                const historyData = [initialMessages[0] as any, initialMessages[1] as any];
-                                console.log(`[Test Mock chat_messages.select] Returning history: ${JSON.stringify(historyData.map(h => h.id))}`);
-                                return { data: historyData, error: null, status: 200, count: historyData.length };
-                            }
-
-                            // Third select call: Result of .insert([...]).select()
-                            // This select is called by the MockQueryBuilder with operation 'select' from a chained .insert().select().
-                            // The MockQueryBuilder's internal state for .select() won't have insertData directly from its own state members,
-                            // but the .insert() part of the chain should have configured the mock to return the inserted data.
-                            // The key is that the *actual insert operation's mock* (the one in genericMockResults.chat_messages.insert)
-                            // is what provides the data that this subsequent .select() should be seen to retrieve.
-                            // So this select mock should simply return what was defined in the test case as the inserted rows.
-                            if (selectCallCount === 3 && state.operation === 'select') { // Filters might be empty or generic for a post-insert select
-                                console.log('[Test Mock chat_messages.select] Matched selectCallCount 3 for post-insert select.');
-                                const insertedDataForSelect = [newUserMsgDbRow as any, newAiMsgDbRow as any]; 
-                                console.log(`[Test Mock chat_messages.select] selectCallCount 3: Returning data that *should have been* inserted: ${JSON.stringify(insertedDataForSelect.map(i => i.id))}`);
-                                return { data: insertedDataForSelect, error: null, status: 200, count: insertedDataForSelect.length };
+                                console.log('[Test Mock chat_messages.select RPC] Matched selectCallCount 2 for fetching active history.');
+                                // This should return the historyForAIAdapter
+                                return { data: historyForAIAdapter as any[], error: null, status: 200, count: historyForAIAdapter.length };
                             }
                             
-                            console.error(`[Test Mock chat_messages.select] UNEXPECTED CALL. selectCallCount: ${selectCallCount}, Operation: ${state.operation}, Filters: ${JSON.stringify(state.filters)}, InsertData: ${state.insertData ? 'Exists' : 'null'}`);
-                            return { data: [], error: new Error('Unexpected select call in chat_messages mock'), status: 500, count: 0 };
+                            console.error(`[Test Mock chat_messages.select RPC] UNEXPECTED CALL. selectCallCount: ${selectCallCount}, Filters: ${JSON.stringify(state.filters)}`);
+                            return { data: [], error: new Error('Unexpected select call in chat_messages mock for RPC test'), status: 500, count: 0 };
                         }),
-                        update: spy(async (state: MockQueryBuilderState) => {
-                            console.log(`[Test Mock chat_messages.update] Called. Filters: ${JSON.stringify(state.filters)}, UpdateData: ${JSON.stringify(state.updateData)}`);
-                            // Simulate successful update of 2 rows, matching the rewind scenario
-                            if (state.updateData && (state.updateData as any).is_active_in_thread === false && 
-                                state.filters.some(f => f.column === 'chat_id' && f.value === rewindChatId) &&
-                                state.filters.some(f => f.column === 'created_at' && f.type === 'gt')) {
-                                return { data: [], error: null, status: 200, count: 2 };     
-                            }
-                            return { data: [], error: new Error('Unexpected update call in mock'), status: 500, count: 0 };
-                        }),
-                        insert: { data: [newUserMsgDbRow as any, newAiMsgDbRow as any], error: null, status: 201, count: 2 }
+                        // update and insert mocks are NOT expected to be called directly by the handler for rewind
+                        update: spy(async () => { throw new Error("chat_messages.update should NOT be called in RPC rewind test"); }),
+                        insert: spy(async () => { throw new Error("chat_messages.insert should NOT be called in RPC rewind test"); })
+                    }
+                },
+                // Mock for the RPC call itself
+                rpcResults: {
+                    'perform_chat_rewind': {
+                        // The RPC function returns a TABLE, so data should be an array of rows
+                        data: [mockAssistantMessageFromRpc as any], // Simulate the RPC returning the new assistant message
+                        error: null
                     }
                 }
             };
 
-            const { deps, mockClientSetup } = createTestDeps(supaConfigForRewind, newAiResponsePayload);
-            // const { spies } = mockClientSetup; // We will get the update spy directly from the config
+            const { deps, mockClientSetup } = createTestDeps(supaConfigForRewindRpc, newAiResponseFromAdapterPayload);
+            const rpcSpy = mockClientSetup.spies.rpcSpy; // Assuming createMockSupabaseClient exposes this
 
-            const requestBody = { chatId: rewindChatId, message: userMsg3Content, providerId: testProviderId, promptId: testPromptId, rewindFromMessageId: rewindFromMsgId };
+            const requestBody = { 
+                chatId: rewindChatId, 
+                message: newRequestUserMessageContent, // New user message content
+                providerId: testProviderId, 
+                promptId: testPromptId, 
+                rewindFromMessageId: rewindFromMsgId 
+            };
             const req = new Request('http://localhost/chat', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer test-token` }, body: JSON.stringify(requestBody) });
             
             const response = await mainHandler(req, deps);
-            assertEquals(response.status, 200);
+            assertEquals(response.status, 200, `RPC Rewind Test Failed: Status was ${response.status}, Body: ${await response.clone().text()}`);
             const responseBody = await response.json();
+
+            // Assert that the response message is the one returned by the RPC
             assertObjectMatch(responseBody.message, {
-                content: aiMsg3Content,
+                id: mockAssistantMessageFromRpc.id,
+                content: mockAssistantMessageFromRpc.content,
                 chat_id: rewindChatId,
                 role: 'assistant',
-                token_usage: newAiResponsePayload.token_usage
+                token_usage: mockAssistantMessageFromRpc.token_usage
             });
 
-            // Get the update spy directly from the mock config
-            const updateSpy = supaConfigForRewind.genericMockResults!.chat_messages!.update as Spy<any, [MockQueryBuilderState], Promise<any>>;
-            assertExists(updateSpy, "updateSpy from mock config should exist.");
-            assertEquals(updateSpy.calls.length, 1, "updateSpy from config should have been called once.");
+            // Assert RPC call
+            assertSpyCalls(rpcSpy, 1);
+            const rpcCallArgs = rpcSpy.calls[0].args;
+            assertEquals(rpcCallArgs[0], 'perform_chat_rewind');
+            const expectedRpcParams: PerformChatRewindParams = {
+                p_chat_id: rewindChatId,
+                p_rewind_from_message_id: rewindFromMsgId,
+                p_user_id: testUserId,
+                p_new_user_message_content: newRequestUserMessageContent,
+                p_new_user_message_ai_provider_id: testProviderId,
+                p_new_user_message_system_prompt_id: testPromptId, // Assuming promptId is not '__none__'
+                p_new_assistant_message_content: newAiResponseFromAdapterPayload.content,
+                p_new_assistant_message_token_usage: newAiResponseFromAdapterPayload.token_usage,
+                p_new_assistant_message_ai_provider_id: testProviderId,
+                p_new_assistant_message_system_prompt_id: testPromptId, // Assuming promptId is not '__none__'
+            };
+            assertObjectMatch(rpcCallArgs[1] as Record<string, unknown>, expectedRpcParams as Record<string, unknown>);
             
-            // Access the state passed to the spy's call
-            const updateCallState = updateSpy.calls[0].args[0] as MockQueryBuilderState;
-            assertEquals(updateCallState.updateData, { is_active_in_thread: false });
-            assert(updateCallState.filters.some(f => f.column === 'chat_id' && f.value === rewindChatId), "Update call should filter by chatId");
-            assert(updateCallState.filters.some(f => f.column === 'created_at' && f.type === 'gt'), "Update call should filter by created_at > value");
-            
-            const adapterSpy = deps.getAiProviderAdapter(testProviderString)!.sendMessage as Spy<any, any[], any>;
+            // Assert AI Adapter call (history should be based on messages *before* rewind point)
+            const adapterFactorySpy = deps.getAiProviderAdapter as Spy<any,any[],any>; // get the factory spy
+            const adapterInstance = adapterFactorySpy.calls[0].returned; // get the instance returned by the factory
+            const adapterSpy = adapterInstance.sendMessage as Spy<any, any[], any>; // get the sendMessage spy from the instance
+
             assertSpyCalls(adapterSpy, 1);
             const adapterArgs = adapterSpy.calls[0].args[0] as ChatApiRequest;
             assertExists(adapterArgs.messages); 
-            assertEquals(adapterArgs.message, userMsg3Content);
+            assertEquals(adapterArgs.message, newRequestUserMessageContent);
             assertEquals(adapterArgs.chatId, rewindChatId);
+            // History for AI should be: system prompt + historyForAIAdapter
             assertEquals(adapterArgs.messages.length, 3); 
             assertEquals(adapterArgs.messages[0].role, 'system');
             assertEquals(adapterArgs.messages[0].content, systemPromptText);
+            assertEquals(adapterArgs.messages[1].role, 'user');
             assertEquals(adapterArgs.messages[1].content, userMsg1Content);
+            assertEquals(adapterArgs.messages[2].role, 'assistant');
             assertEquals(adapterArgs.messages[2].content, aiMsg1Content);
             
-            // const insertSpy = supaConfigForRewind.genericMockResults!.chat_messages!.insert as Spy<any, [any[], any[]], Promise<any>>;
-            // assertExists(insertSpy, "insertSpy from mock config should exist.");
-            // TODO: Revisit insertSpy assertion if needed, ensuring it accesses the correct spy instance or uses a spy function in config.
+            // Ensure original select, update, insert mocks for chat_messages were not called for the DB modification part
+            const cmSelectSpy = supaConfigForRewindRpc.genericMockResults!.chat_messages!.select as Spy<any,any[],any>;
+            // select is called twice: 1 for rewind point, 1 for history. Not for the actual data modification.
+            assertSpyCalls(cmSelectSpy, 2); 
+
+            const cmUpdateSpy = supaConfigForRewindRpc.genericMockResults!.chat_messages!.update as Spy<any,any[],any>;
+            assertSpyCalls(cmUpdateSpy, 0); // Should not be called
+
+            const cmInsertSpy = supaConfigForRewindRpc.genericMockResults!.chat_messages!.insert as Spy<any,any[],any>;
+             assertSpyCalls(cmInsertSpy, 0); // Should not be called
         });
 
         await t.step("POST rewind with non-existent rewindFromMessageId returns 404", async () => {
@@ -265,51 +303,74 @@ Deno.test("Chat Function Rewind Test (Isolated)", async (t) => {
             assertEquals(responseBody.error, 'Query returned no rows (data was null after .single())');
         });
 
-        await t.step("POST rewind with error deactivating messages returns 500", async () => {
-            console.log("--- Running Rewind Error Test: Deactivation Failure ---");
-            const rewindChatId = 'chat-rewind-err-deactivate';
-            const rewindFromMsgId = "ai-msg-1-id-deactivate-err";
-            const userMsgContent = "Test message";
-            const rewindPointCreatedAt = new Date().toISOString();
+        await t.step("POST rewind with RPC error (simulating deactivation failure) returns 500", async () => {
+            console.log("--- Running Rewind Error Test: RPC Failure (simulating deactivation issue) ---");
+            const rewindChatId = 'chat-rewind-err-rpc';
+            const rewindFromMsgId = "ai-msg-1-id-rpc-err";
+            const userMsgContent = "Test message for RPC error";
+            const initialTimestamp = new Date().getTime(); // Define for msgTimestamp
+            const msgTimestamp = (offsetSeconds: number) => new Date(initialTimestamp + offsetSeconds * 1000).toISOString(); // Define msgTimestamp
+            const rewindPointCreatedAt = msgTimestamp(0); // Use msgTimestamp for consistency, though direct new Date().toISOString() also works here
+            const systemPromptText = 'Test system prompt for RPC error';
 
-            const supaConfigError: MockSupabaseDataConfig = {
+            const historyForAIAdapterRpcError: ChatMessageRow[] = [
+                { id: "user-msg-1-rpc-err-id", chat_id: rewindChatId, user_id: testUserId, role: 'user', content: "User Message 1 for RPC error", created_at: msgTimestamp(0), is_active_in_thread: true, ai_provider_id: null, system_prompt_id: null, token_usage: null },
+                { id: rewindFromMsgId, chat_id: rewindChatId, user_id: null, role: 'assistant', content: "AI Response 1 for RPC error", created_at: msgTimestamp(1), is_active_in_thread: true, ai_provider_id: testProviderId, system_prompt_id: testPromptId, token_usage: {prompt_tokens:1, completion_tokens:1}},
+            ];
+
+            const aiAdapterResponseForRpcError: AdapterResponsePayload = {
+                role: 'assistant', content: "AI content when RPC fails", ai_provider_id: testProviderId, system_prompt_id: testPromptId, token_usage: { prompt_tokens: 5, completion_tokens: 5 },
+            };
+            
+            let selectCallCountForRpcErrorTest = 0;
+
+            const supaConfigRpcError: MockSupabaseDataConfig = {
                 mockUser: { id: testUserId, app_metadata: {}, user_metadata: {}, aud: 'authenticated', created_at: now } as any,
                 getUserResult: { data: { user: { id: testUserId, app_metadata: {}, user_metadata: {}, aud: 'authenticated', created_at: now } as any }, error: null },
                 genericMockResults: {
-                    'system_prompts': { select: { data: [{ id: testPromptId, prompt_text: "Sys Prompt" }], error: null, status: 200, count: 1 } },
+                    'system_prompts': { select: { data: [{ id: testPromptId, prompt_text: systemPromptText }], error: null, status: 200, count: 1 } },
                     'ai_providers': { select: { data: [{ id: testProviderId, api_identifier: testApiIdentifier, provider: testProviderString }], error: null, status: 200, count: 1 } },
-                    'chats': { select: { data: [{ id: rewindChatId, user_id: testUserId, system_prompt_id: testPromptId } as any], error: null, status: 200, count: 1 } },
                     'chat_messages': {
                         select: spy(async (state: MockQueryBuilderState) => {
+                            selectCallCountForRpcErrorTest++;
                             // First select call: Fetching the rewind point message - SUCCESS
-                            if (state.operation === 'select' && state.filters.some(f => f.column === 'id' && f.value === rewindFromMsgId)) {
-                                return { data: [{ id: rewindFromMsgId, created_at: rewindPointCreatedAt } as any], error: null, status: 200, count: 1 };
+                            if (selectCallCountForRpcErrorTest === 1 && state.filters.some(f => f.column === 'id' && f.value === rewindFromMsgId) && state.selectColumns === 'created_at') {
+                                return { data: [{ created_at: rewindPointCreatedAt } as any], error: null, status: 200, count: 1 };
                             }
-                            console.error(`[Test Mock chat_messages.select] UNEXPECTED SELECT in 'Deactivation Failure' test.`);
-                            return { data: [], error: new Error('Unexpected select call'), status: 500, count: 0 };
-                        }),
-                        update: spy(async (state: MockQueryBuilderState) => {
-                            // SIMULATE UPDATE ERROR
-                            if (state.updateData && (state.updateData as any).is_active_in_thread === false) {
-                                console.log(`[Test Mock chat_messages.update] Simulating error deactivating messages.`);
-                                return { data: [], error: new Error('DB Update Failed During Deactivation'), status: 500, count: 0 };
+                            // Second select call: Fetching active history - SUCCESS
+                            if (selectCallCountForRpcErrorTest === 2 && state.filters.some(f => f.column === 'chat_id' && f.value === rewindChatId) && state.filters.some(f=>f.column === 'is_active_in_thread')) {
+                                return { data: historyForAIAdapterRpcError as any[], error: null, status: 200, count: historyForAIAdapterRpcError.length };
                             }
-                            console.error(`[Test Mock chat_messages.update] UNEXPECTED UPDATE in 'Deactivation Failure' test.`);
-                            return { data: [], error: new Error('Unexpected update call'), status: 500, count: 0 };
+                            console.error(`[Test Mock chat_messages.select RPC ERROR TEST] UNEXPECTED SELECT (Call #${selectCallCountForRpcErrorTest}). Filters: ${JSON.stringify(state.filters)}`);
+                            return { data: [], error: new Error('Unexpected select call in RPC error test'), status: 500, count: 0 };
                         }),
-                        insert: { data: [], error: null, status: 201, count: 0 }
+                        // update and insert should not be called directly
+                        update: spy(async () => { throw new Error("chat_messages.update should NOT be called in RPC error test"); }),
+                        insert: spy(async () => { throw new Error("chat_messages.insert should NOT be called in RPC error test"); })
+                    }
+                },
+                rpcResults: {
+                    'perform_chat_rewind': {
+                        data: null, 
+                        error: new Error('Simulated RPC error during rewind') // Simulate RPC error with a proper Error object
                     }
                 }
             };
 
-            const { deps } = createTestDeps(supaConfigError, undefined);
+            const { deps, mockClientSetup } = createTestDeps(supaConfigRpcError, aiAdapterResponseForRpcError);
+            const rpcSpy = mockClientSetup.spies.rpcSpy;
+
             const requestBody = { chatId: rewindChatId, message: userMsgContent, providerId: testProviderId, promptId: testPromptId, rewindFromMessageId: rewindFromMsgId };
             const req = new Request('http://localhost/chat', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer test-token` }, body: JSON.stringify(requestBody) });
             
             const response = await mainHandler(req, deps);
             assertEquals(response.status, 500);
             const responseBody = await response.json();
-            assertEquals(responseBody.error, 'DB Update Failed During Deactivation');
+            assertEquals(responseBody.error, 'Simulated RPC error during rewind');
+
+            // Verify RPC was called
+            assertSpyCalls(rpcSpy, 1);
+            assertEquals(rpcSpy.calls[0].args[0], 'perform_chat_rewind');
         });
 
         await t.step("POST rewind with error fetching active history returns 500", async () => {

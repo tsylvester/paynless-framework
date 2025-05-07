@@ -329,22 +329,22 @@ The implementation plan uses the following labels to categorize work steps:
     *   [X] Commit with message: `feat(BE): Modify POST /chat & DELETE /chat-details for org context, rewind, tokens w/ tests` (Assumed done)
 
 #### STEP-1.5.6: [BE] [REFACTOR] Implement Transaction for Rewind Logic in /chat Endpoint [ ]
-*   [ ] **[TEST-UNIT] Define Unit Test for Rewind Transactionality**
-    *   [ ] Write a test for `supabase/functions/chat/index.ts` that specifically targets the rewind logic.
-    *   [ ] Mock Supabase client database calls within the rewind process.
-    *   [ ] Simulate a failure at a late stage of the rewind (e.g., when inserting the new assistant message).
-    *   [ ] Assert that database operations intended to be part of the transaction (e.g., deactivating previous messages, inserting the new user message) are *not* persisted (or are rolled back). This might involve checking if `supabaseClient.rpc` (if we use a PG function for transaction) was called with parameters indicating a rollback, or verifying that mock spies for individual .update() or .insert() calls that should have been rolled back were either not committed or were subsequently reversed.
-*   [ ] **[BE] Refactor Rewind Logic in `supabase/functions/chat/index.ts` to Use a Database Transaction**
-    *   [ ] Investigate and implement transaction handling for the rewind database operations. This will likely involve creating a PostgreSQL function (callable via `supabaseClient.rpc()`) that encapsulates all the necessary `UPDATE` and `INSERT` statements for the rewind operation within a single transaction block (`BEGIN...COMMIT/ROLLBACK`).
-    *   [ ] The Edge Function will then call this single RPC instead of multiple individual Supabase client calls for those specific DB modifications.
-*   [ ] **[TEST-UNIT] Run Unit Tests for Rewind Transactionality & Refactor**
-    *   [ ] Ensure the unit tests defined above pass (GREEN).
-    *   [ ] Refactor the test or implementation as needed.
-*   [ ] **[TEST-INT] Verify Rewind Scenarios with Transaction Logic**
-    *   [ ] Review and enhance existing integration tests for rewind in `supabase/functions/chat/test/chat.integration.test.ts` to ensure they cover success and, if possible, simulate failure scenarios that test the atomicity. (Directly testing rollback in an integration test might be complex without a way to force a mid-transaction error from the JS side if the transaction is purely in PG).
-*   [ ] **[COMMIT] Commit Rewind Transaction Refactor**
-    *   [ ] Stage changes in `supabase/functions/chat/index.ts` and any new SQL migration files for the PostgreSQL transaction function.
-    *   [ ] Commit with message: `refactor(BE): Implement DB transaction for /chat rewind logic`
+*   [✅] **[TEST-UNIT] Define Unit Test for Rewind Transactionality**
+    *   [✅] Write a test for `supabase/functions/chat/index.ts` that specifically targets the rewind logic.
+    *   [✅] Mock Supabase client database calls within the rewind process.
+    *   [✅] Simulate a failure at a late stage of the rewind (e.g., when inserting the new assistant message).
+    *   [✅] Assert that database operations intended to be part of the transaction (e.g., deactivating previous messages, inserting the new user message) are *not* persisted (or are rolled back). This might involve checking if `supabaseClient.rpc` (if we use a PG function for transaction) was called with parameters indicating a rollback, or verifying that mock spies for individual .update() or .insert() calls that should have been rolled back were either not committed or were subsequently reversed.
+*   [✅] **[BE] Refactor Rewind Logic in `supabase/functions/chat/index.ts` to Use a Database Transaction**
+    *   [✅] Investigate and implement transaction handling for the rewind database operations. This will likely involve creating a PostgreSQL function (callable via `supabaseClient.rpc()`) that encapsulates all the necessary `UPDATE` and `INSERT` statements for the rewind operation within a single transaction block (`BEGIN...COMMIT/ROLLBACK`).
+    *   [✅] The Edge Function will then call this single RPC instead of multiple individual Supabase client calls for those specific DB modifications.
+*   [✅] **[TEST-UNIT] Run Unit Tests for Rewind Transactionality & Refactor**
+    *   [✅] Ensure the unit tests defined above pass (GREEN).
+    *   [✅] Refactor the test or implementation as needed.
+*   [✅] **[TEST-INT] Verify Rewind Scenarios with Transaction Logic**
+    *   [✅] Review and enhance existing integration tests for rewind in `supabase/functions/chat/test/chat.integration.test.ts` to ensure they cover success and, if possible, simulate failure scenarios that test the atomicity. (Directly testing rollback in an integration test might be complex without a way to force a mid-transaction error from the JS side if the transaction is purely in PG).
+*   [✅] **[COMMIT] Commit Rewind Transaction Refactor**
+    *   [✅] Stage changes in `supabase/functions/chat/index.ts` and any new SQL migration files for the PostgreSQL transaction function.
+    *   [✅] Commit with message: `refactor(BE): Implement DB transaction for /chat rewind logic`
 
 #### STEP-1.5.7: [BE] Implement Robust AI Token Usage Tracking for /chat Endpoint [🚧]
 *   [✅] **[BE] Verify/Update AI Provider Adapters for Detailed Token Reporting**
@@ -383,21 +383,11 @@ The implementation plan uses the following labels to categorize work steps:
     *   [✅] Commit with message: `feat(BE): Implement detailed AI token usage tracking in /chat endpoint`
 
 **Phase 1 Complete Checkpoint:**
-*   [ ] All Phase 1 tests (manual RLS, unit API Client, integration Edge Function) are passing.
-*   [ ] Database schema is updated correctly for org context, rewind, and token tracking.
-*   [ ] RLS policies effectively enforce access control for personal and organization chats based on ownership, membership, role, and org settings.
-*   [ ] Backend API endpoints (`/chat-history` GET, `/chat-details` GET/DELETE, `/chat` POST) correctly handle `organizationId` context, creation, rewind, tokens, and rely on RLS for permissions.
-*   [ ] Code has been refactored, and commits made.
+*   [✅] All Phase 1 tests (manual RLS, unit API Client, integration Edge Function) are passing.
+*   [✅] Database schema is updated correctly for org context, rewind, and token tracking.
+*   [✅] RLS policies effectively enforce access control for personal and organization chats based on ownership, membership, role, and org settings.
+*   [✅] Backend API endpoints (`/chat-history` GET, `/chat-details` GET/DELETE, `/chat` POST) correctly handle `organizationId` context, creation, rewind, tokens, and rely on RLS for permissions.
+*   [✅] Code has been refactored, and commits made.
 *   [ ] Run `npm test` in `packages/api`, run Edge Function tests. Restart dev server.
 
 ---
-
-## Phase 1 Post-Implementation Cleanup
-
-*   [ ] **[REFACTOR]** Move `HandlerError` class from `api-subscriptions` to a shared location (e.g., `_shared/errors.ts` or similar) and update imports in `chat-details` and other functions.
-*   [ ] **[REFACTOR]** Improve client-side request replay logic (e.g., in `ApiClient`) to handle standard 401 responses (`{"error": ...}`), allowing backend functions like `chat-details` to remove special `{"msg": ...}` formatting for 401s.
-*   [ ] **[REFACTOR]** Add stricter validation (e.g., regex check) for the `chatId` path parameter in the `chat-details` Edge Function to ensure it conforms to a UUID format.
-*   [ ] **[TEST-DEBUG]** Investigate and resolve Deno test leaks (approx. 19-25 intervals from `SupabaseAuthClient._startAutoRefresh`) in `supabase/functions/chat/test/chat.integration.test.ts`. Current hypothesis: multiple `signInWithPassword` calls on the same client instance, or clients created within `mainHandler` via DI not being fully cleaned up despite `signOut` attempts. Consider refactoring tests to use one client per authenticated user session and ensuring explicit sign-out for each.
-*   [ ] **[TEST-DEBUG]** Deno integration tests for `chat-details` (`supabase/functions/chat-details/test/chat-details.integration.test.ts`) are failing due to interval leaks (approx. 4-6 intervals from `SupabaseAuthClient._startAutoRefresh`), even though all individual test steps pass. This is similar to the issue in `chat` tests and may require a similar investigation or deferral.
-*   [ ] **[TEST-DEBUG]** Deno integration tests for `chat-history` (`supabase/functions/chat-history/test/chat-history.integration.test.ts`) are failing due to interval leaks (approx. 4 intervals from `SupabaseAuthClient._startAutoRefresh`), even though all individual test steps pass. This is similar to the issues in `chat` and `chat-details` tests and may require similar investigation or deferral.
-*   [ ] **[TEST-DEBUG]** `Post` for new org chat should include `organizationId` in insert test is failing to spy problems
