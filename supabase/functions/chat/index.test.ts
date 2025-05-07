@@ -14,7 +14,7 @@ import { getAiProviderAdapter } from '../_shared/ai_service/factory.ts'; // Impo
 import {
   createMockSupabaseClient,
   type MockSupabaseDataConfig,
-} from "../_shared/test-utils.ts";
+} from "../_shared/supabase.mock.ts";
 // Import main handler, deps type, and the REAL defaultDeps for comparison/base
 import { mainHandler, defaultDeps } from './index.ts';
 import { logger } from '../_shared/logger.ts';

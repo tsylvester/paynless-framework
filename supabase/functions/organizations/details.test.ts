@@ -9,7 +9,7 @@ import {
     createMockSupabaseClient, 
     MockSupabaseDataConfig, 
     MockQueryBuilderState 
-} from "../_shared/test-utils.ts";
+} from "../_shared/supabase.mock.ts";
 import { User } from "@supabase/supabase-js";
 
 // Helper to create a mock request (copied from original index.test.ts)

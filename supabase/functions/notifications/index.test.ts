@@ -6,7 +6,7 @@ import { SupabaseClient, User } from "npm:@supabase/supabase-js@^2.43.4";
 // Import Notification type from shared types
 
 // Import the shared test utility
-import { createMockSupabaseClient, type MockSupabaseDataConfig } from "../_shared/test-utils.ts";
+import { createMockSupabaseClient, type MockSupabaseDataConfig } from "../_shared/supabase.mock.ts";
 
 // Import the handler function and dependency types
 import { handler, NotificationsDeps } from "./index.ts";
@@ -160,8 +160,8 @@ Deno.test("/notifications endpoint tests", async (t) => {
 
         // Verify mock calls
         assertSpyCalls(spies.getUserSpy, 1);
-        // Need spies for from, select, eq, order from test-utils if we want to assert these
-        // Assuming test-utils provides them: 
+        // Need spies for from, select, eq, order from supabase.mock if we want to assert these
+        // Assuming supabase.mock provides them: 
         // assertSpyCalls(spies.fromSpy, 1);
         // assertSpyCalls(spies.selectSpy, 1);
         // assertSpyCalls(spies.eqSpy, 1);
@@ -300,7 +300,7 @@ Deno.test("/notifications endpoint tests", async (t) => {
         assertEquals(await res.text(), ""); 
 
         assertSpyCalls(spies.getUserSpy, 1);
-        // TODO: Enhance test-utils spies to verify update/match calls and criteria
+        // TODO: Enhance supabase.mock spies to verify update/match calls and criteria
     });
 
     await t.step("PUT /notifications/:id: should return 404 if notification not found or doesn't belong to user", async () => {
@@ -390,7 +390,7 @@ Deno.test("/notifications endpoint tests", async (t) => {
         assertEquals(await res.text(), "");
 
         assertSpyCalls(spies.getUserSpy, 1);
-        // TODO: Enhance test-utils spies to verify update/match calls and criteria
+        // TODO: Enhance supabase.mock spies to verify update/match calls and criteria
     });
 
     await t.step("POST /notifications/mark-all-read: should handle case where no notifications need updating", async () => {

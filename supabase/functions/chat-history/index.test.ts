@@ -14,7 +14,7 @@ import { assert, assertEquals, assertExists, assertRejects } from "jsr:@std/asse
 import { mainHandler, type ChatHistoryItem } from "./index.ts";
 import { HandlerError } from '../api-subscriptions/handlers/current.ts';
 // Import shared testing utilities
-import { createMockSupabaseClient } from "../_shared/test-utils.ts"; // Correct import name
+import { createMockSupabaseClient } from "../_shared/supabase.mock.ts"; // Correct import name
 import type { Database } from "../types_db.ts";
 
 // --- Test Suite ---

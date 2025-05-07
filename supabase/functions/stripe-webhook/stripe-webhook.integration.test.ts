@@ -1,5 +1,5 @@
 import { assert, assertEquals, assertExists, fail } from "https://deno.land/std@0.192.0/testing/asserts.ts";
-import { startSupabase, stopSupabase, createUser, createAdminClient, cleanupUser } from "../_shared/test-utils.ts";
+import { startSupabase, stopSupabase, createUser, createAdminClient, cleanupUser } from "../_shared/supabase.mock.ts";
 import type { SupabaseClient } from "npm:@supabase/supabase-js";
 
 // Ensure required environment variables are available for test setup

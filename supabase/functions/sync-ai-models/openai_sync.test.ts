@@ -14,7 +14,7 @@ import {
     createMockSupabaseClient, 
     type MockSupabaseDataConfig,
     MockQueryBuilderState
-} from "../_shared/test-utils.ts";
+} from "../_shared/supabase.mock.ts";
 
 import { assertThrows } from "jsr:@std/testing/asserts";
 import type { AiProviderAdapter, ProviderModelInfo, AiProvider } from "../../../packages/types/src/ai.types.ts";

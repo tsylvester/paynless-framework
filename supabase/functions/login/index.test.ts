@@ -4,7 +4,7 @@ import { assert, assertEquals, assertExists, assertRejects } from "jsr:@std/asse
 // Import the *inner* handler and its types, and HandlerError
 import { mainHandler, type LoginCredentials, type LoginSuccessResponse } from "./index.ts";
 import { HandlerError } from '../api-subscriptions/handlers/current.ts';
-import { createMockSupabaseClient } from "../_shared/test-utils.ts";
+import { createMockSupabaseClient } from "../_shared/supabase.mock.ts";
 import type { Database } from "../types_db.ts";
 
 // Import Supabase types needed for mocks

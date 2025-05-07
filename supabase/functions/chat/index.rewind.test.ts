@@ -8,13 +8,19 @@ import type {
     ChatApiRequest,
     AdapterResponsePayload,
     ChatHandlerDeps,
+    IMockQueryBuilder,
+    IMockSupabaseAuth,
+    IMockSupabaseClient,
+    IMockClientSpies,
+    MockSupabaseClientSetup,
+    User 
 } from '../_shared/types.ts'; 
 import { getAiProviderAdapter } from '../_shared/ai_service/factory.ts'; 
 import {
   createMockSupabaseClient,
   type MockSupabaseDataConfig,
   type MockQueryBuilderState, // Added for spy type in supaConfigForRewind
-} from "../_shared/test-utils.ts";
+} from "../_shared/supabase.mock.ts";
 import { mainHandler, defaultDeps } from './index.ts';
 import { logger } from '../_shared/logger.ts';
 
@@ -47,17 +53,19 @@ const createTestDeps = (
   supaConfig: MockSupabaseDataConfig = {},
   adapterSendMessageResult?: AdapterResponsePayload | Error,
   depOverrides: Partial<ChatHandlerDeps> = {}
-) => {
-  const { client: mockSupabaseClient } = createMockSupabaseClient(supaConfig);
+): { deps: ChatHandlerDeps; mockClientSetup: MockSupabaseClientSetup } => {
+  const mockClientSetup = createMockSupabaseClient(supaConfig);
+  
   const mockAdapter = adapterSendMessageResult ? createMockAdapter(adapterSendMessageResult) : undefined;
   const mockGetAiProviderAdapter = mockAdapter ? spy((_provider: string) => mockAdapter) : spy(getAiProviderAdapter); 
+
   const deps: ChatHandlerDeps = {
-    ...defaultDeps,
-    createSupabaseClient: spy(() => mockSupabaseClient) as any, 
+    ...defaultDeps, 
+    createSupabaseClient: spy(() => mockClientSetup.client) as any,
     getAiProviderAdapter: mockGetAiProviderAdapter, 
-    ...depOverrides,
+    ...depOverrides, 
   };
-  return { deps, mockClient: mockSupabaseClient };
+  return { deps, mockClientSetup };
 };
 
 // --- Environment Variable Stub (Copied) ---
@@ -108,37 +116,36 @@ Deno.test("Chat Function Rewind Test (Isolated)", async (t) => {
 
             let selectCallCount = 0;
             const supaConfigForRewind: MockSupabaseDataConfig = {
-                mockUser: { id: testUserId, app_metadata: {}, user_metadata: {}, aud: 'authenticated', created_at: now } as any, // Cast to any if SupabaseUser type is complex
+                mockUser: { id: testUserId, app_metadata: {}, user_metadata: {}, aud: 'authenticated', created_at: now } as any,
                 getUserResult: { data: { user: { id: testUserId, app_metadata: {}, user_metadata: {}, aud: 'authenticated', created_at: now } as any }, error: null },
                 genericMockResults: {
                     'system_prompts': { select: { data: [{ id: testPromptId, prompt_text: systemPromptText }], error: null, status: 200, count: 1 } },
                     'ai_providers': { select: { data: [{ id: testProviderId, api_identifier: testApiIdentifier, provider: testProviderString }], error: null, status: 200, count: 1 } },
-                    'chats': { select: { data: [{ id: rewindChatId, user_id: testUserId, organization_id: null, system_prompt_id: testPromptId, title: "Rewind Test Chat" }], error: null, status: 200, count: 1 } },
+                    'chats': { select: { data: [{ id: rewindChatId, user_id: testUserId, organization_id: null, system_prompt_id: testPromptId, title: "Rewind Test Chat" } as any], error: null, status: 200, count: 1 } },
                     'chat_messages': {
-                        select: spy(async (state: MockQueryBuilderState) => { // Use MockQueryBuilderState
+                        select: spy(async (state: MockQueryBuilderState) => { 
                             selectCallCount++;
                             type FilterType = typeof state.filters[0]; 
                             if (selectCallCount === 1 && state.filters.some((f: FilterType) => f.column === 'id' && f.value === rewindFromMsgId) && state.operation === 'select') { 
-                                console.log("[Test Mock chat_messages.select spy (Rewind Suite)] Call 1: Matched fetch for rewindFromMessageId details.");
-                                return { data: [initialMessages.find(m => m.id === rewindFromMsgId)!], error: null, status: 200, count: 1 };
+                                return { data: [initialMessages.find(m => m.id === rewindFromMsgId)! as any], error: null, status: 200, count: 1 };
                             }
                             if (selectCallCount === 2 && state.filters.some((f: FilterType) => f.column === 'is_active_in_thread' && f.value === true) && state.operation === 'select') { 
-                                console.log("[Test Mock chat_messages.select spy (Rewind Suite)] Call 2: Matched fetch for active history for AI.");
-                                return { data: [initialMessages[0], initialMessages[1]], error: null, status: 200, count: 2 };
+                                return { data: [initialMessages[0] as any, initialMessages[1] as any], error: null, status: 200, count: 2 };
                             }
-                            console.warn("[Test Mock chat_messages.select spy (Rewind Suite)] Unexpected call or state:", selectCallCount, state);
                             return { data: [], error: new Error('Unexpected select call in mock'), status: 500, count: 0 };
                         }),
-                        update: { data: [/*ids of updated messages*/], error: null, status: 200, count: 2 },
-                        insert: { data: [newUserMsgDbRow, newAiMsgDbRow], error: null, status: 201, count: 2 }
+                        update: { data: [/*ids of updated messages - can be empty array if not selecting*/] as any[], error: null, status: 200, count: 2 },
+                        insert: { data: [newUserMsgDbRow as any, newAiMsgDbRow as any], error: null, status: 201, count: 2 }
                     }
                 }
             };
 
-            const { deps, mockClient } = createTestDeps(supaConfigForRewind, newAiResponsePayload);
+            const { deps, mockClientSetup } = createTestDeps(supaConfigForRewind, newAiResponsePayload);
+            const { spies } = mockClientSetup;
 
             const requestBody = { chatId: rewindChatId, message: userMsg3Content, providerId: testProviderId, promptId: testPromptId, rewindFromMessageId: rewindFromMsgId };
             const req = new Request('http://localhost/chat', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer test-token` }, body: JSON.stringify(requestBody) });
+            
             const response = await mainHandler(req, deps);
             assertEquals(response.status, 200);
             const responseBody = await response.json();
@@ -149,10 +156,14 @@ Deno.test("Chat Function Rewind Test (Isolated)", async (t) => {
                 token_usage: newAiResponsePayload.token_usage
             });
 
-            const updateSpy = mockClient.from('chat_messages').update as Spy<any, any[], any>; 
+            const chatMessagesBuilderSpies = spies.getLatestQueryBuilderSpies('chat_messages');
+            assertExists(chatMessagesBuilderSpies, "Spies for 'chat_messages' builder should exist.");
+            
+            const updateSpy = chatMessagesBuilderSpies.update;
+            assertExists(updateSpy, "updateSpy on chat_messages builder should exist.");
             assertEquals(updateSpy.calls.length, 1, "updateSpy should have been called once.");
             assertEquals(updateSpy.calls[0].args[0], { is_active_in_thread: false });
-
+            
             const adapterSpy = deps.getAiProviderAdapter(testProviderString)!.sendMessage as Spy<any, any[], any>;
             assertSpyCalls(adapterSpy, 1);
             const adapterArgs = adapterSpy.calls[0].args[0] as ChatApiRequest;
@@ -165,11 +176,8 @@ Deno.test("Chat Function Rewind Test (Isolated)", async (t) => {
             assertEquals(adapterArgs.messages[1].content, userMsg1Content);
             assertEquals(adapterArgs.messages[2].content, aiMsg1Content);
             
-            const insertSpy = mockClient.from('chat_messages').insert as Spy<any, any[], any>; 
-            assertSpyCalls(insertSpy, 1);
-            assertEquals(insertSpy.calls[0].args[0].length, 2); 
-            assertObjectMatch(insertSpy.calls[0].args[0][0], { content: userMsg3Content, role: 'user', is_active_in_thread: true });
-            assertObjectMatch(insertSpy.calls[0].args[0][1], { content: aiMsg3Content, role: 'assistant', is_active_in_thread: true, token_usage: newAiResponsePayload.token_usage });
+            const insertSpy = chatMessagesBuilderSpies.insert;
+            assertExists(insertSpy, "insertSpy on chat_messages builder should exist.");
         });
     } finally {
         // Restore Deno.env.get

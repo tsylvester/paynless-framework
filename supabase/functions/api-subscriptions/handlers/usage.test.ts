@@ -6,7 +6,7 @@ import { SupabaseClient } from "npm:@supabase/supabase-js";
 import { getUsageMetrics } from "./usage.ts";
 import { HandlerError } from "./current.ts";
 // Import shared mock utilities
-import { createMockSupabaseClient, type MockSupabaseDataConfig } from "../../_shared/test-utils.ts"; 
+import { createMockSupabaseClient, type MockSupabaseDataConfig } from "../../_shared/supabase.mock.ts"; 
 
 // --- Mocks & Spies ---
 let mockSupabaseClient: SupabaseClient;

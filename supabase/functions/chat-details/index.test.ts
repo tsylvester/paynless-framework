@@ -7,7 +7,7 @@ import {
 } from "jsr:@std/testing@0.225.1/mock";
 import { assert, assertEquals, assertExists, assertRejects } from "jsr:@std/assert@0.225.3";
 import type { SupabaseClient } from "npm:@supabase/supabase-js";
-import { createMockSupabaseClient, type MockSupabaseDataConfig } from "../_shared/test-utils.ts";
+import { createMockSupabaseClient, type MockSupabaseDataConfig } from "../_shared/supabase.mock.ts";
 
 // Import the specific handler and HandlerError
 import { mainHandler } from "./index.ts";
