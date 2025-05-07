@@ -57,19 +57,19 @@ The implementation plan uses the following labels to categorize work steps:
 ### STEP-2.1: Update AI Store (`useAiStore`) [STORE] [🚧]
 
 #### STEP-2.1.1: Refactor AI Store State Structure [TEST-UNIT] [COMMIT]
-* [ ] Define test cases for the desired state structure. Consider partitioning approaches:
-    *   Gemini suggestion: `chatsByContext: { personal: Chat[], [orgId: string]: Chat[] }`, `messagesByChatId: { [chatId: string]: ChatMessage[] }`, `currentChatId: string | null`, `isLoadingByContext: { personal: boolean, [orgId: string]: boolean }`, `newChatContext: string | null`
-    *   Claude suggestion: `personalChats: Chat[]`, `organizationChats: { [organizationId: string]: Chat[] }` (Requires tracking `currentOrganizationId` separately or via `useOrganizationStore`).
+* [✅] Define test cases for the desired state structure. Consider partitioning approaches:
+    *   [✅] Gemini suggestion: `chatsByContext: { personal: Chat[], [orgId: string]: Chat[] }`, `messagesByChatId: { [chatId: string]: ChatMessage[] }`, `currentChatId: string | null`, `isLoadingByContext: { personal: boolean, [orgId: string]: boolean }`, `newChatContext: string | null`
+    *   [🚫]Claude suggestion: `personalChats: Chat[]`, `organizationChats: { [organizationId: string]: Chat[] }` (Requires tracking `currentOrganizationId` separately or via `useOrganizationStore`).
     *   *Decision:* Choose one or merge. The `chatsByContext` approach might simplify selectors.
-* [ ] Define state properties for token tracking (e.g., cumulative usage, estimates if stored).
-* [ ] Define state properties for rewind feature (e.g., `rewindTargetMessageId: string | null`).
-* [ ] Define state properties for loading/error states (e.g., `isLoadingHistory`, `isLoadingDetails`, `isLoadingAiResponse`, `aiError`).
-* [ ] Write unit tests in `packages/store/src/aiStore.unit.test.ts` covering the chosen state structure. Expect failure (RED).
-* [ ] Open `packages/store/src/aiStore.ts` and modify the state interface (`AiState`) based on the chosen structure.
-* [ ] Update corresponding types in `packages/types/src/ai.types.ts` (`AiState`, `AiStore`).
-* [ ] Run unit tests to verify state structure changes. Debug until pass (GREEN).
-* [ ] **[REFACTOR]** Review final state structure for clarity and efficiency.
-* [ ] Commit changes with message "refactor(STORE): Update useAiStore state structure for org context, tokens, rewind w/ tests"
+* [✅] Define state properties for token tracking (e.g., cumulative usage, estimates if stored).
+* [✅] Define state properties for rewind feature (e.g., `rewindTargetMessageId: string | null`).
+* [✅] Define state properties for loading/error states (e.g., `isLoadingHistory`, `isLoadingDetails`, `isLoadingAiResponse`, `aiError`).
+* [✅] Write unit tests in `packages/store/src/aiStore.unit.test.ts` covering the chosen state structure. Expect failure (RED).
+* [✅] Open `packages/store/src/aiStore.ts` and modify the state interface (`AiState`) based on the chosen structure.
+* [✅] Update corresponding types in `packages/types/src/ai.types.ts` (`AiState`, `AiStore`).
+* [✅] Run unit tests to verify state structure changes. Debug until pass (GREEN).
+* [✅] **[REFACTOR]** Review final state structure for clarity and efficiency.
+* [✅] Commit changes with message "refactor(STORE): Update useAiStore state structure for org context, tokens, rewind w/ tests"
 
 #### STEP-2.1.2: Update AI Store Selectors [TEST-UNIT] [COMMIT]
 * [ ] Define test cases for selectors based on the chosen state structure:

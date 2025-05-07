@@ -22,14 +22,28 @@ import { useAuthStore } from './authStore';
 const initialAiStateValues: AiState = {
     availableProviders: [],
     availablePrompts: [],
-    currentChatMessages: [],
     currentChatId: null,
-    chatHistoryList: [],
     isLoadingAiResponse: false,
     isConfigLoading: false,
-    isHistoryLoading: false,
     isDetailsLoading: false,
     aiError: null,
+
+    // New context-aware state
+    chatsByContext: { 
+        personal: [], 
+        orgs: {}
+    },
+    messagesByChatId: {},
+    isLoadingHistoryByContext: { 
+        personal: false, 
+        orgs: {}
+    },
+    newChatContext: null,
+    rewindTargetMessageId: null,
+    
+    // Token tracking placeholders - will be initialized if defined in AiState
+    // chatTokenUsage: undefined, 
+    // sessionTokenUsage: undefined,
 };
 
 // Use the imported AiStore type

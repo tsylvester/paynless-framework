@@ -127,19 +127,35 @@ export interface AiState {
     availableProviders: AiProvider[]; // Use aliased type
     availablePrompts: SystemPrompt[]; // Use aliased type
 
-    // Current chat state
-    currentChatMessages: ChatMessage[]; // Use aliased type
-    currentChatId: Chat['id'] | null; // Use aliased type
-    isLoadingAiResponse: boolean; // Loading indicator specifically for AI response generation
-    isConfigLoading: boolean;   // Loading indicator for fetching providers/prompts
-    isHistoryLoading: boolean;  // Loading indicator for fetching chat list
-    isDetailsLoading: boolean;  // Loading indicator for fetching messages of a specific chat
+    // New context-aware chat state
+    chatsByContext: { 
+        personal: Chat[]; 
+        orgs: { [orgId: string]: Chat[] };
+    };
+    messagesByChatId: { [chatId: string]: ChatMessage[] };
+    currentChatId: Chat['id'] | null; // Remains the same
 
-    // Chat history list
-    chatHistoryList: Chat[]; // Use aliased type
+    // Loading states
+    isLoadingAiResponse: boolean; // Remains the same
+    isConfigLoading: boolean;   // Remains the same
+    isLoadingHistoryByContext: { 
+        personal: boolean; 
+        orgs: { [orgId: string]: boolean };
+    };
+    isDetailsLoading: boolean;  // Remains the same (for currentChatId messages)
+
+    // New chat initiation and context
+    newChatContext: 'personal' | string | null; // 'personal' or orgId
+
+    // Rewind feature state
+    rewindTargetMessageId: ChatMessage['id'] | null;
 
     // Error state
-    aiError: string | null;
+    aiError: string | null; // Remains the same
+
+    // Token Tracking (placeholders, to be detailed in STEP-2.1.8)
+    // Example: chatTokenUsage?: { [chatId: string]: { promptTokens: number; completionTokens: number; totalTokens: number } };
+    // Example: sessionTokenUsage?: { promptTokens: number; completionTokens: number; totalTokens: number };
 }
 
 /**
