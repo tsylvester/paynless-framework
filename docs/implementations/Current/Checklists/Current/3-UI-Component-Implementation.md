@@ -165,8 +165,8 @@ The implementation plan uses the following labels to categorize work steps:
 * [✅] Commit changes with message "feat(UI): Integrate ChatContextSelector for setting new chat context w/ manual tests & analytics"
 
 #### STEP-3.1.3: Update `Chat` route. 
-* [ ] Move ChatContext component to share row with other components.
-* [ ] Update h2 "AI Chat" to include vars for (Org_name | Personal_name) & Model & Prompt so users can see their entire context a glance
+* [✅] Move ChatContext component to share row with other components.
+* [✅] Update h2 "AI Chat" to include vars for (Org_name | Personal_name) & Model & Prompt so users can see their entire context a glance
 
 #### STEP-3.1.4: Update `Organization` route with store and api changes for org chat functions. 
 

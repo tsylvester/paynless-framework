@@ -7,7 +7,8 @@ import { PromptSelector } from '../components/ai/PromptSelector';
 import { AiChatbox } from '../components/ai/AiChatbox';
 import { ChatHistoryList } from '../components/ai/ChatHistoryList';
 import { ChatContextSelector } from '../components/ai/ChatContextSelector';
-import type { Chat } from '@paynless/types';
+// import type { Chat, Organization, AiProvider, SystemPrompt } from '@paynless/types'; // Organization, AiProvider, SystemPrompt commented out as they are not used
+import type { Chat } from '@paynless/types'; // Only Chat is used now
 
 export default function AiChatPage() {
   // Get user, session, and loading state from auth store
@@ -42,19 +43,46 @@ export default function AiChatPage() {
 
   // Organization Store data
   const { 
-    userOrganizations, 
     currentOrganizationId: globalCurrentOrgId, 
-    isOrgLoading,
   } = useOrganizationStore(state => ({
-    userOrganizations: state.userOrganizations,
     currentOrganizationId: state.currentOrganizationId,
-    isOrgLoading: state.isLoading, 
   }));
 
   const [selectedProviderId, setSelectedProviderId] = useState<string | null>(null);
   const [selectedPromptId, setSelectedPromptId] = useState<string | null>(null);
   const [nextChatOrgContext, setNextChatOrgContext] = useState<string | null | undefined>(undefined);
   const [hasUserManuallySelectedContext, setHasUserManuallySelectedContext] = useState(false);
+
+  // --- Derived display names for the header --- (Commented out as dynamicHeaderText is not currently used in h2)
+  /*
+  const currentContextDisplayName = useMemo(() => {
+    if (typeof nextChatOrgContext === 'undefined') return ''; // Or 'Loading Context...'
+    if (nextChatOrgContext === null) return 'Personal';
+    const org = userOrganizations.find((o: Organization) => o.id === nextChatOrgContext);
+    return org?.name || 'Context'; // Fallback if org not found
+  }, [nextChatOrgContext, userOrganizations]);
+
+  const selectedProviderName = useMemo(() => {
+    if (!selectedProviderId || !availableProviders) return '';
+    const provider = availableProviders.find((p: AiProvider) => p.id === selectedProviderId);
+    return provider?.name || ''; // Fallback if provider not found
+  }, [selectedProviderId, availableProviders]);
+
+  const selectedPromptName = useMemo(() => {
+    if (!selectedPromptId || !availablePrompts) return '';
+    const prompt = availablePrompts.find((p: SystemPrompt) => p.id === selectedPromptId);
+    return prompt?.name || ''; // Fallback if prompt not found
+  }, [selectedPromptId, availablePrompts]);
+
+  const dynamicHeaderText = useMemo(() => {
+    let title = currentContextDisplayName ? `${currentContextDisplayName} Chat` : 'AI Chat';
+    const details = [selectedProviderName, selectedPromptName].filter(Boolean).join(' / ');
+    if (details) {
+      title += ` (${details})`;
+    }
+    return title;
+  }, [currentContextDisplayName, selectedProviderName, selectedPromptName]);
+  */
 
   // Load AI config (public)
   useEffect(() => {
@@ -188,31 +216,34 @@ export default function AiChatPage() {
     <div>
       <div className="container mx-auto p-6 grid grid-cols-1 md:grid-cols-3 gap-6"> 
         <div className="md:col-span-2 flex flex-col border border-border rounded-lg bg-card shadow-sm overflow-y-auto min-h-0 max-h-[calc(100vh-12rem)]"> 
-          <div className="p-4 border-b border-border flex flex-wrap items-center gap-4 sticky top-0 bg-card z-10"> 
-            <h2 className="text-lg font-semibold text-card-foreground mr-auto whitespace-nowrap">AI Chat</h2>
+          <div className="p-4 border-b border-border sticky top-0 bg-card z-10 space-y-2">
+            <div>
+              {/*<h2 className="text-lg font-semibold text-card-foreground">
+                dynamicHeaderText
+              </h2>*/}
+            </div>
             
-            <ChatContextSelector
-              organizations={userOrganizations}
-              currentContextId={typeof nextChatOrgContext === 'undefined' ? null : nextChatOrgContext}
-              onContextChange={handleContextSelection}
-              isLoading={isOrgLoading || isAuthLoading} 
-            />
-
-            <ModelSelector 
-              selectedProviderId={selectedProviderId} 
-              onProviderChange={handleProviderChange}
-            />
-            <PromptSelector 
-              selectedPromptId={selectedPromptId} 
-              onPromptChange={handlePromptChange}
-            />
-            <button 
-              onClick={handleNewChat} 
-              className="px-3 py-1.5 text-sm font-medium rounded-md border border-input bg-transparent hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 whitespace-nowrap"
-              data-testid="new-chat-button"
-            >
-              New Chat
-            </button>
+            <div className="flex flex-wrap items-center gap-x-2 gap-y-2">
+              <ChatContextSelector
+                currentContextId={typeof nextChatOrgContext === 'undefined' ? null : nextChatOrgContext}
+                onContextChange={handleContextSelection}
+              />
+              <ModelSelector 
+                selectedProviderId={selectedProviderId} 
+                onProviderChange={handleProviderChange}
+              />
+              <PromptSelector 
+                selectedPromptId={selectedPromptId} 
+                onPromptChange={handlePromptChange}
+              />
+              <button 
+                onClick={handleNewChat} 
+                className="px-3 py-1.5 text-sm font-medium rounded-md border border-input bg-transparent hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 whitespace-nowrap"
+                data-testid="new-chat-button"
+              >
+                New Chat
+              </button>
+            </div>
           </div>
            
            <div className="flex-grow min-h-0"> 

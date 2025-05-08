@@ -29,27 +29,36 @@ vi.mock('../components/ai/AiChatbox', () => ({
 
 // Mock ChatContextSelector for simpler integration testing
 interface MockChatContextSelectorProps {
-  organizations: Organization[];
   currentContextId: string | null;
   onContextChange: (contextId: string | null) => void;
-  isLoading: boolean;
 }
 vi.mock('../components/ai/ChatContextSelector', () => ({
-  ChatContextSelector: vi.fn(({ organizations, currentContextId, onContextChange, isLoading }: MockChatContextSelectorProps) => {
-    const currentOrg = organizations.find(org => org.id === currentContextId);
-    const displayValue = isLoading ? 'Loading contexts...' : (currentContextId === null ? 'Personal' : currentOrg?.name || 'Select Context');
-    
+  ChatContextSelector: vi.fn(({ currentContextId, onContextChange }: MockChatContextSelectorProps) => {
+    // Simplified display value based only on currentContextId
+    // For the mock, we'll need to simulate what AiChatPage expects for display.
+    // It expects the org name if currentContextId is an org ID, or "Personal".
+    // Since the mock doesn't fetch orgs, we'll hardcode some for display.
+    let displayValue = 'Select Context';
+    if (currentContextId === null) {
+      displayValue = 'Personal';
+    } else if (currentContextId === 'org-A') {
+      displayValue = 'Org A'; // Match test data
+    } else if (currentContextId === 'org-B') {
+      displayValue = 'Org B'; // Match test data
+    }
+    // If currentContextId is something else, it will show 'Select Context' or the ID itself if we want.
+    // For the purpose of these tests, Org A, Org B, and Personal are the primary ones used.
+
     return (
       <div>
         <button data-testid="mock-context-selector-trigger">{displayValue}</button>
-        {!isLoading && (
-          <div data-testid="mock-context-options">
-            <button data-testid="mock-option-personal" onClick={() => onContextChange(null)}>Personal</button>
-            {organizations.map(org => (
-              <button data-testid={`mock-option-${org.id}`} key={org.id} onClick={() => onContextChange(org.id)}>{org.name}</button>
-            ))}
-          </div>
-        )}
+        {/* Simplified options for interaction, matching test IDs */}
+        <div data-testid="mock-context-options">
+          <button data-testid="mock-option-personal" onClick={() => onContextChange(null)}>Personal</button>
+          {/* Simulate org options used in tests */}
+          <button data-testid="mock-option-org-A" onClick={() => onContextChange('org-A')}>Org A</button>
+          <button data-testid="mock-option-org-B" onClick={() => onContextChange('org-B')}>Org B</button>
+        </div>
       </div>
     );
   })

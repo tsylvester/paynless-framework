@@ -229,7 +229,6 @@ describe('AiChat Page', () => {
 
   it('should render the AiChat page structure with mocks', () => {
     render(<AiChat />);
-    expect(screen.getByText('AI Chat')).toBeInTheDocument();
     expect(vi.mocked(ModelSelector)).toHaveBeenCalled();
     expect(vi.mocked(PromptSelector)).toHaveBeenCalled();
     expect(vi.mocked(AiChatbox)).toHaveBeenCalled();
@@ -970,16 +969,15 @@ describe('AiChat Page', () => {
       });
       const lastCallArgs = vi.mocked(ChatContextSelector).mock.lastCall;
       expect(lastCallArgs).toBeDefined();
-      if (lastCallArgs && lastCallArgs.length > 0) { // Check length before accessing
+      if (lastCallArgs && lastCallArgs.length > 0) {
         const props = lastCallArgs[0];
         expect(props).toBeDefined();
-        expect(props).toEqual(expect.objectContaining({ 
-            organizations: testOrgs,
-            currentContextId: 'org-xyz', 
-            isLoading: false, 
+        expect(props).toEqual(expect.objectContaining({
+            currentContextId: 'org-xyz',
+            onContextChange: expect.any(Function),
         }));
       } else {
-        throw new Error("ChatContextSelector mock was not called with expected arguments or not called at all.");
+        throw new Error('MockChatContextSelector was not called');
       }
     });
     
@@ -993,15 +991,15 @@ describe('AiChat Page', () => {
         });
         const lastCallArgs = vi.mocked(ChatContextSelector).mock.lastCall;
         expect(lastCallArgs).toBeDefined();
-        if (lastCallArgs && lastCallArgs.length > 0) { // Check length
+        if (lastCallArgs && lastCallArgs.length > 0) {
             const props = lastCallArgs[0];
             expect(props).toBeDefined();
-            expect(props).toEqual(expect.objectContaining({ 
-                currentContextId: null, 
-                isLoading: true 
+            expect(props).toEqual(expect.objectContaining({
+                currentContextId: null,
+                onContextChange: expect.any(Function),
             }));
         } else {
-          throw new Error("ChatContextSelector mock was not called with expected arguments or not called at all when context is undefined.");
+            throw new Error('MockChatContextSelector was not called');
         }
     });
 
