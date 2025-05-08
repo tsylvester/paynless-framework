@@ -27,7 +27,10 @@ export const baseCorsHeaders = {
  * Exported for use in special cases like SSE streams.
  */
 export const isOriginAllowed = (requestOrigin: string | null): boolean => {
-  return !!requestOrigin && allowedOrigins.includes(requestOrigin);
+  console.log(`[cors-headers] Checking origin: ${requestOrigin}`); // Log received origin
+  const allowed = !!requestOrigin && allowedOrigins.includes(requestOrigin);
+  console.log(`[cors-headers] Origin allowed? ${allowed}`); // Log result
+  return allowed;
 };
 
 /**
@@ -36,9 +39,13 @@ export const isOriginAllowed = (requestOrigin: string | null): boolean => {
 // Keep this internal, used by the response creators below
 const getCorsHeadersForRequest = (request: Request): Record<string, string> => {
   const origin = request.headers.get("Origin");
+  console.log(`[cors-headers] getCorsHeadersForRequest called for Origin: ${origin}`); // Log origin
   const headers: Record<string, string> = { ...baseCorsHeaders };
   if (isOriginAllowed(origin)) {
-    headers["Access-Control-Allow-Origin"] = origin!;
+    headers["Access-Control-Allow-Origin"] = origin!; // Dynamic origin
+    console.log(`[cors-headers] Added Access-Control-Allow-Origin: ${origin}`);
+  } else {
+    console.log(`[cors-headers] Origin not in allowed list. Not adding Access-Control-Allow-Origin.`);
   }
   return headers;
 };
@@ -48,17 +55,15 @@ const getCorsHeadersForRequest = (request: Request): Record<string, string> => {
 * Standard OPTIONS response for CORS preflight requests
 */
 export const handleCorsPreflightRequest = (req: Request): Response | null => {
+ console.log(`[cors-headers] handleCorsPreflightRequest called for Method: ${req.method}, Origin: ${req.headers.get('Origin')}`);
  if (req.method === "OPTIONS") {
    const corsHeaders = getCorsHeadersForRequest(req);
-   // Only return a 204 if the origin is actually allowed
+   console.log(`[cors-headers] Responding to OPTIONS with headers:`, JSON.stringify(corsHeaders));
+   // Only return 204 if origin was allowed and header added
    if (corsHeaders["Access-Control-Allow-Origin"]) {
-     return new Response(null, {
-       status: 204,
-       headers: corsHeaders,
-     });
+     return new Response(null, { status: 204, headers: corsHeaders });
    } else {
-     // If origin is not allowed, return a simple 204 without CORS headers
-     // or potentially a 403 Forbidden.
+     console.warn(`[cors-headers] OPTIONS request from disallowed origin: ${req.headers.get('Origin')}. Responding without CORS headers.`);
      return new Response(null, { status: 204 }); 
    }
  }

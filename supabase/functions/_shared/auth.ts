@@ -1,9 +1,12 @@
 // IMPORTANT: Supabase Edge Functions require relative paths for imports from shared modules.
 // Do not use path aliases (like @shared/) as they will cause deployment failures.
-import { createClient, SupabaseClient, SupabaseClientOptions, GoTrueClient } from "@supabase/supabase-js";
+// Use npm: specifier directly to avoid Supabase CLI import map issues
+import { createClient, SupabaseClient, SupabaseClientOptions, GoTrueClient } from "npm:@supabase/supabase-js@^2.43.4";
 import type { Database } from '../types_db.ts';
 // Remove unused GenericSchema import
 // import type { GenericSchema } from "npm:@supabase/supabase-js@2/dist/module/lib/types";
+// Import the createErrorResponse helper
+import { createErrorResponse } from "./cors-headers.ts"; 
 
 // Define the dependency type (the createClient function signature)
 // Simplify the type to focus on the essential signature for DI
@@ -152,18 +155,13 @@ export async function isAuthenticatedWithClient(req: Request, supabase: Supabase
 }
 
 /**
- * Create an unauthorized response
+ * Create an unauthorized response using the shared error response helper for proper CORS.
  */
-export function createUnauthorizedResponse(message: string): Response {
-  console.warn("[auth.ts] createUnauthorizedResponse: Creating basic 401 response without full CORS headers.");
-  return new Response(
-    JSON.stringify({ error: { code: "unauthorized", message } }),
-    {
-      status: 401,
-      headers: {
-        "Content-Type": "application/json",
-        "Access-Control-Allow-Origin": "*"
-      },
-    }
-  );
+export function createUnauthorizedResponse(
+    message: string, 
+    req: Request // Add Request parameter
+): Response {
+  console.warn(`[auth.ts] createUnauthorizedResponse: Creating 401 response for request from origin: ${req.headers.get('Origin')}`);
+  // Use createErrorResponse to handle CORS correctly
+  return createErrorResponse(message, 401, req);
 }

@@ -13,6 +13,7 @@
     "npm:@google-cloud/vertexai@*": "1.10.0",
     "npm:@supabase/auth-js@2.69.1": "2.69.1",
     "npm:@supabase/functions-js@2.4.4": "2.4.4",
+    "npm:@supabase/gotrue-js@*": "2.69.1",
     "npm:@supabase/gotrue-js@^2.6.3": "2.69.1",
     "npm:@supabase/node-fetch@2.6.15": "2.6.15",
     "npm:@supabase/postgrest-js@1.19.4": "1.19.4",

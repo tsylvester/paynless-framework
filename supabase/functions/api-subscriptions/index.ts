@@ -1,8 +1,8 @@
 // IMPORTANT: Supabase Edge Functions require relative paths for imports from shared modules.
 // Do not use path aliases (like @shared/) as they will cause deployment failures.
 // Subscription API endpoints
-import "jsr:@supabase/functions-js/edge-runtime.d.ts";
-import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
+// import "jsr:@supabase/functions-js/edge-runtime.d.ts"; // Commented out for testing
+import { serve } from "https://deno.land/std@0.177.0/http/server.ts"; // Standardized version
 import { SupabaseClient, User, AuthError } from "npm:@supabase/supabase-js";
 import Stripe from "npm:stripe";
 // Shared utilities
@@ -118,7 +118,7 @@ export async function handleApiSubscriptionsRequest(req: Request, deps: ApiSubsc
             
             if (authError || !user) {
                 console.warn("[api-subscriptions] Authentication failed:", authError?.message || 'No user');
-                return createUnauthorizedResponse(authError?.message || "Authentication failed");
+                return createUnauthorizedResponse(authError?.message || "Authentication failed", req);
             }
             userId = user.id;
         } catch (clientError) {

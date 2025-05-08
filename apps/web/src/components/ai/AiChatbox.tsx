@@ -1,7 +1,7 @@
 'use client'
 
 import React, { useState, useRef, useEffect } from 'react'
-import { useAiStore } from '@paynless/store'
+import { useAiStore, selectCurrentChatMessages } from '@paynless/store'
 import type { ChatMessage } from '@paynless/types'
 import { logger } from '@paynless/utils'
 import { cn } from '@/lib/utils'
@@ -35,18 +35,30 @@ export const AiChatbox: React.FC<AiChatboxProps> = ({
   const [inputMessage, setInputMessage] = useState('')
   const scrollContainerRef = useRef<HTMLDivElement>(null); // Ref for the scrollable container
 
-  // Fetch state and actions from the store
+  // Use the dedicated selector for currentChatMessages
+  const currentChatMessages = useAiStore(selectCurrentChatMessages);
+  
+  // Select other state and actions from the store
   const {
-    currentChatMessages,
-    currentChatId,
+    currentChatId, // Keep this if needed for other logic, e.g., key for AiChatbox itself
     isLoadingAiResponse,
     aiError,
     sendMessage,
     clearAiError,
-  } = useAiStore()
+  } = useAiStore(state => ({
+    currentChatId: state.currentChatId,
+    isLoadingAiResponse: state.isLoadingAiResponse,
+    aiError: state.aiError,
+    sendMessage: state.sendMessage,
+    clearAiError: state.clearAiError,
+  }));
 
   // Scroll to new messages
   useEffect(() => {
+    // The selector already ensures currentChatMessages is an array.
+    // Guard for empty array before accessing last element.
+    if (currentChatMessages.length === 0) return;
+
     const latestMessage = currentChatMessages[currentChatMessages.length - 1];
     if (latestMessage && latestMessage.role === 'assistant') { 
       const container = scrollContainerRef.current;

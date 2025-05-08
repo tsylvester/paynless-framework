@@ -1,7 +1,7 @@
 // IMPORTANT: Supabase Edge Functions require relative paths for imports from shared modules.
 // Do not use path aliases (like @shared/) as they will cause deployment failures.
-import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
-import "jsr:@supabase/functions-js/edge-runtime.d.ts";
+import { serve } from "https://deno.land/std@0.177.0/http/server.ts";
+// import "jsr:@supabase/functions-js/edge-runtime.d.ts"; // Intentionally commented out for testing
 // Import types
 import type { 
     SupabaseClient, 
@@ -56,8 +56,8 @@ export async function handleMeRequest(
   const isValidApiKey = deps.verifyApiKey(req); 
   if (!isValidApiKey) {
     console.log("[me/index.ts] API key verification failed.");
-    // Use deps again - createUnauthorizedResponse only takes message
-    return deps.createUnauthorizedResponse("Invalid or missing apikey"); 
+    // Use deps again - createUnauthorizedResponse now takes req
+    return deps.createUnauthorizedResponse("Invalid or missing apikey", req); 
   }
   console.log("[me/index.ts] API key verified.");
 
@@ -73,8 +73,8 @@ export async function handleMeRequest(
 
     if (userError || !user) {
       console.error("[me/index.ts] Auth error or no user:", userError);
-      // Use deps again - createUnauthorizedResponse only takes message
-      return deps.createUnauthorizedResponse("Not authenticated"); 
+      // Use deps again - createUnauthorizedResponse now takes req
+      return deps.createUnauthorizedResponse("Not authenticated", req); 
     }
     console.log(`[me/index.ts] User authenticated: ${user.id}`);
 
