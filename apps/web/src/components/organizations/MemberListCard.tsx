@@ -1,6 +1,6 @@
 'use client';
 
-import { useOrganizationStore } from '@paynless/store';
+import { useOrganizationStore, selectCurrentUserRoleInOrg } from '@paynless/store';
 import { Card, CardHeader, CardTitle, CardContent, CardFooter } from '@/components/ui/card'; // Shadcn Card, Add CardFooter
 import {
   Table,
@@ -40,7 +40,6 @@ export const MemberListCard: React.FC = () => {
   const {
     currentOrganizationMembers,
     isLoading: isOrgLoading,
-    selectCurrentUserRoleInOrg,
     updateMemberRole, // <<< Get action from store
     removeMember,     // <<< Get action from store
     fetchCurrentOrganizationMembers, // Get fetch function
@@ -51,7 +50,7 @@ export const MemberListCard: React.FC = () => {
   
   const { user: currentUser, isLoading: isUserLoading } = useCurrentUser();
   const isLoading = isOrgLoading || isUserLoading;
-  const currentUserRole = selectCurrentUserRoleInOrg();
+  const currentUserRole = useOrganizationStore(selectCurrentUserRoleInOrg); // USE selector with hook
   const currentUserId = currentUser?.id;
 
   const handleRefresh = () => {

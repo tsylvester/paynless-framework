@@ -3,10 +3,10 @@ import type { OrganizationState, OrganizationUIState, OrganizationMember } from 
 import { useAuthStore } from './authStore'; // For selectCurrentUserRoleInOrg
 
 // Base Selectors
-const selectCurrentOrganizationMembers = (state: OrganizationState) => state.currentOrganizationMembers;
-const selectCurrentOrganizationId = (state: OrganizationState) => state.currentOrganizationId;
-const selectCurrentOrganizationDetails = (state: OrganizationState) => state.currentOrganizationDetails;
-const selectUserIdFromAuth = () => useAuthStore.getState().user?.id;
+export const selectCurrentOrganizationMembers = (state: OrganizationState) => state.currentOrganizationMembers;
+export const selectCurrentOrganizationId = (state: OrganizationState) => state.currentOrganizationId;
+export const selectCurrentOrganizationDetails = (state: OrganizationState) => state.currentOrganizationDetails;
+export const selectUserIdFromAuth = () => useAuthStore.getState().user?.id;
 
 /**
  * Selects the current user's role in the currently selected organization.

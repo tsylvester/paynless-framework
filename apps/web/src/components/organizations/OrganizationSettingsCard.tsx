@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useEffect } from 'react';
-import { useOrganizationStore } from '@paynless/store';
+import { useOrganizationStore, selectCurrentUserRoleInOrg } from '@paynless/store';
 import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -36,7 +36,6 @@ export const OrganizationSettingsCard: React.FC = () => {
     updateOrganization,
     // softDeleteOrganization, // Commented out as unused for now
     openDeleteDialog, // Import the action
-    selectCurrentUserRoleInOrg, // Add selector for role check
     isLoading, // Use main loading for now, maybe specific loading state later
     currentOrganizationId,
   } = useOrganizationStore();
@@ -99,8 +98,8 @@ export const OrganizationSettingsCard: React.FC = () => {
     }
   };
 
-  // Get the current user's role
-  const currentUserRole = selectCurrentUserRoleInOrg();
+  // Get the current user's role using the imported selector with the hook
+  const currentUserRole = useOrganizationStore(selectCurrentUserRoleInOrg);
 
   // Check if the user is an admin
   if (currentUserRole !== 'admin') {

@@ -73,8 +73,8 @@ const organizationStoreInitialState = {
     { id: 'org-def', name: 'Org DEF', created_at: new Date().toISOString(), deleted_at: null, visibility: 'private', allow_member_chat_creation: true },
   ] as Organization[],
   currentOrganizationId: 'org-abc' as string | null,
-  isLoading: false,
-  orgError: null,
+      isLoading: false,
+      orgError: null,
 };
 
 // Corrected SystemPrompt mock based on likely type structure
@@ -142,11 +142,11 @@ const aiStoreInitialState = {
   newChatContext: null as string | null,
   rewindTargetMessageId: null as string | null,
   aiError: null as string | null,
-  loadAiConfig: vi.fn(),
-  loadChatHistory: vi.fn(),
-  loadChatDetails: vi.fn(),
-  startNewChat: vi.fn(),
-  checkAndReplayPendingChatAction: vi.fn(),
+      loadAiConfig: vi.fn(),
+      loadChatHistory: vi.fn(),
+      loadChatDetails: vi.fn(),
+      startNewChat: vi.fn(),
+      checkAndReplayPendingChatAction: vi.fn(),
   deleteChat: vi.fn(),
   prepareRewind: vi.fn(),
   cancelRewindPreparation: vi.fn(),

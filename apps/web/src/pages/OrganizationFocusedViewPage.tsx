@@ -2,7 +2,15 @@
 
 import React, { useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom'; // Hooks for URL params and navigation
-import { useOrganizationStore } from '@paynless/store';
+import { 
+  useOrganizationStore,
+  // Import selectors from the main store export
+  selectCurrentUserRoleInOrg,
+  selectCurrentOrganizationId,
+  selectCurrentOrganizationDetails,
+  selectCurrentOrganizationMembers,
+  // selectUserOrganizations, // Removed - Selector doesn't exist
+} from '@paynless/store';
 import { OrganizationDetailsCard } from '../components/organizations/OrganizationDetailsCard';
 import { OrganizationSettingsCard } from '../components/organizations/OrganizationSettingsCard';
 import { MemberListCard } from '../components/organizations/MemberListCard';
@@ -17,20 +25,31 @@ export const OrganizationFocusedViewPage: React.FC = () => {
   const { orgId } = useParams<{ orgId: string }>(); // Get orgId from URL
   const navigate = useNavigate();
 
+  // Use imported selectors and direct state access where needed
+  const userOrganizations = useOrganizationStore(state => state.userOrganizations); // Reverted to direct access
+  const currentOrganizationId = useOrganizationStore(selectCurrentOrganizationId);
+  const currentOrganizationDetails = useOrganizationStore(selectCurrentOrganizationDetails);
+  const currentOrganizationMembers = useOrganizationStore(selectCurrentOrganizationMembers);
+  const currentUserRole = useOrganizationStore(selectCurrentUserRoleInOrg);
+
   const { 
-    userOrganizations, // Needed to check if user is part of this org initially
     setCurrentOrganizationId,
-    currentOrganizationId,
-    currentOrganizationDetails,
-    currentOrganizationMembers, // Needed to check membership status
     isLoading: isOrgLoading,
-    selectCurrentUserRoleInOrg,
-    error: orgError, // Get error state from store
-    fetchUserOrganizations, // May need to fetch if navigating directly
-  } = useOrganizationStore();
+    error: orgError,
+    fetchUserOrganizations,
+    fetchCurrentOrganizationDetails, // Destructure actions directly
+    fetchCurrentOrganizationMembers, // Destructure actions directly
+  } = useOrganizationStore((state) => ({ // Select actions and specific primitive states
+    setCurrentOrganizationId: state.setCurrentOrganizationId,
+    isLoading: state.isLoading,
+    error: state.error,
+    fetchUserOrganizations: state.fetchUserOrganizations,
+    fetchCurrentOrganizationDetails: state.fetchCurrentOrganizationDetails,
+    fetchCurrentOrganizationMembers: state.fetchCurrentOrganizationMembers,
+  }));
 
   const { user } = useCurrentUser(); 
-  const currentUserRole = selectCurrentUserRoleInOrg();
+  // const currentUserRole = selectCurrentUserRoleInOrg(); // No longer call as a property
 
   useEffect(() => {
     // Ensure user organizations are loaded, especially on direct navigation
@@ -56,12 +75,10 @@ export const OrganizationFocusedViewPage: React.FC = () => {
     // This handles both initial load via URL and changes via switcher (if applicable on this page)
     if (currentOrganizationId && currentOrganizationId === orgId) {
       logger.debug(`[FocusedView] Fetching details & members for orgId: ${currentOrganizationId}`);
-      // Need to get these actions from the store
-      const { fetchCurrentOrganizationDetails, fetchCurrentOrganizationMembers } = useOrganizationStore.getState();
-      fetchCurrentOrganizationDetails();
-      fetchCurrentOrganizationMembers();
+      fetchCurrentOrganizationDetails(); // Call destructured action
+      fetchCurrentOrganizationMembers(); // Call destructured action
     }
-  }, [currentOrganizationId, orgId]); // Depend on currentOrganizationId and orgId from URL
+  }, [currentOrganizationId, orgId, fetchCurrentOrganizationDetails, fetchCurrentOrganizationMembers]); // Add actions to dependency array
 
   useEffect(() => {
     // Validation checks after data might have loaded based on orgId change
