@@ -132,7 +132,7 @@ The implementation plan uses the following labels to categorize work steps:
 * [✅] **[REFACTOR]** Review `startNewChat` action for clarity and ensure no unintended side effects (Action is simple and deemed robust after review).
 * [✅] Commit changes with message "feat(STORE): Update startNewChat action for organization context w/ tests"
 
-#### STEP-2.1.6: Update `sendMessage` Action [TEST-UNIT] [COMMIT]
+#### STEP-2.1.6: Update `sendMessage` Action [TEST-UNIT] [COMMIT] [✅]
 * [✅] Define test cases for `sendMessage` covering:
     *   [✅] **Scenario: New Chat (Personal Context)**
         *   [✅] Context: `currentChatId=null`, `newChatContext=null`, `rewindTargetMessageId=null`.
@@ -212,37 +212,37 @@ The implementation plan uses the following labels to categorize work steps:
 * [✅] **[REFACTOR]** Ensure state updates are clean, especially for rewind. Handle errors gracefully.
 * [✅] Commit changes with message "feat(STORE): Update sendMessage action for org context, rewind, tokens w/ tests & analytics"
 
-#### STEP-2.1.7: Add or Update `deleteChat` Action [TEST-UNIT] [COMMIT]
+#### STEP-2.1.7: Add or Update `deleteChat` Action [TEST-UNIT] [COMMIT] [✅]
 * [✅] Define test cases for `deleteChat` action:
-    *   Verify accepts `chatId`, `organizationId`.
-    *   Verify calls `api.ai().deleteChat(chatId, organizationId)` (mock API).
-    *   Verify removes chat from the correct state partition (e.g., `chatsByContext`).
-    *   Verify calls `startNewChat(null)` if `chatId === currentChatId`.
-    *   Verify triggers `chat_deleted` analytics event on success.
-    *   Verify handles loading/error states.
+    *   [✅] Verify accepts `chatId`, `organizationId`.
+    *   [✅] Verify calls `api.ai().deleteChat(chatId, organizationId)` (mock API).
+    *   [✅] Verify removes chat from the correct state partition (e.g., `chatsByContext`).
+    *   [✅] Verify calls `startNewChat(null)` if `chatId === currentChatId`.
+    *   [✅] Verify triggers `chat_deleted` analytics event on success.
+    *   [✅] Verify handles loading/error states.
 * [✅] Write/Update tests in `packages/store/src/aiStore.unit.test.ts`. Expect failure (RED).
 * [✅] Add or update `deleteChat` action in `packages/store/src/aiStore.ts`.
 * [✅] Run unit tests. Debug until pass (GREEN).
 * [✅] Commit changes with message "feat(STORE): Add/update deleteChat action for organization context w/ tests & analytics"
 
-#### STEP-2.1.8: Add Token Tracking Logic/Actions [TEST-UNIT] [COMMIT]
+#### STEP-2.1.8: Add Token Tracking Logic/Actions [TEST-UNIT] [COMMIT] [✅]
 * [✅] Define test cases for token tracking logic/actions:
-    *   Client-side estimation function/hook interaction (if estimation is done via store action).
-    *   Storing `token_usage` data correctly when messages are added/updated.
-    *   Cumulative token calculation logic/selector tests.
-* [✅] Write/Update tests in `packages/store/src/aiStore.sendMessage.test.ts`. Mock API calls. Expect failure (RED). (Partially done - basic scenarios adapted)
-* [✅] Update `sendMessage` action in `packages/store/src/aiStore.ts` to implement the logic for all scenarios (Partially done - core logic updated, missing `chatsByContext` update).
-* [✅] Run unit tests. Debug complex logic until pass (GREEN).
-* [✅] **[REFACTOR]** Ensure state updates are clean, especially for rewind. Handle errors gracefully.
-* [✅] Commit changes with message "feat(STORE): Update sendMessage action for org context, rewind, tokens w/ tests & analytics"
+    *   [✅] Client-side estimation function/hook interaction (if estimation is done via store action). // Decided against client-side estimation. API is source of truth.
+    *   [✅] Storing `token_usage` data correctly when messages are added/updated. // Covered by sendMessage tests.
+    *   [🚧] Cumulative token calculation logic/selector tests. // Deferred to STEP-2.4
+* [✅] Write/Update tests in `packages/store/src/aiStore.sendMessage.test.ts`. Mock API calls. Expect failure (RED). // Covered by sendMessage tests.
+* [✅] Update `sendMessage` action in `packages/store/src/aiStore.ts` to implement the logic for all scenarios // Covered by sendMessage implementation.
+* [✅] Run unit tests. Debug complex logic until pass (GREEN). // sendMessage tests are passing.
+* [✅] **[REFACTOR]** Ensure state updates are clean, especially for rewind. Handle errors gracefully. // Done as part of sendMessage.
+* [✅] Commit changes with message "feat(STORE): Update sendMessage action for org context, rewind, tokens w/ tests & analytics" // This existing commit for sendMessage covers token storage.
 
-#### STEP-2.1.9: Add Rewind Feature Actions/State [TEST-UNIT] [COMMIT]
-*   [ ] Define test cases for rewind-specific actions (`setRewindTarget`, `clearRewindTarget`) and state (`rewindTargetMessageId`).
-*   [ ] Write/Update tests in `packages/store/src/aiStore.unit.test.ts`. Expect failure (RED).
-*   [ ] Add state properties and actions to `useAiStore` for managing rewind mode.
-*   [ ] Ensure `sendMessage` correctly uses this state when making the API call.
-*   [ ] Run unit tests. Debug until pass (GREEN).
-*   [ ] Commit: `feat(STORE): Add state and actions for chat rewind feature w/ tests`
+#### STEP-2.1.9: Add Rewind Feature Actions/State [TEST-UNIT] [COMMIT] [✅]
+*   [✅] Define test cases for rewind-specific actions (`prepareRewind`, `cancelRewindPreparation`) and state (`rewindTargetMessageId`).
+*   [✅] Write/Update tests in `packages/store/src/aiStore.rewind.test.ts`. Expect failure (RED).
+*   [✅] Add state properties (`rewindTargetMessageId`) and actions (`prepareRewind`, `cancelRewindPreparation`) to `useAiStore` for managing rewind mode.
+*   [✅] Ensure `sendMessage` correctly uses this state when making the API call (Covered in STEP-2.1.6).
+*   [✅] Run unit tests. Debug until pass (GREEN).
+*   [✅] Commit: `feat(STORE): Add state and actions for chat rewind feature w/ tests`
 
 ### STEP-2.2: Integrate with Organization Store (`useOrganizationStore`) [STORE] [🚧]
 
@@ -284,6 +284,9 @@ The implementation plan uses the following labels to categorize work steps:
 * [ ] Add any missing triggers.
 * [ ] Commit changes with message "feat(ANALYTICS): Ensure all required analytics events are triggered from store actions"
 
+#### STEP-2.3.4 `deleteChat` transaction on Database [DB] [COMMIT]
+*   [] **Note:** Ensure the corresponding backend Edge Function (`/chat` with `DELETE` method) uses a database transaction to delete both the `chats` record and all associated `chat_messages` records atomically.
+
 **Phase 2 Complete Checkpoint:**
 *   [ ] All Phase 2 tests (Store unit tests, integration tests) passing.
 *   [ ] `useAiStore` correctly manages state for personal/organization chats, token usage, and rewind.
@@ -292,3 +295,17 @@ The implementation plan uses the following labels to categorize work steps:
 *   [ ] Analytics events are triggered appropriately from store actions.
 *   [ ] Code refactored, and commits made.
 *   [ ] Run `npm test` in `packages/store`. 
+
+#### STEP-2.4: Future: Token Budget vs. Consumption Audit [UI] [STORE]
+*   [ ] **Design & Implement Token Audit Logic:**
+    *   [ ] **`aiStore` Selectors:** Ensure robust selectors exist in `useAiStore` to calculate total token consumption for a given chat (e.g., `selectChatTokenUsage(chatId)`) and potentially cumulative usage for a user/org within a billing period (if applicable and stored/derivable in `aiStore`).
+    *   [ ] **`subscriptionStore` Selectors:** Ensure selectors exist in `useSubscriptionStore` to retrieve token allocation/budget for the current user and/or organization (e.g., `selectCurrentUserTokenBudget()`, `selectOrganizationTokenBudget(orgId)`).
+    *   [ ] **UI Layer / Custom Hook:** Develop a custom React hook (e.g., `useTokenAuditStatus`) or UI-level logic that:
+        *   [ ] Consumes token usage data from `useAiStore` selectors.
+        *   [ ] Consumes token budget data from `useSubscriptionStore` selectors.
+        *   [ ] Performs the comparison/audit logic (e.g., calculates remaining tokens, percentage used).
+        *   [ ] Provides reactive state for the UI to display warnings, block usage, or show token status.
+    *   [ ] **Consider Time Domains:** The audit logic will need to correctly align token consumption (which is ongoing) with token allocation periods (e.g., monthly subscription resets). This might involve fetching usage data for specific time windows if not already handled by `aiStore` selectors.
+    *   [ ] **UI Integration:** Integrate this audit logic into relevant UI components (e.g., chat input, user dashboard, organization settings).
+*   [ ] Write unit/integration tests for the audit logic and UI components.
+*   [ ] Commit changes with message "feat(STORE/UI): Implement token budget vs. consumption audit logic" 

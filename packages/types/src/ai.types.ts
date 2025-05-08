@@ -175,6 +175,9 @@ export interface AiActions {
   startNewChat: (organizationId?: string | null) => void;
   clearAiError: () => void;
   checkAndReplayPendingChatAction: () => Promise<void>;
+  deleteChat: (chatId: Chat['id'], organizationId?: string | null) => Promise<void>;
+  prepareRewind: (messageId: ChatMessage['id'], chatId: Chat['id']) => void;
+  cancelRewindPreparation: () => void;
 }
 
 // Combined type for the store

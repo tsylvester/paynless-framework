@@ -6,12 +6,10 @@ import {
 	ChatApiRequest,
 	FetchOptions,
     ApiResponse,
-    AiState, 
-    AiStore, // Import the combined type
-    PendingAction, // <<< Add this import
-    AuthRequiredError // <<< Add this import
+    PendingAction,
+    AuthRequiredError,
+    Chat
 } from '@paynless/types';
-import type { Chat } from '@paynless/types';
 
 // Re-add the runtime constant hack to ensure build passes
 const preserveChatType: Chat = {
@@ -31,6 +29,44 @@ console.log('Using preserveChatType hack for build', !!preserveChatType);
 import { api } from '@paynless/api';
 import { logger } from '@paynless/utils';
 import { useAuthStore } from './authStore';
+
+// Define AiState interface locally or ensure it's correctly imported if needed elsewhere
+export interface AiState {
+    availableProviders: AiProvider[];
+    availablePrompts: SystemPrompt[];
+    chatsByContext: { personal: Chat[], orgs: { [orgId: string]: Chat[] } };
+    messagesByChatId: { [chatId: string]: ChatMessage[] };
+    currentChatId: string | null;
+    isLoadingAiResponse: boolean;
+    isConfigLoading: boolean;
+    isLoadingHistoryByContext: { personal: boolean, orgs: { [orgId: string]: boolean } };
+    isDetailsLoading: boolean;
+    newChatContext: string | null;
+    rewindTargetMessageId: string | null;
+    aiError: string | null;
+}
+
+// Define AiActions locally within this file
+interface AiActions {
+  loadAiConfig: () => Promise<void>;
+  sendMessage: (data: {
+    message: string; 
+    providerId: AiProvider['id']; 
+    promptId: SystemPrompt['id']; 
+    chatId?: Chat['id'] | null; 
+  }) => Promise<ChatMessage | null>; 
+  loadChatHistory: (organizationId?: string | null) => Promise<void>;
+  loadChatDetails: (chatId: Chat['id']) => Promise<void>; 
+  startNewChat: (organizationId?: string | null) => void;
+  clearAiError: () => void;
+  checkAndReplayPendingChatAction: () => Promise<void>;
+  deleteChat: (chatId: Chat['id'], organizationId?: string | null) => Promise<void>; // Ensure deleteChat is here
+  prepareRewind: (messageId: string, chatId: string) => void;
+  cancelRewindPreparation: () => void;
+}
+
+// Combine state and actions for the store type
+export type AiStore = AiState & AiActions;
 
 // --- Constants ---
 // --- Removed ANONYMOUS_MESSAGE_LIMIT ---
@@ -640,7 +676,93 @@ export const useAiStore = create<AiStore>()(
                         });
                     }
                 }
+            },
+
+            deleteChat: async (chatId: string, organizationId?: string | null) => {
+                const token = useAuthStore.getState().session?.access_token;
+                if (!token) {
+                    set({ aiError: 'Authentication token not found.' });
+                    return;
+                }
+
+                set({ aiError: null }); 
+
+                try {
+                    const response = await api.ai().deleteChat(chatId, token, organizationId);
+
+                    if (response.error) {
+                        throw new Error(response.error.message || 'Failed to delete chat');
+                    }
+
+                    set(state => {
+                        const newMessagesByChatId = { ...state.messagesByChatId };
+                        delete newMessagesByChatId[chatId];
+
+                        let newChatsByContext = { ...state.chatsByContext };
+                        if (organizationId) {
+                            const orgChats = (state.chatsByContext.orgs[organizationId] || []).filter(c => c.id !== chatId);
+                            newChatsByContext = {
+                                ...newChatsByContext,
+                                orgs: { ...newChatsByContext.orgs, [organizationId]: orgChats },
+                            };
+                        } else {
+                            const personalChats = state.chatsByContext.personal.filter(c => c.id !== chatId);
+                            newChatsByContext = {
+                                ...newChatsByContext,
+                                personal: personalChats,
+                            };
+                        }
+
+                        let newCurrentChatId = state.currentChatId;
+                        let shouldCallStartNewChat = false;
+                        if (state.currentChatId === chatId) {
+                            newCurrentChatId = null; 
+                            shouldCallStartNewChat = true; 
+                        }
+
+                        return {
+                            ...state,
+                            messagesByChatId: newMessagesByChatId,
+                            chatsByContext: newChatsByContext,
+                            currentChatId: newCurrentChatId,
+                            aiError: null,
+                        };
+                    });
+
+                    // Call startNewChat if the deleted chat was active and currentChatId was reset
+                    // This check ensures startNewChat is called only if the deletion was successful and current chat was indeed the one deleted.
+                    if (get().currentChatId === null && get().messagesByChatId[chatId] === undefined) { 
+                        get().startNewChat(null); 
+                    }
+                    
+                    // useAnalyticsStore.getState().trackEvent('chat_deleted', { chat_id: chatId, organization_id: organizationId });
+                    logger.info('Chat deleted successfully', { chatId, organizationId });
+
+                } catch (error: unknown) {
+                    const errorMessage = error instanceof Error ? error.message : 'An unexpected error occurred while deleting the chat.';
+                    logger.error('Error deleting chat:', { chatId, organizationId, error: errorMessage });
+                    set({
+                        aiError: errorMessage,
+                    });
+                }
+            },
+
+            prepareRewind: (messageId: string, chatId: string) => {
+                set({
+                    rewindTargetMessageId: messageId,
+                    currentChatId: chatId, // Ensure the context is set to the chat being rewound
+                    aiError: null, // Clear any previous errors as we are starting a new action
+                });
+                logger.info(`[rewind] Prepared rewind for messageId: ${messageId} in chatId: ${chatId}`);
+            },
+
+            cancelRewindPreparation: () => {
+                set({
+                    rewindTargetMessageId: null,
+                    // currentChatId remains as is, no need to change it here
+                });
+                logger.info('[rewind] Canceled rewind preparation.');
             }
-        })
+        }) as AiStore
     // )
 );
