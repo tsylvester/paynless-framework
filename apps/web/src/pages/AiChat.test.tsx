@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach, type Mock } from 'vitest';
+import { describe, it, expect, vi, beforeEach, type Mock, type SpyInstance } from 'vitest';
 import { render, screen, act } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 // import AiChat from './AiChat'; // Will be imported after mocks
@@ -179,7 +179,13 @@ describe('AiChat Page', () => {
     // Assign specific mock instances for actions
     loadAiConfigMock = vi.fn();
     loadChatHistoryMock = vi.fn();
-    loadChatDetailsMock = vi.fn();
+    loadChatDetailsMock = vi.fn((chatIdToLoad: string) => { // New mock implementation
+      act(() => {
+        useAiStore.setState({ currentChatId: chatIdToLoad, isDetailsLoading: true });
+      });
+      // Optionally, simulate async completion of loading, though often not needed for prop assertion
+      // setTimeout(() => act(() => useAiStore.setState({ isDetailsLoading: false })), 0);
+    });
     startNewChatMock = vi.fn();
     checkAndReplayPendingChatActionMock = vi.fn();
     deleteChatMock = vi.fn();
@@ -481,6 +487,67 @@ describe('AiChat Page', () => {
     });
   });
 
+  describe('Load Chat from localStorage', () => {
+    // Use the specific SpyInstance types from vitest
+    let getItemSpy: SpyInstance<[key: string], string | null>;
+    let removeItemSpy: SpyInstance<[key: string], void>;
+
+    beforeEach(() => {
+      // Spy on localStorage methods using Storage.prototype
+      getItemSpy = vi.spyOn(Storage.prototype, 'getItem');
+      removeItemSpy = vi.spyOn(Storage.prototype, 'removeItem');
+      
+      // Ensure necessary store actions are mocked for AiChat initialization if not already covered globally
+      // This might be redundant if global beforeEach already sets them up, but good for clarity.
+      act(() => {
+        useAiStore.setState(state => ({
+          ...state,
+          loadAiConfig: loadAiConfigMock, // from outer scope
+          loadChatHistory: loadChatHistoryMock, // from outer scope
+          checkAndReplayPendingChatAction: checkAndReplayPendingChatActionMock, // from outer scope
+          loadChatDetails: loadChatDetailsMock // from outer scope
+        }));
+      });
+      loadChatDetailsMock.mockClear(); // Clear before each localStorage test
+    });
+
+    afterEach(() => {
+      // Restore original localStorage methods
+      getItemSpy.mockRestore();
+      removeItemSpy.mockRestore();
+    });
+
+    it('should call loadChatDetails and removeItem if chatId is found in localStorage', async () => {
+      const mockChatId = 'chat-from-storage';
+      getItemSpy.mockReturnValue(mockChatId);
+
+      render(<AiChat />); 
+
+      await vi.waitFor(() => {
+        expect(getItemSpy).toHaveBeenCalledWith('loadChatIdOnRedirect');
+      });
+      await vi.waitFor(() => {
+        expect(loadChatDetailsMock).toHaveBeenCalledWith(mockChatId);
+      });
+      expect(removeItemSpy).toHaveBeenCalledWith('loadChatIdOnRedirect');
+    });
+
+    it('should not call loadChatDetails or removeItem if no chatId is found in localStorage', async () => {
+      getItemSpy.mockReturnValue(null);
+
+      render(<AiChat />);
+
+      await vi.waitFor(() => {
+        expect(getItemSpy).toHaveBeenCalledWith('loadChatIdOnRedirect');
+      });
+      // Ensure a small delay for any potential async operations to NOT run if they were conditional
+      await new Promise(resolve => setTimeout(resolve, 50)); 
+
+      expect(loadChatDetailsMock).not.toHaveBeenCalled();
+      expect(removeItemSpy).not.toHaveBeenCalled();
+    });
+  });
+
   describe('User Interactions and Event Handling', () => {
     beforeEach(() => {
       vi.resetModules();
@@ -571,21 +638,65 @@ describe('AiChat Page', () => {
 
     it('should call startNewChat, track event, and reset selections on "New Chat" button click', async () => {
         // Ensure some providers/prompts exist in state for reset logic
-        const initialProviders = [{ id: 'prov-initial', name:'p', api_identifier:'', is_active: true, is_enabled: true, config:{}, created_at:'', updated_at:'', description:'', provider:''}];
-        const initialPrompts = [{ id: 'prompt-initial', name:'p', prompt_text:'', created_at:'', updated_at:'', is_active:true }];
-        act(() => {
-            useAiStore.setState({ 
-                availableProviders: initialProviders,
-                availablePrompts: initialPrompts
-            });
+        const initialProviders: AiProvider[] = [
+            { id: 'prov-initial', name:'Initial Provider', api_identifier:'p-init', is_active: true, is_enabled: true, config:{}, created_at:'', updated_at:'', description:'', provider:''},
+            { id: 'prov-another', name:'Another Provider', api_identifier:'p-another', is_active: true, is_enabled: true, config:{}, created_at:'', updated_at:'', description:'', provider:''}
+        ];
+        const initialPrompts: SystemPrompt[] = [
+            { id: 'prompt-initial', name:'Initial Prompt', prompt_text:'', created_at:'', updated_at:'', is_active:true },
+            { id: 'prompt-another', name:'Another Prompt', prompt_text:'', created_at:'', updated_at:'', is_active:true }
+        ];
+        
+        // Mocks for ModelSelector and PromptSelector to simulate user changing selection
+        // and to check their props after reset
+        const MockModelSelectorWithChange = vi.fn((props: { selectedProviderId: string | null, onProviderChange: (id: string | null) => void }) => {
+            return <button data-testid="mock-model-selector-interactive" onClick={() => props.onProviderChange(initialProviders[1].id)}>Change Provider</button>;
+        });
+        const MockPromptSelectorWithChange = vi.fn((props: { selectedPromptId: string | null, onPromptChange: (id: string | null) => void }) => {
+            return <button data-testid="mock-prompt-selector-interactive" onClick={() => props.onPromptChange(initialPrompts[1].id)}>Change Prompt</button>;
         });
 
-        render(<AiChat />);
+        vi.doMock('../components/ai/ModelSelector', () => ({ ModelSelector: MockModelSelectorWithChange }));
+        vi.doMock('../components/ai/PromptSelector', () => ({ PromptSelector: MockPromptSelectorWithChange }));
+        const AiChatWithInteractiveSelectors = (await import('./AiChat')).default;
+        const { ModelSelector: ImportedModelSelector } = await import('../components/ai/ModelSelector');
+        const { PromptSelector: ImportedPromptSelector } = await import('../components/ai/PromptSelector');
+
+        act(() => {
+            useAiStore.setState(state => ({ 
+                ...state,
+                availableProviders: initialProviders,
+                availablePrompts: initialPrompts,
+                loadAiConfig: loadAiConfigMock, 
+                loadChatHistory: loadChatHistoryMock, 
+                checkAndReplayPendingChatAction: checkAndReplayPendingChatActionMock,
+                startNewChat: startNewChatMock,
+            }));
+        });
+
+        render(<AiChatWithInteractiveSelectors />);
         const user = userEvent.setup();
         const newChatButton = screen.getByTestId('new-chat-button');
 
+        // Simulate user selecting non-default provider and prompt
+        const changeProviderButton = screen.getByTestId('mock-model-selector-interactive');
+        await user.click(changeProviderButton);
+        const changePromptButton = screen.getByTestId('mock-prompt-selector-interactive');
+        await user.click(changePromptButton);
+
+        await vi.waitFor(() => {
+            const modelSelectorCalls = vi.mocked(ImportedModelSelector).mock.calls;
+            const lastModelCallArgs = modelSelectorCalls[modelSelectorCalls.length - 1][0];
+            expect(lastModelCallArgs.selectedProviderId).toBe(initialProviders[1].id); // Verify selection changed
+            
+            const promptSelectorCalls = vi.mocked(ImportedPromptSelector).mock.calls;
+            const lastPromptCallArgs = promptSelectorCalls[promptSelectorCalls.length - 1][0];
+            expect(lastPromptCallArgs.selectedPromptId).toBe(initialPrompts[1].id); // Verify selection changed
+        });
+
         // Get current context from component state (initialized from store)
         const initialContext = useOrganizationStore.getState().currentOrganizationId; // 'org-abc' in default setup
+        analyticsTrackMock.mockClear(); // Clear before clicking new chat
 
         await user.click(newChatButton);
 
@@ -598,10 +709,61 @@ describe('AiChat Page', () => {
             contextId: initialContext === null ? 'personal' : initialContext 
         });
 
-        // Verify selections reset (by checking props passed to mocks again)
-        // Need to mock ModelSelector/PromptSelector again or find another way to check state reset
-        // For now, we focus on the action call and analytics. 
-        // TODO: Add checks for selection reset if possible/needed.
+        // Verify selections reset to the first available
+        await vi.waitFor(() => {
+            const modelSelectorCalls = vi.mocked(ImportedModelSelector).mock.calls;
+            const lastModelCallArgs = modelSelectorCalls[modelSelectorCalls.length - 1][0];
+            expect(lastModelCallArgs.selectedProviderId).toBe(initialProviders[0].id); // Reset to first
+            
+            const promptSelectorCalls = vi.mocked(ImportedPromptSelector).mock.calls;
+            const lastPromptCallArgs = promptSelectorCalls[promptSelectorCalls.length - 1][0];
+            expect(lastPromptCallArgs.selectedPromptId).toBe(initialPrompts[0].id); // Reset to first
+        });
+
+        vi.doUnmock('../components/ai/ModelSelector');
+        vi.doUnmock('../components/ai/PromptSelector');
+    });
+
+    it('should reset selections to null on "New Chat" click if no providers/prompts are available', async () => {
+        act(() => {
+            useAiStore.setState(state => ({ 
+                ...state,
+                availableProviders: [], // No providers
+                availablePrompts: [],   // No prompts
+                loadAiConfig: loadAiConfigMock, 
+                loadChatHistory: loadChatHistoryMock, 
+                checkAndReplayPendingChatAction: checkAndReplayPendingChatActionMock,
+                startNewChat: startNewChatMock,
+                // Simulate some selections were made before
+                // Note: This direct state setting for selectedProviderId/selectedPromptId is internal to AiChat.
+                // If these are purely controlled via props to ModelSelector/PromptSelector, this part of setup might differ.
+                // However, handleNewChat directly resets these internal states.
+            }));
+        });
+        
+        // Using the standard mocks for ModelSelector and PromptSelector for this test
+        // as we are not interacting with them to change selection, only observing their props after reset.
+        render(<AiChat />); // Use top-level imported AiChat
+        const user = userEvent.setup();
+        const newChatButton = screen.getByTestId('new-chat-button');
+
+        // Set some initial selected IDs in the component's state via a simulated prior interaction
+        // This is tricky without direct access or a callback. Let's assume they might be set.
+        // The component's logic should reset them regardless of how they were set.
+        // For the purpose of this test, the crucial part is that `availableProviders/Prompts` are empty.
+
+        await user.click(newChatButton);
+
+        await vi.waitFor(() => {
+            // Use the top-level imported mocks
+            const modelSelectorCalls = vi.mocked(ModelSelector).mock.calls;
+            const lastModelCallArgs = modelSelectorCalls[modelSelectorCalls.length - 1][0];
+            expect(lastModelCallArgs.selectedProviderId).toBeNull();
+
+            const promptSelectorCalls = vi.mocked(PromptSelector).mock.calls;
+            const lastPromptCallArgs = promptSelectorCalls[promptSelectorCalls.length - 1][0];
+            expect(lastPromptCallArgs.selectedPromptId).toBeNull();
+        });
     });
 
     it('should call loadChatDetails, track event, and reset selections on handleLoadChat (from history)', async () => {
@@ -609,26 +771,72 @@ describe('AiChat Page', () => {
         const currentChatIdBeforeLoad = null; 
         expect(chatToLoadId).not.toBe(currentChatIdBeforeLoad);
 
+        const initialProviders: AiProvider[] = [
+            { id: 'prov-load-initial', name:'Load Initial Provider', api_identifier:'pl-init', is_active: true, is_enabled: true, config:{}, created_at:'', updated_at:'', description:'', provider:''},
+            { id: 'prov-load-another', name:'Load Another Provider', api_identifier:'pl-another', is_active: true, is_enabled: true, config:{}, created_at:'', updated_at:'', description:'', provider:''}
+        ];
+        const initialPrompts: SystemPrompt[] = [
+            { id: 'prompt-load-initial', name:'Load Initial Prompt', prompt_text:'', created_at:'', updated_at:'', is_active:true },
+            { id: 'prompt-load-another', name:'Load Another Prompt', prompt_text:'', created_at:'', updated_at:'', is_active:true }
+        ];
+
         const currentLoadAiConfigMock = vi.fn();
         const currentLoadChatHistoryMock = vi.fn();
+        
+        // Mock interactive components
         const TempMockChatHistoryList = vi.fn((props: { onLoadChat: (id: string) => void }) => {
             return <button data-testid="mock-history-item" onClick={() => props.onLoadChat(chatToLoadId)}>Load Chat</button>;
         });
+        const TempMockModelSelector = vi.fn((props: { selectedProviderId: string | null, onProviderChange: (id: string | null) => void }) => {
+            return <button data-testid="mock-model-selector-interactive" onClick={() => props.onProviderChange(initialProviders[1].id)}>Change Provider</button>;
+        });
+        const TempMockPromptSelector = vi.fn((props: { selectedPromptId: string | null, onPromptChange: (id: string | null) => void }) => {
+            return <button data-testid="mock-prompt-selector-interactive" onClick={() => props.onPromptChange(initialPrompts[1].id)}>Change Prompt</button>;
+        });
+
         vi.doMock('../components/ai/ChatHistoryList', () => ({ ChatHistoryList: TempMockChatHistoryList }));
+        vi.doMock('../components/ai/ModelSelector', () => ({ ModelSelector: TempMockModelSelector }));
+        vi.doMock('../components/ai/PromptSelector', () => ({ PromptSelector: TempMockPromptSelector }));
+
         const AiChatWithInteractiveHistory = (await import('./AiChat')).default;
-        // const { ChatHistoryList: ImportedChatHistoryList } = await import('../components/ai/ChatHistoryList'); // Not used for direct assertion on mock calls here
+        const { ModelSelector: ImportedModelSelector } = await import('../components/ai/ModelSelector');
+        const { PromptSelector: ImportedPromptSelector } = await import('../components/ai/PromptSelector');
 
         act(() => {
-          useAiStore.setState({
+          useAiStore.setState(state => ({
+            ...state,
+            availableProviders: initialProviders,
+            availablePrompts: initialPrompts,
             loadAiConfig: currentLoadAiConfigMock,
             loadChatHistory: currentLoadChatHistoryMock,
             checkAndReplayPendingChatAction: vi.fn(),
+            loadChatDetails: loadChatDetailsMock, // from outer scope
+            startNewChat: startNewChatMock, // from outer scope
             currentChatId: currentChatIdBeforeLoad // Ensure initial state
-           });
+           }));
         });
         render(<AiChatWithInteractiveHistory />);
         const user = userEvent.setup();
         const loadChatButton = screen.getByTestId('mock-history-item');
+
+        // Simulate user selecting non-default provider/prompt *before* loading chat
+        const changeProviderButton = screen.getByTestId('mock-model-selector-interactive');
+        await user.click(changeProviderButton);
+        const changePromptButton = screen.getByTestId('mock-prompt-selector-interactive');
+        await user.click(changePromptButton);
+
+        await vi.waitFor(() => {
+            const modelSelectorCalls = vi.mocked(ImportedModelSelector).mock.calls;
+            const lastModelCallArgs = modelSelectorCalls[modelSelectorCalls.length - 1][0];
+            expect(lastModelCallArgs.selectedProviderId).toBe(initialProviders[1].id); // Verify selection changed
+            
+            const promptSelectorCalls = vi.mocked(ImportedPromptSelector).mock.calls;
+            const lastPromptCallArgs = promptSelectorCalls[promptSelectorCalls.length - 1][0];
+            expect(lastPromptCallArgs.selectedPromptId).toBe(initialPrompts[1].id); // Verify selection changed
+        });
+        
+        loadChatDetailsMock.mockClear(); // Clear before load
+        analyticsTrackMock.mockClear(); // Clear before load
 
         await user.click(loadChatButton);
 
@@ -636,7 +844,85 @@ describe('AiChat Page', () => {
         expect(loadChatDetailsMock).toHaveBeenCalledWith(chatToLoadId);
 
         expect(analyticsTrackMock).toHaveBeenCalledWith('Chat: History Item Selected', { chatId: chatToLoadId });
+        
+        // Verify selections reset to the first available
+        await vi.waitFor(() => {
+            const modelSelectorCalls = vi.mocked(ImportedModelSelector).mock.calls;
+            const lastModelCallArgs = modelSelectorCalls[modelSelectorCalls.length - 1][0];
+            expect(lastModelCallArgs.selectedProviderId).toBe(initialProviders[0].id); // Reset to first
+            
+            const promptSelectorCalls = vi.mocked(ImportedPromptSelector).mock.calls;
+            const lastPromptCallArgs = promptSelectorCalls[promptSelectorCalls.length - 1][0];
+            expect(lastPromptCallArgs.selectedPromptId).toBe(initialPrompts[0].id); // Reset to first
+        });
+
         vi.doUnmock('../components/ai/ChatHistoryList');
+        vi.doUnmock('../components/ai/ModelSelector');
+        vi.doUnmock('../components/ai/PromptSelector');
+    });
+
+    it('should reset selections to null on handleLoadChat if no providers/prompts available', async () => {
+        const chatToLoadId = 'chat-personal-2';
+        const currentChatIdBeforeLoad = null;
+
+        const currentLoadAiConfigMock = vi.fn();
+        const currentLoadChatHistoryMock = vi.fn();
+
+        const TempMockChatHistoryList = vi.fn((props: { onLoadChat: (id: string) => void }) => {
+            return <button data-testid="mock-history-item-empty" onClick={() => props.onLoadChat(chatToLoadId)}>Load Chat Empty</button>;
+        });
+        // Use vi.doMock for ModelSelector and PromptSelector specifically for this test
+        const TempMockModelSelector = vi.fn((props: { selectedProviderId: string | null }) => <div data-testid="temp-model-selector">{props.selectedProviderId}</div>);
+        const TempMockPromptSelector = vi.fn((props: { selectedPromptId: string | null }) => <div data-testid="temp-prompt-selector">{props.selectedPromptId}</div>);
+
+        vi.doMock('../components/ai/ChatHistoryList', () => ({ ChatHistoryList: TempMockChatHistoryList }));
+        vi.doMock('../components/ai/ModelSelector', () => ({ ModelSelector: TempMockModelSelector }));
+        vi.doMock('../components/ai/PromptSelector', () => ({ PromptSelector: TempMockPromptSelector }));
+
+        const AiChatWithDynamicMocks = (await import('./AiChat')).default;
+        // We don't need to import the selectors separately now, we'll use the vi.mocked(TempMock...)
+        
+        act(() => {
+          useAiStore.setState(state => ({
+            ...state,
+            availableProviders: [], // No providers
+            availablePrompts: [],   // No prompts
+            loadAiConfig: currentLoadAiConfigMock,
+            loadChatHistory: currentLoadChatHistoryMock,
+            checkAndReplayPendingChatAction: vi.fn(),
+            loadChatDetails: loadChatDetailsMock, // from outer scope
+            startNewChat: startNewChatMock, // from outer scope
+            currentChatId: currentChatIdBeforeLoad // Ensure initial state
+           }));
+        });
+        render(<AiChatWithDynamicMocks />);
+        const user = userEvent.setup();
+        const loadChatButton = screen.getByTestId('mock-history-item-empty');
+
+        // Clear mock calls after initial render and before interaction
+        vi.mocked(TempMockModelSelector).mockClear();
+        vi.mocked(TempMockPromptSelector).mockClear();
+
+        await user.click(loadChatButton);
+
+        expect(loadChatDetailsMock).toHaveBeenCalledWith(chatToLoadId);
+
+        // Verify selections reset to null
+        await vi.waitFor(() => {
+            const modelSelectorCalls = vi.mocked(TempMockModelSelector).mock.calls;
+            expect(modelSelectorCalls.length).toBeGreaterThan(0); 
+            const lastModelCallArgs = modelSelectorCalls[modelSelectorCalls.length - 1][0];
+            expect(lastModelCallArgs.selectedProviderId).toBeNull();
+
+            const promptSelectorCalls = vi.mocked(TempMockPromptSelector).mock.calls;
+            expect(promptSelectorCalls.length).toBeGreaterThan(0);
+            const lastPromptCallArgs = promptSelectorCalls[promptSelectorCalls.length - 1][0];
+            expect(lastPromptCallArgs.selectedPromptId).toBeNull();
+        });
+
+        vi.doUnmock('../components/ai/ChatHistoryList');
+        vi.doUnmock('../components/ai/ModelSelector'); 
+        vi.doUnmock('../components/ai/PromptSelector'); 
     });
 
     it('should NOT call loadChatDetails if handleLoadChat is called with the currentChatId', async () => {

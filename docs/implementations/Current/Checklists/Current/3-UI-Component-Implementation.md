@@ -72,7 +72,7 @@ The implementation plan uses the following labels to categorize work steps:
 * [✅] **[REFACTOR]** Ensure clarity, reusability, accessibility.
 * [✅] Commit changes with message "feat(UI): Create reusable ChatContextSelector component w/ tests"
 
-#### STEP-3.1.2: Integrate `ChatContextSelector` for New Chat Context [TEST-INT] [COMMIT]
+#### STEP-3.1.2: Integrate `ChatContextSelector` for New Chat Context [TEST-INT] [COMMIT] [✅]
 * [ ] **[TEST-UNIT]** Create `apps/web/src/tests/pages/AiChat.test.tsx` if not present. (Already created and initial tests passing)
 * [ ] Define/Implement Comprehensive Unit Test Cases for `AiChat.tsx`:
     *   **Initial State & Rendering (on mount):**
@@ -83,10 +83,10 @@ The implementation plan uses the following labels to categorize work steps:
         *   [✅] Calls `checkAndReplayPendingChatAction` action from `useAiStore`.
         *   [✅] **Default Provider Selection:** When `availableProviders` (from `useAiStore`) become available, `selectedProviderId` state is set to the ID of the first provider if `selectedProviderId` was initially `null`.
         *   [✅] **Default Prompt Selection:** When `availablePrompts` (from `useAiStore`) become available, `selectedPromptId` state is set to the ID of thefirst prompt if `selectedPromptId` was initially `null`.
-        *   [ ] **Load Chat from `localStorage`:**
-            *   [ ] If `localStorage.getItem('loadChatIdOnRedirect')` returns a `chatId`, `loadChatDetails` (from `useAiStore`) is called with that `chatId`.
-            *   [ ] `localStorage.removeItem('loadChatIdOnRedirect')` is called after attempting to load.
-            *   [ ] Does nothing if `localStorage.getItem('loadChatIdOnRedirect')` returns `null`.
+        *   [✅] **Load Chat from `localStorage`:**
+            *   [✅] If `localStorage.getItem('loadChatIdOnRedirect')` returns a `chatId`, `loadChatDetails` (from `useAiStore`) is called with that `chatId`.
+            *   [✅] `localStorage.removeItem('loadChatIdOnRedirect')` is called after attempting to load.
+            *   [✅] Does nothing if `localStorage.getItem('loadChatIdOnRedirect')` returns `null`.
         *   **User Interactions & Event Handling:**
             *   [✅] `ChatContextSelector.onContextChange` (simulating `handleContextSelection`):
                 *   [✅] Updates `nextChatOrgContext` state.
@@ -98,17 +98,17 @@ The implementation plan uses the following labels to categorize work steps:
             *   [✅] `PromptSelector.onPromptChange` (simulating `handlePromptChange`):
                 *   [✅] Updates `selectedPromptId` state.
                 *   [✅] Tracks `analytics.track('Chat: Prompt Selected', ...)` with correct `promptId`.
-            *   [🚧] **"New Chat" Button Click (simulating `handleNewChat`):**
+            *   [✅] **"New Chat" Button Click (simulating `handleNewChat`):**
                 *   [✅] Calls `startNewChat` (from `useAiStore`) with the current `nextChatOrgContext` (or `globalCurrentOrgId` if `nextChatOrgContext` is `undefined`).
                 *   [✅] Tracks `analytics.track('Chat: Clicked New Chat', ...)` with correct context.
-                *   [ ] Resets `selectedProviderId` state to the first available provider's ID (or `null` if none).
-                *   [ ] Resets `selectedPromptId` state to the first available prompt's ID (or `null` if none).
-            *   [🚧] `ChatHistoryList.onLoadChat` (simulating `handleLoadChat`):
+                *   [✅] Resets `selectedProviderId` state to the first available provider's ID (or `null` if none).
+                *   [✅] Resets `selectedPromptId` state to the first available prompt's ID (or `null` if none).
+            *   [✅] `ChatHistoryList.onLoadChat` (simulating `handleLoadChat`):
                 *   [✅] If the provided `chatId` is the same as `currentChatId` (from `useAiStore`), no actions are called.
                 *   [✅] If `chatId` is different, calls `loadChatDetails` (from `useAiStore`) with the `chatId`.
                 *   [✅] Tracks `analytics.track('Chat: History Item Selected', ...)` with correct `chatId`.
-                *   [ ] Resets `selectedProviderId` state to the first available provider's ID (or `null` if none).
-                *   [ ] Resets `selectedPromptId` state to the first available prompt's ID (or `null` if none).
+                *   [✅] Resets `selectedProviderId` state to the first available provider's ID (or `null` if none).
+                *   [✅] Resets `selectedPromptId` state to the first available prompt's ID (or `null` if none).
         *   **State Dependencies & Derived Values (Props to Children):**
             *   [✅] `currentChatHistoryList` is correctly derived from `chatsByContext` and `nextChatOrgContext`.
             *   [✅] `currentIsHistoryLoading` is correctly derived from `isLoadingHistoryByContext` and `nextChatOrgContext`.
@@ -117,18 +117,52 @@ The implementation plan uses the following labels to categorize work steps:
             *   [✅] Verify `PromptSelector` receives correct `selectedPromptId` prop.
             *   [✅] Verify `AiChatbox` receives correct `providerId`, `promptId`, and `key` props.
             *   [✅] Verify `ChatHistoryList` receives correct `history` (as `currentChatHistoryList`), `isLoading` (derived), and `currentChatId` props.
-* [ ] Update `apps/web/src/pages/AiChat.tsx` (or relevant parent component): (This step's implementation details largely covered by tests above)
-  * [ ] Fetch `organizations` and `currentOrganizationId` from `useOrganizationStore`.
-  * [ ] Use `useState` for `nextChatOrgContext: string | null`, defaulting to `currentOrganizationId`.
-  * [ ] Render `<ChatContextSelector organizations={organizations} currentContextId={nextChatOrgContext} onContextChange={handleContextSelection} isLoading={...} />`.
-  * [ ] Implement `handleContextSelection(newContextId: string | null)`:
-      *   `setNextChatOrgContext(newContextId)`.
-      *   Trigger `Chat: Context Selected For Interface` analytics event. (Note: Plan previously said 'chat_context_selected')
-      *   Ensure `loadChatHistory(newContextId)` is called via `useEffect` reacting to `nextChatOrgContext` change.
-  * [ ] Modify "New Chat" button's `onClick` handler:
-      *   Call `useAiStore.getState().startNewChat(nextChatOrgContext)`.
-* [ ] Perform manual integration tests. Debug until functionality is correct.
-* [ ] Commit changes with message "feat(UI): Integrate ChatContextSelector for setting new chat context w/ manual tests & analytics"
+* [✅] Update `apps/web/src/pages/AiChat.tsx` (or relevant parent component): (This step's implementation details largely covered by tests above)
+  * [✅] Fetch `organizations` and `currentOrganizationId` from `useOrganizationStore`.
+  * [✅] Use `useState` for `nextChatOrgContext: string | null`, defaulting to `currentOrganizationId`.
+  * [✅] Render `<ChatContextSelector organizations={organizations} currentContextId={nextChatOrgContext} onContextChange={handleContextSelection} isLoading={...} />`.
+  * [✅] Implement `handleContextSelection(newContextId: string | null)`:
+      *   [✅] `setNextChatOrgContext(newContextId)`.
+      *   [✅] Trigger `Chat: Context Selected For New Chat` analytics event. (Note: Plan previously said 'chat_context_selected')
+      *   [✅] Ensure `loadChatHistory(newContextId)` is called via `useEffect` reacting to `nextChatOrgContext` change.
+  * [✅] Modify "New Chat" button's `onClick` handler:
+      *   [✅] Call `useAiStore.getState().startNewChat(nextChatOrgContext)`.
+* [✅] **[TEST-INT]** Create `apps/web/src/pages/AiChat.integration.test.tsx` with comprehensive integration tests for context selection and initial loading:
+    *   [✅] **Test Setup:**
+        *   [✅] Imports: React, RTL utils, `AiChatPage`, stores, types, `vi`.
+        *   [✅] Global Mocks: `@paynless/analytics`, `Layout`, `ModelSelector`, `PromptSelector`, `AiChatbox`. (NOT `ChatContextSelector`, `ChatHistoryList`).
+        *   [✅] `beforeEach`: Spy on store actions (`loadChatHistory`, `startNewChat`, etc.), set initial store states with distinct personal/org chats.
+    *   [✅] **Initial Render & Context:**
+        *   [✅] Test 1.1: "should render and default to global organization context, loading its history."
+            *   Setup: `globalCurrentOrgId` = 'org-A'.
+            *   Assert: `ChatContextSelector` shows 'Org A'. `loadChatHistory` called with 'org-A'. `ChatHistoryList` shows 'org-A' chats.
+        *   [✅] Test 1.2: "should render and default to Personal context if no global organization, loading personal history."
+            *   Setup: `globalCurrentOrgId` = `null`.
+            *   Assert: `ChatContextSelector` shows "Personal". `loadChatHistory` called with `null`. `ChatHistoryList` shows personal chats.
+    *   [✅] **Context Switching via `ChatContextSelector`:**
+        *   [✅] Test 2.1: "selecting 'Personal' in `ChatContextSelector` should load personal chat history."
+            *   Setup: Initial context 'org-A'.
+            *   Action: Select "Personal".
+            *   Assert: `loadChatHistory` called with `null`. `ChatHistoryList` updates. Analytics tracked.
+        *   [✅] Test 2.2: "selecting a different organization in `ChatContextSelector` should load its chat history."
+            *   Setup: Initial context "Personal".
+            *   Action: Select 'Org B'.
+            *   Assert: `loadChatHistory` called with 'org-B'. `ChatHistoryList` updates. Analytics tracked.
+    *   [✅] **"New Chat" Button Integration:**
+        *   [✅] Test 3.1: "clicking 'New Chat' when 'Personal' context is active should call `startNewChat` for personal."
+            *   Setup: "Personal" context active.
+            *   Action: Click "New Chat".
+            *   Assert: `startNewChat` called with `null`. Analytics tracked.
+        *   [✅] Test 3.2: "clicking 'New Chat' when an organization context is active should call `startNewChat` for that org."
+            *   Setup: 'Org-A' context active.
+            *   Action: Click "New Chat".
+            *   Assert: `startNewChat` called with 'org-A'. Analytics tracked.
+    *   [✅] **Loading Chat from History List Integration:**
+        *   [✅] Test 4.1: "clicking a chat item in `ChatHistoryList` should call `loadChatDetails`."
+            *   Setup: Chat 'chat-org-A-1' exists for current context.
+            *   Action: Click chat item 'chat-org-A-1'.
+            *   Assert: `loadChatDetails` called with 'chat-org-A-1'. Analytics tracked.
+* [✅] Commit changes with message "feat(UI): Integrate ChatContextSelector for setting new chat context w/ manual tests & analytics"
 
 #### STEP-3.1.3: Update `Chat` route. 
 * [ ] Move ChatContext component to share row with other components.
