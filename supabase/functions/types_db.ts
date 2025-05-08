@@ -625,6 +625,13 @@ export type Database = {
         }
         Returns: string
       }
+      delete_chat_and_messages: {
+        Args: {
+          p_chat_id: string
+          p_user_id: string
+        }
+        Returns: undefined
+      }
       is_org_admin: {
         Args: {
           org_id: string

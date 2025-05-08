@@ -20,6 +20,15 @@ export type SystemPrompt = Database['public']['Tables']['system_prompts']['Row']
 export type Chat = Database['public']['Tables']['chats']['Row'];
 
 /**
+ * Represents the token usage for a message or a chat.
+ */
+export interface TokenUsage {
+  promptTokens: number;
+  completionTokens: number;
+  totalTokens: number;
+}
+
+/**
  * Represents a single message within a Chat.
  * Derived from the `chat_messages` table.
  */
@@ -28,6 +37,7 @@ export type ChatMessage = Database['public']['Tables']['chat_messages']['Row'] &
   // Note: status was previously added to LocalChatMessage, consider if it belongs here
   status?: 'pending' | 'sent' | 'error'; 
   is_active_in_thread?: boolean;
+  token_usage?: TokenUsage | null; // Use the more specific TokenUsage type
 };
 
 // --- Application/API/Adapter/Store Specific Types ---

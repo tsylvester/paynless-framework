@@ -181,6 +181,17 @@ This implementation plan follows a phased approach, with each phase building on 
 *   [ ] **[TEST-DEBUG]** `Post` for new org chat should include `organizationId` in insert test is failing to spy problems
 
 #### STEP-6.6.2 Phase 2 Cleanup 
+#### BACKLOG ITEM: Add/Verify Remaining Analytics Integration [ANALYTICS] [COMMIT]
+* [ ] Review all actions in packages to implement app analytics.
+* [ ] Review all actions in `useAiStore` and `useOrganizationStore`.
+* [ ] Verify all analytics events defined in Phase 0 (STEP-0.2.3) are correctly implemented within the relevant store actions, including parameters:
+    * `useAiStore`: `chat_context_selected` (triggered by subscription), `organization_chat_created`, `organization_chat_deleted`, `chat_rewind_used`.
+    * `useOrganizationStore`: `member_chat_creation_toggled`.
+    * *Note:* Events like `organization_chat_viewed` and `token_usage_viewed` might be better suited for the UI layer when the relevant component mounts or 
+    data is displayed.
+* [ ] Add any missing triggers.
+* [ ] Commit changes with message "feat(ANALYTICS): Ensure all required analytics events are triggered from store actions"
+
 #### STEP-6.6.3 Phase 3 Cleanup 
 #### STEP-6.6.4 Phase 4 Cleanup 
 #### STEP-6.6.5 Phase 5 Cleanup 

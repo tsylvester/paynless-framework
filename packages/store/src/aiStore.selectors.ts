@@ -1,5 +1,5 @@
 import { createSelector } from 'reselect';
-import type { AiState, ChatMessage, Chat } from '@paynless/types';
+import type { AiState, ChatMessage, Chat, TokenUsage } from '@paynless/types';
 
 // Base selector for chatsByContext
 const selectChatsByContext = (state: AiState) => state.chatsByContext;
@@ -85,6 +85,79 @@ export const selectAvailablePrompts = (state: AiState) => state.availablePrompts
 
 // Selector for newChatContext
 export const selectNewChatContext = (state: AiState) => state.newChatContext;
+
+// Base selector for chatId parameter (used by selectChatTokenUsage)
+const selectChatIdParam = (_state: AiState, chatId: string) => chatId;
+
+/**
+ * Selects and sums token usage for a specific chat.
+ * @param state The AiState object.
+ * @param chatId The ID of the chat.
+ * @returns An object with promptTokens, completionTokens, and totalTokens, or null if chatId is invalid or no messages.
+ */
+export const selectChatTokenUsage = createSelector(
+  [selectMessagesByChatId, selectChatIdParam],
+  (messagesByChatId, chatId): TokenUsage | null => {
+    const messages = messagesByChatId[chatId];
+    // Return null if no messages or chat doesn't exist to distinguish from a chat with 0 usage.
+    if (!messages || messages.length === 0) {
+      return null; 
+    }
+
+    return messages.reduce(
+      (acc, message) => {
+        // Ensure token_usage is valid and has the expected properties
+        if (
+          message.token_usage && // Ensure token_usage is not null or undefined
+          typeof message.token_usage.promptTokens === 'number' &&
+          typeof message.token_usage.completionTokens === 'number' &&
+          typeof message.token_usage.totalTokens === 'number'
+        ) {
+          acc.promptTokens += message.token_usage.promptTokens;
+          acc.completionTokens += message.token_usage.completionTokens;
+          acc.totalTokens += message.token_usage.totalTokens;
+        } else if (message.token_usage) {
+          // Handle potential snake_case from older data or direct DB saves if necessary
+          // This is a defensive check; ideally, data is consistently shaped before reaching the store.
+          // Check for snake_case only if camelCase properties were not found
+          const tu = message.token_usage as any;
+          const prompt = tu.prompt_tokens ?? 0;
+          const completion = tu.completion_tokens ?? 0;
+          // If total_tokens is present, use it. Otherwise, sum prompt and completion.
+          // This handles cases where only some fields might be snake_case or total_tokens might be missing.
+          const total = tu.total_tokens ?? (prompt + completion);
+
+          if (typeof prompt === 'number' && typeof completion === 'number' && typeof total === 'number') {
+            acc.promptTokens += prompt;
+            acc.completionTokens += completion;
+            acc.totalTokens += total;
+          }      
+        }
+        return acc;
+      },
+      { promptTokens: 0, completionTokens: 0, totalTokens: 0 }
+    );
+  }
+);
+
+/**
+ * Selects all active messages from all personal chats, flattened into a single array.
+ */
+export const selectAllPersonalChatMessages = createSelector(
+  [selectChatsByContext, selectMessagesByChatId],
+  (chatsByContext, messagesByChatId): ChatMessage[] => {
+    const personalChats = chatsByContext.personal || [];
+    let allMessages: ChatMessage[] = [];
+
+    for (const chat of personalChats) {
+      const chatMessages = messagesByChatId[chat.id] || [];
+      // Ensure we only consider messages that are active in their thread
+      const activeMessages = chatMessages.filter(msg => msg.is_active_in_thread !== false); // Explicitly check for not false to include true/undefined
+      allMessages = allMessages.concat(activeMessages);
+    }
+    return allMessages;
+  }
+);
 
 // Selector for the whole AiState (if ever needed, though generally discouraged)
 // export const selectFullAiState = (state: AiState) => state; 

@@ -8,9 +8,11 @@ import {
   selectIsLoadingAiResponse,
   selectAiError,
   selectRewindTargetMessageId,
-  selectIsRewinding
+  selectIsRewinding,
+  selectChatTokenUsage,
+  selectAllPersonalChatMessages,
 } from './aiStore.selectors'; // Import new selectors
-import { Chat, AiState, ChatMessage } from '@paynless/types';
+import { Chat, AiState, ChatMessage, TokenUsage } from '@paynless/types';
 import { vi, describe, beforeEach, it, expect } from 'vitest';
 
 // Mock useOrganizationStore - REMOVE THIS MOCK
@@ -23,9 +25,74 @@ import { vi, describe, beforeEach, it, expect } from 'vitest';
 const mockOrgId1 = 'org-123';
 const mockOrgId2 = 'org-456';
 
-const mockPersonalChat1: Partial<Chat> = { id: 'chat-p1', title: 'Personal Chat 1' };
-const mockPersonalChat2: Partial<Chat> = { id: 'chat-p2', title: 'Personal Chat 2' };
+const mockPersonalChat1: Partial<Chat> = { id: 'chat-p1', title: 'Personal Chat 1', user_id: 'user-test-id', organization_id: null };
+const mockPersonalChat2: Partial<Chat> = { id: 'chat-p2', title: 'Personal Chat 2', user_id: 'user-test-id', organization_id: null };
 const mockOrg1Chat1: Partial<Chat> = { id: 'chat-o1-1', title: 'Org1 Chat 1', organization_id: mockOrgId1 };
+
+// New Mock Data for Token Usage Tests
+const mockTokenUsage1: TokenUsage = { promptTokens: 100, completionTokens: 150, totalTokens: 250 };
+const mockTokenUsage2: TokenUsage = { promptTokens: 50, completionTokens: 70, totalTokens: 120 };
+const mockTokenUsageSnakeCase: any = { prompt_tokens: 10, completion_tokens: 20, total_tokens: 30 };
+
+const mockMsgWithTokens1: Partial<ChatMessage> = {
+  id: 'msg-tok-1',
+  chat_id: 'chat-p1',
+  content: 'Hello with tokens',
+  is_active_in_thread: true,
+  token_usage: mockTokenUsage1,
+  role: 'assistant',
+  created_at: new Date().toISOString(),
+};
+
+const mockMsgWithTokens2: Partial<ChatMessage> = {
+  id: 'msg-tok-2',
+  chat_id: 'chat-p1',
+  content: 'World with more tokens',
+  is_active_in_thread: true,
+  token_usage: mockTokenUsage2,
+  role: 'assistant',
+  created_at: new Date().toISOString(),
+};
+
+const mockMsgWithSnakeCaseTokens: Partial<ChatMessage> = {
+    id: 'msg-tok-snake',
+    chat_id: 'chat-p1',
+    content: 'Snake tokens',
+    is_active_in_thread: true,
+    token_usage: mockTokenUsageSnakeCase as TokenUsage, // Cast for test setup
+    role: 'assistant',
+    created_at: new Date().toISOString(),
+};
+
+const mockMsgNoTokens: Partial<ChatMessage> = {
+  id: 'msg-no-tok',
+  chat_id: 'chat-p1',
+  content: 'No tokens here',
+  is_active_in_thread: true,
+  token_usage: null,
+  role: 'user',
+  created_at: new Date().toISOString(),
+};
+
+const mockMsgMalformedTokens: Partial<ChatMessage> = {
+    id: 'msg-malformed-tok',
+    chat_id: 'chat-p1',
+    content: 'Malformed tokens',
+    is_active_in_thread: true,
+    token_usage: { promptTokens: 'invalid' } as any, // Malformed
+    role: 'assistant',
+    created_at: new Date().toISOString(),
+};
+
+const mockMsgInactiveWithTokens: Partial<ChatMessage> = {
+    id: 'msg-inactive-tok',
+    chat_id: 'chat-p1',
+    content: 'Inactive with tokens',
+    is_active_in_thread: false,
+    token_usage: mockTokenUsage1,
+    role: 'assistant',
+    created_at: new Date().toISOString(),
+  };
 
 describe('useAiStore - Selectors', () => {
   let storeState: AiState;
@@ -273,6 +340,111 @@ describe('useAiStore - Selectors', () => {
     it('should return false if state.rewindTargetMessageId is null', () => {
       setAiStoreState({ rewindTargetMessageId: null });
       expect(selectIsRewinding(storeState)).toBe(false);
+    });
+  });
+
+  describe('selectChatTokenUsage', () => {
+    it('should sum token usage for a chat with valid tokens', () => {
+      setAiStoreState({
+        messagesByChatId: {
+          'chat-p1': [
+            mockMsgWithTokens1 as ChatMessage,
+            mockMsgNoTokens as ChatMessage,
+            mockMsgWithTokens2 as ChatMessage,
+          ],
+        },
+      });
+      const usage = selectChatTokenUsage(storeState, 'chat-p1');
+      expect(usage).toEqual({
+        promptTokens: 100 + 50,
+        completionTokens: 150 + 70,
+        totalTokens: 250 + 120,
+      });
+    });
+
+    it('should handle snake_case token usage', () => {
+        setAiStoreState({
+          messagesByChatId: {
+            'chat-p1': [mockMsgWithSnakeCaseTokens as ChatMessage],
+          },
+        });
+        const usage = selectChatTokenUsage(storeState, 'chat-p1');
+        expect(usage).toEqual({
+          promptTokens: 10,
+          completionTokens: 20,
+          totalTokens: 30,
+        });
+      });
+
+    it('should return zero totals if chat exists but messages have no valid token_usage', () => {
+      setAiStoreState({
+        messagesByChatId: {
+          'chat-p1': [mockMsgNoTokens as ChatMessage, mockMsgMalformedTokens as ChatMessage],
+        },
+      });
+      const usage = selectChatTokenUsage(storeState, 'chat-p1');
+      expect(usage).toEqual({ promptTokens: 0, completionTokens: 0, totalTokens: 0 });
+    });
+
+    it('should return null if chatId does not exist in messagesByChatId', () => {
+      setAiStoreState({ messagesByChatId: {} });
+      const usage = selectChatTokenUsage(storeState, 'non-existent-chat');
+      expect(usage).toBeNull();
+    });
+
+    it('should return null if chat has an empty message array', () => {
+      setAiStoreState({ messagesByChatId: { 'chat-p1': [] } });
+      const usage = selectChatTokenUsage(storeState, 'chat-p1');
+      expect(usage).toBeNull(); 
+    });
+  });
+
+  describe('selectAllPersonalChatMessages', () => {
+    const chatP1Msg1 = { ...mockMsgWithTokens1, chat_id: 'chat-p1' } as ChatMessage;
+    const chatP1Msg2Inactive = { ...mockMsgInactiveWithTokens, chat_id: 'chat-p1' } as ChatMessage;
+    const chatP2Msg1 = { ...mockMsgWithTokens2, chat_id: 'chat-p2' } as ChatMessage;
+
+    it('should return an empty array if no personal chats exist', () => {
+      setAiStoreState({ chatsByContext: { personal: [], orgs: {} } });
+      const messages = selectAllPersonalChatMessages(storeState);
+      expect(messages).toEqual([]);
+    });
+
+    it('should return an empty array if personal chats have no messages', () => {
+      setAiStoreState({
+        chatsByContext: { personal: [mockPersonalChat1 as Chat], orgs: {} },
+        messagesByChatId: { 'chat-p1': [] },
+      });
+      const messages = selectAllPersonalChatMessages(storeState);
+      expect(messages).toEqual([]);
+    });
+
+    it('should return active messages from all personal chats', () => {
+      setAiStoreState({
+        chatsByContext: { personal: [mockPersonalChat1 as Chat, mockPersonalChat2 as Chat], orgs: {} },
+        messagesByChatId: {
+          'chat-p1': [chatP1Msg1, chatP1Msg2Inactive],
+          'chat-p2': [chatP2Msg1],
+        },
+      });
+      const messages = selectAllPersonalChatMessages(storeState);
+      expect(messages).toEqual([chatP1Msg1, chatP2Msg1]);
+      expect(messages.length).toBe(2);
+    });
+
+    it('should only include messages where is_active_in_thread is not false', () => {
+        const activeMsgUndefined: Partial<ChatMessage> = { id: 'active-undef', chat_id: 'chat-p1', is_active_in_thread: undefined, content: 'active?' };
+        const activeMsgTrue: Partial<ChatMessage> = { id: 'active-true', chat_id: 'chat-p1', is_active_in_thread: true, content: 'active!' };
+        const inactiveMsg: Partial<ChatMessage> = { id: 'inactive', chat_id: 'chat-p1', is_active_in_thread: false, content: 'inactive' }; 
+        setAiStoreState({
+            chatsByContext: { personal: [mockPersonalChat1 as Chat], orgs: {} },
+            messagesByChatId: {
+              'chat-p1': [activeMsgUndefined as ChatMessage, inactiveMsg as ChatMessage, activeMsgTrue as ChatMessage],
+            },
+          });
+          const messages = selectAllPersonalChatMessages(storeState);
+          expect(messages).toEqual([activeMsgUndefined, activeMsgTrue]);
+          expect(messages.find(m => m.id === 'inactive')).toBeUndefined();
     });
   });
 }); 
