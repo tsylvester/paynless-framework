@@ -54,18 +54,18 @@ The implementation plan uses the following labels to categorize work steps:
 
 **Goal:** Implement primary UI components (`apps/web`) for organization chat context, chat experience enhancements (Markdown, tokens, rewind), and admin controls, connecting them to the state management layer (Phase 2).
 
-### STEP-3.1: Implement Chat Context Selection UI [UI] [🚧] 
+### STEP-3.1: Implement Chat Context Selection UI [UI] [✅] 
 
-#### STEP-3.1.1: Create `ChatContextSelector` Component [TEST-UNIT] [COMMIT]
-* [ ] Define Test Cases (Gemini 2.2.1): Renders `Select`, renders "Personal", renders org names from prop, displays correct value, calls `onContextChange` with `null` or `orgId`, handles loading/empty states. Expect failure (RED).
-* [ ] Write tests in `apps/web/src/tests/unit/components/ai/ChatContextSelector.unit.test.tsx`.
-* [ ] Create component file `apps/web/src/components/ai/ChatContextSelector.tsx`:
-  * [ ] Implement using `Select` from `shadcn/ui`.
-  * [ ] Props: `organizations: Organization[]`, `currentContextId: string | null`, `onContextChange: (contextId: string | null) => void`, `isLoading: boolean`.
-  * [ ] Render options: "Personal" (value `null`), and each organization name (value `org.id`).
-* [ ] Run tests. Debug until pass (GREEN).
-* [ ] **[REFACTOR]** Ensure clarity, reusability, accessibility.
-* [ ] Commit changes with message "feat(UI): Create reusable ChatContextSelector component w/ tests"
+#### STEP-3.1.1: Create `ChatContextSelector` Component [TEST-UNIT] [COMMIT] [✅]
+* [✅] Define Test Cases (Gemini 2.2.1): Renders `Select`, renders "Personal", renders org names from prop, displays correct value, calls `onContextChange` with `null` or `orgId`, handles loading/empty states. Expect failure (RED).
+* [✅] Write tests in `apps/web/src/tests/unit/components/ai/ChatContextSelector.unit.test.tsx`.
+* [✅] Create component file `apps/web/src/components/ai/ChatContextSelector.tsx`:
+  * [✅] Implement using `Select` from `shadcn/ui`.
+  * [✅] Props: `organizations: Organization[]`, `currentContextId: string | null`, `onContextChange: (contextId: string | null) => void`, `isLoading: boolean`.
+  * [✅] Render options: "Personal" (value `null`), and each organization name (value `org.id`).
+* [✅] Run tests. Debug until pass (GREEN).
+* [✅] **[REFACTOR]** Ensure clarity, reusability, accessibility.
+* [✅] Commit changes with message "feat(UI): Create reusable ChatContextSelector component w/ tests"
 
 #### STEP-3.1.2: Integrate `ChatContextSelector` for New Chat Context [TEST-INT] [COMMIT]
 * [ ] Define Integration Test Cases (Manual - Gemini 2.2.6): Verify selector defaults correctly. Select "Personal", start new chat, send message -> verify `organization_id = null`. Select Org A, start new chat, send message -> verify `organization_id = OrgA.id`. Switch global context via `OrganizationSwitcher` -> verify selector updates.
