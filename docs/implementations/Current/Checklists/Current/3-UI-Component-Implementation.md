@@ -58,7 +58,7 @@ The implementation plan uses the following labels to categorize work steps:
 
 #### STEP-3.1.1: Create `ChatContextSelector` Component [TEST-UNIT] [COMMIT]
 * [ ] Define Test Cases (Gemini 2.2.1): Renders `Select`, renders "Personal", renders org names from prop, displays correct value, calls `onContextChange` with `null` or `orgId`, handles loading/empty states. Expect failure (RED).
-* [ ] Write tests in `apps/web/src/components/ai/ChatContextSelector.unit.test.tsx`.
+* [ ] Write tests in `apps/web/src/tests/unit/components/ai/ChatContextSelector.unit.test.tsx`.
 * [ ] Create component file `apps/web/src/components/ai/ChatContextSelector.tsx`:
   * [ ] Implement using `Select` from `shadcn/ui`.
   * [ ] Props: `organizations: Organization[]`, `currentContextId: string | null`, `onContextChange: (contextId: string | null) => void`, `isLoading: boolean`.
@@ -85,7 +85,7 @@ The implementation plan uses the following labels to categorize work steps:
 
 #### STEP-3.2.1: Implement Segregated Chat History Display [TEST-UNIT] [COMMIT]
 * [ ] Define Test Cases (Gemini 2.3.1): Fetches `currentOrganizationId`, calls `selectChatHistoryList`, renders "Personal" / "[Org Name]" sections (Tabs or headings), applies visual indicators to org chats, updates on context change, handles loading (Skeletons), handles errors (Boundary). Expect failure (RED).
-* [ ] Write/Update tests in `apps/web/src/components/ai/ChatHistory.unit.test.tsx`.
+* [ ] Write/Update tests in `apps/web/src/tests/unit/components/ai/ChatHistory.unit.test.tsx`.
 * [ ] Update `apps/web/src/components/ai/ChatHistory.tsx`:
   * [ ] Use `useOrganizationStore` (for `currentOrganizationId`, `currentOrganizationDetails.name`).
   * [ ] Use `useAiStore` (for `selectChatHistoryList`, `selectIsHistoryLoading`).
@@ -99,7 +99,7 @@ The implementation plan uses the following labels to categorize work steps:
 
 #### STEP-3.2.2: Add Context-Specific Actions to Chat History Items (`ChatItem.tsx`) [TEST-UNIT] [COMMIT]
 * [ ] Define Test Cases (Gemini 2.5.1): Delete Button/menu item visible only for admin on org chats in current context. Hidden otherwise. Click triggers confirmation/action.
-* [ ] Write/Update tests in `apps/web/src/components/ai/ChatItem.unit.test.tsx` (or create if needed).
+* [ ] Write/Update tests in `apps/web/src/tests/unit/components/ai/ChatItem.unit.test.tsx` (or create if needed).
 * [ ] Update `apps/web/src/components/ai/ChatItem.tsx`:
   * [ ] Use `useOrganizationStore` to get `currentOrganizationId` and `currentUserRoleInOrg`.
   * [ ] Conditionally render Delete button/menu item if `chat.organization_id && chat.organization_id === currentOrganizationId && currentUserRoleInOrg === 'admin'`.

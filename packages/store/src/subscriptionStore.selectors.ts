@@ -70,8 +70,8 @@ export const selectCurrentUserSubscriptionPeriod = createSelector(
 export const selectCurrentUserTokenBudget = createSelector(
   [selectCurrentUserResolvedPlan],
   (resolvedPlan): number | null => {
-    if (resolvedPlan && resolvedPlan.metadata && typeof (resolvedPlan.metadata as any).token_limit === 'number') {
-      return (resolvedPlan.metadata as any).token_limit;
+    if (resolvedPlan && resolvedPlan.metadata && typeof (resolvedPlan.metadata as { token_limit?: number }).token_limit === 'number') {
+      return (resolvedPlan.metadata as { token_limit?: number }).token_limit as number;
     }
     // TODO: Consider a default for free plans or if metadata is missing/malformed.
     // For now, null indicates no specific budget found or plan not resolved.
