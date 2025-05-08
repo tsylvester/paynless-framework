@@ -714,10 +714,8 @@ export const useAiStore = create<AiStore>()(
                         }
 
                         let newCurrentChatId = state.currentChatId;
-                        let shouldCallStartNewChat = false;
                         if (state.currentChatId === chatId) {
                             newCurrentChatId = null; 
-                            shouldCallStartNewChat = true; 
                         }
 
                         return {
