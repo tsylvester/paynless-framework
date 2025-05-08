@@ -297,15 +297,6 @@ The implementation plan uses the following labels to categorize work steps:
 #### STEP-2.3.4 `deleteChat` transaction on Database [DB] [COMMIT]
 *   [] **Note:** Ensure the corresponding backend Edge Function (`/chat` with `DELETE` method) uses a database transaction to delete both the `chats` record and all associated `chat_messages` records atomically.
 
-**Phase 2 Complete Checkpoint:**
-*   [ ] All Phase 2 tests (Store unit tests, integration tests) passing.
-*   [ ] `useAiStore` correctly manages state for personal/organization chats, token usage, and rewind.
-*   [ ] `useOrganizationStore` manages chat-related settings.
-*   [ ] Stores are correctly integrated, and context switching updates `useAiStore`.
-*   [ ] Analytics events are triggered appropriately from store actions.
-*   [ ] Code refactored, and commits made.
-*   [ ] Run `npm test` in `packages/store`. 
-
 #### STEP-2.4: Future: Token Budget vs. Consumption Audit [UI] [STORE]
 *   [ ] **Design & Implement Token Audit Logic:**
     *   [ ] **`aiStore` Selectors:** Ensure robust selectors exist in `useAiStore` to calculate total token consumption for a given chat (e.g., `selectChatTokenUsage(chatId)`) and potentially cumulative usage for a user/org within a billing period (if applicable and stored/derivable in `aiStore`).
@@ -319,3 +310,12 @@ The implementation plan uses the following labels to categorize work steps:
     *   [ ] **UI Integration:** Integrate this audit logic into relevant UI components (e.g., chat input, user dashboard, organization settings).
 *   [ ] Write unit/integration tests for the audit logic and UI components.
 *   [ ] Commit changes with message "feat(STORE/UI): Implement token budget vs. consumption audit logic" 
+
+**Phase 2 Complete Checkpoint:**
+*   [ ] All Phase 2 tests (Store unit tests, integration tests) passing.
+*   [ ] `useAiStore` correctly manages state for personal/organization chats, token usage, and rewind.
+*   [ ] `useOrganizationStore` manages chat-related settings.
+*   [ ] Stores are correctly integrated, and context switching updates `useAiStore`.
+*   [ ] Analytics events are triggered appropriately from store actions.
+*   [ ] Code refactored, and commits made.
+*   [ ] Run `npm test` in `packages/store`. 
