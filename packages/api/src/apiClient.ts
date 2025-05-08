@@ -202,6 +202,10 @@ export class ApiClient {
         return this.request<T>(endpoint, { ...options, method: 'PUT', body: JSON.stringify(body) });
     }
 
+    public async patch<T, U>(endpoint: string, body: U, options?: FetchOptions): Promise<ApiResponse<T>> {
+        return this.request<T>(endpoint, { ...options, method: 'PATCH', body: JSON.stringify(body) });
+    }
+
     public async delete<T>(endpoint: string, options?: FetchOptions): Promise<ApiResponse<T>> {
         return this.request<T>(endpoint, { ...options, method: 'DELETE' });
     }
@@ -269,6 +273,8 @@ export const api = {
         getApiClient().post<T, U>(endpoint, body, options),
     put: <T, U>(endpoint: string, body: U, options?: FetchOptions): Promise<ApiResponse<T>> => 
         getApiClient().put<T, U>(endpoint, body, options),
+    patch: <T, U>(endpoint: string, body: U, options?: FetchOptions): Promise<ApiResponse<T>> => 
+        getApiClient().patch<T, U>(endpoint, body, options),
     delete: <T>(endpoint: string, options?: FetchOptions): Promise<ApiResponse<T>> => 
         getApiClient().delete<T>(endpoint, options),
     ai: () => getApiClient().ai, 

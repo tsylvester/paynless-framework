@@ -17,8 +17,7 @@ import {
 } from '@paynless/api';
 import { useAuthStore } from './authStore'; // To get user ID
 import { logger } from '@paynless/utils';
-
-
+// import { useAnalyticsStore } from './analyticsStore'; // Removed - Store not found / incorrect scope
 
 // --- Store Type (Use imported type) ---
 // type OrganizationStore = OrganizationState & OrganizationActions; 
@@ -75,6 +74,7 @@ export type OrganizationStoreImplementation =
     {
         selectCurrentUserRoleInOrg: () => 'admin' | 'member' | null;
         selectIsDeleteDialogOpen: () => boolean;
+        selectCanCreateOrganizationChats: () => boolean;
     };
 
 // Instantiate the specific client - assuming the main 'api' export *is* the base client instance
@@ -970,19 +970,92 @@ export const useOrganizationStore = create<OrganizationStoreImplementation>()(
       },
 
       // --- Selector Implementation ---
-      selectCurrentUserRoleInOrg: (): 'admin' | 'member' | null => {
-        const { currentOrganizationMembers } = get();
+      selectCurrentUserRoleInOrg: () => {
+        const { currentOrganizationMembers, currentOrganizationId } = get();
         const userId = useAuthStore.getState().user?.id;
 
-        if (!userId || !currentOrganizationMembers || currentOrganizationMembers.length === 0) {
-          return null; // No user or no members loaded
+        if (!userId || !currentOrganizationId || !currentOrganizationMembers || currentOrganizationMembers.length === 0) {
+          return null;
         }
 
-        const currentUserMembership = currentOrganizationMembers.find(member => member.user_id === userId);
-        return currentUserMembership?.role as 'admin' | 'member' | null; // Return role or null if not found
+        const currentUserMemberInfo = currentOrganizationMembers.find(member => member.user_id === userId);
+        
+        // The role in OrganizationMember is a string, but we expect 'admin' | 'member'.
+        // Perform a cast or validation if necessary, though for mock purposes it might not matter as much.
+        return currentUserMemberInfo ? (currentUserMemberInfo.role as 'admin' | 'member') : null;
       },
 
-      selectIsDeleteDialogOpen: (): boolean => get().isDeleteDialogOpen,
+      selectIsDeleteDialogOpen: () => get().isDeleteDialogOpen,
+
+      selectCanCreateOrganizationChats: () => {
+        const { currentOrganizationDetails } = get();
+        if (!currentOrganizationDetails) return false;
+        // For now, only the explicit setting. Role-based overrides could be added.
+        return !!currentOrganizationDetails.allow_member_chat_creation;
+      },
+
+      updateOrganizationSettings: async (orgId: string, settings: { allow_member_chat_creation: boolean }): Promise<boolean> => {
+        const { _setLoading, _setError, currentOrganizationId } = get();
+        
+        // Ensure the update is for the currently viewed org for immediate state update
+        const isCurrentOrg = orgId === currentOrganizationId;
+        
+        _setLoading(true);
+        _setError(null);
+        
+        try {
+            const apiClient = getApiClient();
+            // Assumes API method exists: updateOrganizationSettings(orgId, settings) -> returns updated Org
+            const response = await apiClient.organizations.updateOrganizationSettings(orgId, settings);
+
+            if (response.error || !response.data) {
+                const errorMsg = response.error?.message ?? 'Failed to update organization settings';
+                logger.error('[OrganizationStore] updateOrganizationSettings - API Error', { orgId, settings, error: errorMsg, status: response.status });
+                _setError(errorMsg);
+                return false;
+            } else {
+                const updatedOrgDetails = response.data;
+                logger.info(`[OrganizationStore] Successfully updated organization settings for ${orgId}.`);
+                
+                if (isCurrentOrg) {
+                    set({ 
+                        currentOrganizationDetails: updatedOrgDetails,
+                        error: null 
+                    });
+                } else {
+                    set({ error: null }); // Clear errors, no state update needed if not current org
+                }
+
+                // Trigger analytics event
+                // TODO: Revisit analytics integration (STEP-2.2.3). Determine if this event belongs in user analytics 
+                // TODO: or requires a different application-level tracking mechanism.
+                /* 
+                try {
+                    const analytics = useAnalyticsStore.getState();
+                    if (analytics?.trackEvent) {
+                        analytics.trackEvent('member_chat_creation_toggled', {
+                            organization_id: orgId,
+                            enabled: settings.allow_member_chat_creation,
+                        });
+                    } else {
+                        logger.warn('[OrganizationStore] Analytics trackEvent not available.');
+                    }
+                } catch (analyticsError) {
+                     logger.error('[OrganizationStore] Failed to track analytics event for settings update', { error: analyticsError });
+                }
+                */
+                
+                return true; // Indicate success
+            }
+        } catch (err: unknown) { // Catch unexpected errors
+            const errorMsg = err instanceof Error ? err.message : 'An unexpected error occurred during settings update';
+            logger.error('[OrganizationStore] updateOrganizationSettings - Unexpected Error', { orgId, settings, message: errorMsg });
+            _setError(errorMsg);
+            return false;
+        } finally {
+             _setLoading(false);
+        }
+      },
 
     }),
     {
