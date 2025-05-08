@@ -8,19 +8,6 @@ import { HandlerError } from "./current.ts"; // Reuse HandlerError from current.
 // Fix: Define return type based on DB schema
 type SubscriptionPlanData = Database['public']['Tables']['subscription_plans']['Row'];
 
-// Remove old imports and Deps interface
-// import { type SubscriptionPlan } from "../../_shared/types.ts"; // Use DB type instead
-// import { corsHeaders } from "../../_shared/cors-headers.ts"; // Removed
-// import { 
-//   createErrorResponse as CreateErrorResponseType, 
-//   createSuccessResponse as CreateSuccessResponseType 
-// } from "../../_shared/responses.ts"; // Removed
-// 
-// interface GetPlansDeps {
-//   createErrorResponse: typeof CreateErrorResponseType;
-//   createSuccessResponse: typeof CreateSuccessResponseType;
-// } // Removed
-
 /**
  * Get available subscription plans data.
  * Returns an array of plan data on success, throws HandlerError on failure.

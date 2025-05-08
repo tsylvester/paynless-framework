@@ -6,19 +6,6 @@ import Stripe from "npm:stripe";
 import type { Database } from '../../types_db.ts';
 import { HandlerError } from "./current.ts"; // Reuse HandlerError
 
-// Remove old imports and Deps interface
-// import { type UserSubscription } from "../../_shared/types.ts"; // Use DB type for return type
-// import { corsHeaders } from "../../_shared/cors-headers.ts"; // Removed
-// import { 
-//   createErrorResponse as CreateErrorResponseType, 
-//   createSuccessResponse as CreateSuccessResponseType 
-// } from "../../_shared/responses.ts"; // Removed
-// 
-// interface SubscriptionActionDeps {
-//   createErrorResponse: typeof CreateErrorResponseType;
-//   createSuccessResponse: typeof CreateSuccessResponseType;
-// } // Removed
-
 // Fix: Define return type based on DB schema (same as current.ts)
 type UserSubscriptionData = Database['public']['Tables']['user_subscriptions']['Row'] & {
   subscription_plans: Database['public']['Tables']['subscription_plans']['Row'] | null;
