@@ -41,7 +41,7 @@ export interface ChatApiRequest {
   message: string;
   providerId: AiProvider['id']; // Reference aliased type
   promptId: SystemPrompt['id']; // Reference aliased type
-  chatId?: Chat['id'];   // Reference aliased type (optional for new chats)
+  chatId?: Chat['id'] | null;   // Reference aliased type (optional for new chats)
   organizationId?: string | null; // Add optional organizationId
 }
 

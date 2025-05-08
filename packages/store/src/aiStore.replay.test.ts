@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { useAiStore } from './aiStore'; // Adjust path as needed
+import { selectCurrentChatMessages } from './aiStore.selectors'; // Import the selector
 import { useAuthStore } from './authStore'; // Adjust path as needed
 // Import the actual AiApiClient class AND getApiClient
 import { AiApiClient, api as baseApi, AuthRequiredError, getApiClient } from '@paynless/api'; // <<< Import getApiClient
@@ -7,7 +8,7 @@ import { AiApiClient, api as baseApi, AuthRequiredError, getApiClient } from '@p
 import * as apiModule from '@paynless/api';
 // Import the shared mock factory and reset function
 import { createMockAiApiClient, resetMockAiApiClient } from '@paynless/api/mocks/ai.api.mock';
-import type { PendingAction, ChatMessage, Session, User, ApiResponse, UserRole, AuthStore } from '@paynless/types';
+import type { PendingAction, ChatMessage, Session, User, ApiResponse, UserRole, AuthStore, AiState } from '@paynless/types'; // Added AiState
 import { create } from 'zustand'; // Import create
 import 'vitest-localstorage-mock'; // <-- Add this import
 
@@ -112,12 +113,25 @@ try {
 
 // Helper to reset store before each test
 const resetStore = () => {
-    useAiStore.setState(useAiStore.getInitialState(), true);
+    // Use a defined initial state to ensure all properties are covered
+    const initialAiState: AiState = {
+        availableProviders: [],
+        availablePrompts: [],
+        chatsByContext: { personal: [], orgs: {} },
+        messagesByChatId: {},
+        currentChatId: null,
+        isLoadingAiResponse: false,
+        isConfigLoading: false,
+        isLoadingHistoryByContext: { personal: false, orgs: {} },
+        isDetailsLoading: false,
+        newChatContext: null,
+        rewindTargetMessageId: null,
+        aiError: null,
+    };
+    useAiStore.setState(initialAiState, false);
     resetMockAiApiClient(mockAiApi);
     
-    // +++ Reset the mocked getApiClient FUNCTION +++
     const getApiClientMock = vi.mocked(getApiClient);
-    // If getApiClient has been called, reset the mocks on its *return value*
     if (getApiClientMock.mock.results[0]?.value) {
         const mockApiClientInstance = getApiClientMock.mock.results[0].value;
         vi.mocked(mockApiClientInstance.post).mockClear();
@@ -125,25 +139,22 @@ const resetStore = () => {
         vi.mocked(mockApiClientInstance.put).mockClear();
         vi.mocked(mockApiClientInstance.delete).mockClear();
     }
-    getApiClientMock.mockClear(); // Clear calls to getApiClient itself
-    // +++ End Reset +++
+    getApiClientMock.mockClear();
 
-    // Reset base api mocks if they are used directly elsewhere
     vi.mocked(baseApi.post).mockClear();
     vi.mocked(baseApi.get).mockClear();
 
-    // +++ Clear localStorage mocks +++
     vi.mocked(localStorage.getItem).mockClear();
     vi.mocked(localStorage.setItem).mockClear();
     vi.mocked(localStorage.removeItem).mockClear();
-    // +++ End localStorage mock clear +++
 
     vi.mocked(useAuthStore.getState).mockClear();
     navigateMock.mockClear();
+    // Set a default mock auth state for most tests
     vi.mocked(useAuthStore.getState).mockReturnValue({
         ...mockInitialAuthState,
-        session: null,
-        user: null,
+        session: mockAuthSession,
+        user: mockAuthUser,
         navigate: navigateMock
     });
 };
@@ -233,7 +244,7 @@ describe('aiStore - checkAndReplayPendingChatAction', () => {
     // expect(mockedApi.post).not.toHaveBeenCalled(); // <<< Keep using dynamic api mock
     expect(baseApi.post).not.toHaveBeenCalled(); // <<< Revert to top-level import
     expect(useAiStore.getState().aiError).toBe('Authentication required to replay pending action.');
-    expect(useAiStore.getState().currentChatMessages).toEqual([]); 
+    expect(selectCurrentChatMessages(useAiStore.getState())).toEqual([]); // Use selector
   });
 
   it('should replay action successfully, update state optimistically, and finalize on API success', async () => {
@@ -256,6 +267,7 @@ describe('aiStore - checkAndReplayPendingChatAction', () => {
       system_prompt_id: 'pr1',
       token_usage: { total: 10 },
       created_at: new Date().toISOString(),
+      is_active_in_thread: true
     };
 
     localStorage.setItem('pendingAction', JSON.stringify(pendingChatAction));
@@ -292,8 +304,8 @@ describe('aiStore - checkAndReplayPendingChatAction', () => {
     
     const optimisticState = useAiStore.getState();
     expect(optimisticState.isLoadingAiResponse).toBe(true);
-    expect(optimisticState.currentChatMessages).toHaveLength(1);
-    const optimisticUserMessage = optimisticState.currentChatMessages[0];
+    expect(selectCurrentChatMessages(optimisticState)).toHaveLength(1);
+    const optimisticUserMessage = selectCurrentChatMessages(optimisticState)[0];
     expect(optimisticUserMessage).toBeDefined();
     expect(optimisticUserMessage.role).toBe('user');
     expect(optimisticUserMessage.content).toBe(pendingChatAction.body!.message);
@@ -304,27 +316,64 @@ describe('aiStore - checkAndReplayPendingChatAction', () => {
     expect(mockedBaseApiPost).toHaveBeenCalledOnce();
     expect(mockedBaseApiPost).toHaveBeenCalledWith('/chat', pendingChatAction.body!, { token: mockToken });
 
+    // --- Subscribe to wait for final state ---
+    let finalStateFromSubscription: AiState | null = null;
+    let subscriptionMet = false;
+    const unsubscribe = useAiStore.subscribe(newState => {
+        const messages = newState.messagesByChatId[mockAssistantResponse.chat_id];
+        // Check for the expected final state condition
+        if (!newState.isLoadingAiResponse && 
+            newState.currentChatId === mockAssistantResponse.chat_id && 
+            messages && messages.length === 2 && 
+            messages.find(m => m.role === 'assistant')) 
+        {
+            finalStateFromSubscription = newState;
+            subscriptionMet = true;
+            // console.log('[Test Debug] Subscription condition met!'); // Optional debug log
+        }
+    });
+
     // --- Resolve the API call ---
     resolveApiPost!({ data: mockAssistantResponse, error: null });
-    await replayPromise; // Wait for the action to complete
+    await replayPromise; // Wait for the action *promise* to complete
 
-    // --- Assertions AFTER API success ---
-    const finalState = useAiStore.getState();
-    expect(finalState.isLoadingAiResponse).toBe(false);
-    expect(finalState.aiError).toBeNull();
-    expect(finalState.currentChatMessages).toHaveLength(2);
+    // --- Wait for the subscription to confirm state update ---
+    await new Promise<void>((resolve, reject) => {
+        const timeout = setTimeout(() => {
+            unsubscribe(); // Clean up listener
+            reject(new Error(`State update timeout: Condition not met for chat ${mockAssistantResponse.chat_id}`));
+        }, 200); // Wait up to 200ms (adjust if needed)
+        
+        const interval = setInterval(() => {
+            if (subscriptionMet) {
+                clearTimeout(timeout);
+                clearInterval(interval);
+                unsubscribe(); // Clean up listener
+                resolve();
+            }
+        }, 5); // Check every 5ms
+    });
+
+    // --- Assertions AFTER state confirmed by subscription ---
+    // Use the state captured by the subscription
+    expect(finalStateFromSubscription).not.toBeNull();
+    if (!finalStateFromSubscription) throw new Error("Subscription did not capture final state."); // Type guard
+
+    expect(finalStateFromSubscription.isLoadingAiResponse).toBe(false);
+    expect(finalStateFromSubscription.aiError).toBeNull();
+    expect(selectCurrentChatMessages(finalStateFromSubscription)).toHaveLength(2); // Use subscribed state
     
-    const finalUserMessage = finalState.currentChatMessages.find(m => m.role === 'user');
+    const finalUserMessage = selectCurrentChatMessages(finalStateFromSubscription).find(m => m.role === 'user');
     expect(finalUserMessage).toBeDefined();
     expect(finalUserMessage!.id).toBe(optimisticUserMessage.id); 
     expect(finalUserMessage!.content).toEqual(pendingChatAction.body!.message);
     expect(finalUserMessage!.status).toEqual('sent'); 
     expect(finalUserMessage!.chat_id).toEqual(mockAssistantResponse.chat_id);
     
-    const finalAssistantMessage = finalState.currentChatMessages.find(m => m.role === 'assistant');
+    const finalAssistantMessage = selectCurrentChatMessages(finalStateFromSubscription).find(m => m.role === 'assistant');
     expect(finalAssistantMessage).toEqual(mockAssistantResponse);
     
-    expect(finalState.currentChatId).toEqual(mockAssistantResponse.chat_id);
+    expect(finalStateFromSubscription.currentChatId).toEqual(mockAssistantResponse.chat_id);
 
     // <<< ADD Check: localStorage.removeItem called AFTER success >>>
     expect(localStorage.removeItem).toHaveBeenCalledWith('pendingAction');
@@ -376,9 +425,9 @@ describe('aiStore - checkAndReplayPendingChatAction', () => {
       const finalState = useAiStore.getState();
       expect(finalState.isLoadingAiResponse).toBe(false); // Loading finished
       expect(finalState.aiError).toBe(apiError.error!.message); // Error message set
-      expect(finalState.currentChatMessages).toHaveLength(1); // Only the user message remains
+      expect(selectCurrentChatMessages(finalState)).toHaveLength(1); // Only the user message remains
 
-      const failedUserMessage = finalState.currentChatMessages[0];
+      const failedUserMessage = selectCurrentChatMessages(finalState)[0];
       expect(failedUserMessage.role).toBe('user');
       expect(failedUserMessage.content).toBe(pendingChatAction.body!.message);
       expect(failedUserMessage.status).toBe('error'); // <<< Status updated to error
@@ -435,8 +484,8 @@ describe('aiStore - checkAndReplayPendingChatAction', () => {
 
         const finalState = useAiStore.getState();
         expect(finalState.isLoadingAiResponse).toBe(false);
-        expect(finalState.currentChatMessages).toHaveLength(1);
-        expect(finalState.currentChatMessages[0].status).toBe('pending'); 
+        expect(selectCurrentChatMessages(finalState)).toHaveLength(1);
+        expect(selectCurrentChatMessages(finalState)[0].status).toBe('pending'); 
         expect(localStorage.removeItem).toHaveBeenCalledTimes(0);
     });
 

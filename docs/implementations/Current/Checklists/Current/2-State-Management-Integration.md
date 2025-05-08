@@ -97,8 +97,8 @@ The implementation plan uses the following labels to categorize work steps:
     *   Implement/Refactor `selectCurrentChatMessages`, ensuring the `is_active_in_thread` filter.
     *   Implement/Refactor other selectors defined above.
 * [✅] Run unit tests to verify selectors behave correctly. Debug until pass (GREEN).
-* [⏸️] **[REFACTOR]** ~~Ensure selectors are memoized where appropriate (e.g., using Zustand middleware or `reselect`).~~ // NOTE: Deferred to dedicated memoization step later in plan.
-* [ ] Commit changes with message "feat(STORE): Update useAiStore selectors for org context, rewind, tokens w/ tests"
+* [⏸️] **[REFACTOR]** ~~Ensure selectors are memoized where appropriate (e.g., using Zustand middleware or `reselect`).~~ // NOTE: Deferred to dedicated memoization step later in plan (STEP-2.3).
+* [⏸️] Commit changes with message "feat(STORE): Update useAiStore selectors for org context, rewind, tokens w/ tests" // Deferred to STEP-2.3
 
 #### STEP-2.1.3: Update `loadChatHistory` Action [TEST-UNIT] [COMMIT] [✅]
 * [✅] Define test cases for `loadChatHistory` action:
@@ -256,8 +256,8 @@ The implementation plan uses the following labels to categorize work steps:
 
 ### STEP-2.2: Integrate with Organization Store (`useOrganizationStore`) [STORE] [🚧]
 
-#### STEP-2.2.1: Add Organization Chat Settings to Organization Store [TEST-UNIT] [COMMIT] [🚧]
-* [ ] Create unit tests for organization chat settings functionality in `useOrganizationStore`. (Done: Implemented in `organizationStore.settings.test.ts`)
+#### STEP-2.2.1: Add Organization Chat Settings to Organization Store [TEST-UNIT] [COMMIT] [✅]
+* [✅] Create unit tests for organization chat settings functionality in `useOrganizationStore`. (Done: Implemented in `organizationStore.settings.test.ts`)
 * [✅] Update `packages/store/src/organizationStore.ts`:
   * [✅] Add `allowMemberChatCreation: boolean | null` to the organization state properties. (Done via `Organization` type update in types package)
   * [✅] Ensure actions like `loadOrganizationDetails` fetch this property from the API (`api.organizations().getOrganizationSettings` or similar). (Done: Assumed `getOrganizationDetails` includes it based on type)
@@ -272,32 +272,23 @@ The implementation plan uses the following labels to categorize work steps:
 * [✅] Run unit tests. Debug until pass (GREEN).
 * [✅] Commit changes with message "feat(STORE): Add organization chat settings management to useOrganizationStore w/ tests & analytics"
 
-#### STEP-2.2.2: Create Integration Between Stores [TEST-UNIT] [COMMIT]
-* [ ] Define test cases for the store integration (e.g., using `zustand/middleware` testing utilities or manual state checking).
-* [ ] Update `packages/store/src/aiStore.ts`:
-  * [ ] Import and use `useOrganizationStore`.
-  * [ ] Initialize `currentOrganizationId` state based on `useOrganizationStore.getState().currentOrganizationId`.
-  * [ ] Subscribe to changes in `useOrganizationStore`'s `currentOrganizationId`. When it changes:
-      *   Update `useAiStore`'s internal `currentOrganizationId`.
-      *   Trigger `loadChatHistory` action with the new `currentOrganizationId`.
-* [ ] Write/Update tests in `packages/store/src/aiStore.unit.test.ts` or a dedicated integration test file. Expect failure (RED).
-* [ ] Implement the subscription logic in `useAiStore`.
-* [ ] Run tests. Debug until pass (GREEN).
-* [ ] Commit changes with message "feat(STORE): Integrate useAiStore context with useOrganizationStore w/ tests"
+**Note on Analytics (STEP-2.2.3):** Application-level analytics (tracking store actions, API calls, etc.) is deferred to a backlog item. User analytics will be handled at the UI layer when relevant components are updated/created.
 
-#### STEP-2.2.3: Add/Verify Remaining Analytics Integration [ANALYTICS] [COMMIT]
-* [ ] Review all actions in `useAiStore` and `useOrganizationStore`.
-* [ ] Verify all analytics events defined in Phase 0 (STEP-0.2.3) are correctly implemented within the relevant store actions, including parameters:
-    * `useAiStore`: `chat_context_selected` (triggered by subscription), `organization_chat_created`, `organization_chat_deleted`, `chat_rewind_used`.
-    * `useOrganizationStore`: `member_chat_creation_toggled`.
-    * *Note:* Events like `organization_chat_viewed` and `token_usage_viewed` might be better suited for the UI layer when the relevant component mounts or data is displayed.
-* [ ] Add any missing triggers.
-* [ ] Commit changes with message "feat(ANALYTICS): Ensure all required analytics events are triggered from store actions"
+### STEP-2.3: Implement Memoized Selectors [REFACTOR] [TEST-UNIT] [COMMIT]
+*   [✅] Install `reselect` dependency in `packages/store`. (Already done)
+*   [✅] Create/Update selector files (e.g., `aiStore.selectors.ts`, `organizationStore.selectors.ts`) using `reselect`'s `createSelector`.
+    *   [✅] Identify selectors in `useAiStore` that derive data (e.g., `selectChatHistoryList`, `selectCurrentChatMessages`) or depend on external state (`useOrganizationStore`) and memoize them.
+    *   [✅] Review selectors in `useOrganizationStore` (e.g., `selectCurrentUserRoleInOrg`) and memoize if beneficial.
+    *   [✅] (Optional/Review) Review `useSubscriptionStore` selectors for potential memoization benefits. (No inline selectors found needing memoization)
+*   [✅] Refactor store implementations (`aiStore.ts`, `organizationStore.ts`) to remove non-memoized selector functions if they were previously defined inline.
+*   [✅] Update unit tests (`aiStore.selectors.test.ts`, `organizationStore.selectors.test.ts`, etc.) to import and test the standalone memoized selectors, passing state as needed.
+*   [✅] Run all `@paynless/store` tests to ensure memoization didn't break functionality. (Passed after fixes)
+*   [✅] Commit changes with message "refactor(STORE): Implement memoized selectors using reselect".
 
 #### STEP-2.3.4 `deleteChat` transaction on Database [DB] [COMMIT]
 *   [] **Note:** Ensure the corresponding backend Edge Function (`/chat` with `DELETE` method) uses a database transaction to delete both the `chats` record and all associated `chat_messages` records atomically.
 
-#### STEP-2.4: Future: Token Budget vs. Consumption Audit [UI] [STORE]
+#### STEP-2.4: Token Budget vs. Consumption Audit [UI] [STORE]
 *   [ ] **Design & Implement Token Audit Logic:**
     *   [ ] **`aiStore` Selectors:** Ensure robust selectors exist in `useAiStore` to calculate total token consumption for a given chat (e.g., `selectChatTokenUsage(chatId)`) and potentially cumulative usage for a user/org within a billing period (if applicable and stored/derivable in `aiStore`).
     *   [ ] **`subscriptionStore` Selectors:** Ensure selectors exist in `useSubscriptionStore` to retrieve token allocation/budget for the current user and/or organization (e.g., `selectCurrentUserTokenBudget()`, `selectOrganizationTokenBudget(orgId)`).
@@ -310,6 +301,16 @@ The implementation plan uses the following labels to categorize work steps:
     *   [ ] **UI Integration:** Integrate this audit logic into relevant UI components (e.g., chat input, user dashboard, organization settings).
 *   [ ] Write unit/integration tests for the audit logic and UI components.
 *   [ ] Commit changes with message "feat(STORE/UI): Implement token budget vs. consumption audit logic" 
+
+#### BACKLOG ITEM: Add/Verify Remaining Analytics Integration [ANALYTICS] [COMMIT]
+* [ ] Review all actions in `useAiStore` and `useOrganizationStore`.
+* [ ] Verify all analytics events defined in Phase 0 (STEP-0.2.3) are correctly implemented within the relevant store actions, including parameters:
+    * `useAiStore`: `chat_context_selected` (triggered by subscription), `organization_chat_created`, `organization_chat_deleted`, `chat_rewind_used`.
+    * `useOrganizationStore`: `member_chat_creation_toggled`.
+    * *Note:* Events like `organization_chat_viewed` and `token_usage_viewed` might be better suited for the UI layer when the relevant component mounts or 
+    data is displayed.
+* [ ] Add any missing triggers.
+* [ ] Commit changes with message "feat(ANALYTICS): Ensure all required analytics events are triggered from store actions"
 
 **Phase 2 Complete Checkpoint:**
 *   [ ] All Phase 2 tests (Store unit tests, integration tests) passing.

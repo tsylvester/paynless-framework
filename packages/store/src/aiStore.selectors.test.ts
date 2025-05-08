@@ -1,14 +1,24 @@
 import { useAiStore } from './aiStore';
-import { useOrganizationStore } from './organizationStore';
+// import { useOrganizationStore } from './organizationStore'; // No longer needed
+import {
+  selectChatHistoryList,
+  selectCurrentChatMessages,
+  selectIsHistoryLoading,
+  selectIsDetailsLoading,
+  selectIsLoadingAiResponse,
+  selectAiError,
+  selectRewindTargetMessageId,
+  selectIsRewinding
+} from './aiStore.selectors'; // Import new selectors
 import { Chat, AiState, ChatMessage } from '@paynless/types';
 import { vi, describe, beforeEach, it, expect } from 'vitest';
 
-// Mock useOrganizationStore
-vi.mock('./organizationStore', () => ({
-  useOrganizationStore: {
-    getState: vi.fn(),
-  },
-}));
+// Mock useOrganizationStore - REMOVE THIS MOCK
+// vi.mock('./organizationStore', () => ({
+//   useOrganizationStore: {
+//     getState: vi.fn(),
+//   },
+// }));
 
 const mockOrgId1 = 'org-123';
 const mockOrgId2 = 'org-456';
@@ -22,93 +32,101 @@ describe('useAiStore - Selectors', () => {
 
   // Helper to set up the AiStore state for each test
   const setAiStoreState = (newState: Partial<AiState>) => {
-    useAiStore.setState({
-      ...useAiStore.getState(), // Preserve other parts of state
-      ...newState,
-    });
-    storeState = useAiStore.getState();
+    // Construct the full initial state for the store if it's not already comprehensive
+    // For testing selectors, we primarily care about the state snapshot passed to them.
+    // The actual useAiStore.setState might not even be necessary if we directly construct
+    // the AiState object to pass to selectors.
+    // However, to keep structure similar if some tests rely on get() from within actions (not selectors):
+    const baseState = useAiStore.getState(); // Get a full state structure
+    storeState = { ...baseState, ...newState } as AiState;
   };
 
-  // Helper to set the mocked currentOrganizationId
-  const setMockCurrentOrganizationId = (orgId: string | null) => {
-    (useOrganizationStore.getState as vi.Mock).mockReturnValue({ currentOrganizationId: orgId });
-  };
+  // Helper to set the mocked currentOrganizationId - REMOVE THIS HELPER
+  // const setMockCurrentOrganizationId = (orgId: string | null) => {
+  //   (useOrganizationStore.getState as vi.Mock).mockReturnValue({ currentOrganizationId: orgId });
+  // };
 
   beforeEach(() => {
-    // Reset AiStore to its initial state or a known clean state if needed
-    // For selectors, we often set specific states for the test.
-    // Resetting mocks
     vi.clearAllMocks();
     
-    // Set a default clean state for chatsByContext for AiStore
-    setAiStoreState({
-      chatsByContext: {
-        personal: [],
-        orgs: {},
-      },
-    });
+    // Set a default clean state for storeState directly
+    // This is the object that will be passed to our selectors
+    storeState = {
+      availableProviders: [],
+      availablePrompts: [],
+      chatsByContext: { personal: [], orgs: {} },
+      messagesByChatId: {},
+      currentChatId: null,
+      isLoadingAiResponse: false,
+      isConfigLoading: false,
+      isLoadingHistoryByContext: { personal: false, orgs: {} },
+      isDetailsLoading: false,
+      newChatContext: null,
+      rewindTargetMessageId: null,
+      aiError: null,
+      // Ensure all AiState fields are initialized if selectors depend on them
+      // For example, if a selector used a field not listed above, it would need to be here.
+    } as AiState; // Cast to ensure all AiState fields are present or considered
   });
 
   describe('selectChatHistoryList', () => {
-    it('should return personal chats when currentOrganizationId is null', () => {
-      setMockCurrentOrganizationId(null);
+    it('should return personal chats when contextId is null', () => {
+      // setMockCurrentOrganizationId(null); // No longer needed
       setAiStoreState({
         chatsByContext: {
           personal: [mockPersonalChat1 as Chat, mockPersonalChat2 as Chat],
           orgs: { [mockOrgId1]: [mockOrg1Chat1 as Chat] },
         },
       });
-      // Assuming selectChatHistoryList is a method on the store instance
-      // This will fail until the selector is implemented
-      const personalChats = useAiStore.getState().selectChatHistoryList();
+      const personalChats = selectChatHistoryList(storeState, null); // Pass null for personal context
       expect(personalChats).toEqual([mockPersonalChat1, mockPersonalChat2]);
     });
 
     it('should return an empty array for personal chats if none exist', () => {
-      setMockCurrentOrganizationId(null);
+      // setMockCurrentOrganizationId(null); // No longer needed
       setAiStoreState({
         chatsByContext: {
           personal: [],
           orgs: { [mockOrgId1]: [mockOrg1Chat1 as Chat] },
         },
       });
-      const personalChats = useAiStore.getState().selectChatHistoryList();
+      const personalChats = selectChatHistoryList(storeState, null);
       expect(personalChats).toEqual([]);
     });
 
-    it('should return organization chats when currentOrganizationId is set', () => {
-      setMockCurrentOrganizationId(mockOrgId1);
+    it('should return organization chats when contextId is set to an org ID', () => {
+      // setMockCurrentOrganizationId(mockOrgId1); // No longer needed
       setAiStoreState({
         chatsByContext: {
           personal: [mockPersonalChat1 as Chat],
           orgs: { [mockOrgId1]: [mockOrg1Chat1 as Chat] },
         },
       });
-      const orgChats = useAiStore.getState().selectChatHistoryList();
+      const orgChats = selectChatHistoryList(storeState, mockOrgId1);
       expect(orgChats).toEqual([mockOrg1Chat1]);
     });
 
-    it('should return an empty array for org chats if none exist for the current org', () => {
-      setMockCurrentOrganizationId(mockOrgId1);
+    it('should return an empty array for org chats if none exist for the given orgId', () => {
+      // setMockCurrentOrganizationId(mockOrgId1); // No longer needed
       setAiStoreState({
         chatsByContext: {
           personal: [mockPersonalChat1 as Chat],
           orgs: { [mockOrgId1]: [] }, // Org1 has no chats
         },
       });
-      const orgChats = useAiStore.getState().selectChatHistoryList();
+      const orgChats = selectChatHistoryList(storeState, mockOrgId1);
       expect(orgChats).toEqual([]);
     });
 
-    it('should return an empty array if currentOrganizationId refers to an org not in chatsByContext.orgs', () => {
-      setMockCurrentOrganizationId(mockOrgId2); // mockOrgId2 has no entry in orgs
+    it('should return an empty array if contextId refers to an org not in chatsByContext.orgs', () => {
+      // setMockCurrentOrganizationId(mockOrgId2); // No longer needed
       setAiStoreState({
         chatsByContext: {
           personal: [mockPersonalChat1 as Chat],
           orgs: { [mockOrgId1]: [mockOrg1Chat1 as Chat] },
         },
       });
-      const orgChats = useAiStore.getState().selectChatHistoryList();
+      const orgChats = selectChatHistoryList(storeState, mockOrgId2);
       expect(orgChats).toEqual([]);
     });
   });
@@ -128,7 +146,7 @@ describe('useAiStore - Selectors', () => {
           'chat-2': [msg4Chat2 as ChatMessage],
         },
       });
-      const messages = useAiStore.getState().selectCurrentChatMessages();
+      const messages = selectCurrentChatMessages(storeState);
       expect(messages).toEqual([msg1, msg2]);
     });
 
@@ -139,7 +157,7 @@ describe('useAiStore - Selectors', () => {
           [chatId1]: [msg1 as ChatMessage],
         },
       });
-      const messages = useAiStore.getState().selectCurrentChatMessages();
+      const messages = selectCurrentChatMessages(storeState);
       expect(messages).toEqual([]);
     });
 
@@ -148,7 +166,7 @@ describe('useAiStore - Selectors', () => {
         currentChatId: chatId1,
         messagesByChatId: {},
       });
-      const messages = useAiStore.getState().selectCurrentChatMessages();
+      const messages = selectCurrentChatMessages(storeState);
       expect(messages).toEqual([]);
     });
 
@@ -159,7 +177,7 @@ describe('useAiStore - Selectors', () => {
           [chatId1]: [msg3Inactive as ChatMessage],
         },
       });
-      const messages = useAiStore.getState().selectCurrentChatMessages();
+      const messages = selectCurrentChatMessages(storeState);
       expect(messages).toEqual([]);
     });
 
@@ -170,91 +188,91 @@ describe('useAiStore - Selectors', () => {
           [chatId1]: [msg1 as ChatMessage, msg3Inactive as ChatMessage, msg2 as ChatMessage],
         },
       });
-      const messages = useAiStore.getState().selectCurrentChatMessages();
+      const messages = selectCurrentChatMessages(storeState);
       expect(messages).toEqual([msg1, msg2]);
       expect(messages.find(m => m.id === 'msg-3')).toBeUndefined();
     });
   });
 
   describe('selectIsHistoryLoading', () => {
-    it('should return personal history loading state when currentOrganizationId is null', () => {
-      setMockCurrentOrganizationId(null);
+    it('should return personal history loading state when contextId is null', () => {
+      // setMockCurrentOrganizationId(null); // No longer needed
       setAiStoreState({ isLoadingHistoryByContext: { personal: true, orgs: { [mockOrgId1]: false } } });
-      expect(useAiStore.getState().selectIsHistoryLoading()).toBe(true);
+      expect(selectIsHistoryLoading(storeState, null)).toBe(true);
 
       setAiStoreState({ isLoadingHistoryByContext: { personal: false, orgs: { [mockOrgId1]: true } } });
-      expect(useAiStore.getState().selectIsHistoryLoading()).toBe(false);
+      expect(selectIsHistoryLoading(storeState, null)).toBe(false);
     });
 
-    it('should return organization history loading state when currentOrganizationId is set', () => {
-      setMockCurrentOrganizationId(mockOrgId1);
+    it('should return organization history loading state when contextId is set to an org ID', () => {
+      // setMockCurrentOrganizationId(mockOrgId1); // No longer needed
       setAiStoreState({ isLoadingHistoryByContext: { personal: true, orgs: { [mockOrgId1]: true } } });
-      expect(useAiStore.getState().selectIsHistoryLoading()).toBe(true);
+      expect(selectIsHistoryLoading(storeState, mockOrgId1)).toBe(true);
 
       setAiStoreState({ isLoadingHistoryByContext: { personal: true, orgs: { [mockOrgId1]: false } } });
-      expect(useAiStore.getState().selectIsHistoryLoading()).toBe(false);
+      expect(selectIsHistoryLoading(storeState, mockOrgId1)).toBe(false);
     });
 
-    it('should return false if currentOrganizationId refers to an org not in isLoadingHistoryByContext.orgs', () => {
-      setMockCurrentOrganizationId(mockOrgId2); // mockOrgId2 has no entry
+    it('should return false if contextId refers to an org not in isLoadingHistoryByContext.orgs', () => {
+      // setMockCurrentOrganizationId(mockOrgId2); // No longer needed
       setAiStoreState({ isLoadingHistoryByContext: { personal: false, orgs: { [mockOrgId1]: true } } });
-      expect(useAiStore.getState().selectIsHistoryLoading()).toBe(false);
+      expect(selectIsHistoryLoading(storeState, mockOrgId2)).toBe(false);
     });
 
-    it('should return false if isLoadingHistoryByContext.orgs is empty and currentOrganizationId is set', () => {
-        setMockCurrentOrganizationId(mockOrgId1); 
+    it('should return false if isLoadingHistoryByContext.orgs is empty and contextId is for an org', () => {
+        // setMockCurrentOrganizationId(mockOrgId1); // No longer needed
         setAiStoreState({ isLoadingHistoryByContext: { personal: false, orgs: {} } });
-        expect(useAiStore.getState().selectIsHistoryLoading()).toBe(false);
+        expect(selectIsHistoryLoading(storeState, mockOrgId1)).toBe(false);
       });
   });
 
   describe('selectIsDetailsLoading', () => {
     it('should return the value of state.isDetailsLoading', () => {
       setAiStoreState({ isDetailsLoading: true });
-      expect(useAiStore.getState().selectIsDetailsLoading()).toBe(true);
+      expect(selectIsDetailsLoading(storeState)).toBe(true);
       setAiStoreState({ isDetailsLoading: false });
-      expect(useAiStore.getState().selectIsDetailsLoading()).toBe(false);
+      expect(selectIsDetailsLoading(storeState)).toBe(false);
     });
   });
 
   describe('selectIsLoadingAiResponse', () => {
     it('should return the value of state.isLoadingAiResponse', () => {
       setAiStoreState({ isLoadingAiResponse: true });
-      expect(useAiStore.getState().selectIsLoadingAiResponse()).toBe(true);
+      expect(selectIsLoadingAiResponse(storeState)).toBe(true);
       setAiStoreState({ isLoadingAiResponse: false });
-      expect(useAiStore.getState().selectIsLoadingAiResponse()).toBe(false);
+      expect(selectIsLoadingAiResponse(storeState)).toBe(false);
     });
   });
 
   describe('selectAiError', () => {
     it('should return the value of state.aiError', () => {
       setAiStoreState({ aiError: 'An error occurred' });
-      expect(useAiStore.getState().selectAiError()).toBe('An error occurred');
+      expect(selectAiError(storeState)).toBe('An error occurred');
       setAiStoreState({ aiError: null });
-      expect(useAiStore.getState().selectAiError()).toBeNull();
+      expect(selectAiError(storeState)).toBeNull();
     });
   });
 
   describe('selectRewindTargetMessageId', () => {
     it('should return the value of state.rewindTargetMessageId', () => {
       setAiStoreState({ rewindTargetMessageId: 'msg-rewind-target' });
-      expect(useAiStore.getState().selectRewindTargetMessageId()).toBe('msg-rewind-target');
+      expect(selectRewindTargetMessageId(storeState)).toBe('msg-rewind-target');
       setAiStoreState({ rewindTargetMessageId: null });
-      expect(useAiStore.getState().selectRewindTargetMessageId()).toBeNull();
+      expect(selectRewindTargetMessageId(storeState)).toBeNull();
     });
   });
 
   describe('selectIsRewinding', () => {
     it('should return true if state.rewindTargetMessageId is set', () => {
       setAiStoreState({ rewindTargetMessageId: 'msg-rewind-target' });
-      expect(useAiStore.getState().selectIsRewinding()).toBe(true);
+      expect(selectIsRewinding(storeState)).toBe(true);
+      setAiStoreState({ rewindTargetMessageId: null });
+      expect(selectIsRewinding(storeState)).toBe(false);
     });
-
+    
     it('should return false if state.rewindTargetMessageId is null', () => {
       setAiStoreState({ rewindTargetMessageId: null });
-      expect(useAiStore.getState().selectIsRewinding()).toBe(false);
+      expect(selectIsRewinding(storeState)).toBe(false);
     });
   });
-
-  // More selectors will be added below
 }); 

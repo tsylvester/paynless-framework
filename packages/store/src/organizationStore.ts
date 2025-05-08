@@ -70,12 +70,7 @@ export type OrganizationStoreImplementation =
     OrganizationUIState & 
     OrganizationActions & 
     OrganizationUIActions & 
-    InternalOrganizationActions & 
-    {
-        selectCurrentUserRoleInOrg: () => 'admin' | 'member' | null;
-        selectIsDeleteDialogOpen: () => boolean;
-        selectCanCreateOrganizationChats: () => boolean;
-    };
+    InternalOrganizationActions;
 
 // Instantiate the specific client - assuming the main 'api' export *is* the base client instance
 // const orgApiClient = new OrganizationApiClient(api as ApiClient); 
@@ -970,29 +965,29 @@ export const useOrganizationStore = create<OrganizationStoreImplementation>()(
       },
 
       // --- Selector Implementation ---
-      selectCurrentUserRoleInOrg: () => {
-        const { currentOrganizationMembers, currentOrganizationId } = get();
-        const userId = useAuthStore.getState().user?.id;
+      // selectCurrentUserRoleInOrg: () => { // REMOVE THIS BLOCK
+      //   const { currentOrganizationMembers, currentOrganizationId } = get();
+      //   const userId = useAuthStore.getState().user?.id;
 
-        if (!userId || !currentOrganizationId || !currentOrganizationMembers || currentOrganizationMembers.length === 0) {
-          return null;
-        }
+      //   if (!userId || !currentOrganizationId || !currentOrganizationMembers || currentOrganizationMembers.length === 0) {
+      //     return null;
+      //   }
 
-        const currentUserMemberInfo = currentOrganizationMembers.find(member => member.user_id === userId);
-        
-        // The role in OrganizationMember is a string, but we expect 'admin' | 'member'.
-        // Perform a cast or validation if necessary, though for mock purposes it might not matter as much.
-        return currentUserMemberInfo ? (currentUserMemberInfo.role as 'admin' | 'member') : null;
-      },
+      //   const currentUserMemberInfo = currentOrganizationMembers.find(member => member.user_id === userId);
+      //   
+      //   // The role in OrganizationMember is a string, but we expect 'admin' | 'member'.
+      //   // Perform a cast or validation if necessary, though for mock purposes it might not matter as much.
+      //   return currentUserMemberInfo ? (currentUserMemberInfo.role as 'admin' | 'member') : null;
+      // },
 
-      selectIsDeleteDialogOpen: () => get().isDeleteDialogOpen,
+      // selectIsDeleteDialogOpen: () => get().isDeleteDialogOpen, // REMOVE THIS LINE
 
-      selectCanCreateOrganizationChats: () => {
-        const { currentOrganizationDetails } = get();
-        if (!currentOrganizationDetails) return false;
-        // For now, only the explicit setting. Role-based overrides could be added.
-        return !!currentOrganizationDetails.allow_member_chat_creation;
-      },
+      // selectCanCreateOrganizationChats: () => { // REMOVE THIS BLOCK
+      //   const { currentOrganizationDetails } = get();
+      //   if (!currentOrganizationDetails) return false;
+      //   // For now, only the explicit setting. Role-based overrides could be added.
+      //   return !!currentOrganizationDetails.allow_member_chat_creation;
+      // },
 
       updateOrganizationSettings: async (orgId: string, settings: { allow_member_chat_creation: boolean }): Promise<boolean> => {
         const { _setLoading, _setError, currentOrganizationId } = get();
@@ -1026,25 +1021,21 @@ export const useOrganizationStore = create<OrganizationStoreImplementation>()(
                     set({ error: null }); // Clear errors, no state update needed if not current org
                 }
 
-                // Trigger analytics event
-                // TODO: Revisit analytics integration (STEP-2.2.3). Determine if this event belongs in user analytics 
-                // TODO: or requires a different application-level tracking mechanism.
-                /* 
-                try {
-                    const analytics = useAnalyticsStore.getState();
-                    if (analytics?.trackEvent) {
-                        analytics.trackEvent('member_chat_creation_toggled', {
-                            organization_id: orgId,
-                            enabled: settings.allow_member_chat_creation,
-                        });
-                    } else {
-                        logger.warn('[OrganizationStore] Analytics trackEvent not available.');
-                    }
-                } catch (analyticsError) {
-                     logger.error('[OrganizationStore] Failed to track analytics event for settings update', { error: analyticsError });
-                }
-                */
-                
+                // Also update the organization in the userOrganizations list
+                set(state => ({
+                    userOrganizations: state.userOrganizations.map(org => 
+                        org.id === orgId ? { ...org, ...updatedOrgDetails } : org
+                    ),
+                    error: null, 
+                }));
+
+                // <<< TODO: ANALYTICS - Add member_chat_creation_toggled event trigger here >>>
+                // const analytics = useAnalyticsStore.getState(); // Uncomment if analyticsStore is used
+                // analytics.trackEvent('member_chat_creation_toggled', { 
+                //     organization_id: orgId,
+                //     enabled: settings.allow_member_chat_creation 
+                // });
+
                 return true; // Indicate success
             }
         } catch (err: unknown) { // Catch unexpected errors

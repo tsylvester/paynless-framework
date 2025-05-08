@@ -2,8 +2,12 @@ import { describe, it, expect, vi, beforeEach, afterEach, type Mock } from 'vite
 import { useOrganizationStore } from './organizationStore';
 import { useAuthStore } from './authStore';
 import { act } from '@testing-library/react';
-import { Organization, UserProfile, OrganizationStoreType, OrganizationMember } from '@paynless/types';
+import { Organization, UserProfile, OrganizationStoreType, OrganizationMember, OrganizationMemberWithProfile, User } from '@paynless/types';
 import { getApiClient } from '@paynless/api';
+import { 
+    selectCanCreateOrganizationChats,
+    selectCurrentUserRoleInOrg 
+} from './organizationStore.selectors';
 
 // --- Mocks ---
 // This mock factory is hoisted. It should not reference module-level variables 
@@ -195,49 +199,120 @@ describe('Organization Store - Chat Settings', () => {
     });
 
     describe('selectCanCreateOrganizationChats', () => {
-        const setupRole = (role: 'admin' | 'member' | null) => { 
-             const storeState = useOrganizationStore.getState();
-             vi.spyOn(storeState, 'selectCurrentUserRoleInOrg').mockReturnValue(role);
+        const orgId = 'org-test-settings';
+
+        // Corrected UserProfile mocks based on actual DB schema
+        const memberUserProfile: UserProfile = { 
+            id: 'member-user-id', 
+            first_name: 'Member', 
+            last_name: 'User', 
+            role: 'user', // Role is directly on UserProfile
+            created_at: '2023-01-01T00:00:00Z',
+            updated_at: '2023-01-01T00:00:00Z',
+            last_selected_org_id: null
+            // Removed: display_name, avatar_url, bio
+        };
+        const adminUserProfile: UserProfile = { 
+            id: 'admin-user-id', 
+            first_name: 'Admin', 
+            last_name: 'User',
+            role: 'admin', // Role is directly on UserProfile
+            created_at: '2023-01-01T00:00:00Z',
+            updated_at: '2023-01-01T00:00:00Z',
+            last_selected_org_id: orgId
+            // Removed: display_name, avatar_url, bio
         };
 
-        it('should return true if setting is true (admin)', () => {
-            resetOrganizationStore({ currentOrganizationDetails: { allow_member_chat_creation: true } as any });
-            setupRole('admin');
-            expect(useOrganizationStore.getState().selectCanCreateOrganizationChats()).toBe(true);
+        // Mocks for the User type (used by useAuthStore.getState().user)
+        // The User type only needs id, email, role based on auth.types.ts
+        const authMemberUser: User = { id: memberUserProfile.id, email: 'member@example.com', role: 'user' };
+        const authAdminUser: User = { id: adminUserProfile.id, email: 'admin@example.com', role: 'admin' }; 
+
+        const members: OrganizationMemberWithProfile[] = [
+            { 
+                id: 'mem-admin', user_id: adminUserProfile.id, organization_id: orgId, role: 'admin', created_at: '2023-01-01T00:00:00Z', status: 'active',
+                user_profiles: adminUserProfile // Use the corrected profile mock
+            },
+            { 
+                id: 'mem-member', user_id: memberUserProfile.id, organization_id: orgId, role: 'member', created_at: '2023-01-01T00:00:00Z', status: 'active',
+                user_profiles: memberUserProfile // Use the corrected profile mock
+            },
+        ];
+
+        it('should return true if setting is true (admin role)', () => {
+            // Setup state for admin role
+            (useAuthStore.getState as Mock).mockReturnValue({ user: authAdminUser, session: {} } as any);
+            const state = { 
+                ...initialTestOrgState, 
+                currentOrganizationId: orgId,
+                currentOrganizationMembers: members,
+                currentOrganizationDetails: { allow_member_chat_creation: true } as any 
+            } as OrganizationStoreType;
+            expect(selectCanCreateOrganizationChats(state)).toBe(true);
         });
 
-        it('should return true if setting is true (member)', () => {
-             resetOrganizationStore({ currentOrganizationDetails: { allow_member_chat_creation: true } as any });
-            setupRole('member');
-            expect(useOrganizationStore.getState().selectCanCreateOrganizationChats()).toBe(true);
+        it('should return true if setting is true (member role)', () => {
+            // Setup state for member role
+            (useAuthStore.getState as Mock).mockReturnValue({ user: authMemberUser, session: {} } as any);
+            const state = { 
+                ...initialTestOrgState, 
+                currentOrganizationId: orgId,
+                currentOrganizationMembers: members,
+                currentOrganizationDetails: { allow_member_chat_creation: true } as any 
+            } as OrganizationStoreType;
+            expect(selectCanCreateOrganizationChats(state)).toBe(true);
         });
 
-        it('should return false if setting is false (admin)', () => {
-            resetOrganizationStore({ currentOrganizationDetails: { allow_member_chat_creation: false } as any });
-            setupRole('admin');
-            expect(useOrganizationStore.getState().selectCanCreateOrganizationChats()).toBe(false);
+        it('should return false if setting is false (admin role)', () => {
+            (useAuthStore.getState as Mock).mockReturnValue({ user: authAdminUser, session: {} } as any);
+            const state = { 
+                ...initialTestOrgState, 
+                currentOrganizationId: orgId,
+                currentOrganizationMembers: members,
+                currentOrganizationDetails: { allow_member_chat_creation: false } as any 
+            } as OrganizationStoreType;
+            expect(selectCanCreateOrganizationChats(state)).toBe(false);
         });
 
-        it('should return false if setting is false (member)', () => {
-             resetOrganizationStore({ currentOrganizationDetails: { allow_member_chat_creation: false } as any });
-            setupRole('member');
-            expect(useOrganizationStore.getState().selectCanCreateOrganizationChats()).toBe(false);
+        it('should return false if setting is false (member role)', () => {
+            (useAuthStore.getState as Mock).mockReturnValue({ user: authMemberUser, session: {} } as any);
+            const state = { 
+                ...initialTestOrgState, 
+                currentOrganizationId: orgId,
+                currentOrganizationMembers: members,
+                currentOrganizationDetails: { allow_member_chat_creation: false } as any 
+            } as OrganizationStoreType;
+            expect(selectCanCreateOrganizationChats(state)).toBe(false);
         });
 
         it('should return false if setting is null or undefined', () => {
-            resetOrganizationStore({ currentOrganizationDetails: { allow_member_chat_creation: null } as any });
-            setupRole('member');
-            expect(useOrganizationStore.getState().selectCanCreateOrganizationChats()).toBe(false);
+            (useAuthStore.getState as Mock).mockReturnValue({ user: authMemberUser, session: {} } as any);
+            let state = { 
+                ...initialTestOrgState, 
+                currentOrganizationId: orgId,
+                currentOrganizationMembers: members,
+                currentOrganizationDetails: { allow_member_chat_creation: null } as any 
+            } as OrganizationStoreType;
+            expect(selectCanCreateOrganizationChats(state)).toBe(false);
             
-            resetOrganizationStore({ currentOrganizationDetails: {} as any }); 
-            setupRole('member');
-            expect(useOrganizationStore.getState().selectCanCreateOrganizationChats()).toBe(false);
+            state = { 
+                ...initialTestOrgState, 
+                currentOrganizationId: orgId,
+                currentOrganizationMembers: members,
+                currentOrganizationDetails: {} as any // allow_member_chat_creation is undefined
+            } as OrganizationStoreType;
+            expect(selectCanCreateOrganizationChats(state)).toBe(false);
         });
         
         it('should return false if organization details are null', () => {
-             resetOrganizationStore({ currentOrganizationDetails: null });
-            setupRole('member');
-            expect(useOrganizationStore.getState().selectCanCreateOrganizationChats()).toBe(false);
+            (useAuthStore.getState as Mock).mockReturnValue({ user: authMemberUser, session: {} } as any);
+            const state = { 
+                ...initialTestOrgState, 
+                currentOrganizationId: orgId,
+                currentOrganizationMembers: members,
+                currentOrganizationDetails: null 
+            } as OrganizationStoreType;
+            expect(selectCanCreateOrganizationChats(state)).toBe(false);
         });
     });
 });

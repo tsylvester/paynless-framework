@@ -7,7 +7,7 @@ import {
 	FetchOptions,
     ApiResponse,
     PendingAction,
-    AuthRequiredError,
+    AuthRequiredError, // Correctly from @paynless/types
     Chat
 } from '@paynless/types';
 
@@ -528,153 +528,179 @@ export const useAiStore = create<AiStore>()(
             
             checkAndReplayPendingChatAction: async () => {
                 logger.info('[aiStore] Checking for pending chat action...');
-                const pendingActionJson = localStorage.getItem('pendingAction');
-
-                if (!pendingActionJson) {
+                const pendingActionJSON = localStorage.getItem('pendingAction');
+                if (!pendingActionJSON) {
                     logger.info('[aiStore] No pending action found.');
                     return;
                 }
 
-                let action: PendingAction | null = null;
+                let pendingAction: PendingAction | null = null;
                 try {
-                    action = JSON.parse(pendingActionJson);
+                    pendingAction = JSON.parse(pendingActionJSON);
                 } catch (e) {
-                    logger.error('[aiStore] Failed to parse pending action JSON. Removing invalid item.', { error: e });
-                    localStorage.removeItem('pendingAction');
+                    logger.error('[aiStore] Failed to parse pending action from localStorage.', { error: e });
+                    localStorage.removeItem('pendingAction'); // Clear invalid item
                     return;
                 }
 
-                // Validate if it's a chat POST action - Added null check for body
-                if (!action || action.endpoint !== 'chat' || action.method !== 'POST' || !action.body || typeof action.body['message'] !== 'string') { // Use bracket notation and check type
-                    logger.warn('[aiStore] Pending action found, but not a valid chat POST. Ignoring.', { action });
+                if (!pendingAction || typeof pendingAction.body !== 'object' || pendingAction.body === null) {
+                    logger.error('[aiStore] Pending action is invalid or body is missing.', { action: pendingAction });
+                    localStorage.removeItem('pendingAction'); // Clear invalid item
                     return;
                 }
 
-                // --- Authentication Check ---
-                const token = useAuthStore.getState().session?.access_token;
-                if (!token) {
-                    logger.error('[aiStore] Cannot replay pending action: User is not authenticated (no token).');
-                    set({ aiError: 'Authentication required to replay pending action.' });
-                    return;
-                }
 
-                // --- Process Valid Chat Action ---
-                logger.info('[aiStore] Pending chat action is valid and user authenticated. Processing...');
-                // <<< KEEP removeItem commented out here >>>
-                // localStorage.removeItem('pendingAction'); 
-                // logger.info('[aiStore] Removed pending action from localStorage.');
-
-                // --- Refactored Helper (same as above, defined once in scope) --- 
-                const _addOptimisticUserMessage = (msgContent: string, explicitChatId?: string | null): string => {
+                // Helper inside checkAndReplayPendingChatAction to add optimistic message for replay
+                const addOptimisticMessageForReplay = (messageContent: string, existingChatId?: string | null): { tempId: string, chatIdForOptimistic: string } => {
                     const tempId = `temp-user-${Date.now()}`;
-                    const existingChatId = get().currentChatId; // Get current state ID
-                    // Use explicit ID if provided, else fallback to existing or temp string
-                    const chatIdToUse = (typeof explicitChatId === 'string' && explicitChatId) 
-                                        ? explicitChatId 
-                                        : (existingChatId || `temp-chat-replay-${Date.now()}`); // Unique temp ID for replay
-                    
+                    // If replaying for an existing chat, use its ID. Otherwise, create a temporary one.
+                    const chatIdForOptimistic = existingChatId || `temp-chat-replay-${Date.now()}`;
+
                     const userMsg: ChatMessage = {
-                         id: tempId, 
-                         chat_id: chatIdToUse, // Use determined chat ID
-                         user_id: useAuthStore.getState().user?.id || 'unknown-replay-user', 
-                         role: 'user', 
-                         content: msgContent, 
-                         status: 'pending', // Add status
-                         ai_provider_id: null, 
-                         system_prompt_id: null,
-                         token_usage: null, 
-                         created_at: new Date(parseInt(tempId.split('-')[2])).toISOString(),
-                         is_active_in_thread: true
+                        id: tempId,
+                        chat_id: chatIdForOptimistic,
+                        user_id: useAuthStore.getState().user?.id || 'optimistic-user-replay',
+                        role: 'user',
+                        content: messageContent,
+                        status: 'pending',
+                        ai_provider_id: null,
+                        system_prompt_id: null,
+                        token_usage: null,
+                        created_at: new Date(parseInt(tempId.split('-')[2])).toISOString(),
+                        is_active_in_thread: true
                     };
-                    set(state => ({ 
-                        messagesByChatId: { ...state.messagesByChatId, [chatIdToUse]: [...(state.messagesByChatId[chatIdToUse] || []), userMsg] }
+
+                    set(state => ({
+                        messagesByChatId: {
+                            ...state.messagesByChatId,
+                            [chatIdForOptimistic]: [...(state.messagesByChatId[chatIdForOptimistic] || []), userMsg]
+                        },
+                        // Set currentChatId so selectors can pick up the optimistic message
+                        currentChatId: chatIdForOptimistic,
                     }));
-                    logger.info('[replayAction] Added optimistic user message', { id: tempId, chatId: chatIdToUse });
-                    return tempId;
+                    logger.info('[aiStore] Added optimistic pending message for replay via helper.', { tempId, chatIdForOptimistic });
+                    return { tempId, chatIdForOptimistic };
                 };
-                 // --- End Refactored Helper ---
 
-                 set({ isLoadingAiResponse: true, aiError: null });
 
-                 // --- BEGIN ADD OPTIMISTIC UPDATE (using helper) ---
-                 const userMessageContent = action?.body?.['message'] as string ?? '[Message content not found]';
-                 // Extract chatId from the action, which might be string or null/undefined
-                 const chatIdFromAction = (typeof action?.body?.['chatId'] === 'string' ? action.body['chatId'] : null);
-                 // Call the refactored helper, passing the chatId from the action
-                 const tempId = _addOptimisticUserMessage(userMessageContent, chatIdFromAction);
-                 logger.info('[aiStore] Added optimistic pending message for replay via helper.', { tempId });
-                 // --- END ADD OPTIMISTIC UPDATE ---
-
-                try {
-                    const response: ApiResponse<ChatMessage> = await api.post(
-                        '/chat',
-                        action.body,
-                        { token }
-                    );
-
-                    if (response.error) {
-                        throw new Error(response.error.message || 'API returned an error during replay');
+                if (pendingAction.endpoint === 'chat' && pendingAction.method === 'POST' && pendingAction.body) {
+                    const token = useAuthStore.getState().session?.access_token;
+                    if (!token) {
+                        logger.error('[aiStore] Cannot replay pending action: User is not authenticated (no token).');
+                        set({ aiError: 'Authentication required to replay pending action.' });
+                        // Do not remove pendingAction here, user might log in.
+                        return;
                     }
 
-                    if (response.data) {
-                        const assistantMessage = response.data;
-                        logger.info('[aiStore] Pending action replay successful. Received AI response.', { assistantMessage });
+                    logger.info('[aiStore] Pending chat action is valid and user authenticated. Processing...');
+                    set({ isLoadingAiResponse: true, aiError: null });
 
+                    const messageContent = String(pendingAction.body['message'] || '');
+                    // Pass the original chatId from the pending action body if it exists
+                    const originalChatIdFromPendingAction = pendingAction.body['chatId'] as string | null | undefined;
+
+                    const { tempId, chatIdForOptimistic } = addOptimisticMessageForReplay(messageContent, originalChatIdFromPendingAction);
+
+                    try {   
+                        // Ensure the body sent to API matches ChatApiRequest, especially chatId
+                        const apiRequestBody: ChatApiRequest = {
+                            message: messageContent,
+                            providerId: pendingAction.body['providerId'] as string,
+                            promptId: pendingAction.body['promptId'] as string,
+                            chatId: originalChatIdFromPendingAction, // Now correctly typed
+                            organizationId: pendingAction.body['organizationId'] as string | undefined | null,
+                            // rewindFromMessageId is not typically part of a generic pending action replay for send.
+                        };
+
+                        const response: ApiResponse<ChatMessage> = await api.post( // Using baseApi.post
+                            `/${pendingAction.endpoint}`, // Should be '/chat'
+                            apiRequestBody,
+                            { token }
+                        );
+
+                        if (response.error) {
+                            throw new Error(response.error.message || 'API returned an error during replay');
+                        }
+
+                        if (response.data) {
+                            const assistantMessage = response.data;
+                            set(state => {
+                                const actualNewChatId = assistantMessage.chat_id;
+                                
+                                const newMessagesByChatId = { ...state.messagesByChatId };
+                                let updatedMessagesForChat = [...(newMessagesByChatId[chatIdForOptimistic] || [])];
+                                
+                                // Update the optimistic user message to 'sent'
+                                updatedMessagesForChat = updatedMessagesForChat.map(msg =>
+                                    msg.id === tempId
+                                        ? { ...msg, status: 'sent' as const, chat_id: actualNewChatId } // Ensure chat_id is updated
+                                        : msg
+                                );
+                                
+                                // Add assistant message
+                                updatedMessagesForChat.push(assistantMessage);
+
+                                if (chatIdForOptimistic !== actualNewChatId && newMessagesByChatId[chatIdForOptimistic]) {
+                                    newMessagesByChatId[actualNewChatId] = updatedMessagesForChat;
+                                    delete newMessagesByChatId[chatIdForOptimistic];
+                                } else {
+                                    newMessagesByChatId[actualNewChatId] = updatedMessagesForChat;
+                                }
+
+                                return {
+                                    messagesByChatId: newMessagesByChatId,
+                                    currentChatId: actualNewChatId, // Update currentChatId to the real one
+                                    isLoadingAiResponse: false,
+                                    aiError: null,
+                                };
+                            });
+                            localStorage.removeItem('pendingAction'); // Clear after successful replay
+                            logger.info('[aiStore] Pending chat action replayed successfully.', { chatId: assistantMessage.chat_id });
+                        } else {
+                            throw new Error('API returned success but no data during replay.');
+                        }
+                    } catch (error: unknown) {
+                        // Make the check more robust, similar to sendMessage
+                        const isAuthError = error instanceof AuthRequiredError || 
+                                          (typeof error === 'object' && error !== null && 'name' in error && (error as {name: string}).name === 'AuthRequiredError');
+                        const errorMessage = isAuthError ? 'Session expired during replay. Please log in again.' 
+                                           : (error instanceof Error ? error.message : String(error));
+                        logger.error('[aiStore] Error during pending action replay API call:', { error: errorMessage });
                         set(state => {
-                            const newChatId = assistantMessage.chat_id;
-                            
-                            // --- Update existing optimistic message ---
-                            const updatedMessages = state.messagesByChatId[chatIdFromAction || ''].map(msg => 
-                                msg.id === tempId 
-                                    ? { ...msg, status: 'sent' as const, chat_id: newChatId } 
-                                    : msg
-                            );
+                            const messagesForThisChat = state.messagesByChatId[chatIdForOptimistic];
+                            let updatedMessages = messagesForThisChat ? [...messagesForThisChat] : [];
 
-                            // --- Add the assistant message ---
-                            updatedMessages.push(assistantMessage);
-                            
-                            // --- Filter out potential duplicates (just in case) ---
-                            // This ensures we don't have duplicate assistant messages if the API were ever called twice by mistake
-                            const finalMessages = updatedMessages.filter((msg, index, self) =>
-                                index === self.findIndex((m) => m.id === msg.id)
-                            );
+                            if (!isAuthError) { // Only set to 'error' if it's NOT an AuthRequiredError
+                                updatedMessages = messagesForThisChat
+                                    ? messagesForThisChat.map(msg =>
+                                        msg.id === tempId
+                                            ? { ...msg, status: 'error' as const }
+                                            : msg
+                                      )
+                                    : [];
+                            }
+                            // If it is an AuthError, updatedMessages remains as it was (i.e. with 'pending' status)
+                            // if (isAuthError) { 
+                            //     logger.info('[Replay AuthError Debug] Messages before return in set', { messages: JSON.stringify(updatedMessages) });
+                            // } // Removed log
 
                             return {
-                                messagesByChatId: { ...state.messagesByChatId, [chatIdFromAction || '']: finalMessages },
-                                currentChatId: newChatId || state.currentChatId,
                                 isLoadingAiResponse: false,
-                                aiError: null,
+                                aiError: errorMessage,
+                                messagesByChatId: {
+                                    ...state.messagesByChatId,
+                                    [chatIdForOptimistic]: updatedMessages,
+                                },
                             };
                         });
-
-                        // <<< CORRECT: Remove pending action ONLY on successful API call and data processing >>>
-                        localStorage.removeItem('pendingAction');
-                        logger.info('[aiStore] Successfully processed and removed pending action.');
-
-                    } else {
-                        throw new Error('API returned success status but no data during replay.');
+                        if (isAuthError) {
+                            // Pending action is kept for next login.
+                        }
                     }
-                } catch (error: unknown) {
-                    // Revert error check back to just checking the name
-                    if (error instanceof AuthRequiredError) { 
-                        logger.warn('[AiStore] Auth required during replay. Redirecting.', { error: error.message });
-                        set({ isLoadingAiResponse: false, aiError: error.message }); // Sets error message
-                        // Do NOT remove pending action on auth error
-                    } else {
-                        logger.error('[aiStore] Error during pending action replay API call:', { error: error instanceof Error ? error.message : String(error) });
-                        set(state => {
-                            const updatedMessages = state.messagesByChatId[chatIdFromAction || ''].map(msg =>
-                                msg.id === tempId
-                                    ? { ...msg, status: 'error' as const }
-                                    : msg
-                            );
-                            return {
-                                messagesByChatId: { ...state.messagesByChatId, [chatIdFromAction || '']: updatedMessages },
-                                isLoadingAiResponse: false,
-                                aiError: error instanceof Error ? error.message : String(error)
-                            };
-                        });
-                    }
+                } else {
+                    logger.warn('[aiStore] Pending action found, but not a valid chat POST. Ignoring.', { action: pendingAction });
+                    // Optionally remove if it's clearly malformed and not a chat POST.
+                    // localStorage.removeItem('pendingAction');
                 }
             },
 
