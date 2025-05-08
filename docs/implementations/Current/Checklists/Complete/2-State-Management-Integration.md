@@ -301,10 +301,9 @@ The implementation plan uses the following labels to categorize work steps:
 *   [✅] Commit changes with message "feat(STORE): Add selectors for token consumption audit and budget"
 
 **Phase 2 Complete Checkpoint:**
-*   [ ] All Phase 2 tests (Store unit tests, integration tests) passing.
-*   [ ] `useAiStore` correctly manages state for personal/organization chats, token usage, and rewind.
-*   [ ] `useOrganizationStore` manages chat-related settings.
-*   [ ] Stores are correctly integrated, and context switching updates `useAiStore`.
-*   [ ] Analytics events are triggered appropriately from store actions.
-*   [ ] Code refactored, and commits made.
-*   [ ] Run `npm test` in `packages/store`. 
+*   [✅] All Phase 2 tests (Store unit tests, integration tests) passing.
+*   [✅] `useAiStore` correctly manages state for personal/organization chats, token usage, and rewind.
+*   [✅] `useOrganizationStore` manages chat-related settings.
+*   [✅] Stores are correctly integrated, and context switching updates `useAiStore`.
+*   [✅] Code refactored, and commits made.
+*   [✅] Run `pnpm test` in `packages/store`. 
