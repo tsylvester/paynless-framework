@@ -7,14 +7,16 @@ import { PromptSelector } from '../components/ai/PromptSelector';
 import { AiChatbox } from '../components/ai/AiChatbox';
 import { ChatHistoryList } from '../components/ai/ChatHistoryList';
 import { ChatContextSelector } from '../components/ai/ChatContextSelector';
-// import type { Chat, Organization, AiProvider, SystemPrompt } from '@paynless/types'; // Organization, AiProvider, SystemPrompt commented out as they are not used
+import { Button } from '@/components/ui/button';
+import { Plus } from 'lucide-react';
+import type { Chat } from '@paynless/types'; // Import Chat type
+// import type { Organization, AiProvider, SystemPrompt } from '@paynless/types'; // Organization, AiProvider, SystemPrompt commented out as they are not used
 // import type { Chat } from '@paynless/types'; // Chat type might no longer be needed here if currentChatHistoryList is removed
 
 export default function AiChatPage() {
   // Get user, session, and loading state from auth store
-  const { user, isLoading: isAuthLoading } = useAuthStore((state) => ({ 
+  const { user } = useAuthStore((state) => ({ 
       user: state.user, 
-      isLoading: state.isLoading
   }));
   
   const {
@@ -26,7 +28,7 @@ export default function AiChatPage() {
     availableProviders,
     availablePrompts,
     checkAndReplayPendingChatAction,
-    // chatsByContext, // No longer used to derive currentChatHistoryList
+    chatsByContext, // Added to destructure from useAiStore
     // isLoadingHistoryByContext, // No longer used to derive currentIsHistoryLoading
   } = useAiStore((state) => ({
     loadAiConfig: state.loadAiConfig,
@@ -37,7 +39,7 @@ export default function AiChatPage() {
     availableProviders: state.availableProviders,
     availablePrompts: state.availablePrompts,
     checkAndReplayPendingChatAction: state.checkAndReplayPendingChatAction,
-    // chatsByContext: state.chatsByContext,
+    chatsByContext: state.chatsByContext, // Get chatsByContext
     // isLoadingHistoryByContext: state.isLoadingHistoryByContext,
   }));
 
@@ -53,7 +55,26 @@ export default function AiChatPage() {
   const [selectedProviderId, setSelectedProviderId] = useState<string | null>(null);
   const [selectedPromptId, setSelectedPromptId] = useState<string | null>(null);
   const [nextChatOrgContext, setNextChatOrgContext] = useState<string | null | undefined>(undefined);
-  const [hasUserManuallySelectedContext, setHasUserManuallySelectedContext] = useState(false);
+  // const [hasUserManuallySelectedContext, setHasUserManuallySelectedContext] = useState(false); // This state seems unused, consider removing if not needed for other logic.
+
+  const isAnonymous = !user; // Derive isAnonymous
+
+  // --- Selector for current chat details (conceptual) ---
+  const currentChatDetails: Chat | null | undefined = useMemo(() => {
+    if (!currentChatId || !chatsByContext) return null;
+    // Check personal chats
+    const personalChat = chatsByContext.personal?.find(c => c.id === currentChatId);
+    if (personalChat) return personalChat;
+    // Check org chats
+    if (chatsByContext.orgs) {
+      for (const orgId in chatsByContext.orgs) {
+        const orgChats = chatsByContext.orgs[orgId];
+        const orgChat = orgChats?.find(c => c.id === currentChatId);
+        if (orgChat) return orgChat;
+      }
+    }
+    return null;
+  }, [currentChatId, chatsByContext]);
 
   // --- Derived display names for the header --- (Commented out as dynamicHeaderText is not currently used in h2)
   /*
@@ -108,18 +129,28 @@ export default function AiChatPage() {
     }
   }, [checkAndReplayPendingChatAction]);
 
-  // Set default selections for provider/prompt when they load
+  // Set default selections for provider when they load
   useEffect(() => {
     if (!selectedProviderId && availableProviders && availableProviders.length > 0) {
       setSelectedProviderId(availableProviders[0].id);
     }
   }, [availableProviders, selectedProviderId]);
 
+  // Set default selections for prompt initially, or when currentChatDetails changes
   useEffect(() => {
-    if (!selectedPromptId && availablePrompts && availablePrompts.length > 0) {
+    if (currentChatDetails && currentChatDetails.system_prompt_id) {
+      setSelectedPromptId(currentChatDetails.system_prompt_id);
+    } else if (currentChatId) { // A chat is loaded, but no specific system_prompt_id or no details yet
+      // Fallback to first available if no specific prompt from chat OR if chat details are not yet loaded but a chat is selected
+      // This ensures that if a chat is selected, we try to set a prompt, even if it means default.
+      if (!selectedPromptId && availablePrompts && availablePrompts.length > 0) {
+         setSelectedPromptId(availablePrompts[0].id);
+      }
+    } else if (!currentChatId && !selectedPromptId && availablePrompts && availablePrompts.length > 0) {
+      // No chat selected (e.g. initial load before any interaction, or after new chat that hasn't set one), set to default
       setSelectedPromptId(availablePrompts[0].id);
     }
-  }, [availablePrompts, selectedPromptId]);
+  }, [currentChatId, currentChatDetails, availablePrompts, selectedPromptId]); // Added selectedPromptId to dependencies to avoid stale closures if logic becomes more complex
 
   // Load chat ID from localStorage on redirect
   useEffect(() => {
@@ -143,7 +174,7 @@ export default function AiChatPage() {
 
   const handleContextSelection = (newContextId: string | null) => {
     console.log(`[AiChatPage CONSOLE] User selected next chat context: ${newContextId}`);
-    setHasUserManuallySelectedContext(true);
+    // setHasUserManuallySelectedContext(true); // Seems unused
     setNextChatOrgContext(newContextId);
     analytics.track('Chat: Context Selected For New Chat', {
       contextId: newContextId === null ? 'personal' : newContextId,
@@ -162,19 +193,59 @@ export default function AiChatPage() {
     });
     
     const contextForNewChat = typeof nextChatOrgContext === 'undefined' ? globalCurrentOrgId : nextChatOrgContext;
-    startNewChat(contextForNewChat); 
+    startNewChat(contextForNewChat);
 
     setSelectedProviderId(availableProviders && availableProviders.length > 0 ? availableProviders[0].id : null);
+    // For a new chat, selectedPromptId should also reset to the default/first available, or handled by the useEffect if currentChatId becomes null then.
     setSelectedPromptId(availablePrompts && availablePrompts.length > 0 ? availablePrompts[0].id : null);
   };
 
-  const handleLoadChat = (chatId: string) => {
-    if (chatId === currentChatId) return;
-    logger.info(`[AiChatPage] Loading chat details for: ${chatId}`);
-    analytics.track('Chat: History Item Selected', { chatId });
-    loadChatDetails(chatId); 
+  const handleLoadChat = (chat: Chat) => {
+    if (chat.id === currentChatId) return;
+    logger.info(`[AiChatPage] Loading chat:`, { chatId: chat.id, chatTitle: chat.title });
+    analytics.track('Chat: History Item Selected', { chatId: chat.id });
+
+    // Update chatsByContext in the store with the selected chat details
+    // This ensures currentChatDetails in AiChatPage will be up-to-date
+    useAiStore.setState(state => {
+      const orgId = chat.organization_id;
+      // const contextKey = orgId || 'personal'; // 'personal' if orgId is null - Removed as unused
+
+      let updatedChatsByContext = { ...state.chatsByContext };
+
+      if (orgId) {
+        const orgChats = [...(state.chatsByContext.orgs[orgId] || [])];
+        const existingChatIndex = orgChats.findIndex(c => c.id === chat.id);
+        if (existingChatIndex !== -1) {
+          orgChats[existingChatIndex] = chat; // Update existing chat
+        } else {
+          orgChats.push(chat); // Add new chat
+        }
+        updatedChatsByContext = {
+          ...updatedChatsByContext,
+          orgs: { ...updatedChatsByContext.orgs, [orgId]: orgChats }
+        };
+      } else {
+        const personalChats = [...(state.chatsByContext.personal || [])];
+        const existingChatIndex = personalChats.findIndex(c => c.id === chat.id);
+        if (existingChatIndex !== -1) {
+          personalChats[existingChatIndex] = chat; // Update existing chat
+        } else {
+          personalChats.push(chat); // Add new chat
+        }
+        updatedChatsByContext = {
+          ...updatedChatsByContext,
+          personal: personalChats
+        };
+      }
+      return { chatsByContext: updatedChatsByContext };
+    });
+
+    loadChatDetails(chat.id); // This action in store remains focused on loading messages and setting currentChatId
+
+    // Provider still resets to default or first available.
     setSelectedProviderId(availableProviders && availableProviders.length > 0 ? availableProviders[0].id : null);
-    setSelectedPromptId(availablePrompts && availablePrompts.length > 0 ? availablePrompts[0].id : null);
+    // DO NOT reset selectedPromptId here; the useEffect listening to currentChatDetails will handle it.
   };
 
   return (
@@ -201,18 +272,15 @@ export default function AiChatPage() {
                 selectedPromptId={selectedPromptId} 
                 onPromptChange={handlePromptChange}
               />
-              <button 
-                onClick={handleNewChat} 
-                className="px-3 py-1.5 text-sm font-medium rounded-md border border-input bg-transparent hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 whitespace-nowrap"
-                data-testid="new-chat-button"
-              >
-                New Chat
-              </button>
+              <Button variant="default" onClick={handleNewChat} className="ml-auto" data-testid="new-chat-button">
+                <Plus className="mr-2 h-4 w-4" /> New Chat
+              </Button>
             </div>
           </div>
            
            <div className="flex-grow overflow-y-auto p-4"> {/* Main content area with scroll */}
              <AiChatbox 
+               isAnonymous={isAnonymous}
                providerId={selectedProviderId} 
                promptId={selectedPromptId}
                key={`${currentChatId}-${selectedProviderId}-${selectedPromptId}-${nextChatOrgContext}`} // Add nextChatOrgContext to key

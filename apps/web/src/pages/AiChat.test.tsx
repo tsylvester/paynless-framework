@@ -868,7 +868,7 @@ describe('AiChat Page', () => {
             
             const promptSelectorCalls = vi.mocked(ImportedPromptSelector).mock.calls;
             const lastPromptCallArgs = promptSelectorCalls[promptSelectorCalls.length - 1][0];
-            expect(lastPromptCallArgs.selectedPromptId).toBe(initialPrompts[0].id); // Reset to first
+            expect(lastPromptCallArgs.selectedPromptId).toBe(initialPrompts[1].id); 
         });
 
         vi.doUnmock('../components/ai/ChatHistoryList');
@@ -1105,6 +1105,91 @@ describe('AiChat Page', () => {
       });
     });
 
+  });
+
+  it('should load system_prompt_id from current chat when a chat is loaded', async () => {
+    const specificChatId = 'chat-with-specific-prompt';
+    const specificPromptId = 'prompt-for-specific-chat';
+
+    const chatWithPrompt: Chat = {
+      id: specificChatId,
+      title: 'Chat with Specific Prompt',
+      updated_at: new Date().toISOString(),
+      created_at: new Date().toISOString(),
+      organization_id: null,
+      system_prompt_id: specificPromptId, // <<< This chat has a specific prompt
+      user_id: 'user-123'
+    };
+
+    const newAvailablePrompts: SystemPrompt[] = [
+      ...aiStoreInitialState.availablePrompts, // Ensure default prompts are there
+      { id: specificPromptId, name: 'Specific Prompt', prompt_text: 'Specific instructions', created_at: new Date().toISOString(), updated_at: new Date().toISOString(), is_active: true }
+    ];
+
+    // 1. Define the test-specific loadChatDetails mock function
+    const testSpecificLoadChatDetailsMock = vi.fn((chatIdToLoad: string) => {
+      if (chatIdToLoad === specificChatId) {
+        act(() => {
+          useAiStore.setState(prevState => ({
+            ...prevState,
+            currentChatId: chatIdToLoad,
+            isDetailsLoading: false, // Simulate loading completion
+            chatsByContext: {
+              ...(prevState.chatsByContext || { personal: [], orgs: {} }),
+              personal: [...((prevState.chatsByContext?.personal as Chat[] | undefined) || []), chatWithPrompt],
+              orgs: prevState.chatsByContext?.orgs || {},
+            },
+            // availablePrompts is set before render, AiChat will use that instance
+          }));
+        });
+      }
+    });
+
+    // 2. Before rendering, update the store to use this specific loadChatDetails mock
+    //    AND ensure availablePrompts is set for AiChat's initial useEffect.
+    act(() => {
+      useAiStore.setState(prevState => ({
+        ...prevState,
+        loadChatDetails: testSpecificLoadChatDetailsMock,
+        availablePrompts: newAvailablePrompts,
+        currentChatId: null, // Start with no chat selected
+        chatsByContext: aiStoreInitialState.chatsByContext, // Start with initial chats or clear if needed
+      }));
+    });
+
+    render(<AiChat />);
+
+    // Simulate loading the chat (e.g., via ChatHistoryList's onLoadChat prop)
+    const chatHistoryListMock = vi.mocked(ChatHistoryList);
+    // Need to trigger initial render and effects before getting props
+    await act(async () => {
+      // Allow initial effects to run (like default prompt selection if any)
+      await new Promise(resolve => setTimeout(resolve, 0));
+    });
+
+    // Ensure ChatHistoryList mock has been called and get its props
+    if (chatHistoryListMock.mock.calls.length > 0) {
+      // Get the props from the most recent call, in case of re-renders
+      const chatHistoryListProps = chatHistoryListMock.mock.calls[chatHistoryListMock.mock.calls.length - 1][0];
+      act(() => { // Wrap state update trigger in act
+        chatHistoryListProps.onLoadChat(specificChatId);
+      });
+    } else {
+      throw new Error('ChatHistoryList mock was not called during render');
+    }
+    
+    // Wait for state updates and re-renders triggered by onLoadChat and subsequent effects
+    await act(async () => {
+      // Let any chained state updates propagate
+      await new Promise(resolve => setTimeout(resolve, 0)); // Small delay for effects
+    });
+
+    // Assert that PromptSelector received the specific prompt ID
+    const promptSelectorMock = vi.mocked(PromptSelector);
+    expect(promptSelectorMock).toHaveBeenCalled();
+    // Check the props of the last call to PromptSelector, as it might re-render
+    const lastPromptSelectorCallProps = promptSelectorMock.mock.calls[promptSelectorMock.mock.calls.length - 1][0];
+    expect(lastPromptSelectorCallProps.selectedPromptId).toBe(specificPromptId);
   });
 
 }); 

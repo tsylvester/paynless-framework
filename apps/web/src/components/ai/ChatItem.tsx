@@ -18,7 +18,7 @@ import { Trash2 } from 'lucide-react'; // Example icon
 
 interface ChatItemProps {
   chat: Chat;
-  onClick: (chatId: string) => void;
+  onClick: (chat: Chat) => void;
   isActive: boolean;
 }
 
@@ -77,10 +77,10 @@ export function ChatItem({ chat, onClick, isActive }: ChatItemProps) {
   };
 
   return (
-    <div className="flex items-center justify-between w-full group">
+    <div className="flex items-center justify-between w-full group border border-border rounded-md p-1 my-0.5">
       <button
         type="button"
-        onClick={() => onClick(chat.id)}
+        onClick={() => onClick(chat)}
         className={cn(
           'flex-grow text-left px-3 py-2 rounded-md text-sm transition-colors w-full truncate',
           'hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring',

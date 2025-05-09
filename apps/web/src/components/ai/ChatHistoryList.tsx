@@ -4,9 +4,10 @@ import { cn } from '@/lib/utils';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useAiStore } from '@paynless/store';
 import { ChatItem } from './ChatItem';
+import ErrorBoundary from '@/components/common/ErrorBoundary';
 
 interface ChatHistoryListProps {
-  onLoadChat: (chatId: string) => void;
+  onLoadChat: (chat: Chat) => void;
   currentChatId?: string | null;
   contextTitle?: string;
   activeContextId: string | null;
@@ -112,16 +113,18 @@ export function ChatHistoryList({
   return (
     <div className="p-2">
       {renderTitle()}
-      <div className="space-y-1">
-        {chatsToDisplay.map((chat: Chat) => (
-          <ChatItem
-            key={chat.id}
-            chat={chat}
-            onClick={onLoadChat}
-            isActive={chat.id === currentChatId}
-          />
-        ))}
-      </div>
+      <ErrorBoundary fallbackMessage="Could not display chat history items.">
+        <div className="space-y-1">
+          {chatsToDisplay.map((chat: Chat) => (
+            <ChatItem
+              key={chat.id}
+              chat={chat}
+              onClick={onLoadChat}
+              isActive={chat.id === currentChatId}
+            />
+          ))}
+        </div>
+      </ErrorBoundary>
     </div>
   );
 } 
