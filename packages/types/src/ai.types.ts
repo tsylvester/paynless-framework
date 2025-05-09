@@ -153,6 +153,7 @@ export interface AiState {
         personal: boolean; 
         orgs: { [orgId: string]: boolean };
     };
+    historyErrorByContext: { personal: string | null, orgs: { [orgId: string]: string | null } };
     isDetailsLoading: boolean;  // Remains the same (for currentChatId messages)
 
     // New chat initiation and context

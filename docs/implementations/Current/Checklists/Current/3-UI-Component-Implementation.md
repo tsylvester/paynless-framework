@@ -189,18 +189,21 @@ The implementation plan uses the following labels to categorize work steps:
 
 ### STEP-3.2: Update Chat History Component (`ChatHistory.tsx`) [UI] [🚧]
 
-#### STEP-3.2.1: Implement Context-Aware Chat History Display [TEST-UNIT] [COMMIT]
-* [ ] Define Test Cases (Gemini 2.3.1 - Revised): Verifies `ChatHistoryList` displays chats corresponding to the `nextChatOrgContext` (from `AiChatPage.tsx`). Tests display of a contextual title (e.g., "Personal Chats" or "[Org Name] Chats"). Handles loading (Skeletons), handles errors (Boundary). Expect failure (RED).
-* [ ] Write/Update tests in `apps/web/src/tests/unit/components/ai/ChatHistory.unit.test.tsx`.
-* [ ] Update `apps/web/src/components/ai/ChatHistory.tsx`:
-  * [ ] Use `useOrganizationStore` if needed for organization names to display a contextual title.
-  * [ ] Use `useAiStore` (for `chatHistoryList` which is now filtered by `nextChatOrgContext`, `selectIsHistoryLoading`).
-  * [ ] The component will receive `chatHistoryList` already filtered by `AiChatPage.tsx`'s `nextChatOrgContext` via `loadChatHistory(nextChatOrgContext)`.
-  * [ ] Display a contextual title based on the current `nextChatOrgContext` (e.g., "Personal Chats" or "[Selected Org Name] Chats"). This might involve passing `nextChatOrgContext` and `userOrganizations` as props.
-  * [ ] Modify `ChatItem` component if needed to accept and display visual indicators for organization chats (if still desired beyond the list's contextual title).
-* [ ] Run tests. Debug until pass (GREEN).
-* [ ] **[REFACTOR]** Review conditional rendering, `ChatItem` usage.
-* [ ] Commit changes with message "feat(UI): Implement context-aware chat history display driven by ChatContextSelector"
+#### STEP-3.2.1: Implement Context-Aware Chat History Display [TEST-UNIT] [COMMIT] [✅]
+* [✅] Define Test Cases (Gemini 2.3.1 - Revised): Verifies `ChatHistoryList` correctly uses its `activeContextId` prop to: 1. Call `loadChatHistory` from `useAiStore`. 2. Select and display chats from `chatsByContext[activeContextId]`. 3. Display a contextual title passed as `contextTitle` prop. 4. Handle loading (Skeletons from `isLoadingHistoryByContext[activeContextId]`) and errors (Boundary, using `historyErrorByContext[activeContextId]`). Expect failure (RED).
+* [✅] Write/Update tests in `apps/web/src/components/ai/ChatHistory.unit.test.tsx`. Tests will mock `useAiStore` and verify correct actions are called and component renders based on mocked store state for the given `activeContextId`.
+* [✅] Update `apps/web/src/components/ai/ChatHistory.tsx`:
+  * [✅] Accepts `activeContextId: string | null`, `onLoadChat: (chatId: string) => void;`, `currentChatId?: string | null`, `contextTitle?: string;` as props. (No longer accepts `history: Chat[]` or `isLoading: boolean` related to history data itself).
+  * [✅] Internally uses `useAiStore` to access `loadChatHistory`, `chatsByContext`, `isLoadingHistoryByContext`, and `historyErrorByContext`.
+  * [✅] Uses `useEffect` to call `loadChatHistory(activeContextId)` when `activeContextId` changes or if data for that context isn't already loaded/loading.
+  * [✅] Selects and displays chats from `chatsByContext[activeContextId]`.
+  * [✅] Manages its own loading display based on `isLoadingHistoryByContext[activeContextId]`.
+  * [✅] Manages its own error display (potentially via an error boundary) based on `historyErrorByContext[activeContextId]`.
+  * [✅] Renders the `contextTitle` prop.
+  * [✅] Modify `ChatItem` component if needed to accept and display visual indicators for organization chats (if still desired beyond the list's contextual title).
+* [✅] Run tests. Debug until pass (GREEN).
+* [✅] **[REFACTOR]** Review conditional rendering, `ChatItem` usage.
+* [✅] Commit changes with message "feat(UI): Implement context-aware chat history display driven by ChatContextSelector"
 
 #### STEP-3.2.2: Add Context-Specific Actions to Chat History Items (`ChatItem.tsx`) [TEST-UNIT] [COMMIT]
 * [ ] Define Test Cases (Gemini 2.5.1): Delete Button/menu item visible only for admin on org chats in current context. Hidden otherwise. Click triggers confirmation/action.

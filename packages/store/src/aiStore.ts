@@ -437,8 +437,9 @@ export const useAiStore = create<AiStore>()(
                     if (!token && !isOrgContext) { // Only throw for personal if no token
                         throw new AuthRequiredError('Authentication is required to load personal chat history.');
                     }
-
-                    const response: ApiResponse<Chat[]> = await api.ai().getChatHistory({ organizationId }, { token });
+                    // Ensure token is a string if it exists, otherwise, the API call will handle missing token logic internally
+                    // The API client itself checks for token validity.
+                    const response: ApiResponse<Chat[]> = await api.ai().getChatHistory(token as string, organizationId);
 
                     if (response.error) {
                         throw new Error(response.error.message || `Failed to load chat history for ${contextKey}.`);
