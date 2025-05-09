@@ -476,18 +476,45 @@ The implementation plan uses the following labels to categorize work steps:
 ### STEP-3.4: Implement Markdown Support [UI] [🚧]
 
 #### STEP-3.4.1: Install Dependencies
-* [ ] Install `react-markdown` and `remark-gfm`: `pnpm add react-markdown remark-gfm` in `apps/web`.
+* [✅] Install `react-markdown` and `remark-gfm`: `pnpm add react-markdown remark-gfm` in `apps/web`.
 
-#### STEP-3.4.2: Implement Markdown Rendering in Messages (`ChatMessageBubble.tsx`) [TEST-UNIT] [COMMIT]
-* [ ] Define Test Cases (Gemini 3.2.1): Input various markdown syntax, verify correct HTML tags rendered (`<strong>`, `<em>`, `<li>`, `<code>`, `<a>`, `<p>`). Expect failure (RED).
-* [ ] Write/Update tests for `apps/web/src/components/ai/ChatMessageBubble.tsx`.
-* [ ] Update `ChatMessageBubble.tsx`:
-  * [ ] Import `ReactMarkdown` from `react-markdown` and `remarkGfm` from `remark-gfm`.
-  * [ ] Replace direct rendering of `message.content` with `<ReactMarkdown remarkPlugins={[remarkGfm]}>{message.content}</ReactMarkdown>`.
-  * [ ] Apply necessary CSS styling for rendered markdown elements (headings, lists, code blocks, links, blockquotes) consistent with `shadcn/ui` theme.
-* [ ] Run tests. Debug rendering/styling until pass (GREEN).
-* [ ] **[REFACTOR]** Create a reusable `MarkdownRenderer` component if used elsewhere.
-* [ ] Commit changes with message "feat(UI): Implement Markdown rendering for chat messages w/ tests"
+#### STEP-3.4.2: Implement Markdown Rendering in Messages (`ChatMessageBubble.tsx`) [TEST-UNIT] [COMMIT] [✅]
+* [✅] Define Test Cases: Input various markdown syntax, verify correct HTML tags rendered (`<strong>`, `<em>`, `<li>`, `<code>`, `<a>`, `<p>`, `<h1>-<h3>`, `<del>`, `<hr>`, task lists, `<table>`). Expect failure (RED).
+* [✅] Write/Update tests for `apps/web/src/components/ai/ChatMessageBubble.tsx`. (All 28 tests passing).
+* [✅] Update `ChatMessageBubble.tsx`:
+  * [✅] Import `ReactMarkdown` from `react-markdown` and `remarkGfm` from `remark-gfm`.
+  * [✅] Replace direct rendering of `message.content` with `<ReactMarkdown remarkPlugins={[remarkGfm]}>{message.content}</ReactMarkdown>`.
+  * [✅] Apply necessary CSS styling for rendered markdown elements (headings, lists, code blocks, links, blockquotes) consistent with `shadcn/ui` theme (Initial styling with `prose` classes applied).
+* [✅] Run tests. Debug rendering/styling until pass (GREEN). (All 28 tests passing).
+* [✅] **[REFACTOR]** (Moved to STEP-3.4.3)
+* [✅] Commit changes with message "feat(UI): Implement Markdown rendering for chat messages w/ tests" (Pending styling review and refactor).
+
+#### STEP-3.4.2.1: Chat Bugfixes [TEST-UNIT] [COMMIT] [✅]
+* [ ] Revert ChatHistoryList to have a boundary box & scrollbar
+* [ ] Fix Name/date attribution in AttributionDisplay
+* [ ] Alernate left/right for agent/user messages 
+
+#### STEP-3.4.3: Refactor to Reusable `MarkdownRenderer` Component with Syntax Highlighting [UI] [TEST-UNIT] [COMMIT]
+*   **Phase 1: Basic Refactor (Moving existing functionality)**
+    *   [ ] **[UI]** Create `apps/web/src/components/common/MarkdownRenderer.tsx`.
+        *   Props: `content: string;`, `className?: string;`.
+        *   Move `ReactMarkdown`, `remarkGfm` usage, and `proseStyles` from `ChatMessageBubble.tsx` to `MarkdownRenderer.tsx`.
+    *   [ ] **[UI]** Update `ChatMessageBubble.tsx` to use the new `MarkdownRenderer` component.
+    *   [ ] **[TEST-UNIT]** Create `apps/web/src/components/common/MarkdownRenderer.test.tsx`.
+    *   [ ] **[TEST-UNIT]** Move detailed markdown rendering tests from `ChatMessageBubble.test.tsx` to `MarkdownRenderer.test.tsx`.
+    *   [ ] **[TEST-UNIT]** Update `ChatMessageBubble.test.tsx` to mock `MarkdownRenderer` and verify it's called with correct props.
+    *   [ ] Run all tests for `MarkdownRenderer` and `ChatMessageBubble`. Debug until pass (GREEN).
+*   **Phase 2: Adding Syntax Highlighting**
+    *   [ ] **[DEPS]** Install `react-syntax-highlighter` (and types) in `apps/web`.
+    *   [ ] **[UI]** Update `MarkdownRenderer.tsx` to import `SyntaxHighlighter` (e.g., Prism) and a style.
+    *   [ ] **[UI]** Use the `components` prop of `ReactMarkdown` to override `code` block rendering with `SyntaxHighlighter`.
+    *   [ ] **[TEST-UNIT]** Update GFM code block test in `MarkdownRenderer.test.tsx` to verify syntax highlighting is active (e.g., check for `SyntaxHighlighter` mock or specific token classes).
+    *   [ ] Run `MarkdownRenderer` tests. Debug until pass (GREEN).
+*   **Phase 3: Styling Review and Polish**
+    *   [ ] **[DEPS]** Ensure `@tailwindcss/typography` plugin is installed and configured.
+    *   [ ] **[UI]** Review and adjust `proseStyles` in `MarkdownRenderer.tsx` or global Tailwind theme for consistent styling of all markdown elements, including syntax-highlighted code blocks.
+    *   [ ] Manually verify styling in the browser.
+*   [ ] Commit changes with message like "feat(UI): Create MarkdownRenderer with syntax highlighting and refactor usage"
 
 ### STEP-3.5: Implement Token Tracking and Audit UI [UI] [🚧]
 
