@@ -410,17 +410,40 @@ The implementation plan uses the following labels to categorize work steps:
 * [✅] Run tests. Debug until pass (GREEN).
 * [✅] Commit changes with message "feat(UI): Load selected system prompt based on active chat"
 
-#### STEP-3.3.4: Implement User Attribution Display (`ChatMessageBubble.tsx`) [TEST-UNIT] [COMMIT]
-*   [ ] Define Test Cases: Verify visual distinction between user/assistant. Verify initials/icon display correctly for org chat user messages based on profile availability.
-*   [ ] Write/Update tests for `apps/web/src/components/ai/ChatMessageBubble.tsx`.
-*   [ ] Update `ChatMessageBubble.tsx`:
-    *   Add visual distinction (e.g., alignment, icon, color) for `message.role === 'user'` vs `'assistant'`.
-    *   If `chat.organization_id` is set and `message.role === 'user'`:
-        *   Attempt to fetch user profile (name/initials) for `message.user_id` (requires profile data access - e.g., via a shared hook or store).
-        *   Conditionally display initials/avatar if profile found, otherwise a generic user icon.
-    *   Display standard AI icon for assistant messages.
-*   [ ] Run tests. Debug until pass (GREEN).
-*   [ ] Commit: `feat(UI): Add user attribution display to chat messages w/ tests`
+#### STEP-3.3.4: Implement User Attribution Display and Refactor `ChatMessageBubble` [UI] [TEST-UNIT] [COMMIT]
+*   **STEP-3.3.4.A: [UI] [TEST-UNIT] Create Reusable `AttributionDisplay` Component [✅]**
+    *   `[✅]` Define Test Cases (current user, org member, fallback to ID, various profile data points).
+    *   `[✅]` Create `apps/web/src/components/common/AttributionDisplay.test.tsx`.
+    *   `[✅]` Write test shells in `AttributionDisplay.test.tsx`.
+    *   `[✅]` Create `apps/web/src/components/common/AttributionDisplay.tsx`.
+    *   `[✅]` Implement component logic using `useAuthStore` and `useOrganizationStore`.
+    *   `[✅]` Run tests. Debug until pass (GREEN).
+    *   `[✅]` **[REFACTOR]** Ensure clarity, reusability.
+    *   `[✅]` Commit changes with message "feat(UI): Create reusable AttributionDisplay component w/ tests".
+*   **STEP-3.3.4.B: [UI] [TEST-UNIT] Create/Refactor `ChatMessageBubble` Component**
+    *   `[ ]` Define Test Cases:
+        *   `[ ]` Renders as a `Card` component.
+        *   `[ ]` Applies distinct styling for `user` (blue background) vs. `assistant` (grey background).
+        *   `[ ]` Correctly integrates `AttributionDisplay` for user messages.
+        *   `[ ]` Correctly integrates `AttributionDisplay` for assistant messages (pending `model_id` on `ChatMessage`).
+        *   `[ ]` Renders `message.content`.
+    *   `[ ]` Create/Update `apps/web/src/components/ai/ChatMessageBubble.test.tsx`.
+    *   `[ ]` Write test shells in `ChatMessageBubble.test.tsx`.
+    *   `[ ]` Create/Update `apps/web/src/components/ai/ChatMessageBubble.tsx`:
+        *   `[ ]` Refactor to use `Card` from `shadcn/ui`.
+        *   `[ ]` Implement role-based background styling.
+        *   `[ ]` Integrate `AttributionDisplay` for user/assistant attribution.
+        *   `[ ]` Render `message.content`.
+    *   `[ ]` Run tests. Debug until pass (GREEN).
+    *   `[ ]` **[REFACTOR]** Ensure clarity.
+    *   `[ ]` Commit changes with message "feat(UI): Refactor ChatMessageBubble with Card and AttributionDisplay w/ tests".
+*   **STEP-3.3.4.C: [UI] [TEST-UNIT] Integrate `ChatMessageBubble` into Message Display Area**
+    *   `[ ]` Define Test Cases for parent component (`MessageList.tsx` or `AiChatbox.tsx`).
+    *   `[ ]` Update tests for `apps/web/src/components/ai/MessageList.tsx` (or equivalent).
+    *   `[ ]` Update `MessageList.tsx` (or equivalent) to use `ChatMessageBubble`.
+    *   `[ ]` Run tests. Debug until pass (GREEN).
+    *   `[ ]` Commit changes with message "feat(UI): Integrate ChatMessageBubble into message list".
+*   **Note on `ChatMessage` type:** `[ ]` Add `model_id: string | null` to `ChatMessage` type in `@paynless/types` and ensure backend populates it.
 
 #### STEP-3.3.5: Implement Auto-Scroll (`MessageList.tsx`?) [TEST-UNIT] [COMMIT]
 * [ ] Define Test Cases (Gemini 3.1.1): Simulate adding messages, assert last element scrolls into view.
