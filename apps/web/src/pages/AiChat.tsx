@@ -200,50 +200,18 @@ export default function AiChatPage() {
     setSelectedPromptId(availablePrompts && availablePrompts.length > 0 ? availablePrompts[0].id : null);
   };
 
-  const handleLoadChat = (chat: Chat) => {
-    if (chat.id === currentChatId) return;
-    logger.info(`[AiChatPage] Loading chat:`, { chatId: chat.id, chatTitle: chat.title });
-    analytics.track('Chat: History Item Selected', { chatId: chat.id });
+  const handleLoadChat = (chatId: string) => {
+    if (chatId === currentChatId) return;
+    logger.info(`[AiChatPage] Loading chat:`, { chatId });
+    analytics.track('Chat: History Item Selected', { chatId });
 
-    // Update chatsByContext in the store with the selected chat details
-    // This ensures currentChatDetails in AiChatPage will be up-to-date
-    useAiStore.setState(state => {
-      const orgId = chat.organization_id;
-      // const contextKey = orgId || 'personal'; // 'personal' if orgId is null - Removed as unused
-
-      let updatedChatsByContext = { ...state.chatsByContext };
-
-      if (orgId) {
-        const orgChats = [...(state.chatsByContext.orgs[orgId] || [])];
-        const existingChatIndex = orgChats.findIndex(c => c.id === chat.id);
-        if (existingChatIndex !== -1) {
-          orgChats[existingChatIndex] = chat; // Update existing chat
-        } else {
-          orgChats.push(chat); // Add new chat
-        }
-        updatedChatsByContext = {
-          ...updatedChatsByContext,
-          orgs: { ...updatedChatsByContext.orgs, [orgId]: orgChats }
-        };
-      } else {
-        const personalChats = [...(state.chatsByContext.personal || [])];
-        const existingChatIndex = personalChats.findIndex(c => c.id === chat.id);
-        if (existingChatIndex !== -1) {
-          personalChats[existingChatIndex] = chat; // Update existing chat
-        } else {
-          personalChats.push(chat); // Add new chat
-        }
-        updatedChatsByContext = {
-          ...updatedChatsByContext,
-          personal: personalChats
-        };
-      }
-      return { chatsByContext: updatedChatsByContext };
-    });
-
-    loadChatDetails(chat.id); // This action in store remains focused on loading messages and setting currentChatId
+    // The store's loadChatDetails action now handles fetching full chat metadata 
+    // and messages, and updates chatsByContext and messagesByChatId.
+    // The manual update to chatsByContext here is no longer needed.
+    loadChatDetails(chatId); 
 
     // Provider still resets to default or first available.
+    // Consider if this behavior should change, e.g., load provider from chat details if available.
     setSelectedProviderId(availableProviders && availableProviders.length > 0 ? availableProviders[0].id : null);
     // DO NOT reset selectedPromptId here; the useEffect listening to currentChatDetails will handle it.
   };

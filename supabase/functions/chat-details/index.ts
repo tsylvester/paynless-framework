@@ -132,52 +132,56 @@ export async function mainHandler(req: Request, deps: ChatDetailsHandlerDeps = d
 
     // Preliminary Access Check (common for GET and DELETE)
     console.log(`Performing access check for user ${user.id} on chat ${chatId} (Method: ${req.method})`);
-    const { data: chatAccess, error: chatAccessError } = await supabaseClient
+    const { data: chatWithFullMetadata, error: chatAccessError } = await supabaseClient
         .from('chats')
-        .select('id, user_id, organization_id') // Fetch fields needed for explicit delete check too
+        .select('id, created_at, updated_at, organization_id, system_prompt_id, title, user_id') // Select all required fields
         .eq('id', chatId)
+        // .returns<Chat>() // Assuming Chat type from @paynless/types is appropriate or use Tables<'chats'>['Row']
         .maybeSingle(); 
 
     if (chatAccessError) {
+        console.error(`Error verifying chat access for chat ${chatId}:`, chatAccessError);
         return createErrorResponse('Error verifying chat access.', 500, req, chatAccessError);
     }
-    if (!chatAccess) {
+    if (!chatWithFullMetadata) {
+        console.warn(`Chat not found or access denied for user ${user.id} on chat ${chatId}.`);
         return createErrorResponse('Chat not found or access denied.', 404, req);
     }
-    console.log(`Access check passed for user ${user.id} on chat ${chatId}. Chat details:`, chatAccess);
+    // console.log(`Access check passed for user ${user.id} on chat ${chatId}. Chat details:`, chatWithFullMetadata); // Keep for debugging if needed
 
     if (req.method === 'GET') {
         const messages = await getChatMessagesHandler(supabaseClient, chatId);
-        return createJsonResponse(messages, 200);
+        // Return both chat metadata and messages
+        return createJsonResponse({ chat: chatWithFullMetadata, messages: messages }, 200);
     } else if (req.method === 'DELETE') {
         console.log(`Attempting DELETE operation for user ${user.id} on chat ${chatId}`);
         
         // Explicit Permission Check (as per original logic)
         let isAllowed = false;
-        if (chatAccess.organization_id) {
-             console.log(`Explicit check: Chat ${chatId} belongs to org ${chatAccess.organization_id}. Checking admin status.`);
-             const { data: isAdmin, error: adminCheckError } = await supabaseClient.rpc('is_org_admin', { org_id: chatAccess.organization_id });
+        if (chatWithFullMetadata.organization_id) {
+             console.log(`Explicit check: Chat ${chatId} belongs to org ${chatWithFullMetadata.organization_id}. Checking admin status.`);
+             const { data: isAdmin, error: adminCheckError } = await supabaseClient.rpc('is_org_admin', { org_id: chatWithFullMetadata.organization_id });
              if (adminCheckError) {
                 return createErrorResponse('Failed to verify organization permissions.', 500, req, adminCheckError);
              }
              isAllowed = !!isAdmin;
              if (isAllowed) {
-                console.log(`Explicit check PASSED: User ${user.id} is admin of org ${chatAccess.organization_id}.`);
+                console.log(`Explicit check PASSED: User ${user.id} is admin of org ${chatWithFullMetadata.organization_id}.`);
              } else {
-                 console.warn(`Explicit check FAILED: User ${user.id} is NOT admin of org ${chatAccess.organization_id}.`);
+                 console.warn(`Explicit check FAILED: User ${user.id} is NOT admin of org ${chatWithFullMetadata.organization_id}.`);
              }
         } else {
              console.log(`Explicit check: Chat ${chatId} is personal. Checking ownership.`);
-             isAllowed = chatAccess.user_id === user.id;
+             isAllowed = chatWithFullMetadata.user_id === user.id;
              if (isAllowed) {
                  console.log(`Explicit check PASSED: User ${user.id} owns personal chat ${chatId}.`);
              } else {
-                 console.warn(`Explicit check FAILED: User ${user.id} does NOT own personal chat ${chatId} (owner: ${chatAccess.user_id}).`);
+                 console.warn(`Explicit check FAILED: User ${user.id} does NOT own personal chat ${chatId} (owner: ${chatWithFullMetadata.user_id}).`);
              }
         }
 
         if (!isAllowed) {
-            console.warn(`User ${user.id} not allowed to delete chat ${chatId}. Org: ${chatAccess.organization_id}, Owner: ${chatAccess.user_id}`);
+            console.warn(`User ${user.id} not allowed to delete chat ${chatId}. Org: ${chatWithFullMetadata.organization_id}, Owner: ${chatWithFullMetadata.user_id}`);
             return createErrorResponse('Forbidden: You do not have permission to delete this chat.', 403, req);
         }
         console.log(`User ${user.id} IS allowed to delete chat ${chatId}. Proceeding with delete.`);

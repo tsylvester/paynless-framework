@@ -1,291 +1,218 @@
-import { describe, it, expect, vi, beforeEach, afterEach, type SpyInstance } from 'vitest';
-import { useAiStore } from './aiStore';
-import { api } from '@paynless/api';
-import { act } from '@testing-library/react';
-import {
-    // AiProvider,
-    // SystemPrompt,
-    // Chat,
-    ChatMessage,
-    // ChatApiRequest,
-    ApiResponse,
-    User,
-    Session,
-    // UserProfile,
-    UserRole
-} from '@paynless/types';
-import { useAuthStore } from './authStore';
-import { AuthRequiredError } from '@paynless/types';
+// 1. All vi.fn() mock function declarations first
+const mockAuthGetStateFn = vi.fn();
+const mockGetChatWithMessagesFn = vi.fn();
+const mockGetAiProvidersFn = vi.fn();
+const mockGetSystemPromptsFn = vi.fn();
+const mockSendChatMessageFn = vi.fn();
+const mockGetChatHistoryFn = vi.fn();
+const mockDeleteChatFn = vi.fn();
 
-// --- Restore API Client Factory Mock --- 
-const mockGetAiProviders = vi.fn(); 
-const mockGetSystemPrompts = vi.fn(); 
-const mockSendChatMessage = vi.fn(); 
-const mockGetChatHistory = vi.fn();
-const mockGetChatMessages = vi.fn(); 
+// 2. Use vi.doMock for non-hoisted mocking, ensuring mocks are in place before dynamic import
+vi.doMock('./authStore', () => ({
+  useAuthStore: {
+    getState: mockAuthGetStateFn,
+  },
+}));
 
-vi.mock('@paynless/api', async (importOriginal) => {
-    const actual = await importOriginal<typeof import('@paynless/api')>();
-    return {
-        ...actual, 
-        api: {
-            ...actual.api,
-            ai: () => ({
-                getAiProviders: mockGetAiProviders,
-                getSystemPrompts: mockGetSystemPrompts,
-                sendChatMessage: mockSendChatMessage, 
-                getChatHistory: mockGetChatHistory,
-                getChatMessages: mockGetChatMessages,
-            }),
-            auth: () => ({}), 
-            billing: () => ({}),
-            get: vi.fn(),
-            post: vi.fn(),
-            put: vi.fn(),
-            delete: vi.fn(),
-        },
-        initializeApiClient: vi.fn(), 
-    };
-});
+vi.doMock('@paynless/api', () => ({
+  api: {
+    ai: vi.fn(() => ({
+      getAiProviders: mockGetAiProvidersFn,
+      getSystemPrompts: mockGetSystemPromptsFn,
+      sendChatMessage: mockSendChatMessageFn,
+      getChatHistory: mockGetChatHistoryFn,
+      getChatWithMessages: mockGetChatWithMessagesFn,
+      deleteChat: mockDeleteChatFn,
+    })),
+  },
+}));
 
-// --- Mock the authStore --- (Keep this)
-vi.mock('./authStore');
+// 3. Static imports for Vitest utilities and types
+import { vi, describe, it, expect, beforeEach } from 'vitest';
+import type { Chat, ChatMessage, AiProvider, SystemPrompt, ApiError } from '@paynless/types';
 
-// Helper to reset Zustand store state between tests (manual reset)
-const resetAiStore = () => {
-    useAiStore.setState({
-        availableProviders: [],
-        availablePrompts: [],
-        messagesByChatId: {},
-        chatsByContext: { personal: [], orgs: {} },
-        currentChatId: null,
-        isLoadingAiResponse: false,
-        isConfigLoading: false,
-        isLoadingHistoryByContext: { personal: false, orgs: {} },
-        isDetailsLoading: false,
-        newChatContext: null,
-        rewindTargetMessageId: null,
-        aiError: null,
-    });
-};
-
-// Define a global navigate mock
-const mockNavigateGlobal = vi.fn();
+// `useAiStore` and `initialAiStateValues` will be dynamically imported
 
 describe('aiStore - loadChatDetails', () => {
+  // Variables to hold the dynamically imported store and initial values
+  let useAiStore: typeof import('./aiStore').useAiStore;
+  let initialAiStateValues: typeof import('./aiStore').initialAiStateValues;
 
-    // Top-level beforeEach for mock/store reset
-    beforeEach(() => {
-        vi.clearAllMocks(); 
-        vi.restoreAllMocks();
-        act(() => {
-             resetAiStore();
-             // Reset authStore state but preserve/set navigate
-             const initialAuthState = useAuthStore.getInitialState ? useAuthStore.getInitialState() : { user: null, session: null, profile: null, isLoading: false, error: null, navigate: null };
-             useAuthStore.setState({ ...initialAuthState, navigate: mockNavigateGlobal }, true); // Replace state but include global navigate
-        });
-        // No API spy setup needed here
+  const MOCK_TOKEN = 'test-token-123';
+  const MOCK_USER_ID = 'user-ai-store-test';
+
+  const mockPersonalChat: Chat = {
+    id: 'chat-personal-1',
+    title: 'My Personal Chat',
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+    organization_id: null,
+    system_prompt_id: 'prompt-abc',
+    user_id: MOCK_USER_ID,
+  };
+
+  const mockPersonalChatMessages: ChatMessage[] = [
+    { id: 'msg-p1', chat_id: 'chat-personal-1', role: 'user', content: 'Hello', created_at: new Date().toISOString(), user_id: MOCK_USER_ID, is_active_in_thread: true, ai_provider_id: null, system_prompt_id: null, token_usage: null },
+    { id: 'msg-p2', chat_id: 'chat-personal-1', role: 'assistant', content: 'Hi there', created_at: new Date().toISOString(), user_id: null, is_active_in_thread: true, ai_provider_id: 'provider-1', system_prompt_id: 'prompt-abc', token_usage: { total_tokens: 10 } as any },
+  ];
+
+  const mockOrgChat: Chat = {
+    id: 'chat-org-1',
+    title: 'Org Project Chat',
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+    organization_id: 'org-xyz-789',
+    system_prompt_id: 'prompt-def',
+    user_id: MOCK_USER_ID,
+  };
+
+  const mockOrgChatMessages: ChatMessage[] = [
+    { id: 'msg-o1', chat_id: 'chat-org-1', role: 'user', content: 'Org update?', created_at: new Date().toISOString(), user_id: MOCK_USER_ID, is_active_in_thread: true, ai_provider_id: null, system_prompt_id: null, token_usage: null },
+  ];
+
+  beforeEach(async () => {
+    // Dynamically import the store module HERE, after mocks are set up by vi.doMock
+    const aiStoreModule = await import('./aiStore');
+    useAiStore = aiStoreModule.useAiStore;
+    initialAiStateValues = aiStoreModule.initialAiStateValues;
+
+    // Reset store to initial data state before each test.
+    useAiStore.setState(initialAiStateValues);
+
+    // Configure the mock for useAuthStore.getState() for each test
+    mockAuthGetStateFn.mockReturnValue({
+        session: { access_token: MOCK_TOKEN, user: { id: MOCK_USER_ID } },
+        user: { id: MOCK_USER_ID },
+        isUserLoading: false,
+        authError: null,
+        setSession: vi.fn(),
+        clearSession: vi.fn(),
+        setIsUserLoading: vi.fn(),
+        setAuthError: vi.fn(),
+        navigate: vi.fn(),
     });
 
-    // --- Tests for loadChatDetails ---
-    describe('loadChatDetails', () => {
-        // Define constants for mock data
-        const mockChatId = 'c123';
-        const mockToken = 'valid-token-for-details';
-        const mockUser: User = { id: 'user-123', email: 'test@test.com', role: 'user', created_at: '2023-01-01', updated_at: '2023-01-01' };
-        const mockSession: Session = { access_token: mockToken, refresh_token: 'rt', expiresAt: Date.now() / 1000 + 3600 };
-        const mockMessages: ChatMessage[] = [
-            { id: 'm1', chat_id: mockChatId, user_id: mockUser.id, role: 'user', content: 'Q', ai_provider_id: null, system_prompt_id: null, token_usage: { "prompt_tokens": 50, "completion_tokens": 0, "total_tokens": 50 }, created_at: 't1', is_active_in_thread: true },
-            { id: 'm2', chat_id: mockChatId, user_id: null, role: 'assistant', content: 'A', ai_provider_id: 'p1', system_prompt_id: 's1', token_usage: { "prompt_tokens": 20, "completion_tokens": 80, "total_tokens": 100 }, created_at: 't2', is_active_in_thread: true },
-        ];
+    // Clear all top-level Vitest mock functions
+    vi.clearAllMocks(); 
+  });
 
-        // Nested beforeEach using mockReturnValue for authStore.getState
-        beforeEach(() => {
-             if (vi.isMockFunction(useAuthStore)) {
-                vi.mocked(useAuthStore.getState).mockReturnValue({
-                    user: mockUser,
-                    session: mockSession,
-                    profile: null,
-                    isLoading: false,
-                    error: null,
-                    navigate: mockNavigateGlobal,
-                    setNavigate: vi.fn(),
-                    login: vi.fn(),
-                    logout: vi.fn(),
-                    register: vi.fn(),
-                    setProfile: vi.fn(),
-                    setUser: vi.fn(),
-                    setSession: vi.fn(),
-                    setIsLoading: vi.fn(),
-                    setError: vi.fn(),
-                    initialize: vi.fn(),
-                    refreshSession: vi.fn(),
-                    updateProfile: vi.fn(),
-                    clearError: vi.fn(),
-                } as any);
-            } else {
-                console.warn("useAuthStore mock was not found for mocking getState in loadChatDetails tests.");
-            }
-        });
+  it('should load personal chat details and messages successfully', async () => {
+    mockGetChatWithMessagesFn.mockResolvedValueOnce({
+      data: { chat: mockPersonalChat, messages: mockPersonalChatMessages },
+      error: null,
+      status: 200,
+    });
 
-        it('should set isDetailsLoading to true initially and false on completion (success)', async () => {
-            // Arrange
-            mockGetChatMessages.mockResolvedValue({
-                data: mockMessages,
-                status: 200,
-                error: null
-            });
+    await useAiStore.getState().loadChatDetails(mockPersonalChat.id);
 
-            // Act
-            let promise;
-            act(() => {
-                promise = useAiStore.getState().loadChatDetails(mockChatId);
-                // Assert immediate synchronous state change *inside* act
-                expect(useAiStore.getState().isDetailsLoading).toBe(true);
-            });
-            // Await the promise *outside* act
-            await promise;
-            // Assert final state
-            expect(useAiStore.getState().isDetailsLoading).toBe(false);
-        });
+    const state = useAiStore.getState();
+    expect(mockGetChatWithMessagesFn).toHaveBeenCalledWith(mockPersonalChat.id, MOCK_TOKEN);
+    expect(state.isDetailsLoading).toBe(false);
+    expect(state.aiError).toBeNull();
+    expect(state.currentChatId).toBe(mockPersonalChat.id);
+    expect(state.messagesByChatId[mockPersonalChat.id]).toEqual(mockPersonalChatMessages);
+    expect(state.chatsByContext.personal).toEqual(expect.arrayContaining([
+        expect.objectContaining(mockPersonalChat)
+    ]));
+  });
 
-        it('should set isDetailsLoading to true initially and false on completion (failure)', async () => {
-            // Arrange
-            mockGetChatMessages.mockResolvedValue({
-                data: null,
-                status: 500,
-                error: { message: 'Failed to load' }
-            });
+  it('should load organization chat details and messages successfully', async () => {
+    mockGetChatWithMessagesFn.mockResolvedValueOnce({
+      data: { chat: mockOrgChat, messages: mockOrgChatMessages },
+      error: null,
+      status: 200,
+    });
 
-            // Act
-            let promise;
-            act(() => {
-                promise = useAiStore.getState().loadChatDetails(mockChatId);
-                 // Assert immediate synchronous state change *inside* act
-                 expect(useAiStore.getState().isDetailsLoading).toBe(true);
-            });
-             // Await the promise *outside* act
-             await promise;
-             // Assert final state
-            expect(useAiStore.getState().isDetailsLoading).toBe(false);
-        });
+    useAiStore.setState({ 
+        chatsByContext: {
+            personal: undefined, 
+            orgs: { [mockOrgChat.organization_id as string]: [{ ...mockOrgChat, title: "Old Title" }] }
+        }
+    }); 
 
-        it('should set aiError and return early if chatId is empty', async () => {
-            // Arrange
-            const invalidChatId = '';
-            // Act
-            await act(async () => {
-                await useAiStore.getState().loadChatDetails(invalidChatId);
-            });
-            // Assert
-            expect(mockGetChatMessages).not.toHaveBeenCalled();
-            // Fix: Use the correct error message from the store logic
-            expect(useAiStore.getState().aiError).toBe('Chat ID is required to load details.'); 
-            expect(useAiStore.getState().isDetailsLoading).toBe(false);
-        });
+    await useAiStore.getState().loadChatDetails(mockOrgChat.id);
 
-        it('should set aiError and return early if auth token is missing', async () => {
-            // Arrange: Override authStore.getState for this specific test
-             if (vi.isMockFunction(useAuthStore)) { 
-                const currentMockState = useAuthStore.getState();
-                vi.mocked(useAuthStore.getState).mockReturnValueOnce({
-                    ...currentMockState, 
-                    session: null, // Override session to null
-                });
-            } else {
-                 console.warn("useAuthStore mock was not found for mocking getState in 'no auth token' test.");
-            }
+    const state = useAiStore.getState();
+    expect(mockGetChatWithMessagesFn).toHaveBeenCalledWith(mockOrgChat.id, MOCK_TOKEN);
+    expect(state.isDetailsLoading).toBe(false);
+    expect(state.aiError).toBeNull();
+    expect(state.currentChatId).toBe(mockOrgChat.id);
+    expect(state.messagesByChatId[mockOrgChat.id]).toEqual(mockOrgChatMessages);
+    
+    const orgChats = state.chatsByContext.orgs[mockOrgChat.organization_id as string];
+    expect(orgChats).toEqual(expect.arrayContaining([
+        expect.objectContaining(mockOrgChat)
+    ]));
+    expect(orgChats?.find(c => c.id === mockOrgChat.id)?.title).toBe(mockOrgChat.title);
+  });
+  
+  it('should add chat to context if not already present (e.g. direct URL load)', async () => {
+    mockGetChatWithMessagesFn.mockResolvedValueOnce({
+      data: { chat: mockPersonalChat, messages: mockPersonalChatMessages },
+      error: null,
+      status: 200,
+    });
 
-            // Act
-            await act(async () => {
-                await useAiStore.getState().loadChatDetails(mockChatId);
-            });
+    useAiStore.setState({
+        chatsByContext: { personal: [], orgs: {} }
+    }); 
 
-            // Assert
-            expect(mockGetChatMessages).not.toHaveBeenCalled();
-            expect(useAiStore.getState().aiError).toBe('Authentication token not found.');
-            expect(useAiStore.getState().isDetailsLoading).toBe(false);
-        });
+    await useAiStore.getState().loadChatDetails(mockPersonalChat.id);
 
-        it('should call api.ai().getChatMessages with chatId and token on success', async () => {
-            // Arrange
-            mockGetChatMessages.mockResolvedValue({
-                data: { messages: mockMessages },
-                status: 200,
-                error: null
-            });
+    const state = useAiStore.getState();
+    expect(state.chatsByContext.personal).toEqual(expect.arrayContaining([
+        expect.objectContaining(mockPersonalChat)
+    ]));
+  });
 
-            // Act
-            await act(async () => {
-                await useAiStore.getState().loadChatDetails(mockChatId);
-            });
+  it('should handle API error when loading chat details', async () => {
+    const apiError: ApiError = { message: 'Network Error', code: 'NETWORK_ERROR' };
+    mockGetChatWithMessagesFn.mockResolvedValueOnce({
+      data: null,
+      error: apiError,
+      status: 500,
+    });
 
-            // Assert
-            expect(mockGetChatMessages).toHaveBeenCalledTimes(1);
-            expect(mockGetChatMessages).toHaveBeenCalledWith(mockChatId, mockToken);
-        });
+    await useAiStore.getState().loadChatDetails('any-chat-id');
 
-        it('should update state correctly on successful API call', async () => {
-            // Arrange
-            mockGetChatMessages.mockResolvedValue({
-                data: mockMessages,
-                status: 200,
-                error: null
-            });
+    const state = useAiStore.getState();
+    expect(state.isDetailsLoading).toBe(false);
+    expect(state.aiError).toBe(apiError.message);
+  });
 
-            // Act
-            await act(async () => {
-                await useAiStore.getState().loadChatDetails(mockChatId);
-            });
+  it('should handle authentication error (no token)', async () => {
+    mockAuthGetStateFn.mockReturnValueOnce({
+        session: null, 
+        user: null,
+        isUserLoading: false,
+        authError: null,
+        setSession: vi.fn(),
+        clearSession: vi.fn(),
+        setIsUserLoading: vi.fn(),
+        setAuthError: vi.fn(),
+        navigate: vi.fn(),
+    });
 
-            // Assert
-            const state = useAiStore.getState();
-            expect(state.messagesByChatId[mockChatId]).toEqual(mockMessages);
-            expect(state.messagesByChatId[mockChatId]?.[0]?.token_usage).toEqual({ "prompt_tokens": 50, "completion_tokens": 0, "total_tokens": 50 });
-            expect(state.currentChatId).toBe(mockChatId);
-            expect(state.aiError).toBeNull();
-            expect(state.isDetailsLoading).toBe(false);
-        });
+    await useAiStore.getState().loadChatDetails('any-chat-id');
 
-        it('should set aiError state on API error response', async () => {
-            // Arrange
-            const errorMsg = 'API Error Fetching Details';
-            mockGetChatMessages.mockResolvedValue({
-                data: null,
-                status: 500,
-                error: { message: errorMsg }
-            });
+    const state = useAiStore.getState();
+    expect(mockGetChatWithMessagesFn).not.toHaveBeenCalled();
+    expect(state.isDetailsLoading).toBe(false);
+    expect(state.aiError).toBe('Authentication required to load chat details.');
+  });
 
-            // Act
-            await act(async () => {
-                await useAiStore.getState().loadChatDetails(mockChatId);
-            });
+  it('should handle invalid data structure from API', async () => {
+    mockGetChatWithMessagesFn.mockResolvedValueOnce({
+      data: null, 
+      error: null,
+      status: 200,
+    });
 
-            // Assert
-            const state = useAiStore.getState();
-            expect(state.aiError).toBe(errorMsg);
-            expect(state.messagesByChatId[mockChatId]).toEqual([]);
-            expect(state.currentChatId).toBeNull();
-            expect(state.isDetailsLoading).toBe(false);
-        });
+    await useAiStore.getState().loadChatDetails(mockPersonalChat.id);
 
-        it('should set aiError state if API call throws an error', async () => {
-             // Arrange
-            const errorMsg = 'Network Error Fetching Details';
-            mockGetChatMessages.mockRejectedValue(new Error(errorMsg));
+    const state = useAiStore.getState();
+    expect(state.isDetailsLoading).toBe(false);
+    expect(state.aiError).toBe('Invalid data structure received from API for chat details.');
+  });
 
-            // Act
-            await act(async () => {
-                await useAiStore.getState().loadChatDetails(mockChatId);
-            });
-
-            // Assert
-            const state = useAiStore.getState();
-            expect(state.aiError).toBe(errorMsg);
-            expect(state.messagesByChatId[mockChatId]).toEqual([]);
-            expect(state.currentChatId).toBeNull();
-            expect(state.isDetailsLoading).toBe(false);
-        });
-    }); // End loadChatDetails describe
-
-}); // End main describe block
+});

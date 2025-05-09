@@ -85,12 +85,12 @@ export class AiApiClient {
     }
 
     /**
-     * Fetches all messages for a specific chat.
-     * @param chatId - The ID of the chat to fetch messages for.
+     * Fetches the full chat object (metadata) and all its active messages for a specific chat.
+     * @param chatId - The ID of the chat to fetch details for.
      * @param token - The user's authentication token.
      * @param organizationId - Optional ID of the organization the chat belongs to (for context).
      */
-    async getChatMessages(chatId: string, token: string, organizationId?: string | null): Promise<ApiResponse<ChatMessage[]>> {
+    async getChatWithMessages(chatId: string, token: string, organizationId?: string | null): Promise<ApiResponse<{ chat: Chat, messages: ChatMessage[] }>> {
         if (!chatId) {
             const error: ApiError = { code: 'VALIDATION_ERROR', message: 'Chat ID is required' };
             return { error, status: 400 };
@@ -105,7 +105,8 @@ export class AiApiClient {
             // Add organizationId as a query parameter
             endpoint += `?organizationId=${encodeURIComponent(organizationId)}`;
         }
-        return this.apiClient.get<ChatMessage[]>(endpoint, options);
+        // The generic type for .get now reflects the new expected structure
+        return this.apiClient.get<{ chat: Chat, messages: ChatMessage[] }>(endpoint, options);
     }
 
     /**

@@ -26,6 +26,7 @@ export interface ChatHistoryItem {
   id: string;
   title: string | null;
   updated_at: string;
+  system_prompt_id: string | null;
 }
 
 // --- Define Dependencies and Defaults (Simplified - relies on shared) ---
@@ -53,7 +54,7 @@ async function fetchChatHistoryLogic(
 
     let query = supabaseClient
       .from('chats')
-      .select('id, title, updated_at, user_id, organization_id');
+      .select('id, title, updated_at, user_id, organization_id, system_prompt_id');
 
     if (organizationId) {
       query = query.eq('organization_id', organizationId);

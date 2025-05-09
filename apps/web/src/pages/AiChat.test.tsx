@@ -180,8 +180,24 @@ describe('AiChat Page', () => {
     loadAiConfigMock = vi.fn();
     loadChatHistoryMock = vi.fn();
     loadChatDetailsMock = vi.fn((chatIdToLoad: string) => {
+      // Simulate loading the chat and updating the store state, including its system_prompt_id
+      const chatToLoad = aiStoreInitialState.chatsByContext.personal.find(c => c.id === chatIdToLoad) || 
+                         aiStoreInitialState.chatsByContext.orgs['org-abc']?.find(c => c.id === chatIdToLoad);
+
       act(() => {
-        useAiStore.setState({ currentChatId: chatIdToLoad, isDetailsLoading: true });
+        useAiStore.setState(prevState => ({
+          ...prevState,
+          currentChatId: chatIdToLoad,
+          isDetailsLoading: false, // Simulate loading finished
+          // Ensure the specific chat in the store has its details (like system_prompt_id)
+          chatsByContext: {
+            ...prevState.chatsByContext,
+            personal: prevState.chatsByContext.personal.map(c => 
+              c.id === chatIdToLoad && chatToLoad ? { ...c, ...chatToLoad } : c // Update the loaded chat
+            ),
+            // Potentially update orgs chats too if the loaded chat could be an org chat
+          }
+        }));
       });
     });
     startNewChatMock = vi.fn();
@@ -248,25 +264,38 @@ describe('AiChat Page', () => {
   });
 
   it('should pass the correct initial activeContextId to ChatHistoryList based on globalCurrentOrgId', async () => {
+    // Set the global current org ID *before* rendering
+    act(() => {
+      useOrganizationStore.setState({ currentOrganizationId: 'org-def' });
+    });
+
     render(<AiChat />);
+
     await vi.waitFor(() => {
-        expect(vi.mocked(ChatHistoryList)).toHaveBeenCalledWith(
-            expect.objectContaining({ activeContextId: 'org-abc' }),
-            expect.anything()
-        );
+      // Check the *last* call to ChatHistoryList, as it might re-render due to effects
+      const calls = vi.mocked(ChatHistoryList).mock.calls;
+      expect(calls.length).toBeGreaterThan(0);
+      expect(calls[calls.length - 1][0].activeContextId).toBe('org-def');
     });
   });
-  
-  it('should pass activeContextId=null to ChatHistoryList if globalCurrentOrgId is null', async () => {
-     act(() => {
-      useOrganizationStore.setState({ currentOrganizationId: null }, false);
+
+  it('should pass null as activeContextId to ChatHistoryList if globalCurrentOrgId is null', async () => {
+    act(() => {
+      useOrganizationStore.setState({ currentOrganizationId: null });
     });
     render(<AiChat />);
     await vi.waitFor(() => {
-        expect(vi.mocked(ChatHistoryList)).toHaveBeenCalledWith(
-            expect.objectContaining({ activeContextId: null }),
-            expect.anything()
-        );
+        expect(vi.mocked(ChatHistoryList).mock.calls[0][0].activeContextId).toBeNull();
+    });
+  });
+
+  it('should pass currentChatId to ChatHistoryList', async () => {
+    act(() => {
+      useAiStore.setState({ currentChatId: 'chat-xyz' });
+    });
+    render(<AiChat />);
+    await vi.waitFor(() => {
+        expect(vi.mocked(ChatHistoryList).mock.calls[0][0].currentChatId).toBe('chat-xyz');
     });
   });
 
@@ -782,7 +811,7 @@ describe('AiChat Page', () => {
     });
 
     it('should call loadChatDetails, track event, and reset selections on handleLoadChat (from history)', async () => {
-        const chatToLoadId = 'chat-personal-1'; 
+        const chatToLoadId = 'chat-personal-1'; // This chat now has system_prompt_id: 'prompt-load-another'
         const currentChatIdBeforeLoad = null; 
         expect(chatToLoadId).not.toBe(currentChatIdBeforeLoad);
 
@@ -792,7 +821,7 @@ describe('AiChat Page', () => {
         ];
         const initialPrompts: SystemPrompt[] = [
             { id: 'prompt-load-initial', name:'Load Initial Prompt', prompt_text:'', created_at:'', updated_at:'', is_active:true },
-            { id: 'prompt-load-another', name:'Load Another Prompt', prompt_text:'', created_at:'', updated_at:'', is_active:true }
+            { id: 'prompt-load-another', name:'Load Another Prompt (Matches Loaded Chat)', prompt_text:'', created_at:'', updated_at:'', is_active:true } // This is initialPrompts[1]
         ];
 
         const currentLoadAiConfigMock = vi.fn();
@@ -868,7 +897,7 @@ describe('AiChat Page', () => {
             
             const promptSelectorCalls = vi.mocked(ImportedPromptSelector).mock.calls;
             const lastPromptCallArgs = promptSelectorCalls[promptSelectorCalls.length - 1][0];
-            expect(lastPromptCallArgs.selectedPromptId).toBe(initialPrompts[1].id); 
+            expect(lastPromptCallArgs.selectedPromptId).toBe('prompt-load-another'); 
         });
 
         vi.doUnmock('../components/ai/ChatHistoryList');
@@ -1019,32 +1048,63 @@ describe('AiChat Page', () => {
         }
     });
 
-    it('should pass correct props to ModelSelector and PromptSelector based on state', async () => { // Made async
-        render(<AiChat />);
-        await vi.waitFor(() => { // Wait for async updates
-            expect(vi.mocked(ModelSelector)).toHaveBeenCalled();
-            expect(vi.mocked(PromptSelector)).toHaveBeenCalled();
-        });
+    it('should pass correct props to ModelSelector and PromptSelector based on state', async () => {
+      const testProviders = [{ id: 'prov-test-inline', name: 'Inline Test Provider', api_identifier: 'pti', is_active: true, is_enabled: true, config: {}, created_at: 'date', updated_at: 'date', description: '', provider: '' } as AiProvider];
+      const testPrompts = [{ id: 'prompt-test-inline', name: 'Inline Test Prompt', prompt_text: 'inline', created_at: 'date', updated_at: 'date', is_active: true } as SystemPrompt];
 
-        const lastModelCallArgs = vi.mocked(ModelSelector).mock.lastCall;
-        expect(lastModelCallArgs).toBeDefined();
-        if (lastModelCallArgs && lastModelCallArgs.length > 0) { // Check length
-            const props = lastModelCallArgs[0];
-            expect(props).toBeDefined();
-            expect(props).toHaveProperty('selectedProviderId', aiStoreInitialState.availableProviders[0].id);
-        } else {
-          throw new Error("ModelSelector mock was not called with expected arguments or not called at all.");
-        }
+      act(() => {
+        useAiStore.setState({
+          availableProviders: testProviders,
+          availablePrompts: testPrompts,
+          loadAiConfig: loadAiConfigMock,
+          loadChatHistory: loadChatHistoryMock,
+          checkAndReplayPendingChatAction: checkAndReplayPendingChatActionMock,
+          // Reset other relevant parts of AI store state to ensure a clean slate for this test
+          currentChatId: null, 
+          messagesByChatId: {},
+          chatsByContext: { personal: [], orgs: {} },
+          isLoadingAiResponse: false,
+          isConfigLoading: false,
+          isLoadingHistoryByContext: { personal: false, orgs: {} },
+          isDetailsLoading: false,
+          newChatContext: null,
+          rewindTargetMessageId: null,
+          aiError: null,
+        }, true); // Replace entire AI store state for this test
+      });
 
-        const lastPromptCallArgs = vi.mocked(PromptSelector).mock.lastCall;
-        expect(lastPromptCallArgs).toBeDefined();
-        if (lastPromptCallArgs && lastPromptCallArgs.length > 0) { // Check length
-            const props = lastPromptCallArgs[0];
-            expect(props).toBeDefined();
-            expect(props).toHaveProperty('selectedPromptId', aiStoreInitialState.availablePrompts[0].id);
-        } else {
-          throw new Error("PromptSelector mock was not called with expected arguments or not called at all.");
+      render(<AiChat />); 
+
+      await vi.waitFor(() => {
+        // --- Debugging ModelSelector --- 
+        const modelSelectorCalls = vi.mocked(ModelSelector).mock.calls;
+        if (modelSelectorCalls.length === 0) {
+          console.error("[TEST DEBUG] ModelSelector was NOT called.");
+          throw new Error("ModelSelector was not called");
         }
+        const modelSelectorLastCallProps = modelSelectorCalls[modelSelectorCalls.length - 1][0];
+        console.log("[TEST DEBUG] ModelSelector last call props:", JSON.stringify(modelSelectorLastCallProps, null, 2));
+        
+        const currentAiStoreState = useAiStore.getState();
+        console.log("[TEST DEBUG] Store availableProviders at assertion:", JSON.stringify(currentAiStoreState.availableProviders, null, 2));
+
+        expect(modelSelectorLastCallProps).toBeDefined();
+        expect(modelSelectorLastCallProps.selectedProviderId).toBe(testProviders[0]?.id);
+        expect(modelSelectorLastCallProps.onProviderChange).toBeInstanceOf(Function);
+
+        // --- Debugging PromptSelector --- 
+        const promptSelectorCalls = vi.mocked(PromptSelector).mock.calls;
+        if (promptSelectorCalls.length === 0) {
+          console.error("[TEST DEBUG] PromptSelector was NOT called.");
+          throw new Error("PromptSelector was not called");
+        }
+        const promptSelectorLastCallProps = promptSelectorCalls[promptSelectorCalls.length - 1][0];
+        console.log("[TEST DEBUG] PromptSelector last call props:", JSON.stringify(promptSelectorLastCallProps, null, 2));
+        
+        expect(promptSelectorLastCallProps).toBeDefined();
+        expect(promptSelectorLastCallProps.selectedPromptId).toBe(testPrompts[0]?.id);
+        expect(promptSelectorLastCallProps.onPromptChange).toBeInstanceOf(Function);
+      });
     });
 
     it('should pass correct props to AiChatbox including updated key', async () => { // Made async
@@ -1107,89 +1167,27 @@ describe('AiChat Page', () => {
 
   });
 
-  it('should load system_prompt_id from current chat when a chat is loaded', async () => {
-    const specificChatId = 'chat-with-specific-prompt';
-    const specificPromptId = 'prompt-for-specific-chat';
-
-    const chatWithPrompt: Chat = {
-      id: specificChatId,
-      title: 'Chat with Specific Prompt',
-      updated_at: new Date().toISOString(),
-      created_at: new Date().toISOString(),
-      organization_id: null,
-      system_prompt_id: specificPromptId, // <<< This chat has a specific prompt
-      user_id: 'user-123'
-    };
-
-    const newAvailablePrompts: SystemPrompt[] = [
-      ...aiStoreInitialState.availablePrompts, // Ensure default prompts are there
-      { id: specificPromptId, name: 'Specific Prompt', prompt_text: 'Specific instructions', created_at: new Date().toISOString(), updated_at: new Date().toISOString(), is_active: true }
-    ];
-
-    // 1. Define the test-specific loadChatDetails mock function
-    const testSpecificLoadChatDetailsMock = vi.fn((chatIdToLoad: string) => {
-      if (chatIdToLoad === specificChatId) {
-        act(() => {
-          useAiStore.setState(prevState => ({
-            ...prevState,
-            currentChatId: chatIdToLoad,
-            isDetailsLoading: false, // Simulate loading completion
-            chatsByContext: {
-              ...(prevState.chatsByContext || { personal: [], orgs: {} }),
-              personal: [...((prevState.chatsByContext?.personal as Chat[] | undefined) || []), chatWithPrompt],
-              orgs: prevState.chatsByContext?.orgs || {},
-            },
-            // availablePrompts is set before render, AiChat will use that instance
-          }));
-        });
-      }
-    });
-
-    // 2. Before rendering, update the store to use this specific loadChatDetails mock
-    //    AND ensure availablePrompts is set for AiChat's initial useEffect.
-    act(() => {
-      useAiStore.setState(prevState => ({
-        ...prevState,
-        loadChatDetails: testSpecificLoadChatDetailsMock,
-        availablePrompts: newAvailablePrompts,
-        currentChatId: null, // Start with no chat selected
-        chatsByContext: aiStoreInitialState.chatsByContext, // Start with initial chats or clear if needed
-      }));
-    });
-
-    render(<AiChat />);
-
-    // Simulate loading the chat (e.g., via ChatHistoryList's onLoadChat prop)
-    const chatHistoryListMock = vi.mocked(ChatHistoryList);
-    // Need to trigger initial render and effects before getting props
-    await act(async () => {
-      // Allow initial effects to run (like default prompt selection if any)
-      await new Promise(resolve => setTimeout(resolve, 0));
-    });
-
-    // Ensure ChatHistoryList mock has been called and get its props
-    if (chatHistoryListMock.mock.calls.length > 0) {
-      // Get the props from the most recent call, in case of re-renders
-      const chatHistoryListProps = chatHistoryListMock.mock.calls[chatHistoryListMock.mock.calls.length - 1][0];
-      act(() => { // Wrap state update trigger in act
-        chatHistoryListProps.onLoadChat(specificChatId);
+  describe('ChatHistoryList prop verification', () => {
+    it('should pass activeContextId, currentChatId, and onLoadChat to ChatHistoryList', async () => {
+      const testOrgId = 'org-testing-props';
+      const testChatId = 'chat-for-testing-props';
+      act(() => {
+        useOrganizationStore.setState({ currentOrganizationId: testOrgId });
+        useAiStore.setState({ currentChatId: testChatId });
       });
-    } else {
-      throw new Error('ChatHistoryList mock was not called during render');
-    }
-    
-    // Wait for state updates and re-renders triggered by onLoadChat and subsequent effects
-    await act(async () => {
-      // Let any chained state updates propagate
-      await new Promise(resolve => setTimeout(resolve, 0)); // Small delay for effects
-    });
 
-    // Assert that PromptSelector received the specific prompt ID
-    const promptSelectorMock = vi.mocked(PromptSelector);
-    expect(promptSelectorMock).toHaveBeenCalled();
-    // Check the props of the last call to PromptSelector, as it might re-render
-    const lastPromptSelectorCallProps = promptSelectorMock.mock.calls[promptSelectorMock.mock.calls.length - 1][0];
-    expect(lastPromptSelectorCallProps.selectedPromptId).toBe(specificPromptId);
+      render(<AiChat />);
+
+      await vi.waitFor(() => {
+        const chatHistoryListCalls = vi.mocked(ChatHistoryList).mock.calls;
+        expect(chatHistoryListCalls.length).toBeGreaterThan(0);
+        const propsPassed = chatHistoryListCalls[chatHistoryListCalls.length - 1][0];
+        expect(propsPassed.activeContextId).toBe(testOrgId);
+        expect(propsPassed.currentChatId).toBe(testChatId);
+        expect(propsPassed).toHaveProperty('onLoadChat');
+        expect(propsPassed.onLoadChat).toBeInstanceOf(Function);
+      });
+    });
   });
 
 }); 

@@ -14,6 +14,11 @@ import { mainHandler as actualMainHandler, defaultDeps as actualDefaultDeps, typ
 import { HandlerError } from '../api-subscriptions/handlers/current.ts';
 // Import the shared ChatMessage type
 import type { ChatMessage } from '../_shared/types.ts';
+// Import Chat and ChatMessage types
+import type { Database } from "../types_db.ts";
+
+// Define Chat type based on DB schema
+export type Chat = Database['public']['Tables']['chats']['Row'];
 
 // --- Test Setup ---
 let envStub: Stub | undefined;
@@ -40,6 +45,16 @@ const teardown = () => {
 };
 
 // --- Test Data ---
+const mockFullChatDetails = {
+  id: mockChatId,
+  created_at: new Date(Date.now() - 20000).toISOString(),
+  updated_at: new Date(Date.now() - 10000).toISOString(),
+  organization_id: null as string | null, // Explicitly type null for consistency
+  system_prompt_id: 'prompt-sys-123' as string | null, // Example system prompt ID
+  title: 'Mock Chat Title For Details Test',
+  user_id: mockUserId,
+};
+
 const mockMessages: ChatMessage[] = [
   { id: 'msg-1', chat_id: mockChatId, user_id: mockUserId, role: 'user', content: 'First message', created_at: new Date(Date.now() - 10000).toISOString(), ai_provider_id: null, system_prompt_id: null, token_usage: null, is_active_in_thread: true },
   { id: 'msg-2', chat_id: mockChatId, user_id: null, role: 'assistant', content: 'First response', created_at: new Date().toISOString(), ai_provider_id: null, system_prompt_id: null, token_usage: null, is_active_in_thread: true },
@@ -66,7 +81,7 @@ Deno.test("Chat Details Function - GET Logic Tests (Refactored)", {
     return { deps, mockClient: mockSupabaseClient };
   };
 
-  await t.step("GET should return messages array on success", async () => {
+  await t.step("GET should return full chat details and messages array on success", async () => {
     const supaConfig: MockSupabaseDataConfig = {
         mockUser: { id: mockUserId } as any, // For auth check in handler
         getUserResult: { data: { user: { id: mockUserId } as any }, error: null },
@@ -74,7 +89,8 @@ Deno.test("Chat Details Function - GET Logic Tests (Refactored)", {
             chats: { // For preliminary access check
                 select: async (state: MockQueryBuilderState) => {
                     if (state.filters.some(f => f.column === 'id' && f.value === mockChatId)) {
-                        return { data: [{ id: mockChatId, user_id: mockUserId, organization_id: null }], error: null, count: 1, status: 200 };
+                        // Return the full chat details object
+                        return { data: [mockFullChatDetails], error: null, count: 1, status: 200 };
                     }
                     return { data: null, error: new Error('Chat not found in mock'), status: 404 };
                 }
@@ -99,13 +115,21 @@ Deno.test("Chat Details Function - GET Logic Tests (Refactored)", {
     const response = await actualMainHandler(req, deps);
     assertEquals(response.status, 200);
     const responseBody = await response.json();
-    assertEquals(Array.isArray(responseBody), true, "Response should be an array");
-    assertEquals(responseBody.length, 2, "Expected 2 chat messages");
-    assertEquals(responseBody[0].id, 'msg-1');
-    assertEquals(responseBody[1].role, 'assistant');
+    
+    assert(typeof responseBody === 'object' && responseBody !== null, "Response body should be an object");
+    assertExists(responseBody.chat, "Response body should have a 'chat' property");
+    assertExists(responseBody.messages, "Response body should have a 'messages' property");
+
+    // Use assertObjectMatch for the chat details
+    assertObjectMatch(responseBody.chat, mockFullChatDetails);
+    
+    assertEquals(Array.isArray(responseBody.messages), true, "responseBody.messages should be an array");
+    assertEquals(responseBody.messages.length, 2, "Expected 2 chat messages");
+    assertEquals(responseBody.messages[0].id, 'msg-1');
+    assertEquals(responseBody.messages[1].role, 'assistant');
   });
 
-  await t.step("GET should return empty array if chat exists but has no messages", async () => {
+  await t.step("GET should return full chat details and empty messages array if chat exists but has no messages", async () => {
     const supaConfig: MockSupabaseDataConfig = {
         mockUser: { id: mockUserId } as any,
         getUserResult: { data: { user: { id: mockUserId } as any }, error: null },
@@ -113,7 +137,8 @@ Deno.test("Chat Details Function - GET Logic Tests (Refactored)", {
             chats: {
                 select: async (state: MockQueryBuilderState) => {
                     if (state.filters.some(f => f.column === 'id' && f.value === mockChatId)) {
-                        return { data: [{ id: mockChatId, user_id: mockUserId, organization_id: null }], error: null, count: 1, status: 200 };
+                         // Return the full chat details object
+                        return { data: [mockFullChatDetails], error: null, count: 1, status: 200 };
                     }
                     return { data: null, error: new Error('Chat not found in mock'), status: 404 };
                 }
@@ -137,7 +162,15 @@ Deno.test("Chat Details Function - GET Logic Tests (Refactored)", {
     const response = await actualMainHandler(req, deps);
     assertEquals(response.status, 200);
     const responseBody = await response.json();
-    assertEquals(responseBody, [], "Should return empty array");
+
+    assert(typeof responseBody === 'object' && responseBody !== null, "Response body should be an object");
+    assertExists(responseBody.chat, "Response body should have a 'chat' property");
+    assertExists(responseBody.messages, "Response body should have a 'messages' property");
+
+    // Use assertObjectMatch for the chat details
+    assertObjectMatch(responseBody.chat, mockFullChatDetails);
+
+    assertEquals(responseBody.messages, [], "responseBody.messages should be an empty array");
   });
 
   await t.step("GET should return 404 if chat not found", async () => {
@@ -252,6 +285,15 @@ Deno.test("Chat Details Function - GET Logic Tests (Refactored)", {
   await t.step("GET should return messages for an organization chat if user is a member", async () => {
     const orgId = 'org-for-get-test';
     const orgChatId = 'chat-org-get-abc';
+    const mockOrgChatDetails: Chat = {
+        id: orgChatId,
+        user_id: 'creator-user-id',
+        organization_id: orgId,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        system_prompt_id: null,
+        title: 'Org Chat for GET Test'
+    };
     const mockOrgMessages: ChatMessage[] = [
         { id: 'org-msg-1', chat_id: orgChatId, user_id: 'another-user-id', role: 'user', content: 'Org chat message', created_at: new Date().toISOString(), ai_provider_id: null, system_prompt_id: null, token_usage: null, is_active_in_thread: true },
     ];
@@ -263,8 +305,7 @@ Deno.test("Chat Details Function - GET Logic Tests (Refactored)", {
             chats: { 
                 select: async (state: MockQueryBuilderState) => {
                     if (state.filters.some(f => f.column === 'id' && f.value === orgChatId)) {
-                        // Simulate RLS passing for this user and org chat
-                        return { data: [{ id: orgChatId, user_id: 'creator-user-id', organization_id: orgId }], error: null, count: 1, status: 200 };
+                        return { data: [mockOrgChatDetails], error: null, count: 1, status: 200 };
                     }
                     return { data: null, error: new Error('Chat not found in org mock'), status: 404 };
                 }
@@ -280,7 +321,6 @@ Deno.test("Chat Details Function - GET Logic Tests (Refactored)", {
         }
     };
     const { deps } = createGetTestDeps(supaConfig);
-    // The handler doesn't actually use organizationId from query for GET, RLS handles access based on user
     const req = new Request(`http://localhost/chat-details/${orgChatId}`, { 
         method: 'GET', 
         headers: { Authorization: `Bearer test-token` }
@@ -289,8 +329,11 @@ Deno.test("Chat Details Function - GET Logic Tests (Refactored)", {
     const response = await actualMainHandler(req, deps);
     assertEquals(response.status, 200);
     const responseBody = await response.json();
-    assertEquals(responseBody.length, 1);
-    assertObjectMatch(responseBody[0], { id: 'org-msg-1', content: 'Org chat message' });
+    assertExists(responseBody.chat, "Response body should have a 'chat' property for org chat");
+    assertExists(responseBody.messages, "Response body should have a 'messages' property for org chat");
+    assertEquals(responseBody.messages.length, 1, "Expected 1 message for org chat");
+    assertObjectMatch(responseBody.messages[0], { id: 'org-msg-1', content: 'Org chat message' });
+    assertObjectMatch(responseBody.chat, mockOrgChatDetails); 
   });
 
   await t.step("GET should return 404 for an organization chat if user is not a member", async () => {
@@ -330,6 +373,15 @@ Deno.test("Chat Details Function - GET Logic Tests (Refactored)", {
     const chatWithMixedMessagesId = 'chat-mixed-activity';
     const activeMessage = { id: 'active-msg', chat_id: chatWithMixedMessagesId, user_id: mockUserId, role: 'user', content: 'Active message', created_at: new Date().toISOString(), is_active_in_thread: true, ai_provider_id: null, system_prompt_id: null, token_usage: null };
     const inactiveMessage = { id: 'inactive-msg', chat_id: chatWithMixedMessagesId, user_id: mockUserId, role: 'user', content: 'Inactive message', created_at: new Date(Date.now() - 5000).toISOString(), is_active_in_thread: false, ai_provider_id: null, system_prompt_id: null, token_usage: null };
+    const mockChatForMixedActivity: Chat = {
+        id: chatWithMixedMessagesId,
+        user_id: mockUserId,
+        organization_id: null,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        system_prompt_id: null,
+        title: 'Chat with mixed activity'
+    };
     
     const supaConfig: MockSupabaseDataConfig = {
         mockUser: { id: mockUserId } as any, 
@@ -338,25 +390,17 @@ Deno.test("Chat Details Function - GET Logic Tests (Refactored)", {
             chats: { 
                 select: async (state: MockQueryBuilderState) => {
                     if (state.filters.some(f => f.column === 'id' && f.value === chatWithMixedMessagesId)) {
-                        return { data: [{ id: chatWithMixedMessagesId, user_id: mockUserId, organization_id: null }], error: null, count: 1, status: 200 };
+                        return { data: [mockChatForMixedActivity], error: null, count: 1, status: 200 };
                     }
                     return { data: null, error: new Error('Chat not found in mixed activity mock'), status: 404 };
                 }
             },
             chat_messages: { 
-                // This mock will return ALL messages for the chat ID.
-                // The handler logic (`getChatMessagesHandler`) is responsible for filtering by `is_active_in_thread` in its query.
-                // So, we don't filter here in the mock itself, but verify the handler does it.
                 select: async (state: MockQueryBuilderState) => {
                     if (state.filters.some(f => f.column === 'chat_id' && f.value === chatWithMixedMessagesId)) {
-                         // The actual query in getChatMessagesHandler will add .eq('is_active_in_thread', true)
-                         // So, for this test, we simulate that the DB *could* return both if not for that filter.
-                         // The test ensures the handler *does* apply that filter.
                         if (state.filters.some(f => f.column === 'is_active_in_thread' && f.value === true)) {
                             return { data: [activeMessage] as any[], error: null, count: 1, status: 200 };
                         } else {
-                            // This path should ideally not be hit if the handler query is correct.
-                            // If it were to be hit, it means the handler didn't filter for active, so return both for the test to fail meaningfully.
                             console.warn("[Test Mock chat_messages] Query did not explicitly filter for is_active_in_thread: true. This might indicate a handler logic issue if this test fails.");
                             return { data: [activeMessage, inactiveMessage] as any[], error: null, count: 2, status: 200 };
                         }
@@ -375,9 +419,12 @@ Deno.test("Chat Details Function - GET Logic Tests (Refactored)", {
     const response = await actualMainHandler(req, deps);
     assertEquals(response.status, 200);
     const responseBody = await response.json();
-    assertEquals(responseBody.length, 1, "Should only return one active message");
-    assertEquals(responseBody[0].id, 'active-msg');
-    assertEquals(responseBody[0].is_active_in_thread, true);
+    assertExists(responseBody.chat, "Response body should have a 'chat' property for mixed activity chat");
+    assertExists(responseBody.messages, "Response body should have a 'messages' property for mixed activity chat");
+    assertEquals(responseBody.messages.length, 1, "Should only return one active message");
+    assertEquals(responseBody.messages[0].id, 'active-msg');
+    assertEquals(responseBody.messages[0].is_active_in_thread, true);
+    assertObjectMatch(responseBody.chat, mockChatForMixedActivity);
   });
 
   // Remove old HandlerError specific tests if covered by new structure or redundant
@@ -482,6 +529,17 @@ Deno.test("Chat Details Function - DELETE Logic Tests", {
   await t.step("DELETE organization chat by org admin successfully returns 204", async () => {
     const orgChatId = 'org-chat-to-delete-by-admin';
     const orgId = 'org-admin-owns';
+    // Full chat details for the access check part
+    const mockOrgChatToDeleteDetails: Partial<Chat> = { 
+        id: orgChatId, 
+        user_id: 'some-creator-id', 
+        organization_id: orgId,
+        // Add other fields as returned by the select query in mainHandler
+        created_at: new Date().toISOString(), 
+        updated_at: new Date().toISOString(),
+        system_prompt_id: null,
+        title: 'Org chat to delete'
+    };
 
     const supaConfig: MockSupabaseDataConfig = {
       mockUser: { id: testUserIdForDelete } as any, 
@@ -493,7 +551,7 @@ Deno.test("Chat Details Function - DELETE Logic Tests", {
         chats: {
           select: spy(async (state: MockQueryBuilderState) => { 
             if (state.filters.some((f: any) => f.column === 'id' && f.value === orgChatId)) {
-              return { data: [{ id: orgChatId, user_id: 'some-creator-id', organization_id: orgId }], error: null, count: 1, status: 200 };
+              return { data: [mockOrgChatToDeleteDetails as Chat], error: null, count: 1, status: 200 }; // Return full chat details
             }
             return { data: null, error: new Error('Chat not found for org admin delete'), status: 404 };
           }),
@@ -520,13 +578,13 @@ Deno.test("Chat Details Function - DELETE Logic Tests", {
     assertExists(deleteMockSpy, "Delete mock spy function should exist on supaConfig");
     assertEquals(deleteMockSpy.calls.length, 1, "Delete mock spy should have been called once");
 
-    // Assert that is_org_admin was called
     const rpcSpy = clientSpies.rpcSpy;
     assertExists(rpcSpy.calls.find(call => call.args[0] === 'is_org_admin'), "is_org_admin RPC should have been called");
-    assertSpyCall(rpcSpy, rpcSpy.calls.findIndex(call => call.args[0] === 'is_org_admin'), {
-        args: ['is_org_admin', { org_id: orgId }, undefined],
-        // We don't assert on returned value here, just that it was called with correct args
-    });
+    const isOrgAdminCall = rpcSpy.calls.find(call => call.args[0] === 'is_org_admin');
+    assertExists(isOrgAdminCall, "is_org_admin call should exist");
+    assertEquals(isOrgAdminCall.args.length, 2, "is_org_admin RPC should be called with 2 arguments");
+    assertEquals(isOrgAdminCall.args[0], 'is_org_admin');
+    assertEquals(isOrgAdminCall.args[1], { org_id: orgId });
   });
 
   await t.step("DELETE organization chat by org member (non-admin) returns 403", async () => {

@@ -73,7 +73,7 @@ export type AiStore = AiState & AiActions;
 // --- Removed ANONYMOUS_MESSAGE_LIMIT ---
 
 // --- Initial State Values (for direct use in create) ---
-const initialAiStateValues: AiState = {
+export const initialAiStateValues: AiState = {
     availableProviders: [],
     availablePrompts: [],
     chatsByContext: { personal: undefined, orgs: {} },
@@ -489,39 +489,88 @@ export const useAiStore = create<AiStore>()(
                 }
             },
 
-            loadChatDetails: async (chatId) => {
-                if (!chatId) {
-                    set({ aiError: 'Chat ID is required to load details.', isDetailsLoading: false });
-                    return;
-                }
+            loadChatDetails: async (chatId: Chat['id']) => {
+                logger.info(`[aiStore] Loading details for chat ID: ${chatId}`);
+                set({ isDetailsLoading: true, aiError: null });
                 const token = useAuthStore.getState().session?.access_token;
-                 if (!token) {
-                    set({ aiError: 'Authentication token not found.', isDetailsLoading: false });
+
+                if (!token) {
+                    logger.warn('[aiStore] No token available for loading chat details.');
+                    set({ 
+                        isDetailsLoading: false, 
+                        aiError: 'Authentication required to load chat details.', 
+                        currentChatId: null // Potentially clear currentChatId if auth fails mid-operation
+                    });
                     return;
                 }
-                set({ isDetailsLoading: true, aiError: null, currentChatId: chatId }); // Optimistically set chatId
+
                 try {
-                    // Pass token directly as a string
-                    const response = await api.ai().getChatMessages(chatId, token); 
+                    // Call the updated API method that returns chat metadata and messages
+                    // No need to pass organizationId here, as the backend function infers it or doesn't need it for GET if RLS is sufficient.
+                    const response = await api.ai().getChatWithMessages(chatId, token);
+
                     if (response.error) {
-                         throw new Error(response.error.message || 'Failed to load chat details');
+                        throw new Error(response.error.message || 'API error fetching chat details.');
                     }
-                    // Use plain set without immer
-                    set(state => ({
-                        messagesByChatId: { ...state.messagesByChatId, [chatId]: response.data || [] }, // Handle potentially missing messages key
-                        isDetailsLoading: false,
-                        currentChatId: chatId, // Confirm chatId
-                        aiError: null,
-                    }));
+
+                    if (response.data && response.data.chat && response.data.messages) {
+                        const fetchedChat = response.data.chat;
+                        const fetchedMessages = response.data.messages;
+
+                        set(state => {
+                            let newChatsByContext = { ...state.chatsByContext };
+                            const orgId = fetchedChat.organization_id;
+
+                            if (orgId) { // Organization chat
+                                const orgChats = [...(state.chatsByContext.orgs[orgId] || [])];
+                                const existingChatIndex = orgChats.findIndex(c => c.id === fetchedChat.id);
+                                if (existingChatIndex !== -1) {
+                                    orgChats[existingChatIndex] = fetchedChat; // Update existing
+                                } else {
+                                    orgChats.push(fetchedChat); // Add if not present (e.g., direct load via URL)
+                                }
+                                newChatsByContext = {
+                                    ...newChatsByContext,
+                                    orgs: { ...newChatsByContext.orgs, [orgId]: orgChats }
+                                };
+                            } else { // Personal chat
+                                const personalChats = [...(state.chatsByContext.personal || [])];
+                                const existingChatIndex = personalChats.findIndex(c => c.id === fetchedChat.id);
+                                if (existingChatIndex !== -1) {
+                                    personalChats[existingChatIndex] = fetchedChat; // Update existing
+                                } else {
+                                    personalChats.push(fetchedChat); // Add if not present
+                                }
+                                newChatsByContext = {
+                                    ...newChatsByContext,
+                                    personal: personalChats
+                                };
+                            }
+
+                            return {
+                                messagesByChatId: {
+                                    ...state.messagesByChatId,
+                                    [chatId]: fetchedMessages,
+                                },
+                                chatsByContext: newChatsByContext, // Update with the potentially modified chat metadata
+                                currentChatId: chatId,
+                                isDetailsLoading: false,
+                                aiError: null,
+                            };
+                        });
+                        logger.info(`[aiStore] Successfully loaded details for chat ID: ${chatId}. Messages: ${fetchedMessages.length}, Metadata Updated.`);
+                    } else {
+                        throw new Error('Invalid data structure received from API for chat details.');
+                    }
                 } catch (error: unknown) {
-                    logger.error('Error loading chat details:', { chatId, error: error instanceof Error ? error.message : String(error) });
-                    // Use plain set without immer
-                    set(state => ({
-                        aiError: error instanceof Error ? error.message : 'An unexpected error occurred while loading chat details.',
-                        messagesByChatId: { ...state.messagesByChatId, [chatId]: [] },
-                        currentChatId: null, // Clear chatId on error
+                    const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred while loading chat details.';
+                    logger.error(`[aiStore] Error loading details for chat ID: ${chatId}`, { error: errorMessage });
+                    set({
                         isDetailsLoading: false,
-                    }));
+                        aiError: errorMessage,
+                        // Optionally, clear currentChatId if details fail to load for it
+                        // currentChatId: state.currentChatId === chatId ? null : state.currentChatId, 
+                    });
                 }
             },
 

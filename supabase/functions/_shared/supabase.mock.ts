@@ -366,68 +366,58 @@ class MockQueryBuilder implements IMockQueryBuilder {
 
 // --- MockSupabaseAuth Implementation ---
 class MockSupabaseAuth implements IMockSupabaseAuth {
-    public readonly getUserSpy: Spy<IMockSupabaseAuth['getUser']>;
+    public readonly getUserSpy: Spy;
     private _config: MockSupabaseDataConfig;
 
     constructor(config: MockSupabaseDataConfig) {
         this._config = config;
-        this.getUserSpy = spy(async () => {
-            console.log("[Mock Auth] getUser called");
-            if (this._config.simulateAuthError) {
-                return { data: { user: null }, error: this._config.simulateAuthError };
-            }
-            const userFromMockUser = this._config.mockUser === undefined ? undefined : (this._config.mockUser as User | null);
-            const user = this._config.getUserResult?.data?.user ?? userFromMockUser ?? null;
-            const error = this._config.getUserResult?.error ?? null;
-            return { data: { user }, error };
-        });
+        this.getUserSpy = spy(this, 'getUser'); 
     }
-    // Method to satisfy interface and call the spy
-    getUser: () => Promise<{ data: { user: User | null }; error: Error | null }> = async () => {
-         return this.getUserSpy();
+
+    async getUser(): Promise<{ data: { user: User | null }; error: Error | null }> {
+        console.log("[Mock Supabase Auth] getUser called.");
+        if (this._config.simulateAuthError) {
+            return { data: { user: null }, error: this._config.simulateAuthError };
+        }
+        if (this._config.getUserResult) {
+            return this._config.getUserResult;
+        }
+        const userToReturn = this._config.mockUser === undefined ? { id: 'mock-user-id' } as User : this._config.mockUser;
+        return { data: { user: userToReturn }, error: null };
     }
 }
 
 class MockSupabaseClient implements IMockSupabaseClient {
     public readonly auth: MockSupabaseAuth;
-    public readonly rpcSpy: Spy<IMockSupabaseClient['rpc']>;
-    public readonly fromSpy: Spy<IMockSupabaseClient['from']>;
+    public readonly rpcSpy: Spy;
+    public readonly fromSpy: Spy;
     private _config: MockSupabaseDataConfig;
     private _latestBuilders: Map<string, MockQueryBuilder> = new Map();
 
     constructor(config: MockSupabaseDataConfig) {
         this._config = config;
         this.auth = new MockSupabaseAuth(config);
-        this.rpcSpy = spy(async (name: string, params?: object, _options?: { head?: boolean, count?: 'exact' | 'planned' | 'estimated' }): Promise<MockResolveQueryResult> => {
-            console.log(`[Mock RPC] called: ${name} with params:`, params);
-            const rpcConfig = this._config.rpcResults?.[name];
-            if (typeof rpcConfig === 'function') {
-                const funcResult = await rpcConfig();
-                 return { data: funcResult.data ?? null, error: funcResult.error ?? null, count: funcResult.data ? 1:0, status: funcResult.error ? 500:200, statusText: funcResult.error? 'Error' : 'OK' };
-            } else if (rpcConfig && typeof rpcConfig === 'object') {
-                return { data: rpcConfig.data ?? null, error: rpcConfig.error ?? null, count: rpcConfig.data ? 1:0, status: rpcConfig.error ? 500:200, statusText: rpcConfig.error? 'Error' : 'OK' };
-            }
-            return { data: null, error: new Error(`RPC function ${name} not mocked (code: RPC_MOCK_ERROR)`), count: 0, status: 404, statusText: 'Not Found' };
-        });
-        
-        this.fromSpy = spy((tableName: string): IMockQueryBuilder => {
-            console.log(`[Mock Client] from(${tableName}) called`);
-            const newBuilder = new MockQueryBuilder(tableName, 'select', this._config.genericMockResults);
-            this._latestBuilders.set(tableName, newBuilder);
-            return newBuilder;
-        });
+        this.rpcSpy = spy(this, 'rpc'); 
+        this.fromSpy = spy(this, 'from');
     }
 
-    // Methods to satisfy interface and call spies
-    from: (tableName: string) => IMockQueryBuilder = (tableName: string): IMockQueryBuilder => { 
-        return this.fromSpy(tableName); 
+    from(tableName: string): IMockQueryBuilder { 
+        console.log(`[Mock Supabase Client] from('${tableName}') called`);
+        const builder = new MockQueryBuilder(tableName, 'select', this._config.genericMockResults);
+        this._latestBuilders.set(tableName, builder);
+        return builder;
     }
-    rpc: (name: string, params?: object, options?: { head?: boolean, count?: 'exact' | 'planned' | 'estimated' }) => Promise<{ data: unknown | null; error: Error | null; count: number | null; status: number; statusText: string; }> = async (name, params, options) => {
-        // this.rpcSpy returns Promise<MockResolveQueryResult>
-        // MockResolveQueryResult is now { data: unknown; error: Error | MockPGRSTError | null; ... }
-        // This needs to be compatible with the required return type { data: unknown | null; error: Error | null; ... }
-        const result = await this.rpcSpy(name, params, options);
-        return result as { data: unknown | null; error: Error | null; count: number | null; status: number; statusText: string; };
+
+    async rpc(name: string, params?: object, options?: { head?: boolean, count?: 'exact' | 'planned' | 'estimated' }): Promise<{ data: unknown | null; error: Error | null; count: number | null; status: number; statusText: string; }> {
+        console.log(`[Mock Supabase Client] rpc('${name}', ${JSON.stringify(params)}, ${JSON.stringify(options)}) called`);
+        const rpcConfig = this._config.rpcResults?.[name];
+        if (typeof rpcConfig === 'function') {
+            const result = await rpcConfig();
+            return { data: result.data ?? null, error: result.error ?? null, count: null, status: result.error ? 500 : 200, statusText: result.error ? 'Error' : 'OK' };
+        } else if (rpcConfig) {
+            return { data: rpcConfig.data ?? null, error: rpcConfig.error ?? null, count: null, status: rpcConfig.error ? 500 : 200, statusText: rpcConfig.error ? 'Error' : 'OK' };
+        }
+        return { data: null, error: new Error(`RPC function ${name} not mocked.`), count: null, status: 404, statusText: 'Not Found' };
     }
 
     public getLatestBuilder(tableName: string): MockQueryBuilder | undefined { 

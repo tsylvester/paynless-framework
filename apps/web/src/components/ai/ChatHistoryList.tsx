@@ -7,7 +7,7 @@ import { ChatItem } from './ChatItem';
 import ErrorBoundary from '@/components/common/ErrorBoundary';
 
 interface ChatHistoryListProps {
-  onLoadChat: (chat: Chat) => void;
+  onLoadChat: (chatId: string) => void;
   currentChatId?: string | null;
   contextTitle?: string;
   activeContextId: string | null;
@@ -119,7 +119,7 @@ export function ChatHistoryList({
             <ChatItem
               key={chat.id}
               chat={chat}
-              onClick={onLoadChat}
+              onClick={() => onLoadChat(chat.id)}
               isActive={chat.id === currentChatId}
             />
           ))}
