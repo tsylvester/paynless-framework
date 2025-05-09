@@ -8,7 +8,7 @@ import { AiChatbox } from '../components/ai/AiChatbox';
 import { ChatHistoryList } from '../components/ai/ChatHistoryList';
 import { ChatContextSelector } from '../components/ai/ChatContextSelector';
 // import type { Chat, Organization, AiProvider, SystemPrompt } from '@paynless/types'; // Organization, AiProvider, SystemPrompt commented out as they are not used
-import type { Chat } from '@paynless/types'; // Only Chat is used now
+// import type { Chat } from '@paynless/types'; // Chat type might no longer be needed here if currentChatHistoryList is removed
 
 export default function AiChatPage() {
   // Get user, session, and loading state from auth store
@@ -19,33 +19,35 @@ export default function AiChatPage() {
   
   const {
     loadAiConfig,
-    loadChatHistory,
+    // loadChatHistory, // No longer called directly by AiChatPage
     loadChatDetails,
     startNewChat,
     currentChatId,
     availableProviders,
     availablePrompts,
     checkAndReplayPendingChatAction,
-    chatsByContext,
-    isLoadingHistoryByContext,
+    // chatsByContext, // No longer used to derive currentChatHistoryList
+    // isLoadingHistoryByContext, // No longer used to derive currentIsHistoryLoading
   } = useAiStore((state) => ({
     loadAiConfig: state.loadAiConfig,
-    loadChatHistory: state.loadChatHistory,
+    // loadChatHistory: state.loadChatHistory,
     loadChatDetails: state.loadChatDetails,
     startNewChat: state.startNewChat,
     currentChatId: state.currentChatId,
     availableProviders: state.availableProviders,
     availablePrompts: state.availablePrompts,
     checkAndReplayPendingChatAction: state.checkAndReplayPendingChatAction,
-    chatsByContext: state.chatsByContext,
-    isLoadingHistoryByContext: state.isLoadingHistoryByContext,
+    // chatsByContext: state.chatsByContext,
+    // isLoadingHistoryByContext: state.isLoadingHistoryByContext,
   }));
 
   // Organization Store data
   const { 
     currentOrganizationId: globalCurrentOrgId, 
+    userOrganizations,
   } = useOrganizationStore(state => ({
     currentOrganizationId: state.currentOrganizationId,
+    userOrganizations: state.userOrganizations,
   }));
 
   const [selectedProviderId, setSelectedProviderId] = useState<string | null>(null);
@@ -92,28 +94,9 @@ export default function AiChatPage() {
 
   // Initialize or update nextChatOrgContext from globalCurrentOrgId
   useEffect(() => {
-    if (!hasUserManuallySelectedContext && typeof globalCurrentOrgId !== 'undefined') {
-      if (nextChatOrgContext === undefined || nextChatOrgContext !== globalCurrentOrgId) {
-        logger.info(`[AiChatPage] Initializing/syncing nextChatOrgContext from globalCurrentOrgId: ${globalCurrentOrgId}`);
-        setNextChatOrgContext(globalCurrentOrgId);
-      }
-    }
-  }, [globalCurrentOrgId, hasUserManuallySelectedContext, nextChatOrgContext]);
-
-  // Load chat history based on user, auth status, and selected context
-  useEffect(() => {
-    logger.info('[AiChatPage] History effect running.', { isAuthLoading, hasUser: !!user, context: nextChatOrgContext });
-    if (!isAuthLoading && user && typeof nextChatOrgContext !== 'undefined') {
-        logger.info(`[AiChatPage] Auth finished, user found, context defined. Loading history for context: ${nextChatOrgContext === null ? 'Personal' : nextChatOrgContext}`);
-        loadChatHistory(nextChatOrgContext);
-    } else if (isAuthLoading) {
-        logger.info('[AiChatPage] Auth still loading, waiting to load history...');
-    } else if (!user) {
-        logger.warn('[AiChatPage] Auth finished but no user found, skipping chat history load.');
-    } else if (typeof nextChatOrgContext === 'undefined') {
-        logger.info('[AiChatPage] Context not yet defined, waiting to load history...');
-    }
-  }, [loadChatHistory, user, isAuthLoading, nextChatOrgContext]);
+    console.log(`[AiChatPage CONSOLE] Initializing/syncing nextChatOrgContext (current: ${nextChatOrgContext}, global: ${globalCurrentOrgId})`);
+    setNextChatOrgContext(globalCurrentOrgId);
+  }, [globalCurrentOrgId]);
 
   // Check for pending chat action on mount
   useEffect(() => {
@@ -148,25 +131,6 @@ export default function AiChatPage() {
     } 
   }, [loadChatDetails]);
 
-  // Derive chatHistoryList and isHistoryLoading based on nextChatOrgContext
-  const currentChatHistoryList: Chat[] = useMemo(() => {
-    if (typeof nextChatOrgContext === 'undefined' || !chatsByContext) return [];
-    if (nextChatOrgContext === null) { // Personal context
-      return chatsByContext.personal || [];
-    }
-    // Org context
-    return chatsByContext.orgs?.[nextChatOrgContext] || [];
-  }, [nextChatOrgContext, chatsByContext]);
-
-  const currentIsHistoryLoading: boolean = useMemo(() => {
-    if (typeof nextChatOrgContext === 'undefined' || !isLoadingHistoryByContext) return false;
-    if (nextChatOrgContext === null) { // Personal context
-      return isLoadingHistoryByContext.personal || false;
-    }
-    // Org context
-    return isLoadingHistoryByContext.orgs?.[nextChatOrgContext] || false;
-  }, [nextChatOrgContext, isLoadingHistoryByContext]);
-
   const handleProviderChange = (providerId: string | null) => {
     setSelectedProviderId(providerId);
     analytics.track('Chat: Provider Selected', { providerId });
@@ -178,6 +142,7 @@ export default function AiChatPage() {
   };
 
   const handleContextSelection = (newContextId: string | null) => {
+    console.log(`[AiChatPage CONSOLE] User selected next chat context: ${newContextId}`);
     setHasUserManuallySelectedContext(true);
     setNextChatOrgContext(newContextId);
     analytics.track('Chat: Context Selected For New Chat', {
@@ -246,27 +211,24 @@ export default function AiChatPage() {
             </div>
           </div>
            
-           <div className="flex-grow min-h-0"> 
+           <div className="flex-grow overflow-y-auto p-4"> {/* Main content area with scroll */}
              <AiChatbox 
-               isAnonymous={false} 
-               providerId={selectedProviderId}
+               providerId={selectedProviderId} 
                promptId={selectedPromptId}
-               key={currentChatId || 'new'} 
+               key={`${currentChatId}-${selectedProviderId}-${selectedPromptId}-${nextChatOrgContext}`} // Add nextChatOrgContext to key
              />
            </div>
         </div>
 
-        <div className="md:col-span-1 border border-border rounded-lg bg-card shadow-sm flex flex-col overflow-y-auto min-h-0 max-h-[calc(100vh-12rem)]"> 
-           <div className="p-4 border-b border-border sticky top-0 bg-card/80 backdrop-blur-md z-10">
-             <h2 className="text-lg font-semibold text-card-foreground">Chat History</h2>
-           </div>
-          <ChatHistoryList 
-             history={currentChatHistoryList}
-             onLoadChat={handleLoadChat}
-             isLoading={isAuthLoading || currentIsHistoryLoading} 
-             currentChatId={currentChatId}
+        {/* Chat History Sidebar */}
+        <aside className="md:col-span-1 flex flex-col border border-border rounded-lg bg-card shadow-sm overflow-y-auto min-h-0 max-h-[calc(100vh-12rem)]">
+          <ChatHistoryList
+            activeContextId={typeof nextChatOrgContext === 'undefined' ? null : nextChatOrgContext}
+            currentChatId={currentChatId}
+            onLoadChat={handleLoadChat}
+            contextTitle={nextChatOrgContext === null ? "Personal Chats" : (userOrganizations?.find(org => org.id === nextChatOrgContext)?.name || "Organization") + " Chats"}
           />
-        </div>
+        </aside>
       </div>
     </div>
   );

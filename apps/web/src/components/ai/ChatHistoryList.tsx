@@ -1,5 +1,5 @@
 import React, { useEffect } from 'react';
-// import { Chat } from '@paynless/types';
+import { Chat } from '@paynless/types';
 import { cn } from '@/lib/utils';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useAiStore } from '@paynless/store';
@@ -23,41 +23,45 @@ export function ChatHistoryList({
   const historyErrorByContext = useAiStore(state => state.historyErrorByContext);
 
   useEffect(() => {
-    if (activeContextId !== null) {
-      const contextKey = activeContextId;
-      const isOrg = contextKey !== 'personal';
+    const contextKey = activeContextId === null ? 'personal' : activeContextId;
 
-      const chatsForContext = isOrg ? chatsByContext.orgs[contextKey] : chatsByContext.personal;
-      const isLoadingForContext = isOrg ? isLoadingHistoryByContext.orgs[contextKey] : isLoadingHistoryByContext.personal;
-      const errorForContext = isOrg ? historyErrorByContext.orgs[contextKey] : historyErrorByContext.personal;
+    const chatsForContext = contextKey === 'personal' 
+      ? chatsByContext.personal 
+      : chatsByContext.orgs[contextKey];
 
-      if ((chatsForContext === undefined || chatsForContext.length === 0) && 
-          !isLoadingForContext && 
-          !errorForContext) {
-        storeLoadChatHistory(contextKey);
-      }
+    const isLoadingForContext = contextKey === 'personal' 
+      ? isLoadingHistoryByContext.personal 
+      : isLoadingHistoryByContext.orgs[contextKey];
+
+    const errorForContext = contextKey === 'personal' 
+      ? historyErrorByContext.personal 
+      : historyErrorByContext.orgs[contextKey];
+
+    const shouldLoad = chatsForContext === undefined && 
+        !isLoadingForContext && 
+        !errorForContext;
+
+    if (shouldLoad) {
+      storeLoadChatHistory(activeContextId);
     }
   }, [activeContextId, chatsByContext, isLoadingHistoryByContext, historyErrorByContext, storeLoadChatHistory]);
 
   const getChatsForDisplay = () => {
-    if (!activeContextId) return [];
-    return activeContextId === 'personal' 
-      ? chatsByContext.personal || [] 
-      : chatsByContext.orgs[activeContextId] || [];
+    if (activeContextId === null) return chatsByContext.personal || [];
+    if (typeof activeContextId === 'string') return chatsByContext.orgs[activeContextId] || [];
+    return []; // Should not happen if activeContextId is always string | null
   };
 
   const isLoadingForDisplay = () => {
-    if (!activeContextId) return false;
-    return activeContextId === 'personal' 
-      ? isLoadingHistoryByContext.personal 
-      : isLoadingHistoryByContext.orgs[activeContextId] || false;
+    if (activeContextId === null) return isLoadingHistoryByContext.personal;
+    if (typeof activeContextId === 'string') return isLoadingHistoryByContext.orgs[activeContextId] || false;
+    return false; // Default to not loading
   };
 
   const errorForDisplay = () => {
-    if (!activeContextId) return null;
-    return activeContextId === 'personal' 
-      ? historyErrorByContext.personal 
-      : historyErrorByContext.orgs[activeContextId] || null;
+    if (activeContextId === null) return historyErrorByContext.personal;
+    if (typeof activeContextId === 'string') return historyErrorByContext.orgs[activeContextId] || null;
+    return null; // Default to no error
   };
 
   const chatsToDisplay = getChatsForDisplay();
@@ -108,7 +112,7 @@ export function ChatHistoryList({
     <div className="p-2">
       {renderTitle()}
       <div className="space-y-1">
-        {chatsToDisplay.map((chat) => {
+        {chatsToDisplay.map((chat: Chat) => {
           const chatTitle = chat.title || `Chat ${chat.id.substring(0, 8)}...`;
           const isActive = chat.id === currentChatId;
           return (

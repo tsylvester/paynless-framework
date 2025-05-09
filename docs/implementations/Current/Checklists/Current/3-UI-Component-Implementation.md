@@ -78,7 +78,6 @@ The implementation plan uses the following labels to categorize work steps:
     *   **Initial State & Rendering (on mount):**
         *   [✅] Renders the basic page structure with all child components mocked.
         *   [✅] Initializes `nextChatOrgContext` from `globalCurrentOrgId` (from `useOrganizationStore`).
-        *   [✅] Calls `loadChatHistory` with the initial `nextChatOrgContext`.
         *   [✅] Calls `loadAiConfig` action from `useAiStore`.
         *   [✅] Calls `checkAndReplayPendingChatAction` action from `useAiStore`.
         *   [✅] **Default Provider Selection:** When `availableProviders` (from `useAiStore`) become available, `selectedProviderId` state is set to the ID of the first provider if `selectedProviderId` was initially `null`.
@@ -90,7 +89,6 @@ The implementation plan uses the following labels to categorize work steps:
         *   **User Interactions & Event Handling:**
             *   [✅] `ChatContextSelector.onContextChange` (simulating `handleContextSelection`):
                 *   [✅] Updates `nextChatOrgContext` state.
-                *   [✅] `loadChatHistory` is called with the new context (via `useEffect`).
                 *   [✅] Tracks `analytics.track('Chat: Context Selected For New Chat', ...)` with correct context.
             *   [✅] `ModelSelector.onProviderChange` (simulating `handleProviderChange`):
                 *   [✅] Updates `selectedProviderId` state.
@@ -110,21 +108,18 @@ The implementation plan uses the following labels to categorize work steps:
                 *   [✅] Resets `selectedProviderId` state to the first available provider's ID (or `null` if none).
                 *   [✅] Resets `selectedPromptId` state to the first available prompt's ID (or `null` if none).
         *   **State Dependencies & Derived Values (Props to Children):**
-            *   [✅] `currentChatHistoryList` is correctly derived from `chatsByContext` and `nextChatOrgContext`.
-            *   [✅] `currentIsHistoryLoading` is correctly derived from `isLoadingHistoryByContext` and `nextChatOrgContext`.
-            *   [✅] Verify `ChatContextSelector` receives correctly mapped props: `organizations`, `currentContextId` (handles `undefined` `nextChatOrgContext` by passing `null`), `isLoading`.
+            *   [✅] Verify `ChatContextSelector` receives correctly mapped props: `currentContextId` (handles `undefined` `nextChatOrgContext` by passing `null`). (`organizations` and `isLoading` are sourced from store by `ChatContextSelector` itself).
             *   [✅] Verify `ModelSelector` receives correct `selectedProviderId` prop.
             *   [✅] Verify `PromptSelector` receives correct `selectedPromptId` prop.
             *   [✅] Verify `AiChatbox` receives correct `providerId`, `promptId`, and `key` props.
-            *   [✅] Verify `ChatHistoryList` receives correct `history` (as `currentChatHistoryList`), `isLoading` (derived), and `currentChatId` props.
+            *   [✅] Verify `ChatHistoryList` receives correct `activeContextId` (derived from `nextChatOrgContext`), `currentChatId`, and `contextTitle` props.
 * [✅] Update `apps/web/src/pages/AiChat.tsx` (or relevant parent component): (This step's implementation details largely covered by tests above)
-  * [✅] Fetch `organizations` and `currentOrganizationId` from `useOrganizationStore`.
+  * [✅] Fetch `currentOrganizationId` and `userOrganizations` from `useOrganizationStore`.
   * [✅] Use `useState` for `nextChatOrgContext: string | null`, defaulting to `currentOrganizationId`.
-  * [✅] Render `<ChatContextSelector organizations={organizations} currentContextId={nextChatOrgContext} onContextChange={handleContextSelection} isLoading={...} />`.
+  * [✅] Render `<ChatContextSelector currentContextId={nextChatOrgContext} onContextChange={handleContextSelection} />`.
   * [✅] Implement `handleContextSelection(newContextId: string | null)`:
       *   [✅] `setNextChatOrgContext(newContextId)`.
-      *   [✅] Trigger `Chat: Context Selected For New Chat` analytics event. (Note: Plan previously said 'chat_context_selected')
-      *   [✅] Ensure `loadChatHistory(newContextId)` is called via `useEffect` reacting to `nextChatOrgContext` change.
+      *   [✅] Trigger `Chat: Context Selected For New Chat` analytics event.
   * [✅] Modify "New Chat" button's `onClick` handler:
       *   [✅] Call `useAiStore.getState().startNewChat(nextChatOrgContext)`.
 * [✅] **[TEST-INT]** Create `apps/web/src/pages/AiChat.integration.test.tsx` with comprehensive integration tests for context selection and initial loading:
@@ -204,6 +199,11 @@ The implementation plan uses the following labels to categorize work steps:
 * [✅] Run tests. Debug until pass (GREEN).
 * [✅] **[REFACTOR]** Review conditional rendering, `ChatItem` usage.
 * [✅] Commit changes with message "feat(UI): Implement context-aware chat history display driven by ChatContextSelector"
+
+* [✅] Fix AiChat.test.tsx
+* [✅] Fix AiChat.integration.test.tsx
+* [✅] Fix infinite loop on loading org chat 
+* [ ] Check ChatHistoryList test after fixing loop
 
 #### STEP-3.2.2: Add Context-Specific Actions to Chat History Items (`ChatItem.tsx`) [TEST-UNIT] [COMMIT]
 * [ ] Define Test Cases (Gemini 2.5.1): Delete Button/menu item visible only for admin on org chats in current context. Hidden otherwise. Click triggers confirmation/action.

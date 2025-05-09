@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, type Mock, type SpyInstance } from 'vitest';
-import { render, screen, act } from '@testing-library/react';
+import { render, screen, act, fireEvent } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 // import AiChat from './AiChat'; // Will be imported after mocks
 import { useAiStore, useAuthStore, useOrganizationStore } from '@paynless/store';
@@ -156,11 +156,11 @@ const aiStoreInitialState = {
 
 describe('AiChat Page', () => {
   let analyticsTrackMock: Mock;
-  let loadAiConfigMock: Mock; // Defined here
-  let loadChatHistoryMock: Mock; // Defined here
-  let loadChatDetailsMock: Mock; // Defined here
-  let startNewChatMock: Mock; // Defined here
-  let checkAndReplayPendingChatActionMock: Mock; // Defined here
+  let loadAiConfigMock: Mock;
+  let loadChatHistoryMock: Mock;
+  let loadChatDetailsMock: Mock;
+  let startNewChatMock: Mock;
+  let checkAndReplayPendingChatActionMock: Mock;
   let deleteChatMock: Mock;
   let prepareRewindMock: Mock;
   let cancelRewindPreparationMock: Mock;
@@ -179,12 +179,10 @@ describe('AiChat Page', () => {
     // Assign specific mock instances for actions
     loadAiConfigMock = vi.fn();
     loadChatHistoryMock = vi.fn();
-    loadChatDetailsMock = vi.fn((chatIdToLoad: string) => { // New mock implementation
+    loadChatDetailsMock = vi.fn((chatIdToLoad: string) => {
       act(() => {
         useAiStore.setState({ currentChatId: chatIdToLoad, isDetailsLoading: true });
       });
-      // Optionally, simulate async completion of loading, though often not needed for prop assertion
-      // setTimeout(() => act(() => useAiStore.setState({ isDetailsLoading: false })), 0);
     });
     startNewChatMock = vi.fn();
     checkAndReplayPendingChatActionMock = vi.fn();
@@ -224,7 +222,6 @@ describe('AiChat Page', () => {
     // Default mock resolutions
     loadAiConfigMock.mockResolvedValue(undefined);
     loadChatHistoryMock.mockResolvedValue(undefined);
-    checkAndReplayPendingChatActionMock.mockResolvedValue(undefined);
   });
 
   it('should render the AiChat page structure with mocks', () => {
@@ -242,7 +239,6 @@ describe('AiChat Page', () => {
   });
 
   it('should call checkAndReplayPendingChatAction on mount', () => {
-    // Ensure the mock is set up if it can be undefined in the store initially
     const mockCheckAndReplay = vi.fn();
     act(() => {
         useAiStore.setState({ checkAndReplayPendingChatAction: mockCheckAndReplay });
@@ -251,58 +247,69 @@ describe('AiChat Page', () => {
     expect(mockCheckAndReplay).toHaveBeenCalledTimes(1);
   });
 
-  it('should initialize with globalCurrentOrgId and load initial history for that context', async () => {
+  it('should pass the correct initial activeContextId to ChatHistoryList based on globalCurrentOrgId', async () => {
     render(<AiChat />);
     await vi.waitFor(() => {
-        expect(loadChatHistoryMock).toHaveBeenCalledTimes(1);
+        expect(vi.mocked(ChatHistoryList)).toHaveBeenCalledWith(
+            expect.objectContaining({ activeContextId: 'org-abc' }),
+            expect.anything()
+        );
     });
-    expect(loadChatHistoryMock).toHaveBeenCalledWith('org-abc');
   });
   
-  it('should load initial history with null context if globalCurrentOrgId is null', async () => {
+  it('should pass activeContextId=null to ChatHistoryList if globalCurrentOrgId is null', async () => {
      act(() => {
       useOrganizationStore.setState({ currentOrganizationId: null }, false);
     });
     render(<AiChat />);
     await vi.waitFor(() => {
-        expect(loadChatHistoryMock).toHaveBeenCalledTimes(1);
+        expect(vi.mocked(ChatHistoryList)).toHaveBeenCalledWith(
+            expect.objectContaining({ activeContextId: null }),
+            expect.anything()
+        );
     });
-    expect(loadChatHistoryMock).toHaveBeenCalledWith(null);
   });
 
-  it('should call loadChatHistory with new context when ChatContextSelector changes', async () => {
+  it('should update activeContextId for ChatHistoryList when ChatContextSelector changes', async () => {
     const user = userEvent.setup();
     render(<AiChat />);
 
-    await vi.waitFor(() => {
-        expect(loadChatHistoryMock).toHaveBeenCalledWith('org-abc'); // Initial call
+    await vi.waitFor(() => { // Initial check
+        expect(vi.mocked(ChatHistoryList)).toHaveBeenCalledWith(
+            expect.objectContaining({ activeContextId: 'org-abc' }),
+            expect.anything()
+        );
     });
-    loadChatHistoryMock.mockClear(); // Clear for the next assertion
+    vi.mocked(ChatHistoryList).mockClear(); // Clear calls for the next assertion
     analyticsTrackMock.mockClear();
 
-    // Use the imported mock for ChatContextSelector
-    // We need to trigger the onContextChange prop.
-    // The mock itself has a button, let's use that.
     const selectorButton = screen.getByTestId('context-selector-button');
-    await user.click(selectorButton);
+    await user.click(selectorButton); // ChatContextSelector mock calls onContextChange('mock-context-change')
     
-    await vi.waitFor(() => {
-        expect(loadChatHistoryMock).toHaveBeenCalledTimes(1);
+    await vi.waitFor(() => { // Check after change
+        expect(vi.mocked(ChatHistoryList)).toHaveBeenCalledWith(
+            expect.objectContaining({ activeContextId: 'mock-context-change' }),
+            expect.anything()
+        );
     });
-    expect(loadChatHistoryMock).toHaveBeenCalledWith('mock-context-change');
 
     expect(analyticsTrackMock).toHaveBeenCalledWith('Chat: Context Selected For New Chat', {
       contextId: 'mock-context-change',
     });
   });
   
-   it('should call loadChatHistory with null when ChatContextSelector changes to Personal', async () => {
+   it('should update activeContextId to null for ChatHistoryList when ChatContextSelector changes to Personal', async () => {
     const user = userEvent.setup();
     
-    vi.resetModules(); 
+    // This test dynamically mocks ChatContextSelector, so we need to be careful with module state.
+    // The previous implementation of this test already handled vi.resetModules and dynamic imports,
+    // so the core logic change is just the assertion target.
 
-    // Re-mock ChatContextSelector for this specific test case
-    // Ensure to import the component again if its mock changes structure significantly for dynamic import.
+    // Temporarily use a local mock for loadChatHistory if it was used internally in this specific test's setup
+    // However, the primary assertion should be on ChatHistoryList props.
+    const localLoadChatHistoryMockForThisTestScope = vi.fn(); 
+
+    vi.resetModules(); 
     const MockChatContextSelectorPersonal = vi.fn((props: { onContextChange: (id: string | null) => void }) => 
       <button data-testid="context-selector-button-personal" onClick={() => props.onContextChange(null)}>ContextSelectorMockPersonal</button> 
     );
@@ -310,41 +317,50 @@ describe('AiChat Page', () => {
         ChatContextSelector: MockChatContextSelectorPersonal
     }));
 
-    // Dynamically import AiChat AFTER modules are reset and the dynamic mock is in place
     const AiChatWithDynamicMock = (await import('./AiChat')).default;
-    // Re-import necessary store mocks for this isolated context if they were affected by resetModules
     const { useAiStore: useAiStoreDynamic, useOrganizationStore: useOrganizationStoreDynamic } = await import('@paynless/store');
-    
-    // Re-initialize store states for this dynamically imported component context
-    // Ensure loadChatHistoryMock is the one from this scope or re-initialize it.
-    const localLoadChatHistoryMock = vi.fn();
+    // Re-import ChatHistoryList mock to ensure we are checking the correct one after module reset
+    const { ChatHistoryList: MockedChatHistoryListDynamic } = await import('../components/ai/ChatHistoryList');
+
     act(() => {
-      useOrganizationStoreDynamic.setState({ ...structuredClone(organizationStoreInitialState) }, true);
-      useAiStoreDynamic.setState((state) => ({
+      useOrganizationStoreDynamic.setState({ ...structuredClone(organizationStoreInitialState) }, true); // Reset org store
+      useAiStoreDynamic.setState((state) => ({ // Reset AI store
         ...state,
-        ...aiStoreInitialState,
-        loadChatHistory: localLoadChatHistoryMock, // Use locally scoped mock
+        ...aiStoreInitialState, // Use a clean base state
+        loadChatHistory: localLoadChatHistoryMockForThisTestScope, // if ChatHistoryList uses it
+        // Ensure other necessary actions are mocked if AiChat calls them during init
+        loadAiConfig: vi.fn(), 
+        checkAndReplayPendingChatAction: vi.fn(),
       }), true);
     });
 
-
     render(<AiChatWithDynamicMock />);  
 
-    await vi.waitFor(() => {
-        expect(localLoadChatHistoryMock).toHaveBeenCalledWith('org-abc');
+    await vi.waitFor(() => { // Initial check
+        expect(vi.mocked(MockedChatHistoryListDynamic)).toHaveBeenCalledWith(
+            expect.objectContaining({ activeContextId: 'org-abc' }),
+            expect.anything()
+        );
     });
-    localLoadChatHistoryMock.mockClear();
-    analyticsTrackMock.mockClear(); // Assuming analyticsTrackMock is still the global one or re-imported
+    vi.mocked(MockedChatHistoryListDynamic).mockClear();
+    // analyticsTrackMock needs to be the one from the outer scope or re-imported if resetModules affected it.
+    // For simplicity, assuming analyticsTrackMock is still valid or re-mocked if necessary by test structure.
+    const analyticsModule = await import('@paynless/analytics'); // Re-import if needed
+    const currentAnalyticsTrackMock = vi.mocked(analyticsModule.analytics.track);
+    currentAnalyticsTrackMock.mockClear();
+
 
     const selectorButton = screen.getByTestId('context-selector-button-personal');
     await user.click(selectorButton);
 
-    await vi.waitFor(() => {
-       expect(localLoadChatHistoryMock).toHaveBeenCalledTimes(1);
+    await vi.waitFor(() => { // Check after change
+       expect(vi.mocked(MockedChatHistoryListDynamic)).toHaveBeenCalledWith(
+            expect.objectContaining({ activeContextId: null }),
+            expect.anything()
+        );
     });
-    expect(localLoadChatHistoryMock).toHaveBeenCalledWith(null);
-    expect(analyticsTrackMock).toHaveBeenCalledWith('Chat: Context Selected For New Chat', {
-      contextId: 'personal',
+    expect(currentAnalyticsTrackMock).toHaveBeenCalledWith('Chat: Context Selected For New Chat', {
+      contextId: 'personal', // 'personal' when contextId is null
     });
     vi.doUnmock('../components/ai/ChatContextSelector');
   });
@@ -501,10 +517,10 @@ describe('AiChat Page', () => {
       act(() => {
         useAiStore.setState(state => ({
           ...state,
-          loadAiConfig: loadAiConfigMock, // from outer scope
-          loadChatHistory: loadChatHistoryMock, // from outer scope
-          checkAndReplayPendingChatAction: checkAndReplayPendingChatActionMock, // from outer scope
-          loadChatDetails: loadChatDetailsMock // from outer scope
+          loadAiConfig: loadAiConfigMock,
+          loadChatHistory: loadChatHistoryMock,
+          checkAndReplayPendingChatAction: checkAndReplayPendingChatActionMock,
+          loadChatDetails: loadChatDetailsMock
         }));
       });
       loadChatDetailsMock.mockClear(); // Clear before each localStorage test
@@ -1031,73 +1047,64 @@ describe('AiChat Page', () => {
         }
     });
 
-    it('should pass correct props to AiChatbox', async () => { // Made async
-        const testChatId = 'chat-123';
-        act(() => {
-            useAiStore.setState({ currentChatId: testChatId });
-        });
-        render(<AiChat />);
-        await vi.waitFor(() => { // Wait for async updates
-          expect(vi.mocked(AiChatbox)).toHaveBeenCalled();
-        });
-        const lastCallArgs = vi.mocked(AiChatbox).mock.lastCall;
-        expect(lastCallArgs).toBeDefined();
-        if(lastCallArgs && lastCallArgs.length > 0) { // Check length
-            const props = lastCallArgs[0];
-            expect(props).toBeDefined();
-            expect(props).toEqual(expect.objectContaining({
-                providerId: aiStoreInitialState.availableProviders[0].id, 
-                promptId: aiStoreInitialState.availablePrompts[0].id,   
-                // key: testChatId, // Key is not passed as a prop to the component itself
-            }));
-        } else {
-          throw new Error("AiChatbox mock was not called with expected arguments or not called at all.");
-        }
-    });
-    
-    it('should pass key="new" to AiChatbox when currentChatId is null', async () => { // Made async
-        act(() => {
-            useAiStore.setState({ currentChatId: null });
-        });
-        render(<AiChat />);
-        await vi.waitFor(() => { // Wait for async updates
-          expect(vi.mocked(AiChatbox)).toHaveBeenCalled();
-        });
-        const lastCallArgs = vi.mocked(AiChatbox).mock.lastCall;
-        expect(lastCallArgs).toBeDefined();
-        if(lastCallArgs && lastCallArgs.length > 0) { // Check length
-            const props = lastCallArgs[0];
-            expect(props).toBeDefined();
-            // We cannot assert props.key === 'new' because key is not passed down.
-            // Instead, we ensure other props are passed correctly in this state.
-            expect(props).toEqual(expect.objectContaining({
-                providerId: aiStoreInitialState.availableProviders[0].id,
-                promptId: aiStoreInitialState.availablePrompts[0].id,
-            }));
-        } else {
-          throw new Error("AiChatbox mock was not called or not called with expected arguments when currentChatId is null.");
-        }
+    it('should pass correct props to AiChatbox including updated key', async () => { // Made async
+      const initialCurrentChatId = 'chat-123';
+      const initialSelectedProviderId = aiStoreInitialState.availableProviders[0].id; // from default setup
+      const initialSelectedPromptId = aiStoreInitialState.availablePrompts[0].id;   // from default setup
+      const initialNextChatOrgContext = 'org-context-initial';
+
+      act(() => {
+        useAiStore.setState(state => ({ // Ensure AiStore has providers/prompts for default selection
+          ...state, // keep existing mocks for actions like loadAiConfig etc.
+          currentChatId: initialCurrentChatId,
+          availableProviders: [...aiStoreInitialState.availableProviders], // Use a copy
+          availablePrompts: [...aiStoreInitialState.availablePrompts],   // Use a copy
+        }));
+        useOrganizationStore.setState({ currentOrganizationId: initialNextChatOrgContext });
+      });
+      
+      const { rerender } = render(<AiChat />); 
+
+      // Wait for AiChatPage's useEffects to set selectedProviderId, selectedPromptId, and nextChatOrgContext
+      await vi.waitFor(() => {
+        expect(vi.mocked(AiChatbox)).toHaveBeenLastCalledWith( // Check the state after effects have run
+          expect.objectContaining({
+            providerId: initialSelectedProviderId,
+            promptId: initialSelectedPromptId
+            // key: `${initialCurrentChatId}-${initialSelectedProviderId}-${initialSelectedPromptId}-${initialNextChatOrgContext}` // Key is not passed as a prop
+          }),
+          expect.anything()
+        );
+      });
+
+      // Simulate a change that affects the key parts
+      const newChatId = 'chat-456';
+      const newContextId = 'org-context-new';
+
+      // Simulate selecting a new context via ChatContextSelector
+      vi.mocked(ChatContextSelector).mockImplementationOnce((props: { onContextChange: (id: string | null) => void }) => 
+        <button data-testid="context-selector-button-alt" onClick={() => props.onContextChange(newContextId)}>Select New Context</button>
+      );
+      rerender(<AiChat />); 
+      fireEvent.click(screen.getByTestId('context-selector-button-alt'));
+
+      act(() => {
+        useAiStore.setState({ currentChatId: newChatId });
+      });
+      rerender(<AiChat />);
+
+      await vi.waitFor(() => {
+        expect(vi.mocked(AiChatbox)).toHaveBeenLastCalledWith(
+          expect.objectContaining({
+            providerId: initialSelectedProviderId, // Assuming these didn't change in this flow
+            promptId: initialSelectedPromptId   // Assuming these didn't change in this flow
+            // key: `${newChatId}-${initialSelectedProviderId}-${initialSelectedPromptId}-${newContextId}` // Key is not passed as a prop
+          }),
+          expect.anything()
+        );
+      });
     });
 
-     it('should pass correct derived props to ChatHistoryList', async () => { // Made async
-        render(<AiChat />);
-        await vi.waitFor(() => { // Wait for async updates
-          expect(vi.mocked(ChatHistoryList)).toHaveBeenCalled();
-        });
-        const lastCallArgs = vi.mocked(ChatHistoryList).mock.lastCall;
-        expect(lastCallArgs).toBeDefined();
-        if(lastCallArgs && lastCallArgs.length > 0) { // Check length
-            const props = lastCallArgs[0];
-            expect(props).toBeDefined();
-            expect(props).toEqual(expect.objectContaining({
-                history: mockOrgAbcChats, 
-                isLoading: false,         
-                currentChatId: null,      
-            }));
-        } else {
-          throw new Error("ChatHistoryList mock was not called with expected arguments or not called at all.");
-        }
-     });
   });
 
 }); 

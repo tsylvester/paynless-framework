@@ -1,11 +1,11 @@
 import React from 'react';
-import { render, screen, act, waitFor, within } from '@testing-library/react';
+import { render, screen, act, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { vi, describe, it, expect, beforeEach, type Mock } from 'vitest';
 
 import AiChatPage from './AiChat';
 import { useAiStore, useAuthStore, useOrganizationStore } from '@paynless/store';
-import type { Organization, Chat, ChatMessage, User, AiProvider, SystemPrompt } from '@paynless/types';
+import type { Organization, Chat, User, AiProvider, SystemPrompt } from '@paynless/types';
 
 // --- Global Mocks ---
 vi.mock('@paynless/analytics', () => ({
@@ -27,44 +27,25 @@ vi.mock('../components/ai/AiChatbox', () => ({
   AiChatbox: vi.fn(() => <div data-testid="ai-chatbox-mock"></div>),
 }));
 
-// Mock ChatContextSelector for simpler integration testing
-interface MockChatContextSelectorProps {
-  currentContextId: string | null;
-  onContextChange: (contextId: string | null) => void;
-}
-vi.mock('../components/ai/ChatContextSelector', () => ({
-  ChatContextSelector: vi.fn(({ currentContextId, onContextChange }: MockChatContextSelectorProps) => {
-    // Simplified display value based only on currentContextId
-    // For the mock, we'll need to simulate what AiChatPage expects for display.
-    // It expects the org name if currentContextId is an org ID, or "Personal".
-    // Since the mock doesn't fetch orgs, we'll hardcode some for display.
-    let displayValue = 'Select Context';
-    if (currentContextId === null) {
-      displayValue = 'Personal';
-    } else if (currentContextId === 'org-A') {
-      displayValue = 'Org A'; // Match test data
-    } else if (currentContextId === 'org-B') {
-      displayValue = 'Org B'; // Match test data
-    }
-    // If currentContextId is something else, it will show 'Select Context' or the ID itself if we want.
-    // For the purpose of these tests, Org A, Org B, and Personal are the primary ones used.
+// Define MockChatContextSelector as a function declaration BEFORE it's used in vi.mock factory
+function MockChatContextSelector ({ currentContextId, onContextChange }: { currentContextId: string | null; onContextChange: (id: string | null) => void; organizations?: Organization[], isLoading?: boolean }) {
+  let displayValue = 'Select Context';
+  if (currentContextId === null) displayValue = 'Personal';
+  else if (currentContextId === 'org-A') displayValue = 'Org A';
+  else if (currentContextId === 'org-B') displayValue = 'Org B';
 
-    return (
-      <div>
-        <button data-testid="mock-context-selector-trigger">{displayValue}</button>
-        {/* Simplified options for interaction, matching test IDs */}
-        <div data-testid="mock-context-options">
-          <button data-testid="mock-option-personal" onClick={() => onContextChange(null)}>Personal</button>
-          {/* Simulate org options used in tests */}
-          <button data-testid="mock-option-org-A" onClick={() => onContextChange('org-A')}>Org A</button>
-          <button data-testid="mock-option-org-B" onClick={() => onContextChange('org-B')}>Org B</button>
-        </div>
+  return (
+    <div>
+      <button data-testid="mock-context-selector-trigger">{displayValue}</button>
+      <div data-testid="mock-context-options">
+        <button data-testid="mock-option-personal" onClick={() => onContextChange(null)}>Personal</button>
+        <button data-testid="mock-option-org-A" onClick={() => onContextChange('org-A')}>Org A</button>
+        <button data-testid="mock-option-org-B" onClick={() => onContextChange('org-B')}>Org B</button>
       </div>
-    );
-  })
-}));
-
-// ChatContextSelector and ChatHistoryList are NOT mocked by default for integration tests.
+    </div>
+  );
+}
+vi.mock('../components/ai/ChatContextSelector', () => ({ ChatContextSelector: MockChatContextSelector }));
 
 // --- Store Mocks & Initial States ---
 let mockLoadAiConfig: Mock;
@@ -75,294 +56,274 @@ let mockCheckAndReplayPendingChatAction: Mock;
 let mockAnalyticsTrack: Mock;
 
 const mockUser: User = { id: 'user-test-123', email: 'test@example.com' };
-
-const initialAuthStoreState = {
-  user: mockUser,
-  isLoading: false,
-  error: null,
-  // other auth state fields...
-};
-
 const orgA: Organization = { id: 'org-A', name: 'Org A', created_at: '2023-01-01T00:00:00Z', allow_member_chat_creation: true, visibility: 'private', deleted_at: null };
 const orgB: Organization = { id: 'org-B', name: 'Org B', created_at: '2023-01-01T00:00:00Z', allow_member_chat_creation: true, visibility: 'private', deleted_at: null };
 
-const initialOrgStoreState = {
-  userOrganizations: [orgA, orgB],
-  currentOrganizationId: null as string | null, // To be set per test
-  isLoading: false,
-  orgError: null,
-  // other org state fields...
-};
-
 const chatPersonal1: Chat = { id: 'chat-p1', title: 'Personal Chat 1', organization_id: null, user_id: mockUser.id, created_at: '2023-01-01T00:00:00Z', updated_at: '2023-01-01T00:00:00Z', system_prompt_id: null };
 const chatOrgA1: Chat = { id: 'chat-a1', title: 'Org A Chat 1', organization_id: orgA.id, user_id: mockUser.id, created_at: '2023-01-01T00:00:00Z', updated_at: '2023-01-01T00:00:00Z', system_prompt_id: null };
-const chatOrgB1: Chat = { id: 'chat-b1', title: 'Org B Chat 1', organization_id: orgB.id, user_id: mockUser.id, created_at: '2023-01-01T00:00:00Z', updated_at: '2023-01-01T00:00:00Z', system_prompt_id: null };
 
+const setupStoreAndSpies = async (
+    initialGlobalOrgId: string | null, 
+    initialPersonalHistoryState: Chat[] | undefined | 'fetchedEmpty', 
+    initialOrgAHistoryState: Chat[] | undefined | 'fetchedEmpty',
+    initialOrgBHistoryState?: Chat[] | undefined | 'fetchedEmpty' // Optional for orgB
+) => {
+  mockLoadAiConfig = vi.fn();
+  mockLoadChatHistory = vi.fn();
+  mockLoadChatDetails = vi.fn();
+  mockStartNewChat = vi.fn();
+  mockCheckAndReplayPendingChatAction = vi.fn();
 
-const initialAiStoreState = {
-  availableProviders: [{ id: 'prov-1', name: 'Provider 1', api_identifier: 'p1', is_active: true, is_enabled: true, config:{}, created_at:'', updated_at:'', description:'', provider:'' }] as AiProvider[],
-  availablePrompts: [{ id: 'prompt-1', name: 'Prompt 1', prompt_text:'text', created_at:'', updated_at:'', is_active:true }] as SystemPrompt[],
-  chatsByContext: {
-    personal: [chatPersonal1],
-    orgs: { [orgA.id]: [chatOrgA1], [orgB.id]: [chatOrgB1] },
-  },
-  messagesByChatId: {}, // Populate if needed for specific tests
-  currentChatId: null as string | null,
-  isLoadingAiResponse: false,
-  isConfigLoading: false,
-  isLoadingHistoryByContext: { personal: false, orgs: { [orgA.id]: false, [orgB.id]: false } },
-  isDetailsLoading: false,
-  newChatContext: null as string | null, // This is internal to AiChatPage, not directly set in store setup
-  rewindTargetMessageId: null,
-  aiError: null,
-  // Actions will be spied on
+  const analyticsModule = await import('@paynless/analytics');
+  mockAnalyticsTrack = vi.mocked(analyticsModule.analytics.track);
+  mockAnalyticsTrack.mockClear();
+
+  act(() => {
+    useAuthStore.setState({ user: mockUser, isLoading: false, error: null }, true);
+    useOrganizationStore.setState({ 
+      userOrganizations: [orgA, orgB],
+      currentOrganizationId: initialGlobalOrgId, 
+      isLoading: false, 
+      error: null
+    }, true);
+
+    const personalChats = initialPersonalHistoryState === 'fetchedEmpty' ? [] : initialPersonalHistoryState;
+    const orgAChats = initialOrgAHistoryState === 'fetchedEmpty' ? [] : initialOrgAHistoryState;
+    const orgBChats = initialOrgBHistoryState === 'fetchedEmpty' ? [] : initialOrgBHistoryState; // Defaults to undefined if initialOrgBHistoryState is undefined
+
+    const initialAiStoreSlice: Partial<ReturnType<typeof useAiStore.getState>> = {
+      availableProviders: [{ id: 'prov-1', name: 'Provider 1' } as AiProvider],
+      availablePrompts: [{ id: 'prompt-1', name: 'Prompt 1' } as SystemPrompt],
+      chatsByContext: {
+        personal: personalChats,
+        orgs: {
+          [orgA.id!]: orgAChats,
+          [orgB.id!]: orgBChats, // Use the processed orgBChats
+        },
+      },
+      messagesByChatId: {},
+      currentChatId: null,
+      isLoadingAiResponse: false,
+      isConfigLoading: false,
+      isLoadingHistoryByContext: { personal: false, orgs: {} },
+      isDetailsLoading: false,
+      aiError: null,
+      historyErrorByContext: { personal: null, orgs: {} },
+      
+      // Include mocked actions
+      loadAiConfig: mockLoadAiConfig,
+      loadChatHistory: mockLoadChatHistory,
+      loadChatDetails: mockLoadChatDetails,
+      startNewChat: mockStartNewChat,
+      checkAndReplayPendingChatAction: mockCheckAndReplayPendingChatAction,
+      // Ensure all actions called by components/hooks under test are included here
+      // For example, if there are other actions like 'sendMessage', 'deleteChat', etc.,
+      // and they are called, they'd need to be mocked and included too.
+      // Based on current errors, the above list covers loadAiConfig and loadChatHistory.
+    };
+    // Set the state values. The actions on the store should be the spied ones.
+    useAiStore.setState(initialAiStoreSlice, true); 
+  });
+
+  mockLoadAiConfig.mockResolvedValue(undefined);
+  mockLoadChatHistory.mockResolvedValue(undefined);
+  mockLoadChatDetails.mockResolvedValue(undefined);
+  mockCheckAndReplayPendingChatAction.mockResolvedValue(undefined);
 };
 
 describe('AiChatPage Integration Tests', () => {
   beforeEach(async () => {
-    // Reset Vitest spies
-    mockLoadAiConfig = vi.fn();
-    mockLoadChatHistory = vi.fn();
-    mockLoadChatDetails = vi.fn();
-    mockStartNewChat = vi.fn();
-    mockCheckAndReplayPendingChatAction = vi.fn();
-
-    const analyticsModule = await import('@paynless/analytics');
-    mockAnalyticsTrack = vi.mocked(analyticsModule.analytics.track);
-    mockAnalyticsTrack.mockClear();
-
-    // Set initial store states
-    act(() => {
-      useAuthStore.setState(structuredClone(initialAuthStoreState), true);
-      useOrganizationStore.setState(structuredClone(initialOrgStoreState), true); // currentOrganizationId will be overridden in tests
-      useAiStore.setState(
-        (state) => ({
-          ...state, // keep potential other functions from actual store
-          ...structuredClone(initialAiStoreState),
-          loadAiConfig: mockLoadAiConfig,
-          loadChatHistory: mockLoadChatHistory,
-          loadChatDetails: mockLoadChatDetails,
-          startNewChat: mockStartNewChat,
-          checkAndReplayPendingChatAction: mockCheckAndReplayPendingChatAction,
-        }),
-        true
-      );
-    });
-
-    // Default mock resolutions
-    mockLoadAiConfig.mockResolvedValue(undefined);
-    mockLoadChatHistory.mockResolvedValue(undefined); // important for context switching tests
-    mockLoadChatDetails.mockResolvedValue(undefined);
-    mockCheckAndReplayPendingChatAction.mockResolvedValue(undefined);
+    await setupStoreAndSpies(orgA.id, [chatPersonal1], [chatOrgA1]);
   });
 
-  // Test 1.1
-  it('should render and default to global organization context, loading its history', async () => {
-    act(() => {
-      useOrganizationStore.setState({ currentOrganizationId: orgA.id });
-    });
-
+  // Test 1.1: Initial render with Org A (pre-filled history)
+  it('should render and default to global org context, displaying its history if pre-filled', async () => {
     render(<AiChatPage />);
+    expect(await screen.findByTestId('mock-context-selector-trigger')).toHaveTextContent(orgA.name!);
+    expect(await screen.findByText('Org A Chats')).toBeInTheDocument();
+    expect(screen.getByText(chatOrgA1.title!)).toBeInTheDocument();
+    expect(mockLoadChatHistory).not.toHaveBeenCalled();
+  });
 
-    // Wait for effects to run, especially history loading
+  // Test 1.2: Initial render with Org A (empty history, should load)
+  it('should call loadChatHistory if global org context history is NOT pre-filled', async () => {
+    await setupStoreAndSpies(orgA.id, [chatPersonal1], undefined); // Org A not fetched, Personal is
+    render(<AiChatPage />);
+    expect(await screen.findByTestId('mock-context-selector-trigger')).toHaveTextContent(orgA.name!);
     await waitFor(() => {
       expect(mockLoadChatHistory).toHaveBeenCalledWith(orgA.id);
     });
-
-    // Check MockChatContextSelector displays Org A
-    expect(await screen.findByTestId('mock-context-selector-trigger')).toHaveTextContent(orgA.name);
-
-
-    // Check ChatHistoryList displays Org A's chats
-    // ChatHistoryList is not mocked, so we check for its rendered chat items.
-    // This assumes ChatItem or similar within ChatHistoryList displays the chat title.
-    expect(await screen.findByText(chatOrgA1.title)).toBeInTheDocument();
-    expect(screen.queryByText(chatPersonal1.title)).not.toBeInTheDocument();
-    expect(screen.queryByText(chatOrgB1.title)).not.toBeInTheDocument();
   });
 
-  // Test 1.2
-  it('should render and default to Personal context if no global organization, loading personal history', async () => {
-    act(() => {
-      // currentOrganizationId is already null by default in initialOrgStoreState for this test suite setup
-      // but we can explicitly set it for clarity if preferred, or rely on the beforeEach setup.
-      useOrganizationStore.setState({ currentOrganizationId: null });
-    });
-
+  // Test 1.3: Initial render with Personal (pre-filled history)
+  it('should render and default to Personal context, displaying its history if pre-filled', async () => {
+    await setupStoreAndSpies(null, [chatPersonal1], [chatOrgA1]); // Both pre-filled
     render(<AiChatPage />);
+    expect(await screen.findByTestId('mock-context-selector-trigger')).toHaveTextContent('Personal');
+    expect(await screen.findByText('Personal Chats')).toBeInTheDocument();
+    expect(screen.getByText(chatPersonal1.title!)).toBeInTheDocument();
+    expect(mockLoadChatHistory).not.toHaveBeenCalled();
+  });
 
+  // Test 1.4: Initial render with Personal (empty history, should load)
+  it('should call loadChatHistory if Personal context history is NOT pre-filled', async () => {
+    await setupStoreAndSpies(null, undefined, [chatOrgA1]); // Personal not fetched, Org A is
+    render(<AiChatPage />);
+    expect(await screen.findByTestId('mock-context-selector-trigger')).toHaveTextContent('Personal');
     await waitFor(() => {
       expect(mockLoadChatHistory).toHaveBeenCalledWith(null);
     });
-
-    // Check MockChatContextSelector displays "Personal"
-    expect(await screen.findByTestId('mock-context-selector-trigger')).toHaveTextContent(/Personal/i);
-
-    // Check ChatHistoryList displays personal chats
-    expect(await screen.findByText(chatPersonal1.title)).toBeInTheDocument();
-    expect(screen.queryByText(chatOrgA1.title)).not.toBeInTheDocument();
-    expect(screen.queryByText(chatOrgB1.title)).not.toBeInTheDocument();
   });
 
-  // Test 2.1
-  it("selecting 'Personal' in ChatContextSelector should load personal chat history", async () => {
+  // Test 2.1: Context Switching to Personal (Personal history initially empty)
+  it("selecting 'Personal' in ChatContextSelector should load personal history if not pre-filled", async () => {
     const user = userEvent.setup();
+
+    // Specific store setup for this test
+    mockLoadChatHistory = vi.fn(); 
+    mockAnalyticsTrack.mockClear(); // Clear analytics track spy from beforeEach or previous calls
+
+    const initialGlobalOrgIdForTest = orgA.id;
     act(() => {
-      useOrganizationStore.setState({ currentOrganizationId: orgA.id }); // Initial context Org A
+        useAuthStore.setState({ user: mockUser, isLoading: false, error: null }, true);
+        useOrganizationStore.setState({ 
+            userOrganizations: [orgA, orgB],
+            currentOrganizationId: initialGlobalOrgIdForTest, 
+            isLoading: false, 
+            error: null 
+        }, true);
+
+        // Define a minimal set of actions needed, ensure they are fresh vi.fn() if not the one being asserted
+        const loadAiConfigMockForThisTest = vi.fn();
+        const loadChatDetailsMockForThisTest = vi.fn();
+        const startNewChatMockForThisTest = vi.fn();
+        const checkAndReplayPendingChatActionMockForThisTest = vi.fn();
+        
+        useAiStore.setState({
+            availableProviders: [{ id: 'prov-1', name: 'Provider 1' } as AiProvider],
+            availablePrompts: [{ id: 'prompt-1', name: 'Prompt 1' } as SystemPrompt],
+            chatsByContext: {
+                personal: undefined, // Signify that personal history has not been fetched yet
+                orgs: {
+                    [orgA.id!]: [chatOrgA1], // Org A has pre-filled history
+                    [orgB.id!]: undefined,    // Org B also not fetched initially by default for this setup
+                },
+            },
+            messagesByChatId: {},
+            currentChatId: null,
+            isLoadingAiResponse: false,
+            isConfigLoading: false,
+            isLoadingHistoryByContext: { personal: false, orgs: {} }, // Personal not loading initially
+            isDetailsLoading: false,
+            aiError: null,
+            historyErrorByContext: { personal: null, orgs: {} },
+            
+            // Assign actions
+            loadAiConfig: loadAiConfigMockForThisTest,
+            loadChatHistory: mockLoadChatHistory, // This is the one we are testing
+            loadChatDetails: loadChatDetailsMockForThisTest,
+            startNewChat: startNewChatMockForThisTest,
+            checkAndReplayPendingChatAction: checkAndReplayPendingChatActionMockForThisTest,
+        }, true);
     });
 
     render(<AiChatPage />);
+    // Ensure initial state (Org A with its history) is rendered
+    expect(await screen.findByText(chatOrgA1.title!)).toBeInTheDocument();
+    // Ensure loadChatHistory was not called for OrgA (as it was pre-filled)
+    expect(mockLoadChatHistory).not.toHaveBeenCalledWith(orgA.id);
 
-    // Wait for initial history to load for Org A
-    await waitFor(() => {
-      expect(mockLoadChatHistory).toHaveBeenCalledWith(orgA.id);
-      expect(screen.getByText(chatOrgA1.title)).toBeInTheDocument();
-      // Ensure the mock trigger shows Org A initially
-      expect(screen.getByTestId('mock-context-selector-trigger')).toHaveTextContent(orgA.name);
-    });
-    mockLoadChatHistory.mockClear(); // Clear for the next assertion
-    mockAnalyticsTrack.mockClear();
 
-    // Click the "Personal" option from our mock
-    const personalOptionButton = screen.getByTestId('mock-option-personal');
-    await user.click(personalOptionButton);
-
+    // Action: Select "Personal" in ChatContextSelector.
+    await user.click(screen.getByTestId('mock-option-personal'));
+    
+    // Assert: loadChatHistory called with null.
     await waitFor(() => {
       expect(mockLoadChatHistory).toHaveBeenCalledWith(null);
-      // Ensure the mock trigger updates to "Personal"
-      expect(screen.getByTestId('mock-context-selector-trigger')).toHaveTextContent(/Personal/i);
     });
 
-    expect(await screen.findByText(chatPersonal1.title)).toBeInTheDocument();
-    expect(screen.queryByText(chatOrgA1.title)).not.toBeInTheDocument();
-
-    expect(mockAnalyticsTrack).toHaveBeenCalledWith('Chat: Context Selected For New Chat', {
-      contextId: 'personal',
+    // Optional: Assert analytics if that's part of the behavior on context switch
+    expect(mockAnalyticsTrack).toHaveBeenCalledWith('Chat: Context Selected For New Chat', { contextId: 'personal' });
+    
+    // To verify UI update after load (optional, as primary test is the call to loadChatHistory)
+    // you would typically mock the completion of loadChatHistory and then update the store state
+    act(() => {
+      // Simulate loadChatHistory(null) completing and populating personal chats
+      useAiStore.setState(prev => ({ 
+        ...prev, 
+        chatsByContext: { ...prev.chatsByContext, personal: [chatPersonal1] },
+        isLoadingHistoryByContext: { ...prev.isLoadingHistoryByContext, personal: false }
+      }));
     });
+    expect(await screen.findByText(chatPersonal1.title!)).toBeInTheDocument();
   });
 
-  // Test 2.2
-  it("selecting a different organization in ChatContextSelector should load its chat history", async () => {
+  // Test 2.2: Context Switching to Org B (Org B history initially empty)
+  it("selecting Org B in ChatContextSelector should load Org B history if not pre-filled", async () => {
     const user = userEvent.setup();
-    act(() => {
-      // Initial context Personal
-      useOrganizationStore.setState({ currentOrganizationId: null }); 
-    });
-
     render(<AiChatPage />);
-
-    // Wait for initial history to load for Personal
-    await waitFor(() => {
-      expect(mockLoadChatHistory).toHaveBeenCalledWith(null);
-      expect(screen.getByText(chatPersonal1.title)).toBeInTheDocument();
-      // Ensure the mock trigger shows Personal initially
-      expect(screen.getByTestId('mock-context-selector-trigger')).toHaveTextContent(/Personal/i);
-    });
+    expect(await screen.findByText(chatOrgA1.title!)).toBeInTheDocument();
     mockLoadChatHistory.mockClear();
-    mockAnalyticsTrack.mockClear();
 
-    // Click the "Org B" option from our mock
-    const orgBOptionButton = screen.getByTestId(`mock-option-${orgB.id}`);
-    await user.click(orgBOptionButton);
-
+    await user.click(screen.getByTestId('mock-option-org-B'));
     await waitFor(() => {
       expect(mockLoadChatHistory).toHaveBeenCalledWith(orgB.id);
-      // Ensure the mock trigger updates to "Org B"
-      expect(screen.getByTestId('mock-context-selector-trigger')).toHaveTextContent(orgB.name);
     });
-
-    expect(await screen.findByText(chatOrgB1.title)).toBeInTheDocument();
-    expect(screen.queryByText(chatPersonal1.title)).not.toBeInTheDocument();
-
-    expect(mockAnalyticsTrack).toHaveBeenCalledWith('Chat: Context Selected For New Chat', {
-      contextId: orgB.id,
+    const chatOrgB1: Chat = { ...chatOrgA1, id:'cb1', title: 'Org B Chat 1', organization_id: orgB.id };
+    act(() => {
+      useAiStore.setState(prev => ({ ...prev, chatsByContext: { ...prev.chatsByContext, orgs: {...prev.chatsByContext.orgs, [orgB.id!]: [chatOrgB1]} }}));
     });
+    expect(await screen.findByText(chatOrgB1.title!)).toBeInTheDocument();
+    expect(mockAnalyticsTrack).toHaveBeenCalledWith('Chat: Context Selected For New Chat', { contextId: orgB.id });
   });
 
-  // Test 3.1
+  // Test 3.1: New Chat - Personal
   it("clicking 'New Chat' when 'Personal' context is active should call startNewChat for personal", async () => {
     const user = userEvent.setup();
-    act(() => {
-      // Set initial context to Personal
-      useOrganizationStore.setState({ currentOrganizationId: null }); 
-    });
-
+    // Initial render might be with an org context, switch to Personal first
+    // This test now uses a very specific AiStore setup below, this call is less critical but kept for consistency
+    await setupStoreAndSpies(orgA.id, [chatPersonal1], [chatOrgA1]); 
     render(<AiChatPage />);
+    
+    // Wait for initial render and potential history load if any
+    await screen.findByText(chatOrgA1.title!); 
 
-    // Wait for page to stabilize and initial context to be set
+    // Switch to Personal context
+    await user.click(screen.getByTestId('mock-option-personal'));
     await waitFor(() => {
-      expect(screen.getByTestId('mock-context-selector-trigger')).toHaveTextContent(/Personal/i);
+      expect(screen.getByTestId('mock-context-selector-trigger')).toHaveTextContent('Personal');
     });
+    // Ensure ChatHistoryList updates if it was loading personal history
+    // If personal history was pre-filled (as in this setupStoreAndSpies call), it should just show.
+    // If it was NOT pre-filled, ChatHistoryList would call loadChatHistory, and we might need to mock its completion here.
+    // For this test, we assume personal history is available or loads quickly enough via ChatHistoryList internal effect.
 
-    mockStartNewChat.mockClear();
+    mockStartNewChat.mockClear(); // Clear any prior calls from initial setup if any
     mockAnalyticsTrack.mockClear();
 
-    const newChatButton = screen.getByTestId('new-chat-button');
-    await user.click(newChatButton);
-
+    await user.click(screen.getByTestId('new-chat-button'));
     expect(mockStartNewChat).toHaveBeenCalledWith(null);
-    expect(mockAnalyticsTrack).toHaveBeenCalledWith('Chat: Clicked New Chat', {
-      contextId: 'personal',
-    });
+    expect(mockAnalyticsTrack).toHaveBeenCalledWith('Chat: Clicked New Chat', { contextId: 'personal' });
   });
 
-  // Test 3.2
+  // Test 3.2: New Chat - Org
   it("clicking 'New Chat' when an organization context is active should call startNewChat for that org", async () => {
     const user = userEvent.setup();
-    act(() => {
-      // Set initial context to Org A
-      useOrganizationStore.setState({ currentOrganizationId: orgA.id }); 
-    });
-
     render(<AiChatPage />);
-
-    // Wait for page to stabilize and initial context to be set
-    await waitFor(() => {
-      expect(screen.getByTestId('mock-context-selector-trigger')).toHaveTextContent(orgA.name);
-    });
-
-    mockStartNewChat.mockClear();
-    mockAnalyticsTrack.mockClear();
-
-    const newChatButton = screen.getByTestId('new-chat-button');
-    await user.click(newChatButton);
-
+    await user.click(screen.getByTestId('new-chat-button'));
     expect(mockStartNewChat).toHaveBeenCalledWith(orgA.id);
-    expect(mockAnalyticsTrack).toHaveBeenCalledWith('Chat: Clicked New Chat', {
-      contextId: orgA.id,
-    });
+    expect(mockAnalyticsTrack).toHaveBeenCalledWith('Chat: Clicked New Chat', { contextId: orgA.id });
   });
 
-  // Test 4.1
-  it("clicking a chat item in ChatHistoryList should call loadChatDetails", async () => {
+  // Test 4.1: Load Chat from History List
+  it('clicking a chat item in ChatHistoryList should call loadChatDetails', async () => {
     const user = userEvent.setup();
-    act(() => {
-      // Set initial context to Org A, so chatOrgA1 is available
-      useOrganizationStore.setState({ currentOrganizationId: orgA.id }); 
-    });
-
-    render(<AiChatPage />);
-
-    // Wait for the initial history and specific chat item to be visible
-    const chatItemOrgA1 = await screen.findByText(chatOrgA1.title);
-    // The clickable element is likely the parent div with role="button"
-    const clickableChatItem = chatItemOrgA1.closest('[role="button"]');
-    expect(clickableChatItem).toBeInTheDocument();
-
+    render(<AiChatPage />);    
+    const chatItemButton = await screen.findByRole('button', { name: chatOrgA1.title! });
+    expect(chatItemButton).toBeInTheDocument();
     mockLoadChatDetails.mockClear();
-    mockAnalyticsTrack.mockClear();
-
-    if (clickableChatItem) {
-      await user.click(clickableChatItem);
-    } else {
-      throw new Error('Chat item for Org A was not found or not clickable');
-    }
-
+    await user.click(chatItemButton);
     expect(mockLoadChatDetails).toHaveBeenCalledWith(chatOrgA1.id);
-    expect(mockAnalyticsTrack).toHaveBeenCalledWith('Chat: History Item Selected', {
-      chatId: chatOrgA1.id,
-    });
+    expect(mockAnalyticsTrack).toHaveBeenCalledWith('Chat: History Item Selected', { chatId: chatOrgA1.id });
   });
-
-  // More tests to follow...
 }); 

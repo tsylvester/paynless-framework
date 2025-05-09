@@ -25,7 +25,7 @@ const initialOrgChats: Chat[] = [
 
 const mockInitialAiStoreState: Partial<AiState> = {
   chatsByContext: {
-    personal: [],
+    personal: undefined,
     orgs: {},
   },
   messagesByChatId: {},
@@ -100,18 +100,15 @@ const setupMockStore = (stateChanges: Partial<AiState> = {}) => {
 describe('ChatHistoryList', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    // Setup a default clean state for the store before each test
-    setupMockStore({
-        chatsByContext: { personal: [], orgs: {} },
-        isLoadingHistoryByContext: { personal: false, orgs: {} },
-        historyErrorByContext: { personal: null, orgs: {} }
-    });
+    // This now uses personal: undefined by default
+    setupMockStore(); 
   });
 
   it('renders the contextTitle when provided', () => {
+    setupMockStore({ chatsByContext: { personal: initialPersonalChats, orgs: {} } }); // Provide some chats so it doesn't try to load
     render(
       <ChatHistoryList
-        activeContextId="personal"
+        activeContextId={null}
         onLoadChat={mockOnLoadChat}
         contextTitle="My Personal Chats"
       />
@@ -119,18 +116,17 @@ describe('ChatHistoryList', () => {
     expect(screen.getByRole('heading', { name: /My Personal Chats/i })).toBeInTheDocument();
   });
 
-  it('calls loadChatHistory on mount if context data is not present and not loading/errored', () => {
-    // Initial state has no chats for 'personal' and no loading/error
+  it('calls loadChatHistory on mount if context data is undefined (not fetched)', () => {
     render(
       <ChatHistoryList
-        activeContextId="personal"
+        activeContextId={null}
         onLoadChat={mockOnLoadChat}
       />
     );
-    expect(mockLoadChatHistory).toHaveBeenCalledWith('personal');
+    expect(mockLoadChatHistory).toHaveBeenCalledWith(null);
   });
 
-  it('calls loadChatHistory with organizationId when activeContextId is an orgId', () => {
+  it('calls loadChatHistory with organizationId if org context data is undefined (not fetched)', () => {
     render(
       <ChatHistoryList
         activeContextId="org123"
@@ -142,11 +138,12 @@ describe('ChatHistoryList', () => {
 
   it('does NOT call loadChatHistory on mount if context is already loading', () => {
     setupMockStore({
-      isLoadingHistoryByContext: { personal: true, orgs: {} }
+      isLoadingHistoryByContext: { personal: true, orgs: {} }, 
+      chatsByContext: { personal: undefined, orgs: {} } 
     });
     render(
       <ChatHistoryList
-        activeContextId="personal"
+        activeContextId={null}
         onLoadChat={mockOnLoadChat}
       />
     );
@@ -155,96 +152,96 @@ describe('ChatHistoryList', () => {
 
   it('does NOT call loadChatHistory on mount if context has an error', () => {
     setupMockStore({
-      historyErrorByContext: { personal: 'Fetch failed', orgs: {} }
+      historyErrorByContext: { personal: 'Fetch failed', orgs: {} }, 
+      chatsByContext: { personal: undefined, orgs: {} } 
     });
     render(
       <ChatHistoryList
-        activeContextId="personal"
+        activeContextId={null}
         onLoadChat={mockOnLoadChat}
       />
     );
     expect(mockLoadChatHistory).not.toHaveBeenCalled();
   });
   
-  it('does NOT call loadChatHistory on mount if context already has chats', () => {
+  it('does NOT call loadChatHistory on mount if context already has chats (fetched and non-empty)', () => {
     setupMockStore({
-      chatsByContext: { personal: initialPersonalChats, orgs: {} }
+      chatsByContext: { personal: initialPersonalChats, orgs: {} } 
     });
     render(
       <ChatHistoryList
-        activeContextId="personal"
+        activeContextId={null}
         onLoadChat={mockOnLoadChat}
       />
     );
     expect(mockLoadChatHistory).not.toHaveBeenCalled();
   });
 
-  it('renders loading skeletons when isLoadingHistoryByContext for the active context is true', () => {
+  it('does NOT call loadChatHistory on mount if context has been fetched and is empty', () => {
     setupMockStore({
-      isLoadingHistoryByContext: { personal: true, orgs: {} }
+      chatsByContext: { personal: [], orgs: {} } 
     });
     render(
       <ChatHistoryList
-        activeContextId="personal"
+        activeContextId={null}
+        onLoadChat={mockOnLoadChat}
+      />
+    );
+    expect(mockLoadChatHistory).not.toHaveBeenCalled();
+    expect(screen.getByText(/No chat history found./i)).toBeInTheDocument();
+  });
+
+  it('renders loading skeletons when isLoadingHistoryByContext for the active context is true', () => {
+    setupMockStore({
+      isLoadingHistoryByContext: { personal: true, orgs: {} },
+      chatsByContext: { personal: undefined, orgs: {} }, 
+      historyErrorByContext: { personal: null, orgs: {} }
+    });
+    render(
+      <ChatHistoryList
+        activeContextId={null}
         onLoadChat={mockOnLoadChat}
         contextTitle="Personal Chats"
       />
     );
-    // Expect multiple skeletons based on your loading state design
     expect(screen.getAllByTestId('skeleton').length).toBeGreaterThan(0);
-    expect(screen.getByRole('heading', { name: /Personal Chats/i })).toBeInTheDocument(); // Title should still show
+    expect(screen.getByRole('heading', { name: /Personal Chats/i })).toBeInTheDocument();
   });
 
   it('renders an error message when historyErrorByContext for the active context is set', () => {
     setupMockStore({
-      historyErrorByContext: { personal: 'Failed to load chats.', orgs: {} }
+      historyErrorByContext: { personal: 'Failed to load chats.', orgs: {} },
+      chatsByContext: { personal: undefined, orgs: {} }, 
+      isLoadingHistoryByContext: { personal: false, orgs: {} }
     });
     render(
       <ChatHistoryList
-        activeContextId="personal"
+        activeContextId={null}
         onLoadChat={mockOnLoadChat}
         contextTitle="Personal Chats"
       />
     );
     expect(screen.getByText(/Failed to load chats./i)).toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: /Personal Chats/i })).toBeInTheDocument(); // Title should still show
+    expect(screen.getByRole('heading', { name: /Personal Chats/i })).toBeInTheDocument();
   });
 
-  it('renders "No chat history found." and calls load when history is initially empty (personal context)', () => {
-    // 1. Set up the specific store state for this test: personal context is empty, not loading, no error.
-    // This state is technically already set by beforeEach, but explicitly setting it here ensures clarity and isolation.
-    setupMockStore({
-        chatsByContext: { personal: [], orgs: {} }, 
-        isLoadingHistoryByContext: { personal: false, orgs: {} },
-        historyErrorByContext: { personal: null, orgs: {} }
-    });
-    // 2. Clear any mock calls from beforeEach or previous setups within this describe block.
-    mockLoadChatHistory.mockClear(); 
-
-    // 3. Render the component ONCE.
+  it('renders "No chat history found." and calls load when history is initially not fetched (personal context)', () => {
     render(
       <ChatHistoryList
-        activeContextId="personal"
+        activeContextId={null}
         onLoadChat={mockOnLoadChat}
       />
     );
-
-    // 4. Assertions:
-    // useEffect should call loadChatHistory because the context is empty, not loading, and no error.
-    expect(mockLoadChatHistory).toHaveBeenCalledWith('personal');
-    
-    // The component should display "No chat history found." based on the initial empty state.
+    expect(mockLoadChatHistory).toHaveBeenCalledWith(null);
     expect(screen.getByText(/No chat history found./i)).toBeInTheDocument();
   });
   
-  it('renders "No chat history found." when history is empty, not loading, and no error for org context', () => {
-    setupMockStore({
-        chatsByContext: { personal: [], orgs: { 'org123': [] } },
+  it('renders "No chat history found." and calls load when history is initially not fetched (org context)', () => {
+    setupMockStore({ 
+        chatsByContext: { personal: undefined, orgs: { 'org123': undefined } }, 
         isLoadingHistoryByContext: { personal: false, orgs: { 'org123': false } },
         historyErrorByContext: { personal: null, orgs: { 'org123': null } }
     });
-    vi.clearAllMocks();
-
     render(
       <ChatHistoryList
         activeContextId="org123"
@@ -255,23 +252,39 @@ describe('ChatHistoryList', () => {
     expect(mockLoadChatHistory).toHaveBeenCalledWith('org123');
   });
 
+  it('renders "No chat history found." when history is fetched and empty, and does NOT call load (org context)', () => {
+    setupMockStore({
+        chatsByContext: { personal: undefined, orgs: { 'org123': [] } }, 
+        isLoadingHistoryByContext: { personal: false, orgs: { 'org123': false } },
+        historyErrorByContext: { personal: null, orgs: { 'org123': null } }
+    });
+    render(
+      <ChatHistoryList
+        activeContextId="org123"
+        onLoadChat={mockOnLoadChat}
+      />
+    );
+    expect(screen.getByText(/No chat history found./i)).toBeInTheDocument();
+    expect(mockLoadChatHistory).not.toHaveBeenCalled();
+  });
+
   it('renders chat items when chats for the active personal context are available', () => {
     setupMockStore({
       chatsByContext: { personal: initialPersonalChats, orgs: {} }
     });
     render(
       <ChatHistoryList
-        activeContextId="personal"
+        activeContextId={null}
         onLoadChat={mockOnLoadChat}
       />
     );
     expect(screen.getByText('Personal Chat One')).toBeInTheDocument();
-    expect(mockLoadChatHistory).not.toHaveBeenCalled(); // Data is present
+    expect(mockLoadChatHistory).not.toHaveBeenCalled();
   });
 
   it('renders chat items when chats for the active org context are available', () => {
     setupMockStore({
-      chatsByContext: { personal: [], orgs: { 'org1': initialOrgChats } }
+      chatsByContext: { personal: undefined, orgs: { 'org1': initialOrgChats } }
     });
     render(
       <ChatHistoryList
@@ -280,7 +293,7 @@ describe('ChatHistoryList', () => {
       />
     );
     expect(screen.getByText('Org Chat One')).toBeInTheDocument();
-    expect(mockLoadChatHistory).not.toHaveBeenCalled(); // Data is present
+    expect(mockLoadChatHistory).not.toHaveBeenCalled();
   });
   
   it('calls onLoadChat with chatId when a chat item is clicked', () => {
@@ -289,7 +302,7 @@ describe('ChatHistoryList', () => {
     });
     render(
       <ChatHistoryList
-        activeContextId="personal"
+        activeContextId={null}
         onLoadChat={mockOnLoadChat}
       />
     );
@@ -300,38 +313,37 @@ describe('ChatHistoryList', () => {
   it('highlights the currentChatId if provided and matches a chat in the list', () => {
     setupMockStore({
       chatsByContext: { personal: initialPersonalChats, orgs: {} },
-      currentChatId: 'p-chat1',
     });
     render(
       <ChatHistoryList
-        activeContextId="personal"
+        activeContextId={null}
         onLoadChat={mockOnLoadChat}
-        currentChatId="p-chat1" // Pass it as prop as per interface
+        currentChatId="p-chat1" 
       />
     );
-    const activeItem = screen.getByText('Personal Chat One').closest('button'); // Assuming chat items are buttons
-    expect(activeItem).toHaveClass('bg-muted'); // Or whatever your active class is
+    const activeItem = screen.getByText('Personal Chat One').closest('button');
+    expect(activeItem).toHaveClass('bg-muted');
   });
 
   it('calls loadChatHistory when activeContextId prop changes to a new context not yet loaded', () => {
     const { rerender } = render(
       <ChatHistoryList
-        activeContextId="personal"
+        activeContextId={null}
         onLoadChat={mockOnLoadChat}
       />
     );
-    expect(mockLoadChatHistory).toHaveBeenCalledWith('personal');
+    expect(mockLoadChatHistory).toHaveBeenCalledWith(null);
     mockLoadChatHistory.mockClear();
 
-    // Change context to an orgId that has no data yet
-    setupMockStore({ // Update store to reflect 'personal' is loaded, 'org1' is not
-        chatsByContext: { personal: initialPersonalChats, orgs: {} },
-        isLoadingHistoryByContext: { personal: false, orgs: {} }, // personal is loaded
+    setupMockStore({ 
+        chatsByContext: { personal: initialPersonalChats, orgs: { 'org1': undefined } },
+        isLoadingHistoryByContext: { personal: false, orgs: { 'org1': false } },
+        historyErrorByContext: { personal: null, orgs: { 'org1': null} },
     });
 
     rerender(
       <ChatHistoryList
-        activeContextId="org1" // New context
+        activeContextId="org1"
         onLoadChat={mockOnLoadChat}
       />
     );
@@ -344,16 +356,16 @@ describe('ChatHistoryList', () => {
     });
     const { rerender } = render(
       <ChatHistoryList
-        activeContextId="personal"
+        activeContextId={null}
         onLoadChat={mockOnLoadChat}
       />
     );
-    expect(mockLoadChatHistory).not.toHaveBeenCalled(); // personal already loaded
+    expect(mockLoadChatHistory).not.toHaveBeenCalled();
     mockLoadChatHistory.mockClear();
 
     rerender(
       <ChatHistoryList
-        activeContextId="org1" // org1 also already loaded
+        activeContextId="org1"
         onLoadChat={mockOnLoadChat}
       />
     );

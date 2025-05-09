@@ -34,7 +34,7 @@ import { useAuthStore } from './authStore';
 export interface AiState {
     availableProviders: AiProvider[];
     availablePrompts: SystemPrompt[];
-    chatsByContext: { personal: Chat[], orgs: { [orgId: string]: Chat[] } };
+    chatsByContext: { personal: Chat[] | undefined, orgs: { [orgId: string]: Chat[] | undefined } };
     messagesByChatId: { [chatId: string]: ChatMessage[] };
     currentChatId: string | null;
     isLoadingAiResponse: boolean;
@@ -76,7 +76,7 @@ export type AiStore = AiState & AiActions;
 const initialAiStateValues: AiState = {
     availableProviders: [],
     availablePrompts: [],
-    chatsByContext: { personal: [], orgs: {} },
+    chatsByContext: { personal: undefined, orgs: {} },
     messagesByChatId: {},
     currentChatId: null,
     isLoadingAiResponse: false,
@@ -313,7 +313,7 @@ export const useAiStore = create<AiStore>()(
                                     // Add to personal list
                                     updatedChatsByContext = {
                                         ...updatedChatsByContext,
-                                        personal: [...updatedChatsByContext.personal, newChatEntry]
+                                        personal: [...(updatedChatsByContext.personal || []), newChatEntry]
                                     };
                                 }
                             } else {
@@ -748,7 +748,7 @@ export const useAiStore = create<AiStore>()(
                                 orgs: { ...newChatsByContext.orgs, [organizationId]: orgChats },
                             };
                         } else {
-                            const personalChats = state.chatsByContext.personal.filter(c => c.id !== chatId);
+                            const personalChats = (state.chatsByContext.personal || []).filter(c => c.id !== chatId);
                             newChatsByContext = {
                                 ...newChatsByContext,
                                 personal: personalChats,

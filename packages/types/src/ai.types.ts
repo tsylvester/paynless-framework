@@ -140,8 +140,8 @@ export interface AiState {
 
     // New context-aware chat state
     chatsByContext: { 
-        personal: Chat[]; 
-        orgs: { [orgId: string]: Chat[] };
+        personal: Chat[] | undefined; 
+        orgs: { [orgId: string]: Chat[] | undefined };
     };
     messagesByChatId: { [chatId: string]: ChatMessage[] };
     currentChatId: Chat['id'] | null; // Remains the same
