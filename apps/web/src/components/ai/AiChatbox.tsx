@@ -9,7 +9,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { Terminal, Loader2 } from 'lucide-react'
 import { ChatMessageBubble } from './ChatMessageBubble'
 
-interface AiChatboxProps {
+export interface AiChatboxProps {
   providerId: string | null
   promptId: string | null
   isAnonymous: boolean
@@ -44,28 +44,26 @@ export const AiChatbox: React.FC<AiChatboxProps> = ({
 
   // Scroll to new messages
   useEffect(() => {
-    // The selector already ensures currentChatMessages is an array.
-    // Guard for empty array before accessing last element.
     if (currentChatMessages.length === 0) return;
 
-    // const latestMessage = currentChatMessages[currentChatMessages.length - 1];
-    // if (latestMessage && latestMessage.role === 'assistant') { 
-    // Always try to scroll to the latest message if the container exists.
-    const container = scrollContainerRef.current;
-    if (!container) {
-      return;
-    }
+    const latestMessage = currentChatMessages[currentChatMessages.length - 1];
+    // Only scroll if the latest message is from the assistant
+    if (latestMessage && latestMessage.role === 'assistant') { 
+      const container = scrollContainerRef.current;
+      if (!container) {
+        return;
+      }
 
-    const messageElements = container.querySelectorAll('[data-message-id]');
-    const lastMessageElement = messageElements?.[messageElements.length - 1] as HTMLElement | undefined;
+      const messageElements = container.querySelectorAll('[data-message-id]');
+      const lastMessageElement = messageElements?.[messageElements.length - 1] as HTMLElement | undefined;
 
-    if (lastMessageElement) {
-      const targetScrollTop = lastMessageElement.offsetTop - container.offsetTop;
-      requestAnimationFrame(() => {
-          container.scrollTop = targetScrollTop;
-      });
+      if (lastMessageElement && lastMessageElement.getAttribute('data-message-id') === latestMessage.id) {
+        const targetScrollTop = lastMessageElement.offsetTop - container.offsetTop;
+        requestAnimationFrame(() => {
+            container.scrollTop = targetScrollTop;
+        });
+      }
     }
-    // }
   }, [currentChatMessages]); 
 
   const handleSend = async () => {
@@ -115,10 +113,14 @@ export const AiChatbox: React.FC<AiChatboxProps> = ({
   }
 
   return (
-    <div className="flex flex-col h-full border rounded-md p-4 space-y-4">
+    <div 
+      className="flex flex-col h-full border rounded-md p-4 space-y-4"
+      data-testid="ai-chatbox-container"
+    >
       {/* Message Display Area */}
       <div 
         className="flex-grow pr-4 overflow-y-auto min-h-[200px]"
+        data-testid="ai-chatbox-scroll-area"
         ref={scrollContainerRef}
       >
         <div className="space-y-2">

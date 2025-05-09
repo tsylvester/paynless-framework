@@ -1,11 +1,10 @@
+'use client';
+
 import React, { Component, ErrorInfo, ReactNode } from 'react';
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { AlertTriangle } from "lucide-react";
-import { logger } from '@paynless/utils'; // Optional: for logging errors
 
 interface Props {
   children: ReactNode;
-  fallbackMessage?: string; // Optional custom fallback message
+  fallback?: ReactNode; // Optional custom fallback component
 }
 
 interface State {
@@ -25,28 +24,27 @@ class ErrorBoundary extends Component<Props, State> {
 
   public componentDidCatch(error: Error, errorInfo: ErrorInfo) {
     // You can also log the error to an error reporting service
-    logger.error("[ErrorBoundary] Uncaught error:", error, errorInfo);
+    console.error('ErrorBoundary caught an error:', error, errorInfo);
   }
 
   public render() {
     if (this.state.hasError) {
-      // You can render any custom fallback UI
+      if (this.props.fallback) {
+        return this.props.fallback;
+      }
+      // Default fallback UI
       return (
-        <Alert variant="destructive" className="my-4">
-          <AlertTriangle className="h-4 w-4" />
-          <AlertTitle>Something went wrong</AlertTitle>
-          <AlertDescription>
-            {this.props.fallbackMessage || 'This part of the application encountered an error.'}
-            {/* Optional: Show error details in development */}
-            {process.env.NODE_ENV === 'development' && this.state.error && (
-              <pre className="mt-2 text-xs whitespace-pre-wrap">
-                {this.state.error.toString()}
-                {/* <br /> */}
-                {/* {this.state.error.stack} */}
-              </pre>
-            )}
-          </AlertDescription>
-        </Alert>
+        <div className="p-4 text-center text-red-600 bg-red-50 border border-red-200 rounded-md">
+          <h2 className="text-lg font-semibold">Oops, something went wrong.</h2>
+          <p className="text-sm">
+            We encountered an error. Please try refreshing the page or contact support if the problem persists.
+          </p>
+          {this.state.error && (
+            <pre className="mt-2 text-xs text-left whitespace-pre-wrap bg-red-100 p-2 rounded">
+              {this.state.error.message}
+            </pre>
+          )}
+        </div>
       );
     }
 

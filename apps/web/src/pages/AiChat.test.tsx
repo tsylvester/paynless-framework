@@ -5,6 +5,9 @@ import userEvent from '@testing-library/user-event';
 import { useAiStore, useAuthStore, useOrganizationStore } from '@paynless/store';
 import React from 'react';
 import type { User, AiProvider, SystemPrompt, Organization, ChatMessage, Chat } from '@paynless/types'; // Removed TokenUsage
+import { ChatContextSelector } from '../../components/ai/ChatContextSelector';
+import ErrorBoundary from '../../components/common/ErrorBoundary'; // Import real ErrorBoundary
+import { Skeleton } from '@/components/ui/skeleton'; // Import Skeleton
 
 // Mock definitions are hoisted. Define them before component imports.
 vi.mock('../components/layout/Layout', () => ({ Layout: vi.fn(({ children }: { children: React.ReactNode }) => <div data-testid="layout">{children}</div>) }));
@@ -996,6 +999,80 @@ describe('AiChat Page', () => {
         expect(propsPassed.activeContextId).toBe(testOrgId);
         expect(propsPassed.currentChatId).toBe(testChatId);
       });
+    });
+  });
+
+  describe('AiChatPage - Loading States and Error Boundary', () => {
+    beforeEach(() => {
+      // Reset mocks and store states before each test in this describe block
+      vi.clearAllMocks();
+      setupInitialAuthState();
+      setupInitialOrganizationState();
+      setupInitialAiState(); // This will set isDetailsLoading to false by default
+
+      // Ensure AiChatbox mock is reset to default behavior
+      mockAiChatbox.mockImplementation(() => <div data-testid="mock-ai-chatbox">Mock AiChatbox</div>);
+    });
+
+    it('should display skeleton loaders when isDetailsLoading is true and not render AiChatbox', () => {
+      // Override aiStore to set isDetailsLoading to true
+      actualUseAiStore.mockImplementation(mockAiStoreImplementationFactory({
+        isDetailsLoading: true, 
+        // Keep other necessary states for rendering AiChatPage without errors
+        availableProviders: [mockProvider1],
+        availablePrompts: [mockPrompt1],
+        chatsByContext: { personal: [], orgs: {} },
+        currentChatId: null,
+      }));
+
+      render(<AiChat />);
+
+      // Check for Skeletons (example: check for one, assuming multiple are rendered)
+      // This might need adjustment based on how many/what type of Skeletons are in AiChat.tsx
+      const skeletons = screen.queryAllByRole('status'); // Skeletons might have role 'status' or need a data-testid
+      // A more specific test would be to add data-testid to skeleton wrappers in AiChat.tsx
+      // For now, let's assume Skeleton components might be identifiable or we check for their absence of AiChatbox
+      expect(skeletons.length).toBeGreaterThan(0); // Or a specific number if known
+      
+      expect(screen.queryByTestId('mock-ai-chatbox')).not.toBeInTheDocument();
+    });
+
+    it('should display AiChatbox when isDetailsLoading is false', () => {
+      // actualUseAiStore is already set up with isDetailsLoading: false by default in beforeEach
+      // Ensure other necessary states are present for AiChatPage to render AiChatbox
+      actualUseAiStore.mockImplementation(mockAiStoreImplementationFactory({
+        isDetailsLoading: false,
+        availableProviders: [mockProvider1],
+        availablePrompts: [mockPrompt1],
+        chatsByContext: { personal: [], orgs: {} },
+        currentChatId: 'some-chat-id', // Make sure a chat is active so AiChatbox would normally show
+      }));
+
+      render(<AiChat />);
+      expect(screen.getByTestId('mock-ai-chatbox')).toBeInTheDocument();
+      const skeletons = screen.queryAllByRole('status');
+      expect(skeletons.length).toBe(0); // Assuming no skeletons when not loading
+    });
+
+    it('should display error fallback UI when AiChatbox throws an error', () => {
+      // Mock AiChatbox to throw an error
+      mockAiChatbox.mockImplementation(() => {
+        throw new Error('Test error from AiChatbox');
+      });
+
+      // Suppress console.error output for this test if it's noisy
+      const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+      render(
+          <AiChat />
+      );
+
+      // Check for fallback UI text (adjust based on ErrorBoundary.tsx's fallback)
+      expect(screen.getByText(/Oops, something went wrong/i)).toBeInTheDocument();
+      expect(screen.getByText(/Test error from AiChatbox/i)).toBeInTheDocument(); // Check if error message is displayed
+      expect(screen.queryByTestId('mock-ai-chatbox')).not.toBeInTheDocument(); // Original content should not be there
+
+      consoleErrorSpy.mockRestore();
     });
   });
 

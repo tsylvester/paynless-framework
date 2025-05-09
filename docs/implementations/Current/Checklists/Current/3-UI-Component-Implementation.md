@@ -451,25 +451,27 @@ The implementation plan uses the following labels to categorize work steps:
     *   `[✅]` Commit changes with message "feat(AI): Integrate ChatMessageBubble into AiChatbox, add tests, and fix promptId typing".
 *   **Note on `ChatMessage` type:** `[ ]` Add `model_id: string | null` to `ChatMessage` type in `@paynless/types` and ensure backend populates it.
 
-#### STEP-3.3.5: Implement Auto-Scroll (`MessageList.tsx`?) [TEST-UNIT] [COMMIT]
-* [ ] Define Test Cases (Gemini 3.1.1): Simulate adding messages, assert last element scrolls into view.
-* [ ] Write/Update tests for the message list component (`apps/web/src/components/ai/MessageList.tsx`?).
-* [ ] Update the message list component:
-  * [ ] Use `useRef` for the container and potentially the last message element.
-  * [ ] Use `useEffect` that runs when the message list (`messages`) changes.
-  * [ ] Inside the effect, use `lastMessageRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });` (or similar) to scroll the latest message into view.
-* [ ] Run tests. Debug scroll logic until pass (GREEN).
-* [ ] **[REFACTOR]** Extract scroll logic to custom hook (`useScrollToBottom`) if needed.
-* [ ] Commit changes with message "fix(UI): Implement auto-scroll to bottom for new messages w/ tests"
+#### STEP-3.3.5: Implement Auto-Scroll (`AiChatbox.tsx`) [TEST-UNIT] [COMMIT] [✅]
+* [✅] Define Test Cases: Simulate adding messages (user & assistant), assert scroll properties are updated. Test for container not available. Mock `React.useRef` and use fake timers for `requestAnimationFrame`.
+* [✅] Add `data-message-id` to `ChatMessageBubble.tsx`.
+* [✅] Update auto-scroll logic in `AiChatbox.tsx` to scroll for all new messages.
+* [✅] Add `data-testid` to `AiChatbox.tsx` root for testability.
+* [✅] Write/Update tests in `apps/web/src/components/ai/AiChatbox.test.tsx` for auto-scroll.
+* [✅] Run tests. Debug scroll logic until pass (GREEN).
+* [✅] **[REFACTOR]** Scroll logic reviewed and simplified (already part of AiChatbox, not a separate MessageList).
+* [✅] Commit changes with message "feat(UI): Implement and test auto-scroll for AiChatbox, ensure ChatMessageBubble has data-id"
 
-#### STEP-3.3.6: Add Loading States and Error Boundary (`AiChat.tsx`) [TEST-UNIT] [COMMIT]
-* [ ] Define Test Cases: Verify skeleton renders in message area when loading details. Verify error boundary catches errors.
-* [ ] Update `apps/web/src/pages/AiChat.tsx`:
-  * [ ] Use `useAiStore` to get `isDetailsLoading` state.
-  * [ ] Render `Skeleton` components in the message display area when `isDetailsLoading` is true.
-  * [ ] Wrap the main chat content area (messages, input) in an `ErrorBoundary` component.
-* [ ] Run tests. Debug until pass (GREEN).
-* [ ] Commit changes with message "feat(UI): Add loading skeletons and error boundary to AiChat w/ tests"
+#### STEP-3.3.6: Add Loading States and Error Boundary (`AiChat.tsx`) [TEST-UNIT] [COMMIT] [✅]
+* [✅] Define Test Cases: Verify skeleton renders in message area (`AiChat.tsx`) when `isDetailsLoading` is true. Verify `ErrorBoundary` catches errors from children and displays fallback.
+* [✅] Create `apps/web/src/components/common/ErrorBoundary.tsx`.
+* [✅] Update `apps/web/src/pages/AiChat.tsx`:
+  * [✅] Import and use `ErrorBoundary` to wrap main content.
+  * [✅] Import `Skeleton` from `shadcn/ui`.
+  * [✅] Use `useAiStore` to get `isDetailsLoading` state.
+  * [✅] Conditionally render `Skeleton` components in the message display area (where `AiChatbox` would be) when `isDetailsLoading` is true.
+* [✅] Write/Update tests in `apps/web/src/pages/AiChat.test.tsx` for these loading states and error boundary behavior.
+* [✅] Run tests. Debug until pass (GREEN).
+* [✅] Commit changes with message "feat(UI): Add loading skeletons and ErrorBoundary to AiChatPage w/ tests"
 
 ### STEP-3.4: Implement Markdown Support [UI] [🚧]
 

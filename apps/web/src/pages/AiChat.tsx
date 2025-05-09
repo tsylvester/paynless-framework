@@ -8,8 +8,10 @@ import { AiChatbox } from '../components/ai/AiChatbox';
 import { ChatHistoryList } from '../components/ai/ChatHistoryList';
 import { ChatContextSelector } from '../components/ai/ChatContextSelector';
 import { Button } from '@/components/ui/button';
+import { Skeleton } from '@/components/ui/skeleton';
 import { Plus } from 'lucide-react';
 import type { Chat } from '@paynless/types'; // Import Chat type
+import ErrorBoundary from '../components/common/ErrorBoundary'; // Added ErrorBoundary
 // import type { Organization, AiProvider, SystemPrompt } from '@paynless/types'; // Organization, AiProvider, SystemPrompt commented out as they are not used
 // import type { Chat } from '@paynless/types'; // Chat type might no longer be needed here if currentChatHistoryList is removed
 
@@ -29,7 +31,7 @@ export default function AiChatPage() {
     availablePrompts,
     checkAndReplayPendingChatAction,
     chatsByContext, // Added to destructure from useAiStore
-    // isLoadingHistoryByContext, // No longer used to derive currentIsHistoryLoading
+    isDetailsLoading, // Added isDetailsLoading
   } = useAiStore((state) => ({
     loadAiConfig: state.loadAiConfig,
     // loadChatHistory: state.loadChatHistory,
@@ -40,7 +42,7 @@ export default function AiChatPage() {
     availablePrompts: state.availablePrompts,
     checkAndReplayPendingChatAction: state.checkAndReplayPendingChatAction,
     chatsByContext: state.chatsByContext, // Get chatsByContext
-    // isLoadingHistoryByContext: state.isLoadingHistoryByContext,
+    isDetailsLoading: state.isDetailsLoading, // Destructure isDetailsLoading
   }));
 
   // Organization Store data
@@ -210,54 +212,64 @@ export default function AiChatPage() {
   }, [activeContextIdForHistory, userOrganizations]);
 
   return (
-    <div>
-      <div className="container mx-auto p-6 grid grid-cols-1 md:grid-cols-3 gap-6"> 
-        <div className="md:col-span-2 flex flex-col border border-border rounded-lg bg-card shadow-sm overflow-y-auto min-h-0 max-h-[calc(100vh-12rem)]"> 
-          <div className="p-4 border-b border-border sticky top-0 bg-card z-10 space-y-2">
-            <div>
-              {/*<h2 className="text-lg font-semibold text-card-foreground">
-                dynamicHeaderText
-              </h2>*/}
+    <ErrorBoundary>
+      <div>
+        <div className="container mx-auto p-6 grid grid-cols-1 md:grid-cols-3 gap-6"> 
+          <div className="md:col-span-2 flex flex-col border border-border rounded-lg bg-card shadow-sm overflow-y-auto min-h-0 max-h-[calc(100vh-12rem)]"> 
+            <div className="p-4 border-b border-border sticky top-0 bg-card z-10 space-y-2">
+              <div>
+                {/*<h2 className="text-lg font-semibold text-card-foreground">
+                  dynamicHeaderText
+                </h2>*/}
+              </div>
+              
+              <div className="flex flex-wrap items-center gap-x-2 gap-y-2">
+                <ChatContextSelector
+                  currentContextId={typeof nextChatOrgContext === 'undefined' ? null : nextChatOrgContext}
+                  onContextChange={handleContextSelection}
+                />
+                <ModelSelector 
+                  selectedProviderId={selectedProviderId} 
+                  onProviderChange={handleProviderChange}
+                />
+                <PromptSelector 
+                  selectedPromptId={selectedPromptId} 
+                  onPromptChange={handlePromptChange}
+                />
+                <Button variant="default" onClick={handleNewChat} className="ml-auto" data-testid="new-chat-button">
+                  <Plus className="mr-2 h-4 w-4" /> New Chat
+                </Button>
+              </div>
             </div>
             
-            <div className="flex flex-wrap items-center gap-x-2 gap-y-2">
-              <ChatContextSelector
-                currentContextId={typeof nextChatOrgContext === 'undefined' ? null : nextChatOrgContext}
-                onContextChange={handleContextSelection}
-              />
-              <ModelSelector 
-                selectedProviderId={selectedProviderId} 
-                onProviderChange={handleProviderChange}
-              />
-              <PromptSelector 
-                selectedPromptId={selectedPromptId} 
-                onPromptChange={handlePromptChange}
-              />
-              <Button variant="default" onClick={handleNewChat} className="ml-auto" data-testid="new-chat-button">
-                <Plus className="mr-2 h-4 w-4" /> New Chat
-              </Button>
+            <div className="flex-grow overflow-y-auto p-4"> {/* Main content area with scroll */}
+              {isDetailsLoading ? (
+                <div className="space-y-4 p-4">
+                  <Skeleton className="h-16 w-3/4" />
+                  <Skeleton className="h-12 w-1/2 self-end ml-auto" />
+                  <Skeleton className="h-20 w-3/4" />
+                  <Skeleton className="h-10 w-2/5 self-end ml-auto" />
+                </div>
+              ) : (
+                <AiChatbox 
+                  isAnonymous={isAnonymous}
+                  providerId={selectedProviderId} 
+                  promptId={selectedPromptId}
+                  key={`${currentChatId}-${selectedProviderId}-${selectedPromptId}-${nextChatOrgContext}`} 
+                />
+              )}
             </div>
           </div>
-           
-           <div className="flex-grow overflow-y-auto p-4"> {/* Main content area with scroll */}
-             <AiChatbox 
-               isAnonymous={isAnonymous}
-               providerId={selectedProviderId} 
-               promptId={selectedPromptId}
-               key={`${currentChatId}-${selectedProviderId}-${selectedPromptId}-${nextChatOrgContext}`} // Add nextChatOrgContext to key
-             />
-           </div>
-        </div>
 
-        {/* Chat History Sidebar */}
-        <aside className="md:col-span-1 flex flex-col border border-border rounded-lg bg-card shadow-sm overflow-y-auto min-h-0 max-h-[calc(100vh-12rem)]">
-          <ChatHistoryList
-            activeContextId={activeContextIdForHistory}
-            currentChatId={currentChatId}
-            contextTitle={contextTitleForHistory}
-          />
-        </aside>
+          <div className="md:col-span-1 flex flex-col space-y-4 min-h-0 max-h-[calc(100vh-12rem)]">
+            <ChatHistoryList 
+              activeContextId={activeContextIdForHistory} 
+              currentChatId={currentChatId} 
+              contextTitle={contextTitleForHistory} 
+            />
+          </div>
+        </div>
       </div>
-    </div>
+    </ErrorBoundary>
   );
 } 
