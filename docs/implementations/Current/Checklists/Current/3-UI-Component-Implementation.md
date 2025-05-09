@@ -489,11 +489,6 @@ The implementation plan uses the following labels to categorize work steps:
 * [✅] **[REFACTOR]** (Moved to STEP-3.4.3)
 * [✅] Commit changes with message "feat(UI): Implement Markdown rendering for chat messages w/ tests" (Pending styling review and refactor).
 
-#### STEP-3.4.2.1: Chat Bugfixes [TEST-UNIT] [COMMIT] [✅]
-* [ ] Revert ChatHistoryList to have a boundary box & scrollbar
-* [ ] Fix Name/date attribution in AttributionDisplay
-* [ ] Alernate left/right for agent/user messages 
-
 #### STEP-3.4.3: Refactor to Reusable `MarkdownRenderer` Component with Syntax Highlighting [UI] [TEST-UNIT] [COMMIT]
 *   **Phase 1: Basic Refactor (Moving existing functionality)**
     *   [ ] **[UI]** Create `apps/web/src/components/common/MarkdownRenderer.tsx`.
@@ -515,6 +510,11 @@ The implementation plan uses the following labels to categorize work steps:
     *   [ ] **[UI]** Review and adjust `proseStyles` in `MarkdownRenderer.tsx` or global Tailwind theme for consistent styling of all markdown elements, including syntax-highlighted code blocks.
     *   [ ] Manually verify styling in the browser.
 *   [ ] Commit changes with message like "feat(UI): Create MarkdownRenderer with syntax highlighting and refactor usage"
+
+#### STEP-3.4.4: Chat Bugfixes [TEST-UNIT] [COMMIT] [✅]
+* [ ] Revert ChatHistoryList to have a boundary box & scrollbar
+* [ ] Fix Name/date attribution in AttributionDisplay
+* [ ] Alernate left/right for agent/user messages 
 
 ### STEP-3.5: Implement Token Tracking and Audit UI [UI] [🚧]
 
