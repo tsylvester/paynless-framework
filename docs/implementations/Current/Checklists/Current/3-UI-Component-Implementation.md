@@ -203,18 +203,40 @@ The implementation plan uses the following labels to categorize work steps:
 * [✅] Fix AiChat.test.tsx
 * [✅] Fix AiChat.integration.test.tsx
 * [✅] Fix infinite loop on loading org chat 
-* [ ] Check ChatHistoryList test after fixing loop
+* [✅] Check ChatHistoryList test after fixing loop
 
-#### STEP-3.2.2: Add Context-Specific Actions to Chat History Items (`ChatItem.tsx`) [TEST-UNIT] [COMMIT]
-* [ ] Define Test Cases (Gemini 2.5.1): Delete Button/menu item visible only for admin on org chats in current context. Hidden otherwise. Click triggers confirmation/action.
-* [ ] Write/Update tests in `apps/web/src/tests/unit/components/ai/ChatItem.unit.test.tsx` (or create if needed).
-* [ ] Update `apps/web/src/components/ai/ChatItem.tsx`:
-  * [ ] Use `useOrganizationStore` to get `currentOrganizationId` and `currentUserRoleInOrg`.
-  * [ ] Conditionally render Delete button/menu item if `chat.organization_id && chat.organization_id === currentOrganizationId && currentUserRoleInOrg === 'admin'`.
-  * [ ] On click, show confirmation dialog (`AlertDialog` from shadcn/ui).
-  * [ ] On confirm, call `useAiStore.getState().deleteChat(chat.id, chat.organization_id)`.
-* [ ] Run tests. Debug until pass (GREEN).
-* [ ] Commit changes with message "feat(UI): Add admin delete action to organization chat history items w/ tests"
+#### STEP-3.2.2: Create `ChatItem` Component with Context-Specific Actions [TEST-UNIT] [COMMIT]
+* [✅] **Define Test Cases for `ChatItem.tsx`:**
+    *   [✅] Renders chat title correctly (handles null/empty with "Untitled Chat...").
+    *   [✅] Calls `onClick` prop with `chatId` when the main item area is clicked.
+    *   [✅] Applies active styling (e.g., `bg-muted`) if `isActive` prop is true.
+    *   [✅] **Delete Button Visibility Logic:**
+        *   [✅] Personal Chats: VISIBLE if `chat.user_id === currentUserId` (from `useAuthStore`). HIDDEN otherwise.
+        *   [✅] Organization Chats: VISIBLE if `chat.user_id === currentUserId` (creator) OR if `currentUser` (from `useAuthStore`) is an admin in `chat.organization_id` (checked via `currentOrganizationId` and `selectCurrentUserRoleInOrg` from `useOrganizationStore`). HIDDEN otherwise.
+    *   [✅] **Delete Button Interaction:**
+        *   [✅] Clicking delete button (if visible) triggers `AlertDialog`.
+        *   [✅] `AlertDialog` shows appropriate title/description.
+        *   [✅] Confirming delete in `AlertDialog` calls `useAiStore.getState().deleteChat(chat.id, chat.organization_id)`.
+        *   [✅] Cancelling delete in `AlertDialog` does not call `deleteChat`.
+* [✅] **Create `apps/web/src/components/ai/ChatItem.test.tsx`:**
+    *   [✅] Write tests based on the cases above. Mock `useAuthStore`, `useOrganizationStore`, `useAiStore`. Mock `AlertDialog` components.
+* [ ] **Create `apps/web/src/components/ai/ChatItem.tsx` Component:**
+    *   [✅] Props: `chat: Chat`, `onClick: (chatId: string) => void`, `isActive: boolean`.
+    *   [✅] Render chat title (or default "Untitled Chat..."). Main element is a button calling `onClick`.
+    *   [✅] Implement delete button visibility using `useAuthStore` (for `currentUser.id`) and `useOrganizationStore` (for `currentOrganizationId`, `selectCurrentUserRoleInOrg`).
+    *   [✅] Delete button uses `AlertDialog` for confirmation. On confirm, calls `deleteChat` from `useAiStore`.
+* [✅] **Run `ChatItem.test.tsx`**. Debug until all tests pass (GREEN).
+* [✅] **Commit changes** with message "feat(UI): Create ChatItem component with delete action and tests".
+
+#### STEP-3.2.2.1: Integrate `ChatItem` into `ChatHistoryList` and Update Tests [UI] [TEST-UNIT] [COMMIT]
+* [ ] **Refactor `apps/web/src/components/ai/ChatHistoryList.tsx`:**
+    *   [ ] Import and use the new `ChatItem` component to render each chat in the list, passing appropriate props (`chat`, `onLoadChat` as `onClick`, and `isActive` status).
+* [ ] **Update `apps/web/src/components/ai/ChatHistoryList.test.tsx`:**
+    *   [ ] Adjust tests that previously checked for direct button rendering within `ChatHistoryList`.
+    *   [ ] Tests should now primarily verify that `ChatHistoryList` renders the correct number of `ChatItem` components and passes the correct props to them (e.g., by mocking `ChatItem` and checking its received props).
+    *   [ ] Ensure tests for `onLoadChat` being called when a chat is selected still pass (interaction will now be with the `ChatItem`'s main button area).
+* [ ] **Run `ChatHistoryList.test.tsx`**. Debug until all tests pass (GREEN).
+* [ ] **Commit changes** with message "refactor(UI): Integrate ChatItem into ChatHistoryList and update tests".
 
 #### STEP-3.2.3: Add Loading States and Error Boundary [TEST-UNIT] [COMMIT]
 * [ ] Define Test Cases: Verify skeleton renders when loading. Verify error boundary catches errors.

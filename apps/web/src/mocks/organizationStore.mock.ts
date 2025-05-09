@@ -149,6 +149,11 @@ export const mockSetCurrentOrganizationDetails = (details: Organization | null) 
     internalMockOrgStoreState.currentOrganizationDetails = details; 
 };
 
+// New helper to set userOrganizations
+export const mockSetUserOrganizations = (orgs: Organization[]) => {
+  internalMockOrgStoreState.userOrganizations = orgs;
+};
+
 // New exported setters for pagination state
 export const mockSetMemberCurrentPage = (page: number) => { internalMockOrgStoreState.memberCurrentPage = page; };
 export const mockSetMemberPageSize = (size: number) => { internalMockOrgStoreState.memberPageSize = size; };
@@ -177,11 +182,6 @@ export const mockedUseAuthStoreHookLogic = <TResult>(selector?: (state: MockAuth
 const internalMockOrgStoreGetState = (): MockOrganizationStoreInternalStateType => internalMockOrgStoreState;
 
 export const mockedUseOrganizationStoreHookLogic = <TResult>(selector?: (state: MockOrganizationStoreInternalStateType) => TResult): TResult | MockOrganizationStoreInternalStateType => {
-  // Reverting to the original problematic line to see if other changes make it acceptable
-  // or if the linter error needs to be ignored for this mock-specific scenario.
-  if (selector === selectCurrentUserRoleInOrg) { 
-    return selectCurrentUserRoleInOrg(internalMockOrgStoreState as any);
-  }
   const state = internalMockOrgStoreGetState();
   return selector ? selector(state) : state;
 };
