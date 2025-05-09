@@ -178,7 +178,7 @@ export interface AiActions {
   sendMessage: (data: {
     message: string; 
     providerId: AiProvider['id']; // Use aliased type
-    promptId: SystemPrompt['id']; // Use aliased type
+    promptId: SystemPrompt['id'] | null; // MODIFIED HERE
     chatId?: Chat['id'] | null; // Use aliased type
   }) => Promise<ChatMessage | null>; // Use aliased type
   loadChatHistory: (organizationId?: string | null) => Promise<void>;

@@ -25,6 +25,7 @@ export const ChatMessageBubble: React.FC<ChatMessageBubbleProps> = ({ message, o
     <Card 
       className={`p-3 m-2 max-w-[85%] break-words ${bubbleStyles}`}
       data-testid="chat-message-bubble-card"
+      data-message-id={message.id}
     >
       <div className="flex flex-col">
         <AttributionDisplay 

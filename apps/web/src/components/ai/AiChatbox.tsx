@@ -4,33 +4,22 @@ import React, { useState, useRef, useEffect } from 'react'
 import { useAiStore, selectCurrentChatMessages } from '@paynless/store'
 import type { ChatMessage } from '@paynless/types'
 import { logger } from '@paynless/utils'
-import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
-import ReactMarkdown from 'react-markdown'
-import remarkGfm from 'remark-gfm'
-import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
-import { okaidia } from 'react-syntax-highlighter/dist/esm/styles/prism'; // Adjust path as needed
-import rehypeSanitize from 'rehype-sanitize';
-
-// Assuming existing cn utility
-// import { Textarea } from '@/components/ui/textarea';
-// import { Button } from '@/components/ui/button';
-// import { ScrollArea } from '@/components/ui/scroll-area';
-// import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
-// import { Terminal, Loader2 } from "lucide-react"
-import { Terminal, Loader2 } from 'lucide-react' // Keep lucide icons
+import { Terminal, Loader2 } from 'lucide-react'
+import { ChatMessageBubble } from './ChatMessageBubble'
 
 interface AiChatboxProps {
   providerId: string | null
   promptId: string | null
   isAnonymous: boolean
-  // Optional callback for when limit is reached, handled by parent
+  onEditMessageRequest?: (messageId: string, currentContent: string) => void
 }
 
 export const AiChatbox: React.FC<AiChatboxProps> = ({
   providerId,
   promptId,
+  onEditMessageRequest,
 }) => {
   const [inputMessage, setInputMessage] = useState('')
   const scrollContainerRef = useRef<HTMLDivElement>(null); // Ref for the scrollable container
@@ -59,23 +48,24 @@ export const AiChatbox: React.FC<AiChatboxProps> = ({
     // Guard for empty array before accessing last element.
     if (currentChatMessages.length === 0) return;
 
-    const latestMessage = currentChatMessages[currentChatMessages.length - 1];
-    if (latestMessage && latestMessage.role === 'assistant') { 
-      const container = scrollContainerRef.current;
-      if (!container) {
-        return;
-      }
-
-      const messageElements = container.querySelectorAll('[data-message-id]');
-      const lastMessageElement = messageElements?.[messageElements.length - 1] as HTMLElement | undefined;
-
-      if (lastMessageElement) {
-        const targetScrollTop = lastMessageElement.offsetTop - container.offsetTop; 
-        requestAnimationFrame(() => {
-           container.scrollTop = targetScrollTop;
-        });
-      }
+    // const latestMessage = currentChatMessages[currentChatMessages.length - 1];
+    // if (latestMessage && latestMessage.role === 'assistant') { 
+    // Always try to scroll to the latest message if the container exists.
+    const container = scrollContainerRef.current;
+    if (!container) {
+      return;
     }
+
+    const messageElements = container.querySelectorAll('[data-message-id]');
+    const lastMessageElement = messageElements?.[messageElements.length - 1] as HTMLElement | undefined;
+
+    if (lastMessageElement) {
+      const targetScrollTop = lastMessageElement.offsetTop - container.offsetTop;
+      requestAnimationFrame(() => {
+          container.scrollTop = targetScrollTop;
+      });
+    }
+    // }
   }, [currentChatMessages]); 
 
   const handleSend = async () => {
@@ -84,36 +74,22 @@ export const AiChatbox: React.FC<AiChatboxProps> = ({
       logger.error('[AiChatbox] Cannot send message: Provider ID is missing.')
       return
     }
-    if (!promptId) {
-      logger.error('[AiChatbox] Cannot send message: Prompt ID is missing.')
-      return
-    }
+    // if (!promptId) {
+    //   logger.error('[AiChatbox] Cannot send message: Prompt ID is missing.')
+    //   return
+    // }
 
     clearAiError() // Clear previous errors
     const messageToSend = inputMessage
     setInputMessage('') // Clear input immediately
 
     try {
-      const result = await sendMessage({
+      await sendMessage({
         message: messageToSend,
         providerId,
-        promptId,
+        promptId: promptId,
         chatId: currentChatId ?? undefined,
       })
-
-      if (
-        result &&
-        typeof result === 'object' &&
-        'error' in result &&
-        result.error === 'limit_reached'
-      ) {
-        logger.warn('[AiChatbox] Anonymous limit reached.')
-        // Optionally call parent handler
-        // TODO: Restore input message if needed, or handle in parent
-        // setInputMessage(messageToSend);
-      } else if (result && typeof result === 'object' && 'error' in result) {
-        // Handle other potential errors returned from sendMessage
-      }
     } catch (error: unknown) {
       // Errors should ideally be caught and set in the store's aiError state
       // by the sendMessage action itself.
@@ -145,66 +121,16 @@ export const AiChatbox: React.FC<AiChatboxProps> = ({
         className="flex-grow pr-4 overflow-y-auto min-h-[200px]"
         ref={scrollContainerRef}
       >
-        <div className="space-y-4">
+        <div className="space-y-2">
           {currentChatMessages.map((msg: ChatMessage) => (
-            <div
+            <ChatMessageBubble
               key={msg.id}
-              data-message-id={msg.id}
-              className={cn(
-                'flex w-max max-w-[75%] flex-col gap-2 rounded-lg px-3 py-2 text-sm',
-                msg.role === 'user'
-                  ? 'ml-auto bg-[rgb(var(--color-primary))] text-white'
-                  : 'bg-[rgb(var(--color-surface))] text-textPrimary'
-              )}
-            >
-              <div className="markdown-content w-full">
-                <ReactMarkdown
-                  remarkPlugins={[remarkGfm]}
-                  rehypePlugins={[rehypeSanitize]}
-                  components={{
-                    code(props) {
-                      // eslint-disable-next-line @typescript-eslint/no-unused-vars
-                      const {children, className, node, ref, ...rest} = props // Explicitly pull out ref
-                      const match = /language-(\w+)/.exec(className || '')
-                      return match ? (
-                        <SyntaxHighlighter
-                          {...rest} // Spread props WITHOUT ref
-                          PreTag="div"
-                          children={String(children).replace(/\n$/, '')}
-                          language={match[1]}
-                          style={okaidia} // Choose your style
-                          className="whitespace-pre-wrap break-words"
-                        />
-                      ) : (
-                        <code ref={ref} {...rest} className={cn(className, "whitespace-pre-wrap break-words")}> // Pass ref to the fallback code tag
-                          {children}
-                        </code>
-                      )
-                    }
-                  }}
-                >
-                  {msg.content}
-                </ReactMarkdown>
-              </div>
-              {/* Add timestamp below the message content */}
-              {msg.created_at && (
-                <div className={cn(
-                  "text-xs mt-1",
-                  msg.role === 'user' 
-                    ? "text-gray-200/80" /* Lighter text on dark user bubble */
-                    : "text-[rgb(var(--color-textSecondary))]" /* Muted text on light assistant bubble */
-                )}>
-                  {/* Format date and time using toLocaleString */}
-                  {new Date(msg.created_at).toLocaleString([], {
-                    year: 'numeric', month: 'numeric', day: 'numeric', 
-                    hour: 'numeric', minute: '2-digit' 
-                  })}
-                </div>
-              )}
-            </div>
+              message={msg}
+              onEditClick={msg.role === 'user' ? onEditMessageRequest : undefined}
+            />
           ))}
           {isLoadingAiResponse && (
-            <div className="flex items-center space-x-2 justify-start">
+            <div className="flex items-center space-x-2 justify-start pl-2 pt-2">
               <Loader2 className="h-4 w-4 animate-spin text-[rgb(var(--color-textSecondary))]" />
               <span className="text-sm text-[rgb(var(--color-textSecondary))]">
                 Assistant is thinking...

@@ -53,7 +53,7 @@ interface AiActions {
   sendMessage: (data: {
     message: string; 
     providerId: AiProvider['id']; 
-    promptId: SystemPrompt['id']; 
+    promptId: SystemPrompt['id'] | null;
     chatId?: Chat['id'] | null; 
   }) => Promise<ChatMessage | null>; 
   loadChatHistory: (organizationId?: string | null) => Promise<void>;
@@ -208,10 +208,12 @@ export const useAiStore = create<AiStore>()(
                     organizationIdForApi = undefined; // Explicitly undefined for existing chats in request
                 }
 
+                const apiPromptId = promptId === null ? '__none__' : promptId;
+
                 const requestData: ChatApiRequest = { 
                     message, 
                     providerId, 
-                    promptId, 
+                    promptId: apiPromptId,
                     chatId: effectiveChatIdForApi, 
                     organizationId: organizationIdForApi, // Add organizationId to the request
                     // Conditionally add rewindFromMessageId

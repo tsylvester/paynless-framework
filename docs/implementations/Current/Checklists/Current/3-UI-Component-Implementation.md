@@ -410,7 +410,7 @@ The implementation plan uses the following labels to categorize work steps:
 * [✅] Run tests. Debug until pass (GREEN).
 * [✅] Commit changes with message "feat(UI): Load selected system prompt based on active chat"
 
-#### STEP-3.3.4: Implement User Attribution Display and Refactor `ChatMessageBubble` [UI] [TEST-UNIT] [COMMIT] [🚧]
+#### STEP-3.3.4: Implement User Attribution Display and Refactor `ChatMessageBubble` [UI] [TEST-UNIT] [COMMIT] [✅]
 *   **STEP-3.3.4.A: [UI] [TEST-UNIT] Create Reusable `AttributionDisplay` Component [✅]**
     *   `[✅]` Define Test Cases (current user, org member, fallback to ID, various profile data points).
     *   `[✅]` Create `apps/web/src/components/common/AttributionDisplay.test.tsx`.
@@ -440,12 +440,15 @@ The implementation plan uses the following labels to categorize work steps:
     *   `[✅]` Run tests. Debug until pass (GREEN).
     *   `[✅]` **[REFACTOR]** Ensure clarity.
     *   `[✅]` Commit changes with message "feat(UI): Create ChatMessageBubble with Card, AttributionDisplay, and edit features w/ tests".
-*   **STEP-3.3.4.C: [UI] [TEST-UNIT] Integrate `ChatMessageBubble` into Message Display Area**
-    *   `[ ]` Define Test Cases for parent component (`MessageList.tsx` or `AiChatbox.tsx`).
-    *   `[ ]` Update tests for `apps/web/src/components/ai/MessageList.tsx` (or equivalent).
-    *   `[ ]` Update `MessageList.tsx` (or equivalent) to use `ChatMessageBubble`.
-    *   `[ ]` Run tests. Debug until pass (GREEN).
-    *   `[ ]` Commit changes with message "feat(UI): Integrate ChatMessageBubble into message list".
+*   **STEP-3.3.4.C: [UI] [TEST-UNIT] Integrate `ChatMessageBubble` into Message Display Area (e.g., `AiChatbox.tsx`)** [✅]
+    *   `[✅]` C.1. Examine `AiChatbox.tsx` to understand how messages are currently rendered and identify where `ChatMessageBubble` will be integrated.
+    *   `[✅]` C.2. Identify if `AiChatbox.test.tsx` exists. (It did not, created).
+    *   `[✅]` C.3. Define test cases for `AiChatbox.test.tsx`, focusing on the integration of `ChatMessageBubble` and the passing of `message` and `onEditMessageRequest` props. Also include existing core functionality tests.
+    *   `[✅]` C.4. Create/Update `AiChatbox.test.tsx`: Add mocks for `ChatMessageBubble`, `useAiStore`, and necessary helper data/functions. Implement `it.todo` blocks for defined test cases.
+    *   `[✅]` C.5. Modify `AiChatbox.tsx`: Import `ChatMessageBubble`. Add `onEditMessageRequest` to `AiChatboxProps`. Replace existing message rendering logic with `ChatMessageBubble`, passing the `message` object and conditionally passing `onEditMessageRequest` (as `onEditClick`). Handle any necessary state/prop drilling. Remove direct markdown/syntax highlighting. Update `promptId` handling to allow `null` and pass to store.
+    *   `[✅]` C.6. Implement and run tests in `AiChatbox.test.tsx`. Iterate on component and test logic until all tests pass. (12 tests implemented and passing).
+    *   `[✅]` C.7. Consider implications for auto-scrolling and ensure it still functions correctly with `ChatMessageBubble`. (Auto-scroll logic reviewed and simplified).
+    *   `[✅]` Commit changes with message "feat(AI): Integrate ChatMessageBubble into AiChatbox, add tests, and fix promptId typing".
 *   **Note on `ChatMessage` type:** `[ ]` Add `model_id: string | null` to `ChatMessage` type in `@paynless/types` and ensure backend populates it.
 
 #### STEP-3.3.5: Implement Auto-Scroll (`MessageList.tsx`?) [TEST-UNIT] [COMMIT]
