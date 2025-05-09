@@ -1,8 +1,9 @@
 import { useEffect } from 'react';
-import { Chat } from '@paynless/types';
+import type { Chat } from '@paynless/types';
 import { cn } from '@/lib/utils';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useAiStore } from '@paynless/store';
+import { ChatItem } from './ChatItem';
 
 interface ChatHistoryListProps {
   onLoadChat: (chatId: string) => void;
@@ -49,19 +50,19 @@ export function ChatHistoryList({
   const getChatsForDisplay = () => {
     if (activeContextId === null) return chatsByContext.personal || [];
     if (typeof activeContextId === 'string') return chatsByContext.orgs[activeContextId] || [];
-    return []; // Should not happen if activeContextId is always string | null
+    return [];
   };
 
   const isLoadingForDisplay = () => {
     if (activeContextId === null) return isLoadingHistoryByContext.personal;
     if (typeof activeContextId === 'string') return isLoadingHistoryByContext.orgs[activeContextId] || false;
-    return false; // Default to not loading
+    return false;
   };
 
   const errorForDisplay = () => {
     if (activeContextId === null) return historyErrorByContext.personal;
     if (typeof activeContextId === 'string') return historyErrorByContext.orgs[activeContextId] || null;
-    return null; // Default to no error
+    return null;
   };
 
   const chatsToDisplay = getChatsForDisplay();
@@ -83,9 +84,9 @@ export function ChatHistoryList({
     return (
       <div className="p-4 space-y-3">
         {renderTitle()}
-        <Skeleton className="h-8 w-full" />
-        <Skeleton className="h-8 w-full" />
-        <Skeleton className="h-8 w-full" />
+        <Skeleton className="h-8 w-full" data-testid="skeleton-item" />
+        <Skeleton className="h-8 w-full" data-testid="skeleton-item" />
+        <Skeleton className="h-8 w-full" data-testid="skeleton-item" />
       </div>
     );
   }
@@ -112,24 +113,14 @@ export function ChatHistoryList({
     <div className="p-2">
       {renderTitle()}
       <div className="space-y-1">
-        {chatsToDisplay.map((chat: Chat) => {
-          const chatTitle = chat.title || `Chat ${chat.id.substring(0, 8)}...`;
-          const isActive = chat.id === currentChatId;
-          return (
-            <button
-              key={chat.id}
-              onClick={() => onLoadChat(chat.id)}
-              className={cn(
-                'w-full text-left px-3 py-2 rounded-md text-sm transition-colors',
-                'hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring',
-                isActive ? 'bg-muted font-semibold' : 'text-muted-foreground'
-              )}
-              aria-current={isActive ? 'page' : undefined}
-            >
-              {chatTitle}
-            </button>
-          );
-        })}
+        {chatsToDisplay.map((chat: Chat) => (
+          <ChatItem
+            key={chat.id}
+            chat={chat}
+            onClick={onLoadChat}
+            isActive={chat.id === currentChatId}
+          />
+        ))}
       </div>
     </div>
   );

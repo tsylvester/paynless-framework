@@ -228,14 +228,14 @@ The implementation plan uses the following labels to categorize work steps:
 * [✅] **Run `ChatItem.test.tsx`**. Debug until all tests pass (GREEN).
 * [✅] **Commit changes** with message "feat(UI): Create ChatItem component with delete action and tests".
 
-#### STEP-3.2.2.1: Integrate `ChatItem` into `ChatHistoryList` and Update Tests [UI] [TEST-UNIT] [COMMIT]
-* [ ] **Refactor `apps/web/src/components/ai/ChatHistoryList.tsx`:**
-    *   [ ] Import and use the new `ChatItem` component to render each chat in the list, passing appropriate props (`chat`, `onLoadChat` as `onClick`, and `isActive` status).
-* [ ] **Update `apps/web/src/components/ai/ChatHistoryList.test.tsx`:**
-    *   [ ] Adjust tests that previously checked for direct button rendering within `ChatHistoryList`.
-    *   [ ] Tests should now primarily verify that `ChatHistoryList` renders the correct number of `ChatItem` components and passes the correct props to them (e.g., by mocking `ChatItem` and checking its received props).
-    *   [ ] Ensure tests for `onLoadChat` being called when a chat is selected still pass (interaction will now be with the `ChatItem`'s main button area).
-* [ ] **Run `ChatHistoryList.test.tsx`**. Debug until all tests pass (GREEN).
+#### STEP-3.2.2.1: Integrate `ChatItem` into `ChatHistoryList` and Update Tests [UI] [TEST-UNIT] [COMMIT] [✅]
+* [✅] **Refactor `apps/web/src/components/ai/ChatHistoryList.tsx`:**
+    *   [✅] Import and use the new `ChatItem` component to render each chat in the list, passing appropriate props (`chat`, `onLoadChat` as `onClick`, and `isActive` status).
+* [✅] **Update `apps/web/src/components/ai/ChatHistoryList.test.tsx`:**
+    *   [✅] Adjust tests that previously checked for direct button rendering within `ChatHistoryList`.
+    *   [✅] Tests should now primarily verify that `ChatHistoryList` renders the correct number of `ChatItem` components and passes the correct props to them (e.g., by mocking `ChatItem` and checking its received props).
+    *   [✅] Ensure tests for `onLoadChat` being called when a chat is selected still pass (interaction will now be with the `ChatItem`'s main button area).
+* [✅] **Run `ChatHistoryList.test.tsx`**. Debug until all tests pass (GREEN).
 * [ ] **Commit changes** with message "refactor(UI): Integrate ChatItem into ChatHistoryList and update tests".
 
 #### STEP-3.2.3: Add Loading States and Error Boundary [TEST-UNIT] [COMMIT]
@@ -244,7 +244,7 @@ The implementation plan uses the following labels to categorize work steps:
   * [ ] Add `Skeleton` rendering (using shadcn/ui) when `isHistoryLoading` is true.
   * [ ] Wrap the chat list rendering logic in an `ErrorBoundary` component.
 * [ ] Run tests. Debug until pass (GREEN).
-* [ ] Commit changes with message "feat(UI): Add loading skeletons and error boundary to ChatHistory w/ tests"
+* [ ] Commit changes with message "feat(UI): Add loading skeletons and error boundary to ChatHistoryList w/ tests"
 
 ### STEP-3.3: Update Main Chat Interface (`AiChat.tsx`) [UI] [🚧]
 
