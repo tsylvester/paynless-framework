@@ -170,22 +170,22 @@ The implementation plan uses the following labels to categorize work steps:
 
 #### STEP-3.1.4: Update `Organization` route with store and api changes for org chat functions. 
 * [✅] All cards updated
-* [ ] Need to finish Org pages unit tests
-* [ ] Need to finish Org pages integration tests 
+* [✅] Need to finish Org pages unit tests
+* [✅] Need to finish Org pages integration tests 
 
 #### STEP-3.1.5: Update `aiStore` for Contextual Chat History [STORE] [TEST-UNIT] [COMMIT]
-*   [ ] **[TEST-UNIT]** Define/Update Test Cases in `packages/store/src/tests/aiStore.test.ts` (create if not present) for `loadChatHistory` action:
-    *   [ ] Verify `apiClient.getChatHistory` is called with the provided `organizationId` when `loadChatHistory(organizationId)` is dispatched.
-    *   [ ] Verify `apiClient.getChatHistory` is called for personal chats (e.g., `organizationId = null` or appropriate parameter for personal context) when `loadChatHistory(null)` is dispatched.
-    *   [ ] Verify store state (`chatHistoryList`, `isHistoryLoading`, `historyError`) is updated correctly after API success/failure for both personal and organizational contexts.
-    *   [ ] Ensure tests mock `apiClient.getChatHistory` (or the actual API call module used by the store) appropriately.
-*   [ ] Run `aiStore` tests. Expect failures for `loadChatHistory` if changes are not yet implemented (RED).
-*   [ ] **[STORE]** Modify `loadChatHistory` action in `packages/store/src/aiStore.ts`:
-    *   [ ] Update signature to accept `organizationId: string | null` as an argument.
-    *   [ ] Pass this `organizationId` to the `apiClient.getChatHistory` method (or equivalent).
-*   [ ] Run `aiStore` tests. Debug until pass (GREEN).
-*   [ ] **[REFACTOR]** Review `loadChatHistory` action for clarity and error handling.
-*   [ ] Commit changes with message "feat(STORE): Enhance aiStore.loadChatHistory for contextual loading w/ tests"
+*   [✅] **[TEST-UNIT]** Define/Update Test Cases in `packages/store/src/tests/aiStore.test.ts` (create if not present) for `loadChatHistory` action:
+    *   [✅] Verify `apiClient.getChatHistory` is called with the provided `organizationId` when `loadChatHistory(organizationId)` is dispatched.
+    *   [✅] Verify `apiClient.getChatHistory` is called for personal chats (e.g., `organizationId = null` or appropriate parameter for personal context) when `loadChatHistory(null)` is dispatched.
+    *   [✅] Verify store state (`chatHistoryList`, `isHistoryLoading`, `historyError`) is updated correctly after API success/failure for both personal and organizational contexts.
+    *   [✅] Ensure tests mock `apiClient.getChatHistory` (or the actual API call module used by the store) appropriately.
+*   [✅] Run `aiStore` tests. Expect failures for `loadChatHistory` if changes are not yet implemented (RED).
+*   [✅] **[STORE]** Modify `loadChatHistory` action in `packages/store/src/aiStore.ts`:
+    *   [✅] Update signature to accept `organizationId: string | null` as an argument.
+    *   [✅] Pass this `organizationId` to the `apiClient.getChatHistory` method (or equivalent).
+*   [✅] Run `aiStore` tests. Debug until pass (GREEN).
+*   [✅] **[REFACTOR]** Review `loadChatHistory` action for clarity and error handling.
+*   [✅] Commit changes with message "feat(STORE): Enhance aiStore.loadChatHistory for contextual loading w/ tests"
 
 ### STEP-3.2: Update Chat History Component (`ChatHistory.tsx`) [UI] [🚧]
 

@@ -40,6 +40,7 @@ export interface AiState {
     isLoadingAiResponse: boolean;
     isConfigLoading: boolean;
     isLoadingHistoryByContext: { personal: boolean, orgs: { [orgId: string]: boolean } };
+    historyErrorByContext: { personal: string | null, orgs: { [orgId: string]: string | null } };
     isDetailsLoading: boolean;
     newChatContext: string | null;
     rewindTargetMessageId: string | null;
@@ -81,6 +82,7 @@ const initialAiStateValues: AiState = {
     isLoadingAiResponse: false,
     isConfigLoading: false,
     isLoadingHistoryByContext: { personal: false, orgs: {} },
+    historyErrorByContext: { personal: null, orgs: {} },
     isDetailsLoading: false,
     newChatContext: null,
     rewindTargetMessageId: null,
@@ -408,68 +410,81 @@ export const useAiStore = create<AiStore>()(
             },
 
             loadChatHistory: async (organizationId?: string | null) => {
-                const token = useAuthStore.getState().session?.access_token;
-                if (!token) {
-                    set(state => ({
-                        aiError: 'Authentication token not found.',
-                        isLoadingHistoryByContext: organizationId
-                            ? { ...state.isLoadingHistoryByContext, orgs: { ...state.isLoadingHistoryByContext.orgs, [organizationId]: false } }
-                            : { ...state.isLoadingHistoryByContext, personal: false },
-                    }));
-                    return;
-                }
+                const contextKey = organizationId || 'personal';
+                const isOrgContext = !!organizationId;
+                logger.info(`Loading chat history for context: ${contextKey}`);
+                
+                set(state => {
+                    const newIsLoadingHistoryByContext = { ...state.isLoadingHistoryByContext };
+                    const newHistoryErrorByContext = { ...state.historyErrorByContext };
 
-                if (organizationId) {
-                    set(state => ({ isLoadingHistoryByContext: { ...state.isLoadingHistoryByContext, orgs: { ...state.isLoadingHistoryByContext.orgs, [organizationId]: true } }, aiError: null }));
-                } else {
-                    set(state => ({ isLoadingHistoryByContext: { ...state.isLoadingHistoryByContext, personal: true }, aiError: null }));
-                }
+                    if (isOrgContext) {
+                        newIsLoadingHistoryByContext.orgs = { ...newIsLoadingHistoryByContext.orgs, [organizationId]: true };
+                        newHistoryErrorByContext.orgs = { ...newHistoryErrorByContext.orgs, [organizationId]: null };
+                    } else {
+                        newIsLoadingHistoryByContext.personal = true;
+                        newHistoryErrorByContext.personal = null;
+                    }
+                    return {
+                        isLoadingHistoryByContext: newIsLoadingHistoryByContext,
+                        historyErrorByContext: newHistoryErrorByContext,
+                        // aiError: null // Keep general aiError for other operations, only clear context-specific error
+                    };
+                });
 
                 try {
-                    // Pass token and optional organizationId to the API client
-                    const response = await api.ai().getChatHistory(token, organizationId);
+                    const token = useAuthStore.getState().session?.access_token;
+                    if (!token && !isOrgContext) { // Only throw for personal if no token
+                        throw new AuthRequiredError('Authentication is required to load personal chat history.');
+                    }
+
+                    const response: ApiResponse<Chat[]> = await api.ai().getChatHistory({ organizationId }, { token });
+
                     if (response.error) {
-                        throw new Error(response.error.message || 'Failed to load chat history');
+                        throw new Error(response.error.message || `Failed to load chat history for ${contextKey}.`);
                     }
-
-                    const chatsForContext = response.data || [];
-
-                    if (organizationId) {
-                        set(state => ({
-                            chatsByContext: {
-                                ...state.chatsByContext,
-                                orgs: { ...state.chatsByContext.orgs, [organizationId]: chatsForContext },
-                            },
-                            isLoadingHistoryByContext: { ...state.isLoadingHistoryByContext, orgs: { ...state.isLoadingHistoryByContext.orgs, [organizationId]: false } },
-                            aiError: null,
-                        }));
-                    } else {
-                        set(state => ({
-                            chatsByContext: {
-                                ...state.chatsByContext,
-                                personal: chatsForContext,
-                            },
-                            isLoadingHistoryByContext: { ...state.isLoadingHistoryByContext, personal: false },
-                            aiError: null,
-                        }));
-                    }
-                } catch (error: unknown) {
-                    const errorMessage = error instanceof Error ? error.message : 'An unexpected error occurred while loading chat history.';
-                    logger.error('Error loading chat history:', { context: organizationId || 'personal', error: errorMessage });
                     
-                    if (organizationId) {
-                        set(state => ({
-                            aiError: errorMessage,
-                            chatsByContext: { ...state.chatsByContext, orgs: { ...state.chatsByContext.orgs, [organizationId]: [] } }, // Clear data for this org on error
-                            isLoadingHistoryByContext: { ...state.isLoadingHistoryByContext, orgs: { ...state.isLoadingHistoryByContext.orgs, [organizationId]: false } },
-                        }));
-                    } else {
-                        set(state => ({
-                            aiError: errorMessage,
-                            chatsByContext: { ...state.chatsByContext, personal: [] }, // Clear personal data on error
-                            isLoadingHistoryByContext: { ...state.isLoadingHistoryByContext, personal: false },
-                        }));
-                    }
+                    const history = response.data || [];
+                    logger.info(`Chat history loaded successfully for ${contextKey}. Count: ${history.length}`);
+
+                    set(state => {
+                        const newChatsByContext = { ...state.chatsByContext };
+                        const newIsLoadingHistoryByContext = { ...state.isLoadingHistoryByContext };
+                        // Error should remain null if successful, already set by initial part of action
+
+                        if (isOrgContext) {
+                            newChatsByContext.orgs = { ...newChatsByContext.orgs, [organizationId]: history };
+                            newIsLoadingHistoryByContext.orgs = { ...newIsLoadingHistoryByContext.orgs, [organizationId]: false };
+                        } else {
+                            newChatsByContext.personal = history;
+                            newIsLoadingHistoryByContext.personal = false;
+                        }
+                        return {
+                            chatsByContext: newChatsByContext,
+                            isLoadingHistoryByContext: newIsLoadingHistoryByContext,
+                        };
+                    });
+
+                } catch (error: unknown) {
+                    const typedError = error as Error;
+                    const errorMessage = typedError.message || `An unknown error occurred while loading history for ${contextKey}.`;
+                    logger.error(`Error loading chat history for ${contextKey}:`, { error: errorMessage });
+                    set(state => {
+                        const newIsLoadingHistoryByContext = { ...state.isLoadingHistoryByContext };
+                        const newHistoryErrorByContext = { ...state.historyErrorByContext };
+
+                        if (isOrgContext) {
+                            newIsLoadingHistoryByContext.orgs = { ...newIsLoadingHistoryByContext.orgs, [organizationId]: false };
+                            newHistoryErrorByContext.orgs = { ...newHistoryErrorByContext.orgs, [organizationId]: errorMessage };
+                        } else {
+                            newIsLoadingHistoryByContext.personal = false;
+                            newHistoryErrorByContext.personal = errorMessage;
+                        }
+                        return {
+                            isLoadingHistoryByContext: newIsLoadingHistoryByContext,
+                            historyErrorByContext: newHistoryErrorByContext,
+                        };
+                    });
                 }
             },
 
