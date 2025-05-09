@@ -69,7 +69,7 @@ const internalRemoveMemberSpy = vi.fn();
 const internalFetchCurrentOrganizationMembersSpy = vi.fn();
 
 // Helper to create mock actions
-const createMockActions = (): MockOrganizationStoreActions => ({
+export const createMockActions = (): MockOrganizationStoreActions => ({
     // OrganizationActions
     fetchUserOrganizations: vi.fn().mockImplementation(() => {
         // console.log('[Mock Store] fetchUserOrganizations called by test'); // Optional debug
@@ -179,7 +179,7 @@ export const mockedUseAuthStoreHookLogic = <TResult>(selector?: (state: MockAuth
 (mockedUseAuthStoreHookLogic as any).getState = internalMockAuthStoreGetState;
 
 
-const internalMockOrgStoreGetState = (): MockOrganizationStoreInternalStateType => internalMockOrgStoreState;
+export const internalMockOrgStoreGetState = (): MockOrganizationStoreInternalStateType => internalMockOrgStoreState;
 
 export const mockedUseOrganizationStoreHookLogic = <TResult>(selector?: (state: MockOrganizationStoreInternalStateType) => TResult): TResult | MockOrganizationStoreInternalStateType => {
   const state = internalMockOrgStoreGetState();

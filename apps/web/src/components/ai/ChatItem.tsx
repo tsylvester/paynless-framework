@@ -148,7 +148,9 @@ export function ChatItem({ chat, isActive }: ChatItemProps) {
         className={cn(
           'flex-grow text-left px-3 py-2 rounded-md text-sm transition-colors w-full truncate',
           'hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring',
-          isActive ? 'bg-muted font-semibold text-accent-foreground' : 'text-muted-foreground'
+          isActive 
+            ? 'bg-primary/10 font-semibold text-accent-foreground ring-2 ring-primary' 
+            : 'text-muted-foreground'
         )}
         aria-current={isActive ? 'page' : undefined}
       >

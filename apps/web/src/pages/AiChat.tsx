@@ -200,21 +200,14 @@ export default function AiChatPage() {
     setSelectedPromptId(availablePrompts && availablePrompts.length > 0 ? availablePrompts[0].id : null);
   };
 
-  const handleLoadChat = (chatId: string) => {
-    if (chatId === currentChatId) return;
-    logger.info(`[AiChatPage] Loading chat:`, { chatId });
-    analytics.track('Chat: History Item Selected', { chatId });
-
-    // The store's loadChatDetails action now handles fetching full chat metadata 
-    // and messages, and updates chatsByContext and messagesByChatId.
-    // The manual update to chatsByContext here is no longer needed.
-    loadChatDetails(chatId); 
-
-    // Provider still resets to default or first available.
-    // Consider if this behavior should change, e.g., load provider from chat details if available.
-    setSelectedProviderId(availableProviders && availableProviders.length > 0 ? availableProviders[0].id : null);
-    // DO NOT reset selectedPromptId here; the useEffect listening to currentChatDetails will handle it.
-  };
+  const activeContextIdForHistory = typeof nextChatOrgContext === 'undefined' ? globalCurrentOrgId : nextChatOrgContext;
+  
+  const contextTitleForHistory = useMemo(() => {
+    if (typeof activeContextIdForHistory === 'undefined') return 'Loading History...'; // Should ideally not happen if nextChatOrgContext defaults properly
+    if (activeContextIdForHistory === null) return 'Personal Chat History';
+    const org = userOrganizations.find(o => o.id === activeContextIdForHistory);
+    return org ? `${org.name} Chat History` : 'Organization Chat History';
+  }, [activeContextIdForHistory, userOrganizations]);
 
   return (
     <div>
@@ -259,10 +252,9 @@ export default function AiChatPage() {
         {/* Chat History Sidebar */}
         <aside className="md:col-span-1 flex flex-col border border-border rounded-lg bg-card shadow-sm overflow-y-auto min-h-0 max-h-[calc(100vh-12rem)]">
           <ChatHistoryList
-            activeContextId={typeof nextChatOrgContext === 'undefined' ? null : nextChatOrgContext}
+            activeContextId={activeContextIdForHistory}
             currentChatId={currentChatId}
-            onLoadChat={handleLoadChat}
-            contextTitle={nextChatOrgContext === null ? "Personal Chats" : (userOrganizations?.find(org => org.id === nextChatOrgContext)?.name || "Organization") + " Chats"}
+            contextTitle={contextTitleForHistory}
           />
         </aside>
       </div>

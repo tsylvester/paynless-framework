@@ -307,7 +307,7 @@ describe('ChatItem', () => {
     expect(screen.getByRole('button', { name: new RegExp(personalChatByCurrentUser.title!, 'i') })).not.toHaveClass('bg-muted');
 
     rerender(<ChatItem chat={personalChatByCurrentUser} isActive={true} />);
-    expect(screen.getByRole('button', { name: new RegExp(personalChatByCurrentUser.title!, 'i') })).toHaveClass('bg-muted');
+    expect(screen.getByRole('button', { name: new RegExp(personalChatByCurrentUser.title!, 'i') })).toHaveClass('bg-primary/10');
   });
 
 

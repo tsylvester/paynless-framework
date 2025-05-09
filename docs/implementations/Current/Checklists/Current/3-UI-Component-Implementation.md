@@ -330,55 +330,56 @@ The implementation plan uses the following labels to categorize work steps:
             *   [✅] Verify that `handleLoadChat` now primarily calls the enhanced `loadChatDetails` store action.
             *   [✅] Confirm `currentChatDetails` (derived via `useMemo`) and `selectedPromptId` (derived via `useEffect`) update correctly based *solely* on the state managed by the enhanced `loadChatDetails`.
             *   [✅] Update unit tests in `apps/web/src/pages/AiChat.test.tsx` to reflect the simplified `handleLoadChat` and verify correct behavior with the improved store interaction.
-        *   [ ] **STEP-3.3.2.1: Refactor `ChatItem.tsx` for Direct Store Interaction and Enhance UI (TDD)**
+        *   [✅] **STEP-3.3.2.1: Refactor `ChatItem.tsx` for Direct Store Interaction and Enhance UI (TDD)**
             *   Description: Refactor `ChatItem.tsx` to call `loadChatDetails` directly from the store upon user click. Simultaneously, enhance its UI to display `created_at`/`updated_at` timestamps, creator's user ID (for organization chats), and the system prompt name if applicable. This will follow a Test-Driven Development approach.
             *   Sub-steps:
                 *   **1. [TEST-UNIT] Define and Write Failing Unit Tests for `ChatItem.tsx` & Related Components**:
                     *   **`ChatItem.test.tsx` - Test Cases:**
                         *   **Direct Store Interaction:**
-                            *   `[ ]` Clicking `ChatItem` calls `useAiStore.getState().loadChatDetails` with the correct `chat.id`.
-                            *   `[ ]` The `onClick` prop is no longer present or used.
+                            *   `[✅]` Clicking `ChatItem` calls `useAiStore.getState().loadChatDetails` with the correct `chat.id`.
+                            *   `[✅]` The `onClick` prop is no longer present or used.
                         *   **UI Enhancements:**
-                            *   `[ ]` Renders formatted `created_at` timestamp (e.g., using `date-fns`).
-                            *   `[ ]` Renders formatted `updated_at` timestamp.
-                            *   `[ ]` For organization chats, renders the creator's `user_id`.
-                            *   `[ ]` Does *not* render creator's `user_id` for personal chats.
-                            *   `[ ]` If `chat.system_prompt_id` exists and a matching prompt is in `availablePrompts` (from mocked `useAiStore`), renders the prompt's name.
-                            *   `[ ]` Handles cases where `chat.system_prompt_id` exists but no matching prompt is found (e.g., renders nothing for prompt name or a default).
-                            *   `[ ]` Handles cases where `chat.system_prompt_id` is null (renders nothing for prompt name).
+                            *   `[✅]` Renders formatted `created_at` timestamp (e.g., using `date-fns`).
+                            *   `[✅]` Renders formatted `updated_at` timestamp.
+                            *   `[✅]` For organization chats, renders the creator's `user_id`.
+                            *   `[✅]` Does *not* render creator's `user_id` for personal chats.
+                            *   `[✅]` If `chat.system_prompt_id` exists and a matching prompt is in `availablePrompts` (from mocked `useAiStore`), renders the prompt's name.
+                            *   `[✅]` Handles cases where `chat.system_prompt_id` exists but no matching prompt is found (e.g., renders nothing for prompt name or a default).
+                            *   `[✅]` Handles cases where `chat.system_prompt_id` is null (renders nothing for prompt name).
                     *   **`ChatHistoryList.test.tsx` - Test Updates:**
-                        *   `[ ]` Remove assertions related to an `onLoadChat` prop being passed to or called by `ChatItem`. Verify `ChatItem` receives `chat` and `isActive` props.
+                        *   `[✅]` Remove assertions related to an `onLoadChat` prop being passed to or called by `ChatItem`. Verify `ChatItem` receives `chat` and `isActive` props.
                     *   **`AiChatPage.test.tsx` - Test Updates:**
-                        *   `[ ]` Remove tests and assertions for the `handleLoadChat` function.
-                        *   `[ ]` Remove assertions related to the `onLoadChat` prop of `ChatHistoryList`.
+                        *   `[✅]` Remove tests and assertions for the `handleLoadChat` function.
+                        *   `[✅]` Remove assertions related to the `onLoadChat` prop of `ChatHistoryList`.
                     *   **Files to Update:** `apps/web/src/components/ai/ChatItem.test.tsx`, `apps/web/src/components/ai/ChatHistoryList.test.tsx`, `apps/web/src/pages/AiChat.test.tsx`
                     *   **Expected Status:** Tests related to new/changed behavior should fail (RED).
                 *   **2. [UI] Implement `ChatItem.tsx` Direct Store Interaction and UI Enhancements**:
                     *   **Direct Store Interaction:**
-                        *   `[ ]` Remove the `onClick` prop from `ChatItemProps`.
-                        *   `[ ]` Import `useAiStore` (if not already fully imported for `deleteChat`).
-                        *   `[ ]` In the `ChatItem`'s main clickable element, call `useAiStore.getState().loadChatDetails(chat.id)`.
+                        *   `[✅]` Remove the `onClick` prop from `ChatItemProps`.
+                        *   `[✅]` Import `useAiStore` (if not already fully imported for `deleteChat`).
+                        *   `[✅]` In the `ChatItem`'s main clickable element, call `useAiStore.getState().loadChatDetails(chat.id)`.
                     *   **UI Enhancements:**
-                        *   `[ ]` (If not present) Add `date-fns` dependency to `apps/web`: `pnpm add date-fns --filter apps/web`.
-                        *   `[ ]` Implement the display logic for formatted `created_at` and `updated_at` timestamps using `date-fns` (e.g., `formatDistanceToNow`).
-                        *   `[ ]` Implement logic to display the creator's `user_id` for organization chats.
-                        *   `[ ]` Fetch `availablePrompts` from `useAiStore` within `ChatItem`.
-                        *   `[ ]` Implement logic to find and display the system prompt name if `chat.system_prompt_id` exists and a match is found in `availablePrompts`.
+                        *   `[✅]` (If not present) Add `date-fns` dependency to `apps/web`: `pnpm add date-fns --filter apps/web`.
+                        *   `[✅]` Implement the display logic for formatted `created_at` and `updated_at` timestamps using `date-fns` (e.g., `formatDistanceToNow`).
+                        *   `[✅]` Implement logic to display the creator's `user_id` for organization chats.
+                        *   `[✅]` Fetch `availablePrompts` from `useAiStore` within `ChatItem`.
+                        *   `[✅]` Implement logic to find and display the system prompt name if `chat.system_prompt_id` exists and a match is found in `availablePrompts`.
+                        *   `[ ]` Add theme background color and card outline to selected ChatItem                    
                     *   **File to Update:** `apps/web/src/components/ai/ChatItem.tsx`
                 *   **3. [REFACTOR] Update Related Components (`ChatHistoryList.tsx`, `AiChatPage.tsx`)**:
                     *   **`ChatHistoryList.tsx`:**
-                        *   `[ ]` Remove the `onLoadChat` prop from `ChatHistoryListProps`.
-                        *   `[ ]` Remove `onLoadChat` from destructuring and from being passed to `ChatItem`.
+                        *   `[✅]` Remove the `onLoadChat` prop from `ChatHistoryListProps`.
+                        *   `[✅]` Remove `onLoadChat` from destructuring and from being passed to `ChatItem`.
                     *   **`AiChatPage.tsx`:**
-                        *   `[ ]` Remove the `handleLoadChat` function.
-                        *   `[ ]` Remove the `onLoadChat` prop when rendering `ChatHistoryList`.
+                        *   `[✅]` Remove the `handleLoadChat` function.
+                        *   `[✅]` Remove the `onLoadChat` prop when rendering `ChatHistoryList`.
                     *   **Files to Update:** `apps/web/src/components/ai/ChatHistoryList.tsx`, `apps/web/src/pages/AiChat.tsx`
                 *   **4. [TEST-UNIT] Run All Tests and Refactor**:
-                    *   `[ ]` Execute tests for `ChatItem.test.tsx`, `ChatHistoryList.test.tsx`, and `AiChatPage.test.tsx`.
-                    *   `[ ]` Debug any failures until all tests pass (GREEN).
-                    *   `[ ]` **[REFACTOR]** Review `ChatItem.tsx` for code clarity, efficiency, and proper hook usage.
+                    *   `[✅]` Execute tests for `ChatItem.test.tsx`, `ChatHistoryList.test.tsx`, and `AiChatPage.test.tsx`.
+                    *   `[✅]` Debug any failures until all tests pass (GREEN).
+                    *   `[✅]` **[REFACTOR]** Review `ChatItem.tsx` for code clarity, efficiency, and proper hook usage.
                 *   **5. [COMMIT] Commit Changes**:
-                    *   `[ ]` Commit the successfully refactored and tested changes with a message like "refactor(ChatItem): Implement direct store call for details & UI enhancements w/ TDD".
+                    *   `[✅]` Commit the successfully refactored and tested changes with a message like "refactor(ChatItem): Implement direct store call for details & UI enhancements w/ TDD".
     *   Files to Update: (This list is now covered within the sub-steps above)
         *   `supabase/functions/chat-details/index.ts`
         *   `supabase/functions/chat-details/index.test.ts`
@@ -396,18 +397,18 @@ The implementation plan uses the following labels to categorize work steps:
         *   [✅] Add/Update unit tests for backend, API client, and store.
         *   [✅] Run backend and frontend tests. Debug until pass (GREEN).
         *   [✅] Implement `AiChatPage.tsx` refactor.
-        *   [ ] Implement `ChatItem.tsx` UI enhancements and direct store interaction (optional).
-        *   [ ] Add/Update unit tests for frontend components.
-        *   [ ] Run all tests. Debug until pass (GREEN).
-        *   [ ] Commit work to GitHub.
+        *   [✅] Implement `ChatItem.tsx` UI enhancements and direct store interaction (optional).
+        *   [✅] Add/Update unit tests for frontend components.
+        *   [✅] Run all tests. Debug until pass (GREEN).
+        *   [✅] Commit work to GitHub.
 
-#### STEP-3.3.3: Implement System Prompt Loading [TEST-UNIT] [COMMIT]
-* [ ] Define Test Cases: Verify `SystemPromptSelector` updates its selected value when `currentChat` changes and has a `system_prompt_id`.
-* [ ] Update `apps/web/src/pages/AiChat.tsx` and `apps/web/src/components/ai/SystemPromptSelector.tsx`:
-  * [ ] Pass the `currentChat?.system_prompt_id` to the `SystemPromptSelector` as its `value` prop (or similar mechanism).
-  * [ ] Ensure the selector correctly reflects this value when a chat is loaded.
-* [ ] Run tests. Debug until pass (GREEN).
-* [ ] Commit changes with message "feat(UI): Load selected system prompt based on active chat"
+#### STEP-3.3.3: Implement System Prompt Loading [TEST-UNIT] [COMMIT] [✅]
+* [✅] Define Test Cases: Verify `SystemPromptSelector` updates its selected value when `currentChat` changes and has a `system_prompt_id`.
+* [✅] Update `apps/web/src/pages/AiChat.tsx` and `apps/web/src/components/ai/SystemPromptSelector.tsx`:
+  * [✅] Pass the `currentChat?.system_prompt_id` to the `SystemPromptSelector` as its `value` prop (or similar mechanism).
+  * [✅] Ensure the selector correctly reflects this value when a chat is loaded.
+* [✅] Run tests. Debug until pass (GREEN).
+* [✅] Commit changes with message "feat(UI): Load selected system prompt based on active chat"
 
 #### STEP-3.3.4: Implement User Attribution Display (`ChatMessageBubble.tsx`) [TEST-UNIT] [COMMIT]
 *   [ ] Define Test Cases: Verify visual distinction between user/assistant. Verify initials/icon display correctly for org chat user messages based on profile availability.

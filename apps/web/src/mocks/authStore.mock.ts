@@ -16,7 +16,7 @@ const initialAuthState: MockAuthStoreState = {
 
 let internalMockAuthStoreState: MockAuthStoreState = { ...initialAuthState };
 
-const internalMockAuthStoreGetState = (): MockAuthStoreState => internalMockAuthStoreState;
+export const internalMockAuthStoreGetState = (): MockAuthStoreState => internalMockAuthStoreState;
 
 export const mockedUseAuthStoreHookLogic = <TResult>(
   selector?: (state: MockAuthStoreState) => TResult

@@ -140,7 +140,7 @@ describe('AiChatPage Integration Tests', () => {
   it('should render and default to global org context, displaying its history if pre-filled', async () => {
     render(<AiChatPage />);
     expect(await screen.findByTestId('mock-context-selector-trigger')).toHaveTextContent(orgA.name!);
-    expect(await screen.findByText('Org A Chats')).toBeInTheDocument();
+    expect(await screen.findByText('Org A Chat History')).toBeInTheDocument();
     expect(screen.getByText(chatOrgA1.title!)).toBeInTheDocument();
     expect(mockLoadChatHistory).not.toHaveBeenCalled();
   });
@@ -160,7 +160,7 @@ describe('AiChatPage Integration Tests', () => {
     await setupStoreAndSpies(null, [chatPersonal1], [chatOrgA1]); // Both pre-filled
     render(<AiChatPage />);
     expect(await screen.findByTestId('mock-context-selector-trigger')).toHaveTextContent('Personal');
-    expect(await screen.findByText('Personal Chats')).toBeInTheDocument();
+    expect(await screen.findByText('Personal Chat History')).toBeInTheDocument();
     expect(screen.getByText(chatPersonal1.title!)).toBeInTheDocument();
     expect(mockLoadChatHistory).not.toHaveBeenCalled();
   });
@@ -319,11 +319,10 @@ describe('AiChatPage Integration Tests', () => {
   it('clicking a chat item in ChatHistoryList should call loadChatDetails', async () => {
     const user = userEvent.setup();
     render(<AiChatPage />);    
-    const chatItemButton = await screen.findByRole('button', { name: chatOrgA1.title! });
+    const chatItemButton = await screen.findByRole('button', { name: new RegExp(chatOrgA1.title!, 'i') });
     expect(chatItemButton).toBeInTheDocument();
     mockLoadChatDetails.mockClear();
     await user.click(chatItemButton);
     expect(mockLoadChatDetails).toHaveBeenCalledWith(chatOrgA1.id);
-    expect(mockAnalyticsTrack).toHaveBeenCalledWith('Chat: History Item Selected', { chatId: chatOrgA1.id });
   });
 }); 
