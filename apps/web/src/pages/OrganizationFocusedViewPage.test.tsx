@@ -29,14 +29,20 @@ import type {
 
 vi.mock('@paynless/store', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@paynless/store')>();
+  
+  // Create a mock for useAuthStore that also has a mocked getState
+  const mockUseAuthStore = vi.fn();
+  // Default mock for getState, can be overridden in tests if needed for specific userId
+  (mockUseAuthStore as any).getState = vi.fn().mockReturnValue({ user: null }); 
+
   return {
-    ...actual, // Keep actual exports (selectors, types)
-    useOrganizationStore: vi.fn(),
-    useAuthStore: vi.fn(),
+    ...actual, 
+    useOrganizationStore: vi.fn(), 
+    useAuthStore: mockUseAuthStore, // Use our enhanced mock
   };
 });
 
-vi.mock('../../../hooks/useCurrentUser', () => ({ useCurrentUser: vi.fn() }));
+vi.mock('../hooks/useCurrentUser', () => ({ useCurrentUser: vi.fn() }));
 vi.mock('react-router-dom', async (importOriginal) => {
   const original = await importOriginal<typeof import('react-router-dom')>();
   return {
@@ -47,16 +53,51 @@ vi.mock('react-router-dom', async (importOriginal) => {
 });
 
 // Mock child components...
-vi.mock('../../../components/organizations/OrganizationDetailsCard', () => ({ OrganizationDetailsCard: () => <div data-testid="org-details-card">Details</div> }));
-vi.mock('../../../components/organizations/OrganizationSettingsCard', () => ({ OrganizationSettingsCard: () => <div data-testid="org-settings-card">Settings</div> }));
-vi.mock('../../../components/organizations/MemberListCard', () => ({ MemberListCard: () => <div data-testid="member-list-card">Members</div> }));
-vi.mock('../../../components/organizations/InviteMemberCard', () => ({ InviteMemberCard: () => <div data-testid="invite-member-card">Invite</div> }));
-vi.mock('../../../components/organizations/PendingActionsCard', () => ({ PendingActionsCard: () => <div data-testid="pending-actions-card">Pending</div> }));
+vi.mock('../components/organizations/OrganizationDetailsCard', async (importOriginal) => {
+  const original = await importOriginal<typeof import('../components/organizations/OrganizationDetailsCard')>();
+  return {
+    ...original,
+    OrganizationDetailsCard: () => <div data-testid="org-details-card">Details Mocked Robustly</div>,
+  };
+});
+
+// Apply robust mocking to all card components
+vi.mock('../components/organizations/OrganizationSettingsCard', async (importOriginal) => {
+  const original = await importOriginal<typeof import('../components/organizations/OrganizationSettingsCard')>();
+  return {
+    ...original,
+    OrganizationSettingsCard: () => <div data-testid="org-settings-card">Settings Mocked Robustly</div>,
+  };
+});
+
+vi.mock('../components/organizations/MemberListCard', async (importOriginal) => {
+  const original = await importOriginal<typeof import('../components/organizations/MemberListCard')>();
+  return {
+    ...original,
+    MemberListCard: () => <div data-testid="member-list-card">Members Mocked Robustly</div>,
+  };
+});
+
+vi.mock('../components/organizations/InviteMemberCard', async (importOriginal) => {
+  const original = await importOriginal<typeof import('../components/organizations/InviteMemberCard')>();
+  return {
+    ...original,
+    InviteMemberCard: () => <div data-testid="invite-member-card">Invite Mocked Robustly</div>,
+  };
+});
+
+vi.mock('../components/organizations/PendingActionsCard', async (importOriginal) => {
+  const original = await importOriginal<typeof import('../components/organizations/PendingActionsCard')>();
+  return {
+    ...original,
+    PendingActionsCard: () => <div data-testid="pending-actions-card">Pending Mocked Robustly</div>,
+  };
+});
+
 vi.mock('@/components/ui/skeleton', () => ({ Skeleton: ({ className }: { className: string }) => <div data-testid="skeleton" className={className}></div> }));
 
 // --- Test Suite ---
 describe('OrganizationFocusedViewPage', () => {
-  let mockUseCurrentUser: Mock;
   let mockUseParams: Mock;
   let mockUseNavigate: Mock;
   let mockNavigate: Mock;
@@ -71,7 +112,6 @@ describe('OrganizationFocusedViewPage', () => {
   const orgIdFromUrl = 'org-abc';
 
   // Helper to setup mock state and actions
-  // Simpler: just define the state and actions needed by this component
   const setupMocksAndState = (stateOverrides: Partial<OrganizationState & OrganizationUIState> = {}, authUserId: string = mockUser.id) => {
     // Define default state structure with correct types
     const defaultOrg: Organization = { id: orgIdFromUrl, name: 'Test Org', deleted_at: null, created_at: '', visibility: 'private', allow_member_chat_creation: true };
@@ -110,61 +150,46 @@ describe('OrganizationFocusedViewPage', () => {
       fetchCurrentOrganizationMembers: fetchCurrentOrganizationMembersMock,
     };
 
-    vi.mocked(useAuthStore).mockReturnValue({ user: { id: authUserId } });
+    // Configure the mocked useAuthStore hook's return value for direct calls
+    vi.mocked(useAuthStore).mockReturnValue({ user: { id: authUserId } } as any);
+    // Configure the mocked useAuthStore.getState for selectors
+    vi.mocked((useAuthStore as any).getState).mockReturnValue({ user: { id: authUserId } } as any);
+
+    // Mock useCurrentUser to return a user object with the current authUserId for this specific setup
+    // This ensures the user object in the component aligns with the test's intended authenticated user
+    vi.mocked(useCurrentUser).mockReturnValue({ user: { ...mockUser, id: authUserId } } as any); 
 
     // Configure the main store hook mock
-    vi.mocked(useOrganizationStore).mockImplementation((selector?: unknown) => {
-      const mockFullState = mockState as OrganizationState & OrganizationUIState;
+    vi.mocked(useOrganizationStore).mockImplementation((selector?: (state: OrganizationState & OrganizationUIState & typeof mockActions) => any) => {
+      const fullMockedStoreStateAndActions = { ...mockState, ...mockActions };
 
+      // Special handling for selectCurrentUserRoleInOrg to bypass its internal auth store dependency
       if (selector === selectCurrentUserRoleInOrg) {
-        return selectCurrentUserRoleInOrg(mockFullState);
-      }
-      if (selector === selectCurrentOrganizationId) {
-        return selectCurrentOrganizationId(mockFullState);
-      }
-      if (selector === selectCurrentOrganizationDetails) {
-        return selectCurrentOrganizationDetails(mockFullState);
-      }
-      if (selector === selectCurrentOrganizationMembers) {
-        return selectCurrentOrganizationMembers(mockFullState);
-      }
-      
-      if (typeof selector === 'function') {
-        // Try to apply the function selector (like the component's inline one)
-        try {
-          // We pass only the state here, as the inline selector in the component
-          // only selects state + actions, and we return the actions separately below.
-          const result = selector(mockState);
-          // Check if it returns the shape the component expects
-          if (result && typeof result === 'object' && 'setCurrentOrganizationId' in result) {
-             // Return the specific object the component expects
-             return {
-               setCurrentOrganizationId: mockActions.setCurrentOrganizationId,
-               isLoading: mockState.isLoading,
-               error: mockState.error,
-               fetchUserOrganizations: mockActions.fetchUserOrganizations,
-               fetchCurrentOrganizationDetails: mockActions.fetchCurrentOrganizationDetails,
-               fetchCurrentOrganizationMembers: mockActions.fetchCurrentOrganizationMembers,
-             };
-          }
-        } catch (e) { /* ignore errors applying unexpected selectors */ }
+        // Re-implement the core logic of selectCurrentUserRoleInOrg using our controlled authUserId and mockState
+        if (!authUserId || !mockState.currentOrganizationId || !mockState.currentOrganizationMembers || mockState.currentOrganizationMembers.length === 0) {
+          return null;
+        }
+        const currentUserMemberInfo = mockState.currentOrganizationMembers.find(member => member.user_id === authUserId);
+        return currentUserMemberInfo ? currentUserMemberInfo.role : null;
       }
 
-      // Fallback: Return a default object containing state and the mocked actions
-      // This might be hit if the hook is called without any selector
-      return { ...mockState, ...mockActions };
+      // Original behavior for other selectors or no selector
+      if (typeof selector === 'function') {
+        return selector(fullMockedStoreStateAndActions);
+      }
+      return fullMockedStoreStateAndActions;
     });
   };
 
   beforeEach(() => {
     vi.clearAllMocks();
-    mockUseCurrentUser = useCurrentUser as Mock;
     mockUseParams = useParams as Mock;
     mockUseNavigate = useNavigate as Mock;
     mockNavigate = vi.fn();
-    mockUseCurrentUser.mockReturnValue({ user: mockUser });
     mockUseParams.mockReturnValue({ orgId: orgIdFromUrl });
     mockUseNavigate.mockReturnValue(mockNavigate);
+    
+    // Call setupMocksAndState AFTER other mocks are cleared and reset, especially for useAuthStore.getState
     setupMocksAndState(); 
   });
 
