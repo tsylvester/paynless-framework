@@ -86,6 +86,13 @@ beforeEach(() => {
     };
     // Apply the initial mock implementation
     setupMockImplementation(); 
+
+    // Mock ResizeObserver
+    window.ResizeObserver = vi.fn().mockImplementation(() => ({
+        observe: vi.fn(),
+        unobserve: vi.fn(),
+        disconnect: vi.fn(),
+    }));
 });
 
 // Helper to set the store state for a specific test

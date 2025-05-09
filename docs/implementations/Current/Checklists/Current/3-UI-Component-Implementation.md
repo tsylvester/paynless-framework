@@ -169,6 +169,9 @@ The implementation plan uses the following labels to categorize work steps:
 * [✅] Update h2 "AI Chat" to include vars for (Org_name | Personal_name) & Model & Prompt so users can see their entire context a glance
 
 #### STEP-3.1.4: Update `Organization` route with store and api changes for org chat functions. 
+* [✅] All cards updated
+* [ ] Need to finish Org pages unit tests
+* [ ] Need to finish Org pages integration tests 
 
 #### STEP-3.1.5: Update `aiStore` for Contextual Chat History [STORE] [TEST-UNIT] [COMMIT]
 *   [ ] **[TEST-UNIT]** Define/Update Test Cases in `packages/store/src/tests/aiStore.test.ts` (create if not present) for `loadChatHistory` action:

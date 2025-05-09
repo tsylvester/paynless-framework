@@ -1,10 +1,10 @@
 import React from 'react';
-import { render, screen, fireEvent, act } from '@testing-library/react';
-import { vi, describe, it, expect, beforeEach, afterEach, Mock } from 'vitest';
+import { render, screen, fireEvent, act, waitFor } from '@testing-library/react';
+import { vi, describe, it, expect, beforeEach, afterEach, type Mock } from 'vitest';
 import { OrganizationListCard } from './OrganizationListCard';
 import * as PaynlessStore from '@paynless/store'; // Import for spyOn
-import type { OrganizationState, Organization } from '@paynless/types'; // Import store state type
-import { createMockOrganizationStore } from '@/tests/utils/mocks/stores'; // Import mock creator
+import type { Organization } from '@paynless/types'; // Removed OrganizationState, OrganizationStoreType
+import { createMockOrganizationStore } from './../../mocks/organizationStore.mock'; // Import mock creator
 
 // --- Test Setup ---
 
@@ -15,21 +15,31 @@ const mockOrgs: Organization[] = Array.from({ length: 12 }, (_, i) => ({
     visibility: 'private',
     created_at: new Date().toISOString(),
     deleted_at: null,
+    allow_member_chat_creation: false,
 }));
 
 // --- Test Suite --- 
 describe('OrganizationListCard', () => {
     // Keep track of the mock store instance for tests to access actions/state
     let mockOrgStore: ReturnType<typeof createMockOrganizationStore>;
-    let orgStoreSpy: ReturnType<typeof vi.spyOn> | undefined;
+    let mockFetchUserOrganizations: Mock; // Declare mock for specific action
 
     beforeEach(() => {
-        // Create a fresh mock store instance for each test
-        // Tests can override specific state/actions after this if needed
-        mockOrgStore = createMockOrganizationStore();
+        // Create a specific mock instance for fetchUserOrganizations
+        mockFetchUserOrganizations = vi.fn().mockImplementation(() => {
+            // console.log('[MOCK] fetchUserOrganizations called via injected mock'); // Optional: for seeing if this specific instance is hit
+            return Promise.resolve(undefined);
+        });
+
+        // Create a fresh mock store instance for each test, injecting our specific mock
+        mockOrgStore = createMockOrganizationStore({
+            fetchUserOrganizations: mockFetchUserOrganizations,
+        });
 
         // Spy on the actual store hook and make it return our mock instance's state
-        orgStoreSpy = vi.spyOn(PaynlessStore, 'useOrganizationStore').mockImplementation(<S,>(selector?: (state: OrganizationState) => S): S | OrganizationState => {
+        // Reverting to `any` for the selector's state type due to complex type mismatches
+        // between the mock store's state shape and the actual OrganizationStoreImplementation.
+        vi.spyOn(PaynlessStore, 'useOrganizationStore').mockImplementation((selector?: (state: any) => any) => {
             const state = mockOrgStore.getState();
             return selector ? selector(state) : state;
         });
@@ -41,7 +51,6 @@ describe('OrganizationListCard', () => {
     afterEach(() => {
         // Restore all mocks and spies
         vi.restoreAllMocks();
-        orgStoreSpy = undefined; // Clear spy reference
     });
 
     // --- Tests (Updated to use mockOrgStore instance where needed) ---
@@ -58,7 +67,7 @@ describe('OrganizationListCard', () => {
         render(<OrganizationListCard />);
 
         // Assert (Keep assertions as they were, relying on the spy)
-        expect(screen.getByRole('heading', { level: 2, name: /Organizations/i })).toBeInTheDocument();
+        expect(screen.getByRole('heading', { name: /Organizations/i })).toBeInTheDocument();
         expect(screen.getByRole('button', { name: /Create New/i })).toBeInTheDocument();
         expect(screen.getByRole('button', { name: 'Org 1' })).toBeInTheDocument();
         expect(screen.getByRole('button', { name: 'Org 2' })).toBeInTheDocument();
@@ -78,7 +87,7 @@ describe('OrganizationListCard', () => {
         render(<OrganizationListCard />);
 
         // Assert
-        expect(screen.getByRole('heading', { level: 2, name: /Organizations/i })).toBeInTheDocument(); 
+        expect(screen.getByRole('heading', { name: /Organizations/i })).toBeInTheDocument();
         expect(screen.getByRole('button', { name: /Create New/i })).toBeInTheDocument();
         expect(screen.getByText('No organizations found.')).toBeInTheDocument();
         expect(screen.queryByText('Loading...')).not.toBeInTheDocument();
@@ -95,7 +104,7 @@ describe('OrganizationListCard', () => {
         const { container } = render(<OrganizationListCard />); 
 
         // Assert
-        expect(screen.getByRole('heading', { level: 2, name: /Organizations/i })).toBeInTheDocument();
+        expect(screen.getByRole('heading', { name: /Organizations/i })).toBeInTheDocument();
         expect(screen.getByRole('button', { name: /Create New/i })).toBeInTheDocument();
         const skeletons = container.querySelectorAll('[data-slot="skeleton"]'); 
         expect(skeletons.length).toBeGreaterThan(0);
@@ -179,38 +188,51 @@ describe('OrganizationListCard', () => {
         expect(mockOrgStore.getState().openCreateModal).toHaveBeenCalledTimes(1);
     });
 
-    it('updates the list when userOrganizations state changes', () => {
-        // Arrange: Initial state with one org
+    it('updates the list when userOrganizations state changes', async () => {
+        const org1 = { id: 'o1', name: 'Org 1', visibility: 'private', created_at: 'd', deleted_at: null, allow_member_chat_creation: false };
+        const org2 = { id: 'o2', name: 'Org 2', visibility: 'private', created_at: 'd', deleted_at: null, allow_member_chat_creation: false };
+
+        // Spy is no longer needed here as we assert on mockFetchUserOrganizations directly
+        // const fetchUserOrgsSpy = vi.spyOn(mockOrgStore.getState(), 'fetchUserOrganizations');
+
         mockOrgStore.setState({
-            userOrganizations: [mockOrgs[0]],
+            userOrganizations: [org1],
             orgListTotalCount: 1,
             isLoading: false,
+            orgListPage: 1,
+            orgListPageSize: 10,
         });
 
-        // Act: Initial render
-        const { rerender } = render(<OrganizationListCard />); // Get rerender function
+        const { rerender } = render(<OrganizationListCard />); // Capture rerender
+        console.log('[TEST DEBUG] mockFetchUserOrganizations calls after initial render:', mockFetchUserOrganizations.mock.calls.length);
 
-        // Assert: Initial state
+        // Initial assertions
         expect(screen.getByRole('button', { name: 'Org 1' })).toBeInTheDocument();
         expect(screen.queryByRole('button', { name: 'Org 2' })).not.toBeInTheDocument();
 
-        // Act: Update the store state (simulating external change)
-        act(() => {
-            mockOrgStore.setState({
-                userOrganizations: [mockOrgs[0], mockOrgs[1]],
-                orgListTotalCount: 2,
-                isLoading: false,
-            });
+        // Act: Update the store state
+        mockOrgStore.setState({
+            userOrganizations: [org1, org2],
+            orgListTotalCount: 2,
+            isLoading: false,
         });
         
-        // Re-render with the same props might be needed if the component doesn't directly subscribe
-        // However, since we spy on useOrganizationStore, React should trigger a re-render.
-        // If the test fails, uncommenting the rerender might be necessary, but try without first.
-        // rerender(<OrganizationListCard />); 
+        rerender(<OrganizationListCard />); // Call rerender
 
-        // Assert: Updated state
+        console.log('[TEST DEBUG] Store userOrganizations before waitFor:', JSON.stringify(mockOrgStore.getState().userOrganizations));
+        console.log('[TEST DEBUG] mockFetchUserOrganizations calls before waitFor:', mockFetchUserOrganizations.mock.calls.length);
+
+        // Assert: Updated state using waitFor
+        await waitFor(() => {
+            // console.log('[TEST DEBUG] DOM inside waitFor:');
+            // screen.debug(undefined, 30000); // Temporarily uncomment for full DOM output if needed
+            expect(screen.getByRole('button', { name: 'Org 2' })).toBeInTheDocument();
+        });
+        // Assert Org 1 is still there too
         expect(screen.getByRole('button', { name: 'Org 1' })).toBeInTheDocument();
-        expect(screen.getByRole('button', { name: 'Org 2' })).toBeInTheDocument();
+        console.log('[TEST DEBUG] mockFetchUserOrganizations calls after waitFor:', mockFetchUserOrganizations.mock.calls.length);
+        // Expect our injected mock to have been called once by the initial render's effect
+        expect(mockFetchUserOrganizations).toHaveBeenCalledTimes(1); 
     });
 
     // --- Pagination Tests (Adjusted to use mockOrgStore) ---
