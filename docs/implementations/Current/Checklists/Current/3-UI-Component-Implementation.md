@@ -269,7 +269,7 @@ The implementation plan uses the following labels to categorize work steps:
     *   [✅] Ensure all tests pass, debugging any failures related to state updates, effect timing (`vi.waitFor`), or mock interactions.
 *   [✅] **Commit changes** with message "refactor(UI): Refine AiChat state management and prop passing, fix all unit tests".
 
-#### STEP-3.3.1: Ensure Correct Functionality of Context Selectors and Chat Data Display in AiChat.tsx [TEST-UNIT] [COMMIT]
+#### STEP-3.3.1: Ensure Correct Functionality of Context Selectors and Chat Data Display in AiChat.tsx [TEST-UNIT] [COMMIT] [✅]
 * [✅] **STEP-3.3.1: Ensure Correct Functionality of Context Selectors and Chat Data Display in AiChat.tsx**
     *   Description: Verify that `ChatContextSelector`, `ModelSelector`, and `PromptSelector` are present and correctly wired up. Test that state updates in `AiChat.tsx` occur correctly upon changes in these selectors. Confirm that `AiChatbox` receives and uses the `currentChatMessages` appropriately. Verify that the `PromptSelector` updates if the `currentChat` has a `system_prompt_id` (e.g., when loading a chat from history). Ensure that `onLoadChat` from `ChatHistoryList` correctly calls `loadChatDetails` and related state updates for `system_prompt_id` occur. Verify the "New Chat" button's functionality, including calling `startNewChat` with the correct context, appropriate analytics tracking, and resetting selectors.
     *   Current Status: **BUG ACTIVE** - "Only first item loads" issue persists. Previous frontend workaround (updating `chatsByContext` in `AiChatPage`) was not a complete solution and will be superseded by backend/store enhancements in STEP-3.3.2. (Note: Bug is now resolved)
@@ -296,7 +296,7 @@ The implementation plan uses the following labels to categorize work steps:
         *   [✅] Run tests. Debug until pass (GREEN) - for existing functionality, loading bug outstanding. (Note: Resolved)
         *   [✅] Commit work to GitHub (pending full resolution). (Note: Resolved and committed)
 
-#### STEP-3.3.2: Refine AiChat Data Flow & Enhance ChatItem UI**
+#### STEP-3.3.2: Refine AiChat Data Flow & Enhance ChatItem UI** [✅]
     *   Description: Resolve chat loading issues by enhancing backend/store data fetching. Improve the data loading architecture for selected chats and add more contextual information to `ChatItem` components.
     *   Sub-steps:
         *   [✅] **Implement Backend/Store Enhancement for Comprehensive Chat Details (`loadChatDetails`)**:
@@ -333,7 +333,7 @@ The implementation plan uses the following labels to categorize work steps:
         *   [✅] **STEP-3.3.2.1: Refactor `ChatItem.tsx` for Direct Store Interaction and Enhance UI (TDD)**
             *   Description: Refactor `ChatItem.tsx` to call `loadChatDetails` directly from the store upon user click. Simultaneously, enhance its UI to display `created_at`/`updated_at` timestamps, creator's user ID (for organization chats), and the system prompt name if applicable. This will follow a Test-Driven Development approach.
             *   Sub-steps:
-                *   **1. [TEST-UNIT] Define and Write Failing Unit Tests for `ChatItem.tsx` & Related Components**:
+                *   **1. [TEST-UNIT] Define and Write Failing Unit Tests for `ChatItem.tsx` & Related Components**: [✅]
                     *   **`ChatItem.test.tsx` - Test Cases:**
                         *   **Direct Store Interaction:**
                             *   `[✅]` Clicking `ChatItem` calls `useAiStore.getState().loadChatDetails` with the correct `chat.id`.
@@ -346,14 +346,14 @@ The implementation plan uses the following labels to categorize work steps:
                             *   `[✅]` If `chat.system_prompt_id` exists and a matching prompt is in `availablePrompts` (from mocked `useAiStore`), renders the prompt's name.
                             *   `[✅]` Handles cases where `chat.system_prompt_id` exists but no matching prompt is found (e.g., renders nothing for prompt name or a default).
                             *   `[✅]` Handles cases where `chat.system_prompt_id` is null (renders nothing for prompt name).
-                    *   **`ChatHistoryList.test.tsx` - Test Updates:**
+                    *   **`ChatHistoryList.test.tsx` - Test Updates:** [✅]
                         *   `[✅]` Remove assertions related to an `onLoadChat` prop being passed to or called by `ChatItem`. Verify `ChatItem` receives `chat` and `isActive` props.
-                    *   **`AiChatPage.test.tsx` - Test Updates:**
+                    *   **`AiChatPage.test.tsx` - Test Updates:** [✅]
                         *   `[✅]` Remove tests and assertions for the `handleLoadChat` function.
                         *   `[✅]` Remove assertions related to the `onLoadChat` prop of `ChatHistoryList`.
                     *   **Files to Update:** `apps/web/src/components/ai/ChatItem.test.tsx`, `apps/web/src/components/ai/ChatHistoryList.test.tsx`, `apps/web/src/pages/AiChat.test.tsx`
-                    *   **Expected Status:** Tests related to new/changed behavior should fail (RED).
-                *   **2. [UI] Implement `ChatItem.tsx` Direct Store Interaction and UI Enhancements**:
+                    *   **Expected Status:** Tests related to new/changed behavior should fail (RED). [✅]
+                *   **2. [UI] Implement `ChatItem.tsx` Direct Store Interaction and UI Enhancements**: [✅]
                     *   **Direct Store Interaction:**
                         *   `[✅]` Remove the `onClick` prop from `ChatItemProps`.
                         *   `[✅]` Import `useAiStore` (if not already fully imported for `deleteChat`).
@@ -366,7 +366,7 @@ The implementation plan uses the following labels to categorize work steps:
                         *   `[✅]` Implement logic to find and display the system prompt name if `chat.system_prompt_id` exists and a match is found in `availablePrompts`.
                         *   `[ ]` Add theme background color and card outline to selected ChatItem                    
                     *   **File to Update:** `apps/web/src/components/ai/ChatItem.tsx`
-                *   **3. [REFACTOR] Update Related Components (`ChatHistoryList.tsx`, `AiChatPage.tsx`)**:
+                *   **3. [REFACTOR] Update Related Components (`ChatHistoryList.tsx`, `AiChatPage.tsx`)**: [✅]
                     *   **`ChatHistoryList.tsx`:**
                         *   `[✅]` Remove the `onLoadChat` prop from `ChatHistoryListProps`.
                         *   `[✅]` Remove `onLoadChat` from destructuring and from being passed to `ChatItem`.
@@ -374,11 +374,11 @@ The implementation plan uses the following labels to categorize work steps:
                         *   `[✅]` Remove the `handleLoadChat` function.
                         *   `[✅]` Remove the `onLoadChat` prop when rendering `ChatHistoryList`.
                     *   **Files to Update:** `apps/web/src/components/ai/ChatHistoryList.tsx`, `apps/web/src/pages/AiChat.tsx`
-                *   **4. [TEST-UNIT] Run All Tests and Refactor**:
+                *   **4. [TEST-UNIT] Run All Tests and Refactor**: [✅]
                     *   `[✅]` Execute tests for `ChatItem.test.tsx`, `ChatHistoryList.test.tsx`, and `AiChatPage.test.tsx`.
                     *   `[✅]` Debug any failures until all tests pass (GREEN).
                     *   `[✅]` **[REFACTOR]** Review `ChatItem.tsx` for code clarity, efficiency, and proper hook usage.
-                *   **5. [COMMIT] Commit Changes**:
+                *   **5. [COMMIT] Commit Changes**: [✅]
                     *   `[✅]` Commit the successfully refactored and tested changes with a message like "refactor(ChatItem): Implement direct store call for details & UI enhancements w/ TDD".
     *   Files to Update: (This list is now covered within the sub-steps above)
         *   `supabase/functions/chat-details/index.ts`
@@ -410,7 +410,7 @@ The implementation plan uses the following labels to categorize work steps:
 * [✅] Run tests. Debug until pass (GREEN).
 * [✅] Commit changes with message "feat(UI): Load selected system prompt based on active chat"
 
-#### STEP-3.3.4: Implement User Attribution Display and Refactor `ChatMessageBubble` [UI] [TEST-UNIT] [COMMIT]
+#### STEP-3.3.4: Implement User Attribution Display and Refactor `ChatMessageBubble` [UI] [TEST-UNIT] [COMMIT] [🚧]
 *   **STEP-3.3.4.A: [UI] [TEST-UNIT] Create Reusable `AttributionDisplay` Component [✅]**
     *   `[✅]` Define Test Cases (current user, org member, fallback to ID, various profile data points).
     *   `[✅]` Create `apps/web/src/components/common/AttributionDisplay.test.tsx`.
@@ -420,23 +420,26 @@ The implementation plan uses the following labels to categorize work steps:
     *   `[✅]` Run tests. Debug until pass (GREEN).
     *   `[✅]` **[REFACTOR]** Ensure clarity, reusability.
     *   `[✅]` Commit changes with message "feat(UI): Create reusable AttributionDisplay component w/ tests".
-*   **STEP-3.3.4.B: [UI] [TEST-UNIT] Create/Refactor `ChatMessageBubble` Component**
-    *   `[ ]` Define Test Cases:
-        *   `[ ]` Renders as a `Card` component.
-        *   `[ ]` Applies distinct styling for `user` (blue background) vs. `assistant` (grey background).
-        *   `[ ]` Correctly integrates `AttributionDisplay` for user messages.
-        *   `[ ]` Correctly integrates `AttributionDisplay` for assistant messages (pending `model_id` on `ChatMessage`).
-        *   `[ ]` Renders `message.content`.
-    *   `[ ]` Create/Update `apps/web/src/components/ai/ChatMessageBubble.test.tsx`.
-    *   `[ ]` Write test shells in `ChatMessageBubble.test.tsx`.
-    *   `[ ]` Create/Update `apps/web/src/components/ai/ChatMessageBubble.tsx`:
-        *   `[ ]` Refactor to use `Card` from `shadcn/ui`.
-        *   `[ ]` Implement role-based background styling.
-        *   `[ ]` Integrate `AttributionDisplay` for user/assistant attribution.
-        *   `[ ]` Render `message.content`.
-    *   `[ ]` Run tests. Debug until pass (GREEN).
-    *   `[ ]` **[REFACTOR]** Ensure clarity.
-    *   `[ ]` Commit changes with message "feat(UI): Refactor ChatMessageBubble with Card and AttributionDisplay w/ tests".
+*   **STEP-3.3.4.B: [UI] [TEST-UNIT] Create/Refactor `ChatMessageBubble` Component** [✅]
+    *   `[✅]` Define Test Cases:
+        *   `[✅]` Renders as a `Card` component.
+        *   `[✅]` Applies distinct styling for `user` (blue background) vs. `assistant` (grey background).
+        *   `[✅]` Correctly integrates `AttributionDisplay` for user messages.
+        *   `[✅]` Correctly integrates `AttributionDisplay` for assistant messages (pending `model_id` on `ChatMessage`).
+        *   `[✅]` Renders `message.content`.
+        *   `[✅]` Includes an edit button/icon for user messages (and not for assistant messages).
+        *   `[✅]` Calls `onEditClick` with messageId and content when edit button is clicked for user messages.
+    *   `[✅]` Create/Update `apps/web/src/components/ai/ChatMessageBubble.test.tsx`.
+    *   `[✅]` Write test shells in `ChatMessageBubble.test.tsx`.
+    *   `[✅]` Create/Update `apps/web/src/components/ai/ChatMessageBubble.tsx`:
+        *   `[✅]` Refactor to use `Card` from `shadcn/ui`.
+        *   `[✅]` Implement role-based background styling.
+        *   `[✅]` Integrate `AttributionDisplay` for user/assistant attribution.
+        *   `[✅]` Render `message.content`.
+        *   `[✅]` Implement edit button logic.
+    *   `[✅]` Run tests. Debug until pass (GREEN).
+    *   `[✅]` **[REFACTOR]** Ensure clarity.
+    *   `[✅]` Commit changes with message "feat(UI): Create ChatMessageBubble with Card, AttributionDisplay, and edit features w/ tests".
 *   **STEP-3.3.4.C: [UI] [TEST-UNIT] Integrate `ChatMessageBubble` into Message Display Area**
     *   `[ ]` Define Test Cases for parent component (`MessageList.tsx` or `AiChatbox.tsx`).
     *   `[ ]` Update tests for `apps/web/src/components/ai/MessageList.tsx` (or equivalent).
