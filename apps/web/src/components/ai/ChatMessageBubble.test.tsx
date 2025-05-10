@@ -14,6 +14,12 @@ vi.mock('../common/AttributionDisplay', () => ({
   AttributionDisplay: (props: any) => actualMockAttributionDisplay(props),
 }));
 
+// Mock MarkdownRenderer
+const actualMockMarkdownRenderer = vi.fn();
+vi.mock('../common/MarkdownRenderer', () => ({
+  MarkdownRenderer: (props: any) => actualMockMarkdownRenderer(props),
+}));
+
 // Mock stores: The factory creates the mocks.
 vi.mock('@paynless/store', () => ({
   useAuthStore: vi.fn(),
@@ -78,6 +84,7 @@ describe('ChatMessageBubble', () => {
   beforeEach(() => {
     // Clear all mock instances
     actualMockAttributionDisplay.mockClear();
+    actualMockMarkdownRenderer.mockClear();
     mockedAuthStoreHook.mockClear();
     mockedOrgStoreHook.mockClear();
     mockOnEditClick.mockClear();
@@ -87,6 +94,11 @@ describe('ChatMessageBubble', () => {
       <div data-testid="mock-attribution-display">
         {`Attribution for ${message.role}`}
       </div>
+    ));
+
+    // Set up default implementation for MarkdownRenderer mock
+    actualMockMarkdownRenderer.mockImplementation(({ content }) => (
+      <div data-testid="mock-markdown-renderer">{content}</div>
     ));
 
     // Set up default return values for store hooks
@@ -188,197 +200,5 @@ describe('ChatMessageBubble', () => {
     expect(mockOnEditClick).toHaveBeenCalledWith(defaultMockUserMessage.id, defaultMockUserMessage.content);
   });
 
-  describe('Markdown Rendering', () => {
-    it('should render bold text correctly', () => {
-      const markdownMessage = { ...defaultMockAssistantMessage, content: '**bold text**' };
-      renderComponent({ message: markdownMessage });
-      const boldElement = screen.getByText('bold text');
-      expect(boldElement.tagName).toBe('STRONG');
-    });
-
-    it('should render italic text correctly', () => {
-      const markdownMessage = { ...defaultMockAssistantMessage, content: '*italic text*' };
-      renderComponent({ message: markdownMessage });
-      const italicElement = screen.getByText('italic text');
-      expect(italicElement.tagName).toBe('EM');
-    });
-
-    it('should render a link correctly', () => {
-      const markdownMessage = { ...defaultMockAssistantMessage, content: '[Paynless](https://paynless.io)' };
-      renderComponent({ message: markdownMessage });
-      const linkElement = screen.getByRole('link', { name: 'Paynless' }) as HTMLAnchorElement;
-      expect(linkElement).toBeInTheDocument();
-      expect(linkElement.href).toBe('https://paynless.io/'); // Browsers might add trailing slash
-    });
-
-    it('should render an unordered list correctly', () => {
-      const markdownMessage = { ...defaultMockAssistantMessage, content: '* Item 1\n* Item 2' };
-      renderComponent({ message: markdownMessage });
-      const listItem1 = screen.getByText('Item 1');
-      const listItem2 = screen.getByText('Item 2');
-      expect(listItem1.tagName).toBe('LI');
-      expect(listItem2.tagName).toBe('LI');
-      expect(listItem1.parentElement?.tagName).toBe('UL');
-    });
-
-    it('should render an ordered list correctly', () => {
-      const markdownMessage = { ...defaultMockAssistantMessage, content: '1. First item\n2. Second item' };
-      renderComponent({ message: markdownMessage });
-      const listItem1 = screen.getByText('First item');
-      const listItem2 = screen.getByText('Second item');
-      expect(listItem1.tagName).toBe('LI');
-      expect(listItem2.tagName).toBe('LI');
-      expect(listItem1.parentElement?.tagName).toBe('OL');
-    });
-
-    it('should render inline code correctly', () => {
-      const markdownMessage = { ...defaultMockAssistantMessage, content: '`const x = 10;`' };
-      renderComponent({ message: markdownMessage });
-      const codeElement = screen.getByText('const x = 10;');
-      expect(codeElement.tagName).toBe('CODE');
-      // Check if it's not inside a <pre> for inline
-      expect(codeElement.parentElement?.tagName).not.toBe('PRE');
-    });
-
-    it('should render a GFM code block correctly', () => {
-      const codeContent = 'function greet() {\n  console.log("Hello");\n}';
-      const markdownMessage = { ...defaultMockAssistantMessage, content: '```javascript\n' + codeContent + '\n```' };
-      renderComponent({ message: markdownMessage });
-      
-      // Use document.querySelector to find the <code> element within a <pre> tag with the specific class
-      const codeElement = document.querySelector('pre > code.language-javascript');
-      
-      expect(codeElement).toBeInTheDocument(); // Check if the element was found
-      // Ensure it is indeed a CODE element, within a PRE element, and has the correct class
-      expect(codeElement?.tagName).toBe('CODE');
-      expect(codeElement?.parentElement?.tagName).toBe('PRE');
-      expect(codeElement).toHaveClass('language-javascript');
-      
-      // Check textContent, which normalizes spaces/newlines better for multi-line code
-      // Trim both the actual text content and the expected content to handle potential leading/trailing whitespace differences.
-      expect(codeElement?.textContent?.trim()).toBe(codeContent.trim());
-    });
-
-    it('should render a blockquote correctly', () => {
-      const markdownMessage = { ...defaultMockAssistantMessage, content: '> This is a quote.' };
-      renderComponent({ message: markdownMessage });
-      const quoteText = screen.getByText('This is a quote.');
-      // react-markdown wraps blockquote content in a paragraph
-      expect(quoteText.tagName).toBe('P');
-      expect(quoteText.parentElement?.tagName).toBe('BLOCKQUOTE');
-    });
-
-    it('should render paragraphs correctly', () => {
-      const markdownMessage = { ...defaultMockAssistantMessage, content: 'Hello\n\nWorld' };
-      renderComponent({ message: markdownMessage });
-      const p1 = screen.getByText('Hello');
-      const p2 = screen.getByText('World');
-      expect(p1.tagName).toBe('P');
-      expect(p2.tagName).toBe('P');
-    });
-    
-    it('should render a combination of markdown elements', () => {
-      const markdownMessage = { ...defaultMockAssistantMessage, content: 'This is **bold** and _italic_ with a [link](https://example.com).' };
-      renderComponent({ message: markdownMessage });
-      const boldElement = screen.getByText('bold');
-      const italicElement = screen.getByText('italic');
-      const linkElement = screen.getByRole('link', { name: 'link' }) as HTMLAnchorElement;
-
-      expect(boldElement.tagName).toBe('STRONG');
-      expect(italicElement.tagName).toBe('EM'); // remark-gfm uses <em> for _italic_
-      expect(linkElement).toBeInTheDocument();
-      expect(linkElement.href).toBe('https://example.com/');
-    });
-
-    it('should render H1 heading correctly', () => {
-      const markdownMessage = { ...defaultMockAssistantMessage, content: '# Heading 1' };
-      renderComponent({ message: markdownMessage });
-      const headingElement = screen.getByRole('heading', { level: 1, name: 'Heading 1' });
-      expect(headingElement).toBeInTheDocument();
-      expect(headingElement.tagName).toBe('H1');
-    });
-
-    it('should render H2 heading correctly', () => {
-      const markdownMessage = { ...defaultMockAssistantMessage, content: '## Heading 2' };
-      renderComponent({ message: markdownMessage });
-      const headingElement = screen.getByRole('heading', { level: 2, name: 'Heading 2' });
-      expect(headingElement).toBeInTheDocument();
-      expect(headingElement.tagName).toBe('H2');
-    });
-
-    it('should render H3 heading correctly', () => {
-      const markdownMessage = { ...defaultMockAssistantMessage, content: '### Heading 3' };
-      renderComponent({ message: markdownMessage });
-      const headingElement = screen.getByRole('heading', { level: 3, name: 'Heading 3' });
-      expect(headingElement).toBeInTheDocument();
-      expect(headingElement.tagName).toBe('H3');
-    });
-
-    it('should render strikethrough text correctly', () => {
-      const markdownMessage = { ...defaultMockAssistantMessage, content: '~~deleted~~' };
-      renderComponent({ message: markdownMessage });
-      const strikethroughElement = screen.getByText('deleted');
-      expect(strikethroughElement.tagName).toBe('DEL');
-    });
-
-    it('should render a horizontal rule correctly', () => {
-      const markdownMessage = { ...defaultMockAssistantMessage, content: '---' };
-      renderComponent({ message: markdownMessage });
-      const hrElement = screen.getByRole('separator'); // <hr> has a role of separator
-      expect(hrElement).toBeInTheDocument();
-      expect(hrElement.tagName).toBe('HR');
-    });
-
-    it('should render task list items correctly', () => {
-      const markdownMessage = { ...defaultMockAssistantMessage, content: '- [x] Completed Task\n- [ ] Open Task' };
-      renderComponent({ message: markdownMessage });
-      
-      const completedTaskTextElement = screen.getByText('Completed Task');
-      const openTaskTextElement = screen.getByText('Open Task');
-
-      // Find the parent <li> for the completed task
-      const completedListItem = completedTaskTextElement.closest('li');
-      expect(completedListItem).toBeInTheDocument();
-      const completedCheckbox = completedListItem?.querySelector('input[type="checkbox"]');
-      expect(completedCheckbox).toBeInTheDocument();
-      expect(completedCheckbox?.tagName).toBe('INPUT');
-      expect(completedCheckbox).toBeChecked();
-      expect(completedCheckbox).toBeDisabled();
-      expect(completedListItem?.parentElement?.tagName).toBe('UL');
-
-      // Find the parent <li> for the open task
-      const openListItem = openTaskTextElement.closest('li');
-      expect(openListItem).toBeInTheDocument();
-      const openCheckbox = openListItem?.querySelector('input[type="checkbox"]');
-      expect(openCheckbox).toBeInTheDocument();
-      expect(openCheckbox?.tagName).toBe('INPUT');
-      expect(openCheckbox).not.toBeChecked();
-      expect(openCheckbox).toBeDisabled();
-      expect(openListItem?.parentElement?.tagName).toBe('UL');
-    });
-
-    it('should render a table correctly', () => {
-      const markdownTable = 
-        '| Header 1 | Header 2 |\n' +
-        '| -------- | -------- |\n' +
-        '| Cell 1   | Cell 2   |\n' +
-        '| Cell 3   | Cell 4   |';
-      const markdownMessage = { ...defaultMockAssistantMessage, content: markdownTable };
-      renderComponent({ message: markdownMessage });
-
-      // Check for table
-      const tableElement = screen.getByRole('table');
-      expect(tableElement).toBeInTheDocument();
-
-      // Check headers
-      expect(screen.getByRole('columnheader', { name: 'Header 1' })).toBeInTheDocument();
-      expect(screen.getByRole('columnheader', { name: 'Header 2' })).toBeInTheDocument();
-
-      // Check cells
-      expect(screen.getByRole('cell', { name: 'Cell 1' })).toBeInTheDocument();
-      expect(screen.getByRole('cell', { name: 'Cell 2' })).toBeInTheDocument();
-      expect(screen.getByRole('cell', { name: 'Cell 3' })).toBeInTheDocument();
-      expect(screen.getByRole('cell', { name: 'Cell 4' })).toBeInTheDocument();
-    });
-  });
+  // Markdown rendering tests have been moved to MarkdownRenderer.test.tsx
 }); 

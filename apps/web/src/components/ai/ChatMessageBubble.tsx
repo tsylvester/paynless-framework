@@ -3,8 +3,7 @@ import { ChatMessage } from '@paynless/shared-types'; // Assuming types are here
 import { Card } from '@/components/ui/card'; // Assuming shadcn/ui card path
 import { AttributionDisplay } from '../common/AttributionDisplay';
 import { useAuthStore, useOrganizationStore } from '@paynless/store';
-import ReactMarkdown from 'react-markdown';
-import remarkGfm from 'remark-gfm';
+import { MarkdownRenderer } from '../common/MarkdownRenderer';
 
 export interface ChatMessageBubbleProps {
   message: ChatMessage;
@@ -23,20 +22,6 @@ export const ChatMessageBubble: React.FC<ChatMessageBubbleProps> = ({ message, o
 
   const bubbleStyles = isUserMessage ? userMessageStyles : assistantMessageStyles;
 
-  // Basic styling for markdown elements. This can be expanded or moved to a global CSS file.
-  // These are Tailwind CSS classes. Ensure they are available in your project.
-  const markdownStyles = `
-    prose 
-    dark:prose-invert 
-    prose-sm 
-    max-w-none 
-    prose-headings:font-semibold 
-    prose-a:text-blue-600 prose-a:hover:underline
-    prose-code:bg-gray-200 prose-code:dark:bg-gray-800 prose-code:p-1 prose-code:rounded prose-code:text-sm
-    prose-pre:bg-gray-200 prose-pre:dark:bg-gray-800 prose-pre:p-2 prose-pre:rounded prose-pre:overflow-x-auto
-    prose-blockquote:border-l-4 prose-blockquote:pl-4 prose-blockquote:italic
-  `;
-
   return (
     <Card 
       className={`p-3 m-2 max-w-[85%] break-words ${bubbleStyles}`}
@@ -49,10 +34,8 @@ export const ChatMessageBubble: React.FC<ChatMessageBubbleProps> = ({ message, o
             currentUserId={currentUserId} 
             currentOrgId={currentOrgId} 
         />
-        <div className={`mt-1 ${markdownStyles}`}>
-          <ReactMarkdown remarkPlugins={[remarkGfm]}>
-            {message.content}
-          </ReactMarkdown>
+        <div className="mt-1">
+          <MarkdownRenderer content={message.content} />
         </div>
         {/* Placeholder for edit button for user messages */}
         {isUserMessage && onEditClick && (

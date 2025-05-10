@@ -491,14 +491,14 @@ The implementation plan uses the following labels to categorize work steps:
 
 #### STEP-3.4.3: Refactor to Reusable `MarkdownRenderer` Component with Syntax Highlighting [UI] [TEST-UNIT] [COMMIT]
 *   **Phase 1: Basic Refactor (Moving existing functionality)**
-    *   [ ] **[UI]** Create `apps/web/src/components/common/MarkdownRenderer.tsx`.
+    *   [✅] **[UI]** Create `apps/web/src/components/common/MarkdownRenderer.tsx`.
         *   Props: `content: string;`, `className?: string;`.
         *   Move `ReactMarkdown`, `remarkGfm` usage, and `proseStyles` from `ChatMessageBubble.tsx` to `MarkdownRenderer.tsx`.
-    *   [ ] **[UI]** Update `ChatMessageBubble.tsx` to use the new `MarkdownRenderer` component.
-    *   [ ] **[TEST-UNIT]** Create `apps/web/src/components/common/MarkdownRenderer.test.tsx`.
-    *   [ ] **[TEST-UNIT]** Move detailed markdown rendering tests from `ChatMessageBubble.test.tsx` to `MarkdownRenderer.test.tsx`.
-    *   [ ] **[TEST-UNIT]** Update `ChatMessageBubble.test.tsx` to mock `MarkdownRenderer` and verify it's called with correct props.
-    *   [ ] Run all tests for `MarkdownRenderer` and `ChatMessageBubble`. Debug until pass (GREEN).
+    *   [✅] **[UI]** Update `ChatMessageBubble.tsx` to use the new `MarkdownRenderer` component.
+    *   [✅] **[TEST-UNIT]** Create `apps/web/src/components/common/MarkdownRenderer.test.tsx`.
+    *   [✅] **[TEST-UNIT]** Move detailed markdown rendering tests from `ChatMessageBubble.test.tsx` to `MarkdownRenderer.test.tsx`.
+    *   [✅] **[TEST-UNIT]** Update `ChatMessageBubble.test.tsx` to mock `MarkdownRenderer` and verify it's called with correct props.
+    *   [✅] Run all tests for `MarkdownRenderer` and `ChatMessageBubble`. Debug until pass (GREEN).
 *   **Phase 2: Adding Syntax Highlighting**
     *   [ ] **[DEPS]** Install `react-syntax-highlighter` (and types) in `apps/web`.
     *   [ ] **[UI]** Update `MarkdownRenderer.tsx` to import `SyntaxHighlighter` (e.g., Prism) and a style.
