@@ -517,22 +517,23 @@ The implementation plan uses the following labels to categorize work steps:
     * [ ] Add a bounding box (border, background, rounded corners) and vertical scrollbar to ChatHistoryList.
     * [ ] Ensure the list is visually separated and scrollable when overflowing.
     * [ ] Write/update unit tests to verify bounding box and scrollbar presence.
-* [ ] **Fix AttributionDisplay Integration** [UI] [TEST-UNIT]
-    * [ ] Ensure AttributionDisplay is rendered in ChatMessageBubble for both user and assistant messages.
-    * [ ] Pass correct props: message, currentUserId, currentOrgId.
-    * [ ] Write/update unit tests to verify AttributionDisplay integration and props.
-* [ ] **Alternate Left/Right Justification for Messages** [UI] [TEST-UNIT]
-    * [ ] User messages should be right-justified, assistant/other messages left-justified.
-    * [ ] Update ChatMessageBubble and/or parent container to apply correct alignment.
-    * [ ] Write/update unit tests to verify correct alignment for each message type.
-* [ ] **Comprehensive Integration Test Coverage** [TEST-INT]
-    * [ ] Update or expand AiChat.integration.test.tsx to cover:
-        * [ ] ChatHistoryList bounding box and scrollbar.
-        * [ ] Correct alignment and attribution for messages in AiChatbox.
-        * [ ] Proper integration of AttributionDisplay and ChatMessageBubble.
-        * [ ] All new/refactored components in the chat flow.
-    * [ ] Ensure all relevant integration tests pass (GREEN).
-* [ ] **Commit changes** with message like "fix(UI): ChatHistoryList bounding box, AttributionDisplay, message alignment, and integration tests"
+* [x] **Fix AttributionDisplay Integration** [UI] [TEST-UNIT]
+    * [x] Ensure AttributionDisplay is rendered in ChatMessageBubble for both user and assistant messages.
+    * [x] Pass correct props: message, currentUserId, currentOrgId.
+    * [x] Write/update unit tests to verify AttributionDisplay integration and props.
+    * [x] AttributionDisplay now robustly displays '(You)' for the current user and model names for assistants. All tests pass.
+* [x] **Alternate Left/Right Justification for Messages** [UI] [TEST-UNIT]
+    * [x] User messages are right-justified, assistant/other messages left-justified.
+    * [x] Update ChatMessageBubble and/or parent container to apply correct alignment.
+    * [x] Write/update unit tests to verify correct alignment for each message type.
+* [x] **Comprehensive Integration Test Coverage** [TEST-INT]
+    * [x] Update or expand AiChat.integration.test.tsx to cover:
+        * [x] ChatHistoryList bounding box and scrollbar.
+        * [x] Correct alignment and attribution for messages in AiChatbox.
+        * [x] Proper integration of AttributionDisplay and ChatMessageBubble.
+        * [x] All new/refactored components in the chat flow.
+    * [x] Ensure all relevant integration tests pass (GREEN).
+* [x] **Commit changes** with message like "fix(UI): AttributionDisplay '(You)' indicator, model name, message alignment, and integration tests"
 
 ### STEP-3.5: Implement Token Tracking and Audit UI [UI] [🚧]
 
