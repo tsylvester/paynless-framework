@@ -35,6 +35,7 @@ export const OrganizationChatSettings: React.FC = () => {
           onCheckedChange={handleToggle}
           disabled={!isAdmin || isLoading}
           aria-label="Allow members to create organization chats"
+          className="data-[state=unchecked]:bg-border"
         />
         <Label htmlFor="allow-member-chat-creation" className={(!isAdmin || isLoading) ? 'text-muted-foreground' : ''}>
           Allow members to create organization chats

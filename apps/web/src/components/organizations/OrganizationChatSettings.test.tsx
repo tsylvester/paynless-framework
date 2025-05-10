@@ -1,5 +1,4 @@
-import React from 'react';
-import { render, screen, fireEvent, act, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, act } from '@testing-library/react';
 import { OrganizationChatSettings } from './OrganizationChatSettings'; // Assuming this path
 import { useOrganizationStore, useAuthStore, selectCurrentUserRoleInOrg } from '@paynless/store';
 import { vi, type Mock } from 'vitest';

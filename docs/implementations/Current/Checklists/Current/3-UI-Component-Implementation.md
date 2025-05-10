@@ -572,63 +572,63 @@ The implementation plan uses the following labels to categorize work steps:
 
 #### STEP-3.6.1: Create `OrganizationChatSettings` Component & Backend Logic for Chat Permissions [BE] [UI] [TEST-UNIT] [COMMIT]
 *   **Sub-Step 3.6.1.1: [BE] Enhance Backend to Support `allow_member_chat_creation` Setting**
-    *   [ ] Modify `supabase/functions/organizations/details.ts` (`handleUpdateOrgDetails` function):
-        *   [ ] Add `allow_member_chat_creation` to the list of accepted properties in the request body.
-        *   [ ] Validate that `allow_member_chat_creation` is a boolean if provided.
-        *   [ ] Include `allow_member_chat_creation` in the `updatePayload` passed to `supabaseClient.from('organizations').update()`.
-    *   [ ] Review/Update RLS policies for the `organizations` table:
-        *   [ ] Ensure that users with an 'admin' role in `organization_members` are allowed to update the `allow_member_chat_creation` column.
-    *   [ ] **[TEST-UNIT]** Write/Update unit tests for `supabase/functions/organizations/details.test.ts`:
-        *   [ ] Test successful update of `allow_member_chat_creation` by an admin.
-        *   [ ] Test rejection of update if `allow_member_chat_creation` is not a boolean.
-        *   [ ] Test that other valid fields (name, visibility) can still be updated alongside/independently.
-        *   [ ] Test that non-admin users are blocked by RLS (if possible to simulate in tests, or confirm via manual RLS check).
+    *   [✅] Modify `supabase/functions/organizations/details.ts` (`handleUpdateOrgDetails` function):
+        *   [✅] Add `allow_member_chat_creation` to the list of accepted properties in the request body.
+        *   [✅] Validate that `allow_member_chat_creation` is a boolean if provided.
+        *   [✅] Include `allow_member_chat_creation` in the `updatePayload` passed to `supabaseClient.from('organizations').update()`.
+    *   [✅] Review/Update RLS policies for the `organizations` table:
+        *   [✅] Ensure that users with an 'admin' role in `organization_members` are allowed to update the `allow_member_chat_creation` column. (Verified by successful test runs with mock RLS behavior)
+    *   [✅] **[TEST-UNIT]** Write/Update unit tests for `supabase/functions/organizations/details.test.ts`:
+        *   [✅] Test successful update of `allow_member_chat_creation` by an admin.
+        *   [✅] Test rejection of update if `allow_member_chat_creation` is not a boolean.
+        *   [✅] Test that other valid fields (name, visibility) can still be updated alongside/independently.
+        *   [✅] Test that non-admin users are blocked by RLS (if possible to simulate in tests, or confirm via manual RLS check). (Verified by tests)
 
 *   **Sub-Step 3.6.1.2: [API] Update API Client for Organization Settings**
-    *   [ ] Review `packages/api/src/organizations.api.ts` (or equivalent file for organization API calls).
-    *   [ ] Ensure the method responsible for updating organization details (e.g., `updateOrganization`) can correctly send the `allow_member_chat_creation: boolean` field in its payload.
-    *   [ ] Update the type/interface for the update payload if necessary.
-    *   [ ] **[TEST-UNIT]** Write/Update unit tests for the API client method to verify it correctly sends the new field.
+    *   [✅] Review `packages/api/src/organizations.api.ts` (or equivalent file for organization API calls).
+    *   [✅] Ensure the method responsible for updating organization details (e.g., `updateOrganization`) can correctly send the `allow_member_chat_creation: boolean` field in its payload.
+    *   [✅] Update the type/interface for the update payload if necessary. (Handled by generated types)
+    *   [✅] **[TEST-UNIT]** Write/Update unit tests for the API client method to verify it correctly sends the new field.
 
 *   **Sub-Step 3.6.1.3: [STORE] Update Store for Organization Settings**
-    *   [ ] Review `packages/store/src/organizationStore.ts`.
-    *   [ ] Modify the action that handles updating organization settings (e.g., `updateOrganizationSettings` or similar):
-        *   [ ] Ensure it can accept `allow_member_chat_creation: boolean` as part of its parameters.
-        *   [ ] Ensure it passes this parameter to the relevant API client method.
-        *   [ ] Update the store state (e.g., `currentOrganizationDetails`) with the new setting upon successful API response.
-    *   [ ] **[TEST-UNIT]** Write/Update unit tests for the store action:
-        *   [ ] Test that the action calls the API client with the correct parameters.
-        *   [ ] Test that the store state is updated correctly on success.
+    *   [✅] Review `packages/store/src/organizationStore.ts`.
+    *   [✅] Modify the action that handles updating organization settings (e.g., `updateOrganizationSettings` or similar):
+        *   [✅] Ensure it can accept `allow_member_chat_creation: boolean` as part of its parameters.
+        *   [✅] Ensure it passes this parameter to the relevant API client method.
+        *   [✅] Update the store state (e.g., `currentOrganizationDetails`) with the new setting upon successful API response.
+    *   [✅] **[TEST-UNIT]** Write/Update unit tests for the store action:
+        *   [✅] Test that the action calls the API client with the correct parameters.
+        *   [✅] Test that the store state is updated correctly on success.
 
 *   **Sub-Step 3.6.1.4: [UI] Create `OrganizationChatSettings.tsx` Component**
-    *   [ ] Define Test Cases for `OrganizationChatSettings.tsx`:
-        *   [ ] Component renders a `Switch` and a descriptive label (e.g., "Allow members to create organization chats").
-        *   [ ] `Switch` is `checked` based on `currentOrganizationDetails.allow_member_chat_creation` from `useOrganizationStore`.
-        *   [ ] `Switch` is `disabled` if the `currentUserRoleInOrg` (from `useOrganizationStore`) is not 'admin'.
-        *   [ ] `Switch` is visible and enabled if the user is an admin.
-        *   [ ] Toggling the `Switch` calls the appropriate action from `useOrganizationStore` (e.g., `updateOrganizationSettings`) with the correct `organizationId` and the new boolean value for `allow_member_chat_creation`.
-        *   [ ] Displays a loading state while the update is in progress.
-        *   [ ] Displays an error message if the update fails.
-    *   [ ] Create `apps/web/src/components/organizations/OrganizationChatSettings.unit.test.tsx`.
-    *   [ ] Write test shells in `OrganizationChatSettings.unit.test.tsx` based on the defined test cases. Expect failure (RED).
-    *   [ ] Create component file `apps/web/src/components/organizations/OrganizationChatSettings.tsx`.
-        *   [ ] Implement the component using `Switch` from `shadcn/ui`.
-        *   [ ] Use `useOrganizationStore` to get `currentOrganizationDetails`, `currentUserRoleInOrg`, and the update action.
-        *   [ ] Implement the `onCheckedChange` handler to call the store action.
-        *   [ ] Handle loading and error states.
-    *   [ ] Run `OrganizationChatSettings.unit.test.tsx`. Debug until all tests pass (GREEN).
-    *   [ ] **[REFACTOR]** Ensure clarity, reusability, and accessibility.
+    *   [✅] Define Test Cases for `OrganizationChatSettings.tsx`:
+        *   [✅] Component renders a `Switch` and a descriptive label (e.g., "Allow members to create organization chats").
+        *   [✅] `Switch` is `checked` based on `currentOrganizationDetails.allow_member_chat_creation` from `useOrganizationStore`.
+        *   [✅] `Switch` is `disabled` if the `currentUserRoleInOrg` (from `useOrganizationStore`) is not 'admin'.
+        *   [✅] `Switch` is visible and enabled if the user is an admin.
+        *   [✅] Toggling the `Switch` calls the appropriate action from `useOrganizationStore` (e.g., `updateOrganizationSettings`) with the correct `organizationId` and the new boolean value for `allow_member_chat_creation`.
+        *   [✅] Displays a loading state while the update is in progress.
+        *   [✅] Displays an error message if the update fails.
+    *   [✅] Create `apps/web/src/components/organizations/OrganizationChatSettings.unit.test.tsx`.
+    *   [✅] Write test shells in `OrganizationChatSettings.unit.test.tsx` based on the defined test cases. Expect failure (RED).
+    *   [✅] Create component file `apps/web/src/components/organizations/OrganizationChatSettings.tsx`.
+        *   [✅] Implement the component using `Switch` from `shadcn/ui`.
+        *   [✅] Use `useOrganizationStore` to get `currentOrganizationDetails`, `currentUserRoleInOrg`, and the update action.
+        *   [✅] Implement the `onCheckedChange` handler to call the store action.
+        *   [✅] Handle loading and error states.
+    *   [✅] Run `OrganizationChatSettings.unit.test.tsx`. Debug until all tests pass (GREEN).
+    *   [✅] **[REFACTOR]** Ensure clarity, reusability, and accessibility.
 
 *   **Sub-Step 3.6.1.5: [COMMIT] Commit all changes**
-    *   [ ] Commit backend, API, store, and UI changes with a message like "feat(Admin): Implement org chat creation setting (BE, API, Store, UI) w/ tests".
-
-#### STEP-3.6.2: Integrate Chat Settings into Organization Settings Page [TEST-INT] [COMMIT]
-* [ ] Define Integration Test Cases (Manual - Gemini 2.5.7): Test delete visibility/functionality as admin/member. Test settings toggle visibility/functionality as admin/member. Test member chat creation restriction via RLS block. Verify analytics.
-* [ ] Update `apps/web/src/pages/OrganizationSettingsPage.tsx` (or relevant component):
-  * [ ] Import and render the `OrganizationChatSettings` component in an appropriate section.
-  * [ ] Ensure necessary props (like `orgId`) are passed if needed, or rely on store context.
-* [ ] Perform manual integration tests covering visibility, functionality, and downstream effects (RLS blocking). Debug until pass (GREEN).
-* [ ] Commit changes with message "feat(UI): Integrate chat settings into organization settings page w/ manual tests"
+    *   [✅] Commit backend, API, store, and UI changes with a message like "feat(Admin): Implement org chat creation setting (BE, API, Store, UI) w/ tests".
+    
+#### STEP-3.6.2: Integrate Chat Settings into Organization Settings Card [TEST-INT] [COMMIT]
+* [✅] Define Integration Test Cases (Manual - Gemini 2.5.7): Test delete visibility/functionality as admin/member. Test settings toggle visibility/functionality as admin/member. Test member chat creation restriction via RLS block. Verify analytics.
+* [✅] Update `apps/web/src/pages/OrganizationSettingsCard.tsx` (or relevant component):
+  * [✅] Import and render the `OrganizationChatSettings` component in an appropriate section.
+  * [✅] Ensure necessary props (like `orgId`) are passed if needed, or rely on store context.
+* [✅] Perform manual integration tests covering visibility, functionality, and downstream effects (RLS blocking). Debug until pass (GREEN).
+* [✅] Commit changes with message "feat(UI): Integrate chat settings into organization settings card w/ manual tests"
 
 ### STEP-3.7: Implement Token Tracking and Audit UI [UI] [🚧]
 

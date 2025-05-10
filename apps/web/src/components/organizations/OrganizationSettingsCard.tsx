@@ -19,6 +19,9 @@ import {
 import { toast } from 'sonner';
 import { AdminBadge } from './AdminBadge'; // Import the badge
 
+// Import the new chat settings component
+import { OrganizationChatSettings } from './OrganizationChatSettings';
+
 // Placeholder for DeleteOrganizationDialog trigger
 // import { useDeleteOrganizationDialog } from './DeleteOrganizationDialog';
 
@@ -177,13 +180,19 @@ export const OrganizationSettingsCard: React.FC = () => {
             {/* Delete Button */} 
             <Button
               variant="destructive"
-              onClick={() => currentOrganizationId && openDeleteDialog(currentOrganizationId)}
+              onClick={() => openDeleteDialog()}
               type="button"
               disabled={formDisabled || !currentOrganizationId}
               className="shrink-0" // Prevent shrinking
             >
               Delete {/* Shortened text */}
             </Button>
+          </div>
+          
+          {/* --- Organization Chat Settings --- */}
+          <div className="space-y-2 pt-4 border-t border-border/40 mt-6">
+            <h4 className="text-md font-medium">Chat Permissions</h4>
+            <OrganizationChatSettings />
           </div>
           
         </CardContent>
