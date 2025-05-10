@@ -4,6 +4,8 @@ import { Card } from '@/components/ui/card'; // Assuming shadcn/ui card path
 import { AttributionDisplay } from '../common/AttributionDisplay';
 import { useAuthStore, useOrganizationStore } from '@paynless/store';
 import { MarkdownRenderer } from '../common/MarkdownRenderer';
+import { Pencil } from 'lucide-react';
+import { Button } from '@/components/ui/button';
 
 export interface ChatMessageBubbleProps {
   message: ChatMessage;
@@ -24,7 +26,7 @@ export const ChatMessageBubble: React.FC<ChatMessageBubbleProps> = ({ message, o
 
   return (
     <Card 
-      className={`p-3 m-2 max-w-[85%] break-words ${bubbleStyles}`}
+      className={`p-3 m-2 max-w-[85%] break-words ${bubbleStyles} group relative`}
       data-testid="chat-message-bubble-card"
       data-message-id={message.id}
     >
@@ -39,15 +41,17 @@ export const ChatMessageBubble: React.FC<ChatMessageBubbleProps> = ({ message, o
         <div className="mt-1">
           <MarkdownRenderer content={message.content} />
         </div>
-        {/* Placeholder for edit button for user messages */}
         {isUserMessage && onEditClick && (
-          <button 
-            onClick={() => onEditClick(message.id, message.content)} 
-            className="text-xs text-blue-600 hover:underline mt-1 self-start"
+          <Button
+            variant="ghost"
+            size="icon"
+            className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity h-6 w-6"
+            onClick={() => onEditClick(message.id, message.content)}
             aria-label="Edit message"
+            data-testid="edit-message-button"
           >
-            Edit
-          </button>
+            <Pencil className="h-3 w-3" />
+          </Button>
         )}
       </div>
     </Card>

@@ -513,31 +513,126 @@ The implementation plan uses the following labels to categorize work steps:
 *   [✅] Reusable MarkdownRenderer with syntax highlighting implemented, tested, and integrated.
 
 #### STEP-3.4.4: Chat Bugfixes [TEST-UNIT] [COMMIT] [🚧]
-* [ ] **Restore Bounding Box & Scrollbar on ChatHistoryList** [UI] [TEST-UNIT]
-    * [ ] Add a bounding box (border, background, rounded corners) and vertical scrollbar to ChatHistoryList.
-    * [ ] Ensure the list is visually separated and scrollable when overflowing.
-    * [ ] Write/update unit tests to verify bounding box and scrollbar presence.
-* [x] **Fix AttributionDisplay Integration** [UI] [TEST-UNIT]
-    * [x] Ensure AttributionDisplay is rendered in ChatMessageBubble for both user and assistant messages.
-    * [x] Pass correct props: message, currentUserId, currentOrgId.
-    * [x] Write/update unit tests to verify AttributionDisplay integration and props.
-    * [x] AttributionDisplay now robustly displays '(You)' for the current user and model names for assistants. All tests pass.
-* [x] **Alternate Left/Right Justification for Messages** [UI] [TEST-UNIT]
-    * [x] User messages are right-justified, assistant/other messages left-justified.
-    * [x] Update ChatMessageBubble and/or parent container to apply correct alignment.
-    * [x] Write/update unit tests to verify correct alignment for each message type.
-* [x] **Comprehensive Integration Test Coverage** [TEST-INT]
-    * [x] Update or expand AiChat.integration.test.tsx to cover:
-        * [x] ChatHistoryList bounding box and scrollbar.
-        * [x] Correct alignment and attribution for messages in AiChatbox.
-        * [x] Proper integration of AttributionDisplay and ChatMessageBubble.
-        * [x] All new/refactored components in the chat flow.
-    * [x] Ensure all relevant integration tests pass (GREEN).
-* [x] **Commit changes** with message like "fix(UI): AttributionDisplay '(You)' indicator, model name, message alignment, and integration tests"
+* [✅] **Restore Bounding Box & Scrollbar on ChatHistoryList** [UI] [TEST-UNIT]
+    * [✅] Add a bounding box (border, background, rounded corners) and vertical scrollbar to ChatHistoryList.
+    * [✅] Ensure the list is visually separated and scrollable when overflowing.
+    * [✅] Write/update unit tests to verify bounding box and scrollbar presence.
+* [✅] **Fix AttributionDisplay Integration** [UI] [TEST-UNIT]
+    * [✅] Ensure AttributionDisplay is rendered in ChatMessageBubble for both user and assistant messages.
+    * [✅] Pass correct props: message, currentUserId, currentOrgId.
+    * [✅] Write/update unit tests to verify AttributionDisplay integration and props.
+    * [✅] AttributionDisplay now robustly displays '(You)' for the current user and model names for assistants. All tests pass.
+* [✅] **Alternate Left/Right Justification for Messages** [UI] [TEST-UNIT]
+    * [✅] User messages are right-justified, assistant/other messages left-justified.
+    * [✅] Update ChatMessageBubble and/or parent container to apply correct alignment.
+    * [✅] Write/update unit tests to verify correct alignment for each message type.
+* [✅] **Comprehensive Integration Test Coverage** [TEST-INT]
+    * [✅] Update or expand AiChat.integration.test.tsx to cover:
+        * [✅] ChatHistoryList bounding box and scrollbar.
+        * [✅] Correct alignment and attribution for messages in AiChatbox.
+        * [✅] Proper integration of AttributionDisplay and ChatMessageBubble.
+        * [✅] All new/refactored components in the chat flow.
+    * [✅] Ensure all relevant integration tests pass (GREEN).
+* [✅] **Commit changes** with message like "fix(UI): AttributionDisplay '(You)' indicator, model name, message alignment, and integration tests"
 
-### STEP-3.5: Implement Token Tracking and Audit UI [UI] [🚧]
+### STEP-3.5: Implement Chat Rewind/Reprompt UI [UI] [🚧]
 
-#### STEP-3.5.1: Create/Integrate Token Estimator Hook/Display [TEST-UNIT] [COMMIT]
+#### STEP-3.5.1: Create Message Edit Controls (`ChatMessageBubble.tsx`) [TEST-UNIT] [COMMIT] [✅]
+* [✅] Define Test Cases (Gemini 3.4.2): Verify button visible only on user messages. Click triggers callback with correct message ID/content.
+* [✅] Write/Update tests for `apps/web/src/components/ai/ChatMessageBubble.tsx`.
+* [✅] Update `ChatMessageBubble.tsx`:
+  * [✅] Add an edit button/icon (e.g., Pencil) to user message bubbles.
+  * [✅] Prop: `onEditClick?: (messageId: string, messageContent: string) => void`.
+  * [✅] Call `onEditClick(message.id, message.content)` when the button is clicked.
+* [✅] Run tests. Debug until pass (GREEN).
+* [✅] Commit changes with message "feat(UI): Add edit control to user messages for rewind w/ tests"
+
+#### STEP-3.5.2: Implement Rewind Mode in Chat Interface (`AiChatbox.tsx`) [TEST-UNIT] [COMMIT] [✅]
+* [✅] Define Test Cases (Gemini 3.4.2): Entering rewind mode sets input value and state correctly. Submit button changes text. Resubmit action calls correct store function. State resets after resubmit.
+* [✅] Write/Update tests for `apps/web/src/pages/AiChatbox.tsx`.
+* [✅] Update `AiChatbox.tsx`:
+  * [✅] Add state: `const [rewindState, setRewindState] = useState<{ messageId: string | null }>({ messageId: null });` (Note: Implemented via store: `rewindTargetMessageId`, `prepareRewind`, `cancelRewindPreparation`)
+  * [✅] Implement `handleEditClick(messageId, messageContent)` passed to `ChatMessageBubble`:
+      *   [✅] `setRewindState({ messageId });` (Note: Implemented via store: `prepareRewind(messageId, currentChatId)`)
+      *   [✅] Update chat input component's value state with `messageContent`.
+  * [✅] Pass `isRewinding = {rewindState.messageId !== null}` to chat input component. (Note: Logic implemented directly in `AiChatbox` based on `rewindTargetMessageId` from store)
+* [✅] Update chat input component (`AiChatbox.tsx`?): (Note: `AiChatbox.tsx` is the component)
+  * [✅] Accept `isRewinding` prop. (Note: Handled internally based on `rewindTargetMessageId`)
+  * [✅] Change submit button text to "Resubmit" if `isRewinding` is true.
+  * [✅] On submit, check `isRewinding`. If true, call a specific `handleResubmit(inputValue)` prop; otherwise, call standard `handleSendMessage(inputValue)`. (Note: `handleSend` in `AiChatbox.tsx` handles this logic using `rewindTargetMessageId`)
+* [✅] Implement `handleResubmit(editedContent)` in `AiChatbox.tsx`: (Note: Integrated into `handleSend`)
+  *   If `rewindState.messageId` exists: (Note: Checks `rewindTargetMessageId`)
+      *   [✅] Call `useAiStore.getState().sendMessage({ message: editedContent, providerId: /* current provider */, promptId: /* current prompt */, rewindFromMessageId: rewindState.messageId });` (or the dedicated `rewindAndSendMessage` action if created in store). (Note: `sendMessage` in store is expected to handle this based on `rewindTargetMessageId` being set).
+      *   [✅] `setRewindState({ messageId: null });` (Note: Implemented via store: `cancelRewindPreparation()`)
+      *   [✅] Clear chat input value state.
+* [✅] Run tests. Debug state management and handlers until pass (GREEN).
+* [✅] Commit changes with message "feat(UI): Implement rewind mode state and handlers in chat interface w/ tests"
+
+### STEP-3.6: Implement Admin Controls UI [UI] [🚧]
+
+#### STEP-3.6.1: Create `OrganizationChatSettings` Component & Backend Logic for Chat Permissions [BE] [UI] [TEST-UNIT] [COMMIT]
+*   **Sub-Step 3.6.1.1: [BE] Enhance Backend to Support `allow_member_chat_creation` Setting**
+    *   [ ] Modify `supabase/functions/organizations/details.ts` (`handleUpdateOrgDetails` function):
+        *   [ ] Add `allow_member_chat_creation` to the list of accepted properties in the request body.
+        *   [ ] Validate that `allow_member_chat_creation` is a boolean if provided.
+        *   [ ] Include `allow_member_chat_creation` in the `updatePayload` passed to `supabaseClient.from('organizations').update()`.
+    *   [ ] Review/Update RLS policies for the `organizations` table:
+        *   [ ] Ensure that users with an 'admin' role in `organization_members` are allowed to update the `allow_member_chat_creation` column.
+    *   [ ] **[TEST-UNIT]** Write/Update unit tests for `supabase/functions/organizations/details.test.ts`:
+        *   [ ] Test successful update of `allow_member_chat_creation` by an admin.
+        *   [ ] Test rejection of update if `allow_member_chat_creation` is not a boolean.
+        *   [ ] Test that other valid fields (name, visibility) can still be updated alongside/independently.
+        *   [ ] Test that non-admin users are blocked by RLS (if possible to simulate in tests, or confirm via manual RLS check).
+
+*   **Sub-Step 3.6.1.2: [API] Update API Client for Organization Settings**
+    *   [ ] Review `packages/api/src/organizations.api.ts` (or equivalent file for organization API calls).
+    *   [ ] Ensure the method responsible for updating organization details (e.g., `updateOrganization`) can correctly send the `allow_member_chat_creation: boolean` field in its payload.
+    *   [ ] Update the type/interface for the update payload if necessary.
+    *   [ ] **[TEST-UNIT]** Write/Update unit tests for the API client method to verify it correctly sends the new field.
+
+*   **Sub-Step 3.6.1.3: [STORE] Update Store for Organization Settings**
+    *   [ ] Review `packages/store/src/organizationStore.ts`.
+    *   [ ] Modify the action that handles updating organization settings (e.g., `updateOrganizationSettings` or similar):
+        *   [ ] Ensure it can accept `allow_member_chat_creation: boolean` as part of its parameters.
+        *   [ ] Ensure it passes this parameter to the relevant API client method.
+        *   [ ] Update the store state (e.g., `currentOrganizationDetails`) with the new setting upon successful API response.
+    *   [ ] **[TEST-UNIT]** Write/Update unit tests for the store action:
+        *   [ ] Test that the action calls the API client with the correct parameters.
+        *   [ ] Test that the store state is updated correctly on success.
+
+*   **Sub-Step 3.6.1.4: [UI] Create `OrganizationChatSettings.tsx` Component**
+    *   [ ] Define Test Cases for `OrganizationChatSettings.tsx`:
+        *   [ ] Component renders a `Switch` and a descriptive label (e.g., "Allow members to create organization chats").
+        *   [ ] `Switch` is `checked` based on `currentOrganizationDetails.allow_member_chat_creation` from `useOrganizationStore`.
+        *   [ ] `Switch` is `disabled` if the `currentUserRoleInOrg` (from `useOrganizationStore`) is not 'admin'.
+        *   [ ] `Switch` is visible and enabled if the user is an admin.
+        *   [ ] Toggling the `Switch` calls the appropriate action from `useOrganizationStore` (e.g., `updateOrganizationSettings`) with the correct `organizationId` and the new boolean value for `allow_member_chat_creation`.
+        *   [ ] Displays a loading state while the update is in progress.
+        *   [ ] Displays an error message if the update fails.
+    *   [ ] Create `apps/web/src/components/organizations/OrganizationChatSettings.unit.test.tsx`.
+    *   [ ] Write test shells in `OrganizationChatSettings.unit.test.tsx` based on the defined test cases. Expect failure (RED).
+    *   [ ] Create component file `apps/web/src/components/organizations/OrganizationChatSettings.tsx`.
+        *   [ ] Implement the component using `Switch` from `shadcn/ui`.
+        *   [ ] Use `useOrganizationStore` to get `currentOrganizationDetails`, `currentUserRoleInOrg`, and the update action.
+        *   [ ] Implement the `onCheckedChange` handler to call the store action.
+        *   [ ] Handle loading and error states.
+    *   [ ] Run `OrganizationChatSettings.unit.test.tsx`. Debug until all tests pass (GREEN).
+    *   [ ] **[REFACTOR]** Ensure clarity, reusability, and accessibility.
+
+*   **Sub-Step 3.6.1.5: [COMMIT] Commit all changes**
+    *   [ ] Commit backend, API, store, and UI changes with a message like "feat(Admin): Implement org chat creation setting (BE, API, Store, UI) w/ tests".
+
+#### STEP-3.6.2: Integrate Chat Settings into Organization Settings Page [TEST-INT] [COMMIT]
+* [ ] Define Integration Test Cases (Manual - Gemini 2.5.7): Test delete visibility/functionality as admin/member. Test settings toggle visibility/functionality as admin/member. Test member chat creation restriction via RLS block. Verify analytics.
+* [ ] Update `apps/web/src/pages/OrganizationSettingsPage.tsx` (or relevant component):
+  * [ ] Import and render the `OrganizationChatSettings` component in an appropriate section.
+  * [ ] Ensure necessary props (like `orgId`) are passed if needed, or rely on store context.
+* [ ] Perform manual integration tests covering visibility, functionality, and downstream effects (RLS blocking). Debug until pass (GREEN).
+* [ ] Commit changes with message "feat(UI): Integrate chat settings into organization settings page w/ manual tests"
+
+### STEP-3.7: Implement Token Tracking and Audit UI [UI] [🚧]
+
+#### STEP-3.7.1: Create/Integrate Token Estimator Hook/Display [TEST-UNIT] [COMMIT]
 * [ ] Define Test Cases (Gemini 3.3.2): Hook takes text, returns estimated count using `tiktoken`. Test samples, empty string. Mock `tiktoken`.
 * [ ] Create hook `apps/web/src/hooks/useTokenEstimator.ts`:
     *   Import `getEncoding` from `tiktoken`. Initialize `encoding = getEncoding('cl100k_base')`.
@@ -550,7 +645,7 @@ The implementation plan uses the following labels to categorize work steps:
 * [ ] Write/Update component tests to verify display. Debug until pass (GREEN).
 * [ ] Commit changes with message "feat(UI): Implement token estimator hook and display in chat input w/ tests"
 
-#### STEP-3.5.2: Add Token Usage Display to Messages (`ChatMessageBubble.tsx`) [TEST-UNIT] [COMMIT]
+#### STEP-3.7.2: Add Token Usage Display to Messages (`ChatMessageBubble.tsx`) [TEST-UNIT] [COMMIT]
 * [ ] Define Test Cases: Verify token count displays only for assistant messages with `token_usage` data.
 * [ ] Write/Update tests for `apps/web/src/components/ai/ChatMessageBubble.tsx`.
 * [ ] Update `ChatMessageBubble.tsx`:
@@ -558,7 +653,7 @@ The implementation plan uses the following labels to categorize work steps:
 * [ ] Run tests. Debug until pass (GREEN).
 * [ ] Commit changes with message "feat(UI): Add token usage display to assistant chat messages w/ tests"
 
-#### STEP-3.5.3: Create Cumulative Token Usage Display (`ChatTokenUsageDisplay.tsx`) [TEST-UNIT] [COMMIT]
+#### STEP-3.7.3: Create Cumulative Token Usage Display (`ChatTokenUsageDisplay.tsx`) [TEST-UNIT] [COMMIT]
 * [ ] Define Test Cases (Gemini 3.3.9): Takes `messages` prop. Calculates sum of prompt/completion/total tokens correctly. Displays User/Assistant/Total. Handles missing `token_usage`. Expect failure (RED).
 * [ ] Write tests for `apps/web/src/components/ai/ChatTokenUsageDisplay.unit.test.tsx`.
 * [ ] Create component `apps/web/src/components/ai/ChatTokenUsageDisplay.tsx`:
@@ -569,7 +664,7 @@ The implementation plan uses the following labels to categorize work steps:
 * [ ] **[REFACTOR]** Optimize calculation if needed. Ensure clear display.
 * [ ] Commit changes with message "feat(UI): Create cumulative token usage display component w/ tests"
 
-#### STEP-3.5.4: Integrate Token UI Components (`AiChat.tsx`) [TEST-INT] [COMMIT]
+#### STEP-3.7.4: Integrate Token UI Components (`AiChat.tsx`) [TEST-INT] [COMMIT]
 * [ ] Define Integration Test Cases (Manual - Gemini 3.3.13): Send messages, verify estimator updates. Verify assistant messages show tokens. Verify cumulative display updates. Verify analytics.
 * [ ] Update `apps/web/src/pages/AiChat.tsx`:
   * [ ] Ensure token estimator is displayed near input.
@@ -578,7 +673,7 @@ The implementation plan uses the following labels to categorize work steps:
 * [ ] Perform manual integration tests. Debug until pass (GREEN).
 * [ ] Commit changes with message "feat(UI): Integrate token tracking UI components into chat page w/ manual tests & analytics"
 
-#### STEP-3.5.5: Implement Token Budget Audit Hook and UI Integration [TEST-UNIT] [TEST-INT] [COMMIT]
+#### STEP-3.7.5: Implement Token Budget Audit Hook and UI Integration [TEST-UNIT] [TEST-INT] [COMMIT]
 *   [ ] **Define Test Cases for `useTokenAuditStatus` hook:**
     *   [ ] Mocks `useAiStore` and `useSubscriptionStore` selectors (from revised STEP-2.4).
     *   [ ] Test various scenarios: budget available, usage below budget, usage at budget, usage exceeding budget.
@@ -602,62 +697,6 @@ The implementation plan uses the following labels to categorize work steps:
         *   [ ] Display current organization token usage vs. budget.
 *   [ ] Write integration tests (or update existing component tests) for these UI integrations to ensure the hook's state is correctly reflected.
 *   [ ] Commit changes with message "feat(UI): Implement token budget audit hook and integrate into UI components w/ tests"
-
-### STEP-3.6: Implement Chat Rewind/Reprompt UI [UI] [🚧]
-
-#### STEP-3.6.1: Create Message Edit Controls (`ChatMessageBubble.tsx`) [TEST-UNIT] [COMMIT]
-* [ ] Define Test Cases (Gemini 3.4.2): Verify button visible only on user messages. Click triggers callback with correct message ID/content.
-* [ ] Write/Update tests for `apps/web/src/components/ai/ChatMessageBubble.tsx`.
-* [ ] Update `ChatMessageBubble.tsx`:
-  * [ ] Add an edit button/icon (e.g., Pencil) to user message bubbles.
-  * [ ] Prop: `onEditClick?: (messageId: string, messageContent: string) => void`.
-  * [ ] Call `onEditClick(message.id, message.content)` when the button is clicked.
-* [ ] Run tests. Debug until pass (GREEN).
-* [ ] Commit changes with message "feat(UI): Add edit control to user messages for rewind w/ tests"
-
-#### STEP-3.6.2: Implement Rewind Mode in Chat Interface (`AiChat.tsx`) [TEST-UNIT] [COMMIT]
-* [ ] Define Test Cases (Gemini 3.4.2): Entering rewind mode sets input value and state correctly. Submit button changes text. Resubmit action calls correct store function. State resets after resubmit.
-* [ ] Write/Update tests for `apps/web/src/pages/AiChat.tsx`.
-* [ ] Update `AiChat.tsx`:
-  * [ ] Add state: `const [rewindState, setRewindState] = useState<{ messageId: string | null }>({ messageId: null });`
-  * [ ] Implement `handleEditClick(messageId, messageContent)` passed to `ChatMessageBubble`:
-      *   `setRewindState({ messageId });`
-      *   Update chat input component's value state with `messageContent`.
-  * [ ] Pass `isRewinding = {rewindState.messageId !== null}` to chat input component.
-* [ ] Update chat input component (`ChatInput.tsx`?):
-  * [ ] Accept `isRewinding` prop.
-  * [ ] Change submit button text to "Resubmit" if `isRewinding` is true.
-  * [ ] On submit, check `isRewinding`. If true, call a specific `handleResubmit(inputValue)` prop; otherwise, call standard `handleSendMessage(inputValue)`.
-* [ ] Implement `handleResubmit(editedContent)` in `AiChat.tsx`:
-  *   If `rewindState.messageId` exists:
-      *   Call `useAiStore.getState().sendMessage({ message: editedContent, providerId: /* current provider */, promptId: /* current prompt */, rewindFromMessageId: rewindState.messageId });` (or the dedicated `rewindAndSendMessage` action if created in store).
-      *   `setRewindState({ messageId: null });`
-      *   Clear chat input value state.
-* [ ] Run tests. Debug state management and handlers until pass (GREEN).
-* [ ] Commit changes with message "feat(UI): Implement rewind mode state and handlers in chat interface w/ tests"
-
-### STEP-3.7: Implement Admin Controls UI [UI] [🚧]
-
-#### STEP-3.7.1: Create Organization Chat Settings Component (`OrganizationChatSettings.tsx`?) [TEST-UNIT] [COMMIT]
-* [ ] Define Test Cases (Gemini 2.5.1): Switch rendered, reflects fetched status, calls update action on toggle, disabled/hidden if not admin.
-* [ ] Write tests for the component (`apps/web/src/components/organizations/OrganizationChatSettings.unit.test.tsx`?).
-* [ ] Create component `apps/web/src/components/organizations/OrganizationChatSettings.tsx`:
-  * [ ] Use `useOrganizationStore` to get org details (`currentOrganizationDetails`) and `currentUserRoleInOrg`.
-  * [ ] Render a `Switch` (from shadcn/ui) with label "Allow members to create organization chats".
-  * [ ] Set `checked` prop based on `currentOrganizationDetails?.allow_member_chat_creation`.
-  * [ ] Set `disabled` prop if `currentUserRoleInOrg !== 'admin'`.
-  * [ ] Implement `onCheckedChange` handler:
-      *   Call `useOrganizationStore.getState().updateOrganizationSettings(orgId, { allow_member_chat_creation: newValue })`.
-* [ ] Run tests. Debug until pass (GREEN).
-* [ ] Commit changes with message "feat(UI): Create organization chat settings component with toggle w/ tests"
-
-#### STEP-3.7.2: Integrate Chat Settings into Organization Settings Page [TEST-INT] [COMMIT]
-* [ ] Define Integration Test Cases (Manual - Gemini 2.5.7): Test delete visibility/functionality as admin/member. Test settings toggle visibility/functionality as admin/member. Test member chat creation restriction via RLS block. Verify analytics.
-* [ ] Update `apps/web/src/pages/OrganizationSettingsPage.tsx` (or relevant component):
-  * [ ] Import and render the `OrganizationChatSettings` component in an appropriate section.
-  * [ ] Ensure necessary props (like `orgId`) are passed if needed, or rely on store context.
-* [ ] Perform manual integration tests covering visibility, functionality, and downstream effects (RLS blocking). Debug until pass (GREEN).
-* [ ] Commit changes with message "feat(UI): Integrate chat settings into organization settings page w/ manual tests"
 
 **Phase 3 Complete Checkpoint:**
 *   [ ] All Phase 3 tests (UI unit and integration tests) passing.

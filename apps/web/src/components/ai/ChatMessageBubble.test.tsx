@@ -1,7 +1,7 @@
 import { render, screen, fireEvent } from '@testing-library/react';
 import { ChatMessageBubble, ChatMessageBubbleProps } from './ChatMessageBubble';
 import { vi } from 'vitest';
-import { ChatMessage, UserProfile } from '@paynless/shared-types';
+import { ChatMessage, UserProfile } from '@paynless/types';
 // Store hooks are imported for type casting if needed, but actual mocks are handled by vi.mock
 // import { useAuthStore, useOrganizationStore } from '@paynless/store';
 
@@ -41,7 +41,6 @@ const defaultMockUserMessage: ChatMessage = {
   role: 'user',
   content: 'Hello, assistant!',
   created_at: new Date().toISOString(),
-  updated_at: new Date().toISOString(),
   token_usage: null,
   model_id: null,
 };
@@ -90,9 +89,9 @@ describe('ChatMessageBubble', () => {
     mockOnEditClick.mockClear();
 
     // Set up default implementation for AttributionDisplay mock
-    actualMockAttributionDisplay.mockImplementation(({ message }) => (
+    actualMockAttributionDisplay.mockImplementation(({ role }) => (
       <div data-testid="mock-attribution-display">
-        {`Attribution for ${message.role}`}
+        {`Attribution for ${role}`}
       </div>
     ));
 
@@ -134,9 +133,11 @@ describe('ChatMessageBubble', () => {
     renderComponent({ message: defaultMockUserMessage });
     expect(actualMockAttributionDisplay).toHaveBeenCalledWith(
       expect.objectContaining({
-        message: defaultMockUserMessage,
-        currentUserId: mockCurrentUserId,
-        currentOrgId: mockCurrentOrgId,
+        userId: defaultMockUserMessage.user_id,
+        role: defaultMockUserMessage.role,
+        timestamp: defaultMockUserMessage.created_at,
+        organizationId: undefined, // As 'organization_id' is not in defaultMockUserMessage
+        modelId: undefined, // As message.ai_provider_id is undefined for defaultMockUserMessage
       })
     );
     expect(screen.getByTestId('mock-attribution-display')).toHaveTextContent('Attribution for user');
@@ -146,9 +147,11 @@ describe('ChatMessageBubble', () => {
     renderComponent({ message: defaultMockAssistantMessage, onEditClick: undefined });
     expect(actualMockAttributionDisplay).toHaveBeenCalledWith(
       expect.objectContaining({
-        message: defaultMockAssistantMessage,
-        currentUserId: mockCurrentUserId, 
-        currentOrgId: mockCurrentOrgId,   
+        userId: defaultMockAssistantMessage.user_id,
+        role: defaultMockAssistantMessage.role,
+        timestamp: defaultMockAssistantMessage.created_at,
+        organizationId: undefined, // As 'organization_id' is not in defaultMockAssistantMessage
+        modelId: undefined, // As message.ai_provider_id is undefined for defaultMockAssistantMessage (it has 'model_id')
       })
     );
     expect(screen.getByTestId('mock-attribution-display')).toHaveTextContent('Attribution for assistant');
@@ -179,25 +182,41 @@ describe('ChatMessageBubble', () => {
 
   it('should include an edit button for user messages if onEditClick is provided', () => {
     renderComponent({ message: defaultMockUserMessage, onEditClick: mockOnEditClick });
-    expect(screen.getByRole('button', { name: /edit message/i })).toBeInTheDocument();
+    const editButton = screen.getByTestId('edit-message-button');
+    expect(editButton).toBeInTheDocument();
+    expect(editButton).toHaveClass('opacity-0');
+    expect(editButton).toHaveClass('group-hover:opacity-100');
+    expect(editButton).toHaveClass('transition-opacity');
+    expect(editButton).toHaveClass('absolute');
+    expect(editButton).toHaveClass('top-2');
+    expect(editButton).toHaveClass('right-2');
+    expect(editButton).toHaveClass('h-6');
+    expect(editButton).toHaveClass('w-6');
   });
 
   it('should not include an edit button for user messages if onEditClick is not provided', () => {
     renderComponent({ message: defaultMockUserMessage, onEditClick: undefined });
-    expect(screen.queryByRole('button', { name: /edit message/i })).not.toBeInTheDocument();
+    expect(screen.queryByTestId('edit-message-button')).not.toBeInTheDocument();
   });
 
   it('should not include an edit button for assistant messages', () => {
-    renderComponent({ message: defaultMockAssistantMessage, onEditClick: mockOnEditClick }); // onEditClick might be passed but component should ignore for assistant
-    expect(screen.queryByRole('button', { name: /edit message/i })).not.toBeInTheDocument();
+    renderComponent({ message: defaultMockAssistantMessage, onEditClick: mockOnEditClick });
+    expect(screen.queryByTestId('edit-message-button')).not.toBeInTheDocument();
   });
 
   it('should call onEditClick with messageId and content when edit button is clicked for user messages', () => {
     renderComponent({ message: defaultMockUserMessage, onEditClick: mockOnEditClick });
-    const editButton = screen.getByRole('button', { name: /edit message/i });
+    const editButton = screen.getByTestId('edit-message-button');
     fireEvent.click(editButton);
     expect(mockOnEditClick).toHaveBeenCalledTimes(1);
     expect(mockOnEditClick).toHaveBeenCalledWith(defaultMockUserMessage.id, defaultMockUserMessage.content);
+  });
+
+  it('should render a Pencil icon in the edit button', () => {
+    renderComponent({ message: defaultMockUserMessage, onEditClick: mockOnEditClick });
+    const editButton = screen.getByTestId('edit-message-button');
+    expect(editButton.querySelector('svg')).toBeInTheDocument();
+    expect(editButton.querySelector('svg')).toHaveClass('h-3', 'w-3');
   });
 
   // Markdown rendering tests have been moved to MarkdownRenderer.test.tsx

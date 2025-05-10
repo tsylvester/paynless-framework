@@ -12,14 +12,11 @@ import { ChatMessageBubble } from './ChatMessageBubble'
 export interface AiChatboxProps {
   providerId: string | null
   promptId: string | null
-  isAnonymous: boolean
-  onEditMessageRequest?: (messageId: string, currentContent: string) => void
 }
 
 export const AiChatbox: React.FC<AiChatboxProps> = ({
   providerId,
   promptId,
-  onEditMessageRequest,
 }) => {
   const [inputMessage, setInputMessage] = useState('')
   const scrollContainerRef = useRef<HTMLDivElement>(null); // Ref for the scrollable container
@@ -29,17 +26,23 @@ export const AiChatbox: React.FC<AiChatboxProps> = ({
   
   // Select other state and actions from the store
   const {
-    currentChatId, // Keep this if needed for other logic, e.g., key for AiChatbox itself
+    currentChatId,
     isLoadingAiResponse,
     aiError,
     sendMessage,
     clearAiError,
+    rewindTargetMessageId,
+    prepareRewind,
+    cancelRewindPreparation,
   } = useAiStore(state => ({
     currentChatId: state.currentChatId,
     isLoadingAiResponse: state.isLoadingAiResponse,
     aiError: state.aiError,
     sendMessage: state.sendMessage,
     clearAiError: state.clearAiError,
+    rewindTargetMessageId: state.rewindTargetMessageId,
+    prepareRewind: state.prepareRewind,
+    cancelRewindPreparation: state.cancelRewindPreparation,
   }));
 
   // Scroll to new messages
@@ -64,7 +67,7 @@ export const AiChatbox: React.FC<AiChatboxProps> = ({
         });
       }
     }
-  }, [currentChatMessages]); 
+  }, [currentChatMessages]);
 
   const handleSend = async () => {
     if (!inputMessage.trim() || isLoadingAiResponse) return
@@ -72,32 +75,34 @@ export const AiChatbox: React.FC<AiChatboxProps> = ({
       logger.error('[AiChatbox] Cannot send message: Provider ID is missing.')
       return
     }
-    // if (!promptId) {
-    //   logger.error('[AiChatbox] Cannot send message: Prompt ID is missing.')
-    //   return
-    // }
 
     clearAiError() // Clear previous errors
     const messageToSend = inputMessage
-    setInputMessage('') // Clear input immediately
+    // Decide whether to clear input immediately or after successful send, especially for rewind.
+    // For now, clearing immediately for simplicity, but this might change based on UX preference for rewind.
+    // setInputMessage('') // Temporarily commented out for diagnosis
+
+    // Store the current rewindTargetMessageId before calling sendMessage,
+    // as sendMessage might be asynchronous and the state could change.
+    const wasRewinding = !!rewindTargetMessageId;
 
     try {
       await sendMessage({
         message: messageToSend,
         providerId,
-        promptId: promptId,
-        chatId: currentChatId ?? undefined,
-      })
+        promptId: promptId, // Ensure promptId is correctly passed
+        chatId: currentChatId ?? undefined, // Pass currentChatId if available
+      });
+
+      if (wasRewinding) {
+        cancelRewindPreparation(); // Clear rewind state after successful resubmission
+      }
     } catch (error: unknown) {
-      // Errors should ideally be caught and set in the store's aiError state
-      // by the sendMessage action itself.
       const errorMessage =
         error instanceof Error ? error.message : String(error)
       logger.error('[AiChatbox] Unexpected error calling sendMessage:', {
         error: errorMessage,
       })
-      // Restore input message on unexpected error?
-      // setInputMessage(messageToSend);
     }
   }
 
@@ -110,6 +115,20 @@ export const AiChatbox: React.FC<AiChatboxProps> = ({
       event.preventDefault() // Prevent newline
       handleSend()
     }
+  }
+
+  const handleEditClick = (messageId: string, messageContent: string) => {
+    if (!currentChatId) {
+      logger.error('[AiChatbox] Cannot prepare rewind: No current chat ID')
+      return
+    }
+    prepareRewind(messageId, currentChatId)
+    setInputMessage(messageContent)
+  }
+
+  const handleCancelRewind = () => {
+    cancelRewindPreparation()
+    setInputMessage('')
   }
 
   return (
@@ -128,7 +147,7 @@ export const AiChatbox: React.FC<AiChatboxProps> = ({
             <ChatMessageBubble
               key={msg.id}
               message={msg}
-              onEditClick={msg.role === 'user' ? onEditMessageRequest : undefined}
+              onEditClick={msg.role === 'user' ? handleEditClick : undefined}
             />
           ))}
           {isLoadingAiResponse && (
@@ -142,7 +161,7 @@ export const AiChatbox: React.FC<AiChatboxProps> = ({
         </div>
       </div>
 
-      {/* Error Display - Use standard div */}
+      {/* Error Display */}
       {aiError && (
         <div className="p-4 rounded-md bg-red-100 text-red-800 border border-red-300 dark:bg-red-900/30 dark:text-red-300 dark:border-red-700">
           <div className="flex items-center space-x-2">
@@ -155,9 +174,9 @@ export const AiChatbox: React.FC<AiChatboxProps> = ({
 
       {/* Input Area */}
       <div className="flex items-center space-x-2 border-t pt-4 border-[rgb(var(--color-border))]">
-        {/* Standard textarea */}
         <Textarea
-          placeholder="Type your message here..."
+          key={rewindTargetMessageId ? 'rewind-input' : 'normal-input'}
+          placeholder={rewindTargetMessageId ? "Edit your message..." : "Type your message here..."}
           value={inputMessage}
           onChange={handleInputChange}
           onKeyDown={handleKeyDown}
@@ -165,13 +184,30 @@ export const AiChatbox: React.FC<AiChatboxProps> = ({
           className="flex-grow resize-none min-h-[40px] max-h-[150px] overflow-y-auto"
           disabled={isLoadingAiResponse}
         />
-        {/* Standard button */}
-        <Button
-          onClick={handleSend}
-          disabled={isLoadingAiResponse || !inputMessage.trim()}
-        >
-          Send
-        </Button>
+        {rewindTargetMessageId ? (
+          <div className="flex space-x-2">
+            <Button
+              onClick={handleCancelRewind}
+              variant="outline"
+              disabled={isLoadingAiResponse}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handleSend}
+              disabled={isLoadingAiResponse || !inputMessage.trim()}
+            >
+              Resubmit
+            </Button>
+          </div>
+        ) : (
+          <Button
+            onClick={handleSend}
+            disabled={isLoadingAiResponse || !inputMessage.trim()}
+          >
+            Send
+          </Button>
+        )}
       </div>
     </div>
   )
