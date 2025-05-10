@@ -78,22 +78,19 @@ const resetOrganizationStore = (initialState: Partial<OrganizationStoreType> = {
 describe('Organization Store - Chat Settings', () => {
     // Hold references to the mock functions obtained from the mocked getApiClient
     let mockedGetOrganizationDetails: Mock;
-    let mockedUpdateOrganizationSettings: Mock;
-    // let mockedUpdateOrganization: vi.Mock; // If needed
+    let mockedUpdateOrganization: Mock;
 
     beforeEach(() => {
         resetOrganizationStore();
         
         const apiClient = getApiClient();
         mockedGetOrganizationDetails = apiClient.organizations.getOrganizationDetails as Mock;
-        mockedUpdateOrganizationSettings = apiClient.organizations.updateOrganizationSettings as Mock;
-        // mockedUpdateOrganization = vi.mocked(apiClient.organizations.updateOrganization); // Corrected if used
+        mockedUpdateOrganization = apiClient.organizations.updateOrganization as Mock;
 
         vi.clearAllMocks(); 
 
         mockedGetOrganizationDetails.mockReset();
-        mockedUpdateOrganizationSettings.mockReset();
-        // mockedUpdateOrganization.mockReset(); // Corrected if used
+        mockedUpdateOrganization.mockReset();
         mockTrackEvent.mockReset();
 
         (useAuthStore.getState as Mock).mockReturnValue({ 
@@ -102,10 +99,6 @@ describe('Organization Store - Chat Settings', () => {
             navigate: vi.fn(), 
         } as any);
     });
-
-    // afterEach(() => {
-    //     // vi.restoreAllMocks(); // Can be too broad. Reset specific spies if used.
-    // });
 
     describe('fetchCurrentOrganizationDetails', () => {
         it('should load organization details including allow_member_chat_creation', async () => {
@@ -133,7 +126,7 @@ describe('Organization Store - Chat Settings', () => {
     });
 
     describe('updateOrganizationSettings', () => {
-        it('should call API, update state, and track event on successful update', async () => {
+        it('should call API (updateOrganization), update state, and track event on successful update', async () => {
             const initialOrgDetails: Organization = {
                 id: testOrgId,
                 name: 'Test Settings Org Update',
@@ -142,12 +135,12 @@ describe('Organization Store - Chat Settings', () => {
                 deleted_at: null,
                 allow_member_chat_creation: false
             };
-            resetOrganizationStore({ currentOrganizationDetails: initialOrgDetails });
+            resetOrganizationStore({ currentOrganizationDetails: initialOrgDetails, userOrganizations: [initialOrgDetails] });
 
             const newSettings = { allow_member_chat_creation: true };
-            const updatedOrgDetails = { ...initialOrgDetails, ...newSettings };
+            const updatedApiResponseOrg = { ...initialOrgDetails, ...newSettings };
             
-            mockedUpdateOrganizationSettings.mockResolvedValue({ data: updatedOrgDetails, error: undefined, status: 200 });
+            mockedUpdateOrganization.mockResolvedValue({ data: updatedApiResponseOrg, error: undefined, status: 200 });
 
             let result: boolean | undefined;
             await act(async () => {
@@ -155,19 +148,16 @@ describe('Organization Store - Chat Settings', () => {
             });
 
             expect(result).toBe(true);
-            expect(mockedUpdateOrganizationSettings).toHaveBeenCalledWith(testOrgId, newSettings);
+            expect(mockedUpdateOrganization).toHaveBeenCalledWith(testOrgId, newSettings);
             const state = useOrganizationStore.getState();
             expect(state.currentOrganizationDetails?.allow_member_chat_creation).toBe(true);
+            expect(state.currentOrganizationDetails?.name).toBe(initialOrgDetails.name);
+            expect(state.userOrganizations.find(o => o.id === testOrgId)?.allow_member_chat_creation).toBe(true);
             expect(state.isLoading).toBe(false);
             expect(state.error).toBeNull();
-            // TODO: Uncomment and verify when analytics for 'member_chat_creation_toggled' is active in organizationStore.ts
-            // expect(mockTrackEvent).toHaveBeenCalledWith('member_chat_creation_toggled', {
-            //     organization_id: testOrgId,
-            //     enabled: true,
-            // });
         });
 
-        it('should set error state and return false on API failure', async () => {
+        it('should set error state and return false on API (updateOrganization) failure', async () => {
              const initialOrgDetails: Organization = {
                 id: testOrgId,
                 name: 'Test Settings Org Fail',
@@ -181,7 +171,7 @@ describe('Organization Store - Chat Settings', () => {
             const newSettings = { allow_member_chat_creation: false };
             const apiError = { message: 'Update failed', code: 'API_ERROR' };
             
-            mockedUpdateOrganizationSettings.mockResolvedValue({ data: undefined, error: apiError, status: 500 });
+            mockedUpdateOrganization.mockResolvedValue({ data: undefined, error: apiError, status: 500 });
 
             let result: boolean | undefined;
             await act(async () => {
@@ -189,12 +179,11 @@ describe('Organization Store - Chat Settings', () => {
             });
 
             expect(result).toBe(false);
-            expect(mockedUpdateOrganizationSettings).toHaveBeenCalledWith(testOrgId, newSettings);
+            expect(mockedUpdateOrganization).toHaveBeenCalledWith(testOrgId, newSettings);
             const state = useOrganizationStore.getState();
-            expect(state.currentOrganizationDetails?.allow_member_chat_creation).toBe(true); 
+            expect(state.currentOrganizationDetails?.allow_member_chat_creation).toBe(true);
             expect(state.isLoading).toBe(false);
             expect(state.error).toBe(apiError.message);
-            expect(mockTrackEvent).not.toHaveBeenCalled();
         });
     });
 

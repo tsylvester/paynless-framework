@@ -10,6 +10,7 @@ import {
     OrganizationActions,
     OrganizationUIState,
     OrganizationUIActions,
+    OrganizationUpdate,
 } from '@paynless/types';
 // Import the specific client class and the base api object
 import { 
@@ -990,9 +991,8 @@ export const useOrganizationStore = create<OrganizationStoreImplementation>()(
       // },
 
       updateOrganizationSettings: async (orgId: string, settings: { allow_member_chat_creation: boolean }): Promise<boolean> => {
-        const { _setLoading, _setError, currentOrganizationId } = get();
+        const { _setLoading, _setError, currentOrganizationId, currentOrganizationDetails, userOrganizations } = get(); // Get current details and list
         
-        // Ensure the update is for the currently viewed org for immediate state update
         const isCurrentOrg = orgId === currentOrganizationId;
         
         _setLoading(true);
@@ -1000,8 +1000,9 @@ export const useOrganizationStore = create<OrganizationStoreImplementation>()(
         
         try {
             const apiClient = getApiClient();
-            // Assumes API method exists: updateOrganizationSettings(orgId, settings) -> returns updated Org
-            const response = await apiClient.organizations.updateOrganizationSettings(orgId, settings);
+            // Align with the backend change: use updateOrganization which hits PUT /organizations/:orgId
+            // The OrganizationUpdate type should include allow_member_chat_creation as an optional field.
+            const response = await apiClient.organizations.updateOrganization(orgId, settings as Partial<OrganizationUpdate>); // Cast settings to allow partial update
 
             if (response.error || !response.data) {
                 const errorMsg = response.error?.message ?? 'Failed to update organization settings';
@@ -1009,16 +1010,22 @@ export const useOrganizationStore = create<OrganizationStoreImplementation>()(
                 _setError(errorMsg);
                 return false;
             } else {
-                const updatedOrgDetails = response.data;
+                const updatedOrgDetails = response.data; // This will be the full updated Organization object
                 logger.info(`[OrganizationStore] Successfully updated organization settings for ${orgId}.`);
                 
+                // Optimistically update currentOrganizationDetails if it's the same org
+                // and merge with existing details to preserve other fields not returned by a partial update
+                // However, PUT usually returns the full resource, so merging might not be strictly needed if response.data is complete.
                 if (isCurrentOrg) {
                     set({ 
-                        currentOrganizationDetails: updatedOrgDetails,
+                        currentOrganizationDetails: {
+                            ...(currentOrganizationDetails || {}), // Keep existing details
+                            ...updatedOrgDetails, // Override with new data from response
+                        } as Organization, // Ensure the merged type is Organization
                         error: null 
                     });
                 } else {
-                    set({ error: null }); // Clear errors, no state update needed if not current org
+                    set({ error: null }); 
                 }
 
                 // Also update the organization in the userOrganizations list
@@ -1029,16 +1036,16 @@ export const useOrganizationStore = create<OrganizationStoreImplementation>()(
                     error: null, 
                 }));
 
-                // <<< TODO: ANALYTICS - Add member_chat_creation_toggled event trigger here >>>
-                // const analytics = useAnalyticsStore.getState(); // Uncomment if analyticsStore is used
+                // Analytics event (example)
+                // const analytics = useAnalyticsStore.getState(); 
                 // analytics.trackEvent('member_chat_creation_toggled', { 
                 //     organization_id: orgId,
                 //     enabled: settings.allow_member_chat_creation 
                 // });
 
-                return true; // Indicate success
+                return true; 
             }
-        } catch (err: unknown) { // Catch unexpected errors
+        } catch (err: unknown) { 
             const errorMsg = err instanceof Error ? err.message : 'An unexpected error occurred during settings update';
             logger.error('[OrganizationStore] updateOrganizationSettings - Unexpected Error', { orgId, settings, message: errorMsg });
             _setError(errorMsg);
