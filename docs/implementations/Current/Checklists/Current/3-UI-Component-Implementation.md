@@ -500,16 +500,17 @@ The implementation plan uses the following labels to categorize work steps:
     *   [✅] **[TEST-UNIT]** Update `ChatMessageBubble.test.tsx` to mock `MarkdownRenderer` and verify it's called with correct props.
     *   [✅] Run all tests for `MarkdownRenderer` and `ChatMessageBubble`. Debug until pass (GREEN).
 *   **Phase 2: Adding Syntax Highlighting**
-    *   [ ] **[DEPS]** Install `react-syntax-highlighter` (and types) in `apps/web`.
-    *   [ ] **[UI]** Update `MarkdownRenderer.tsx` to import `SyntaxHighlighter` (e.g., Prism) and a style.
-    *   [ ] **[UI]** Use the `components` prop of `ReactMarkdown` to override `code` block rendering with `SyntaxHighlighter`.
-    *   [ ] **[TEST-UNIT]** Update GFM code block test in `MarkdownRenderer.test.tsx` to verify syntax highlighting is active (e.g., check for `SyntaxHighlighter` mock or specific token classes).
-    *   [ ] Run `MarkdownRenderer` tests. Debug until pass (GREEN).
+    *   [✅] **[DEPS]** Install `react-syntax-highlighter` (and types) in `apps/web`.
+    *   [✅] **[UI]** Update `MarkdownRenderer.tsx` to import `SyntaxHighlighter` (e.g., Prism) and a style.
+    *   [✅] **[UI]** Use the `components` prop of `ReactMarkdown` to override `code` block rendering with `SyntaxHighlighter`.
+    *   [✅] **[TEST-UNIT]** Update GFM code block test in `MarkdownRenderer.test.tsx` to verify syntax highlighting is active (e.g., check for `SyntaxHighlighter` mock or specific token classes).
+    *   [✅] Run `MarkdownRenderer` tests. Debug until pass (GREEN).
 *   **Phase 3: Styling Review and Polish**
-    *   [ ] **[DEPS]** Ensure `@tailwindcss/typography` plugin is installed and configured.
-    *   [ ] **[UI]** Review and adjust `proseStyles` in `MarkdownRenderer.tsx` or global Tailwind theme for consistent styling of all markdown elements, including syntax-highlighted code blocks.
-    *   [ ] Manually verify styling in the browser.
-*   [ ] Commit changes with message like "feat(UI): Create MarkdownRenderer with syntax highlighting and refactor usage"
+    *   [✅] **[DEPS]** Ensure `@tailwindcss/typography` plugin is installed and configured.
+    *   [✅] **[UI]** Review and adjust `proseStyles` in `MarkdownRenderer.tsx` or global Tailwind theme for consistent styling of all markdown elements, including syntax-highlighted code blocks.
+    *   [✅] Manually verify styling in the browser.
+*   [✅] Commit changes with message like "feat(UI): Create MarkdownRenderer with syntax highlighting and refactor usage"
+*   [✅] Reusable MarkdownRenderer with syntax highlighting implemented, tested, and integrated.
 
 #### STEP-3.4.4: Chat Bugfixes [TEST-UNIT] [COMMIT] [✅]
 * [ ] Revert ChatHistoryList to have a boundary box & scrollbar

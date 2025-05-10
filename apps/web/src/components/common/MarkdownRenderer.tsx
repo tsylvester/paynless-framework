@@ -1,6 +1,8 @@
 import React from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import { Prism } from 'react-syntax-highlighter';
+import { oneDark } from 'react-syntax-highlighter/dist/esm/styles/prism';
 
 export interface MarkdownRendererProps {
   content: string;
@@ -23,7 +25,31 @@ export const MarkdownRenderer: React.FC<MarkdownRendererProps> = ({ content, cla
 
   return (
     <div className={`${markdownStyles} ${className || ''}`}>
-      <ReactMarkdown remarkPlugins={[remarkGfm]}>
+      <ReactMarkdown
+        remarkPlugins={[remarkGfm]}
+        components={{
+          code({ inline, className, children, ...props }: React.ComponentProps<'code'> & { inline?: boolean; children?: React.ReactNode }) {
+            const match = /language-(\w+)/.exec(className || '');
+            if (inline || !className) {
+              return (
+                <code className={className} {...props}>
+                  {children}
+                </code>
+              );
+            }
+            return (
+              <div style={{ margin: 0, padding: '0.5em 1em', borderRadius: '0.5em', fontSize: '0.95em' }}>
+                <Prism
+                  style={oneDark}
+                  language={match ? match[1] : undefined}
+                >
+                  {String(children).replace(/\n$/, '')}
+                </Prism>
+              </div>
+            );
+          },
+        }}
+      >
         {content}
       </ReactMarkdown>
     </div>
