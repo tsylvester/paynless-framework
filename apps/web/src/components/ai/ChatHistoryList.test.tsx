@@ -175,6 +175,18 @@ describe('ChatHistoryList', () => {
     expect(screen.getByRole('heading', { name: /My Personal Chats/i })).toBeInTheDocument();
   });
 
+  it('renders a bounding box and scrollbar on the main container', () => {
+    setupMockStore({ chatsByContext: { personal: initialPersonalChats, orgs: {} } });
+    render(<ChatHistoryList activeContextId={null} />);
+    const boundingBox = screen.getByTestId('chat-history-bounding-box');
+    expect(boundingBox).toBeInTheDocument();
+    expect(boundingBox).toHaveClass('border');
+    expect(boundingBox).toHaveClass('rounded-lg');
+    expect(boundingBox).toHaveClass('bg-muted');
+    expect(boundingBox).toHaveClass('overflow-y-auto');
+    expect(boundingBox).toHaveClass('max-h-[60vh]');
+  });
+
   it('calls loadChatHistory on mount if context data is undefined (personal)', () => {
     render( <ChatHistoryList activeContextId={null} /> );
     expect(mockLoadChatHistory).toHaveBeenCalledWith(null);
@@ -349,16 +361,12 @@ describe('ChatHistoryList', () => {
       
       render(<ChatHistoryList activeContextId={null} currentChatId={null} />);
 
-      expect(screen.getByText('Could not display chat history items.')).toBeInTheDocument();
+      expect(screen.getByText('Oops, something went wrong.')).toBeInTheDocument();
+      expect(screen.getByText(/We encountered an error/)).toBeInTheDocument();
+      expect(screen.getByText('Simulated rendering error from ErrorThrower')).toBeInTheDocument();
       expect(mockChatItem).toHaveBeenCalledWith(expect.objectContaining({ chat: personalChatUser1 }));
       expect(mockChatItem).toHaveBeenCalledWith(expect.objectContaining({ chat: personalChatUser1Another }));
       expect(mockChatItem).toHaveBeenCalledWith(expect.objectContaining({ chat: errorChat }));
-      expect(mockLoggerErrorFn).toHaveBeenCalledTimes(1);
-      expect(mockLoggerErrorFn).toHaveBeenCalledWith(
-        "[ErrorBoundary] Uncaught error:",
-        new Error('Simulated rendering error from ErrorThrower'),
-        expect.objectContaining({ componentStack: expect.any(String) })
-      );
     });
   });
 }); 

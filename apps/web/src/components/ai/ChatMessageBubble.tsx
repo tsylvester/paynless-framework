@@ -30,9 +30,11 @@ export const ChatMessageBubble: React.FC<ChatMessageBubbleProps> = ({ message, o
     >
       <div className="flex flex-col">
         <AttributionDisplay 
-            message={message} 
-            currentUserId={currentUserId} 
-            currentOrgId={currentOrgId} 
+            userId={message.user_id}
+            role={message.role as 'user' | 'assistant'}
+            timestamp={message.created_at}
+            organizationId={('organization_id' in message) ? (message as any).organization_id : undefined}
+            modelId={message.ai_provider_id}
         />
         <div className="mt-1">
           <MarkdownRenderer content={message.content} />

@@ -512,10 +512,27 @@ The implementation plan uses the following labels to categorize work steps:
 *   [✅] Commit changes with message like "feat(UI): Create MarkdownRenderer with syntax highlighting and refactor usage"
 *   [✅] Reusable MarkdownRenderer with syntax highlighting implemented, tested, and integrated.
 
-#### STEP-3.4.4: Chat Bugfixes [TEST-UNIT] [COMMIT] [✅]
-* [ ] Revert ChatHistoryList to have a boundary box & scrollbar
-* [ ] Fix Name/date attribution in AttributionDisplay
-* [ ] Alernate left/right for agent/user messages 
+#### STEP-3.4.4: Chat Bugfixes [TEST-UNIT] [COMMIT] [🚧]
+* [ ] **Restore Bounding Box & Scrollbar on ChatHistoryList** [UI] [TEST-UNIT]
+    * [ ] Add a bounding box (border, background, rounded corners) and vertical scrollbar to ChatHistoryList.
+    * [ ] Ensure the list is visually separated and scrollable when overflowing.
+    * [ ] Write/update unit tests to verify bounding box and scrollbar presence.
+* [ ] **Fix AttributionDisplay Integration** [UI] [TEST-UNIT]
+    * [ ] Ensure AttributionDisplay is rendered in ChatMessageBubble for both user and assistant messages.
+    * [ ] Pass correct props: message, currentUserId, currentOrgId.
+    * [ ] Write/update unit tests to verify AttributionDisplay integration and props.
+* [ ] **Alternate Left/Right Justification for Messages** [UI] [TEST-UNIT]
+    * [ ] User messages should be right-justified, assistant/other messages left-justified.
+    * [ ] Update ChatMessageBubble and/or parent container to apply correct alignment.
+    * [ ] Write/update unit tests to verify correct alignment for each message type.
+* [ ] **Comprehensive Integration Test Coverage** [TEST-INT]
+    * [ ] Update or expand AiChat.integration.test.tsx to cover:
+        * [ ] ChatHistoryList bounding box and scrollbar.
+        * [ ] Correct alignment and attribution for messages in AiChatbox.
+        * [ ] Proper integration of AttributionDisplay and ChatMessageBubble.
+        * [ ] All new/refactored components in the chat flow.
+    * [ ] Ensure all relevant integration tests pass (GREEN).
+* [ ] **Commit changes** with message like "fix(UI): ChatHistoryList bounding box, AttributionDisplay, message alignment, and integration tests"
 
 ### STEP-3.5: Implement Token Tracking and Audit UI [UI] [🚧]
 

@@ -109,7 +109,10 @@ export function ChatHistoryList({
   }
 
   return (
-    <div className="p-2">
+    <div
+      className="border rounded-lg bg-muted overflow-y-auto max-h-[60vh] p-2"
+      data-testid="chat-history-bounding-box"
+    >
       {renderTitle()}
       <ErrorBoundary fallbackMessage="Could not display chat history items.">
         <div className="space-y-1">

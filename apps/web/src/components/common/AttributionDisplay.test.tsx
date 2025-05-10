@@ -3,6 +3,7 @@ import { render, screen } from '@testing-library/react';
 import { vi, describe, it, expect, beforeEach } from 'vitest';
 import { AttributionDisplay, AttributionDisplayProps } from './AttributionDisplay';
 import type { User, UserProfile, OrganizationMemberWithProfile } from '@paynless/types';
+import { useAiStore } from '@paynless/store';
 
 // Import shared mock SETTER utilities (can be at top level)
 import { mockSetAuthUser, mockSetAuthProfile } from '../../mocks/authStore.mock'; 
@@ -82,8 +83,8 @@ describe('AttributionDisplay', () => {
       mockSetAuthUser(userWithEmail);
       mockSetAuthProfile(profileWithFullName);
       render(<AttributionDisplay {...defaultProps} userId={testUserId} />);
-      expect(screen.getByText('Testy McTestface')).toBeInTheDocument();
-      expect(screen.getByText('Testy McTestface').closest('span')).toHaveAttribute('title', `Testy McTestface (ID: ${testUserId})`);
+      expect(screen.getByText('Testy McTestface (You)')).toBeInTheDocument();
+      expect(screen.getByText('Testy McTestface (You)').closest('span')).toHaveAttribute('title', `Testy McTestface (ID: ${testUserId})`);
       expect(screen.getByText('mocked time ago')).toBeInTheDocument();
     });
 
@@ -93,8 +94,8 @@ describe('AttributionDisplay', () => {
       mockSetAuthUser(userWithEmail);
       mockSetAuthProfile(profileWithFirstName);
       render(<AttributionDisplay {...defaultProps} userId={testUserId} />);
-      expect(screen.getByText('Testy')).toBeInTheDocument();
-      expect(screen.getByText('Testy').closest('span')).toHaveAttribute('title', `Testy (ID: ${testUserId})`);
+      expect(screen.getByText('Testy (You)')).toBeInTheDocument();
+      expect(screen.getByText('Testy (You)').closest('span')).toHaveAttribute('title', `Testy (ID: ${testUserId})`);
     });
 
     it('should display current user\'s email and timestamp if profile has no names but has email on User object', () => {
@@ -103,8 +104,8 @@ describe('AttributionDisplay', () => {
       mockSetAuthUser(userWithEmail);
       mockSetAuthProfile(profileNoNames);
       render(<AttributionDisplay {...defaultProps} userId={testUserId} />);
-      expect(screen.getByText('onlyemail@example.com')).toBeInTheDocument();
-      expect(screen.getByText('onlyemail@example.com').closest('span')).toHaveAttribute('title', `onlyemail@example.com (ID: ${testUserId})`);
+      expect(screen.getByText('onlyemail@example.com (You)')).toBeInTheDocument();
+      expect(screen.getByText('onlyemail@example.com (You)').closest('span')).toHaveAttribute('title', `onlyemail@example.com (ID: ${testUserId})`);
     });
 
     it('should display current user\'s truncated ID and timestamp if profile has no names or email, and user object has no email', () => {
@@ -113,8 +114,8 @@ describe('AttributionDisplay', () => {
       mockSetAuthUser(userWithNoEmail);
       mockSetAuthProfile(profileNoDetails);
       render(<AttributionDisplay {...defaultProps} userId={testUserId} />);
-      expect(screen.getByText(`${testUserId.substring(0, 8)}...`)).toBeInTheDocument();
-      expect(screen.getByText(`${testUserId.substring(0, 8)}...`).closest('span')).toHaveAttribute('title', `User ID: ${testUserId}`);
+      expect(screen.getByText(`${testUserId.substring(0, 8)}... (You)`)).toBeInTheDocument();
+      expect(screen.getByText(`${testUserId.substring(0, 8)}... (You)`).closest('span')).toHaveAttribute('title', `User ID: ${testUserId}`);
     });
 
     it('should display current user\'s email (from user object) and timestamp if profile is null but user object has email', () => {
@@ -122,17 +123,26 @@ describe('AttributionDisplay', () => {
       mockSetAuthUser(userWithEmail);
       mockSetAuthProfile(null);
       render(<AttributionDisplay {...defaultProps} userId={testUserId} />);
-      expect(screen.getByText('userobj@example.com')).toBeInTheDocument();
-      expect(screen.getByText('userobj@example.com').closest('span')).toHaveAttribute('title', `userobj@example.com (ID: ${testUserId})`);
+      expect(screen.getByText('userobj@example.com (You)')).toBeInTheDocument();
+      expect(screen.getByText('userobj@example.com (You)').closest('span')).toHaveAttribute('title', `userobj@example.com (ID: ${testUserId})`);
     });
 
-    it.skip('should display current user\'s full name with "(You)" indicator and timestamp when explicitly marked as self', () => {
+    it('should display current user\'s full name with "(You)" indicator and timestamp when message is from self', () => {
       const userWithEmail: User = { ...fullBaseUser, id: testUserId, email: 'testy@example.com' };
       const profileWithFullName: UserProfile = { ...fullBaseUserProfile, id: testUserId, first_name: 'Testy', last_name: 'McTestface' };
       mockSetAuthUser(userWithEmail);
       mockSetAuthProfile(profileWithFullName);
-      render(<AttributionDisplay {...defaultProps} userId={testUserId} />); 
+      render(<AttributionDisplay {...defaultProps} userId={testUserId} />);
       expect(screen.getByText('Testy McTestface (You)')).toBeInTheDocument();
+    });
+
+    it('should display current user\'s email with "(You)" indicator if profile has no names', () => {
+      const userWithEmail: User = { ...fullBaseUser, id: testUserId, email: 'onlyemail@example.com' };
+      const profileNoNames: UserProfile = { ...fullBaseUserProfile, id: testUserId, first_name: null, last_name: null };
+      mockSetAuthUser(userWithEmail);
+      mockSetAuthProfile(profileNoNames);
+      render(<AttributionDisplay {...defaultProps} userId={testUserId} />);
+      expect(screen.getByText('onlyemail@example.com (You)')).toBeInTheDocument();
     });
   });
 
@@ -275,9 +285,11 @@ describe('AttributionDisplay', () => {
     it('should display model name (from a future lookup) and timestamp if role is assistant and model_id is present', () => {
       mockSetAuthUser(null);
       mockSetAuthProfile(null);
+      // Set the provider list before rendering
+      useAiStore.setState({ availableProviders: [{ id: 'model-gpt-4', name: 'GPT-4' }] }, true);
       render(<AttributionDisplay {...assistantProps} modelId="model-gpt-4" />);
-      expect(screen.getByText('GPT-4')).toBeInTheDocument(); 
-      expect(screen.getByText('GPT-4').closest('span')).toHaveAttribute('title', 'GPT-4 (Model ID: model-gpt-4)');
+      expect(screen.getByText('GPT-4')).toBeInTheDocument();
+      expect(screen.getByText('GPT-4').closest('span')).toHaveAttribute('title', 'GPT-4');
     });
   });
 }); 

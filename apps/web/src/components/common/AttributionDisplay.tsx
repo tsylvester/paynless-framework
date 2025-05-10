@@ -1,14 +1,7 @@
 import React from 'react';
-import { useAuthStore, useOrganizationStore } from '@paynless/store';
-import { formatDistanceToNow, format, parseISO, type Locale } from 'date-fns';
-import type { UserProfile, OrganizationMemberWithProfile } from '@paynless/types';
-
-// Placeholder for availableModels - in a real scenario, this might come from a store or context
-// For now, it's a simple map for the purpose of the assistant attribution placeholder logic
-const availableModels: Record<string, { name: string }> = {
-  'model-gpt-4': { name: 'GPT-4' },
-  'model-claude-2': { name: 'Claude 2' },
-};
+import { useAuthStore, useOrganizationStore, useAiStore } from '@paynless/store';
+import { formatDistanceToNow, format, parseISO } from 'date-fns';
+import type { UserProfile, User } from '@paynless/types';
 
 export interface AttributionDisplayProps {
   userId: string | null;
@@ -16,7 +9,6 @@ export interface AttributionDisplayProps {
   timestamp: string;
   organizationId?: string | null;
   modelId?: string | null;
-  // isSelf?: boolean; // Optional: to explicitly add "(You)"
 }
 
 const truncateId = (id: string, length: number = 8): string => {
@@ -30,10 +22,9 @@ export const AttributionDisplay: React.FC<AttributionDisplayProps> = ({
   timestamp,
   organizationId,
   modelId,
-  // isSelf = false, // Uncomment if isSelf prop is used
 }) => {
   const { currentUser, profile: currentUserProfile } = useAuthStore(
-    (state) => ({ currentUser: state.user, profile: state.profile }),
+    (state) => ({ currentUser: state.user as User | null, profile: state.profile as UserProfile | null }),
   );
   const { currentOrganizationId, currentOrganizationMembers } = useOrganizationStore(
     (state) => ({
@@ -41,14 +32,20 @@ export const AttributionDisplay: React.FC<AttributionDisplayProps> = ({
       currentOrganizationMembers: state.currentOrganizationMembers,
     }),
   );
+  const { availableProviders } = useAiStore(
+    (state) => ({
+      availableProviders: state.availableProviders,
+    }),
+  );
 
   let displayName = 'Unknown';
   let fullIdentifier = userId ? `User ID: ${userId}` : 'Assistant';
 
   if (role === 'assistant') {
-    const model = modelId ? availableModels[modelId] : null;
-    displayName = model ? model.name : 'Assistant';
-    fullIdentifier = model ? `${model.name} (Model ID: ${modelId})` : 'Assistant';
+    // Get the actual model information from the store
+    const provider = modelId ? availableProviders?.find(p => p.id === modelId) : null;
+    displayName = provider ? provider.name : 'Assistant';
+    fullIdentifier = provider ? provider.name : 'Assistant';
   } else if (userId) {
     // Determine if the message user is the current authenticated user
     const isCurrentUserMessage = currentUser?.id === userId;
@@ -63,7 +60,7 @@ export const AttributionDisplay: React.FC<AttributionDisplayProps> = ({
       // Message is from another user in the currently active organization
       const member = currentOrganizationMembers?.find(m => m.user_id === userId);
       profileToUse = member?.user_profiles;
-      emailFallback = member?.user_profiles?.email;
+      // No email on user_profiles, so fallback to undefined
     }
 
     if (profileToUse?.first_name && profileToUse?.last_name) {
@@ -72,20 +69,18 @@ export const AttributionDisplay: React.FC<AttributionDisplayProps> = ({
     } else if (profileToUse?.first_name) {
       displayName = profileToUse.first_name;
       fullIdentifier = `${displayName} (ID: ${userId})`;
-    } else if (profileToUse?.email) {
-      displayName = profileToUse.email;
-      fullIdentifier = `${displayName} (ID: ${userId})`;
     } else if (emailFallback) {
+      // Use email as fallback when no profile name is available
       displayName = emailFallback;
       fullIdentifier = `${displayName} (ID: ${userId})`;
     } else {
       displayName = truncateId(userId);
       fullIdentifier = `User ID: ${userId}`;
     }
-    // Optional: Add "(You)" indicator
-    // if (isCurrentUserMessage && isSelf) { // Or just always for isCurrentUserMessage
-    //   displayName += ' (You)';
-    // }
+    // Add (You) if this is the current user
+    if (isCurrentUserMessage) {
+      displayName += ' (You)';
+    }
   }
 
   let formattedTimestamp = 'Invalid date';
@@ -101,7 +96,7 @@ export const AttributionDisplay: React.FC<AttributionDisplayProps> = ({
 
   return (
     <div className="text-xs text-muted-foreground flex items-center space-x-2">
-      <span title={fullIdentifier} className="font-semibold truncate">
+      <span title={fullIdentifier} className="font-semibold truncate" data-testid="attribution-name">
         {displayName}
       </span>
       <span title={fullTimestampString} className="whitespace-nowrap">

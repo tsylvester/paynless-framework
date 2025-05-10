@@ -123,7 +123,7 @@ export const AiChatbox: React.FC<AiChatboxProps> = ({
         data-testid="ai-chatbox-scroll-area"
         ref={scrollContainerRef}
       >
-        <div className="space-y-2">
+        <div className="flex flex-col space-y-2">
           {currentChatMessages.map((msg: ChatMessage) => (
             <ChatMessageBubble
               key={msg.id}
