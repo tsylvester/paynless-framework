@@ -17,9 +17,7 @@ import ErrorBoundary from '../components/common/ErrorBoundary'; // Added ErrorBo
 
 export default function AiChatPage() {
   // Get user, session, and loading state from auth store
-  const { user } = useAuthStore((state) => ({ 
-      user: state.user, 
-  }));
+
   
   const {
     loadAiConfig,
@@ -33,7 +31,7 @@ export default function AiChatPage() {
     selectedProviderId,
     selectedPromptId,
     setSelectedPrompt,
-    selectedChatContextForNewChat,
+    newChatContext,
   } = useAiStore((state) => ({
     loadAiConfig: state.loadAiConfig,
     loadChatDetails: state.loadChatDetails,
@@ -47,7 +45,7 @@ export default function AiChatPage() {
     selectedProviderId: state.selectedProviderId,
     selectedPromptId: state.selectedPromptId,
     setSelectedPrompt: state.setSelectedPrompt,
-    selectedChatContextForNewChat: state.selectedChatContextForNewChat,
+    newChatContext: state.newChatContext,
   }));
 
   // Organization Store data
@@ -59,10 +57,6 @@ export default function AiChatPage() {
     userOrganizations: state.userOrganizations,
   }));
 
-  const [nextChatOrgContext, setNextChatOrgContext] = useState<string | null | undefined>(undefined);
-  // const [hasUserManuallySelectedContext, setHasUserManuallySelectedContext] = useState(false); // This state seems unused, consider removing if not needed for other logic.
-
-  const isAnonymous = !user; // Derive isAnonymous
 
   // --- Selector for current chat details (conceptual) ---
   const currentChatDetails: Chat | null | undefined = useMemo(() => {
@@ -135,46 +129,22 @@ export default function AiChatPage() {
   // };
 
   const handleNewChat = () => {
-    logger.info(`[AiChatPage] Starting new chat with context: ${nextChatOrgContext}`);
-    const contextIdForAnalytics = typeof nextChatOrgContext === 'undefined' 
-        ? (globalCurrentOrgId === null ? 'personal' : globalCurrentOrgId || 'unknown') 
-        : (nextChatOrgContext === null ? 'personal' : nextChatOrgContext);
+    const contextForNewChat = newChatContext === undefined ? globalCurrentOrgId : newChatContext;
+    logger.info(`[AiChatPage] Starting new chat with context: ${contextForNewChat}`);
+    
+    const contextIdForAnalytics = contextForNewChat === null ? 'personal' : contextForNewChat || 'unknown';
 
     analytics.track('Chat: Clicked New Chat', {
        contextId: contextIdForAnalytics
     });
     
-    const contextForNewChat = typeof nextChatOrgContext === 'undefined' ? globalCurrentOrgId : nextChatOrgContext;
     startNewChat(contextForNewChat);
-
-    // Reset selected provider and prompt in the store to defaults
-    if (availableProviders && availableProviders.length > 0) {
-        // Prioritize dummy provider in dev for new chats as well
-        if ((import.meta as any).env.MODE === 'development') {
-            const dummy = availableProviders.find(p => p.id === 'dummy-test-provider');
-            if (dummy) {
-                setSelectedProvider(dummy.id);
-            } else {
-                setSelectedProvider(availableProviders[0].id);
-            }
-        } else {
-            setSelectedProvider(availableProviders[0].id);
-        }
-    } else {
-        setSelectedProvider(null);
-    }
-
-    if (availablePrompts && availablePrompts.length > 0) {
-        setSelectedPrompt(availablePrompts[0].id);
-    } else {
-        setSelectedPrompt(null);
-    }
   };
 
-  const activeContextIdForHistory = typeof nextChatOrgContext === 'undefined' ? globalCurrentOrgId : nextChatOrgContext;
+  const activeContextIdForHistory = newChatContext === undefined ? globalCurrentOrgId : newChatContext;
   
   const contextTitleForHistory = useMemo(() => {
-    if (typeof activeContextIdForHistory === 'undefined') return 'Loading History...'; // Should ideally not happen if nextChatOrgContext defaults properly
+    if (typeof activeContextIdForHistory === 'undefined') return 'Loading History...'; 
     if (activeContextIdForHistory === null) return 'Personal Chat History';
     const org = userOrganizations.find(o => o.id === activeContextIdForHistory);
     return org ? `${org.name} Chat History` : 'Organization Chat History';
@@ -194,24 +164,19 @@ export default function AiChatPage() {
               
               <div className="flex flex-wrap items-center gap-x-2 gap-y-2">
                 <ChatContextSelector
-                  currentContextId={typeof nextChatOrgContext === 'undefined' ? null : nextChatOrgContext}
-                  onContextChange={handleContextSelection}
+                  // currentContextId={typeof nextChatOrgContext === 'undefined' ? null : nextChatOrgContext}
+                  // onContextChange={handleContextSelection}
+                  // Pass any necessary props like 'disabled' if needed, e.g., disabled={isDetailsLoading}
                 />
-                <ModelSelector 
-                  selectedProviderId={selectedProviderId} 
-                  onProviderChange={handleProviderChange}
-                />
-                <PromptSelector 
-                  selectedPromptId={selectedPromptId} 
-                  onPromptChange={handlePromptChange}
-                />
+                <ModelSelector />
+                <PromptSelector />
                 <Button variant="default" onClick={handleNewChat} className="ml-auto" data-testid="new-chat-button">
                   <Plus className="mr-2 h-4 w-4" /> New Chat
                 </Button>
               </div>
             </div>
             
-            <div className="flex-grow overflow-y-auto p-4"> {/* Main content area with scroll */}
+            <div className="flex-grow overflow-y-auto p-4"> 
               {isDetailsLoading ? (
                 <div className="space-y-4 p-4">
                   <Skeleton className="h-16 w-3/4" />
@@ -221,8 +186,7 @@ export default function AiChatPage() {
                 </div>
               ) : (
                 <AiChatbox 
-                  isAnonymous={isAnonymous}
-                  key={`${currentChatId}-${selectedProviderId}-${selectedPromptId}-${nextChatOrgContext}`} 
+                  key={`${currentChatId}-${selectedProviderId}-${selectedPromptId}-${newChatContext}`}
                 />
               )}
             </div>

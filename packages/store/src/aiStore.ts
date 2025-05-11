@@ -10,7 +10,7 @@ import {
     AuthRequiredError, // Correctly from @paynless/types
     Chat,
     AiState,      // <-- Add this import
-    AiActions     // <-- Add this import
+    AiStore,      // <-- Add this import
 } from '@paynless/types';
 
 // Re-add the runtime constant hack to ensure build passes
@@ -34,8 +34,6 @@ import { analytics } from '@paynless/analytics'; // Import analytics
 import { useAuthStore } from './authStore';
 import { DUMMY_PROVIDER_ID, dummyProviderDefinition } from './aiStore.dummy'; // Import from the new file
 
-// Combine state and actions for the store type
-export type AiStore = AiState & AiActions;
 // --- Initial State Values (for direct use in create) ---
 export const initialAiStateValues: AiState = {
     availableProviders: [],
@@ -64,6 +62,10 @@ export const useAiStore = create<AiStore>()(
             ...initialAiStateValues,
 
             // --- Action Definitions ---
+            setNewChatContext: (contextId: string | null) => {
+              set({ newChatContext: contextId });
+              logger.info(`[aiStore] newChatContext set to: ${contextId}`);
+            },
             loadAiConfig: async () => {
                 logger.info('Loading AI config...');
                 set({ isConfigLoading: true, aiError: null }); 
@@ -176,7 +178,6 @@ export const useAiStore = create<AiStore>()(
                          user_id: useAuthStore.getState().user?.id || 'optimistic-user', 
                          role: 'user', 
                          content: msgContent, 
-                         status: 'pending', 
                          ai_provider_id: null, 
                          system_prompt_id: null,
                          token_usage: null, 
@@ -220,7 +221,6 @@ export const useAiStore = create<AiStore>()(
                                 },
                                 ai_provider_id: DUMMY_PROVIDER_ID, // Use imported ID
                                 system_prompt_id: promptId, 
-                                status: 'sent'
                             };
 
                             set(state => {
@@ -370,7 +370,7 @@ export const useAiStore = create<AiStore>()(
                                 // Find the optimistic user message (it should be the last one added for this chat)
                                 const optimisticUserMessage = messagesForChatProcessing.find(msg => msg.id === tempUserMessageId);
                                 if (optimisticUserMessage) {
-                                    newHistoryBase.push({ ...optimisticUserMessage, chat_id: finalChatId, status: 'sent' as const });
+                                    newHistoryBase.push({ ...optimisticUserMessage, chat_id: finalChatId });
                                 }
                                 newHistoryBase.push(assistantMessage); 
                                 messagesForChatProcessing = newHistoryBase;
@@ -736,7 +736,6 @@ export const useAiStore = create<AiStore>()(
                         user_id: useAuthStore.getState().user?.id || 'optimistic-user-replay',
                         role: 'user',
                         content: messageContent,
-                        status: 'pending',
                         ai_provider_id: null,
                         system_prompt_id: null,
                         token_usage: null,

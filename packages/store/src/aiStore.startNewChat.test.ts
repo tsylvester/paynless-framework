@@ -1,14 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { useAiStore } from './aiStore';
 import { act } from '@testing-library/react';
-import { useAuthStore } from './authStore'; // Needed for reset logic, even if not directly used by startNewChat
-import { AiState, ChatMessage } from '@paynless/types';
-
-// No need for hoisted mock function variables if using inline vi.fn() in the factory
+import { useAuthStore } from './authStore';
+import { AiState, ChatMessage, TokenUsage, User } from '@paynless/types'; // Combined User import
 
 vi.mock('@paynless/api', async () => {
-    // Simplified mock: returns a structure with inline vi.fn() for all methods.
-    // This avoids issues with hoisted variables and `importOriginal` complexity when not strictly needed.
     return {
         api: {
             ai: () => ({
@@ -18,7 +14,7 @@ vi.mock('@paynless/api', async () => {
                 getChatHistory: vi.fn(),
                 getChatMessages: vi.fn(),
             }),
-            auth: () => ({}), // Mock other groups as needed
+            auth: () => ({}),
             billing: () => ({}),
             get: vi.fn(),
             post: vi.fn(),
@@ -29,40 +25,48 @@ vi.mock('@paynless/api', async () => {
     };
 });
 
-// Mock authStore (remains the same)
-vi.mock('./authStore');
+// Revised mock for authStore
+vi.mock('./authStore', () => ({
+    useAuthStore: vi.fn(), // Mock the hook itself
+}));
 
-// Helper to reset Zustand store state between tests
-// Adapted to include all relevant AiState fields
-const initialTestAiState: AiState = {
-    availableProviders: [],
-    availablePrompts: [],
-    messagesByChatId: {},
-    chatsByContext: { personal: [], orgs: {} },
-    currentChatId: null,
-    isLoadingAiResponse: false,
-    isConfigLoading: false,
-    isLoadingHistoryByContext: { personal: false, orgs: {} },
-    isDetailsLoading: false,
-    newChatContext: null,
-    rewindTargetMessageId: null,
-    aiError: null,
-};
+import { initialAiStateValues } from './aiStore';
 
-const resetAiStore = (initialState: Partial<AiState> = {}) => {
-    useAiStore.setState({ ...initialTestAiState, ...initialState }, false); // Ensure actions are preserved by merging
+const resetAiStore = (initialOverrides: Partial<AiState> = {}) => {
+    act(() => {
+        useAiStore.setState({
+            ...initialAiStateValues,
+            currentChatId: null,
+            messagesByChatId: {},
+            isLoadingAiResponse: false,
+            aiError: null,
+            ...initialOverrides,
+        }, false);
+    });
 };
 
 const mockNavigateGlobal = vi.fn();
 
 describe('aiStore - startNewChat action', () => {
+    const mockUserInstance: User = { id: 'test-user-startnew', email: 'startnew@test.com', created_at: 't', updated_at: 't', role: 'user' };
+
     beforeEach(() => {
         vi.clearAllMocks();
+
+        // Configure the mocked useAuthStore hook to return an object with getState
+        vi.mocked(useAuthStore).mockReturnValue({
+            getState: () => ({
+                user: mockUserInstance,
+                session: { access_token: 'fake-token-startnew', refresh_token: 'fake-refresh-token-startnew', expiresAt: Date.now() + 3600000 },
+                navigate: mockNavigateGlobal,
+                // Include other state/actions from authStore if needed by aiStore directly
+            }),
+            // If aiStore subscribes or uses other parts of the hook, mock them as well
+            // e.g., subscribe: vi.fn(), setState: vi.fn(), etc.
+        } as any); // Using 'as any' for brevity in mock setup
+
         act(() => {
-            resetAiStore();
-            // Mock minimal authStore state if needed, startNewChat doesn't directly use auth token
-            const initialAuthState = useAuthStore.getInitialState ? useAuthStore.getInitialState() : { user: null, session: null, profile: null, isLoading: false, error: null, navigate: null };
-            useAuthStore.setState({ ...initialAuthState, navigate: mockNavigateGlobal }, true);
+            resetAiStore(); // resetAiStore can now safely assume authStore is mocked
         });
     });
 
@@ -80,7 +84,6 @@ describe('aiStore - startNewChat action', () => {
                 });
             });
 
-            // Act
             act(() => {
                 console.log('Store object before calling startNewChat (personal test):', useAiStore.getState()); // <<< ADD THIS
                 console.log('Is startNewChat a function here (personal test)?:', typeof useAiStore.getState().startNewChat); // <<< AND THIS

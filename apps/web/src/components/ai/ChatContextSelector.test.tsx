@@ -1,10 +1,8 @@
-import React from 'react';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { ChatContextSelector } from './ChatContextSelector';
-import { useAiStore, initialAiStateValues as aiStoreInitialState } from '@paynless/store';
-import { useOrganizationStore, initialOrganizationState } from '@paynless/store';
-import type { Organization } from '@paynless/types';
-import { vi } from 'vitest';
+import type { Organization, OrganizationState, OrganizationUIState } from '@paynless/types';
+import { vi, beforeEach, afterEach } from 'vitest';
 
 // Mock logger
 vi.mock('@paynless/utils', () => ({
@@ -16,97 +14,164 @@ vi.mock('@paynless/utils', () => ({
     },
 }));
 
+// Polyfill for PointerEvents
+if (typeof window !== 'undefined') {
+    class MockPointerEvent extends Event {
+        button: number;
+        ctrlKey: boolean;
+        pointerType: string;
+        pointerId: number; // Added pointerId
+
+        constructor(type: string, props: PointerEventInit) {
+            super(type, props);
+            this.button = props.button || 0;
+            this.ctrlKey = props.ctrlKey || false;
+            this.pointerType = props.pointerType || 'mouse';
+            this.pointerId = props.pointerId || 0; // Initialize pointerId
+        }
+    }
+    // @ts-expect-error // window.PointerEvent is read-only
+    window.PointerEvent = MockPointerEvent;
+
+    if (!HTMLElement.prototype.hasPointerCapture) {
+        HTMLElement.prototype.hasPointerCapture = (pointerId: number) => {
+            // console.warn('[Test Polyfill] hasPointerCapture called with', pointerId);
+            // Add mock logic if needed, for now, it can be a no-op or return false
+            if (process.env['NODE_ENV'] === 'test') { // only log in test environment
+                console.log(`[Test Polyfill] hasPointerCapture: ${pointerId}`);
+            }
+            return false; 
+        };
+    }
+    if (!HTMLElement.prototype.releasePointerCapture) {
+        HTMLElement.prototype.releasePointerCapture = (pointerId: number) => {
+            // console.warn('[Test Polyfill] releasePointerCapture called with', pointerId);
+            // Add mock logic if needed
+            if (process.env['NODE_ENV'] === 'test') {
+                console.log(`[Test Polyfill] releasePointerCapture: ${pointerId}`);
+            }
+        };
+    }
+    if (!HTMLElement.prototype.setPointerCapture) { // Added setPointerCapture
+        HTMLElement.prototype.setPointerCapture = (pointerId: number) => {
+            // console.warn('[Test Polyfill] setPointerCapture called with', pointerId);
+            // Add mock logic if needed
+            if (process.env['NODE_ENV'] === 'test') {
+                console.log(`[Test Polyfill] setPointerCapture: ${pointerId}`);
+            }
+        };
+    }
+}
+
 
 // Mock Zustand stores
-const mockSetSelectedChatContextForNewChat = vi.fn();
-let mockSelectedChatContextForNewChat: string | null = null;
+const mockSetNewChatContext = vi.fn();
+let mockNewChatContext: string | null = null;
 
 const mockUserOrganizations: Organization[] = [
-    { id: 'org1', name: 'Organization 1', created_at: 'test', updated_at: 'test', user_id: 'u1', visibility: 'private' },
-    { id: 'org2', name: 'Organization 2', created_at: 'test', updated_at: 'test', user_id: 'u1', visibility: 'private' },
+    { id: 'org1', name: 'Organization 1', created_at: 'test', visibility: 'private', allow_member_chat_creation: true, deleted_at: null },
+    { id: 'org2', name: 'Organization 2', created_at: 'test', visibility: 'private', allow_member_chat_creation: true, deleted_at: null },
 ];
 let mockIsOrgLoading = false;
 
 vi.mock('@paynless/store', async (importOriginal) => {
-    const actual = await importOriginal() as any;
+    const actual = await importOriginal() as typeof import('@paynless/store');
     return {
         ...actual,
         useAiStore: vi.fn((selector) => {
             const state = {
                 ...actual.initialAiStateValues, // Ensure this is the correct initial state object name from the store
-                selectedChatContextForNewChat: mockSelectedChatContextForNewChat,
-                setSelectedChatContextForNewChat: mockSetSelectedChatContextForNewChat,
+                newChatContext: mockNewChatContext,
+                setNewChatContext: mockSetNewChatContext,
             };
             return selector(state);
         }),
         useOrganizationStore: vi.fn((selector) => {
-            const state = {
-                ...actual.initialOrganizationState, // Ensure this is the correct initial state object name
+            // Define all properties for OrganizationState & OrganizationUIState
+            const state: OrganizationState & OrganizationUIState = {
                 userOrganizations: mockUserOrganizations,
                 isLoading: mockIsOrgLoading,
+                // Provide default/mock values for all other properties of OrganizationState
+                currentOrganizationId: null,
+                currentOrganizationDetails: null,
+                currentOrganizationMembers: [],
+                memberCurrentPage: 1,
+                memberPageSize: 10,
+                memberTotalCount: 0,
+                currentPendingInvites: [],
+                currentPendingRequests: [],
+                currentInviteDetails: null,
+                fetchInviteDetailsError: null,
+                error: null,
+                orgListPage: 1,
+                orgListPageSize: 10,
+                orgListTotalCount: 0,
+                isFetchingInviteDetails: false,
+                // Provide default/mock values for all other properties of OrganizationUIState
+                isCreateModalOpen: false,
+                isDeleteDialogOpen: false,
             };
             return selector(state);
         }),
     };
 });
 
-const PERSONAL_CONTEXT_ID = '__personal__'; // As defined in ChatContextSelector.tsx
-
 describe('ChatContextSelector', () => {
+    const originalScrollIntoView = HTMLElement.prototype.scrollIntoView; // Store original
+
     beforeEach(() => {
         vi.clearAllMocks();
-        mockSelectedChatContextForNewChat = null;
+        mockNewChatContext = null;
         mockIsOrgLoading = false;
+        HTMLElement.prototype.scrollIntoView = vi.fn(); // Mock scrollIntoView
+    });
+
+    afterEach(() => {
+        HTMLElement.prototype.scrollIntoView = originalScrollIntoView; // Restore original
     });
 
     it('renders with "Personal" selected by default if store state is null', () => {
-        mockSelectedChatContextForNewChat = null;
+        mockNewChatContext = null;
         render(<ChatContextSelector />);
         expect(screen.getByText('Personal')).toBeInTheDocument();
     });
 
     it('renders with the correct organization name selected based on store state', () => {
-        mockSelectedChatContextForNewChat = 'org1';
+        mockNewChatContext = 'org1';
         render(<ChatContextSelector />);
         expect(screen.getByText('Organization 1')).toBeInTheDocument();
     });
     
     it('renders "Select context" if store state is an orgId not in userOrganizations (fallback)', () => {
-        mockSelectedChatContextForNewChat = 'org-unknown';
+        mockNewChatContext = 'org-unknown';
         render(<ChatContextSelector />);
         expect(screen.getByText('Select context')).toBeInTheDocument();
     });
 
 
-    it('calls setSelectedChatContextForNewChat with null when "Personal" is selected', async () => {
+    it('calls setNewChatContext with null when "Personal" is selected', async () => {
+        const user = userEvent.setup();
+        mockNewChatContext = 'org1';
         render(<ChatContextSelector />);
         const trigger = screen.getByRole('combobox');
-        fireEvent.mouseDown(trigger); 
+        await user.click(trigger);
 
-        await waitFor(() => {
-            // Use a more robust selector if plain text is ambiguous or part of the trigger itself
-            expect(screen.getByText('Personal', { selector: '[role="option"]' })).toBeInTheDocument();
-        });
-        
-        const personalOption = screen.getByText('Personal', { selector: '[role="option"]' });
-        fireEvent.click(personalOption);
+        const personalOption = await screen.findByRole('option', { name: 'Personal' });
+        await user.click(personalOption);
 
-        expect(mockSetSelectedChatContextForNewChat).toHaveBeenCalledWith(null);
+        expect(mockSetNewChatContext).toHaveBeenCalledWith(null);
     });
 
-    it('calls setSelectedChatContextForNewChat with the orgId when an organization is selected', async () => {
+    it('calls setNewChatContext with the orgId when an organization is selected', async () => {
+        const user = userEvent.setup();
         render(<ChatContextSelector />);
         const trigger = screen.getByRole('combobox');
-        fireEvent.mouseDown(trigger);
+        await user.click(trigger);
 
-        await waitFor(() => {
-           expect(screen.getByText('Organization 1', { selector: '[role="option"]' })).toBeInTheDocument();
-        });
+        const orgOption = await screen.findByRole('option', { name: 'Organization 1' });
+        await user.click(orgOption);
         
-        const orgOption = screen.getByText('Organization 1', { selector: '[role="option"]' });
-        fireEvent.click(orgOption);
-        
-        expect(mockSetSelectedChatContextForNewChat).toHaveBeenCalledWith('org1');
+        expect(mockSetNewChatContext).toHaveBeenCalledWith('org1');
     });
 
     it('displays "Loading contexts..." when organization data is loading', () => {
@@ -122,14 +187,13 @@ describe('ChatContextSelector', () => {
     });
     
     it('renders all organizations from the store', async () => {
+        const user = userEvent.setup();
         render(<ChatContextSelector />);
         const trigger = screen.getByRole('combobox');
-        fireEvent.mouseDown(trigger); 
+        await user.click(trigger); 
 
-        await waitFor(() => {
-            expect(screen.getByText('Personal', { selector: '[role="option"]' })).toBeInTheDocument();
-            expect(screen.getByText('Organization 1', { selector: '[role="option"]' })).toBeInTheDocument();
-            expect(screen.getByText('Organization 2', { selector: '[role="option"]' })).toBeInTheDocument();
-        });
+        expect(await screen.findByRole('option', { name: 'Personal' })).toBeInTheDocument();
+        expect(await screen.findByRole('option', { name: 'Organization 1' })).toBeInTheDocument();
+        expect(await screen.findByRole('option', { name: 'Organization 2' })).toBeInTheDocument();
     });
 }); 

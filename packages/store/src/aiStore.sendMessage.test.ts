@@ -1,24 +1,19 @@
 import { describe, it, expect, vi, beforeEach, afterEach, type SpyInstance, type Mock } from 'vitest';
-import { useAiStore, type AiState, type AiStoreType } from './aiStore';
+import { useAiStore } from './aiStore';
 import { api } from '@paynless/api';
 import { act } from '@testing-library/react';
 import {
-    // AiProvider,
-    // SystemPrompt,
-    // Chat,
+    AiState,
     ChatMessage,
     ChatApiRequest,
-    ApiResponse,
     User,
     Session,
-    UserProfile,
-    UserRole,
-    AuthRequiredError
+    AuthRequiredError,
 } from '@paynless/types';
 import { useAuthStore } from './authStore';
 import { DUMMY_PROVIDER_ID, dummyProviderDefinition } from './aiStore.dummy';
 
-// --- Restore API Client Factory Mock --- 
+// --- Restore API Client Factory Mock ---
 // Define mock functions for the methods we need to control
 const mockGetAiProviders = vi.fn(); // Keep even if unused in this file
 const mockGetSystemPrompts = vi.fn(); // Keep even if unused
@@ -29,7 +24,7 @@ const mockGetChatMessages = vi.fn(); // Keep even if unused
 vi.mock('@paynless/api', async (importOriginal) => {
     const actual = await importOriginal<typeof import('@paynless/api')>();
     return {
-        ...actual, 
+        ...actual,
         api: {
             ...actual.api,
             ai: () => ({
@@ -40,18 +35,18 @@ vi.mock('@paynless/api', async (importOriginal) => {
                 getChatMessages: mockGetChatMessages,
             }),
             // Ensure other parts of api are mocked if needed by store/authstore interactions
-            auth: () => ({}), 
+            auth: () => ({}),
             billing: () => ({}),
             get: vi.fn(),
             post: vi.fn(),
             put: vi.fn(),
             delete: vi.fn(),
         },
-        initializeApiClient: vi.fn(), 
+        initializeApiClient: vi.fn(),
     };
 });
 
-// --- Mock the authStore --- 
+// --- Mock the authStore ---
 vi.mock('./authStore');
 
 // Define a well-typed initial state for these tests, matching AiState
@@ -68,6 +63,9 @@ const initialTestSendMessageState: AiState = {
     newChatContext: null, // New state property
     rewindTargetMessageId: null, // New state property
     aiError: null,
+    historyErrorByContext: { personal: null, orgs: {} },
+    selectedProviderId: null,
+    selectedPromptId: null,
 };
 
 // Updated resetAiStore to use the new initial state and merge (preserve actions)
@@ -85,7 +83,7 @@ describe('aiStore - sendMessage', () => {
         vi.restoreAllMocks();
         act(() => {
             resetAiStore();
-            // --- REMOVED authStore.setState from top-level --- 
+            // --- REMOVED authStore.setState from top-level ---
         });
     });
 
@@ -96,7 +94,18 @@ describe('aiStore - sendMessage', () => {
         const mockUser: User = { id: 'user-auth-send', email: 'test@test.com', created_at: 't', updated_at: 't', role: 'user' };
         const mockSession: Session = { access_token: mockToken, refresh_token: 'r', expiresAt: Date.now() / 1000 + 3600 };
         const messageData = { message: 'Hello', providerId: 'p1', promptId: 's1' };
-        const mockAssistantResponse: ChatMessage = { id: 'm2', chat_id: 'c123', role: 'assistant', content: 'Hi there', user_id: null, ai_provider_id: messageData.providerId, system_prompt_id: messageData.promptId, token_usage: { total_tokens: 20 }, created_at: '2024-01-01T12:00:00.000Z' };
+        const mockAssistantResponse: ChatMessage = {
+            id: 'm2',
+            chat_id: 'c123',
+            role: 'assistant',
+            content: 'Hi there',
+            user_id: null,
+            ai_provider_id: messageData.providerId,
+            system_prompt_id: messageData.promptId,
+            token_usage: { total_tokens: 20 },
+            created_at: '2024-01-01T12:00:00.000Z',
+            is_active_in_thread: true
+        };
 
         // Nested beforeEach using mockReturnValue for authenticated state
         beforeEach(() => {
@@ -117,7 +126,15 @@ describe('aiStore - sendMessage', () => {
             }
             // Ensure currentChatId is null for new chat tests in this block initially
             act(() => {
-                resetAiStore({ currentChatId: null, messagesByChatId: {} });
+                resetAiStore({
+                    currentChatId: null,
+                    messagesByChatId: {},
+                    // selectedProviderId and selectedPromptId are set below, after reset
+                });
+                useAiStore.setState({
+                    selectedProviderId: messageData.providerId,
+                    selectedPromptId: messageData.promptId
+                });
             });
         });
 
@@ -127,7 +144,7 @@ describe('aiStore - sendMessage', () => {
             const newChatIdFromServer = 'c123';
             const mockAssistantResponseNewChat: ChatMessage = { ...mockAssistantResponse, chat_id: newChatIdFromServer };
             mockSendChatMessage.mockResolvedValue({ data: mockAssistantResponseNewChat, status: 200, error: null });
-            
+
             // Store initial messagesByChatId for comparison if needed, though for a new chat it starts empty for this test.
             const initialMessagesByChatId = useAiStore.getState().messagesByChatId;
             expect(useAiStore.getState().currentChatId).toBeNull(); // Pre-condition for new chat
@@ -145,25 +162,25 @@ describe('aiStore - sendMessage', () => {
             await promise; // Wait for the API call and subsequent state updates
 
             // Assert final state after success
-            const expectedRequestData: ChatApiRequest = { 
-                message: messageData.message, 
-                providerId: messageData.providerId, 
-                promptId: messageData.promptId, 
-                chatId: undefined, 
+            const expectedRequestData: ChatApiRequest = {
+                message: messageData.message,
+                providerId: messageData.providerId,
+                promptId: messageData.promptId,
+                chatId: undefined,
                 organizationId: null // Added expectation: null for new personal chat
-            }; 
+            };
             const expectedOptions = { token: mockToken };
             expect(mockSendChatMessage).toHaveBeenCalledTimes(1);
             expect(mockSendChatMessage).toHaveBeenCalledWith(expectedRequestData, expectedOptions);
-            
+
             const state = useAiStore.getState();
             expect(state.isLoadingAiResponse).toBe(false);
             expect(state.currentChatId).toBe(newChatIdFromServer); // currentChatId is now set
-            
+
             const messagesForNewChat = state.messagesByChatId[newChatIdFromServer];
             expect(messagesForNewChat).toBeDefined();
             expect(messagesForNewChat.length).toBe(2); // User's optimistic (now confirmed) + assistant's
-            
+
             const userMessage = messagesForNewChat.find(m => m.role === 'user');
             expect(userMessage).toBeDefined();
             expect(userMessage?.content).toBe(messageData.message);
@@ -173,10 +190,10 @@ describe('aiStore - sendMessage', () => {
             expect(messagesForNewChat.find(m => m.id === mockAssistantResponseNewChat.id)).toEqual(mockAssistantResponseNewChat); // Corrected: find by assistant message ID
             expect(state.aiError).toBeNull();
             // Assert chatsByContext update for the new personal chat
-            expect(state.chatsByContext.personal.length).toBe(1);
-            expect(state.chatsByContext.personal[0].id).toBe(newChatIdFromServer);
-            expect(state.chatsByContext.personal[0].organization_id).toBeNull();
-            expect(state.chatsByContext.personal[0].title).toBe(messageData.message.substring(0, 50));
+            expect(state.chatsByContext?.personal?.length).toBe(1);
+            expect(state.chatsByContext?.personal?.[0]?.id).toBe(newChatIdFromServer);
+            expect(state.chatsByContext?.personal?.[0]?.organization_id).toBeNull();
+            expect(state.chatsByContext?.personal?.[0]?.title).toBe(messageData.message.substring(0, 50));
         });
 
         it('[ORG] NEW CHAT SUCCESS: should update state and chatsByContext.orgs[orgId]', async () => {
@@ -184,16 +201,21 @@ describe('aiStore - sendMessage', () => {
             const mockOrgId = 'org-new-chat-123';
             const newChatIdFromServer = 'c-org-456';
             // Mock response indicating it belongs to the org
-            const mockAssistantResponseOrgChat: ChatMessage = { 
-                ...mockAssistantResponse, 
-                chat_id: newChatIdFromServer, 
-                organization_id: mockOrgId // Assume API response includes this if relevant
+            const mockAssistantResponseOrgChat: ChatMessage = {
+                ...mockAssistantResponse,
+                chat_id: newChatIdFromServer,
             };
             mockSendChatMessage.mockResolvedValue({ data: mockAssistantResponseOrgChat, status: 200, error: null });
-            
+
             // Set context for a new organization chat
             act(() => {
-                resetAiStore({ currentChatId: null, messagesByChatId: {}, newChatContext: mockOrgId });
+                resetAiStore({
+                    currentChatId: null,
+                    messagesByChatId: {},
+                    newChatContext: mockOrgId,
+                    selectedProviderId: messageData.providerId,
+                    selectedPromptId: messageData.promptId
+                });
             });
             expect(useAiStore.getState().currentChatId).toBeNull();
             expect(useAiStore.getState().newChatContext).toBe(mockOrgId);
@@ -205,40 +227,40 @@ describe('aiStore - sendMessage', () => {
                 expect(useAiStore.getState().isLoadingAiResponse).toBe(true);
                 expect(useAiStore.getState().currentChatId).toBeNull(); // Still null before response
             });
-            await promise; 
+            await promise;
 
             // Assert final state
-            const expectedRequestData: ChatApiRequest = { 
-                message: messageData.message, 
-                providerId: messageData.providerId, 
-                promptId: messageData.promptId, 
-                chatId: undefined, 
+            const expectedRequestData: ChatApiRequest = {
+                message: messageData.message,
+                providerId: messageData.providerId,
+                promptId: messageData.promptId,
+                chatId: undefined,
                 organizationId: mockOrgId // Expect orgId derived from newChatContext
             };
             const expectedOptions = { token: mockToken };
             expect(mockSendChatMessage).toHaveBeenCalledTimes(1);
             expect(mockSendChatMessage).toHaveBeenCalledWith(expectedRequestData, expectedOptions);
-            
+
             const state = useAiStore.getState();
             expect(state.isLoadingAiResponse).toBe(false);
-            expect(state.currentChatId).toBe(newChatIdFromServer); 
+            expect(state.currentChatId).toBe(newChatIdFromServer);
             expect(state.newChatContext).toBeNull(); // Should be cleared after success
-            
+
             const messagesForNewChat = state.messagesByChatId[newChatIdFromServer];
             expect(messagesForNewChat).toBeDefined();
-            expect(messagesForNewChat.length).toBe(2); 
-            
-            const userMessage = messagesForNewChat.find(m => m.role === 'user');
-            expect(userMessage?.chat_id).toBe(newChatIdFromServer); 
+            expect(messagesForNewChat.length).toBe(2);
 
-            expect(messagesForNewChat.find(m => m.id === mockAssistantResponseOrgChat.id)).toEqual(mockAssistantResponseOrgChat); 
+            const userMessage = messagesForNewChat.find(m => m.role === 'user');
+            expect(userMessage?.chat_id).toBe(newChatIdFromServer);
+
+            expect(messagesForNewChat.find(m => m.id === mockAssistantResponseOrgChat.id)).toEqual(mockAssistantResponseOrgChat);
             expect(state.aiError).toBeNull();
             // Assert chatsByContext update for the new org chat
-            expect(state.chatsByContext.orgs[mockOrgId]).toBeDefined();
-            expect(state.chatsByContext.orgs[mockOrgId].length).toBe(1);
-            expect(state.chatsByContext.orgs[mockOrgId][0].id).toBe(newChatIdFromServer);
-            expect(state.chatsByContext.orgs[mockOrgId][0].organization_id).toBe(mockOrgId);
-            expect(state.chatsByContext.orgs[mockOrgId][0].title).toBe(messageData.message.substring(0, 50));
+            expect(state.chatsByContext?.orgs?.[mockOrgId]).toBeDefined();
+            expect(state.chatsByContext?.orgs?.[mockOrgId]?.length).toBe(1);
+            expect(state.chatsByContext?.orgs?.[mockOrgId]?.[0]?.id).toBe(newChatIdFromServer);
+            expect(state.chatsByContext?.orgs?.[mockOrgId]?.[0]?.organization_id).toBe(mockOrgId);
+            expect(state.chatsByContext?.orgs?.[mockOrgId]?.[0]?.title).toBe(messageData.message.substring(0, 50));
         });
 
         it('[EXISTING] SUCCESS: should update messages and preserve currentChatId', async () => {
@@ -247,16 +269,28 @@ describe('aiStore - sendMessage', () => {
             const serverResponseChatId = existingChatId; // For an existing chat, chat_id in response matches
             const assistantResponseForExistingChat: ChatMessage = { ...mockAssistantResponse, chat_id: serverResponseChatId };
             mockSendChatMessage.mockResolvedValue({ data: assistantResponseForExistingChat, status: 200, error: null });
-            
-            const initialUserMessage = { id: 'temp-user-old', chat_id: existingChatId, role: 'user', content: messageData.message, created_at: 't0', is_active_in_thread: true };
-            act(() => { 
-                resetAiStore({ 
+
+            const initialUserMessage: ChatMessage = {
+                id: 'temp-user-old',
+                chat_id: existingChatId,
+                role: 'user',
+                content: messageData.message,
+                created_at: 't0',
+                is_active_in_thread: true,
+                ai_provider_id: null,
+                system_prompt_id: null,
+                token_usage: null,
+                user_id: mockUser.id
+            };
+            act(() => {
+                resetAiStore({
                     currentChatId: existingChatId,
                     messagesByChatId: {
                         [existingChatId]: [initialUserMessage] // Simulate an already existing optimistic message (e.g. from previous send attempt)
-                                                              // Or just test adding to an existing conversation
-                    }
-                }); 
+                    },
+                    selectedProviderId: messageData.providerId,
+                    selectedPromptId: messageData.promptId
+                });
             });
              // Re-check after reset
             const initialMessagesForExistingChat = useAiStore.getState().messagesByChatId[existingChatId] || [];
@@ -270,11 +304,11 @@ describe('aiStore - sendMessage', () => {
             // Assert
             const state = useAiStore.getState();
             expect(state.currentChatId).toBe(existingChatId); // Stays the same
-            
+
             const messagesForExistingChat = state.messagesByChatId[existingChatId];
             expect(messagesForExistingChat).toBeDefined();
             // Length should be initial + new optimistic user message + new assistant message
-            expect(messagesForExistingChat.length).toBe(initialMessagesLength + 2); 
+            expect(messagesForExistingChat.length).toBe(initialMessagesLength + 2);
 
             const newUserMessage = messagesForExistingChat.find(m => m.role === 'user' && m.content === newMessageData.message);
             expect(newUserMessage).toBeDefined();
@@ -288,7 +322,12 @@ describe('aiStore - sendMessage', () => {
             const errorMsg = 'AI failed to respond';
             mockSendChatMessage.mockResolvedValue({ data: null, status: 500, error: { message: errorMsg } });
             act(() => {
-                resetAiStore({ currentChatId: null, messagesByChatId: {} });
+                resetAiStore({
+                    currentChatId: null,
+                    messagesByChatId: {},
+                    selectedProviderId: messageData.providerId,
+                    selectedPromptId: messageData.promptId
+                });
             });
 
             let optimisticChatIdDuringSend: string | undefined;
@@ -316,8 +355,8 @@ describe('aiStore - sendMessage', () => {
                  // Check isLoadingAiResponse
                  expect(useAiStore.getState().isLoadingAiResponse).toBe(true);
              });
-             await promise; 
- 
+             await promise;
+
              // Assert
              vi.mocked(useAiStore.setState).mockRestore(); // Clean up spy
 
@@ -340,7 +379,12 @@ describe('aiStore - sendMessage', () => {
             const errorMsg = 'Network connection failed';
             mockSendChatMessage.mockRejectedValue(new Error(errorMsg));
             act(() => {
-                resetAiStore({ currentChatId: null, messagesByChatId: {} });
+                resetAiStore({
+                    currentChatId: null,
+                    messagesByChatId: {},
+                    selectedProviderId: messageData.providerId,
+                    selectedPromptId: messageData.promptId
+                });
             });
             let optimisticChatIdDuringSend: string | undefined;
             const originalSetState = useAiStore.setState;
@@ -393,7 +437,9 @@ describe('aiStore - sendMessage', () => {
                     messagesByChatId: {
                         // No initial messages needed for optimistic message addition test
                     },
-                    newChatContext: null // Ensure it's an existing chat context
+                    newChatContext: null, // Ensure it's an existing chat context
+                    selectedProviderId: messageData.providerId,
+                    selectedPromptId: messageData.promptId
                 });
             });
 
@@ -406,7 +452,7 @@ describe('aiStore - sendMessage', () => {
                     // Sniff the temporary message ID when the optimistic message is added
                     const messagesInChat = newState.messagesByChatId?.[existingChatId];
                     if (messagesInChat) {
-                        const optimisticMsg = messagesInChat.find(m => m.id.startsWith('temp-user-') && m.status === 'pending');
+                        const optimisticMsg = messagesInChat.find(m => m.id.startsWith('temp-user-') && m.role === 'user');
                         if (optimisticMsg) {
                             optimisticTempMessageId = optimisticMsg.id;
                         }
@@ -420,7 +466,7 @@ describe('aiStore - sendMessage', () => {
             // Act
             let promise;
             act(() => {
-                promise = useAiStore.getState().sendMessage({ message: initialUserMessageContent, chatId: existingChatId });
+                promise = useAiStore.getState().sendMessage(messageData);
                 expect(useAiStore.getState().isLoadingAiResponse).toBe(true);
             });
             await promise;
@@ -437,8 +483,8 @@ describe('aiStore - sendMessage', () => {
             if (optimisticTempMessageId) {
                 expect(messagesForChat?.find(m => m.id === optimisticTempMessageId)).toBeUndefined(); // Optimistic message removed
             } else {
-                // Fallback if ID wasn't sniffed, ensure no pending user messages remain
-                expect(messagesForChat?.some(m => m.role === 'user' && m.status === 'pending')).toBe(false);
+                // Fallback if ID wasn't sniffed, ensure no temporary user messages remain
+                expect(messagesForChat?.some(m => m.role === 'user' && m.id.startsWith('temp-user-'))).toBe(false);
             }
             expect(messagesForChat?.length || 0).toBe(0); // Expecting the chat message list to be empty if the only message failed
         });
@@ -454,7 +500,9 @@ describe('aiStore - sendMessage', () => {
                 resetAiStore({
                     currentChatId: existingChatId,
                     messagesByChatId: {},
-                    newChatContext: null
+                    newChatContext: null,
+                    selectedProviderId: messageData.providerId,
+                    selectedPromptId: messageData.promptId
                 });
             });
 
@@ -466,7 +514,7 @@ describe('aiStore - sendMessage', () => {
                     const newState = updater(stateBeforeUpdate);
                     const messagesInChat = newState.messagesByChatId?.[existingChatId];
                     if (messagesInChat) {
-                        const optimisticMsg = messagesInChat.find(m => m.id.startsWith('temp-user-') && m.status === 'pending');
+                        const optimisticMsg = messagesInChat.find(m => m.id.startsWith('temp-user-') && m.role === 'user');
                         if (optimisticMsg) {
                             optimisticTempMessageId = optimisticMsg.id;
                         }
@@ -480,7 +528,7 @@ describe('aiStore - sendMessage', () => {
             // Act
             let promise;
             act(() => {
-                promise = useAiStore.getState().sendMessage({ message: initialUserMessageContent, chatId: existingChatId });
+                promise = useAiStore.getState().sendMessage(messageData);
                 expect(useAiStore.getState().isLoadingAiResponse).toBe(true);
             });
             await promise;
@@ -497,7 +545,7 @@ describe('aiStore - sendMessage', () => {
             if (optimisticTempMessageId) {
                 expect(messagesForChat?.find(m => m.id === optimisticTempMessageId)).toBeUndefined();
             } else {
-                expect(messagesForChat?.some(m => m.role === 'user' && m.status === 'pending')).toBe(false);
+                expect(messagesForChat?.some(m => m.role === 'user' && m.id.startsWith('temp-user-'))).toBe(false);
             }
             expect(messagesForChat?.length || 0).toBe(0);
         });
@@ -506,11 +554,11 @@ describe('aiStore - sendMessage', () => {
             const chatId = 'chat-with-rewind';
             const rewindTargetId = 'msg2-user'; // Target this message for rewind
             const initialMessages: ChatMessage[] = [
-                { id: 'msg1-user', chat_id: chatId, role: 'user', content: 'First message', created_at: 't1', is_active_in_thread: true },
-                { id: 'msg1-assist', chat_id: chatId, role: 'assistant', content: 'First response', created_at: 't2', is_active_in_thread: true },
-                { id: rewindTargetId, chat_id: chatId, role: 'user', content: 'Second message (to be rewound from)', created_at: 't3', is_active_in_thread: true },
-                { id: 'msg2-assist', chat_id: chatId, role: 'assistant', content: 'Second response (to be replaced)', created_at: 't4', is_active_in_thread: true },
-                { id: 'msg3-user', chat_id: chatId, role: 'user', content: 'Third message (to be replaced)', created_at: 't5', is_active_in_thread: true },
+                { id: 'msg1-user', chat_id: chatId, role: 'user', content: 'First message', created_at: 't1', is_active_in_thread: true, ai_provider_id: 'p-rewind', system_prompt_id: 's-rewind', token_usage: null, user_id: mockUser.id },
+                { id: 'msg1-assist', chat_id: chatId, role: 'assistant', content: 'First response', created_at: 't2', is_active_in_thread: true, ai_provider_id: null, system_prompt_id: null, token_usage: null, user_id: null },
+                { id: rewindTargetId, chat_id: chatId, role: 'user', content: 'Second message (to be rewound from)', created_at: 't3', is_active_in_thread: true, ai_provider_id: 'p-rewind', system_prompt_id: 's-rewind', token_usage: null, user_id: mockUser.id },
+                { id: 'msg2-assist', chat_id: chatId, role: 'assistant', content: 'Second response (to be replaced)', created_at: 't4', is_active_in_thread: true, ai_provider_id: null, system_prompt_id: null, token_usage: null, user_id: null },
+                { id: 'msg3-user', chat_id: chatId, role: 'user', content: 'Third message (to be replaced)', created_at: 't5', is_active_in_thread: true, ai_provider_id: 'p-rewind', system_prompt_id: 's-rewind', token_usage: null, user_id: mockUser.id },
             ];
             const newMessageContent = "New message after rewind";
             const newAssistantResponse: ChatMessage = {
@@ -519,7 +567,11 @@ describe('aiStore - sendMessage', () => {
                 role: 'assistant',
                 content: 'Response to rewinded message',
                 created_at: new Date().toISOString(),
-                token_usage: { total_tokens: 15 }
+                token_usage: { total_tokens: 15 },
+                ai_provider_id: 'p-rewind',
+                system_prompt_id: 's-rewind',
+                is_active_in_thread: true,
+                user_id: null
             };
 
             act(() => {
@@ -527,7 +579,9 @@ describe('aiStore - sendMessage', () => {
                     currentChatId: chatId,
                     messagesByChatId: { [chatId]: initialMessages },
                     rewindTargetMessageId: rewindTargetId,
-                    newChatContext: null
+                    newChatContext: null,
+                    selectedProviderId: 'p-rewind',
+                    selectedPromptId: 's-rewind'
                 });
             });
 
@@ -541,7 +595,7 @@ describe('aiStore - sendMessage', () => {
                     const newState = updater(stateBeforeUpdate);
                     const messagesInChat = newState.messagesByChatId?.[chatId];
                     if (messagesInChat) {
-                        const optimisticMsg = messagesInChat.find(m => m.content === newMessageContent && m.status === 'pending');
+                        const optimisticMsg = messagesInChat.find(m => m.content === newMessageContent && m.role === 'user');
                         if (optimisticMsg) optimisticUserMessageId = optimisticMsg.id;
                     }
                     originalSetState(newState, replace);
@@ -551,14 +605,14 @@ describe('aiStore - sendMessage', () => {
             });
 
             await act(async () => {
-                await useAiStore.getState().sendMessage({ message: newMessageContent, chatId });
+                await useAiStore.getState().sendMessage({ ...messageData, message: newMessageContent, providerId: 'p-rewind', promptId: 's-rewind' });
             });
 
             vi.mocked(useAiStore.setState).mockRestore();
             const state = useAiStore.getState();
 
             expect(mockSendChatMessage).toHaveBeenCalledWith(
-                expect.objectContaining({ chatId, message: newMessageContent, rewindFromMessageId: rewindTargetId }),
+                expect.objectContaining({ chatId, message: newMessageContent, rewindFromMessageId: rewindTargetId, providerId: 'p-rewind', promptId: 's-rewind' }),
                 expect.anything()
             );
 
@@ -575,7 +629,6 @@ describe('aiStore - sendMessage', () => {
             expect(finalMessages[0].id).toBe('msg1-user');
             expect(finalMessages[1].id).toBe('msg1-assist');
             expect(finalMessages[2].content).toBe(newMessageContent);
-            expect(finalMessages[2].status).toBe('sent');
             if (optimisticUserMessageId) expect(finalMessages[2].id).toBe(optimisticUserMessageId);
             expect(finalMessages[3].id).toBe(newAssistantResponse.id);
 
@@ -589,10 +642,10 @@ describe('aiStore - sendMessage', () => {
             const chatId = 'chat-with-rewind-fail';
             const rewindTargetId = 'msg2-user-fail';
             const initialMessages: ChatMessage[] = [
-                { id: 'msg1-user-f', chat_id: chatId, role: 'user', content: 'First message fail', created_at: 'tf1', is_active_in_thread: true },
-                { id: 'msg1-assist-f', chat_id: chatId, role: 'assistant', content: 'First response fail', created_at: 'tf2', is_active_in_thread: true },
-                { id: rewindTargetId, chat_id: chatId, role: 'user', content: 'Second message (to be rewound from)', created_at: 'tf3', is_active_in_thread: true },
-                { id: 'msg2-assist-f', chat_id: chatId, role: 'assistant', content: 'Second response (should remain)', created_at: 'tf4', is_active_in_thread: true },
+                { id: 'msg1-user-f', chat_id: chatId, role: 'user', content: 'First message fail', created_at: 'tf1', is_active_in_thread: true, ai_provider_id: null, system_prompt_id: null, token_usage: null, user_id: mockUser.id },
+                { id: 'msg1-assist-f', chat_id: chatId, role: 'assistant', content: 'First response fail', created_at: 'tf2', is_active_in_thread: true, ai_provider_id: null, system_prompt_id: null, token_usage: null, user_id: null },
+                { id: rewindTargetId, chat_id: chatId, role: 'user', content: 'Second message (to be rewound from)', created_at: 'tf3', is_active_in_thread: true, ai_provider_id: null, system_prompt_id: null, token_usage: null, user_id: mockUser.id },
+                { id: 'msg2-assist-f', chat_id: chatId, role: 'assistant', content: 'Second response (should remain)', created_at: 'tf4', is_active_in_thread: true, ai_provider_id: null, system_prompt_id: null, token_usage: null, user_id: null },
             ];
             const newMessageContent = "New message triggering failed rewind";
             const errorMsg = "API error during rewind";
@@ -602,7 +655,9 @@ describe('aiStore - sendMessage', () => {
                     currentChatId: chatId,
                     messagesByChatId: { [chatId]: [...initialMessages] }, // Store a copy
                     rewindTargetMessageId: rewindTargetId,
-                    newChatContext: null
+                    newChatContext: null,
+                    selectedProviderId: messageData.providerId,
+                    selectedPromptId: messageData.promptId
                 });
             });
 
@@ -616,7 +671,7 @@ describe('aiStore - sendMessage', () => {
                     const newState = updater(stateBeforeUpdate);
                     const messagesInChat = newState.messagesByChatId?.[chatId];
                     if (messagesInChat) {
-                        const optimisticMsg = messagesInChat.find(m => m.content === newMessageContent && m.status === 'pending');
+                        const optimisticMsg = messagesInChat.find(m => m.content === newMessageContent && m.role === 'user');
                         if (optimisticMsg) optimisticTempMessageId = optimisticMsg.id;
                     }
                     originalSetState(newState, replace);
@@ -626,7 +681,7 @@ describe('aiStore - sendMessage', () => {
             });
 
             await act(async () => {
-                await useAiStore.getState().sendMessage({ message: newMessageContent, chatId });
+                 await useAiStore.getState().sendMessage({...messageData, message: newMessageContent });
             });
 
             vi.mocked(useAiStore.setState).mockRestore();
@@ -662,18 +717,18 @@ describe('aiStore - sendMessage', () => {
 
         beforeEach(() => {
             // Stub window.localStorage with our mock function
-            vi.stubGlobal('localStorage', { 
+            vi.stubGlobal('localStorage', {
                 setItem: mockLocalStorageSetItem,
                 // Add getItem, removeItem etc. with vi.fn() if they are used by the store
-                getItem: vi.fn(), 
+                getItem: vi.fn(),
                 removeItem: vi.fn(),
                 clear: vi.fn(),
                 key: vi.fn(),
                 length: 0, // Provide a sensible default for length
             });
 
-            optimisticChatIdForAnonFlow = undefined; 
-            
+            optimisticChatIdForAnonFlow = undefined;
+
             const originalSetState = useAiStore.setState;
             vi.spyOn(useAiStore, 'setState').mockImplementation((updater, replace) => {
                 if (typeof updater === 'function') {
@@ -692,14 +747,14 @@ describe('aiStore - sendMessage', () => {
             });
 
             act(() => {
-                resetAiStore({ messagesByChatId: {}, currentChatId: null, newChatContext: null });
+                resetAiStore({ messagesByChatId: {}, currentChatId: null, newChatContext: null, selectedProviderId: messageData.providerId, selectedPromptId: messageData.promptId });
             });
 
             if (vi.isMockFunction(useAuthStore)) {
                 vi.mocked(useAuthStore.getState).mockReturnValue({
-                    user: null, 
-                    session: null, 
-                    navigate: null, 
+                    user: null,
+                    session: null,
+                    navigate: null,
                     profile: null,
                     isLoading: false,
                     error: null,
@@ -714,7 +769,7 @@ describe('aiStore - sendMessage', () => {
 
         afterEach(() => {
             vi.unstubAllGlobals(); // Restore original localStorage
-            vi.mocked(useAiStore.setState).mockRestore(); 
+            vi.mocked(useAiStore.setState).mockRestore();
             mockLocalStorageSetItem.mockClear(); // Clear mock calls for the next test
         });
 
@@ -724,46 +779,46 @@ describe('aiStore - sendMessage', () => {
         it('[ANON] NAVIGATE NULL: should store pendingAction and set error when auth navigate is null', async () => {
             mockSendChatMessage.mockRejectedValue(authError);
 
-            await act(async () => { 
-                await useAiStore.getState().sendMessage(messageData); 
+            await act(async () => {
+                await useAiStore.getState().sendMessage(messageData);
             });
 
             const finalState = useAiStore.getState();
             expect(finalState.isLoadingAiResponse).toBe(false);
-            expect(finalState.aiError).toBe(authError.message); 
-            
+            expect(finalState.aiError).toBe(authError.message);
+
             if (optimisticChatIdForAnonFlow) {
                 expect(finalState.messagesByChatId[optimisticChatIdForAnonFlow]?.length || 0).toBe(0);
             }
-            
-            const expectedPendingAction = { 
-                endpoint: 'chat', 
-                method: 'POST', 
+
+            const expectedPendingAction = {
+                endpoint: 'chat',
+                method: 'POST',
                 body: { ...messageData, chatId: null, organizationId: null }, // Added organizationId: null
-                returnPath: 'chat' 
+                returnPath: 'chat'
             };
             expect(mockLocalStorageSetItem).toHaveBeenCalledWith('pendingAction', JSON.stringify(expectedPendingAction)); // Use the new mock fn
-            expect(mockNavigateGlobal).not.toHaveBeenCalled(); 
+            expect(mockNavigateGlobal).not.toHaveBeenCalled();
         });
 
         it('[ANON] LOCALSTORAGE FAIL: should set error and not navigate if localStorage.setItem fails', async () => {
             mockSendChatMessage.mockRejectedValue(authError);
             const storageErrorMsg = 'Session storage is full';
             // Make our specific mock function throw the error
-            mockLocalStorageSetItem.mockImplementation(() => { throw new Error(storageErrorMsg); }); 
+            mockLocalStorageSetItem.mockImplementation(() => { throw new Error(storageErrorMsg); });
 
-            await act(async () => { 
-                await useAiStore.getState().sendMessage(messageData); 
+            await act(async () => {
+                await useAiStore.getState().sendMessage(messageData);
             });
-            
+
             const finalState = useAiStore.getState();
             expect(finalState.isLoadingAiResponse).toBe(false);
-            expect(finalState.aiError).toBe(authError.message); 
+            expect(finalState.aiError).toBe(authError.message);
             if (optimisticChatIdForAnonFlow) {
                 expect(finalState.messagesByChatId[optimisticChatIdForAnonFlow]?.length || 0).toBe(0);
             }
             expect(mockLocalStorageSetItem).toHaveBeenCalledTimes(1); // Use the new mock fn
-            expect(mockNavigateGlobal).not.toHaveBeenCalled(); 
+            expect(mockNavigateGlobal).not.toHaveBeenCalled();
         });
     }); // End Anonymous describe
 
@@ -773,7 +828,7 @@ describe('aiStore - sendMessage', () => {
         const mockUser: User = { id: 'user-dummy-dev', email: 'dummy@dev.com', created_at: 't', updated_at: 't', role: 'user' };
         const mockSession: Session = { access_token: mockToken, refresh_token: 'r', expiresAt: Date.now() / 1000 + 3600 };
         const messageData = { message: 'Hello Dummy', providerId: DUMMY_PROVIDER_ID, promptId: null };
-        
+
         let originalNodeEnv: string | undefined;
 
         beforeEach(() => {
@@ -800,6 +855,8 @@ describe('aiStore - sendMessage', () => {
                     currentChatId: null,
                     messagesByChatId: {},
                     chatsByContext: { personal: [], orgs: {} },
+                    selectedProviderId: messageData.providerId,
+                    selectedPromptId: messageData.promptId
                 });
             });
             mockSendChatMessage.mockClear();
@@ -818,7 +875,9 @@ describe('aiStore - sendMessage', () => {
                     currentChatId: initialChatId,
                     messagesByChatId: {},
                     chatsByContext: { personal: [], orgs: {}},
-                    newChatContext: null
+                    newChatContext: null,
+                    selectedProviderId: messageData.providerId,
+                    selectedPromptId: messageData.promptId
                 });
             });
 
@@ -835,23 +894,22 @@ describe('aiStore - sendMessage', () => {
             expect(optimisticMessages).toHaveLength(1);
             expect(optimisticMessages[0].content).toBe(messageData.message);
             expect(optimisticMessages[0].role).toBe('user');
-            expect(optimisticMessages[0].status).toBe('pending');
 
             act(() => {
-                vi.runAllTimers(); 
+                vi.runAllTimers();
             });
-            await promise; 
+            await promise;
 
             expect(mockSendChatMessage).not.toHaveBeenCalled();
             const state = useAiStore.getState();
             expect(state.isLoadingAiResponse).toBe(false);
-            
+
             const finalChatId = optimisticChatIdKey!;
             expect(state.currentChatId).toBe(finalChatId);
 
             const finalMessages = state.messagesByChatId[finalChatId];
             expect(finalMessages).toHaveLength(2);
-            expect(finalMessages[0].content).toBe(messageData.message); 
+            expect(finalMessages[0].content).toBe(messageData.message);
             expect(finalMessages[0].role).toBe('user');
 
             const assistantMessage = finalMessages[1];
@@ -868,9 +926,9 @@ describe('aiStore - sendMessage', () => {
             });
             expect(state.aiError).toBeNull();
 
-            expect(state.chatsByContext.personal.length).toBe(1);
-            expect(state.chatsByContext.personal[0].id).toBe(finalChatId);
-            expect(state.chatsByContext.personal[0].title).toBe(messageData.message.substring(0,50));
+            expect(state.chatsByContext?.personal?.length).toBe(1);
+            expect(state.chatsByContext?.personal?.[0]?.id).toBe(finalChatId);
+            expect(state.chatsByContext?.personal?.[0]?.title).toBe(messageData.message.substring(0,50));
         });
 
         it('should work with an existing chat ID', async () => {
@@ -884,6 +942,8 @@ describe('aiStore - sendMessage', () => {
                     currentChatId: existingChatId,
                     messagesByChatId: { [existingChatId]: initialMessages },
                     chatsByContext: { personal: [{id: existingChatId, created_at: 't', updated_at: 't', title: 'Old Chat', user_id: mockUser.id, organization_id: null, system_prompt_id: null }], orgs: {}},
+                    selectedProviderId: messageData.providerId,
+                    selectedPromptId: messageData.promptId
                 });
             });
 
@@ -900,9 +960,9 @@ describe('aiStore - sendMessage', () => {
             const state = useAiStore.getState();
             expect(state.isLoadingAiResponse).toBe(false);
             expect(state.currentChatId).toBe(existingChatId);
-            
+
             const finalMessages = state.messagesByChatId[existingChatId];
-            expect(finalMessages).toHaveLength(initialMessages.length + 2); 
+            expect(finalMessages).toHaveLength(initialMessages.length + 2);
             expect(finalMessages[initialMessages.length].content).toBe(messageData.message);
             expect(finalMessages[initialMessages.length + 1].content).toBe(`Echo from Dummy: ${messageData.message}`);
             expect(finalMessages[initialMessages.length + 1].ai_provider_id).toBe(DUMMY_PROVIDER_ID);

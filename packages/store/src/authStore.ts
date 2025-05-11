@@ -9,7 +9,6 @@ import {
   Session,
   User,
   UserRole,
-  ISupabaseDataClient
 } from '@paynless/types'
 import { NavigateFunction } from '@paynless/types'
 import { logger } from '@paynless/utils'

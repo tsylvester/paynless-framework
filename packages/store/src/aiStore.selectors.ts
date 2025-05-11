@@ -101,41 +101,46 @@ export const selectChatTokenUsage = createSelector(
     const messages = messagesByChatId[chatId];
     // Return null if no messages or chat doesn't exist to distinguish from a chat with 0 usage.
     if (!messages || messages.length === 0) {
-      return null; 
+      return null;
     }
 
     return messages.reduce(
-      (acc, message) => {
-        // Ensure token_usage is valid and has the expected properties
-        if (
-          message.token_usage && // Ensure token_usage is not null or undefined
-          typeof message.token_usage.promptTokens === 'number' &&
-          typeof message.token_usage.completionTokens === 'number' &&
-          typeof message.token_usage.totalTokens === 'number'
-        ) {
-          acc.promptTokens += message.token_usage.promptTokens;
-          acc.completionTokens += message.token_usage.completionTokens;
-          acc.totalTokens += message.token_usage.totalTokens;
-        } else if (message.token_usage) {
-          // Handle potential snake_case from older data or direct DB saves if necessary
-          // This is a defensive check; ideally, data is consistently shaped before reaching the store.
-          // Check for snake_case only if camelCase properties were not found
-          const tu = message.token_usage as any;
-          const prompt = tu.prompt_tokens ?? 0;
-          const completion = tu.completion_tokens ?? 0;
-          // If total_tokens is present, use it. Otherwise, sum prompt and completion.
-          // This handles cases where only some fields might be snake_case or total_tokens might be missing.
-          const total = tu.total_tokens ?? (prompt + completion);
+      (acc: TokenUsage, message: ChatMessage): TokenUsage => {
+        const tu = message.token_usage; // tu is Json | null
 
-          if (typeof prompt === 'number' && typeof completion === 'number' && typeof total === 'number') {
-            acc.promptTokens += prompt;
-            acc.completionTokens += completion;
-            acc.totalTokens += total;
-          }      
+        // Check if tu is an object and not null or an array
+        if (tu && typeof tu === 'object' && !Array.isArray(tu)) {
+          // Cast to Record<string, unknown> for safer property checking
+          const tokenObject = tu as Record<string, unknown>;
+
+          let prompt = 0;
+          let completion = 0;
+          let total = 0;
+
+          // Try camelCase first
+          if (typeof tokenObject['promptTokens'] === 'number' &&
+              typeof tokenObject['completionTokens'] === 'number' &&
+              typeof tokenObject['totalTokens'] === 'number') {
+            prompt = tokenObject['promptTokens'] as number;
+            completion = tokenObject['completionTokens'] as number;
+            total = tokenObject['totalTokens'] as number;
+          }
+          // Else, try snake_case
+          else if (typeof tokenObject['prompt_tokens'] === 'number' &&
+                   typeof tokenObject['completion_tokens'] === 'number') {
+            prompt = tokenObject['prompt_tokens'] as number;
+            completion = tokenObject['completion_tokens'] as number;
+            // If total_tokens is present (snake_case), use it. Otherwise, sum prompt and completion.
+            total = typeof tokenObject['total_tokens'] === 'number' ? tokenObject['total_tokens'] as number : (prompt + completion);
+          }
+
+          acc.promptTokens += prompt;
+          acc.completionTokens += completion;
+          acc.totalTokens += total;
         }
         return acc;
       },
-      { promptTokens: 0, completionTokens: 0, totalTokens: 0 }
+      { promptTokens: 0, completionTokens: 0, totalTokens: 0 } as TokenUsage // Initial accumulator typed as TokenUsage
     );
   }
 );

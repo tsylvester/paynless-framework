@@ -581,6 +581,9 @@ importers:
       typescript:
         specifier: ^5.5.3
         version: 5.8.3
+      vite-plugin-node-polyfills:
+        specifier: ^0.23.0
+        version: 0.23.0(rollup@4.40.2)(vite@6.3.5(@types/node@20.17.46)(jiti@2.4.2)(yaml@2.7.1))
       vitest:
         specifier: ^1.6.1
         version: 1.6.1(@types/node@20.17.46)(@vitest/ui@1.6.1)(jsdom@26.1.0)
@@ -8979,7 +8982,7 @@ snapshots:
       pathe: 1.1.2
       picocolors: 1.1.1
       sirv: 2.0.4
-      vitest: 1.6.1(@types/node@22.15.17)(@vitest/ui@1.6.1)(jsdom@26.1.0)
+      vitest: 1.6.1(@types/node@20.17.46)(@vitest/ui@1.6.1)(jsdom@26.1.0)
 
   '@vitest/utils@1.6.1':
     dependencies:

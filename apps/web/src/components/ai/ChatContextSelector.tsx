@@ -33,49 +33,32 @@ export const ChatContextSelector: React.FC<ChatContextSelectorProps> = ({
   }));
 
   const { 
-    selectedChatContextForNewChat, 
-    setSelectedChatContextForNewChat,
-    // startNewChat, // We might not call startNewChat directly from here anymore
-    // availableProviders, // Not needed if default setting is in store's startNewChat
-    // setSelectedProvider, // Not needed if default setting is in store's startNewChat
-    // availablePrompts, // Not needed if default setting is in store's startNewChat
-    // setSelectedPrompt, // Not needed if default setting is in store's startNewChat
+    newChatContext, 
+    setNewChatContext,
   } = useAiStore(state => ({
-    selectedChatContextForNewChat: state.selectedChatContextForNewChat,
-    setSelectedChatContextForNewChat: state.setSelectedChatContextForNewChat,
-    // startNewChat: state.startNewChat,
-    // availableProviders: state.availableProviders,
-    // setSelectedProvider: state.setSelectedProvider,
-    // availablePrompts: state.availablePrompts,
-    // setSelectedPrompt: state.setSelectedPrompt,
+    newChatContext: state.newChatContext,
+    setNewChatContext: state.setNewChatContext,
   }));
 
   const handleValueChange = (value: string) => {
     const newContextId = value === PERSONAL_CONTEXT_ID ? null : value;
-    setSelectedChatContextForNewChat(newContextId);
+    setNewChatContext(newContextId);
     logger.info(`[ChatContextSelector] Context selected for new chat: ${newContextId}`);
-    // analytics.track('Chat: Context Selected For New Chat', { // This analytics call should happen where startNewChat is called
-    //   contextId: newContextId === null ? 'personal' : newContextId,
-    // });
-
-    // The logic to call startNewChat and set defaults will now be handled by the "New Chat" button in AiChatPage
-    // or if we decide selection itself should trigger a new chat.
-    // For now, this component only sets the desired context in the store.
   };
 
   // Ensure selectedChatContextForNewChat is initialized in the store,
   // otherwise, this might be undefined initially.
   // The store should initialize selectedChatContextForNewChat, perhaps to globalCurrentOrgId or null.
-  const currentSelectedValueInStore = selectedChatContextForNewChat === undefined 
+  const currentSelectedValueInStore = newChatContext === undefined 
     ? PERSONAL_CONTEXT_ID // Default to personal if undefined in store (should be initialized in store)
-    : (selectedChatContextForNewChat === null ? PERSONAL_CONTEXT_ID : selectedChatContextForNewChat);
+    : (newChatContext === null ? PERSONAL_CONTEXT_ID : newChatContext);
 
 
   const getDisplayName = () => {
     if (isOrgLoading) return 'Loading contexts...';
     // Use selectedChatContextForNewChat from the store for display
-    if (selectedChatContextForNewChat === null || selectedChatContextForNewChat === undefined) return 'Personal';
-    const selectedOrg = userOrganizations?.find(org => org.id === selectedChatContextForNewChat);
+    if (newChatContext === null || newChatContext === undefined) return 'Personal';
+    const selectedOrg = userOrganizations?.find(org => org.id === newChatContext);
     return selectedOrg?.name || 'Select context'; // Fallback if org not found
   };
 

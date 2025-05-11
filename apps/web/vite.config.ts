@@ -44,18 +44,6 @@ export default defineConfig({
       '@': path.resolve(__dirname, './src'),
     },
   },
-  // Keep Vitest configuration
-  test: {
-    globals: true,
-    environment: 'jsdom',
-    setupFiles: './src/setupTests.ts', // Ensure setup file is loaded
-    server: {
-      deps: {
-        // Process linked dependencies to ensure MSW patching works
-        inline: [/@paynless\//, /msw/],
-      },
-    },
-  } as UserConfig['test'],
   build: {
     // Output directly to a dist folder inside the desktop app project
     outDir: 'dist',

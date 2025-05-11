@@ -59,6 +59,7 @@ describe('ModelSelector', () => {
       cancelRewindPreparation: vi.fn(),
       setSelectedProvider: mockSetSelectedProvider,
       setSelectedPrompt: mockSetSelectedPrompt,
+      setNewChatContext: vi.fn(),
       ...overrides,
     };
   };

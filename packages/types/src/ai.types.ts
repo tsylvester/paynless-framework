@@ -35,13 +35,7 @@ export interface TokenUsage {
  * Represents a single message within a Chat.
  * Derived from the `chat_messages` table.
  */
-export type ChatMessage = Database['public']['Tables']['chat_messages']['Row'] & {
-  // Keep application-level status enrichment if needed by UI directly
-  // Note: status was previously added to LocalChatMessage, consider if it belongs here
-  status?: 'pending' | 'sent' | 'error'; 
-  is_active_in_thread?: boolean;
-  token_usage?: TokenUsage | null; // Use the more specific TokenUsage type
-};
+export type ChatMessage = Database['public']['Tables']['chat_messages']['Row'] 
 
 // --- Application/API/Adapter/Store Specific Types ---
 
@@ -198,6 +192,7 @@ export interface AiActions {
   cancelRewindPreparation: () => void;
   setSelectedProvider: (providerId: AiProvider['id'] | null) => void;
   setSelectedPrompt: (promptId: SystemPrompt['id'] | null) => void;
+  setNewChatContext: (contextId: string | null) => void;
 }
 
 // Combined type for the store
@@ -216,4 +211,12 @@ export interface IAiApiClient {
   getChatWithMessages(chatId: string, token: string, organizationId?: string | null): Promise<ApiResponse<{ chat: Chat, messages: ChatMessage[] }>>;
   deleteChat(chatId: string, token: string, organizationId?: string | null): Promise<ApiResponse<void>>;
   // Add other public methods of AiApiClient here if any
+}
+
+export type initialAiStateValues = {
+    availableProviders: [],
+    availablePrompts: [],
+    chatsByContext: { personal: undefined, orgs: {} },
+    messagesByChatId: {},
+    currentChatId: null,
 }
