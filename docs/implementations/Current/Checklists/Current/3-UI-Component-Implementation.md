@@ -630,40 +630,87 @@ The implementation plan uses the following labels to categorize work steps:
 * [✅] Perform manual integration tests covering visibility, functionality, and downstream effects (RLS blocking). Debug until pass (GREEN).
 * [✅] Commit changes with message "feat(UI): Integrate chat settings into organization settings card w/ manual tests"
 
-### STEP-3.7: Implement Token Tracking and Audit UI [UI] [🚧]
+### STEP-3.7: Implement Dummy Test Provider for Development [ARCH] [STORE] [UI] [TEST-UNIT] [TEST-INT]
 
-#### STEP-3.7.1: Create/Integrate Token Estimator Hook/Display [TEST-UNIT] [COMMIT]
-* [ ] Define Test Cases (Gemini 3.3.2): Hook takes text, returns estimated count using `tiktoken`. Test samples, empty string. Mock `tiktoken`.
-* [ ] Create hook `apps/web/src/hooks/useTokenEstimator.ts`:
-    *   Import `getEncoding` from `tiktoken`. Initialize `encoding = getEncoding('cl100k_base')`.
-    *   Hook takes `text: string`, returns `encoding.encode(text).length`. Memoize result.
-* [ ] Write tests for the hook. Expect failure (RED).
-* [ ] Implement the hook. Run tests until pass (GREEN).
-* [ ] Update the chat input component (`apps/web/src/components/ai/ChatInput.tsx`?):
-    *   Use the `useTokenEstimator` hook with the current text input value.
-    *   Display the estimated count near the input field (e.g., "Tokens: {count}").
-* [ ] Write/Update component tests to verify display. Debug until pass (GREEN).
-* [ ] Commit changes with message "feat(UI): Implement token estimator hook and display in chat input w/ tests"
+**Goal:** Allow developers to test chat UI functionality and message flow without incurring AI costs or relying on external AI services during development, by providing a dummy provider that echoes user input.
 
-#### STEP-3.7.2: Add Token Usage Display to Messages (`ChatMessageBubble.tsx`) [TEST-UNIT] [COMMIT]
-* [ ] Define Test Cases: Verify token count displays only for assistant messages with `token_usage` data.
-* [ ] Write/Update tests for `apps/web/src/components/ai/ChatMessageBubble.tsx`.
-* [ ] Update `ChatMessageBubble.tsx`:
-  * [ ] If `message.role === 'assistant'` and `message.token_usage`, display the count (e.g., "Tokens: {message.token_usage.completion}" or total). Style subtly.
-* [ ] Run tests. Debug until pass (GREEN).
-* [ ] Commit changes with message "feat(UI): Add token usage display to assistant chat messages w/ tests"
+#### STEP-3.7.1: Define Dummy Provider Behavior & Integration Strategy [ARCH]
+*   [ ] **3.7.1.1: [ARCH] Define Dummy Provider Identity:**
+    *   ID: `dummy-test-provider`
+    *   Display Name: "Dummy Test Provider (Echo)"
+    *   Model(s) (if applicable for UI): e.g., `dummy-echo-v1`
+*   [ ] **3.7.1.2: [ARCH] Define Echo Logic and Message Structure:**
+    *   Input: User's `ChatMessage` content.
+    *   Output: An assistant `ChatMessage` object with:
+        *   `role: 'assistant'`
+        *   `content: "Echo from Dummy: " + userMessageContent` (or similar prefix).
+        *   `provider_id: 'dummy-test-provider'` (or the selected model under it).
+        *   `token_usage`: Mocked values, e.g., `prompt_tokens` based on input length, `completion_tokens` based on output length.
+        *   `id`: A unique ID for the message.
+        *   `chat_id`: The current chat's ID.
+        *   `created_at`, `updated_at`: Current timestamps.
+*   [ ] **3.7.1.3: [ARCH] Choose Integration Approach:**
+    *   Decision: Implement as a client-side mock within the `aiStore`'s `sendMessage` action. This avoids unnecessary backend changes for a dev-only tool and simplifies implementation. The dummy provider will only be available if `process.env.NODE_ENV === 'development'`.
 
-#### STEP-3.7.3: Create Cumulative Token Usage Display (`ChatTokenUsageDisplay.tsx`) [TEST-UNIT] [COMMIT]
-* [ ] Define Test Cases (Gemini 3.3.9): Takes `messages` prop. Calculates sum of prompt/completion/total tokens correctly. Displays User/Assistant/Total. Handles missing `token_usage`. Expect failure (RED).
-* [ ] Write tests for `apps/web/src/components/ai/ChatTokenUsageDisplay.unit.test.tsx`.
-* [ ] Create component `apps/web/src/components/ai/ChatTokenUsageDisplay.tsx`:
-  * [ ] Prop: `messages: ChatMessage[]`.
-  * [ ] Calculate cumulative counts: Iterate messages. If assistant message has `token_usage`, add `prompt` tokens (representing previous user msg) to a user total, `completion` tokens to an assistant total.
-  * [ ] Display User/Assistant/Total counts.
-* [ ] Run tests. Debug component logic until pass (GREEN).
-* [ ] **[REFACTOR]** Optimize calculation if needed. Ensure clear display.
-* [ ] Commit changes with message "feat(UI): Create cumulative token usage display component w/ tests"
+#### STEP-3.7.2: Implement Store Modifications for Dummy Provider [STORE] [TEST-UNIT] [COMMIT]
+*   [ ] **3.7.2.1: [TYPES] Update Provider/Model Types if Necessary**
+    *   Ensure `Provider` and `Model` types in `@paynless/types` (or relevant store types) can accommodate the dummy provider and its mock model (e.g., `id`, `name`, `providerId`).
+*   [ ] **3.7.2.2: [STORE] Conditionally Add Dummy Provider to `availableProviders` in `aiStore`**
+    *   Modify `packages/store/src/aiStore.ts` (e.g., in `loadAiConfig` action or initial state setup):
+        *   If `process.env.NODE_ENV === 'development'`, add the "Dummy Test Provider" object (with its mock model) to the `state.availableProviders` and `state.modelsByProvider` collections.
+    *   **[TEST-UNIT]** Update `packages/store/src/tests/aiStore.test.ts` (or relevant test file, e.g., `aiStore.config.test.ts`):
+        *   Verify the dummy provider and its model are added to `availableProviders` and `modelsByProvider` when `process.env.NODE_ENV` is 'development'.
+        *   Verify they are NOT added when `process.env.NODE_ENV` is 'production'.
+*   [ ] **3.7.2.3: [STORE] Implement Client-Side Echo Logic in `sendMessage` Action**
+    *   Modify the `sendMessage` action in `packages/store/src/aiStore.ts`:
+        *   Retrieve `providerId` from the `sendMessage` parameters or from current state.
+        *   **Condition:** If `providerId === 'dummy-test-provider'`:
+            1.  Set `state.isSendingMessage = true`.
+            2.  Add the user's outgoing message to `state.messagesByChatId[chatId]`.
+            3.  Simulate a brief delay (e.g., `setTimeout` for 500ms) to mimic network latency.
+            4.  After the delay:
+                *   Construct the assistant's echo message based on the definition in STEP-3.7.1.2.
+                *   Add the echo message to `state.messagesByChatId[chatId]`.
+                *   Update `state.currentChat?.updated_at` or relevant chat metadata.
+                *   Set `state.isSendingMessage = false`.
+                *   Ensure `rewindTargetMessageId` is cleared if it was used (though rewind with a dummy might be trivial).
+        *   **Else (not dummy provider):** Proceed with the existing logic to call the actual API client.
+    *   **[TEST-UNIT]** Update `packages/store/src/tests/aiStore.test.ts` (e.g., `aiStore.messages.test.ts`):
+        *   Test `sendMessage` with `providerId: 'dummy-test-provider'`:
+            *   Verify `isSendingMessage` toggles correctly.
+            *   Verify user message is added to state.
+            *   Verify (after simulated delay) the assistant's echo message is added with correct content and attribution.
+            *   Verify no actual API client methods are called.
+        *   Test `sendMessage` with a real provider ID:
+            *   Verify it still calls the API client as expected.
+*   [ ] **3.7.2.4: [COMMIT]** Commit changes with message "feat(STORE): Add dummy echo provider client-side logic for development w/ tests"
 
+#### STEP-3.7.3: UI Integration and Testing [UI] [TEST-INT] [COMMIT]
+*   [ ] **3.7.3.1: [UI] Verify Dummy Provider in `ModelSelector`**
+    *   In `apps/web/src/components/ai/ModelSelector.tsx` (or wherever providers/models are selected):
+        *   No direct code changes should be needed if it correctly iterates over `availableProviders` and `modelsByProvider` from `useAiStore`.
+    *   Manually start the app in development mode.
+    *   Navigate to the chat page.
+    *   Verify that "Dummy Test Provider (Echo)" and its model appear in the provider/model selection UI.
+*   [ ] **3.7.3.2: [UI] End-to-End Manual Test of Chat Flow with Dummy Provider**
+    *   Select the "Dummy Test Provider" and its model.
+    *   Send several messages.
+    *   Verify:
+        *   User messages appear correctly.
+        *   Echoed assistant messages appear shortly after, with the defined prefix and correct attribution.
+        *   Message timestamps are correct.
+        *   Markdown rendering (if applicable) works for echoed content.
+        *   Chat history items are created correctly for chats using the dummy provider.
+        *   Rewind/Reprompt UI (if used on a dummy message or an echo) behaves predictably (though its utility might be limited here).
+*   [ ] **3.7.3.3: [TEST-INT] Update/Add Integration Test for Dummy Provider**
+    *   In `apps/web/src/pages/AiChat.integration.test.tsx` (or a new dedicated test):
+        *   Set up the test environment to simulate development mode (`process.env.NODE_ENV = 'development'`)
+        *   Ensure `aiStore` is initialized to include the dummy provider in its `availableProviders`.
+        *   Simulate user selecting the dummy provider via the UI.
+        *   Simulate user typing and sending a message.
+        *   Use `waitFor` to check that the user's message appears in the `AiChatbox`.
+        *   Use `waitFor` again to check that the assistant's echoed message appears in the `AiChatbox`, with the correct content and attribution.
+*   [ ] **3.7.3.4: [COMMIT]** Commit changes with message "feat(UI): Integrate and test dummy echo provider in chat interface w/ integration tests"
 
 **Phase 3 Complete Checkpoint:**
 *   [ ] All Phase 3 tests (UI unit and integration tests) passing.
@@ -675,6 +722,8 @@ The implementation plan uses the following labels to categorize work steps:
 *   [ ] UI components correctly interact with the State Management layer (Phase 2).
 *   [ ] Code refactored, analytics integrated where specified, and commits made.
 *   [ ] Run `npm test` in `apps/web`. Build `apps/web` (`npm run build`). Perform quick smoke test.
+
+---
 
 ### Future Work / Backlog:
 
