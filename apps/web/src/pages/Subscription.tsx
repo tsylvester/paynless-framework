@@ -4,29 +4,37 @@ import { useAuthStore } from '@paynless/store';
 import { Navigate } from 'react-router-dom';
 import { logger } from '@paynless/utils';
 import { AlertCircle, AlertTriangle } from 'lucide-react';
-import { useSubscriptionStore } from '@paynless/store';
+import { 
+  useSubscriptionStore,
+  selectUserSubscription,
+  selectAvailablePlans,
+  selectIsSubscriptionLoading,
+  selectHasActiveSubscription,
+  selectSubscriptionError,
+  selectCurrentUserResolvedPlan,
+} from '@paynless/store';
 import { CurrentSubscriptionCard } from '../components/subscription/CurrentSubscriptionCard';
 import { PlanCard } from '../components/subscription/PlanCard';
 import type { UserSubscription, SubscriptionPlan } from '@paynless/types';
 
 export function SubscriptionPage() {
   const { user, isLoading: authLoading } = useAuthStore();
+
+  const availablePlans = useSubscriptionStore(selectAvailablePlans);
+  const userSubscription = useSubscriptionStore(selectUserSubscription);
+  const isSubscriptionLoading = useSubscriptionStore(selectIsSubscriptionLoading);
+  const storeError = useSubscriptionStore(selectSubscriptionError);
+  const hasActiveSubscription = useSubscriptionStore(selectHasActiveSubscription);
+  const currentUserResolvedPlan = useSubscriptionStore(selectCurrentUserResolvedPlan);
+
   const { 
-    availablePlans, 
-    userSubscription, 
-    isSubscriptionLoading, 
     isTestMode, 
-    error: storeError,
     loadSubscriptionData,
     createCheckoutSession,
     createBillingPortalSession,
     cancelSubscription,
   } = useSubscriptionStore(state => ({ 
-    availablePlans: state.availablePlans, 
-    userSubscription: state.userSubscription, 
-    isSubscriptionLoading: state.isSubscriptionLoading, 
     isTestMode: state.isTestMode,
-    error: state.error,
     loadSubscriptionData: state.loadSubscriptionData,
     createCheckoutSession: state.createCheckoutSession,
     createBillingPortalSession: state.createBillingPortalSession,
@@ -111,7 +119,7 @@ export function SubscriptionPage() {
     return <Navigate to="/login" />;
   }
   
-  const userIsOnPaidPlan = userSubscription?.status === 'active' || userSubscription?.status === 'trialing';
+  const userIsOnPaidPlan = hasActiveSubscription;
 
   return (
     <div>
@@ -143,9 +151,9 @@ export function SubscriptionPage() {
             </div>
           )}
           
-          {userSubscription && userSubscription.plan && userSubscription.status !== 'free' && (
+          {userSubscription && currentUserResolvedPlan && userSubscription.status !== 'free' && (
             <CurrentSubscriptionCard 
-              userSubscription={userSubscription as UserSubscription & { plan: SubscriptionPlan }}
+              userSubscription={{...userSubscription, plan: currentUserResolvedPlan } as UserSubscription & { plan: SubscriptionPlan }}
               isProcessing={isSubscriptionLoading}
               handleManageSubscription={handleManageSubscription}
               handleCancelSubscription={handleCancelSubscription}
@@ -156,7 +164,7 @@ export function SubscriptionPage() {
           
           <div className="mt-12 sm:mt-16 grid gap-8 md:grid-cols-2 lg:grid-cols-3">
             {availablePlans.map((plan) => {
-              const isCurrentPlan = userSubscription?.plan?.id === plan.id;
+              const isCurrentPlan = currentUserResolvedPlan?.id === plan.id;
               
               return (
                  <PlanCard 

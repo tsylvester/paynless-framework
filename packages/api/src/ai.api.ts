@@ -66,23 +66,30 @@ export class AiApiClient {
     }
 
     /**
-     * Fetches the chat history list for the current user.
+     * Fetches the chat history list for the current user or an organization.
      * @param token - The user's authentication token.
+     * @param organizationId - Optional ID of the organization to fetch history for.
      */
-    async getChatHistory(token: string): Promise<ApiResponse<Chat[]>> {
+    async getChatHistory(token: string, organizationId?: string | null): Promise<ApiResponse<Chat[]>> {
         if (!token) {
             const error: ApiError = { code: 'AUTH_ERROR', message: 'Authentication token is required' };
             return { error, status: 401 };
         }
         const options: FetchOptions = { token };
-        return this.apiClient.get<Chat[]>('chat-history', options);
+        let endpoint = 'chat-history';
+        if (organizationId) {
+            endpoint += `?organizationId=${encodeURIComponent(organizationId)}`;
+        }
+        return this.apiClient.get<Chat[]>(endpoint, options);
     }
 
     /**
-     * Fetches all messages for a specific chat.
-     * @param chatId - The ID of the chat to fetch messages for.
+     * Fetches the full chat object (metadata) and all its active messages for a specific chat.
+     * @param chatId - The ID of the chat to fetch details for.
+     * @param token - The user's authentication token.
+     * @param organizationId - Optional ID of the organization the chat belongs to (for context).
      */
-    async getChatMessages(chatId: string, token: string): Promise<ApiResponse<ChatMessage[]>> {
+    async getChatWithMessages(chatId: string, token: string, organizationId?: string | null): Promise<ApiResponse<{ chat: Chat, messages: ChatMessage[] }>> {
         if (!chatId) {
             const error: ApiError = { code: 'VALIDATION_ERROR', message: 'Chat ID is required' };
             return { error, status: 400 };
@@ -91,8 +98,47 @@ export class AiApiClient {
             const error: ApiError = { code: 'AUTH_ERROR', message: 'Authentication token is required' };
             return { error, status: 401 };
         }
-        // Pass the token in options
         const options: FetchOptions = { token };
-        return this.apiClient.get<ChatMessage[]>(`chat-details/${chatId}`, options);
+        let endpoint = `chat-details/${chatId}`;
+        if (organizationId) {
+            // Add organizationId as a query parameter
+            endpoint += `?organizationId=${encodeURIComponent(organizationId)}`;
+        }
+        // The generic type for .get now reflects the new expected structure
+        return this.apiClient.get<{ chat: Chat, messages: ChatMessage[] }>(endpoint, options);
+    }
+
+    /**
+     * Deletes a specific chat and its associated messages.
+     * @param chatId - The ID of the chat to delete.
+     * @param token - The user's authentication token.
+     * @param organizationId - Optional ID of the organization the chat belongs to.
+     * @returns An ApiResponse indicating success or failure (often with no specific data on success).
+     */
+    async deleteChat(chatId: string, token: string, organizationId?: string | null): Promise<ApiResponse<void>> {
+        if (!chatId) {
+            const error: ApiError = { code: 'VALIDATION_ERROR', message: 'Chat ID is required for deletion' };
+            return { error, status: 400 };
+        }
+        if (!token) {
+            const error: ApiError = { code: 'AUTH_ERROR', message: 'Authentication token is required' };
+            return { error, status: 401 };
+        }
+        const options: FetchOptions = { token };
+        let endpoint = `chat/${chatId}`; // Assume endpoint structure like /chat/{chatId}
+        if (organizationId) {
+            // Pass organizationId as a query parameter for authorization/scoping on the backend
+            endpoint += `?organizationId=${encodeURIComponent(organizationId)}`;
+        }
+        
+        logger.info(`Attempting to delete chat: ${chatId}`, { organizationId });
+        // Use the base client's delete method
+        const response = await this.apiClient.delete<void>(endpoint, options);
+        if (response.error) {
+            logger.error('Error deleting chat:', { chatId, organizationId, error: response.error });
+        } else {
+            logger.info(`Successfully deleted chat: ${chatId}`, { organizationId });
+        }
+        return response;
     }
 } 

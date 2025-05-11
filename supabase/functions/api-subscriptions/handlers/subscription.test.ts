@@ -8,7 +8,7 @@ import {
     resumeSubscription,
 } from "./subscription.ts";
 import { HandlerError } from "./current.ts";
-import { createMockSupabaseClient, type MockSupabaseDataConfig } from "../../_shared/test-utils.ts";
+import { createMockSupabaseClient, type MockSupabaseDataConfig } from "../../_shared/supabase.mock.ts";
 
 // --- Mocks & Spies ---
 let mockSupabaseClient: SupabaseClient;

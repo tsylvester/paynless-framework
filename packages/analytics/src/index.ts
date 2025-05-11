@@ -22,9 +22,9 @@ const initializeAnalytics = (): AnalyticsClient => {
       const posthogAdapter = new PostHogAdapter();
       posthogAdapter.init(posthogApiKey, posthogApiHost); // Initialize PostHog
       analyticsInstance = posthogAdapter;
-    } catch (initError: any) {
+    } catch (initError: unknown) {
         logger.error('[Analytics] Failed to initialize PostHog Adapter. Falling back to NullAdapter.', {
-            error: initError.message
+            error: initError instanceof Error ? initError.message : String(initError)
         });
         analyticsInstance = new NullAnalyticsAdapter();
     }

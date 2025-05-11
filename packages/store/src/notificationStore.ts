@@ -78,10 +78,16 @@ export const useNotificationStore = create<NotificationState>((set, get) => {
                         error: null,
                     });
                 }
-            } catch (err: any) {
-                logger.error('[notificationStore] Unexpected error fetching notifications', { error: err });
-                const error: ApiError = { code: 'UNEXPECTED_ERROR', message: err.message || 'An unexpected error occurred' };
-                set({ error, isLoading: false, notifications: [], unreadCount: 0 });
+            } catch (error: unknown) {
+                logger.error('[notificationStore] Error during initial load:', { 
+                    error: error instanceof Error ? error.message : String(error) 
+                });
+                // Create ApiError object
+                const apiError: ApiError = {
+                    code: 'FETCH_FAILED',
+                    message: error instanceof Error ? error.message : 'Failed to load notifications'
+                };
+                set({ isLoading: false, error: apiError });
             }
         },
 
@@ -133,10 +139,16 @@ export const useNotificationStore = create<NotificationState>((set, get) => {
                         };
                     });
                 }
-            } catch (err: any) {
-                logger.error('[notificationStore] Unexpected error marking notification as read', { notificationId, error: err });
-                const error: ApiError = { code: 'UNEXPECTED_ERROR', message: err.message || 'An unexpected error occurred' };
-                set({ error });
+            } catch (error: unknown) {
+                logger.error(`Error marking notification ${notificationId} as read:`, { 
+                    error: error instanceof Error ? error.message : String(error) 
+                });
+                // Create ApiError object
+                const apiError: ApiError = {
+                    code: 'MARK_READ_FAILED',
+                    message: error instanceof Error ? error.message : 'Failed to mark notification as read'
+                };
+                set({ error: apiError });
             }
         },
 
@@ -162,10 +174,16 @@ export const useNotificationStore = create<NotificationState>((set, get) => {
                         error: null
                     }));
                 }
-            } catch (err: any) {
-                logger.error('[notificationStore] Unexpected error marking all notifications as read', { error: err });
-                const error: ApiError = { code: 'UNEXPECTED_ERROR', message: err.message || 'An unexpected error occurred' };
-                set({ error });
+            } catch (error: unknown) {
+                logger.error('Error marking all notifications as read:', { 
+                     error: error instanceof Error ? error.message : String(error) 
+                });
+                 // Create ApiError object
+                 const apiError: ApiError = {
+                    code: 'MARK_ALL_READ_FAILED',
+                    message: error instanceof Error ? error.message : 'Failed to mark all notifications as read'
+                 };
+                 set({ error: apiError });
             }
         },
 
@@ -200,9 +218,12 @@ export const useNotificationStore = create<NotificationState>((set, get) => {
                     logger.error('[NotificationStore] Failed to subscribe to notifications, API returned null channel for user:', { userId });
                     set({ subscribedUserId: null });
                 }
-            } catch (err: any) {
-                logger.error('[NotificationStore] Error calling subscribeToNotifications:', { userId, error: err instanceof Error ? err.message : String(err) });
-                set({ subscribedUserId: null, error: { code: 'SUBSCRIBE_ERROR', message: err.message || 'Failed to subscribe' } });
+            } catch (error: unknown) {
+                logger.error('[NotificationStore] Error calling subscribeToNotifications:', { 
+                    userId, 
+                    error: error instanceof Error ? error.message : String(error) 
+                });
+                set({ subscribedUserId: null, error: { code: 'SUBSCRIBE_ERROR', message: error instanceof Error ? error.message : String(error) } });
             }
         },
 
@@ -219,9 +240,12 @@ export const useNotificationStore = create<NotificationState>((set, get) => {
                 notificationApi.unsubscribeFromNotifications();
                 set({ subscribedUserId: null });
                 logger.info('Successfully unsubscribed from notifications for user:', { userId: currentSubscribedId });
-            } catch (err: any) {
-                logger.error('[NotificationStore] Error calling unsubscribeFromNotifications:', { userId: currentSubscribedId, error: err });
-                set({ subscribedUserId: null, error: { code: 'UNSUBSCRIBE_ERROR', message: err.message || 'Failed to unsubscribe' } });
+            } catch (error: unknown) {
+                logger.error('[NotificationStore] Error calling unsubscribeFromNotifications:', { 
+                    userId: currentSubscribedId, 
+                    error: error instanceof Error ? error.message : String(error) 
+                });
+                set({ subscribedUserId: null, error: { code: 'UNSUBSCRIBE_ERROR', message: error instanceof Error ? error.message : String(error) } });
             }
         },
         // -----------------------------------------

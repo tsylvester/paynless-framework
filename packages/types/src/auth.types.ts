@@ -7,8 +7,8 @@ export interface SupabaseUser {
   id: string;
   email?: string;
   role?: string; // Keep as string? or specific roles if known and enforced
-  app_metadata: Record<string, any> & { provider?: string };
-  user_metadata: Record<string, any>;
+  app_metadata: Record<string, unknown> & { provider?: string };
+  user_metadata: Record<string, unknown>;
   aud: string;
   created_at?: string;
   updated_at?: string;

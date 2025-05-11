@@ -5,7 +5,7 @@ import {
     createMockSupabaseClient, 
     MockSupabaseDataConfig, 
     MockQueryBuilderState 
-} from "../_shared/test-utils.ts";
+} from "../_shared/supabase.mock.ts";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { User } from "@supabase/supabase-js"; 
 

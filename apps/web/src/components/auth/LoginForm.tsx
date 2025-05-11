@@ -1,5 +1,5 @@
 import React, { useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { Mail, Lock, AlertCircle } from 'lucide-react'
 import { logger } from '@paynless/utils'
 import { useAuthStore } from '@paynless/store'
@@ -10,12 +10,11 @@ import { Button } from '@/components/ui/button'
 export function LoginForm() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
+  const [isSubmitting, setIsSubmitting] = useState(false)
+  const navigate = useNavigate()
 
-  const { login, isLoading, error } = useAuthStore((state) => ({
-    login: state.login,
-    isLoading: state.isLoading,
-    error: state.error,
-  }))
+  const login = useAuthStore((state) => state.login)
+  const authError = useAuthStore((state) => state.error)
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -24,9 +23,18 @@ export function LoginForm() {
       logger.warn('Login form submitted with empty fields')
       return
     }
+    
+    setIsSubmitting(true)
 
-    logger.info('Attempting to login user via form', { email })
-    await login(email, password)
+    try {
+      logger.info('Attempting to login user via form', { email })
+      await login(email, password)
+      logger.info('[LoginForm] Login action succeeded, navigating to dashboard.')
+      navigate('/dashboard', { replace: true })
+    } catch (error) {
+      logger.error('[LoginForm] Login action failed in component:', { errorMessage: error instanceof Error ? error.message : String(error) });
+      setIsSubmitting(false)
+    }
   }
 
   return (
@@ -35,13 +43,13 @@ export function LoginForm() {
         Welcome Back
       </h2>
 
-      {error && (
+      {authError && (
         <div
           role="alert"
           className="mb-4 p-3 bg-red-50 border border-red-200 rounded-md flex items-center gap-2 text-red-700"
         >
           <AlertCircle size={18} />
-          <span data-testid="login-error-message">{error.message}</span>
+          <span data-testid="login-error-message">{authError.message}</span>
         </div>
       )}
 
@@ -62,7 +70,7 @@ export function LoginForm() {
               type="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              disabled={isLoading}
+              disabled={isSubmitting}
               className="pl-10 bg-black"
               placeholder="you@example.com"
               required
@@ -86,7 +94,7 @@ export function LoginForm() {
               type="password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              disabled={isLoading}
+              disabled={isSubmitting}
               className="pl-10"
               placeholder="••••••••"
               required
@@ -102,8 +110,8 @@ export function LoginForm() {
           </div>
         </div>
 
-        <Button type="submit" disabled={isLoading} className="w-full">
-          {isLoading ? 'Signing in...' : 'Sign in'}
+        <Button type="submit" disabled={isSubmitting} className="w-full">
+          {isSubmitting ? 'Signing in...' : 'Sign in'}
         </Button>
 
         <div className="mt-4 text-center">

@@ -14,7 +14,7 @@ import {
   FlaskConical,
   FileCog,
 } from 'lucide-react'
-import { Notifications } from '../Notifications'
+import { Notifications } from '../notifications/Notifications'
 import { SimpleDropdown } from '../ui/SimpleDropdown'
 import { OrganizationSwitcher } from '../organizations/OrganizationSwitcher'
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"

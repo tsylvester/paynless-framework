@@ -1,5 +1,5 @@
 import React, { useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { Mail, Lock, AlertCircle } from 'lucide-react'
 import { logger } from '@paynless/utils'
 import { useAuthStore } from '@paynless/store'
@@ -10,12 +10,11 @@ import { Button } from '@/components/ui/button'
 export function RegisterForm() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
+  const [isSubmitting, setIsSubmitting] = useState(false)
+  const navigate = useNavigate()
 
-  const { register, isLoading, error } = useAuthStore((state) => ({
-    register: state.register,
-    isLoading: state.isLoading,
-    error: state.error,
-  }))
+  const register = useAuthStore((state) => state.register)
+  const authError = useAuthStore((state) => state.error)
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -25,8 +24,19 @@ export function RegisterForm() {
       return
     }
 
-    logger.info('Attempting to register user via form', { email })
-    await register(email, password)
+    setIsSubmitting(true)
+
+    try {
+      logger.info('Attempting to register user via form', { email })
+      await register(email, password)
+
+      logger.info('[RegisterForm] Register action succeeded, navigating to dashboard.')
+      navigate('/dashboard', { replace: true })
+
+    } catch (error) {
+      logger.error('[RegisterForm] Register action failed in component:', { errorMessage: error instanceof Error ? error.message : String(error) })
+      setIsSubmitting(false)
+    }
   }
 
   return (
@@ -35,10 +45,10 @@ export function RegisterForm() {
         Create an Account
       </h2>
 
-      {error && (
+      {authError && (
         <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-md flex items-center gap-2 text-red-700">
           <AlertCircle size={18} />
-          <span data-testid="register-error-message">{error.message}</span>
+          <span data-testid="register-error-message">{authError.message}</span>
         </div>
       )}
 
@@ -54,7 +64,7 @@ export function RegisterForm() {
               type="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              disabled={isLoading}
+              disabled={isSubmitting}
               className="pl-10"
               placeholder="you@example.com"
               required
@@ -74,7 +84,7 @@ export function RegisterForm() {
               autoComplete="new-password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              disabled={isLoading}
+              disabled={isSubmitting}
               className="pl-10"
               placeholder="••••••••"
               required
@@ -84,12 +94,12 @@ export function RegisterForm() {
 
         <Button
           type="submit"
-          disabled={isLoading}
+          disabled={isSubmitting}
           className={`w-full flex justify-center py-2 px-4 ${
-            isLoading ? 'opacity-75 cursor-not-allowed' : ''
+            isSubmitting ? 'opacity-75 cursor-not-allowed' : ''
           }`}
         >
-          {isLoading ? 'Creating account...' : 'Create account'}
+          {isSubmitting ? 'Creating account...' : 'Create account'}
         </Button>
 
         <div className="mt-4 text-center">

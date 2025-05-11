@@ -20,6 +20,15 @@ export type SystemPrompt = Database['public']['Tables']['system_prompts']['Row']
 export type Chat = Database['public']['Tables']['chats']['Row'];
 
 /**
+ * Represents the token usage for a message or a chat.
+ */
+export interface TokenUsage {
+  promptTokens: number;
+  completionTokens: number;
+  totalTokens: number;
+}
+
+/**
  * Represents a single message within a Chat.
  * Derived from the `chat_messages` table.
  */
@@ -27,6 +36,8 @@ export type ChatMessage = Database['public']['Tables']['chat_messages']['Row'] &
   // Keep application-level status enrichment if needed by UI directly
   // Note: status was previously added to LocalChatMessage, consider if it belongs here
   status?: 'pending' | 'sent' | 'error'; 
+  is_active_in_thread?: boolean;
+  token_usage?: TokenUsage | null; // Use the more specific TokenUsage type
 };
 
 // --- Application/API/Adapter/Store Specific Types ---
@@ -40,7 +51,8 @@ export interface ChatApiRequest {
   message: string;
   providerId: AiProvider['id']; // Reference aliased type
   promptId: SystemPrompt['id']; // Reference aliased type
-  chatId?: Chat['id'];   // Reference aliased type (optional for new chats)
+  chatId?: Chat['id'] | null;   // Reference aliased type (optional for new chats)
+  organizationId?: string | null; // Add optional organizationId
 }
 
 /**
@@ -126,19 +138,36 @@ export interface AiState {
     availableProviders: AiProvider[]; // Use aliased type
     availablePrompts: SystemPrompt[]; // Use aliased type
 
-    // Current chat state
-    currentChatMessages: ChatMessage[]; // Use aliased type
-    currentChatId: Chat['id'] | null; // Use aliased type
-    isLoadingAiResponse: boolean; // Loading indicator specifically for AI response generation
-    isConfigLoading: boolean;   // Loading indicator for fetching providers/prompts
-    isHistoryLoading: boolean;  // Loading indicator for fetching chat list
-    isDetailsLoading: boolean;  // Loading indicator for fetching messages of a specific chat
+    // New context-aware chat state
+    chatsByContext: { 
+        personal: Chat[] | undefined; 
+        orgs: { [orgId: string]: Chat[] | undefined };
+    };
+    messagesByChatId: { [chatId: string]: ChatMessage[] };
+    currentChatId: Chat['id'] | null; // Remains the same
 
-    // Chat history list
-    chatHistoryList: Chat[]; // Use aliased type
+    // Loading states
+    isLoadingAiResponse: boolean; // Remains the same
+    isConfigLoading: boolean;   // Remains the same
+    isLoadingHistoryByContext: { 
+        personal: boolean; 
+        orgs: { [orgId: string]: boolean };
+    };
+    historyErrorByContext: { personal: string | null, orgs: { [orgId: string]: string | null } };
+    isDetailsLoading: boolean;  // Remains the same (for currentChatId messages)
+
+    // New chat initiation and context
+    newChatContext: 'personal' | string | null; // 'personal' or orgId
+
+    // Rewind feature state
+    rewindTargetMessageId: ChatMessage['id'] | null;
 
     // Error state
-    aiError: string | null;
+    aiError: string | null; // Remains the same
+
+    // Token Tracking (placeholders, to be detailed in STEP-2.1.8)
+    // Example: chatTokenUsage?: { [chatId: string]: { promptTokens: number; completionTokens: number; totalTokens: number } };
+    // Example: sessionTokenUsage?: { promptTokens: number; completionTokens: number; totalTokens: number };
 }
 
 /**
@@ -149,14 +178,17 @@ export interface AiActions {
   sendMessage: (data: {
     message: string; 
     providerId: AiProvider['id']; // Use aliased type
-    promptId: SystemPrompt['id']; // Use aliased type
+    promptId: SystemPrompt['id'] | null; // MODIFIED HERE
     chatId?: Chat['id'] | null; // Use aliased type
   }) => Promise<ChatMessage | null>; // Use aliased type
-  loadChatHistory: () => Promise<void>;
+  loadChatHistory: (organizationId?: string | null) => Promise<void>;
   loadChatDetails: (chatId: Chat['id']) => Promise<void>; // Use aliased type
-  startNewChat: () => void;
+  startNewChat: (organizationId?: string | null) => void;
   clearAiError: () => void;
   checkAndReplayPendingChatAction: () => Promise<void>;
+  deleteChat: (chatId: Chat['id'], organizationId?: string | null) => Promise<void>;
+  prepareRewind: (messageId: ChatMessage['id'], chatId: Chat['id']) => void;
+  cancelRewindPreparation: () => void;
 }
 
 // Combined type for the store

@@ -1,5 +1,5 @@
 import { assertEquals, assertExists, assertNotEquals } from "https://deno.land/std@0.192.0/testing/asserts.ts";
-import { startSupabase, stopSupabase, createUser, createAdminClient, cleanupUser } from "../_shared/test-utils.ts";
+import { startSupabase, stopSupabase, createUser, createAdminClient, cleanupUser } from "../_shared/supabase.mock.ts";
 
 // Assuming SUPABASE_ANON_KEY is available in the test environment
 const ANON_KEY = Deno.env.get('SUPABASE_ANON_KEY') || ""; 

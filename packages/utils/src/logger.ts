@@ -1,28 +1,4 @@
-/**
- * Logging levels
- */
-export enum LogLevel {
-  DEBUG = 'debug',
-  INFO = 'info',
-  WARN = 'warn',
-  ERROR = 'error',
-}
-
-/**
- * Configuration for the logger
- */
-export interface LoggerConfig {
-  minLevel: LogLevel;
-  enableConsole: boolean;
-  captureErrors: boolean;
-}
-
-/**
- * Interface for log entry metadata
- */
-export interface LogMetadata {
-  [key: string]: unknown;
-}
+import { LoggerConfig, LogLevel, LogMetadata } from "@paynless/types";
 
 /**
  * Logging service for application-wide logging

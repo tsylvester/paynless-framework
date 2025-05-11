@@ -2,6 +2,36 @@
 // Centralized APPLICATION-LEVEL types for Supabase Edge Functions.
 // Types directly related to DB tables should be imported from ../types_db.ts
 import type { Database } from '../types_db.ts';
+import type { handleCorsPreflightRequest, createSuccessResponse, createErrorResponse } from './cors-headers.ts';
+import { createClient } from "npm:@supabase/supabase-js";
+import type { Spy } from "jsr:@std/testing@0.225.1/mock";
+import type { User as SupabaseUser } from "npm:@supabase/supabase-js";
+
+/**
+ * Logging levels
+ */
+export enum LogLevel {
+  DEBUG = 'debug',
+  INFO = 'info',
+  WARN = 'warn',
+  ERROR = 'error',
+}  
+
+/**
+* Configuration for the logger
+*/
+export interface LoggerConfig {
+  minLevel: LogLevel;
+  enableConsole: boolean;
+  captureErrors: boolean;
+}
+
+/**
+ * Interface for log entry metadata
+ */
+export interface LogMetadata {
+  [key: string]: unknown;
+}
 
 /**
  * Represents the standard user data structure for email marketing services.
@@ -16,7 +46,7 @@ export interface UserData {
   lastSignInAt?: string; // ISO string format
   // Add other standard fields you might want to sync
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  [key: string]: any; // Allows for platform-specific custom fields
+  [key: string]: unknown; // Allows for platform-specific custom fields
 }
 
 // --- Subscription Related API Types (Not DB Tables) ---
@@ -88,13 +118,15 @@ export interface EmailMarketingService {
  */
 export interface ChatApiRequest {
   message: string;
-  providerId: string; // AiProvider['id'] (ID from ai_providers table)
-  promptId: string;   // SystemPrompt['id'] or '__none__'
-  chatId?: string;   // Chat['id'] (optional for new chats)
-  // NOTE: The ChatMessage type previously here is REMOVED.
-  // Adapters/functions will need to handle message structure internally
-  // or import the DB type `Database['public']['Tables']['chat_messages']['Row']` from `../types_db.ts`.
-  messages: { role: 'user' | 'assistant' | 'system'; content: string }[]; // History + System Prompt
+  providerId: string; // uuid for ai_providers table
+  promptId: string;   // uuid for system_prompts table, or '__none__'
+  chatId?: string;   // uuid, optional for new chats
+  messages?: { // For sending history to adapter, optional
+    role: 'system' | 'user' | 'assistant';
+    content: string;
+  }[];
+  organizationId?: string; // uuid, optional for org chats - ADDED
+  rewindFromMessageId?: string; // uuid, optional for rewinding - ADDED
 }
 
 /**
@@ -105,7 +137,7 @@ export interface ProviderModelInfo {
   name: string;           // A user-friendly name for the model
   description?: string;    // Optional description
   // Use `Database['public']['Tables']['ai_providers']['Row']['config']` for the actual JSON type
-  config?: any; // Use 'any' here to avoid importing Json from db-types
+  config?: Database['public']['Tables']['ai_providers']['Row']['config']; // Use specific DB Json type
 }
 
 /**
@@ -117,7 +149,7 @@ export interface AiProviderAdapter {
     request: ChatApiRequest,
     modelIdentifier: string, // The specific API identifier for the model (e.g., 'gpt-4o')
     apiKey: string
-  ): Promise<any>; // Return type changed to any - implementation needs to use DB type
+  ): Promise<AdapterResponsePayload>; // Return type changed to AdapterResponsePayload
 
   listModels(apiKey: string): Promise<ProviderModelInfo[]>;
 }
@@ -138,7 +170,8 @@ export interface AdapterResponsePayload {
   content: string;
   ai_provider_id: string | null; // The DB ID of the provider used
   system_prompt_id: string | null; // The DB ID of the prompt used (or null)
-  token_usage: any | null; // Use 'any' for now to avoid linter issues
+  token_usage: Database['public']['Tables']['chat_messages']['Row']['token_usage']; // Use specific DB Json type
+  created_at?: string;
 }
 
 /**
@@ -153,5 +186,150 @@ export interface FullChatMessageRecord {
   content: string;
   ai_provider_id?: string | null;
   system_prompt_id?: string | null;
-  token_usage?: any | null; // Use 'any' for now
+  token_usage?: Database['public']['Tables']['chat_messages']['Row']['token_usage']; // Use specific DB Json type
+}
+
+/**
+ * Interface describing the signature of the getAiProviderAdapter function.
+ */
+export interface GetAiProviderAdapter {
+  (provider: string): AiProviderAdapter | null;
+}
+
+/**
+ * Interface describing the signature of the verifyApiKey function.
+ */
+export interface VerifyApiKey {
+  (req: Request): boolean;
+}
+
+/**
+ * Interface describing the public contract of a Logger instance.
+ */
+export interface ILogger {
+  debug: (message: string, metadata?: LogMetadata) => void;
+  info: (message: string, metadata?: LogMetadata) => void;
+  warn: (message: string, metadata?: LogMetadata) => void;
+  error: (message: string | Error, metadata?: LogMetadata) => void;
+  // setLogLevel?: (level: LogLevel) => void; // Example if needed
+}
+
+export interface ChatHandlerDeps {
+  createSupabaseClient: typeof createClient;
+  fetch: typeof fetch; // Global fetch type
+  handleCorsPreflightRequest: typeof handleCorsPreflightRequest;
+  createJsonResponse: typeof createSuccessResponse; // Use the corrected type name
+  createErrorResponse: typeof createErrorResponse;
+  getAiProviderAdapter: GetAiProviderAdapter; // Use the new specific type
+  verifyApiKey: VerifyApiKey;
+  logger: ILogger;
+}
+
+// --- Interfaces for Mock Supabase Client (for testing) ---
+
+export type User = SupabaseUser;
+
+export interface IMockQueryBuilder {
+  select: (columns?: string) => IMockQueryBuilder;
+  insert: (data: unknown[] | object) => IMockQueryBuilder;
+  update: (data: object) => IMockQueryBuilder;
+  delete: () => IMockQueryBuilder; // delete often doesn't take args directly, filters applied before
+  upsert: (data: unknown[] | object, options?: { onConflict?: string, ignoreDuplicates?: boolean }) => IMockQueryBuilder;
+
+  // Filtering
+  eq: (column: string, value: unknown) => IMockQueryBuilder;
+  neq: (column: string, value: unknown) => IMockQueryBuilder;
+  gt: (column: string, value: unknown) => IMockQueryBuilder;
+  gte: (column: string, value: unknown) => IMockQueryBuilder;
+  lt: (column: string, value: unknown) => IMockQueryBuilder;
+  lte: (column: string, value: unknown) => IMockQueryBuilder;
+  like: (column: string, pattern: string) => IMockQueryBuilder;
+  ilike: (column: string, pattern: string) => IMockQueryBuilder;
+  is: (column: string, value: 'null' | 'not null' | 'true' | 'false') => IMockQueryBuilder;
+  in: (column: string, values: unknown[]) => IMockQueryBuilder;
+  contains: (column: string, value: string | string[] | object) => IMockQueryBuilder;
+  containedBy: (column: string, value: string | string[] | object) => IMockQueryBuilder;
+  rangeGt: (column: string, range: string) => IMockQueryBuilder;
+  rangeGte: (column: string, range: string) => IMockQueryBuilder;
+  rangeLt: (column: string, range: string) => IMockQueryBuilder;
+  rangeLte: (column: string, range: string) => IMockQueryBuilder;
+  rangeAdjacent: (column: string, range: string) => IMockQueryBuilder;
+  overlaps: (column: string, value: string | string[]) => IMockQueryBuilder;
+  textSearch: (column: string, query: string, options?: { config?: string, type?: 'plain' | 'phrase' | 'websearch' }) => IMockQueryBuilder;
+  match: (query: object) => IMockQueryBuilder;
+  or: (filters: string, options?: { referencedTable?: string }) => IMockQueryBuilder;
+  filter: (column: string, operator: string, value: unknown) => IMockQueryBuilder;
+  not: (column: string, operator: string, value: unknown) => IMockQueryBuilder; // Simplified not, full not is more complex
+
+  // Modifiers
+  order: (column: string, options?: { ascending?: boolean, nullsFirst?: boolean, referencedTable?: string }) => IMockQueryBuilder;
+  limit: (count: number, options?: { referencedTable?: string }) => IMockQueryBuilder;
+  range: (from: number, to: number, options?: { referencedTable?: string }) => IMockQueryBuilder;
+
+  // Terminators
+  single: () => Promise<{ data: object | null; error: Error | null; count: number | null; status: number; statusText: string; }>;
+  maybeSingle: () => Promise<{ data: object | null; error: Error | null; count: number | null; status: number; statusText: string; }>;
+  // .then is implicitly supported by async functions / promises in JS/TS, 
+  // but if we want to spy on it explicitly as a method:
+  then: (
+    onfulfilled?: ((value: { data: unknown[] | null; error: Error | null; count: number | null; status: number; statusText: string; }) => unknown | PromiseLike<unknown>) | null | undefined, 
+    onrejected?: ((reason: unknown) => unknown | PromiseLike<unknown>) | null | undefined
+  ) => Promise<unknown>; 
+  // For RPC-like calls if the builder supports it (e.g. PostgREST functions)
+  returns: () => IMockQueryBuilder; // Or Promise<any> if it's terminal
+
+  // TODO: Add other methods as needed: e.g., rpc within builder, with, modifiers like .csv()
+}
+
+export interface IMockSupabaseAuth {
+  // Define methods we need to mock, e.g.:
+  getUser: () => Promise<{ data: { user: User | null }; error: Error | null }>; // Now User is defined
+  // Add signOut, signUp, signInWithPassword etc. if needed for tests
+  // For admin actions if used by client directly (usually not)
+  // admin?: { listUsers: () => Promise<any>, deleteUser: (id: string) => Promise<any> };
+}
+
+export interface IMockSupabaseClient {
+  from: (tableName: string) => IMockQueryBuilder;
+  // Define simplified auth object for now based on what's typically used client-side
+  auth: IMockSupabaseAuth; 
+  rpc: (name: string, params?: object, options?: { head?: boolean, count?: 'exact' | 'planned' | 'estimated' }) => Promise<{ data: unknown | null; error: Error | null; count: number | null; status: number; statusText: string; }>;
+  // Add removeChannel, getChannels etc. if realtime is tested
+}
+
+// Interface for the collection of spies returned by the mock client setup
+export interface IMockClientSpies {
+  auth: {
+    getUserSpy: Spy<IMockSupabaseAuth['getUser']>; // Spy type is now available
+    // Add other auth method spies here
+  };
+  rpcSpy: Spy<IMockSupabaseClient['rpc']>; // Spy type is now available
+  fromSpy: Spy<IMockSupabaseClient['from']>; // Spy type is now available
+  
+  // New way to access query builder method spies for a specific table
+  // This function would be part of the returned spies object.
+  // It retrieves the spies from the *last* MockQueryBuilder instance created for that table.
+  getLatestQueryBuilderSpies: (tableName: string) => ({
+    select?: Spy<IMockQueryBuilder['select']>; // Spy type is now available
+    insert?: Spy<IMockQueryBuilder['insert']>; // Spy type is now available
+    update?: Spy<IMockQueryBuilder['update']>; // Spy type is now available
+    delete?: Spy<IMockQueryBuilder['delete']>; // Spy type is now available
+    upsert?: Spy<IMockQueryBuilder['upsert']>; // Spy type is now available
+    eq?: Spy<IMockQueryBuilder['eq']>; // Spy type is now available
+    neq?: Spy<IMockQueryBuilder['neq']>; // Spy type is now available
+    gt?: Spy<IMockQueryBuilder['gt']>; // Spy type is now available
+    gte?: Spy<IMockQueryBuilder['gte']>; // Spy type is now available
+    lt?: Spy<IMockQueryBuilder['lt']>; // Spy type is now available
+    lte?: Spy<IMockQueryBuilder['lte']>; // Spy type is now available
+    // Add other filter/modifier/terminator method spies as needed
+    single?: Spy<IMockQueryBuilder['single']>; // Spy type is now available
+    maybeSingle?: Spy<IMockQueryBuilder['maybeSingle']>; // Spy type is now available
+    then?: Spy<IMockQueryBuilder['then']>; // Spy type is now available
+  } | undefined);
+}
+
+// The return type of the refined createMockSupabaseClient function
+export interface MockSupabaseClientSetup {
+  client: IMockSupabaseClient; // The mock client instance
+  spies: IMockClientSpies;   // The collection of spies
 }

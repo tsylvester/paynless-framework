@@ -13,6 +13,8 @@
     "npm:@google-cloud/vertexai@*": "1.10.0",
     "npm:@supabase/auth-js@2.69.1": "2.69.1",
     "npm:@supabase/functions-js@2.4.4": "2.4.4",
+    "npm:@supabase/gotrue-js@*": "2.69.1",
+    "npm:@supabase/gotrue-js@^2.6.3": "2.69.1",
     "npm:@supabase/node-fetch@2.6.15": "2.6.15",
     "npm:@supabase/postgrest-js@1.19.4": "1.19.4",
     "npm:@supabase/realtime-js@2.11.2": "2.11.2",
@@ -22,13 +24,15 @@
     "npm:@supabase/supabase-js@2.39.3": "2.39.3",
     "npm:@supabase/supabase-js@2.49.4": "2.49.4",
     "npm:@supabase/supabase-js@^2.43.4": "2.49.4",
+    "npm:@types/node@*": "22.12.0",
     "npm:openai@*": "4.91.1",
     "npm:openai@^4.52.5": "4.91.1",
     "npm:react@*": "19.1.0",
     "npm:sinon@*": "20.0.0",
     "npm:stripe@*": "18.0.0",
     "npm:stripe@14.11.0": "14.11.0",
-    "npm:stripe@18.0.0": "18.0.0"
+    "npm:stripe@18.0.0": "18.0.0",
+    "npm:stripe@^14.11.0": "14.11.0"
   },
   "jsr": {
     "@std/assert@0.225.3": {
@@ -589,7 +593,11 @@
     }
   },
   "redirects": {
-    "https://deno.land/std/testing/asserts.ts": "https://deno.land/std@0.224.0/testing/asserts.ts"
+    "https://deno.land/std/testing/asserts.ts": "https://deno.land/std@0.224.0/testing/asserts.ts",
+    "https://esm.sh/@supabase/node-fetch@^2.6.14?target=denonext": "https://esm.sh/@supabase/node-fetch@2.6.15?target=denonext",
+    "https://esm.sh/tr46@~0.0.3?target=denonext": "https://esm.sh/tr46@0.0.3?target=denonext",
+    "https://esm.sh/webidl-conversions@^3.0.0?target=denonext": "https://esm.sh/webidl-conversions@3.0.1?target=denonext",
+    "https://esm.sh/whatwg-url@^5.0.0?target=denonext": "https://esm.sh/whatwg-url@5.0.0?target=denonext"
   },
   "remote": {
     "https://deno.land/std@0.168.0/async/abortable.ts": "80b2ac399f142cc528f95a037a7d0e653296352d95c681e284533765961de409",
@@ -896,7 +904,17 @@
     "https://deno.land/x/postgres@v0.19.2/query/query.ts": "510f9a27da87ed7b31b5cbcd14bf3028b441ac2ddc368483679d0b86a9d9f213",
     "https://deno.land/x/postgres@v0.19.2/query/transaction.ts": "8f4eef68f8e9b4be216199404315e6e08fe1fe98afb2e640bffd077662f79678",
     "https://deno.land/x/postgres@v0.19.2/utils/deferred.ts": "5420531adb6c3ea29ca8aac57b9b59bd3e4b9a938a4996bbd0947a858f611080",
-    "https://deno.land/x/postgres@v0.19.2/utils/utils.ts": "ca47193ea03ff5b585e487a06f106d367e509263a960b787197ce0c03113a738"
+    "https://deno.land/x/postgres@v0.19.2/utils/utils.ts": "ca47193ea03ff5b585e487a06f106d367e509263a960b787197ce0c03113a738",
+    "https://esm.sh/@supabase/gotrue-js@2.60.0": "7e5e5dcbfc6b60d0db3ccd329958859b122ed7cfd8c7de71421b0d4bf832bb37",
+    "https://esm.sh/@supabase/gotrue-js@2.60.0/denonext/gotrue-js.mjs": "cc7e95134547e23bc5b8d044e91a872c12f2f61e4257d19c00f7950c889dbdce",
+    "https://esm.sh/@supabase/node-fetch@2.6.15/denonext/node-fetch.mjs": "0bae9052231f4f6dbccc7234d05ea96923dbf967be12f402764580b6bf9f713d",
+    "https://esm.sh/@supabase/node-fetch@2.6.15?target=denonext": "4d28c4ad97328403184353f68434f2b6973971507919e9150297413664919cf3",
+    "https://esm.sh/tr46@0.0.3/denonext/tr46.mjs": "5753ec0a99414f4055f0c1f97691100f13d88e48a8443b00aebb90a512785fa2",
+    "https://esm.sh/tr46@0.0.3?target=denonext": "19cb9be0f0d418a0c3abb81f2df31f080e9540a04e43b0f699bce1149cba0cbb",
+    "https://esm.sh/webidl-conversions@3.0.1/denonext/webidl-conversions.mjs": "54b5c2d50a294853c4ccebf9d5ed8988c94f4e24e463d84ec859a866ea5fafec",
+    "https://esm.sh/webidl-conversions@3.0.1?target=denonext": "4e20318d50528084616c79d7b3f6e7f0fe7b6d09013bd01b3974d7448d767e29",
+    "https://esm.sh/whatwg-url@5.0.0/denonext/whatwg-url.mjs": "29b16d74ee72624c915745bbd25b617cfd2248c6af0f5120d131e232a9a9af79",
+    "https://esm.sh/whatwg-url@5.0.0?target=denonext": "f001a2cadf81312d214ca330033f474e74d81a003e21e8c5d70a1f46dc97b02d"
   },
   "workspace": {
     "dependencies": [

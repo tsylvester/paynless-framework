@@ -356,6 +356,15 @@ export const useAuthStore = create<AuthStore>()((set, get) => ({
         // Implementation for handling OAuth login
         // This is a placeholder and should be implemented
       },
+
+      updateProfileWithAvatar: async (
+        _profileData: UserProfileUpdate,
+        // _file: File | null // Commented out as it's unused for now
+      ): Promise<UserProfile | null> => {
+        // Implementation for updating profile with avatar
+        // This is a placeholder and should be implemented
+        return null;
+      },
     }))
 
 export function initAuthListener(
@@ -473,14 +482,6 @@ export function initAuthListener(
                         } else {
                             logger.warn('[AuthListener] Could not parse returnPath from pending action JSON.', { pendingActionJson });
                         }
-                    } else {
-                        logger.info('[AuthListener] No pending action found on SIGNED_IN. Navigating to default route dashboard.');
-                        const navigate = useAuthStore.getState().navigate;
-                        if (navigate) {
-                            navigate('dashboard');
-                        } else {
-                            logger.warn('[AuthListener] Navigate function not available for default redirection.');
-                        }
                     }
                 } catch (e) {
                     logger.error('[AuthListener] Error checking/parsing pendingAction for navigation:', { 
@@ -505,39 +506,45 @@ export function initAuthListener(
             break;
 
           case 'SIGNED_OUT':
-            useAuthStore.setState({
-              user: null,
-              session: null,
-              profile: null,
-              isLoading: false, 
-              error: null,
-            });
-            localStorage.removeItem('pendingAction');
-            localStorage.removeItem('loadChatIdOnRedirect');
-             // Explicitly unsubscribe notifications on sign out
-             try {
-                 const unsubscribeNotifications = useNotificationStore.getState().unsubscribeFromUserNotifications;
-                 logger.info('[AuthListener SIGNED_OUT] Unsubscribing from notifications...');
-                 unsubscribeNotifications();
-             } catch (unsubscribeError) {
-                  logger.error('[AuthListener SIGNED_OUT] Error unsubscribing from notifications:', { error: unsubscribeError instanceof Error ? unsubscribeError.message : String(unsubscribeError) });
-             }
-             // Navigate to root
-             const navigate = useAuthStore.getState().navigate;
-             if (navigate) {
-                 navigate('/');
-             } else {
-                 logger.warn('[AuthListener] Navigate function not available for SIGNED_OUT redirection.');
-             }
-            break;
+            {
+              useAuthStore.setState({
+                user: null,
+                session: null,
+                profile: null,
+                isLoading: false,
+                error: null,
+              });
+              localStorage.removeItem('pendingAction');
+              localStorage.removeItem('loadChatIdOnRedirect');
+              // Explicitly unsubscribe notifications on sign out
+              try {
+                  const unsubscribeNotifications = useNotificationStore.getState().unsubscribeFromUserNotifications;
+                  logger.info('[AuthListener SIGNED_OUT] Unsubscribing from notifications...');
+                  unsubscribeNotifications();
+              } catch (unsubscribeError) {
+                    logger.error('[AuthListener SIGNED_OUT] Error unsubscribing from notifications:', { error: unsubscribeError instanceof Error ? unsubscribeError.message : String(unsubscribeError) });
+              }
+              // Navigate to root
+              const navigate = useAuthStore.getState().navigate;
+              if (navigate) {
+                  navigate('/');
+              } else {
+                  logger.warn('[AuthListener] Navigate function not available for SIGNED_OUT redirection.');
+              }
+              break;
+            }
 
           case 'PASSWORD_RECOVERY':
-            useAuthStore.setState({ isLoading: false });
-            break;
+            {
+                useAuthStore.setState({ isLoading: false });
+                break;
+            }
           default:
-            logger.warn('[AuthListener] Unhandled auth event:', { event });
-            useAuthStore.setState({ isLoading: false }); 
-            break;
+            {
+                logger.warn('[AuthListener] Unhandled auth event:', { event });
+                useAuthStore.setState({ isLoading: false }); 
+                break;
+            }
         }
 
         // --- Trigger Profile Fetch if needed ---

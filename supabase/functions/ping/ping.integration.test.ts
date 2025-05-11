@@ -1,5 +1,5 @@
 import { assertEquals, assertExists } from "https://deno.land/std@0.192.0/testing/asserts.ts";
-import { startSupabase, stopSupabase } from "../_shared/test-utils.ts";
+import { startSupabase, stopSupabase } from "../_shared/supabase.mock.ts";
 
 const PING_URL = "http://localhost:54321/functions/v1/ping";
 

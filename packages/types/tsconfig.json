@@ -3,10 +3,16 @@
   "compilerOptions": {
     "outDir": "./dist",
     "rootDir": "./src",
+    "baseUrl": ".",
     "declaration": true,
     "lib": ["ESNext", "DOM"],
     "composite": true
   },
-  "include": ["src/**/*"],
+  "include": [
+    "src/**/*"
+  ],
+  "references": [
+    { "path": "../../supabase/functions" }
+  ],
   "exclude": ["node_modules", "dist"]
 } 

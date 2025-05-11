@@ -32,5 +32,9 @@ tsconfig.tsbuildinfo
 vite.config.*.timestamp*
 vitest.config.*.timestamp*
 
+# Rust
+target/
+
+
 # Rust build artifacts
 /target/

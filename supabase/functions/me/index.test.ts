@@ -26,7 +26,7 @@ import type {
 import { 
     createMockSupabaseClient, 
     type MockSupabaseDataConfig
-} from '../_shared/test-utils.ts';
+} from '../_shared/supabase.mock.ts';
 
 // --- Test Cases ---
 Deno.test("Me Function (/me) Tests", async (t) => {

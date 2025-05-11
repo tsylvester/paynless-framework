@@ -19,7 +19,7 @@ import {
     // setMockFetchResponse, // No longer needed if mocking adapter directly
     // stubFetchForTestScope, // No longer needed if mocking adapter directly
     type MockQueryBuilderState 
-} from "../_shared/test-utils.ts";
+} from "../_shared/supabase.mock.ts";
 
 // Constants for Anthropic
 const PROVIDER_NAME = 'anthropic';

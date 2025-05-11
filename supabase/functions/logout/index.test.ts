@@ -13,7 +13,7 @@ import { mainHandler } from "./index.ts";
 // Assuming standard Error or AuthError is sufficient based on context.
 // import { HandlerError } from '../api-subscriptions/handlers/current.ts'; 
 import { HandlerError } from "../api-subscriptions/handlers/current.ts"; // Import HandlerError
-import { createMockSupabaseClient } from "../_shared/test-utils.ts";
+import { createMockSupabaseClient } from "../_shared/supabase.mock.ts";
 import type { Database } from "../types_db.ts";
 
 // Test suite for the inner mainHandler

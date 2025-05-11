@@ -45,6 +45,7 @@ export const defaultMockOrganization: Organization = {
   created_at: new Date().toISOString(),
   visibility: 'private',
   deleted_at: null,
+  allow_member_chat_creation: true,
 };
 
 // Correct defaultMockMembers based on actual type from linter error
@@ -63,7 +64,8 @@ export const defaultMockMembers: OrganizationMemberWithProfile[] = [ // Use Orga
              last_name: 'User',
              updated_at: new Date().toISOString(), 
              created_at: new Date().toISOString(),
-             role: 'user'
+             role: 'user',
+             last_selected_org_id: null,
           }
     },
     { 
@@ -79,7 +81,8 @@ export const defaultMockMembers: OrganizationMemberWithProfile[] = [ // Use Orga
              last_name: 'User',
              updated_at: new Date().toISOString(), 
              created_at: new Date().toISOString(),
-             role: 'user'
+             role: 'user',
+             last_selected_org_id: null,
           }
     },
 ]

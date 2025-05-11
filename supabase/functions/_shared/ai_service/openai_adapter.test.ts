@@ -6,6 +6,13 @@ import { assertSpyCall, assertSpyCalls, type Spy } from "jsr:@std/testing@0.225.
 import { assert } from "jsr:@std/assert@0.225.3";
 import { OpenAI } from 'npm:openai';
 
+// Define an interface for the expected token usage structure
+interface MockTokenUsage {
+  prompt_tokens: number;
+  completion_tokens: number;
+  total_tokens: number;
+}
+
 // --- Test Data ---
 const MOCK_API_KEY = 'sk-test-key';
 const MOCK_MODEL_ID = 'openai-gpt-4o';
@@ -110,6 +117,10 @@ Deno.test("OpenAiAdapter sendMessage - Success", async () => {
     assertEquals(result.ai_provider_id, MOCK_CHAT_REQUEST.providerId);
     assertEquals(result.system_prompt_id, MOCK_CHAT_REQUEST.promptId);
     assertExists(result.token_usage); // Should return token usage
+    const tokenUsage = result.token_usage as unknown as MockTokenUsage; // Cast
+    assertEquals(tokenUsage.prompt_tokens, MOCK_OPENAI_SUCCESS_RESPONSE.usage.prompt_tokens, "Prompt tokens mismatch");
+    assertEquals(tokenUsage.completion_tokens, MOCK_OPENAI_SUCCESS_RESPONSE.usage.completion_tokens, "Completion tokens mismatch");
+    assertEquals(tokenUsage.total_tokens, MOCK_OPENAI_SUCCESS_RESPONSE.usage.total_tokens, "Total tokens mismatch");
 
     // Verify fetch call details
     // assertSpyCall(mockFetch, 0); // Removed redundant/problematic assertion

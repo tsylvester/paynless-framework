@@ -6,7 +6,10 @@ This application is designed to follow these principles:
 - Full separation of concerns 
 - API-first architecture
 - Secure, safe, reliable, robust development practices
-- No code duplication
+- No code duplication (DRY)
+- Dependency inversion
+- Dependency injection
+- Interfaces 
 - Well-structured code with proper documentation
 - Event-driven architecture instead of delays or timeouts
 - Comprehensive logging
@@ -14,6 +17,9 @@ This application is designed to follow these principles:
 - Clear organization of types and interfaces
 
 When implementing features:
+- Use dependency inversion
+- Use dependency injection
+- Use interfaces
 - Never duplicate or replicate existing functionality
 - Create reusable components that can be used across the application
 - Use separation of concerns to keep files focused and maintainable

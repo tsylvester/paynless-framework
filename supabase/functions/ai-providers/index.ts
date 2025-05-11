@@ -4,9 +4,9 @@ import { serve } from 'https://deno.land/std@0.177.0/http/server.ts'
 import { createClient, type SupabaseClient } from 'npm:@supabase/supabase-js@2'
 // Import shared response/error handlers
 import { 
-    handleCorsPreflightRequest as actualHandleCorsPreflightRequest, 
-    createErrorResponse as actualCreateErrorResponse, 
-    createSuccessResponse as actualCreateJsonResponse 
+    handleCorsPreflightRequest, 
+    createErrorResponse, 
+    createSuccessResponse 
 } from '../_shared/cors-headers.ts'; 
 
 console.log(`Function "ai-providers" up and running!`)
@@ -23,9 +23,9 @@ const PROVIDER_ENV_KEY_MAP: Record<string, string> = {
 export interface AiProvidersHandlerDeps {
   createSupabaseClient: (url: string, key: string) => SupabaseClient;
   getEnv: (key: string) => string | undefined;
-  handleCorsPreflightRequest: typeof actualHandleCorsPreflightRequest;
-  createJsonResponse: typeof actualCreateJsonResponse;
-  createErrorResponse: typeof actualCreateErrorResponse;
+  handleCorsPreflightRequest: typeof handleCorsPreflightRequest;
+  createJsonResponse: typeof createSuccessResponse;
+  createErrorResponse: typeof createErrorResponse;
 }
 
 export const defaultDeps: AiProvidersHandlerDeps = {
@@ -34,9 +34,9 @@ export const defaultDeps: AiProvidersHandlerDeps = {
     // global: { headers: { Authorization: `Bearer ${supabaseServiceRoleKey}` } } 
   }),
   getEnv: Deno.env.get,
-  handleCorsPreflightRequest: actualHandleCorsPreflightRequest,
-  createJsonResponse: actualCreateJsonResponse,
-  createErrorResponse: actualCreateErrorResponse,
+  handleCorsPreflightRequest: handleCorsPreflightRequest,
+  createJsonResponse: createSuccessResponse,
+  createErrorResponse: createErrorResponse,
 };
 
 // --- Main Handler Logic ---
@@ -61,6 +61,7 @@ export async function mainHandler(req: Request, deps: AiProvidersHandlerDeps = d
     // Use Anon key - assuming RLS handles auth if needed, or it's public
     const supabaseUrl = getEnvDep('SUPABASE_URL') ?? '';
     const supabaseAnonKey = getEnvDep('SUPABASE_ANON_KEY') ?? '';
+    console.log(`[ai-providers] Checking Env Vars: OPENAI_API_KEY=${getEnvDep('OPENAI_API_KEY') ? 'SET' : 'MISSING'}, ANTHROPIC_API_KEY=${getEnvDep('ANTHROPIC_API_KEY') ? 'SET' : 'MISSING'}, GOOGLE_API_KEY=${getEnvDep('GOOGLE_API_KEY') ? 'SET' : 'MISSING'}`);
     if (!supabaseUrl || !supabaseAnonKey) {
         console.error("Missing SUPABASE_URL or SUPABASE_ANON_KEY environment variables.");
         return createErrorResponse("Server configuration error.", 500, req);
@@ -110,17 +111,18 @@ export async function mainHandler(req: Request, deps: AiProvidersHandlerDeps = d
     console.error('Error in ai-providers function:', error) // Log the raw error
     // Use injected error response creator
     const errorMessage = error instanceof Error ? error.message : 'An unexpected error occurred';
-    // Attempt to determine status from error if possible, default to 500
+    
+    // Safely determine status from error
     let errorStatus = 500;
-     if (typeof error === 'object' && error !== null && typeof (error as any).status === 'number') {
-       errorStatus = (error as any).status;
-     } else if (error instanceof Error && typeof (error as any).status === 'number') { // Check Error instance too
-        errorStatus = (error as any).status;
-     } else if (error instanceof Response) { // Handle if a Response object was thrown
+    if (error instanceof Response) { // Check if a Response object was thrown
        errorStatus = error.status;
-       // Try to get message from Response body if possible
-       // errorMessage = await error.text(); // Avoid await in catch if possible
-     }
+       // Note: Avoid awaiting in catch block if possible, handle body parsing errors separately if needed.
+       // errorMessage = await error.text(); // Example, but be cautious
+    } else if (typeof error === 'object' && error !== null && 'status' in error && typeof error.status === 'number') {
+       // Check if it's an object with a numeric status property
+       errorStatus = error.status;
+    }
+    // No need for the `error instanceof Error` check here as the object check covers it if Error has a status prop
 
     // Add req as the 3rd argument, pass original error as 4th
     return createErrorResponse(errorMessage, errorStatus, req, error);

@@ -17,24 +17,17 @@ import {
   Laptop,
   Monitor,
 } from 'lucide-react'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link } from 'react-router-dom'
 import { useAuthStore, useAiStore } from '@paynless/store'
 import { useState, useEffect, useRef } from 'react'
 import { logger } from '@paynless/utils'
 import { ModelSelector } from '../components/ai/ModelSelector'
 import { PromptSelector } from '../components/ai/PromptSelector'
 import { AiChatbox } from '../components/ai/AiChatbox'
-import { useTheme } from '../hooks/useTheme'
 
 export function HomePage() {
-  const { user, session } = useAuthStore()
-  const navigate = useNavigate()
-  const { colorMode } = useTheme()
-
-  const loadAiConfig = useAiStore((state) => state.loadAiConfig)
-  const sendMessage = useAiStore((state) => state.sendMessage)
-  const startNewChat = useAiStore((state) => state.startNewChat)
-  const availableProviders = useAiStore((state) => state.availableProviders)
+  const { user } = useAuthStore((state) => ({ user: state.user }))
+  const { loadAiConfig, startNewChat, availableProviders } = useAiStore((state) => state)
 
   const [selectedProviderId, setSelectedProviderId] = useState<string | null>(
     null

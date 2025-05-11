@@ -149,8 +149,8 @@ Following this cycle helps catch errors early, ensures comprehensive test covera
 *   **[NEW] Phase 5: Anonymous Chat Auth Refactor Verification:** Added specific backend and E2E test cases for the anonymous secret header and related flows.
 
 *   **[NEW] Deno Function Testing Learnings (May 2024 - sync-ai-models):**
-    *   **Mocking Supabase Client Chaining:** Accurately mocking the Supabase JS client requires mimicking the synchronous return of the query builder object for chaining methods like `.select()`, `.eq()`, `.in()` before the final asynchronous resolution (`await`, `.then()`, `.single()`). The successful refactor in `test-utils.ts` implements this by having modifier methods return the mock builder instance and resolving configured mock results only within terminal methods (`.then()`, `.single()`). Initial attempts where modifier methods were `async` failed.
-    *   **Mocking Fetch:** Using shared helpers like `stubFetchForTestScope` (which returns a disposable stub) and `setMockFetchResponse` (which configures the response) from `test-utils.ts` is more robust than manual stubbing within test files. Attempting to manually cancel the original response body within the fetch mock (`baseFetchImplementation`) can cause tests to hang and should be avoided.
+    *   **Mocking Supabase Client Chaining:** Accurately mocking the Supabase JS client requires mimicking the synchronous return of the query builder object for chaining methods like `.select()`, `.eq()`, `.in()` before the final asynchronous resolution (`await`, `.then()`, `.single()`). The successful refactor in `supabase.mock.ts` implements this by having modifier methods return the mock builder instance and resolving configured mock results only within terminal methods (`.then()`, `.single()`). Initial attempts where modifier methods were `async` failed.
+    *   **Mocking Fetch:** Using shared helpers like `stubFetchForTestScope` (which returns a disposable stub) and `setMockFetchResponse` (which configures the response) from `supabase.mock.ts` is more robust than manual stubbing within test files. Attempting to manually cancel the original response body within the fetch mock (`baseFetchImplementation`) can cause tests to hang and should be avoided.
     *   **Spy Assertions:** Checking spy call counts (`assertEquals(spy.calls.length, 1)`) can sometimes be more reliable than asserting specific call arguments (`assertSpyCall`) immediately after the invocation, especially across `await` boundaries or when dealing with complex mock object interactions.
     *   **Mock Error Propagation:** When a mocked promise rejects (e.g., simulating a DB error), the way the error propagates through subsequent `catch` blocks in the code under test might differ slightly from live execution. Assertions may need to check for the stringified original mock error (`String(mockErrorObject)`) instead of the message from a potentially re-thrown `new Error("...")` if the re-throw doesn't occur as expected in the test context.
     *   **Test Data Consistency:** Ensure mock data used in tests (e.g., mock database records) aligns with data conventions established by other parts of the system (e.g., provider prefixes like `openai-` added to identifiers by adapters). Inconsistent test data can lead to misleading failures.
@@ -190,6 +190,27 @@ Following this cycle helps catch errors early, ensures comprehensive test covera
         *   Use MSW to mock backend API endpoints for frontend integration tests covering flows like creating an org, switching context, inviting/joining, managing members, and soft-deleting.
         *   Manual testing (as outlined in Checkpoint 2) is crucial for verifying RLS and complex interaction flows end-to-end.
 
+*   **[NEW] Advanced Deno Function Mocking Insights (`MockQueryBuilder` - May 2025):**
+    *   **Promise Resolution Hangs with Spied `.then()`:**
+        *   **Problem:** When testing Supabase Edge Functions (e.g., `chat/index.ts`) using a custom mock Supabase client (`MockQueryBuilder` from `_shared/supabase.mock.ts`), tests could hang indefinitely. This occurred when an `await` was used on a query builder method (e.g., `await supabaseClient.from(...).update(...)`).
+        *   **Root Cause:** The hang was traced to the interaction between the `jsr:@std/testing/mock` `spy` wrapper around the `MockQueryBuilder.then` method and the promise resolution mechanism. Even if the underlying mock logic (`_resolveQuery`) correctly prepared and returned a resolved promise, the `spy` on `.then()` (or the way it was invoked via `_executeMethodLogic`) appeared to prevent the `await` in the function under test from correctly "picking up" the resolved state and continuing execution.
+        *   **Solution:**
+            1.  The `MockQueryBuilder.then` method was refactored to *directly* call its internal promise resolution logic (`this._resolveQuery()`) and manage the promise chaining with the provided `onfulfilled` and `onrejected` callbacks. This bypassed calling `_executeMethodLogic` for the `'then'` case.
+            2.  The `_initializeSpies` method in `MockQueryBuilder` was modified to *not* wrap the `.then()` method with a `spy`. This ensures that when `await` (which uses `.then()`) is called on a query builder instance, it invokes the direct, unspied `then` method.
+        *   **Impact:** This resolved the test hangs, allowing tests to proceed and fail/pass based on actual logic rather than mock-induced stalls.
+
+    *   **Asserting Spies on Sequentially Used Builders:**
+        *   **Problem:** When a Supabase Edge Function makes multiple calls to `supabaseClient.from('some_table')` sequentially (e.g., a `select`, then an `update`, then another `select` on the same table), the `MockSupabaseClient.from()` method, by design, creates a *new* `MockQueryBuilder` instance for each call. If test assertions attempt to retrieve spies using a helper like `spies.getLatestQueryBuilderSpies('some_table')`, they will get spies from the *last* builder instance created for that table. This can lead to incorrect assertions if trying to verify calls made on an earlier builder instance (e.g., an `updateSpy.calls.length` being 0 because the spy instance belongs to a later builder).
+        *   **Solution:** To reliably assert calls on specific operations in a sequence:
+            1.  Modify the mock configuration for the specific operation (e.g., `genericMockResults.chat_messages.update`) in the test setup (e.g., `supaConfigForRewind`) to be a `spy` function itself (e.g., `update: spy(async (state: MockQueryBuilderState) => { ... })`).
+            2.  In the test assertions, retrieve this operation-specific spy directly from the mock configuration object (e.g., `const updateSpy = supaConfigForRewind.genericMockResults!.chat_messages!.update as Spy<...>;`).
+            3.  Assert against this directly retrieved spy's `calls.length` and arguments (which will include the `MockQueryBuilderState` passed to it, allowing checks on `state.updateData`, `state.filters`, etc.).
+        *   **Example:** This was applied in `chat/index.rewind.test.ts` for the `update` operation.
+
+    *   **Chained Operations (`.insert().select()`):**
+        *   **Behavior:** When testing code like `await supabaseClient.from('table').insert(...).select()`, the `MockQueryBuilder` will first process the `insert` (setting its operation state to `'insert'`) and resolve it using the `insert` mock configuration. Then, the chained `.select()` modifies the *same* builder instance's operation state to `'select'` and attempts to resolve using the `select` mock configuration.
+        *   **Mocking Strategy:** The `select` mock (e.g., a spy function provided in `genericMockResults.table.select`) needs to be configured to return the data that was notionally "just inserted." In `chat/index.rewind.test.ts`, the `select` spy was updated to handle a specific `selectCallCount` corresponding to this post-insert select, returning the predefined new message rows.
+
 ✅ **How to Test Incrementally and Correctly (Layered Testing Strategy)**
 *This remains our guiding principle.*
 
@@ -215,6 +236,57 @@ Following this cycle helps catch errors early, ensures comprehensive test covera
 🌐 **4. End-to-End Validation**
 - Once the system passes unit and integration layers (acknowledging local limitations), run full end-to-end (E2E) tests.
 - Fix or update E2E tests and supporting mocks if needed.
+
+---
+
+## Troubleshooting Zustand Store Actions in Vitest: The "is not a function" Error
+
+**Symptom:**
+Tests for Zustand store actions fail with a `TypeError: useMyStore.getState().myAction is not a function`, even though `myAction` is clearly defined in the store. This can be particularly perplexing if the error appears inconsistently or only in certain test files.
+
+**Root Cause (Common Pitfall):**
+The most common cause is an incorrect state reset strategy within test helper functions (e.g., `resetMyStore` in `beforeEach`). If `useMyStore.setState(initialStateObject, true)` is used (where `true` means "replace the entire state"), and `initialStateObject` only contains state *properties* (e.g., `{ count: 0, user: null }`) but not the action *definitions* from the original `create()(...)` call, the actions will be wiped from the store instance for that test's scope.
+
+**Solution:**
+Ensure your store reset helper function uses `setState` to *merge* the initial/default state properties, rather than replace the entire store. This preserves the actions.
+
+**Example (`resetMyStore` helper):**
+
+```typescript
+// In your test file (e.g., myStore.test.ts)
+import { useMyStore, MyState } from './myStore'; // Assuming MyState includes only state props
+
+const defaultTestState: MyState = {
+  // all your default state properties
+  count: 0,
+  user: null,
+  // ... other state properties
+};
+
+// Correct reset helper
+const resetMyStore = (overrides: Partial<MyState> = {}) => {
+  useMyStore.setState({ ...defaultTestState, ...overrides }, false); // Or simply omit `, false` as it's default
+};
+
+// Incorrect reset helper (causes actions to disappear)
+// const resetMyStoreBad = (overrides: Partial<MyState> = {}) => {
+//   useMyStore.setState({ ...defaultTestState, ...overrides }, true); // 'true' replaces, wiping actions
+// };
+
+beforeEach(() => {
+  act(() => {
+    resetMyStore();
+  });
+});
+```
+
+**Key Takeaway:**
+When resetting Zustand stores in tests, always ensure you are merging state properties (`setState(..., false)` or `setState(...)`) rather than replacing the entire store instance (`setState(..., true)`), unless you are intentionally providing a complete store object that *includes* all action definitions.
+
+**Secondary Consideration: API Mocks**
+While the `setState` issue is primary for "is not a function" on actions, ensure your API mocks (`vi.mock(...)`) are appropriate for the test.
+*   For actions that *do not* directly make API calls, a simpler mock (inline `vi.fn()` for API methods, no `importOriginal`) is often cleaner and sufficient.
+*   For actions that *do* make API calls, or if store initialization depends on the actual API module, a more detailed mock using `await vi.importActual()` and spreading the original module might be necessary to ensure the store initializes correctly while allowing you to control specific API method behaviors.
 
 ---
 

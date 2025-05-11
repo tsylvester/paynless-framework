@@ -72,7 +72,7 @@ export class KitService implements EmailMarketingService {
                  await response.body?.cancel(); 
                  /* ignore parsing error */ 
              }
-             const errorMessage = (errorBody as any)?.error?.message || response.statusText || 'Unknown API error';
+             const errorMessage = (errorBody as Error)?.message || response.statusText || 'Unknown API error';
              logger.error('Kit API Error', { 
                 status: response.status, 
                 endpoint, 

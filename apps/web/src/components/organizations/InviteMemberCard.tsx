@@ -1,10 +1,10 @@
 'use client';
 
 import React from 'react';
-import { useForm } from 'react-hook-form';
+import { useForm, ControllerRenderProps } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
-import { useOrganizationStore } from '@paynless/store';
+import { useOrganizationStore, selectCurrentUserRoleInOrg } from '@paynless/store';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -40,15 +40,19 @@ export const InviteMemberCard: React.FC = () => {
   });
   const { formState } = form; // Get form state for disabling button
 
-  // Get store state after hooks
+  // Use selector correctly
+  const currentUserRole = useOrganizationStore(selectCurrentUserRoleInOrg);
+
+  // Get actions and needed state directly
   const {
     inviteUser, 
-    isLoading, // Use store's loading for general state if needed, formState better for button
+    isLoading,
     currentOrganizationId,
-    selectCurrentUserRoleInOrg,
-  } = useOrganizationStore();
-
-  const currentUserRole = selectCurrentUserRoleInOrg();
+  } = useOrganizationStore((state) => ({ // Select only needed actions/primitive state
+    inviteUser: state.inviteUser,
+    isLoading: state.isLoading,
+    currentOrganizationId: state.currentOrganizationId,
+  }));
 
   // Conditionally render based on role and selected org
   if (currentUserRole !== 'admin' || !currentOrganizationId) {
@@ -72,14 +76,10 @@ export const InviteMemberCard: React.FC = () => {
            toast.success(`Invite sent successfully to ${values.email}`);
            form.reset(); 
         } else {
-            // If inviteUser returns null, it means the store handled the error (like 409)
-            // and likely set an error state. We can grab that error message.
-            // Note: This requires the store to expose the error message reliably.
+            // Revert to using getState() to access error for now
             const errorFromStore = useOrganizationStore.getState().error;
             const displayMessage = errorFromStore || 'Failed to send invite. User may already be a member or have a pending invite.';
             toast.error(displayMessage);
-            // Optionally clear the store error after displaying it
-            // useOrganizationStore.setState({ error: null });
         }
     } catch (error) { // Catch unexpected errors *within the component/store action itself*
         logger.error('[InviteMemberCard] Unexpected error during invite process:', { error });
@@ -99,7 +99,7 @@ export const InviteMemberCard: React.FC = () => {
             <FormField
               control={form.control}
               name="email"
-              render={({ field }) => (
+              render={({ field }: { field: ControllerRenderProps<InviteFormValues, 'email'> }) => (
                 <FormItem>
                   <FormLabel>Email</FormLabel>
                   <FormControl>
@@ -118,7 +118,7 @@ export const InviteMemberCard: React.FC = () => {
                 <FormField
                   control={form.control}
                   name="role"
-                  render={({ field }) => (
+                  render={({ field }: { field: ControllerRenderProps<InviteFormValues, 'role'> }) => (
                     <FormItem>
                       <FormLabel>Role</FormLabel>
                       <Select onValueChange={field.onChange} defaultValue={field.value} name={field.name}>

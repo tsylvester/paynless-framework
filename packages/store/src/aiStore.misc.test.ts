@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { useAiStore } from './aiStore';
+import { selectCurrentChatMessages } from './aiStore.selectors'; // Import the selector
 // Import the actual AiApiClient class
 import { AiApiClient } from '@paynless/api';
 // Import the shared mock factory and reset function
@@ -45,18 +46,24 @@ vi.mock('./authStore');
 
 // Helper to reset Zustand store state between tests (manual reset)
 const resetAiStore = () => {
+    // Get the actual initial state from the store to ensure all fields are covered
+    const actualInitialState = useAiStore.getState();
+    // Create a reset state based on the default values or specific test defaults
     useAiStore.setState({
+        ...actualInitialState, // Spread to get all fields
         availableProviders: [],
         availablePrompts: [],
-        currentChatMessages: [],
+        messagesByChatId: {}, // Reset this to empty for a clean slate
+        chatsByContext: { personal: [], orgs: {} }, // Reset this
         currentChatId: null,
         isLoadingAiResponse: false,
         isConfigLoading: false,
-        isHistoryLoading: false,
+        isLoadingHistoryByContext: { personal: false, orgs: {} },
         isDetailsLoading: false,
-        chatHistoryList: [],
         aiError: null,
-    }); // Merge state
+        newChatContext: null,
+        rewindTargetMessageId: null,
+    }, true); // Replace the state entirely for a clean reset
 };
 
 // Define a global navigate mock
@@ -80,55 +87,59 @@ describe('aiStore - Misc Actions', () => {
 
     // --- Tests for startNewChat ---
     describe('startNewChat', () => {
-        it('should reset currentChatId and currentChatMessages', () => {
-            // Arrange: Set some initial state
+        it('should reset currentChatId and selected messages should be empty', () => {
             act(() => { 
                 useAiStore.setState({
                     currentChatId: 'existing-chat-id',
-                    currentChatMessages: [{ id: 'm1', chat_id: 'existing-chat-id', role: 'user' as const, content: 'Old message', user_id: 'u1', created_at: '', ai_provider_id: null, system_prompt_id: null, token_usage: null }],
+                    messagesByChatId: {
+                        'existing-chat-id': [{ id: 'm1', chat_id: 'existing-chat-id', role: 'user' as const, content: 'Old message', user_id: 'u1', created_at: '', ai_provider_id: null, system_prompt_id: null, token_usage: null, is_active_in_thread: true }],
+                    }
                 }); 
             });
 
-            // Act
             act(() => { 
                 useAiStore.getState().startNewChat();
             });
 
-            // Assert
             const state = useAiStore.getState();
             expect(state.currentChatId).toBeNull();
-            expect(state.currentChatMessages).toEqual([]);
+            expect(selectCurrentChatMessages(state)).toEqual([]); // Use selector
         });
 
-        it('should reset loading/error states as well', () => { 
-             // Arrange: Set other state properties
-             const initialProviders: AiProvider[] = [{ id: 'p1', name: 'P1', description: '', api_identifier: 'mock-id-1' }];
-             const initialPrompts: SystemPrompt[] = [{ id: 's1', name: 'S1', prompt_text: '' }];
-             const initialHistory: Chat[] = [{ id: 'h1', title: 'History 1', user_id: 'u1', created_at: '', updated_at: '' }];
+        it('should reset loading/error states and currentChatId, selected messages should be empty', () => { 
+             const initialProviders: AiProvider[] = [{ id: 'p1', name: 'P1', description: '', api_identifier: 'mock-id-1', config: null, is_active: true, is_enabled: true, provider: null, created_at: '', updated_at: ''}];
+             const initialPrompts: SystemPrompt[] = [{ id: 's1', name: 'S1', prompt_text: '', created_at: '', updated_at: '', is_active: true }];
+             // chatHistoryList is derived, not stored directly.
+             // We set up chatsByContext instead for initial state if needed for other parts of the test.
+             const initialPersonalChats: Chat[] = [{ id: 'h1', title: 'History 1', user_id: 'u1', created_at: '', updated_at: '', organization_id: null, system_prompt_id: null }];
+
              act(() => { 
                 useAiStore.setState({
                     availableProviders: initialProviders,
                     availablePrompts: initialPrompts,
-                    chatHistoryList: initialHistory,
+                    chatsByContext: { personal: initialPersonalChats, orgs: {} },
                     isLoadingAiResponse: true, 
                     aiError: 'Some error', 
                     currentChatId: 'to-be-cleared',
-                    currentChatMessages: [{ id: 'm1', chat_id: 'to-be-cleared', role: 'user' as const, content: 'Old', user_id: 'u1', created_at: '', ai_provider_id: null, system_prompt_id: null, token_usage: null }],
+                    messagesByChatId: {
+                        'to-be-cleared': [{ id: 'm1', chat_id: 'to-be-cleared', role: 'user' as const, content: 'Old', user_id: 'u1', created_at: '', ai_provider_id: null, system_prompt_id: null, token_usage: null, is_active_in_thread: true }],
+                    }
                 }); 
             });
 
-             // Act
              act(() => {
                 useAiStore.getState().startNewChat();
              });
 
-             // Assert
              const state = useAiStore.getState();
              expect(state.currentChatId).toBeNull();
-             expect(state.currentChatMessages).toEqual([]);
+             expect(selectCurrentChatMessages(state)).toEqual([]); // Use selector
              expect(state.availableProviders).toEqual(initialProviders);
              expect(state.availablePrompts).toEqual(initialPrompts);
-             expect(state.chatHistoryList).toEqual(initialHistory);
+             // To test chat history, use selectChatHistoryList(state, null) for personal
+             // For this test, we are just checking that other parts of state are preserved.
+             // So, checking chatsByContext directly is fine if that's the intent.
+             expect(state.chatsByContext.personal).toEqual(initialPersonalChats);
              expect(state.isLoadingAiResponse).toBe(false);
              expect(state.aiError).toBeNull(); 
         });
@@ -137,44 +148,43 @@ describe('aiStore - Misc Actions', () => {
     // --- Tests for clearAiError ---
     describe('clearAiError', () => {
         it('should set aiError to null', () => {
-            // Arrange: Set an initial error
              act(() => { 
-                useAiStore.setState({ aiError: 'An error occurred' }, false); // Merge
+                useAiStore.setState({ aiError: 'An error occurred' });
              });
             expect(useAiStore.getState().aiError).not.toBeNull();
 
-            // Act
             act(() => {
                 useAiStore.getState().clearAiError();
             });
 
-            // Assert
             expect(useAiStore.getState().aiError).toBeNull();
         });
 
         it('should not affect other state properties', () => {
-            // Arrange: Set other state properties along with an error
-            const initialProviders: AiProvider[] = [{ id: 'p1', name: 'P1', description: '', api_identifier: 'mock-id-clear' }];
-            const initialMessages: ChatMessage[] = [{ id: 'm1', chat_id: 'c1', role: 'user' as const, content: 'Msg', user_id: 'u1', created_at: '', ai_provider_id: null, system_prompt_id: null, token_usage: null }];
+            const initialProviders: AiProvider[] = [{ id: 'p1', name: 'P1', description: '', api_identifier: 'mock-id-clear', config: null, is_active: true, is_enabled: true, provider: null, created_at: '', updated_at: '' }];
+            // messagesByChatId should be used instead of currentChatMessages for setup
+            const chatIdForTest = 'c1';
+            const initialMessagesInChat: ChatMessage[] = [{ id: 'm1', chat_id: chatIdForTest, role: 'user' as const, content: 'Msg', user_id: 'u1', created_at: '', ai_provider_id: null, system_prompt_id: null, token_usage: null, is_active_in_thread: true }];
+            
             act(() => { 
                 useAiStore.setState({
                     availableProviders: initialProviders,
-                    currentChatMessages: initialMessages,
+                    messagesByChatId: { [chatIdForTest]: initialMessagesInChat },
+                    currentChatId: chatIdForTest, // Set currentChatId to make selectCurrentChatMessages work if needed
                     isLoadingAiResponse: true,
                     aiError: 'Error to be cleared',
-                }, false); // Merge
+                });
             });
 
-            // Act
-             act(() => {
+            act(() => {
                 useAiStore.getState().clearAiError();
-             });
+            });
 
-            // Assert
             const state = useAiStore.getState();
             expect(state.aiError).toBeNull();
             expect(state.availableProviders).toEqual(initialProviders);
-            expect(state.currentChatMessages).toEqual(initialMessages);
+            // Assert messages for the specific chat ID using the selector
+            expect(selectCurrentChatMessages(state)).toEqual(initialMessagesInChat);
             expect(state.isLoadingAiResponse).toBe(true);
         });
     }); // End clearAiError describe
