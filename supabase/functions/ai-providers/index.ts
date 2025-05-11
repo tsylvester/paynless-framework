@@ -87,17 +87,25 @@ export async function mainHandler(req: Request, deps: AiProvidersHandlerDeps = d
 
     // Filter providers based on configured API keys
     const configuredProviders = allActiveProviders?.filter(providerRecord => {
-      // Ensure provider string exists and is known
-      if (!providerRecord.provider || !PROVIDER_ENV_KEY_MAP[providerRecord.provider.toLowerCase()]) {
-        console.warn(`Provider record ID ${providerRecord.id} has missing or unknown provider string: ${providerRecord.provider}. Skipping.`);
+      const providerIdentifier = providerRecord.provider?.toLowerCase();
+
+      // If it's our special "dummy" provider, don't check for an API key
+      if (providerIdentifier === 'dummy') {
+        console.log(`Provider record ID ${providerRecord.id} (${providerRecord.name}) is a dummy provider. Including without API key check.`);
+        return true; 
+      }
+
+      // For all other (non-dummy) providers, proceed with the API key check
+      if (!providerIdentifier || !PROVIDER_ENV_KEY_MAP[providerIdentifier]) {
+        console.warn(`Provider record ID ${providerRecord.id} (${providerRecord.name}) has missing or unknown real provider string: ${providerRecord.provider}. Skipping.`);
         return false;
       }
-      // Check if the corresponding environment variable is set using the injected getter
-      const envVarName = PROVIDER_ENV_KEY_MAP[providerRecord.provider.toLowerCase()];
-      const apiKeyExists = !!getEnvDep(envVarName); // Use injected getEnvDep
+      
+      const envVarName = PROVIDER_ENV_KEY_MAP[providerIdentifier];
+      const apiKeyExists = !!getEnvDep(envVarName); 
       
       if (!apiKeyExists) {
-          console.log(`API Key for provider '${providerRecord.provider}' (env: ${envVarName}) not found. Filtering out model: ${providerRecord.name}`);
+          console.log(`API Key for real provider '${providerRecord.provider}' (env: ${envVarName}) not found. Filtering out model: ${providerRecord.name}`);
       }
       return apiKeyExists;
     }) || []; // Default to empty array if allActiveProviders is null/undefined

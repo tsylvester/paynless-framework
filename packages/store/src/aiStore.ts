@@ -9,8 +9,8 @@ import {
     PendingAction,
     AuthRequiredError, // Correctly from @paynless/types
     Chat,
-    AiState,      // <-- Add this import
-    AiStore,      // <-- Add this import
+    AiStore, 
+    initialAiStateValues     // <-- Add this import
 } from '@paynless/types';
 
 // Re-add the runtime constant hack to ensure build passes
@@ -32,26 +32,6 @@ import { api } from '@paynless/api';
 import { logger } from '@paynless/utils';
 import { analytics } from '@paynless/analytics'; // Import analytics
 import { useAuthStore } from './authStore';
-import { DUMMY_PROVIDER_ID, dummyProviderDefinition } from './aiStore.dummy'; // Import from the new file
-
-// --- Initial State Values (for direct use in create) ---
-export const initialAiStateValues: AiState = {
-    availableProviders: [],
-    availablePrompts: [],
-    chatsByContext: { personal: undefined, orgs: {} },
-    messagesByChatId: {},
-    currentChatId: null,
-    isLoadingAiResponse: false,
-    isConfigLoading: false,
-    isLoadingHistoryByContext: { personal: false, orgs: {} },
-    historyErrorByContext: { personal: null, orgs: {} },
-    isDetailsLoading: false,
-    newChatContext: null,
-    rewindTargetMessageId: null,
-    aiError: null,
-    selectedProviderId: null,
-    selectedPromptId: null,
-};
 
 // Use the imported AiStore type
 export const useAiStore = create<AiStore>()(
@@ -81,6 +61,32 @@ export const useAiStore = create<AiStore>()(
                     type ProvidersPayload = { providers: AiProvider[] };
                     if (!providersResponse.error && providersResponse.data && typeof providersResponse.data === 'object' && providersResponse.data !== null && 'providers' in providersResponse.data && Array.isArray((providersResponse.data as ProvidersPayload).providers)) {
                         loadedProviders = (providersResponse.data as ProvidersPayload).providers;
+
+                        logger.info('[aiStore] Initial loadedProviders from API:', {
+                            count: loadedProviders.length,
+                            providerNames: loadedProviders.map(p => p.name) // Log names for brevity
+                        });
+                        logger.info(`[aiStore] Value of import.meta.env.MODE in loadAiConfig: "${import.meta.env.MODE}"`);
+
+                        // Filter out dummy providers if not in development mode
+                        if (import.meta.env.MODE !== 'development') {
+                            logger.info(`[aiStore] MODE is "${import.meta.env.MODE}", attempting to filter dummy providers.`);
+                            const originalProviderNames = loadedProviders.map(p => p.name); // For logging before filter
+
+                            loadedProviders = loadedProviders.filter(provider => {
+                                const isDummy = provider.name && provider.name.toLowerCase().includes('dummy');
+                                if (isDummy) {
+                                    logger.info(`[aiStore] Identified dummy provider for filtering: name="${provider.name}"`);
+                                }
+                                return !isDummy;
+                            });
+                            logger.info(`[aiStore] Providers after filtering: count=${loadedProviders.length}`, {
+                                providerNamesAfter: loadedProviders.map(p => p.name),
+                                providerNamesBefore: originalProviderNames
+                            });
+                        } else {
+                            logger.info(`[aiStore] MODE is "${import.meta.env.MODE}", skipping dummy provider filter.`);
+                        }
                     } else if (providersResponse.error) {
                         errorMessages.push(providersResponse.error?.message || 'Failed to load AI providers.');
                     }
@@ -96,36 +102,9 @@ export const useAiStore = create<AiStore>()(
                         throw new Error(errorMessages.join(' \n'));
                     }
 
-                    // --- Add Dummy Provider in Development Mode ---
-                    if (process.env['NODE_ENV'] === 'development') {
-                        loadedProviders.push(dummyProviderDefinition); // Use imported definition
-                        logger.info('Added Dummy Test Provider for development.');
-                    }
-                    // --- End Dummy Provider --- 
-                    
-                    // --- Set Default Selected Provider ---
-                    let defaultProviderId: AiProvider['id'] | null = null;
-                    if (loadedProviders.length > 0) {
-                        if (process.env['NODE_ENV'] === 'development') {
-                            const dummy = loadedProviders.find(p => p.id === DUMMY_PROVIDER_ID);
-                            if (dummy) {
-                                defaultProviderId = dummy.id;
-                                logger.info(`[aiStore] Default provider set to Dummy Test Provider (ID: ${defaultProviderId}).`);
-                            }
-                        }
-                        if (!defaultProviderId) { // If dummy not found or not in dev mode
-                            defaultProviderId = loadedProviders[0].id;
-                            logger.info(`[aiStore] Default provider set to: ${loadedProviders[0].name} (ID: ${defaultProviderId}).`);
-                        }
-                    } else {
-                        logger.warn('[aiStore] No AI providers loaded. selectedProviderId will be null.');
-                    }
-                    // --- End Set Default Selected Provider ---
-                    
                     set({
                         availableProviders: loadedProviders, 
                         availablePrompts: loadedPrompts,   
-                        selectedProviderId: defaultProviderId, // Set the default provider ID
                         isConfigLoading: false,
                         aiError: null
                     });
@@ -144,6 +123,10 @@ export const useAiStore = create<AiStore>()(
             },
 
             sendMessage: async (data) => {
+                // Corrected logger call: Pass data as a metadata object property
+                logger.info('[aiStore] sendMessage called with data:', { requestData: data }); 
+                logger.info(`[aiStore] Current import.meta.env.MODE: ${import.meta.env.MODE}`); // Changed from process.env
+
                 const { message, chatId: inputChatId } = data;
                 const {
                     currentChatId: existingChatIdFromState,
@@ -197,114 +180,9 @@ export const useAiStore = create<AiStore>()(
                 };
 
                 set({ isLoadingAiResponse: true, aiError: null });
-                const { tempId: tempUserMessageId, chatIdUsed: optimisticMessageChatId, createdTimestamp: userMessageCreatedAt } = _addOptimisticUserMessage(message, inputChatId);
+                const { tempId: tempUserMessageId, chatIdUsed: optimisticMessageChatId } = _addOptimisticUserMessage(message, inputChatId);
 
-                // --- Dummy Provider Logic ---
-                if (providerId === DUMMY_PROVIDER_ID && process.env['NODE_ENV'] === 'development') { // Use imported ID
-                    logger.info(`[sendMessage] Using Dummy Test Provider for chat ID: ${optimisticMessageChatId}`);
-                    return new Promise((resolve) => {
-                        setTimeout(() => {
-                            const assistantMessageId = `dummy-echo-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
-                            const assistantContent = `Echo from Dummy: ${message}`;
-                            const assistantMessage: ChatMessage = {
-                                id: assistantMessageId,
-                                chat_id: optimisticMessageChatId, 
-                                user_id: null,
-                                role: 'assistant',
-                                content: assistantContent,
-                                created_at: new Date().toISOString(),
-                                is_active_in_thread: true,
-                                token_usage: {
-                                    promptTokens: message.length,
-                                    completionTokens: assistantContent.length,
-                                    totalTokens: message.length + assistantContent.length,
-                                },
-                                ai_provider_id: DUMMY_PROVIDER_ID, // Use imported ID
-                                system_prompt_id: promptId, 
-                            };
-
-                            set(state => {
-                                const updatedMessages = [...(state.messagesByChatId[optimisticMessageChatId] || []), assistantMessage];
-                                const updatedMessagesByChatId = {
-                                    ...state.messagesByChatId,
-                                    [optimisticMessageChatId]: updatedMessages
-                                };
-                                
-                                let updatedCurrentChatId = state.currentChatId;
-                                const updatedChatsByContext = { ...state.chatsByContext };
-                                const titleForNewChat = message.substring(0, 50);
-
-                                if (!state.currentChatId || state.currentChatId !== optimisticMessageChatId) {
-                                    updatedCurrentChatId = optimisticMessageChatId;
-                                    // Create new chat entry in chatsByContext if it doesn't exist
-                                    const currentOrgContext = get().newChatContext; // This was set by startNewChat or UI
-
-                                    if (currentOrgContext && currentOrgContext !== 'personal') { // Org chat
-                                        if (!updatedChatsByContext.orgs[currentOrgContext]?.find(c => c.id === optimisticMessageChatId)) {
-                                            const newOrgChatEntry: Chat = {
-                                                id: optimisticMessageChatId,
-                                                organization_id: currentOrgContext,
-                                                user_id: useAuthStore.getState().user?.id || null,
-                                                title: titleForNewChat,
-                                                created_at: userMessageCreatedAt, // Use user message creation time
-                                                updated_at: new Date().toISOString(),
-                                                system_prompt_id: promptId
-                                            };
-                                            updatedChatsByContext.orgs[currentOrgContext] = [
-                                                ...(updatedChatsByContext.orgs[currentOrgContext] || []),
-                                                newOrgChatEntry
-                                            ];
-                                        }
-                                    } else { // Personal chat (newChatContext is null or 'personal')
-                                        if (!updatedChatsByContext.personal?.find(c => c.id === optimisticMessageChatId)) {
-                                            const newPersonalChatEntry: Chat = {
-                                                id: optimisticMessageChatId,
-                                                organization_id: null,
-                                                user_id: useAuthStore.getState().user?.id || null,
-                                                title: titleForNewChat,
-                                                created_at: userMessageCreatedAt,
-                                                updated_at: new Date().toISOString(),
-                                                system_prompt_id: promptId
-                                            };
-                                            updatedChatsByContext.personal = [
-                                                ...(updatedChatsByContext.personal || []),
-                                                newPersonalChatEntry
-                                            ];
-                                        }
-                                    }
-                                } else {
-                                    // Update existing chat's updated_at timestamp
-                                    if (state.chatsByContext.personal?.find(c => c.id === optimisticMessageChatId)) {
-                                        updatedChatsByContext.personal = state.chatsByContext.personal.map(c => 
-                                            c.id === optimisticMessageChatId ? { ...c, updated_at: new Date().toISOString(), title: c.title || titleForNewChat } : c
-                                        );
-                                    } else {
-                                        for (const orgId in state.chatsByContext.orgs) {
-                                            if (state.chatsByContext.orgs[orgId]?.find(c => c.id === optimisticMessageChatId)) {
-                                                updatedChatsByContext.orgs[orgId] = state.chatsByContext.orgs[orgId]?.map(c => 
-                                                    c.id === optimisticMessageChatId ? { ...c, updated_at: new Date().toISOString(), title: c.title || titleForNewChat } : c
-                                                ) || [];
-                                                break;
-                                            }
-                                        }
-                                    }
-                                }
-
-                                return {
-                                    messagesByChatId: updatedMessagesByChatId,
-                                    isLoadingAiResponse: false,
-                                    currentChatId: updatedCurrentChatId,
-                                    chatsByContext: updatedChatsByContext,
-                                    aiError: null,
-                                    rewindTargetMessageId: null, // Clear rewind state after dummy send
-                                    newChatContext: null // Clear new chat context after use
-                                };
-                            });
-                            resolve(assistantMessage);
-                        }, 500);
-                    });
-                }
-                // --- End Dummy Provider Logic ---
+                // Standard API call logic (will now also correctly call backend for dummy provider)
 
                 // --- Existing API Call Logic ---
                 const effectiveChatIdForApi = inputChatId ?? existingChatIdFromState ?? undefined;
@@ -341,10 +219,9 @@ export const useAiStore = create<AiStore>()(
 
                         set(state => {
                             const actualNewChatId = assistantMessage.chat_id; 
-                            const finalChatId = actualNewChatId || existingChatIdFromState;
-                            finalChatIdForLog = finalChatId; // Assign for logging outside this scope
+                            finalChatIdForLog = actualNewChatId; // Assign for logging outside this scope
 
-                            if (!finalChatId) {
+                            if (!actualNewChatId) {
                                 logger.error('[sendMessage] Critical error: finalChatId is undefined after successful API call.');
                                 // When returning early, ensure all necessary parts of state are preserved or intentionally set
                                 return { 
@@ -357,9 +234,9 @@ export const useAiStore = create<AiStore>()(
                             let messagesForChatProcessing = [...(state.messagesByChatId[optimisticMessageChatId] || [])];
                             const isRewindOperation = !!(effectiveChatIdForApi && currentRewindTargetId);
 
-                            if (isRewindOperation && finalChatId) {
+                            if (isRewindOperation && actualNewChatId) {
                                 // Rewind logic: Rebuild message history
-                                const originalMessagesForChat = state.messagesByChatId[finalChatId] || [];
+                                const originalMessagesForChat = state.messagesByChatId[actualNewChatId] || [];
                                 const rewindTargetIndex = originalMessagesForChat.findIndex(msg => msg.id === currentRewindTargetId);
 
                                 let newHistoryBase: ChatMessage[] = [];
@@ -370,7 +247,7 @@ export const useAiStore = create<AiStore>()(
                                 // Find the optimistic user message (it should be the last one added for this chat)
                                 const optimisticUserMessage = messagesForChatProcessing.find(msg => msg.id === tempUserMessageId);
                                 if (optimisticUserMessage) {
-                                    newHistoryBase.push({ ...optimisticUserMessage, chat_id: finalChatId });
+                                    newHistoryBase.push({ ...optimisticUserMessage, chat_id: actualNewChatId });
                                 }
                                 newHistoryBase.push(assistantMessage); 
                                 messagesForChatProcessing = newHistoryBase;
@@ -379,7 +256,7 @@ export const useAiStore = create<AiStore>()(
                                 // Standard logic: Update optimistic and add assistant message
                                 messagesForChatProcessing = messagesForChatProcessing.map(msg =>
                                     msg.id === tempUserMessageId
-                                        ? { ...msg, chat_id: finalChatId, status: 'sent' as const }
+                                        ? { ...msg, chat_id: actualNewChatId, status: 'sent' as const }
                                         : msg
                                 );
                                 messagesForChatProcessing.push(assistantMessage);
@@ -387,18 +264,18 @@ export const useAiStore = create<AiStore>()(
 
                             const newMessagesByChatId = { ...state.messagesByChatId };
 
-                            if (optimisticMessageChatId !== finalChatId && newMessagesByChatId[optimisticMessageChatId]) {
-                                newMessagesByChatId[finalChatId] = messagesForChatProcessing;
+                            if (optimisticMessageChatId !== actualNewChatId && newMessagesByChatId[optimisticMessageChatId]) {
+                                newMessagesByChatId[actualNewChatId] = messagesForChatProcessing;
                                 delete newMessagesByChatId[optimisticMessageChatId];
                             } else {
-                                newMessagesByChatId[finalChatId] = messagesForChatProcessing;
+                                newMessagesByChatId[actualNewChatId] = messagesForChatProcessing;
                             }
                             
                             let updatedChatsByContext = { ...state.chatsByContext };
                             // If it was a new chat, add it to chatsByContext
-                            if (optimisticMessageChatId !== finalChatId) {
+                            if (optimisticMessageChatId !== actualNewChatId) {
                                 const newChatEntry: Chat = {
-                                    id: finalChatId,
+                                    id: actualNewChatId,
                                     // Derive title from first message? Requires access to the first user message here.
                                     // For simplicity, let's use a placeholder or the assistant's first few words.
                                     // The user message is: requestData.message
@@ -434,7 +311,7 @@ export const useAiStore = create<AiStore>()(
                                 ...state, 
                                 messagesByChatId: newMessagesByChatId,
                                 chatsByContext: updatedChatsByContext, // Set the updated context
-                                currentChatId: finalChatId, 
+                                currentChatId: actualNewChatId, 
                                 isLoadingAiResponse: false,
                                 aiError: null,
                                 newChatContext: null, 

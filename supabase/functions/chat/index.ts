@@ -12,7 +12,7 @@ import {
 import { getAiProviderAdapter as actualGetAiProviderAdapter } from '../_shared/ai_service/factory.ts';
 // Use import type for type-only imports
 import type { ChatApiRequest as AdapterChatRequest, ChatHandlerDeps as ActualChatHandlerDeps, AdapterResponsePayload } from '../_shared/types.ts'; 
-import type { Database } from "../types_db.ts"; 
+import type { Database, Json } from "../types_db.ts"; 
 import { verifyApiKey as actualVerifyApiKey } from '../_shared/auth.ts'; // Assuming verifyApiKey is not used in this specific flow but kept for DI consistency
 import { logger as actualLogger } from '../_shared/logger.ts';
 
@@ -221,6 +221,108 @@ async function handlePostRequest(
         }
         logger.info(`Fetched provider details: provider=${providerString}, api_identifier=${apiIdentifier}`);
 
+        // --- START DUMMY PROVIDER LOGIC ---
+        if (providerString === 'dummy') {
+            logger.info(`DUMMY PROVIDER DETECTED: providerString="${providerString}", apiIdentifier="${apiIdentifier}". Proceeding with echo logic.`);
+
+            // 1. Ensure Chat Session Exists or Create New One
+            if (!currentChatId) {
+                logger.info('No existingChatId provided, creating new chat session for dummy provider.');
+                const { data: newChatData, error: newChatError } = await supabaseClient
+                    .from('chats')
+                    .insert({
+                        user_id: userId,
+                        organization_id: requestBody.organizationId || null, // Assuming organizationId might be in requestBody
+                        system_prompt_id: systemPromptDbId,
+                        title: userMessageContent.substring(0, 50) // Or generate title differently
+                    })
+                    .select('id')
+                    .single();
+
+                if (newChatError || !newChatData) {
+                    logger.error('Error creating new chat session for dummy provider:', { error: newChatError });
+                    return { data: null, error: { message: newChatError?.message || 'Failed to create new chat session.', status: 500 } };
+                }
+                currentChatId = newChatData.id;
+                logger.info(`New chat session created for dummy provider with ID: ${currentChatId}`);
+            } else {
+                logger.info(`Using existing chat ID for dummy provider: ${currentChatId}`);
+            }
+            
+            // 2. Store User's Message
+            const userMessageToInsert: ChatMessageInsert = {
+                chat_id: currentChatId,
+                user_id: userId,
+                role: 'user',
+                content: userMessageContent,
+                ai_provider_id: requestProviderId, // This is the dummy model's ID from ai_providers table
+                system_prompt_id: systemPromptDbId,
+                is_active_in_thread: true, // New messages are active
+                // token_usage can be null or omitted for user messages if not tracked
+            };
+            logger.info('Attempting to insert user message for dummy provider:', { payload: userMessageToInsert });
+            const { data: insertedUserMessage, error: userInsertError } = await supabaseClient
+                .from('chat_messages')
+                .insert(userMessageToInsert)
+                .select()
+                .single();
+
+            if (userInsertError || !insertedUserMessage) {
+                logger.error('Error inserting user message for dummy provider:', { error: userInsertError });
+                return { data: null, error: { message: userInsertError?.message || 'Failed to store user message.', status: 500 } };
+            }
+            logger.info('User message successfully inserted for dummy provider:', { messageId: insertedUserMessage.id });
+
+            // 3. Generate and Store Dummy Assistant's Message
+            const assistantEchoContent = `Echo from Dummy: ${userMessageContent}`;
+            const assistantMessageToInsert: ChatMessageInsert = {
+                chat_id: currentChatId,
+                user_id: null, // Assistant messages don't have a user_id in this context
+                role: 'assistant',
+                content: assistantEchoContent,
+                ai_provider_id: requestProviderId, // Dummy model's ID
+                system_prompt_id: systemPromptDbId,
+                is_active_in_thread: true,
+                token_usage: { // Mocked token usage
+                    prompt_tokens: userMessageContent.length,
+                    completion_tokens: assistantEchoContent.length,
+                    total_tokens: userMessageContent.length + assistantEchoContent.length,
+                } as unknown as Json, // Cast to Json type
+            };
+            logger.info('Attempting to insert dummy assistant message:', { payload: assistantMessageToInsert });
+            const { data: insertedAssistantMessage, error: assistantInsertError } = await supabaseClient
+                .from('chat_messages')
+                .insert(assistantMessageToInsert)
+                .select()
+                .single();
+
+            if (assistantInsertError || !insertedAssistantMessage) {
+                logger.error('Error inserting dummy assistant message:', { error: assistantInsertError });
+                // Potentially consider if we need to "rollback" or mark the user message as failed too,
+                // but for a dummy provider, this might be overkill.
+                return { data: null, error: { message: assistantInsertError?.message || 'Failed to store dummy assistant message.', status: 500 } };
+            }
+            logger.info('Dummy assistant message successfully inserted:', { messageId: insertedAssistantMessage.id });
+            
+            // 4. Update chat's updated_at timestamp
+            const { error: chatUpdateError } = await supabaseClient
+                .from('chats')
+                .update({ updated_at: new Date().toISOString() })
+                .eq('id', currentChatId);
+
+            if (chatUpdateError) {
+                logger.warn(`Failed to update chat updated_at for dummy provider, chat ID ${currentChatId}:`, { error: chatUpdateError });
+                // Non-critical, proceed with returning the message
+            }
+
+
+            // 5. Return Dummy Assistant's Message
+            logger.info('Successfully processed dummy provider request. Returning assistant message.');
+            return { data: insertedAssistantMessage as ChatMessageRow, error: null };
+        }
+        // --- END DUMMY PROVIDER LOGIC ---
+
+        // --- Original/Real Provider Logic Continues Below ---
         const adapter = getAiProviderAdapter(providerString);
         if (!adapter) {
             logger.error(`No adapter found for provider: ${providerString}`);

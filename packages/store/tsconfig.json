@@ -5,6 +5,7 @@
     "rootDir": "./src",
     "declarationDir": "./dist",
     "lib": ["ESNext", "DOM"],
+    "types": ["vite/client"],
     "composite": true
   },
   "include": ["src/**/*"],

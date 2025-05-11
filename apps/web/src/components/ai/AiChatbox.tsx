@@ -79,11 +79,13 @@ export const AiChatbox: React.FC<AiChatboxProps> = () => {
     const messageToSend = inputMessage
     // Decide whether to clear input immediately or after successful send, especially for rewind.
     // For now, clearing immediately for simplicity, but this might change based on UX preference for rewind.
-    // setInputMessage('') // Temporarily commented out for diagnosis
+    setInputMessage('') // Re-enabled to clear input after send
 
     // Store the current rewindTargetMessageId before calling sendMessage,
     // as sendMessage might be asynchronous and the state could change.
     const wasRewinding = !!rewindTargetMessageId;
+
+    logger.info(`[AiChatbox] handleSend called. Selected Provider ID: ${selectedProviderId}, Selected Prompt ID: ${selectedPromptId}`);
 
     if (!selectedProviderId) {
       logger.error('[AiChatbox] Cannot send message: No provider selected');

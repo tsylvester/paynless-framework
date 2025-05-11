@@ -160,6 +160,27 @@ The implementation plan uses the following labels to categorize work steps:
             *   Assert: `loadChatDetails` called with 'chat-org-A-1'. Analytics tracked.
 * [✅] Commit changes with message "feat(UI): Integrate ChatContextSelector for setting new chat context w/ manual tests & analytics"
 
+
+### Backend Modifications for Dummy Provider Support
+
+- **Modify `/functions/v1/chat` (or equivalent chat message endpoint):**
+  - **[ ] Identify `DUMMY_PROVIDER_ID`:** When a request is received, check if the `providerId` in the payload is `dummy-test-provider`.
+  - **[ ] Handle New Dummy Chat:**
+    - **[ ] Create Chat Entity:** If no `chatId` is provided (or if `chatId` is new/temporary), create a new chat record in the database. Ensure this chat gets a real, persistent ID from the database.
+    - **[ ] Store User Message:** Persist the incoming user message, associating it with the new (or existing) real chat ID.
+    - **[ ] Generate Dummy Assistant Message:** Create a dummy assistant message (e.g., content like "Echo from Dummy: [user's message content]"). This message should also be associated with the `DUMMY_PROVIDER_ID` and the real chat ID.
+    - **[ ] Store Dummy Assistant Message:** Persist this dummy assistant message to the database.
+    - **[ ] Return Assistant Message:** Respond with a standard `ChatMessage` object for the dummy assistant's reply, including the real `chat_id`.
+  - **[ ] Handle Existing Dummy Chat:**
+    - **[ ] Store User Message:** Persist the incoming user message, associating it with the existing real chat ID.
+    - **[ ] Generate Dummy Assistant Message:** Create and persist a new dummy assistant message linked to the existing chat.
+    - **[ ] Return Assistant Message:** Respond with the `ChatMessage` object for the new dummy assistant message.
+  - **[ ] Standard Provider Handling:** If `providerId` is not `DUMMY_PROVIDER_ID`, proceed with the existing logic to call the actual AI model.
+  - **[ ] Consistent Response Structure:** Ensure the API response structure for a dummy message is identical to that of a real AI-generated message (i.e., a valid `ChatMessage` object).
+
+- **Verify other relevant endpoints (e.g., `/functions/v1/chat-details`, `/functions/v1/chat-history`):**
+  - **[ ] No Special Dummy Handling Needed:** These endpoints should generally not require special logic for the dummy provider. Since chats involving the dummy provider are now real, persisted chats, these endpoints should naturally return their details and include them in history listings just like any other chat.
+
 #### STEP-3.1.2.A: Refactor Chat Context State Management to `aiStore` [STORE] [UI] [TEST-UNIT] [COMMIT] [🚧]
 *   **Goal:** Centralize the management of the selected context for new chats and the logic for initiating new chats (including default provider/prompt selection) within the `aiStore` to simplify `AiChat.tsx` and make `ChatContextSelector.tsx` more self-contained.
 *   **Status:** UI components (`ChatContextSelector.tsx`, `AiChat.tsx`) have been partially updated based on this plan. `aiStore` modifications are pending from the developer. Linter errors currently exist in `AiChat.tsx` (e.g., `Property 'contextfornewchat' does not exist on type 'AiStore'`) which will be resolved upon completion of the `aiStore` updates.

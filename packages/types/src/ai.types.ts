@@ -213,10 +213,21 @@ export interface IAiApiClient {
   // Add other public methods of AiApiClient here if any
 }
 
-export type initialAiStateValues = {
-    availableProviders: [],
-    availablePrompts: [],
-    chatsByContext: { personal: undefined, orgs: {} },
-    messagesByChatId: {},
-    currentChatId: null,
-}
+// --- Initial State Values (for direct use in create) ---
+export const initialAiStateValues: AiState = {
+  availableProviders: [],
+  availablePrompts: [],
+  chatsByContext: { personal: undefined, orgs: {} },
+  messagesByChatId: {},
+  currentChatId: null,
+  isLoadingAiResponse: false,
+  isConfigLoading: false,
+  isLoadingHistoryByContext: { personal: false, orgs: {} },
+  historyErrorByContext: { personal: null, orgs: {} },
+  isDetailsLoading: false,
+  newChatContext: null,
+  rewindTargetMessageId: null,
+  aiError: null,
+  selectedProviderId: null,
+  selectedPromptId: null,
+};
