@@ -29,6 +29,7 @@ console.log('Using preserveChatType hack for build', !!preserveChatType);
 import { api } from '@paynless/api';
 import { logger } from '@paynless/utils';
 import { useAuthStore } from './authStore';
+import { DUMMY_PROVIDER_ID, dummyProviderDefinition } from './aiStore.dummy'; // Import from the new file
 
 // Define AiState interface locally or ensure it's correctly imported if needed elsewhere
 export interface AiState {
@@ -100,7 +101,6 @@ export const useAiStore = create<AiStore>()(
             // --- Action Definitions ---
             loadAiConfig: async () => {
                 logger.info('Loading AI config...');
-                // Use plain set without immer
                 set({ isConfigLoading: true, aiError: null }); 
                 try {
                     const [providersResponse, promptsResponse] = await Promise.all([
@@ -111,8 +111,6 @@ export const useAiStore = create<AiStore>()(
                     let loadedProviders: AiProvider[] = [];
                     let loadedPrompts: SystemPrompt[] = [];
 
-                    // Check providers response
-                    // Define expected payload structure
                     type ProvidersPayload = { providers: AiProvider[] };
                     if (!providersResponse.error && providersResponse.data && typeof providersResponse.data === 'object' && providersResponse.data !== null && 'providers' in providersResponse.data && Array.isArray((providersResponse.data as ProvidersPayload).providers)) {
                         loadedProviders = (providersResponse.data as ProvidersPayload).providers;
@@ -120,8 +118,6 @@ export const useAiStore = create<AiStore>()(
                         errorMessages.push(providersResponse.error?.message || 'Failed to load AI providers.');
                     }
                     
-                    // Check prompts response
-                    // Define expected payload structure
                     type PromptsPayload = { prompts: SystemPrompt[] };
                     if (!promptsResponse.error && promptsResponse.data && typeof promptsResponse.data === 'object' && promptsResponse.data !== null && 'prompts' in promptsResponse.data && Array.isArray((promptsResponse.data as PromptsPayload).prompts)) {
                         loadedPrompts = (promptsResponse.data as PromptsPayload).prompts;
@@ -130,23 +126,27 @@ export const useAiStore = create<AiStore>()(
                     }
                     
                     if (errorMessages.length > 0) {
-                        // Combine errors properly
                         throw new Error(errorMessages.join(' \n'));
                     }
+
+                    // --- Add Dummy Provider in Development Mode ---
+                    if (process.env['NODE_ENV'] === 'development') {
+                        loadedProviders.push(dummyProviderDefinition); // Use imported definition
+                        logger.info('Added Dummy Test Provider for development.');
+                    }
+                    // --- End Dummy Provider --- 
                     
-                    // Use plain set without immer
                     set({
                         availableProviders: loadedProviders, 
                         availablePrompts: loadedPrompts,   
                         isConfigLoading: false,
-                        aiError: null // Clear error on success
+                        aiError: null
                     });
                     
                     logger.info(`AI Config loaded successfully. Providers: ${loadedProviders.length}, Prompts: ${loadedPrompts.length}`);
                 } catch (error: unknown) {
                     const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred while loading AI configuration.';
                     logger.error('Error loading AI config:', { error: errorMessage });
-                    // Use plain set without immer
                     set({
                         availableProviders: [], 
                         availablePrompts: [],  
@@ -158,16 +158,17 @@ export const useAiStore = create<AiStore>()(
 
             sendMessage: async (data) => {
                 const { message, providerId, promptId, chatId: inputChatId } = data;
-                const { currentChatId: existingChatIdFromState, rewindTargetMessageId: currentRewindTargetId } = get(); // Get rewindTargetMessageId
-
+                const { currentChatId: existingChatIdFromState, rewindTargetMessageId: currentRewindTargetId, newChatContext } = get();
                 const token = useAuthStore.getState().session?.access_token;
 
-                const _addOptimisticUserMessage = (msgContent: string, explicitChatId?: string | null): { tempId: string, chatIdUsed: string } => {
-                    const tempId = `temp-user-${Date.now()}`;
-                    const currentChatIdFromGetter = get().currentChatId; // Get current state ID within the helper
+                // --- Helper to add optimistic user message (remains largely the same) ---
+                const _addOptimisticUserMessage = (msgContent: string, explicitChatId?: string | null): { tempId: string, chatIdUsed: string, createdTimestamp: string } => {
+                    const createdTimestamp = new Date().toISOString();
+                    const tempId = `temp-user-${Date.parse(createdTimestamp)}-${Math.random().toString(36).substring(2, 7)}`;
+                    const currentChatIdFromGetter = get().currentChatId;
                     const chatIdUsed = (typeof explicitChatId === 'string' && explicitChatId) 
                                         ? explicitChatId 
-                                        : (currentChatIdFromGetter || `temp-chat-${Date.now()}`);
+                                        : (currentChatIdFromGetter || `temp-chat-${Date.parse(createdTimestamp)}-${Math.random().toString(36).substring(2, 7)}`);
                     
                     const userMsg: ChatMessage = {
                          id: tempId, 
@@ -179,29 +180,137 @@ export const useAiStore = create<AiStore>()(
                          ai_provider_id: null, 
                          system_prompt_id: null,
                          token_usage: null, 
-                         created_at: new Date(parseInt(tempId.split('-')[2])).toISOString(),
+                         created_at: createdTimestamp,
                          is_active_in_thread: true
                     };
                     set(state => ({ 
                         messagesByChatId: { 
                             ...state.messagesByChatId, 
                             [chatIdUsed]: [...(state.messagesByChatId[chatIdUsed] || []), userMsg] 
-                        }
+                        },
+                        // If it's a new chat, set currentChatId optimistically IF it wasn't already set by startNewChat
+                        // currentChatId: state.currentChatId || (chatIdUsed.startsWith('temp-chat-') ? chatIdUsed : state.currentChatId)
                     }));
                     logger.info('[sendMessage] Added optimistic user message', { id: tempId, chatId: chatIdUsed });
-                    return { tempId, chatIdUsed };
+                    return { tempId, chatIdUsed, createdTimestamp };
                 };
 
                 set({ isLoadingAiResponse: true, aiError: null });
+                const { tempId: tempUserMessageId, chatIdUsed: optimisticMessageChatId, createdTimestamp: userMessageCreatedAt } = _addOptimisticUserMessage(message, inputChatId);
 
-                const { tempId: tempUserMessageId, chatIdUsed: optimisticMessageChatId } = _addOptimisticUserMessage(message, inputChatId); 
+                // --- Dummy Provider Logic ---
+                if (providerId === DUMMY_PROVIDER_ID && process.env['NODE_ENV'] === 'development') { // Use imported ID
+                    logger.info(`[sendMessage] Using Dummy Test Provider for chat ID: ${optimisticMessageChatId}`);
+                    return new Promise((resolve) => {
+                        setTimeout(() => {
+                            const assistantMessageId = `dummy-echo-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
+                            const assistantContent = `Echo from Dummy: ${message}`;
+                            const assistantMessage: ChatMessage = {
+                                id: assistantMessageId,
+                                chat_id: optimisticMessageChatId, 
+                                user_id: null,
+                                role: 'assistant',
+                                content: assistantContent,
+                                created_at: new Date().toISOString(),
+                                is_active_in_thread: true,
+                                token_usage: {
+                                    promptTokens: message.length,
+                                    completionTokens: assistantContent.length,
+                                    totalTokens: message.length + assistantContent.length,
+                                },
+                                ai_provider_id: DUMMY_PROVIDER_ID, // Use imported ID
+                                system_prompt_id: promptId, 
+                                status: 'sent'
+                            };
 
+                            set(state => {
+                                const updatedMessages = [...(state.messagesByChatId[optimisticMessageChatId] || []), assistantMessage];
+                                const updatedMessagesByChatId = {
+                                    ...state.messagesByChatId,
+                                    [optimisticMessageChatId]: updatedMessages
+                                };
+                                
+                                let updatedCurrentChatId = state.currentChatId;
+                                const updatedChatsByContext = { ...state.chatsByContext };
+                                const titleForNewChat = message.substring(0, 50);
+
+                                if (!state.currentChatId || state.currentChatId !== optimisticMessageChatId) {
+                                    updatedCurrentChatId = optimisticMessageChatId;
+                                    // Create new chat entry in chatsByContext if it doesn't exist
+                                    const currentOrgContext = get().newChatContext; // This was set by startNewChat or UI
+
+                                    if (currentOrgContext && currentOrgContext !== 'personal') { // Org chat
+                                        if (!updatedChatsByContext.orgs[currentOrgContext]?.find(c => c.id === optimisticMessageChatId)) {
+                                            const newOrgChatEntry: Chat = {
+                                                id: optimisticMessageChatId,
+                                                organization_id: currentOrgContext,
+                                                user_id: useAuthStore.getState().user?.id || null,
+                                                title: titleForNewChat,
+                                                created_at: userMessageCreatedAt, // Use user message creation time
+                                                updated_at: new Date().toISOString(),
+                                                system_prompt_id: promptId
+                                            };
+                                            updatedChatsByContext.orgs[currentOrgContext] = [
+                                                ...(updatedChatsByContext.orgs[currentOrgContext] || []),
+                                                newOrgChatEntry
+                                            ];
+                                        }
+                                    } else { // Personal chat (newChatContext is null or 'personal')
+                                        if (!updatedChatsByContext.personal?.find(c => c.id === optimisticMessageChatId)) {
+                                            const newPersonalChatEntry: Chat = {
+                                                id: optimisticMessageChatId,
+                                                organization_id: null,
+                                                user_id: useAuthStore.getState().user?.id || null,
+                                                title: titleForNewChat,
+                                                created_at: userMessageCreatedAt,
+                                                updated_at: new Date().toISOString(),
+                                                system_prompt_id: promptId
+                                            };
+                                            updatedChatsByContext.personal = [
+                                                ...(updatedChatsByContext.personal || []),
+                                                newPersonalChatEntry
+                                            ];
+                                        }
+                                    }
+                                } else {
+                                    // Update existing chat's updated_at timestamp
+                                    if (state.chatsByContext.personal?.find(c => c.id === optimisticMessageChatId)) {
+                                        updatedChatsByContext.personal = state.chatsByContext.personal.map(c => 
+                                            c.id === optimisticMessageChatId ? { ...c, updated_at: new Date().toISOString(), title: c.title || titleForNewChat } : c
+                                        );
+                                    } else {
+                                        for (const orgId in state.chatsByContext.orgs) {
+                                            if (state.chatsByContext.orgs[orgId]?.find(c => c.id === optimisticMessageChatId)) {
+                                                updatedChatsByContext.orgs[orgId] = state.chatsByContext.orgs[orgId]?.map(c => 
+                                                    c.id === optimisticMessageChatId ? { ...c, updated_at: new Date().toISOString(), title: c.title || titleForNewChat } : c
+                                                ) || [];
+                                                break;
+                                            }
+                                        }
+                                    }
+                                }
+
+                                return {
+                                    messagesByChatId: updatedMessagesByChatId,
+                                    isLoadingAiResponse: false,
+                                    currentChatId: updatedCurrentChatId,
+                                    chatsByContext: updatedChatsByContext,
+                                    aiError: null,
+                                    rewindTargetMessageId: null, // Clear rewind state after dummy send
+                                    newChatContext: null // Clear new chat context after use
+                                };
+                            });
+                            resolve(assistantMessage);
+                        }, 500);
+                    });
+                }
+                // --- End Dummy Provider Logic ---
+
+                // --- Existing API Call Logic ---
                 const effectiveChatIdForApi = inputChatId ?? existingChatIdFromState ?? undefined;
-                
-                // Determine organizationId for the API call
                 let organizationIdForApi: string | undefined | null = undefined;
                 if (!effectiveChatIdForApi) { // It's a new chat
-                    organizationIdForApi = get().newChatContext; // Get from state, could be null or orgId
+                    organizationIdForApi = newChatContext; // Use the destructured newChatContext from line 161
                 } else {
                     // For existing chats, orgId is implicit in the chatId, API/backend handles this.
                     // We don't need to explicitly find the orgId from chatsByContext here.
@@ -857,3 +966,5 @@ export const useAiStore = create<AiStore>()(
         }) as AiStore
     // )
 );
+
+export const useAiStoreTyped = useAiStore as unknown as AiStore;

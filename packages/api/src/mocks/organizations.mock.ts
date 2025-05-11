@@ -4,7 +4,6 @@ import type {
     Organization, 
     ApiResponse, 
     OrganizationMemberWithProfile, 
-    Invite, 
     PendingOrgItems 
 } from '@paynless/types';
 

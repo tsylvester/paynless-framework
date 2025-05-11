@@ -18,7 +18,7 @@ describe('useAiStore - Initial State Structure', () => {
 
   it('should have the correct initial structure for context-based chat history', () => {
     expect(initialState.chatsByContext).toBeDefined();
-    expect(initialState.chatsByContext).toEqual({ personal: [], orgs: {} }); // Or just {} and let population define orgs
+    expect(initialState.chatsByContext).toEqual({ personal: undefined, orgs: {} });
   });
 
   it('should have the correct initial structure for messages', () => {

@@ -115,8 +115,8 @@ describe('aiStore - loadChatHistory', () => {
 
             expect(useAiStore.getState().isLoadingHistoryByContext.personal).toBe(false);
             expect(mockGetChatHistory).toHaveBeenCalledTimes(1);
-            // API called with { organizationId: undefined/null } and token options
-            expect(mockGetChatHistory).toHaveBeenCalledWith({ organizationId: undefined }, { token: mockToken }); 
+            // API called with token and then organizationId (which is undefined for personal)
+            expect(mockGetChatHistory).toHaveBeenCalledWith(mockToken, undefined);
         });
 
         it('should update personal chatsByContext and clear error on success', async () => {
@@ -205,7 +205,8 @@ describe('aiStore - loadChatHistory', () => {
 
             expect(useAiStore.getState().isLoadingHistoryByContext.orgs[mockOrgId]).toBe(false);
             expect(mockGetChatHistory).toHaveBeenCalledTimes(1);
-            expect(mockGetChatHistory).toHaveBeenCalledWith({ organizationId: mockOrgId }, { token: mockToken });
+            // API called with token and then organizationId
+            expect(mockGetChatHistory).toHaveBeenCalledWith(mockToken, mockOrgId);
         });
 
         it('should update org-specific chatsByContext and clear error on success', async () => {
@@ -214,6 +215,8 @@ describe('aiStore - loadChatHistory', () => {
             const state = useAiStore.getState();
             expect(state.chatsByContext.orgs[mockOrgId]).toEqual(mockOrgChats);
             expect(state.historyErrorByContext.orgs[mockOrgId]).toBeNull();
+            // API called with token (which is undefined in this test case) and then organizationId
+            expect(mockGetChatHistory).toHaveBeenCalledWith(undefined, mockOrgId);
         });
 
         it('should set historyErrorByContext.orgs[orgId] and NOT clear org chats on failure', async () => {
@@ -247,7 +250,7 @@ describe('aiStore - loadChatHistory', () => {
             const state = useAiStore.getState();
             expect(state.historyErrorByContext.orgs[mockOrgId]).toBeNull();
             expect(state.chatsByContext.orgs[mockOrgId]).toEqual(mockOrgChats);
-            expect(mockGetChatHistory).toHaveBeenCalledWith({ organizationId: mockOrgId }, { token: undefined }); // Token would be undefined
+            expect(mockGetChatHistory).toHaveBeenCalledWith(undefined, mockOrgId); // Token would be undefined
         });
 
         it('should update specific org chats and not affect other contexts (personal or other orgs)', async () => {

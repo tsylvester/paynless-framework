@@ -588,25 +588,17 @@ export type Database = {
     }
     Functions: {
       can_select_chat: {
-        Args: {
-          check_chat_id: string
-        }
+        Args: { check_chat_id: string }
         Returns: boolean
       }
       check_existing_member_by_email: {
-        Args: {
-          target_org_id: string
-          target_email: string
-        }
+        Args: { target_org_id: string; target_email: string }
         Returns: {
           membership_status: string
         }[]
       }
       check_org_chat_creation_permission: {
-        Args: {
-          p_org_id: string
-          p_user_id: string
-        }
+        Args: { p_org_id: string; p_user_id: string }
         Returns: boolean
       }
       create_notification_for_user: {
@@ -626,16 +618,15 @@ export type Database = {
         Returns: string
       }
       delete_chat_and_messages: {
-        Args: {
-          p_chat_id: string
-          p_user_id: string
-        }
-        Returns: undefined
+        Args: { p_chat_id: string; p_user_id: string }
+        Returns: string
+      }
+      delete_chat_and_messages_debug: {
+        Args: { p_chat_id: string; p_user_id: string }
+        Returns: string
       }
       is_org_admin: {
-        Args: {
-          org_id: string
-        }
+        Args: { org_id: string }
         Returns: boolean
       }
       is_org_member: {

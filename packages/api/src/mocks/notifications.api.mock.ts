@@ -1,6 +1,6 @@
-import { vi } from 'vitest';
+import { vi, type Mock } from 'vitest';
 import type { NotificationApiClient } from '../notifications.api';
-import { Notification, ApiResponse, ApiError } from '@paynless/types';
+import type { Notification, ApiResponse } from '@paynless/types';
 
 /**
  * Creates a reusable mock object for the NotificationApiClient, suitable for Vitest unit tests.
@@ -9,11 +9,14 @@ import { Notification, ApiResponse, ApiError } from '@paynless/types';
  * @returns A mocked NotificationApiClient instance.
  */
 export const createMockNotificationApiClient = (): NotificationApiClient => ({
-    fetchNotifications: vi.fn<[], Promise<ApiResponse<Notification[]>>>(),
-    markNotificationRead: vi.fn<[string], Promise<ApiResponse<void>>>(),
-    markAllNotificationsAsRead: vi.fn<[], Promise<ApiResponse<void>>>(),
+    fetchNotifications: vi.fn() as Mock<[], Promise<ApiResponse<Notification[]>>>,
+    markNotificationRead: vi.fn() as Mock<[string], Promise<ApiResponse<null>>>,
+    markAllNotificationsAsRead: vi.fn() as Mock<[], Promise<ApiResponse<null>>>,
     // Ensure all methods from the actual NotificationApiClient are mocked
-});
+    // Cast the entire object to NotificationApiClient to satisfy the type, 
+    // acknowledging that private members are not part of this mock object structure
+    // because the class constructor itself is typically mocked in tests.
+}) as unknown as NotificationApiClient;
 
 /**
  * Resets all mock functions within a given mock NotificationApiClient instance.
@@ -22,9 +25,9 @@ export const createMockNotificationApiClient = (): NotificationApiClient => ({
  * @param mockClient - The mock NotificationApiClient instance to reset.
  */
 export const resetMockNotificationApiClient = (mockClient: NotificationApiClient) => {
-    mockClient.fetchNotifications.mockReset();
-    mockClient.markNotificationRead.mockReset();
-    mockClient.markAllNotificationsAsRead.mockReset();
+    (mockClient.fetchNotifications as Mock).mockReset();
+    (mockClient.markNotificationRead as Mock).mockReset();
+    (mockClient.markAllNotificationsAsRead as Mock).mockReset();
 };
 
 // Optional: Export a default instance if needed, though creating fresh ones might be safer

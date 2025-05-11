@@ -16,6 +16,7 @@ import {
     AuthRequiredError
 } from '@paynless/types';
 import { useAuthStore } from './authStore';
+import { DUMMY_PROVIDER_ID, dummyProviderDefinition } from './aiStore.dummy';
 
 // --- Restore API Client Factory Mock --- 
 // Define mock functions for the methods we need to control
@@ -766,4 +767,146 @@ describe('aiStore - sendMessage', () => {
         });
     }); // End Anonymous describe
 
-}); // End main describe block
+    // --- Tests for sendMessage (Dummy Provider - Development Mode) ---
+    describe('sendMessage (Dummy Provider - Development Mode)', () => {
+        const mockToken = 'dev-dummy-token';
+        const mockUser: User = { id: 'user-dummy-dev', email: 'dummy@dev.com', created_at: 't', updated_at: 't', role: 'user' };
+        const mockSession: Session = { access_token: mockToken, refresh_token: 'r', expiresAt: Date.now() / 1000 + 3600 };
+        const messageData = { message: 'Hello Dummy', providerId: DUMMY_PROVIDER_ID, promptId: null };
+        
+        let originalNodeEnv: string | undefined;
+
+        beforeEach(() => {
+            originalNodeEnv = process.env.NODE_ENV;
+            process.env.NODE_ENV = 'development';
+            vi.useFakeTimers();
+
+            if (vi.isMockFunction(useAuthStore)) {
+                vi.mocked(useAuthStore.getState).mockReturnValue({
+                    user: mockUser,
+                    session: mockSession,
+                    navigate: mockNavigateGlobal,
+                    profile: null, isLoading: false, error: null, setNavigate: vi.fn(), login: vi.fn(), logout: vi.fn(), register: vi.fn(),
+                    setProfile: vi.fn(), setUser: vi.fn(), setSession: vi.fn(), setIsLoading: vi.fn(), setError: vi.fn(),
+                    initialize: vi.fn(), refreshSession: vi.fn(), updateProfile: vi.fn(), clearError: vi.fn(),
+                } as any);
+            } else {
+                 console.warn("useAuthStore mock was not found for mocking getState in sendMessage (Dummy Provider) tests.");
+            }
+
+            act(() => {
+                resetAiStore({
+                    availableProviders: [dummyProviderDefinition],
+                    currentChatId: null,
+                    messagesByChatId: {},
+                    chatsByContext: { personal: [], orgs: {} },
+                });
+            });
+            mockSendChatMessage.mockClear();
+        });
+
+        afterEach(() => {
+            process.env.NODE_ENV = originalNodeEnv;
+            vi.useRealTimers();
+        });
+
+        it('should add user message and then echo assistant message without calling API', async () => {
+            const initialChatId = null;
+            act(() => {
+                 resetAiStore({
+                    availableProviders: [dummyProviderDefinition],
+                    currentChatId: initialChatId,
+                    messagesByChatId: {},
+                    chatsByContext: { personal: [], orgs: {}},
+                    newChatContext: null
+                });
+            });
+
+            let promise;
+            act(() => {
+                promise = useAiStore.getState().sendMessage({ ...messageData, chatId: initialChatId });
+            });
+
+            expect(useAiStore.getState().isLoadingAiResponse).toBe(true);
+            const messagesPending = useAiStore.getState().messagesByChatId;
+            const optimisticChatIdKey = Object.keys(messagesPending).find(key => key.startsWith('temp-chat-'));
+            expect(optimisticChatIdKey).toBeDefined();
+            const optimisticMessages = messagesPending[optimisticChatIdKey!];
+            expect(optimisticMessages).toHaveLength(1);
+            expect(optimisticMessages[0].content).toBe(messageData.message);
+            expect(optimisticMessages[0].role).toBe('user');
+            expect(optimisticMessages[0].status).toBe('pending');
+
+            act(() => {
+                vi.runAllTimers(); 
+            });
+            await promise; 
+
+            expect(mockSendChatMessage).not.toHaveBeenCalled();
+            const state = useAiStore.getState();
+            expect(state.isLoadingAiResponse).toBe(false);
+            
+            const finalChatId = optimisticChatIdKey!;
+            expect(state.currentChatId).toBe(finalChatId);
+
+            const finalMessages = state.messagesByChatId[finalChatId];
+            expect(finalMessages).toHaveLength(2);
+            expect(finalMessages[0].content).toBe(messageData.message); 
+            expect(finalMessages[0].role).toBe('user');
+
+            const assistantMessage = finalMessages[1];
+            expect(assistantMessage.role).toBe('assistant');
+            expect(assistantMessage.content).toBe(`Echo from Dummy: ${messageData.message}`);
+            expect(assistantMessage.ai_provider_id).toBe(DUMMY_PROVIDER_ID);
+            expect(assistantMessage.user_id).toBeNull();
+            expect(assistantMessage.chat_id).toBe(finalChatId);
+            expect(assistantMessage.id.startsWith('dummy-echo-')).toBe(true);
+            expect(assistantMessage.token_usage).toEqual({
+                promptTokens: messageData.message.length,
+                completionTokens: (`Echo from Dummy: ${messageData.message}`).length,
+                totalTokens: messageData.message.length + (`Echo from Dummy: ${messageData.message}`).length,
+            });
+            expect(state.aiError).toBeNull();
+
+            expect(state.chatsByContext.personal.length).toBe(1);
+            expect(state.chatsByContext.personal[0].id).toBe(finalChatId);
+            expect(state.chatsByContext.personal[0].title).toBe(messageData.message.substring(0,50));
+        });
+
+        it('should work with an existing chat ID', async () => {
+            const existingChatId = 'existing-dummy-chat-123';
+            const initialMessages: ChatMessage[] = [
+                { id: 'm0', chat_id: existingChatId, role: 'user', content: 'Old message', created_at: 't0', is_active_in_thread: true, user_id: mockUser.id, ai_provider_id: null, system_prompt_id: null, token_usage: null }
+            ];
+            act(() => {
+                 resetAiStore({
+                    availableProviders: [dummyProviderDefinition],
+                    currentChatId: existingChatId,
+                    messagesByChatId: { [existingChatId]: initialMessages },
+                    chatsByContext: { personal: [{id: existingChatId, created_at: 't', updated_at: 't', title: 'Old Chat', user_id: mockUser.id, organization_id: null, system_prompt_id: null }], orgs: {}},
+                });
+            });
+
+            let promise;
+            act(() => {
+                promise = useAiStore.getState().sendMessage({ ...messageData, chatId: existingChatId });
+            });
+            act(() => {
+                vi.runAllTimers();
+            });
+            await promise;
+
+            expect(mockSendChatMessage).not.toHaveBeenCalled();
+            const state = useAiStore.getState();
+            expect(state.isLoadingAiResponse).toBe(false);
+            expect(state.currentChatId).toBe(existingChatId);
+            
+            const finalMessages = state.messagesByChatId[existingChatId];
+            expect(finalMessages).toHaveLength(initialMessages.length + 2); 
+            expect(finalMessages[initialMessages.length].content).toBe(messageData.message);
+            expect(finalMessages[initialMessages.length + 1].content).toBe(`Echo from Dummy: ${messageData.message}`);
+            expect(finalMessages[initialMessages.length + 1].ai_provider_id).toBe(DUMMY_PROVIDER_ID);
+        });
+    });
+
+}); // End describe for aiStore - sendMessage
