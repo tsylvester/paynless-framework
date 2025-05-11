@@ -1,3 +1,51 @@
+# AI Chat Enhancements: PARENTHESIS Implementation Plan
+
+## Preamble
+
+This document outlines the detailed, step-by-step implementation plan for the AI Chat Enhancements project, based on the synthesized requirements (SYNTHESIS #1, #2, #3) and user feedback. It follows a Test-Driven Development (TDD) approach (Red -> Green -> Refactor) and adheres to the existing monorepo architecture (`Backend (Supabase Functions) <-> API Client (@paynless/api) <-> State (@paynless/store) <-> Frontend (apps/web)`).
+
+**Goal:** To guide the development team through the implementation process, ensuring all requirements are met, code quality is maintained, and features are delivered reliably.
+
+## Legend
+
+*   [ ] Each work step will be uniquely named for easy reference 
+    *   [ ] Worksteps will be nested as shown
+        *   [ ] Nesting can be as deep as logically required 
+*   [✅] Represents a completed step or nested set
+*   [🚧] Represents an incomplete or partially completed step or nested set
+*   [⏸️] Represents a paused step where a discovery has been made that requires backtracking 
+*   [❓] Represents an uncertainty that must be resolved before continuing 
+*   [🚫] Represents a blocked, halted, stopped step or nested set that has some unresolved problem or prior dependency to resolve before continuing
+
+## Component Types and Labels
+
+The implementation plan uses the following labels to categorize work steps:
+
+* **[DB]:** Database Schema Change (Migration)
+* **[RLS]:** Row-Level Security Policy
+* **[BE]:** Backend Logic (Edge Function / RLS / Helpers)
+* **[API]:** API Client Library (`@paynless/api`)
+* **[STORE]:** State Management (`@paynless/store`)
+* **[UI]:** Frontend Component (`apps/web`)
+* **[TEST-UNIT]:** Unit Test Implementation/Update
+* **[TEST-INT]:** Integration Test Implementation/Update (API, Store-Component, RLS)
+* **[ANALYTICS]:** Analytics Integration (`@paynless/analytics`)
+* **[REFACTOR]:** Code Refactoring Step
+* **[COMMIT]:** Checkpoint for Git Commit
+
+**Core Principles:**
+
+*   **TDD:** Write failing tests before implementation code (RED), write code to make tests pass (GREEN), then refactor (REFACTOR).
+*   **Modularity:** Build reusable components, functions, and modules.
+*   **Architecture:** Respect the existing API <-> Store <-> UI flow and the `api` Singleton pattern.
+*   **Explicitness:** Leave nothing to assumption. Detail every sub-step.
+*   **Testing:** Unit tests (`[TEST-UNIT]`) for isolated logic, Integration tests (`[TEST-INT]`) for interactions (API-Store, Store-UI, Backend Endpoints). E2E tests (`[TEST-E2E]`) are optional/manual for this phase.
+*   **Analytics:** Integrate `packages/analytics` for all relevant user interactions (`[ANALYTICS]`)
+*   **Commits:** Commit frequently after Green/Refactor stages with clear messages (`[COMMIT]`)
+*   **Checkpoints:** Stop, run tests (`npm test`), build (`npm run build`), restart dev server after significant steps/phases.
+
+**Reference Requirements:** Use REQ-XXX codes from SYNTHESIS #2 PRD for traceability.
+
 # Phase 4: Advanced Tokenomics - Wallets, Payments, and Auditing
 
 **Overall Goal:** Implement a robust and extensible system for managing AI token wallets, allowing users to acquire tokens through various payment gateways (fiat and crypto), consume tokens for AI services, and provide a clear audit trail. This system will be built with abstractions to easily integrate new payment methods and potential future exchange functionalities.
