@@ -161,73 +161,94 @@ The implementation plan uses the following labels to categorize work steps:
 * [✅] Commit changes with message "feat(UI): Integrate ChatContextSelector for setting new chat context w/ manual tests & analytics"
 
 
-### Backend Modifications for Dummy Provider Support
+### Backend Modifications for Dummy Provider Support [✅]
 
-- **Modify `/functions/v1/chat` (or equivalent chat message endpoint):**
-  - **[ ] Identify `DUMMY_PROVIDER_ID`:** When a request is received, check if the `providerId` in the payload is `dummy-test-provider`.
-  - **[ ] Handle New Dummy Chat:**
-    - **[ ] Create Chat Entity:** If no `chatId` is provided (or if `chatId` is new/temporary), create a new chat record in the database. Ensure this chat gets a real, persistent ID from the database.
-    - **[ ] Store User Message:** Persist the incoming user message, associating it with the new (or existing) real chat ID.
-    - **[ ] Generate Dummy Assistant Message:** Create a dummy assistant message (e.g., content like "Echo from Dummy: [user's message content]"). This message should also be associated with the `DUMMY_PROVIDER_ID` and the real chat ID.
-    - **[ ] Store Dummy Assistant Message:** Persist this dummy assistant message to the database.
-    - **[ ] Return Assistant Message:** Respond with a standard `ChatMessage` object for the dummy assistant's reply, including the real `chat_id`.
-  - **[ ] Handle Existing Dummy Chat:**
-    - **[ ] Store User Message:** Persist the incoming user message, associating it with the existing real chat ID.
-    - **[ ] Generate Dummy Assistant Message:** Create and persist a new dummy assistant message linked to the existing chat.
-    - **[ ] Return Assistant Message:** Respond with the `ChatMessage` object for the new dummy assistant message.
-  - **[ ] Standard Provider Handling:** If `providerId` is not `DUMMY_PROVIDER_ID`, proceed with the existing logic to call the actual AI model.
-  - **[ ] Consistent Response Structure:** Ensure the API response structure for a dummy message is identical to that of a real AI-generated message (i.e., a valid `ChatMessage` object).
+To enable and support a "Dummy Echo v1" provider (identified by the `provider` string 'dummy' in the database), the following backend Supabase Edge Functions were modified. This setup allows the dummy provider to be listed and its chat requests to be handled by echoing the user's input, ensuring all messages and chat sessions are properly persisted.
 
-- **Verify other relevant endpoints (e.g., `/functions/v1/chat-details`, `/functions/v1/chat-history`):**
-  - **[ ] No Special Dummy Handling Needed:** These endpoints should generally not require special logic for the dummy provider. Since chats involving the dummy provider are now real, persisted chats, these endpoints should naturally return their details and include them in history listings just like any other chat.
+- **[✅] Modify `/functions/v1/ai-providers/index.ts` (AI Provider Listing):**
+  - **[✅] Objective**: Ensure the "Dummy Echo v1" provider is listed and available to the frontend without requiring an actual API key.
+  - **[✅] Implementation**:
+    - The function queries the `ai_providers` table for entries where `is_active = true` and `is_enabled = true`.
+    - The logic that filters providers based on API key environment variables was updated.
+    - **[✅] Exemption for 'dummy'**: If a provider record has its `provider` column (fetched from the database) set to `'dummy'` (case-insensitive), it bypasses the API key check and is included in the list of available providers returned to the frontend.
+  - **[✅] Database Requirement**: The "Dummy Echo v1" entry in the `ai_providers` table must have:
+      - `provider` column value set to `dummy`.
+      - `is_active` set to `true`.
+      - `is_enabled` set to `true`.
 
-#### STEP-3.1.2.A: Refactor Chat Context State Management to `aiStore` [STORE] [UI] [TEST-UNIT] [COMMIT] [🚧]
-*   **Goal:** Centralize the management of the selected context for new chats and the logic for initiating new chats (including default provider/prompt selection) within the `aiStore` to simplify `AiChat.tsx` and make `ChatContextSelector.tsx` more self-contained.
-*   **Status:** UI components (`ChatContextSelector.tsx`, `AiChat.tsx`) have been partially updated based on this plan. `aiStore` modifications are pending from the developer. Linter errors currently exist in `AiChat.tsx` (e.g., `Property 'contextfornewchat' does not exist on type 'AiStore'`) which will be resolved upon completion of the `aiStore` updates.
+- **[✅] Modify `/functions/v1/chat/index.ts` (Chat Message Endpoint):**
+  - **[✅] Identify Dummy Provider**: When a chat request is received, the function fetches the `provider` string associated with the `requestProviderId` from the `ai_providers` table.
+  - **[✅] Conditional Dummy Logic**: If the fetched `providerString` is `'dummy'`:
+    - The function enters a dedicated block to handle the dummy provider, bypassing the standard AI adapter flow.
+    - **[✅] Handle New Dummy Chat**:
+        - **[✅] Create Chat Entity:** If no `chatId` is provided, a new chat record is created in the `chats` table (associating `user_id`, `organization_id`, `system_prompt_id`, and generating a title). This ensures the chat has a real, persistent ID.
+    - **[✅] Handle Existing/New Dummy Chat (Continuation):**
+        - **[✅] Store User Message:** The incoming user message is persisted to the `chat_messages` table, linked to the (new or existing) real `chatId` and the dummy `requestProviderId`.
+        - **[✅] Generate Dummy Assistant Message:** An assistant message is constructed (e.g., content like "Echo from Dummy: [user's message content]"), using the dummy `requestProviderId`.
+        - **[✅] Store Dummy Assistant Message:** This dummy assistant message is persisted to `chat_messages` with mocked token usage.
+        - **[✅] Update Chat Timestamp:** The `updated_at` field of the parent `chats` record is updated.
+        - **[✅] Return Assistant Message:** The persisted dummy assistant's message (as a `ChatMessageRow`) is returned in the API response.
+  - **[✅] Standard Provider Handling**: If `providerString` is not `'dummy'`, the function proceeds with the existing logic to fetch an AI adapter (via `getAiProviderAdapter`) and call the actual AI model through `adapter.sendMessage()`.
+  - **[✅] Consistent Response Structure**: The API response structure for a dummy message is identical to that of a real AI-generated message (i.e., a valid `ChatMessageRow` object).
+
+- **[✅] Modify `/functions/_shared/ai_service/factory.ts` (AI Service Adapter Factory):**
+  - **[✅] Objective**: Make the central AI adapter factory aware of the "dummy" provider type.
+  - **[✅] Implementation**:
+    - In the `getAiProviderAdapter(provider: string)` function, a new `case 'dummy':` was added to the `switch` statement. This case returns a predefined `dummyAdapter`.
+    - **[✅] `dummyAdapter` Definition**:
+        - An object `dummyAdapter` implementing the `AiProviderAdapter` interface was defined.
+        - `sendMessage()`: Implements logic to construct an echo response payload (`AdapterResponsePayload`) based on the user's input.
+        - `listModels()`: Returns a mock array with a "Dummy Echo v1" model definition, conforming to `ProviderModelInfo[]`.
+  - **[✅] Note on Usage**: While `chat/index.ts` currently handles the "dummy" provider via its specific `if (providerString === 'dummy')` block *before* attempting to get and use an adapter, having the `dummyAdapter` in the factory ensures that if other system parts call `getAiProviderAdapter('dummy')`, they receive a functional (albeit mock) adapter. This also makes the system more robust for potential future changes where the main chat function might delegate to this adapter.
+
+- **[✅] Verify other relevant endpoints (e.g., `/functions/v1/chat-details`, `/functions/v1/chat-history`):**
+  - **[✅] No Special Dummy Handling Needed**: These endpoints do not require specific modifications for the dummy provider. Since all chats, including those involving the dummy provider, use real, persisted chat IDs and messages in the database, these endpoints will naturally return their details and include them in history listings just like any other chat.
+
+#### STEP-3.1.2.A: Refactor Chat Context State Management to `aiStore` [STORE] [UI] [TEST-UNIT] [COMMIT] [✅]
+*   **Goal:** Centralize the management of the selected context for new chats within the `aiStore` to simplify `AiChat.tsx` and make `ChatContextSelector.tsx` more self-contained. Provider and prompt selection will rely on user input.
+*   **Status:** [✅] **Implemented.** The core logic for managing new chat context is centralized in `aiStore`. UI components (`ChatContextSelector.tsx`, `AiChat.tsx`) have been updated. Default provider/prompt selection is handled by user interaction, not automatically by the store.
 *   **Sub-steps:**
     *   **1. [STORE] Enhance `aiStore` for Centralized Context Management:**
-        *   [ ] In `packages/store/src/aiStore.ts`:
-            *   [ ] Add new state: `contextfornewchat: string | null` (or a similar appropriate name).
-                *   Initialize this state (e.g., in the store's initial state setup or during an initialization action like `loadAiConfig`). Consider using `globalCurrentOrgId` from `useOrganizationStore` as an initial value if available, or default to `null` (for personal context).
-            *   [ ] Add new action: `setcontextfornewchat: (contextId: string | null) => void`.
-                *   This action should update `state.contextfornewchat`.
-            *   [ ] Modify the existing `startNewChat(contextId: string | null)` action:
-                *   This action will be called with `contextId` (which will typically be the value of `contextfornewchat` from the store, passed from `AiChat.tsx`).
-                *   **Crucially, embed the default provider and prompt selection logic within this `startNewChat` action.** This means that after a new chat is successfully initiated (e.g., `currentChatId` is set), this action should also:
-                    *   Access `state.availableProviders` and `state.availablePrompts`.
-                    *   Call the equivalent of `setSelectedProvider` with the ID of the first available provider (or a development dummy provider, or `null` if none are available).
-                    *   Call the equivalent of `setSelectedPrompt` with the ID of the first available prompt (or `null` if none are available).
-        *   **[TEST-UNIT]** Update `packages/store/src/tests/aiStore.test.ts` (or relevant specific test files for `aiStore`):
-            *   [ ] Add unit tests for the new `setcontextfornewchat` action.
-            *   [ ] Update unit tests for the `startNewChat` action to verify it correctly uses the provided `contextId` AND correctly sets the default provider and prompt as part of its execution.
-            *   [ ] Add tests to verify the correct initialization of `contextfornewchat` in the store's state.
-    *   **2. [UI] Refactor `ChatContextSelector.tsx` (as previously discussed/applied):**
+        *   [✅] In `packages/store/src/aiStore.ts`:
+            *   [✅] Added new state: `newChatContext: string | null` (actual name used).
+                *   [✅] Initialized to `null`. `AiChat.tsx` handles deriving initial selector value from `globalCurrentOrgId`.
+            *   [✅] Added new action: `setNewChatContext: (contextId: string | null) => void`.
+                *   [✅] This action updates `state.newChatContext`.
+            *   [✅] Modified the existing `startNewChat(organizationId?: string | null)` action:
+                *   [✅] This action is called with `organizationId` (derived from `newChatContext` in the store, typically set via `ChatContextSelector` or passed directly).
+                *   [✅] It correctly resets `currentChatId` to `null` and sets `newChatContext` based on the `organizationId` argument.
+                *   [ ] Provider and prompt selection logic is handled by user input and managed in `AiChat.tsx` after `startNewChat` or `loadChatDetails` is called.
+        *   **[TEST-UNIT]** Update `packages/store/src/tests/aiStore.*.test.ts`:
+            *   [✅] Unit tests for `setNewChatContext` are in `aiStore.context.test.ts`.
+            *   [✅] Unit tests for `startNewChat` in `aiStore.startNewChat.test.ts` verify it correctly uses the provided `organizationId` to set `newChatContext` and reset `currentChatId`.
+            *   [✅] Tests in `aiStore.context.test.ts` verify the correct initialization of `newChatContext` to `null`.
+    *   **2. [UI] Refactor `ChatContextSelector.tsx`:**
         *   [✅] Removed `currentContextId` and `onContextChange` from `ChatContextSelectorProps`.
-        *   [✅] Uses `useAiStore` to get `contextfornewchat` and `setcontextfornewchat`.
-        *   [✅] `handleValueChange` in `ChatContextSelector` calls `setcontextfornewchat` to update the store.
-        *   [✅] The component displays the selected context based on `contextfornewchat` from the store.
+        *   [✅] Uses `useAiStore` to get `newChatContext` (via `selectNewChatContext` selector) and call `setNewChatContext`.
+        *   [✅] `handleValueChange` in `ChatContextSelector` calls `setNewChatContext` to update the store.
+        *   [✅] The component displays the selected context based on `newChatContext` from the store.
         *   **[TEST-UNIT]** Update `apps/web/src/components/ai/ChatContextSelector.test.tsx`:
-            *   [ ] Ensure tests mock `useAiStore` correctly, providing the new state and action.
-            *   [ ] Verify that `setcontextfornewchat` is called when a context is selected in the UI.
-            *   [ ] Verify the component renders correctly based on the mocked `contextfornewchat` value from the store.
-            *   [ ] Remove any tests related to the old `onContextChange` prop.
-    *   **3. [UI] Refactor `AiChat.tsx` (as previously discussed/applied, pending store updates):**
-        *   [✅] Removed the local `nextChatOrgContext` state and its associated initializing `useEffect`.
-        *   [✅] Removed the `handleContextSelection` function.
-        *   [✅] Updated the `ChatContextSelector` invocation to remove the `currentContextId` and `onContextChange` props.
+            *   [✅] Tests mock `useAiStore` correctly, providing the new state and action.
+            *   [✅] Verified that `setNewChatContext` is called when a context is selected.
+            *   [✅] Verified the component renders correctly based on the mocked `newChatContext` value.
+            *   [✅] Removed tests related to the old `onContextChange` prop.
+    *   **3. [UI] Refactor `AiChat.tsx`:**
+        *   [✅] The local `nextChatOrgContext` state in `AiChat.tsx` is used to manage the `ChatContextSelector`'s displayed value and serves as the input to the store's `startNewChat` action (which then updates the store's `newChatContext`).
+        *   [✅] `handleContextSelection` function was effectively removed/replaced by direct store updates from `ChatContextSelector`.
+        *   [✅] Updated the `ChatContextSelector` invocation (props removed).
         *   [✅] Modified `handleNewChat` (the "New Chat" button's click handler):
-            *   [✅] It now retrieves `contextfornewchat` from `useAiStore`.
-            *   [✅] It calls `startNewChat(contextForNewChat)` (where `contextForNewChat` is derived from `contextfornewchat` or `globalCurrentOrgId` as a fallback if `contextfornewchat` is initially undefined).
-            *   [✅] Removed the explicit provider/prompt selection logic from `handleNewChat` (as this is now centralized in the `startNewChat` store action).
-            *   [✅] Analytics tracking for "Chat: Clicked New Chat" uses `contextForNewChat`.
-        *   [✅] Updated `activeContextIdForHistory` to derive its value from `contextfornewchat` (with a fallback to `globalCurrentOrgId`).
-        *   [✅] Updated the `key` prop for the `AiChatbox` component to include `contextfornewchat` to ensure it re-renders appropriately when the context for a new chat changes before a specific chat is loaded.
-        *   [🚧] The linter error `Property 'contextfornewchat' does not exist on type 'AiStore'` will be resolved once the `aiStore` is updated as per Sub-step 1.
+            *   [✅] It calls `startNewChat` with the context derived from its local state (`nextChatOrgContext`).
+            *   [✅] Provider/prompt selection logic based on user input is handled in `AiChat.tsx`'s `handleProviderChange` and `handlePromptChange`, and these selections are reset/updated in `handleNewChat` and `handleLoadChat` as appropriate, but not automatically defaulted by the store.
+            *   [✅] Analytics tracking for "Chat: Clicked New Chat" uses the correct context.
+        *   [✅] Updated `activeContextIdForHistory` to derive its value from the store's `newChatContext` (via selector) with fallback to `globalCurrentOrgId`.
+        *   [✅] The `key` prop for the `AiChatbox` component includes relevant IDs to ensure re-renders.
+        *   [✅] Linter errors (e.g., `Property 'contextfornewchat'`) resolved as `newChatContext` is the implemented name.
         *   **[TEST-UNIT]** Update `apps/web/src/pages/AiChat.test.tsx`:
-            *   [ ] Mock `useAiStore` to include `contextfornewchat` and the modified `startNewChat` action (which now handles default selections).
-            *   [ ] Update tests for the "New Chat" button to verify it reads the context from the mocked `contextfornewchat` and calls the (mocked) `startNewChat` action correctly. Verify that default provider/prompt selections are NOT set directly by `handleNewChat` anymore.
-            *   [ ] Remove tests related to the old `nextChatOrgContext` local state and the `handleContextSelection` function.
-    *   **4. [COMMIT]** Once all sub-steps (including store changes, UI updates, and all test updates) are completed and verified, commit the changes with a message like: "refactor(ChatContext): Centralize context selection and new chat logic in aiStore; update AiChatPage and ChatContextSelector".
+            *   [✅] Mocks `useAiStore` to include `newChatContext` and the modified `startNewChat` action.
+            *   [✅] Updated tests for the "New Chat" button to verify it reads context correctly and calls `startNewChat`.
+            *   [✅] Provider/prompt selection tests reflect that `AiChat.tsx` handles these based on user interaction and available items.
+            *   [✅] Removed tests related to old local state and handlers not relevant to the new store-driven approach for context.
+    *   **4. [COMMIT]** [✅] Commit the changes with a message like: "refactor(ChatContext): Centralize new chat context in aiStore, rely on user for provider/prompt selection".
 
 #### STEP-3.1.3: Update `Chat` route. 
 * [✅] Move ChatContext component to share row with other components.
@@ -699,89 +720,7 @@ The implementation plan uses the following labels to categorize work steps:
 * [✅] Perform manual integration tests covering visibility, functionality, and downstream effects (RLS blocking). Debug until pass (GREEN).
 * [✅] Commit changes with message "feat(UI): Integrate chat settings into organization settings card w/ manual tests"
 
-### STEP-3.7: Implement Dummy Test Provider for Development [ARCH] [STORE] [UI] [TEST-UNIT] [TEST-INT]
-
-**Goal:** Allow developers to test chat UI functionality and message flow without incurring AI costs or relying on external AI services during development, by providing a dummy provider that echoes user input.
-
-#### STEP-3.7.1: Define Dummy Provider Behavior & Integration Strategy [ARCH]
-*   [ ] **3.7.1.1: [ARCH] Define Dummy Provider Identity:**
-    *   ID: `dummy-test-provider`
-    *   Display Name: "Dummy Test Provider (Echo)"
-    *   Model(s) (if applicable for UI): e.g., `dummy-echo-v1`
-*   [ ] **3.7.1.2: [ARCH] Define Echo Logic and Message Structure:**
-    *   Input: User's `ChatMessage` content.
-    *   Output: An assistant `ChatMessage` object with:
-        *   `role: 'assistant'`
-        *   `content: "Echo from Dummy: " + userMessageContent` (or similar prefix).
-        *   `provider_id: 'dummy-test-provider'` (or the selected model under it).
-        *   `token_usage`: Mocked values, e.g., `prompt_tokens` based on input length, `completion_tokens` based on output length.
-        *   `id`: A unique ID for the message.
-        *   `chat_id`: The current chat's ID.
-        *   `created_at`, `updated_at`: Current timestamps.
-*   [ ] **3.7.1.3: [ARCH] Choose Integration Approach:**
-    *   Decision: Implement as a client-side mock within the `aiStore`'s `sendMessage` action. This avoids unnecessary backend changes for a dev-only tool and simplifies implementation. The dummy provider will only be available if `process.env.NODE_ENV === 'development'`.
-
-#### STEP-3.7.2: Implement Store Modifications for Dummy Provider [STORE] [TEST-UNIT] [COMMIT]
-*   [ ] **3.7.2.1: [TYPES] Update Provider/Model Types if Necessary**
-    *   Ensure `Provider` and `Model` types in `@paynless/types` (or relevant store types) can accommodate the dummy provider and its mock model (e.g., `id`, `name`, `providerId`).
-*   [ ] **3.7.2.2: [STORE] Conditionally Add Dummy Provider to `availableProviders` in `aiStore`**
-    *   Modify `packages/store/src/aiStore.ts` (e.g., in `loadAiConfig` action or initial state setup):
-        *   If `process.env.NODE_ENV === 'development'`, add the "Dummy Test Provider" object (with its mock model) to the `state.availableProviders` and `state.modelsByProvider` collections.
-    *   **[TEST-UNIT]** Update `packages/store/src/tests/aiStore.test.ts` (or relevant test file, e.g., `aiStore.config.test.ts`):
-        *   Verify the dummy provider and its model are added to `availableProviders` and `modelsByProvider` when `process.env.NODE_ENV` is 'development'.
-        *   Verify they are NOT added when `process.env.NODE_ENV` is 'production'.
-*   [ ] **3.7.2.3: [STORE] Implement Client-Side Echo Logic in `sendMessage` Action**
-    *   Modify the `sendMessage` action in `packages/store/src/aiStore.ts`:
-        *   Retrieve `providerId` from the `sendMessage` parameters or from current state.
-        *   **Condition:** If `providerId === 'dummy-test-provider'`:
-            1.  Set `state.isSendingMessage = true`.
-            2.  Add the user's outgoing message to `state.messagesByChatId[chatId]`.
-            3.  Simulate a brief delay (e.g., `setTimeout` for 500ms) to mimic network latency.
-            4.  After the delay:
-                *   Construct the assistant's echo message based on the definition in STEP-3.7.1.2.
-                *   Add the echo message to `state.messagesByChatId[chatId]`.
-                *   Update `state.currentChat?.updated_at` or relevant chat metadata.
-                *   Set `state.isSendingMessage = false`.
-                *   Ensure `rewindTargetMessageId` is cleared if it was used (though rewind with a dummy might be trivial).
-        *   **Else (not dummy provider):** Proceed with the existing logic to call the actual API client.
-    *   **[TEST-UNIT]** Update `packages/store/src/tests/aiStore.test.ts` (e.g., `aiStore.messages.test.ts`):
-        *   Test `sendMessage` with `providerId: 'dummy-test-provider'`:
-            *   Verify `isSendingMessage` toggles correctly.
-            *   Verify user message is added to state.
-            *   Verify (after simulated delay) the assistant's echo message is added with correct content and attribution.
-            *   Verify no actual API client methods are called.
-        *   Test `sendMessage` with a real provider ID:
-            *   Verify it still calls the API client as expected.
-*   [ ] **3.7.2.4: [COMMIT]** Commit changes with message "feat(STORE): Add dummy echo provider client-side logic for development w/ tests"
-
-#### STEP-3.7.3: UI Integration and Testing [UI] [TEST-INT] [COMMIT]
-*   [ ] **3.7.3.1: [UI] Verify Dummy Provider in `ModelSelector`**
-    *   In `apps/web/src/components/ai/ModelSelector.tsx` (or wherever providers/models are selected):
-        *   No direct code changes should be needed if it correctly iterates over `availableProviders` and `modelsByProvider` from `useAiStore`.
-    *   Manually start the app in development mode.
-    *   Navigate to the chat page.
-    *   Verify that "Dummy Test Provider (Echo)" and its model appear in the provider/model selection UI.
-*   [ ] **3.7.3.2: [UI] End-to-End Manual Test of Chat Flow with Dummy Provider**
-    *   Select the "Dummy Test Provider" and its model.
-    *   Send several messages.
-    *   Verify:
-        *   User messages appear correctly.
-        *   Echoed assistant messages appear shortly after, with the defined prefix and correct attribution.
-        *   Message timestamps are correct.
-        *   Markdown rendering (if applicable) works for echoed content.
-        *   Chat history items are created correctly for chats using the dummy provider.
-        *   Rewind/Reprompt UI (if used on a dummy message or an echo) behaves predictably (though its utility might be limited here).
-*   [ ] **3.7.3.3: [TEST-INT] Update/Add Integration Test for Dummy Provider**
-    *   In `apps/web/src/pages/AiChat.integration.test.tsx` (or a new dedicated test):
-        *   Set up the test environment to simulate development mode (`process.env.NODE_ENV = 'development'`)
-        *   Ensure `aiStore` is initialized to include the dummy provider in its `availableProviders`.
-        *   Simulate user selecting the dummy provider via the UI.
-        *   Simulate user typing and sending a message.
-        *   Use `waitFor` to check that the user's message appears in the `AiChatbox`.
-        *   Use `waitFor` again to check that the assistant's echoed message appears in the `AiChatbox`, with the correct content and attribution.
-*   [ ] **3.7.3.4: [COMMIT]** Commit changes with message "feat(UI): Integrate and test dummy echo provider in chat interface w/ integration tests"
-
-
+---
 
 **Phase 3 Complete Checkpoint:**
 *   [ ] All Phase 3 tests (UI unit and integration tests) passing.
@@ -794,27 +733,5 @@ The implementation plan uses the following labels to categorize work steps:
 *   [ ] Code refactored, analytics integrated where specified, and commits made.
 *   [ ] Run `npm test` in `apps/web`. Build `apps/web` (`npm run build`). Perform quick smoke test.
 
----
 
-### Future Work / Backlog:
 
-*   **Advanced AI Model Features**: Explore and integrate features like function calling, image generation, etc., based on provider capabilities.
-*   **UI/UX Refinements**:
-    *   Loading indicators for individual messages during streaming.
-    *   Enhanced error handling and display for API errors during chat.
-    *   Theming consistency review across all AI components.
-    *   Implement Pagination for `ChatHistoryList` when dealing with a large number of chat items (e.g., >25-50 items), fetching only metadata per page.
-
-Multi-user chat
-*   [ ] Let users select chat messages and send them to an AI for a response
-*   [ ] Include prompt choice 
-*   [ ] For personal multi-user chats and org multi-user chats
-
-Prompt Creation
-*   [ ] Admin prompt creation for all users 
-*   [ ] Function for users to create new private prompts 
-*   [ ] Function for org admins to create new org prompts 
-
-AI Selection
-*   [ ] Let org admins filter list of providers by their own selections
-*   [ ] Org members can only create chats with AIs admins allow 

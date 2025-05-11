@@ -2,11 +2,11 @@
 // Do not use path aliases (like @shared/) as they will cause deployment failures.
 import { serve } from 'https://deno.land/std@0.224.0/http/server.ts'
 import { createClient, type SupabaseClient } from 'npm:@supabase/supabase-js@2'
-// Import shared response/error handlers instead of defaultCorsHeaders directly
+// Import shared response/error handlers
 import { 
-    handleCorsPreflightRequest as actualHandleCorsPreflightRequest, 
-    createErrorResponse as actualCreateErrorResponse, 
-    createSuccessResponse as actualCreateJsonResponse,
+    handleCorsPreflightRequest, 
+    createErrorResponse, 
+    createSuccessResponse,
 } from '../_shared/cors-headers.ts'; 
 // Import AI service factory and necessary types
 import { getAiProviderAdapter as actualGetAiProviderAdapter } from '../_shared/ai_service/factory.ts';
@@ -31,9 +31,9 @@ export type ChatHandlerDeps = ActualChatHandlerDeps;
 export const defaultDeps: ChatHandlerDeps = {
   createSupabaseClient: createClient, 
   fetch: fetch,
-  handleCorsPreflightRequest: actualHandleCorsPreflightRequest,
-  createJsonResponse: actualCreateJsonResponse,
-  createErrorResponse: actualCreateErrorResponse,
+  handleCorsPreflightRequest,
+  createSuccessResponse,
+  createErrorResponse,
   getAiProviderAdapter: actualGetAiProviderAdapter,
   verifyApiKey: actualVerifyApiKey, // Included for completeness of the interface
   logger: actualLogger, // Use the imported logger
@@ -44,9 +44,9 @@ export async function mainHandler(req: Request, deps: ChatHandlerDeps = defaultD
   const {
     createSupabaseClient: createSupabaseClientDep,
     handleCorsPreflightRequest,
-    createJsonResponse, // To be used by handlePostRequest
-    createErrorResponse, // To be used by handlePostRequest
-    // getAiProviderAdapter, verifyApiKey, logger are passed to handlePostRequest via deps
+    createSuccessResponse,
+    createErrorResponse,
+    logger,
   } = deps;
 
   const corsResponse = handleCorsPreflightRequest(req);
@@ -55,11 +55,11 @@ export async function mainHandler(req: Request, deps: ChatHandlerDeps = defaultD
   // --- Auth and Client Initialization ---
   const authHeader = req.headers.get('Authorization');
   if (!authHeader) {
-     deps.logger.info("Chat function called without Authorization header. Returning AUTH_REQUIRED signal.")
+     logger.info("Chat function called without Authorization header. Returning AUTH_REQUIRED signal.")
      if (req.method !== 'POST') { // Defensive check, though mainHandler now mostly handles POST
         return createErrorResponse('Authentication required', 401, req);
      }
-     return createJsonResponse(
+     return createSuccessResponse(
          { error: "Authentication required", code: "AUTH_REQUIRED" },
          401,
          req
@@ -69,7 +69,7 @@ export async function mainHandler(req: Request, deps: ChatHandlerDeps = defaultD
   const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? '';
   const supabaseAnonKey = Deno.env.get('SUPABASE_ANON_KEY') ?? '';
   if (!supabaseUrl || !supabaseAnonKey) {
-      deps.logger.error("Missing SUPABASE_URL or SUPABASE_ANON_KEY environment variables.");
+      logger.error("Missing SUPABASE_URL or SUPABASE_ANON_KEY environment variables.");
       return createErrorResponse("Server configuration error.", 500, req);
   }
 
@@ -83,29 +83,28 @@ export async function mainHandler(req: Request, deps: ChatHandlerDeps = defaultD
   // --- User Authentication ---
   const { data: { user }, error: userError } = await supabaseClient.auth.getUser();
   if (userError || !user) {
-    deps.logger.error('Auth error:', { error: userError || 'User not found' });
+    logger.error('Auth error:', { error: userError || 'User not found' });
     return createErrorResponse('Invalid authentication credentials', 401, req);
   }
   const userId = user.id;
-  deps.logger.info('Authenticated user:', { userId });
+  logger.info('Authenticated user:', { userId });
 
 
   if (req.method === 'POST') {
     try {
         const requestBody: AdapterChatRequest = await req.json(); // Assuming AdapterChatRequest from _shared/types is the correct one
-        deps.logger.info('Received chat POST request:', { body: requestBody });
+        logger.info('Received chat POST request:', { body: requestBody });
 
         const result = await handlePostRequest(requestBody, supabaseClient, userId, deps);
         
         if (result.error) {
             return createErrorResponse(result.error.message, result.error.status || 500, req);
         }
-        // The original code structure was createJsonResponse({ message: postData }, 200, req);
-        // We adapt to return the assistant's message directly as the `data` part of the successful response.
-        return createJsonResponse(result.data, 200, req); // Pass assistant message directly
+        // For POST, createJsonResponse (which is actualCreateSuccessResponse) is appropriate as it handles JSON body
+        return createSuccessResponse(result.data, 200, req); 
 
     } catch (err) {
-        deps.logger.error('Unhandled error in POST mainHandler:', { error: err instanceof Error ? err.stack : String(err) });
+        logger.error('Unhandled error in POST mainHandler:', { error: err instanceof Error ? err.stack : String(err) });
         const errorMessage = err instanceof Error ? err.message : 'An unexpected error occurred.';
         return createErrorResponse(errorMessage, 500, req);
     }
@@ -119,7 +118,7 @@ export async function mainHandler(req: Request, deps: ChatHandlerDeps = defaultD
         if (!chatId || chatId === 'chat') { 
             return createErrorResponse('Missing chat ID in URL path for DELETE request.', 400, req);
         }
-        deps.logger.info(`Received DELETE request for chat ID: ${chatId}`);
+        logger.info(`Received DELETE request for chat ID: ${chatId}`);
 
         const { error: rpcError } = await supabaseClient.rpc('delete_chat_and_messages', {
             p_chat_id: chatId,
@@ -127,17 +126,18 @@ export async function mainHandler(req: Request, deps: ChatHandlerDeps = defaultD
         });
 
         if (rpcError) {
-            deps.logger.error(`Error calling delete_chat_and_messages RPC for chat ${chatId}:`, { error: rpcError });
+            logger.error(`Error calling delete_chat_and_messages RPC for chat ${chatId}:`, { error: rpcError });
             if (rpcError.code === 'PGRST01' || rpcError.message.includes('permission denied')) { 
                  return createErrorResponse('Permission denied to delete this chat.', 403, req); 
             }
             return createErrorResponse(rpcError.message || 'Failed to delete chat.', 500, req);
         }
-        deps.logger.info(`Successfully deleted chat ${chatId} via RPC.`);
-        return new Response(null, { status: 204 }); 
+        logger.info(`Successfully deleted chat ${chatId} via RPC.`);
+        // Use createJsonResponse to ensure CORS headers are applied
+        return createSuccessResponse(null, 204, req); 
 
     } catch (err) {
-        deps.logger.error('Unhandled error in DELETE handler:', { error: err instanceof Error ? err.stack : String(err) });
+        logger.error('Unhandled error in DELETE handler:', { error: err instanceof Error ? err.stack : String(err) });
         const errorMessage = err instanceof Error ? err.message : 'An unexpected error occurred.';
         return createErrorResponse(errorMessage, 500, req);
     }
@@ -153,7 +153,7 @@ async function handlePostRequest(
     userId: string, 
     deps: ChatHandlerDeps
 ): Promise<{data: ChatMessageRow | null, error: {message: string, status?: number} | null}> {
-    const { logger, getAiProviderAdapter, createErrorResponse: _createErrorResponse, createJsonResponse: _createJsonResponse } = deps;
+    const { logger, getAiProviderAdapter } = deps;
     
     logger.info('Entering handlePostRequest with body:', { requestBody });
 

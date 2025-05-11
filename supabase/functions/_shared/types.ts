@@ -218,7 +218,7 @@ export interface ChatHandlerDeps {
   createSupabaseClient: typeof createClient;
   fetch: typeof fetch; // Global fetch type
   handleCorsPreflightRequest: typeof handleCorsPreflightRequest;
-  createJsonResponse: typeof createSuccessResponse; // Use the corrected type name
+  createSuccessResponse: typeof createSuccessResponse; // Use the corrected type name
   createErrorResponse: typeof createErrorResponse;
   getAiProviderAdapter: GetAiProviderAdapter; // Use the new specific type
   verifyApiKey: VerifyApiKey;

@@ -193,6 +193,30 @@ This implementation plan follows a phased approach, with each phase building on 
 * [ ] Commit changes with message "feat(ANALYTICS): Ensure all required analytics events are triggered from store actions"
 
 #### STEP-6.6.3 Phase 3 Cleanup 
+
+### Future Work / Backlog:
+
+*   **Advanced AI Model Features**: Explore and integrate features like function calling, image generation, etc., based on provider capabilities.
+*   **UI/UX Refinements**:
+    *   Loading indicators for individual messages during streaming.
+    *   Enhanced error handling and display for API errors during chat.
+    *   Theming consistency review across all AI components.
+    *   Implement Pagination for `ChatHistoryList` when dealing with a large number of chat items (e.g., >25-50 items), fetching only metadata per page.
+
+Multi-user chat
+*   [ ] Let users select chat messages and send them to an AI for a response
+*   [ ] Include prompt choice 
+*   [ ] For personal multi-user chats and org multi-user chats
+
+Prompt Creation
+*   [ ] Admin prompt creation for all users 
+*   [ ] Function for users to create new private prompts 
+*   [ ] Function for org admins to create new org prompts 
+
+AI Selection
+*   [ ] Let org admins filter list of providers by their own selections
+*   [ ] Org members can only create chats with AIs admins allow 
+
 #### STEP-6.6.4 Phase 4 Cleanup 
 #### STEP-6.6.5 Phase 5 Cleanup 
 
