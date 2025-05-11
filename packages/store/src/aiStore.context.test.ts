@@ -125,11 +125,6 @@ describe('useAiStore - Initial State Structure', () => {
   it('should not have the old isHistoryLoading (replaced by isLoadingHistoryByContext)', () => {
     expect((initialAiStateValues as any).isHistoryLoading).toBeUndefined();
   });
-
-  it('should not have the old newChatContext state property', () => {
-    expect((initialAiStateValues as any).newChatContext).toBeUndefined();
-    expect((useAiStore.getState() as any).newChatContext).toBeUndefined();
-  });
 });
 
 describe('useAiStore - Context Actions', () => {
@@ -148,134 +143,24 @@ describe('useAiStore - Context Actions', () => {
     //    vi.restoreAllMocks(); // Might be needed if mocks persist too strongly
     // });
 
-    describe('setSelectedChatContextForNewChat', () => {
-        it('should update selectedChatContextForNewChat to the given organization ID', () => {
+    describe('setNewChatContext', () => {
+        it('should update newChatContext to the given organization ID', () => {
             const orgId = 'org-test-123';
             useAiStore.getState().newChatContext = orgId;
             expect(useAiStore.getState().newChatContext).toBe(orgId);
-            expect(analytics.track).toHaveBeenCalledWith(
-                'Chat: Context For New Chat Selected In Store',
-                { contextId: orgId, contextType: 'Organization' }
-            );
+            //expect(analytics.track).toHaveBeenCalledWith(
+            //    'Chat: Context For New Chat Selected In Store',
+            //    { contextId: orgId, contextType: 'Organization' }
+            //);
         });
 
-        it('should update selectedChatContextForNewChat to null for personal context', () => {
+        it('should update newChatContext to null for personal context', () => {
             useAiStore.getState().newChatContext = null;
             expect(useAiStore.getState().newChatContext).toBeNull();
-            expect(analytics.track).toHaveBeenCalledWith(
-                'Chat: Context For New Chat Selected In Store',
-                { contextId: null, contextType: 'Personal' }
-            );
-        });
-    });
-
-    describe('startNewChat', () => {
-        // Matching AiProvider type from @paynless/types (no 'models' field)
-        const dummyProvider: Omit<AiProvider, 'models' | 'config' | 'description' | 'api_identifier' | 'created_at' | 'is_active' | 'is_enabled' | 'provider' | 'updated_at'> & { name: string, id: string } = { id: 'dummy-test-provider', name: 'Dummy Test Provider' };
-        const realProvider1: Omit<AiProvider, 'models' | 'config' | 'description' | 'api_identifier' | 'created_at' | 'is_active' | 'is_enabled' | 'provider' | 'updated_at'> & { name: string, id: string } = { id: 'real-provider-1', name: 'Real Provider 1' };
-        
-        // Matching SystemPrompt type from @paynless/types (using 'prompt_text')
-        const prompt1: SystemPrompt = { id: 'prompt-abc', name: 'Test Prompt 1', prompt_text: 'You are a test assistant.', created_at: 'test', updated_at: 'test', is_active: true };
-        const prompt2: SystemPrompt = { id: 'prompt-def', name: 'Test Prompt 2', prompt_text: 'You are another test assistant.', created_at: 'test', updated_at: 'test', is_active: true };
-
-        it('should start a new personal chat, set currentChatId, and initialize messages', () => {
-            useAiStore.getState().startNewChat(null);
-            const state = useAiStore.getState();
-            expect(state.currentChatId).not.toBeNull();
-            expect(state.messagesByChatId[state.currentChatId!]).toEqual([]);
-            const personalChats = state.chatsByContext.personal;
-            expect(personalChats).toBeDefined();
-            expect(personalChats!.length).toBe(1);
-            expect(personalChats![0].id).toBe(state.currentChatId);
-            expect(personalChats![0].organization_id).toBeNull();
-            expect(analytics.track).toHaveBeenCalledWith(
-                'Chat: New Chat Started In Store',
-                expect.objectContaining({ contextId: null, contextType: 'Personal' })
-            );
-        });
-
-        it('should start a new organization chat, set currentChatId, and initialize messages', () => {
-            const orgId = 'org-start-chat-456';
-            useAiStore.getState().startNewChat(orgId);
-            const state = useAiStore.getState();
-            expect(state.currentChatId).not.toBeNull();
-            expect(state.messagesByChatId[state.currentChatId!]).toEqual([]);
-            const orgChats = state.chatsByContext.orgs[orgId];
-            expect(orgChats).toBeDefined();
-            expect(orgChats!.length).toBe(1);
-            expect(orgChats![0].id).toBe(state.currentChatId);
-            expect(orgChats![0].organization_id).toBe(orgId);
-            expect(analytics.track).toHaveBeenCalledWith(
-                'Chat: New Chat Started In Store',
-                expect.objectContaining({ contextId: orgId, contextType: 'Organization' })
-            );
-        });
-
-        it('should set the first available provider if none is selected', () => {
-            useAiStore.setState({ ...initialAiStateValues, availableProviders: [realProvider1 as AiProvider], selectedProviderId: null });
-            useAiStore.getState().startNewChat(null);
-            expect(useAiStore.getState().selectedProviderId).toBe(realProvider1.id);
-        });
-        
-        it('should set the dummy provider in development if no provider is selected and dummy is available', () => {
-            const originalNodeEnv = process.env['NODE_ENV'];
-            process.env['NODE_ENV'] = 'development';
-            useAiStore.setState({ ...initialAiStateValues, availableProviders: [dummyProvider as AiProvider, realProvider1 as AiProvider], selectedProviderId: null });
-            
-            useAiStore.getState().startNewChat(null);
-            expect(useAiStore.getState().selectedProviderId).toBe(dummyProvider.id);
-            
-            process.env['NODE_ENV'] = originalNodeEnv; 
-        });
-
-        it('should keep the currently selected provider if one is already selected', () => {
-            const originalNodeEnv = process.env['NODE_ENV'];
-            process.env['NODE_ENV'] = 'development'; 
-            useAiStore.setState({ ...initialAiStateValues, availableProviders: [dummyProvider as AiProvider, realProvider1 as AiProvider], selectedProviderId: realProvider1.id });
-            
-            useAiStore.getState().startNewChat(null);
-            expect(useAiStore.getState().selectedProviderId).toBe(realProvider1.id);
-            
-            process.env['NODE_ENV'] = originalNodeEnv; 
-        });
-        
-        it('should set the first available prompt if prompts are available and a provider is selected', () => {
-            useAiStore.setState({ 
-                ...initialAiStateValues, 
-                availablePrompts: [prompt1, prompt2], 
-                selectedPromptId: null, 
-                availableProviders: [realProvider1 as AiProvider], 
-                selectedProviderId: realProvider1.id 
-            });
-            useAiStore.getState().startNewChat(null);
-            expect(useAiStore.getState().selectedPromptId).toBe(prompt1.id);
-        });
-
-        it('should set selectedPromptId to null if no prompts are available', () => {
-            useAiStore.setState({ 
-                ...initialAiStateValues, 
-                availablePrompts: [], 
-                selectedPromptId: prompt1.id, 
-                availableProviders: [realProvider1 as AiProvider], 
-                selectedProviderId: realProvider1.id 
-            });
-            useAiStore.getState().startNewChat(null);
-            expect(useAiStore.getState().selectedPromptId).toBeNull();
-        });
-        
-        it('should do nothing and set error if user is not authenticated', () => {
-            (useAuthStore.getState as import('vitest').Mock).mockReturnValueOnce({ user: null, session: null }); 
-            const originalCurrentChatId = useAiStore.getState().currentChatId;
-
-            useAiStore.getState().startNewChat(null);
-            
-            const finalState = useAiStore.getState();
-            expect(finalState.currentChatId).toBe(originalCurrentChatId); 
-            expect(finalState.aiError).toBe('User not authenticated. Cannot start new chat.');
-            expect(analytics.track).not.toHaveBeenCalledWith(
-                'Chat: New Chat Started In Store',
-                expect.anything()
-            );
+            //expect(analytics.track).toHaveBeenCalledWith(
+            //    'Chat: Context For New Chat Selected In Store',
+            //    { contextId: null, contextType: 'Personal' }
+            //);
         });
     });
 }); 

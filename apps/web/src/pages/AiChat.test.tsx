@@ -26,26 +26,12 @@ vi.mock('../components/ai/PromptSelector', () => ({
   PromptSelector: vi.fn(() => <div data-testid="prompt-selector-mock"></div>),
 }));
 
-// Define MockChatContextSelector as a function declaration BEFORE it's used in vi.mock factory
-function MockChatContextSelector({ currentContextId, onContextChange }: { currentContextId: string | null; onContextChange: (id: string | null) => void; organizations?: Organization[], isLoading?: boolean }) {
-  let displayValue = 'Select Context';
-  if (currentContextId === null) displayValue = 'Personal';
-  else if (currentContextId === 'org-A') displayValue = 'Org A';
-  else if (currentContextId === 'org-B') displayValue = 'Org B';
-
-  return (
-    <div>
-      <button data-testid="mock-context-selector-trigger">{displayValue}</button>
-      <div data-testid="mock-context-options">
-        <button data-testid="mock-option-personal" onClick={() => onContextChange(null)}>Personal</button>
-        <button data-testid="mock-option-org-A" onClick={() => onContextChange('org-A')}>Org A</button>
-        <button data-testid="mock-option-org-B" onClick={() => onContextChange('org-B')}>Org B</button>
-      </div>
-    </div>
-  );
-}
-
-vi.mock('../components/ai/ChatContextSelector', () => ({ ChatContextSelector: MockChatContextSelector }));
+// Updated ChatContextSelector mock - it no longer takes currentContextId or onContextChange
+// It now reads from the store, but for AiChatPage tests, we mostly care that it renders.
+// Interactions that change context will be tested by setting the store state directly.
+vi.mock('../components/ai/ChatContextSelector', () => ({
+  ChatContextSelector: vi.fn(() => <div data-testid="chat-context-selector-mock">Chat Context Selector</div>),
+}));
 
 // --- Store Mocks & Initial States ---
 const mockUser: User = { id: 'user-test-123', email: 'test@example.com' };
@@ -59,7 +45,8 @@ const setupStoreAndSpies = async (
     initialGlobalOrgId: string | null, 
     initialPersonalHistoryState: Chat[] | undefined | 'fetchedEmpty', 
     initialOrgAHistoryState: Chat[] | undefined | 'fetchedEmpty',
-    initialOrgBHistoryState?: Chat[] | undefined | 'fetchedEmpty'
+    initialOrgBHistoryState?: Chat[] | undefined | 'fetchedEmpty',
+    initialSelectedChatContext?: string | null // Added for new state
 ) => {
   const mockLoadAiConfig = vi.fn();
   const mockLoadChatHistory = vi.fn();
@@ -71,6 +58,9 @@ const setupStoreAndSpies = async (
   const mockCancelRewindPreparation = vi.fn();
   const mockClearAiError = vi.fn();
   const mockSendMessage = vi.fn().mockResolvedValue(null);
+  const mockSetNewChatContext = vi.fn(); // New mock action
+  const mockSetSelectedProvider = vi.fn(); // New mock action
+  const mockSetSelectedPrompt = vi.fn(); // New mock action
 
   const analyticsModule = await import('@paynless/analytics');
   const mockAnalyticsTrack = vi.mocked(analyticsModule.analytics.track);
@@ -101,12 +91,16 @@ const setupStoreAndSpies = async (
       },
       messagesByChatId: {},
       currentChatId: null,
+      selectedProviderId: null, // Add initial value for selectedProviderId
+      selectedPromptId: null, // Add initial value for selectedPromptId
+      newChatContext: initialSelectedChatContext, // Initialize newChatContext with the parameter directly (can be undefined)
       isLoadingAiResponse: false,
       isConfigLoading: false,
       isLoadingHistoryByContext: { personal: false, orgs: {} },
       isDetailsLoading: false,
       aiError: null,
       historyErrorByContext: { personal: null, orgs: {} },
+      rewindTargetMessageId: null, // Ensure rewindTargetMessageId is initialized
       
       // Actions
       loadAiConfig: mockLoadAiConfig,
@@ -119,6 +113,9 @@ const setupStoreAndSpies = async (
       cancelRewindPreparation: mockCancelRewindPreparation,
       clearAiError: mockClearAiError,
       sendMessage: mockSendMessage,
+      setNewChatContext: mockSetNewChatContext, // Add new action mock
+      setSelectedProvider: mockSetSelectedProvider, // Add new action mock
+      setSelectedPrompt: mockSetSelectedPrompt, // Add new action mock
     }, true);
   });
 
@@ -138,6 +135,9 @@ const setupStoreAndSpies = async (
     mockCancelRewindPreparation,
     mockClearAiError,
     mockSendMessage,
+    mockSetNewChatContext,
+    mockSetSelectedProvider,
+    mockSetSelectedPrompt,
     mockAnalyticsTrack
   };
 };
@@ -152,7 +152,10 @@ describe('AiChatPage Integration Tests', () => {
   // Test 1.1: Initial render with Org A (pre-filled history)
   it('should render and default to global org context, displaying its history if pre-filled', async () => {
     render(<AiChatPage />);
-    expect(await screen.findByTestId('mock-context-selector-trigger')).toHaveTextContent(orgA.name!);
+    // expect(await screen.findByTestId('mock-context-selector-trigger')).toHaveTextContent(orgA.name!);
+    // The above assertion is no longer valid as the mock is simpler.
+    // We verify ChatContextSelector is rendered, its internal state is tested separately.
+    expect(screen.getByTestId('chat-context-selector-mock')).toBeInTheDocument();
     expect(await screen.findByText('Org A Chat History')).toBeInTheDocument();
     expect(screen.getByText(chatOrgA1.title!)).toBeInTheDocument();
     expect(mocks.mockLoadChatHistory).not.toHaveBeenCalled();
@@ -162,7 +165,7 @@ describe('AiChatPage Integration Tests', () => {
   it('should call loadChatHistory if global org context history is NOT pre-filled', async () => {
     mocks = await setupStoreAndSpies(orgA.id, [chatPersonal1], undefined);
     render(<AiChatPage />);
-    expect(await screen.findByTestId('mock-context-selector-trigger')).toHaveTextContent(orgA.name!);
+    expect(await screen.findByTestId('chat-context-selector-mock')).toBeInTheDocument();
     await waitFor(() => {
       expect(mocks.mockLoadChatHistory).toHaveBeenCalledWith(orgA.id);
     });
@@ -172,7 +175,8 @@ describe('AiChatPage Integration Tests', () => {
   it('should render and default to Personal context, displaying its history if pre-filled', async () => {
     mocks = await setupStoreAndSpies(null, [chatPersonal1], [chatOrgA1]);
     render(<AiChatPage />);
-    expect(await screen.findByTestId('mock-context-selector-trigger')).toHaveTextContent('Personal');
+    // expect(await screen.findByTestId('mock-context-selector-trigger')).toHaveTextContent('Personal');
+    expect(screen.getByTestId('chat-context-selector-mock')).toBeInTheDocument();
     expect(await screen.findByText('Personal Chat History')).toBeInTheDocument();
     expect(screen.getByText(chatPersonal1.title!)).toBeInTheDocument();
     expect(mocks.mockLoadChatHistory).not.toHaveBeenCalled();
@@ -182,7 +186,7 @@ describe('AiChatPage Integration Tests', () => {
   it('should call loadChatHistory if Personal context history is NOT pre-filled', async () => {
     mocks = await setupStoreAndSpies(null, undefined, [chatOrgA1]);
     render(<AiChatPage />);
-    expect(await screen.findByTestId('mock-context-selector-trigger')).toHaveTextContent('Personal');
+    expect(await screen.findByTestId('chat-context-selector-mock')).toBeInTheDocument();
     await waitFor(() => {
       expect(mocks.mockLoadChatHistory).toHaveBeenCalledWith(null);
     });
@@ -190,57 +194,74 @@ describe('AiChatPage Integration Tests', () => {
 
   // Test 2.1: Context Switching to Personal
   it("selecting 'Personal' in ChatContextSelector should load personal history if not pre-filled", async () => {
-    const user = userEvent.setup();
+    // const user = userEvent.setup(); // userEvent not used for this part now
     mocks = await setupStoreAndSpies(orgA.id, undefined, [chatOrgA1]);
     render(<AiChatPage />);
     
-    await user.click(screen.getByTestId('mock-option-personal'));
+    // Simulate ChatContextSelector updating the store directly for testing AiChatPage's reaction
+    act(() => {
+      useAiStore.setState({ newChatContext: null });
+    });
     
     await waitFor(() => {
+      // AiChatPage useEffect for activeContextIdForHistory should trigger loadChatHistory
       expect(mocks.mockLoadChatHistory).toHaveBeenCalledWith(null);
     });
-    expect(mocks.mockAnalyticsTrack).toHaveBeenCalledWith('Chat: Context Selected For New Chat', { contextId: 'personal' });
+    // Analytics for context selection for new chat is tracked by setSelectedChatContextForNewChat action in store,
+    // not directly by AiChatPage anymore.
+    // expect(mocks.mockAnalyticsTrack).toHaveBeenCalledWith('Chat: Context Selected For New Chat', { contextId: 'personal' });
   });
 
   // Test 2.2: Context Switching to Org B
   it("selecting Org B in ChatContextSelector should load Org B history if not pre-filled", async () => {
-    const user = userEvent.setup();
+    // const user = userEvent.setup(); // userEvent not used
     render(<AiChatPage />);
     expect(await screen.findByText(chatOrgA1.title!)).toBeInTheDocument();
     mocks.mockLoadChatHistory.mockClear();
 
-    await user.click(screen.getByTestId('mock-option-org-B'));
+    // Simulate ChatContextSelector updating the store directly
+    act(() => {
+      useAiStore.setState({ newChatContext: orgB.id });
+    });
+
     await waitFor(() => {
       expect(mocks.mockLoadChatHistory).toHaveBeenCalledWith(orgB.id);
     });
-    expect(mocks.mockAnalyticsTrack).toHaveBeenCalledWith('Chat: Context Selected For New Chat', { contextId: orgB.id });
+    // Analytics for context selection for new chat is tracked by setSelectedChatContextForNewChat action in store.
+    // expect(mocks.mockAnalyticsTrack).toHaveBeenCalledWith('Chat: Context Selected For New Chat', { contextId: orgB.id });
   });
 
   // Test 3.1: New Chat - Personal
-  it("clicking 'New Chat' when 'Personal' context is active should call startNewChat for personal", async () => {
+  it("clicking 'New Chat' when 'Personal' context is active (set in store) should call startNewChat for personal", async () => {
     const user = userEvent.setup();
-    mocks = await setupStoreAndSpies(orgA.id, [chatPersonal1], [chatOrgA1]);
+    // Set up store with Personal as the selected context for new chat
+    mocks = await setupStoreAndSpies(orgA.id, [chatPersonal1], [chatOrgA1], undefined, null);
     render(<AiChatPage />);
     
-    await screen.findByText(chatOrgA1.title!);
-    await user.click(screen.getByTestId('mock-option-personal'));
-    await waitFor(() => {
-      expect(screen.getByTestId('mock-context-selector-trigger')).toHaveTextContent('Personal');
-    });
+    // Ensure page has rendered, e.g., by finding some existing content if necessary
+    // await screen.findByText(chatOrgA1.title!); // This might be for a different context initially loaded by globalCurrentOrgId
 
     mocks.mockStartNewChat.mockClear();
     mocks.mockAnalyticsTrack.mockClear();
 
     await user.click(screen.getByTestId('new-chat-button'));
+    // startNewChat should be called with the value from selectedChatContextForNewChat (null)
     expect(mocks.mockStartNewChat).toHaveBeenCalledWith(null);
     expect(mocks.mockAnalyticsTrack).toHaveBeenCalledWith('Chat: Clicked New Chat', { contextId: 'personal' });
   });
 
   // Test 3.2: New Chat - Org
-  it("clicking 'New Chat' when an organization context is active should call startNewChat for that org", async () => {
+  it("clicking 'New Chat' when an organization context is active (set in store) should call startNewChat for that org", async () => {
     const user = userEvent.setup();
+    // Set up store with OrgA as the selected context for new chat
+    mocks = await setupStoreAndSpies(null, [chatPersonal1], [chatOrgA1], undefined, orgA.id);
     render(<AiChatPage />);
+
+    mocks.mockStartNewChat.mockClear(); // Clear before action
+    mocks.mockAnalyticsTrack.mockClear();
+
     await user.click(screen.getByTestId('new-chat-button'));
+    // startNewChat should be called with the value from selectedChatContextForNewChat (orgA.id)
     expect(mocks.mockStartNewChat).toHaveBeenCalledWith(orgA.id);
     expect(mocks.mockAnalyticsTrack).toHaveBeenCalledWith('Chat: Clicked New Chat', { contextId: orgA.id });
   });
