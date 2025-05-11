@@ -160,6 +160,54 @@ The implementation plan uses the following labels to categorize work steps:
             *   Assert: `loadChatDetails` called with 'chat-org-A-1'. Analytics tracked.
 * [✅] Commit changes with message "feat(UI): Integrate ChatContextSelector for setting new chat context w/ manual tests & analytics"
 
+#### STEP-3.1.2.A: Refactor Chat Context State Management to `aiStore` [STORE] [UI] [TEST-UNIT] [COMMIT] [🚧]
+*   **Goal:** Centralize the management of the selected context for new chats and the logic for initiating new chats (including default provider/prompt selection) within the `aiStore` to simplify `AiChat.tsx` and make `ChatContextSelector.tsx` more self-contained.
+*   **Status:** UI components (`ChatContextSelector.tsx`, `AiChat.tsx`) have been partially updated based on this plan. `aiStore` modifications are pending from the developer. Linter errors currently exist in `AiChat.tsx` (e.g., `Property 'contextfornewchat' does not exist on type 'AiStore'`) which will be resolved upon completion of the `aiStore` updates.
+*   **Sub-steps:**
+    *   **1. [STORE] Enhance `aiStore` for Centralized Context Management:**
+        *   [ ] In `packages/store/src/aiStore.ts`:
+            *   [ ] Add new state: `contextfornewchat: string | null` (or a similar appropriate name).
+                *   Initialize this state (e.g., in the store's initial state setup or during an initialization action like `loadAiConfig`). Consider using `globalCurrentOrgId` from `useOrganizationStore` as an initial value if available, or default to `null` (for personal context).
+            *   [ ] Add new action: `setcontextfornewchat: (contextId: string | null) => void`.
+                *   This action should update `state.contextfornewchat`.
+            *   [ ] Modify the existing `startNewChat(contextId: string | null)` action:
+                *   This action will be called with `contextId` (which will typically be the value of `contextfornewchat` from the store, passed from `AiChat.tsx`).
+                *   **Crucially, embed the default provider and prompt selection logic within this `startNewChat` action.** This means that after a new chat is successfully initiated (e.g., `currentChatId` is set), this action should also:
+                    *   Access `state.availableProviders` and `state.availablePrompts`.
+                    *   Call the equivalent of `setSelectedProvider` with the ID of the first available provider (or a development dummy provider, or `null` if none are available).
+                    *   Call the equivalent of `setSelectedPrompt` with the ID of the first available prompt (or `null` if none are available).
+        *   **[TEST-UNIT]** Update `packages/store/src/tests/aiStore.test.ts` (or relevant specific test files for `aiStore`):
+            *   [ ] Add unit tests for the new `setcontextfornewchat` action.
+            *   [ ] Update unit tests for the `startNewChat` action to verify it correctly uses the provided `contextId` AND correctly sets the default provider and prompt as part of its execution.
+            *   [ ] Add tests to verify the correct initialization of `contextfornewchat` in the store's state.
+    *   **2. [UI] Refactor `ChatContextSelector.tsx` (as previously discussed/applied):**
+        *   [✅] Removed `currentContextId` and `onContextChange` from `ChatContextSelectorProps`.
+        *   [✅] Uses `useAiStore` to get `contextfornewchat` and `setcontextfornewchat`.
+        *   [✅] `handleValueChange` in `ChatContextSelector` calls `setcontextfornewchat` to update the store.
+        *   [✅] The component displays the selected context based on `contextfornewchat` from the store.
+        *   **[TEST-UNIT]** Update `apps/web/src/components/ai/ChatContextSelector.test.tsx`:
+            *   [ ] Ensure tests mock `useAiStore` correctly, providing the new state and action.
+            *   [ ] Verify that `setcontextfornewchat` is called when a context is selected in the UI.
+            *   [ ] Verify the component renders correctly based on the mocked `contextfornewchat` value from the store.
+            *   [ ] Remove any tests related to the old `onContextChange` prop.
+    *   **3. [UI] Refactor `AiChat.tsx` (as previously discussed/applied, pending store updates):**
+        *   [✅] Removed the local `nextChatOrgContext` state and its associated initializing `useEffect`.
+        *   [✅] Removed the `handleContextSelection` function.
+        *   [✅] Updated the `ChatContextSelector` invocation to remove the `currentContextId` and `onContextChange` props.
+        *   [✅] Modified `handleNewChat` (the "New Chat" button's click handler):
+            *   [✅] It now retrieves `contextfornewchat` from `useAiStore`.
+            *   [✅] It calls `startNewChat(contextForNewChat)` (where `contextForNewChat` is derived from `contextfornewchat` or `globalCurrentOrgId` as a fallback if `contextfornewchat` is initially undefined).
+            *   [✅] Removed the explicit provider/prompt selection logic from `handleNewChat` (as this is now centralized in the `startNewChat` store action).
+            *   [✅] Analytics tracking for "Chat: Clicked New Chat" uses `contextForNewChat`.
+        *   [✅] Updated `activeContextIdForHistory` to derive its value from `contextfornewchat` (with a fallback to `globalCurrentOrgId`).
+        *   [✅] Updated the `key` prop for the `AiChatbox` component to include `contextfornewchat` to ensure it re-renders appropriately when the context for a new chat changes before a specific chat is loaded.
+        *   [🚧] The linter error `Property 'contextfornewchat' does not exist on type 'AiStore'` will be resolved once the `aiStore` is updated as per Sub-step 1.
+        *   **[TEST-UNIT]** Update `apps/web/src/pages/AiChat.test.tsx`:
+            *   [ ] Mock `useAiStore` to include `contextfornewchat` and the modified `startNewChat` action (which now handles default selections).
+            *   [ ] Update tests for the "New Chat" button to verify it reads the context from the mocked `contextfornewchat` and calls the (mocked) `startNewChat` action correctly. Verify that default provider/prompt selections are NOT set directly by `handleNewChat` anymore.
+            *   [ ] Remove tests related to the old `nextChatOrgContext` local state and the `handleContextSelection` function.
+    *   **4. [COMMIT]** Once all sub-steps (including store changes, UI updates, and all test updates) are completed and verified, commit the changes with a message like: "refactor(ChatContext): Centralize context selection and new chat logic in aiStore; update AiChatPage and ChatContextSelector".
+
 #### STEP-3.1.3: Update `Chat` route. 
 * [✅] Move ChatContext component to share row with other components.
 * [✅] Update h2 "AI Chat" to include vars for (Org_name | Personal_name) & Model & Prompt so users can see their entire context a glance
@@ -711,6 +759,8 @@ The implementation plan uses the following labels to categorize work steps:
         *   Use `waitFor` to check that the user's message appears in the `AiChatbox`.
         *   Use `waitFor` again to check that the assistant's echoed message appears in the `AiChatbox`, with the correct content and attribution.
 *   [ ] **3.7.3.4: [COMMIT]** Commit changes with message "feat(UI): Integrate and test dummy echo provider in chat interface w/ integration tests"
+
+
 
 **Phase 3 Complete Checkpoint:**
 *   [ ] All Phase 3 tests (UI unit and integration tests) passing.

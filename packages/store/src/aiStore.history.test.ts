@@ -215,8 +215,8 @@ describe('aiStore - loadChatHistory', () => {
             const state = useAiStore.getState();
             expect(state.chatsByContext.orgs[mockOrgId]).toEqual(mockOrgChats);
             expect(state.historyErrorByContext.orgs[mockOrgId]).toBeNull();
-            // API called with token (which is undefined in this test case) and then organizationId
-            expect(mockGetChatHistory).toHaveBeenCalledWith(undefined, mockOrgId);
+            // API called with the valid token from mockSession and then organizationId
+            expect(mockGetChatHistory).toHaveBeenCalledWith(mockToken, mockOrgId);
         });
 
         it('should set historyErrorByContext.orgs[orgId] and NOT clear org chats on failure', async () => {

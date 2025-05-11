@@ -1,5 +1,5 @@
 import { vi } from 'vitest';
-import type { AiState, AiActions, Chat, ChatMessage, AiProvider, SystemPrompt } from '@paynless/types';
+import type { AiState, AiActions, SystemPrompt } from '@paynless/types';
 
 // Define the shape of our mock AiStore's state and actions
 type MockAiStoreType = AiState & AiActions;
@@ -20,7 +20,7 @@ export const mockSetAvailablePrompts = (prompts: SystemPrompt[]) => {
 export const mockAvailablePrompts = (): SystemPrompt[] => currentMockAvailablePrompts;
 // --- End mock data for availablePrompts ---
 
-const initialAiState: MockAiStoreType = {
+export const initialAiState: MockAiStoreType = {
   availableProviders: [],
   availablePrompts: [], // This will be dynamically updated by mockSetAvailablePrompts via internalMockAiState
   chatsByContext: { personal: undefined, orgs: {} },
@@ -34,6 +34,8 @@ const initialAiState: MockAiStoreType = {
   newChatContext: null,
   rewindTargetMessageId: null,
   aiError: null,
+  selectedProviderId: null,
+  selectedPromptId: null,
   // AiActions
   loadAiConfig: vi.fn().mockResolvedValue(undefined),
   sendMessage: vi.fn().mockResolvedValue(null),
@@ -45,6 +47,8 @@ const initialAiState: MockAiStoreType = {
   deleteChat: mockDeleteChatSpy.mockResolvedValue(undefined), // Use the exported spy
   prepareRewind: vi.fn(),
   cancelRewindPreparation: vi.fn(),
+  setSelectedProvider: vi.fn(),
+  setSelectedPrompt: vi.fn(),
 };
 
 let internalMockAiState: MockAiStoreType = { ...initialAiState, availablePrompts: mockAvailablePrompts() };

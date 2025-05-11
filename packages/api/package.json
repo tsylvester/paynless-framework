@@ -11,10 +11,17 @@
       "import": "./dist/index.js",
       "types": "./dist/index.d.ts"
     },
+    "./mocks": {
+      "import": "./dist/mocks/index.js",
+      "types": "./dist/mocks/index.d.ts"
+    },
     "./mocks/stripe.mock": {
       "import": "./dist/mocks/stripe.mock.js",
       "types": "./dist/mocks/stripe.mock.d.ts"
-    }
+    },
+    "./mocks/supabase.mock": "./dist/mocks/supabase.mock.js",
+    "./mocks/notifications.api.mock": "./dist/mocks/notifications.api.mock.js",
+    "./mocks/ai.api.mock": "./dist/mocks/ai.api.mock.js"
   },
   "scripts": {
     "test": "vitest run",

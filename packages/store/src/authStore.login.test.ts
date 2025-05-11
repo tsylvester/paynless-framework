@@ -84,7 +84,7 @@ vi.mock('@paynless/utils', () => ({
 // Test data
 // ---> Remove these declarations as they are moved up <---
 // const email = 'test@example.com'
-const password = 'password123' // Keep password declaration here if needed
+// const password = 'password123' // REMOVE THIS LINE
 // const mockUser: User = {
 //   id: 'user-123',
 //   email,
@@ -149,25 +149,36 @@ const mockSupabaseClient = {
   }
 } as unknown as SupabaseClient;
 
-// Mock the api client module to return our mock Supabase client
-vi.mock('@paynless/api', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('@paynless/api')>()
-  // Define the mocked api object separately for clarity
-  const mockedApi = {
-    get: vi.fn(),
+// More explicit mock for '@paynless/api'
+vi.mock('@paynless/api', () => {
+  // mockSupabaseClient is defined in the outer scope of the test file
+  const mockedGetSupabaseClient = vi.fn(() => mockSupabaseClient);
+
+  const mockedApiObject = {
+    getSupabaseClient: mockedGetSupabaseClient,
+    // Add other methods of 'api' if they are directly called by the store
+    // or its direct dependencies during the login action.
+    // For now, keep it minimal for the login test.
     post: vi.fn(),
+    get: vi.fn(),
     put: vi.fn(),
     delete: vi.fn(),
-    getSupabaseClient: vi.fn(() => mockSupabaseClient),
     ai: vi.fn(),
     billing: vi.fn(),
     notifications: vi.fn(),
   };
+
   return {
-    ...actual,
-    api: mockedApi, // Export the mocked api object
-    getApiClient: vi.fn(() => mockedApi), // getApiClient returns the mocked api object
-  }
+    // Ensure all named exports used by authStore.ts are provided.
+    // authStore.ts imports: { api, getApiClient } from '@paynless/api'
+    api: mockedApiObject,
+    getApiClient: vi.fn(() => mockedApiObject), // If getApiClient is used, it should also return a compatible mock
+
+    // If authStore.ts or its dependencies (like other stores it might interact with during login, though unlikely)
+    // import other specific named exports from '@paynless/api', they must be mocked here too.
+    // For example, if it used 'someOtherExportedFunction':
+    // someOtherExportedFunction: vi.fn(), 
+  };
 });
 
 describe('AuthStore - Login Action (Refactored for Supabase)', () => {
@@ -178,6 +189,8 @@ describe('AuthStore - Login Action (Refactored for Supabase)', () => {
   let loggerInfoSpy: SpyInstance; // Add spy for logger.info
 
   beforeEach(() => {
+    vi.clearAllMocks(); // Ensure mocks are cleared BEFORE spies are reassigned
+
     // Reset Zustand store state
     resetStore(); // Use the helper function
 
@@ -193,8 +206,8 @@ describe('AuthStore - Login Action (Refactored for Supabase)', () => {
     navigateMock = vi.fn();
     useAuthStore.getState().setNavigate(navigateMock); // Set navigate after resetting state
 
-    // Clear mock history AFTER setup
-    vi.clearAllMocks();
+    // REMOVE: Moved vi.clearAllMocks() to the top of beforeEach
+    // vi.clearAllMocks();
   });
 
   afterEach(() => {
@@ -208,7 +221,7 @@ describe('AuthStore - Login Action (Refactored for Supabase)', () => {
     // Act
     await act(async () => {
         // PASS the mock client directly to the action
-        await useAuthStore.getState().login(mockSupabaseClient.auth, email, password);
+        await useAuthStore.getState().login(email, password);
     });
 
     // Assert: Logger call
@@ -241,9 +254,10 @@ describe('AuthStore - Login Action (Refactored for Supabase)', () => {
     signInPasswordSpy.mockRejectedValue(supabaseError); 
 
     // Act
+     let result; // Define result to capture the return value
      await act(async () => {
         // PASS the mock client directly to the action
-        await useAuthStore.getState().login(mockSupabaseClient.auth, email, password);
+        result = await useAuthStore.getState().login(email, password);
     });
 
     // Assert: Supabase call
@@ -278,9 +292,10 @@ describe('AuthStore - Login Action (Refactored for Supabase)', () => {
     });
 
     // Act
+    let result; // Define result
     await act(async () => {
         // PASS the mock client directly to the action
-        await useAuthStore.getState().login(mockSupabaseClient.auth, email, password);
+        result = await useAuthStore.getState().login(email, password);
     });
 
     // Assert

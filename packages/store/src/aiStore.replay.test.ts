@@ -1,493 +1,161 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { useAiStore } from './aiStore'; // Adjust path as needed
-import { selectCurrentChatMessages } from './aiStore.selectors'; // Import the selector
-import { useAuthStore } from './authStore'; // Adjust path as needed
-// Import the actual AiApiClient class AND getApiClient
-import { AiApiClient, api as baseApi, AuthRequiredError, getApiClient } from '@paynless/api'; // <<< Import getApiClient
-// +++ Import the module itself for direct mocking +++
-import * as apiModule from '@paynless/api';
-// Import the shared mock factory and reset function
-import { createMockAiApiClient, resetMockAiApiClient } from '@paynless/api/mocks/ai.api.mock';
-import type { PendingAction, ChatMessage, Session, User, ApiResponse, UserRole, AuthStore, AiState } from '@paynless/types'; // Added AiState
-import { create } from 'zustand'; // Import create
-import 'vitest-localstorage-mock'; // <-- Add this import
+import { describe, it, expect, vi, beforeEach, afterEach, type Mock } from 'vitest';
+import { useAiStore, initialAiStateValues } from './aiStore';
+import { useAuthStore } from './authStore';
+import { act } from '@testing-library/react';
+import type { User, Session, ChatMessage, Chat, ApiResponse, AuthRequiredError } from '@paynless/types';
+// Use the package's mock entry point
+import { createMockAiApiClient, resetMockAiApiClient } from '@paynless/api/mocks';
 
-// --- Create an instance of the shared mock ---
+// Create the mock instance using the imported creator
 const mockAiApi = createMockAiApiClient();
 
-// --- Mock navigate function ---
-const navigateMock = vi.fn();
-
-// Mock dependencies
-// // Mock the entire @paynless/api module
-// /* // <<< REMOVE Global vi.mock START >>>
-// vi.mock('@paynless/api', async (importOriginal) => {
-//     // ... (keep mock implementation details)
-// });
-// 
-// vi.mock('./authStore');
-// */ // <<< REMOVE Global vi.mock END >>>
-
-// +++ RESTORE Global vi.mock START +++
+// Mock the entire @paynless/api module to control its behavior
 vi.mock('@paynless/api', async (importOriginal) => {
-    // +++ Define Mock Error Class INSIDE the factory +++
-    class MockAuthRequiredError extends Error {
-        constructor(message: string) {
-            super(message);
-            this.name = 'AuthRequiredError'; 
-        }
-    }
-    // +++ End Mock Error Class Definition +++
-
     const actualApiModule = await importOriginal<typeof import('@paynless/api')>();
+    // The mockAiApi instance is already created above using helpers from @paynless/api/mocks
+    // So, we just need to ensure the mocked module provides this instance for the 'ai' part.
+    const mockSupabaseAuth = {
+        getSession: vi.fn().mockResolvedValue({ data: { session: { access_token: 'mock-token' } }, error: null }),
+        onAuthStateChange: vi.fn().mockReturnValue({ data: { subscription: { unsubscribe: vi.fn() } } }),
+    };
+    const mockSupabaseClient = { auth: mockSupabaseAuth, from: vi.fn().mockReturnThis() }; // Simplified
+
+    const mockApiClientInstance = {
+        ai: mockAiApi, // Use the pre-configured mockAiApi instance
+        organizations: { getOrganization: vi.fn() }, // Simplified
+        notifications: { getNotifications: vi.fn() }, // Simplified
+        billing: { createCheckoutSession: vi.fn() }, // Simplified
+        getSupabaseClient: vi.fn(() => mockSupabaseClient),
+        get: vi.fn(), post: vi.fn(), put: vi.fn(), patch: vi.fn(), delete: vi.fn(),
+        getFunctionsUrl: vi.fn().mockReturnValue('mock-functions-url'),
+    };
+
     return {
-        ...actualApiModule, // Spread original module first
-        // --- Overwrite specific parts ---
-        AiApiClient: vi.fn(() => mockAiApi),
-        AuthRequiredError: MockAuthRequiredError, // Export the mock error
-        api: { 
-            ...actualApiModule.api, 
-            post: vi.fn(),
-            get: vi.fn(),
-            put: vi.fn(),
-            delete: vi.fn(),
-            ai: () => mockAiApi,
-        },
-        getApiClient: vi.fn(() => ({ 
-            post: vi.fn(), 
-            get: vi.fn(),
-            put: vi.fn(),
-            delete: vi.fn(),
-            ai: () => mockAiApi, 
-            organizations: vi.fn(), 
-            notifications: vi.fn(), 
-        })), 
+        ...actualApiModule,
+        // AiApiClient: vi.fn(() => mockAiApi), // This might not be needed if getApiClient is always used
+        getApiClient: vi.fn(() => mockApiClientInstance),
         initializeApiClient: vi.fn(), 
-        _resetApiClient: vi.fn(),
+        // We don't need to re-export createMockAiApiClient/resetMockAiApiClient here
+        // as they are not expected to be accessed from the mocked module instance itself usually.
+        // Test files should import them directly from '@paynless/api/mocks' if they need them.
     };
 });
 
-vi.mock('./authStore', () => {
-    const mockGetState = vi.fn(); // Mock for the static getState method
-    const mockUseAuthStoreHook = vi.fn(() => ({ /* Mock return value if hook called directly */ })); 
-    mockUseAuthStoreHook.getState = mockGetState;
-    return { useAuthStore: mockUseAuthStoreHook }; // Export the correctly structured mock
-});
-// +++ RESTORE Global vi.mock END +++
+// Mock the authStore
+vi.mock('./authStore');
 
-// Helper to define mock auth state with required fields
-const mockAuthSession: Session = {
-  access_token: 'mock-token',
-  refresh_token: 'mock-refresh',
-  expiresAt: Date.now() / 1000 + 3600,
-  token_type: 'bearer',
-  expires_in: 3600,
-};
-const mockAuthUser: User = {
-  id: 'user-123',
-  email: 'test@example.com',
-  role: 'authenticated' as UserRole,
-  created_at: new Date().toISOString(),
-  updated_at: new Date().toISOString(),
+// Helper to reset Zustand store state
+const resetAiStore = () => {
+    useAiStore.setState({ ...initialAiStateValues }, true); // Preserve actions by setting second param to false/true based on need, or deep merge
 };
 
-let mockInitialAuthState: AuthStore;
-try {
-    // Temporarily create a dummy store to get initial state/actions shape
-    const dummyAuthStore = create<AuthStore>(() => ({
-        user: null, session: null, profile: null, isLoading: true, error: null, navigate: null,
-        setUser: vi.fn(), setSession: vi.fn(), setProfile: vi.fn(), setIsLoading: vi.fn(),
-        setError: vi.fn(), setNavigate: vi.fn(), login: vi.fn(), register: vi.fn(),
-        logout: vi.fn(), updateProfile: vi.fn(), updateEmail: vi.fn(), clearError: vi.fn(),
-    }));
-    mockInitialAuthState = dummyAuthStore.getState();
-} catch (e) {
-  console.warn("Could not automatically get initial AuthStore state for mocking. Using fallback.");
-  mockInitialAuthState = {
-    user: null, session: null, profile: null, isLoading: true, error: null, navigate: null,
-    setUser: vi.fn(), setSession: vi.fn(), setProfile: vi.fn(), setIsLoading: vi.fn(),
-    setError: vi.fn(), setNavigate: vi.fn(), login: vi.fn(), register: vi.fn(), 
-    logout: vi.fn(), updateProfile: vi.fn(), updateEmail: vi.fn(), clearError: vi.fn(),
-  } as unknown as AuthStore; 
-}
-
-// Helper to reset store before each test
-const resetStore = () => {
-    // Use a defined initial state to ensure all properties are covered
-    const initialAiState: AiState = {
-        availableProviders: [],
-        availablePrompts: [],
-        chatsByContext: { personal: [], orgs: {} },
-        messagesByChatId: {},
-        currentChatId: null,
-        isLoadingAiResponse: false,
-        isConfigLoading: false,
-        isLoadingHistoryByContext: { personal: false, orgs: {} },
-        isDetailsLoading: false,
-        newChatContext: null,
-        rewindTargetMessageId: null,
-        aiError: null,
-    };
-    useAiStore.setState(initialAiState, false);
-    resetMockAiApiClient(mockAiApi);
-    
-    const getApiClientMock = vi.mocked(getApiClient);
-    if (getApiClientMock.mock.results[0]?.value) {
-        const mockApiClientInstance = getApiClientMock.mock.results[0].value;
-        vi.mocked(mockApiClientInstance.post).mockClear();
-        vi.mocked(mockApiClientInstance.get).mockClear();
-        vi.mocked(mockApiClientInstance.put).mockClear();
-        vi.mocked(mockApiClientInstance.delete).mockClear();
-    }
-    getApiClientMock.mockClear();
-
-    vi.mocked(baseApi.post).mockClear();
-    vi.mocked(baseApi.get).mockClear();
-
-    vi.mocked(localStorage.getItem).mockClear();
-    vi.mocked(localStorage.setItem).mockClear();
-    vi.mocked(localStorage.removeItem).mockClear();
-
-    vi.mocked(useAuthStore.getState).mockClear();
-    navigateMock.mockClear();
-    // Set a default mock auth state for most tests
-    vi.mocked(useAuthStore.getState).mockReturnValue({
-        ...mockInitialAuthState,
-        session: mockAuthSession,
-        user: mockAuthUser,
-        navigate: navigateMock
-    });
-};
-
-beforeEach(async () => {
-  resetStore();
-});
-
-afterEach(() => {
-  // localStorage cleanup is handled by vitest-localstorage-mock
-});
+const mockNavigateGlobal = vi.fn();
 
 describe('aiStore - checkAndReplayPendingChatAction', () => {
-
-  it('should do nothing if no pendingAction exists in localStorage', async () => {
-    // Arrange: localStorage is cleared by beforeEach
-    const store = useAiStore.getState();
-    const initialState = { ...store };
-
-    // // +++ Dynamically import mocked api for assertion +++
-    // const { api: mockedApi } = await import('@paynless/api');
-
-    // Act
-    await store.checkAndReplayPendingChatAction();
-
-    // Assert
-    expect(localStorage.getItem).toHaveBeenCalledWith('pendingAction');
-    // expect(mockedApi.post).not.toHaveBeenCalled(); // <<< Use dynamically imported mock
-    expect(baseApi.post).not.toHaveBeenCalled(); // <<< Revert to top-level import
-    expect(useAiStore.getState()).toEqual(initialState); 
-  });
-
-  it('should do nothing if pendingAction is not a chat POST action', async () => {
-    // Arrange
-    const nonChatAction: PendingAction = {
-        endpoint: 'profile', 
-        method: 'PUT',
-        body: { firstName: 'Test' },
-        returnPath: '/profile'
-    };
-    localStorage.setItem('pendingAction', JSON.stringify(nonChatAction));
-    const store = useAiStore.getState();
-    const initialState = { ...store };
-
-    // // +++ Dynamically import mocked api for assertion +++
-    // const { api: mockedApi } = await import('@paynless/api');
-
-    // Act
-    await store.checkAndReplayPendingChatAction();
-
-    // Assert
-    expect(localStorage.getItem).toHaveBeenCalledWith('pendingAction');
-    // expect(mockedApi.post).not.toHaveBeenCalled(); // <<< Use dynamically imported mock
-    expect(baseApi.post).not.toHaveBeenCalled(); // <<< Revert to top-level import
-    expect(useAiStore.getState()).toEqual(initialState); 
-  });
-
-  it('should set error and do nothing if pendingAction exists but user is not authenticated', async () => {
-    // Arrange
-    const chatAction: PendingAction = {
-        endpoint: 'chat',
-        method: 'POST',
-        body: { message: 'Test message', providerId: 'p1', promptId: 'pr1' },
-        returnPath: '/chat'
-    };
-    localStorage.setItem('pendingAction', JSON.stringify(chatAction));
-
-    // // +++ Dynamically import mocked authStore +++
-    // const { useAuthStore: mockedAuthStore } = await import('./authStore');
-    
-    // vi.mocked(mockedAuthStore.getState).mockReturnValue({ // <<< Use dynamically imported mock
-    vi.mocked(useAuthStore.getState).mockReturnValue({ // <<< Revert to top-level import
-        ...mockInitialAuthState,
-        session: null, 
-        user: null 
-    }); 
-    const store = useAiStore.getState();
-    
-    // // +++ Dynamically import mocked api for assertion +++
-    // const { api: mockedApi } = await import('@paynless/api');
-
-    // Act
-    await store.checkAndReplayPendingChatAction();
-
-    // Assert
-    expect(localStorage.getItem).toHaveBeenCalledWith('pendingAction');
-    // expect(mockedApi.post).not.toHaveBeenCalled(); // <<< Keep using dynamic api mock
-    expect(baseApi.post).not.toHaveBeenCalled(); // <<< Revert to top-level import
-    expect(useAiStore.getState().aiError).toBe('Authentication required to replay pending action.');
-    expect(selectCurrentChatMessages(useAiStore.getState())).toEqual([]); // Use selector
-  });
-
-  it('should replay action successfully, update state optimistically, and finalize on API success', async () => {
-    // Arrange
-    const mockUserId = 'user-123';
-    const mockToken = 'mock-auth-token';
-    const pendingChatAction: PendingAction = {
-      endpoint: 'chat',
-      method: 'POST',
-      body: { message: 'Hello from pending action', providerId: 'p1', promptId: 'pr1', chatId: null },
-      returnPath: '/chat'
-    };
-    const mockAssistantResponse: ChatMessage = {
-      id: 'assistant-msg-1',
-      chat_id: 'new-chat-id-from-replay',
-      user_id: null,
-      role: 'assistant',
-      content: 'Hi! I am the replayed response.',
-      ai_provider_id: 'p1',
-      system_prompt_id: 'pr1',
-      token_usage: { total: 10 },
-      created_at: new Date().toISOString(),
-      is_active_in_thread: true
+    const mockUser: User = { id: 'user-replay-1', email: 'replay@test.com', created_at: 't', updated_at: 't', role: 'user' };
+    const mockSession: Session = { access_token: 'replay-token', refresh_token: 'rt', expires_in: 3600, token_type: 'bearer', user: mockUser };
+    const pendingAction = {
+        type: 'sendMessage',
+        payload: { message: 'Hello from pending', providerId: 'p1', promptId: 's1', chatId: 'chat-pending-123' }
     };
 
-    localStorage.setItem('pendingAction', JSON.stringify(pendingChatAction));
+    beforeEach(() => {
+        vi.clearAllMocks();
+        vi.restoreAllMocks();
+        localStorage.clear();
+        // Reset the specific mock functions on mockAiApi instance
+        resetMockAiApiClient(mockAiApi); // Use the imported reset function
 
-    // // +++ Dynamically import mocked authStore +++
-    // const { useAuthStore: mockedAuthStore } = await import('./authStore');
-
-    // vi.mocked(mockedAuthStore.getState).mockReturnValue({ // <<< Use dynamically imported mock
-    vi.mocked(useAuthStore.getState).mockReturnValue({ // <<< Revert to top-level import
-        ...mockInitialAuthState,
-        session: { ...mockAuthSession, access_token: mockToken }, 
-        user: mockAuthUser,
-        navigate: null
-    });
-
-    let resolveApiPost: (value: ApiResponse<ChatMessage>) => void;
-    const apiPostPromise = new Promise<ApiResponse<ChatMessage>>((resolve) => {
-        resolveApiPost = resolve;
-    });
-    // Mock the base api.post used by replay
-    // // +++ Dynamically import mocked api for setting return value +++
-    // const { api: mockedApi } = await import('@paynless/api');
-    // const mockedBaseApiPost = vi.mocked(mockedApi.post).mockReturnValue(apiPostPromise);
-    const mockedBaseApiPost = vi.mocked(baseApi.post).mockReturnValue(apiPostPromise); // <<< Revert to top-level import
-    
-    const store = useAiStore.getState();
-    const setSpy = vi.spyOn(useAiStore, 'setState');
-    
-    // Act
-    const replayPromise = store.checkAndReplayPendingChatAction();
-
-    // --- Assertions DURING pending state ---
-    expect(localStorage.getItem).toHaveBeenCalledWith('pendingAction');
-    
-    const optimisticState = useAiStore.getState();
-    expect(optimisticState.isLoadingAiResponse).toBe(true);
-    expect(selectCurrentChatMessages(optimisticState)).toHaveLength(1);
-    const optimisticUserMessage = selectCurrentChatMessages(optimisticState)[0];
-    expect(optimisticUserMessage).toBeDefined();
-    expect(optimisticUserMessage.role).toBe('user');
-    expect(optimisticUserMessage.content).toBe(pendingChatAction.body!.message);
-    expect(optimisticUserMessage.status).toBe('pending'); 
-    expect(optimisticUserMessage.id).toMatch(/^temp-user-/); 
-
-    // Ensure base API was called
-    expect(mockedBaseApiPost).toHaveBeenCalledOnce();
-    expect(mockedBaseApiPost).toHaveBeenCalledWith('/chat', pendingChatAction.body!, { token: mockToken });
-
-    // --- Subscribe to wait for final state ---
-    let finalStateFromSubscription: AiState | null = null;
-    let subscriptionMet = false;
-    const unsubscribe = useAiStore.subscribe(newState => {
-        const messages = newState.messagesByChatId[mockAssistantResponse.chat_id];
-        // Check for the expected final state condition
-        if (!newState.isLoadingAiResponse && 
-            newState.currentChatId === mockAssistantResponse.chat_id && 
-            messages && messages.length === 2 && 
-            messages.find(m => m.role === 'assistant')) 
-        {
-            finalStateFromSubscription = newState;
-            subscriptionMet = true;
-            // console.log('[Test Debug] Subscription condition met!'); // Optional debug log
-        }
-    });
-
-    // --- Resolve the API call ---
-    resolveApiPost!({ data: mockAssistantResponse, error: null });
-    await replayPromise; // Wait for the action *promise* to complete
-
-    // --- Wait for the subscription to confirm state update ---
-    await new Promise<void>((resolve, reject) => {
-        const timeout = setTimeout(() => {
-            unsubscribe(); // Clean up listener
-            reject(new Error(`State update timeout: Condition not met for chat ${mockAssistantResponse.chat_id}`));
-        }, 200); // Wait up to 200ms (adjust if needed)
-        
-        const interval = setInterval(() => {
-            if (subscriptionMet) {
-                clearTimeout(timeout);
-                clearInterval(interval);
-                unsubscribe(); // Clean up listener
-                resolve();
+        act(() => {
+            resetAiStore();
+            // Setup authStore mock for authenticated state
+            if (vi.isMockFunction(useAuthStore)) {
+                vi.mocked(useAuthStore.getState).mockReturnValue({
+                    user: mockUser,
+                    session: mockSession,
+                    navigate: mockNavigateGlobal,
+                    profile: null, isLoading: false, error: null,
+                    // Provide full mock for authStore state and actions
+                    setNavigate: vi.fn(), login: vi.fn(), logout: vi.fn(), register: vi.fn(),
+                    setProfile: vi.fn(), setUser: vi.fn(), setSession: vi.fn(), setIsLoading: vi.fn(), setError: vi.fn(),
+                    initialize: vi.fn(), refreshSession: vi.fn(), updateProfile: vi.fn(), clearError: vi.fn(),
+                } as any);
+            } else {
+                console.warn("useAuthStore mock was not found for mocking getState in checkAndReplay tests.");
             }
-        }, 5); // Check every 5ms
-    });
-
-    // --- Assertions AFTER state confirmed by subscription ---
-    // Use the state captured by the subscription
-    expect(finalStateFromSubscription).not.toBeNull();
-    if (!finalStateFromSubscription) throw new Error("Subscription did not capture final state."); // Type guard
-
-    expect(finalStateFromSubscription.isLoadingAiResponse).toBe(false);
-    expect(finalStateFromSubscription.aiError).toBeNull();
-    expect(selectCurrentChatMessages(finalStateFromSubscription)).toHaveLength(2); // Use subscribed state
-    
-    const finalUserMessage = selectCurrentChatMessages(finalStateFromSubscription).find(m => m.role === 'user');
-    expect(finalUserMessage).toBeDefined();
-    expect(finalUserMessage!.id).toBe(optimisticUserMessage.id); 
-    expect(finalUserMessage!.content).toEqual(pendingChatAction.body!.message);
-    expect(finalUserMessage!.status).toEqual('sent'); 
-    expect(finalUserMessage!.chat_id).toEqual(mockAssistantResponse.chat_id);
-    
-    const finalAssistantMessage = selectCurrentChatMessages(finalStateFromSubscription).find(m => m.role === 'assistant');
-    expect(finalAssistantMessage).toEqual(mockAssistantResponse);
-    
-    expect(finalStateFromSubscription.currentChatId).toEqual(mockAssistantResponse.chat_id);
-
-    // <<< ADD Check: localStorage.removeItem called AFTER success >>>
-    expect(localStorage.removeItem).toHaveBeenCalledWith('pendingAction');
-
-    setSpy.mockRestore(); 
-  });
-
-  it('should handle API failure during replay, keeping optimistic message with error status', async () => {
-      // Arrange
-      const mockToken = 'mock-auth-token-fail';
-      const pendingChatAction: PendingAction = {
-        endpoint: 'chat',
-        method: 'POST',
-        body: { message: 'This replay will fail', providerId: 'p2', promptId: 'pr2', chatId: null },
-        returnPath: '/chat-fail'
-      };
-      const apiError: ApiResponse<ChatMessage> = {
-          data: null,
-          error: { message: 'AI failed to respond', code: 'AI_ERROR' }
-      };
-
-      localStorage.setItem('pendingAction', JSON.stringify(pendingChatAction));
-      // // +++ Dynamically import mocked authStore +++
-      // const { useAuthStore: mockedAuthStore } = await import('./authStore');
-      
-      // vi.mocked(mockedAuthStore.getState).mockReturnValue({ // <<< Use dynamically imported mock
-      vi.mocked(useAuthStore.getState).mockReturnValue({ // <<< Revert to top-level import
-          ...mockInitialAuthState,
-          session: { ...mockAuthSession, access_token: mockToken },
-          user: mockAuthUser,
-          navigate: navigateMock // Ensure navigate is mocked here too
-      });
-      // Mock the base api.post to return an error
-      // // +++ Dynamically import mocked api for setting return value +++
-      // const { api: mockedApi } = await import('@paynless/api');
-      // const mockedBaseApiPost = vi.mocked(mockedApi.post).mockResolvedValue(apiError);
-      const mockedBaseApiPost = vi.mocked(baseApi.post).mockResolvedValue(apiError); // <<< Revert to top-level import
-      const store = useAiStore.getState();
-
-      // Act
-      await store.checkAndReplayPendingChatAction();
-
-      // Assert
-      expect(localStorage.getItem).toHaveBeenCalledWith('pendingAction');
-      // <<< CHANGE Check: localStorage.removeItem should NOT be called on failure >>>
-      expect(localStorage.removeItem).toHaveBeenCalledTimes(0);
-      expect(mockedBaseApiPost).toHaveBeenCalledWith('/chat', pendingChatAction.body!, { token: mockToken });
-
-      const finalState = useAiStore.getState();
-      expect(finalState.isLoadingAiResponse).toBe(false); // Loading finished
-      expect(finalState.aiError).toBe(apiError.error!.message); // Error message set
-      expect(selectCurrentChatMessages(finalState)).toHaveLength(1); // Only the user message remains
-
-      const failedUserMessage = selectCurrentChatMessages(finalState)[0];
-      expect(failedUserMessage.role).toBe('user');
-      expect(failedUserMessage.content).toBe(pendingChatAction.body!.message);
-      expect(failedUserMessage.status).toBe('error'); // <<< Status updated to error
-      expect(failedUserMessage.id).toMatch(/^temp-user-/);
-  });
-
-    // Test case for AuthRequiredError during replay
-    it('should handle AuthRequiredError during replay and redirect', async () => {
-        // Arrange
-        const mockToken = 'mock-auth-token-auth-error';
-        const pendingChatAction: PendingAction = {
-          endpoint: 'chat',
-          method: 'POST',
-          body: { message: 'Auth required test', providerId: 'p1', promptId: 'pr1', chatId: null },
-          returnPath: '/chat-auth-fail'
-        };
-        localStorage.setItem('pendingAction', JSON.stringify(pendingChatAction));
-
-        // // +++ Dynamically import mocked authStore +++
-        // const { useAuthStore: mockedAuthStore } = await import('./authStore');
-
-        // vi.mocked(mockedAuthStore.getState).mockReturnValue({ // <<< Use dynamically imported mock
-        vi.mocked(useAuthStore.getState).mockReturnValue({ // <<< Revert to top-level import
-            ...mockInitialAuthState,
-            session: { ...mockAuthSession, access_token: mockToken },
-            user: mockAuthUser,
-            navigate: navigateMock
         });
-
-        // // +++ Mock the API call directly for this test +++
-        // const simulatedAuthError = new AuthRequiredError('Session expired during replay'); // <<< Still uses top-level import, which is now the mock
-        // // Mock the specific API call method expected to be used by checkAndReplayPendingChatAction
-        // // We need to access the 'api' export from the mocked module.
-        // // const apiPostMock = vi.spyOn(apiModule.api, 'post').mockRejectedValue(simulatedAuthError);
-        // // +++ Dynamically import mocked api for setting return value +++
-        // const { api: mockedApi } = await import('@paynless/api'); 
-        // const apiPostMock = vi.spyOn(mockedApi, 'post').mockRejectedValue(simulatedAuthError);
-        // // +++ End Mocking +++
-
-        // +++ Mock API using top-level imports +++
-        const simulatedAuthError = new AuthRequiredError('Session expired during replay'); // <<< Use top-level (now mocked) AuthRequiredError
-        const apiPostMock = vi.spyOn(baseApi, 'post').mockRejectedValue(simulatedAuthError); // <<< Use top-level baseApi
-        // +++ End Mocking +++
-
-        const store = useAiStore.getState();
-
-        // Act
-        await store.checkAndReplayPendingChatAction();
-
-        // Assert
-        // Verify the specific API post method was called
-        expect(apiPostMock).toHaveBeenCalledOnce(); 
-        expect(apiPostMock).toHaveBeenCalledWith('/chat', pendingChatAction.body!, { token: mockToken });
-
-        const finalState = useAiStore.getState();
-        expect(finalState.isLoadingAiResponse).toBe(false);
-        expect(selectCurrentChatMessages(finalState)).toHaveLength(1);
-        expect(selectCurrentChatMessages(finalState)[0].status).toBe('pending'); 
-        expect(localStorage.removeItem).toHaveBeenCalledTimes(0);
     });
 
+    it('should do nothing if no pending action in localStorage', () => {
+        localStorage.removeItem('pendingChatAction');
+        useAiStore.getState().checkAndReplayPendingChatAction();
+        expect(mockAiApi.sendChatMessage).not.toHaveBeenCalled();
+    });
 
-}); // End describe block 
+    it('should do nothing if user is not authenticated, even with pending action', () => {
+        localStorage.setItem('pendingChatAction', JSON.stringify(pendingAction));
+        // Override authStore mock for unauthenticated state for this test
+        if (vi.isMockFunction(useAuthStore)) {
+             vi.mocked(useAuthStore.getState).mockReturnValue({
+                user: null, session: null, navigate: mockNavigateGlobal, profile: null, isLoading: false, error: null,
+                setNavigate: vi.fn(), login: vi.fn(), logout: vi.fn(), register: vi.fn(),
+                setProfile: vi.fn(), setUser: vi.fn(), setSession: vi.fn(), setIsLoading: vi.fn(), setError: vi.fn(),
+                initialize: vi.fn(), refreshSession: vi.fn(), updateProfile: vi.fn(), clearError: vi.fn(),
+            } as any);
+        } else {
+            console.warn("useAuthStore mock was not found for mocking getState in checkAndReplay (unauthenticated) tests.");
+        }
+        useAiStore.getState().checkAndReplayPendingChatAction();
+        expect(mockAiApi.sendChatMessage).not.toHaveBeenCalled();
+        // Should also still have the item in localStorage as it wasn't processed
+        expect(localStorage.getItem('pendingChatAction')).toBe(JSON.stringify(pendingAction));
+    });
+
+    it('should dispatch sendMessage if pending action exists and user is authenticated', async () => {
+        localStorage.setItem('pendingChatAction', JSON.stringify(pendingAction));
+        const mockResponse: ChatMessage = { id: 'm-replay', chat_id: pendingAction.payload.chatId, role: 'assistant', content: 'Replayed!', user_id: null, ai_provider_id: pendingAction.payload.providerId, system_prompt_id: pendingAction.payload.promptId, token_usage: {total_tokens: 10}, created_at: 'now' };
+        (mockAiApi.sendChatMessage as Mock).mockResolvedValue({ data: mockResponse, status: 200 });
+
+        // Spy on the local sendMessage action of the store
+        const sendMessageSpy = vi.spyOn(useAiStore.getState(), 'sendMessage');
+
+        await useAiStore.getState().checkAndReplayPendingChatAction();
+
+        expect(sendMessageSpy).toHaveBeenCalledTimes(1);
+        expect(sendMessageSpy).toHaveBeenCalledWith(pendingAction.payload);
+        expect(localStorage.getItem('pendingChatAction')).toBeNull(); // Action should be cleared after replay
+        
+        // Optionally, check if sendChatMessage on the API mock was called (if sendMessage doesn't have further logic to prevent it)
+        // This depends on the implementation of the actual sendMessage store action.
+        // For this test, focusing on sendMessageSpy is more direct for replaying logic.
+    });
+
+    it('should clear pending action from localStorage even if replayed sendMessage call fails', async () => {
+        localStorage.setItem('pendingChatAction', JSON.stringify(pendingAction));
+        (mockAiApi.sendChatMessage as Mock).mockRejectedValue(new Error('API failed during replay'));
+
+        const sendMessageSpy = vi.spyOn(useAiStore.getState(), 'sendMessage');
+        
+        // Wrap in try/catch if sendMessage re-throws, or check error state in store
+        try {
+            await useAiStore.getState().checkAndReplayPendingChatAction();
+        } catch (e) {
+            // Expected if sendMessage re-throws
+        }
+
+        expect(sendMessageSpy).toHaveBeenCalledTimes(1);
+        expect(sendMessageSpy).toHaveBeenCalledWith(pendingAction.payload);
+        expect(localStorage.getItem('pendingChatAction')).toBeNull(); // Action should be cleared regardless of API success/failure
+        // Optionally check for aiError state in the store
+        // expect(useAiStore.getState().aiError).toBe('API failed during replay');
+    });
+
+    it('should do nothing if pending action type is unknown', () => {
+        const unknownAction = { type: 'unknownAction', payload: {} };
+        localStorage.setItem('pendingChatAction', JSON.stringify(unknownAction));
+        useAiStore.getState().checkAndReplayPendingChatAction();
+        expect(mockAiApi.sendChatMessage).not.toHaveBeenCalled();
+        // localStorage should still contain the action as it wasn't processed by known handlers
+        expect(localStorage.getItem('pendingChatAction')).toBe(JSON.stringify(unknownAction)); 
+    });
+});

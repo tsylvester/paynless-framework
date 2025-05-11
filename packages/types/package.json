@@ -26,9 +26,7 @@
   },
   "license": "ISC",
   "dependencies": {
-    "react": "^18.2.0"
-  },
-  "dependencies": {
+    "@supabase/postgrest-js": "^1.19.4",
     "vite-plugin-node-polyfills": "^0.23.0"
   }
 }

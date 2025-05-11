@@ -7,14 +7,15 @@ import type {
     ChatMessage,
     ChatApiRequest,
     ApiError,
-    FetchOptions
+    FetchOptions,
+    IAiApiClient
 } from '@paynless/types';
 import { logger } from '@paynless/utils';
 
 /**
  * API Client for interacting with AI-related Edge Functions.
  */
-export class AiApiClient {
+export class AiApiClient implements IAiApiClient {
     private apiClient: ApiClient;
 
     constructor(apiClient: ApiClient) {

@@ -8,7 +8,9 @@ import {
     ApiResponse,
     PendingAction,
     AuthRequiredError, // Correctly from @paynless/types
-    Chat
+    Chat,
+    AiState,      // <-- Add this import
+    AiActions     // <-- Add this import
 } from '@paynless/types';
 
 // Re-add the runtime constant hack to ensure build passes
@@ -28,51 +30,12 @@ console.log('Using preserveChatType hack for build', !!preserveChatType);
 
 import { api } from '@paynless/api';
 import { logger } from '@paynless/utils';
+import { analytics } from '@paynless/analytics'; // Import analytics
 import { useAuthStore } from './authStore';
 import { DUMMY_PROVIDER_ID, dummyProviderDefinition } from './aiStore.dummy'; // Import from the new file
 
-// Define AiState interface locally or ensure it's correctly imported if needed elsewhere
-export interface AiState {
-    availableProviders: AiProvider[];
-    availablePrompts: SystemPrompt[];
-    chatsByContext: { personal: Chat[] | undefined, orgs: { [orgId: string]: Chat[] | undefined } };
-    messagesByChatId: { [chatId: string]: ChatMessage[] };
-    currentChatId: string | null;
-    isLoadingAiResponse: boolean;
-    isConfigLoading: boolean;
-    isLoadingHistoryByContext: { personal: boolean, orgs: { [orgId: string]: boolean } };
-    historyErrorByContext: { personal: string | null, orgs: { [orgId: string]: string | null } };
-    isDetailsLoading: boolean;
-    newChatContext: string | null;
-    rewindTargetMessageId: string | null;
-    aiError: string | null;
-}
-
-// Define AiActions locally within this file
-interface AiActions {
-  loadAiConfig: () => Promise<void>;
-  sendMessage: (data: {
-    message: string; 
-    providerId: AiProvider['id']; 
-    promptId: SystemPrompt['id'] | null;
-    chatId?: Chat['id'] | null; 
-  }) => Promise<ChatMessage | null>; 
-  loadChatHistory: (organizationId?: string | null) => Promise<void>;
-  loadChatDetails: (chatId: Chat['id']) => Promise<void>; 
-  startNewChat: (organizationId?: string | null) => void;
-  clearAiError: () => void;
-  checkAndReplayPendingChatAction: () => Promise<void>;
-  deleteChat: (chatId: Chat['id'], organizationId?: string | null) => Promise<void>; // Ensure deleteChat is here
-  prepareRewind: (messageId: string, chatId: string) => void;
-  cancelRewindPreparation: () => void;
-}
-
 // Combine state and actions for the store type
 export type AiStore = AiState & AiActions;
-
-// --- Constants ---
-// --- Removed ANONYMOUS_MESSAGE_LIMIT ---
-
 // --- Initial State Values (for direct use in create) ---
 export const initialAiStateValues: AiState = {
     availableProviders: [],
@@ -88,6 +51,8 @@ export const initialAiStateValues: AiState = {
     newChatContext: null,
     rewindTargetMessageId: null,
     aiError: null,
+    selectedProviderId: null,
+    selectedPromptId: null,
 };
 
 // Use the imported AiStore type
@@ -136,9 +101,29 @@ export const useAiStore = create<AiStore>()(
                     }
                     // --- End Dummy Provider --- 
                     
+                    // --- Set Default Selected Provider ---
+                    let defaultProviderId: AiProvider['id'] | null = null;
+                    if (loadedProviders.length > 0) {
+                        if (process.env['NODE_ENV'] === 'development') {
+                            const dummy = loadedProviders.find(p => p.id === DUMMY_PROVIDER_ID);
+                            if (dummy) {
+                                defaultProviderId = dummy.id;
+                                logger.info(`[aiStore] Default provider set to Dummy Test Provider (ID: ${defaultProviderId}).`);
+                            }
+                        }
+                        if (!defaultProviderId) { // If dummy not found or not in dev mode
+                            defaultProviderId = loadedProviders[0].id;
+                            logger.info(`[aiStore] Default provider set to: ${loadedProviders[0].name} (ID: ${defaultProviderId}).`);
+                        }
+                    } else {
+                        logger.warn('[aiStore] No AI providers loaded. selectedProviderId will be null.');
+                    }
+                    // --- End Set Default Selected Provider ---
+                    
                     set({
                         availableProviders: loadedProviders, 
                         availablePrompts: loadedPrompts,   
+                        selectedProviderId: defaultProviderId, // Set the default provider ID
                         isConfigLoading: false,
                         aiError: null
                     });
@@ -157,9 +142,24 @@ export const useAiStore = create<AiStore>()(
             },
 
             sendMessage: async (data) => {
-                const { message, providerId, promptId, chatId: inputChatId } = data;
-                const { currentChatId: existingChatIdFromState, rewindTargetMessageId: currentRewindTargetId, newChatContext } = get();
+                const { message, chatId: inputChatId } = data;
+                const {
+                    currentChatId: existingChatIdFromState,
+                    rewindTargetMessageId: currentRewindTargetId,
+                    newChatContext,
+                    selectedProviderId,
+                    selectedPromptId
+                } = get();
                 const token = useAuthStore.getState().session?.access_token;
+
+                if (!selectedProviderId) {
+                    logger.error('[sendMessage] No provider selected. Cannot send message.');
+                    set({ isLoadingAiResponse: false, aiError: 'No AI provider selected.' });
+                    return null;
+                }
+
+                const providerId = selectedProviderId;
+                const promptId = selectedPromptId;
 
                 // --- Helper to add optimistic user message (remains largely the same) ---
                 const _addOptimisticUserMessage = (msgContent: string, explicitChatId?: string | null): { tempId: string, chatIdUsed: string, createdTimestamp: string } => {
@@ -310,22 +310,20 @@ export const useAiStore = create<AiStore>()(
                 const effectiveChatIdForApi = inputChatId ?? existingChatIdFromState ?? undefined;
                 let organizationIdForApi: string | undefined | null = undefined;
                 if (!effectiveChatIdForApi) { // It's a new chat
-                    organizationIdForApi = newChatContext; // Use the destructured newChatContext from line 161
+                    organizationIdForApi = newChatContext; 
                 } else {
                     // For existing chats, orgId is implicit in the chatId, API/backend handles this.
-                    // We don't need to explicitly find the orgId from chatsByContext here.
-                    organizationIdForApi = undefined; // Explicitly undefined for existing chats in request
+                    organizationIdForApi = undefined; 
                 }
 
-                const apiPromptId = promptId === null ? '__none__' : promptId;
+                const apiPromptId = promptId === null || promptId === '__none__' ? '__none__' : promptId;
 
                 const requestData: ChatApiRequest = { 
                     message, 
-                    providerId, 
+                    providerId,
                     promptId: apiPromptId,
                     chatId: effectiveChatIdForApi, 
-                    organizationId: organizationIdForApi, // Add organizationId to the request
-                    // Conditionally add rewindFromMessageId
+                    organizationId: organizationIdForApi, 
                     ...(effectiveChatIdForApi && currentRewindTargetId && { rewindFromMessageId: currentRewindTargetId })
                 };
                 const options: FetchOptions = { token }; 
@@ -962,7 +960,23 @@ export const useAiStore = create<AiStore>()(
                     // currentChatId remains as is, no need to change it here
                 });
                 logger.info('[rewind] Canceled rewind preparation.');
-            }
+            },
+
+            setSelectedProvider: (providerId) => { // Implementation
+                set({ selectedProviderId: providerId });
+                logger.info(`[aiStore] Selected provider ID set to: ${providerId}`);
+                if (providerId) { // Only track if a providerId is set (not null)
+                    analytics.track('Chat: Provider Selected', { providerId });
+                }
+            },
+
+            setSelectedPrompt: (promptId) => { // Implementation
+                set({ selectedPromptId: promptId });
+                logger.info(`[aiStore] Selected prompt ID set to: ${promptId}`);
+                if (promptId) { // Only track if a promptId is set (not null or __none__ if that's a case)
+                     analytics.track('Chat: Prompt Selected', { promptId });
+                }
+            },
         }) as AiStore
     // )
 );

@@ -1,252 +1,135 @@
-import { render, screen, fireEvent, within } from '@testing-library/react';
+import React from 'react';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { ChatContextSelector } from './ChatContextSelector';
+import { useAiStore, initialAiStateValues as aiStoreInitialState } from '@paynless/store';
+import { useOrganizationStore, initialOrganizationState } from '@paynless/store';
+import type { Organization } from '@paynless/types';
 import { vi } from 'vitest';
-import { ChatContextSelector } from '@/components/ai/ChatContextSelector'; // Adjust path as needed
-import type { Organization } from '@paynless/types'; // Adjust path as needed
-import { useOrganizationStore } from '@paynless/store';
 
-// Mock scrollIntoView for Radix components in JSDOM
-if (typeof window !== 'undefined') {
-  window.HTMLElement.prototype.scrollIntoView = vi.fn();
-  window.HTMLElement.prototype.hasPointerCapture = vi.fn();
-  window.HTMLElement.prototype.releasePointerCapture = vi.fn();
-}
+// Mock logger
+vi.mock('@paynless/utils', () => ({
+    logger: {
+        info: vi.fn(),
+        error: vi.fn(),
+        warn: vi.fn(),
+        debug: vi.fn(),
+    },
+}));
 
-// Mock @paynless/store
+
+// Mock Zustand stores
+const mockSetSelectedChatContextForNewChat = vi.fn();
+let mockSelectedChatContextForNewChat: string | null = null;
+
+const mockUserOrganizations: Organization[] = [
+    { id: 'org1', name: 'Organization 1', created_at: 'test', updated_at: 'test', user_id: 'u1', visibility: 'private' },
+    { id: 'org2', name: 'Organization 2', created_at: 'test', updated_at: 'test', user_id: 'u1', visibility: 'private' },
+];
+let mockIsOrgLoading = false;
+
 vi.mock('@paynless/store', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('@paynless/store')>();
-  return {
-    ...actual,
-    useOrganizationStore: vi.fn(),
-  };
+    const actual = await importOriginal() as any;
+    return {
+        ...actual,
+        useAiStore: vi.fn((selector) => {
+            const state = {
+                ...actual.initialAiStateValues, // Ensure this is the correct initial state object name from the store
+                selectedChatContextForNewChat: mockSelectedChatContextForNewChat,
+                setSelectedChatContextForNewChat: mockSetSelectedChatContextForNewChat,
+            };
+            return selector(state);
+        }),
+        useOrganizationStore: vi.fn((selector) => {
+            const state = {
+                ...actual.initialOrganizationState, // Ensure this is the correct initial state object name
+                userOrganizations: mockUserOrganizations,
+                isLoading: mockIsOrgLoading,
+            };
+            return selector(state);
+        }),
+    };
 });
 
-const mockUseOrganizationStore = vi.mocked(useOrganizationStore);
-
-// Mock shadcn/ui Select component
-// jest.mock('@/components/ui/select', () => ({
-//   Select: ({ children, onValueChange, value, disabled }: any) => (
-//     <select 
-//       data-testid="select-mock" 
-//       value={value} 
-//       onChange={(e) => onValueChange(e.target.value)} 
-//       disabled={disabled}
-//     >
-//       {children}
-//     </select>
-//   ),
-//   SelectTrigger: ({ children }: any) => <div data-testid="select-trigger-mock">{children}</div>,
-//   SelectValue: ({ placeholder }: any) => <span data-testid="select-value-mock">{placeholder}</span>,
-//   SelectContent: ({ children }: any) => <div data-testid="select-content-mock">{children}</div>,
-//   SelectItem: ({ children, value }: any) => <option data-testid={`select-item-mock-${value}`} value={value}>{children}</option>,
-// }));
-
-// A more robust mock for shadcn/ui Select that handles opening/closing and item selection
-const mockOrganizations: Organization[] = [
-  {
-    id: 'org_1',
-    name: 'Org One',
-    created_at: '2023-01-01T00:00:00Z',
-    allow_member_chat_creation: true,
-    visibility: 'private',
-    deleted_at: null,
-  },
-  {
-    id: 'org_2',
-    name: 'Org Two',
-    created_at: '2023-01-02T00:00:00Z',
-    allow_member_chat_creation: false,
-    visibility: 'public',
-    deleted_at: null,
-  },
-];
+const PERSONAL_CONTEXT_ID = '__personal__'; // As defined in ChatContextSelector.tsx
 
 describe('ChatContextSelector', () => {
-  const onContextChangeMock = vi.fn();
-  const mockUserOrganizations: Organization[] = [
-    {
-      id: 'org_1',
-      name: 'Org One',
-      created_at: '2023-01-01T00:00:00Z',
-      allow_member_chat_creation: true,
-      visibility: 'private',
-      deleted_at: null,
-    },
-    {
-      id: 'org_2',
-      name: 'Org Two',
-      created_at: '2023-01-02T00:00:00Z',
-      allow_member_chat_creation: false,
-      visibility: 'public',
-      deleted_at: null,
-    },
-  ];
+    beforeEach(() => {
+        vi.clearAllMocks();
+        mockSelectedChatContextForNewChat = null;
+        mockIsOrgLoading = false;
+    });
 
-  beforeEach(() => {
-    onContextChangeMock.mockClear();
-    // Default mock implementation
-    mockUseOrganizationStore.mockReturnValue({
-      userOrganizations: [],
-      isLoading: false,
-      // Add other state properties and actions if ChatContextSelector uses them
-      // For now, assuming it only uses userOrganizations and isLoading
-    } as any); // Use 'as any' for simplicity if full type is complex
-  });
+    it('renders with "Personal" selected by default if store state is null', () => {
+        mockSelectedChatContextForNewChat = null;
+        render(<ChatContextSelector />);
+        expect(screen.getByText('Personal')).toBeInTheDocument();
+    });
 
-  it('renders the Select component with placeholder', () => {
-    mockUseOrganizationStore.mockReturnValue({
-      userOrganizations: [],
-      isLoading: false,
-    } as any);
-    render(
-      <ChatContextSelector
-        currentContextId={null}
-        onContextChange={onContextChangeMock}
-        // isLoading is now from the store
-      />
-    );
-    expect(screen.getByRole('combobox')).toBeInTheDocument();
-  });
+    it('renders with the correct organization name selected based on store state', () => {
+        mockSelectedChatContextForNewChat = 'org1';
+        render(<ChatContextSelector />);
+        expect(screen.getByText('Organization 1')).toBeInTheDocument();
+    });
+    
+    it('renders "Select context" if store state is an orgId not in userOrganizations (fallback)', () => {
+        mockSelectedChatContextForNewChat = 'org-unknown';
+        render(<ChatContextSelector />);
+        expect(screen.getByText('Select context')).toBeInTheDocument();
+    });
 
-  it('renders "Personal" option in the dropdown by default', async () => {
-    mockUseOrganizationStore.mockReturnValue({
-      userOrganizations: [],
-      isLoading: false,
-    } as any);
-    render(
-      <ChatContextSelector
-        currentContextId={null}
-        onContextChange={onContextChangeMock}
-      />
-    );
-    fireEvent.click(screen.getByRole('combobox'));
-    const listbox = await screen.findByRole('listbox');
-    expect(await within(listbox).findByText('Personal')).toBeInTheDocument();
-  });
 
-  it('renders organization names from props in the dropdown', async () => {
-    mockUseOrganizationStore.mockReturnValue({
-      userOrganizations: mockUserOrganizations,
-      isLoading: false,
-    } as any);
-    render(
-      <ChatContextSelector
-        currentContextId={null}
-        onContextChange={onContextChangeMock}
-      />
-    );
-    fireEvent.click(screen.getByRole('combobox'));
-    const listbox = await screen.findByRole('listbox');
-    expect(await within(listbox).findByText('Org One')).toBeInTheDocument();
-    expect(await within(listbox).findByText('Org Two')).toBeInTheDocument();
-  });
+    it('calls setSelectedChatContextForNewChat with null when "Personal" is selected', async () => {
+        render(<ChatContextSelector />);
+        const trigger = screen.getByRole('combobox');
+        fireEvent.mouseDown(trigger); 
 
-  it('displays the correct value when currentContextId is "Personal" (null)', () => {
-    mockUseOrganizationStore.mockReturnValue({
-      userOrganizations: mockUserOrganizations,
-      isLoading: false,
-    } as any);
-    render(
-      <ChatContextSelector
-        currentContextId={null} // "Personal"
-        onContextChange={onContextChangeMock}
-      />
-    );
-    expect(screen.getByRole('combobox')).toHaveTextContent('Personal');
-  });
+        await waitFor(() => {
+            // Use a more robust selector if plain text is ambiguous or part of the trigger itself
+            expect(screen.getByText('Personal', { selector: '[role="option"]' })).toBeInTheDocument();
+        });
+        
+        const personalOption = screen.getByText('Personal', { selector: '[role="option"]' });
+        fireEvent.click(personalOption);
 
-  it('displays the correct value when currentContextId is an org ID', () => {
-    mockUseOrganizationStore.mockReturnValue({
-      userOrganizations: mockUserOrganizations,
-      isLoading: false,
-    } as any);
-    render(
-      <ChatContextSelector
-        currentContextId={'org_1'}
-        onContextChange={onContextChangeMock}
-      />
-    );
-    expect(screen.getByRole('combobox')).toHaveTextContent('Org One');
-  });
+        expect(mockSetSelectedChatContextForNewChat).toHaveBeenCalledWith(null);
+    });
 
-  it('calls onContextChange with null when "Personal" option is selected', async () => {
-    mockUseOrganizationStore.mockReturnValue({
-      userOrganizations: mockUserOrganizations,
-      isLoading: false,
-    } as any);
-    render(
-      <ChatContextSelector
-        currentContextId={'org_1'} // Start with an org selected
-        onContextChange={onContextChangeMock}
-      />
-    );
-    fireEvent.click(screen.getByRole('combobox'));
-    const listbox = await screen.findByRole('listbox');
-    const personalOption = await within(listbox).findByText('Personal');
-    fireEvent.click(personalOption);
-    expect(onContextChangeMock).toHaveBeenCalledWith(null);
-  });
+    it('calls setSelectedChatContextForNewChat with the orgId when an organization is selected', async () => {
+        render(<ChatContextSelector />);
+        const trigger = screen.getByRole('combobox');
+        fireEvent.mouseDown(trigger);
 
-  it('calls onContextChange with orgId when an organization option is selected', async () => {
-    mockUseOrganizationStore.mockReturnValue({
-      userOrganizations: mockUserOrganizations,
-      isLoading: false,
-    } as any);
-    render(
-      <ChatContextSelector
-        currentContextId={null} // Start with "Personal"
-        onContextChange={onContextChangeMock}
-      />
-    );
-    fireEvent.click(screen.getByRole('combobox'));
-    const listbox = await screen.findByRole('listbox');
-    const orgOneOption = await within(listbox).findByText('Org One');
-    fireEvent.click(orgOneOption);
-    expect(onContextChangeMock).toHaveBeenCalledWith('org_1');
-  });
+        await waitFor(() => {
+           expect(screen.getByText('Organization 1', { selector: '[role="option"]' })).toBeInTheDocument();
+        });
+        
+        const orgOption = screen.getByText('Organization 1', { selector: '[role="option"]' });
+        fireEvent.click(orgOption);
+        
+        expect(mockSetSelectedChatContextForNewChat).toHaveBeenCalledWith('org1');
+    });
 
-  it('disables the select when isLoading is true', () => {
-    mockUseOrganizationStore.mockReturnValue({
-      userOrganizations: mockUserOrganizations,
-      isLoading: true, // Set isLoading to true
-    } as any);
-    render(
-      <ChatContextSelector
-        currentContextId={null}
-        onContextChange={onContextChangeMock}
-      />
-    );
-    expect(screen.getByRole('combobox')).toBeDisabled();
-  });
+    it('displays "Loading contexts..." when organization data is loading', () => {
+        mockIsOrgLoading = true;
+        render(<ChatContextSelector />);
+        expect(screen.getByText('Loading contexts...')).toBeInTheDocument();
+        expect(screen.getByRole('combobox')).toBeDisabled();
+    });
 
-  it('handles empty state (still shows "Personal" option in dropdown)', async () => {
-    mockUseOrganizationStore.mockReturnValue({
-      userOrganizations: [], // Empty organizations
-      isLoading: false,
-    } as any);
-    render(
-      <ChatContextSelector
-        currentContextId={null}
-        onContextChange={onContextChangeMock}
-      />
-    );
-    fireEvent.click(screen.getByRole('combobox'));
-    const listbox = await screen.findByRole('listbox');
-    expect(await within(listbox).findByText('Personal')).toBeInTheDocument();
-    // Check that organization options are not present
-    expect(within(listbox).queryByText('Org One')).not.toBeInTheDocument();
-  });
+    it('is disabled when the disabled prop is true', () => {
+        render(<ChatContextSelector disabled={true} />);
+        expect(screen.getByRole('combobox')).toBeDisabled();
+    });
+    
+    it('renders all organizations from the store', async () => {
+        render(<ChatContextSelector />);
+        const trigger = screen.getByRole('combobox');
+        fireEvent.mouseDown(trigger); 
 
-  it('shows a loading placeholder in the trigger when isLoading is true', () => {
-    mockUseOrganizationStore.mockReturnValue({
-      userOrganizations: [],
-      isLoading: true, // Set isLoading to true
-    } as any);
-    render(
-      <ChatContextSelector
-        currentContextId={null}
-        onContextChange={onContextChangeMock}
-      />
-    );
-    expect(screen.getByRole('combobox')).toHaveTextContent(/loading contexts.../i);
-  });
+        await waitFor(() => {
+            expect(screen.getByText('Personal', { selector: '[role="option"]' })).toBeInTheDocument();
+            expect(screen.getByText('Organization 1', { selector: '[role="option"]' })).toBeInTheDocument();
+            expect(screen.getByText('Organization 2', { selector: '[role="option"]' })).toBeInTheDocument();
+        });
+    });
 }); 

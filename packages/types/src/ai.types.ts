@@ -1,4 +1,7 @@
 import type { Database } from '@paynless/db-types';
+// If FetchOptions is meant to be the standard fetch options, use RequestInit
+// import type { FetchOptions } from '@supabase/supabase-js'; // This was problematic
+import type { ApiResponse } from './api.types';
 // --- Database Table Aliases ---
 
 /**
@@ -165,6 +168,10 @@ export interface AiState {
     // Error state
     aiError: string | null; // Remains the same
 
+    // Selected provider and prompt
+    selectedProviderId: AiProvider['id'] | null;
+    selectedPromptId: SystemPrompt['id'] | null;
+
     // Token Tracking (placeholders, to be detailed in STEP-2.1.8)
     // Example: chatTokenUsage?: { [chatId: string]: { promptTokens: number; completionTokens: number; totalTokens: number } };
     // Example: sessionTokenUsage?: { promptTokens: number; completionTokens: number; totalTokens: number };
@@ -189,7 +196,24 @@ export interface AiActions {
   deleteChat: (chatId: Chat['id'], organizationId?: string | null) => Promise<void>;
   prepareRewind: (messageId: ChatMessage['id'], chatId: Chat['id']) => void;
   cancelRewindPreparation: () => void;
+  setSelectedProvider: (providerId: AiProvider['id'] | null) => void;
+  setSelectedPrompt: (promptId: SystemPrompt['id'] | null) => void;
 }
 
 // Combined type for the store
 export type AiStore = AiState & AiActions; 
+
+// --- API Client Interface ---
+
+/**
+ * Defines the public contract for the AiApiClient.
+ */
+export interface IAiApiClient {
+  getAiProviders(token?: string): Promise<ApiResponse<AiProvider[]>>;
+  getSystemPrompts(token?: string): Promise<ApiResponse<SystemPrompt[]>>;
+  sendChatMessage(data: ChatApiRequest, options?: RequestInit): Promise<ApiResponse<ChatMessage>>;
+  getChatHistory(token: string, organizationId?: string | null): Promise<ApiResponse<Chat[]>>;
+  getChatWithMessages(chatId: string, token: string, organizationId?: string | null): Promise<ApiResponse<{ chat: Chat, messages: ChatMessage[] }>>;
+  deleteChat(chatId: string, token: string, organizationId?: string | null): Promise<ApiResponse<void>>;
+  // Add other public methods of AiApiClient here if any
+}

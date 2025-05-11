@@ -8,7 +8,8 @@ import {
   SupabaseSession,
   Session,
   User,
-  UserRole
+  UserRole,
+  ISupabaseDataClient
 } from '@paynless/types'
 import { NavigateFunction } from '@paynless/types'
 import { logger } from '@paynless/utils'
@@ -75,6 +76,7 @@ export const useAuthStore = create<AuthStore>()((set, get) => ({
       clearError: () => set({ error: null }),
 
       login: async (email: string, password: string): Promise<void> => {
+        logger.info('Attempting to login user via form', { email });
         set({ isLoading: true, error: null })
         try {
           // Get Supabase client instance

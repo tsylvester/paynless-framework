@@ -105,8 +105,8 @@ describe('AuthStore - Register Action (Refactored for Supabase)', () => {
 
     // Act
     await act(async () => {
-      // PASS the mock client directly
-      await useAuthStore.getState().register(mockSupabaseClient.auth, mockRegisterData.email, mockRegisterData.password);
+      // Call register with email and password, as defined in the store
+      await useAuthStore.getState().register(mockRegisterData.email, mockRegisterData.password);
     });
 
     // Assert: Supabase call
@@ -133,11 +133,12 @@ describe('AuthStore - Register Action (Refactored for Supabase)', () => {
     // Arrange: Mock supabase failure
     const supabaseError = new Error('User already registered');
     signUpSpy.mockRejectedValue(supabaseError); // Mock rejection
+    let result: void | undefined; // register returns void or undefined on error path
 
     // Act
     await act(async () => {
-        // PASS the mock client directly
-        await useAuthStore.getState().register(mockSupabaseClient.auth, mockRegisterData.email, mockRegisterData.password);
+        // Call register with email and password, as defined in the store
+        result = await useAuthStore.getState().register(mockRegisterData.email, mockRegisterData.password);
     });
 
     // Assert: Supabase call

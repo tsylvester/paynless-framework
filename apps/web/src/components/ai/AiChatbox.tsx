@@ -11,15 +11,12 @@ import { Textarea } from '@/components/ui/textarea'
 import { Terminal, Loader2 } from 'lucide-react'
 import { ChatMessageBubble } from './ChatMessageBubble'
 
+
 export interface AiChatboxProps {
-  providerId: string | null
-  promptId: string | null
+  // isAnonymous: boolean; // Removed
 }
 
-export const AiChatbox: React.FC<AiChatboxProps> = ({
-  providerId,
-  promptId,
-}) => {
+export const AiChatbox: React.FC<AiChatboxProps> = () => {
   const [inputMessage, setInputMessage] = useState('')
   const scrollContainerRef = useRef<HTMLDivElement>(null); // Ref for the scrollable container
 
@@ -36,6 +33,8 @@ export const AiChatbox: React.FC<AiChatboxProps> = ({
     rewindTargetMessageId,
     prepareRewind,
     cancelRewindPreparation,
+    selectedProviderId,
+    selectedPromptId,
   } = useAiStore(state => ({
     currentChatId: state.currentChatId,
     isLoadingAiResponse: state.isLoadingAiResponse,
@@ -45,6 +44,8 @@ export const AiChatbox: React.FC<AiChatboxProps> = ({
     rewindTargetMessageId: state.rewindTargetMessageId,
     prepareRewind: state.prepareRewind,
     cancelRewindPreparation: state.cancelRewindPreparation,
+    selectedProviderId: state.selectedProviderId,
+    selectedPromptId: state.selectedPromptId,
   }));
 
   // Scroll to new messages
@@ -73,10 +74,6 @@ export const AiChatbox: React.FC<AiChatboxProps> = ({
 
   const handleSend = async () => {
     if (!inputMessage.trim() || isLoadingAiResponse) return
-    if (!providerId) {
-      logger.error('[AiChatbox] Cannot send message: Provider ID is missing.')
-      return
-    }
 
     clearAiError() // Clear previous errors
     const messageToSend = inputMessage
@@ -88,12 +85,18 @@ export const AiChatbox: React.FC<AiChatboxProps> = ({
     // as sendMessage might be asynchronous and the state could change.
     const wasRewinding = !!rewindTargetMessageId;
 
+    if (!selectedProviderId) {
+      logger.error('[AiChatbox] Cannot send message: No provider selected');
+      // Optionally, set an error state here to inform the user
+      return;
+    }
+
     try {
       await sendMessage({
         message: messageToSend,
-        providerId,
-        promptId: promptId, // Ensure promptId is correctly passed
         chatId: currentChatId ?? undefined, // Pass currentChatId if available
+        providerId: selectedProviderId,
+        promptId: selectedPromptId,
       });
 
       if (wasRewinding) {

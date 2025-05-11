@@ -1,33 +1,46 @@
 import { vi, type Mock } from 'vitest';
-import type { AiApiClient } from '../ai.api';
-import type { ApiResponse, AiProvider, SystemPrompt, ChatMessage, ChatApiRequest, Chat, FetchOptions } from '@paynless/types';
+// Remove direct import of AiApiClient class type if no longer needed here
+// import type { AiApiClient } from '../ai.api'; 
+import type { 
+    IAiApiClient // Import the contract interface
+} from '@paynless/types';
+
+/**
+ * Defines the structure of a mocked AiApiClient, where each method
+ * from IAiApiClient is replaced with a Vitest Mock.
+ */
+export type MockedAiApiClient = {
+    [K in keyof IAiApiClient]: IAiApiClient[K] extends (...args: infer A) => Promise<any> 
+        ? Mock<A, ReturnType<IAiApiClient[K]>> 
+        : IAiApiClient[K]; // For non-function properties, if any (though AiApiClient only has methods)
+};
 
 /**
  * Creates a mock instance of AiApiClient with all its public methods implemented as Vitest mock functions.
  * The method signatures for vi.fn() should match the actual AiApiClient methods.
  */
-export const createMockAiApiClient = (): AiApiClient => ({
-    getAiProviders: vi.fn() as Mock<[string?], Promise<ApiResponse<AiProvider[]>>>,
-    getSystemPrompts: vi.fn() as Mock<[string?], Promise<ApiResponse<SystemPrompt[]>>>,
-    sendChatMessage: vi.fn() as Mock<[ChatApiRequest, FetchOptions?], Promise<ApiResponse<ChatMessage>>>,
-    getChatHistory: vi.fn() as Mock<[string, (string | null | undefined)?], Promise<ApiResponse<Chat[]>>>,
-    getChatWithMessages: vi.fn() as Mock<[string, string, (string | null | undefined)?], Promise<ApiResponse<{ chat: Chat, messages: ChatMessage[] }>>>,
-    deleteChat: vi.fn() as Mock<[string, string, (string | null | undefined)?], Promise<ApiResponse<void>>>,
-    // Cast the entire object to AiApiClient to satisfy the type, 
-    // acknowledging that private members are not part of this mock object structure
-    // because the class constructor itself is typically mocked in tests.
-}) as unknown as AiApiClient;
+export const createMockAiApiClient = (): MockedAiApiClient => ({
+    getAiProviders: vi.fn() as Mock<Parameters<IAiApiClient['getAiProviders']>, ReturnType<IAiApiClient['getAiProviders']>>,
+    getSystemPrompts: vi.fn() as Mock<Parameters<IAiApiClient['getSystemPrompts']>, ReturnType<IAiApiClient['getSystemPrompts']>>,
+    sendChatMessage: vi.fn() as Mock<Parameters<IAiApiClient['sendChatMessage']>, ReturnType<IAiApiClient['sendChatMessage']>>,
+    getChatHistory: vi.fn() as Mock<Parameters<IAiApiClient['getChatHistory']>, ReturnType<IAiApiClient['getChatHistory']>>,
+    getChatWithMessages: vi.fn() as Mock<Parameters<IAiApiClient['getChatWithMessages']>, ReturnType<IAiApiClient['getChatWithMessages']>>,
+    deleteChat: vi.fn() as Mock<Parameters<IAiApiClient['deleteChat']>, ReturnType<IAiApiClient['deleteChat']>>,
+    // Cast the entire object to MockedAiApiClient to satisfy the type.
+    // This is safe because we are manually constructing the object to match the MockedAiApiClient structure.
+}) as unknown as MockedAiApiClient; // Keep as unknown as MockedAiApiClient for the overall object cast
 
 /**
  * Resets all mock functions on the provided mock AI API client instance.
  */
-export const resetMockAiApiClient = (mockClient: AiApiClient) => {
-    (mockClient.getAiProviders as Mock).mockReset();
-    (mockClient.getSystemPrompts as Mock).mockReset();
-    (mockClient.sendChatMessage as Mock).mockReset();
-    (mockClient.getChatHistory as Mock).mockReset();
-    (mockClient.getChatWithMessages as Mock).mockReset();
-    (mockClient.deleteChat as Mock).mockReset();
+export const resetMockAiApiClient = (mockClient: MockedAiApiClient) => {
+    // Iterate over the keys of the mockClient and reset if it's a mock function
+    // This is more robust if methods are added/removed from IAiApiClient
+    for (const key in mockClient) {
+        if (typeof mockClient[key as keyof MockedAiApiClient] === 'function' && 'mockReset' in mockClient[key as keyof MockedAiApiClient]) {
+            (mockClient[key as keyof MockedAiApiClient] as Mock<any[], any>).mockReset();
+        }
+    }
 };
 
 // Optional: Export a default instance
