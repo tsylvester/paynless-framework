@@ -3,10 +3,20 @@ import react from '@vitejs/plugin-react';
 // Import vitest types for test config
 import type { UserConfig } from 'vitest/config';
 import path from 'node:path'; // Keep path for alias
+import tsconfigPaths from 'vite-tsconfig-paths';
+import { nodePolyfills } from 'vite-plugin-node-polyfills';
 
 // https://vitejs.dev/config/
 export default defineConfig({
-  plugins: [react()],
+  plugins: [
+    react(),
+    tsconfigPaths(),
+    nodePolyfills({
+      globals: {
+        Buffer: true,
+      },
+    }),
+  ],
   optimizeDeps: {
     // Explicitly include problematic transitive dependencies based on errors
     include: [

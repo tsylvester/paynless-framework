@@ -34,3 +34,7 @@ vitest.config.*.timestamp*
 
 # Rust
 target/
+
+
+# Rust build artifacts
+/target/

@@ -4,6 +4,7 @@
     "outDir": "./dist",
     "rootDir": "./src",
     "types": ["node", "vitest/globals"],
+    "jsx": "react-jsx",
     "declaration": true,
     "lib": ["ESNext", "DOM"],
     "composite": true

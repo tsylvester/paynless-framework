@@ -75,8 +75,6 @@ const mockUserProfile: UserProfile = {
 // --- Mocks for Dependencies ---
 // let listenerCallback: AuthStateChangeListener | null = null; // Moved definition inside describe block
 const mockUnsubscribe = vi.fn();
-
-// Add mock navigate function
 const mockNavigate = vi.fn();
 
 // Create a mock Supabase client instance using the factory from the shared mock

@@ -9,6 +9,7 @@ The architecture follows these principles:
 - Stateless authentication using JWT tokens managed via Supabase Auth
 - Consistent error handling and response formatting via `apiClient`
 - State management primarily using Zustand stores
+- **Platform Abstraction:** A dedicated layer (`packages/platform`) abstracts platform-specific capabilities (like desktop filesystem access) allowing shared UI code to adapt gracefully across different environments (Web, Desktop).
 
 ### Core Pattern: API Client Singleton
 
@@ -272,6 +273,13 @@ The project is organized as a monorepo using pnpm workspaces:
 │   │       │   │   ├── OrganizationSettingsCard.tsx
 │   │       │   │   ├── OrganizationSwitcher.tsx
 │   │       │   │   └── PendingActionsCard.tsx
+│   │       │   ├── demos/ # << NEW - Demonstration components
+│   │       │   │   └── WalletBackupDemo/ # << NEW - Demo for platform FS capabilities
+│   │       │   │       ├── FileActionButtons.tsx
+│   │       │   │       ├── GenerateMnemonicButton.tsx
+│   │       │   │       ├── MnemonicInputArea.tsx
+│   │       │   │       ├── StatusDisplay.tsx
+│   │       │   │       └── WalletBackupDemoCard.tsx
 │   │       │   ├── ui/           # Re-exported shadcn/ui components
 │   │       │   └── Notifications.tsx # << CORRECTED: Top-level component for notifications
 │   │       │   └── NotificationCard.tsx # << NEW: Component for individual notification display
@@ -305,9 +313,9 @@ The project is organized as a monorepo using pnpm workspaces:
 │   │       └── main.tsx        # Application entry point (renders App)
 │   ├── ios/                # iOS Application (Placeholder) //do not remove
 │   ├── android/            # Android Application (Placeholder) //do not remove
-│   ├── desktop/            # Desktop Application (Tauri/Rust)
-│   ├── linux/              # Desktop Application (Placeholder) //do not remove
-│   └── macos/              # Desktop Application (Placeholder) //do not remove
+│   ├── windows/            # Windows Application (Tauri/Rust)
+│   ├── linux/              # Linux Application (Placeholder) //do not remove
+│   └── macos/              # Mac Application (Placeholder) //do not remove
 │
 ├── packages/               # Shared libraries/packages
 │   ├── api/         # Frontend API client logic (Singleton)
@@ -344,9 +352,11 @@ The project is organized as a monorepo using pnpm workspaces:
 │   │       └── index.ts            # Main export for types
 │   ├── platform/ # Service for abstracting platform-specific APIs (FS, etc.)
 │   │   └── src/
-│   │       ├── index.ts          # Main service export & detection
-│   │       ├── webPlatformCapabilities.ts # Web provider (stub)
-│   │       └── tauriPlatformCapabilities.ts # Tauri provider (stub)
+│   │       ├── index.ts        # Main service export, platform/OS detection, provider loading
+│   │       ├── context.tsx     # PlatformProvider context and usePlatform hook, Tauri event listener
+│   │       ├── web.ts          # Web platform provider (implements capabilities for standard browser)
+│   │       ├── tauri.ts        # Tauri platform provider (uses Tauri plugins for native features like FS/Dialog)
+│   │       └── events.ts       # Event emitter and types for cross-component communication (e.g., file drop)
 │   └── utils/              # Shared utility functions
 │       └── src/
 │           └── logger.ts         # Logging utility (singleton)
@@ -420,7 +430,7 @@ supabase/functions/
 ├── api-subscriptions/   # Handles subscription actions (checkout, portal, plans, current, cancel, resume, usage)
 ├── ai-providers/        # Fetches active AI providers
 ├── chat/                # Handles AI chat message exchange, context management, history saving
-├── chat-details/        # Fetches messages for a specific chat ID
+├── chat-details/        # Fetches messages for a specific chat
 ├── chat-history/        # Fetches the list of chats for the authenticated user
 ├── login/               # Handles user login
 ├── logout/              # Handles user logout
@@ -661,6 +671,8 @@ Provides a service to abstract platform-specific functionalities (like filesyste
 
 - **`getPlatformCapabilities(): PlatformCapabilities`**: Detects the current platform (web, tauri, etc.) and returns an object describing available capabilities. Result is memoized.
   - Consumers check `capabilities.fileSystem.isAvailable` before attempting to use filesystem methods.
+- **`PlatformProvider` Component & `usePlatform` Hook (from `context.tsx`)**: Wraps the application (or parts of it) to provide capability state (`capabilities`, `isLoadingCapabilities`, `capabilityError`) via the hook.
+  - Consumers use the hook to access state and check `capabilities.fileSystem.isAvailable` before attempting filesystem methods.
 - **Providers (Internal):**
   - `webPlatformCapabilities.ts`: Implements capabilities available in a standard web browser (currently FS is `isAvailable: false`).
   - `tauriPlatformCapabilities.ts`: Implements capabilities available in the Tauri desktop environment (currently FS is `isAvailable: false`, planned to call Rust backend).
@@ -707,12 +719,13 @@ Contains shared Deno code used by multiple Edge Functions (CORS handling, Supaba
 
 Provides a service to abstract platform-specific functionalities (like filesystem access) for use in shared UI code.
 
-- **`getPlatformCapabilities(): PlatformCapabilities`**: Detects the current platform (web, tauri, etc.) and returns an object describing available capabilities. Result is memoized.
-  - Consumers check `capabilities.fileSystem.isAvailable` before attempting to use filesystem methods.
-- **Providers (Internal):**
-  - `webPlatformCapabilities.ts`: Implements capabilities available in a standard web browser (currently FS is `isAvailable: false`).
-  - `tauriPlatformCapabilities.ts`: Implements capabilities available in the Tauri desktop environment (currently FS is `isAvailable: false`, planned to call Rust backend).
-- **`resetMemoizedCapabilities(): void`**: Clears the cached capabilities result (useful for testing).
+- **`getPlatformCapabilities(): Promise<PlatformCapabilities>`**: (Exported from `index.ts`) Detects the current platform (web, tauri, etc.) and asynchronously returns an object describing available capabilities (e.g., `fileSystem`). Result is memoized.
+- **`PlatformProvider` Component & `usePlatform` Hook**: (Exported from `index.ts`, defined in `context.tsx`) Wraps the application (or parts of it) to provide capability state (`capabilities: PlatformCapabilities | null`, `isLoadingCapabilities: boolean`, `capabilityError: Error | null`) via the hook. Consumers use the hook to access state and check capability availability (e.g., `capabilities.fileSystem.isAvailable`) before rendering UI or calling methods.
+- **`platformEventEmitter`**: (Exported from `index.ts`, defined in `events.ts`) A `mitt` event emitter instance used for decoupled communication, primarily for broadcasting drag-and-drop events (`file-drop`, `file-drag-hover`, `file-drag-cancel`) from the Tauri listener in `context.tsx` to consuming components like `DropZone`.
+- **Providers (Internal - Loaded dynamically by `index.ts`)**:
+  - `web.ts`: Implements capabilities available in a standard web browser (FS is `isAvailable: false`).
+  - `tauri.ts`: Implements capabilities available in the Tauri desktop environment using standard Tauri plugins (`fs`, `dialog`).
+- **`resetMemoizedCapabilities(): void`**: (Exported from `index.ts`) Clears the cached capabilities result (useful for testing).
 
 ### 6. `supabase/functions/_shared/` (Backend Shared Utilities)
 

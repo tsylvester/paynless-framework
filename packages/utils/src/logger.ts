@@ -43,7 +43,7 @@ export class Logger {
    */
   private setupGlobalErrorHandling(): void {
     if (typeof window !== 'undefined') {
-      window.addEventListener('error', (event) => {
+      window.addEventListener('error', (event: ErrorEvent) => {
         this.error('Uncaught error', {
           message: event.message,
           filename: event.filename,
@@ -53,7 +53,7 @@ export class Logger {
         });
       });
       
-      window.addEventListener('unhandledrejection', (event) => {
+      window.addEventListener('unhandledrejection', (event: PromiseRejectionEvent) => {
         this.error('Unhandled promise rejection', {
           reason: event.reason,
           stack: event.reason?.stack,

@@ -991,7 +991,7 @@ export const useOrganizationStore = create<OrganizationStoreImplementation>()(
       // },
 
       updateOrganizationSettings: async (orgId: string, settings: { allow_member_chat_creation: boolean }): Promise<boolean> => {
-        const { _setLoading, _setError, currentOrganizationId, currentOrganizationDetails, userOrganizations } = get(); // Get current details and list
+        const { _setLoading, _setError, currentOrganizationId, currentOrganizationDetails } = get(); // Get current details and list
         
         const isCurrentOrg = orgId === currentOrganizationId;
         

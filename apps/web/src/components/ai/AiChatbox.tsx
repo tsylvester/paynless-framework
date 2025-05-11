@@ -1,5 +1,7 @@
 'use client'
 
+'use client'
+
 import React, { useState, useRef, useEffect } from 'react'
 import { useAiStore, selectCurrentChatMessages } from '@paynless/store'
 import type { ChatMessage } from '@paynless/types'
