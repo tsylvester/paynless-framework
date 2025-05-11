@@ -664,39 +664,6 @@ The implementation plan uses the following labels to categorize work steps:
 * [ ] **[REFACTOR]** Optimize calculation if needed. Ensure clear display.
 * [ ] Commit changes with message "feat(UI): Create cumulative token usage display component w/ tests"
 
-#### STEP-3.7.4: Integrate Token UI Components (`AiChat.tsx`) [TEST-INT] [COMMIT]
-* [ ] Define Integration Test Cases (Manual - Gemini 3.3.13): Send messages, verify estimator updates. Verify assistant messages show tokens. Verify cumulative display updates. Verify analytics.
-* [ ] Update `apps/web/src/pages/AiChat.tsx`:
-  * [ ] Ensure token estimator is displayed near input.
-  * [ ] Integrate `ChatTokenUsageDisplay` component, passing `currentChatMessages` from the store. Place appropriately.
-  * [ ] Trigger `token_usage_displayed` analytics event (consider on mount/update of summary).
-* [ ] Perform manual integration tests. Debug until pass (GREEN).
-* [ ] Commit changes with message "feat(UI): Integrate token tracking UI components into chat page w/ manual tests & analytics"
-
-#### STEP-3.7.5: Implement Token Budget Audit Hook and UI Integration [TEST-UNIT] [TEST-INT] [COMMIT]
-*   [ ] **Define Test Cases for `useTokenAuditStatus` hook:**
-    *   [ ] Mocks `useAiStore` and `useSubscriptionStore` selectors (from revised STEP-2.4).
-    *   [ ] Test various scenarios: budget available, usage below budget, usage at budget, usage exceeding budget.
-    *   [ ] Verify correct calculation of remaining tokens, percentage used.
-    *   [ ] Verify correct status flags returned (e.g., `isWarning`, `isBlocked`).
-*   [ ] **Create `useTokenAuditStatus` Hook (`apps/web/src/hooks/useTokenAuditStatus.ts`):**
-    *   [ ] Consumes token usage data from `useAiStore` (e.g., `selectCurrentUserPeriodUsage`, `selectCurrentOrgPeriodUsage`).
-    *   [ ] Consumes token budget data from `useSubscriptionStore` (e.g., `selectCurrentUserTokenBudget`, `selectOrganizationTokenBudget`).
-    *   [ ] Consumes current organization context from `useOrganizationStore` to select appropriate budget/usage.
-    *   [ ] Performs comparison logic (budget - usage = remaining; (usage/budget)*100 = percentage).
-    *   [ ] Returns reactive state: `remainingTokens: number`, `percentageUsed: number`, `isWarning: boolean` (e.g., >80% used), `isBlocked: boolean` (e.g., >100% used or budget exhausted).
-*   [ ] Write unit tests for the `useTokenAuditStatus` hook. Debug until (GREEN).
-*   [ ] **UI Integration Points:**
-    *   [ ] **Chat Input (`ChatInput.tsx`):**
-        *   [ ] Use `useTokenAuditStatus`.
-        *   [ ] Display a warning message if `isWarning` is true.
-        *   [ ] Disable input and show a message if `isBlocked` is true.
-    *   [ ] **User Dashboard (e.g., `UserAccountPage.tsx`):**
-        *   [ ] Display current personal token usage vs. budget (e.g., using a progress bar and text like "X of Y tokens used").
-    *   [ ] **Organization Settings (e.g., `OrganizationBillingPage.tsx` or similar):**
-        *   [ ] Display current organization token usage vs. budget.
-*   [ ] Write integration tests (or update existing component tests) for these UI integrations to ensure the hook's state is correctly reflected.
-*   [ ] Commit changes with message "feat(UI): Implement token budget audit hook and integrate into UI components w/ tests"
 
 **Phase 3 Complete Checkpoint:**
 *   [ ] All Phase 3 tests (UI unit and integration tests) passing.
