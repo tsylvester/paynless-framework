@@ -5,6 +5,14 @@ import type { ApiResponse } from './api.types';
 import type { UserProfile } from './auth.types'; // UserProfile import is correct here
 // --- Database Table Aliases ---
 
+// Define the specific type for the RPC parameters based on types_db.ts
+export type PerformChatRewindArgs = Database['public']['Functions']['perform_chat_rewind']['Args'];
+
+// Define derived DB types needed locally
+export type ChatMessageInsert = Database['public']['Tables']['chat_messages']['Insert'];
+export type ChatMessageRow = Database['public']['Tables']['chat_messages']['Row'];
+// type ChatRow = Database['public']['Tables']['chats']['Row']; // Not directly used in handlePostRequest return
+
 /**
  * Represents an AI Provider configuration.
  * Derived from the `ai_providers` table.
@@ -124,6 +132,13 @@ export interface AiProviderAdapter {
    * @returns A Promise resolving to an array of standardized model information.
    */
   listModels(apiKey: string): Promise<ProviderModelInfo[]>;
+}
+
+export interface ChatHandlerSuccessResponse {
+  userMessage?: ChatMessageRow;       // Populated for normal new messages and new user message in rewind
+  assistantMessage: ChatMessageRow;  // Always populated on success
+  isRewind?: boolean;                 // True if this was a rewind operation
+  isDummy?: boolean;                  // True if dummy provider was used
 }
 
 // --- Zustand Store Types ---

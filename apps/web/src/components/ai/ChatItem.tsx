@@ -2,7 +2,7 @@ import type { Chat } from '@paynless/types';
 import { useAiStore, useOrganizationStore, useAuthStore } from '@paynless/store';
 import { selectCurrentUserRoleInOrg } from '@paynless/store'; // Assuming re-export
 import { cn } from '@/lib/utils';
-import { formatDistanceToNow, parseISO } from 'date-fns'; // Import date-fns functions
+import { AttributionDisplay } from '@/components/common/AttributionDisplay';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -31,7 +31,6 @@ export function ChatItem({ chat, isActive }: ChatItemProps) {
   
   const currentUser = authState.user;
   const currentOrganizationId = orgState.currentOrganizationId;
-  const currentOrganizationMembers = orgState.currentOrganizationMembers;
 
   const chatTitle = chat.title || `Untitled Chat ${chat.id.substring(0, 6)}...`;
 
@@ -56,89 +55,9 @@ export function ChatItem({ chat, isActive }: ChatItemProps) {
     deleteChat(chat.id, chat.organization_id);
   };
 
-  let formattedTimestamp = '';
-  try {
-    if (chat.updated_at) {
-      formattedTimestamp = formatDistanceToNow(parseISO(chat.updated_at), { addSuffix: true });
-    }
-  } catch (error) {
-    // formattedTimestamp remains empty or you can set a default error string
-  }
-
   const systemPromptName = chat.system_prompt_id && availablePrompts 
     ? availablePrompts.find(p => p.id === chat.system_prompt_id)?.name 
     : null;
-
-  // Determine creator display name and title
-  let creatorDisplayString = 'Unknown';
-  let creatorTitle = 'Unknown User';
-
-  if (chat.user_id) {
-    // Default to truncated UUID
-    creatorDisplayString = `${chat.user_id.substring(0, 8)}...`;
-    creatorTitle = `User ID: ${chat.user_id}`;
-
-    // Define a shape for the user details we expect.
-    // This aligns with typical User structures from authState.user
-    type UserDetails = {
-      id: string;
-      first_name?: string | null;
-      last_name?: string | null;
-      email?: string | null;
-    };
-
-    let foundUserDetails: UserDetails | undefined;
-
-    // Case 1: Creator is the current user
-    if (currentUser && currentUser.id === chat.user_id) {
-      // If the creator is the current user, use their profile from authState
-      if (authState.profile && authState.profile.id === currentUser.id) {
-        foundUserDetails = authState.profile; 
-      } else {
-        // Fallback to currentUser (Supabase user object) if profile somehow doesn't match or is missing,
-        // though ideally authState.profile should always be the source for current user's display details.
-        foundUserDetails = currentUser; 
-      }
-    } 
-    // Case 2: Organization chat, and creator is a member of the current active organization
-    else if (chat.organization_id && chat.organization_id === currentOrganizationId && currentOrganizationMembers && Array.isArray(currentOrganizationMembers)) {
-      // currentOrganizationMembers is Array<OrganizationMemberWithProfile>
-      // OrganizationMemberWithProfile = OrganizationMember & { user_profiles: UserProfile | null }
-      // OrganizationMember has user_id
-      // UserProfile has id, first_name, last_name, email
-      const member = currentOrganizationMembers.find(
-        (m) => m.user_id === chat.user_id
-      );
-      if (member && member.user_profiles) { // Check if user_profiles exists
-        // Ensure the id from user_profiles matches, though user_id on member is the primary link
-        if (member.user_profiles.id === chat.user_id) {
-            foundUserDetails = member.user_profiles; // UserProfile is compatible with UserDetails
-        }
-      }
-    }
-
-    if (foundUserDetails) {
-      const { first_name, last_name, email } = foundUserDetails;
-      let newDisplayString: string | null = null;
-
-      if (first_name && last_name) {
-        newDisplayString = `${first_name} ${last_name}`;
-      } else if (first_name) {
-        // Use first_name if last_name is not available
-        newDisplayString = first_name;
-      } else if (email) {
-        newDisplayString = email;
-      }
-
-      if (newDisplayString) {
-        creatorDisplayString = newDisplayString;
-        // Update title to be more specific if name/email found
-        creatorTitle = `${creatorDisplayString} (ID: ${chat.user_id})`;
-      }
-      // If newDisplayString remains null, creatorDisplayString keeps the truncated UUID
-      // and creatorTitle also reflects the User ID.
-    }
-  }
 
   return (
     <div className="flex items-center justify-between w-full group border border-border rounded-md p-1 my-0.5">
@@ -157,19 +76,17 @@ export function ChatItem({ chat, isActive }: ChatItemProps) {
         <div className="flex flex-col">
           <span className="truncate font-medium">{chatTitle}</span>
           <div className="flex items-center space-x-2 text-xs text-muted-foreground/80 mt-1">
-            {formattedTimestamp && (
-              <span title={`Updated: ${new Date(chat.updated_at).toLocaleString()}`}>{formattedTimestamp}</span>
-            )}
-            {chat.user_id && (
-              <span className="truncate" title={creatorTitle}>
-                by: {creatorDisplayString}
-              </span>
-            )}
+            <AttributionDisplay
+              userId={chat.user_id}
+              role="user"
+              timestamp={chat.updated_at}
+              organizationId={chat.organization_id}
+            />
             {systemPromptName && (
-                <span className="flex items-center truncate" title={`Prompt: ${systemPromptName}`}>
-                    <Info size={12} className="mr-1 shrink-0" /> 
-                    {systemPromptName}
-                </span>
+              <span className="flex items-center truncate" title={`Prompt: ${systemPromptName}`}>
+                <Info size={12} className="mr-1 shrink-0" /> 
+                {systemPromptName}
+              </span>
             )}
           </div>
         </div>

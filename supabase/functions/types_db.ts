@@ -84,6 +84,7 @@ export type Database = {
           role: string
           system_prompt_id: string | null
           token_usage: Json | null
+          updated_at: string
           user_id: string | null
         }
         Insert: {
@@ -96,6 +97,7 @@ export type Database = {
           role: string
           system_prompt_id?: string | null
           token_usage?: Json | null
+          updated_at?: string
           user_id?: string | null
         }
         Update: {
@@ -108,6 +110,7 @@ export type Database = {
           role?: string
           system_prompt_id?: string | null
           token_usage?: Json | null
+          updated_at?: string
           user_id?: string | null
         }
         Relationships: [
@@ -664,6 +667,7 @@ export type Database = {
           role: string
           content: string
           created_at: string
+          updated_at: string
           is_active_in_thread: boolean
           token_usage: Json
           ai_provider_id: string

@@ -9,10 +9,12 @@ import type { Database } from '../../../functions/types_db.ts'; // For TokenUsag
 // Define a simple dummy adapter
 const dummyAdapter: AiProviderAdapter = {
     sendMessage: async (request: AdapterChatRequest, modelIdentifier: string, _apiKey: string): Promise<AdapterResponsePayload> => {
+        console.log("[Dummy Adapter] sendMessage called with request:", request);
         const lastUserMessage = request.messages && request.messages.length > 0 ? request.messages[request.messages.length - 1] : null;
         // If there are no past messages, use the main `request.message` which is the current one being sent.
         const currentMessageContent = request.message;
         const contentToEcho = currentMessageContent || lastUserMessage?.content || 'This is a dummy echo response.';
+        const finalContent = `Echo from Dummy: ${contentToEcho}`;
         
         // Construct token usage as per Database['public']['Tables']['chat_messages']['Row']['token_usage']
         // which is expected to be `Json | null`. Let's assume it's an object or null.
@@ -27,7 +29,7 @@ const dummyAdapter: AiProviderAdapter = {
             // data: { // AdapterResponsePayload is the data itself
                 // id: `dummy-msg-${Date.now()}`, // Not part of AdapterResponsePayload
                 role: 'assistant',
-                content: contentToEcho,
+                content: finalContent,
                 // model: modelIdentifier, // Not part of AdapterResponsePayload, model info is implicit or part of request
                 ai_provider_id: request.providerId, // Pass through from the original request
                 system_prompt_id: request.promptId !== '__none__' ? request.promptId : null, // Pass through

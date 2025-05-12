@@ -791,39 +791,38 @@ To enable and support a "Dummy Echo v1" provider (identified by the `provider` s
 
     *   **6. [UI] Update `ChatMessageBubble.tsx` (and/or `AttributionDisplay.tsx`) for Privacy-Aware Display:**
         *   `[ ]` **Name Resolution Logic (likely in `AttributionDisplay.tsx` or directly in `ChatMessageBubble.tsx`):**
-            *   `[ ]` If `message.user_id` matches `useAuthStore.getState().user?.id`, display "(You)" or the current user's own name.
-            *   `[ ]` Else, attempt to retrieve the profile from `useAiStore(state => state.chatParticipantsProfiles[message.user_id])`.
-            *   `[ ]` **If Profile is Found in Store:** Construct and display the name (e.g., "First Last", "First", fallback to User ID from the fetched profile if names are null).
-            *   `[ ]` **If Profile is NOT Found in Store (due to privacy/RLS or other fetch issue):** Display a privacy-respecting fallback. This could be:
+            *   `[✅]` If `message.user_id` matches `useAuthStore.getState().user?.id`, display "(You)" or the current user's own name.
+            *   `[✅]` Else, attempt to retrieve the profile from `useAiStore(state => state.chatParticipantsProfiles[message.user_id])`.
+            *   `[✅]` **If Profile is Found in Store:** Construct and display the name (e.g., "First Last", "First", fallback to User ID from the fetched profile if names are null).
+            *   `[✅]` **If Profile is NOT Found in Store (due to privacy/RLS or other fetch issue):** Display a privacy-respecting fallback. This could be:
                 *   A generic "User" label.
                 *   The `message.user_id` (UUID) *only if deemed acceptable as a last resort and clearly distinct from a resolved name*. Consider if just "User" or an icon is better.
                 *   *Avoid* showing parts of a profile that might have been partially cached or inadvertently exposed.
-        *   `[ ]` **[TEST-UNIT]** Update unit tests for `ChatMessageBubble.test.tsx` (and `AttributionDisplay.test.tsx` if it handles the name resolution):
-            *   `[ ]` Mock `useAuthStore` for current user ID.
-            *   `[ ]` Mock `useAiStore` to provide various `chatParticipantsProfiles` states:
+        *   `[✅]` **[TEST-UNIT]** Update unit tests for `ChatMessageBubble.test.tsx` (and `AttributionDisplay.test.tsx` if it handles the name resolution):
+            *   `[✅]` Mock `useAuthStore` for current user ID.
+            *   `[✅]` Mock `useAiStore` to provide various `chatParticipantsProfiles` states:
                 *   Profile found for `message.user_id`.
                 *   Profile *not* found for `message.user_id` (simulating privacy restriction).
                 *   Profile found but with missing name fields (to test fallbacks like displaying User ID from profile).
-            *   `[ ]` Verify the correct display output for each scenario, especially the privacy-respecting fallback.
+            *   `[✅]` Verify the correct display output for each scenario, especially the privacy-respecting fallback.
 
     *   **7. [COMMIT] Commit all changes** for this step with a message like "feat(Profile,Chat): Implement profile privacy settings and update user name display logic w/ tests".
 
 ---
 
 Bug fixes: 
-*   [ ] Org members see each others details in chats
+*   [✅] Org members see each others details in chats
 *   [✅] Chat context resets when sending new message to existing chat started by someone else 
 *   [✅] Provider resets when context resets instead of taking provider from selector 
 *   [✅] Message input gets wiped when changing provider 
 
 **Phase 3 Complete Checkpoint:**
 *   [ ] All Phase 3 tests (UI unit and integration tests) passing.
-*   [ ] Core UI components (Context Selector, Chat History, Chat Interface, Message Bubbles, Input) are implemented/updated for org context and new features.
-*   [ ] Markdown rendering is functional in messages.
-*   [ ] Token estimation and usage display are integrated.
-*   [ ] Chat rewind UI flow is implemented.
-*   [ ] Admin controls (chat deletion, member creation toggle) are implemented in the UI.
-*   [ ] UI components correctly interact with the State Management layer (Phase 2).
+*   [✅] Core UI components (Context Selector, Chat History, Chat Interface, Message Bubbles, Input) are implemented/updated for org context and new features.
+*   [✅] Markdown rendering is functional in messages.
+*   [✅] Chat rewind UI flow is implemented.
+*   [✅] Admin controls (chat deletion, member creation toggle) are implemented in the UI.
+*   [✅] UI components correctly interact with the State Management layer (Phase 2).
 *   [ ] Code refactored, analytics integrated where specified, and commits made.
 *   [ ] Run `npm test` in `apps/web`. Build `apps/web` (`npm run build`). Perform quick smoke test.
 

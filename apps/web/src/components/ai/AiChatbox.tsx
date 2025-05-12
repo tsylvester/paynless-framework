@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { Terminal, Loader2 } from 'lucide-react'
 import { ChatMessageBubble } from './ChatMessageBubble'
+import { toast } from "sonner"
 
 
 export interface AiChatboxProps {
@@ -91,7 +92,7 @@ const AiChatboxComponent: React.FC<AiChatboxProps> = () => {
 
     if (!selectedProviderId) {
       logger.error('[AiChatbox] Cannot send message: No provider selected');
-      // Optionally, set an error state here to inform the user
+      toast.error("Cannot send message: No provider selected");
       return;
     }
 
@@ -105,6 +106,7 @@ const AiChatboxComponent: React.FC<AiChatboxProps> = () => {
 
       if (wasRewinding) {
         cancelRewindPreparation(); // Clear rewind state after successful resubmission
+        toast.success("Message rewound and resubmitted successfully");
       }
     } catch (error: unknown) {
       const errorMessage =
@@ -112,6 +114,10 @@ const AiChatboxComponent: React.FC<AiChatboxProps> = () => {
       logger.error('[AiChatbox] Unexpected error calling sendMessage:', {
         error: errorMessage,
       })
+      toast.error(wasRewinding 
+        ? "Failed to rewind and resubmit message" 
+        : "Failed to send message"
+      );
     }
   }
 

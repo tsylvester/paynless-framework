@@ -14,7 +14,8 @@ import {
     initialAiStateValues,     // <-- Add this import
     UserProfileUpdate, // Added for typing the updateProfile payload
     ChatContextPreferences,
-    UserProfile // Import UserProfile from @paynless/types
+    UserProfile, // Import UserProfile from @paynless/types
+    ChatHandlerSuccessResponse
 } from '@paynless/types';
 
 // Re-add the runtime constant hack to ensure build passes
@@ -240,6 +241,9 @@ export const useAiStore = create<AiStore>()(
                             selectedPromptId
                         } = get();
 
+                        // Define isRewindOperation flag based on client state BEFORE the main try block
+                        const isRewindOperation = !!(inputChatId && currentRewindTargetId);
+
                         // DETAILED LOGGING FOR DEBUGGING ORG CHAT RESET
                         logger.info('[aiStore sendMessage DEBUG] Called with:', {
                             inputMessage: message,
@@ -281,7 +285,8 @@ export const useAiStore = create<AiStore>()(
                                  system_prompt_id: null,
                                  token_usage: null, 
                                  created_at: createdTimestamp,
-                                 is_active_in_thread: true
+                                 is_active_in_thread: true,
+                                 updated_at: createdTimestamp
                             };
                             set(state => ({ 
                                 messagesByChatId: { 
@@ -329,23 +334,32 @@ export const useAiStore = create<AiStore>()(
                         const options: FetchOptions = { token }; 
                         
                         try {
-                            const response: ApiResponse<ChatMessage> = await api.ai().sendChatMessage(requestData, options);
+                            // Expect ChatHandlerResponse, use type assertion if API client type is not updated yet
+                            const response = await api.ai().sendChatMessage(requestData, options) as ApiResponse<ChatHandlerSuccessResponse>; 
 
                             if (response.error) {
                                 throw new Error(response.error.message || 'API returned an error');
                             }
 
                             if (response.data) {
-                                const assistantMessage = response.data;
-                                let finalChatIdForLog: string | null | undefined = null; // Variable for logging
+                                const { userMessage: actualUserMessage, assistantMessage, isRewind: responseIsRewind } = response.data; 
+                                let finalChatIdForLog: string | null | undefined = null; 
 
                                 set(state => {
+                                    // Use backend response flag primarily, fallback to client flag if needed
+                                    const wasRewind = responseIsRewind ?? isRewindOperation;
+                                    logger.debug('[sendMessage] Inside set callback. Backend response data:', { 
+                                        userMsgId: actualUserMessage?.id, 
+                                        assistantMsgId: assistantMessage.id,
+                                        chatId: assistantMessage.chat_id,
+                                        wasRewind 
+                                    });
+
                                     const actualNewChatId = assistantMessage.chat_id; 
                                     finalChatIdForLog = actualNewChatId; // Assign for logging outside this scope
 
                                     if (!actualNewChatId) {
-                                        logger.error('[sendMessage] Critical error: finalChatId is undefined after successful API call.');
-                                        // When returning early, ensure all necessary parts of state are preserved or intentionally set
+                                        logger.error('[sendMessage] Critical error: finalChatId is undefined/null after successful API call.');
                                         return { 
                                             ...state, 
                                             isLoadingAiResponse: false, 
@@ -354,34 +368,68 @@ export const useAiStore = create<AiStore>()(
                                     }
 
                                     let messagesForChatProcessing = [...(state.messagesByChatId[optimisticMessageChatId] || [])];
-                                    const isRewindOperation = !!(effectiveChatIdForApi && currentRewindTargetId);
+                                    // Use the wasRewind flag determined above
 
-                                    if (isRewindOperation && actualNewChatId) {
-                                        // Rewind logic: Rebuild message history
-                                        const originalMessagesForChat = state.messagesByChatId[actualNewChatId] || [];
-                                        const rewindTargetIndex = originalMessagesForChat.findIndex(msg => msg.id === currentRewindTargetId);
+                                    if (wasRewind && actualNewChatId) { // <-- Use wasRewind
+                                        // --- Rewind Logic --- 
+                                        const messagesInStoreForChat = state.messagesByChatId[actualNewChatId] || [];
+                                        const newBranchMessages: ChatMessage[] = []; // Changed to const
 
-                                        let newHistoryBase: ChatMessage[] = [];
-                                        if (rewindTargetIndex !== -1) {
-                                            newHistoryBase = originalMessagesForChat.slice(0, rewindTargetIndex);
+                                        // Find the optimistic user message (the one that initiated the rewind)
+                                        const optimisticUserMessageIndex = messagesInStoreForChat.findIndex(m => m.id === tempUserMessageId);
+                                        
+                                        // If the backend provided the actual saved user message from the rewind branch:
+                                        if (actualUserMessage && actualUserMessage.id !== tempUserMessageId) {
+                                            // Use type assertion to add status
+                                            newBranchMessages.push({ ...actualUserMessage, status: 'sent' as const } as ChatMessage);
+                                        } else {
+                                            // Fallback: Update the existing optimistic message if found
+                                            const newOptimisticUserMsg = messagesInStoreForChat[optimisticUserMessageIndex];
+                                            if (newOptimisticUserMsg) {
+                                                // Use type assertion to add status
+                                                newBranchMessages.push({ ...newOptimisticUserMsg, chat_id: actualNewChatId, status: 'sent' as const } as ChatMessage);
+                                            }
+                                        }
+                                        newBranchMessages.push(assistantMessage); // The new assistant message from backend
+
+                                        // Get messages up to (and including) the rewind point
+                                        let baseHistory: ChatMessage[] = [];
+                                        const rewindPointIdx = messagesInStoreForChat.findIndex(m => m.id === currentRewindTargetId); 
+                                        if (rewindPointIdx !== -1) {
+                                            baseHistory = messagesInStoreForChat.slice(0, rewindPointIdx + 1); 
+                                        } else {
+                                            logger.warn(`[sendMessage] Rewind target ${currentRewindTargetId} not found in chat ${actualNewChatId} for history reconstruction.`);
+                                            // Fallback: Try using all messages except the optimistic one we just pushed
+                                            baseHistory = messagesInStoreForChat.filter(m => m.id !== tempUserMessageId);
                                         }
 
-                                        // Find the optimistic user message (it should be the last one added for this chat)
-                                        const optimisticUserMessage = messagesForChatProcessing.find(msg => msg.id === tempUserMessageId);
-                                        if (optimisticUserMessage) {
-                                            newHistoryBase.push({ ...optimisticUserMessage, chat_id: actualNewChatId });
-                                        }
-                                        newHistoryBase.push(assistantMessage); 
-                                        messagesForChatProcessing = newHistoryBase;
+                                        // Filter out the optimistic message from baseHistory if it exists there (unlikely but safety)
+                                        baseHistory = baseHistory.filter(m => m.id !== tempUserMessageId);
+
+                                        messagesForChatProcessing = [...baseHistory, ...newBranchMessages];
 
                                     } else {
-                                        // Standard logic: Update optimistic and add assistant message
-                                        messagesForChatProcessing = messagesForChatProcessing.map(msg =>
-                                            msg.id === tempUserMessageId
-                                                ? { ...msg, chat_id: actualNewChatId, status: 'sent' as const }
-                                                : msg
-                                        );
-                                        messagesForChatProcessing.push(assistantMessage);
+                                        // --- Standard (Non-Rewind) Logic --- 
+                                        // Update optimistic user message with its actual data if backend sent it
+                                        if (actualUserMessage && actualUserMessage.id !== tempUserMessageId) {
+                                            messagesForChatProcessing = messagesForChatProcessing.map(msg =>
+                                                msg.id === tempUserMessageId
+                                                    // Use type assertion to add status
+                                                    ? { ...actualUserMessage, status: 'sent' as const } as ChatMessage // Use all data from actualUserMessage
+                                                    : msg
+                                            );
+                                        } else { // Fallback: just update status and chat_id
+                                            messagesForChatProcessing = messagesForChatProcessing.map(msg =>
+                                                msg.id === tempUserMessageId
+                                                    // Use type assertion to add status
+                                                    ? { ...msg, chat_id: actualNewChatId, status: 'sent' as const } as ChatMessage
+                                                    : msg
+                                            );
+                                        }
+                                        // Ensure the assistant message isn't accidentally added twice if mapping didn't find the temp ID
+                                        if (!messagesForChatProcessing.some(msg => msg.id === assistantMessage.id)) {
+                                            messagesForChatProcessing.push(assistantMessage); // Add the AI's response
+                                        }
                                     }
 
                                     const newMessagesByChatId = { ...state.messagesByChatId };
@@ -436,12 +484,12 @@ export const useAiStore = create<AiStore>()(
                                         currentChatId: actualNewChatId, 
                                         isLoadingAiResponse: false,
                                         aiError: null,
-                                        //newChatContext: null, 
-                                        rewindTargetMessageId: isRewindOperation ? null : state.rewindTargetMessageId, // Clear on successful rewind
+                                        // Clear rewind target on successful rewind
+                                        rewindTargetMessageId: wasRewind ? null : state.rewindTargetMessageId, // <-- Use wasRewind
                                     };
                                 });
-                                logger.info('Message sent and response received:', { messageId: assistantMessage.id, chatId: finalChatIdForLog, rewound: !!(effectiveChatIdForApi && currentRewindTargetId) });
-                                return assistantMessage;
+                                logger.info('Message sent and response received:', { messageId: assistantMessage.id, chatId: finalChatIdForLog, rewound: responseIsRewind ?? isRewindOperation }); // Use combined flag
+                                return assistantMessage; // Keep returning assistant message for potential UI focus etc.
                             } else {
                                 throw new Error('API returned success status but no data.');
                             }
@@ -735,7 +783,8 @@ export const useAiStore = create<AiStore>()(
                                 system_prompt_id: null,
                                 token_usage: null,
                                 created_at: new Date(parseInt(tempId.split('-')[2])).toISOString(),
-                                is_active_in_thread: true
+                                is_active_in_thread: true,
+                                updated_at: new Date(parseInt(tempId.split('-')[2])).toISOString()
                             };
 
                             set(state => ({
