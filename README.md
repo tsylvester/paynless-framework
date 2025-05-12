@@ -35,6 +35,7 @@ The framework comes pre-configured with essential features:
     *   Member management (inviting users via email, accepting/declining invites, managing roles - admin/member, removing members).
     *   Role-based access control (RBAC) enforced via RLS policies and backend checks.
     *   Organization switcher UI for easy context switching.
+*   **AI Token Wallet & Payment System:** A flexible system for managing AI service tokens, allowing users to acquire tokens (initially via Stripe, with plans for crypto/Tauri wallet integration) and consume them for AI interactions, with a clear transaction audit trail.
 
 ## Development
 *   **Development Experience:**

@@ -191,6 +191,9 @@ export type Database = {
           invited_by_user_id: string | null
           invited_email: string
           invited_user_id: string | null
+          inviter_email: string | null
+          inviter_first_name: string | null
+          inviter_last_name: string | null
           organization_id: string
           role_to_assign: string
           status: string
@@ -203,6 +206,9 @@ export type Database = {
           invited_by_user_id?: string | null
           invited_email: string
           invited_user_id?: string | null
+          inviter_email?: string | null
+          inviter_first_name?: string | null
+          inviter_last_name?: string | null
           organization_id: string
           role_to_assign?: string
           status?: string
@@ -215,6 +221,9 @@ export type Database = {
           invited_by_user_id?: string | null
           invited_email?: string
           invited_user_id?: string | null
+          inviter_email?: string | null
+          inviter_first_name?: string | null
+          inviter_last_name?: string | null
           organization_id?: string
           role_to_assign?: string
           status?: string
@@ -324,6 +333,75 @@ export type Database = {
           visibility?: string
         }
         Relationships: []
+      }
+      payment_transactions: {
+        Row: {
+          amount_requested_crypto: number | null
+          amount_requested_fiat: number | null
+          created_at: string
+          currency_requested_crypto: string | null
+          currency_requested_fiat: string | null
+          gateway_transaction_id: string | null
+          id: string
+          metadata_json: Json | null
+          organization_id: string | null
+          payment_gateway_id: string
+          status: string
+          target_wallet_id: string
+          tokens_to_award: number
+          updated_at: string
+          user_id: string | null
+        }
+        Insert: {
+          amount_requested_crypto?: number | null
+          amount_requested_fiat?: number | null
+          created_at?: string
+          currency_requested_crypto?: string | null
+          currency_requested_fiat?: string | null
+          gateway_transaction_id?: string | null
+          id?: string
+          metadata_json?: Json | null
+          organization_id?: string | null
+          payment_gateway_id: string
+          status?: string
+          target_wallet_id: string
+          tokens_to_award: number
+          updated_at?: string
+          user_id?: string | null
+        }
+        Update: {
+          amount_requested_crypto?: number | null
+          amount_requested_fiat?: number | null
+          created_at?: string
+          currency_requested_crypto?: string | null
+          currency_requested_fiat?: string | null
+          gateway_transaction_id?: string | null
+          id?: string
+          metadata_json?: Json | null
+          organization_id?: string | null
+          payment_gateway_id?: string
+          status?: string
+          target_wallet_id?: string
+          tokens_to_award?: number
+          updated_at?: string
+          user_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "payment_transactions_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "payment_transactions_target_wallet_id_fkey"
+            columns: ["target_wallet_id"]
+            isOneToOne: false
+            referencedRelation: "token_wallets"
+            referencedColumns: ["wallet_id"]
+          },
+        ]
       }
       subscription_plans: {
         Row: {
@@ -461,6 +539,98 @@ export type Database = {
           updated_at?: string
         }
         Relationships: []
+      }
+      token_wallet_transactions: {
+        Row: {
+          amount: number
+          balance_after_txn: number
+          idempotency_key: string | null
+          notes: string | null
+          related_entity_id: string | null
+          related_entity_type: string | null
+          timestamp: string
+          transaction_id: string
+          transaction_type: string
+          wallet_id: string
+        }
+        Insert: {
+          amount: number
+          balance_after_txn: number
+          idempotency_key?: string | null
+          notes?: string | null
+          related_entity_id?: string | null
+          related_entity_type?: string | null
+          timestamp?: string
+          transaction_id?: string
+          transaction_type: string
+          wallet_id: string
+        }
+        Update: {
+          amount?: number
+          balance_after_txn?: number
+          idempotency_key?: string | null
+          notes?: string | null
+          related_entity_id?: string | null
+          related_entity_type?: string | null
+          timestamp?: string
+          transaction_id?: string
+          transaction_type?: string
+          wallet_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "token_wallet_transactions_wallet_id_fkey"
+            columns: ["wallet_id"]
+            isOneToOne: false
+            referencedRelation: "token_wallets"
+            referencedColumns: ["wallet_id"]
+          },
+        ]
+      }
+      token_wallets: {
+        Row: {
+          balance: number
+          created_at: string
+          currency: string
+          organization_id: string | null
+          updated_at: string
+          user_id: string | null
+          wallet_id: string
+        }
+        Insert: {
+          balance?: number
+          created_at?: string
+          currency?: string
+          organization_id?: string | null
+          updated_at?: string
+          user_id?: string | null
+          wallet_id?: string
+        }
+        Update: {
+          balance?: number
+          created_at?: string
+          currency?: string
+          organization_id?: string | null
+          updated_at?: string
+          user_id?: string | null
+          wallet_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "token_wallets_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "token_wallets_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "user_profiles"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       user_profiles: {
         Row: {
