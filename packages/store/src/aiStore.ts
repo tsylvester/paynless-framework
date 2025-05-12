@@ -436,7 +436,7 @@ export const useAiStore = create<AiStore>()(
                                         currentChatId: actualNewChatId, 
                                         isLoadingAiResponse: false,
                                         aiError: null,
-                                        newChatContext: null, 
+                                        //newChatContext: null, 
                                         rewindTargetMessageId: isRewindOperation ? null : state.rewindTargetMessageId, // Clear on successful rewind
                                     };
                                 });

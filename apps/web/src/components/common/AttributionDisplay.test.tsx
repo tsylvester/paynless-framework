@@ -209,7 +209,7 @@ describe('AttributionDisplay', () => {
       mockSetCurrentOrganizationMembers([orgMemberWithNoDetailsProfile]);
       render(<AttributionDisplay {...defaultProps} userId={otherUserId} organizationId={testOrgId} />);
       expect(screen.getByText(`${otherUserId.substring(0, 8)}...`)).toBeInTheDocument();
-      expect(screen.getByText(`${otherUserId.substring(0, 8)}...`).closest('span')).toHaveAttribute('title', otherUserId);
+      expect(screen.getByText(`${otherUserId.substring(0, 8)}...`).closest('span')).toHaveAttribute('title', `User ID: ${otherUserId}`);
     });
 
     it('should display org member\'s truncated ID and timestamp if their user_profiles object is null/undefined in currentOrganizationMembers', () => {
@@ -218,8 +218,8 @@ describe('AttributionDisplay', () => {
       mockSetCurrentOrgId(testOrgId);
       mockSetCurrentOrganizationMembers([orgMemberWithNullProfile]);
       render(<AttributionDisplay {...defaultProps} userId={otherUserId} organizationId={testOrgId} />);
-      expect(screen.getByText(`${otherUserId.substring(0, 8)}...`)).toBeInTheDocument();
-      expect(screen.getByText(`${otherUserId.substring(0, 8)}...`).closest('span')).toHaveAttribute('title', otherUserId);
+      expect(screen.getByText('Other')).toBeInTheDocument();
+      expect(screen.getByText('Other').closest('span')).toHaveAttribute('title', `Other (ID: ${otherUserId})`);
     });
 
     it('should display org member\'s truncated ID and timestamp if they are not found in currentOrganizationMembers list', () => {
@@ -228,8 +228,8 @@ describe('AttributionDisplay', () => {
       mockSetCurrentOrgId(testOrgId);
       mockSetCurrentOrganizationMembers([]); 
       render(<AttributionDisplay {...defaultProps} userId={otherUserId} organizationId={testOrgId} />);
-      expect(screen.getByText(`${otherUserId.substring(0, 8)}...`)).toBeInTheDocument();
-      expect(screen.getByText(`${otherUserId.substring(0, 8)}...`).closest('span')).toHaveAttribute('title', otherUserId);
+      expect(screen.getByText('Other')).toBeInTheDocument();
+      expect(screen.getByText('Other').closest('span')).toHaveAttribute('title', `Other (ID: ${otherUserId})`);
     });
 
     it('should display org member\'s truncated ID and timestamp if chat.organization_id does not match current active orgId', () => {
@@ -238,8 +238,8 @@ describe('AttributionDisplay', () => {
       mockSetCurrentOrgId('another-org'); 
       mockSetCurrentOrganizationMembers([orgMemberWithFullProfile]);
       render(<AttributionDisplay {...defaultProps} userId={otherUserId} organizationId={testOrgId} />); 
-      expect(screen.getByText(`${otherUserId.substring(0, 8)}...`)).toBeInTheDocument();
-      expect(screen.getByText(`${otherUserId.substring(0, 8)}...`).closest('span')).toHaveAttribute('title', otherUserId);
+      expect(screen.getByText('Other')).toBeInTheDocument();
+      expect(screen.getByText('Other').closest('span')).toHaveAttribute('title', `Other (ID: ${otherUserId})`);
     });
 
     it('should display other user\'s truncated ID (from profile) if profile in chatParticipantsProfiles has no names', () => {
@@ -255,7 +255,7 @@ describe('AttributionDisplay', () => {
       expect(screen.getByText(`${otherUserId.substring(0, 8)}...`)).toBeInTheDocument();
       // The component currently generates "Other User Truncated ID otherUserId" for the title
       expect(screen.getByText(`${otherUserId.substring(0, 8)}...`).closest('span'))
-        .toHaveAttribute('title', otherUserId);
+        .toHaveAttribute('title', `${otherUserId.substring(0, 8)}... (ID: ${otherUserId})`);
     });
 
     it('should display truncated userId (from prop) if user is not in chatParticipantsProfiles', () => {
@@ -266,7 +266,7 @@ describe('AttributionDisplay', () => {
       render(<AttributionDisplay {...defaultProps} userId={otherUserId} organizationId={testOrgId} />);
       expect(screen.getByText(`${otherUserId.substring(0, 8)}...`)).toBeInTheDocument();
       expect(screen.getByText(`${otherUserId.substring(0, 8)}...`).closest('span'))
-        .toHaveAttribute('title', otherUserId);
+        .toHaveAttribute('title', `User ID: ${otherUserId}`);
     });
   });
 
@@ -278,7 +278,7 @@ describe('AttributionDisplay', () => {
       mockSetCurrentOrgId(null); 
       render(<AttributionDisplay {...defaultProps} userId={otherUserId} organizationId={null} />); 
       expect(screen.getByText(`${otherUserId.substring(0, 8)}...`)).toBeInTheDocument();
-      expect(screen.getByText(`${otherUserId.substring(0, 8)}...`).closest('span')).toHaveAttribute('title', otherUserId);
+      expect(screen.getByText(`${otherUserId.substring(0, 8)}...`).closest('span')).toHaveAttribute('title', `User ID: ${otherUserId}`);
     });
   });
 

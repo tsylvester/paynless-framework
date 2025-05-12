@@ -40,7 +40,7 @@ export const AttributionDisplay: React.FC<AttributionDisplayProps> = ({
   );
 
   let displayName = 'Unknown';
-  let fullIdentifier = userId ? userId : 'Assistant';
+  let fullIdentifier = userId ? `User ID: ${userId}` : 'Assistant';
 
   if (role === 'assistant') {
     // Get the actual model information from the store
@@ -70,11 +70,7 @@ export const AttributionDisplay: React.FC<AttributionDisplayProps> = ({
       const isInOrgContext = organizationId && currentOrganizationId === organizationId;
       const orgMember = isInOrgContext ? currentOrganizationMembers?.find(m => m.user_id === userId) : null;
       
-      if (!isInOrgContext) {
-        // If organization IDs don't match, use truncated ID
-        displayName = truncateId(userId);
-        fullIdentifier = userId;
-      } else if (orgMember && orgMember.user_profiles) {
+      if (orgMember?.user_profiles) {
         const profile = orgMember.user_profiles;
         if (profile.first_name && profile.last_name) {
           displayName = `${profile.first_name} ${profile.last_name}`;
@@ -84,36 +80,24 @@ export const AttributionDisplay: React.FC<AttributionDisplayProps> = ({
           fullIdentifier = `${profile.first_name} (ID: ${userId})`;
         } else {
           displayName = truncateId(userId);
-          fullIdentifier = userId;
+          fullIdentifier = `User ID: ${userId}`;
         }
-      } else if (orgMember && !orgMember.user_profiles) {
-        // If user_profiles is null/undefined, use truncated ID
-        displayName = truncateId(userId);
-        fullIdentifier = userId;
-      } else if (!orgMember) {
-        // If member not found in org, use truncated ID
-        displayName = truncateId(userId);
-        fullIdentifier = userId;
       } else {
         // Try chat participants profiles as fallback
         const participantProfile = chatParticipantsProfiles[userId];
         if (participantProfile) {
           if (participantProfile.first_name && participantProfile.last_name) {
             displayName = `${participantProfile.first_name} ${participantProfile.last_name}`;
-            fullIdentifier = `${participantProfile.first_name} ${participantProfile.last_name} (ID: ${userId})`;
           } else if (participantProfile.first_name) {
             displayName = participantProfile.first_name;
-            fullIdentifier = `${participantProfile.first_name} (ID: ${userId})`;
           } else {
-            const truncatedId = truncateId(userId);
-            displayName = truncatedId;
-            fullIdentifier = truncatedId;
+            displayName = truncateId(userId);
           }
+          fullIdentifier = `${displayName} (ID: ${userId})`;
         } else {
           // Final fallback to truncated ID
-          const truncatedId = truncateId(userId);
-          displayName = truncatedId;
-          fullIdentifier = truncatedId;
+          displayName = truncateId(userId);
+          fullIdentifier = `User ID: ${userId}`;
         }
       }
     }
