@@ -1,190 +1,219 @@
-import { useEffect, useState } from 'react';
-import { useAiStore, useAuthStore } from '@paynless/store';
+import { useEffect, useMemo } from 'react';
+import { useAiStore, useOrganizationStore } from '@paynless/store';
 import { logger } from '@paynless/utils';
 import { analytics } from '@paynless/analytics';
 import { ModelSelector } from '../components/ai/ModelSelector';
 import { PromptSelector } from '../components/ai/PromptSelector';
 import { AiChatbox } from '../components/ai/AiChatbox';
 import { ChatHistoryList } from '../components/ai/ChatHistoryList';
+import { ChatContextSelector } from '../components/ai/ChatContextSelector';
+import { Button } from '@/components/ui/button';
+import { Skeleton } from '@/components/ui/skeleton';
+import { Plus } from 'lucide-react';
+import type { Chat } from '@paynless/types'; // Import Chat type
+import ErrorBoundary from '../components/common/ErrorBoundary'; // Added ErrorBoundary
+// import type { Organization, AiProvider, SystemPrompt } from '@paynless/types'; // Organization, AiProvider, SystemPrompt commented out as they are not used
+// import type { Chat } from '@paynless/types'; // Chat type might no longer be needed here if currentChatHistoryList is removed
 
 export default function AiChatPage() {
   // Get user, session, and loading state from auth store
-  const { user, isLoading: isAuthLoading } = useAuthStore((state) => ({ 
-      user: state.user, 
-      isLoading: state.isLoading // Get the auth loading state
-  }));
+
   
   const {
     loadAiConfig,
-    loadChatHistory,
     loadChatDetails,
     startNewChat,
-    chatHistoryList,
-    isHistoryLoading,
     currentChatId,
-    availableProviders,
-    availablePrompts
+    availablePrompts,
+    checkAndReplayPendingChatAction,
+    chatsByContext, 
+    isDetailsLoading, 
+    selectedPromptId,
+    setSelectedPrompt,
+    newChatContext,
   } = useAiStore((state) => ({
     loadAiConfig: state.loadAiConfig,
-    loadChatHistory: state.loadChatHistory,
     loadChatDetails: state.loadChatDetails,
     startNewChat: state.startNewChat,
-    chatHistoryList: state.chatHistoryList,
-    isHistoryLoading: state.isHistoryLoading,
     currentChatId: state.currentChatId,
     availableProviders: state.availableProviders,
-    availablePrompts: state.availablePrompts
+    availablePrompts: state.availablePrompts,
+    checkAndReplayPendingChatAction: state.checkAndReplayPendingChatAction,
+    chatsByContext: state.chatsByContext,
+    isDetailsLoading: state.isDetailsLoading,
+    selectedProviderId: state.selectedProviderId,
+    selectedPromptId: state.selectedPromptId,
+    setSelectedPrompt: state.setSelectedPrompt,
+    newChatContext: state.newChatContext,
   }));
 
-  const [selectedProviderId, setSelectedProviderId] = useState<string | null>(null);
-  const [selectedPromptId, setSelectedPromptId] = useState<string | null>(null);
+  // Organization Store data
+  const { 
+    currentOrganizationId: globalCurrentOrgId, 
+    userOrganizations,
+  } = useOrganizationStore(state => ({
+    currentOrganizationId: state.currentOrganizationId,
+    userOrganizations: state.userOrganizations,
+  }));
 
-  // ---> Get the new action from aiStore <---
-  const checkAndReplayPendingChatAction = useAiStore((state) => state.checkAndReplayPendingChatAction);
+  console.log("AiChatPage rendering/re-rendering. isDetailsLoading:", isDetailsLoading);
 
-  // Load config (public)
   useEffect(() => {
-    logger.info('[AiChatPage] Config effect running.');
-    loadAiConfig(); // Always load config
+    console.log("AiChatPage MOUNTED");
+    return () => {
+      console.log("AiChatPage UNMOUNTING");
+    };
+  }, []);
+
+  // --- Selector for current chat details (conceptual) ---
+  const currentChatDetails: Chat | null | undefined = useMemo(() => {
+    if (!currentChatId || !chatsByContext) return null;
+    // Check personal chats
+    const personalChat = chatsByContext.personal?.find(c => c.id === currentChatId);
+    if (personalChat) return personalChat;
+    // Check org chats
+    if (chatsByContext.orgs) {
+      for (const orgId in chatsByContext.orgs) {
+        const orgChats = chatsByContext.orgs[orgId];
+        const orgChat = orgChats?.find(c => c.id === currentChatId);
+        if (orgChat) return orgChat;
+      }
+    }
+    return null;
+  }, [currentChatId, chatsByContext]);
+
+  // Load AI config (public)
+  useEffect(() => {
+    console.log('[AiChatPage] Config effect running - attempting to call loadAiConfig');
+    if (loadAiConfig) loadAiConfig(); else console.error('[AiChatPage] loadAiConfig is undefined!');
   }, [loadAiConfig]);
 
-  // Load history (auth-required)
+  // Check for pending chat action on mount
   useEffect(() => {
-    logger.info('[AiChatPage] History effect running.', { isAuthLoading, hasUser: !!user });
-    if (!isAuthLoading && user) {
-        logger.info('[AiChatPage] Auth finished and user found, loading history...');
-        loadChatHistory();
-    } else if (isAuthLoading) {
-        logger.info('[AiChatPage] Auth still loading, waiting to load history...');
-    } else {
-        logger.warn('[AiChatPage] Auth finished but no user found, skipping chat history load.');
-    }
-  }, [loadChatHistory, user, isAuthLoading]);
-
-  // ---> NEW: Check for pending chat action on mount <---
-  useEffect(() => {
-    logger.info('[AiChatPage] Checking for pending chat action on mount...');
-    // Check if the function exists before calling, as it might not during initial setup/TDD
+    console.log('[AiChatPage] Pending action effect running - attempting to call checkAndReplayPendingChatAction');
     if (checkAndReplayPendingChatAction) { 
       checkAndReplayPendingChatAction();
     } else {
-      logger.warn('[AiChatPage] checkAndReplayPendingChatAction function not found in aiStore yet.')
+      console.warn('[AiChatPage] checkAndReplayPendingChatAction function not found in aiStore yet.')
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [checkAndReplayPendingChatAction]); // Depend on the action function itself
+  }, [checkAndReplayPendingChatAction]); 
 
-  // Set default selections when providers/prompts load
+  // Effect to handle selectedPromptId based on loaded chat or initial default.
+  // Default provider selection is handled by loadAiConfig and startNewChat in the store.
   useEffect(() => {
-    if (!selectedProviderId && availableProviders && availableProviders.length > 0) {
-      setSelectedProviderId(availableProviders[0].id);
+    if (currentChatDetails && currentChatDetails.system_prompt_id) {
+      // If a chat is loaded and has a specific system_prompt_id, set it as the selectedPromptId
+      // Only update if it's different from the current selectedPromptId to avoid unnecessary calls/renders
+      if (selectedPromptId !== currentChatDetails.system_prompt_id) {
+        setSelectedPrompt(currentChatDetails.system_prompt_id);
+        logger.info(`[AiChatPage] Prompt set from loaded chat details: ${currentChatDetails.system_prompt_id}`);
+      }
+    } else if (!currentChatId && availablePrompts && availablePrompts.length > 0) {
+      // If no chat is currently active (e.g., initial page load before any chat selection or new chat)
+      // and no prompt is selected yet, default to the first available prompt.
+      if (!selectedPromptId) {
+        setSelectedPrompt(availablePrompts[0].id);
+        logger.info(`[AiChatPage] Default prompt set (no active chat): ${availablePrompts[0].id}`);
+      }
     }
-  }, [availableProviders, selectedProviderId]);
+    // Note: The store's startNewChat action now handles setting a default prompt for brand new chats.
+    // This useEffect primarily syncs the prompt when an existing chat is loaded or sets an initial page default.
+  }, [currentChatId, currentChatDetails, availablePrompts, selectedPromptId, setSelectedPrompt]);
 
-  useEffect(() => {
-    if (!selectedPromptId && availablePrompts && availablePrompts.length > 0) {
-      setSelectedPromptId(availablePrompts[0].id);
-    }
-  }, [availablePrompts, selectedPromptId]);
-
-  // ---> START MODIFICATION: Check for redirect ID on mount <---
+  // Load chat ID from localStorage on redirect
   useEffect(() => {
     const chatIdToLoad = localStorage.getItem('loadChatIdOnRedirect');
     if (chatIdToLoad) {
-      // If an ID is found, remove it and load that specific chat
       localStorage.removeItem('loadChatIdOnRedirect');
-      logger.info(`[AiChatPage] Found chatId ${chatIdToLoad} in localStorage, loading details...`);
-      loadChatDetails(chatIdToLoad);
+      console.log(`[AiChatPage] Found chatId ${chatIdToLoad} in localStorage, loading details...`);
+      if (loadChatDetails) loadChatDetails(chatIdToLoad); else console.warn('[AiChatPage] loadChatDetails is undefined during redirect load!');
     } 
-    // Run only once on mount
-    // eslint-disable-next-line react-hooks/exhaustive-deps 
-  }, []); 
-  // ---> END MODIFICATION <---
+  }, [loadChatDetails]); 
 
-  const handleProviderChange = (providerId: string | null) => {
-    setSelectedProviderId(providerId);
-    analytics.track('Chat: Provider Selected', { providerId }); // Track provider change
-  };
-
-  const handlePromptChange = (promptId: string | null) => {
-    setSelectedPromptId(promptId);
-    analytics.track('Chat: Prompt Selected', { promptId }); // Track prompt change
-  };
+  // const handlePromptChange = (promptId: string | null) => { // Removed as PromptSelector handles its own state via store
+  //   setSelectedPrompt(promptId); 
+  //   analytics.track('Chat: Prompt Selected', { promptId });
+  // };
 
   const handleNewChat = () => {
-    logger.info('[AiChat] Starting new chat...');
-    analytics.track('Chat: Clicked New Chat');
-    startNewChat();
-    // Reset selections to defaults
-    setSelectedProviderId(availableProviders && availableProviders.length > 0 ? availableProviders[0].id : null);
-    setSelectedPromptId(availablePrompts && availablePrompts.length > 0 ? availablePrompts[0].id : null);
+    const contextForNewChat = newChatContext === undefined ? globalCurrentOrgId : newChatContext;
+    logger.info(`[AiChatPage] Starting new chat with context: ${contextForNewChat}`);
+    
+    const contextIdForAnalytics = contextForNewChat === null ? 'personal' : contextForNewChat || 'unknown';
+
+    analytics.track('Chat: Clicked New Chat', {
+       contextId: contextIdForAnalytics
+    });
+    
+    startNewChat(contextForNewChat);
   };
 
-  const handleLoadChat = (chatId: string) => {
-    if (chatId === currentChatId) return; // Avoid reloading the same chat
-    logger.info(`[AiChatPage] Loading chat details for: ${chatId}`);
-    analytics.track('Chat: History Item Selected', { chatId });
-    loadChatDetails(chatId);
-    // TODO: Determine how to set provider/prompt when loading history.
-    // Maybe store last used provider/prompt with the chat?
-    // For now, reset to default.
-    setSelectedProviderId(availableProviders && availableProviders.length > 0 ? availableProviders[0].id : null);
-    setSelectedPromptId(availablePrompts && availablePrompts.length > 0 ? availablePrompts[0].id : null);
-  };
+  const activeContextIdForHistory = newChatContext === undefined ? globalCurrentOrgId : newChatContext;
+  
+  const contextTitleForHistory = useMemo(() => {
+    if (typeof activeContextIdForHistory === 'undefined') return 'Loading History...'; 
+    if (activeContextIdForHistory === null) return 'Personal Chat History';
+    const org = userOrganizations.find(o => o.id === activeContextIdForHistory);
+    return org ? `${org.name} Chat History` : 'Organization Chat History';
+  }, [activeContextIdForHistory, userOrganizations]);
 
   return (
-    <div>
-      {/* Make grid container grow vertically and respect parent height */}
-      <div className="container mx-auto p-6 grid grid-cols-1 md:grid-cols-3 gap-6"> 
-        {/* Left Column: Make COLUMN scrollable */}
-        <div className="md:col-span-2 flex flex-col border border-border rounded-lg bg-card shadow-sm overflow-y-auto min-h-0 max-h-[calc(100vh-12rem)]"> 
-          {/* Header is sticky within the column */} 
-          <div className="p-4 border-b border-border flex flex-wrap items-center gap-4 sticky top-0 bg-card z-10"> 
-            <h2 className="text-lg font-semibold text-card-foreground mr-auto">AI Chat</h2> 
+    <ErrorBoundary>
+      <div>
+        <div className="container mx-auto p-6 grid grid-cols-1 md:grid-cols-3 gap-6"> 
+          <div className="md:col-span-2 flex flex-col border border-border rounded-lg bg-card shadow-sm overflow-y-auto min-h-0 max-h-[calc(100vh-12rem)]"> 
+            <div className="p-4 border-b border-border sticky top-0 bg-card z-10 space-y-2">
+              <div>
+                {/*<h2 className="text-lg font-semibold text-card-foreground">
+                  dynamicHeaderText
+                </h2>*/}
+              </div>
+              
+              <div className="flex flex-wrap items-center gap-x-2 gap-y-2">
+                <ChatContextSelector
+                  // currentContextId={typeof nextChatOrgContext === 'undefined' ? null : nextChatOrgContext}
+                  // onContextChange={handleContextSelection}
+                  // Pass any necessary props like 'disabled' if needed, e.g., disabled={isDetailsLoading}
+                />
+                <ModelSelector />
+                <PromptSelector />
+                <Button variant="default" onClick={handleNewChat} className="ml-auto" data-testid="new-chat-button">
+                  <Plus className="mr-2 h-4 w-4" /> New Chat
+                </Button>
+              </div>
+            </div>
             
-            {/* Controls */}
-            <ModelSelector 
-              selectedProviderId={selectedProviderId} 
-              onProviderChange={handleProviderChange}
-            />
-            <PromptSelector 
-              selectedPromptId={selectedPromptId} 
-              onPromptChange={handlePromptChange}
-            />
-            <button 
-              onClick={handleNewChat} 
-              className="px-3 py-1.5 text-sm font-medium rounded-md border border-input bg-transparent hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 whitespace-nowrap"
-            >
-              New Chat
-            </button>
+            <div className="flex-grow overflow-y-auto p-4"> 
+              {isDetailsLoading ? (
+                <>
+                  {/* Conditional console.log for debugging */}
+                  {typeof window !== 'undefined' && console.log("AiChatPage: Rendering SKELETONS because isDetailsLoading is true")}
+                  <div className="space-y-4 p-4">
+                    <Skeleton className="h-16 w-3/4" />
+                    <Skeleton className="h-12 w-1/2 self-end ml-auto" />
+                    <Skeleton className="h-20 w-3/4" />
+                    <Skeleton className="h-10 w-2/5 self-end ml-auto" />
+                  </div>
+                </>
+              ) : (
+                <>
+                  {/* Conditional console.log for debugging */}
+                  {typeof window !== 'undefined' && console.log("AiChatPage: Rendering AiChatbox because isDetailsLoading is false")}
+                  <AiChatbox />
+                </>
+              )}
+            </div>
           </div>
-           
-           {/* Chatbox Container - Grows but relies on column scroll */} 
-           <div className="flex-grow min-h-0"> 
-             <AiChatbox 
-               isAnonymous={false} 
-               providerId={selectedProviderId}
-               promptId={selectedPromptId}
-               key={currentChatId || 'new'} 
-             />
-           </div>
-        </div>
 
-        {/* Right Column: Make COLUMN scrollable */} 
-        <div className="md:col-span-1 border border-border rounded-lg bg-card shadow-sm flex flex-col overflow-y-auto min-h-0 max-h-[calc(100vh-12rem)]"> 
-           {/* Header is sticky within the column */} 
-           <div className="p-4 border-b border-border sticky top-0 bg-card/80 backdrop-blur-md z-10">
- 
-             <h2 className="text-lg font-semibold text-card-foreground">Chat History</h2>
-           </div>
-           {/* History List - Grows but relies on column scroll */} 
-          <ChatHistoryList 
-             history={chatHistoryList}
-             onLoadChat={handleLoadChat}
-             isLoading={isAuthLoading || isHistoryLoading} 
-             currentChatId={currentChatId}
-          />
+          <div className="md:col-span-1 flex flex-col space-y-4 min-h-0 max-h-[calc(100vh-12rem)]">
+            <ChatHistoryList 
+              activeContextId={activeContextIdForHistory} 
+              currentChatId={currentChatId} 
+              contextTitle={contextTitleForHistory} 
+            />
+          </div>
         </div>
       </div>
-    </div>
+    </ErrorBoundary>
   );
 } 

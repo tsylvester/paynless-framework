@@ -15,7 +15,7 @@
   "scripts": {
     "build": "tsc -b",
     "clean": "rm -rf dist tsconfig.tsbuildinfo",
-    "lint": "eslint . --ext .ts,.tsx",
+    "lint": "eslint src/**/*.{ts,tsx} --max-warnings 0",
     "test": "vitest run"
   },
   "dependencies": {
@@ -26,6 +26,7 @@
     "@supabase/supabase-js": "^2.0.0",
     "immer": "^10.1.1",
     "jwt-decode": "^4.0.0",
+    "reselect": "^5.1.1",
     "zustand": "^4.5.2"
   },
   "devDependencies": {
@@ -36,6 +37,7 @@
     "@typescript-eslint/parser": "^7.18.0",
     "eslint": "^8.57.0",
     "typescript": "^5.5.3",
+    "vite-plugin-node-polyfills": "^0.23.0",
     "vitest": "^1.6.1",
     "vitest-localstorage-mock": "^0.1.2"
   },

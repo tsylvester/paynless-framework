@@ -94,8 +94,8 @@ export async function handleOrganizationRequest(
 
     if (userError || !user) {
       console.error('[organizations] Handler: Auth error:', userError);
-      // Auth error needs CORS headers (handled by createUnauthorizedResponse)
-      return createUnauthorizedResponse('Unauthorized'); 
+      // Pass req to createUnauthorizedResponse
+      return createUnauthorizedResponse('Unauthorized', req); 
     }
     
     const authenticatedUser = user as User; // Cast to User type

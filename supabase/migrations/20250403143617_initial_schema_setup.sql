@@ -1,5 +1,5 @@
 -- Enable UUID generation
-CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+CREATE EXTENSION IF NOT EXISTS "uuid-ossp" WITH SCHEMA public;
 
 -- Define User Roles Enum (Optional but good practice)
 DROP TYPE IF EXISTS public.user_role;

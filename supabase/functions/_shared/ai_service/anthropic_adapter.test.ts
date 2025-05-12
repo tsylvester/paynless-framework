@@ -3,6 +3,13 @@ import { spy, stub, type Stub } from "https://deno.land/std@0.224.0/testing/mock
 import { AnthropicAdapter, anthropicAdapter } from './anthropic_adapter.ts';
 import type { ChatApiRequest } from '../types.ts';
 
+// Define an interface for the expected token usage structure (consistent with other tests)
+interface MockTokenUsage {
+  prompt_tokens: number;
+  completion_tokens: number;
+  total_tokens: number;
+}
+
 // --- Test Data ---
 const MOCK_API_KEY = 'sk-ant-test-key';
 const MOCK_MODEL_ID = 'anthropic-claude-3-opus-20240229';
@@ -160,6 +167,13 @@ Deno.test("AnthropicAdapter sendMessage - Success without System Prompt", async 
       assertEquals(result.content, 'Okay, how can I help you today?');
       assertEquals(result.ai_provider_id, MOCK_CHAT_REQUEST_NO_SYSTEM.providerId);
       assertEquals(result.system_prompt_id, null); // Should be null as promptId was '__none__'
+      // Add token assertions
+      assertExists(result.token_usage);
+      const tokens = result.token_usage as unknown as MockTokenUsage; // Cast
+      assertEquals(tokens.prompt_tokens, MOCK_ANTHROPIC_SUCCESS_RESPONSE.usage.input_tokens, "Prompt tokens mismatch");
+      assertEquals(tokens.completion_tokens, MOCK_ANTHROPIC_SUCCESS_RESPONSE.usage.output_tokens, "Completion tokens mismatch");
+      assertEquals(tokens.total_tokens, MOCK_ANTHROPIC_SUCCESS_RESPONSE.usage.input_tokens + MOCK_ANTHROPIC_SUCCESS_RESPONSE.usage.output_tokens, "Total tokens mismatch");
+      assertExists(result.created_at);
 
     } finally {
       mockFetch.restore();

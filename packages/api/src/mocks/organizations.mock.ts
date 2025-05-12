@@ -4,7 +4,6 @@ import type {
     Organization, 
     ApiResponse, 
     OrganizationMemberWithProfile, 
-    Invite, 
     PendingOrgItems 
 } from '@paynless/types';
 
@@ -45,6 +44,7 @@ export const defaultMockOrganization: Organization = {
   created_at: new Date().toISOString(),
   visibility: 'private',
   deleted_at: null,
+  allow_member_chat_creation: true,
 };
 
 // Correct defaultMockMembers based on actual type from linter error
@@ -63,7 +63,10 @@ export const defaultMockMembers: OrganizationMemberWithProfile[] = [ // Use Orga
              last_name: 'User',
              updated_at: new Date().toISOString(), 
              created_at: new Date().toISOString(),
-             role: 'user'
+             role: 'user',
+             last_selected_org_id: null,
+             chat_context: null,
+             profile_privacy_setting: 'private',
           }
     },
     { 
@@ -79,7 +82,10 @@ export const defaultMockMembers: OrganizationMemberWithProfile[] = [ // Use Orga
              last_name: 'User',
              updated_at: new Date().toISOString(), 
              created_at: new Date().toISOString(),
-             role: 'user'
+             role: 'user',
+             last_selected_org_id: null,
+             chat_context: null,
+             profile_privacy_setting: 'private',
           }
     },
 ]
@@ -122,6 +128,7 @@ export const resetOrganizationMocks = () => {
   mockCancelInvite.mockResolvedValue({ status: 200, data: undefined, error: undefined }); // Default success for cancel invite
   mockInviteUserByEmail.mockResolvedValue({ status: 201, data: { id: 'new-invite-123' }, error: undefined }); // Default success for invite by email
   mockGetPendingItems.mockResolvedValue({ status: 200, data: { invites: [], requests: [] }, error: undefined }); // Default success for get pending (empty lists)
+
 };
 
 // Initialize with default mocks

@@ -7,7 +7,7 @@ import {
     createMockSupabaseClient, 
     MockSupabaseDataConfig, 
     MockQueryBuilderState 
-} from "../_shared/test-utils.ts";
+} from "../_shared/supabase.mock.ts";
 
 // Mock user objects conforming to Supabase User type (keep as is, should be compatible)
 const mockUser: User = {

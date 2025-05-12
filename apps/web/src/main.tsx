@@ -7,8 +7,11 @@ import { logger/*, LogLevel*/ } from '@paynless/utils'
 import ReactGA from 'react-ga4'
 import { api } from '@paynless/api'
 import { initAuthListener } from '@paynless/store'
-//@ts-expect-error - Analytics is initialized by importing the module, do not change this line
+// @ts-expect-error - Analytics is initialized by importing the module, do not change this line
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 import { analytics } from '@paynless/analytics'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { ReactQueryDevtools } from '@tanstack/react-query-devtools'
 
 // --- Configure Logger Early ---
 // Only show errors in the console for now to reduce noise
@@ -50,8 +53,16 @@ if (gaMeasurementId) {
   logger.warn('VITE_GA_MEASUREMENT_ID is not set. Google Analytics disabled.')
 }
 
+// Initialize analytics (if needed elsewhere, keep; otherwise, remove if truly unused)
+// analytics.init();
+
+const queryClient = new QueryClient()
+
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <App />
+    <QueryClientProvider client={queryClient}>
+      <App />
+      <ReactQueryDevtools initialIsOpen={false} />
+    </QueryClientProvider>
   </StrictMode>
 )

@@ -14,6 +14,8 @@ export const defaultMockChatHistory: Chat[] = [
     title: 'Test Chat 1',
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
+    organization_id: null,
+    system_prompt_id: null,
   },
   {
     id: 'chat-2',
@@ -21,6 +23,8 @@ export const defaultMockChatHistory: Chat[] = [
     title: 'Test Chat 2',
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
+    organization_id: null,
+    system_prompt_id: null,
   },
 ];
 

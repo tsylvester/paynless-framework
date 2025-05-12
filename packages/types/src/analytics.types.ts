@@ -14,14 +14,14 @@ export interface AnalyticsClient {
    * @param userId - The unique identifier for the user.
    * @param traits - Optional key-value pairs of user properties.
    */
-  identify(userId: string, traits?: Record<string, any>): void;
+  identify(userId: string, traits?: Record<string, string | number | boolean | null>): void;
 
   /**
    * Tracks a custom event occurrence.
    * @param eventName - The name of the event to track.
    * @param properties - Optional key-value pairs providing context for the event.
    */
-  track(eventName: string, properties?: Record<string, any>): void;
+  track(eventName: string, properties?: Record<string, string | number | boolean | null>): void;
 
   /**
    * Clears the identified user and resets analytics state (e.g., on logout).

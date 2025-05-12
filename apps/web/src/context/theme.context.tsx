@@ -13,6 +13,7 @@ function hexToRgbString(hex: string): string {
 }
 
 // Initialize context with null to allow detection in useTheme hook
+// eslint-disable-next-line react-refresh/only-export-components
 export const ThemeContext = createContext<ThemeState | null>(null);
 
 interface ThemeProviderProps {

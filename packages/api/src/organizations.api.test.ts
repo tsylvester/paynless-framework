@@ -105,7 +105,8 @@ describe('OrganizationApiClient', () => {
         name: 'Updated Org Name',
         visibility: 'public',
         created_at: new Date().toISOString(),
-        deleted_at: null
+        deleted_at: null,
+        allow_member_chat_creation: false, // Assuming a default or existing value
       };
       const mockResponse: ApiResponse<Organization> = { status: 200, data: mockReturnedOrg };
 
@@ -116,6 +117,54 @@ describe('OrganizationApiClient', () => {
       expect(mockApiClient.put).toHaveBeenCalledTimes(1);
       expect(mockApiClient.put).toHaveBeenCalledWith(`organizations/${orgId}`, updateData);
       expect(result).toEqual(mockResponse);
+    });
+
+    it('should call apiClient.put with allow_member_chat_creation field', async () => {
+      const updateData: OrganizationUpdate = { allow_member_chat_creation: true };
+      const mockReturnedOrg: Organization = {
+        id: orgId,
+        name: 'Some Org', // Assuming other fields remain or are fetched
+        visibility: 'private',
+        created_at: new Date().toISOString(),
+        deleted_at: null,
+        allow_member_chat_creation: true,
+      };
+      const mockResponse: ApiResponse<Organization> = { status: 200, data: mockReturnedOrg };
+
+      vi.mocked(mockApiClient.put).mockResolvedValue(mockResponse);
+
+      const result = await organizationApiClient.updateOrganization(orgId, updateData);
+
+      expect(mockApiClient.put).toHaveBeenCalledTimes(1);
+      expect(mockApiClient.put).toHaveBeenCalledWith(`organizations/${orgId}`, updateData);
+      expect(result).toEqual(mockResponse);
+      expect(result.data?.allow_member_chat_creation).toBe(true);
+    });
+
+    it('should call apiClient.put with all fields including allow_member_chat_creation', async () => {
+      const updateData: OrganizationUpdate = {
+        name: 'Fully Updated Org',
+        visibility: 'public',
+        allow_member_chat_creation: false,
+      };
+      const mockReturnedOrg: Organization = {
+        id: orgId,
+        ...updateData,
+        created_at: new Date().toISOString(),
+        deleted_at: null,
+      };
+      const mockResponse: ApiResponse<Organization> = { status: 200, data: mockReturnedOrg };
+
+      vi.mocked(mockApiClient.put).mockResolvedValue(mockResponse);
+
+      const result = await organizationApiClient.updateOrganization(orgId, updateData);
+
+      expect(mockApiClient.put).toHaveBeenCalledTimes(1);
+      expect(mockApiClient.put).toHaveBeenCalledWith(`organizations/${orgId}`, updateData);
+      expect(result).toEqual(mockResponse);
+      expect(result.data?.name).toBe('Fully Updated Org');
+      expect(result.data?.visibility).toBe('public');
+      expect(result.data?.allow_member_chat_creation).toBe(false);
     });
 
     it('should return error response if apiClient.put fails', async () => {

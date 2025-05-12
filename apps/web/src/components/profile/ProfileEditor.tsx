@@ -1,4 +1,4 @@
-import React, { Suspense, useState, useEffect } from 'react'
+import React, { useState, useEffect } from 'react'
 import { AlertCircle } from 'lucide-react'
 import { useAuthStore } from '@paynless/store'
 import type { UserProfileUpdate } from '@paynless/types'
@@ -45,8 +45,6 @@ function ProfileNameEditor() {
 
     setSaving(true)
 
-    let profileUpdateError = false
-
     // --- Update Profile (First/Last Name) ---
     // Only update if names have changed
     if (firstName !== profile?.first_name || lastName !== profile?.last_name) {
@@ -56,7 +54,6 @@ function ProfileNameEditor() {
       }
       const profileResult = await updateProfile(profileUpdateData)
       if (!profileResult) {
-        profileUpdateError = true
         // Error is already set in the store by updateProfile
       }
     }
@@ -155,12 +152,10 @@ function EmailEditor() {
     user, // Get user object for email
     error, // Use store's error state
     updateEmail, // Use store's update action
-    refreshSession,
   } = useAuthStore((state) => ({
     user: state.user, // Add user to selector
     error: state.error,
     updateEmail: state.updateEmail, // <-- Add the new action
-    refreshSession: state.refreshSession,
   }))
 
   // Local state for form inputs
@@ -183,8 +178,6 @@ function EmailEditor() {
     setSaving(true)
 
     await updateEmail(email)
-
-    refreshSession()
 
     setSaving(false)
   }

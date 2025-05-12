@@ -4,6 +4,7 @@
     "outDir": "./dist",
     "rootDir": "./src",
     "types": ["node", "vitest/globals"],
+    "jsx": "react-jsx",
     "declaration": true,
     "lib": ["ESNext", "DOM"],
     "composite": true
@@ -13,8 +14,7 @@
     "node_modules", 
     "dist", 
     "src/**/*.test.ts", 
-    "src/setupTests.ts",
-    "src/mocks"
+    "src/setupTests.ts"
   ],
   "references": [
     { "path": "../types" },

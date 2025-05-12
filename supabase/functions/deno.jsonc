@@ -5,5 +5,9 @@
   "tasks": {
     "test": "deno test --allow-env --allow-net"
   },
-  "nodeModulesDir": "auto"
+  "nodeModulesDir": "auto",
+  "imports": {
+    "@types/node": "npm:@types/node@^20"
+    // "@paynless/db-types": "./types_db.ts"
+  }
 } 

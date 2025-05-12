@@ -22,7 +22,7 @@ comment on table public.ai_providers is 'Stores information about supported AI m
 -- Table: system_prompts
 create table public.system_prompts (
   id uuid primary key default uuid_generate_v4(),
-  name text not null,
+  name text not null unique,
   prompt_text text not null,
   is_active boolean not null default true,
   created_at timestamptz not null default now(),

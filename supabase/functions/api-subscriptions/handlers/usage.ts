@@ -6,17 +6,6 @@ import type { Database } from '../../types_db.ts';
 import { type SubscriptionUsageMetrics } from "../../_shared/types.ts";
 import { HandlerError } from "./current.ts"; // Reuse HandlerError
 
-// Remove old imports and Deps interface
-// import { corsHeaders } from "../../_shared/cors-headers.ts"; // Removed
-// import { 
-//   createErrorResponse as CreateErrorResponseType, 
-//   createSuccessResponse as CreateSuccessResponseType 
-// } from "../../_shared/responses.ts"; // Removed
-// 
-// interface GetUsageDeps {
-//   createErrorResponse: typeof CreateErrorResponseType;
-//   createSuccessResponse: typeof CreateSuccessResponseType;
-// } // Removed
 
 // Fix: Define return type based on DB schema for subscription
 type UserSubscriptionWithPlan = Database['public']['Tables']['user_subscriptions']['Row'] & {

@@ -1,28 +1,4 @@
-/**
- * Logging levels
- */
-export enum LogLevel {
-  DEBUG = 'debug',
-  INFO = 'info',
-  WARN = 'warn',
-  ERROR = 'error',
-}
-
-/**
- * Configuration for the logger
- */
-export interface LoggerConfig {
-  minLevel: LogLevel;
-  enableConsole: boolean;
-  captureErrors: boolean;
-}
-
-/**
- * Interface for log entry metadata
- */
-export interface LogMetadata {
-  [key: string]: unknown;
-}
+import { LoggerConfig, LogLevel, LogMetadata } from "@paynless/types";
 
 /**
  * Logging service for application-wide logging
@@ -67,7 +43,7 @@ export class Logger {
    */
   private setupGlobalErrorHandling(): void {
     if (typeof window !== 'undefined') {
-      window.addEventListener('error', (event) => {
+      window.addEventListener('error', (event: ErrorEvent) => {
         this.error('Uncaught error', {
           message: event.message,
           filename: event.filename,
@@ -77,7 +53,7 @@ export class Logger {
         });
       });
       
-      window.addEventListener('unhandledrejection', (event) => {
+      window.addEventListener('unhandledrejection', (event: PromiseRejectionEvent) => {
         this.error('Unhandled promise rejection', {
           reason: event.reason,
           stack: event.reason?.stack,

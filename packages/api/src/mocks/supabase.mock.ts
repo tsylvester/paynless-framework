@@ -1,11 +1,21 @@
-import { vi } from 'vitest';
+import { vi, type Mock } from 'vitest';
 import type {
     SupabaseClient,
     Session,
     User,
     AuthChangeEvent,
     Subscription,
-    Provider
+    SignInWithPasswordCredentials,
+    AuthTokenResponse,
+    SignUpWithPasswordCredentials,
+    AuthResponse,
+    SignOut,
+    SignInWithOAuthCredentials,
+    OAuthResponse,
+    RealtimeChannel,
+    RealtimeChannelOptions,
+    PostgrestResponse,
+    FunctionInvokeOptions,
 } from '@supabase/supabase-js';
 
 // Define a type for the auth state change callback for clarity
@@ -21,35 +31,40 @@ export const createMockSupabaseClient = (): SupabaseClient => {
     const mockSubscription: Subscription = {
         id: 'mock-subscription-id',
         unsubscribe: vi.fn(),
-        callback: vi.fn(), // Add the callback property
+        callback: vi.fn(),
     };
 
-    // The core mock object
     const mockClient = {
         auth: {
-            onAuthStateChange: vi.fn<[AuthStateChangeCallback], { data: { subscription: Subscription } }>((_callback) => {
-                // Store the callback if needed for triggering later in tests
-                // Return the expected structure
-                return {
-                    data: { subscription: mockSubscription },
-                };
-            }),
-            getUser: vi.fn<[], Promise<{ data: { user: User | null }; error: null }>>().mockResolvedValue({ data: { user: null }, error: null }), // Default: no user
-            getSession: vi.fn<[], Promise<{ data: { session: Session | null }; error: null }>>().mockResolvedValue({ data: { session: null }, error: null }), // Default: no session
-            signInWithPassword: vi.fn<[any], Promise<any>>().mockResolvedValue({ data: {}, error: null }),
-            signUp: vi.fn<[any], Promise<any>>().mockResolvedValue({ data: {}, error: null }),
-            signOut: vi.fn<[], Promise<{ error: null }>>().mockResolvedValue({ error: null }),
-            signInWithOAuth: vi.fn<[{ provider: Provider; options?: any }], Promise<any>>().mockResolvedValue({ data: {}, error: null }),
-            // Add other auth methods if needed by tests (e.g., resetPasswordForEmail, updateUser)
+            onAuthStateChange: vi.fn() as Mock<[AuthStateChangeCallback], { data: { subscription: Subscription } }>,
+            getUser: vi.fn() as Mock<[string?], Promise<{ data: { user: User | null }; error: null }>>,
+            getSession: vi.fn() as Mock<[], Promise<{ data: { session: Session | null }; error: null }>>,
+            signInWithPassword: vi.fn() as Mock<[SignInWithPasswordCredentials], Promise<AuthTokenResponse>>,
+            signUp: vi.fn() as Mock<[SignUpWithPasswordCredentials], Promise<AuthResponse>>,
+            signOut: vi.fn() as Mock<[SignOut?], Promise<{ error: null }>>,
+            signInWithOAuth: vi.fn() as Mock<[SignInWithOAuthCredentials], Promise<OAuthResponse>>,
         },
-        channel: vi.fn().mockReturnThis(), // Basic channel mock
-        from: vi.fn().mockReturnThis(), // Basic query builder mock
-        // Add other top-level SupabaseClient methods if needed (e.g., rpc, functions)
-        functions: { // Mock functions if client is used for function calls directly (less common)
-            invoke: vi.fn()
+        channel: vi.fn() as Mock<[string, RealtimeChannelOptions?], RealtimeChannel>,
+        from: vi.fn() as Mock<[string], any>,
+        functions: {
+            invoke: vi.fn() as Mock<[string, FunctionInvokeOptions?], Promise<{ data: any; error: any }>>
         },
-        rpc: vi.fn(), // Mock rpc
-    } as unknown as SupabaseClient; // Use type assertion
+        rpc: vi.fn() as Mock<[string, any?, any?], Promise<PostgrestResponse<any>>>,
+        removeChannel: vi.fn() as Mock<[RealtimeChannel], Promise<'ok' | 'timed out' | 'error'>>,
+        removeAllChannels: vi.fn() as Mock<[], Promise<('ok' | 'timed out' | 'error')[]>>,
+        storage: {
+            from: vi.fn().mockReturnThis(),
+        } as any,
+    } as unknown as SupabaseClient;
+
+    // Default implementations after creation to allow for proper Mock typing
+    (mockClient.auth.onAuthStateChange as Mock).mockReturnValue({ data: { subscription: mockSubscription } });
+    (mockClient.auth.getUser as Mock).mockResolvedValue({ data: { user: null }, error: null });
+    (mockClient.auth.getSession as Mock).mockResolvedValue({ data: { session: null }, error: null });
+    (mockClient.auth.signInWithPassword as Mock).mockResolvedValue({ data: {} as any, error: null });
+    (mockClient.auth.signUp as Mock).mockResolvedValue({ data: {} as any, error: null });
+    (mockClient.auth.signOut as Mock).mockResolvedValue({ error: null });
+    (mockClient.auth.signInWithOAuth as Mock).mockResolvedValue({ data: {} as any, error: null });
 
     return mockClient;
 };
@@ -62,19 +77,21 @@ export const createMockSupabaseClient = (): SupabaseClient => {
  */
 export const resetMockSupabaseClient = (mockClient: SupabaseClient) => {
     if (mockClient.auth) {
-        mockClient.auth.onAuthStateChange.mockClear(); // Clear calls, keep implementation
-        // Reset specific return values if needed (or let tests set them)
-        mockClient.auth.getUser.mockResolvedValue({ data: { user: null }, error: null });
-        mockClient.auth.getSession.mockResolvedValue({ data: { session: null }, error: null });
-        mockClient.auth.signInWithPassword.mockClear();
-        mockClient.auth.signUp.mockClear();
-        mockClient.auth.signOut.mockClear();
-        mockClient.auth.signInWithOAuth.mockClear();
+        (mockClient.auth.onAuthStateChange as Mock).mockClear();
+        (mockClient.auth.getUser as Mock).mockClear().mockResolvedValue({ data: { user: null }, error: null });
+        (mockClient.auth.getSession as Mock).mockClear().mockResolvedValue({ data: { session: null }, error: null });
+        (mockClient.auth.signInWithPassword as Mock).mockClear();
+        (mockClient.auth.signUp as Mock).mockClear();
+        (mockClient.auth.signOut as Mock).mockClear();
+        (mockClient.auth.signInWithOAuth as Mock).mockClear();
     }
-    if (mockClient.channel) mockClient.channel.mockClear();
-    if (mockClient.from) mockClient.from.mockClear();
-    if (mockClient.functions?.invoke) mockClient.functions.invoke.mockClear();
-    if (mockClient.rpc) mockClient.rpc.mockClear();
+    if (mockClient.channel) (mockClient.channel as Mock).mockClear();
+    if (mockClient.from) (mockClient.from as Mock).mockClear();
+    if (mockClient.functions?.invoke) (mockClient.functions.invoke as Mock).mockClear();
+    if (mockClient.rpc) (mockClient.rpc as Mock).mockClear();
+    if (mockClient.removeChannel) (mockClient.removeChannel as Mock).mockClear();
+    if (mockClient.removeAllChannels) (mockClient.removeAllChannels as Mock).mockClear();
+    if (mockClient.storage?.from) (mockClient.storage.from as Mock).mockClear();
 };
 
 // Optional: Export a default instance

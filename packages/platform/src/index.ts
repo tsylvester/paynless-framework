@@ -1,72 +1,103 @@
-import { PlatformCapabilities } from '@paynless/types';
+import {
+  PlatformCapabilities,
+  OperatingSystem,
+  CapabilityUnavailable,
+  FileSystemCapabilities
+} from '@paynless/types';
+import { isTauri } from '@tauri-apps/api/core'; // Use official Tauri detector
 
-// Helper function for detection
-const detectPlatform = (): 'web' | 'tauri' | 'react-native' | 'unknown' => {
-  // Check for Tauri specific global
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  if (typeof (window as any)?.__TAURI__ !== 'undefined') {
+// --- Re-export Context and Hook ---
+export { PlatformProvider, usePlatform } from './Context';
+// -----------------------------------
+
+// Platform Detection (using Tauri API)
+const detectPlatform = (): PlatformCapabilities['platform'] => {
+  if (isTauri()) {
     return 'tauri';
   }
-  // Placeholder for React Native detection (e.g., check navigator.product)
+  // Placeholder for React Native detection
   // if (typeof navigator !== 'undefined' && navigator.product === 'ReactNative') {
   //   return 'react-native';
   // }
-  // Default to web if in a browser-like environment
   if (typeof window !== 'undefined') {
     return 'web';
   }
   return 'unknown';
 };
 
-// Optional OS detection (can be expanded)
-// For Tauri, you might use the os module: import { type } from '@tauri-apps/api/os';
-// For web/RN, navigator.platform might give hints but is less reliable.
-const detectOs = (): PlatformCapabilities['os'] => {
-  // Implementation depends on platform and desired granularity
-  // Example (very basic web detection):
-  // if (typeof navigator !== 'undefined') {
-  //   if (/Win/.test(navigator.platform)) return 'windows';
-  //   if (/Mac/.test(navigator.platform)) return 'macos';
-  //   if (/Linux/.test(navigator.platform)) return 'linux';
-  // }
-  return undefined; // Or more specific detection using Tauri APIs if platform === 'tauri'
+// OS Detection (Synchronous for now, Tauri part can be enhanced later if needed async)
+const detectOs = (): OperatingSystem => {
+  // TODO: Enhance Tauri OS detection if needed (could involve async import)
+  // For now, basic web detection is sufficient for sync operation.
+  if (typeof navigator !== 'undefined') {
+      const platform = navigator.platform.toLowerCase();
+      if (platform.startsWith('win')) return 'windows';
+      if (platform.startsWith('mac')) return 'macos';
+      if (platform.startsWith('linux')) return 'linux';
+      // Basic mobile detection (less reliable)
+      if (/iphone|ipad|ipod/.test(platform)) return 'ios'; 
+      if (/android/.test(platform)) return 'android';
+  }
+  return 'unknown'; // Default required value
 };
 
+// Memoization Cache
 let memoizedCapabilities: PlatformCapabilities | null = null;
 
+// Default unavailable file system object conforming to the type
+const unavailableFileSystem: CapabilityUnavailable = {
+  isAvailable: false,
+} as const;
+
 /**
- * Determines the current platform capabilities.
+ * Determines the current platform capabilities by detecting the platform and OS,
+ * then dynamically loading and returning the appropriate capability providers.
  * Caches the result after the first call.
- * @returns An object describing the available platform features.
+ * @returns A Promise resolving to an object describing the available platform features.
  */
-export function getPlatformCapabilities(): PlatformCapabilities {
+export async function getPlatformCapabilities(): Promise<PlatformCapabilities> {
   if (memoizedCapabilities) {
     return memoizedCapabilities;
   }
 
-  const platform = detectPlatform();
-  const os = detectOs(); // Basic OS detection
+  const detectedPlatform = detectPlatform();
+  const detectedOs = detectOs(); // Sync OS detection for now
 
-  // Initialize with defaults (capabilities not available)
+  let fileSystemProvider: FileSystemCapabilities | CapabilityUnavailable = unavailableFileSystem;
+  
+  try {
+    if (detectedPlatform === 'web') {
+      // Dynamically import static web capabilities
+      const { getWebCapabilities } = await import('./web');
+      // Assuming getWebCapabilities now returns the correct FileSystem part
+      const webCaps = getWebCapabilities(); // Might need update if getWebCapabilities changes structure
+      fileSystemProvider = webCaps.fileSystem; // Assign the fileSystem part
+      console.log('Platform Service: Using Web capabilities.');
+
+    } else if (detectedPlatform === 'tauri') {
+      // Dynamically import Tauri capabilities factory
+      const { createTauriFileSystemCapabilities } = await import('./tauri');
+      // Call factory to get the capabilities object
+      const tauriCaps = createTauriFileSystemCapabilities(); // Factory returns FileSystemCapabilities
+      fileSystemProvider = tauriCaps;
+      console.log('Platform Service: Using Tauri capabilities.');
+      // Note: If OS detection needed Tauri APIs, it would be async and done here.
+    }
+  } catch (error) {
+    console.error('Platform Service: Error loading platform providers:', error);
+    // Keep fileSystemProvider as unavailableFileSystem on error
+  }
+
+  // Assemble the final capabilities object
   memoizedCapabilities = {
-    platform,
-    os,
-    fileSystem: { isAvailable: false },
-    // Add other capabilities here with { isAvailable: false }
+    platform: detectedPlatform,
+    os: detectedOs,
+    fileSystem: fileSystemProvider,
+    // Initialize other future capability groups here as unavailable, e.g.:
+    // notifications: { isAvailable: false }, 
   };
 
-  // --- Capability Provider Integration (will happen in later steps) ---
-  // if (platform === 'tauri') {
-  //   // Import and assign Tauri providers
-  //   const { tauriFileSystemCapabilities } = await import('./tauriPlatformCapabilities');
-  //   memoizedCapabilities.fileSystem = tauriFileSystemCapabilities;
-  // } else if (platform === 'web') {
-  //   // Import and assign Web providers
-  //   const { webFileSystemCapabilities } = await import('./webPlatformCapabilities');
-  //   memoizedCapabilities.fileSystem = webFileSystemCapabilities;
-  // }
-
-  console.log('Platform Capabilities Initialized:', memoizedCapabilities);
+  console.log('Platform Service: Capabilities Initialized:', memoizedCapabilities);
   return memoizedCapabilities;
 }
 
@@ -75,4 +106,8 @@ export function getPlatformCapabilities(): PlatformCapabilities {
  */
 export function resetMemoizedCapabilities(): void {
   memoizedCapabilities = null;
-} 
+}
+
+// Re-export event emitter and types
+export { platformEventEmitter } from './events';
+export type { PlatformEvents, FileDropPayload } from './events';

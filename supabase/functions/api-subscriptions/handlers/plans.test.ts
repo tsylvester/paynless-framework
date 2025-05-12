@@ -4,7 +4,7 @@ import { spy, assertSpyCalls, type Spy } from "jsr:@std/testing/mock";
 import { SupabaseClient } from "npm:@supabase/supabase-js";
 import { getSubscriptionPlans } from "./plans.ts";
 import { HandlerError } from "./current.ts";
-import { createMockSupabaseClient, type MockSupabaseDataConfig } from "../../_shared/test-utils.ts";
+import { createMockSupabaseClient, type MockSupabaseDataConfig } from "../../_shared/supabase.mock.ts";
 
 // --- Mocks & Spies ---
 let mockSupabaseClient: SupabaseClient;

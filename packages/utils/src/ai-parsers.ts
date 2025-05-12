@@ -1,5 +1,25 @@
 import { logger } from './logger';
 
+// Minimal interfaces for expected response shapes
+interface OpenAIResponseShape {
+  choices?: Array<{
+    message?: {
+      content?: string | null;
+    };
+  }>;
+}
+
+interface AnthropicContentBlock {
+    type: string;
+    text?: string;
+    // Anthropic might have other block types, ignore them here
+    [key: string]: unknown; // Allow other properties but treat as unknown
+}
+
+interface AnthropicResponseShape {
+  content?: AnthropicContentBlock[];
+}
+
 /**
  * Parses the assistant's message content from raw API response data.
  * 
@@ -7,7 +27,7 @@ import { logger } from './logger';
  * @param apiIdentifier The identifier string for the AI provider (e.g., 'openai-gpt-4o', 'anthropic-claude-3-sonnet').
  * @returns The extracted assistant message content as a string, or null if parsing fails.
  */
-export function parseAssistantContent(responseData: any, apiIdentifier: string): string | null {
+export function parseAssistantContent(responseData: unknown, apiIdentifier: string): string | null {
     try {
         if (!responseData) {
             logger.warn('[parseAssistantContent] Response data is null or undefined.');
@@ -15,7 +35,8 @@ export function parseAssistantContent(responseData: any, apiIdentifier: string):
         }
 
         if (apiIdentifier?.startsWith('openai-')) {
-            const content = responseData?.choices?.[0]?.message?.content;
+            const openAIResponse = responseData as OpenAIResponseShape;
+            const content = openAIResponse?.choices?.[0]?.message?.content;
             if (typeof content === 'string') {
                 return content.trim();
             } else {
@@ -23,8 +44,8 @@ export function parseAssistantContent(responseData: any, apiIdentifier: string):
                  return null;
             }
         } else if (apiIdentifier?.startsWith('anthropic-')) {
-             // Anthropic often returns content in a list, find the first text block
-            const textContent = responseData?.content?.find((block: any) => block.type === 'text')?.text;
+             const anthropicResponse = responseData as AnthropicResponseShape;
+             const textContent = anthropicResponse?.content?.find(block => block.type === 'text')?.text;
              if (typeof textContent === 'string') {
                  return textContent.trim();
              } else {
@@ -35,8 +56,9 @@ export function parseAssistantContent(responseData: any, apiIdentifier: string):
              logger.warn('[parseAssistantContent] Unknown or unsupported apiIdentifier:', { apiIdentifier });
              return null;
         }
-    } catch (error: any) {
-         logger.error('[parseAssistantContent] Error during parsing:', { error: error?.message, apiIdentifier, responseData });
+    } catch (error: unknown) {
+         const errorMessage = error instanceof Error ? error.message : String(error);
+         logger.error('[parseAssistantContent] Error during parsing:', { error: errorMessage, apiIdentifier, responseData });
          return null;
     }
 }

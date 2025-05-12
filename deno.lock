@@ -4,10 +4,13 @@
     "jsr:@std/assert@*": "1.0.12",
     "jsr:@std/assert@0.225.3": "0.225.3",
     "jsr:@std/assert@1": "1.0.12",
+    "jsr:@std/assert@1.0.0-rc.1": "1.0.0-rc.1",
     "jsr:@std/assert@^1.0.12": "1.0.12",
+    "jsr:@std/dotenv@*": "0.225.3",
     "jsr:@std/internal@1": "1.0.6",
     "jsr:@std/internal@^1.0.6": "1.0.6",
     "jsr:@std/testing@*": "1.0.11",
+    "jsr:@std/testing@0.225.1": "0.225.1",
     "npm:@nx/eslint@20.7.1": "20.7.1_eslint@9.24.0__jiti@2.4.2_nx@20.7.1_jiti@2.4.2",
     "npm:@nx/vite@20.7.1": "20.7.1_vite@6.2.5__jiti@2.4.2_vitest@1.6.1__@vitest+ui@1.6.1___vitest@1.6.1___jsdom@26.0.0__jsdom@26.0.0_nx@20.7.1_typescript@5.8.3_jiti@2.4.2_@vitest+ui@1.6.1__vitest@1.6.1___@vitest+ui@1.6.1___jsdom@26.0.0__jsdom@26.0.0_jsdom@26.0.0",
     "npm:@nx/web@20.7.1": "20.7.1_nx@20.7.1",
@@ -32,14 +35,29 @@
         "jsr:@std/internal@1"
       ]
     },
+    "@std/assert@1.0.0-rc.1": {
+      "integrity": "f2f1f1d5b5eab3a2165744996c42b3c501688d887a015067e12267fe5e6fb804",
+      "dependencies": [
+        "jsr:@std/internal@1"
+      ]
+    },
     "@std/assert@1.0.12": {
       "integrity": "08009f0926dda9cbd8bef3a35d3b6a4b964b0ab5c3e140a4e0351fbf34af5b9a",
       "dependencies": [
         "jsr:@std/internal@^1.0.6"
       ]
     },
+    "@std/dotenv@0.225.3": {
+      "integrity": "a95e5b812c27b0854c52acbae215856d9cce9d4bbf774d938c51d212711e8d4a"
+    },
     "@std/internal@1.0.6": {
       "integrity": "9533b128f230f73bd209408bb07a4b12f8d4255ab2a4d22a1fd6d87304aca9a4"
+    },
+    "@std/testing@0.225.1": {
+      "integrity": "1a11119553fc33410abe8566731ae513c53e73db040cedbf901858fbd7587819",
+      "dependencies": [
+        "jsr:@std/assert@1.0.0-rc.1"
+      ]
     },
     "@std/testing@1.0.11": {
       "integrity": "12b3db12d34f0f385a26248933bde766c0f8c5ad8b6ab34d4d38f528ab852f48",
@@ -4024,6 +4042,7 @@
     }
   },
   "redirects": {
+    "https://deno.land/x/deno/runtime/mod.ts": "https://deno.land/x/deno@v2.3.1/runtime/mod.ts",
     "https://esm.sh/@supabase/node-fetch@^2.6.14?target=denonext": "https://esm.sh/@supabase/node-fetch@2.6.15?target=denonext",
     "https://esm.sh/@supabase/supabase-js@2": "https://esm.sh/@supabase/supabase-js@2.49.4",
     "https://esm.sh/@types/ws@~8.5.14/index.d.mts": "https://esm.sh/@types/ws@8.5.14/index.d.mts",
@@ -4082,14 +4101,19 @@
     "https://deno.land/std@0.224.0/assert/mod.ts": "48b8cb8a619ea0b7958ad7ee9376500fe902284bb36f0e32c598c3dc34cbd6f3",
     "https://deno.land/std@0.224.0/assert/unimplemented.ts": "8c55a5793e9147b4f1ef68cd66496b7d5ba7a9e7ca30c6da070c1a58da723d73",
     "https://deno.land/std@0.224.0/assert/unreachable.ts": "5ae3dbf63ef988615b93eb08d395dda771c96546565f9e521ed86f6510c29e19",
+    "https://deno.land/std@0.224.0/async/delay.ts": "f90dd685b97c2f142b8069082993e437b1602b8e2561134827eeb7c12b95c499",
     "https://deno.land/std@0.224.0/fmt/colors.ts": "508563c0659dd7198ba4bbf87e97f654af3c34eb56ba790260f252ad8012e1c5",
+    "https://deno.land/std@0.224.0/http/server.ts": "f9313804bf6467a1704f45f76cb6cd0a3396a3b31c316035e6a4c2035d1ea514",
     "https://deno.land/std@0.224.0/internal/diff.ts": "6234a4b493ebe65dc67a18a0eb97ef683626a1166a1906232ce186ae9f65f4e6",
     "https://deno.land/std@0.224.0/internal/format.ts": "0a98ee226fd3d43450245b1844b47003419d34d210fa989900861c79820d21c2",
     "https://deno.land/std@0.224.0/internal/mod.ts": "534125398c8e7426183e12dc255bb635d94e06d0f93c60a297723abe69d3b22e",
+    "https://deno.land/std@0.224.0/testing/mock.ts": "a963181c2860b6ba3eb60e08b62c164d33cf5da7cd445893499b2efda20074db",
     "https://esm.sh/@supabase/auth-js@2.64.2/denonext/auth-js.mjs": "ae42eb4c7ac9fe6bfcd0e5c242f353877cf148759d1502ee653f21b2028be5e1",
     "https://esm.sh/@supabase/auth-js@2.69.1/denonext/auth-js.mjs": "fb31c3925437753f5a8a90fc57ea24dc5b68b2b295e696123b1b6a635b7b3ada",
     "https://esm.sh/@supabase/functions-js@2.3.1/denonext/functions-js.mjs": "e8296206805e0997328ee586fad70f86e9ab63dd36f511a85ba8c7f8c903c508",
     "https://esm.sh/@supabase/functions-js@2.4.4/denonext/functions-js.mjs": "7adeb257410ef3c4a8a1eb9b4ff416c0075d1c32860ca04913c8a9dace1de6a6",
+    "https://esm.sh/@supabase/gotrue-js@2.60.0": "7e5e5dcbfc6b60d0db3ccd329958859b122ed7cfd8c7de71421b0d4bf832bb37",
+    "https://esm.sh/@supabase/gotrue-js@2.60.0/denonext/gotrue-js.mjs": "cc7e95134547e23bc5b8d044e91a872c12f2f61e4257d19c00f7950c889dbdce",
     "https://esm.sh/@supabase/node-fetch@2.6.15/denonext/node-fetch.mjs": "0bae9052231f4f6dbccc7234d05ea96923dbf967be12f402764580b6bf9f713d",
     "https://esm.sh/@supabase/node-fetch@2.6.15?target=denonext": "4d28c4ad97328403184353f68434f2b6973971507919e9150297413664919cf3",
     "https://esm.sh/@supabase/postgrest-js@1.15.2/denonext/postgrest-js.mjs": "46a1fa1d82c4c082de350bb6b606b2f216e131b8e1f7d2c57a046e2ade2bc059",
@@ -4123,9 +4147,12 @@
         "npm:@nx/eslint@20.7.1",
         "npm:@nx/vite@20.7.1",
         "npm:@nx/web@20.7.1",
+        "npm:@supabase/supabase-js@^2.49.4",
         "npm:@testing-library/react@^16.3.0",
         "npm:@vitest/ui@^1.3.1",
         "npm:copyfiles@^2.4.1",
+        "npm:dotenv@^16.5.0",
+        "npm:globals@^15.8.0",
         "npm:jiti@2.4.2",
         "npm:jsdom@26",
         "npm:msw@^2.7.3",

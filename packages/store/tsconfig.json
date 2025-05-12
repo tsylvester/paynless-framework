@@ -5,6 +5,7 @@
     "rootDir": "./src",
     "declarationDir": "./dist",
     "lib": ["ESNext", "DOM"],
+    "types": ["vite/client"],
     "composite": true
   },
   "include": ["src/**/*"],
@@ -17,6 +18,7 @@
   "references": [
     { "path": "../types" },
     { "path": "../utils" },
-    { "path": "../api" }
+    { "path": "../api" },
+    { "path": "../analytics" }
   ]
 } 

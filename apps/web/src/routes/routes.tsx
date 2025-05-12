@@ -17,6 +17,11 @@ import { OrganizationFocusedViewPage } from '../pages/OrganizationFocusedViewPag
 //import { VerifyEmail } from '../pages/VerifyEmail';
 import { HomePage } from '../pages/Home';
 
+// Import the new wrapper and the demo component
+//import { TauriOnlyWrapper } from '../components/routes/TauriOnlyWrapper';
+import { WalletBackupDemoCard } from '../components/demos/WalletBackupDemo/WalletBackupDemoCard';
+import { ConfigFileManager } from '@/components/features/ConfigFileManager';
+
 const routes: RouteObject[] = [
   {
     path: '/',
@@ -119,6 +124,34 @@ const routes: RouteObject[] = [
           </ProtectedRoute>
         ),
       },
+      // --- Tauri Only Routes (Dev/Debug) --- 
+      // TEMPORARILY COMMENT OUT WRAPPER FOR TESTING REDIRECT
+      // {
+      //   element: <TauriOnlyWrapper />, 
+      //   children: [
+      //     // ... other routes inside ...
+      //   ]
+      // },
+
+      // --- Temporarily place route outside wrapper --- 
+      {
+        path: 'dev/wallet', 
+        element: (
+          <ProtectedRoute>
+             <WalletBackupDemoCard />
+          </ProtectedRoute>
+        )
+      },
+      {
+        path: 'dev/config', 
+        element: (
+          <ProtectedRoute>
+             <ConfigFileManager />
+          </ProtectedRoute>
+        )
+      },
+      // --- End Temporary Placement --- 
+
       { path: '*', element: <Navigate to="/" replace /> },
     ],
   },

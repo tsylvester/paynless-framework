@@ -6,7 +6,7 @@ import Stripe from "npm:stripe";
 import { createCheckoutSession } from "./checkout.ts";
 import { TablesInsert } from "../../types_db.ts";
 import { HandlerError } from "./current.ts";
-import { createMockSupabaseClient, type MockSupabaseDataConfig } from "../../_shared/test-utils.ts";
+import { createMockSupabaseClient, type MockSupabaseDataConfig } from "../../_shared/supabase.mock.ts";
 
 // Declare mocks/spies with let
 let mockSupabaseClient: SupabaseClient;
