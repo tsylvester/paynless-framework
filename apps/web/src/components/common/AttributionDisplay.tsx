@@ -1,7 +1,7 @@
 import React from 'react';
-import { useAuthStore, useAiStore } from '@paynless/store';
+import { useAuthStore, useAiStore, useOrganizationStore } from '@paynless/store';
 import { formatDistanceToNow, format, parseISO } from 'date-fns';
-import type { UserProfile, User } from '@paynless/types';
+import type { UserProfile, User, OrganizationMemberWithProfile } from '@paynless/types';
 
 export interface AttributionDisplayProps {
   userId: string | null;
@@ -20,10 +20,17 @@ export const AttributionDisplay: React.FC<AttributionDisplayProps> = ({
   userId,
   role,
   timestamp,
+  organizationId,
   modelId,
 }) => {
   const { currentUser, profile: currentUserProfile } = useAuthStore(
     (state) => ({ currentUser: state.user as User | null, profile: state.profile as UserProfile | null }),
+  );
+  const { currentOrganizationId, currentOrganizationMembers } = useOrganizationStore(
+    (state) => ({
+      currentOrganizationId: state.currentOrganizationId,
+      currentOrganizationMembers: state.currentOrganizationMembers as OrganizationMemberWithProfile[],
+    }),
   );
   const { availableProviders, chatParticipantsProfiles } = useAiStore(
     (state) => ({
@@ -33,7 +40,7 @@ export const AttributionDisplay: React.FC<AttributionDisplayProps> = ({
   );
 
   let displayName = 'Unknown';
-  let fullIdentifier = userId ? `User ID: ${userId}` : 'Assistant';
+  let fullIdentifier = userId ? userId : 'Assistant';
 
   if (role === 'assistant') {
     // Get the actual model information from the store
@@ -43,10 +50,6 @@ export const AttributionDisplay: React.FC<AttributionDisplayProps> = ({
   } else if (userId) {
     // Determine if the message user is the current authenticated user
     const isCurrentUserMessage = currentUser?.id === userId;
-
-    // Initialize with a generic default
-    displayName = 'User'; 
-    fullIdentifier = `User ID: ${truncateId(userId)}`; // Keep fullIdentifier potentially more specific for title
 
     if (isCurrentUserMessage) {
       let tempDisplayName = 'You'; // Default before adding (You)
@@ -63,21 +66,55 @@ export const AttributionDisplay: React.FC<AttributionDisplayProps> = ({
       fullIdentifier = `${tempDisplayName} (ID: ${userId})`; // Set fullIdentifier BEFORE appending (You)
       displayName = `${tempDisplayName} (You)`;
     } else {
-      // For other users, try to get from chatParticipantsProfiles first
-      const participantProfile = chatParticipantsProfiles[userId];
-      if (participantProfile) {
-        if (participantProfile.first_name && participantProfile.last_name) {
-          displayName = `${participantProfile.first_name} ${participantProfile.last_name}`;
-        } else if (participantProfile.first_name) {
-          displayName = participantProfile.first_name;
-        } else if (participantProfile.id) { // Fallback to ID from profile if name is missing
-          displayName = truncateId(participantProfile.id);
-        } // Else, displayName remains 'User' as initialized before this block
-        fullIdentifier = `${displayName} (Profile ID: ${participantProfile.id})`;
+      // Check if we're in an organization context and the user is a member
+      const isInOrgContext = organizationId && currentOrganizationId === organizationId;
+      const orgMember = isInOrgContext ? currentOrganizationMembers?.find(m => m.user_id === userId) : null;
+      
+      if (!isInOrgContext) {
+        // If organization IDs don't match, use truncated ID
+        displayName = truncateId(userId);
+        fullIdentifier = userId;
+      } else if (orgMember && orgMember.user_profiles) {
+        const profile = orgMember.user_profiles;
+        if (profile.first_name && profile.last_name) {
+          displayName = `${profile.first_name} ${profile.last_name}`;
+          fullIdentifier = `${profile.first_name} ${profile.last_name} (ID: ${userId})`;
+        } else if (profile.first_name) {
+          displayName = profile.first_name;
+          fullIdentifier = `${profile.first_name} (ID: ${userId})`;
+        } else {
+          displayName = truncateId(userId);
+          fullIdentifier = userId;
+        }
+      } else if (orgMember && !orgMember.user_profiles) {
+        // If user_profiles is null/undefined, use truncated ID
+        displayName = truncateId(userId);
+        fullIdentifier = userId;
+      } else if (!orgMember) {
+        // If member not found in org, use truncated ID
+        displayName = truncateId(userId);
+        fullIdentifier = userId;
       } else {
-        // If participantProfile is not found, or for non-current users with no profile in chatParticipants
-        displayName = truncateId(userId); // Default to truncated ID for other users not in participants list
-        fullIdentifier = `User ID: ${userId}`; 
+        // Try chat participants profiles as fallback
+        const participantProfile = chatParticipantsProfiles[userId];
+        if (participantProfile) {
+          if (participantProfile.first_name && participantProfile.last_name) {
+            displayName = `${participantProfile.first_name} ${participantProfile.last_name}`;
+            fullIdentifier = `${participantProfile.first_name} ${participantProfile.last_name} (ID: ${userId})`;
+          } else if (participantProfile.first_name) {
+            displayName = participantProfile.first_name;
+            fullIdentifier = `${participantProfile.first_name} (ID: ${userId})`;
+          } else {
+            const truncatedId = truncateId(userId);
+            displayName = truncatedId;
+            fullIdentifier = truncatedId;
+          }
+        } else {
+          // Final fallback to truncated ID
+          const truncatedId = truncateId(userId);
+          displayName = truncatedId;
+          fullIdentifier = truncatedId;
+        }
       }
     }
   }
