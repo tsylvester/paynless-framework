@@ -722,6 +722,12 @@ To enable and support a "Dummy Echo v1" provider (identified by the `provider` s
 
 ---
 
+Bug fixes: 
+*   [ ] Org members see each others details in chats
+*   [✅] Chat context resets when sending new message to existing chat started by someone else 
+*   [✅] Provider resets when context resets instead of taking provider from selector 
+*   [✅] Message input gets wiped when changing provider 
+
 **Phase 3 Complete Checkpoint:**
 *   [ ] All Phase 3 tests (UI unit and integration tests) passing.
 *   [ ] Core UI components (Context Selector, Chat History, Chat Interface, Message Bubbles, Input) are implemented/updated for org context and new features.

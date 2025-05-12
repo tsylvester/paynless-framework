@@ -65,6 +65,7 @@ export const defaultMockMembers: OrganizationMemberWithProfile[] = [ // Use Orga
              created_at: new Date().toISOString(),
              role: 'user',
              last_selected_org_id: null,
+             chat_context: null,
           }
     },
     { 
@@ -82,6 +83,7 @@ export const defaultMockMembers: OrganizationMemberWithProfile[] = [ // Use Orga
              created_at: new Date().toISOString(),
              role: 'user',
              last_selected_org_id: null,
+             chat_context: null,
           }
     },
 ]

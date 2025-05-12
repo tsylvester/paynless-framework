@@ -3,7 +3,7 @@ import { router } from './routes/routes'
 import { RouterProvider } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { useEffect /*useRef */ } from 'react'
-import { useAuthStore } from '@paynless/store'
+import { useAuthStore, useAiStore } from '@paynless/store'
 import { ThemeProvider } from './context/theme.context'
 import { logger } from '@paynless/utils'
 import { useSubscriptionStore } from '@paynless/store'
@@ -39,8 +39,33 @@ export function NavigateInjector() {
 
 // NEW: Internal component to handle content rendering within PlatformProvider
 function AppContent() {
-  const isAuthLoading = useAuthStore((state) => state.isLoading)
+  const profile = useAuthStore((state) => state.profile);
+  const isAuthLoading = useAuthStore((state) => state.isLoading);
+  
+  const {
+    isChatContextHydrated,
+    hydrateChatContext,
+    resetChatContextToDefaults
+  } = useAiStore((state) => ({
+    isChatContextHydrated: state.isChatContextHydrated,
+    hydrateChatContext: state.hydrateChatContext,
+    resetChatContextToDefaults: state.resetChatContextToDefaults,
+  }));
+
   const { isLoadingCapabilities, capabilityError } = usePlatform();
+
+  useEffect(() => {
+    if (profile && !isChatContextHydrated) {
+      logger.info('[AppContent] Profile available and AI chat context not hydrated. Hydrating...');
+      // Type assertion as UserProfile from authStore has chat_context as Json | null
+      // and hydrateChatContext expects ChatContextPreferences | null.
+      // This assumes the structure within profile.chat_context matches ChatContextPreferences.
+      hydrateChatContext(profile.chat_context as ChatContextPreferences | null);
+    } else if (!profile && isChatContextHydrated) {
+      logger.info('[AppContent] Profile removed (logout) and AI chat context was hydrated. Resetting AI context...');
+      resetChatContextToDefaults();
+    }
+  }, [profile, isChatContextHydrated, hydrateChatContext, resetChatContextToDefaults]);
 
   if (isLoadingCapabilities) {
     return (

@@ -461,6 +461,7 @@ export type Database = {
       }
       user_profiles: {
         Row: {
+          chat_context: Json | null
           created_at: string
           first_name: string | null
           id: string
@@ -470,6 +471,7 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          chat_context?: Json | null
           created_at?: string
           first_name?: string | null
           id: string
@@ -479,6 +481,7 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          chat_context?: Json | null
           created_at?: string
           first_name?: string | null
           id?: string

@@ -1,5 +1,5 @@
 import { useEffect, useMemo } from 'react';
-import { useAiStore, useAuthStore, useOrganizationStore } from '@paynless/store';
+import { useAiStore, useOrganizationStore } from '@paynless/store';
 import { logger } from '@paynless/utils';
 import { analytics } from '@paynless/analytics';
 import { ModelSelector } from '../components/ai/ModelSelector';
@@ -28,7 +28,6 @@ export default function AiChatPage() {
     checkAndReplayPendingChatAction,
     chatsByContext, 
     isDetailsLoading, 
-    selectedProviderId,
     selectedPromptId,
     setSelectedPrompt,
     newChatContext,
@@ -57,6 +56,14 @@ export default function AiChatPage() {
     userOrganizations: state.userOrganizations,
   }));
 
+  console.log("AiChatPage rendering/re-rendering. isDetailsLoading:", isDetailsLoading);
+
+  useEffect(() => {
+    console.log("AiChatPage MOUNTED");
+    return () => {
+      console.log("AiChatPage UNMOUNTING");
+    };
+  }, []);
 
   // --- Selector for current chat details (conceptual) ---
   const currentChatDetails: Chat | null | undefined = useMemo(() => {
@@ -77,19 +84,19 @@ export default function AiChatPage() {
 
   // Load AI config (public)
   useEffect(() => {
-    logger.info('[AiChatPage] Config effect running.');
-    loadAiConfig();
+    console.log('[AiChatPage] Config effect running - attempting to call loadAiConfig');
+    if (loadAiConfig) loadAiConfig(); else console.error('[AiChatPage] loadAiConfig is undefined!');
   }, [loadAiConfig]);
 
   // Check for pending chat action on mount
   useEffect(() => {
-    logger.info('[AiChatPage] Checking for pending chat action on mount...');
+    console.log('[AiChatPage] Pending action effect running - attempting to call checkAndReplayPendingChatAction');
     if (checkAndReplayPendingChatAction) { 
       checkAndReplayPendingChatAction();
     } else {
-      logger.warn('[AiChatPage] checkAndReplayPendingChatAction function not found in aiStore yet.')
+      console.warn('[AiChatPage] checkAndReplayPendingChatAction function not found in aiStore yet.')
     }
-  }, [checkAndReplayPendingChatAction]);
+  }, [checkAndReplayPendingChatAction]); 
 
   // Effect to handle selectedPromptId based on loaded chat or initial default.
   // Default provider selection is handled by loadAiConfig and startNewChat in the store.
@@ -118,10 +125,10 @@ export default function AiChatPage() {
     const chatIdToLoad = localStorage.getItem('loadChatIdOnRedirect');
     if (chatIdToLoad) {
       localStorage.removeItem('loadChatIdOnRedirect');
-      logger.info(`[AiChatPage] Found chatId ${chatIdToLoad} in localStorage, loading details...`);
-      loadChatDetails(chatIdToLoad);
+      console.log(`[AiChatPage] Found chatId ${chatIdToLoad} in localStorage, loading details...`);
+      if (loadChatDetails) loadChatDetails(chatIdToLoad); else console.warn('[AiChatPage] loadChatDetails is undefined during redirect load!');
     } 
-  }, [loadChatDetails]);
+  }, [loadChatDetails]); 
 
   // const handlePromptChange = (promptId: string | null) => { // Removed as PromptSelector handles its own state via store
   //   setSelectedPrompt(promptId); 
@@ -178,16 +185,22 @@ export default function AiChatPage() {
             
             <div className="flex-grow overflow-y-auto p-4"> 
               {isDetailsLoading ? (
-                <div className="space-y-4 p-4">
-                  <Skeleton className="h-16 w-3/4" />
-                  <Skeleton className="h-12 w-1/2 self-end ml-auto" />
-                  <Skeleton className="h-20 w-3/4" />
-                  <Skeleton className="h-10 w-2/5 self-end ml-auto" />
-                </div>
+                <>
+                  {/* Conditional console.log for debugging */}
+                  {typeof window !== 'undefined' && console.log("AiChatPage: Rendering SKELETONS because isDetailsLoading is true")}
+                  <div className="space-y-4 p-4">
+                    <Skeleton className="h-16 w-3/4" />
+                    <Skeleton className="h-12 w-1/2 self-end ml-auto" />
+                    <Skeleton className="h-20 w-3/4" />
+                    <Skeleton className="h-10 w-2/5 self-end ml-auto" />
+                  </div>
+                </>
               ) : (
-                <AiChatbox 
-                  key={`${currentChatId}-${selectedProviderId}-${selectedPromptId}-${newChatContext}`}
-                />
+                <>
+                  {/* Conditional console.log for debugging */}
+                  {typeof window !== 'undefined' && console.log("AiChatPage: Rendering AiChatbox because isDetailsLoading is false")}
+                  <AiChatbox />
+                </>
               )}
             </div>
           </div>

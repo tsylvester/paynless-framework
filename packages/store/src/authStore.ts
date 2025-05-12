@@ -212,64 +212,68 @@ export const useAuthStore = create<AuthStore>()((set, get) => ({
       updateProfile: async (
         profileData: UserProfileUpdate
       ): Promise<UserProfile | null> => {
-        set({ error: null })
-        const token = get().session?.access_token
-        const currentProfile = get().profile
+        set({ error: null }); // Clear previous errors immediately
+        const token = get().session?.access_token;
+        const currentProfile = get().profile;
 
         if (!token) {
           logger.error(
             'updateProfile: Cannot update profile, user not authenticated.'
-          )
-          set({ error: new Error('Authentication required'), isLoading: false }) 
-          return null
+          );
+          // Do not set isLoading: false here if it might be true from initial app load
+          set({ error: new Error('Authentication required') }); 
+          return null;
         }
 
-        // Then check if profile is loaded
         if (!currentProfile) {
           logger.error(
             'updateProfile: Cannot update profile, no current profile loaded.'
-          )
-          set({
-            error: new Error('Profile not loaded'),
-            isLoading: false 
-          })
-          return null
+          );
+          set({ error: new Error('Profile not loaded') });
+          return null;
         }
 
-        // Set loading true only if proceeding to API call
-        set({ isLoading: true });
+        const keys = Object.keys(profileData);
+        const isOnlyChatContextUpdate = keys.length === 1 && keys[0] === 'chat_context';
+        let wasLoadingSetByThisAction = false;
+
+        // Only set global isLoading for non-background updates
+        if (!isOnlyChatContextUpdate) {
+          set({ isLoading: true });
+          wasLoadingSetByThisAction = true;
+        }
+        
         try {
           const response = await api.put<UserProfile, UserProfileUpdate>(
             'me',
             profileData,
             { token }
-          )
+          );
 
           if (!response.error && response.data) {
-            const updatedProfile = response.data
+            const updatedProfile = response.data;
             set({
               profile: updatedProfile,
-              error: null,
-            })
-            logger.info('Profile updated successfully.')
-            return updatedProfile
+              error: null, // Clear error on success
+            });
+            logger.info('Profile updated successfully.', updatedProfile);
+            return updatedProfile;
           } else {
-            const errorMessage =
-              response.error?.message || 'Failed to update profile'
-            throw new Error(errorMessage)
+            const errorMsg = response.error?.message || 'Failed to update profile';
+            logger.error('updateProfile: Profile update failed.', { error: errorMsg });
+            set({ error: new Error(errorMsg) }); 
+            return null;
           }
         } catch (error) {
           const finalError =
-            error instanceof Error
-              ? error
-              : new Error('Failed to update profile (API error)')
-          logger.error('Update profile: Error during API call.', {
-            message: finalError.message,
-          })
-          set({ error: finalError })
-          return null
+            error instanceof Error ? error : new Error('Unknown error updating profile');
+          logger.error('updateProfile: Unexpected error.', { message: finalError.message });
+          set({ error: finalError }); 
+          return null;
         } finally {
+          if (wasLoadingSetByThisAction) {
             set({ isLoading: false });
+          }
         }
       },
 

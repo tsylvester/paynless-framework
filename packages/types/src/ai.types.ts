@@ -166,6 +166,8 @@ export interface AiState {
     selectedProviderId: AiProvider['id'] | null;
     selectedPromptId: SystemPrompt['id'] | null;
 
+    isChatContextHydrated?: boolean; // Added for tracking hydration status
+
     // Token Tracking (placeholders, to be detailed in STEP-2.1.8)
     // Example: chatTokenUsage?: { [chatId: string]: { promptTokens: number; completionTokens: number; totalTokens: number } };
     // Example: sessionTokenUsage?: { promptTokens: number; completionTokens: number; totalTokens: number };
@@ -193,10 +195,27 @@ export interface AiActions {
   setSelectedProvider: (providerId: AiProvider['id'] | null) => void;
   setSelectedPrompt: (promptId: SystemPrompt['id'] | null) => void;
   setNewChatContext: (contextId: string | null) => void;
+
+  // Added for chat context hydration
+  setChatContextHydrated: (hydrated: boolean) => void;
+  hydrateChatContext: (chatContext: ChatContextPreferences | null) => void;
+  resetChatContextToDefaults: () => void;
 }
 
 // Combined type for the store
 export type AiStore = AiState & AiActions; 
+
+// +++ ADDED Chat Context Preferences Type +++
+/**
+ * Defines the structure for user-specific chat UI preferences,
+ * intended to be stored as JSON in user_profiles.chat_context.
+ */
+export interface ChatContextPreferences {
+  newChatContext?: string | null;      // Corresponds to ChatContextSelector
+  selectedProviderId?: string | null;  // Corresponds to ModelSelector (provider ID)
+  selectedPromptId?: string | null;    // Corresponds to PromptSelector
+}
+// +++ END Chat Context Preferences Type +++
 
 // --- API Client Interface ---
 
@@ -230,4 +249,5 @@ export const initialAiStateValues: AiState = {
   aiError: null,
   selectedProviderId: null,
   selectedPromptId: null,
+  isChatContextHydrated: false, // Default hydration status
 };

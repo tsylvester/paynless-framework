@@ -1,8 +1,6 @@
 'use client'
 
-'use client'
-
-import React, { useState, useRef, useEffect } from 'react'
+import React, { useState, useRef, useEffect, memo } from 'react'
 import { useAiStore, selectCurrentChatMessages } from '@paynless/store'
 import type { ChatMessage } from '@paynless/types'
 import { logger } from '@paynless/utils'
@@ -16,9 +14,11 @@ export interface AiChatboxProps {
   // isAnonymous: boolean; // Removed
 }
 
-export const AiChatbox: React.FC<AiChatboxProps> = () => {
+// Define the base component implementation
+const AiChatboxComponent: React.FC<AiChatboxProps> = () => {
   const [inputMessage, setInputMessage] = useState('')
   const scrollContainerRef = useRef<HTMLDivElement>(null); // Ref for the scrollable container
+  console.log("AiChatbox rendering/re-rendering. Input:", inputMessage); // Log current input too
 
   // Use the dedicated selector for currentChatMessages
   const currentChatMessages = useAiStore(selectCurrentChatMessages);
@@ -33,8 +33,6 @@ export const AiChatbox: React.FC<AiChatboxProps> = () => {
     rewindTargetMessageId,
     prepareRewind,
     cancelRewindPreparation,
-    selectedProviderId,
-    selectedPromptId,
   } = useAiStore(state => ({
     currentChatId: state.currentChatId,
     isLoadingAiResponse: state.isLoadingAiResponse,
@@ -44,8 +42,6 @@ export const AiChatbox: React.FC<AiChatboxProps> = () => {
     rewindTargetMessageId: state.rewindTargetMessageId,
     prepareRewind: state.prepareRewind,
     cancelRewindPreparation: state.cancelRewindPreparation,
-    selectedProviderId: state.selectedProviderId,
-    selectedPromptId: state.selectedPromptId,
   }));
 
   // Scroll to new messages
@@ -72,18 +68,24 @@ export const AiChatbox: React.FC<AiChatboxProps> = () => {
     }
   }, [currentChatMessages]);
 
+  useEffect(() => {
+    console.log("AiChatbox MOUNTED");
+    return () => {
+      console.log("AiChatbox UNMOUNTING");
+    };
+  }, []);
+
   const handleSend = async () => {
     if (!inputMessage.trim() || isLoadingAiResponse) return
 
     clearAiError() // Clear previous errors
     const messageToSend = inputMessage
-    // Decide whether to clear input immediately or after successful send, especially for rewind.
-    // For now, clearing immediately for simplicity, but this might change based on UX preference for rewind.
     setInputMessage('') // Re-enabled to clear input after send
 
-    // Store the current rewindTargetMessageId before calling sendMessage,
-    // as sendMessage might be asynchronous and the state could change.
     const wasRewinding = !!rewindTargetMessageId;
+
+    // Get latest provider and prompt IDs directly from the store when sending
+    const { selectedProviderId, selectedPromptId } = useAiStore.getState();
 
     logger.info(`[AiChatbox] handleSend called. Selected Provider ID: ${selectedProviderId}, Selected Prompt ID: ${selectedPromptId}`);
 
@@ -134,8 +136,7 @@ export const AiChatbox: React.FC<AiChatboxProps> = () => {
   }
 
   const handleCancelRewind = () => {
-    cancelRewindPreparation()
-    setInputMessage('')
+    cancelRewindPreparation();
   }
 
   return (
@@ -182,7 +183,6 @@ export const AiChatbox: React.FC<AiChatboxProps> = () => {
       {/* Input Area */}
       <div className="flex items-center space-x-2 border-t pt-4 border-[rgb(var(--color-border))]">
         <Textarea
-          key={rewindTargetMessageId ? 'rewind-input' : 'normal-input'}
           placeholder={rewindTargetMessageId ? "Edit your message..." : "Type your message here..."}
           value={inputMessage}
           onChange={handleInputChange}
@@ -218,4 +218,10 @@ export const AiChatbox: React.FC<AiChatboxProps> = () => {
       </div>
     </div>
   )
-}
+};
+
+// Memoize the component
+export const AiChatbox = memo(AiChatboxComponent);
+
+// Set the display name for easier debugging
+AiChatbox.displayName = 'AiChatbox';
