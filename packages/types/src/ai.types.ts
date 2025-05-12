@@ -2,6 +2,7 @@ import type { Database } from '@paynless/db-types';
 // If FetchOptions is meant to be the standard fetch options, use RequestInit
 // import type { FetchOptions } from '@supabase/supabase-js'; // This was problematic
 import type { ApiResponse } from './api.types';
+import type { UserProfile } from './auth.types'; // UserProfile import is correct here
 // --- Database Table Aliases ---
 
 /**
@@ -168,6 +169,8 @@ export interface AiState {
 
     isChatContextHydrated?: boolean; // Added for tracking hydration status
 
+    chatParticipantsProfiles: { [userId: string]: UserProfile }; 
+
     // Token Tracking (placeholders, to be detailed in STEP-2.1.8)
     // Example: chatTokenUsage?: { [chatId: string]: { promptTokens: number; completionTokens: number; totalTokens: number } };
     // Example: sessionTokenUsage?: { promptTokens: number; completionTokens: number; totalTokens: number };
@@ -249,5 +252,6 @@ export const initialAiStateValues: AiState = {
   aiError: null,
   selectedProviderId: null,
   selectedPromptId: null,
-  isChatContextHydrated: false, // Default hydration status
+  isChatContextHydrated: false, 
+  chatParticipantsProfiles: {}, 
 };

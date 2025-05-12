@@ -467,6 +467,7 @@ export type Database = {
           id: string
           last_name: string | null
           last_selected_org_id: string | null
+          profile_privacy_setting: string
           role: Database["public"]["Enums"]["user_role"]
           updated_at: string
         }
@@ -477,6 +478,7 @@ export type Database = {
           id: string
           last_name?: string | null
           last_selected_org_id?: string | null
+          profile_privacy_setting?: string
           role?: Database["public"]["Enums"]["user_role"]
           updated_at?: string
         }
@@ -487,6 +489,7 @@ export type Database = {
           id?: string
           last_name?: string | null
           last_selected_org_id?: string | null
+          profile_privacy_setting?: string
           role?: Database["public"]["Enums"]["user_role"]
           updated_at?: string
         }

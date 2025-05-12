@@ -66,6 +66,7 @@ export const defaultMockMembers: OrganizationMemberWithProfile[] = [ // Use Orga
              role: 'user',
              last_selected_org_id: null,
              chat_context: null,
+             profile_privacy_setting: 'private',
           }
     },
     { 
@@ -84,6 +85,7 @@ export const defaultMockMembers: OrganizationMemberWithProfile[] = [ // Use Orga
              role: 'user',
              last_selected_org_id: null,
              chat_context: null,
+             profile_privacy_setting: 'private',
           }
     },
 ]
@@ -126,6 +128,7 @@ export const resetOrganizationMocks = () => {
   mockCancelInvite.mockResolvedValue({ status: 200, data: undefined, error: undefined }); // Default success for cancel invite
   mockInviteUserByEmail.mockResolvedValue({ status: 201, data: { id: 'new-invite-123' }, error: undefined }); // Default success for invite by email
   mockGetPendingItems.mockResolvedValue({ status: 200, data: { invites: [], requests: [] }, error: undefined }); // Default success for get pending (empty lists)
+
 };
 
 // Initialize with default mocks

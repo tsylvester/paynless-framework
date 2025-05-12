@@ -13,7 +13,8 @@ import {
     AiStore, 
     initialAiStateValues,     // <-- Add this import
     UserProfileUpdate, // Added for typing the updateProfile payload
-    ChatContextPreferences // Added for typing the chat_context object
+    ChatContextPreferences,
+    UserProfile // Import UserProfile from @paynless/types
 } from '@paynless/types';
 
 // Re-add the runtime constant hack to ensure build passes
@@ -73,6 +74,59 @@ export const useAiStore = create<AiStore>()(
                         }
                     } catch (error) {
                         logger.error('[aiStore._updateChatContextInProfile] Error during chat_context update:', { error });
+                    }
+                };
+
+                const _fetchAndStoreUserProfiles = async (userIds: string[]) => {
+                    const currentUser = useAuthStore.getState().user;
+                    const existingProfiles = get().chatParticipantsProfiles;
+                    
+                    const idsToFetch = userIds.filter(id => 
+                        id !== currentUser?.id && 
+                        !existingProfiles[id]
+                    );
+
+                    if (idsToFetch.length === 0) {
+                        logger.debug('[aiStore._fetchAndStoreUserProfiles] No new user profiles to fetch.', { requestedUserIds: userIds, currentUserId: currentUser?.id, existingProfileCount: Object.keys(existingProfiles).length });
+                        return;
+                    }
+
+                    logger.info('[aiStore._fetchAndStoreUserProfiles] Fetching profiles for user IDs:', { userIds: idsToFetch });
+                    try {
+                        // TEMPORARY: Cast api to any to use conceptual .users().getProfilesByIds()
+                        // TODO: Define api.users().getProfilesByIds() in IApiClient and implement it.
+                        const response = await (api as any).users().getProfilesByIds(idsToFetch); 
+
+                        if (response.error) {
+                            throw new Error(response.error.message || 'Failed to fetch user profiles by IDs');
+                        }
+
+                        if (response.data && Array.isArray(response.data)) {
+                            const fetchedProfilesArray = response.data as UserProfile[]; // UserProfile from @paynless/types
+                            const newProfilesMap: { [userId: string]: UserProfile } = {};
+                            fetchedProfilesArray.forEach(profile => {
+                                if (profile && profile.id) { 
+                                   newProfilesMap[profile.id] = profile;
+                                }
+                            });
+
+                            if (Object.keys(newProfilesMap).length > 0) {
+                                set(state => ({
+                                    chatParticipantsProfiles: {
+                                        ...state.chatParticipantsProfiles,
+                                        ...newProfilesMap,
+                                    }
+                                }));
+                                logger.info('[aiStore._fetchAndStoreUserProfiles] Stored profiles for users:', { userIds: Object.keys(newProfilesMap) });
+                            } else {
+                                logger.warn('[aiStore._fetchAndStoreUserProfiles] API call successful but no valid profiles returned or mapped.', { responseData: response.data });
+                            }
+                        } else {
+                             logger.warn('[aiStore._fetchAndStoreUserProfiles] No data or unexpected data format returned from getProfilesByIds API call.', { responseData: response.data });
+                        }
+                    } catch (error) {
+                        const errorMessage = error instanceof Error ? error.message : 'Unknown error fetching user profiles';
+                        logger.error('[aiStore._fetchAndStoreUserProfiles] Error:', { message: errorMessage, userIds: idsToFetch });
                     }
                 };
 
@@ -529,87 +583,83 @@ export const useAiStore = create<AiStore>()(
                         }
                     },
 
-                    loadChatDetails: async (chatId: Chat['id']) => {
-                        logger.info(`[aiStore] Loading details for chat ID: ${chatId}`);
-                        set({ isDetailsLoading: true, aiError: null });
-                        const token = useAuthStore.getState().session?.access_token;
-
-                        if (!token) {
-                            logger.warn('[aiStore] No token available for loading chat details.');
-                            set({ 
-                                isDetailsLoading: false, 
-                                aiError: 'Authentication required to load chat details.', 
-                                currentChatId: null // Potentially clear currentChatId if auth fails mid-operation
-                            });
+                    loadChatDetails: async (chatId: string) => { 
+                        if (!chatId) {
+                            logger.warn('[aiStore] loadChatDetails called with no chatId.');
+                            set({ isDetailsLoading: false });
                             return;
                         }
-
+                        logger.info(`[aiStore] Loading details for chat: ${chatId}`);
+                        set({ 
+                            currentChatId: chatId, 
+                            isDetailsLoading: true, 
+                            aiError: null 
+                        });
+                    
                         try {
-                            // Call the updated API method that returns chat metadata and messages
-                            // No need to pass organizationId here, as the backend function infers it or doesn't need it for GET if RLS is sufficient.
-                            const response = await api.ai().getChatWithMessages(chatId, token);
-
-                            if (response.error) {
-                                throw new Error(response.error.message || 'API error fetching chat details.');
+                            const token = useAuthStore.getState().session?.access_token;
+                            if (!token) {
+                                throw new AuthRequiredError('Authentication required to load chat details.');
                             }
-
-                            if (response.data && response.data.chat && response.data.messages) {
-                                const fetchedChat = response.data.chat;
-                                const fetchedMessages = response.data.messages;
-
-                                set(state => {
-                                    let newChatsByContext = { ...state.chatsByContext };
-                                    const orgId = fetchedChat.organization_id;
-
-                                    if (orgId) { // Organization chat
-                                        const orgChats = [...(state.chatsByContext.orgs[orgId] || [])];
-                                        const existingChatIndex = orgChats.findIndex(c => c.id === fetchedChat.id);
-                                        if (existingChatIndex !== -1) {
-                                            orgChats[existingChatIndex] = fetchedChat; // Update existing
-                                        } else {
-                                            orgChats.push(fetchedChat); // Add if not present (e.g., direct load via URL)
-                                        }
-                                        newChatsByContext = {
-                                            ...newChatsByContext,
-                                            orgs: { ...newChatsByContext.orgs, [orgId]: orgChats }
-                                        };
-                                    } else { // Personal chat
-                                        const personalChats = [...(state.chatsByContext.personal || [])];
-                                        const existingChatIndex = personalChats.findIndex(c => c.id === fetchedChat.id);
-                                        if (existingChatIndex !== -1) {
-                                            personalChats[existingChatIndex] = fetchedChat; // Update existing
-                                        } else {
-                                            personalChats.push(fetchedChat); // Add if not present
-                                        }
-                                        newChatsByContext = {
-                                            ...newChatsByContext,
-                                            personal: personalChats
-                                        };
+                    
+                            const { chatsByContext, newChatContext } = get();
+                            let organizationId: string | undefined | null = undefined;
+                            if (chatsByContext.orgs) {
+                                for (const orgIdKey in chatsByContext.orgs) {
+                                    if (chatsByContext.orgs[orgIdKey]?.find(c => c.id === chatId)) {
+                                        organizationId = orgIdKey;
+                                        break;
                                     }
+                                }
+                            }
+                            if (organizationId === undefined && typeof newChatContext === 'string' && newChatContext !== 'personal') {
+                                organizationId = newChatContext;
+                            }
+                            logger.debug(`[aiStore] loadChatDetails determined organizationId for API call: ${organizationId} (for chatId: ${chatId})`);
 
-                                    return {
-                                        messagesByChatId: {
-                                            ...state.messagesByChatId,
-                                            [chatId]: fetchedMessages,
-                                        },
-                                        chatsByContext: newChatsByContext, // Update with the potentially modified chat metadata
-                                        currentChatId: chatId,
-                                        isDetailsLoading: false,
-                                        aiError: null,
-                                    };
-                                });
-                                logger.info(`[aiStore] Successfully loaded details for chat ID: ${chatId}. Messages: ${fetchedMessages.length}, Metadata Updated.`);
+                            const response = await api.ai().getChatWithMessages(chatId, token, organizationId);
+                    
+                            if (response.error) {
+                                throw new Error(response.error.message);
+                            }
+                    
+                            if (response.data?.messages) {
+                                const messages = response.data.messages;
+                                set(state => ({
+                                    messagesByChatId: {
+                                        ...state.messagesByChatId,
+                                        [chatId]: messages,
+                                    },
+                                    isDetailsLoading: false,
+                                    currentChatId: chatId 
+                                }));
+                                logger.info(`[aiStore] Successfully loaded ${messages.length} messages for chat ${chatId}.`);
+                    
+                                const userMessageSenderIds = messages
+                                    .filter(msg => msg.role === 'user' && msg.user_id)
+                                    .map(msg => msg.user_id!)
+                                    .filter((id, index, self) => self.indexOf(id) === index);
+                                
+                                if (userMessageSenderIds.length > 0) {
+                                    await _fetchAndStoreUserProfiles(userMessageSenderIds);
+                                }
+
                             } else {
-                                throw new Error('Invalid data structure received from API for chat details.');
+                                set({ isDetailsLoading: false });
+                                logger.warn(`[aiStore] No data returned for chat ${chatId} despite no error.`);
                             }
                         } catch (error: unknown) {
-                            const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred while loading chat details.';
-                            logger.error(`[aiStore] Error loading details for chat ID: ${chatId}`, { error: errorMessage });
-                            set({
+                            logger.error(`[aiStore] Error loading details for chat ${chatId}:`, { error }); // Wrapped error
+                            let errorMessage = 'Failed to load chat details.';
+                            if (error instanceof AuthRequiredError) {
+                                errorMessage = error.message;
+                               // set({ pendingAction: { type: 'loadChatDetails', payload: { chatId } } });
+                            } else if (error instanceof Error) {
+                                errorMessage = error.message;
+                            }
+                            set({ 
+                                aiError: errorMessage, 
                                 isDetailsLoading: false,
-                                aiError: errorMessage,
-                                // Optionally, clear currentChatId if details fail to load for it
-                                // currentChatId: state.currentChatId === chatId ? null : state.currentChatId, 
                             });
                         }
                     },

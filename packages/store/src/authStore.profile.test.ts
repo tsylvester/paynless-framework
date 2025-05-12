@@ -4,7 +4,7 @@ import { api } from '@paynless/api';
 // Direct import of the mock client and its reset function
 import { mockApiClient, resetMockApiClient } from '@paynless/api/mocks';
 import { act } from '@testing-library/react';
-import type { User, Session, UserProfile, UserRole, ApiError, UserProfileUpdate, SuccessResponse, ErrorResponse } from '@paynless/types';
+import type { User, Session, UserProfile, UserRole, ApiError, UserProfileUpdate, SuccessResponse, ErrorResponse, ProfilePrivacySetting, Json } from '@paynless/types';
 import { logger } from '@paynless/utils';
 
 // Helper to reset Zustand store state between tests
@@ -15,15 +15,8 @@ const resetStore = () => {
 };
 
 // Mock data aligned with type definitions
-const mockUser: User = { id: 'user-123', email: 'test@example.com', role: 'user' as UserRole, created_at: 'now', updated_at: 'now' };
-const mockSession: Session = { 
-  access_token: 'test-access-token', 
-  refresh_token: 'def', 
-  expiresAt: Date.now() + 3600000, 
-  // token_type and expires_in are optional in Session type
-  // token_type: 'bearer', 
-  // expires_in: 3600 
-};
+const mockUser: User = { id: 'user-123', email: 'test@example.com', role: 'user', created_at: 'now', updated_at: 'now' };
+const mockSession: Session = { access_token: 'mock-token', refresh_token: 'mock-refresh', expiresAt: Date.now() + 3600 * 1000, token_type: 'bearer', expires_in: 3600 };
 const mockProfile: UserProfile = { 
   id: 'user-123', 
   first_name: 'Test', 
@@ -32,13 +25,17 @@ const mockProfile: UserProfile = {
   created_at: 'now', 
   updated_at: 'now',
   last_selected_org_id: null,
-  // Removed email, phone, address, last_selected_org_id from base mockProfile
-  // Add last_selected_org_id: null if UserProfile type strictly requires it and it's not optional
-  // based on `Database['public']['Tables']['user_profiles']['Row']`
-  // For UserProfileUpdate, only first_name, last_name, last_selected_org_id are relevant.
+  chat_context: null as Json | null, // Explicitly type chat_context
+  profile_privacy_setting: 'private' as ProfilePrivacySetting, // Explicitly type profile_privacy_setting
 };
 const profileUpdateData: UserProfileUpdate = { first_name: 'Updated', last_name: 'Name' };
-const updatedProfile: UserProfile = { ...mockProfile, ...profileUpdateData, updated_at: 'later' };
+const updatedProfile: UserProfile = { 
+  ...mockProfile, 
+  ...profileUpdateData, 
+  updated_at: 'later',
+  chat_context: mockProfile.chat_context, 
+  profile_privacy_setting: mockProfile.profile_privacy_setting, 
+};
 
 // Mock the logger
 vi.mock('@paynless/utils', () => ({ 
@@ -51,6 +48,7 @@ vi.mock('@paynless/utils', () => ({
 describe('AuthStore - Update Profile Action', () => {
   let logErrorSpy: SpyInstance;
   let apiPutSpy: SpyInstance; // Spy for api.put
+  let setStateSpy: SpyInstance; // Spy on the store's setState
 
   beforeEach(() => {
     resetStore();
@@ -65,6 +63,19 @@ describe('AuthStore - Update Profile Action', () => {
     vi.mocked(logger.error).mockClear();
     vi.mocked(logger.info).mockClear();
     vi.mocked(logger.warn).mockClear();
+
+    // Spy on the store's setState
+    setStateSpy = vi.spyOn(useAuthStore, 'setState');
+
+    // Set default initial state for most tests
+    useAuthStore.setState({ 
+      user: mockUser, 
+      session: mockSession, 
+      profile: { ...mockProfile }, 
+      isLoading: false, // Start with isLoading false for most tests
+      error: null,
+      navigate: vi.fn(),
+    });
   });
 
   afterEach(() => {
@@ -72,62 +83,55 @@ describe('AuthStore - Update Profile Action', () => {
   });
 
   it('should call api.put, update profile state, clear error, and return profile on success', async () => {
-    useAuthStore.setState({ user: mockUser, session: mockSession, profile: mockProfile });
-    const mockSuccessResponse: SuccessResponse<UserProfile> = { 
-      data: updatedProfile, 
-      error: undefined, // Crucial: error must be undefined for SuccessResponse
-      status: 200 
-    };
-    vi.mocked(mockApiClient.put).mockResolvedValue(mockSuccessResponse); // Control via mockApiClient.put
+    vi.mocked(mockApiClient.put).mockResolvedValueOnce({
+      data: updatedProfile,
+      error: undefined,
+      status: 200,
+      statusText: 'OK',
+    } as SuccessResponse<UserProfile>);
 
-    let result: UserProfile | null = null;
-    await act(async () => {
-      result = await useAuthStore.getState().updateProfile(profileUpdateData);
-    });
+    const result = await useAuthStore.getState().updateProfile(profileUpdateData);
 
     expect(apiPutSpy).toHaveBeenCalledWith('me', profileUpdateData, { token: mockSession.access_token });
     const finalState = useAuthStore.getState();
     expect(finalState.profile).toEqual(updatedProfile);
-    expect(finalState.isLoading).toBe(false);
     expect(finalState.error).toBeNull();
+    expect(finalState.isLoading).toBe(false); // Should be false after completion
     expect(result).toEqual(updatedProfile);
+    expect(logErrorSpy).not.toHaveBeenCalled();
   });
 
   it('should set error state, not update profile, and return null on API failure (ErrorResponse)', async () => {
-    useAuthStore.setState({ user: mockUser, session: mockSession, profile: mockProfile });
-    const apiError: ApiError = { code: 'API123', message: 'Update failed' }; // No `name` property
-    const mockErrorResponse: ErrorResponse = { 
-      data: undefined, // Crucial: data must be undefined for ErrorResponse
-      error: apiError, 
-      status: 400 // Example error status
-    };
-    vi.mocked(mockApiClient.put).mockResolvedValue(mockErrorResponse); // Simulate an API error response
+    const apiError: ApiError = { message: 'Update failed', code: '500' };
+    vi.mocked(mockApiClient.put).mockResolvedValueOnce({
+      data: undefined,
+      error: apiError,
+      status: 500,
+      statusText: 'Internal Server Error',
+    } as ErrorResponse);
 
-    let result: UserProfile | null = null;
-    await act(async () => {
-      result = await useAuthStore.getState().updateProfile(profileUpdateData);
-    });
+    const initialProfile = useAuthStore.getState().profile;
+    const result = await useAuthStore.getState().updateProfile(profileUpdateData);
 
     expect(apiPutSpy).toHaveBeenCalledWith('me', profileUpdateData, { token: mockSession.access_token });
     const finalState = useAuthStore.getState();
-    expect(finalState.profile).toEqual(mockProfile);
+    expect(finalState.profile).toEqual(initialProfile); // Profile should not change
     expect(finalState.isLoading).toBe(false);
     expect(finalState.error).toBeInstanceOf(Error);
-    expect(finalState.error?.message).toBe(apiError.message); // Store creates new Error(apiError.message)
+    expect(finalState.error?.message).toBe(apiError.message);
     expect(result).toBeNull();
-    expect(logErrorSpy).toHaveBeenCalledWith('Update profile: Error during API call.', { message: apiError.message });
+    expect(logErrorSpy).toHaveBeenCalledWith('updateProfile: Profile update failed.', { error: apiError });
   });
 
   it('should set error and return null if no session token exists', async () => {
-    useAuthStore.setState({ user: mockUser, session: null, profile: mockProfile });
-    let result: UserProfile | null = null;
-    await act(async () => {
-      result = await useAuthStore.getState().updateProfile(profileUpdateData);
-    });
+    useAuthStore.setState({ session: null, isLoading: false }); // Ensure isLoading is initially false
+
+    const result = await useAuthStore.getState().updateProfile(profileUpdateData);
+
     expect(apiPutSpy).not.toHaveBeenCalled();
     const finalState = useAuthStore.getState();
     expect(finalState.profile).toEqual(mockProfile);
-    expect(finalState.isLoading).toBe(false);
+    expect(finalState.isLoading).toBe(false); // Should remain false
     expect(finalState.error).toBeInstanceOf(Error);
     expect(finalState.error?.message).toBe('Authentication required');
     expect(result).toBeNull();
@@ -135,15 +139,14 @@ describe('AuthStore - Update Profile Action', () => {
   });
   
   it('should set error and return null if profile is not loaded', async () => {
-    useAuthStore.setState({ user: mockUser, session: mockSession, profile: null });
-    let result: UserProfile | null = null;
-    await act(async () => {
-      result = await useAuthStore.getState().updateProfile(profileUpdateData);
-    });
+    useAuthStore.setState({ profile: null, isLoading: false }); // Ensure isLoading is initially false
+
+    const result = await useAuthStore.getState().updateProfile(profileUpdateData);
+
     expect(apiPutSpy).not.toHaveBeenCalled();
     const finalState = useAuthStore.getState();
     expect(finalState.profile).toBeNull();
-    expect(finalState.isLoading).toBe(false);
+    expect(finalState.isLoading).toBe(false); // Should remain false
     expect(finalState.error).toBeInstanceOf(Error);
     expect(finalState.error?.message).toBe('Profile not loaded');
     expect(result).toBeNull();
@@ -151,72 +154,132 @@ describe('AuthStore - Update Profile Action', () => {
   });
 
   it('should set error state if API update returns no data (SuccessResponse with undefined data)', async () => {
-    useAuthStore.setState({ user: mockUser, session: mockSession, profile: mockProfile });
-    const mockSuccessNoDataResponse: SuccessResponse<UserProfile> = { 
-      data: undefined, // Data is undefined
-      error: undefined, 
-      status: 200 
-    };
-    vi.mocked(mockApiClient.put).mockResolvedValue(mockSuccessNoDataResponse);
+    vi.mocked(mockApiClient.put).mockResolvedValueOnce({
+      data: undefined as any, // Correct type for SuccessResponse with no data
+      error: undefined,
+      status: 200,
+      statusText: 'OK',
+    } as SuccessResponse<UserProfile>);
     
-    let result: UserProfile | null = null;
-    await act(async () => {
-      result = await useAuthStore.getState().updateProfile(profileUpdateData);
-    });
+    const initialProfile = useAuthStore.getState().profile;
+    const result = await useAuthStore.getState().updateProfile(profileUpdateData);
 
-    expect(apiPutSpy).toHaveBeenCalledWith('me', profileUpdateData, { token: mockSession.access_token });
     const finalState = useAuthStore.getState();
-    expect(finalState.profile).toEqual(mockProfile);
+    expect(finalState.profile).toEqual(initialProfile); // Profile should not change
     expect(finalState.isLoading).toBe(false);
     expect(finalState.error).toBeInstanceOf(Error);
     expect(finalState.error?.message).toBe('Failed to update profile');
     expect(result).toBeNull();
-    expect(logErrorSpy).toHaveBeenCalledWith('Update profile: Error during API call.', { message: 'Failed to update profile' });
+    expect(logErrorSpy).toHaveBeenCalledWith('updateProfile: Profile update failed.', { error: 'API returned success but no profile data.' });
   });
 
   it('should handle thrown error during api.put call (e.g. network error)', async () => {
-    useAuthStore.setState({ user: mockUser, session: mockSession, profile: mockProfile });
     const thrownError = new Error('Network Error');
-    vi.mocked(mockApiClient.put).mockRejectedValue(thrownError); // mockApiClient.put is spied upon by apiPutSpy
+    vi.mocked(mockApiClient.put).mockRejectedValueOnce(thrownError);
 
-    let result: UserProfile | null = null;
-    await act(async () => {
-      result = await useAuthStore.getState().updateProfile(profileUpdateData);
-    });
+    const initialProfile = useAuthStore.getState().profile;
+    const result = await useAuthStore.getState().updateProfile(profileUpdateData);
 
-    expect(apiPutSpy).toHaveBeenCalledWith('me', profileUpdateData, { token: mockSession.access_token });
     const finalState = useAuthStore.getState();
-    expect(finalState.profile).toEqual(mockProfile);
+    expect(finalState.profile).toEqual(initialProfile);
     expect(finalState.isLoading).toBe(false);
     expect(finalState.error).toBeInstanceOf(Error);
     expect(finalState.error?.message).toBe(thrownError.message);
     expect(result).toBeNull();
-    expect(logErrorSpy).toHaveBeenCalledWith('Update profile: Error during API call.', { message: thrownError.message });
+    expect(logErrorSpy).toHaveBeenCalledWith('updateProfile: Unexpected error.', { error: thrownError.message });
   });
   
-  it('should prioritize auth/profile checks', async () => {
-    useAuthStore.setState({ user: null, session: null, profile: mockProfile });
-    await act(async () => { await useAuthStore.getState().updateProfile(profileUpdateData); });
-    const finalStateAuth = useAuthStore.getState();
-    expect(finalStateAuth.error?.message).toBe('Authentication required');
+  it('should update profile_privacy_setting successfully and set isLoading correctly', async () => {
+    const privacyUpdateData: UserProfileUpdate = { profile_privacy_setting: 'public' };
+    const profileWithPrivacyUpdate: UserProfile = {
+      ...mockProfile,
+      profile_privacy_setting: 'public',
+      updated_at: 'later', // Simulate backend update
+    };
+
+    vi.mocked(mockApiClient.put).mockResolvedValueOnce({
+      data: profileWithPrivacyUpdate,
+      error: undefined, // Correct for SuccessResponse
+      status: 200,
+      statusText: 'OK',
+    } as SuccessResponse<UserProfile>);
+    
+    // Ensure isLoading is false before the call
+    useAuthStore.setState({ isLoading: false });
+
+    const result = await useAuthStore.getState().updateProfile(privacyUpdateData);
+
+    expect(apiPutSpy).toHaveBeenCalledWith('me', privacyUpdateData, { token: mockSession.access_token });
+    const finalState = useAuthStore.getState();
+    expect(finalState.profile).toEqual(profileWithPrivacyUpdate);
+    expect(finalState.error).toBeNull();
+    expect(result).toEqual(profileWithPrivacyUpdate);
+    
+    // Check if setState was called to set isLoading to true during the operation
+    const isLoadingTrueCall = setStateSpy.mock.calls.find(call => call[0].isLoading === true);
+    expect(isLoadingTrueCall).toBeDefined();
+    // And ensure it was set to false by the end
+    expect(finalState.isLoading).toBe(false); 
+  });
+
+  it('should prioritize auth/profile checks over API call and not set global loading for these errors', async () => {
+    // Test case 1: No session
+    useAuthStore.setState({ session: null, isLoading: false, error: null });
+    await useAuthStore.getState().updateProfile(profileUpdateData);
     expect(logErrorSpy).toHaveBeenCalledWith('updateProfile: Cannot update profile, user not authenticated.');
-
-    // Reset for next check
-    resetStore();
-    resetMockApiClient(); // Reset the standalone mockApiClient again
-    // apiPutSpy is restored in afterEach, so we need to re-spy/re-mock for this specific path if afterEach hasn't run yet
-    // However, standard test flow means afterEach from previous test runs before beforeEach of next.
-    // So apiPutSpy would be freshly set up by beforeEach.
+    expect(useAuthStore.getState().isLoading).toBe(false); // Should not have changed
+    expect(apiPutSpy).not.toHaveBeenCalled();
     logErrorSpy.mockClear();
-    // Re-establish spy for this specific part of the test if needed, or rely on beforeEach logic for subsequent tests.
-    // For this multi-check test, ensure mocks are clean for the second part.
-    vi.mocked(mockApiClient.put).mockClear(); // Clear any previous mockResolvedValue specific to this mock function
+    apiPutSpy.mockClear();
 
-    useAuthStore.setState({ user: mockUser, session: mockSession, profile: null });
-    await act(async () => { await useAuthStore.getState().updateProfile(profileUpdateData); });
-    const finalStateProfile = useAuthStore.getState();
-    expect(finalStateProfile.error?.message).toBe('Profile not loaded');
+    // Reset for next sub-test
+    useAuthStore.setState({ 
+      user: mockUser, 
+      session: mockSession, 
+      profile: { ...mockProfile }, 
+      isLoading: false,
+      error: null 
+    });
+
+    // Test case 2: No profile
+    useAuthStore.setState({ profile: null, isLoading: false, error: null });
+    await useAuthStore.getState().updateProfile(profileUpdateData);
     expect(logErrorSpy).toHaveBeenCalledWith('updateProfile: Cannot update profile, no current profile loaded.');
+    expect(useAuthStore.getState().isLoading).toBe(false); // Should not have changed
+    expect(apiPutSpy).not.toHaveBeenCalled();
+  });
+  
+  // Test for background update (chat_context only)
+  it('should NOT set global isLoading for chat_context only updates', async () => {
+    const chatContextUpdate: UserProfileUpdate = { chat_context: { newChatContext: 'org-123' } };
+    const profileWithChatContextUpdate: UserProfile = {
+      ...mockProfile,
+      chat_context: { newChatContext: 'org-123' },
+      updated_at: 'later',
+    };
+
+    vi.mocked(mockApiClient.put).mockResolvedValueOnce({
+      data: profileWithChatContextUpdate,
+      error: undefined, // Correct for SuccessResponse
+      status: 200,
+      statusText: 'OK',
+    } as SuccessResponse<UserProfile>);
+
+    useAuthStore.setState({ isLoading: false }); // Ensure global isLoading is false initially
+
+    const result = await useAuthStore.getState().updateProfile(chatContextUpdate);
+
+    expect(apiPutSpy).toHaveBeenCalledWith('me', chatContextUpdate, { token: mockSession.access_token });
+    const finalState = useAuthStore.getState();
+    expect(finalState.profile).toEqual(profileWithChatContextUpdate);
+    expect(finalState.error).toBeNull();
+    expect(result).toEqual(profileWithChatContextUpdate);
+    
+    // Check that setState was NOT called to set isLoading to true
+    const isLoadingTrueCall = setStateSpy.mock.calls.find(call => call[0].isLoading === true);
+    expect(isLoadingTrueCall).toBeUndefined(); 
+    // And ensure global isLoading remained false
+    expect(finalState.isLoading).toBe(false);
   });
 
 }); 

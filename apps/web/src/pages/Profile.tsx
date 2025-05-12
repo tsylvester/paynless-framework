@@ -1,6 +1,6 @@
 import { useAuthStore } from '@paynless/store'
 import { ProfileEditor } from '../components/profile/ProfileEditor'
-
+import { ProfilePrivacySettingsCard } from '../components/profile/ProfilePrivacySettingsCard'
 export function ProfilePage() {
   const {
     profile: currentProfile,
@@ -36,6 +36,7 @@ export function ProfilePage() {
     <div>
       <div className="py-20 pt-6">
         <ProfileEditor />
+        <ProfilePrivacySettingsCard />
       </div>
       {/* Feedback moved inside ProfileEditor or handled via store state globally */}
     </div>

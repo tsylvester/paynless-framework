@@ -296,7 +296,7 @@ To enable and support a "Dummy Echo v1" provider (identified by the `provider` s
 * [✅] Fix infinite loop on loading org chat 
 * [✅] Check ChatHistoryList test after fixing loop
 
-#### STEP-3.2.2: Create `ChatItem` Component with Context-Specific Actions [TEST-UNIT] [COMMIT]
+#### STEP-3.2.2: Create `ChatItem` Component with Context-Specific Actions [TEST-UNIT] [COMMIT] [✅]
 * [✅] **Define Test Cases for `ChatItem.tsx`:**
     *   [✅] Renders chat title correctly (handles null/empty with "Untitled Chat...").
     *   [✅] Calls `onClick` prop with `chatId` when the main item area is clicked.
@@ -719,6 +719,94 @@ To enable and support a "Dummy Echo v1" provider (identified by the `provider` s
   * [✅] Ensure necessary props (like `orgId`) are passed if needed, or rely on store context.
 * [✅] Perform manual integration tests covering visibility, functionality, and downstream effects (RLS blocking). Debug until pass (GREEN).
 * [✅] Commit changes with message "feat(UI): Integrate chat settings into organization settings card w/ manual tests"
+
+### STEP-3.6.3: Implement User Profile Privacy and User Name Display in Chat Messages [DB] [RLS] [BE] [API] [STORE] [UI] [TEST-UNIT] [COMMIT] [🚧]
+*   **Goal:** Implement user-configurable profile privacy settings using a flexible text-based field. Ensure that for messages, the sender's display name is shown *if privacy settings and organization membership permit*, otherwise fallback gracefully.
+*   **Sub-steps:**
+    *   **1. [DB] [RLS] Add `profile_privacy_setting` to `user_profiles` and Update RLS:**
+        *   `[✅]` **Migration:**
+            *   `[✅]` Add `profile_privacy_setting TEXT NOT NULL DEFAULT 'private'` column to the `public.user_profiles` table.
+            *   `[✅]` Consider adding a `CHECK` constraint to `profile_privacy_setting` to allow only predefined values (e.g., `'private'`, `'public'`, initially).
+        *   `[✅]` **Type Updates:**
+            *   `[✅]` Update `supabase/functions/types_db.ts` to reflect the new column.
+            *   `[✅]` Ensure `UserProfile` type in `packages/types/src/auth.types.ts` (and any other relevant type definitions like in `ai.types.ts` if they carry the full profile) includes `profile_privacy_setting: string;` (or a more specific string literal union type like `'public' | 'private'`).
+            *   `[✅]` `chatParticipantsProfiles: { [userId: string]: UserProfile }` already exists in `AiState` (`packages/types/src/ai.types.ts`).
+            *   `[✅]` `initialAiStateValues` initializes `chatParticipantsProfiles: {}`.
+        *   `[✅]` **RLS Policies for `user_profiles` Table:**
+            *   `[✅]` Drop the existing permissive read policy (`POLICY "Allow authenticated read access" ON public.user_profiles FOR SELECT USING (true)`).
+            *   `[✅]` Create a new RLS policy for `SELECT` operations:
+                *   Allow a user (`auth.uid()`) to read a `user_profiles` row IF:
+                    *   `profile.profile_privacy_setting = 'public'`
+                    *   OR the requesting user (`auth.uid()`) and the `profile.id` (target user) are members of at least one common organization. (This will likely require a SQL subquery or helper function to check shared organization membership).
+            *   `[✅]` Ensure an RLS policy for `UPDATE` operations allows an authenticated user to update *only their own* `user_profiles` row, and specifically the `profile_privacy_setting` column (among other editable fields like `first_name`, `last_name`, `chat_context`).
+        *   `[🚧]` **New User Default:** Verify that new user creation correctly results in `profile_privacy_setting` being `'private'` due to the database column default.
+        *   `[ ]` **[TEST-UNIT]** Write/Update tests for RLS policies. This might involve backend tests that assert behavior based on different user contexts or using specialized RLS testing tools if available.
+
+    *   **2. [STORE] [UI] Create `ProfilePrivacySettingsCard.tsx` and Update `authStore`:**
+        *   `[🚧]` **Component (`apps/web/src/components/profile/ProfilePrivacySettingsCard.tsx`):** (Implementation in progress, UI built, tests pending)
+            *   `[✅]` Create a new self-contained card component to be placed on a user's own profile settings page.
+            *   `[✅]` It should display a user-friendly way to change `profile_privacy_setting` (using a Select dropdown with options like "Public Profile" / "Private Profile" / "Members Only").
+            *   `[✅]` Reads the current `profile_privacy_setting` from `useAuthStore(state => state.profile?.profile_privacy_setting)`.
+            *   `[✅]` On change, it calls `useAuthStore.getState().updateProfile({ profile_privacy_setting: newSettingValue })` where `newSettingValue` is e.g., `'public'` or `'private'`.
+            *   `[✅]` Manages and displays loading states during the update operation.
+            *   `[✅]` Manages and displays error messages if the update fails.
+        *   `[✅]` **`authStore` (`packages/store/src/authStore.ts`):**
+            *   `[✅]` Ensure the `UserProfile` type used within the store includes `profile_privacy_setting` (implicitly via `types_db.ts` and `auth.types.ts`).
+            *   `[✅]` Verify the `updateProfile` action can accept `profile_privacy_setting` in its payload, sends it to the backend API, and updates the local `profile` state upon success (verified, no changes needed to action).
+        *   `[✅]` **[TEST-UNIT]** Write unit tests for `ProfilePrivacySettingsCard.tsx` (`apps/web/src/components/profile/ProfilePrivacySettingsCard.unit.test.tsx`):
+            *   `[✅]` Test rendering based on different `profile_privacy_setting` values from the mocked store.
+            *   `[✅]` Test that `updateProfile` is called with the correct new value on user interaction.
+            *   `[✅]` Test loading and error state displays.
+            *   `[🚧]` Resolve remaining linter/type issues in test file (likely Vitest env/config related).
+        *   `[✅]` **[TEST-UNIT]** Update unit tests for `authStore`'s `updateProfile` action in `packages/store/src/authStore.profile.test.ts` to cover `profile_privacy_setting` updates.
+
+    *   **3. [BE] Verify/Update Profile Fetching Endpoint (`supabase/functions/profile/{userId}/index.ts`):**
+        *   `[ ]` **Endpoint Logic:** The core logic of this function (fetching specified fields for a given `userId`) should not need to change. Access control will be handled by the RLS policies defined in Sub-step 1.
+        *   `[ ]` **[TEST-UNIT]** Update/ensure comprehensive unit tests in `supabase/functions/profile/index.test.ts`:
+            *   `[ ]` Test fetching a public profile successfully.
+            *   `[ ]` Test fetching a private profile of another user with whom a common organization is shared (should succeed).
+            *   `[ ]` Test fetching a private profile of another user with no shared organization (should result in a 403 Forbidden or 404 Not Found, depending on RLS/function behavior for unauthorized access).
+            *   `[ ]` Test fetching a non-existent profile (should result in 404).
+
+    *   **4. [API] Verify/Update API Client for Profile Fetching (`packages/api/src/users.api.ts`):**
+        *   `[ ]` **Method:** Review the existing `getUserProfile(userId: string)` method (or its equivalent like `api.users().getProfile(userId)`).
+        *   `[ ]` It should correctly call the `GET /functions/v1/profile/{userId}` endpoint.
+        *   `[ ]` Ensure it handles successful responses (returning `UserProfile`) and error responses (e.g., 403, 404 from the Edge Function due to RLS) appropriately, propagating them as `ApiResponse` objects.
+        *   `[ ]` **[TEST-UNIT]** Ensure unit tests for this API client method cover:
+            *   `[ ]` Successful profile fetch.
+            *   `[ ]` Handling of error responses (e.g., 403, 404) from the server.
+
+    *   **5. [STORE] Modify `aiStore` for Privacy-Aware Profile Fetching (`packages/store/src/aiStore.ts`):**
+        *   `[✅]` Internal action `_fetchAndStoreUserProfiles(userIds: string[])` exists.
+        *   `[✅]` `loadChatDetails` calls `_fetchAndStoreUserProfiles`.
+        *   `[ ]` **[REFACTOR]** Modify `_fetchAndStoreUserProfiles`:
+            *   `[ ]` It will continue to iterate through `idsToFetch` and call `api.users().getProfile(userId)` (or equivalent) for each ID.
+            *   `[ ]` **Crucially, it must gracefully handle API errors for individual profile fetches.** If `api.users().getProfile(userId)` returns an error (e.g., because RLS denied access), the store should log this (e.g., `logger.warn`) and simply *not* add an entry for that `userId` to `state.chatParticipantsProfiles`.
+            *   `[ ]` The `state.chatParticipantsProfiles` map should only contain profiles that were successfully fetched (i.e., the current user is permitted to see them).
+            *   `[ ]` Remove the `(api as any)` cast if still present and use the correctly typed API client method.
+        *   `[ ]` **[TEST-UNIT]** Update unit tests for `_fetchAndStoreUserProfiles`:
+            *   `[ ]` Mock `api.users().getProfile()` to simulate successful fetches for some user IDs and error responses (due to privacy) for others within the same batch.
+            *   `[ ]` Verify that `state.chatParticipantsProfiles` is updated correctly, only containing the accessible profiles.
+            *   `[ ]` Verify appropriate logging for inaccessible profiles.
+
+    *   **6. [UI] Update `ChatMessageBubble.tsx` (and/or `AttributionDisplay.tsx`) for Privacy-Aware Display:**
+        *   `[ ]` **Name Resolution Logic (likely in `AttributionDisplay.tsx` or directly in `ChatMessageBubble.tsx`):**
+            *   `[ ]` If `message.user_id` matches `useAuthStore.getState().user?.id`, display "(You)" or the current user's own name.
+            *   `[ ]` Else, attempt to retrieve the profile from `useAiStore(state => state.chatParticipantsProfiles[message.user_id])`.
+            *   `[ ]` **If Profile is Found in Store:** Construct and display the name (e.g., "First Last", "First", fallback to User ID from the fetched profile if names are null).
+            *   `[ ]` **If Profile is NOT Found in Store (due to privacy/RLS or other fetch issue):** Display a privacy-respecting fallback. This could be:
+                *   A generic "User" label.
+                *   The `message.user_id` (UUID) *only if deemed acceptable as a last resort and clearly distinct from a resolved name*. Consider if just "User" or an icon is better.
+                *   *Avoid* showing parts of a profile that might have been partially cached or inadvertently exposed.
+        *   `[ ]` **[TEST-UNIT]** Update unit tests for `ChatMessageBubble.test.tsx` (and `AttributionDisplay.test.tsx` if it handles the name resolution):
+            *   `[ ]` Mock `useAuthStore` for current user ID.
+            *   `[ ]` Mock `useAiStore` to provide various `chatParticipantsProfiles` states:
+                *   Profile found for `message.user_id`.
+                *   Profile *not* found for `message.user_id` (simulating privacy restriction).
+                *   Profile found but with missing name fields (to test fallbacks like displaying User ID from profile).
+            *   `[ ]` Verify the correct display output for each scenario, especially the privacy-respecting fallback.
+
+    *   **7. [COMMIT] Commit all changes** for this step with a message like "feat(Profile,Chat): Implement profile privacy settings and update user name display logic w/ tests".
 
 ---
 
