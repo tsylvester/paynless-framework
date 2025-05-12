@@ -40,8 +40,10 @@ const mockInvite1: PendingInviteWithInviter = {
   created_at: new Date('2023-10-26T10:00:00Z').toISOString(),
   expires_at: null,
   invited_user_id: null, 
-  // Use the full profile mock
-  invited_by_profile: mockAdminUserProfile,
+  // ADDED: Flat inviter details
+  inviter_email: 'admin.inviter@example.com', // Example email
+  inviter_first_name: 'Admin',
+  inviter_last_name: 'Inviter',
 };
 
 const mockInvite2: PendingInviteWithInviter = {
@@ -55,6 +57,9 @@ const mockInvite2: PendingInviteWithInviter = {
   created_at: new Date('2023-10-27T11:00:00Z').toISOString(),
   expires_at: null,
   invited_user_id: null, 
+  // ADDED: Flat inviter details (with null names)
+  inviter_email: 'admin2@example.com',
+  inviter_first_name: null,
   invited_by_profile: null, // Keep null case
 };
 
@@ -143,8 +148,8 @@ describe('PendingActionsCard', () => {
     expect(row1).not.toBeNull();
     if (row1) {
       expect(within(row1).getByText(mockInvite1.role_to_assign)).toBeInTheDocument();
-      // Construct expected inviter name from profile
-      const inviter1Name = `${mockInvite1.invited_by_profile!.first_name} ${mockInvite1.invited_by_profile!.last_name}`;
+      // UPDATED: Assert based on new flat fields
+      const inviter1Name = `${mockInvite1.inviter_first_name} ${mockInvite1.inviter_last_name}`.trim();
       expect(within(row1).getByText(inviter1Name)).toBeInTheDocument(); 
       expect(within(row1).getByText(formatDistanceToNow(new Date(mockInvite1.created_at), { addSuffix: true }))).toBeInTheDocument();
       expect(within(row1).getByRole('button', { name: "Cancel" })).toBeInTheDocument();
@@ -155,7 +160,8 @@ describe('PendingActionsCard', () => {
     expect(row2).not.toBeNull();
     if (row2) {
       expect(within(row2).getByText(mockInvite2.role_to_assign)).toBeInTheDocument();
-      expect(within(row2).getByText('Unknown')).toBeInTheDocument(); // Inviter fallback (profile is null)
+      // UPDATED: Assert fallback to email when names are null
+      expect(within(row2).getByText(mockInvite2.inviter_email!)).toBeInTheDocument(); // Should fallback to email
       expect(within(row2).getByText(formatDistanceToNow(new Date(mockInvite2.created_at), { addSuffix: true }))).toBeInTheDocument();
       expect(within(row2).getByRole('button', { name: "Cancel" })).toBeInTheDocument();
     }

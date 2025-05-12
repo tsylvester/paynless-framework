@@ -166,9 +166,10 @@ export const PendingActionsCard: React.FC = () => {
               </TableHeader>
               <TableBody>
                 {currentPendingInvites.map((invite: PendingInviteWithInviter) => {
-                  const inviterName = invite.invited_by_profile 
-                                    ? `${invite.invited_by_profile.first_name || ''} ${invite.invited_by_profile.last_name || ''}`.trim()
-                                    : 'Unknown';
+                  // Use new flat properties, fallback to email
+                  const inviterName = (invite.inviter_first_name || invite.inviter_last_name)
+                                    ? `${invite.inviter_first_name || ''} ${invite.inviter_last_name || ''}`.trim()
+                                    : (invite.inviter_email || 'Unknown Inviter');
                   return (
                   <TableRow key={invite.id}>
                     <TableCell>{invite.invited_email}</TableCell>

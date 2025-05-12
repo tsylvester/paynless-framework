@@ -1,6 +1,6 @@
 import { createErrorResponse, createSuccessResponse } from '../_shared/cors-headers.ts';
 import { Database } from '../types_db.ts'; 
-import { SupabaseClient, User, createClient } from 'npm:@supabase/supabase-js@^2.43.4'; 
+import { SupabaseClient, createClient } from 'npm:@supabase/supabase-js@^2.43.4'; 
 
 // --- Define interface for Admin Auth Lookup dependency ---
 interface AdminAuthLookup { 
@@ -24,7 +24,9 @@ class DefaultUserLookupService implements UserLookupService {
     }
     try {
         const adminClient = createClient(supabaseUrl, serviceRoleKey);
-        const { data: listData, error: listError } = await adminClient.auth.admin.listUsers({ 
+        // Assert the type to include 'admin' property
+        const authAdminList = adminClient.auth as (typeof adminClient.auth & { admin: any });
+        const { data: listData, error: listError } = await authAdminList.admin.listUsers({ 
             page: 1, 
             perPage: 1000 
         });
@@ -34,7 +36,7 @@ class DefaultUserLookupService implements UserLookupService {
              return { data: { user: null }, error: listError };
         }
         
-        const existingUser = listData.users?.find(u => u.email?.toLowerCase() === email.toLowerCase());
+        const existingUser = listData.users?.find((u: any) => u.email?.toLowerCase() === email.toLowerCase());
 
         if (existingUser) {
             console.log(`[invites.ts DefaultUserLookupService] Found user ID: ${existingUser.id} for email: ${email}`);
@@ -67,7 +69,9 @@ async function getUserByEmailServiceRole(email: string): Promise<{ data: { user:
         // Fetch the first user. We can't directly filter by email in the listUsers call param in v2.
         // We need to fetch and then check the result.
         // WARNING: This is inefficient if you have many users. Consider a DB function for production.
-        const { data: listData, error: listError } = await adminClient.auth.admin.listUsers({ 
+        // Assert the type to include 'admin' property
+        const authAdminList2 = adminClient.auth as (typeof adminClient.auth & { admin: any });
+        const { data: listData, error: listError } = await authAdminList2.admin.listUsers({
             page: 1, 
             perPage: 1000 // Fetch a larger batch to increase chance of finding email if not first
             // No direct email filter here
@@ -79,7 +83,7 @@ async function getUserByEmailServiceRole(email: string): Promise<{ data: { user:
         }
         
         // Manually filter the results for the email
-        const existingUser = listData.users?.find(u => u.email?.toLowerCase() === email.toLowerCase());
+        const existingUser = listData.users?.find((u: any) => u.email?.toLowerCase() === email.toLowerCase());
 
         if (existingUser) {
             console.log(`[invites.ts getUserByEmailServiceRole] Found user ID: ${existingUser.id} for email: ${email}`);
@@ -100,7 +104,7 @@ async function getUserByEmailServiceRole(email: string): Promise<{ data: { user:
 export async function handleCreateInvite(
     req: Request, 
     supabaseClient: SupabaseClient<Database>, // Inviting user's client
-    invitingUser: User, 
+    invitingUser: { id: string; email?: string }, // Use inline type instead of User
     orgId: string,
     body: { email: string; role: string }, // Only email and role expected
     userLookupService: UserLookupService = defaultUserLookupService // Inject service
@@ -223,6 +227,28 @@ export async function handleCreateInvite(
 
     // 5. Generate invite token
     const inviteToken = crypto.randomUUID(); 
+    
+    // 5b. Fetch inviter's profile details (using their own client)
+    let inviterFirstName: string | null = null;
+    let inviterLastName: string | null = null;
+    try {
+        const { data: profileData, error: profileError } = await supabaseClient
+            .from('user_profiles')
+            .select('first_name, last_name')
+            .eq('id', invitingUser.id)
+            .single();
+            
+        if (profileError) {
+            console.warn(`[invites.ts handleCreateInvite] Could not fetch inviter profile for ${invitingUser.id}. Proceeding without name. Error:`, profileError.message);
+            // Proceed without name, don't block invite creation
+        } else if (profileData) {
+            inviterFirstName = profileData.first_name;
+            inviterLastName = profileData.last_name;
+        }
+    } catch (profileCatchError) {
+         console.error(`[invites.ts handleCreateInvite] Exception fetching inviter profile for ${invitingUser.id}:`, profileCatchError);
+         // Proceed without name
+    }
 
     // 6. Insert invite (using inviter's client)
     const { data: newInvite, error: insertError } = await supabaseClient
@@ -234,7 +260,11 @@ export async function handleCreateInvite(
             role_to_assign: role,
             invited_by_user_id: invitingUser.id,
             invite_token: inviteToken, 
-            status: 'pending'
+            status: 'pending',
+            // Add denormalized fields
+            inviter_email: invitingUser.email, // Get email from auth context
+            inviter_first_name: inviterFirstName,
+            inviter_last_name: inviterLastName
         })
         .select()
         .single();
@@ -264,7 +294,7 @@ export async function handleCreateInvite(
 export async function handleAcceptInvite(
     req: Request, 
     supabaseClient: SupabaseClient<Database>,
-    user: User, 
+    user: { id: string; email?: string }, // Use inline type instead of User
     inviteToken: string,
     _body: any, // Body is not used for accept
     // Injectable admin client for testing
@@ -417,7 +447,7 @@ export async function handleAcceptInvite(
 export async function handleDeclineInvite(
     req: Request, 
     supabaseClient: SupabaseClient<Database>,
-    user: User, 
+    user: { id: string; email?: string }, // Use inline type instead of User
     inviteToken: string,
     _body: any // Body is not used for decline
 ): Promise<Response> {
@@ -469,7 +499,7 @@ export async function handleDeclineInvite(
 export async function handleCancelInvite(
     req: Request,
     supabaseClient: SupabaseClient<Database>,
-    user: User,
+    user: { id: string; email?: string }, // Use inline type instead of User
     orgId: string,
     inviteId: string // Get this from the URL path
 ): Promise<Response> {
@@ -635,7 +665,7 @@ export async function handleListPending(
 export async function handleGetInviteDetails(
     req: Request,
     supabaseClient: SupabaseClient<Database>, // User's client
-    user: User, // User is REQUIRED for authenticated endpoint access logic
+    user: { id: string; email?: string }, // Use inline type instead of User
     inviteToken: string
 ): Promise<Response> {
     console.log(`[invites.ts] Handling GET invite details for token: ${inviteToken}`);

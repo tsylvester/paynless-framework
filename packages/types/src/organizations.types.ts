@@ -47,8 +47,12 @@ export type MembershipRequest = OrganizationMemberWithProfile & {
 // --- Enriched Pending Types (for PendingActionsCard) ---
 
 // Invite enriched with the inviter's profile
+// MODIFIED: Removed nested profile, added flat inviter details
 export type PendingInviteWithInviter = Invite & {
-  invited_by_profile: UserProfile | null; // Profile of the user who sent invite
+  // invited_by_profile: UserProfile | null; // Profile of the user who sent invite - REMOVED
+  inviter_email: string | null; // Snapshot of inviter's email
+  inviter_first_name?: string | null; // Optional: Snapshot of inviter's first name
+  inviter_last_name?: string | null;  // Optional: Snapshot of inviter's last name
 };
 
 // MembershipRequest enriched with the requester's email (from auth.users)
