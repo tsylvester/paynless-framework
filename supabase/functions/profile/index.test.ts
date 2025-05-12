@@ -47,6 +47,7 @@ const mockTargetProfileData = {
     first_name: "Target",
     last_name: "User",
     created_at: new Date().toISOString(),
+    profile_privacy_setting: 'public' as const,
 };
 
 // --- Mock Dependencies --- 
@@ -176,9 +177,8 @@ describe("Profile Handler (GET /profile/:userId)", () => {
     });
     const res = await handleProfileRequest(req, mockDeps);
     assertEquals(res.status, 401);
-    // Cast to Spy for type safety with assertSpyCall
     assertSpyCall(mockDeps.verifyApiKey as Spy, 0);
-    assertSpyCall(mockDeps.createUnauthorizedResponse as Spy, 0, { args: ["Invalid or missing apikey"] });
+    assertSpyCall(mockDeps.createUnauthorizedResponse as Spy, 0, { args: ["Invalid or missing apikey", req] });
   });
 
   it("should return 401 if user is not authenticated", async () => {
@@ -186,7 +186,6 @@ describe("Profile Handler (GET /profile/:userId)", () => {
     const authError = new AuthError("Invalid JWT");
     const mockGetUser = spy(() => Promise.resolve({ data: { user: null }, error: authError }));
     const mockSupabaseClient = { auth: { getUser: mockGetUser }, from: spy() }; 
-    // Provide the override directly (already spied)
     const mockCreateSupabaseClientOverride = spy(() => mockSupabaseClient as any);
     const mockDeps = createMockDeps({ 
         createSupabaseClient: mockCreateSupabaseClientOverride
@@ -199,12 +198,9 @@ describe("Profile Handler (GET /profile/:userId)", () => {
     const res = await handleProfileRequest(req, mockDeps);
 
     assertEquals(res.status, 401);
-    // Assert the OVERRIDE spy was called
     assertSpyCall(mockCreateSupabaseClientOverride, 0); 
-    // Assert the spy INSIDE the returned mock client was called
     assertSpyCall(mockGetUser, 0);
-    // Assert the standard dependency spy was called
-    assertSpyCall(mockDeps.createUnauthorizedResponse as Spy, 0, { args: ["Not authenticated"] });
+    assertSpyCall(mockDeps.createUnauthorizedResponse as Spy, 0, { args: ["Not authenticated", req] });
   });
 
   // --- Path and Method Tests ---
@@ -212,33 +208,31 @@ describe("Profile Handler (GET /profile/:userId)", () => {
   it("should return 404 for invalid path (e.g., /profile/)", async () => {
     setupEnvStub(defaultEnv);
     const mockDeps = createMockDeps();
-    const req = new Request("http://example.com/profile/", { // Trailing slash
+    const req = new Request("http://example.com/profile/", { 
         method: "GET", 
         headers: { 'apikey': defaultEnv.API_KEY } 
     });
     const res = await handleProfileRequest(req, mockDeps);
     assertEquals(res.status, 404);
-    assertSpyCall(mockDeps.getPathname as Spy, 0); // Path was checked
-    assertSpyCall(mockDeps.createErrorResponse as Spy, 0, { args: ["Not Found", 404] });
+    assertSpyCall(mockDeps.getPathname as Spy, 0); 
+    assertSpyCall(mockDeps.createErrorResponse as Spy, 0, { args: ["Not Found", 404, req] });
   });
   
    it("should return 404 for invalid path (e.g., /profile)", async () => {
     setupEnvStub(defaultEnv);
     const mockDeps = createMockDeps();
-    const req = new Request("http://example.com/profile", { // No user ID
+    const req = new Request("http://example.com/profile", { 
         method: "GET", 
         headers: { 'apikey': defaultEnv.API_KEY } 
     });
     const res = await handleProfileRequest(req, mockDeps);
     assertEquals(res.status, 404);
-    assertSpyCall(mockDeps.createErrorResponse as Spy, 0, { args: ["Not Found", 404] });
+    assertSpyCall(mockDeps.createErrorResponse as Spy, 0, { args: ["Not Found", 404, req] });
   });
 
   it("should return 405 for disallowed methods (e.g., PUT, POST)", async () => {
     setupEnvStub(defaultEnv);
     const mockDeps = createMockDeps();
-    // Get the mock client instance created by the default dependency
-    // The default createSupabaseClient spy returns defaultSupabaseClient (now from outer scope)
     const defaultClientUsed = (mockDeps.createSupabaseClient as Spy).calls[0]?.returned ?? defaultSupabaseClient; 
     const targetUserId = "user-target-456";
     const reqPost = new Request(`http://example.com/profile/${targetUserId}`, { 
@@ -253,13 +247,12 @@ describe("Profile Handler (GET /profile/:userId)", () => {
 
     const resPost = await handleProfileRequest(reqPost, mockDeps);
     assertEquals(resPost.status, 405);
-    assertSpyCall(mockDeps.createErrorResponse as Spy, 0, { args: ["Method POST not allowed", 405] });
+    assertSpyCall(mockDeps.createErrorResponse as Spy, 0, { args: ["Method POST not allowed", 405, reqPost] });
 
     const resPut = await handleProfileRequest(reqPut, mockDeps);
     assertEquals(resPut.status, 405);
-    assertSpyCall(mockDeps.createErrorResponse as Spy, 1, { args: ["Method PUT not allowed", 405] });
+    assertSpyCall(mockDeps.createErrorResponse as Spy, 1, { args: ["Method PUT not allowed", 405, reqPut] });
     
-    // Ensure DB select wasn't called for these methods
     assertSpyCalls(defaultClientUsed._spies.mockFrom, 0);
   });
 
@@ -268,7 +261,9 @@ describe("Profile Handler (GET /profile/:userId)", () => {
   it("should successfully fetch profile with GET /profile/:userId", async () => {
     setupEnvStub(defaultEnv);
     // Provide a specific mock client for this test to access its spies
-    const mockClient = createMockSupabaseClient(); 
+    const mockClient = createMockSupabaseClient(
+        Promise.resolve({ data: { ...mockTargetProfileData }, error: null }) // Ensure mock returns the new field
+    ); 
     const mockCreateClientSpy = spy(() => mockClient);
     const mockDeps = createMockDeps({ createSupabaseClient: mockCreateClientSpy }); 
     const targetUserId = "user-target-456";
@@ -284,7 +279,8 @@ describe("Profile Handler (GET /profile/:userId)", () => {
     assertSpyCall(mockCreateClientSpy, 0);
     // Check Supabase call chain using the spies from the specific mockClient
     assertSpyCall(mockClient._spies.mockFrom as Spy, 0, { args: ['user_profiles'] });
-    assertSpyCall(mockClient._spies.mockSelect as Spy, 0, { args: ['id, first_name, last_name, created_at'] });
+    // Expect 'profile_privacy_setting' to be selected
+    assertSpyCall(mockClient._spies.mockSelect as Spy, 0, { args: ['id, first_name, last_name, created_at, profile_privacy_setting'] });
     assertSpyCall(mockClient._spies.mockEq as Spy, 0, { args: ['id', targetUserId] });
     assertSpyCall(mockClient._spies.mockMaybeSingle as Spy, 0); 
     // Check success response spy (cast needed)
@@ -295,11 +291,9 @@ describe("Profile Handler (GET /profile/:userId)", () => {
 
   it("should return 404 if profile for targetUserId is not found", async () => {
     setupEnvStub(defaultEnv);
-    // Create a mock client that simulates profile not found
     const mockSupabaseNotFound = createMockSupabaseClient(
-        Promise.resolve({ data: null, error: null }) // maybeSingle returns null data
+        Promise.resolve({ data: null, error: null }) 
     );
-    // Pass the specific client creator function spy
     const mockDeps = createMockDeps({ 
         createSupabaseClient: spy(() => mockSupabaseNotFound as any)
     }); 
@@ -310,20 +304,17 @@ describe("Profile Handler (GET /profile/:userId)", () => {
     });
     const res = await handleProfileRequest(req, mockDeps);
     assertEquals(res.status, 404);
-    // Check the Supabase call chain was still attempted
     assertSpyCall(mockSupabaseNotFound._spies.mockFrom as Spy, 0);
     assertSpyCall(mockSupabaseNotFound._spies.mockSelect as Spy, 0);
     assertSpyCall(mockSupabaseNotFound._spies.mockEq as Spy, 0, { args: ['id', targetUserId] });
     assertSpyCall(mockSupabaseNotFound._spies.mockMaybeSingle as Spy, 0);
-    // Check the correct error response creator was called
-    assertSpyCall(mockDeps.createErrorResponse as Spy, 0, { args: ["Profile not found", 404] });
-    assertSpyCalls(mockDeps.createSuccessResponse as Spy, 0); // No success call
+    assertSpyCall(mockDeps.createErrorResponse as Spy, 0, { args: ["Profile not found", 404, req] });
+    assertSpyCalls(mockDeps.createSuccessResponse as Spy, 0); 
   });
 
   it("should return 500 if Supabase throws an error during fetch", async () => {
     setupEnvStub(defaultEnv);
-    // Create a mock client that simulates a DB error
-    const dbError: PostgrestError = { message: "DB connection error", code: "50000", details: "", hint: "", name: "PostgrestError" }; // Added name
+    const dbError: PostgrestError = { message: "DB connection error", code: "50000", details: "", hint: "", name: "PostgrestError" }; 
     const mockSupabaseDbError = createMockSupabaseClient(
         Promise.resolve({ data: null, error: dbError })
     );
@@ -338,8 +329,7 @@ describe("Profile Handler (GET /profile/:userId)", () => {
     const res = await handleProfileRequest(req, mockDeps);
     assertEquals(res.status, 500);
     assertSpyCall(mockSupabaseDbError._spies.mockMaybeSingle as Spy, 0);
-    // Check error response includes the DB error message
-    assertSpyCall(mockDeps.createErrorResponse as Spy, 0, { args: [`Database error: ${dbError.message}`, 500] });
+    assertSpyCall(mockDeps.createErrorResponse as Spy, 0, { args: ["Failed to fetch profile", 500, req] }); 
   });
 
 }); 

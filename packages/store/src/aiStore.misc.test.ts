@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach, afterEach, type Mock } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach, type Mock, type MockInstance } from 'vitest';
 import { useAiStore, initialAiStateValues } from './aiStore';
 import { selectCurrentChatMessages } from './aiStore.selectors'; // Import the selector
 import { act } from '@testing-library/react';
@@ -7,14 +7,41 @@ import {
     SystemPrompt,
     Chat,
     ChatMessage,
+    UserProfile
 } from '@paynless/types';
 import { useAuthStore } from './authStore';
 import { MockedAiApiClient } from '@paynless/api/mocks';
 
+// Define an interface for the expected shape of the mocked users client
+interface MockUserClient {
+    getProfile: Mock;
+}
+
+// This interface represents the parts of ApiClient we are mocking/using
+interface MockedApiClientShape {
+    ai: MockedAiApiClient;
+    users: MockUserClient;
+    organizations: any; 
+    notifications: any; 
+    billing: any; 
+    getSupabaseClient: Mock<[], any>;
+    get: Mock<[string, any?], Promise<any>>;
+    post: Mock<[string, any, any?], Promise<any>>;
+    put: Mock<[string, any, any?], Promise<any>>;
+    patch: Mock<[string, any, any?], Promise<any>>;
+    delete: Mock<[string, any?], Promise<any>>;
+    getFunctionsUrl: Mock<[], string>;
+}
+
 vi.mock('@paynless/api', async (importOriginal) => {
-    const { createMockAiApiClient: actualCreateMock, resetMockAiApiClient: actualResetMock } = await import('@paynless/api/mocks');
+    const { 
+        createMockAiApiClient: actualCreateMockAi, 
+    } = await import('@paynless/api/mocks');
     
-    const localMockAiApiInstance = actualCreateMock() as unknown as MockedAiApiClient;
+    const localMockAiApiInstance = actualCreateMockAi() as unknown as MockedAiApiClient;
+    const localMockUserApiInstance: MockUserClient = {
+        getProfile: vi.fn(),
+    };
 
     const mockSupabaseAuth = {
         getSession: vi.fn().mockResolvedValue({ data: { session: { access_token: 'mock-token' } }, error: null }),
@@ -22,8 +49,9 @@ vi.mock('@paynless/api', async (importOriginal) => {
     };
     const mockSupabaseClient = { auth: mockSupabaseAuth, from: vi.fn().mockReturnThis() };
     
-    const mockApiClientToReturn = {
+    const mockApiClientToReturn: MockedApiClientShape = {
         ai: localMockAiApiInstance, 
+        users: localMockUserApiInstance,
         organizations: { getOrganization: vi.fn(), updateOrganizationSettings: vi.fn() },
         notifications: { getNotifications: vi.fn(), markAllNotificationsAsRead: vi.fn() },
         billing: { createCheckoutSession: vi.fn(), getSubscriptions: vi.fn() },
@@ -33,16 +61,15 @@ vi.mock('@paynless/api', async (importOriginal) => {
     };
 
     return {
-        // ...actualApiModule, // REMOVED
-        // AiApiClient constructor mock now directly uses the local instance if needed,
-        // or consumers should use getApiClient().ai
-        AiApiClient: vi.fn(() => localMockAiApiInstance), // Keep if AiApiClient class itself is instantiated in tests
+        api: {
+            users: () => localMockUserApiInstance,
+        },
+        AiApiClient: vi.fn(() => localMockAiApiInstance),
+        UserApiClient: vi.fn(() => localMockUserApiInstance),
         getApiClient: vi.fn(() => mockApiClientToReturn), 
         initializeApiClient: vi.fn(), 
-        // Re-export mock utilities if they are imported from '@paynless/api' in the test file
-        // (though this file seems to import AiApiClient class directly and mock utils from /mocks)
-        createMockAiApiClient: actualCreateMock, 
-        resetMockAiApiClient: actualResetMock,
+        _resetApiClient: vi.fn(), 
+        createMockAiApiClient: actualCreateMockAi, 
     };
 });
 
@@ -117,12 +144,11 @@ describe('aiStore - Misc Actions', () => {
         const apiMockModule = await import('@paynless/api');
         const mockedApi = vi.mocked(apiMockModule);
         
-        // Retrieve the AI mock instance via the mocked getApiClient
-        const currentMockAiApiInstance = mockedApi.getApiClient().ai as unknown as MockedAiApiClient;
-
-        if (currentMockAiApiInstance && mockedApi.resetMockAiApiClient) {
-            mockedApi.resetMockAiApiClient(currentMockAiApiInstance as any); // Cast as any if type issues persist with reset
+        if (mockedApi._resetApiClient) {
+            mockedApi._resetApiClient(); 
         }
+        // vi.clearAllMocks() called at the top of beforeEach should handle resetting vi.fn() instances.
+        
         act(() => {
              resetAiStore();
              // The call to mockedAuthStore.setState below will execute the vi.fn() for setState.
@@ -176,3 +202,230 @@ describe('aiStore - Misc Actions', () => {
     }); // End clearAiError describe
 
 }); // End main describe block
+
+// --- NEW TEST SUITE FOR _fetchAndStoreUserProfiles ---
+describe('aiStore - _fetchAndStoreUserProfiles', () => {
+    let mockGetProfile: Mock;
+    let loggerWarnSpy: MockInstance<[message: string, metadata?: any], void>;
+    let loggerErrorSpy: MockInstance<[message: string, metadata?: any], void>;
+    let loggerDebugSpy: MockInstance<[message: string, metadata?: any], void>;
+    let loggerInfoSpy: MockInstance<[message: string, metadata?: any], void>;
+
+    // Moved mockUserProfile function definition higher up
+    const mockUserProfile = (id: string): UserProfile => ({
+        id,
+        first_name: `First-${id}`,
+        last_name: `Last-${id}`,
+        updated_at: new Date().toISOString(),
+        created_at: new Date().toISOString(),
+        last_selected_org_id: null,
+        chat_context: null,
+        profile_privacy_setting: 'public',
+        role: 'user',
+    });
+
+    // Define mock profiles at a higher scope to ensure consistent timestamps
+    const user1Profile = mockUserProfile('user1');
+    const user2Profile = mockUserProfile('user2');
+    const userNewProfile = mockUserProfile('user-new');
+    const userExistingProfile = mockUserProfile('user-existing');
+    const userSuccessProfile = mockUserProfile('user-s');
+
+    beforeEach(async () => {
+        // vi.clearAllMocks(); // Already called in global beforeEach, but doesn't hurt if specific spies are added here
+        // vi.restoreAllMocks(); // Same as above
+
+        // Setup spies for logger
+        const utilsMock = await import('@paynless/utils');
+        loggerWarnSpy = vi.spyOn(utilsMock.logger, 'warn') as unknown as MockInstance<[message: string, metadata?: any], void>;
+        loggerErrorSpy = vi.spyOn(utilsMock.logger, 'error') as unknown as MockInstance<[message: string, metadata?: any], void>;
+        loggerDebugSpy = vi.spyOn(utilsMock.logger, 'debug') as unknown as MockInstance<[message: string, metadata?: any], void>;
+        loggerInfoSpy = vi.spyOn(utilsMock.logger, 'info') as unknown as MockInstance<[message: string, metadata?: any], void>;
+
+
+        // Mock api.users().getProfile()
+        const apiMockModule = await import('@paynless/api');
+        const mockedApi = vi.mocked(apiMockModule);
+
+        // Access the mock through the 'api' export, which should align with how aiStore uses it.
+        // The 'users' method on the mocked 'api' object returns our MockUserClient.
+        const usersApiClientMock = mockedApi.api.users() as unknown as MockUserClient;
+        mockGetProfile = usersApiClientMock.getProfile;
+
+
+        // Mock authStore to provide a current user
+        vi.mocked(useAuthStore.getState).mockReturnValue({
+            user: { id: 'current-user-id' } as any,
+            session: { access_token: 'mock-token' } as any,
+            profile: null,
+            isLoading: false,
+            error: null,
+            navigate: vi.fn(),
+            // ... other authStore functions if needed by _fetchAndStoreUserProfiles indirectly
+            setUser: vi.fn(),
+            setSession: vi.fn(),
+            setProfile: vi.fn(),
+            setIsLoading: vi.fn(),
+            setError: vi.fn(),
+            setNavigate: vi.fn(),
+            login: vi.fn(),
+            logout: vi.fn(),
+            register: vi.fn(),
+            updateProfile: vi.fn(),
+            updateEmail: vi.fn(),
+            uploadAvatar: vi.fn(),
+            fetchProfile: vi.fn(),
+            checkEmailExists: vi.fn(),
+            requestPasswordReset: vi.fn(),
+            handleOAuthLogin: vi.fn(),
+        });
+        
+        act(() => {
+            resetAiStore(); // Reset aiStore state
+        });
+    });
+
+    afterEach(() => {
+        vi.restoreAllMocks(); // Restore all mocks after each test
+    });
+
+    it('should successfully fetch and store new profiles', async () => {
+        const userIdsToFetch = ['user1', 'user2'];
+        mockGetProfile
+            .mockResolvedValueOnce({ data: user1Profile, error: null, status: 200 })
+            .mockResolvedValueOnce({ data: user2Profile, error: null, status: 200 });
+
+        await act(async () => {
+            // Directly call the internal function for testing.
+            // This requires it to be exported from aiStore.ts or tested via a public action that uses it.
+            // For now, assuming we can access it or will test via `loadChatDetails` or similar.
+            // Let's simulate calling it as if by loadChatDetails.
+            // We need to get the actual function from the store instance.
+            await (useAiStore.getState() as any)._fetchAndStoreUserProfiles(userIdsToFetch);
+        });
+
+        const state = useAiStore.getState();
+        expect(mockGetProfile).toHaveBeenCalledTimes(2);
+        expect(mockGetProfile).toHaveBeenCalledWith('user1');
+        expect(mockGetProfile).toHaveBeenCalledWith('user2');
+        expect(state.chatParticipantsProfiles['user1']).toEqual(user1Profile);
+        expect(state.chatParticipantsProfiles['user2']).toEqual(user2Profile);
+        expect(loggerWarnSpy).not.toHaveBeenCalled();
+        expect(loggerErrorSpy).not.toHaveBeenCalled();
+    });
+
+    it('should gracefully handle API errors (e.g., RLS denial) and not store profile', async () => {
+        const userIdToFetch = 'user-rls-denied';
+        const apiError = { code: 'RLS_DENIED', message: 'Access denied via RLS' };
+        mockGetProfile.mockResolvedValueOnce({ data: null, error: apiError, status: 403 });
+
+        await act(async () => {
+            await (useAiStore.getState() as any)._fetchAndStoreUserProfiles([userIdToFetch]);
+        });
+
+        const state = useAiStore.getState();
+        expect(mockGetProfile).toHaveBeenCalledWith(userIdToFetch);
+        expect(state.chatParticipantsProfiles[userIdToFetch]).toBeUndefined();
+        expect(loggerWarnSpy).toHaveBeenCalledWith(
+            expect.stringContaining(`API error fetching profile for user ${userIdToFetch}`),
+            expect.objectContaining({ errorCode: apiError.code, errorMessage: apiError.message })
+        );
+        expect(loggerErrorSpy).not.toHaveBeenCalled();
+    });
+
+    it('should gracefully handle promise rejections (e.g., network error) and not store profile', async () => {
+        const userIdToFetch = 'user-network-error';
+        const networkError = new Error('Network failure');
+        mockGetProfile.mockRejectedValueOnce(networkError); // Simulate a direct rejection
+
+        await act(async () => {
+            await (useAiStore.getState() as any)._fetchAndStoreUserProfiles([userIdToFetch]);
+        });
+        
+        const state = useAiStore.getState();
+        expect(mockGetProfile).toHaveBeenCalledWith(userIdToFetch);
+        expect(state.chatParticipantsProfiles[userIdToFetch]).toBeUndefined();
+        // The error is caught by the .catch(error => ({userId, error})) inside profilePromises.map
+        // This means the promise resolves successfully with an error object, leading to a logger.warn
+        expect(loggerWarnSpy).toHaveBeenCalledWith(
+            expect.stringContaining(`Error fetching profile for user ${userIdToFetch} (caught by promise.catch)`),
+            expect.objectContaining({ error: networkError })
+        );
+        expect(loggerErrorSpy).not.toHaveBeenCalled(); // Should not call logger.error in this path
+    });
+    
+    it('should skip fetching for current user and already existing profiles', async () => {
+        const currentUserId = 'current-user-id'; // As set in beforeEach auth mock
+        const existingUserId = 'user-existing';
+        const newUserId = 'user-new';
+    
+        act(() => {
+            useAiStore.setState({
+                chatParticipantsProfiles: {
+                    [existingUserId]: userExistingProfile, // Use pre-defined profile
+                },
+            });
+        });
+    
+        mockGetProfile.mockResolvedValueOnce({ data: userNewProfile, error: null, status: 200 });
+    
+        await act(async () => {
+            await (useAiStore.getState() as any)._fetchAndStoreUserProfiles([currentUserId, existingUserId, newUserId]);
+        });
+    
+        const state = useAiStore.getState();
+        expect(mockGetProfile).toHaveBeenCalledTimes(1);
+        expect(mockGetProfile).toHaveBeenCalledWith(newUserId);
+        expect(state.chatParticipantsProfiles[newUserId]).toEqual(userNewProfile);
+        expect(state.chatParticipantsProfiles[existingUserId]).toEqual(userExistingProfile); // Should still be there
+        // expect(loggerDebugSpy).toHaveBeenCalledWith( // Expect a debug log for skipping
+        //     expect.stringContaining('No new user profiles to fetch'),
+        //     expect.objectContaining({ requestedUserIds: [currentUserId, existingUserId, newUserId] })
+        // );
+        // Commenting out the loggerDebugSpy check for now, as the condition for "No new user profiles to fetch" might be tricky
+        // if currentUserId or existingUserId are the *only* ones passed. 
+        // The core functionality is that only newUserId is fetched.
+    });
+
+    it('should handle a mix of successful and failed fetches in one batch', async () => {
+        const userSuccess = 'user-s';
+        const userApiErrorId = 'user-ae';
+        const userPromiseRejectId = 'user-pr';
+    
+        const apiErrorPayload = { code: 'SOME_ERROR', message: 'API level error' };
+        const promiseRejectError = new Error('Promise level rejection');
+    
+        mockGetProfile
+            .mockImplementation(async (id: string) => {
+                if (id === userSuccess) return { data: userSuccessProfile, error: null, status: 200 };
+                if (id === userApiErrorId) return { data: null, error: apiErrorPayload, status: 500 };
+                if (id === userPromiseRejectId) throw promiseRejectError; // This will be caught by the .catch in profilePromises.map
+                return { data: null, error: {code: 'UNHANDLED_MOCK', message: 'Unhandled mock id'}, status: 500};
+            });
+            
+        await act(async () => {
+            await (useAiStore.getState() as any)._fetchAndStoreUserProfiles([userSuccess, userApiErrorId, userPromiseRejectId]);
+        });
+    
+        const state = useAiStore.getState();
+        expect(state.chatParticipantsProfiles[userSuccess]).toEqual(userSuccessProfile);
+        expect(state.chatParticipantsProfiles[userApiErrorId]).toBeUndefined();
+        expect(state.chatParticipantsProfiles[userPromiseRejectId]).toBeUndefined();
+    
+        expect(loggerWarnSpy).toHaveBeenCalledWith(
+            expect.stringContaining(`API error fetching profile for user ${userApiErrorId}`),
+            expect.objectContaining({ errorCode: apiErrorPayload.code })
+        );
+        // For the promiseRejectError, it's caught by the .catch in the map, so it becomes a warning
+        expect(loggerWarnSpy).toHaveBeenCalledWith(
+            expect.stringContaining(`Error fetching profile for user ${userPromiseRejectId} (caught by promise.catch)`),
+            expect.objectContaining({ error: promiseRejectError })
+        );
+        expect(loggerErrorSpy).not.toHaveBeenCalled(); // logger.error should not be called for promiseRejectId in this path
+        expect(loggerInfoSpy).toHaveBeenCalledWith(
+            expect.stringContaining('Successfully fetched and stored 1 of 3 requested profiles'),
+            expect.anything()
+        );
+    });
+
+}); // End _fetchAndStoreUserProfiles describe

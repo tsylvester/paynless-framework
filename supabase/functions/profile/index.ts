@@ -63,7 +63,7 @@ export async function handleProfileRequest(
   // Verify API key
   const isValidApiKey = verifyApiKey(req);
   if (!isValidApiKey) {
-    return createUnauthorizedResponse("Invalid or missing apikey");
+    return createUnauthorizedResponse("Invalid or missing apikey", req);
   }
 
   try {
@@ -75,7 +75,7 @@ export async function handleProfileRequest(
     
     if (userError || !requestingUser) {
       console.error("Profile Auth error or no user:", userError);
-      return createUnauthorizedResponse("Not authenticated");
+      return createUnauthorizedResponse("Not authenticated", req);
     }
     
     // --- Routing and Parameter Extraction ---
@@ -99,7 +99,7 @@ export async function handleProfileRequest(
             // Fetch the profile using the userId from the path
             const { data, error } = await supabase
               .from('user_profiles')
-              .select('id, first_name, last_name, created_at') // Select only public fields
+              .select('id, first_name, last_name, created_at, profile_privacy_setting')
               .eq('id', targetUserId) // Use targetUserId from path
               .maybeSingle(); 
             profile = data;

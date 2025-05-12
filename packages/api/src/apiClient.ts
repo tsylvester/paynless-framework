@@ -11,6 +11,7 @@ import { StripeApiClient } from './stripe.api';
 import { AiApiClient } from './ai.api';
 import { NotificationApiClient } from './notifications.api'; // Import new client
 import { OrganizationApiClient } from './organizations.api'; // <<< Import Org client
+import { UserApiClient } from './users.api'; // +++ Add import
 import { logger } from '@paynless/utils';
 import type { Database } from '@paynless/db-types'; // Keep this for createClient
 
@@ -52,6 +53,7 @@ export class ApiClient {
     public ai: AiApiClient;
     public notifications: NotificationApiClient; // Add new client property
     public organizations: OrganizationApiClient; // <<< Add Org client property
+    public users: UserApiClient; // +++ Add users property
 
     // Update constructor signature
     constructor(options: ApiClientConstructorOptions) {
@@ -67,6 +69,7 @@ export class ApiClient {
         this.ai = new AiApiClient(this);
         this.notifications = new NotificationApiClient(this); // Initialize new client
         this.organizations = new OrganizationApiClient(this); // <<< Initialize Org client
+        this.users = new UserApiClient(this); // +++ Initialize UserApiClient
     }
 
     /**
@@ -281,6 +284,7 @@ export const api = {
     billing: () => getApiClient().billing,
     notifications: () => getApiClient().notifications,
     organizations: () => getApiClient().organizations,
+    users: () => getApiClient().users,
     getSupabaseClient: (): SupabaseClient<Database> => 
         getApiClient().getSupabaseClient(),
 }; 

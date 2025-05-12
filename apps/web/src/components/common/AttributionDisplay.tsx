@@ -1,5 +1,5 @@
 import React from 'react';
-import { useAuthStore, useOrganizationStore, useAiStore } from '@paynless/store';
+import { useAuthStore, useAiStore } from '@paynless/store';
 import { formatDistanceToNow, format, parseISO } from 'date-fns';
 import type { UserProfile, User } from '@paynless/types';
 
@@ -20,21 +20,15 @@ export const AttributionDisplay: React.FC<AttributionDisplayProps> = ({
   userId,
   role,
   timestamp,
-  organizationId,
   modelId,
 }) => {
   const { currentUser, profile: currentUserProfile } = useAuthStore(
     (state) => ({ currentUser: state.user as User | null, profile: state.profile as UserProfile | null }),
   );
-  const { currentOrganizationId, currentOrganizationMembers } = useOrganizationStore(
-    (state) => ({
-      currentOrganizationId: state.currentOrganizationId,
-      currentOrganizationMembers: state.currentOrganizationMembers,
-    }),
-  );
-  const { availableProviders } = useAiStore(
+  const { availableProviders, chatParticipantsProfiles } = useAiStore(
     (state) => ({
       availableProviders: state.availableProviders,
+      chatParticipantsProfiles: state.chatParticipantsProfiles,
     }),
   );
 
@@ -50,36 +44,41 @@ export const AttributionDisplay: React.FC<AttributionDisplayProps> = ({
     // Determine if the message user is the current authenticated user
     const isCurrentUserMessage = currentUser?.id === userId;
 
-    let profileToUse: UserProfile | null | undefined = null;
-    let emailFallback: string | undefined = undefined;
+    // Initialize with a generic default
+    displayName = 'User'; 
+    fullIdentifier = `User ID: ${truncateId(userId)}`; // Keep fullIdentifier potentially more specific for title
 
     if (isCurrentUserMessage) {
-      profileToUse = currentUserProfile;
-      emailFallback = currentUser?.email;
-    } else if (organizationId && organizationId === currentOrganizationId) {
-      // Message is from another user in the currently active organization
-      const member = currentOrganizationMembers?.find(m => m.user_id === userId);
-      profileToUse = member?.user_profiles;
-      // No email on user_profiles, so fallback to undefined
-    }
-
-    if (profileToUse?.first_name && profileToUse?.last_name) {
-      displayName = `${profileToUse.first_name} ${profileToUse.last_name}`;
-      fullIdentifier = `${displayName} (ID: ${userId})`;
-    } else if (profileToUse?.first_name) {
-      displayName = profileToUse.first_name;
-      fullIdentifier = `${displayName} (ID: ${userId})`;
-    } else if (emailFallback) {
-      // Use email as fallback when no profile name is available
-      displayName = emailFallback;
-      fullIdentifier = `${displayName} (ID: ${userId})`;
+      let tempDisplayName = 'You'; // Default before adding (You)
+      if (currentUserProfile?.first_name && currentUserProfile?.last_name) {
+        tempDisplayName = `${currentUserProfile.first_name} ${currentUserProfile.last_name}`;
+      } else if (currentUserProfile?.first_name) {
+        tempDisplayName = currentUserProfile.first_name;
+      } else if (currentUser?.email) {
+        tempDisplayName = currentUser.email;
+      } else {
+        // Fallback to truncated ID if no name/email for current user
+        tempDisplayName = truncateId(userId);
+      }
+      fullIdentifier = `${tempDisplayName} (ID: ${userId})`; // Set fullIdentifier BEFORE appending (You)
+      displayName = `${tempDisplayName} (You)`;
     } else {
-      displayName = truncateId(userId);
-      fullIdentifier = `User ID: ${userId}`;
-    }
-    // Add (You) if this is the current user
-    if (isCurrentUserMessage) {
-      displayName += ' (You)';
+      // For other users, try to get from chatParticipantsProfiles first
+      const participantProfile = chatParticipantsProfiles[userId];
+      if (participantProfile) {
+        if (participantProfile.first_name && participantProfile.last_name) {
+          displayName = `${participantProfile.first_name} ${participantProfile.last_name}`;
+        } else if (participantProfile.first_name) {
+          displayName = participantProfile.first_name;
+        } else if (participantProfile.id) { // Fallback to ID from profile if name is missing
+          displayName = truncateId(participantProfile.id);
+        } // Else, displayName remains 'User' as initialized before this block
+        fullIdentifier = `${displayName} (Profile ID: ${participantProfile.id})`;
+      } else {
+        // If participantProfile is not found, or for non-current users with no profile in chatParticipants
+        displayName = truncateId(userId); // Default to truncated ID for other users not in participants list
+        fullIdentifier = `User ID: ${userId}`; 
+      }
     }
   }
 

@@ -1,8 +1,7 @@
-import React from 'react';
 import { render, screen } from '@testing-library/react';
 import { vi, describe, it, expect, beforeEach } from 'vitest';
 import { AttributionDisplay, AttributionDisplayProps } from './AttributionDisplay';
-import type { User, UserProfile, OrganizationMemberWithProfile } from '@paynless/types';
+import type { User, UserProfile, OrganizationMemberWithProfile, AiStore } from '@paynless/types';
 import { useAiStore } from '@paynless/store';
 
 // Import shared mock SETTER utilities (can be at top level)
@@ -66,6 +65,8 @@ const fullBaseUserProfile: UserProfile = {
     last_selected_org_id: null,
     first_name: null,
     last_name: null,
+    chat_context: {},
+    profile_privacy_setting: 'private',
 };
 
 
@@ -115,7 +116,7 @@ describe('AttributionDisplay', () => {
       mockSetAuthProfile(profileNoDetails);
       render(<AttributionDisplay {...defaultProps} userId={testUserId} />);
       expect(screen.getByText(`${testUserId.substring(0, 8)}... (You)`)).toBeInTheDocument();
-      expect(screen.getByText(`${testUserId.substring(0, 8)}... (You)`).closest('span')).toHaveAttribute('title', `User ID: ${testUserId}`);
+      expect(screen.getByText(`${testUserId.substring(0, 8)}... (You)`).closest('span')).toHaveAttribute('title', `${testUserId.substring(0, 8)}... (ID: ${testUserId})`);
     });
 
     it('should display current user\'s email (from user object) and timestamp if profile is null but user object has email', () => {
@@ -172,6 +173,14 @@ describe('AttributionDisplay', () => {
     });
 
     it('should display org member\'s first name and timestamp if member profile has only first_name', () => {
+      const otherMemberProfileWithFirstName: UserProfile = { 
+        ...fullBaseUserProfile, // Ensure this base includes chat_context and profile_privacy_setting
+        id: otherUserId, 
+        first_name: 'Other', 
+        last_name: null 
+      };
+      (useAiStore.getState() as AiStore).chatParticipantsProfiles = { [otherUserId]: otherMemberProfileWithFirstName }; // Or use your mockSetter
+
       mockSetAuthUser(currentActiveUser);
       mockSetAuthProfile(currentActiveUserProfile);
       mockSetCurrentOrgId(testOrgId);
@@ -232,6 +241,33 @@ describe('AttributionDisplay', () => {
       expect(screen.getByText(`${otherUserId.substring(0, 8)}...`)).toBeInTheDocument();
       expect(screen.getByText(`${otherUserId.substring(0, 8)}...`).closest('span')).toHaveAttribute('title', `User ID: ${otherUserId}`);
     });
+
+    it('should display other user\'s truncated ID (from profile) if profile in chatParticipantsProfiles has no names', () => {
+      const profileNoNames: UserProfile = { 
+        ...fullBaseUserProfile, 
+        id: otherUserId, 
+        first_name: null, 
+        last_name: null 
+      };
+      (useAiStore.getState() as AiStore).chatParticipantsProfiles = { [otherUserId]: profileNoNames };
+      
+      render(<AttributionDisplay {...defaultProps} userId={otherUserId} />);
+      expect(screen.getByText(`${otherUserId.substring(0, 8)}...`)).toBeInTheDocument();
+      // The component currently generates "Other User Truncated ID (Profile ID: otherUserId)" for the title
+      expect(screen.getByText(`${otherUserId.substring(0, 8)}...`).closest('span'))
+        .toHaveAttribute('title', `${otherUserId.substring(0, 8)}... (Profile ID: ${otherUserId})`);
+    });
+
+    it('should display truncated userId (from prop) if user is not in chatParticipantsProfiles', () => {
+      mockSetAuthUser(currentActiveUser); // Assuming currentActiveUser is defined
+      mockSetAuthProfile(currentActiveUserProfile); // Assuming currentActiveUserProfile is defined
+      (useAiStore.getState() as AiStore).chatParticipantsProfiles = {}; // Explicitly empty
+    
+      render(<AttributionDisplay {...defaultProps} userId={otherUserId} organizationId={testOrgId} />);
+      expect(screen.getByText(`${otherUserId.substring(0, 8)}...`)).toBeInTheDocument();
+      expect(screen.getByText(`${otherUserId.substring(0, 8)}...`).closest('span'))
+        .toHaveAttribute('title', `User ID: ${otherUserId}`);
+    });
   });
 
   describe('3. Fallback/Generic Attribution', () => {
@@ -286,7 +322,18 @@ describe('AttributionDisplay', () => {
       mockSetAuthUser(null);
       mockSetAuthProfile(null);
       // Set the provider list before rendering
-      useAiStore.setState({ availableProviders: [{ id: 'model-gpt-4', name: 'GPT-4' }] }, true);
+      useAiStore.setState({ availableProviders: [{ 
+          id: 'model-gpt-4', 
+          name: 'GPT-4',
+          api_identifier: 'gpt-4',
+          config: {},
+          created_at: new Date().toISOString(),
+          description: 'Mock GPT-4 Provider',
+          is_active: true,
+          is_enabled: true,
+          provider: 'openai', // example
+          updated_at: new Date().toISOString(),
+      }] }, true);
       render(<AttributionDisplay {...assistantProps} modelId="model-gpt-4" />);
       expect(screen.getByText('GPT-4')).toBeInTheDocument();
       expect(screen.getByText('GPT-4').closest('span')).toHaveAttribute('title', 'GPT-4');

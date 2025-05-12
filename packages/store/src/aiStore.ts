@@ -91,42 +91,56 @@ export const useAiStore = create<AiStore>()(
                         return;
                     }
 
-                    logger.info('[aiStore._fetchAndStoreUserProfiles] Fetching profiles for user IDs:', { userIds: idsToFetch });
-                    try {
-                        // TEMPORARY: Cast api to any to use conceptual .users().getProfilesByIds()
-                        // TODO: Define api.users().getProfilesByIds() in IApiClient and implement it.
-                        const response = await (api as any).users().getProfilesByIds(idsToFetch); 
+                    logger.info('[aiStore._fetchAndStoreUserProfiles] Attempting to fetch profiles for user IDs:', { userIds: idsToFetch });
+                    
+                    const profilePromises = idsToFetch.map(userId => 
+                        api.users().getProfile(userId) // Use the new UserApiClient method
+                            .then((response: ApiResponse<UserProfile>) => ({ userId, response })) // Explicitly type response
+                            .catch((error: Error) => ({ userId, error })) // Explicitly type error as Error
+                    );
 
-                        if (response.error) {
-                            throw new Error(response.error.message || 'Failed to fetch user profiles by IDs');
-                        }
+                    const results = await Promise.allSettled(profilePromises);
+                    const newProfilesMap: { [userId: string]: UserProfile } = {};
+                    let successfullyFetchedCount = 0;
 
-                        if (response.data && Array.isArray(response.data)) {
-                            const fetchedProfilesArray = response.data as UserProfile[]; // UserProfile from @paynless/types
-                            const newProfilesMap: { [userId: string]: UserProfile } = {};
-                            fetchedProfilesArray.forEach(profile => {
-                                if (profile && profile.id) { 
-                                   newProfilesMap[profile.id] = profile;
-                                }
-                            });
-
-                            if (Object.keys(newProfilesMap).length > 0) {
-                                set(state => ({
-                                    chatParticipantsProfiles: {
-                                        ...state.chatParticipantsProfiles,
-                                        ...newProfilesMap,
-                                    }
-                                }));
-                                logger.info('[aiStore._fetchAndStoreUserProfiles] Stored profiles for users:', { userIds: Object.keys(newProfilesMap) });
+                    results.forEach(result => {
+                        if (result.status === 'fulfilled') {
+                            const { userId, response, error } = result.value as { userId: string; response?: ApiResponse<UserProfile>; error?: Error }; // error is now Error
+                            
+                            if (error) { // Handle errors caught by the .catch in profilePromises
+                                logger.warn(`[aiStore._fetchAndStoreUserProfiles] Error fetching profile for user ${userId} (caught by promise.catch):`, { error });
+                            } else if (response && response.data && !response.error) {
+                                newProfilesMap[userId] = response.data;
+                                successfullyFetchedCount++;
+                            } else if (response && response.error) {
+                                logger.warn(`[aiStore._fetchAndStoreUserProfiles] API error fetching profile for user ${userId} (RLS denial or other server error):`, { 
+                                    status: response.status, 
+                                    errorCode: response.error.code, 
+                                    errorMessage: response.error.message 
+                                });
+                                // Do not add to newProfilesMap, RLS likely denied access or another server-side issue occurred
                             } else {
-                                logger.warn('[aiStore._fetchAndStoreUserProfiles] API call successful but no valid profiles returned or mapped.', { responseData: response.data });
+                                logger.warn(`[aiStore._fetchAndStoreUserProfiles] Unexpected empty response or structure for user ${userId}.`, { response });
                             }
                         } else {
-                             logger.warn('[aiStore._fetchAndStoreUserProfiles] No data or unexpected data format returned from getProfilesByIds API call.', { responseData: response.data });
+                            // result.status === 'rejected' - error from api.users().getProfile() itself before .then/.catch
+                            // This case should ideally be less common if getProfile itself catches and returns ApiResponse
+                            const failedPromise = result.reason as { userId?: string; error?: Error } | Error; // Refined type for failedPromise
+                            const userId = typeof failedPromise === 'object' && failedPromise !== null && 'userId' in failedPromise && typeof failedPromise.userId === 'string' ? failedPromise.userId : 'unknown_user_id_in_rejected_promise';
+                            logger.error(`[aiStore._fetchAndStoreUserProfiles] Promise rejected while fetching profile for user ${userId}:`, { reason: result.reason });
                         }
-                    } catch (error) {
-                        const errorMessage = error instanceof Error ? error.message : 'Unknown error fetching user profiles';
-                        logger.error('[aiStore._fetchAndStoreUserProfiles] Error:', { message: errorMessage, userIds: idsToFetch });
+                    });
+
+                    if (successfullyFetchedCount > 0) {
+                        set(state => ({
+                            chatParticipantsProfiles: {
+                                ...state.chatParticipantsProfiles,
+                                ...newProfilesMap,
+                            }
+                        }));
+                        logger.info(`[aiStore._fetchAndStoreUserProfiles] Successfully fetched and stored ${successfullyFetchedCount} of ${idsToFetch.length} requested profiles.`, { fetchedUserIds: Object.keys(newProfilesMap) });
+                    } else {
+                        logger.warn('[aiStore._fetchAndStoreUserProfiles] No new profiles were successfully fetched.', { totalAttempted: idsToFetch.length });
                     }
                 };
 
@@ -996,6 +1010,9 @@ export const useAiStore = create<AiStore>()(
                             isChatContextHydrated: false,
                         });
                     },
+
+                    // --- Internal Helper Functions Exposed for Testing ---
+                    _fetchAndStoreUserProfiles, // Export for testing
                 };
             }
         // )
@@ -1003,3 +1020,6 @@ export const useAiStore = create<AiStore>()(
 );
 
 export const useAiStoreTyped = useAiStore as unknown as AiStore;
+
+// Export initialAiStateValues for testing purposes
+export { initialAiStateValues };
