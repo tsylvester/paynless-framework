@@ -552,15 +552,12 @@ export async function handleCancelInvite(
 // List pending invites and requests for an organization (Admin only)
 export async function handleListPending(
     req: Request, 
-    supabaseClient: SupabaseClient<Database>,
-    user: { id: string; email?: string }, // Use inline type instead of User
+    supabaseClient: SupabaseClient<Database>, // This is the user's client
+    user: User, 
     orgId: string
 ): Promise<Response> {
     console.log(`[invites.ts] Handling LIST PENDING for org: ${orgId}`);
 
-    // 1. Check permissions (Is user an admin of this org?)
-    // Note: Using RPC is slightly less secure if RLS isn't perfect,
-    // but simpler than joining organization_members here.
     const { data: isAdmin, error: adminCheckError } = await supabaseClient.rpc('is_org_admin', { org_id: orgId });
 
     if (adminCheckError) {
@@ -572,64 +569,96 @@ export async function handleListPending(
         return createErrorResponse("Forbidden: You do not have permission to view pending items for this organization.", 403, req);
     }
 
-    // 2. Fetch pending invites (selecting necessary fields including inviter ID)
-    const { data: invites, error: invitesError } = await supabaseClient
+    // 1. Fetch pending invites (basic details first)
+    const { data: invitesRaw, error: invitesError } = await supabaseClient
         .from('invites')
-        .select(`
-            id,
-            invite_token,
-            organization_id,
-            invited_email,
-            role_to_assign,
-            invited_by_user_id,
-            status,
-            created_at,
-            expires_at,
-            inviter_email,
-            inviter_first_name,
-            inviter_last_name
-        `)
+        .select('*, invited_by_user_id') // Get all invite fields + the ID of the inviter
         .eq('organization_id', orgId)
         .eq('status', 'pending');
 
     if (invitesError) {
-        console.error(`[invites.ts List Pending] Error fetching pending invites for org ${orgId}:`, invitesError);
+        console.error(`[invites.ts List Pending] Error fetching raw invites for org ${orgId}:`, invitesError);
         return createErrorResponse("Error fetching pending invites.", 500, req);
     }
 
-    // +++ ADD DEFAULTING FOR INVITES +++
-    const invitesData = invites || []; 
-    // +++++++++++++++++++++++++++++++++++
+    const rawInvitesData = invitesRaw || []; // Renamed to avoid conflict
+    let enrichedInvitesData = [];
 
-    // 3. Fetch pending join requests (from the new view)
-    const { data: pendingRequests, error: requestsError } = await supabaseClient
-        .from('v_pending_membership_requests') // <<< Use the VIEW name
-        .select(` 
-            id, 
-            user_id, 
-            organization_id, 
-            status, 
-            created_at,
-            role, 
-            first_name, 
-            last_name,
-            user_email
-        `) // <<< Select columns from the VIEW
+    // 2. Enrich invites with inviter's profile using service role client (to bypass RLS)
+    const supabaseUrl = Deno.env.get('SUPABASE_URL');
+    const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+    let adminClient: SupabaseClient<Database> | null = null;
+
+    if (!supabaseUrl || !serviceRoleKey) {
+        console.error("[invites.ts List Pending] Service role credentials not configured. Cannot fetch inviter profiles.");
+        enrichedInvitesData = rawInvitesData.map(invite => ({ ...invite, invited_by_profile: null }));
+    } else {
+        adminClient = createClient<Database>(supabaseUrl, serviceRoleKey);
+        enrichedInvitesData = await Promise.all(rawInvitesData.map(async (invite) => {
+            if (!invite.invited_by_user_id) { 
+                return { ...invite, invited_by_profile: null };
+            }
+            const { data: profile, error: profileError } = await adminClient! // Assert adminClient is not null here
+                .from('user_profiles')
+                .select('first_name, last_name')
+                .eq('id', invite.invited_by_user_id)
+                .single();
+            if (profileError) {
+                console.error(`[invites.ts List Pending] Service role error fetching inviter profile for user ${invite.invited_by_user_id}:`, profileError);
+                return { ...invite, invited_by_profile: null };
+            }
+            return { ...invite, invited_by_profile: profile };
+        }));
+    }
+    
+    // 3. Fetch pending join requests (raw data from view)
+    // The view v_pending_membership_requests already attempts to join with user_profiles and auth.users
+    // However, RLS on user_profiles (can only see own) means names/emails will be null for admin.
+    const { data: rawPendingRequests, error: requestsError } = await supabaseClient
+        .from('v_pending_membership_requests') 
+        .select('id, user_id, organization_id, status, created_at, role') // Select core fields, profile fields will be fetched next
         .eq('organization_id', orgId);
-        // No need for .eq('status', 'pending_approval') as the VIEW is already filtered
 
     if (requestsError) {
         console.error(`[invites.ts List Pending] Error fetching pending requests for org ${orgId}:`, requestsError);
         return createErrorResponse("Error fetching pending requests.", 500, req);
     }
 
-    // Ensure we return arrays even if data is null
-    const pendingRequestsData = pendingRequests || [];
+    const rawPendingRequestsData = rawPendingRequests || [];
+    let enrichedPendingRequestsData = [];
 
-    // +++ USE THE DEFAULTED VARIABLE and CORRECT KEY NAME +++
-    console.log(`[invites.ts List Pending] Found ${invitesData.length} invites and ${pendingRequestsData.length} requests for org ${orgId}.`);
-    return createSuccessResponse({ invites: invitesData, pendingRequests: pendingRequestsData }, 200, req); // Changed invites key to invitesData
-    // ++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+    // 4. Enrich pending requests with user's profile and email using service role client
+    if (adminClient) { // Reuse adminClient if initialized
+        enrichedPendingRequestsData = await Promise.all(rawPendingRequestsData.map(async (request) => {
+            if (!request.user_id) { // Should always have user_id for a pending request
+                return { ...request, user_profile: null, user_email: null };
+            }
+            // Fetch profile
+            const { data: profile, error: profileError } = await adminClient
+                .from('user_profiles')
+                .select('first_name, last_name')
+                .eq('id', request.user_id)
+                .single();
+            
+            // Fetch email from auth.users (service role can access auth.users via admin API)
+            // Note: Supabase JS client doesn't directly expose adminClient.auth.admin.getUserById normally
+            // For simplicity, we'll just attach the profile. Email can be added if a direct admin user lookup is implemented.
+            // Or, if email is added to user_profiles table (synced by trigger), that's easier.
+
+            if (profileError) {
+                console.error(`[invites.ts List Pending] Service role error fetching profile for pending request user ${request.user_id}:`, profileError);
+                return { ...request, user_profile: null }; 
+            }
+            return { ...request, user_profile: profile };
+        }));
+    } else {
+        // Service role client not available, return requests without enriched profile data
+        console.warn("[invites.ts List Pending] Service role client not available, pending requests will not have enriched profile data.");
+        enrichedPendingRequestsData = rawPendingRequestsData.map(req => ({ ...req, user_profile: null }));
+    }
+
+    console.log(`[invites.ts List Pending] Found ${enrichedInvitesData.length} invites and ${enrichedPendingRequestsData.length} requests for org ${orgId}.`);
+    return createSuccessResponse({ invites: enrichedInvitesData, pendingRequests: enrichedPendingRequestsData }, 200, req);
 }
 
 // --- New Handler: Get Invite Details (for AcceptInvitePage) ---

@@ -37,7 +37,7 @@ import Stripe from "npm:stripe";
 
 interface WebhookDependencies {
   envGet: (key: string) => string | undefined;
-  createStripeClient: (isTestMode: boolean, stripeConstructor?: any) => Stripe;
+  createStripeClient: (isTestMode: boolean, stripeConstructor?: typeof Stripe) => Stripe;
   verifyWebhookSignature: (
     stripe: Stripe,
     payload: string,

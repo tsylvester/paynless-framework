@@ -1,110 +1,106 @@
-console.log('[setupTests] STARTING setupTests.ts EXECUTION');
-
-// jest-dom adds custom jest matchers for asserting on DOM nodes.
-// allows you to do things like:
-// expect(element).toHaveTextContent(/react/i)
-// learn more: https://github.com/testing-library/jest-dom
-// Try importing the main package entry point
 import '@testing-library/jest-dom/vitest';
-import { beforeAll, afterEach, afterAll, vi } from 'vitest';
-import { setupServer } from 'msw/node';
-import { handlers } from './utils/mocks/handlers';
-import { initializeApiClient } from '@paynless/api';
+import { vi, beforeEach, afterEach, afterAll } from 'vitest';
+// Import the official mock creator from the api package using a relative path
+import { createMockSupabaseClient } from '../../../../packages/api/src/mocks/supabase.mock.ts'; 
 import { cleanup } from '@testing-library/react';
 
-console.log('Setting up test environment...');
+// The core mocked 'api' object that stores will use
+const mockedApiObject = {
+  get: vi.fn(),
+  post: vi.fn(),
+  put: vi.fn(),
+  patch: vi.fn(),
+  delete: vi.fn(),
+  // Use the imported mock Supabase client creator
+  getSupabaseClient: vi.fn().mockImplementation(createMockSupabaseClient),
+  // Mock sub-clients
+  ai: () => ({
+    getAiProviders: vi.fn().mockResolvedValue({ data: { providers: [] }, error: null }),
+    getSystemPrompts: vi.fn().mockResolvedValue({ data: { prompts: [] }, error: null }),
+    getChatWithMessages: vi.fn().mockResolvedValue({ data: { chat: null, messages: [] }, error: null }),
+    getChatHistory: vi.fn().mockResolvedValue({ data: { history: [] }, error: null }),
+    createChat: vi.fn().mockResolvedValue({ data: null, error: null }),
+    sendMessageToChat: vi.fn().mockResolvedValue({ data: null, error: null }),
+    // ... other ai methods
+  }),
+  users: () => ({
+    getProfile: vi.fn().mockResolvedValue({ data: null, error: null }),
+    updateUserProfile: vi.fn().mockResolvedValue({ data: null, error: null }),
+    // ... other user methods
+  }),
+  organizations: () => ({
+    getOrganizationDetails: vi.fn().mockResolvedValue({ data: null, error: null }),
+    updateOrganization: vi.fn().mockResolvedValue({ data: null, error: null }),
+    getOrganizationsForUser: vi.fn().mockResolvedValue({ data: [], error: null }),
+    // ... mock organization methods
+  }),
+  notifications: () => ({
+    registerDevice: vi.fn().mockResolvedValue({ data: null, error: null }),
+    getNotifications: vi.fn().mockResolvedValue({ data: [], error: null }),
+    // ... mock notification methods
+  }),
+  billing: () => ({
+    createCheckoutSession: vi.fn().mockResolvedValue({ data: null, error: null }),
+    // ... mock billing methods
+  }),
+};
 
-// Load environment variables (ensure this happens early if not handled by Vitest config)
-// Example using dotenv if needed: 
-// import dotenv from 'dotenv';
-// dotenv.config({ path: '.env.test' }); // Adjust path as needed
+vi.mock('@paynless/api', () => ({
+  api: mockedApiObject,
+  initializeApiClient: vi.fn(), // Mock the initializer
+  getApiClient: vi.fn(() => mockedApiObject), // If anything calls this, return the main mock
+  // Mock error classes if they are constructed/thrown by code under test
+  ApiError: class MockApiError extends Error {
+    code?: string | number;
+    constructor(message: string, code?: string | number) { super(message); this.name = 'MockApiError'; this.code = code; }
+  },
+  AuthRequiredError: class MockAuthRequiredError extends Error {
+    constructor(message: string) { super(message); this.name = 'MockAuthRequiredError'; }
+  },
+}));
 
-// Create MSW server instance
-export const server = setupServer(...handlers);
+// Mock other global dependencies like analytics
+vi.mock('@paynless/analytics', () => ({
+  analytics: {
+    track: vi.fn(),
+    identify: vi.fn(),
+    reset: vi.fn(),
+    init: vi.fn(),
+  },
+  initializeAnalytics: vi.fn(),
+}));
 
-// Start MSW server before all tests
-beforeAll(() => {
-  console.log('Starting MSW server...');
-  console.log('Before MSW setup, fetch is:', globalThis.fetch);
-  server.listen({ onUnhandledRequest: 'error' });
-  console.log('After MSW setup, fetch is:', globalThis.fetch);
+// Mock for @paynless/utils logger
+vi.mock('@paynless/utils', async (importOriginal) => {
+  const actualUtils = await importOriginal<typeof import('@paynless/utils')>();
+  return {
+    ...actualUtils, // Spread actual utilities
+    logger: { // Mock only the logger
+      info: vi.fn(),
+      warn: vi.fn(),
+      error: vi.fn(),
+      debug: vi.fn(),
+      setLogLevel: vi.fn(),
+      getLogLevel: vi.fn().mockReturnValue('info'),
+      // Add other logger methods if any
+    },
+  };
 });
 
-// Add listener for unhandled requests
-server.events.on('request:unhandled', ({ request }) => {
-  console.error(
-    `[MSW] Found an unhandled ${request.method} request to ${request.url}`,
-  )
-})
 
-// Reset handlers after each test
-afterEach(() => {
-  server.resetHandlers();
-  cleanup();
+// Global test hooks
+beforeEach(() => {
   vi.clearAllMocks();
+  // Re-apply the mock implementation for getSupabaseClient after clearAllMocks
+  // because clearAllMocks also clears mock implementations.
+  mockedApiObject.getSupabaseClient.mockImplementation(createMockSupabaseClient);
 });
 
-// Clean up after all tests are done
+afterEach(() => {
+  cleanup();
+});
+
 afterAll(() => {
-  server.close();
 });
 
-// Initialize API client using environment variables
-const supabaseUrl = process.env['VITE_SUPABASE_URL'];
-const supabaseAnonKey = process.env['VITE_SUPABASE_ANON_KEY'];
-
-if (!supabaseUrl || !supabaseAnonKey) {
-    console.error('Error: Missing Supabase environment variables (VITE_SUPABASE_URL, VITE_SUPABASE_ANON_KEY) for test setup.');
-    // Optionally throw an error to halt tests if config is essential
-    // throw new Error('Missing Supabase environment variables for test setup.');
-} else {
-    initializeApiClient({
-        supabaseUrl: supabaseUrl,
-        supabaseAnonKey: supabaseAnonKey
-    });
-    console.log('[setupTests] API Client Initialized.');
-}
-
-// Mock window.matchMedia using vi.stubGlobal
-const matchMediaMock = vi.fn(query => ({
-    matches: false, // Default to light mode for tests
-    media: query,
-    onchange: null,
-    addListener: vi.fn(), // Deprecated
-    removeListener: vi.fn(), // Deprecated
-    addEventListener: vi.fn(),
-    removeEventListener: vi.fn(),
-    dispatchEvent: vi.fn(),
-}));
-vi.stubGlobal('matchMedia', matchMediaMock);
-console.log('[setupTests] Applied window.matchMedia mock using vi.stubGlobal.'); // Log confirmation
-
-// Mock ResizeObserver
-const ResizeObserverMock = vi.fn(() => ({
-    observe: vi.fn(),
-    unobserve: vi.fn(),
-    disconnect: vi.fn(),
-}));
-vi.stubGlobal('ResizeObserver', ResizeObserverMock);
-console.log('[setupTests] Applied ResizeObserver mock using vi.stubGlobal.');
-
-// --- ADD PointerEvent Mocks for Radix UI --- 
-// JSDOM doesn't implement PointerEvent methods needed by Radix
-if (typeof Element.prototype.hasPointerCapture === 'undefined') {
-  Element.prototype.hasPointerCapture = vi.fn().mockReturnValue(false);
-}
-if (typeof Element.prototype.releasePointerCapture === 'undefined') {
-  Element.prototype.releasePointerCapture = vi.fn();
-}
-console.log('[setupTests] Applied PointerEvent mocks (has/releasePointerCapture).');
-// --- End PointerEvent Mocks ---
-
-// --- ADD scrollIntoView Mock --- 
-if (typeof Element.prototype.scrollIntoView === 'undefined') {
-  Element.prototype.scrollIntoView = vi.fn();
-}
-console.log('[setupTests] Applied scrollIntoView mock.');
-// --- End scrollIntoView Mock ---
-
-// Log fetch status AFTER potentially setting up MSW
-console.log(`[setupTests] globalThis.fetch AT END of setupTests.ts: ${globalThis.fetch}`); 
+console.log('Global test setup in apps/web/src/tests/setup.ts has been updated and applied (using shared Supabase mock).'); 

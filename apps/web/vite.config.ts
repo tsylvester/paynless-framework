@@ -3,10 +3,20 @@ import react from '@vitejs/plugin-react';
 // Import vitest types for test config
 import type { UserConfig } from 'vitest/config';
 import path from 'node:path'; // Keep path for alias
+import tsconfigPaths from 'vite-tsconfig-paths';
+import { nodePolyfills } from 'vite-plugin-node-polyfills';
 
 // https://vitejs.dev/config/
 export default defineConfig({
-  plugins: [react()],
+  plugins: [
+    react(),
+    tsconfigPaths(),
+    nodePolyfills({
+      globals: {
+        Buffer: true,
+      },
+    }),
+  ],
   optimizeDeps: {
     // Explicitly include problematic transitive dependencies based on errors
     include: [
@@ -34,18 +44,6 @@ export default defineConfig({
       '@': path.resolve(__dirname, './src'),
     },
   },
-  // Keep Vitest configuration
-  test: {
-    globals: true,
-    environment: 'jsdom',
-    setupFiles: './src/setupTests.ts', // Ensure setup file is loaded
-    server: {
-      deps: {
-        // Process linked dependencies to ensure MSW patching works
-        inline: [/@paynless\//, /msw/],
-      },
-    },
-  } as UserConfig['test'],
   build: {
     // Output directly to a dist folder inside the desktop app project
     outDir: 'dist',

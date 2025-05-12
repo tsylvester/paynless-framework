@@ -11,7 +11,9 @@ import { StripeApiClient } from './stripe.api';
 import { AiApiClient } from './ai.api';
 import { NotificationApiClient } from './notifications.api'; // Import new client
 import { OrganizationApiClient } from './organizations.api'; // <<< Import Org client
+import { UserApiClient } from './users.api'; // +++ Add import
 import { logger } from '@paynless/utils';
+import type { Database } from '@paynless/db-types'; // Keep this for createClient
 
 // Define ApiError class locally for throwing (can extend the type)
 export class ApiError extends Error {
@@ -23,15 +25,27 @@ export class ApiError extends Error {
     }
 }
 
+// Helper type guard to check if an object looks like our standard ApiErrorType
+function isApiErrorType(obj: unknown): obj is ApiErrorType {
+  return (
+    typeof obj === 'object' && 
+    obj !== null &&
+    ('code' in obj) && // Check for code property
+    ('message' in obj) // Check for message property
+    // We don't strictly need to check the types of code/message here for the guard,
+    // but we assume they match ApiErrorType if the properties exist.
+  );
+}
+
 // Config interface for the constructor
 interface ApiClientConstructorOptions {
-    supabase: SupabaseClient<any>;
-    supabaseUrl: string; // Pass the URL explicitly
-    supabaseAnonKey: string; // <<< Add anon key here
+    supabase: SupabaseClient<Database>;
+    supabaseUrl: string;
+    supabaseAnonKey: string;
 }
 
 export class ApiClient {
-    private supabase: SupabaseClient<any>;
+    private supabase: SupabaseClient<Database>;
     private functionsUrl: string;
     private supabaseAnonKey: string; // <<< Add storage for anon key
 
@@ -39,6 +53,7 @@ export class ApiClient {
     public ai: AiApiClient;
     public notifications: NotificationApiClient; // Add new client property
     public organizations: OrganizationApiClient; // <<< Add Org client property
+    public users: UserApiClient; // +++ Add users property
 
     // Update constructor signature
     constructor(options: ApiClientConstructorOptions) {
@@ -54,6 +69,7 @@ export class ApiClient {
         this.ai = new AiApiClient(this);
         this.notifications = new NotificationApiClient(this); // Initialize new client
         this.organizations = new OrganizationApiClient(this); // <<< Initialize Org client
+        this.users = new UserApiClient(this); // +++ Initialize UserApiClient
     }
 
     /**
@@ -102,14 +118,19 @@ export class ApiClient {
             const contentType = response.headers.get('Content-Type');
             logger.info('[apiClient] Response Content-Type:', { contentType });
             
-            let responseData: any;
+            let responseData: unknown;
             try {
                 responseData = contentType?.includes('application/json') 
                                     ? await response.json() 
                                     : await response.text(); 
-            } catch (parseError: any) {
-                logger.error('[apiClient] Failed to parse response body:', { error: parseError.message });
-                throw new ApiError(parseError.message || 'Failed to parse response body', response.status);
+            } catch (parseError: unknown) {
+                 logger.error('[apiClient] Failed to parse response body:', { error: (parseError as Error)?.message ?? String(parseError) });
+                 // Use the imported ApiErrorType structure for consistency when throwing
+                 const errorPayload: ApiErrorType = {
+                    code: String(response.status), // Use status as code if parsing failed
+                    message: (parseError as Error)?.message ?? 'Failed to parse response body'
+                 };
+                throw new ApiError(errorPayload.message, errorPayload.code);
             }
 
             // ---> Add specific debug log for 401 response data (using WARN level) <--- 
@@ -117,35 +138,28 @@ export class ApiClient {
                 logger.warn('[apiClient] Raw responseData for 401 status:', { responseData });
             }
 
-            // ---> NEW: Throw AuthRequiredError ONLY on specific 401 + code <---
-            // The calling function (e.g., store) is responsible for handling the consequences (like saving pending action).
-            if (response.status === 401 && !options.isPublic && responseData?.code === 'AUTH_REQUIRED') {
+            // ---> Handle AUTH_REQUIRED error <---
+            // Use the refined type guard
+            if (response.status === 401 && !options.isPublic && isApiErrorType(responseData) && responseData.code === 'AUTH_REQUIRED') {
                 logger.warn('[apiClient] Received 401 with AUTH_REQUIRED code. Throwing AuthRequiredError...');
-                // Use a generic message or attempt to get one from the body if available
-                const errorMessage = (typeof responseData === 'object' && responseData?.message)
-                                    ? responseData.message
-                                    : 'Authentication required';
+                const errorMessage = responseData.message ?? 'Authentication required'; // Message property is now safely accessed
                 throw new AuthRequiredError(errorMessage);
             }
 
-            // ---> Check for other non-OK responses (including other 401s) <---
+            // ---> Check for other non-OK responses <---
             if (!response.ok) {
-                // Log the response data for debugging OTHER errors
                  logger.warn(`[apiClient] Received non-OK (${response.status}) response body:`, { responseData });
 
-                // --- Original error handling for other non-OK responses ---
                 let errorPayload: ApiErrorType;
-                if (typeof responseData === 'object' && responseData !== null) {
-                    if (responseData.code && responseData.message) {
-                         errorPayload = responseData as ApiErrorType;
-                    } else if (responseData.error && typeof responseData.error === 'string') {
-                         errorPayload = { code: String(response.status), message: responseData.error };
-                    } else {
-                        const messageFromBody = typeof responseData === 'object' && responseData?.message ? responseData.message : null;
-                        const errorMessage = messageFromBody || response.statusText || 'Unknown API Error';
-                        errorPayload = { code: String(response.status), message: errorMessage };
-                    }
+                // Use the refined type guard before accessing properties
+                if (isApiErrorType(responseData)) {
+                     // Now we know it has code and message, matching ApiErrorType
+                     errorPayload = responseData;
+                } else if (typeof responseData === 'object' && responseData !== null && 'error' in responseData && typeof responseData.error === 'string') {
+                     // Handle simple { error: string } responses
+                     errorPayload = { code: String(response.status), message: responseData.error };
                 } else {
+                    // Handle other cases (e.g., plain text response)
                     const errorMessage = typeof responseData === 'string' && responseData.trim() !== ''
                                         ? responseData
                                         : response.statusText || 'Unknown API Error';
@@ -158,7 +172,7 @@ export class ApiClient {
             // Success case
             return { status: response.status, data: responseData as T };
 
-        } catch (error: any) {
+        } catch (error: unknown) {
              // ---> Check if it's the specific AuthRequiredError we threw <---
             if (error instanceof AuthRequiredError) {
                 logger.warn("AuthRequiredError caught by API Client. Re-throwing for store handler...");
@@ -168,10 +182,12 @@ export class ApiClient {
             }
 
             // ---> Otherwise, handle as a network/unexpected error <---
-            logger.error(`Network or fetch error on ${endpoint}:`, { error: error?.message });
+            // Check if error is an instance of Error before accessing .message
+            const errorMessage = error instanceof Error ? error.message : 'Network error';
+            logger.error(`Network or fetch error on ${endpoint}:`, { error: errorMessage });
             return {
-                status: 0,
-                error: { code: 'NETWORK_ERROR', message: error.message || 'Network error' }
+                status: 0, // Indicate network/fetch error with status 0 or similar
+                error: { code: 'NETWORK_ERROR', message: errorMessage }
             };
         }
     }
@@ -189,6 +205,10 @@ export class ApiClient {
         return this.request<T>(endpoint, { ...options, method: 'PUT', body: JSON.stringify(body) });
     }
 
+    public async patch<T, U>(endpoint: string, body: U, options?: FetchOptions): Promise<ApiResponse<T>> {
+        return this.request<T>(endpoint, { ...options, method: 'PATCH', body: JSON.stringify(body) });
+    }
+
     public async delete<T>(endpoint: string, options?: FetchOptions): Promise<ApiResponse<T>> {
         return this.request<T>(endpoint, { ...options, method: 'DELETE' });
     }
@@ -199,7 +219,7 @@ export class ApiClient {
      * at the application root. Do NOT use this to bypass the ApiClient for other operations.
      * @returns The SupabaseClient instance.
      */
-    public getSupabaseClient(): SupabaseClient<any> {
+    public getSupabaseClient(): SupabaseClient<Database> {
         return this.supabase;
     }
 }
@@ -224,13 +244,13 @@ export function initializeApiClient(config: ApiInitializerConfig) {
      throw new Error('Supabase URL and Anon Key are required to initialize ApiClient');
   }
   // Create Supabase client inside the initializer
-  const supabase = createClient<any>(config.supabaseUrl, config.supabaseAnonKey);
+  const supabase = createClient<Database>(config.supabaseUrl, config.supabaseAnonKey);
   
   // Pass both client and URL to constructor
   apiClientInstance = new ApiClient({ 
       supabase: supabase, 
       supabaseUrl: config.supabaseUrl,
-      supabaseAnonKey: config.supabaseAnonKey // <<< Pass anon key here
+      supabaseAnonKey: config.supabaseAnonKey
   });
   logger.info('ApiClient Singleton Initialized.');
 }
@@ -256,11 +276,15 @@ export const api = {
         getApiClient().post<T, U>(endpoint, body, options),
     put: <T, U>(endpoint: string, body: U, options?: FetchOptions): Promise<ApiResponse<T>> => 
         getApiClient().put<T, U>(endpoint, body, options),
+    patch: <T, U>(endpoint: string, body: U, options?: FetchOptions): Promise<ApiResponse<T>> => 
+        getApiClient().patch<T, U>(endpoint, body, options),
     delete: <T>(endpoint: string, options?: FetchOptions): Promise<ApiResponse<T>> => 
         getApiClient().delete<T>(endpoint, options),
     ai: () => getApiClient().ai, 
     billing: () => getApiClient().billing,
     notifications: () => getApiClient().notifications,
-    getSupabaseClient: (): SupabaseClient<any> => 
+    organizations: () => getApiClient().organizations,
+    users: () => getApiClient().users,
+    getSupabaseClient: (): SupabaseClient<Database> => 
         getApiClient().getSupabaseClient(),
 }; 

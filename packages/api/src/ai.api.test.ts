@@ -217,13 +217,13 @@ describe('AiApiClient', () => {
     // Tests for getChatHistory
     describe('getChatHistory', () => {
         const mockToken = 'test-auth-token'; // Define a mock token
+        const mockOrgId = 'org-789';
 
-        it('should call apiClient.get with the correct endpoint and token', async () => {
+        it('should call apiClient.get with the correct endpoint and token when no orgId is provided', async () => {
             // Arrange
              const mockResponse: ApiResponse<Chat[]> = {
-                success: true,
                 data: [],
-                statusCode: 200,
+                status: 200
             };
             (mockApiClient.get as vi.Mock).mockResolvedValue(mockResponse);
 
@@ -234,6 +234,26 @@ describe('AiApiClient', () => {
             expect(mockApiClient.get).toHaveBeenCalledTimes(1);
             // Verify endpoint AND options object with token
             expect(mockApiClient.get).toHaveBeenCalledWith('chat-history', { token: mockToken }); 
+        });
+        
+        // New Test Case for organizationId
+        it('should call apiClient.get with the correct endpoint including organizationId when provided', async () => {
+            // Arrange
+             const mockResponse: ApiResponse<Chat[]> = {
+                data: [],
+                status: 200
+            };
+            (mockApiClient.get as vi.Mock).mockResolvedValue(mockResponse);
+
+            // Act: Call with mock token and organizationId
+            // Note: Method signature will need update later for this to compile
+            // @ts-expect-error - Temporarily ignore error until method signature is updated
+            await aiApiClient.getChatHistory(mockToken, mockOrgId); 
+
+            // Assert
+            expect(mockApiClient.get).toHaveBeenCalledTimes(1);
+            const expectedEndpoint = `chat-history?organizationId=${mockOrgId}`;
+            expect(mockApiClient.get).toHaveBeenCalledWith(expectedEndpoint, { token: mockToken });
         });
 
         it('should return the chat history array on successful response', async () => {
@@ -275,88 +295,79 @@ describe('AiApiClient', () => {
         });
     });
 
-    // Tests for getChatMessages
-    describe('getChatMessages', () => {
-        const chatId = 'c123';
-        const mockToken = 'test-auth-token'; // <<< Add mock token
-        const mockMessages: ChatMessage[] = [
-            { id: 'm1', chat_id: chatId, role: 'user', content: 'Hi', user_id: 'u1', ai_provider_id: null, system_prompt_id: null, token_usage: null, created_at: 't1' },
-            { id: 'm2', chat_id: chatId, role: 'assistant', content: 'Hello', user_id: null, ai_provider_id: 'p1', system_prompt_id: 'sp1', token_usage: null, created_at: 't2' },
-        ];
+    // Tests for getChatWithMessages
+    describe('getChatWithMessages', () => {
+        const chatId = 'chat-abc-123';
+        const mockToken = 'mock-jwt-token';
+        const mockOrgId = 'org-xyz-789';
+        const mockMessagesResponse: { chat: Chat, messages: ChatMessage[] } = {
+            chat: { id: chatId, user_id: 'user-1', created_at: '2023-01-01T00:00:00Z', updated_at: '2023-01-01T00:00:00Z', organization_id: null, system_prompt_id: null, title: 'Test Chat' },
+            messages: [{ id: 'msg-1', chat_id: chatId, user_id: 'user-1', role: 'user', content: 'Hello', created_at: '2023-01-01T00:00:00Z', is_active_in_thread: true, ai_provider_id: null, system_prompt_id: null, token_usage: null }]
+        };
 
         it('should return an error object if chatId is missing', async () => {
-            // Arrange: Call with empty string or undefined/null
-            const invalidChatId = '';
+            const invalidChatId = ''; // Test with an empty or invalid chatId
+            // Mock apiClient.get to ensure it's not called due to client-side validation
+            (mockApiClient.get as vi.Mock).mockResolvedValue({ data: { chat: {} as Chat, messages: []} }); // Should not be reached
 
             // Act
-            const result = await aiApiClient.getChatMessages(invalidChatId);
+            const result = await aiApiClient.getChatWithMessages(invalidChatId, mockToken);
 
             // Assert
-            // Check for error presence and correct status/message
-            expect(result.error).toBeDefined(); 
-            expect(result.error?.message).toBe('Chat ID is required'); 
-            expect(result.status).toBe(400); 
-            expect(result.data).toBeUndefined(); 
-            // Ensure base client wasn't called
-            expect(mockApiClient.get).not.toHaveBeenCalled(); 
+            expect(result.error).toBeDefined();
+            expect(result.error?.message).toEqual('Chat ID is required');
+            expect(result.status).toBe(400); // Check status code from client-side validation
+            expect(mockApiClient.get).not.toHaveBeenCalled(); // Verify apiClient.get was not called
         });
 
-        it('should call apiClient.get with the correct endpoint including chatId', async () => {
-            // Arrange
-            const mockResponse: ApiResponse<ChatMessage[]> = {
-                // success: true, 
-                data: mockMessages,
-                status: 200,
-            };
-            (mockApiClient.get as vi.Mock).mockResolvedValue(mockResponse);
+        it('should call apiClient.get with the correct endpoint including chatId when no orgId is provided', async () => {
+            (mockApiClient.get as vi.Mock).mockResolvedValue({ data: mockMessagesResponse });
 
             // Act
-            // Pass mockToken as the second argument
-            await aiApiClient.getChatMessages(chatId, mockToken); // <<< Pass mockToken
+            await aiApiClient.getChatWithMessages(chatId, mockToken);
 
             // Assert
-            expect(mockApiClient.get).toHaveBeenCalledTimes(1);
-            // Corrected expectation: Check endpoint and options with token
-            expect(mockApiClient.get).toHaveBeenCalledWith(`chat-details/${chatId}`, { token: mockToken }); // <<< Verify token in options
+            expect(mockApiClient.get).toHaveBeenCalledWith(
+                `chat-details/${chatId}`,
+                { token: mockToken }
+            );
         });
 
-        it('should return the messages array on successful response', async () => {
-            // Arrange
-             const mockResponse: ApiResponse<ChatMessage[]> = {
-                // success: true, // Remove success property if not used
-                data: mockMessages, // Data is the array directly
-                status: 200,
-            };
-            (mockApiClient.get as vi.Mock).mockResolvedValue(mockResponse);
+        it('should call apiClient.get with the correct endpoint including chatId and organizationId when provided', async () => {
+            (mockApiClient.get as vi.Mock).mockResolvedValue({ data: mockMessagesResponse });
 
             // Act
-            // Pass mockToken as the second argument
-            const result = await aiApiClient.getChatMessages(chatId, mockToken); // <<< Pass mockToken
+            // @ts-expect-error - Temporarily ignore error until method signature is updated (already updated)
+            await aiApiClient.getChatWithMessages(chatId, mockToken, mockOrgId);
 
             // Assert
-            expect(result.data).toEqual(mockMessages);
-            expect(result.status).toBe(200); // Use status, not statusCode
+            expect(mockApiClient.get).toHaveBeenCalledWith(
+                `chat-details/${chatId}?organizationId=${mockOrgId}`,
+                { token: mockToken }
+            );
+        });
+
+        it('should return the chat and messages object on successful response', async () => {
+            (mockApiClient.get as vi.Mock).mockResolvedValue({ data: mockMessagesResponse });
+
+            // Act
+            const result = await aiApiClient.getChatWithMessages(chatId, mockToken);
+
+            // Assert
+            expect(result.data).toEqual(mockMessagesResponse);
+            expect(result.error).toBeUndefined();
         });
 
         it('should return the error object on failed response', async () => {
-            // Arrange
-            const mockError: ApiError = { code: 'FETCH_FAILED', message: 'Failed to fetch messages' };
-             const mockErrorResponse: ApiResponse<ChatMessage[]> = {
-                // success: false, // Remove success property if not used
-                error: mockError,
-                status: 404, // Use status
-            };
-            (mockApiClient.get as vi.Mock).mockResolvedValue(mockErrorResponse);
+            const errorResponse = { message: 'Failed to fetch messages' };
+            (mockApiClient.get as vi.Mock).mockResolvedValue({ error: errorResponse });
 
             // Act
-            // Pass mockToken as the second argument
-            const result = await aiApiClient.getChatMessages(chatId, mockToken); // <<< Pass mockToken
+            const result = await aiApiClient.getChatWithMessages(chatId, mockToken);
 
             // Assert
-            // Expect the error object
-            expect(result.error).toEqual(mockError); // <<< Check for the error object
-            expect(result.status).toBe(404); // Use status
-            expect(result.data).toBeUndefined(); // Ensure data is undefined on error
+            expect(result.error).toEqual(errorResponse);
+            expect(result.data).toBeUndefined();
         });
     });
 }); 

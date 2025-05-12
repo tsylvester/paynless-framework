@@ -11,34 +11,46 @@
       "import": "./dist/index.js",
       "types": "./dist/index.d.ts"
     },
+    "./mocks": {
+      "import": "./dist/mocks/index.js",
+      "types": "./dist/mocks/index.d.ts"
+    },
     "./mocks/stripe.mock": {
       "import": "./dist/mocks/stripe.mock.js",
       "types": "./dist/mocks/stripe.mock.d.ts"
-    }
+    },
+    "./mocks/supabase.mock": "./dist/mocks/supabase.mock.js",
+    "./mocks/notifications.api.mock": "./dist/mocks/notifications.api.mock.js",
+    "./mocks/ai.api.mock": "./dist/mocks/ai.api.mock.js"
   },
   "scripts": {
     "test": "vitest run",
     "test:watch": "vitest",
     "build": "tsc -b",
     "clean": "rm -rf dist tsconfig.tsbuildinfo",
-    "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0"
+    "lint": "eslint src/**/*.{ts,tsx} --report-unused-disable-directives --max-warnings 0"
   },
   "dependencies": {
     "@paynless/types": "workspace:*",
     "@paynless/utils": "workspace:*",
     "@supabase/supabase-js": "^2.49.4",
     "axios": "^1.6.7",
+    "vite-plugin-node-polyfills": "^0.23.0",
     "zustand": "^4.5.2"
   },
   "devDependencies": {
     "@paynless/db-types": "workspace:^",
     "@types/node": "^20.11.20",
+    "@types/react": "^18",
     "@typescript-eslint/eslint-plugin": "^7.18.0",
     "@typescript-eslint/parser": "^7.18.0",
     "eslint": "^8.57.0",
     "msw": "^2.2.13",
     "typescript": "^5.2.2",
     "vitest": "^1.4.0"
+  },
+  "peerDependencies": {
+    "react": "^18"
   },
   "license": "ISC"
 }

@@ -7,6 +7,31 @@ export type Json =
   | Json[]
 
 export type Database = {
+  graphql_public: {
+    Tables: {
+      [_ in never]: never
+    }
+    Views: {
+      [_ in never]: never
+    }
+    Functions: {
+      graphql: {
+        Args: {
+          operationName?: string
+          query?: string
+          variables?: Json
+          extensions?: Json
+        }
+        Returns: Json
+      }
+    }
+    Enums: {
+      [_ in never]: never
+    }
+    CompositeTypes: {
+      [_ in never]: never
+    }
+  }
   public: {
     Tables: {
       ai_providers: {
@@ -55,9 +80,11 @@ export type Database = {
           content: string
           created_at: string
           id: string
+          is_active_in_thread: boolean
           role: string
           system_prompt_id: string | null
           token_usage: Json | null
+          updated_at: string
           user_id: string | null
         }
         Insert: {
@@ -66,9 +93,11 @@ export type Database = {
           content: string
           created_at?: string
           id?: string
+          is_active_in_thread?: boolean
           role: string
           system_prompt_id?: string | null
           token_usage?: Json | null
+          updated_at?: string
           user_id?: string | null
         }
         Update: {
@@ -77,9 +106,11 @@ export type Database = {
           content?: string
           created_at?: string
           id?: string
+          is_active_in_thread?: boolean
           role?: string
           system_prompt_id?: string | null
           token_usage?: Json | null
+          updated_at?: string
           user_id?: string | null
         }
         Relationships: [
@@ -110,6 +141,8 @@ export type Database = {
         Row: {
           created_at: string
           id: string
+          organization_id: string | null
+          system_prompt_id: string | null
           title: string | null
           updated_at: string
           user_id: string | null
@@ -117,6 +150,8 @@ export type Database = {
         Insert: {
           created_at?: string
           id?: string
+          organization_id?: string | null
+          system_prompt_id?: string | null
           title?: string | null
           updated_at?: string
           user_id?: string | null
@@ -124,11 +159,28 @@ export type Database = {
         Update: {
           created_at?: string
           id?: string
+          organization_id?: string | null
+          system_prompt_id?: string | null
           title?: string | null
           updated_at?: string
           user_id?: string | null
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "chats_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "chats_system_prompt_id_fkey"
+            columns: ["system_prompt_id"]
+            isOneToOne: false
+            referencedRelation: "system_prompts"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       invites: {
         Row: {
@@ -248,6 +300,7 @@ export type Database = {
       }
       organizations: {
         Row: {
+          allow_member_chat_creation: boolean
           created_at: string
           deleted_at: string | null
           id: string
@@ -255,6 +308,7 @@ export type Database = {
           visibility: string
         }
         Insert: {
+          allow_member_chat_creation?: boolean
           created_at?: string
           deleted_at?: string | null
           id?: string
@@ -262,6 +316,7 @@ export type Database = {
           visibility?: string
         }
         Update: {
+          allow_member_chat_creation?: boolean
           created_at?: string
           deleted_at?: string | null
           id?: string
@@ -409,29 +464,35 @@ export type Database = {
       }
       user_profiles: {
         Row: {
+          chat_context: Json | null
           created_at: string
           first_name: string | null
           id: string
           last_name: string | null
           last_selected_org_id: string | null
+          profile_privacy_setting: string
           role: Database["public"]["Enums"]["user_role"]
           updated_at: string
         }
         Insert: {
+          chat_context?: Json | null
           created_at?: string
           first_name?: string | null
           id: string
           last_name?: string | null
           last_selected_org_id?: string | null
+          profile_privacy_setting?: string
           role?: Database["public"]["Enums"]["user_role"]
           updated_at?: string
         }
         Update: {
+          chat_context?: Json | null
           created_at?: string
           first_name?: string | null
           id?: string
           last_name?: string | null
           last_selected_org_id?: string | null
+          profile_privacy_setting?: string
           role?: Database["public"]["Enums"]["user_role"]
           updated_at?: string
         }
@@ -535,11 +596,19 @@ export type Database = {
       }
     }
     Functions: {
+      can_select_chat: {
+        Args: { check_chat_id: string }
+        Returns: boolean
+      }
       check_existing_member_by_email: {
         Args: { target_org_id: string; target_email: string }
         Returns: {
           membership_status: string
         }[]
+      }
+      check_org_chat_creation_permission: {
+        Args: { p_org_id: string; p_user_id: string }
+        Returns: boolean
       }
       create_notification_for_user: {
         Args: {
@@ -557,6 +626,14 @@ export type Database = {
         }
         Returns: string
       }
+      delete_chat_and_messages: {
+        Args: { p_chat_id: string; p_user_id: string }
+        Returns: string
+      }
+      delete_chat_and_messages_debug: {
+        Args: { p_chat_id: string; p_user_id: string }
+        Returns: string
+      }
       is_org_admin: {
         Args: { org_id: string }
         Returns: boolean
@@ -569,6 +646,33 @@ export type Database = {
           required_role?: string
         }
         Returns: boolean
+      }
+      perform_chat_rewind: {
+        Args: {
+          p_chat_id: string
+          p_rewind_from_message_id: string
+          p_user_id: string
+          p_new_user_message_content: string
+          p_new_user_message_ai_provider_id: string
+          p_new_user_message_system_prompt_id: string
+          p_new_assistant_message_content: string
+          p_new_assistant_message_token_usage: Json
+          p_new_assistant_message_ai_provider_id: string
+          p_new_assistant_message_system_prompt_id: string
+        }
+        Returns: {
+          id: string
+          chat_id: string
+          user_id: string
+          role: string
+          content: string
+          created_at: string
+          updated_at: string
+          is_active_in_thread: boolean
+          token_usage: Json
+          ai_provider_id: string
+          system_prompt_id: string
+        }[]
       }
     }
     Enums: {
@@ -686,9 +790,13 @@ export type CompositeTypes<
     : never
 
 export const Constants = {
+  graphql_public: {
+    Enums: {},
+  },
   public: {
     Enums: {
       user_role: ["user", "admin"],
     },
   },
 } as const
+

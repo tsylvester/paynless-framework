@@ -10,8 +10,8 @@ const PROVIDER_NAME = 'openai';
 export interface SyncOpenAIDeps {
   listProviderModels: (apiKey: string) => Promise<ProviderModelInfo[]>;
   getCurrentDbModels: (supabaseClient: SupabaseClient, providerName: string) => Promise<DbAiProvider[]>;
-  log: (...args: any[]) => void;
-  error: (...args: any[]) => void;
+  log: (...args: unknown[]) => void;
+  error: (...args: unknown[]) => void;
   // SupabaseClient is passed separately for now, but could be included here
 }
 

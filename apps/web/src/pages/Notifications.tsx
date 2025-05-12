@@ -1,7 +1,7 @@
 import React, { useEffect } from 'react';
 import { useNotificationStore } from '@paynless/store';
 import { logger } from '@paynless/utils';
-import { NotificationCard } from '@/components/NotificationCard';
+import { NotificationCard } from '@/components/notifications/NotificationCard';
 
 export const Notifications: React.FC = () => {
     const { notifications, fetchNotifications } = useNotificationStore(state => ({

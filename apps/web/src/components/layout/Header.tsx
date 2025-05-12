@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { Link, useNavigate, useLocation } from 'react-router-dom'
 import { useAuthStore } from '@paynless/store'
 import { useTheme } from '../../hooks/useTheme'
+import { usePlatform } from '@paynless/platform'
 import {
   LogOut,
   Menu,
@@ -10,8 +11,10 @@ import {
   CreditCard,
   Sun,
   Moon,
+  FlaskConical,
+  FileCog,
 } from 'lucide-react'
-import { Notifications } from '../Notifications'
+import { Notifications } from '../notifications/Notifications'
 import { SimpleDropdown } from '../ui/SimpleDropdown'
 import { OrganizationSwitcher } from '../organizations/OrganizationSwitcher'
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
@@ -23,6 +26,7 @@ export function Header() {
     profile: state.profile,
     logout: state.logout,
   }))
+  const { capabilities } = usePlatform()
 
   const { colorMode, setColorMode } = useTheme()
   const navigate = useNavigate()
@@ -106,7 +110,7 @@ export function Header() {
                       className="flex items-center space-x-2 p-1 rounded-lg hover:bg-surface"
                     >
                       <Avatar className="h-8 w-8">
-                        <AvatarImage src={(profile as any)?.avatarUrl} alt={profile?.first_name || user.email || 'User'} />
+                        <AvatarImage src={undefined} alt={profile?.first_name || user.email || 'User'} />
                         <AvatarFallback>
                           {getInitials(profile?.first_name, profile?.last_name) || <User size={16}/>}
                         </AvatarFallback>
@@ -132,6 +136,24 @@ export function Header() {
                       <CreditCard className="inline-block h-4 w-4 mr-2" />
                       Subscription
                     </Link>
+                    {capabilities?.platform === 'tauri' && (
+                      <Link
+                        to="/dev/wallet"
+                        className="block px-4 py-2 text-sm text-textSecondary hover:bg-primary/10 hover:text-primary"
+                      >
+                        <FlaskConical className="inline-block h-4 w-4 mr-2" />
+                        Dev Wallet
+                      </Link>
+                    )}
+                    {capabilities?.platform === 'tauri' && (
+                      <Link
+                        to="/dev/config"
+                        className="block px-4 py-2 text-sm text-textSecondary hover:bg-primary/10 hover:text-primary"
+                      >
+                        <FileCog className="inline-block h-4 w-4 mr-2" />
+                        Dev Config
+                      </Link>
+                    )}
                     <button
                       onClick={handleLogout}
                       className="block w-full text-left px-4 py-2 text-sm text-textSecondary hover:bg-primary/10 hover:text-primary"
@@ -195,7 +217,7 @@ export function Header() {
             <div className="pt-2 pb-3 space-y-1">
               <div className="flex items-center px-4 mb-3">
                 <Avatar className="h-10 w-10 mr-3">
-                  <AvatarImage src={(profile as any)?.avatarUrl} alt={profile?.first_name || user.email || 'User'} />
+                  <AvatarImage src={undefined} alt={profile?.first_name || user.email || 'User'} />
                   <AvatarFallback>
                     {getInitials(profile?.first_name, profile?.last_name) || <User size={20}/>}
                   </AvatarFallback>
@@ -247,6 +269,26 @@ export function Header() {
                 <CreditCard className="inline-block h-5 w-5 mr-2" />
                 Subscription
               </Link>
+              {capabilities?.platform === 'tauri' && (
+                <Link
+                  to="/dev/wallet"
+                  className="block px-4 py-2 text-base font-medium text-textSecondary hover:bg-primary/5 hover:text-textPrimary"
+                  onClick={() => setIsMenuOpen(false)}
+                >
+                  <FlaskConical className="inline-block h-5 w-5 mr-2" />
+                  Dev Wallet
+                </Link>
+              )}
+              {capabilities?.platform === 'tauri' && (
+                <Link
+                  to="/dev/config"
+                  className="block px-4 py-2 text-base font-medium text-textSecondary hover:bg-primary/5 hover:text-textPrimary"
+                  onClick={() => setIsMenuOpen(false)}
+                >
+                  <FileCog className="inline-block h-5 w-5 mr-2" />
+                  Dev Config
+                </Link>
+              )}
               <button
                 onClick={() => { handleLogout(); setIsMenuOpen(false); }}
                 className="block w-full text-left px-4 py-2 text-base font-medium text-textSecondary hover:bg-primary/5 hover:text-textPrimary"
@@ -259,16 +301,38 @@ export function Header() {
             <div className="pt-2 pb-3 space-y-1">
               <Link
                 to="/login"
-                className="block pl-3 pr-4 py-2 border-l-4 text-base font-medium border-transparent text-textSecondary hover:bg-surface hover:border-border hover:text-textPrimary"
+                className="border-transparent text-textSecondary hover:bg-primary/5 hover:border-border hover:text-textPrimary block pl-3 pr-4 py-2 border-l-4 text-base font-medium"
+                onClick={() => setIsMenuOpen(false)}
               >
                 Login
               </Link>
               <Link
                 to="/register"
-                className="block pl-3 pr-4 py-2 border-l-4 text-base font-medium border-transparent text-textSecondary hover:bg-surface hover:border-border hover:text-textPrimary"
+                className="border-transparent text-textSecondary hover:bg-primary/5 hover:border-border hover:text-textPrimary block pl-3 pr-4 py-2 border-l-4 text-base font-medium"
+                onClick={() => setIsMenuOpen(false)}
               >
                 Register
               </Link>
+              {capabilities?.platform === 'tauri' && (
+                <Link
+                  to="/dev/wallet"
+                  className="border-transparent text-textSecondary hover:bg-primary/5 hover:border-border hover:text-textPrimary block pl-3 pr-4 py-2 border-l-4 text-base font-medium"
+                  onClick={() => setIsMenuOpen(false)}
+                >
+                  <FlaskConical className="inline-block h-4 w-4 mr-2" />
+                  Dev Wallet
+                </Link>
+              )}
+              {capabilities?.platform === 'tauri' && (
+                <Link
+                  to="/dev/config"
+                  className="border-transparent text-textSecondary hover:bg-primary/5 hover:border-border hover:text-textPrimary block pl-3 pr-4 py-2 border-l-4 text-base font-medium"
+                  onClick={() => setIsMenuOpen(false)}
+                >
+                  <FileCog className="inline-block h-4 w-4 mr-2" />
+                  Dev Config
+                </Link>
+              )}
             </div>
           )}
         </div>

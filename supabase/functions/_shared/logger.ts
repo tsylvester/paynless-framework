@@ -1,31 +1,6 @@
 // IMPORTANT: Supabase Edge Functions require relative paths for imports from shared modules.
 // Do not use path aliases (like @shared/) as they will cause deployment failures.
-/**
- * Logging levels
- */
-export enum LogLevel {
-  DEBUG = 'debug',
-  INFO = 'info',
-  WARN = 'warn',
-  ERROR = 'error',
-}
-
-/**
- * Configuration for the logger
- */
-export interface LoggerConfig {
-  minLevel: LogLevel;
-  enableConsole: boolean;
-  // captureErrors is removed as window is not available
-}
-
-/**
- * Interface for log entry metadata
- */
-export interface LogMetadata {
-  [key: string]: unknown;
-}
-
+import { LogLevel, LoggerConfig, LogMetadata } from "./types.ts";
 /**
  * Logging service - Simplified for Deno Edge Functions
  */
@@ -38,6 +13,7 @@ export class Logger {
     this.config = {
       minLevel: LogLevel.INFO, // Default to INFO on server
       enableConsole: true,
+      captureErrors: true,
     };
   }
   
@@ -113,13 +89,14 @@ export class Logger {
   /**
    * Log an error message
    */
-  public error(message: string, metadata?: LogMetadata): void {
+  public error(message: string | Error, metadata?: LogMetadata): void {
     if (!this.shouldLog(LogLevel.ERROR)) return;
     if (this.config.enableConsole) {
+      const msgToLog = message instanceof Error ? message.message : message;
       if (metadata) {
-        console.error(`[${new Date().toISOString()}] ${message}`, metadata);
+        console.error(`[${new Date().toISOString()}] ${msgToLog}`, metadata, message instanceof Error ? message.stack : undefined);
       } else {
-        console.error(`[${new Date().toISOString()}] ${message}`);
+        console.error(`[${new Date().toISOString()}] ${msgToLog}`, message instanceof Error ? message.stack : undefined);
       }
     }
   }

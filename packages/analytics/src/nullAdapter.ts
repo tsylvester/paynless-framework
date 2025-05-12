@@ -12,12 +12,12 @@ export class NullAnalyticsAdapter implements AnalyticsClient {
   }
 
   // eslint-disable-next-line @typescript-eslint/no-empty-function, @typescript-eslint/no-unused-vars
-  identify(_userId: string, _traits?: Record<string, any>): void {
+  identify(_userId: string, _traits?: Record<string, unknown>): void {
     // No operation
   }
 
   // eslint-disable-next-line @typescript-eslint/no-empty-function, @typescript-eslint/no-unused-vars
-  track(_eventName: string, _properties?: Record<string, any>): void {
+  track(_eventName: string, _properties?: Record<string, unknown>): void {
     // No operation
   }
 

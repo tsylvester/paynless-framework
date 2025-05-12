@@ -8,14 +8,6 @@ import Stripe from "npm:stripe";
 import { CheckoutSessionRequest, SessionResponse } from "../../_shared/types.ts";
 import { HandlerError } from "./current.ts"; // Reuse HandlerError
 
-// Remove old imports and Deps interface
-// import type { createErrorResponse as CreateErrorResponseType, createSuccessResponse as CreateSuccessResponseType } from "../../_shared/responses.ts"; // Removed
-// 
-// interface CheckoutDeps {
-//   createErrorResponse: typeof CreateErrorResponseType;
-//   createSuccessResponse: typeof CreateSuccessResponseType;
-// } // Removed
-
 /**
  * Create a checkout session for subscription.
  * Returns SessionResponse data on success, throws HandlerError on failure.

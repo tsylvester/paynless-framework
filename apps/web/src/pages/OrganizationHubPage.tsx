@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useEffect } from 'react';
-import { useOrganizationStore } from '@paynless/store';
+import { useOrganizationStore, selectCurrentUserRoleInOrg } from '@paynless/store';
 import { OrganizationListCard } from '../components/organizations/OrganizationListCard';
 import { OrganizationDetailsCard } from '../components/organizations/OrganizationDetailsCard';
 import { OrganizationSettingsCard } from '../components/organizations/OrganizationSettingsCard';
@@ -19,12 +19,18 @@ export const OrganizationHubPage: React.FC = () => {
     currentOrganizationId,
     isLoading: isOrgLoading,
     error: orgError, // Get the error state
-    selectCurrentUserRoleInOrg, // ADDED: The correct selector function
     fetchCurrentOrganizationDetails,
     fetchCurrentOrganizationMembers,
-  } = useOrganizationStore();
+  } = useOrganizationStore(state => ({
+    userOrganizations: state.userOrganizations,
+    currentOrganizationId: state.currentOrganizationId,
+    isLoading: state.isLoading,
+    error: state.error,
+    fetchCurrentOrganizationDetails: state.fetchCurrentOrganizationDetails,
+    fetchCurrentOrganizationMembers: state.fetchCurrentOrganizationMembers,
+  }));
 
-  const currentUserRole = selectCurrentUserRoleInOrg(); // Call the selector function to get the role
+  const currentUserRole = useOrganizationStore(selectCurrentUserRoleInOrg); // Use the selector correctly
 
   // NEW: Effect to fetch details/members whenever currentOrganizationId changes (and is not null)
   // This ensures data is fetched even when the ID is set by hydration from localStorage.

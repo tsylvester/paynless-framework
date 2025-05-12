@@ -19,12 +19,12 @@ export const mockApiClient = {
   getSupabaseClient: vi.fn().mockImplementation(() => { // Use mockImplementation for complex return
     // Mock the Supabase client instance
     const mockSupabase = {
-      channel: vi.fn().mockImplementation((name: string, opts?: RealtimeChannelOptions) => {
+      channel: vi.fn().mockImplementation((name: string, _opts?: RealtimeChannelOptions) => {
         // Mock the RealtimeChannel instance
         const mockChannel = {
           // Mock methods used by NotificationApiClient
           on: vi.fn(() => mockChannel), // Return self for chaining
-          subscribe: vi.fn((callback?: (status: REALTIME_SUBSCRIBE_STATES, err?: Error) => void) => {
+          subscribe: vi.fn((_callback?: (status: REALTIME_SUBSCRIBE_STATES, err?: Error) => void) => {
             // Optionally simulate async subscription confirmation
             // setTimeout(() => callback?.('SUBSCRIBED', undefined), 0);
             return mockChannel; // Return self for chaining
@@ -61,10 +61,10 @@ export const resetMockApiClient = () => {
   vi.mocked(mockApiClient.getFunctionsUrl).mockReset().mockReturnValue('http://mock-functions.api/v1');
   vi.mocked(mockApiClient.getSupabaseClient).mockReset().mockImplementation(() => {
     const mockSupabase = {
-      channel: vi.fn().mockImplementation((name: string, opts?: RealtimeChannelOptions) => {
+      channel: vi.fn().mockImplementation((name: string, _opts?: RealtimeChannelOptions) => {
         const mockChannel = {
           on: vi.fn(() => mockChannel),
-          subscribe: vi.fn((callback?: (status: REALTIME_SUBSCRIBE_STATES, err?: Error) => void) => mockChannel),
+          subscribe: vi.fn((_callback?: (status: REALTIME_SUBSCRIBE_STATES, err?: Error) => void) => mockChannel),
           unsubscribe: vi.fn(() => mockChannel),
           topic: name,
           params: {}, // Provide default empty params object

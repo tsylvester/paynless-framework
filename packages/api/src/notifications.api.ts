@@ -4,6 +4,7 @@ import { Notification, ApiResponse } from '@paynless/types';
 import { logger } from '@paynless/utils';
 // Import Supabase client types
 import { RealtimeChannel, SupabaseClient } from '@supabase/supabase-js';
+import type { Database } from '@paynless/db-types'; // Import Database type
 
 // Define the expected callback types locally if not imported (Now imported, so commented out)
 // type OnMessageCallback = (notification: Notification) => void;
@@ -22,7 +23,7 @@ type NotificationSubscriptionCallback = (notification: Notification) => void;
 
 export class NotificationApiClient {
   private apiClient: ApiClient; // Store base client instance
-  private supabase: SupabaseClient<any>; // Store Supabase client instance
+  private supabase: SupabaseClient<Database>; // Store Supabase client instance
   private notificationChannel: RealtimeChannel | null = null; // Store the active channel
   // Remove internal eventSource management
   // private eventSource: EventSource | null = null;
@@ -62,7 +63,7 @@ export class NotificationApiClient {
   async markNotificationRead(notificationId: string): Promise<ApiResponse<null>> {
     logger.debug(`[NotificationApiClient] Marking notification ${notificationId} as read...`);
     // Endpoint expects /notifications/:id for PUT
-    const response = await this.apiClient.put<null, {}>(`notifications/${notificationId}`, {});
+    const response = await this.apiClient.put<null, null>(`notifications/${notificationId}`, null);
     if (!response.error) {
       logger.info(`[NotificationApiClient] Marked notification ${notificationId} as read successfully.`);
     } else {
@@ -77,7 +78,7 @@ export class NotificationApiClient {
   async markAllNotificationsAsRead(): Promise<ApiResponse<null>> {
     logger.debug('[NotificationApiClient] Marking all notifications as read...');
     // Endpoint expects /notifications/mark-all-read for POST
-    const response = await this.apiClient.post<null, {}>(`notifications/mark-all-read`, {});
+    const response = await this.apiClient.post<null, null>(`notifications/mark-all-read`, null);
     if (!response.error) {
       logger.info('[NotificationApiClient] Marked all notifications as read successfully.');
     } else {
@@ -140,7 +141,7 @@ export class NotificationApiClient {
         });
 
       return this.notificationChannel;
-    } catch (err: any) {
+    } catch (err: unknown) {
       const errorMessage = err instanceof Error ? err.message : String(err);
       logger.error('[NotificationApiClient] Exception during subscription setup:', { error: errorMessage });
       this.notificationChannel = null;
@@ -157,7 +158,7 @@ export class NotificationApiClient {
         .then((status) => {
           logger.info(`[NotificationApiClient] Channel ${channelName} removal status: ${status}`);
         })
-        .catch((err: any) => {
+        .catch((err: unknown) => {
           const errorMessage = err instanceof Error ? err.message : String(err);
           logger.error(`[NotificationApiClient] Error removing channel ${channelName}:`, { error: errorMessage });
         });

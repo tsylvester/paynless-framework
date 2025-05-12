@@ -1,8 +1,13 @@
 // IMPORTANT: Supabase Edge Functions require relative paths for imports from shared modules.
 // Do not use path aliases (like @shared/ or @paynless/) as they will cause deployment failures.
-import { type SupabaseClient } from 'npm:@supabase/supabase-js@2';
+import { 
+    type SupabaseClient,
+    type PostgrestError,
+    type FunctionsError
+} from 'npm:@supabase/supabase-js@2';
 import { Database, Tables, TablesInsert, TablesUpdate } from "../../types_db.ts";
 import { logger } from "../../_shared/logger.ts"; // Use relative path
+import type { SyncResult } from '../sync-ai-models/index.ts'; // Import SyncResult
 
 /**
  * Interface for Supabase interactions needed by product webhook handlers.
@@ -15,14 +20,14 @@ export interface ISupabaseProductWebhookService { // <--- Add export here
    * @param active The target active status.
    * @returns An object containing only the potential error.
    */
-  updatePlanStatus(productId: string, active: boolean): Promise<{ error: any | null }>;
+  updatePlanStatus(productId: string, active: boolean): Promise<{ error: PostgrestError | null }>;
 
   /**
    * Invokes the 'sync-stripe-plans' Edge Function.
    * @param isTestMode Indicates whether to run the sync in test mode.
    * @returns The result of the function invocation (data and/or error).
    */
-  invokeSyncPlans(isTestMode: boolean): Promise<{ data: any | null; error: any | null }>;
+  invokeSyncPlans(isTestMode: boolean): Promise<{ data: SyncResult | null; error: FunctionsError | { message: string, name: string } | null }>;
 }
 
 /**
@@ -35,7 +40,7 @@ export class SupabaseProductWebhookService implements ISupabaseProductWebhookSer
     this.supabase = supabaseClient;
   }
 
-  async updatePlanStatus(productId: string, active: boolean): Promise<{ error: any | null }> {
+  async updatePlanStatus(productId: string, active: boolean): Promise<{ error: PostgrestError | null }> {
     const { error } = await this.supabase
       .from('subscription_plans')
       .update({ active: active, updated_at: new Date().toISOString() }) // Removed 'satisfies' based on previous findings
@@ -49,7 +54,7 @@ export class SupabaseProductWebhookService implements ISupabaseProductWebhookSer
     return { error };
   }
 
-  async invokeSyncPlans(isTestMode: boolean): Promise<{ data: any | null; error: any | null }> {
+  async invokeSyncPlans(isTestMode: boolean): Promise<{ data: SyncResult | null; error: FunctionsError | { message: string, name: string } | null }> {
     logger.info(`[SupabaseProductWebhookService] Attempting to invoke sync-stripe-plans with mode: ${isTestMode ? 'test' : 'live'}`);
     try {
       const { data, error } = await this.supabase.functions.invoke('sync-stripe-plans', {

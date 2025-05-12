@@ -10,8 +10,8 @@ const PROVIDER_NAME = 'anthropic';
 export interface SyncAnthropicDeps {
   listProviderModels: (apiKey: string) => Promise<ProviderModelInfo[]>;
   getCurrentDbModels: (supabaseClient: SupabaseClient, providerName: string) => Promise<DbAiProvider[]>;
-  log: (...args: any[]) => void;
-  error: (...args: any[]) => void;
+  log: (...args: unknown[]) => void;
+  error: (...args: unknown[]) => void;
 }
 
 // Default dependencies using actual implementations

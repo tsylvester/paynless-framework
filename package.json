@@ -2,6 +2,7 @@
   "name": "paynless-framework-monorepo",
   "version": "0.1.0",
   "private": true,
+  "type": "module",
   "description": "Monorepo for the Paynless framework backend, shared packages, and apps.",
   "scripts": {
     "dev": "pnpm --parallel --filter \"./apps/*\" dev",
@@ -14,6 +15,7 @@
     "preview": "pnpm --filter @paynless/web preview",
     "lint": "pnpm -r run lint --if-present",
     "test": "pnpm -r test",
+    "test:integration": "vitest run --config ./vitest.config.ts",
     "sync:types": "supabase gen types typescript --local > supabase/functions/types_db.ts && node supabase/scripts/sync-supabase-shared-types.mjs"
   },
   "keywords": [
@@ -29,9 +31,12 @@
     "@nx/eslint": "20.7.1",
     "@nx/vite": "20.7.1",
     "@nx/web": "20.7.1",
+    "@supabase/supabase-js": "^2.49.4",
     "@testing-library/react": "^16.3.0",
     "@vitest/ui": "^1.3.1",
     "copyfiles": "^2.4.1",
+    "dotenv": "^16.5.0",
+    "globals": "^15.8.0",
     "jiti": "2.4.2",
     "jsdom": "^26.0.0",
     "msw": "^2.7.3",

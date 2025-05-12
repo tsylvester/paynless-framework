@@ -1,0 +1,43 @@
+[package]
+name = "paynless-desktop"
+version = "0.1.0"
+description = "A Tauri App"
+authors = ["you"]
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[lib]
+# The `_lib` suffix may seem redundant but it is necessary
+# to make the lib name unique and wouldn't conflict with the bin name.
+# This seems to be only an issue on Windows, see https://github.com/rust-lang/cargo/issues/8519
+name = "windows_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "^2.0.0", features = [] }
+
+[dependencies]
+tauri = { version = "^2.0.0", features = [] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+# Local Crates
+core-crypto = { path = "./crates/core-crypto" }
+storage-interface = { path = "./crates/storage-interface" }
+thiserror = "1.0" # Needed by error types exposed in commands
+hex = "0.4" # For command argument decoding
+
+# Tauri Plugins (Ensure versions match tauri core if necessary)
+tauri-plugin-dialog = "2"
+tauri-plugin-fs = "2"
+tauri-plugin-opener = "2"
+
+[dev-dependencies]
+tokio = { version = "1", features = ["macros", "rt-multi-thread"] } # For async tests
+tempfile = "3.10.1"
+
+# Features section removed as it wasn't present in the conflicting file and seems outdated
+# [features]
+# default = ["custom-protocol"]
+# custom-protocol = ["tauri/custom-protocol"]
+

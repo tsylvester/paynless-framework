@@ -8,7 +8,7 @@ import {
   SupabaseSession,
   Session,
   User,
-  UserRole
+  UserRole,
 } from '@paynless/types'
 import { NavigateFunction } from '@paynless/types'
 import { logger } from '@paynless/utils'
@@ -75,6 +75,7 @@ export const useAuthStore = create<AuthStore>()((set, get) => ({
       clearError: () => set({ error: null }),
 
       login: async (email: string, password: string): Promise<void> => {
+        logger.info('Attempting to login user via form', { email });
         set({ isLoading: true, error: null })
         try {
           // Get Supabase client instance
@@ -211,64 +212,68 @@ export const useAuthStore = create<AuthStore>()((set, get) => ({
       updateProfile: async (
         profileData: UserProfileUpdate
       ): Promise<UserProfile | null> => {
-        set({ error: null })
-        const token = get().session?.access_token
-        const currentProfile = get().profile
+        set({ error: null }); // Clear previous errors immediately
+        const token = get().session?.access_token;
+        const currentProfile = get().profile;
 
         if (!token) {
           logger.error(
             'updateProfile: Cannot update profile, user not authenticated.'
-          )
-          set({ error: new Error('Authentication required'), isLoading: false }) 
-          return null
+          );
+          // Do not set isLoading: false here if it might be true from initial app load
+          set({ error: new Error('Authentication required') }); 
+          return null;
         }
 
-        // Then check if profile is loaded
         if (!currentProfile) {
           logger.error(
             'updateProfile: Cannot update profile, no current profile loaded.'
-          )
-          set({
-            error: new Error('Profile not loaded'),
-            isLoading: false 
-          })
-          return null
+          );
+          set({ error: new Error('Profile not loaded') });
+          return null;
         }
 
-        // Set loading true only if proceeding to API call
-        set({ isLoading: true });
+        const keys = Object.keys(profileData);
+        const isOnlyChatContextUpdate = keys.length === 1 && keys[0] === 'chat_context';
+        let wasLoadingSetByThisAction = false;
+
+        // Only set global isLoading for non-background updates
+        if (!isOnlyChatContextUpdate) {
+          set({ isLoading: true });
+          wasLoadingSetByThisAction = true;
+        }
+        
         try {
           const response = await api.put<UserProfile, UserProfileUpdate>(
             'me',
             profileData,
             { token }
-          )
+          );
 
           if (!response.error && response.data) {
-            const updatedProfile = response.data
+            const updatedProfile = response.data;
             set({
               profile: updatedProfile,
-              error: null,
-            })
-            logger.info('Profile updated successfully.')
-            return updatedProfile
+              error: null, // Clear error on success
+            });
+            logger.info('Profile updated successfully.', updatedProfile);
+            return updatedProfile;
           } else {
-            const errorMessage =
-              response.error?.message || 'Failed to update profile'
-            throw new Error(errorMessage)
+            const errorMsg = response.error?.message || 'Failed to update profile';
+            logger.error('updateProfile: Profile update failed.', { error: errorMsg });
+            set({ error: new Error(errorMsg) }); 
+            return null;
           }
         } catch (error) {
           const finalError =
-            error instanceof Error
-              ? error
-              : new Error('Failed to update profile (API error)')
-          logger.error('Update profile: Error during API call.', {
-            message: finalError.message,
-          })
-          set({ error: finalError })
-          return null
+            error instanceof Error ? error : new Error('Unknown error updating profile');
+          logger.error('updateProfile: Unexpected error.', { message: finalError.message });
+          set({ error: finalError }); 
+          return null;
         } finally {
+          if (wasLoadingSetByThisAction) {
             set({ isLoading: false });
+          }
         }
       },
 
@@ -355,6 +360,15 @@ export const useAuthStore = create<AuthStore>()((set, get) => ({
       handleOAuthLogin: async (_provider: 'google' | 'github'): Promise<void> => {
         // Implementation for handling OAuth login
         // This is a placeholder and should be implemented
+      },
+
+      updateProfileWithAvatar: async (
+        _profileData: UserProfileUpdate,
+        // _file: File | null // Commented out as it's unused for now
+      ): Promise<UserProfile | null> => {
+        // Implementation for updating profile with avatar
+        // This is a placeholder and should be implemented
+        return null;
       },
     }))
 
@@ -497,39 +511,45 @@ export function initAuthListener(
             break;
 
           case 'SIGNED_OUT':
-            useAuthStore.setState({
-              user: null,
-              session: null,
-              profile: null,
-              isLoading: false, 
-              error: null,
-            });
-            localStorage.removeItem('pendingAction');
-            localStorage.removeItem('loadChatIdOnRedirect');
-             // Explicitly unsubscribe notifications on sign out
-             try {
-                 const unsubscribeNotifications = useNotificationStore.getState().unsubscribeFromUserNotifications;
-                 logger.info('[AuthListener SIGNED_OUT] Unsubscribing from notifications...');
-                 unsubscribeNotifications();
-             } catch (unsubscribeError) {
-                  logger.error('[AuthListener SIGNED_OUT] Error unsubscribing from notifications:', { error: unsubscribeError instanceof Error ? unsubscribeError.message : String(unsubscribeError) });
-             }
-             // Navigate to root
-             const navigate = useAuthStore.getState().navigate;
-             if (navigate) {
-                 navigate('/');
-             } else {
-                 logger.warn('[AuthListener] Navigate function not available for SIGNED_OUT redirection.');
-             }
-            break;
+            {
+              useAuthStore.setState({
+                user: null,
+                session: null,
+                profile: null,
+                isLoading: false,
+                error: null,
+              });
+              localStorage.removeItem('pendingAction');
+              localStorage.removeItem('loadChatIdOnRedirect');
+              // Explicitly unsubscribe notifications on sign out
+              try {
+                  const unsubscribeNotifications = useNotificationStore.getState().unsubscribeFromUserNotifications;
+                  logger.info('[AuthListener SIGNED_OUT] Unsubscribing from notifications...');
+                  unsubscribeNotifications();
+              } catch (unsubscribeError) {
+                    logger.error('[AuthListener SIGNED_OUT] Error unsubscribing from notifications:', { error: unsubscribeError instanceof Error ? unsubscribeError.message : String(unsubscribeError) });
+              }
+              // Navigate to root
+              const navigate = useAuthStore.getState().navigate;
+              if (navigate) {
+                  navigate('/');
+              } else {
+                  logger.warn('[AuthListener] Navigate function not available for SIGNED_OUT redirection.');
+              }
+              break;
+            }
 
           case 'PASSWORD_RECOVERY':
-            useAuthStore.setState({ isLoading: false });
-            break;
+            {
+                useAuthStore.setState({ isLoading: false });
+                break;
+            }
           default:
-            logger.warn('[AuthListener] Unhandled auth event:', { event });
-            useAuthStore.setState({ isLoading: false }); 
-            break;
+            {
+                logger.warn('[AuthListener] Unhandled auth event:', { event });
+                useAuthStore.setState({ isLoading: false }); 
+                break;
+            }
         }
 
         // --- Trigger Profile Fetch if needed ---

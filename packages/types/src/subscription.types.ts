@@ -105,3 +105,17 @@ export interface ApiSubscriptionUsageMetrics {
   limit: number;
   reset_date?: string | null;
 }
+
+// --- Store Specific State Types ---
+
+/**
+ * Defines the shape of the subscription slice in the Zustand reselect store.
+ */
+export interface SubscriptionState {
+  userSubscription: UserSubscription | null;
+  availablePlans: SubscriptionPlan[];
+  isSubscriptionLoading: boolean;
+  hasActiveSubscription: boolean;
+  error: Error | null;
+  // Add other relevant state properties here if they exist
+}

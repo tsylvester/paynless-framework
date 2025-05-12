@@ -4,8 +4,8 @@ import {
     createMockSupabaseClient, 
     MockSupabaseDataConfig, 
     MockQueryBuilderState 
-} from "../_shared/test-utils.ts";
-import { SupabaseClient, createClient } from "npm:@supabase/supabase-js@^2.43.4";
+} from "../_shared/supabase.mock.ts";
+import { User } from "@supabase/supabase-js";
 
 // Helper to create a mock request (copied from original index.test.ts)
 const createMockRequest = (method: string, path: string, body?: Record<string, unknown>): Request => {

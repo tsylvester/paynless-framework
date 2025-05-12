@@ -112,24 +112,48 @@ const MOCK_GOOGLE_OTHER_REASON_RESPONSE = {
   ]
 };
 
+// Add an interface for the expected token usage structure
+interface MockTokenUsage {
+  prompt_tokens: number;
+  completion_tokens: number;
+  total_tokens: number;
+}
+
 // --- Tests ---
 Deno.test("GoogleAdapter sendMessage - Success", async () => {
-  const mockFetch = stub(globalThis, "fetch", () =>
-    Promise.resolve(
-      new Response(JSON.stringify(MOCK_GOOGLE_SUCCESS_RESPONSE), {
-        status: 200,
-        headers: { 'Content-Type': 'application/json' },
-      })
-    )
-  );
+  const mockSuccessfulGenerateContent = {
+    // Using the same success response structure as before for generateContent
+    candidates: MOCK_GOOGLE_SUCCESS_RESPONSE.candidates,
+  };
+  const mockGenericTokenCountResponse = { totalTokens: 1 }; // Generic small token count
+
+  const mockFetch = stub(globalThis, "fetch", (input: string | URL | Request, _options?: RequestInit) => {
+    const urlString = input.toString();
+    if (urlString.includes(":generateContent")) {
+      return Promise.resolve(
+        new Response(JSON.stringify(mockSuccessfulGenerateContent), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      );
+    } else if (urlString.includes(":countTokens")) {
+      return Promise.resolve(
+        new Response(JSON.stringify(mockGenericTokenCountResponse), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      );
+    }
+    return Promise.reject(new Error(`Unexpected fetch call in mock: ${urlString}`));
+  });
 
   try {
     const adapter = new GoogleAdapter();
     const result = await adapter.sendMessage(MOCK_CHAT_REQUEST_GOOGLE, MOCK_MODEL_ID, MOCK_API_KEY);
 
     // Assert fetch was called correctly
-    assertEquals(mockFetch.calls.length, 1);
-    const fetchArgs = mockFetch.calls[0].args;
+    assertEquals(mockFetch.calls.length, 3, "Expected 3 fetch calls (generate + 2 countTokens)");
+    const fetchArgs = mockFetch.calls[0].args; // This will be the generateContent call
     const expectedUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro-latest:generateContent?key=${MOCK_API_KEY}`;
     assertEquals(fetchArgs[0], expectedUrl);
     assertEquals(fetchArgs[1]?.method, 'POST');
@@ -150,8 +174,87 @@ Deno.test("GoogleAdapter sendMessage - Success", async () => {
     assertEquals(result.content, 'A region in spacetime where gravity is so strong nothing escapes, not even light.'); // Trimmed
     assertEquals(result.ai_provider_id, MOCK_CHAT_REQUEST_GOOGLE.providerId);
     assertEquals(result.system_prompt_id, MOCK_CHAT_REQUEST_GOOGLE.promptId);
-    // Token usage is explicitly null in the current implementation
-    // assertExists(result.token_usage); // Check that token usage is returned
+    // Token usage should now be present due to the adapter changes
+    assertExists(result.token_usage, "Token usage should be present");
+    const tokenUsage = result.token_usage as unknown as MockTokenUsage;
+    assertEquals(typeof tokenUsage.prompt_tokens, "number");
+    assertEquals(typeof tokenUsage.completion_tokens, "number");
+    assertEquals(typeof tokenUsage.total_tokens, "number");
+    // Specific values (e.g., 1 for prompt, 1 for completion based on mockGenericTokenCountResponse)
+    assertEquals(tokenUsage.prompt_tokens, mockGenericTokenCountResponse.totalTokens);
+    assertEquals(tokenUsage.completion_tokens, mockGenericTokenCountResponse.totalTokens);
+    assertEquals(tokenUsage.total_tokens, mockGenericTokenCountResponse.totalTokens + mockGenericTokenCountResponse.totalTokens);
+
+  } finally {
+    mockFetch.restore();
+  }
+});
+
+Deno.test("GoogleAdapter sendMessage - Success with Token Counting", async () => {
+  const mockGenerateContentResponse = {
+    candidates: [
+      {
+        content: { parts: [{ text: "Test AI response." }], role: "model" },
+        finishReason: "STOP",
+      },
+    ],
+  };
+  const mockPromptTokensResponse = { totalTokens: 15 }; // Example prompt token count
+  const mockCompletionTokensResponse = { totalTokens: 5 }; // Example completion token count
+
+  const mockFetch = stub(globalThis, "fetch", async (input: string | URL | Request, options?: RequestInit) => {
+    const urlString = input.toString();
+    if (urlString.includes(":generateContent")) {
+      return Promise.resolve(
+        new Response(JSON.stringify(mockGenerateContentResponse), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        })
+      );
+    } else if (urlString.includes(":countTokens")) {
+      const requestBody = options?.body ? JSON.parse(options.body.toString()) : {};
+      // If the request body for countTokens contains multiple 'contents' entries, assume it's for the prompt.
+      // Otherwise, if it's a single entry (our adapter sends the AI response this way), assume it's for completion.
+      if (requestBody.contents && Array.isArray(requestBody.contents) && requestBody.contents.length > 1) {
+        return Promise.resolve(
+          new Response(JSON.stringify(mockPromptTokensResponse), {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          })
+        );
+      } else {
+        return Promise.resolve(
+          new Response(JSON.stringify(mockCompletionTokensResponse), {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          })
+        );
+      }
+    }
+    return Promise.reject(new Error(`Unexpected fetch call: ${urlString}`));
+  });
+
+  try {
+    const adapter = new GoogleAdapter();
+    const result = await adapter.sendMessage(MOCK_CHAT_REQUEST_GOOGLE, MOCK_MODEL_ID, MOCK_API_KEY);
+
+    assertEquals(mockFetch.calls.length, 3, "Expected 3 fetch calls: generateContent, countTokens (prompt), countTokens (completion)");
+    
+    // Check generateContent call (already well-tested in the original success test, could be simplified here)
+    const generateContentCall = mockFetch.calls.find(call => call.args[0].toString().includes(":generateContent"));
+    assertExists(generateContentCall, "generateContent call not found");
+
+    // Check countTokens calls
+    const countTokensCalls = mockFetch.calls.filter(call => call.args[0].toString().includes(":countTokens"));
+    assertEquals(countTokensCalls.length, 2, "Expected 2 countTokens calls");
+
+    // TODO: Add assertions for the bodies of countTokens calls if needed, to ensure the correct content is being tokenized.
+
+    assertExists(result.token_usage, "token_usage should be present");
+    const tokenUsage = result.token_usage as unknown as MockTokenUsage; // Cast to unknown first, then to the specific type
+    assertEquals(tokenUsage.prompt_tokens, mockPromptTokensResponse.totalTokens, "Prompt tokens mismatch");
+    assertEquals(tokenUsage.completion_tokens, mockCompletionTokensResponse.totalTokens, "Completion tokens mismatch");
+    assertEquals(tokenUsage.total_tokens, mockPromptTokensResponse.totalTokens + mockCompletionTokensResponse.totalTokens, "Total tokens mismatch");
 
   } finally {
     mockFetch.restore();

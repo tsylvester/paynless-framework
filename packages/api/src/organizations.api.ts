@@ -152,6 +152,22 @@ export class OrganizationApiClient {
   }
 
   /**
+   * Updates specific settings for an organization.
+   * Uses the main client's patch method.
+   * @param orgId - The ID of the organization whose settings to update.
+   * @param settings - An object containing the settings to update, e.g., { allow_member_chat_creation: boolean }.
+   * @returns An ApiResponse containing the updated organization details or an error.
+   */
+  async updateOrganizationSettings(
+      orgId: string, 
+      settings: { allow_member_chat_creation: boolean } // Specify the expected settings structure
+  ): Promise<ApiResponse<Organization>> {
+      // Use PATCH as we are updating specific fields (settings)
+      // Endpoint assumes /organizations/{orgId}/settings structure
+      return this.client.patch<Organization, typeof settings>(`organizations/${orgId}/settings`, settings);
+  }
+
+  /**
    * Invites a user to an organization.
    * Uses the main client's post method.
    * @param orgId - The ID of the organization to invite to.
@@ -159,7 +175,7 @@ export class OrganizationApiClient {
    * @param role - The role to assign to the invitee (e.g., 'member', 'admin').
    * @returns An ApiResponse, typically with no data on success (e.g., status 204) or an error.
    */
-  async inviteUserByEmail(orgId: string, email: string, role: string): Promise<ApiResponse<any>> {
+  async inviteUserByEmail(orgId: string, email: string, role: string): Promise<ApiResponse<Invite>> {
     const payload = { email, role };
     // Use the injected ApiClient's post method
     // Assuming backend returns the created Invite object
@@ -174,7 +190,7 @@ export class OrganizationApiClient {
    * @param role - The role to assign to the invitee (e.g., 'member', 'admin').
    * @returns An ApiResponse containing invite details or an error.
    */
-  async inviteUserById(orgId: string, userId: string, role: string): Promise<ApiResponse<any>> {
+  async inviteUserById(orgId: string, userId: string, role: string): Promise<ApiResponse<Invite>> {
     const payload = { invitedUserId: userId, role }; // Use 'invitedUserId' as key
     // Assuming backend returns the created Invite object
     return this.client.post<Invite, typeof payload>(`organizations/${orgId}/invites`, payload);
@@ -211,12 +227,12 @@ export class OrganizationApiClient {
    * @param orgId - The ID of the organization to request joining.
    * @returns An ApiResponse, typically with no data on success (e.g., status 204) or an error.
    */
-  async requestToJoinOrganization(orgId: string): Promise<ApiResponse<any>> {
+  async requestToJoinOrganization(orgId: string): Promise<ApiResponse<unknown>> {
     // Backend endpoint: POST /organizations/:orgId/requests
     // Assuming the backend needs no specific payload from the client for this action.
     // The backend infers the user from the auth context.
     // Adjust expected return type <T> if backend provides data (e.g., pending membership record)
-    return this.client.post<any, undefined>(`organizations/${orgId}/requests`, undefined);
+    return this.client.post<unknown, undefined>(`organizations/${orgId}/requests`, undefined);
   }
 
   /**
@@ -320,13 +336,8 @@ export class OrganizationApiClient {
             invites: enrichedData?.invites ?? [],
             requests: enrichedData?.requests ?? []
         };
-    } else if (response.status >= 200 && response.status < 300 && !response.error) {
-         // Handle case where response.data itself might be null/undefined on success
-         response.data = {
-            invites: [],
-            requests: []
-        };
     }
+    
     // Cast the entire response to match the function's Promise signature
     return response as ApiResponse<{ invites: PendingInviteWithInviter[], requests: PendingRequestWithDetails[] }>;
   }

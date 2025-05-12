@@ -1,5 +1,17 @@
 import type { Database } from '@paynless/db-types';
+// If FetchOptions is meant to be the standard fetch options, use RequestInit
+// import type { FetchOptions } from '@supabase/supabase-js'; // This was problematic
+import type { ApiResponse } from './api.types';
+import type { UserProfile } from './auth.types'; // UserProfile import is correct here
 // --- Database Table Aliases ---
+
+// Define the specific type for the RPC parameters based on types_db.ts
+export type PerformChatRewindArgs = Database['public']['Functions']['perform_chat_rewind']['Args'];
+
+// Define derived DB types needed locally
+export type ChatMessageInsert = Database['public']['Tables']['chat_messages']['Insert'];
+export type ChatMessageRow = Database['public']['Tables']['chat_messages']['Row'];
+// type ChatRow = Database['public']['Tables']['chats']['Row']; // Not directly used in handlePostRequest return
 
 /**
  * Represents an AI Provider configuration.
@@ -20,14 +32,19 @@ export type SystemPrompt = Database['public']['Tables']['system_prompts']['Row']
 export type Chat = Database['public']['Tables']['chats']['Row'];
 
 /**
+ * Represents the token usage for a message or a chat.
+ */
+export interface TokenUsage {
+  promptTokens: number;
+  completionTokens: number;
+  totalTokens: number;
+}
+
+/**
  * Represents a single message within a Chat.
  * Derived from the `chat_messages` table.
  */
-export type ChatMessage = Database['public']['Tables']['chat_messages']['Row'] & {
-  // Keep application-level status enrichment if needed by UI directly
-  // Note: status was previously added to LocalChatMessage, consider if it belongs here
-  status?: 'pending' | 'sent' | 'error'; 
-};
+export type ChatMessage = Database['public']['Tables']['chat_messages']['Row'] 
 
 // --- Application/API/Adapter/Store Specific Types ---
 
@@ -40,7 +57,8 @@ export interface ChatApiRequest {
   message: string;
   providerId: AiProvider['id']; // Reference aliased type
   promptId: SystemPrompt['id']; // Reference aliased type
-  chatId?: Chat['id'];   // Reference aliased type (optional for new chats)
+  chatId?: Chat['id'] | null;   // Reference aliased type (optional for new chats)
+  organizationId?: string | null; // Add optional organizationId
 }
 
 /**
@@ -116,6 +134,13 @@ export interface AiProviderAdapter {
   listModels(apiKey: string): Promise<ProviderModelInfo[]>;
 }
 
+export interface ChatHandlerSuccessResponse {
+  userMessage?: ChatMessageRow;       // Populated for normal new messages and new user message in rewind
+  assistantMessage: ChatMessageRow;  // Always populated on success
+  isRewind?: boolean;                 // True if this was a rewind operation
+  isDummy?: boolean;                  // True if dummy provider was used
+}
+
 // --- Zustand Store Types ---
 
 /**
@@ -126,19 +151,44 @@ export interface AiState {
     availableProviders: AiProvider[]; // Use aliased type
     availablePrompts: SystemPrompt[]; // Use aliased type
 
-    // Current chat state
-    currentChatMessages: ChatMessage[]; // Use aliased type
-    currentChatId: Chat['id'] | null; // Use aliased type
-    isLoadingAiResponse: boolean; // Loading indicator specifically for AI response generation
-    isConfigLoading: boolean;   // Loading indicator for fetching providers/prompts
-    isHistoryLoading: boolean;  // Loading indicator for fetching chat list
-    isDetailsLoading: boolean;  // Loading indicator for fetching messages of a specific chat
+    // New context-aware chat state
+    chatsByContext: { 
+        personal: Chat[] | undefined; 
+        orgs: { [orgId: string]: Chat[] | undefined };
+    };
+    messagesByChatId: { [chatId: string]: ChatMessage[] };
+    currentChatId: Chat['id'] | null; // Remains the same
 
-    // Chat history list
-    chatHistoryList: Chat[]; // Use aliased type
+    // Loading states
+    isLoadingAiResponse: boolean; // Remains the same
+    isConfigLoading: boolean;   // Remains the same
+    isLoadingHistoryByContext: { 
+        personal: boolean; 
+        orgs: { [orgId: string]: boolean };
+    };
+    historyErrorByContext: { personal: string | null, orgs: { [orgId: string]: string | null } };
+    isDetailsLoading: boolean;  // Remains the same (for currentChatId messages)
+
+    // New chat initiation and context
+    newChatContext: 'personal' | string | null; // 'personal' or orgId
+
+    // Rewind feature state
+    rewindTargetMessageId: ChatMessage['id'] | null;
 
     // Error state
-    aiError: string | null;
+    aiError: string | null; // Remains the same
+
+    // Selected provider and prompt
+    selectedProviderId: AiProvider['id'] | null;
+    selectedPromptId: SystemPrompt['id'] | null;
+
+    isChatContextHydrated?: boolean; // Added for tracking hydration status
+
+    chatParticipantsProfiles: { [userId: string]: UserProfile }; 
+
+    // Token Tracking (placeholders, to be detailed in STEP-2.1.8)
+    // Example: chatTokenUsage?: { [chatId: string]: { promptTokens: number; completionTokens: number; totalTokens: number } };
+    // Example: sessionTokenUsage?: { promptTokens: number; completionTokens: number; totalTokens: number };
 }
 
 /**
@@ -149,15 +199,74 @@ export interface AiActions {
   sendMessage: (data: {
     message: string; 
     providerId: AiProvider['id']; // Use aliased type
-    promptId: SystemPrompt['id']; // Use aliased type
+    promptId: SystemPrompt['id'] | null; // MODIFIED HERE
     chatId?: Chat['id'] | null; // Use aliased type
   }) => Promise<ChatMessage | null>; // Use aliased type
-  loadChatHistory: () => Promise<void>;
+  loadChatHistory: (organizationId?: string | null) => Promise<void>;
   loadChatDetails: (chatId: Chat['id']) => Promise<void>; // Use aliased type
-  startNewChat: () => void;
+  startNewChat: (organizationId?: string | null) => void;
   clearAiError: () => void;
   checkAndReplayPendingChatAction: () => Promise<void>;
+  deleteChat: (chatId: Chat['id'], organizationId?: string | null) => Promise<void>;
+  prepareRewind: (messageId: ChatMessage['id'], chatId: Chat['id']) => void;
+  cancelRewindPreparation: () => void;
+  setSelectedProvider: (providerId: AiProvider['id'] | null) => void;
+  setSelectedPrompt: (promptId: SystemPrompt['id'] | null) => void;
+  setNewChatContext: (contextId: string | null) => void;
+
+  // Added for chat context hydration
+  setChatContextHydrated: (hydrated: boolean) => void;
+  hydrateChatContext: (chatContext: ChatContextPreferences | null) => void;
+  resetChatContextToDefaults: () => void;
 }
 
 // Combined type for the store
 export type AiStore = AiState & AiActions; 
+
+// +++ ADDED Chat Context Preferences Type +++
+/**
+ * Defines the structure for user-specific chat UI preferences,
+ * intended to be stored as JSON in user_profiles.chat_context.
+ */
+export interface ChatContextPreferences {
+  newChatContext?: string | null;      // Corresponds to ChatContextSelector
+  selectedProviderId?: string | null;  // Corresponds to ModelSelector (provider ID)
+  selectedPromptId?: string | null;    // Corresponds to PromptSelector
+}
+// +++ END Chat Context Preferences Type +++
+
+// --- API Client Interface ---
+
+/**
+ * Defines the public contract for the AiApiClient.
+ */
+export interface IAiApiClient {
+  getAiProviders(token?: string): Promise<ApiResponse<AiProvider[]>>;
+  getSystemPrompts(token?: string): Promise<ApiResponse<SystemPrompt[]>>;
+  sendChatMessage(data: ChatApiRequest, options?: RequestInit): Promise<ApiResponse<ChatMessage>>;
+  getChatHistory(token: string, organizationId?: string | null): Promise<ApiResponse<Chat[]>>;
+  getChatWithMessages(chatId: string, token: string, organizationId?: string | null): Promise<ApiResponse<{ chat: Chat, messages: ChatMessage[] }>>;
+  deleteChat(chatId: string, token: string, organizationId?: string | null): Promise<ApiResponse<void>>;
+  // Add other public methods of AiApiClient here if any
+}
+
+// --- Initial State Values (for direct use in create) ---
+export const initialAiStateValues: AiState = {
+  availableProviders: [],
+  availablePrompts: [],
+  chatsByContext: { personal: undefined, orgs: {} },
+  messagesByChatId: {},
+  currentChatId: null,
+  isLoadingAiResponse: false,
+  isConfigLoading: false,
+  isLoadingHistoryByContext: { personal: false, orgs: {} },
+  historyErrorByContext: { personal: null, orgs: {} },
+  isDetailsLoading: false,
+  newChatContext: null,
+  rewindTargetMessageId: null,
+  aiError: null,
+  selectedProviderId: null,
+  selectedPromptId: null,
+  isChatContextHydrated: false, 
+  chatParticipantsProfiles: {}, 
+};

@@ -1,0 +1,1 @@
+Read all of these in numeric order. In each folder, read the seedphrase first. 

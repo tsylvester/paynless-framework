@@ -8,7 +8,9 @@ type OrganizationMembersTable = Database['public']['Tables']['organization_membe
 type InvitesTable = Database['public']['Tables']['invites']; // Add invites table type
 
 // --- Organization Types ---
-export type Organization = OrganizationsTable['Row'];
+export type Organization = OrganizationsTable['Row'] & {
+    allow_member_chat_creation?: boolean | null; // Added for chat settings
+};
 export type OrganizationInsert = OrganizationsTable['Insert'];
 export type OrganizationUpdate = OrganizationsTable['Update'];
 
@@ -79,6 +81,7 @@ export interface OrganizationState {
   memberCurrentPage: number;
   memberPageSize: number;
   memberTotalCount: number;
+  // No direct state property for allow_member_chat_creation here, it's part of currentOrganizationDetails
 }
 
 // Type for the details needed on the Invite Accept page
@@ -125,6 +128,7 @@ export interface OrganizationActions {
   denyRequest: (membershipId: string) => Promise<boolean>;
   cancelInvite: (inviteId: string) => Promise<boolean>;
   fetchInviteDetails: (token: string) => Promise<InviteDetails | null>; 
+  updateOrganizationSettings: (organizationId: string, settings: { allow_member_chat_creation: boolean }) => Promise<boolean>; // Added
   // --- Pagination Actions ---
   setOrgListPage: (page: number) => void;
   setOrgListPageSize: (size: number) => void;
@@ -146,4 +150,9 @@ export interface OrganizationUIActions {
   closeDeleteDialog: () => void;
 }
 
-export type OrganizationStoreType = OrganizationState & OrganizationActions;
+export type OrganizationStoreType = OrganizationState & OrganizationActions & OrganizationUIState & OrganizationUIActions & {
+    // Add selector signature here if we want it strictly typed on the store instance
+    // This is often handled by direct implementation in the store and use via useStore(state => state.selectorName()) though.
+    selectCanCreateOrganizationChats: () => boolean; 
+    selectCurrentUserRoleInOrg: () => OrganizationMember['role'] | null; // Added selector for current user's role
+};

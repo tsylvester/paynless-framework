@@ -5,7 +5,7 @@ import { SupabaseClient } from "npm:@supabase/supabase-js";
 import Stripe from "npm:stripe";
 import { createBillingPortalSession } from "./billing-portal.ts";
 import { HandlerError } from "./current.ts";
-import { createMockSupabaseClient, type MockSupabaseDataConfig } from "../../_shared/test-utils.ts";
+import { createMockSupabaseClient, type MockSupabaseDataConfig } from "../../_shared/supabase.mock.ts";
 import { BillingPortalRequest } from "../../_shared/types.ts";
 
 // --- Mocks & Spies ---

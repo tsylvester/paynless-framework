@@ -15,7 +15,7 @@ import {
     createMockSupabaseClient, 
     type MockSupabaseDataConfig,
     type MockQueryBuilderState 
-} from "../_shared/test-utils.ts";
+} from "../_shared/supabase.mock.ts";
 // REMOVE these lines:
 // import { GoogleAIHandler } from "./google_sync.ts"; // Handler we are testing
 // import type { GoogleModel } from "./google_models.ts"; // Type for models

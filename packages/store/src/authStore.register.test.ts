@@ -1,10 +1,12 @@
 import { describe, it, expect, beforeEach, vi, type MockInstance, type Mock, type SpyInstance } from 'vitest';
 import { useAuthStore } from './authStore'; 
 import { api } from '@paynless/api';
+import { api } from '@paynless/api';
 import { act } from '@testing-library/react';
-import type { User, Session, UserProfile, UserRole, ChatMessage, ApiResponse, FetchOptions } from '@paynless/types';
+import type { User, Session, UserProfile, UserRole, ChatMessage, ApiResponse, FetchOptions, AuthResponse } from '@paynless/types';
 import { logger } from '@paynless/utils'; 
 import { SupabaseClient, Session as SupabaseSession, User as SupabaseUser } from '@supabase/supabase-js'; // Import Supabase types
+import * as analyticsClient from '@paynless/analytics';
 
 // Helper to reset Zustand store state between tests
 const resetStore = () => {
@@ -30,23 +32,25 @@ vi.mock('@paynless/utils', () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
 }));
 
+// Mock analytics
+vi.mock('@paynless/analytics', () => ({ 
+  analytics: { identify: vi.fn(), reset: vi.fn(), track: vi.fn() } 
+}));
+
 // Mock replayPendingAction (still needed by listener, potentially)
 vi.mock('./lib/replayPendingAction', () => ({
   replayPendingAction: vi.fn(),
 }));
 
 // --- Mock Supabase Client Setup ---
-const mockSupabaseAuthResponse = { data: { user: {} as SupabaseUser, session: {} as SupabaseSession }, error: null }; // Generic success response
-const mockSignInWithPassword = vi.fn(); 
-const mockSignUp = vi.fn().mockResolvedValue(mockSupabaseAuthResponse); // Mock signUp specificially
-const mockSignOut = vi.fn();
+const mockSupabaseAuthSuccessResponse = { data: {}, error: null }; // Simple success object
+const mockSignUp = vi.fn().mockResolvedValue(mockSupabaseAuthSuccessResponse);
 
+// Assemble the mock client
 const mockSupabaseClient = {
   auth: {
-    signInWithPassword: mockSignInWithPassword,
     signUp: mockSignUp,
-    signOut: mockSignOut,
-    onAuthStateChange: vi.fn(() => ({ data: { subscription: { unsubscribe: vi.fn() } } })),
+    // Add other auth methods if needed
   }
 } as unknown as SupabaseClient;
 
@@ -79,8 +83,8 @@ describe('AuthStore - Register Action (Refactored for Supabase)', () => {
     // Reset Zustand store state
     useAuthStore.setState(useAuthStore.getInitialState(), true);
 
-    // Assign mocks/spies
-    signUpSpy = vi.spyOn(mockSupabaseClient.auth, 'signUp');
+    // Assign spies
+    signUpSpy = mockSignUp;
     loggerErrorSpy = vi.spyOn(logger, 'error');
     
     // Setup navigation mock
@@ -95,54 +99,59 @@ describe('AuthStore - Register Action (Refactored for Supabase)', () => {
      vi.restoreAllMocks();
   });
 
-  it('should call supabase.auth.signUp, set loading/error, navigate, but NOT set state directly', async () => {
+  it('should call authClient.signUp, set loading/error, navigate, but NOT set state directly', async () => {
     // Arrange
-    const { email, password } = mockRegisterData;
-    signUpSpy.mockResolvedValue(mockSupabaseAuthResponse); // Ensure success
+    signUpSpy.mockResolvedValue(mockSupabaseAuthSuccessResponse); // Ensure success
 
     // Act
-    const result = await useAuthStore.getState().register(email, password);
+    await act(async () => {
+      // Call register with email and password, as defined in the store
+      await useAuthStore.getState().register(mockRegisterData.email, mockRegisterData.password);
+    });
 
     // Assert: Supabase call
     expect(signUpSpy).toHaveBeenCalledTimes(1);
-    expect(signUpSpy).toHaveBeenCalledWith({ email, password });
+    expect(signUpSpy).toHaveBeenCalledWith({ email: mockRegisterData.email, password: mockRegisterData.password });
 
-    // Assert: Final state (loading false, no user/session/profile set by action)
+    // Assert: State changes for loading/error
     const finalState = useAuthStore.getState();
     expect(finalState.isLoading).toBe(false);
-    expect(finalState.user).toBeNull(); 
-    expect(finalState.session).toBeNull();
-    expect(finalState.profile).toBeNull();
     expect(finalState.error).toBeNull();
 
-    // Assert: Return value (expect null as listener handles state)
-    // expect(result).toBeNull(); 
+    // Assert state is NOT set directly (handled by listener)
+    expect(finalState.user).toBeNull();
+    expect(finalState.session).toBeNull();
+    expect(finalState.profile).toBeNull();
 
-    // Assert: Navigation (REMOVED - Handled by listener)
+    // Assert: Navigation (REMOVED - Register action no longer navigates directly)
     // expect(navigateMock).toHaveBeenCalledTimes(1);
-    // expect(navigateMock).toHaveBeenCalledWith('dashboard');
+    // expect(navigateMock).toHaveBeenCalledWith('login'); // Or wherever register navigates
+    expect(navigateMock).not.toHaveBeenCalled();
   });
 
   it('should set error state, not navigate, and return null on Supabase signUp failure', async () => {
-    // Arrange
-    const { email, password } = mockRegisterData;
+    // Arrange: Mock supabase failure
     const supabaseError = new Error('User already registered');
-    signUpSpy.mockRejectedValue(supabaseError);
-    
+    signUpSpy.mockRejectedValue(supabaseError); // Mock rejection
+    let result: void | undefined; // register returns void or undefined on error path
+
     // Act
-    const result = await useAuthStore.getState().register(email, password);
+    await act(async () => {
+        // Call register with email and password, as defined in the store
+        result = await useAuthStore.getState().register(mockRegisterData.email, mockRegisterData.password);
+    });
 
     // Assert: Supabase call
     expect(signUpSpy).toHaveBeenCalledTimes(1);
-    expect(signUpSpy).toHaveBeenCalledWith({ email, password });
+    expect(signUpSpy).toHaveBeenCalledWith({ email: mockRegisterData.email, password: mockRegisterData.password });
 
-    // Assert: Final state (loading false, error set, user/session/profile null)
+    // Assert: Final state has error
     const finalState = useAuthStore.getState();
-    expect(finalState.isLoading).toBe(false);
-    expect(finalState.user).toBeNull(); 
+    expect(finalState.isLoading).toBe(false); 
+    expect(finalState.user).toBeNull();
     expect(finalState.session).toBeNull();
     expect(finalState.profile).toBeNull();
-    expect(finalState.error).toBe(supabaseError);
+    expect(finalState.error).toBe(supabaseError); 
 
     // Assert: Return value
     expect(result).toBeUndefined();

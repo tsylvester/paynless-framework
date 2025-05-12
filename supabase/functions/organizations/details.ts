@@ -43,16 +43,21 @@ export async function handleUpdateOrgDetails(
     console.log(`[details.ts] Handling PUT /organizations/${orgId} (update)...`);
      
      // 1. Validate payload
-     const { name, visibility } = body || {};
+     const { name, visibility, allow_member_chat_creation } = body || {};
      if (name !== undefined && (typeof name !== 'string' || name.trim().length < 3)) {
          return createErrorResponse('Invalid update payload. Name must be at least 3 characters.', 400, req);
      }
      if (visibility !== undefined && visibility !== 'public' && visibility !== 'private') {
           return createErrorResponse('Invalid update payload. Visibility must be "public" or "private".', 400, req);
      }
+     if (allow_member_chat_creation !== undefined && typeof allow_member_chat_creation !== 'boolean') {
+        return createErrorResponse('Invalid update payload. allow_member_chat_creation must be a boolean.', 400, req);
+    }
+
      const updatePayload: Partial<Database['public']['Tables']['organizations']['Update']> = {};
      if (name !== undefined) updatePayload.name = name.trim();
      if (visibility !== undefined) updatePayload.visibility = visibility;
+     if (allow_member_chat_creation !== undefined) updatePayload.allow_member_chat_creation = allow_member_chat_creation;
 
      if (Object.keys(updatePayload).length === 0) {
         return createErrorResponse('No valid fields provided for update.', 400, req);

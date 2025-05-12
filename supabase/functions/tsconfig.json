@@ -1,0 +1,30 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "outDir": "./dist",
+    "rootDir": ".", // Considers all files in supabase/functions as potential root
+    "declaration": true,
+    "declarationMap": true,
+    "composite": true,
+    // We only want to emit declarations, actual JS might not be needed if it's just types
+    // but tsc might require it with composite.
+    "emitDeclarationOnly": false, // Set to true if types_db.ts TRULY has no runtime code
+    "module": "ESNext", // Or "CommonJS" depending on expected output, ESNext is modern
+    "target": "ESNext"
+  },
+  "include": [
+    "types_db.ts" // Only include this file for this specific build purpose
+  ],
+  "exclude": [
+    "node_modules",
+    "dist",
+    // Exclude other Deno function folders if they exist at the root of supabase/functions
+    // to prevent this tsconfig from trying to compile them.
+    // For example: "chat", "chat-details", etc. if they are top-level directories.
+    // If they are nested under index.ts files or similar, this might not be an issue.
+    "**/*.test.ts",       // Exclude test files
+    "**/*.integration.ts", // Exclude integration test files
+    "**/*.deno.ts"         // Exclude Deno specific test files
+    // Add other patterns for Deno files if necessary
+  ]
+} 
