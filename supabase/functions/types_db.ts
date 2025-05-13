@@ -546,6 +546,8 @@ export type Database = {
           balance_after_txn: number
           idempotency_key: string | null
           notes: string | null
+          payment_transaction_id: string | null
+          recorded_by_user_id: string
           related_entity_id: string | null
           related_entity_type: string | null
           timestamp: string
@@ -558,6 +560,8 @@ export type Database = {
           balance_after_txn: number
           idempotency_key?: string | null
           notes?: string | null
+          payment_transaction_id?: string | null
+          recorded_by_user_id: string
           related_entity_id?: string | null
           related_entity_type?: string | null
           timestamp?: string
@@ -570,6 +574,8 @@ export type Database = {
           balance_after_txn?: number
           idempotency_key?: string | null
           notes?: string | null
+          payment_transaction_id?: string | null
+          recorded_by_user_id?: string
           related_entity_id?: string | null
           related_entity_type?: string | null
           timestamp?: string
@@ -578,6 +584,13 @@ export type Database = {
           wallet_id?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "token_wallet_transactions_payment_transaction_id_fkey"
+            columns: ["payment_transaction_id"]
+            isOneToOne: false
+            referencedRelation: "payment_transactions"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "token_wallet_transactions_wallet_id_fkey"
             columns: ["wallet_id"]
@@ -842,6 +855,33 @@ export type Database = {
           token_usage: Json
           ai_provider_id: string
           system_prompt_id: string
+        }[]
+      }
+      record_token_transaction: {
+        Args: {
+          p_wallet_id: string
+          p_transaction_type: string
+          p_input_amount_text: string
+          p_recorded_by_user_id: string
+          p_idempotency_key?: string
+          p_related_entity_id?: string
+          p_related_entity_type?: string
+          p_notes?: string
+          p_payment_transaction_id?: string
+        }
+        Returns: {
+          transaction_id: string
+          wallet_id: string
+          transaction_type: string
+          amount: number
+          balance_after_txn: number
+          recorded_by_user_id: string
+          idempotency_key: string
+          related_entity_id: string
+          related_entity_type: string
+          notes: string
+          timestamp: string
+          payment_transaction_id: string
         }[]
       }
     }

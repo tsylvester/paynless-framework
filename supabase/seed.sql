@@ -41,7 +41,7 @@ ON CONFLICT (id) DO NOTHING; -- Avoid errors if users already exist
 -- Add Dummy AI Provider for testing
 INSERT INTO public.ai_providers (id, name, provider, api_identifier, is_active)
 VALUES 
-    ('11111111-1111-1111-1111-111111111111', 'Dummy Test Provider', 'openai', 'gpt-dummy', true)
+    ('11111111-1111-1111-1111-111111111111', 'Dummy Echo v1', 'dummy', 'dummy-echo-v1', true)
 ON CONFLICT (id) DO NOTHING;
 
 -- Add Dummy System Prompt for testing

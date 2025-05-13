@@ -96,14 +96,109 @@ The implementation plan uses the following labels to categorize work steps:
 **Goal:** Implement the backend service for managing token wallets and integrate the first payment gateway (Stripe).
 
 ### 4.1.1: [BE] Implement `TokenWalletService`
-*   [ ] **4.1.1.1: [BE] [TEST-UNIT] Create `supabase/functions/_shared/services/tokenWalletService.ts`**
-    *   Implement methods of `ITokenWalletService` using Supabase client.
-    *   `recordTransaction`: Use `supabaseClient.rpc('record_token_transaction', { p_wallet_id, p_type, p_amount, ... })` where the Postgres function handles updating balance and inserting ledger entry atomically within a transaction.
-    *   `checkBalance`: Simple select `balance >= amountToSpend`.
-    *   Write comprehensive unit tests (mocking Supabase client and RPC calls) for all service methods. (RED -> GREEN)
-*   [ ] **4.1.1.2: [DB] Create Postgres function `record_token_transaction`**
-    *   This function takes transaction parameters, updates `token_wallets.balance`, inserts into `token_wallet_transactions`, and returns the new transaction record. It MUST run within a transaction.
+*   [🚧] **4.1.1.1: [BE] [TEST-UNIT] Implement and Test `TokenWalletService` Methods using TDD**
+    *   **Overall Prerequisites (ensure these are addressed before or during relevant TDD cycles below):**
+        *   Task `4.1.1.1a` (Enhance `recorded_by_user_id` for Full Auditability) and its sub-tasks are critical, especially for `recordTransaction`.
+            *   [✅] **4.1.1.1a.1: [DB] Make `recorded_by_user_id` mandatory.** (Completed for `token_wallet_transactions` table and PG function `record_token_transaction`)
+            *   [✅] **4.1.1.1a.2: [TYPES] Update Type Definitions.** (Completed: `ITokenWalletService` and `TokenWalletTransaction` reflect mandatory `recordedByUserId` and `paymentTransactionId`)
+        *   [✅] Task `4.1.1.2` (Create Postgres function `record_token_transaction`) must be implemented, robust, and verified before the `recordTransaction` service method's TDD cycle can be successfully completed. (Function exists and basic interaction verified)
+    *   **`createWallet` Method:**
+        *   [✅] **4.1.1.1.1: [TEST-UNIT] Define Test Cases for `TokenWalletService.createWallet`**
+            *   Successful user wallet creation (`userId` provided, `organizationId` is null).
+            *   Successful organization wallet creation (`organizationId` provided, `userId` is null).
+            *   Failure if neither `userId` nor `organizationId` is provided.
+            *   Consider behavior if *both* `userId` and `organizationId` are provided (align with DB constraints: current `user_or_org_wallet` constraint allows this, but service might enforce mutual exclusivity or specific logic).
+            *   Verify the returned `TokenWallet` object structure, default balance, currency, etc.
+            *   Verify data persistence and correct field mapping in the `token_wallets` table.
+        *   [✅] **4.1.1.1.2: [TEST-UNIT] Write Failing Integration Tests for `TokenWalletService.createWallet` (RED)** (Tests written, initial failures led to implementation)
+        *   [✅] **4.1.1.1.3: [BE] Implement `TokenWalletService.createWallet` method.**
+            *   Location: `supabase/functions/_shared/services/tokenWalletService.ts`.
+            *   Handle insertion into `token_wallets` table.
+            *   Return the created `TokenWallet` object.
+        *   [✅] **4.1.1.1.4: [TEST-UNIT] Run `createWallet` Tests until GREEN.** (Tests are now passing)
+        *   [✅] **4.1.1.1.5: [REFACTOR] Refactor `createWallet` Implementation and Associated Tests.** (Iterative improvements made for robustness, including admin client usage, dummy org handling, and assertion corrections).
+        *   [ ] **4.1.1.1.6: [COMMIT]** "feat(BE|TEST): Implement and test TokenWalletService.createWallet"
+    *   **`recordTransaction` Method:** (Depends on `createWallet` for test setup, and the finalized PG function from `4.1.1.2` & `4.1.1.1a` requirements)
+        *   [ ] **4.1.1.1.7: [TEST-UNIT] Define Test Cases for `TokenWalletService.recordTransaction`**
+            *   Successful `CREDIT_PURCHASE` transaction.
+            *   Successful `DEBIT_USAGE` transaction. (Test case defined, not yet implemented/run)
+            *   Failure scenario: Target wallet ID does not exist. (Test case defined and passing)
+            *   Failure scenario: `recordedByUserId` is missing (as it's now mandatory). (Test case defined, not yet implemented/run)
+            *   Verify the structure and content of the returned `TokenWalletTransaction` object.
+            *   Verify correct data persistence in `token_wallet_transactions` table.
+            *   Verify that `token_wallets.balance` is correctly updated by the underlying `record_token_transaction` PG function.
+        *   [✅] **4.1.1.1.8: [TEST-UNIT] Write Failing Integration Tests for `TokenWalletService.recordTransaction` (RED)** (Tests for successful credit and non-existent wallet written; initial failures led to implementation refinements)
+        *   [✅] **4.1.1.1.9: [BE] Verify/Refine `TokenWalletService.recordTransaction` method implementation.** (Method refined to handle RPC array return, snake_case to camelCase mapping, type conversions, and inclusion of `paymentTransactionId`).
+        *   [✅] **4.1.1.1.10: [TEST-UNIT] Run `recordTransaction` Tests until GREEN.** (Tests for successful credit and non-existent wallet are now passing).
+        *   [✅] **4.1.1.1.11: [REFACTOR] Refactor `recordTransaction` Implementation and Tests.** (Iterative improvements to RPC data handling and type mapping).
+        *   [ ] **4.1.1.1.12: [COMMIT]** "feat(BE|TEST): Implement and test TokenWalletService.recordTransaction (credit, non-existent wallet)"
+    *   **`getWallet` Method:**
+        *   [ ] **4.1.1.1.13: [TEST-UNIT] Define Test Cases & Write Failing Integration Tests for `TokenWalletService.getWallet` (RED)**
+        *   [ ] **4.1.1.1.14: [BE] Implement `TokenWalletService.getWallet` method.**
+        *   [ ] **4.1.1.1.15: [TEST-UNIT] Run `getWallet` Tests until GREEN.**
+        *   [ ] **4.1.1.1.16: [REFACTOR] Refactor `getWallet` Implementation and Tests.**
+        *   [ ] **4.1.1.1.17: [COMMIT]** "feat(BE|TEST): Implement and test TokenWalletService.getWallet"
+    *   **`getWalletForContext` Method:**
+        *   [ ] **4.1.1.1.18: [TEST-UNIT] Define Test Cases & Write Failing Integration Tests for `TokenWalletService.getWalletForContext` (RED)**
+        *   [ ] **4.1.1.1.19: [BE] Implement `TokenWalletService.getWalletForContext` method.**
+        *   [ ] **4.1.1.1.20: [TEST-UNIT] Run `getWalletForContext` Tests until GREEN.**
+        *   [ ] **4.1.1.1.21: [REFACTOR] Refactor `getWalletForContext` Implementation and Tests.**
+        *   [ ] **4.1.1.1.22: [COMMIT]** "feat(BE|TEST): Implement and test TokenWalletService.getWalletForContext"
+    *   **`getBalance` Method:**
+        *   [ ] **4.1.1.1.23: [TEST-UNIT] Define Test Cases & Write Failing Integration Tests for `TokenWalletService.getBalance` (RED)**
+        *   [ ] **4.1.1.1.24: [BE] Implement `TokenWalletService.getBalance` method.**
+        *   [ ] **4.1.1.1.25: [TEST-UNIT] Run `getBalance` Tests until GREEN.**
+        *   [ ] **4.1.1.1.26: [REFACTOR] Refactor `getBalance` Implementation and Tests.**
+        *   [ ] **4.1.1.1.27: [COMMIT]** "feat(BE|TEST): Implement and test TokenWalletService.getBalance"
+    *   **`checkBalance` Method:**
+        *   [ ] **4.1.1.1.28: [TEST-UNIT] Define Test Cases & Write Failing Integration Tests for `TokenWalletService.checkBalance` (RED)**
+        *   [ ] **4.1.1.1.29: [BE] Implement `TokenWalletService.checkBalance` method.**
+        *   [ ] **4.1.1.1.30: [TEST-UNIT] Run `checkBalance` Tests until GREEN.**
+        *   [ ] **4.1.1.1.31: [REFACTOR] Refactor `checkBalance` Implementation and Tests.**
+        *   [ ] **4.1.1.1.32: [COMMIT]** "feat(BE|TEST): Implement and test TokenWalletService.checkBalance"
+    *   **`getTransactionHistory` Method:**
+        *   [ ] **4.1.1.1.33: [TEST-UNIT] Define Test Cases & Write Failing Integration Tests for `TokenWalletService.getTransactionHistory` (RED)**
+        *   [ ] **4.1.1.1.34: [BE] Implement `TokenWalletService.getTransactionHistory` method.**
+        *   [ ] **4.1.1.1.35: [TEST-UNIT] Run `getTransactionHistory` Tests until GREEN.**
+        *   [ ] **4.1.1.1.36: [REFACTOR] Refactor `getTransactionHistory` Implementation and Tests.**
+        *   [ ] **4.1.1.1.37: [COMMIT]** "feat(BE|TEST): Implement and test TokenWalletService.getTransactionHistory"
+*   [ ] **4.1.1.1a: [ARCH] [DB] [TYPES] Enhance `recorded_by_user_id` for Full Auditability**
+    *   **Goal:** Ensure every transaction is auditable to a specific user, system process, or admin action.
+    *   [🚧] **4.1.1.1a.1: [DB] Make `recorded_by_user_id` mandatory.** (Moved to prerequisites above)
+        *   Modify `record_token_transaction` SQL function: `p_recorded_by_user_id UUID` (not nullable). (Covered by 4.1.1.2)
+        *   Modify `token_wallet_transactions` table: `recorded_by_user_id UUID NOT NULL`. (This needs to be done via a migration)
+    *   [ ] **4.1.1.1a.2: [TYPES] Update Type Definitions.** (Moved to prerequisites above)
+        *   Modify `ITokenWalletService` (`recordTransaction` params) to require `recordedByUserId: string`.
+        *   Modify `TokenWalletTransaction` type to make `recordedByUserId: string` (non-nullable).
+    *   [ ] **4.1.1.1a.3: [BE] [ARCH] Define Strategy for System-Initiated Recorder IDs.**
+        *   For actions not tied to a direct end-user (e.g., subscription renewals, admin adjustments), use designated placeholder UUIDs initially.
+        *   Examples: `00000000-SYSTEM-SUB-0001` for subscriptions, `00000000-SYSTEM-ADM-0001` for admin actions. (These should be valid UUIDs in practice).
+        *   Document these placeholder IDs and their intended future replacements.
+    *   [ ] **4.1.1.1a.4: [PLAN] Schedule Future Work: Implement Traceable System/Admin IDs.**
+        *   Add tasks to later phases (e.g., Admin Panel Implementation, Subscription Management) to replace placeholder `recorded_by_user_id` values with actual `subscription_id`s (linked to `payment_transactions` or a new `subscriptions` table) or `admin_user_id`s from an admin authentication system. This ensures long-term, granular auditability of all system-generated transactions.
+*   [🚧] **4.1.1.2: [DB] Create Postgres function `record_token_transaction`**
+    *   This function takes transaction parameters (including a mandatory `p_recorded_by_user_id`), updates `token_wallets.balance`, inserts into `token_wallet_transactions` (with `recorded_by_user_id NOT NULL`), and returns the new transaction record. It MUST run within a transaction and implement robust idempotency. (This is a key prerequisite for the `recordTransaction` service method TDD cycle)
 *   [ ] **4.1.1.3: [COMMIT]** "feat(BE|DB): Implement core TokenWalletService and atomic DB transaction function with tests"
+
+*   [🚧] **4.1.1.4: [BE] [RLS] Secure Tokenomics Tables**
+    *   **Goal:** Implement Row-Level Security for `token_wallets`, `token_wallet_transactions`, and `payment_transactions` to ensure data integrity and proper access control.
+    *   [🚧] **4.1.1.4.1: [RLS] Define and Apply RLS for `token_wallets`**
+        *   `SELECT`: Users can select their own wallet(s) (`user_id = auth.uid()`) or wallets of organizations they are a member of (requires join with `organization_members`). Service role for full access.
+        *   `INSERT`: Restrict to `service_role` or specific trusted roles/functions. End-users should not directly insert wallets.
+        *   `UPDATE`: Generally restrict direct updates, especially to `balance`. Updates to `balance` should occur via the `record_token_transaction` function. Other fields (e.g., metadata if added) might have more permissive policies for owners.
+        *   `DELETE`: Restrict to `service_role` or specific admin-only functions.
+    *   [🚧] **4.1.1.4.2: [RLS] Define and Apply RLS for `token_wallet_transactions`**
+        *   `SELECT`: Users can select transactions belonging to their own wallet(s) or wallets of organizations they are a member of (join `token_wallets` then check ownership/membership).
+        *   `INSERT`: Restrict to `service_role` or the `record_token_transaction` function (which is `SECURITY DEFINER`). End-users should not directly insert ledger entries.
+        *   `UPDATE`: Forbid all updates (`USING (false)` and `WITH CHECK (false)`). Ledger entries should be immutable.
+        *   `DELETE`: Forbid all deletes. Ledger entries should be immutable.
+    *   [🚧] **4.1.1.4.3: [RLS] Define and Apply RLS for `payment_transactions`**
+        *   `SELECT`: Users can select their own payment transactions (`user_id = auth.uid()`) or payments related to organizations they manage.
+        *   `INSERT`: Primarily by backend services when initiating payments. Authenticated users might trigger this via an edge function that runs with elevated privileges for the insert.
+        *   `UPDATE`: Status updates (e.g., 'pending' to 'completed') should be handled by trusted backend processes (like webhook handlers or payment confirmation services), not directly by users.
+        *   `DELETE`: Generally restrict or disallow. Refunds should be new transactions or status updates.
+    *   [ ] **4.1.1.4.4: [TEST-INT] Write RLS tests.** Verify that users can/cannot access/modify data according to policies.
+    *   [ ] **4.1.1.4.5: [COMMIT]** "feat(RLS): Implement row-level security for tokenomics tables"
 
 ### 4.1.2: [BE] Implement Stripe Payment Gateway Adapter
 *   [ ] **4.1.2.1: [BE] [TEST-UNIT] Create `supabase/functions/_shared/adapters/stripePaymentAdapter.ts`**

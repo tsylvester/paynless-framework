@@ -297,7 +297,7 @@ async function handlePostRequest(
             case 'openai': apiKeyEnvVarName = 'OPENAI_API_KEY'; break;
             case 'anthropic': apiKeyEnvVarName = 'ANTHROPIC_API_KEY'; break;
             case 'google': apiKeyEnvVarName = 'GOOGLE_API_KEY'; break;
-                case 'dummy': apiKeyEnvVarName = 'DUMMY_API_KEY'; break; // Dummy might not need one, but align for now
+            case 'dummy': apiKeyEnvVarName = 'DUMMY_API_KEY'; break; // Dummy might not need one, but align for now
             default:
                     logger.error(`Unknown provider string for API key lookup: ${providerString}`);
                     return { error: { message: `Internal server error: Unknown AI provider configuration for ${providerString}.`, status: 500 }};

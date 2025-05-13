@@ -48,7 +48,8 @@ COMMENT ON COLUMN public.payment_transactions.target_wallet_id IS 'The token_wal
 COMMENT ON COLUMN public.payment_transactions.tokens_to_award IS 'Number of app tokens to be awarded upon successful completion.';
 COMMENT ON COLUMN public.payment_transactions.status IS 'Status of the payment transaction.';
 
--- 3. Create token_wallet_transactions table
+-- 3. Create token_wallet_transactions table (if it doesn't exist)
+-- The definition includes recorded_by_user_id for cases where the table is brand new.
 CREATE TABLE IF NOT EXISTS public.token_wallet_transactions (
     transaction_id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
     wallet_id UUID NOT NULL REFERENCES public.token_wallets(wallet_id) ON DELETE RESTRICT,
@@ -57,7 +58,7 @@ CREATE TABLE IF NOT EXISTS public.token_wallet_transactions (
     transaction_type TEXT NOT NULL, -- e.g., 'CREDIT_PURCHASE', 'DEBIT_USAGE', 'CREDIT_REFUND', 'ADJUSTMENT_STAFF_GRANT', 'ADJUSTMENT_STAFF_REVOKE'
     amount NUMERIC NOT NULL, -- Absolute value of tokens transacted. Type (credit/debit) is in transaction_type
     balance_after_txn NUMERIC NOT NULL, -- Wallet balance after this transaction was applied
-    recorded_by_user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE RESTRICT, -- User who initiated, or system user ID
+    recorded_by_user_id UUID REFERENCES auth.users(id) ON DELETE RESTRICT, -- User who initiated, or system user ID. Will be set to NOT NULL below.
     related_entity_id TEXT,      -- e.g., chat_message_id, feature_id, user_id (for referral bonus)
     related_entity_type TEXT,  -- e.g., 'CHAT_MESSAGE', 'FEATURE_USAGE', 'USER_REFERRAL'
     notes TEXT,                          -- Any additional notes about the transaction
@@ -65,6 +66,17 @@ CREATE TABLE IF NOT EXISTS public.token_wallet_transactions (
     CONSTRAINT abs_amount CHECK (amount >= 0), -- Amount should always be positive; direction is via type
     CONSTRAINT unique_idempotency_key_per_wallet UNIQUE (wallet_id, idempotency_key)
 );
+
+-- Ensure recorded_by_user_id column exists and is NOT NULL, even if table was created by a previous migration without it.
+ALTER TABLE public.token_wallet_transactions
+ADD COLUMN IF NOT EXISTS recorded_by_user_id UUID REFERENCES auth.users(id) ON DELETE RESTRICT;
+
+-- Important: This next command will fail if the table existed with NULLs in recorded_by_user_id
+-- and no default was set for the column. For a fresh db reset or if the column was just added, it's fine.
+-- If this migration needs to run on a DB with existing token_wallet_transactions table that has NULLs in this column,
+-- those NULLs would need to be handled (e.g. backfilled) before this ALTER COLUMN can succeed.
+ALTER TABLE public.token_wallet_transactions
+ALTER COLUMN recorded_by_user_id SET NOT NULL;
 
 COMMENT ON TABLE public.token_wallet_transactions IS 'Ledger of all token transactions for all wallets. Append-only.';
 COMMENT ON COLUMN public.token_wallet_transactions.amount IS 'Absolute (non-negative) number of tokens in the transaction.';
@@ -118,7 +130,6 @@ DECLARE
     v_new_balance NUMERIC;
     v_is_credit BOOLEAN;
     v_existing_transaction public.token_wallet_transactions%ROWTYPE;
-    v_numeric_parse_error BOOLEAN := FALSE;
 BEGIN
     -- Input Validation
     IF p_wallet_id IS NULL THEN
@@ -155,8 +166,6 @@ BEGIN
         WHERE twt.wallet_id = p_wallet_id AND twt.idempotency_key = p_idempotency_key;
 
         IF FOUND THEN
-            -- To prevent accidental reuse of idempotency key for different transactions,
-            -- check if key parameters match.
             IF v_existing_transaction.transaction_type = p_transaction_type AND
                v_existing_transaction.amount = v_transaction_amount AND
                v_existing_transaction.recorded_by_user_id = p_recorded_by_user_id AND
@@ -164,7 +173,6 @@ BEGIN
                (v_existing_transaction.related_entity_type IS NOT DISTINCT FROM p_related_entity_type) AND
                (v_existing_transaction.payment_transaction_id IS NOT DISTINCT FROM p_payment_transaction_id)
             THEN
-                -- Parameters match, it's a true duplicate, return existing transaction.
                 RETURN QUERY SELECT
                     twt.transaction_id, twt.wallet_id, twt.transaction_type::VARCHAR, twt.amount,
                     twt.balance_after_txn, twt.recorded_by_user_id, twt.idempotency_key,
@@ -174,7 +182,6 @@ BEGIN
                 WHERE twt.transaction_id = v_existing_transaction.transaction_id;
                 RETURN;
             ELSE
-                -- Idempotency key collision with different parameters. This is an error.
                 RAISE EXCEPTION 'Idempotency key % collision for wallet %. Recorded params: type=%, amt=%, user=%. New params: type=%, amt=%, user=%',
                                 p_idempotency_key, p_wallet_id,
                                 v_existing_transaction.transaction_type, v_existing_transaction.amount, v_existing_transaction.recorded_by_user_id,
@@ -183,9 +190,6 @@ BEGIN
         END IF;
     END IF;
 
-    -- Determine if it's a credit or debit based on transaction type naming convention
-    -- Example: 'CREDIT_...' or 'DEBIT_...'
-    -- This is a simplified approach; a more robust method might involve a separate parameter or a lookup table.
     IF upper(p_transaction_type) LIKE 'CREDIT%' THEN
         v_is_credit := TRUE;
     ELSIF upper(p_transaction_type) LIKE 'DEBIT%' THEN
@@ -198,7 +202,6 @@ BEGIN
         RAISE EXCEPTION 'Unknown transaction type prefix for credit/debit determination: %', p_transaction_type;
     END IF;
 
-    -- Lock the wallet row and get current balance
     SELECT balance INTO v_current_balance FROM public.token_wallets
     WHERE public.token_wallets.wallet_id = p_wallet_id FOR UPDATE;
 
@@ -206,7 +209,6 @@ BEGIN
         RAISE EXCEPTION 'Wallet not found: %', p_wallet_id;
     END IF;
 
-    -- Calculate new balance
     IF v_is_credit THEN
         v_new_balance := v_current_balance + v_transaction_amount;
     ELSE
@@ -217,12 +219,10 @@ BEGIN
         END IF;
     END IF;
 
-    -- Update wallet balance
     UPDATE public.token_wallets
     SET balance = v_new_balance, updated_at = now()
     WHERE public.token_wallets.wallet_id = p_wallet_id;
 
-    -- Insert transaction record
     INSERT INTO public.token_wallet_transactions (
         wallet_id, idempotency_key, transaction_type, amount, balance_after_txn,
         recorded_by_user_id, related_entity_id, related_entity_type, notes, payment_transaction_id, timestamp
@@ -249,7 +249,7 @@ BEGIN
         recorded_by_user_id, idempotency_key, related_entity_id, related_entity_type,
         notes, "timestamp", payment_transaction_id;
 
-    RETURN NEXT; -- Returns the single inserted row via the OUT parameters of the RETURNS TABLE
+    RETURN NEXT;
 END;
 $$;
 
@@ -265,14 +265,9 @@ COMMENT ON FUNCTION public.record_token_transaction(
     p_payment_transaction_id UUID
 ) IS 'Records a token transaction, updates wallet balance, and ensures idempotency. Returns the recorded transaction.';
 
--- Grant execute permission to the authenticated role (and other roles as necessary)
--- This should be adjusted based on your security model.
 GRANT EXECUTE ON FUNCTION public.record_token_transaction(
     UUID, VARCHAR, TEXT, UUID, TEXT, VARCHAR, VARCHAR, TEXT, UUID
 ) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.record_token_transaction(
     UUID, VARCHAR, TEXT, UUID, TEXT, VARCHAR, VARCHAR, TEXT, UUID
 ) TO service_role;
--- Example: GRANT EXECUTE ON FUNCTION public.record_token_transaction TO anon; -- If needed for some public actions
-
--- Additionally, ensure appropriate RLS is set up on the tables and the calling user has necessary permissions.
