@@ -1162,6 +1162,300 @@ Deno.test("TokenWalletService (Integration with Dev Server)", async (t) => {
 
   // --- End of tests for getBalance ---
 
+  // --- Tests for checkBalance ---
+  await t.step("checkBalance: returns true when balance is sufficient", async () => {
+    assertExists(testUserProfileId, "Test user profile ID must exist.");
+    const stepName = "checkBalance_sufficient";
+    let userWalletId: string | undefined;
+    try {
+      const userWallet = await tokenWalletService.createWallet(testUserProfileId!);
+      assertExists(userWallet, "User wallet should be created.");
+      userWalletId = userWallet.walletId;
+      walletsToCleanup.push(userWalletId);
+      await tokenWalletService.recordTransaction({
+        walletId: userWalletId,
+        type: 'CREDIT_PURCHASE',
+        amount: '100',
+        recordedByUserId: testUserProfileId!,
+      });
+      const canSpend = await tokenWalletService.checkBalance(userWalletId, '50');
+      assertEquals(canSpend, true);
+    } finally {
+      await cleanupStepData(stepName);
+    }
+  });
+
+  await t.step("checkBalance: returns true when balance is exactly equal to amount to spend", async () => {
+    assertExists(testUserProfileId, "Test user profile ID must exist.");
+    const stepName = "checkBalance_exact";
+    let userWalletId: string | undefined;
+    try {
+      const userWallet = await tokenWalletService.createWallet(testUserProfileId!);
+      assertExists(userWallet, "User wallet should be created.");
+      userWalletId = userWallet.walletId;
+      walletsToCleanup.push(userWalletId);
+      await tokenWalletService.recordTransaction({
+        walletId: userWalletId,
+        type: 'CREDIT_PURCHASE',
+        amount: '100',
+        recordedByUserId: testUserProfileId!,
+      });
+      const canSpend = await tokenWalletService.checkBalance(userWalletId, '100');
+      assertEquals(canSpend, true);
+    } finally {
+      await cleanupStepData(stepName);
+    }
+  });
+
+  await t.step("checkBalance: returns false when balance is insufficient", async () => {
+    assertExists(testUserProfileId, "Test user profile ID must exist.");
+    const stepName = "checkBalance_insufficient";
+    let userWalletId: string | undefined;
+    try {
+      const userWallet = await tokenWalletService.createWallet(testUserProfileId!);
+      assertExists(userWallet, "User wallet should be created.");
+      userWalletId = userWallet.walletId;
+      walletsToCleanup.push(userWalletId);
+      await tokenWalletService.recordTransaction({
+        walletId: userWalletId,
+        type: 'CREDIT_PURCHASE',
+        amount: '100',
+        recordedByUserId: testUserProfileId!,
+      });
+      const canSpend = await tokenWalletService.checkBalance(userWalletId, '101');
+      assertEquals(canSpend, false);
+    } finally {
+      await cleanupStepData(stepName);
+    }
+  });
+
+  await t.step("checkBalance: returns false for a new wallet (zero balance) when spending > 0", async () => {
+    assertExists(testUserProfileId, "Test user profile ID must exist.");
+    const stepName = "checkBalance_new_wallet_zero_spend";
+    let userWalletId: string | undefined;
+    try {
+      const userWallet = await tokenWalletService.createWallet(testUserProfileId!);
+      assertExists(userWallet, "User wallet should be created.");
+      userWalletId = userWallet.walletId;
+      walletsToCleanup.push(userWalletId);
+      const canSpend = await tokenWalletService.checkBalance(userWalletId, '1');
+      assertEquals(canSpend, false);
+    } finally {
+      await cleanupStepData(stepName);
+    }
+  });
+
+  await t.step("checkBalance: throws error for a non-existent wallet ID", async () => {
+    const nonExistentWalletId = crypto.randomUUID();
+    // No wallet creation, so no specific cleanup needed for this step directly,
+    // but assertRejects should handle its own.
+    await assertRejects(
+      async () => { await tokenWalletService.checkBalance(nonExistentWalletId, '10'); },
+      Error, // Or a more specific error type if defined later
+      "Wallet not found" // Or whatever specific message getBalance throws
+    );
+  });
+
+  await t.step("checkBalance: (RLS) throws error when checking another user's wallet", async () => {
+    assertExists(testUserProfileId, "Original test user profile ID must exist.");
+    const stepName = "checkBalance_RLS_other_user";
+    let originalUserWalletId: string | undefined;
+    let secondUserFullCtx: SecondUserFullContext | null = null;
+
+    try {
+      const originalUserWallet = await tokenWalletService.createWallet(testUserProfileId!);
+      assertExists(originalUserWallet, "Original user's wallet should be created.");
+      originalUserWalletId = originalUserWallet.walletId;
+      walletsToCleanup.push(originalUserWalletId);
+
+      secondUserFullCtx = await setupSecondUserContext(supabaseAdminClient);
+      assertExists(secondUserFullCtx, "Second user context should be created.");
+      assertExists(secondUserFullCtx.client, "Second user client should exist.");
+      
+      const secondUserService = new TokenWalletService(secondUserFullCtx.client);
+      
+      await assertRejects(
+        async () => { await secondUserService.checkBalance(originalUserWalletId!, '10'); },
+        Error,
+        "Wallet not found" // RLS denial should appear as not found
+      );
+    } finally {
+      if (secondUserFullCtx?.user.id) {
+        await supabaseAdminClient.auth.admin.deleteUser(secondUserFullCtx.user.id);
+      }
+      // originalUserWalletId is in walletsToCleanup, handled by cleanupStepData
+      await cleanupStepData(stepName);
+    }
+  });
+  
+  await t.step("checkBalance: (RLS) throws error for an org wallet if user is not admin", async () => {
+    const stepName = "checkBalance_RLS_org_not_admin";
+    let testOrgId: string | undefined;
+    let orgWalletId: string | undefined;
+    let secondUserFullCtx: SecondUserFullContext | null = null;
+
+    try {
+      testOrgId = await createOrgAndMakeUserAdmin(
+        'org-cb-rls-na', // Shorter prefix
+        supabaseAdminClient,
+        testUserProfileId!,
+        orgsToCleanup 
+      );
+      assertExists(testOrgId, "Organization ID must exist after creation.");
+
+      const orgWallet = await tokenWalletService.createWallet(undefined, testOrgId);
+      assertExists(orgWallet, "Org wallet should be created for RLS test.");
+      orgWalletId = orgWallet.walletId;
+      walletsToCleanup.push(orgWalletId);
+    
+      secondUserFullCtx = await setupSecondUserContext(supabaseAdminClient);
+      assertExists(secondUserFullCtx, "Second user context should be created for org RLS test.");
+      assertExists(secondUserFullCtx.client, "Second user client should exist in org RLS test.");
+
+      const secondUserService = new TokenWalletService(secondUserFullCtx.client);
+    
+      await assertRejects(
+        async () => { await secondUserService.checkBalance(orgWalletId!, '10'); },
+        Error,
+        "Wallet not found" // RLS denial
+      );
+    } finally {
+      if (secondUserFullCtx?.user.id) {
+        await supabaseAdminClient.auth.admin.deleteUser(secondUserFullCtx.user.id);
+      }
+      // orgWalletId is in walletsToCleanup, testOrgId in orgsToCleanup
+      await cleanupStepData(stepName);
+    }
+  });
+
+  await t.step("checkBalance: (Input Validation) throws error for invalid walletId format", async () => {
+    // No wallet creation, so no specific cleanup needed for this step directly.
+    await assertRejects(
+      async () => { await tokenWalletService.checkBalance("not-a-uuid", '10'); },
+      Error,
+      "Invalid wallet ID format"
+    );
+  });
+
+  await t.step("checkBalance: (Input Validation) throws error for non-numeric amountToSpend", async () => {
+    assertExists(testUserProfileId, "Test user profile ID must exist.");
+    const stepName = "checkBalance_invalid_amount_non_numeric";
+    let userWalletId: string | undefined;
+    try {
+      const userWallet = await tokenWalletService.createWallet(testUserProfileId!);
+      assertExists(userWallet, "User wallet should be created.");
+      userWalletId = userWallet.walletId;
+      walletsToCleanup.push(userWalletId);
+      await tokenWalletService.recordTransaction({ walletId: userWalletId, type: 'CREDIT_PURCHASE', amount: '100', recordedByUserId: testUserProfileId! });
+      
+      await assertRejects(
+        async () => { await tokenWalletService.checkBalance(userWalletId!, "not-a-number"); },
+        Error,
+        "Invalid amount format"
+      );
+    } finally {
+      await cleanupStepData(stepName);
+    }
+  });
+
+  await t.step("checkBalance: (Input Validation) throws error for negative amountToSpend", async () => {
+    assertExists(testUserProfileId, "Test user profile ID must exist.");
+    const stepName = "checkBalance_invalid_amount_negative";
+    let userWalletId: string | undefined;
+    try {
+      const userWallet = await tokenWalletService.createWallet(testUserProfileId!);
+      assertExists(userWallet, "User wallet should be created.");
+      userWalletId = userWallet.walletId;
+      walletsToCleanup.push(userWalletId);
+      await tokenWalletService.recordTransaction({ walletId: userWalletId, type: 'CREDIT_PURCHASE', amount: '100', recordedByUserId: testUserProfileId! });
+
+      await assertRejects(
+        async () => { await tokenWalletService.checkBalance(userWalletId!, "-10"); },
+        Error,
+        "Amount to spend must be non-negative"
+      );
+    } finally {
+      await cleanupStepData(stepName);
+    }
+  });
+  
+  await t.step("checkBalance: (Input Validation) returns true for amountToSpend '0'", async () => {
+    assertExists(testUserProfileId, "Test user profile ID must exist.");
+    const stepName = "checkBalance_valid_amount_zero";
+    let userWalletId: string | undefined;
+    try {
+      const userWallet = await tokenWalletService.createWallet(testUserProfileId!);
+      assertExists(userWallet, "User wallet should be created.");
+      userWalletId = userWallet.walletId;
+      walletsToCleanup.push(userWalletId);
+      await tokenWalletService.recordTransaction({ walletId: userWalletId, type: 'CREDIT_PURCHASE', amount: '100', recordedByUserId: testUserProfileId! });
+      
+      const canSpend = await tokenWalletService.checkBalance(userWalletId!, '0');
+      assertEquals(canSpend, true);
+    } finally {
+      await cleanupStepData(stepName);
+    }
+  });
+
+  await t.step("checkBalance: handles large numbers correctly - sufficient balance", async () => {
+    assertExists(testUserProfileId, "Test user profile ID must exist.");
+    const stepName = "checkBalance_large_sufficient";
+    let userWalletId: string | undefined;
+    try {
+      const userWallet = await tokenWalletService.createWallet(testUserProfileId!);
+      assertExists(userWallet, "User wallet should be created for large number test.");
+      userWalletId = userWallet.walletId;
+      walletsToCleanup.push(userWalletId);
+      const largeAmount = '9999999999999999999';
+      
+      const { error: rpcError } = await supabaseAdminClient.rpc('record_token_transaction', {
+        p_wallet_id: userWalletId,
+        p_transaction_type: 'CREDIT_ADJUSTMENT',
+        p_input_amount_text: largeAmount,
+        p_recorded_by_user_id: testUserProfileId!,
+        p_notes: 'Test credit of very large amount',
+        p_idempotency_key: `idem-large-${crypto.randomUUID()}`,
+        p_payment_transaction_id: undefined
+      });
+      assertEquals(!rpcError, true, `RPC call failed for large credit: ${rpcError?.message}`);
+
+      const canSpend = await tokenWalletService.checkBalance(userWalletId!, largeAmount);
+      assertEquals(canSpend, true);
+    } finally {
+      await cleanupStepData(stepName);
+    }
+  });
+
+  await t.step("checkBalance: handles large numbers correctly - insufficient balance", async () => {
+    assertExists(testUserProfileId, "Test user profile ID must exist.");
+    const stepName = "checkBalance_large_insufficient";
+    let userWalletId: string | undefined;
+    try {
+      const userWallet = await tokenWalletService.createWallet(testUserProfileId!);
+      assertExists(userWallet, "User wallet should be created for large number insufficient test.");
+      userWalletId = userWallet.walletId;
+      walletsToCleanup.push(userWalletId);
+      const currentBalance = '9999999999999999990'; 
+      const amountToSpend =  '9999999999999999999'; 
+      
+      const { error: rpcError } = await supabaseAdminClient.rpc('record_token_transaction', {
+          p_wallet_id: userWalletId,
+          p_transaction_type: 'CREDIT_ADJUSTMENT',
+          p_input_amount_text: currentBalance,
+          p_recorded_by_user_id: testUserProfileId!,
+          p_notes: 'Large credit for checkBalance insufficient test'
+      });
+      assertEquals(!rpcError, true, `RPC call failed for large credit (insufficient): ${rpcError?.message}`);
+      
+      const canSpend = await tokenWalletService.checkBalance(userWalletId!, amountToSpend);
+      assertEquals(canSpend, false);
+    } finally {
+      await cleanupStepData(stepName);
+    }
+  });
+
+  // --- End of tests for checkBalance ---
+
   // Global Teardown (runs once after all steps in this test block)
   await t.step("Global Teardown: Clean up Auth User and Profile", async () => {
     await cleanupStepData("GlobalTeardown_WalletsOrgs"); // Explicitly call here to ensure it runs before user deletion

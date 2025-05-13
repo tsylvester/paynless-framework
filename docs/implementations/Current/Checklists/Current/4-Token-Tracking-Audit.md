@@ -157,9 +157,9 @@ The implementation plan uses the following labels to categorize work steps:
         *   [✅] **4.1.1.1.26: [REFACTOR] Refactor `getBalance` Implementation and Tests.**
         *   [✅] **4.1.1.1.27: [COMMIT]** "feat(BE|TEST): Implement and test TokenWalletService.getBalance"
     *   **`checkBalance` Method:**
-        *   [ ] **4.1.1.1.28: [TEST-UNIT] Define Test Cases & Write Failing Integration Tests for `TokenWalletService.checkBalance` (RED)**
-        *   [ ] **4.1.1.1.29: [BE] Implement `TokenWalletService.checkBalance` method.**
-        *   [ ] **4.1.1.1.30: [TEST-UNIT] Run `checkBalance` Tests until GREEN.**
+        *   [✅] **4.1.1.1.28: [TEST-UNIT] Define Test Cases & Write Failing Integration Tests for `TokenWalletService.checkBalance` (RED)**
+        *   [✅] **4.1.1.1.29: [BE] Implement `TokenWalletService.checkBalance` method.**
+        *   [✅] **4.1.1.1.30: [TEST-UNIT] Run `checkBalance` Tests until GREEN.**
         *   [ ] **4.1.1.1.31: [REFACTOR] Refactor `checkBalance` Implementation and Tests.**
         *   [ ] **4.1.1.1.32: [COMMIT]** "feat(BE|TEST): Implement and test TokenWalletService.checkBalance"
     *   **`getTransactionHistory` Method:**

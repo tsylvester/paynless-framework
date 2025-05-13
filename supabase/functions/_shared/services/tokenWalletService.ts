@@ -322,8 +322,47 @@ export class TokenWalletService implements ITokenWalletService {
 
   async checkBalance(walletId: string, amountToSpend: string): Promise<boolean> {
     console.log('[TokenWalletService] Checking balance for wallet', { walletId, amountToSpend });
-    // TODO: Implement balance check
-    throw new Error('Method checkBalance not implemented.');
+
+    // 1. Validate walletId format (copied from getBalance for consistency)
+    const uuidRegex = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
+    if (!uuidRegex.test(walletId)) {
+      console.error("[TokenWalletService] Invalid walletId format for checkBalance:", walletId);
+      throw new Error("Invalid wallet ID format");
+    }
+
+    // 2. Validate amountToSpend
+    let amountToSpendBigInt: bigint;
+    try {
+      amountToSpendBigInt = BigInt(amountToSpend);
+    } catch (e) {
+      console.error("[TokenWalletService] Invalid amountToSpend format (not a valid integer string):", amountToSpend);
+      throw new Error("Invalid amount format: amountToSpend must be a string representing a valid integer.");
+    }
+
+    if (amountToSpendBigInt < 0) {
+      console.error("[TokenWalletService] amountToSpend cannot be negative:", amountToSpend);
+      throw new Error("Amount to spend must be non-negative");
+    }
+
+    // 3. Get current balance (this will also handle RLS and wallet not found errors)
+    let currentBalanceStr: string;
+    try {
+      currentBalanceStr = await this.getBalance(walletId);
+    } catch (error) {
+      console.error(`[TokenWalletService] Error in checkBalance while calling getBalance for wallet ${walletId}:`, error);
+      // Re-throw the error from getBalance (e.g., "Wallet not found", "Invalid wallet ID format", etc.)
+      throw error;
+    }
+
+    // 4. Compare balance with amountToSpend using BigInt
+    try {
+      const currentBalanceBigInt = BigInt(currentBalanceStr);
+      return currentBalanceBigInt >= amountToSpendBigInt;
+    } catch (e) {
+      console.error("[TokenWalletService] Error converting current balance to BigInt:", { currentBalanceStr, error: e });
+      // This case should be rare if getBalance always returns a valid integer string or throws.
+      throw new Error("Failed to compare balance due to internal error converting balance value.");
+    }
   }
 
   async getTransactionHistory(
