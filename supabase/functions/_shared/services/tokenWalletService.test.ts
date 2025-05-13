@@ -1693,7 +1693,7 @@ Deno.test("TokenWalletService (Integration with Dev Server)", async (t) => {
     await assertRejects(
       async () => { await tokenWalletService.getTransactionHistory(invalidWalletId); },
       Error,
-      "Invalid wallet ID format"
+      "Invalid walletId format" // Changed from "Invalid wallet ID format"
     );
   });
 

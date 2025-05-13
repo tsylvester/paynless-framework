@@ -163,11 +163,11 @@ The implementation plan uses the following labels to categorize work steps:
         *   [✅] **4.1.1.1.31: [REFACTOR] Refactor `checkBalance` Implementation and Tests.**
         *   [✅] **4.1.1.1.32: [COMMIT]** "feat(BE|TEST): Implement and test TokenWalletService.checkBalance"
     *   **`getTransactionHistory` Method:**
-        *   [✅] **4.1.1.1.33: [TEST-UNIT] Define Test Cases & Write Failing Integration Tests for TokenWalletService.getTransactionHistory** (Covered by existing tests, RLS was the primary blocker, now resolved)
-        *   [✅] **4.1.1.1.34: [BE] Implement TokenWalletService.getTransactionHistory (focused on fetching, RLS, and pagination)** (Implementation exists and was validated)
-        *   [✅] **4.1.1.1.35: [TEST-INTEG] Test TokenWalletService.getTransactionHistory for various scenarios (user, org admin, pagination, RLS for non-accessing users)** (Tests are passing)
-        *   [ ] **4.1.1.1.36: [COMMIT]** "feat(BE|TEST): Implement and test TokenWalletService.getTransactionHistory with RLS and pagination"
-        *   [ ] **4.1.1.1.37: [DB] Create `get_transactions_for_wallet_rpc(wallet_id_param UUID, limit_param INT DEFAULT 20, offset_param INT DEFAULT 0)` RPC Function**
+        *   [✅] **4.1.1.1.33: [TEST-UNIT] Define Test Cases & Write Failing Integration Tests for TokenWalletService.getTransactionHistory** (Utilized existing tests; primary challenges were RLS resolution and direct pagination implementation in the service method, both now addressed)
+        *   [✅] **4.1.1.1.34: [BE] Implement TokenWalletService.getTransactionHistory (focused on fetching, RLS, and pagination)** (Method implemented with RLS operational and pagination included directly)
+        *   [✅] **4.1.1.1.35: [TEST-INTEG] Test TokenWalletService.getTransactionHistory for various scenarios (user, org admin, pagination, RLS for non-accessing users)** (All relevant test scenarios are passing)
+        *   [✅] **4.1.1.1.36: [COMMIT]** "feat(BE|TEST): Implement and test TokenWalletService.getTransactionHistory with RLS and pagination"
+        *   [ ] **4.1.1.1.37: [DB] RPC Function (Optional): `get_user_token_transaction_history(p_user_id UUID, p_limit INT DEFAULT 20, p_offset INT DEFAULT 0)`** (To be re-evaluated; service method handles this, RPC might be redundant)
 *   [ ] **4.1.1.1a: [ARCH] [DB] [TYPES] Enhance `recorded_by_user_id` for Full Auditability**
     *   **Goal:** Ensure every transaction is auditable to a specific user, system process, or admin action.
     *   [🚧] **4.1.1.1a.1: [DB] Make `recorded_by_user_id` mandatory.** (Moved to prerequisites above)

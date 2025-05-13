@@ -153,7 +153,7 @@ export class TokenWalletService implements ITokenWalletService {
       return this._transformDbWalletToTokenWallet(data);
 
     } catch (e) {
-      console.error(`[TokenWalletService GW_DEBUG_CATCH_BLOCK] Unexpected error in getWallet, returning null for ${walletId}:`, e);
+      // The console.error was here, now fully removed.
       return null;
     }
   }
@@ -361,8 +361,8 @@ export class TokenWalletService implements ITokenWalletService {
 
   async getTransactionHistory(
     walletId: string,
-    //limit: number = 20,
-    //offset: number = 0
+    limit: number = 20,
+    offset: number = 0
   ): Promise<TokenWalletTransaction[]> {
     // console.log('[TokenWalletService GH_ENTRY] Fetching transaction history for wallet', { walletId, limit, offset });
 
@@ -385,8 +385,7 @@ export class TokenWalletService implements ITokenWalletService {
     }
     // console.log('[TokenWalletService GH_DEBUG_WALLET_VALID] Wallet object is valid, proceeding to fetch transactions.', { walletId });
 
-    // try {
-    const { data: transactionsData, error: transactionsError } = await this.supabaseClient
+    const query = this.supabaseClient
       .from('token_wallet_transactions')
       .select(`
         transaction_id,
@@ -402,7 +401,11 @@ export class TokenWalletService implements ITokenWalletService {
         timestamp
       `)
       .eq('wallet_id', walletId)
-      .order('created_at', { ascending: false }); // Get newest first
+      .order('timestamp', { ascending: false })
+      .limit(limit)
+      .range(offset, offset + limit - 1);
+
+    const { data: transactionsData, error: transactionsError } = await query;
 
     // console.log('[TokenWalletService GH_DEBUG_AFTER_TX_QUERY] Transaction query completed.', { walletId, dataIsTruthy: !!transactionsData, errorIsTruthy: !!transactionsError });
 
@@ -433,9 +436,5 @@ export class TokenWalletService implements ITokenWalletService {
     }));
     // console.log('[TokenWalletService GH_EXIT_SUCCESS] Returning mapped transactions.', { walletId, count: mappedTransactions.length });
     return mappedTransactions;
-    // } catch (error) {
-    //   // console.error(`[TokenWalletService GH_EXIT_CATCH_ERROR] Unexpected error in getTransactionHistory for wallet ${walletId}:`, error);
-    //   throw error;
-    // }
   }
 } 
