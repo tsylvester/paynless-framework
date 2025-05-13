@@ -99,8 +99,8 @@ The implementation plan uses the following labels to categorize work steps:
 *   [🚧] **4.1.1.1: [TEST-UNIT] Implement and Test `TokenWalletService` Methods using TDD**
     *   **Overall Prerequisites (ensure these are addressed before or during relevant TDD cycles below):**
         *   Task `4.1.1.1a` (Enhance `recorded_by_user_id` for Full Auditability) and its sub-tasks are critical, especially for `recordTransaction`.
-            *   [✅] **4.1.1.1a.1: [DB] Make `recorded_by_user_id` mandatory.** (Completed for `token_wallet_transactions` table and PG function `record_token_transaction`)
-            *   [✅] **4.1.1.1a.2: [TYPES] Update Type Definitions.** (Completed: `ITokenWalletService` and `TokenWalletTransaction` reflect mandatory `recordedByUserId` and `paymentTransactionId`)
+            *   [✅] **4.1.1.1a.1: [DB] Make `recorded_by_user_id` mandatory.** (Verified as completed in existing migration `20250513135601_record_token_transaction.sql`, which makes the column `NOT NULL` and the PG function parameter effectively mandatory.)
+            *   [✅] **4.1.1.1a.2: [TYPES] Update Type Definitions.** (Verified as completed in `packages/types/src/services/tokenWallet.types.ts`; `TokenWalletTransaction` and `ITokenWalletService.recordTransaction` params correctly define `recordedByUserId: string`.)
         *   [✅] Task `4.1.1.2` (Create Postgres function `record_token_transaction`) must be implemented, robust, and verified before the `recordTransaction` service method's TDD cycle can be successfully completed. (Function exists and basic interaction verified)
     *   **`createWallet` Method:**
         *   [✅] **4.1.1.1.1: [TEST-UNIT] Define Test Cases for `TokenWalletService.createWallet`**
@@ -167,23 +167,17 @@ The implementation plan uses the following labels to categorize work steps:
         *   [✅] **4.1.1.1.34: [BE] Implement TokenWalletService.getTransactionHistory (focused on fetching, RLS, and pagination)** (Method implemented with RLS operational and pagination included directly)
         *   [✅] **4.1.1.1.35: [TEST-INTEG] Test TokenWalletService.getTransactionHistory for various scenarios (user, org admin, pagination, RLS for non-accessing users)** (All relevant test scenarios are passing)
         *   [✅] **4.1.1.1.36: [COMMIT]** "feat(BE|TEST): Implement and test TokenWalletService.getTransactionHistory with RLS and pagination"
-        *   [ ] **4.1.1.1.37: [DB] RPC Function (Optional): `get_user_token_transaction_history(p_user_id UUID, p_limit INT DEFAULT 20, p_offset INT DEFAULT 0)`** (To be re-evaluated; service method handles this, RPC might be redundant)
-*   [ ] **4.1.1.1a: [ARCH] [DB] [TYPES] Enhance `recorded_by_user_id` for Full Auditability**
+        *   [✅] **4.1.1.1.37: [DB] RPC Function (Optional): `get_user_token_transaction_history(p_user_id UUID, p_limit INT DEFAULT 20, p_offset INT DEFAULT 0)`** (To be re-evaluated; service method handles this, RPC might be redundant)
+*   [🚧] **4.1.1.1a: [ARCH] [DB] [TYPES] Enhance `recorded_by_user_id` for Full Auditability**
     *   **Goal:** Ensure every transaction is auditable to a specific user, system process, or admin action.
-    *   [🚧] **4.1.1.1a.1: [DB] Make `recorded_by_user_id` mandatory.** (Moved to prerequisites above)
+    *   [✅] **4.1.1.1a.1: [DB] Make `recorded_by_user_id` mandatory.** (Moved to prerequisites above)
         *   Modify `record_token_transaction` SQL function: `p_recorded_by_user_id UUID` (not nullable). (Covered by 4.1.1.2)
         *   Modify `token_wallet_transactions` table: `recorded_by_user_id UUID NOT NULL`. (This needs to be done via a migration)
-    *   [ ] **4.1.1.1a.2: [TYPES] Update Type Definitions.** (Moved to prerequisites above)
+    *   [✅] **4.1.1.1a.2: [TYPES] Update Type Definitions.** (Moved to prerequisites above)
         *   Modify `ITokenWalletService` (`recordTransaction` params) to require `recordedByUserId: string`.
         *   Modify `TokenWalletTransaction` type to make `recordedByUserId: string` (non-nullable).
-    *   [ ] **4.1.1.1a.3: [BE] [ARCH] Define Strategy for System-Initiated Recorder IDs.**
-        *   For actions not tied to a direct end-user (e.g., subscription renewals, admin adjustments), use designated placeholder UUIDs initially.
-        *   Examples: `00000000-SYSTEM-SUB-0001` for subscriptions, `00000000-SYSTEM-ADM-0001` for admin actions. (These should be valid UUIDs in practice).
-        *   Document these placeholder IDs and their intended future replacements.
-    *   [ ] **4.1.1.1a.4: [PLAN] Schedule Future Work: Implement Traceable System/Admin IDs.**
-        *   Add tasks to later phases (e.g., Admin Panel Implementation, Subscription Management) to replace placeholder `recorded_by_user_id` values with actual `subscription_id`s (linked to `payment_transactions` or a new `subscriptions` table) or `admin_user_id`s from an admin authentication system. This ensures long-term, granular auditability of all system-generated transactions.
-*   [🚧] **4.1.1.2: [DB] Create Postgres function `record_token_transaction`**
-    *   This function takes transaction parameters (including a mandatory `p_recorded_by_user_id`), updates `token_wallets.balance`, inserts into `token_wallet_transactions` (with `recorded_by_user_id NOT NULL`), and returns the new transaction record. It MUST run within a transaction and implement robust idempotency. (This is a key prerequisite for the `recordTransaction` service method TDD cycle)
+*   [✅] **4.1.1.2: [DB] Create Postgres function `record_token_transaction`**
+    *   This function takes transaction parameters (including a mandatory `p_recorded_by_user_id`), updates `token_wallets.balance`, inserts into `token_wallet_transactions` (with `recorded_by_user_id NOT NULL`), and returns the new transaction record. It MUST run within a transaction and implement robust idempotency. (Verified as completed in existing migration `20250513135601_record_token_transaction.sql`)
 *   [ ] **4.1.1.3: [COMMIT]** "feat(BE|DB): Implement core TokenWalletService and atomic DB transaction function with tests"
 
 *   [🚧] **4.1.1.4: [BE] [RLS] Secure Tokenomics Tables**
@@ -386,32 +380,6 @@ The implementation plan uses the following labels to categorize work steps:
 
 ---
 
-## Phase 4.5: [ARCH] Tauri/Rust Desktop Wallet Integration Strategy (High-Level Design)
-
-**Goal:** Outline how the web platform's token wallet could potentially interact or synchronize with the Tauri/Rust desktop crypto wallet. This is a research and design phase.
-
-*   [ ] **4.5.1: [ARCH] Define Synchronization Model & Use Cases**
-    *   **Use Case 1 (Desktop as Payment Method):** User wants to use crypto from their Tauri wallet to buy AI Tokens for the web platform.
-        *   Model: Tauri app communicates with a custom "TauriPaymentAdapter" on the backend.
-    *   **Use Case 2 (Desktop as Client to AI Platform Wallet):** Desktop app wants to show AI Token balance and allow use of AI services, debiting the same centralized AI Token wallet.
-        *   Model: Tauri app's backend calls the same APIs as the web app (`/wallet-info`, `/chat` with token debits).
-    *   **Initial Focus:** Use Case 1. The Tauri wallet helps *acquire* platform AI Tokens.
-*   [ ] **4.5.2: [ARCH] `TauriPaymentAdapter` Design (for Use Case 1)**
-    *   The web UI's "Top-Up" page could have "Pay with Tauri Wallet" option.
-    *   Clicking this triggers `initiatePurchase` with `paymentGatewayId: 'tauri_crypto_wallet'`.
-    *   Backend `TauriPaymentAdapter.initiatePayment` might:
-        *   Generate a unique transaction ID for the platform.
-        *   Return instructions/deep-link for the user to open their Tauri wallet and approve a specific crypto transfer to a designated platform address, including the transaction ID in memo/metadata.
-    *   A separate backend process/webhook listener for the platform's crypto deposit address would:
-        *   Detect incoming crypto transactions.
-        *   Match the memo/metadata to a pending `payment_transactions` record.
-        *   Call `TokenWalletService.recordTransaction` to credit AI Tokens.
-*   [ ] **4.5.3: [ARCH] Security & UX for Tauri Payment Flow.**
-*   [ ] **4.5.4: [DOC] Document the chosen integration strategy for Tauri payments.**
-*   [ ] **4.5.5: [COMMIT]** "docs(ARCH): Outline strategy for Tauri desktop wallet as a payment method for AI Tokens"
-    *   *(Actual implementation of this adapter and flow would be a subsequent phase)*
-
----
 
 ## Phase 4.6: End-to-End Testing, Refinement, and Security Review
 
