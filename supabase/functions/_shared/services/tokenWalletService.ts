@@ -116,50 +116,44 @@ export class TokenWalletService implements ITokenWalletService {
   }
 
   async getWallet(walletId: string): Promise<TokenWallet | null> {
-    console.log('[TokenWalletService] Attempting to get wallet', { walletId });
+    // console.log('[TokenWalletService GW_ENTRY] Attempting to get wallet', { walletId });
 
-    // Basic UUID format validation
     const uuidRegex = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$/;
     if (!uuidRegex.test(walletId)) {
-      console.warn(`[TokenWalletService] Invalid walletId format: ${walletId}`);
+      // console.warn(`[TokenWalletService GW_DEBUG_INVALID_UUID_FORMAT] Invalid walletId format, returning null: ${walletId}`);
       return null;
     }
 
     try {
+      // console.log('[TokenWalletService GW_DEBUG_TRY_BLOCK] Entering try block for Supabase call.', { walletId });
       const { data, error } = await this.supabaseClient
         .from('token_wallets')
         .select('wallet_id, user_id, organization_id, balance, currency, created_at, updated_at')
         .eq('wallet_id', walletId)
-        .single(); // Use .single() to expect one row or throw PostgrestError if not exactly one (or zero)
+        .single();
+
+      // console.log('[TokenWalletService GW_DEBUG_AFTER_CALL] Supabase call completed.', { walletId, dataIsTruthy: !!data, errorIsTruthy: !!error });
 
       if (error) {
-        // PostgREST errors include code 'PGRST116' (0 rows) or 'PGRST111' (ambiguous result, >1 row)
-        // If it's a "0 rows" error, that means not found, so we return null.
-        // For other errors, log them and return null (or rethrow as a service error if preferred).
-        if (error.code === 'PGRST116') { // PGRST116: "The result contains 0 rows"
-          console.log(`[TokenWalletService] Wallet not found (PGRST116): ${walletId}`);
+        // console.error(`[TokenWalletService GW_DEBUG_ERROR_RECEIVED] Error object is present.`, { walletId, errorCode: error.code, errorMessage: error.message });
+        if (error.code === 'PGRST116') { // "JSON object requested, multiple (or no) rows returned" - typically means not found or RLS prevented access
+          // console.warn(`[TokenWalletService GW_DEBUG_PGRST116] Wallet not found (PGRST116), returning null: ${walletId}`);
           return null;
         }
-        console.error(`[TokenWalletService] Error fetching wallet ${walletId}:`, {
-          message: error.message,
-          code: error.code,
-          details: error.details,
-        });
-        return null; // For other errors, also return null to simplify error handling for the caller
+        // console.error(`[TokenWalletService GW_ERROR] Error fetching wallet ${walletId}:`, error);
+        throw new Error(`Error fetching wallet ${walletId}: ${error.message}`);
       }
 
       if (!data) {
-        // This case should ideally be covered by error.code === 'PGRST116' from .single()
-        console.log(`[TokenWalletService] Wallet not found (no data): ${walletId}`);
+        // console.warn(`[TokenWalletService GW_DEBUG_NO_DATA] No data returned for wallet (but no error), returning null: ${walletId}`);
         return null;
       }
 
-      // Transform DB result to TokenWallet type
+      // console.log(`[TokenWalletService GW_DEBUG_SUCCESS] Wallet found, returning transformed wallet for: ${walletId}`);
       return this._transformDbWalletToTokenWallet(data);
 
     } catch (e) {
-      // Catch any unexpected errors during the process
-      console.error(`[TokenWalletService] Unexpected error in getWallet for ${walletId}:`, e);
+      console.error(`[TokenWalletService GW_DEBUG_CATCH_BLOCK] Unexpected error in getWallet, returning null for ${walletId}:`, e);
       return null;
     }
   }
@@ -367,15 +361,81 @@ export class TokenWalletService implements ITokenWalletService {
 
   async getTransactionHistory(
     walletId: string,
-    limit?: number,
-    offset?: number
+    //limit: number = 20,
+    //offset: number = 0
   ): Promise<TokenWalletTransaction[]> {
-    console.log('[TokenWalletService] Fetching transaction history for wallet', {
-      walletId,
-      limit,
-      offset,
-    });
-    // TODO: Implement logic to fetch transaction history with pagination
-    throw new Error('Method getTransactionHistory not implemented.');
+    // console.log('[TokenWalletService GH_ENTRY] Fetching transaction history for wallet', { walletId, limit, offset });
+
+    const uuidRegex = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$/;
+    if (!uuidRegex.test(walletId)) {
+      // console.warn(`[TokenWalletService GH_DEBUG_INVALID_UUID_FORMAT] Invalid walletId format for getTransactionHistory, throwing error: ${walletId}`);
+      throw new Error('Invalid walletId format');
+    }
+
+    // console.log('[TokenWalletService GH_DEBUG_BEFORE_GETWALLET] Calling this.getWallet()', { walletId });
+    // First verify the wallet exists and user has access (RLS will handle this via getWallet)
+    const wallet = await this.getWallet(walletId);
+    // console.log('[TokenWalletService GH_DEBUG_AFTER_GETWALLET] Result of getWallet call:', wallet ? `Wallet object received for ${walletId}` : `null received for ${walletId}`);
+
+    if (!wallet) {
+      // console.log(`[TokenWalletService GH_DEBUG_WALLET_NULL] Wallet object is null. Wallet not found or access denied logic triggered for: ${walletId}`);
+      // console.log("[TokenWalletService] Wallet not found or access denied:", walletId);
+      // console.log('[TokenWalletService GH_EXIT_WALLET_NULL] Returning empty array due to null wallet.', { walletId });
+      return []; // Return empty array if wallet not found or access denied by getWallet
+    }
+    // console.log('[TokenWalletService GH_DEBUG_WALLET_VALID] Wallet object is valid, proceeding to fetch transactions.', { walletId });
+
+    // try {
+    const { data: transactionsData, error: transactionsError } = await this.supabaseClient
+      .from('token_wallet_transactions')
+      .select(`
+        transaction_id,
+        wallet_id,
+        transaction_type,
+        amount,
+        balance_after_txn,
+        recorded_by_user_id,
+        related_entity_id,
+        related_entity_type,
+        payment_transaction_id,
+        notes,
+        timestamp
+      `)
+      .eq('wallet_id', walletId)
+      .order('created_at', { ascending: false }); // Get newest first
+
+    // console.log('[TokenWalletService GH_DEBUG_AFTER_TX_QUERY] Transaction query completed.', { walletId, dataIsTruthy: !!transactionsData, errorIsTruthy: !!transactionsError });
+
+    if (transactionsError) {
+      // console.error(`[TokenWalletService GH_DEBUG_TX_ERROR] Error fetching transaction history for wallet ${walletId}:`, transactionsError);
+      throw new Error(`Error fetching transaction history: ${transactionsError.message}`);
+    }
+
+    if (!transactionsData || transactionsData.length === 0) {
+      // console.log(`[TokenWalletService GH_DEBUG_TX_EMPTY_ARRAY] Transaction data array is empty for wallet: ${walletId}`);
+      // console.log('[TokenWalletService GH_EXIT_SUCCESS] Returning mapped transactions.', { walletId, count: 0 });
+      return [];
+    }
+
+    // console.log(`[TokenWalletService GH_DEBUG_TX_DATA_FOUND] Transactions found (count: ${transactionsData.length}) for wallet: ${walletId}`);
+    const mappedTransactions = transactionsData.map(tx => ({
+      transactionId: tx.transaction_id,
+      walletId: tx.wallet_id,
+      type: tx.transaction_type as TokenWalletTransactionType,
+      amount: tx.amount?.toString(),
+      balanceAfterTxn: tx.balance_after_txn?.toString(),
+      recordedByUserId: tx.recorded_by_user_id,
+      relatedEntityId: tx.related_entity_id || undefined,
+      relatedEntityType: tx.related_entity_type || undefined,
+      paymentTransactionId: tx.payment_transaction_id || undefined,
+      notes: tx.notes || undefined,
+      timestamp: new Date(tx.timestamp),
+    }));
+    // console.log('[TokenWalletService GH_EXIT_SUCCESS] Returning mapped transactions.', { walletId, count: mappedTransactions.length });
+    return mappedTransactions;
+    // } catch (error) {
+    //   // console.error(`[TokenWalletService GH_EXIT_CATCH_ERROR] Unexpected error in getTransactionHistory for wallet ${walletId}:`, error);
+    //   throw error;
+    // }
   }
 } 

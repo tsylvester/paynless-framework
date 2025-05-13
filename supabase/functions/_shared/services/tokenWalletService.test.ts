@@ -1456,6 +1456,249 @@ Deno.test("TokenWalletService (Integration with Dev Server)", async (t) => {
 
   // --- End of tests for checkBalance ---
 
+  // --- Tests for getTransactionHistory ---
+  await t.step("getTransactionHistory: successfully retrieves transactions for a user wallet", async () => {
+    assertExists(testUserProfileId, "Test user profile ID must exist.");
+    const stepName = "getTransactionHistory_user";
+    let userWalletId: string | undefined;
+    try {
+      // Create wallet and add some transactions
+      const userWallet = await tokenWalletService.createWallet(testUserProfileId!);
+      assertExists(userWallet, "User wallet should be created.");
+      userWalletId = userWallet.walletId;
+      walletsToCleanup.push(userWalletId);
+
+      // Add transactions sequentially
+      await tokenWalletService.recordTransaction({
+        walletId: userWalletId,
+        type: 'CREDIT_PURCHASE',
+        amount: '100',
+        recordedByUserId: testUserProfileId!,
+        notes: 'First credit'
+      });
+      await tokenWalletService.recordTransaction({
+        walletId: userWalletId,
+        type: 'DEBIT_USAGE',
+        amount: '30',
+        recordedByUserId: testUserProfileId!,
+        notes: 'First debit'
+      });
+      await tokenWalletService.recordTransaction({
+        walletId: userWalletId,
+        type: 'CREDIT_PURCHASE',
+        amount: '50',
+        recordedByUserId: testUserProfileId!,
+        notes: 'Second credit'
+      });
+
+      // Fetch history
+      const history = await tokenWalletService.getTransactionHistory(userWalletId);
+      assertExists(history, "Transaction history should exist.");
+      assertEquals(history.length, 3, "Should return all transactions.");
+      
+      // Verify transactions are ordered by timestamp (newest first)
+      const sortedHistory = [...history].sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime());
+      assertEquals(history, sortedHistory, "Transactions should be ordered by timestamp descending");
+
+      // Verify transaction details
+      const firstTxn = history[0];
+      assertEquals(firstTxn.walletId, userWalletId);
+      assertEquals(firstTxn.type, 'CREDIT_PURCHASE');
+      assertEquals(firstTxn.amount, '50');
+      assertEquals(firstTxn.notes, 'Second credit');
+      assertExists(firstTxn.transactionId);
+      assertExists(firstTxn.timestamp);
+      assertExists(firstTxn.balanceAfterTxn);
+      assertExists(firstTxn.recordedByUserId);
+    } finally {
+      await cleanupStepData(stepName);
+    }
+  });
+
+  await t.step("getTransactionHistory: successfully retrieves transactions for an org wallet (user is admin)", async () => {
+    assertExists(testUserProfileId, "Test user profile ID must exist.");
+    const stepName = "getTransactionHistory_org";
+    let orgWalletId: string | undefined;
+    try {
+      // Create org and make user admin
+      const orgId = await createOrgAndMakeUserAdmin("TxHistoryOrg", supabaseAdminClient, testUserProfileId!, orgsToCleanup);
+      
+      // Create org wallet
+      const orgWallet = await tokenWalletService.createWallet(undefined, orgId);
+      assertExists(orgWallet, "Org wallet should be created.");
+      orgWalletId = orgWallet.walletId;
+      walletsToCleanup.push(orgWalletId);
+
+      // Add transactions sequentially
+      await tokenWalletService.recordTransaction({
+        walletId: orgWalletId,
+        type: 'CREDIT_PURCHASE',
+        amount: '200',
+        recordedByUserId: testUserProfileId!,
+        notes: 'Org first credit'
+      });
+      await tokenWalletService.recordTransaction({
+        walletId: orgWalletId,
+        type: 'DEBIT_USAGE',
+        amount: '75',
+        recordedByUserId: testUserProfileId!,
+        notes: 'Org first debit'
+      });
+
+      // Fetch history
+      const history = await tokenWalletService.getTransactionHistory(orgWalletId);
+      assertExists(history, "Transaction history should exist.");
+      assertEquals(history.length, 2, "Should return all org transactions.");
+      
+      // Verify transactions
+      const firstTxn = history[0];
+      assertEquals(firstTxn.walletId, orgWalletId);
+      assertEquals(firstTxn.type, 'DEBIT_USAGE');
+      assertEquals(firstTxn.amount, '75');
+      assertEquals(firstTxn.notes, 'Org first debit');
+    } finally {
+      await cleanupStepData(stepName);
+    }
+  });
+
+  await t.step("getTransactionHistory: respects pagination parameters", async () => {
+    assertExists(testUserProfileId, "Test user profile ID must exist.");
+    const stepName = "getTransactionHistory_pagination";
+    let userWalletId: string | undefined;
+    try {
+      // Create wallet and add multiple transactions
+      const userWallet = await tokenWalletService.createWallet(testUserProfileId!);
+      assertExists(userWallet, "User wallet should be created.");
+      userWalletId = userWallet.walletId;
+      walletsToCleanup.push(userWalletId);
+
+      // Add 5 transactions
+      for (let i = 1; i <= 5; i++) {
+        await tokenWalletService.recordTransaction({
+          walletId: userWalletId,
+          type: 'CREDIT_PURCHASE',
+          amount: (i * 10).toString(),
+          recordedByUserId: testUserProfileId!,
+          notes: `Transaction ${i}`
+        });
+      }
+
+      // Test limit
+      const limitedHistory = await tokenWalletService.getTransactionHistory(userWalletId, 3);
+      assertEquals(limitedHistory.length, 3, "Should respect limit parameter");
+
+      // Test offset
+      const offsetHistory = await tokenWalletService.getTransactionHistory(userWalletId, 2, 2);
+      assertEquals(offsetHistory.length, 2, "Should respect offset parameter");
+      assertEquals(offsetHistory[0].amount, '30', "Should skip first two transactions");
+    } finally {
+      await cleanupStepData(stepName);
+    }
+  });
+
+  await t.step("getTransactionHistory: returns empty array for wallet with no transactions", async () => {
+    assertExists(testUserProfileId, "Test user profile ID must exist.");
+    const stepName = "getTransactionHistory_empty";
+    let userWalletId: string | undefined;
+    try {
+      const userWallet = await tokenWalletService.createWallet(testUserProfileId!);
+      assertExists(userWallet, "User wallet should be created.");
+      userWalletId = userWallet.walletId;
+      walletsToCleanup.push(userWalletId);
+
+      const history = await tokenWalletService.getTransactionHistory(userWalletId);
+      assertEquals(history.length, 0, "Should return empty array for new wallet");
+    } finally {
+      await cleanupStepData(stepName);
+    }
+  });
+
+  await t.step("getTransactionHistory: (RLS) returns empty array for another user's wallet", async () => {
+    assertExists(testUserProfileId, "Original test user profile ID must exist.");
+    const stepName = "getTransactionHistory_RLS_other_user";
+    let originalUserWalletId: string | undefined;
+    let secondUserFullCtx: SecondUserFullContext | null = null;
+
+    try {
+      // Create wallet for original user
+      const originalUserWallet = await tokenWalletService.createWallet(testUserProfileId!);
+      assertExists(originalUserWallet, "Original user's wallet should be created.");
+      originalUserWalletId = originalUserWallet.walletId;
+      walletsToCleanup.push(originalUserWalletId);
+
+      // Add a transaction
+      await tokenWalletService.recordTransaction({
+        walletId: originalUserWalletId,
+        type: 'CREDIT_PURCHASE',
+        amount: '100',
+        recordedByUserId: testUserProfileId!,
+        notes: 'Test transaction'
+      });
+
+      // Create second user
+      secondUserFullCtx = await setupSecondUserContext(supabaseAdminClient);
+      
+      // Second user attempts to get history
+      const history = await secondUserFullCtx.service.getTransactionHistory(originalUserWalletId);
+      assertEquals(history.length, 0, "Should return empty array for another user's wallet");
+    } finally {
+      if (secondUserFullCtx?.user.id) {
+        await supabaseAdminClient.auth.admin.deleteUser(secondUserFullCtx.user.id);
+      }
+      await cleanupStepData(stepName);
+    }
+  });
+
+  await t.step("getTransactionHistory: (RLS) returns empty array for org wallet if user is not admin", async () => {
+    assertExists(testUserProfileId, "Original test user profile ID must exist.");
+    const stepName = "getTransactionHistory_RLS_org_not_admin";
+    let orgWalletId: string | undefined;
+    let secondUserFullCtx: SecondUserFullContext | null = null;
+
+    try {
+      // Create org and make original user admin
+      const orgId = await createOrgAndMakeUserAdmin("TxHistoryRLSOrg", supabaseAdminClient, testUserProfileId!, orgsToCleanup);
+      
+      // Create org wallet
+      const orgWallet = await tokenWalletService.createWallet(undefined, orgId);
+      assertExists(orgWallet, "Org wallet should be created.");
+      orgWalletId = orgWallet.walletId;
+      walletsToCleanup.push(orgWalletId);
+
+      // Add a transaction
+      await tokenWalletService.recordTransaction({
+        walletId: orgWalletId,
+        type: 'CREDIT_PURCHASE',
+        amount: '100',
+        recordedByUserId: testUserProfileId!,
+        notes: 'Org test transaction'
+      });
+
+      // Create second user (not admin of org)
+      secondUserFullCtx = await setupSecondUserContext(supabaseAdminClient);
+      
+      // Second user attempts to get history
+      const history = await secondUserFullCtx.service.getTransactionHistory(orgWalletId);
+      assertEquals(history.length, 0, "Should return empty array for org wallet when user is not admin");
+    } finally {
+      if (secondUserFullCtx?.user.id) {
+        await supabaseAdminClient.auth.admin.deleteUser(secondUserFullCtx.user.id);
+      }
+      await cleanupStepData(stepName);
+    }
+  });
+
+  await t.step("getTransactionHistory: throws error for invalid wallet ID format", async () => {
+    const invalidWalletId = "not-a-uuid";
+    await assertRejects(
+      async () => { await tokenWalletService.getTransactionHistory(invalidWalletId); },
+      Error,
+      "Invalid wallet ID format"
+    );
+  });
+
+  // --- End of tests for getTransactionHistory ---
+
   // Global Teardown (runs once after all steps in this test block)
   await t.step("Global Teardown: Clean up Auth User and Profile", async () => {
     await cleanupStepData("GlobalTeardown_WalletsOrgs"); // Explicitly call here to ensure it runs before user deletion

@@ -96,7 +96,7 @@ The implementation plan uses the following labels to categorize work steps:
 **Goal:** Implement the backend service for managing token wallets and integrate the first payment gateway (Stripe).
 
 ### 4.1.1: [BE] Core Wallet Service & Payment Gateway Integration
-*   [🚧] **4.1.1.1: [BE] [TEST-UNIT] Implement and Test `TokenWalletService` Methods using TDD**
+*   [🚧] **4.1.1.1: [TEST-UNIT] Implement and Test `TokenWalletService` Methods using TDD**
     *   **Overall Prerequisites (ensure these are addressed before or during relevant TDD cycles below):**
         *   Task `4.1.1.1a` (Enhance `recorded_by_user_id` for Full Auditability) and its sub-tasks are critical, especially for `recordTransaction`.
             *   [✅] **4.1.1.1a.1: [DB] Make `recorded_by_user_id` mandatory.** (Completed for `token_wallet_transactions` table and PG function `record_token_transaction`)
@@ -160,14 +160,14 @@ The implementation plan uses the following labels to categorize work steps:
         *   [✅] **4.1.1.1.28: [TEST-UNIT] Define Test Cases & Write Failing Integration Tests for `TokenWalletService.checkBalance` (RED)**
         *   [✅] **4.1.1.1.29: [BE] Implement `TokenWalletService.checkBalance` method.**
         *   [✅] **4.1.1.1.30: [TEST-UNIT] Run `checkBalance` Tests until GREEN.**
-        *   [ ] **4.1.1.1.31: [REFACTOR] Refactor `checkBalance` Implementation and Tests.**
-        *   [ ] **4.1.1.1.32: [COMMIT]** "feat(BE|TEST): Implement and test TokenWalletService.checkBalance"
+        *   [✅] **4.1.1.1.31: [REFACTOR] Refactor `checkBalance` Implementation and Tests.**
+        *   [✅] **4.1.1.1.32: [COMMIT]** "feat(BE|TEST): Implement and test TokenWalletService.checkBalance"
     *   **`getTransactionHistory` Method:**
-        *   [ ] **4.1.1.1.33: [TEST-UNIT] Define Test Cases & Write Failing Integration Tests for `TokenWalletService.getTransactionHistory` (RED)**
-        *   [ ] **4.1.1.1.34: [BE] Implement `TokenWalletService.getTransactionHistory` method.**
-        *   [ ] **4.1.1.1.35: [TEST-UNIT] Run `getTransactionHistory` Tests until GREEN.**
-        *   [ ] **4.1.1.1.36: [REFACTOR] Refactor `getTransactionHistory` Implementation and Tests.**
-        *   [ ] **4.1.1.1.37: [COMMIT]** "feat(BE|TEST): Implement and test TokenWalletService.getTransactionHistory"
+        *   [✅] **4.1.1.1.33: [TEST-UNIT] Define Test Cases & Write Failing Integration Tests for TokenWalletService.getTransactionHistory** (Covered by existing tests, RLS was the primary blocker, now resolved)
+        *   [✅] **4.1.1.1.34: [BE] Implement TokenWalletService.getTransactionHistory (focused on fetching, RLS, and pagination)** (Implementation exists and was validated)
+        *   [✅] **4.1.1.1.35: [TEST-INTEG] Test TokenWalletService.getTransactionHistory for various scenarios (user, org admin, pagination, RLS for non-accessing users)** (Tests are passing)
+        *   [ ] **4.1.1.1.36: [COMMIT]** "feat(BE|TEST): Implement and test TokenWalletService.getTransactionHistory with RLS and pagination"
+        *   [ ] **4.1.1.1.37: [DB] Create `get_transactions_for_wallet_rpc(wallet_id_param UUID, limit_param INT DEFAULT 20, offset_param INT DEFAULT 0)` RPC Function**
 *   [ ] **4.1.1.1a: [ARCH] [DB] [TYPES] Enhance `recorded_by_user_id` for Full Auditability**
     *   **Goal:** Ensure every transaction is auditable to a specific user, system process, or admin action.
     *   [🚧] **4.1.1.1a.1: [DB] Make `recorded_by_user_id` mandatory.** (Moved to prerequisites above)

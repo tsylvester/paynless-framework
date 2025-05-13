@@ -36,8 +36,10 @@ export interface TokenWalletTransaction {
   type: TokenWalletTransactionType;
   amount: string; // Change in balance, string for precision
   balanceAfterTxn: string; // Wallet balance after this transaction, string for precision
+  recordedByUserId: string; // ID of the user or system entity that recorded this transaction
   relatedEntityId?: string; // e.g., chatMessageId, paymentTransactionId, referredUserId
   relatedEntityType?: string; // e.g., 'chat_message', 'payment_transaction', 'user_profile'
+  paymentTransactionId?: string; // Link to payment if this was a purchase
   notes?: string; // Optional notes, e.g., reason for manual adjustment
   timestamp: Date; // Should be string if coming directly from DB, or properly parsed.
 }

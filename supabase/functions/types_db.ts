@@ -818,9 +818,7 @@ export type Database = {
         Returns: string
       }
       is_admin_of_org_for_wallet: {
-        Args: {
-          p_wallet_row: Database["public"]["Tables"]["token_wallets"]["Row"]
-        }
+        Args: { p_organization_id: string }
         Returns: boolean
       }
       is_org_admin: {
