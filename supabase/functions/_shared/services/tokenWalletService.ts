@@ -217,9 +217,43 @@ export class TokenWalletService implements ITokenWalletService {
   }
 
   async getBalance(walletId: string): Promise<string> {
-    console.log('[TokenWalletService] Attempting to get balance for wallet', { walletId });
-    // TODO: Implement logic to fetch wallet balance
-    throw new Error('Method getBalance not implemented.');
+    console.log(`[TokenWalletService] Attempting to get balance for wallet`, { walletId });
+
+    // Basic UUID validation
+    const uuidRegex = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
+    if (!uuidRegex.test(walletId)) {
+      console.error("[TokenWalletService] Invalid walletId format for getBalance:", walletId);
+      throw new Error("Invalid wallet ID format");
+    }
+
+    const { data, error } = await this.supabaseClient
+      .from('token_wallets')
+      .select('balance::text') // Cast balance to text to ensure string type
+      .eq('wallet_id', walletId)
+      .single();
+
+    if (error) {
+      // Log the error for debugging, especially for RLS issues or unexpected DB problems
+      console.error("[TokenWalletService] Error fetching balance for wallet:", { walletId, errorDetails: error });
+      // If RLS denies access, Supabase often returns a PGRST116 error (row not found), 
+      // which is treated similarly to a non-existent wallet for the user.
+      if (error.code === 'PGRST116') { // PGRST116: "Searched for a single row, but found no rows (or multiple rows)"
+        throw new Error("Wallet not found"); 
+      }
+      throw new Error(`Failed to fetch balance: ${error.message}`);
+    }
+
+    if (!data) {
+      // This case should ideally be covered by error.code === 'PGRST116' from .single()
+      // but as a fallback, explicitly throw if data is null/undefined without an error object.
+      console.log("[TokenWalletService] Wallet not found (no data) for getBalance:", { walletId });
+      throw new Error("Wallet not found");
+    }
+
+    console.log("[TokenWalletService] Balance fetched successfully for wallet:", { walletId, balance: data.balance, typeOfBalance: typeof data.balance });
+    // Balance from DB is NUMERIC, Supabase client might return it as number or string depending on value/driver.
+    // By casting to ::text in the select, data.balance should already be a string.
+    return data.balance; // Should now be a string directly
   }
 
   async recordTransaction(params: {

@@ -86,6 +86,7 @@ export interface ITokenWalletService {
     walletId: string;
     type: TokenWalletTransactionType;
     amount: string; // Absolute amount for the transaction type
+    recordedByUserId: string;
     relatedEntityId?: string;
     relatedEntityType?: string;
     notes?: string;
