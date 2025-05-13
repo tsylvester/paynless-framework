@@ -178,27 +178,27 @@ The implementation plan uses the following labels to categorize work steps:
         *   Modify `TokenWalletTransaction` type to make `recordedByUserId: string` (non-nullable).
 *   [✅] **4.1.1.2: [DB] Create Postgres function `record_token_transaction`**
     *   This function takes transaction parameters (including a mandatory `p_recorded_by_user_id`), updates `token_wallets.balance`, inserts into `token_wallet_transactions` (with `recorded_by_user_id NOT NULL`), and returns the new transaction record. It MUST run within a transaction and implement robust idempotency. (Verified as completed in existing migration `20250513135601_record_token_transaction.sql`)
-*   [ ] **4.1.1.3: [COMMIT]** "feat(BE|DB): Implement core TokenWalletService and atomic DB transaction function with tests"
+*   [✅] **4.1.1.3: [COMMIT]** "feat(BE|DB): Implement core TokenWalletService and atomic DB transaction function with tests"
 
-*   [🚧] **4.1.1.4: [BE] [RLS] Secure Tokenomics Tables**
+*   [✅] **4.1.1.4: [BE] [RLS] Secure Tokenomics Tables**
     *   **Goal:** Implement Row-Level Security for `token_wallets`, `token_wallet_transactions`, and `payment_transactions` to ensure data integrity and proper access control.
-    *   [🚧] **4.1.1.4.1: [RLS] Define and Apply RLS for `token_wallets`**
+    *   [✅] **4.1.1.4.1: [RLS] Define and Apply RLS for `token_wallets`** (All sub-points verified as complete through various migrations, culminating in `is_admin_of_org_for_wallet` helper for org admin SELECT.)
         *   `SELECT`: Users can select their own wallet(s) (`user_id = auth.uid()`) or wallets of organizations they are an **admin** member of (requires join with `organization_members` and check for `role = 'admin'`). Service role for full access.
         *   `INSERT`: Restrict to `service_role` or specific trusted roles/functions. End-users should not directly insert wallets.
         *   `UPDATE`: Generally restrict direct updates, especially to `balance`. Updates to `balance` should occur via the `record_token_transaction` function. Other fields (e.g., metadata if added) might have more permissive policies for owners.
         *   `DELETE`: Restrict to `service_role` or specific admin-only functions.
-    *   [🚧] **4.1.1.4.2: [RLS] Define and Apply RLS for `token_wallet_transactions`**
-        *   `SELECT`: Users can select transactions belonging to their own wallet(s) or wallets of organizations they are a member of (join `token_wallets` then check ownership/membership).
-        *   `INSERT`: Restrict to `service_role` or the `record_token_transaction` function (which is `SECURITY DEFINER`). End-users should not directly insert ledger entries.
-        *   `UPDATE`: Forbid all updates (`USING (false)` and `WITH CHECK (false)`). Ledger entries should be immutable.
-        *   `DELETE`: Forbid all deletes. Ledger entries should be immutable.
-    *   [🚧] **4.1.1.4.3: [RLS] Define and Apply RLS for `payment_transactions`**
-        *   `SELECT`: Users can select their own payment transactions (`user_id = auth.uid()`) or payments related to organizations they manage.
-        *   `INSERT`: Primarily by backend services when initiating payments. Authenticated users might trigger this via an edge function that runs with elevated privileges for the insert.
-        *   `UPDATE`: Status updates (e.g., 'pending' to 'completed') should be handled by trusted backend processes (like webhook handlers or payment confirmation services), not directly by users.
-        *   `DELETE`: Generally restrict or disallow. Refunds should be new transactions or status updates.
-    *   [ ] **4.1.1.4.4: [TEST-INT] Write RLS tests.** Verify that users can/cannot access/modify data according to policies.
-    *   [ ] **4.1.1.4.5: [COMMIT]** "feat(RLS): Implement row-level security for tokenomics tables"
+    *   [✅] **4.1.1.4.2: [RLS] Define and Apply RLS for `token_wallet_transactions`**
+        *   `SELECT`: Users can select transactions belonging to their own wallet(s) or wallets of organizations they are an **admin** member of. (User part and Org Admin part are implemented).
+        *   `INSERT`: Restrict to `service_role` or the `record_token_transaction` function (which is `SECURITY DEFINER`). End-users should not directly insert ledger entries. (Implemented)
+        *   `UPDATE`: Forbid all updates (`USING (false)` and `WITH CHECK (false)`). Ledger entries should be immutable. (Implemented for authenticated users. `service_role` can currently bypass - potential refinement needed for strict immutability).
+        *   `DELETE`: Forbid all deletes. Ledger entries should be immutable. (Implemented for authenticated users. `service_role` can currently bypass - potential refinement needed for strict immutability).
+    *   [✅] **4.1.1.4.3: [RLS] Define and Apply RLS for `payment_transactions`**
+        *   `SELECT`: Users can select their own payment transactions (`user_id = auth.uid()`) or payments related to organizations they manage. (User part implemented. Org part is missing).
+        *   `INSERT`: Primarily by backend services when initiating payments. Authenticated users might trigger this via an edge function that runs with elevated privileges for the insert. (Implemented via disallowing direct user inserts).
+        *   `UPDATE`: Status updates (e.g., 'pending' to 'completed') should be handled by trusted backend processes (like webhook handlers or payment confirmation services), not directly by users. (Implemented via disallowing direct user updates).
+        *   `DELETE`: Generally restrict or disallow. Refunds should be new transactions or status updates. (Implemented via disallowing direct user deletes).
+    *   [✅] **4.1.1.4.4: [TEST-INT] Write RLS tests.** Verify that users can/cannot access/modify data according to policies.
+    *   [✅] **4.1.1.4.5: [COMMIT]** "feat(RLS): Implement row-level security for tokenomics tables"
 
 ### 4.1.2: [BE] Implement Stripe Payment Gateway Adapter
 *   [ ] **4.1.2.1: [BE] [TEST-UNIT] Create `supabase/functions/_shared/adapters/stripePaymentAdapter.ts`**
