@@ -817,6 +817,12 @@ export type Database = {
         Args: { p_chat_id: string; p_user_id: string }
         Returns: string
       }
+      is_admin_of_org_for_wallet: {
+        Args: {
+          p_wallet_row: Database["public"]["Tables"]["token_wallets"]["Row"]
+        }
+        Returns: boolean
+      }
       is_org_admin: {
         Args: { org_id: string }
         Returns: boolean

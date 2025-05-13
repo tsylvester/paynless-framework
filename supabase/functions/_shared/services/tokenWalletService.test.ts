@@ -42,6 +42,39 @@ const supabaseAdminClient = createClient<Database>(supabaseUrl, supabaseServiceR
     auth: { persistSession: false, autoRefreshToken: false }
 });
 
+// Define TestUserContext for helper function
+interface TestUserContext {
+  id: string;
+  email: string;
+}
+
+// Helper function to create a test user
+async function createTestUser(
+  adminClient: SupabaseClient<Database>,
+  options: { email: string; password?: string; email_confirm?: boolean }
+): Promise<TestUserContext> {
+  const { data, error } = await adminClient.auth.admin.createUser({
+    email: options.email,
+    password: options.password || "password123",
+    email_confirm: options.email_confirm === undefined ? true : options.email_confirm,
+  });
+  if (error) {
+    throw new Error(`Failed to create test user ${options.email}: ${error.message}`);
+  }
+  assertExists(data.user, `User data missing for ${options.email}`);
+  // Ensure a profile is created by waiting a bit, can be made more robust if needed
+  await new Promise(resolve => setTimeout(resolve, 500)); 
+  const { data: profile, error: profileError } = await adminClient
+    .from('user_profiles')
+    .select('id')
+    .eq('id', data.user.id)
+    .single();
+  if (profileError || !profile) {
+    console.warn(`Profile not found immediately for ${data.user.id}, ensure triggers are working or manually create if tests fail.`);
+  }
+  return { id: data.user.id, email: data.user.email as string };
+}
+
 // !!! IMPORTANT: For tests to pass, this ID must correspond to an existing user in your `auth.users` table !!!
 // Replace with a real UUID from your development auth.users table, dedicated for testing.
 const PRE_EXISTING_TEST_AUTH_USER_ID = Deno.env.get('PRE_EXISTING_TEST_AUTH_USER_ID') || "00000000-0000-0000-0000-000000000000"; 
@@ -80,6 +113,15 @@ Deno.test("TokenWalletService (Integration with Dev Server)", async (t) => {
     walletsToCleanup.length = 0;
 
     for (const orgId of orgsToCleanup) {
+      // First, explicitly delete members of this org to avoid last admin issues
+      const { error: memberDeleteError } = await supabaseAdminClient
+        .from('organization_members')
+        .delete()
+        .eq('organization_id', orgId);
+      if (memberDeleteError) {
+        console.warn(`[Test Cleanup] Warning cleaning members for organization ${orgId}:`, memberDeleteError.message);
+      }
+
       const { error: orgError } = await supabaseAdminClient // Use admin client for cleanup
         .from('organizations') // Assuming your table is named 'organizations'
         .delete()
@@ -191,31 +233,58 @@ Deno.test("TokenWalletService (Integration with Dev Server)", async (t) => {
     assertExists(orgData, "Dummy organization data should exist after insert.");
     orgsToCleanup.push(orgData.id);
 
-    let createdWallet: TokenWallet | null = null;
+    // Add the test user as an active admin member of this organization
+    assertExists(testUserProfileId, "testUserProfileId must exist to add as org member.");
+    const { error: memberInsertError } = await supabaseAdminClient
+      .from('organization_members')
+      .insert({
+        organization_id: orgData.id,
+        user_id: testUserProfileId,
+        role: 'admin',
+        status: 'active',
+      });
+    if (memberInsertError) {
+      throw new Error(`Failed to insert test user into organization_members: ${memberInsertError.message}`);
+    }
+
+    // Debug: Directly test is_org_member with the user's client
+    const { data: isMemberData, error: isMemberError } = await supabaseTestClient.rpc('is_org_member', {
+      p_org_id: orgData.id,
+      p_user_id: testUserProfileId, // or use auth.uid() if confident it resolves correctly here via RPC
+      required_status: 'active',
+      required_role: 'admin'
+    });
+    console.log(`[Test Debug] is_org_member direct call for org ${orgData.id}, user ${testUserProfileId} (admin):`, { isMemberData, isMemberError });
+    if (isMemberError) console.error("[Test Debug] Error calling is_org_member:", isMemberError.message);
+    assertEquals(isMemberData, true, "is_org_member should return true for the admin user and org.");
+
+    let createdOrgWallet: TokenWallet | null = null;
     try {
-      createdWallet = await tokenWalletService.createWallet(undefined, orgData.id);
-      assertExists(createdWallet, "Wallet object should be returned for org wallet.");
-      walletsToCleanup.push(createdWallet.walletId);
+      createdOrgWallet = await tokenWalletService.createWallet(undefined, orgData.id);
+      assertExists(createdOrgWallet, "Organization wallet should be created for setup.");
+      walletsToCleanup.push(createdOrgWallet.walletId);
+      console.log("[Test Debug] Created Org Wallet:", JSON.stringify(createdOrgWallet));
 
-      assertEquals(createdWallet.userId, undefined);
-      assertEquals(createdWallet.organizationId, orgData.id);
-      assertEquals(createdWallet.balance, '0');
-      assertEquals(createdWallet.currency, 'AI_TOKEN');
-      assertExists(createdWallet.walletId, "Org Wallet ID should be present.");
+      // DEBUG: Call the RLS helper function directly via RPC to check its output
+      if (createdOrgWallet && createdOrgWallet.organizationId) {
+        console.log(`[Test Debug Admin] Calling is_admin_of_org_for_wallet with p_organization_id: ${createdOrgWallet.organizationId}`);
+        const { data: rpcCheckData, error: rpcCheckError } = await supabaseTestClient.rpc(
+          'is_admin_of_org_for_wallet' as any, 
+          { p_organization_id: createdOrgWallet.organizationId } // Pass organizationId directly
+        );
+        console.log('[Test Debug Admin] RPC is_admin_of_org_for_wallet result:', { rpcCheckData, rpcCheckError });
+        
+        assertEquals(rpcCheckError, null, `RPC call to is_admin_of_org_for_wallet errored: ${rpcCheckError?.message}`);
+        assertEquals(rpcCheckData, true, "is_admin_of_org_for_wallet RPC call should return true for admin.");
+      }
 
-      // Verify in DB using admin client as the user-context client may not have RLS to see it
-      const { data: dbWallet, error: dbWalletError } = await supabaseAdminClient // Changed to supabaseAdminClient
-        .from('token_wallets')
-        .select('*')
-        .eq('wallet_id', createdWallet.walletId)
-        .single();
-      
-      assertEquals(dbWalletError, null, `Error fetching org wallet from DB: ${dbWalletError?.message}`);
-      assertExists(dbWallet, "Org Wallet should be in the database.");
-      assertEquals(dbWallet.user_id, null);
-      assertEquals(dbWallet.organization_id, orgData.id);
-      assertEquals(dbWallet.balance?.toString(), '0');
-      assertEquals(dbWallet.currency, 'AI_TOKEN');
+      const fetchedWallet = await tokenWalletService.getWallet(createdOrgWallet.walletId);
+      assertExists(fetchedWallet, "Fetched org wallet should exist.");
+      assertEquals(fetchedWallet.walletId, createdOrgWallet.walletId);
+      assertEquals(fetchedWallet.userId, undefined);
+      assertEquals(fetchedWallet.organizationId, orgData.id);
+      assertEquals(fetchedWallet.balance, '0');
+      assertEquals(fetchedWallet.currency, 'AI_TOKEN');
     } finally {
       await cleanupStepData(); // This will now also clean the org from orgsToCleanup
     }
@@ -405,30 +474,242 @@ Deno.test("TokenWalletService (Integration with Dev Server)", async (t) => {
           } as any); // Cast to 'any' to bypass TypeScript compile-time check for null argument
 
           if (error) {
-            // Log the actual error to help with debugging if the test fails
-            // console.error("[Test Info] RPC call failed as expected. Error details:", JSON.stringify(error, null, 2));
-            // The Supabase client often wraps PostgREST errors or other HTTP errors in a generic Error object,
-            // but the actual PostgREST error (with code, message, details) is what we care about.
-            // assertRejects expects an Error instance to be thrown. PostgrestError is an object, not an Error instance.
-            // We wrap the PostgrestError's message into a new Error, as that message contains the DB error string.
             throw new Error(error.message); 
           }
-          // If the RPC call completes without an error object being populated (e.g. { data: ..., error: null }), 
-          // it means the constraint wasn't hit or the RPC didn't signal failure as expected.
-          // This line should ideally not be reached.
           throw new Error("RPC call 'record_token_transaction' with null p_recorded_by_user_id completed without returning an error object, which was not expected.");
         },
-        Error, // We expect the Supabase client to throw a generic Error object when an RPC call results in a database error.
-               // The actual details (message, code) will be on that error object.
-        'Recorded by User ID cannot be null' // Updated to match the actual error message from the RPC function.
-        // This string is the specific PostgreSQL error message for a NOT NULL violation on this column.
-        // assertRejects will check if the error.message contains this substring.
+        Error, 
+        'Recorded by User ID cannot be null' 
       );
 
     } finally {
       await cleanupStepData();
     }
   });
+
+  // --- Tests for getWallet --- 
+
+  await t.step("getWallet: successfully retrieves an existing user wallet", async () => {
+    assertExists(testUserProfileId, "Test user profile ID must exist for this test.");
+    let createdWallet: TokenWallet | null = null;
+    try {
+      createdWallet = await tokenWalletService.createWallet(testUserProfileId, undefined);
+      assertExists(createdWallet, "User wallet should be created for setup.");
+      walletsToCleanup.push(createdWallet.walletId);
+      const fetchedWallet = await tokenWalletService.getWallet(createdWallet.walletId);
+      assertExists(fetchedWallet, "Fetched wallet should exist.");
+      assertEquals(fetchedWallet.walletId, createdWallet.walletId);
+      assertEquals(fetchedWallet.userId, testUserProfileId);
+      assertEquals(fetchedWallet.organizationId, undefined);
+      assertEquals(fetchedWallet.balance, '0');
+      assertEquals(fetchedWallet.currency, 'AI_TOKEN');
+      assertExists(fetchedWallet.createdAt, "createdAt should be present.");
+      assertExists(fetchedWallet.updatedAt, "updatedAt should be present.");
+    } finally {
+      await cleanupStepData();
+    }
+  });
+
+  await t.step("getWallet: successfully retrieves an existing organization wallet", async (t) => {
+    const step = t.step;
+    let testOrgId: string | undefined;
+    let orgWalletId: string | undefined;
+    // let dummyAdminForOrgMemberTest: TestUserContext | undefined; // This variable is not used in this test
+
+    await step("Setup: Create dummy organization and admin member", async () => {
+      testOrgId = crypto.randomUUID();
+      await supabaseAdminClient.from("organizations").insert({ id: testOrgId, name: "Test Org for Wallet" });
+      assertExists(testUserProfileId, "testUserProfileId should be defined for org membership");
+      await supabaseAdminClient.from("organization_members").insert({
+        organization_id: testOrgId,
+        user_id: testUserProfileId, // Corrected from testAuthUser.id
+        role: "admin",
+        status: "active",
+      });
+      console.log(`[Test Debug] Setup: Org ID: ${testOrgId}, User ID: ${testUserProfileId} made admin.`); // Corrected
+    });
+
+    await step("Create organization wallet using service", async () => {
+      assertExists(testOrgId, "testOrgId should be defined for wallet creation");
+      const wallet = await tokenWalletService.createWallet(undefined, testOrgId);
+      assertExists(wallet, "Organization wallet should be created");
+      orgWalletId = wallet.walletId;
+      assertEquals(wallet.organizationId, testOrgId);
+      assertEquals(wallet.currency, "AI_TOKEN");
+      console.log(`[Test Debug] Wallet created by service: ${JSON.stringify(wallet)}`);
+
+      // Verify with admin client
+      const { data: adminFetchedWallet, error: adminFetchError } = await supabaseAdminClient
+        .from("token_wallets")
+        .select("*")
+        .eq("wallet_id", orgWalletId)
+        .single();
+      assertNotEquals(adminFetchedWallet, null, "Admin client should fetch created org wallet.");
+      assertEquals(adminFetchError, null, "Admin client fetch should have no error.");
+      console.log(`[Test Debug] Wallet fetched by ADMIN client: ${JSON.stringify(adminFetchedWallet)}`);
+
+      // Verify member status with admin client
+      assertExists(testUserProfileId, "testUserProfileId should be defined for org membership check");
+      const { data: memberStatus, error: memberError } = await supabaseAdminClient
+        .from("organization_members")
+        .select("*")
+        .eq("organization_id", testOrgId)
+        .eq("user_id", testUserProfileId) // Corrected from testAuthUser.id
+        .eq("role", "admin")
+        .eq("status", "active")
+        .single();
+      assertNotEquals(memberStatus, null, "Admin client should find active admin membership.");
+      assertEquals(memberError, null, "Admin client membership check should have no error.");
+      console.log(`[Test Debug] User admin status in org by ADMIN client: ${JSON.stringify(memberStatus)}`);
+
+    });
+
+    await step("Fetch organization wallet using service (as authenticated user)", async () => {
+      assertExists(orgWalletId, "orgWalletId should be defined for fetching");
+      assertExists(testOrgId, "testOrgId should be defined for RPC check");
+
+      // Debug RPC call to is_admin_of_org_for_wallet
+      console.log(`[Test Debug] Pre-getWallet: Calling is_admin_of_org_for_wallet with orgId: ${testOrgId} using supabaseTestClient (auth.uid() perspective)`);
+      const { data: rpcCheckData, error: rpcCheckError } = await supabaseTestClient.rpc(
+        "is_admin_of_org_for_wallet" as any, // Added 'as any' to bypass type error
+        { p_organization_id: testOrgId }
+      );
+      console.log(`[Test Debug] Pre-getWallet: RPC is_admin_of_org_for_wallet result: data=${JSON.stringify(rpcCheckData)}, error=${JSON.stringify(rpcCheckError)}`);
+
+      const fetchedWallet = await tokenWalletService.getWallet(orgWalletId);
+      console.log(`[Test Debug] Wallet fetched by SERVICE (test client): ${JSON.stringify(fetchedWallet)}`);
+      assertExists(fetchedWallet, "Fetched org wallet should exist.");
+      assertEquals(fetchedWallet.walletId, orgWalletId);
+      assertEquals(fetchedWallet.organizationId, testOrgId);
+    });
+  });
+
+  await t.step("getWallet: returns null for an organization wallet if the user is a member but not an admin", async (t) => {
+    const step = t.step;
+    let testNonAdminOrgId: string | undefined;
+    let orgWalletNonAdminId: string | undefined;
+    let dummyAdminForNonAdminTest: TestUserContext | undefined;
+
+    await step("Setup: Create dummy organization, a dummy admin, and test user as non-admin member", async () => {
+      testNonAdminOrgId = crypto.randomUUID();
+      await supabaseAdminClient.from("organizations").insert({ id: testNonAdminOrgId, name: "Test Org for Non-Admin Wallet" });
+
+      // Create a separate dummy admin user for this organization
+      dummyAdminForNonAdminTest = await createTestUser(supabaseAdminClient, { // Corrected: Using defined helper
+          email: `dummy-admin-${Date.now()}@example.com`,
+          password: "password123",
+      });
+      assertExists(dummyAdminForNonAdminTest, "Dummy admin user for non-admin test should be created.");
+      assertExists(dummyAdminForNonAdminTest.id, "Dummy admin user ID should exist.");
+
+      await supabaseAdminClient.from("organization_members").insert({
+        organization_id: testNonAdminOrgId,
+        user_id: dummyAdminForNonAdminTest.id,
+        role: "admin",
+        status: "active",
+      });
+      console.log(`[Test Debug NonAdmin] Setup: Org ID: ${testNonAdminOrgId}, Dummy Admin ID: ${dummyAdminForNonAdminTest.id}`);
+
+      // Add the main testAuthUser as a 'member' (not admin)
+      assertExists(testUserProfileId, "testUserProfileId should be defined for non-admin org membership");
+      await supabaseAdminClient.from("organization_members").insert({
+        organization_id: testNonAdminOrgId,
+        user_id: testUserProfileId, // Corrected from testAuthUser.id
+        role: "member", // Non-admin role
+        status: "active",
+      });
+      console.log(`[Test Debug NonAdmin] Setup: Test User ID: ${testUserProfileId} added as 'member' to org ${testNonAdminOrgId}.`); // Corrected
+    });
+
+    await step("Create organization wallet for non-admin test scenario", async () => {
+        assertExists(testNonAdminOrgId, "testNonAdminOrgId should be defined for non-admin wallet creation");
+        // Create wallet using admin/service context as it's just for setup
+        const wallet = await tokenWalletService.createWallet(undefined, testNonAdminOrgId);
+        assertExists(wallet, "Organization wallet for non-admin test should be created");
+        orgWalletNonAdminId = wallet.walletId;
+        walletsToCleanup.push(orgWalletNonAdminId); // Ensure it's cleaned up
+        console.log(`[Test Debug NonAdmin] Wallet created for non-admin scenario: ${JSON.stringify(wallet)}`);
+    });
+
+    await step("Fetch organization wallet using service (as non-admin member)", async () => {
+      assertExists(orgWalletNonAdminId, "orgWalletNonAdminId should be defined");
+      assertExists(testNonAdminOrgId, "testNonAdminOrgId should be defined for RPC check");
+
+      // Optional: Debug RPC call to is_admin_of_org_for_wallet (should be false)
+      console.log(`[Test Debug NonAdmin] Pre-getWallet: Calling is_admin_of_org_for_wallet with orgId: ${testNonAdminOrgId} using supabaseTestClient`);
+      const { data: rpcCheckData, error: rpcCheckError } = await supabaseTestClient.rpc(
+          "is_admin_of_org_for_wallet" as any, // Added 'as any' to bypass type error
+          { p_organization_id: testNonAdminOrgId }
+      );
+      console.log(`[Test Debug NonAdmin] Pre-getWallet: RPC is_admin_of_org_for_wallet result: data=${JSON.stringify(rpcCheckData)}, error=${JSON.stringify(rpcCheckError)}`);
+
+
+      const fetchedWallet = await tokenWalletService.getWallet(orgWalletNonAdminId);
+      console.log(`[Test Debug NonAdmin] Wallet fetched by SERVICE (test client as non-admin): ${JSON.stringify(fetchedWallet)}`);
+      assertEquals(fetchedWallet, null, "Fetched org wallet should be null for a non-admin member.");
+    });
+  });
+
+  await t.step("getWallet: returns null for a non-existent (but valid UUID) wallet ID", async () => {
+    const nonExistentWalletId = crypto.randomUUID();
+    const fetchedWallet = await tokenWalletService.getWallet(nonExistentWalletId);
+    assertEquals(fetchedWallet, null, "Should return null for a non-existent wallet ID.");
+  });
+
+  await t.step("getWallet: returns null for an invalidly formatted wallet ID string", async () => {
+    const invalidWalletId = "this-is-not-a-uuid";
+    const fetchedWallet = await tokenWalletService.getWallet(invalidWalletId);
+    assertEquals(fetchedWallet, null, "Should return null for an invalidly formatted wallet ID.");
+  });
+
+  await t.step("getWallet: (RLS) returns null when trying to fetch another user's wallet", async () => {
+    assertExists(testUserProfileId, "Original test user profile ID must exist.");
+    let originalUserWallet: TokenWallet | null = null;
+    let secondTestUser: TestUserContext | null = null;
+    let secondUserService: ITokenWalletService | null = null;
+    let secondUserClient: SupabaseClient<Database> | null = null;
+
+    try {
+      // 1. Original user creates a wallet
+      originalUserWallet = await tokenWalletService.createWallet(testUserProfileId);
+      assertExists(originalUserWallet, "Original user's wallet should be created.");
+      walletsToCleanup.push(originalUserWallet.walletId);
+
+      // 2. Create a second test user and their own Supabase client + service
+      const secondUserEmail = `second-test-user-${Date.now()}@example.com`;
+      secondTestUser = await createTestUser(supabaseAdminClient, { email: secondUserEmail });
+      assertExists(secondTestUser, "Second test user should be created.");
+      assertExists(secondTestUser.id, "Second test user ID should exist.");
+
+      // Sign in the second user to get a new session for them
+      secondUserClient = createClient<Database>(supabaseUrl, supabaseAnonKey, {
+        auth: { persistSession: false, autoRefreshToken: false }
+      });
+      const { data: signInData, error: signInError } = await secondUserClient.auth.signInWithPassword({
+        email: secondUserEmail,
+        password: "password123",
+      });
+      if (signInError) throw new Error(`Failed to sign in second test user: ${signInError.message}`);
+      assertExists(signInData.session, "Second user session data missing.");
+      secondUserClient.auth.setSession(signInData.session);
+      
+      secondUserService = new TokenWalletService(secondUserClient);
+
+      // 3. Second user attempts to fetch the original user's wallet
+      const fetchedWalletBySecondUser = await secondUserService.getWallet(originalUserWallet.walletId);
+      assertEquals(fetchedWalletBySecondUser, null, "Second user should not be able to fetch original user's wallet.");
+
+    } finally {
+      // Cleanup: Delete the second test user
+      if (secondTestUser && secondTestUser.id) {
+        const { error: deleteError } = await supabaseAdminClient.auth.admin.deleteUser(secondTestUser.id);
+        if (deleteError) console.error(`[Test Cleanup] Error deleting second test user ${secondTestUser.id}:`, deleteError.message);
+      }
+      // Wallets are cleaned up by the existing global cleanup
+    }
+  });
+
+  // --- End of tests for getWallet --- 
 
   // TODO: Add more test cases for recordTransaction (e.g., DEBIT_USAGE, different amounts, error scenarios from PG function)
   
@@ -449,7 +730,7 @@ Deno.test("TokenWalletService (Integration with Dev Server)", async (t) => {
   //     assertExists(dbWallet);
   //     assertEquals(dbWallet.user_id, newUserId);
   //   } finally {
-  //     if (createdWalletId) await cleanupWallet(createdWalletId);
+  //     if (createdWalletId) await cleanupWallet(createdWalletId); // Assumes a specific cleanupWallet helper
   //   }
   // });
 

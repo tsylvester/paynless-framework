@@ -95,7 +95,7 @@ The implementation plan uses the following labels to categorize work steps:
 
 **Goal:** Implement the backend service for managing token wallets and integrate the first payment gateway (Stripe).
 
-### 4.1.1: [BE] Implement `TokenWalletService`
+### 4.1.1: [BE] Core Wallet Service & Payment Gateway Integration
 *   [🚧] **4.1.1.1: [BE] [TEST-UNIT] Implement and Test `TokenWalletService` Methods using TDD**
     *   **Overall Prerequisites (ensure these are addressed before or during relevant TDD cycles below):**
         *   Task `4.1.1.1a` (Enhance `recorded_by_user_id` for Full Auditability) and its sub-tasks are critical, especially for `recordTransaction`.
@@ -133,9 +133,15 @@ The implementation plan uses the following labels to categorize work steps:
         *   [✅] **4.1.1.1.11: [REFACTOR] Refactor `recordTransaction` Implementation and Tests.** (Iterative improvements to RPC data handling and type mapping).
         *   [✅] **4.1.1.1.12: [COMMIT]** "feat(BE|TEST): Implement and test TokenWalletService.recordTransaction (credit, debit, error scenarios)"
     *   **`getWallet` Method:**
-        *   [ ] **4.1.1.1.13: [TEST-UNIT] Define Test Cases & Write Failing Integration Tests for `TokenWalletService.getWallet` (RED)**
-        *   [ ] **4.1.1.1.14: [BE] Implement `TokenWalletService.getWallet` method.**
-        *   [ ] **4.1.1.1.15: [TEST-UNIT] Run `getWallet` Tests until GREEN.**
+        *   [✅] **4.1.1.1.13: [TEST-UNIT] Define Test Cases & Write Failing Integration Tests for `TokenWalletService.getWallet` (RED)**
+            *   Successfully retrieves an existing user wallet (verify all properties).
+            *   Successfully retrieves an existing organization wallet (verify all properties, user is admin of org).
+            *   Returns `null` if the provided `walletId` (valid UUID format) does not exist in the database.
+            *   (RLS Check) Returns `null` when attempting to retrieve a wallet that exists but belongs to a different user and is accessed with a user-specific client context (simulating RLS denial).
+            *   (RLS Check) Returns `null` for an organization wallet if the user is a member of the organization but not an admin.
+            *   (Input Validation) Returns `null` if the provided `walletId` string is not a valid UUID format (service should gracefully handle potential database errors from malformed UUIDs).
+        *   [✅] **4.1.1.1.14: [BE] Implement `TokenWalletService.getWallet` method.**
+        *   [✅] **4.1.1.1.15: [TEST-UNIT] Run `getWallet` Tests until GREEN.**
         *   [ ] **4.1.1.1.16: [REFACTOR] Refactor `getWallet` Implementation and Tests.**
         *   [ ] **4.1.1.1.17: [COMMIT]** "feat(BE|TEST): Implement and test TokenWalletService.getWallet"
     *   **`getWalletForContext` Method:**
@@ -183,7 +189,7 @@ The implementation plan uses the following labels to categorize work steps:
 *   [🚧] **4.1.1.4: [BE] [RLS] Secure Tokenomics Tables**
     *   **Goal:** Implement Row-Level Security for `token_wallets`, `token_wallet_transactions`, and `payment_transactions` to ensure data integrity and proper access control.
     *   [🚧] **4.1.1.4.1: [RLS] Define and Apply RLS for `token_wallets`**
-        *   `SELECT`: Users can select their own wallet(s) (`user_id = auth.uid()`) or wallets of organizations they are a member of (requires join with `organization_members`). Service role for full access.
+        *   `SELECT`: Users can select their own wallet(s) (`user_id = auth.uid()`) or wallets of organizations they are an **admin** member of (requires join with `organization_members` and check for `role = 'admin'`). Service role for full access.
         *   `INSERT`: Restrict to `service_role` or specific trusted roles/functions. End-users should not directly insert wallets.
         *   `UPDATE`: Generally restrict direct updates, especially to `balance`. Updates to `balance` should occur via the `record_token_transaction` function. Other fields (e.g., metadata if added) might have more permissive policies for owners.
         *   `DELETE`: Restrict to `service_role` or specific admin-only functions.

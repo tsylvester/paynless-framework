@@ -28,6 +28,26 @@ export class TokenWalletService implements ITokenWalletService {
     });
   }
 
+  private _transformDbWalletToTokenWallet(dbData: {
+    wallet_id: string;
+    user_id: string | null;
+    organization_id: string | null;
+    balance: number | null;
+    currency: string; // Keep as string from DB
+    created_at: string;
+    updated_at: string;
+  }): TokenWallet {
+    return {
+      walletId: dbData.wallet_id,
+      userId: dbData.user_id || undefined,
+      organizationId: dbData.organization_id || undefined,
+      balance: dbData.balance?.toString() || '0',
+      currency: dbData.currency as 'AI_TOKEN', // Cast to 'AI_TOKEN' here
+      createdAt: new Date(dbData.created_at),
+      updatedAt: new Date(dbData.updated_at),
+    };
+  }
+
   async createWallet(
     userId?: string,
     organizationId?: string
@@ -92,21 +112,56 @@ export class TokenWalletService implements ITokenWalletService {
     // The balance from the DB will be a number (numeric), but TokenWallet expects a string.
     // The DB also returns snake_case, but TokenWallet expects camelCase for some fields (e.g. walletId).
     // The select() automatically returns columns like wallet_id, user_id, organization_id, balance, currency, created_at, updated_at
-    return {
-      walletId: data.wallet_id,
-      userId: data.user_id || undefined, // Ensure undefined if null
-      organizationId: data.organization_id || undefined, // Ensure undefined if null
-      balance: data.balance?.toString() || '0', // Convert numeric balance to string, default to '0' if null/undefined
-      currency: data.currency, // Assuming currency is always returned and matches
-      createdAt: new Date(data.created_at),
-      updatedAt: new Date(data.updated_at),
-    } as TokenWallet; // Cast needed because of potential snake_case vs camelCase and type differences (Date, string for balance)
+    return this._transformDbWalletToTokenWallet(data);
   }
 
   async getWallet(walletId: string): Promise<TokenWallet | null> {
     console.log('[TokenWalletService] Attempting to get wallet', { walletId });
-    // TODO: Implement logic to fetch a wallet by its ID
-    throw new Error('Method getWallet not implemented.');
+
+    // Basic UUID format validation
+    const uuidRegex = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$/;
+    if (!uuidRegex.test(walletId)) {
+      console.warn(`[TokenWalletService] Invalid walletId format: ${walletId}`);
+      return null;
+    }
+
+    try {
+      const { data, error } = await this.supabaseClient
+        .from('token_wallets')
+        .select('wallet_id, user_id, organization_id, balance, currency, created_at, updated_at')
+        .eq('wallet_id', walletId)
+        .single(); // Use .single() to expect one row or throw PostgrestError if not exactly one (or zero)
+
+      if (error) {
+        // PostgREST errors include code 'PGRST116' (0 rows) or 'PGRST111' (ambiguous result, >1 row)
+        // If it's a "0 rows" error, that means not found, so we return null.
+        // For other errors, log them and return null (or rethrow as a service error if preferred).
+        if (error.code === 'PGRST116') { // PGRST116: "The result contains 0 rows"
+          console.log(`[TokenWalletService] Wallet not found (PGRST116): ${walletId}`);
+          return null;
+        }
+        console.error(`[TokenWalletService] Error fetching wallet ${walletId}:`, {
+          message: error.message,
+          code: error.code,
+          details: error.details,
+        });
+        return null; // For other errors, also return null to simplify error handling for the caller
+      }
+
+      if (!data) {
+        // This case should ideally be covered by error.code === 'PGRST116' from .single()
+        console.log(`[TokenWalletService] Wallet not found (no data): ${walletId}`);
+        return null;
+      }
+
+      // Transform DB result to TokenWallet type
+      return this._transformDbWalletToTokenWallet(data);
+
+    } catch (e) {
+      // Catch any unexpected errors during the process
+      console.error(`[TokenWalletService] Unexpected error in getWallet for ${walletId}:`, e);
+      return null;
+    }
   }
 
   async getWalletForContext(
