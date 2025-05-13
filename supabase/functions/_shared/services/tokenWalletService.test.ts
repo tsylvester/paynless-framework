@@ -293,6 +293,78 @@ Deno.test("TokenWalletService (Integration with Dev Server)", async (t) => {
     }
   });
 
+  await t.step("recordTransaction: successful DEBIT_USAGE from wallet with sufficient balance", async () => {
+    assertExists(testUserProfileId, "Test user profile ID must exist for this test.");
+    let testUserWalletId: string | null = null;
+    const initialCreditAmount = '100';
+    const debitAmount = '30';
+    const expectedBalanceAfterDebit = (parseInt(initialCreditAmount) - parseInt(debitAmount)).toString();
+
+    try {
+      // 1. Setup: Create a wallet and credit it with initial balance
+      const newWallet = await tokenWalletService.createWallet(testUserProfileId);
+      assertExists(newWallet, "A new wallet should be created.");
+      testUserWalletId = newWallet.walletId;
+      walletsToCleanup.push(testUserWalletId);
+
+      const creditParams = {
+        walletId: testUserWalletId,
+        type: 'CREDIT_PURCHASE' as TokenWalletTransactionType,
+        amount: initialCreditAmount,
+        recordedByUserId: testUserProfileId,
+        notes: 'Initial credit for debit test',
+      };
+      const creditResult = await tokenWalletService.recordTransaction(creditParams);
+      assertExists(creditResult, "Initial credit transaction should succeed.");
+      assertEquals(creditResult.balanceAfterTxn, initialCreditAmount, "Balance after initial credit should be correct.");
+
+      // 2. Action: Perform the DEBIT_USAGE transaction
+      const debitParams = {
+        walletId: testUserWalletId,
+        type: 'DEBIT_USAGE' as TokenWalletTransactionType,
+        amount: debitAmount,
+        recordedByUserId: testUserProfileId,
+        relatedEntityId: `usage-${crypto.randomUUID()}`,
+        relatedEntityType: 'ai_service_usage',
+        notes: 'Test debit usage',
+      };
+      const debitResult = await tokenWalletService.recordTransaction(debitParams);
+
+      // 3. Verification of debit transaction
+      assertExists(debitResult, "Debit transaction result should exist.");
+      assertEquals(debitResult.walletId, testUserWalletId);
+      assertEquals(debitResult.type, debitParams.type);
+      assertEquals(debitResult.amount, debitParams.amount);
+      assertEquals(debitResult.balanceAfterTxn, expectedBalanceAfterDebit, "Balance after debit in transaction should be correct.");
+      assertExists(debitResult.transactionId, "Debit transaction ID should be present.");
+
+      // Verify in DB: transaction details
+      const { data: dbTxn, error: dbTxnError } = await supabaseAdminClient
+        .from('token_wallet_transactions')
+        .select('*')
+        .eq('transaction_id', debitResult.transactionId)
+        .single();
+      assertEquals(dbTxnError, null, `Error fetching debit transaction from DB: ${dbTxnError?.message}`);
+      assertExists(dbTxn, "Debit transaction should be in the database.");
+      assertEquals(dbTxn.amount.toString(), debitAmount);
+      assertEquals(dbTxn.balance_after_txn.toString(), expectedBalanceAfterDebit);
+
+      // Verify in DB: wallet balance
+      const { data: updatedWallet, error: fetchWalletError } = await supabaseAdminClient
+        .from('token_wallets')
+        .select('balance')
+        .eq('wallet_id', testUserWalletId)
+        .single();
+      assertEquals(fetchWalletError, null, `Error fetching updated wallet: ${fetchWalletError?.message}`);
+      assertExists(updatedWallet, "Updated wallet data should exist.");
+      assertEquals(updatedWallet.balance.toString(), expectedBalanceAfterDebit, "Wallet balance in DB should be correctly debited.");
+
+    } finally {
+      // cleanupStepData will handle walletsToCleanup which includes testUserWalletId and its transactions
+      await cleanupStepData(); 
+    }
+  });
+
   await t.step("recordTransaction: fails if wallet does not exist", async () => {
     const nonExistentWalletId = "00000000-0000-0000-0000-000000000001"; // Use a valid UUID format
     const params = {
@@ -308,6 +380,54 @@ Deno.test("TokenWalletService (Integration with Dev Server)", async (t) => {
       Error,
       "Failed to record token transaction"
     );
+  });
+
+  await t.step("recordTransaction: fails if recordedByUserId is missing (via direct RPC call)", async () => {
+    assertExists(testUserProfileId, "Test user profile ID must exist for this test.");
+    let testUserWalletId: string | null = null;
+
+    try {
+      // 1. Setup: Create a wallet
+      const newWallet = await tokenWalletService.createWallet(testUserProfileId);
+      assertExists(newWallet, "A new wallet should be created for the test.");
+      testUserWalletId = newWallet.walletId;
+      walletsToCleanup.push(testUserWalletId);
+
+      // 2. Action & Verification: Attempt to call RPC with p_recorded_by_user_id as null
+      await assertRejects(
+        async () => {
+          const { error } = await supabaseAdminClient.rpc('record_token_transaction', {
+            p_wallet_id: testUserWalletId as string,
+            p_transaction_type: 'CREDIT_ADJUSTMENT' as TokenWalletTransactionType,
+            p_input_amount_text: '10',
+            p_recorded_by_user_id: null, // Intentionally null to trigger the NOT NULL constraint
+            p_notes: 'Test attempt with null recordedByUserId for RPC direct call'
+          } as any); // Cast to 'any' to bypass TypeScript compile-time check for null argument
+
+          if (error) {
+            // Log the actual error to help with debugging if the test fails
+            // console.error("[Test Info] RPC call failed as expected. Error details:", JSON.stringify(error, null, 2));
+            // The Supabase client often wraps PostgREST errors or other HTTP errors in a generic Error object,
+            // but the actual PostgREST error (with code, message, details) is what we care about.
+            // assertRejects expects an Error instance to be thrown. PostgrestError is an object, not an Error instance.
+            // We wrap the PostgrestError's message into a new Error, as that message contains the DB error string.
+            throw new Error(error.message); 
+          }
+          // If the RPC call completes without an error object being populated (e.g. { data: ..., error: null }), 
+          // it means the constraint wasn't hit or the RPC didn't signal failure as expected.
+          // This line should ideally not be reached.
+          throw new Error("RPC call 'record_token_transaction' with null p_recorded_by_user_id completed without returning an error object, which was not expected.");
+        },
+        Error, // We expect the Supabase client to throw a generic Error object when an RPC call results in a database error.
+               // The actual details (message, code) will be on that error object.
+        'Recorded by User ID cannot be null' // Updated to match the actual error message from the RPC function.
+        // This string is the specific PostgreSQL error message for a NOT NULL violation on this column.
+        // assertRejects will check if the error.message contains this substring.
+      );
+
+    } finally {
+      await cleanupStepData();
+    }
   });
 
   // TODO: Add more test cases for recordTransaction (e.g., DEBIT_USAGE, different amounts, error scenarios from PG function)
