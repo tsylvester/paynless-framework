@@ -168,13 +168,52 @@ export class TokenWalletService implements ITokenWalletService {
     userId?: string,
     organizationId?: string
   ): Promise<TokenWallet | null> {
-    console.log('[TokenWalletService] Attempting to get wallet for context', { userId, organizationId });
+    console.log("[TokenWalletService] Attempting to get wallet for context", { userId, organizationId });
     if (!userId && !organizationId) {
-      console.error('[TokenWalletService] getWalletForContext requires userId or organizationId', { userId, organizationId });
+      console.log("[TokenWalletService] getWalletForContext requires userId or organizationId", { userId, organizationId });
       return null;
     }
-    // TODO: Implement logic to fetch wallet based on user/org context
-    throw new Error('Method getWalletForContext not implemented.');
+
+    let query = this.supabaseClient
+      .from('token_wallets')
+      .select('wallet_id, user_id, organization_id, balance, currency, created_at, updated_at');
+
+    if (organizationId) {
+      // If orgId is provided, always prioritize it.
+      // RLS will ensure the user has access to this organization's wallet.
+      query = query.eq('organization_id', organizationId);
+      if (userId) {
+        // If userId is also provided with orgId, it can be used as an additional filter
+        // or for RLS policies that might depend on the user context for an org wallet.
+        // For now, we assume RLS on organization_id is sufficient for access control.
+        // If a specific user's view of an org wallet is needed, this might change.
+        // query = query.eq('user_id', userId); // Example if user_id was also on org wallets for some reason
+      }
+    } else if (userId) {
+      // If only userId is provided, fetch the user's personal wallet.
+      // RLS will ensure it's the authenticated user's own wallet.
+      query = query.eq('user_id', userId).is('organization_id', null);
+    }
+
+    const { data, error } = await query.maybeSingle();
+
+    if (error) {
+      console.error("[TokenWalletService] Error fetching wallet for context:", { userId, organizationId, error });
+      // Consider specific error handling, e.g., if error is due to RLS (PostgREST might return 401/403 or empty data)
+      // For now, any error results in null.
+      return null;
+    }
+
+    if (!data) {
+      console.log("[TokenWalletService] Wallet not found for context", { userId, organizationId });
+      return null;
+    }
+
+    console.log("[TokenWalletService] Wallet found for context, transforming...", { data });
+    // With explicit select, Supabase types might be more specific, but an explicit cast
+    // can still be useful if the exact type for _transformDbWalletToTokenWallet is very precise.
+    // For now, assuming the selected columns match the expected input structure of the helper.
+    return this._transformDbWalletToTokenWallet(data); 
   }
 
   async getBalance(walletId: string): Promise<string> {

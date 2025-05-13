@@ -34,7 +34,10 @@ if (!supabaseUrl || !supabaseAnonKey || !supabaseServiceRoleKey) {
 // Create a single Supabase client for all tests in this file
 // The service itself will receive this client, or one derived from it.
 const supabaseTestClient = createClient<Database>(supabaseUrl, supabaseAnonKey, {
-    auth: { persistSession: false } // Recommended for test environments
+    auth: { 
+        persistSession: false, // Recommended for test environments
+        autoRefreshToken: false // Disable auto-refresh to prevent leaks in tests
+    } 
 });
 
 // Admin client for setup/teardown tasks that require bypassing RLS
@@ -75,6 +78,79 @@ async function createTestUser(
   return { id: data.user.id, email: data.user.email as string };
 }
 
+// Helper function to set up an organization and make the primary test user an admin
+async function createOrgAndMakeUserAdmin(
+  orgNamePrefix: string,
+  adminClient: SupabaseClient<Database>,
+  currentTestUserProfileId: string,
+  orgsToCleanupArray: string[]
+): Promise<string> {
+  const orgId = crypto.randomUUID();
+  const orgName = `${orgNamePrefix}-${orgId.substring(0, 8)}`; // Add part of UUID for uniqueness
+  const { data: orgData, error: orgInsertError } = await adminClient
+    .from('organizations')
+    .insert({ id: orgId, name: orgName })
+    .select('id')
+    .single();
+
+  if (orgInsertError) {
+    throw new Error(`Failed to insert dummy organization for test (${orgName}): ${orgInsertError.message}`);
+  }
+  assertExists(orgData, "Dummy organization data should exist after insert.");
+  orgsToCleanupArray.push(orgData.id);
+
+  assertExists(currentTestUserProfileId, "Test user profile ID must exist to make them an org admin.");
+  const { error: memberInsertError } = await adminClient
+    .from('organization_members')
+    .insert({
+      organization_id: orgData.id,
+      user_id: currentTestUserProfileId,
+      role: 'admin',
+      status: 'active',
+    });
+  if (memberInsertError) {
+    // Attempt to clean up the org if member insertion fails
+    await adminClient.from('organizations').delete().eq('id', orgData.id);
+    orgsToCleanupArray.pop(); // Remove if it was added
+    throw new Error(`Failed to insert test user into organization_members for org ${orgName}: ${memberInsertError.message}`);
+  }
+  return orgData.id;
+}
+
+// Helper function to set up a complete secondary user context (auth user, client, service)
+interface SecondUserFullContext {
+  user: TestUserContext;
+  client: SupabaseClient<Database>;
+  service: ITokenWalletService;
+}
+async function setupSecondUserContext(
+  adminClient: SupabaseClient<Database>,
+  // No need to pass supabaseUrl, supabaseAnonKey here as they are module-scoped
+): Promise<SecondUserFullContext> {
+  const secondUserEmail = `second-user-${Date.now()}@example.com`;
+  const user = await createTestUser(adminClient, { email: secondUserEmail });
+  assertExists(user, "Second test user should be created by helper.");
+  assertExists(user.id, "Second test user ID should exist.");
+
+  const client = createClient<Database>(supabaseUrl!, supabaseAnonKey!, {
+    auth: { persistSession: false, autoRefreshToken: false }
+  });
+  const { data: signInData, error: signInError } = await client.auth.signInWithPassword({
+    email: secondUserEmail,
+    password: "password123", // Standard password from createTestUser helper
+  });
+  if (signInError) {
+    // Attempt to clean up the created auth user if sign-in fails
+    await adminClient.auth.admin.deleteUser(user.id);
+    throw new Error(`Failed to sign in second test user (${secondUserEmail}): ${signInError.message}`);
+  }
+  assertExists(signInData.session, "Second user session data missing after sign in.");
+  client.auth.setSession(signInData.session);
+  
+  const service = new TokenWalletService(client);
+  return { user, client, service };
+}
+
 // !!! IMPORTANT: For tests to pass, this ID must correspond to an existing user in your `auth.users` table !!!
 // Replace with a real UUID from your development auth.users table, dedicated for testing.
 const PRE_EXISTING_TEST_AUTH_USER_ID = Deno.env.get('PRE_EXISTING_TEST_AUTH_USER_ID') || "00000000-0000-0000-0000-000000000000"; 
@@ -96,39 +172,60 @@ Deno.test("TokenWalletService (Integration with Dev Server)", async (t) => {
   const walletsToCleanup: string[] = []; // Store all created wallet IDs for cleanup
   const orgsToCleanup: string[] = []; // For cleaning up dummy organizations
 
-  const cleanupStepData = async () => {
+  const cleanupStepData = async (stepName?: string) => {
+    console.log(`[Test Cleanup - ${stepName || 'Global'}] Cleaning up data. Wallets to clean: ${walletsToCleanup.length}, Orgs to clean: ${orgsToCleanup.length}`);
+    console.log(`[Test Cleanup - ${stepName || 'Global'}] Wallet IDs: ${JSON.stringify(walletsToCleanup)}`);
+    console.log(`[Test Cleanup - ${stepName || 'Global'}] Org IDs: ${JSON.stringify(orgsToCleanup)}`);
+
     for (const walletId of walletsToCleanup) {
+      console.log(`[Test Cleanup - ${stepName || 'Global'}] Attempting to delete transactions for wallet ${walletId}`);
       const { error: txnError } = await supabaseAdminClient // Use admin client for cleanup
         .from('token_wallet_transactions')
         .delete()
         .eq('wallet_id', walletId);
-      if (txnError) console.error(`[Test Cleanup] Error cleaning transactions for wallet ${walletId}:`, txnError.message);
+      if (txnError) {
+        console.error(`[Test Cleanup - ${stepName || 'Global'}] Error cleaning transactions for wallet ${walletId}:`, txnError);
+      } else {
+        console.log(`[Test Cleanup - ${stepName || 'Global'}] Successfully deleted transactions for wallet ${walletId}`);
+      }
       
+      console.log(`[Test Cleanup - ${stepName || 'Global'}] Attempting to delete wallet ${walletId}`);
       const { error: walletError } = await supabaseAdminClient // Use admin client for cleanup
         .from('token_wallets')
         .delete()
         .eq('wallet_id', walletId);
-      if (walletError) console.error(`[Test Cleanup] Error cleaning wallet ${walletId}:`, walletError.message);
+      if (walletError) {
+        console.error(`[Test Cleanup - ${stepName || 'Global'}] Error cleaning wallet ${walletId}:`, walletError);
+      } else {
+        console.log(`[Test Cleanup - ${stepName || 'Global'}] Successfully deleted wallet ${walletId}`);
+      }
     }
-    walletsToCleanup.length = 0;
+    walletsToCleanup.length = 0; // Clear the array after processing
 
     for (const orgId of orgsToCleanup) {
-      // First, explicitly delete members of this org to avoid last admin issues
+      console.log(`[Test Cleanup - ${stepName || 'Global'}] Attempting to delete members for organization ${orgId}`);
       const { error: memberDeleteError } = await supabaseAdminClient
         .from('organization_members')
         .delete()
         .eq('organization_id', orgId);
       if (memberDeleteError) {
-        console.warn(`[Test Cleanup] Warning cleaning members for organization ${orgId}:`, memberDeleteError.message);
+        console.warn(`[Test Cleanup - ${stepName || 'Global'}] Warning cleaning members for organization ${orgId}:`, memberDeleteError);
+      } else {
+        console.log(`[Test Cleanup - ${stepName || 'Global'}] Successfully deleted members for org ${orgId}`);
       }
 
+      console.log(`[Test Cleanup - ${stepName || 'Global'}] Attempting to delete organization ${orgId}`);
       const { error: orgError } = await supabaseAdminClient // Use admin client for cleanup
-        .from('organizations') // Assuming your table is named 'organizations'
+        .from('organizations') 
         .delete()
         .eq('id', orgId);
-      if (orgError) console.error(`[Test Cleanup] Error cleaning organization ${orgId}:`, orgError.message);
+      if (orgError) {
+        console.error(`[Test Cleanup - ${stepName || 'Global'}] Error cleaning organization ${orgId}:`, orgError);
+      } else {
+        console.log(`[Test Cleanup - ${stepName || 'Global'}] Successfully deleted org ${orgId}`);
+      }
     }
-    orgsToCleanup.length = 0;
+    orgsToCleanup.length = 0; // Clear the array after processing
   };
 
   // Global test setup for auth user (runs once before all steps in this test block)
@@ -149,6 +246,18 @@ Deno.test("TokenWalletService (Integration with Dev Server)", async (t) => {
     assertExists(adminUserData.user, "Test auth user data missing after admin creation.");
     testUserProfileId = adminUserData.user.id;
     console.log(`[Test Setup] Created test auth user with admin client: ${testUserProfileId}`);
+
+    console.log(`[Test Setup] Attempting to delete pre-existing personal wallet for user: ${testUserProfileId}`);
+    const { error: preDeleteError, count: preDeleteCount } = await supabaseAdminClient
+      .from('token_wallets')
+      .delete()
+      .eq('user_id', testUserProfileId!)
+      .is('organization_id', null);
+    if (preDeleteError) {
+      console.error(`[Test Setup] Error deleting pre-existing personal wallet for ${testUserProfileId}:`, preDeleteError);
+    } else {
+      console.log(`[Test Setup] Ensured no pre-existing personal wallet for user: ${testUserProfileId}. Wallets deleted: ${preDeleteCount}`);
+    }
 
     // Manually create a session for the supabaseTestClient (anon key client)
     // This simulates user login for RLS testing against user-specific policies.
@@ -188,8 +297,9 @@ Deno.test("TokenWalletService (Integration with Dev Server)", async (t) => {
   await t.step("createWallet: successfully creates a new user wallet", async () => {
     assertExists(testUserProfileId, "Test user profile ID must exist for this test.");
     let createdWallet: TokenWallet | null = null;
+    const stepName = "createWallet_user";
     try {
-      createdWallet = await tokenWalletService.createWallet(testUserProfileId, undefined);
+      createdWallet = await tokenWalletService.createWallet(testUserProfileId!, undefined);
       assertExists(createdWallet, "Wallet object should be returned.");
       walletsToCleanup.push(createdWallet.walletId);
 
@@ -214,7 +324,7 @@ Deno.test("TokenWalletService (Integration with Dev Server)", async (t) => {
       assertEquals(dbWallet.balance?.toString(), '0');
       assertEquals(dbWallet.currency, 'AI_TOKEN');
     } finally {
-      await cleanupStepData();
+      await cleanupStepData(stepName);
     }
   });
 
@@ -259,6 +369,7 @@ Deno.test("TokenWalletService (Integration with Dev Server)", async (t) => {
     assertEquals(isMemberData, true, "is_org_member should return true for the admin user and org.");
 
     let createdOrgWallet: TokenWallet | null = null;
+    const stepName = "createWallet_org";
     try {
       createdOrgWallet = await tokenWalletService.createWallet(undefined, orgData.id);
       assertExists(createdOrgWallet, "Organization wallet should be created for setup.");
@@ -286,7 +397,7 @@ Deno.test("TokenWalletService (Integration with Dev Server)", async (t) => {
       assertEquals(fetchedWallet.balance, '0');
       assertEquals(fetchedWallet.currency, 'AI_TOKEN');
     } finally {
-      await cleanupStepData(); // This will now also clean the org from orgsToCleanup
+      await cleanupStepData(stepName); // This will now also clean the org from orgsToCleanup
     }
   });
 
@@ -301,6 +412,7 @@ Deno.test("TokenWalletService (Integration with Dev Server)", async (t) => {
   await t.step("recordTransaction: successful CREDIT_PURCHASE", async () => {
     assertExists(testUserProfileId, "Test user profile ID must exist for this test.");
     let testUserWalletId: string | null = null; // This will store the ID of the wallet created for this test step
+    const stepName = "recordTransaction_credit";
     try {
       const newWallet = await tokenWalletService.createWallet(testUserProfileId);
       assertExists(newWallet, "A new wallet should be created for the test user.");
@@ -358,7 +470,7 @@ Deno.test("TokenWalletService (Integration with Dev Server)", async (t) => {
       assertEquals(dbTxn.balance_after_txn.toString(), params.amount, "Ledger balance_after_txn should match new wallet balance.");
 
     } finally {
-      await cleanupStepData(); // This will clean up testUserWalletId and any others
+      await cleanupStepData(stepName); // This will clean up testUserWalletId and any others
     }
   });
 
@@ -369,6 +481,7 @@ Deno.test("TokenWalletService (Integration with Dev Server)", async (t) => {
     const debitAmount = '30';
     const expectedBalanceAfterDebit = (parseInt(initialCreditAmount) - parseInt(debitAmount)).toString();
 
+    const stepName = "recordTransaction_debit";
     try {
       // 1. Setup: Create a wallet and credit it with initial balance
       const newWallet = await tokenWalletService.createWallet(testUserProfileId);
@@ -430,7 +543,7 @@ Deno.test("TokenWalletService (Integration with Dev Server)", async (t) => {
 
     } finally {
       // cleanupStepData will handle walletsToCleanup which includes testUserWalletId and its transactions
-      await cleanupStepData(); 
+      await cleanupStepData(stepName); 
     }
   });
 
@@ -455,6 +568,7 @@ Deno.test("TokenWalletService (Integration with Dev Server)", async (t) => {
     assertExists(testUserProfileId, "Test user profile ID must exist for this test.");
     let testUserWalletId: string | null = null;
 
+    const stepName = "recordTransaction_null_recordedByUserId";
     try {
       // 1. Setup: Create a wallet
       const newWallet = await tokenWalletService.createWallet(testUserProfileId);
@@ -483,7 +597,7 @@ Deno.test("TokenWalletService (Integration with Dev Server)", async (t) => {
       );
 
     } finally {
-      await cleanupStepData();
+      await cleanupStepData(stepName);
     }
   });
 
@@ -492,6 +606,7 @@ Deno.test("TokenWalletService (Integration with Dev Server)", async (t) => {
   await t.step("getWallet: successfully retrieves an existing user wallet", async () => {
     assertExists(testUserProfileId, "Test user profile ID must exist for this test.");
     let createdWallet: TokenWallet | null = null;
+    const stepName = "getWallet_user";
     try {
       createdWallet = await tokenWalletService.createWallet(testUserProfileId, undefined);
       assertExists(createdWallet, "User wallet should be created for setup.");
@@ -506,7 +621,7 @@ Deno.test("TokenWalletService (Integration with Dev Server)", async (t) => {
       assertExists(fetchedWallet.createdAt, "createdAt should be present.");
       assertExists(fetchedWallet.updatedAt, "updatedAt should be present.");
     } finally {
-      await cleanupStepData();
+      await cleanupStepData(stepName);
     }
   });
 
@@ -665,80 +780,217 @@ Deno.test("TokenWalletService (Integration with Dev Server)", async (t) => {
   await t.step("getWallet: (RLS) returns null when trying to fetch another user's wallet", async () => {
     assertExists(testUserProfileId, "Original test user profile ID must exist.");
     let originalUserWallet: TokenWallet | null = null;
-    let secondTestUser: TestUserContext | null = null;
-    let secondUserService: ITokenWalletService | null = null;
-    let secondUserClient: SupabaseClient<Database> | null = null;
+    let secondUserFullCtx: SecondUserFullContext | null = null;
 
+    const stepName = "getWallet_RLS";
     try {
-      // 1. Original user creates a wallet
       originalUserWallet = await tokenWalletService.createWallet(testUserProfileId);
       assertExists(originalUserWallet, "Original user's wallet should be created.");
       walletsToCleanup.push(originalUserWallet.walletId);
 
-      // 2. Create a second test user and their own Supabase client + service
-      const secondUserEmail = `second-test-user-${Date.now()}@example.com`;
-      secondTestUser = await createTestUser(supabaseAdminClient, { email: secondUserEmail });
-      assertExists(secondTestUser, "Second test user should be created.");
-      assertExists(secondTestUser.id, "Second test user ID should exist.");
-
-      // Sign in the second user to get a new session for them
-      secondUserClient = createClient<Database>(supabaseUrl, supabaseAnonKey, {
-        auth: { persistSession: false, autoRefreshToken: false }
-      });
-      const { data: signInData, error: signInError } = await secondUserClient.auth.signInWithPassword({
-        email: secondUserEmail,
-        password: "password123",
-      });
-      if (signInError) throw new Error(`Failed to sign in second test user: ${signInError.message}`);
-      assertExists(signInData.session, "Second user session data missing.");
-      secondUserClient.auth.setSession(signInData.session);
+      secondUserFullCtx = await setupSecondUserContext(supabaseAdminClient);
       
-      secondUserService = new TokenWalletService(secondUserClient);
-
-      // 3. Second user attempts to fetch the original user's wallet
-      const fetchedWalletBySecondUser = await secondUserService.getWallet(originalUserWallet.walletId);
+      const fetchedWalletBySecondUser = await secondUserFullCtx.service.getWallet(originalUserWallet.walletId);
       assertEquals(fetchedWalletBySecondUser, null, "Second user should not be able to fetch original user's wallet.");
 
     } finally {
-      // Cleanup: Delete the second test user
-      if (secondTestUser && secondTestUser.id) {
-        const { error: deleteError } = await supabaseAdminClient.auth.admin.deleteUser(secondTestUser.id);
-        if (deleteError) console.error(`[Test Cleanup] Error deleting second test user ${secondTestUser.id}:`, deleteError.message);
+      if (secondUserFullCtx?.user.id) {
+        const { error: deleteError } = await supabaseAdminClient.auth.admin.deleteUser(secondUserFullCtx.user.id);
+        if (deleteError) console.error(`[Test Cleanup - ${stepName}] Error deleting second test user ${secondUserFullCtx.user.id}:`, deleteError.message);
       }
-      // Wallets are cleaned up by the existing global cleanup
     }
   });
 
   // --- End of tests for getWallet --- 
 
-  // TODO: Add more test cases for recordTransaction (e.g., DEBIT_USAGE, different amounts, error scenarios from PG function)
+  // --- Tests for getWalletForContext ---
+  await t.step("getWalletForContext: successfully retrieves a user wallet given only userId", async () => {
+    assertExists(testUserProfileId, "Test user profile ID must exist.");
+    let userWallet: TokenWallet | null = null;
+    const stepName = "getWalletForContext_user";
+    try {
+      console.log(`[${stepName}] Attempting to delete personal wallet for ${testUserProfileId!} before creation.`);
+      const {error: delError, count: delCount} = await supabaseAdminClient
+        .from('token_wallets')
+        .delete()
+        .eq('user_id', testUserProfileId!)
+        .is('organization_id', null);
+      if(delError) console.error(`[${stepName}] Error in pre-delete:`, delError);
+      console.log(`[${stepName}] Pre-deleted ${delCount} personal wallets for ${testUserProfileId!}.`);
+
+      userWallet = await tokenWalletService.createWallet(testUserProfileId!); 
+      assertExists(userWallet, "User wallet should be created for setup.");
+      walletsToCleanup.push(userWallet.walletId);
+
+      const fetchedWallet = await tokenWalletService.getWalletForContext(testUserProfileId!, undefined);
+      assertExists(fetchedWallet, "Fetched wallet should exist when userId is provided.");
+      assertEquals(fetchedWallet.walletId, userWallet.walletId);
+      assertEquals(fetchedWallet.userId, testUserProfileId);
+      assertEquals(fetchedWallet.organizationId, undefined);
+    } finally {
+      await cleanupStepData(stepName);
+    }
+  });
+
+  await t.step("getWalletForContext: successfully retrieves an org wallet given orgId and admin userId", async () => {
+    assertExists(testUserProfileId, "Test user profile ID must exist.");
+    let orgWallet: TokenWallet | null = null;
+    const tempOrgId = await createOrgAndMakeUserAdmin("CtxOrg", supabaseAdminClient, testUserProfileId!, orgsToCleanup);
+
+    try {
+      orgWallet = await tokenWalletService.createWallet(undefined, tempOrgId);
+      assertExists(orgWallet, "Org wallet should be created for setup.");
+      walletsToCleanup.push(orgWallet.walletId);
+
+      const fetchedWallet = await tokenWalletService.getWalletForContext(testUserProfileId!, tempOrgId);
+      assertExists(fetchedWallet, "Fetched org wallet should exist when orgId and admin userId are provided.");
+      assertEquals(fetchedWallet.walletId, orgWallet.walletId);
+      assertEquals(fetchedWallet.organizationId, tempOrgId);
+      // For an org wallet, userId might be undefined or the user's ID depending on desired return structure.
+      // Current implementation of _transformDbWalletToTokenWallet sets userId to undefined if dbData.user_id is null.
+      assertEquals(fetchedWallet.userId, undefined, "User ID should be undefined on fetched org wallet.");
+    } finally {
+      // Orgs and wallets are cleaned up by their respective arrays handled by cleanupStepData
+      // No need to call cleanupStepData(stepName) here as it's handled globally or by other pushes.
+    }
+  });
+
+  await t.step("getWalletForContext: returns null if neither userId nor organizationId is provided", async () => {
+    const result = await tokenWalletService.getWalletForContext(undefined, undefined);
+    assertEquals(result, null, "Should return null if no IDs are provided.");
+  });
+
+  await t.step("getWalletForContext: returns null if userId provided but no wallet exists", async () => {
+    const nonExistentUserId = crypto.randomUUID();
+    const result = await tokenWalletService.getWalletForContext(nonExistentUserId, undefined);
+    assertEquals(result, null, "Should return null if userId provided but no wallet exists.");
+  });
+
+  await t.step("getWalletForContext: returns null if orgId provided but no wallet exists", async () => {
+    const nonExistentOrgId = crypto.randomUUID();
+    const result = await tokenWalletService.getWalletForContext(testUserProfileId!, nonExistentOrgId);
+    assertEquals(result, null, "Should return null if orgId provided but no wallet exists for that user/org combo.");
+  });
+
+  await t.step("getWalletForContext: (RLS) returns null for org wallet if user not admin/member", async () => {
+    assertExists(testUserProfileId, "Test user profile ID must exist.");
+    let orgWallet: TokenWallet | null = null;
+    let secondUserFullCtx: SecondUserFullContext | null = null;
+    
+    // 1. Setup: Create org, add original testUser as admin, create wallet
+    const orgIdForRlsTest = await createOrgAndMakeUserAdmin("RLSOrgNotAdmin", supabaseAdminClient, testUserProfileId!, orgsToCleanup);
+    orgWallet = await tokenWalletService.createWallet(undefined, orgIdForRlsTest); 
+    assertExists(orgWallet, "Org wallet for RLS test should be created.");
+    walletsToCleanup.push(orgWallet.walletId);
+
+    try {
+      // 2. Create a second user who is NOT a member of the org (and thus not an admin)
+      secondUserFullCtx = await setupSecondUserContext(supabaseAdminClient);
+
+      // 3. Second user (non-member) attempts to get org wallet via context
+      assertExists(secondUserFullCtx.user, "Second test user must exist for this assertion call.");
+      assertExists(secondUserFullCtx.service, "Second user service must exist for this assertion call.");
+      const fetchedWallet = await secondUserFullCtx.service.getWalletForContext(secondUserFullCtx.user.id, orgIdForRlsTest); 
+      assertEquals(fetchedWallet, null, "Should return null for org wallet when user is not a member/admin.");
+    } finally {
+      if (secondUserFullCtx?.user.id) {
+        await supabaseAdminClient.auth.admin.deleteUser(secondUserFullCtx.user.id);
+      }
+    }
+  });
+
+  await t.step("getWalletForContext: prioritizes org wallet if both userId and orgId provided", async () => {
+    assertExists(testUserProfileId, "Test user profile ID must exist.");
+    let userWallet: TokenWallet | null = null;
+    let orgWallet: TokenWallet | null = null;
+    const stepName = "getWalletForContext_priority";
+
+    // 1. Create an org and make the current test user an admin
+    const orgIdForPriorityTest = await createOrgAndMakeUserAdmin("CtxPrioOrg", supabaseAdminClient, testUserProfileId!, orgsToCleanup);
+
+    try {
+      console.log(`[${stepName}] Attempting to delete personal wallet for ${testUserProfileId!} before creation.`);
+      const {error: delError, count: delCount} = await supabaseAdminClient
+        .from('token_wallets')
+        .delete()
+        .eq('user_id', testUserProfileId!)
+        .is('organization_id', null);
+      if(delError) console.error(`[${stepName}] Error in pre-delete:`, delError);
+      console.log(`[${stepName}] Pre-deleted ${delCount} personal wallets for ${testUserProfileId!}.`);
+      
+      userWallet = await tokenWalletService.createWallet(testUserProfileId!); 
+      assertExists(userWallet, "User wallet for priority test should be created.");
+      walletsToCleanup.push(userWallet.walletId);
+
+      // 2. Create an org and its wallet, add user as admin
+      await supabaseAdminClient.from('organizations').insert({ id: orgIdForPriorityTest, name: `Priority Test Org ${orgIdForPriorityTest}` });
+      orgsToCleanup.push(orgIdForPriorityTest);
+      await supabaseAdminClient.from('organization_members').insert({
+        organization_id: orgIdForPriorityTest, user_id: testUserProfileId!, role: 'admin', status: 'active'
+      });
+      orgWallet = await tokenWalletService.createWallet(undefined, orgIdForPriorityTest);
+      assertExists(orgWallet, "Org wallet for priority test should be created.");
+      walletsToCleanup.push(orgWallet.walletId);
+
+      const fetchedWallet = await tokenWalletService.getWalletForContext(testUserProfileId!, orgIdForPriorityTest);
+      assertExists(fetchedWallet, "Wallet should be fetched when both IDs provided.");
+      assertEquals(fetchedWallet.walletId, orgWallet.walletId, "Should prioritize and fetch org wallet.");
+      assertEquals(fetchedWallet.organizationId, orgIdForPriorityTest);
+      // Based on current _transformDbWalletToTokenWallet, userId will be undefined for an org wallet from this query
+      assertEquals(fetchedWallet.userId, undefined, "User ID should be undefined on fetched org wallet in this context.");
+    } finally {
+      await cleanupStepData(stepName);
+    }
+  });
   
-  // TODO: Write integration tests for other service methods (createWallet, getWallet, etc.)
-  // These will also involve direct DB interaction for setup and verification.
-  // Example for createWallet:
-  // await t.step("createWallet: successfully creates a new user wallet", async () => {
-  //   const newUserId = `test-user-create-${Date.now()}`;
-  //   let createdWalletId = "";
-  //   try {
-  //     const newWallet = await tokenWalletService.createWallet(newUserId, undefined);
-  //     assertExists(newWallet);
-  //     assertEquals(newWallet.userId, newUserId);
-  //     createdWalletId = newWallet.walletId;
-  //     // Verify in DB
-  //     const { data: dbWallet, error } = await supabaseTestClient.from('token_wallets').select('*').eq('wallet_id', createdWalletId).single();
-  //     assertNull(error);
-  //     assertExists(dbWallet);
-  //     assertEquals(dbWallet.user_id, newUserId);
-  //   } finally {
-  //     if (createdWalletId) await cleanupWallet(createdWalletId); // Assumes a specific cleanupWallet helper
-  //   }
-  // });
+  await t.step("getWalletForContext: (RLS) returns null if called with a different userId than authenticated user", async () => {
+    assertExists(testUserProfileId, "Authenticated user ID must exist.");
+    let otherUserWallet: TokenWallet | null = null;
+    let otherTestUserContext: TestUserContext | null = null; // Renamed to avoid conflict with outer scope
+
+    try {
+      // 1. Create another user (but we won't use their client/service, just their ID)
+      const tempSecondUser = await createTestUser(supabaseAdminClient, { email: `other-ctx-user-${Date.now()}@example.com` });
+      otherTestUserContext = tempSecondUser;
+      assertExists(otherTestUserContext, "Other test user context should be created.");
+      assertExists(otherTestUserContext.id, "Other test user ID should exist.");
+      
+      // Create a wallet for this "other" user using an admin service instance for simplicity in setup
+      const adminService = new TokenWalletService(supabaseAdminClient);
+      otherUserWallet = await adminService.createWallet(otherTestUserContext.id);
+      assertExists(otherUserWallet, "Other user's wallet should be created.");
+      walletsToCleanup.push(otherUserWallet.walletId);
+
+      // 2. Authenticated user (tokenWalletService for testUserProfileId) tries to fetch otherUser's wallet
+      const fetchedWallet = await tokenWalletService.getWalletForContext(otherTestUserContext.id, undefined);
+      assertEquals(fetchedWallet, null, "Should not fetch another user's personal wallet by providing their ID due to RLS.");
+
+    } finally {
+      if (otherTestUserContext?.id) {
+        await supabaseAdminClient.auth.admin.deleteUser(otherTestUserContext.id);
+      }
+    }
+  });
+
+  // --- End of tests for getWalletForContext ---
 
   // Global Teardown (runs once after all steps in this test block)
   await t.step("Global Teardown: Clean up Auth User and Profile", async () => {
+    await cleanupStepData("GlobalTeardown_WalletsOrgs"); // Explicitly call here to ensure it runs before user deletion
+    
+    // Attempt to sign out the test client's session
+    if (supabaseTestClient) {
+      console.log("[Global Teardown] Attempting to sign out from supabaseTestClient");
+      const { error: signOutError } = await supabaseTestClient.auth.signOut();
+      if (signOutError) {
+        console.warn("[Global Teardown] Error signing out supabaseTestClient:", signOutError.message);
+      } else {
+        console.log("[Global Teardown] Successfully signed out from supabaseTestClient");
+      }
+    }
+
     if (testUserProfileId) {
         // user_profile should be deleted by cascade when auth user is deleted if FK is set up correctly
-        // or can be deleted manually first if needed.
         console.log(`[Global Teardown] Cleaning up auth user ${testUserProfileId}`);
         const { error: authUserDeleteError } = await supabaseAdminClient.auth.admin.deleteUser(testUserProfileId);
         if (authUserDeleteError) {

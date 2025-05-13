@@ -142,14 +142,14 @@ The implementation plan uses the following labels to categorize work steps:
             *   (Input Validation) Returns `null` if the provided `walletId` string is not a valid UUID format (service should gracefully handle potential database errors from malformed UUIDs).
         *   [✅] **4.1.1.1.14: [BE] Implement `TokenWalletService.getWallet` method.**
         *   [✅] **4.1.1.1.15: [TEST-UNIT] Run `getWallet` Tests until GREEN.**
-        *   [ ] **4.1.1.1.16: [REFACTOR] Refactor `getWallet` Implementation and Tests.**
-        *   [ ] **4.1.1.1.17: [COMMIT]** "feat(BE|TEST): Implement and test TokenWalletService.getWallet"
+        *   [✅] **4.1.1.1.16: [REFACTOR] Refactor `getWallet` Implementation and Tests.**
+        *   [✅] **4.1.1.1.17: [COMMIT]** "feat(BE|TEST): Implement and test TokenWalletService.getWallet"
     *   **`getWalletForContext` Method:**
-        *   [ ] **4.1.1.1.18: [TEST-UNIT] Define Test Cases & Write Failing Integration Tests for `TokenWalletService.getWalletForContext` (RED)**
-        *   [ ] **4.1.1.1.19: [BE] Implement `TokenWalletService.getWalletForContext` method.**
-        *   [ ] **4.1.1.1.20: [TEST-UNIT] Run `getWalletForContext` Tests until GREEN.**
-        *   [ ] **4.1.1.1.21: [REFACTOR] Refactor `getWalletForContext` Implementation and Tests.**
-        *   [ ] **4.1.1.1.22: [COMMIT]** "feat(BE|TEST): Implement and test TokenWalletService.getWalletForContext"
+        *   [✅] **4.1.1.1.18: [TEST-UNIT] Define Test Cases & Write Failing Integration Tests for `TokenWalletService.getWalletForContext` (RED)**
+        *   [✅] **4.1.1.1.19: [BE] Implement `TokenWalletService.getWalletForContext` method.**
+        *   [✅] **4.1.1.1.20: [TEST-UNIT] Run `getWalletForContext` Tests until GREEN.**
+        *   [✅] **4.1.1.1.21: [REFACTOR] Refactor `getWalletForContext` Implementation and Tests.**
+        *   [✅] **4.1.1.1.22: [COMMIT]** "feat(BE|TEST): Implement, test, and refactor TokenWalletService.getWalletForContext"
     *   **`getBalance` Method:**
         *   [ ] **4.1.1.1.23: [TEST-UNIT] Define Test Cases & Write Failing Integration Tests for `TokenWalletService.getBalance` (RED)**
         *   [ ] **4.1.1.1.24: [BE] Implement `TokenWalletService.getBalance` method.**
