@@ -5,6 +5,7 @@ import type { Stub } from 'https://deno.land/std@0.224.0/testing/mock.ts';
 // Get the actual method types
 type CheckoutSessionCreateType = Stripe['checkout']['sessions']['create'];
 type WebhookConstructEventType = Stripe['webhooks']['constructEvent'];
+type PaymentIntentsRetrieveType = Stripe['paymentIntents']['retrieve'];
 
 // Define a type for the structure of the mocked Stripe, exposing stubs
 export interface MockStripe {
@@ -12,20 +13,24 @@ export interface MockStripe {
   stubs: {
     checkoutSessionsCreate: Stub<
       Stripe.Checkout.SessionsResource, 
-      Parameters<Stripe.Checkout.SessionsResource['create']>, // Use Parameters<T> utility type
+      Parameters<Stripe.Checkout.SessionsResource['create']>,
       Promise<Stripe.Response<Stripe.Checkout.Session>>
     >;
     webhooksConstructEvent: Stub<
       Stripe.Webhooks, 
-      Parameters<Stripe.Webhooks['constructEvent']>, // Use Parameters<T> utility type
+      Parameters<Stripe.Webhooks['constructEvent']>,
       Stripe.Event
+    >;
+    paymentIntentsRetrieve: Stub<
+      Stripe.PaymentIntentsResource,
+      Parameters<Stripe.PaymentIntentsResource['retrieve']>,
+      Promise<Stripe.Response<Stripe.PaymentIntent>>
     >;
   };
   clearStubs: () => void;
 }
 
 // A simplified mock of the Stripe instance parts we use
-// We cast to 'Stripe' type, so it needs to satisfy the parts of Stripe our adapter uses.
 const getMockStripeInstance = (): Stripe => ({
   checkout: {
     sessions: {
@@ -36,9 +41,12 @@ const getMockStripeInstance = (): Stripe => ({
           url: 'https://stripe.com/pay/default',
           status: 'open',
           livemode: false,
-          // Minimal compliant Stripe.Response<Stripe.Checkout.Session>
-          // Tests should fake this for specific scenarios
-        } as Stripe.Checkout.Session) as Promise<Stripe.Response<Stripe.Checkout.Session>>, 
+          lastResponse: {
+            headers: {},
+            requestId: 'req_default_checkout',
+            statusCode: 200,
+          },
+        } as Stripe.Response<Stripe.Checkout.Session>),
     } as Stripe.Checkout.SessionsResource,
   },
   webhooks: {
@@ -48,7 +56,7 @@ const getMockStripeInstance = (): Stripe => ({
       secret: string,
       tolerance?: number,
       cryptoProvider?: Stripe.CryptoProvider
-    ): Stripe.Event =>  // Explicit return type for the function itself
+    ): Stripe.Event =>
       ({
         id: 'evt_test_default',
         type: 'checkout.session.completed',
@@ -63,8 +71,20 @@ const getMockStripeInstance = (): Stripe => ({
         }
       } as Stripe.Event),
   } as Stripe.Webhooks,
-  // Add other top-level Stripe properties/methods if the adapter uses them
-  // For now, casting to Stripe for simplicity, assuming only above are used.
+  paymentIntents: {
+    retrieve: (id: string, params?: Stripe.PaymentIntentRetrieveParams, options?: Stripe.RequestOptions) =>
+      Promise.resolve({
+        id: id,
+        object: 'payment_intent',
+        status: 'succeeded',
+        client_secret: `${id}_secret_default`,
+        lastResponse: {
+          headers: {},
+          requestId: 'req_default_pi_retrieve',
+          statusCode: 200,
+        },
+      } as Stripe.Response<Stripe.PaymentIntent>),
+  } as Stripe.PaymentIntentsResource,
 }) as Stripe;
 
 export function createMockStripe(): MockStripe {
@@ -73,15 +93,18 @@ export function createMockStripe(): MockStripe {
   const stubs = {
     checkoutSessionsCreate: stub(mockInstance.checkout.sessions, "create"),
     webhooksConstructEvent: stub(mockInstance.webhooks, "constructEvent"),
+    paymentIntentsRetrieve: stub(mockInstance.paymentIntents, "retrieve"),
   };
 
   const clearStubs = () => {
     stubs.checkoutSessionsCreate.restore();
     stubs.webhooksConstructEvent.restore();
+    stubs.paymentIntentsRetrieve.restore();
     
     mockInstance = getMockStripeInstance(); 
     stubs.checkoutSessionsCreate = stub(mockInstance.checkout.sessions, "create");
     stubs.webhooksConstructEvent = stub(mockInstance.webhooks, "constructEvent");
+    stubs.paymentIntentsRetrieve = stub(mockInstance.paymentIntents, "retrieve");
   };
 
   return {

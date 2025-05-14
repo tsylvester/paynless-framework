@@ -232,7 +232,10 @@ class MockQueryBuilder implements IMockQueryBuilder {
         console.log(`[Mock QB ${this._state.tableName}] .${methodName}(${args.map(a => typeof a === 'object' ? JSON.stringify(a) : String(a)).join(', ')}) called`);
         switch(methodName as string) {
             case 'select': 
-                this._state.operation = 'select'; 
+                // If current operation is a mutation, select just specifies return shape
+                if (!['insert', 'update', 'upsert'].includes(this._state.operation)) {
+                    this._state.operation = 'select'; 
+                }
                 this._state.selectColumns = typeof args[0] === 'string' || args[0] === undefined ? (args[0] as string | undefined) || '*' : '*'; 
                 return this;
             case 'insert': this._state.operation = 'insert'; this._state.insertData = args[0] as (object | unknown[]); return this;
@@ -393,6 +396,7 @@ class MockSupabaseClient implements IMockSupabaseClient {
     public readonly fromSpy: Spy;
     private _config: MockSupabaseDataConfig;
     private _latestBuilders: Map<string, MockQueryBuilder> = new Map();
+    private _historicBuildersByTable: Map<string, MockQueryBuilder[]> = new Map();
 
     constructor(config: MockSupabaseDataConfig) {
         this._config = config;
@@ -405,6 +409,13 @@ class MockSupabaseClient implements IMockSupabaseClient {
         console.log(`[Mock Supabase Client] from('${tableName}') called`);
         const builder = new MockQueryBuilder(tableName, 'select', this._config.genericMockResults);
         this._latestBuilders.set(tableName, builder);
+
+        // Store for historic tracking
+        if (!this._historicBuildersByTable.has(tableName)) {
+            this._historicBuildersByTable.set(tableName, []);
+        }
+        this._historicBuildersByTable.get(tableName)!.push(builder);
+        
         return builder;
     }
 
@@ -423,6 +434,21 @@ class MockSupabaseClient implements IMockSupabaseClient {
     public getLatestBuilder(tableName: string): MockQueryBuilder | undefined { 
         return this._latestBuilders.get(tableName);
     }
+
+    public getAllBuildersUsed(): MockQueryBuilder[] { 
+        // This method's utility might need re-evaluation if _latestBuilders only stores one per table.
+        // For now, its usage in clearAllStubs might be okay if stubs are per-instance.
+        return Array.from(this._latestBuilders.values());
+    }
+
+    public getHistoricBuildersForTable(tableName: string): MockQueryBuilder[] {
+        return this._historicBuildersByTable.get(tableName) || [];
+    }
+
+    public clearAllTrackedBuilders(): void {
+        this._latestBuilders.clear();
+        this._historicBuildersByTable.clear();
+    }
 }
 
 // --- Refactored createMockSupabaseClient (Phase 3) ---
@@ -432,21 +458,76 @@ export function createMockSupabaseClient(
 ): MockSupabaseClientSetup {
     const mockClientInstance = new MockSupabaseClient(config);
 
-    const spies: IMockClientSpies = {
+    const spies = { // Temporarily remove IMockClientSpies type to avoid type error for new method
         auth: {
             getUserSpy: mockClientInstance.auth.getUserSpy,
         },
         rpcSpy: mockClientInstance.rpcSpy,
         fromSpy: mockClientInstance.fromSpy,
         getLatestQueryBuilderSpies: (tableName: string) => {
-            const builder = mockClientInstance.getLatestBuilder(tableName); // Already MockQueryBuilder | undefined
-            return builder?.methodSpies as ReturnType<IMockClientSpies['getLatestQueryBuilderSpies']> | undefined; 
+            const builder = mockClientInstance.getLatestBuilder(tableName);
+            // Cast to MockQueryBuilder to access methodSpies if IMockQueryBuilder doesn't expose it
+            return (builder as MockQueryBuilder)?.methodSpies as ReturnType<IMockClientSpies['getLatestQueryBuilderSpies']> | undefined;
+        },
+        getHistoricQueryBuilderSpies: (tableName: string, methodName: string) => { // methodName as string
+            const historicBuilders = mockClientInstance.getHistoricBuildersForTable(tableName);
+            let totalCallCount = 0;
+            const allCallsArgs: any[][] = []; 
+
+            if (historicBuilders && historicBuilders.length > 0) {
+                historicBuilders.forEach(builderInstance => {
+                    // Cast builderInstance to MockQueryBuilder to access methodSpies
+                    const concreteBuilder = builderInstance as MockQueryBuilder;
+                    const spy = concreteBuilder.methodSpies[methodName] as Spy<any, any[], any> | undefined;
+                    if (spy && spy.calls) { 
+                        totalCallCount += spy.calls.length;
+                        allCallsArgs.push(...spy.calls.map(call => call.args)); 
+                    }
+                });
+            }
+            return { callsArgs: allCallsArgs, callCount: totalCallCount }; 
         }
+    } as IMockClientSpies; // Add back IMockClientSpies, acknowledging the structural addition
+
+    const clearAllStubs = () => {
+        // Restore client-level spies
+        const clientSpiesToRestore: Array<Spy<any, any[], any> | undefined> = [
+            spies.auth.getUserSpy as Spy<any, any[], any> | undefined,
+            spies.rpcSpy as Spy<any, any[], any> | undefined,
+            spies.fromSpy as Spy<any, any[], any> | undefined,
+        ];
+
+        clientSpiesToRestore.forEach(s => {
+            if (s && typeof s.restore === 'function' && !s.restored) {
+                try {
+                    s.restore();
+                } catch (e) {
+                    console.warn(`[MockSupabaseClientSetup] Failed to restore client spy:`, (e as Error).message);
+                }
+            }
+        });
+
+        // Restore spies from all latest query builders that were used
+        mockClientInstance.getAllBuildersUsed().forEach(builder => { // Assuming getAllBuildersUsed() exists and returns MockQueryBuilder[]
+            Object.values(builder.methodSpies).forEach(spyInstance => {
+                // Ensure spyInstance is indeed a Spy and has a restore method and is not already restored
+                const s = spyInstance as Spy<any, any[], any>; 
+                if (s && typeof s.restore === 'function' && !s.restored) {
+                    try {
+                        s.restore();
+                    } catch (e) {
+                        console.warn("[MockSupabaseClientSetup] Failed to restore builder spy:", (e as Error).message);
+                    }
+                }
+            });
+        });
+        mockClientInstance.clearAllTrackedBuilders(); // Use new comprehensive clearer
     };
 
     return {
-        client: mockClientInstance, // mockClientInstance is already IMockSupabaseClient
-        spies
+        client: mockClientInstance,
+        spies,
+        clearAllStubs, // Provide the cleanup function
     };
 }
 

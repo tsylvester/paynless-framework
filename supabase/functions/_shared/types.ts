@@ -332,6 +332,7 @@ export interface IMockClientSpies {
 export interface MockSupabaseClientSetup {
   client: IMockSupabaseClient; // The mock client instance
   spies: IMockClientSpies;   // The collection of spies
+  clearAllStubs?: () => void; // Added method to clear/restore all internal stubs
 }
 
 // Define the specific type for the RPC parameters based on types_db.ts

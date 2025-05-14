@@ -28,6 +28,7 @@
     "npm:openai@^4.52.5": "4.96.2",
     "npm:stripe@*": "14.11.0",
     "npm:stripe@14.11.0": "14.11.0",
+    "npm:stripe@14.20.0": "14.20.0",
     "npm:stripe@18.0.0": "18.0.0",
     "npm:stripe@^18.1.0": "18.1.0_@types+node@20.17.32",
     "npm:typescript@5": "5.8.3",
@@ -1269,6 +1270,13 @@
         "qs"
       ]
     },
+    "stripe@14.20.0": {
+      "integrity": "sha512-+3EP8GSWnKVHNATChhDzwAKk3nqSJKQOf2Q+dMGdgEk2sQXWYoA8GXY0A1TjL0m6895FVNavgvno6+0+6lC+kw==",
+      "dependencies": [
+        "@types/node@22.12.0",
+        "qs"
+      ]
+    },
     "stripe@18.0.0": {
       "integrity": "sha512-3Fs33IzKUby//9kCkCa1uRpinAoTvj6rJgQ2jrBEysoxEvfsclvXdna1amyEYbA2EKkjynuB4+L/kleCCaWTpA==",
       "dependencies": [
@@ -1442,7 +1450,11 @@
     "https://deno.land/std@0.177.0/async/pool.ts": "fd082bd4aaf26445909889435a5c74334c017847842ec035739b4ae637ae8260",
     "https://deno.land/std@0.177.0/async/retry.ts": "5efa3ba450ac0c07a40a82e2df296287b5013755d232049efd7ea2244f15b20f",
     "https://deno.land/std@0.177.0/async/tee.ts": "47e42d35f622650b02234d43803d0383a89eb4387e1b83b5a40106d18ae36757",
+    "https://deno.land/std@0.177.0/fmt/colors.ts": "938c5d44d889fb82eff6c358bea8baa7e85950a16c9f6dae3ec3a7a729164471",
     "https://deno.land/std@0.177.0/http/server.ts": "cbb17b594651215ba95c01a395700684e569c165a567e4e04bba327f41197433",
+    "https://deno.land/std@0.177.0/testing/_diff.ts": "1a3c044aedf77647d6cac86b798c6417603361b66b54c53331b312caeb447aea",
+    "https://deno.land/std@0.177.0/testing/_format.ts": "a69126e8a469009adf4cf2a50af889aca364c349797e63174884a52ff75cf4c7",
+    "https://deno.land/std@0.177.0/testing/asserts.ts": "984ab0bfb3faeed92ffaa3a6b06536c66811185328c5dd146257c702c41b01ab",
     "https://deno.land/std@0.192.0/fmt/colors.ts": "d67e3cd9f472535241a8e410d33423980bec45047e343577554d3356e1f0ef4e",
     "https://deno.land/std@0.192.0/testing/_diff.ts": "1a3c044aedf77647d6cac86b798c6417603361b66b54c53331b312caeb447aea",
     "https://deno.land/std@0.192.0/testing/_format.ts": "a69126e8a469009adf4cf2a50af889aca364c349797e63174884a52ff75cf4c7",
@@ -1594,6 +1606,8 @@
     "https://esm.sh/side-channel@1.1.0?target=denonext": "af0b34fab98933edb9b50119e3383d0f2df5451b179ded5e92007d6f773d12e2",
     "https://esm.sh/stripe@14.12.0": "480b8d2a4d12e2fe57a4ddb64506d79a00aa500e57b1bb3d5058d18d95330a43",
     "https://esm.sh/stripe@14.12.0/denonext/stripe.mjs": "54cc360e0d9971e7db7386d39d742eddac8738a98dc96fd00e20fcd60019ac03",
+    "https://esm.sh/stripe@14.20.0": "96b03d199deeb3aa647ab7a1258cb8e3f0d1b8d10c7dbf3dae78ae1caa9f9b61",
+    "https://esm.sh/stripe@14.20.0/denonext/stripe.mjs": "5d3d2f1318c7f31a9e3f7b91d715b2c8910b4b9363da83a29ddb7d8a0c2bdb46",
     "https://esm.sh/tr46@0.0.3/denonext/tr46.mjs": "5753ec0a99414f4055f0c1f97691100f13d88e48a8443b00aebb90a512785fa2",
     "https://esm.sh/tr46@0.0.3?target=denonext": "19cb9be0f0d418a0c3abb81f2df31f080e9540a04e43b0f699bce1149cba0cbb",
     "https://esm.sh/utf-8-validate@6.0.5/denonext/utf-8-validate.mjs": "66b8ea532a0c745068f5b96ddb1bae332c3036703243541d2e89e66331974d98",

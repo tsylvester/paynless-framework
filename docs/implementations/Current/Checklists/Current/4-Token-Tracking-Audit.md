@@ -103,8 +103,8 @@ The implementation plan uses the following labels to categorize work steps:
     *   [✅] **4.0.A.1.2: [BE] Organization Wallet Provisioning:**
         *   [✅] Define the trigger for organization wallet creation (e.g., upon organization creation via API/service, or on first relevant action requiring an org wallet). (Implemented via `handle_new_organization` SQL function and trigger in `20250514123855_add_wallet_to_users.sql`)
         *   [✅] Implement the call to `TokenWalletService.createWallet` for the new organization. (Implemented via direct SQL INSERT in `handle_new_organization` function in `20250514123855_add_wallet_to_users.sql`)
-    *   [✅] **4.0.A.1.3: [DB] [BE] Idempotency:** Ensure wallet creation logic is idempotent (i.e., attempting to create a wallet that already exists does not cause errors or duplicates). `TokenWalletService.createWallet` should handle this, or the calling logic should check first. (Handled by `ON CONFLICT DO NOTHING` clauses in SQL functions and underlying unique constraints on `token_wallets` table as per migration `20250514123855_add_wallet_to_users.sql`).
-*   [🚧] **4.0.A.2: [BE] [TEST-UNIT] Write Unit/Integration Tests for Wallet Provisioning**
+        *   [✅] **4.0.A.1.3: [DB] [BE] Idempotency:** Ensure wallet creation logic is idempotent (i.e., attempting to create a wallet that already exists does not cause errors or duplicates). `TokenWalletService.createWallet` should handle this, or the calling logic should check first. (Handled by `ON CONFLICT DO NOTHING` clauses in SQL functions and underlying unique constraints on `token_wallets` table as per migration `20250514123855_add_wallet_to_users.sql`).
+*   [✅] **4.0.A.2: [BE] [TEST-UNIT] Write Unit/Integration Tests for Wallet Provisioning**
     *   Test automatic user wallet creation upon new user signup.
     *   Test user wallet creation on login for users missing a wallet. (Covered by testing backfill's effect)
     *   Test organization wallet creation.
@@ -191,7 +191,7 @@ The implementation plan uses the following labels to categorize work steps:
         *   [✅] **4.1.1.1.35: [TEST-INTEG] Test TokenWalletService.getTransactionHistory for various scenarios (user, org admin, pagination, RLS for non-accessing users)** (All relevant test scenarios are passing)
         *   [✅] **4.1.1.1.36: [COMMIT]** "feat(BE|TEST): Implement and test TokenWalletService.getTransactionHistory with RLS and pagination"
         *   [✅] **4.1.1.1.37: [DB] RPC Function (Optional): `get_user_token_transaction_history(p_user_id UUID, p_limit INT DEFAULT 20, p_offset INT DEFAULT 0)`** (To be re-evaluated; service method handles this, RPC might be redundant)
-*   [🚧] **4.1.1.1a: [ARCH] [DB] [TYPES] Enhance `recorded_by_user_id` for Full Auditability**
+*   [✅] **4.1.1.1a: [ARCH] [DB] [TYPES] Enhance `recorded_by_user_id` for Full Auditability**
     *   **Goal:** Ensure every transaction is auditable to a specific user, system process, or admin action.
     *   [✅] **4.1.1.1a.1: [DB] Make `recorded_by_user_id` mandatory.** (Moved to prerequisites above)
         *   Modify `record_token_transaction` SQL function: `p_recorded_by_user_id UUID` (not nullable). (Covered by 4.1.1.2)
@@ -215,9 +215,9 @@ The implementation plan uses the following labels to categorize work steps:
         *   `INSERT`: Restrict to `service_role` or the `record_token_transaction` function (which is `SECURITY DEFINER`). End-users should not directly insert ledger entries. (Implemented)
         *   `UPDATE`: Forbid all updates (`USING (false)` and `WITH CHECK (false)`). Ledger entries should be immutable. (Implemented for authenticated users. `service_role` can currently bypass - potential refinement needed for strict immutability).
         *   `DELETE`: Forbid all deletes. Ledger entries should be immutable. (Implemented for authenticated users. `service_role` can currently bypass - potential refinement needed for strict immutability).
-    *   [🚧] **4.1.1.4.3: [RLS] Define and Apply RLS for `payment_transactions`**
+    *   [✅] **4.1.1.4.3: [RLS] Define and Apply RLS for `payment_transactions`**
         *   `SELECT`: Users can select their own payment transactions (`user_id = auth.uid()`) or payments related to organizations they manage. (User part implemented. Org part is missing).
-        *   [ ] **Sub-task: Implement SELECT RLS for organization-managed `payment_transactions`.**
+        *   [✅] **Sub-task: Implement SELECT RLS for organization-managed `payment_transactions`.**
         *   `INSERT`: Primarily by backend services when initiating payments. Authenticated users might trigger this via an edge function that runs with elevated privileges for the insert. (Implemented via disallowing direct user inserts).
         *   `UPDATE`: Status updates (e.g., 'pending' to 'completed') should be handled by trusted backend processes (like webhook handlers or payment confirmation services), not directly by users. (Implemented via disallowing direct user updates).
         *   `DELETE`: Generally restrict or disallow. Refunds should be new transactions or status updates. (Implemented via disallowing direct user deletes).
@@ -257,19 +257,47 @@ The implementation plan uses the following labels to categorize work steps:
     *   [✅] **4.1.2.1.12: [TEST-UNIT] Write Unit Tests for `StripePaymentAdapter`**
         *   In `supabase/functions/_shared/adapters/tests/stripePaymentAdapter.test.ts`.
         *   Mock Stripe SDK, Supabase client (`adminClient`), and `TokenWalletService`.
-        *   Cover success and failure scenarios for both `initiatePayment` and `handleWebhook`, including idempotency.
+        *   Cover success and failure scenarios for both `initiatePayment` (with its refactored, simpler signature and responsibilities) and `handleWebhook`, including idempotency.
 *   [✅] **4.1.2.2: [COMMIT]** "feat(BE): Implement StripePaymentAdapter, abstracting Stripe logic, with tests"
+
+*   [🚧] **4.1.2.A: [BE] [REFACTOR] Refine `StripePaymentAdapter` for Dynamic Checkout Mode and Correct Data Sourcing**
+    *   **Goal:** Ensure the `StripePaymentAdapter` correctly handles different product types (one-time vs. subscription) by dynamically setting the Stripe Checkout mode and properly sourcing Stripe-specific identifiers. This corrects oversights in the initial implementation (4.1.2.1).
+    *   **`initiatePayment(context: PaymentOrchestrationContext)` Method Refinements:**
+        *   **4.1.2.A.1: [BE] Gateway-Specific Item Interpretation (Adapter Responsibility):**
+            *   Adapter receives the generic `PaymentOrchestrationContext` (containing `itemId`, `quantity`, `internalPaymentId`, `userId`, `amountForGateway`, `currencyForGateway`, etc.).
+            *   Adapter uses `context.itemId` to query the `subscription_plans` table (using its own admin Supabase client) to fetch Stripe-specific details:
+                *   `stripe_price_id`
+                *   `plan_type`
+            *   If `stripe_price_id` or necessary `plan_type` is not found for the `itemId`, return an appropriate error in `PaymentInitiationResult`.
+        *   **4.1.2.A.2: [BE] Dynamic Stripe Session Creation:**
+            *   Construct `Stripe.Checkout.SessionCreateParams`.
+            *   Set `mode` dynamically based on the `plan_type` fetched from `subscription_plans` (e.g., map 'one_time' to 'payment', 'recurring' to 'subscription').
+            *   Use the fetched `stripe_price_id` for `line_items`.
+            *   Use `context.quantity`.
+            *   Use `context.internalPaymentId` for Stripe's `metadata.internal_payment_id`.
+            *   Use `context.userId` for `client_reference_id`.
+            *   Populate `success_url` and `cancel_url`.
+        *   **4.1.2.A.3: [BE] Return `PaymentInitiationResult`:** (As before)
+    *   **4.1.2.A.4: [TEST-UNIT] Update/Add Unit Tests for `StripePaymentAdapter` Refinements**
+        *   Verify the adapter correctly queries `subscription_plans` for `stripe_price_id` and `plan_type`.
+        *   Verify dynamic `mode` setting based on `plan_type`.
+        *   Cover scenarios for both 'payment' and 'subscription' modes.
+    *   **4.1.2.A.5: [COMMIT]** "refactor(BE): Refine StripePaymentAdapter for dynamic mode and correct data sourcing"
 
 ### 4.1.3: [BE] Payment Initiation & Webhook Endpoints (Refactored)
 *   [🚧] **4.1.3.1: [BE] Refactor/Create Central `POST /initiate-payment` Edge Function**
     *   **Path:** `supabase/functions/initiate-payment/index.ts`
-    *   **Functionality:**
-        *   [ ] **4.1.3.1.1: [BE] Authentication & Request Handling:** Authenticate user. Parse `PurchaseRequest` from request body.
-        *   [ ] **4.1.3.1.2: [BE] Adapter Factory/Selection:** Implement a mechanism to select and instantiate the correct payment adapter based on `PurchaseRequest.paymentGatewayId` (e.g., 'stripe').
-        *   [ ] **4.1.3.1.3: [BE] Adapter Instantiation:** Instantiate the selected adapter (e.g., `StripePaymentAdapter`) with its required dependencies (Stripe SDK instance, admin Supabase client, `TokenWalletService` instance, webhook secret from env).
-        *   [ ] **4.1.3.1.4: [BE] Call Adapter:** Call `adapter.initiatePayment(request)`.
-        *   [ ] **4.1.3.1.5: [BE] Return Response:** Return the `PaymentInitiationResult` to the client.
-    *   [ ] **4.1.3.1.6: [TEST-INT] Write/Update Integration Tests for `/initiate-payment`**. Test with 'stripe' gateway.
+    *   **Functionality (Orchestrator Role - Ensure this reflects generic behavior):**
+        *   [ ] **4.1.3.1.1: [BE] Authentication & Request Handling:** (As before)
+        *   [ ] **4.1.3.1.1a: [BE] Generic Item Details Extraction:** From `PurchaseRequest.itemId`, orchestrator determines generic item details like `tokens_to_award`, monetary value (`amountForGateway`), and `currencyForGateway` by querying `subscription_plans`. **The orchestrator does NOT fetch or pass adapter-specific fields like `stripe_price_id` or `plan_type` into the generic context.**
+        *   [ ] **4.1.3.1.1b: [BE] Target Wallet Identification:** (As before)
+        *   [ ] **4.1.3.1.1c: [BE] Create `payment_transactions` Record:** (As before, using generic data)
+        *   [ ] **4.1.3.1.2: [BE] Adapter Factory/Selection:** (As before)
+        *   [ ] **4.1.3.1.3: [BE] Adapter Instantiation:** (As before)
+        *   [ ] **4.1.3.1.4: [BE] Call Adapter:** Call `adapter.initiatePayment(paymentOrchestrationContext)`. The `paymentOrchestrationContext` is **generic** and includes `itemId`, `quantity`, `userId`, `metadata`, `internalPaymentId`, `target_wallet_id`, `tokens_to_award`, `amountForGateway`, `currencyForGateway`. The adapter uses this generic `itemId` to resolve its own specific needs (like Stripe Price ID or mode).
+        *   [ ] **4.1.3.1.5: [BE] Return Response:** (As before)
+    *   [ ] **4.1.3.1.6: [TEST-INT] Write/Update Integration Tests for `/initiate-payment`**.
+        *   Ensure tests verify the orchestration logic passes a purely **generic** `PaymentOrchestrationContext` to the adapter.
 *   [🚧] **4.1.3.2: [BE] Refactor `POST /webhooks/stripe` Edge Function**
     *   **Path:** `supabase/functions/webhooks-stripe/index.ts`
     *   **Functionality (Thin Wrapper):**

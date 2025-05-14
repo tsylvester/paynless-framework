@@ -6,7 +6,7 @@ import {
   IPaymentGatewayAdapter,
   PaymentInitiationResult,
   PaymentConfirmation,
-  PurchaseRequest,
+  PaymentOrchestrationContext,
 } from '../types/payment.types.ts'; // Assuming types are in this package
 import { ITokenWalletService } from '../../_shared/types/tokenWallet.types.ts'; // For token awarding
 
@@ -30,91 +30,114 @@ export class StripePaymentAdapter implements IPaymentGatewayAdapter {
     // console.log('[StripePaymentAdapter] Initialized');
   }
 
-  async initiatePayment(request: PurchaseRequest): Promise<PaymentInitiationResult> {
-    // console.log('[StripePaymentAdapter] initiatePayment called with:', request);
+  async initiatePayment(context: PaymentOrchestrationContext): Promise<PaymentInitiationResult> {
+    console.log('[StripePaymentAdapter] initiatePayment called with context:', context);
     try {
-      // 1. Determine Stripe Price ID and tokens_to_award from request.itemId
-      //    This likely involves querying a local 'service_plans' or 'products' table
-      //    that syncs with Stripe (related to your `sync-stripe-plans` logic).
+      // The following are now provided by the context:
+      // - internalPaymentId (context.internalPaymentId)
+      // - targetWalletId (context.targetWalletId) - Not directly used by Stripe session creation itself
+      // - tokensToAward (context.tokensToAward) - Not directly used by Stripe session creation itself
+      // - amountForGateway (context.amountForGateway)
+      // - currencyForGateway (context.currencyForGateway)
+      // - userId (context.userId)
+      // - organizationId (context.organizationId)
+      // - itemId (context.itemId)
+      // - quantity (context.quantity)
+
+      // 1. Determine Stripe Price ID and plan_type from context.itemId.
       const { data: planData, error: planError } = await this.adminClient
-        .from('subscription_plans') // Assuming a table like this exists or will be created
-        .select('stripe_price_id, tokens_awarded')
-        .eq('item_id_internal', request.itemId) // Assuming your plan table has an internal ID
+        .from('subscription_plans')
+        .select('stripe_price_id, plan_type') // Fetch plan_type as well
+        .eq('item_id_internal', context.itemId)
         .single();
 
       if (planError || !planData) {
-        console.error('[StripePaymentAdapter] Error fetching plan data:', planError);
-        return { success: false, error: `Item ID ${request.itemId} not found or invalid.` };
+        console.error('[StripePaymentAdapter] Error fetching plan data or not found for item:', context.itemId, planError);
+        const errorMsg = planError ? planError.message : `Plan data not found for item ${context.itemId}.`;
+        return { success: false, transactionId: context.internalPaymentId, error: errorMsg };
+      }
+      
+      if (!planData.stripe_price_id) {
+        console.error('[StripePaymentAdapter] stripe_price_id not found in plan data for item:', context.itemId);
+        return { success: false, transactionId: context.internalPaymentId, error: `Stripe Price ID configuration missing for item ${context.itemId}.` };
       }
       const stripePriceId = planData.stripe_price_id;
-      const tokensToAward = planData.tokens_awarded;
+      const planType = planData.plan_type;
+      console.log(`[StripePaymentAdapter] Using Stripe Price ID: ${stripePriceId} and plan_type: ${planType} for item ID: ${context.itemId}`);
+      
+      let stripeMode: 'payment' | 'subscription'; 
 
-      if (!stripePriceId || tokensToAward == null) {
-         console.error('[StripePaymentAdapter] Missing Stripe Price ID or tokens_awarded for item:', request.itemId);
-        return { success: false, error: 'Configuration error for the selected item.' };
+      if (planType === 'one_time_purchase') {
+        stripeMode = 'payment';
+      } else if (planType === 'subscription') {
+        stripeMode = 'subscription';
+      } else {
+        // If plan_type is undefined, null, or an unexpected value, return an error.
+        const errorMsg = `Invalid or missing plan_type: '${planType}' received for item ID: ${context.itemId}. Cannot determine Stripe session mode.`;
+        console.error(`[StripePaymentAdapter] ${errorMsg}`);
+        return { success: false, transactionId: context.internalPaymentId, error: errorMsg };
       }
+      console.log(`[StripePaymentAdapter] Determined Stripe mode: ${stripeMode}`);
 
-      // 2. Determine target_wallet_id
-      const walletCtx = { userId: request.userId, organizationId: request.organizationId };
-      const wallet = await this.tokenWalletService.getWalletForContext(walletCtx.userId, walletCtx.organizationId ?? undefined);
+      // Values from context:
+      const internalPaymentId = context.internalPaymentId;
+      const userId = context.userId;
+      const organizationId = context.organizationId;
+      const quantity = context.quantity;
+      // amountForGateway and currencyForGateway from context are for the *total amount*.
+      // Stripe line_items take unit price. If `context.amountForGateway` is total, and `stripePriceId` represents a unit price,
+      // then we might not need `context.amountForGateway` directly for `line_items`.
+      // Let's assume stripePriceId corresponds to the item and quantity handles the multiplication.
 
-      if (!wallet) {
-         console.error('[StripePaymentAdapter] Wallet not found for context:', walletCtx, '. A wallet should exist prior to initiating payment.');
-         return { success: false, error: 'User/Organization wallet not found. Please ensure a wallet is provisioned before payment.' };
-      }
-      const targetWalletId = wallet.walletId; // Now a const
-
-      // 3. Create 'payment_transactions' record in 'PENDING' state.
-      const { data: paymentTxnData, error: paymentTxnError } = await this.adminClient
-        .from('payment_transactions')
-        .upsert({
-          user_id: request.userId,
-          organization_id: request.organizationId ?? undefined, // Consistent with getWalletForContext
-          target_wallet_id: targetWalletId,
-          payment_gateway_id: this.gatewayId,
-          status: 'PENDING',
-          tokens_to_award: tokensToAward,
-          amount_requested_fiat: typeof request.metadata?.amount_fiat === 'number' ? request.metadata.amount_fiat : null,
-          currency_requested_fiat: request.currency,
-          metadata_json: { itemId: request.itemId, ...(request.metadata || {}) }
-        })
-        .select('id')
-        .single();
-
-      if (paymentTxnError || !paymentTxnData) {
-        console.error('[StripePaymentAdapter] Error creating payment_transactions record:', paymentTxnError);
-        return { success: false, error: 'Failed to initialize payment record.' };
-      }
-      const internalPaymentId = paymentTxnData.id;
-
-      // 4. Create Stripe Checkout Session
+      // 2. Create Stripe Checkout Session (Simplified)
       const sessionParams: Stripe.Checkout.SessionCreateParams = {
-        line_items: [{ price: stripePriceId, quantity: request.quantity }],
-        mode: 'payment',
-        success_url: `${process.env.SITE_URL}/payment-success?session_id={CHECKOUT_SESSION_ID}&payment_id=${internalPaymentId}`,
-        cancel_url: `${process.env.SITE_URL}/payment-cancelled?payment_id=${internalPaymentId}`,
-        client_reference_id: request.userId, 
+        line_items: [{ price: stripePriceId, quantity: quantity }],
+        mode: stripeMode, // Use dynamically determined mode
+        success_url: `${Deno.env.get('SITE_URL')}/subscription/success?session_id={CHECKOUT_SESSION_ID}&payment_id=${internalPaymentId}`,
+        cancel_url: `${Deno.env.get('SITE_URL')}/subscription`, // Changed to /subscription and removed payment_id query param
+        client_reference_id: userId, 
         metadata: {
-          internal_payment_id: internalPaymentId,
-          user_id: request.userId,
-          organization_id: request.organizationId || '', // Stripe metadata values are typically strings
-          item_id: request.itemId,
+          internal_payment_id: internalPaymentId, // Crucial for webhook reconciliation
+          user_id: userId,
+          organization_id: organizationId || '',
+          item_id: context.itemId, // Store original item_id for reference
         },
       };
       
+      // If context.currencyForGateway is 'eur', 'gbp', etc. and Stripe needs it for the session:
+      if (context.currencyForGateway && context.currencyForGateway.toLowerCase() !== 'usd') { // Assuming USD is default for price_id
+         // PaymentIntent-level currency can be set if not using Prices that pre-define currency.
+         // For Checkout Sessions with Prices, the Price's currency is used.
+         // If you need to support multiple currencies for the *same* Stripe Price ID,
+         // you'd typically use PaymentIntents directly or have multiple Price IDs.
+         // For simplicity, we assume the stripePriceId has the correct currency or is USD.
+         // If `payment_intent_data.currency` is needed:
+         // sessionParams.payment_intent_data = { currency: context.currencyForGateway.toLowerCase() };
+      }
+
       const stripeSession = await this.stripe.checkout.sessions.create(sessionParams);
+      console.log('[StripePaymentAdapter] Stripe session created:', stripeSession.id);
 
       return {
         success: true,
-        transactionId: internalPaymentId,
-        paymentGatewayTransactionId: stripeSession.id,
+        transactionId: internalPaymentId, // Our internal ID
+        paymentGatewayTransactionId: stripeSession.id, // Stripe's session ID
         redirectUrl: stripeSession.url ?? undefined,
-        clientSecret: stripeSession.client_secret ?? undefined,
+        clientSecret: stripeSession.payment_intent && typeof stripeSession.payment_intent === 'string' 
+                        ? (await this.stripe.paymentIntents.retrieve(stripeSession.payment_intent)).client_secret ?? undefined
+                        : typeof stripeSession.payment_intent === 'object' && stripeSession.payment_intent?.client_secret 
+                        ? stripeSession.payment_intent.client_secret
+                        : undefined, // Extract client_secret if available (for Payment Intents mode)
       };
 
     } catch (error) {
       console.error('[StripePaymentAdapter] Exception in initiatePayment:', error);
-      return { success: false, error: (error instanceof Error ? error.message : String(error)) || 'An unexpected error occurred during payment initiation.' };
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      return { 
+        success: false, 
+        transactionId: context.internalPaymentId, // Include our internal ID in error response
+        error: errorMessage || 'An unexpected error occurred during payment initiation with Stripe.' 
+      };
     }
   }
 

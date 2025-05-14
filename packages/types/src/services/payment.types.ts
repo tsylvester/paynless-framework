@@ -55,7 +55,7 @@ export interface IPaymentGatewayAdapter {
    * @param request - The details of the purchase.
    * @returns A promise that resolves to a PaymentInitiationResult.
    */
-  initiatePayment(request: PurchaseRequest): Promise<PaymentInitiationResult>;
+  initiatePayment(context: PaymentOrchestrationContext): Promise<PaymentInitiationResult>;
 
   /**
    * Handles incoming webhook events from the payment gateway.
@@ -74,4 +74,16 @@ export interface IPaymentGatewayAdapter {
   // processRefund(transactionId: string, amount?: number): Promise<RefundResult>;
   // getTransactionDetails(gatewayTransactionId: string): Promise<TransactionDetails>;
 }
- 
+
+/**
+ * Context object passed from the payment orchestration layer to a specific payment gateway adapter.
+ * It includes the original purchase request and additional system-resolved information.
+ */
+export interface PaymentOrchestrationContext {
+  purchaseRequest: PurchaseRequest; // The original request from the client
+  internalPaymentId: string; // The ID of our internal payment_transactions record
+  targetWalletId: string; // The wallet ID to be credited
+  tokensToAward: number; // The number of tokens to be awarded upon successful payment
+  amountForGateway: number; // The monetary amount to be charged by the gateway (e.g., in cents for Stripe)
+  currencyForGateway: string; // The currency code for the gateway (e.g., 'usd' for Stripe)
+}

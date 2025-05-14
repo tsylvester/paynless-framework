@@ -16,6 +16,40 @@ export interface PurchaseRequest {
 }
 
 /**
+ * Represents the context passed to the payment adapter after initial processing by the edge function.
+ * It includes resolved details like target wallet ID, internal payment ID, and specific pricing info.
+ */
+export interface StripePurchase extends PurchaseRequest {
+  targetWalletId: string;
+  internalPaymentId: string;
+  stripePriceId: string; // Specific to Stripe, consider making this generic if other gateways need similar
+  tokensToAward: number;
+  amount: number; // The actual fiat amount for this transaction
+  currency: string; // The actual fiat currency for this transaction
+}
+
+/**
+ * Represents the processed and enriched context passed from the orchestrating Edge Function
+ * to a specific payment gateway adapter.
+ */
+export interface PaymentOrchestrationContext {
+  // Information from the original PurchaseRequest, still relevant to the adapter
+  userId: string;
+  organizationId?: string | null;
+  itemId: string;           // Crucial: The adapter uses this to find its specific price/plan ID
+  quantity: number;
+  paymentGatewayId: string; // For context, as the factory selected the adapter based on this
+  metadata?: Record<string, unknown>; // Original metadata from PurchaseRequest
+
+  // Information resolved by the initiate-payment Edge Function (our system's view of the transaction)
+  internalPaymentId: string; // Our DB record's ID for this payment attempt
+  targetWalletId: string;    // The wallet to be credited
+  tokensToAward: number;     // How many tokens this item yields, as determined by our system
+  amountForGateway: number;  // The monetary amount the gateway should process, as determined by our system
+  currencyForGateway: string;// The currency the gateway should use, as determined by our system
+}
+
+/**
  * Represents the result of initiating a payment attempt with a gateway.
  */
 export interface PaymentInitiationResult {
@@ -61,7 +95,7 @@ export interface IPaymentGatewayAdapter {
    * @param request - The details of the purchase.
    * @returns A promise that resolves to a PaymentInitiationResult.
    */
-  initiatePayment(request: PurchaseRequest): Promise<PaymentInitiationResult>;
+  initiatePayment(context: PaymentOrchestrationContext): Promise<PaymentInitiationResult>;
 
   /**
    * Handles incoming webhook events from the payment gateway.

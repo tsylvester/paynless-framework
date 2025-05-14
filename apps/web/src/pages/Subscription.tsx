@@ -64,7 +64,7 @@ export function SubscriptionPage() {
   
   const handleCancelSubscription = async () => {
     if (!user) return;
-    const subscriptionId = userSubscription?.stripeSubscriptionId;
+    const subscriptionId = userSubscription?.stripe_subscription_id;
     
     if (!subscriptionId) {
         logger.error('Cannot cancel/downgrade: Missing subscription ID.');
