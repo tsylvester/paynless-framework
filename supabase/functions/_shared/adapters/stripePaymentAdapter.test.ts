@@ -352,6 +352,70 @@ Deno.test('StripePaymentAdapter: initiatePayment', async (t) => {
     teardownMocks();
   });
 
+  await t.step('initiatePayment - error: Stripe paymentIntents.retrieve fails', async () => {
+    const basePurchaseRequest: PurchaseRequest = {
+      userId: 'user-pi-retrieve-error',
+      itemId: 'item-causes-pi-retrieve-error',
+      quantity: 1,
+      currency: 'USD',
+      paymentGatewayId: 'stripe',
+    };
+    const context: PaymentOrchestrationContext = {
+        ...basePurchaseRequest,
+        internalPaymentId: 'ptxn_pi_retrieve_fail_002',
+        targetWalletId: 'wallet_irrelevant_for_pi_error',
+        tokensToAward: 600,
+        amountForGateway: 30.00,
+        currencyForGateway: 'USD',
+    };
+
+    const planData = { 
+        stripe_price_id: 'price_causes_pi_error', 
+        plan_type: 'one_time_purchase', 
+    };
+    const stripeSessionData = { 
+      id: 'cs_test_pi_retrieve_error', 
+      url: 'https://stripe.com/pay/pi_retrieve_error', 
+      payment_intent: 'pi_to_fail_retrieve',
+      object: 'checkout.session',
+      status: 'open',
+      livemode: false,
+      lastResponse: { headers: {}, requestId: 'req_pi_retrieve_error', statusCode: 200 }
+    } as Stripe.Response<Stripe.Checkout.Session>;
+
+    const retrieveError = new Stripe.errors.StripeAPIError({ message: 'Simulated Stripe PaymentIntent retrieve error', type: 'api_error' });
+
+    const supabaseConfig: MockSupabaseDataConfig = {
+      genericMockResults: {
+        'subscription_plans': {
+          select: async (state) => {
+            if (state.filters.some(f => f.column === 'item_id_internal' && f.value === context.itemId)) {
+                return { data: [planData], error: null, count: 1, status: 200, statusText: 'OK' };
+            }
+            return { data: [], error: new Error('Mock: Plan not found in PI retrieve error test'), count: 0, status: 404, statusText: 'Not Found' };
+          }
+        },
+      }
+    };
+    setupMocksAndAdapter(supabaseConfig);
+
+    if (mockStripe.stubs.checkoutSessionsCreate?.restore) mockStripe.stubs.checkoutSessionsCreate.restore();
+    mockStripe.stubs.checkoutSessionsCreate = stub(mockStripe.instance.checkout.sessions, "create", () => Promise.resolve(stripeSessionData));
+
+    if (mockStripe.stubs.paymentIntentsRetrieve?.restore) mockStripe.stubs.paymentIntentsRetrieve.restore();
+    mockStripe.stubs.paymentIntentsRetrieve = stub(mockStripe.instance.paymentIntents, "retrieve", () => Promise.reject(retrieveError));
+
+    const result = await adapter.initiatePayment(context);
+
+    assert(!result.success, 'Payment initiation should fail when PaymentIntent retrieve fails');
+    assertEquals(result.error, retrieveError.message, "Error message should match the rejected PaymentIntent retrieve error");
+    
+    assertSpyCalls(mockStripe.stubs.checkoutSessionsCreate, 1);
+    assertSpyCalls(mockStripe.stubs.paymentIntentsRetrieve, 1);
+
+    teardownMocks();
+  });
+
   await t.step('initiatePayment - happy path: subscription successfully initiates payment', async () => {
     const basePurchaseRequest: PurchaseRequest = {
       userId: 'user-happy-path-sub',
@@ -787,7 +851,7 @@ Deno.test('StripePaymentAdapter: handleWebhook', async (t) => {
             return { data: [], error: new Error('Mock: Payment txn not found'), count: 0, status: 404, statusText: 'Not Found' };
           },
           update: async (state) => { // Should be called to update status to COMPLETED
-            const updateData = state.updateData as { status?: string, gateway_transaction_id?: string }; // Type assertion
+            const updateData = state.updateData as { status?: string, gateway_transaction_id?: string }; // Type assertion for updateData
             if (state.filters.some(f => f.column === 'id' && f.value === internalPaymentId) && updateData?.status === 'COMPLETED') {
               return { data: [{ ...initialPaymentTxnData, status: 'COMPLETED', gateway_transaction_id: stripeSessionId }], error: null, count: 1, status: 200, statusText: 'OK' };
             }
@@ -1016,6 +1080,326 @@ Deno.test('StripePaymentAdapter: handleWebhook', async (t) => {
     assertEquals(result.error, `Payment transaction ${MOCK_EXPIRED_PAYMENT_TX_ID} marked as EXPIRED.`);
 
     assertEquals(mockTokenWalletService.stubs.recordTransaction.calls.length, 0, 'TokenWalletService.recordTransaction should NOT be called for an expired session');
+
+    teardownWebhookMocks();
+  });
+
+  await t.step('handleWebhook - error: Stripe signature verification fails', async () => {
+    setupMocksAndAdapterForWebhook(); // Basic setup
+
+    const signatureError = new Stripe.errors.StripeSignatureVerificationError(
+      { 
+        message: 'Unable to extract timestamp and signatures from header',
+        type: 'invalid_request_error' // Added required 'type' property
+      }
+    );
+
+    if (mockStripe.stubs.webhooksConstructEvent?.restore) mockStripe.stubs.webhooksConstructEvent.restore();
+    mockStripe.stubs.webhooksConstructEvent = stub(mockStripe.instance.webhooks, "constructEvent", () => {
+      throw signatureError;
+    });
+
+    const rawBodyString = JSON.stringify({ type: 'checkout.session.completed', data: {} }); // Minimal valid JSON
+    const dummySignature = 'sig_invalid_or_missing';
+
+    const result = await adapter.handleWebhook(rawBodyString, dummySignature);
+
+    assert(!result.success, 'Webhook handling should fail if signature verification fails.');
+    // assertEquals(result.error, signatureError.message, 'Error message should match the StripeSignatureVerificationError.');
+    assertEquals(result.error, 'Webhook signature verification failed.', 'Error message should match the adapter output.');
+    assertEquals(result.transactionId, undefined, 'TransactionId should be undefined on signature failure.');
+    assertEquals(result.tokensAwarded, undefined, 'TokensAwarded should be undefined on signature failure.');
+
+    // Ensure no DB or token service calls were made
+    const paymentTxSpies = (mockSupabaseSetup.spies as any).getHistoricQueryBuilderSpies('payment_transactions', 'select');
+    assertEquals(paymentTxSpies?.callCount || 0, 0, "Supabase select for payment_transactions should not be called if signature fails.");
+    assertEquals(mockTokenWalletService.stubs.recordTransaction.calls.length, 0, "TokenWalletService.recordTransaction should not be called if signature fails.");
+
+    teardownWebhookMocks();
+  });
+
+  await t.step('handleWebhook - checkout.session.completed - idempotency: payment transaction already completed', async () => {
+    const internalPaymentId = 'ptxn_webhook_idempotency_completed_777';
+    const stripeSessionId = 'cs_webhook_idempotency_completed_888';
+    const userId = 'user-webhook-idempotency';
+    const walletId = 'wallet-for-user-webhook-idempotency';
+    const tokensToAward = 300;
+
+    const mockStripeSession: Partial<Stripe.Checkout.Session> = {
+      id: stripeSessionId,
+      object: 'checkout.session',
+      status: 'complete',
+      payment_status: 'paid',
+      client_reference_id: userId,
+      metadata: { internal_payment_id: internalPaymentId, user_id: userId },
+    };
+    const mockStripeEvent: Stripe.Event = {
+      id: 'evt_webhook_idempotency_completed_999',
+      object: 'event',
+      type: 'checkout.session.completed',
+      api_version: '2020-08-27',
+      created: Math.floor(Date.now() / 1000),
+      data: { object: mockStripeSession as Stripe.Checkout.Session },
+      livemode: false,
+      pending_webhooks: 0,
+      request: { id: 'req_webhook_idempotency', idempotency_key: null },
+    };
+
+    // Key for this test: payment_transactions record is already COMPLETED
+    const alreadyCompletedPaymentTxnData = {
+      id: internalPaymentId,
+      user_id: userId,
+      target_wallet_id: walletId,
+      tokens_to_award: tokensToAward,
+      status: 'COMPLETED', // Already completed
+      gateway_transaction_id: stripeSessionId, // Already set
+    };
+
+    const supabaseConfig: MockSupabaseDataConfig = {
+      genericMockResults: {
+        'payment_transactions': {
+          select: async (state) => {
+            if (state.filters.some(f => f.column === 'id' && f.value === internalPaymentId)) {
+              return { data: [alreadyCompletedPaymentTxnData], error: null, count: 1, status: 200, statusText: 'OK' };
+            }
+            return { data: [], error: new Error('Mock: Payment txn not found for idempotency test'), count: 0, status: 404, statusText: 'Not Found' };
+          },
+          // update should NOT be called in this scenario
+        }
+      }
+    };
+    setupMocksAndAdapterForWebhook(supabaseConfig);
+
+    if (mockStripe.stubs.webhooksConstructEvent?.restore) mockStripe.stubs.webhooksConstructEvent.restore();
+    mockStripe.stubs.webhooksConstructEvent = stub(mockStripe.instance.webhooks, "constructEvent", () => mockStripeEvent);
+
+    // Ensure TokenWalletService.recordTransaction is NOT called
+    if (mockTokenWalletService.stubs.recordTransaction?.restore) mockTokenWalletService.stubs.recordTransaction.restore();
+    mockTokenWalletService.stubs.recordTransaction = stub(
+        mockTokenWalletService as ITokenWalletService, // Cast to ITokenWalletService
+        "recordTransaction", 
+        // Provide a signature that matches ITokenWalletService.recordTransaction
+        (params: any): Promise<any> => { // Use 'any' for params if not inspecting them
+            throw new Error("TokenWalletService.recordTransaction should not be called for already completed transaction.");
+        }
+    );
+
+    const result = await adapter.handleWebhook(JSON.stringify(mockStripeEvent), 'dummy_sig_idempotency');
+
+    assert(result.success, 'Webhook handling should be successful for already completed transaction.');
+    assertEquals(result.transactionId, internalPaymentId, 'TransactionId should match.');
+    assertEquals(result.tokensAwarded, alreadyCompletedPaymentTxnData.tokens_to_award, 'TokensAwarded should match the original award from the already completed transaction.');
+
+    assertSpyCalls(mockStripe.stubs.webhooksConstructEvent, 1);
+    
+    const selectSpies = (mockSupabaseSetup.spies as any).getHistoricQueryBuilderSpies('payment_transactions', 'select');
+    assertEquals(selectSpies?.callCount || 0, 1, "Supabase select for payment_transactions should be called once.");
+
+    // Check that update was NOT called using historic spies
+    const updateSpies = (mockSupabaseSetup.spies as any).getHistoricQueryBuilderSpies('payment_transactions', 'update');
+    assertEquals(updateSpies?.callCount || 0, 0, "Supabase update for payment_transactions should NOT be called.");
+    
+    assertEquals(mockTokenWalletService.stubs.recordTransaction.calls.length, 0, "TokenWalletService.recordTransaction should NOT be called.");
+
+    teardownWebhookMocks();
+  });
+
+  await t.step('handleWebhook - error: internal_payment_id missing in webhook metadata', async () => {
+    setupMocksAndAdapterForWebhook();
+
+    const mockStripeSessionMissingMeta: Partial<Stripe.Checkout.Session> = {
+      id: 'cs_webhook_missing_meta_111',
+      object: 'checkout.session',
+      status: 'complete',
+      payment_status: 'paid',
+      client_reference_id: 'user-webhook-missing-meta',
+      metadata: { user_id: 'user-webhook-missing-meta' }, // internal_payment_id is deliberately missing
+    };
+    const mockStripeEvent: Stripe.Event = {
+      id: 'evt_webhook_missing_meta_222',
+      object: 'event',
+      type: 'checkout.session.completed',
+      api_version: '2020-08-27',
+      created: Math.floor(Date.now() / 1000),
+      data: { object: mockStripeSessionMissingMeta as Stripe.Checkout.Session },
+      livemode: false,
+      pending_webhooks: 0,
+      request: { id: 'req_webhook_missing_meta', idempotency_key: null },
+    };
+
+    if (mockStripe.stubs.webhooksConstructEvent?.restore) mockStripe.stubs.webhooksConstructEvent.restore();
+    mockStripe.stubs.webhooksConstructEvent = stub(mockStripe.instance.webhooks, "constructEvent", () => mockStripeEvent);
+
+    const result = await adapter.handleWebhook(JSON.stringify(mockStripeEvent), 'dummy_sig_missing_meta');
+
+    assert(!result.success, 'Webhook handling should fail if internal_payment_id is missing.');
+    assertEquals(result.error, 'Internal payment ID missing from webhook.', 'Error message should match adapter output for missing internal_payment_id.');
+    assertEquals(result.transactionId, undefined, 'TransactionId should be undefined.');
+    assertEquals(result.tokensAwarded, undefined, 'TokensAwarded should be undefined.');
+
+    // Ensure no DB or token service calls were made
+    const selectSpies = (mockSupabaseSetup.spies as any).getHistoricQueryBuilderSpies('payment_transactions', 'select');
+    assertEquals(selectSpies?.callCount || 0, 0, "Supabase select for payment_transactions should not be called.");
+    const updateSpies = (mockSupabaseSetup.spies as any).getHistoricQueryBuilderSpies('payment_transactions', 'update');
+    assertEquals(updateSpies?.callCount || 0, 0, "Supabase update for payment_transactions should not be called.");
+    assertEquals(mockTokenWalletService.stubs.recordTransaction.calls.length, 0, "TokenWalletService.recordTransaction should not be called.");
+
+    teardownWebhookMocks();
+  });
+
+  await t.step('handleWebhook - error: payment_transactions record not found for internal_payment_id', async () => {
+    const internalPaymentIdUnknown = 'ptxn_webhook_unknown_id_404';
+    const mockStripeSession: Partial<Stripe.Checkout.Session> = {
+      id: 'cs_webhook_unknown_id_505',
+      object: 'checkout.session',
+      status: 'complete',
+      payment_status: 'paid',
+      client_reference_id: 'user-webhook-unknown-id',
+      metadata: { internal_payment_id: internalPaymentIdUnknown, user_id: 'user-webhook-unknown-id' },
+    };
+    const mockStripeEvent: Stripe.Event = {
+      id: 'evt_webhook_unknown_id_606',
+      object: 'event',
+      type: 'checkout.session.completed',
+      api_version: '2020-08-27',
+      created: Math.floor(Date.now() / 1000),
+      data: { object: mockStripeSession as Stripe.Checkout.Session },
+      livemode: false,
+      pending_webhooks: 0,
+      request: { id: 'req_webhook_unknown_id', idempotency_key: null },
+    };
+
+    const supabaseConfig: MockSupabaseDataConfig = {
+      genericMockResults: {
+        'payment_transactions': {
+          select: async (state) => {
+            if (state.filters.some(f => f.column === 'id' && f.value === internalPaymentIdUnknown)) {
+              // Simulate not found
+              return { data: [], error: { name: 'PGRST116', message: 'No rows found', code: 'PGRST116' } as any, count: 0, status: 406, statusText: 'Not Acceptable' }; 
+            }
+            return { data: [], error: new Error('Mock: Unexpected select query in payment_transactions not found test'), count: 0, status: 500, statusText: 'Error' };
+          },
+        }
+      }
+    };
+    setupMocksAndAdapterForWebhook(supabaseConfig);
+
+    if (mockStripe.stubs.webhooksConstructEvent?.restore) mockStripe.stubs.webhooksConstructEvent.restore();
+    mockStripe.stubs.webhooksConstructEvent = stub(mockStripe.instance.webhooks, "constructEvent", () => mockStripeEvent);
+
+    const result = await adapter.handleWebhook(JSON.stringify(mockStripeEvent), 'dummy_sig_unknown_id');
+
+    assert(!result.success, 'Webhook handling should fail if payment_transactions record is not found.');
+    // assertEquals(result.error, `Payment transaction not found or in unexpected state for ID: ${internalPaymentIdUnknown}. Error: No rows found`, 'Error message incorrect for not found txn.');
+    assertEquals(result.error, 'Payment record not found.', 'Error message should match adapter output.');
+    assertEquals(result.transactionId, internalPaymentIdUnknown, 'TransactionId should be the one from webhook.');
+
+    assertSpyCalls(mockStripe.stubs.webhooksConstructEvent, 1);
+    const selectSpies = (mockSupabaseSetup.spies as any).getHistoricQueryBuilderSpies('payment_transactions', 'select');
+    assertEquals(selectSpies?.callCount || 0, 1, "Supabase select for payment_transactions should be called once.");
+    
+    const updateSpies = (mockSupabaseSetup.spies as any).getHistoricQueryBuilderSpies('payment_transactions', 'update');
+    assertEquals(updateSpies?.callCount || 0, 0, "Supabase update for payment_transactions should NOT be called.");
+    assertEquals(mockTokenWalletService.stubs.recordTransaction.calls.length, 0, "TokenWalletService.recordTransaction should NOT be called.");
+
+    teardownWebhookMocks();
+  });
+
+  await t.step('handleWebhook - checkout.session.completed - error: TokenWalletService.recordTransaction fails', async () => {
+    const internalPaymentId = 'ptxn_webhook_token_award_fail_123';
+    const stripeSessionId = 'cs_webhook_token_award_fail_456';
+    const userId = 'user-webhook-token-award-fail';
+    const walletId = 'wallet-for-token-award-fail';
+    const tokensToAward = 1000;
+
+    const mockPendingTransaction = {
+      id: internalPaymentId,
+      user_id: userId,
+      target_wallet_id: walletId,
+      tokens_to_award: tokensToAward,
+      status: 'PENDING', 
+      gateway_transaction_id: null, // Not yet set
+    };
+
+    const mockStripeSession: Partial<Stripe.Checkout.Session> = {
+      id: stripeSessionId,
+      object: 'checkout.session',
+      status: 'complete',
+      payment_status: 'paid',
+      client_reference_id: userId,
+      metadata: { internal_payment_id: internalPaymentId, user_id: userId },
+    };
+    const mockStripeEvent: Stripe.Event = {
+      id: 'evt_webhook_token_award_fail_789',
+      object: 'event',
+      type: 'checkout.session.completed',
+      api_version: '2020-08-27',
+      created: Math.floor(Date.now() / 1000),
+      data: { object: mockStripeSession as Stripe.Checkout.Session },
+      livemode: false,
+      pending_webhooks: 0,
+      request: { id: 'req_webhook_token_award_fail', idempotency_key: null },
+    };
+
+    const tokenWalletError = new Error('Simulated TokenWalletService.recordTransaction failure');
+
+    const supabaseConfig: MockSupabaseDataConfig = {
+      genericMockResults: {
+        'payment_transactions': {
+          select: async (state) => {
+            if (state.filters.some(f => f.column === 'id' && f.value === internalPaymentId)) {
+              return { data: [mockPendingTransaction], error: null, count: 1, status: 200, statusText: 'OK' };
+            }
+            return { data: [], error: new Error('Mock: Payment txn not found in token award fail test'), count: 0, status: 404, statusText: 'Not Found' };
+          },
+          update: async (state) => { 
+            const updateData = state.updateData as { status?: string; gateway_transaction_id?: string };
+            if (
+              state.filters.some(f => f.column === 'id' && f.value === internalPaymentId) &&
+              updateData?.status === 'COMPLETED' && // First update to COMPLETED
+              updateData?.gateway_transaction_id === stripeSessionId
+            ) {
+              return { data: [{ ...mockPendingTransaction, status: 'COMPLETED', gateway_transaction_id: stripeSessionId }], error: null, count: 1, status: 200, statusText: 'OK' };
+            } else if (
+              state.filters.some(f => f.column === 'id' && f.value === internalPaymentId) &&
+              updateData?.status === 'TOKEN_AWARD_FAILED' // Second update to TOKEN_AWARD_FAILED
+            ) {
+              return { data: [{ ...mockPendingTransaction, status: 'TOKEN_AWARD_FAILED', gateway_transaction_id: stripeSessionId }], error: null, count: 1, status: 200, statusText: 'OK' };
+            }
+            return { data: null, error: new Error('Mock DB update unexpected condition in token award fail test'), count: 0, status: 500, statusText: 'Mock Error' };
+          }
+        }
+      }
+    };
+    setupMocksAndAdapterForWebhook(supabaseConfig);
+
+    if (mockStripe.stubs.webhooksConstructEvent?.restore) mockStripe.stubs.webhooksConstructEvent.restore();
+    mockStripe.stubs.webhooksConstructEvent = stub(mockStripe.instance.webhooks, "constructEvent", () => mockStripeEvent);
+
+    if (mockTokenWalletService.stubs.recordTransaction?.restore) mockTokenWalletService.stubs.recordTransaction.restore();
+    // Cast to ITokenWalletService for the stub call to satisfy 'this' typing for the interface method
+    mockTokenWalletService.stubs.recordTransaction = stub(
+        mockTokenWalletService as ITokenWalletService, 
+        "recordTransaction", 
+        () => Promise.reject(tokenWalletError)
+    );
+
+    const result = await adapter.handleWebhook(JSON.stringify(mockStripeEvent), 'dummy_sig_token_award_fail');
+
+    assert(!result.success, 'Webhook handling should fail if TokenWalletService.recordTransaction fails.');
+    // assertEquals(result.error, `Failed to award tokens for transaction ${internalPaymentId}. Reason: ${tokenWalletError.message}`, 'Error message incorrect for token award failure.');
+    assertEquals(result.error, 'Token award failed after payment.', 'Error message should match adapter output.');
+    assertEquals(result.transactionId, internalPaymentId, 'TransactionId should match.');
+    assertEquals(result.tokensAwarded, 0, 'TokensAwarded should be 0 on failure.'); // Or undefined
+
+    assertSpyCalls(mockStripe.stubs.webhooksConstructEvent, 1);
+    const selectSpies = (mockSupabaseSetup.spies as any).getHistoricQueryBuilderSpies('payment_transactions', 'select');
+    assertEquals(selectSpies?.callCount || 0, 1, "Supabase select for payment_transactions should be called once.");
+    
+    const updateSpies = (mockSupabaseSetup.spies as any).getHistoricQueryBuilderSpies('payment_transactions', 'update');
+    assertEquals(updateSpies?.callCount || 0, 2, "Supabase update for payment_transactions should be called twice (COMPLETED then TOKEN_AWARD_FAILED).");
+
+    assertSpyCalls(mockTokenWalletService.stubs.recordTransaction, 1);
 
     teardownWebhookMocks();
   });

@@ -66,7 +66,8 @@ export interface PaymentInitiationResult {
  */
 export interface PaymentConfirmation {
   success: boolean;
-  transactionId: string; // Our internal payment_transactions.id
+  transactionId: string | undefined; // Allow undefined for cases like signature failure before ID is known
+  paymentGatewayTransactionId?: string;
   tokensAwarded?: number;
   error?: string;
 }

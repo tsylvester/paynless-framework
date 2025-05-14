@@ -260,16 +260,16 @@ The implementation plan uses the following labels to categorize work steps:
         *   Cover success and failure scenarios for both `initiatePayment` (with its refactored, simpler signature and responsibilities) and `handleWebhook`, including idempotency.
 *   [✅] **4.1.2.2: [COMMIT]** "feat(BE): Implement StripePaymentAdapter, abstracting Stripe logic, with tests"
 
-*   [🚧] **4.1.2.A: [BE] [REFACTOR] Refine `StripePaymentAdapter` for Dynamic Checkout Mode and Correct Data Sourcing**
+*   [✅] **4.1.2.A: [BE] [REFACTOR] Refine `StripePaymentAdapter` for Dynamic Checkout Mode and Correct Data Sourcing**
     *   **Goal:** Ensure the `StripePaymentAdapter` correctly handles different product types (one-time vs. subscription) by dynamically setting the Stripe Checkout mode and properly sourcing Stripe-specific identifiers. This corrects oversights in the initial implementation (4.1.2.1).
     *   **`initiatePayment(context: PaymentOrchestrationContext)` Method Refinements:**
-        *   **4.1.2.A.1: [BE] Gateway-Specific Item Interpretation (Adapter Responsibility):**
+        *   [✅] **4.1.2.A.1: [BE] Gateway-Specific Item Interpretation (Adapter Responsibility):**
             *   Adapter receives the generic `PaymentOrchestrationContext` (containing `itemId`, `quantity`, `internalPaymentId`, `userId`, `amountForGateway`, `currencyForGateway`, etc.).
             *   Adapter uses `context.itemId` to query the `subscription_plans` table (using its own admin Supabase client) to fetch Stripe-specific details:
                 *   `stripe_price_id`
                 *   `plan_type`
             *   If `stripe_price_id` or necessary `plan_type` is not found for the `itemId`, return an appropriate error in `PaymentInitiationResult`.
-        *   **4.1.2.A.2: [BE] Dynamic Stripe Session Creation:**
+        *   [✅] **4.1.2.A.2: [BE] Dynamic Stripe Session Creation:**
             *   Construct `Stripe.Checkout.SessionCreateParams`.
             *   Set `mode` dynamically based on the `plan_type` fetched from `subscription_plans` (e.g., map 'one_time' to 'payment', 'recurring' to 'subscription').
             *   Use the fetched `stripe_price_id` for `line_items`.
@@ -277,26 +277,26 @@ The implementation plan uses the following labels to categorize work steps:
             *   Use `context.internalPaymentId` for Stripe's `metadata.internal_payment_id`.
             *   Use `context.userId` for `client_reference_id`.
             *   Populate `success_url` and `cancel_url`.
-        *   **4.1.2.A.3: [BE] Return `PaymentInitiationResult`:** (As before)
-    *   **4.1.2.A.4: [TEST-UNIT] Update/Add Unit Tests for `StripePaymentAdapter` Refinements**
+        *   [✅] **4.1.2.A.3: [BE] Return `PaymentInitiationResult`:** (As before)
+    *   [✅] **4.1.2.A.4: [TEST-UNIT] Update/Add Unit Tests for `StripePaymentAdapter` Refinements**
         *   Verify the adapter correctly queries `subscription_plans` for `stripe_price_id` and `plan_type`.
         *   Verify dynamic `mode` setting based on `plan_type`.
         *   Cover scenarios for both 'payment' and 'subscription' modes.
-    *   **4.1.2.A.5: [COMMIT]** "refactor(BE): Refine StripePaymentAdapter for dynamic mode and correct data sourcing"
+    *   [✅] **4.1.2.A.5: [COMMIT]** "refactor(BE): Refine StripePaymentAdapter for dynamic mode and correct data sourcing"
 
 ### 4.1.3: [BE] Payment Initiation & Webhook Endpoints (Refactored)
-*   [🚧] **4.1.3.1: [BE] Refactor/Create Central `POST /initiate-payment` Edge Function**
+*   [✅] **4.1.3.1: [BE] Refactor/Create Central `POST /initiate-payment` Edge Function**
     *   **Path:** `supabase/functions/initiate-payment/index.ts`
     *   **Functionality (Orchestrator Role - Ensure this reflects generic behavior):**
-        *   [ ] **4.1.3.1.1: [BE] Authentication & Request Handling:** (As before)
-        *   [ ] **4.1.3.1.1a: [BE] Generic Item Details Extraction:** From `PurchaseRequest.itemId`, orchestrator determines generic item details like `tokens_to_award`, monetary value (`amountForGateway`), and `currencyForGateway` by querying `subscription_plans`. **The orchestrator does NOT fetch or pass adapter-specific fields like `stripe_price_id` or `plan_type` into the generic context.**
-        *   [ ] **4.1.3.1.1b: [BE] Target Wallet Identification:** (As before)
-        *   [ ] **4.1.3.1.1c: [BE] Create `payment_transactions` Record:** (As before, using generic data)
-        *   [ ] **4.1.3.1.2: [BE] Adapter Factory/Selection:** (As before)
-        *   [ ] **4.1.3.1.3: [BE] Adapter Instantiation:** (As before)
-        *   [ ] **4.1.3.1.4: [BE] Call Adapter:** Call `adapter.initiatePayment(paymentOrchestrationContext)`. The `paymentOrchestrationContext` is **generic** and includes `itemId`, `quantity`, `userId`, `metadata`, `internalPaymentId`, `target_wallet_id`, `tokens_to_award`, `amountForGateway`, `currencyForGateway`. The adapter uses this generic `itemId` to resolve its own specific needs (like Stripe Price ID or mode).
-        *   [ ] **4.1.3.1.5: [BE] Return Response:** (As before)
-    *   [ ] **4.1.3.1.6: [TEST-INT] Write/Update Integration Tests for `/initiate-payment`**.
+        *   [✅] **4.1.3.1.1: [BE] Authentication & Request Handling:** (As before)
+        *   [✅] **4.1.3.1.1a: [BE] Generic Item Details Extraction:** From `PurchaseRequest.itemId`, orchestrator determines generic item details like `tokens_to_award`, monetary value (`amountForGateway`), and `currencyForGateway` by querying `subscription_plans`. **The orchestrator does NOT fetch or pass adapter-specific fields like `stripe_price_id` or `plan_type` into the generic context.**
+        *   [✅] **4.1.3.1.1b: [BE] Target Wallet Identification:** (As before)
+        *   [✅] **4.1.3.1.1c: [BE] Create `payment_transactions` Record:** (As before, using generic data)
+        *   [✅] **4.1.3.1.2: [BE] Adapter Factory/Selection:** (As before)
+        *   [✅] **4.1.3.1.3: [BE] Adapter Instantiation:** (As before)
+        *   [✅] **4.1.3.1.4: [BE] Call Adapter:** Call `adapter.initiatePayment(paymentOrchestrationContext)`. The `paymentOrchestrationContext` is **generic** and includes `itemId`, `quantity`, `userId`, `metadata`, `internalPaymentId`, `target_wallet_id`, `tokens_to_award`, `amountForGateway`, `currencyForGateway`. The adapter uses this generic `itemId` to resolve its own specific needs (like Stripe Price ID or mode).
+        *   [✅] **4.1.3.1.5: [BE] Return Response:** (As before)
+    *   [✅] **4.1.3.1.6: [TEST-INT] Write/Update Integration Tests for `/initiate-payment`**.
         *   Ensure tests verify the orchestration logic passes a purely **generic** `PaymentOrchestrationContext` to the adapter.
 *   [🚧] **4.1.3.2: [BE] Refactor `POST /webhooks/stripe` Edge Function**
     *   **Path:** `supabase/functions/webhooks-stripe/index.ts`

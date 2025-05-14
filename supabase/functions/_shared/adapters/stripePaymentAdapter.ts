@@ -145,7 +145,7 @@ export class StripePaymentAdapter implements IPaymentGatewayAdapter {
     // console.log('[StripePaymentAdapter] handleWebhook called');
     if (!signature) {
       console.warn('[StripePaymentAdapter] Webhook signature missing.');
-      return { success: false, transactionId: '', error: 'Webhook signature missing.' };
+      return { success: false, transactionId: undefined, error: 'Webhook signature missing.' };
     }
     
     let event: Stripe.Event;
@@ -155,7 +155,7 @@ export class StripePaymentAdapter implements IPaymentGatewayAdapter {
       event = this.stripe.webhooks.constructEvent(bodyToUse, signature, this.stripeWebhookSecret);
     } catch (err) {
       console.error(`[StripePaymentAdapter] Webhook signature verification failed: ${(err instanceof Error ? err.message : String(err))}`);
-      return { success: false, transactionId: '', error: 'Webhook signature verification failed.' };
+      return { success: false, transactionId: undefined, error: 'Webhook signature verification failed.' };
     }
 
     // console.log('[StripePaymentAdapter] Webhook event received:', event.type);
@@ -168,7 +168,7 @@ export class StripePaymentAdapter implements IPaymentGatewayAdapter {
 
       if (!internalPaymentId) {
         console.error('[StripePaymentAdapter] internal_payment_id missing from webhook metadata:', session);
-        return { success: false, transactionId: '', error: 'Internal payment ID missing from webhook.' };
+        return { success: false, transactionId: undefined, error: 'Internal payment ID missing from webhook.' };
       }
 
       try {
@@ -203,43 +203,55 @@ export class StripePaymentAdapter implements IPaymentGatewayAdapter {
           .eq('id', internalPaymentId);
 
         if (updateError) {
-          console.error(`[StripePaymentAdapter] Error updating payment transaction ${internalPaymentId} to COMPLETED:`, updateError);
-          return { success: false, transactionId: internalPaymentId, error: 'Failed to update payment status.' };
+          console.error(`[StripePaymentAdapter] Failed to update payment transaction ${internalPaymentId} to COMPLETED.`, updateError);
+          return { success: false, transactionId: internalPaymentId, error: 'Failed to update payment status after confirmation.' };
         }
 
-        // 3. Call TokenWalletService.recordTransaction to credit tokens.
-        const recordedByUserId = paymentTx.user_id;
-        if (!recordedByUserId) {
-            console.error(`[StripePaymentAdapter] Missing user_id on payment transaction ${internalPaymentId} for token awarding.`);
-            return { success: false, transactionId: internalPaymentId, error: 'Cannot award tokens, user context missing.' };
-        }
-
-        try {
-          const transactionResult = await this.tokenWalletService.recordTransaction({
-            walletId: paymentTx.target_wallet_id,
-            type: 'CREDIT_PURCHASE',
-            amount: paymentTx.tokens_to_award.toString(),
-            recordedByUserId: recordedByUserId,
-            relatedEntityId: internalPaymentId,
-            relatedEntityType: 'payment_transaction',
-            notes: `Tokens awarded from Stripe payment ${gatewayTransactionId}`,
-          });
-
-          if (!transactionResult || !transactionResult.transactionId) { // Check based on your service's success indication
-            console.error(`[StripePaymentAdapter] Failed to record token transaction (returned failure) for payment ${internalPaymentId}.`);
-            await this.adminClient.from('payment_transactions').update({ status: 'TOKEN_AWARD_FAILED' }).eq('id', internalPaymentId);
-            return { success: false, transactionId: internalPaymentId, error: 'Token award failed after payment.' };
-          }
-        } catch (tokenAwardError) {
-          console.error(`[StripePaymentAdapter] Exception during token awarding for payment ${internalPaymentId}:`, tokenAwardError);
+        // Validate required fields for token awarding
+        if (!paymentTx.target_wallet_id) {
+          console.error(`[StripePaymentAdapter] target_wallet_id is missing for transaction ${internalPaymentId}. Cannot award tokens.`);
+          // Optionally, update status to TOKEN_AWARD_FAILED
           await this.adminClient.from('payment_transactions').update({ status: 'TOKEN_AWARD_FAILED' }).eq('id', internalPaymentId);
-          return { success: false, transactionId: internalPaymentId, error: 'Token award failed after payment.' };
+          return { success: false, transactionId: internalPaymentId, error: 'Token award failed: target wallet ID missing.', tokensAwarded: 0 };
+        }
+        if (!paymentTx.user_id) {
+          console.error(`[StripePaymentAdapter] user_id is missing for transaction ${internalPaymentId}. Cannot award tokens.`);
+          await this.adminClient.from('payment_transactions').update({ status: 'TOKEN_AWARD_FAILED' }).eq('id', internalPaymentId);
+          return { success: false, transactionId: internalPaymentId, error: 'Token award failed: user ID missing.', tokensAwarded: 0 };
+        }
+        if (paymentTx.tokens_to_award == null || paymentTx.tokens_to_award <= 0) {
+            console.warn(`[StripePaymentAdapter] No tokens to award or invalid amount for ${internalPaymentId}: ${paymentTx.tokens_to_award}. Skipping token award.`);
+            // Still return success for the payment itself if it was completed.
+            return { success: true, transactionId: internalPaymentId, tokensAwarded: 0 }; 
+        }
+
+        // 3. Award tokens via TokenWalletService.
+        try {
+          await this.tokenWalletService.recordTransaction({
+            walletId: paymentTx.target_wallet_id, // Now checked for null
+            type: 'CREDIT_PURCHASE',
+            amount: paymentTx.tokens_to_award.toString(), 
+            recordedByUserId: paymentTx.user_id, // Now checked for null
+            relatedEntityId: internalPaymentId,
+            relatedEntityType: 'payment_transactions',
+            notes: `Tokens for Stripe payment ${gatewayTransactionId}`,
+          });
+          // console.log(`[StripePaymentAdapter] Tokens successfully awarded for payment ${internalPaymentId}.`);
+        } catch (tokenError) {
+          console.error(`[StripePaymentAdapter] Exception during token awarding for payment ${internalPaymentId}:`, tokenError);
+          // If token awarding fails, update payment_transactions status to TOKEN_AWARD_FAILED
+          await this.adminClient
+            .from('payment_transactions')
+            .update({ status: 'TOKEN_AWARD_FAILED' })
+            .eq('id', internalPaymentId);
+          return { 
+            success: false, 
+            transactionId: internalPaymentId, 
+            error: 'Token award failed after payment.', 
+            tokensAwarded: 0 // Explicitly set tokensAwarded to 0 on failure
+          };
         }
         
-        // If we reach here, token awarding was successful.
-        // The original console.log for success was:
-        // console.log(`[StripePaymentAdapter] Tokens awarded for payment ${internalPaymentId}. Transaction: ${transactionResult.transactionId}`);
-        console.log(`[StripePaymentAdapter] Tokens successfully awarded for payment ${internalPaymentId}.`);
         return { success: true, transactionId: internalPaymentId, tokensAwarded: paymentTx.tokens_to_award };
 
       } catch (processingError) {
