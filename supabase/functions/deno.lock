@@ -7,6 +7,7 @@
     "jsr:@std/internal@1": "1.0.6",
     "jsr:@std/testing@*": "0.225.1",
     "jsr:@std/testing@0.225.1": "0.225.1",
+    "jsr:@std/testing@~0.225.3": "0.225.3",
     "jsr:@supabase/functions-js@*": "2.4.4",
     "jsr:@supabase/supabase-js@2": "2.49.4",
     "jsr:@supabase/supabase-js@^2.4.0": "2.49.4",
@@ -55,6 +56,9 @@
       "dependencies": [
         "jsr:@std/assert@1.0.0-rc.1"
       ]
+    },
+    "@std/testing@0.225.3": {
+      "integrity": "348c24d0479d44ab3dbb4f26170f242e19f24051b45935d4a9e7ca0ab7e37780"
     },
     "@supabase/functions-js@2.4.4": {
       "integrity": "38456509a6e22fb116b118464cbb36357256f9048d3580632b63af91f63769f7",

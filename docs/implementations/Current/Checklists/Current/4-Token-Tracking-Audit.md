@@ -323,16 +323,112 @@ The implementation plan uses the following labels to categorize work steps:
         *   [✅] **4.1.3.2.6: [REFACTOR] Refactor Router and Associated Tests.**
         *   [✅] **4.1.3.2.7: [TEST-INT] Ensure Stripe Webhook Processing via `/webhooks/stripe` Passes Tests.**
             *   Run integration tests targeting the new `/webhooks/` function with a `/stripe` path segment.
-        *   [ ] **4.1.3.2.8: [BE] [REFACTOR] [API] [UI] [TEST-UNIT] [TEST-INT] Safely Decommission Old `webhooks-stripe/index.ts` Function and Transition to Generic `/webhooks/stripe` Endpoint.**
-            *   [ ] **4.1.3.2.8.1: [BE] [ARCH] Review Existing `webhooks-stripe/index.ts`:** Analyze its current functionality, logic, and any direct integrations or assumptions it makes.
-            *   [ ] **4.1.3.2.8.2: [BE] [ARCH] Gap Analysis:** Compare the functionality of the old `webhooks-stripe/index.ts` with the new generic `/webhooks/stripe` path (handled by `webhooks/index.ts` + `StripePaymentAdapter`). Identify any functional differences, potential behavioral changes, or missing pieces in the new implementation that could impact existing consumers.
-            *   [ ] **4.1.3.2.8.3: [BE] [REFACTOR] Resolve Gaps/Bugs:** If any critical gaps or bugs are identified in the new generic webhook implementation (specifically for Stripe handling via the adapter) that would prevent existing functionality from working correctly, address these in `webhooks/index.ts` or `StripePaymentAdapter.ts` and their tests.
-            *   [ ] **4.1.3.2.8.4: [API] [UI] Identify Frontend Consumers:** Search the codebase (primarily `apps/web/` and potentially `packages/api/` or `packages/store/`) to find all locations where the old `/webhooks-stripe` endpoint is explicitly called or configured.
-            *   [ ] **4.1.3.2.8.5: [API] [UI] [REFACTOR] Transition Frontend Calls:** Update all identified frontend locations to use the new generic `/webhooks/stripe` endpoint. This might involve changes to API client methods, store actions, or direct fetch/service calls in UI components.
-            *   [ ] **4.1.3.2.8.6: [TEST-UNIT] [TEST-INT] Update Affected Tests:** Review and update any unit or integration tests in the frontend (`apps/web/`) or shared packages (`packages/api/`, `packages/store/`) that were asserting behavior related to the old `/webhooks-stripe` endpoint. Ensure they now correctly reflect calls and expected behavior with the new `/webhooks/stripe` endpoint.
-            *   [ ] **4.1.3.2.8.7: [TEST-INT] [E2E] Full Flow Verification:** After frontend changes, conduct thorough testing (integration, and ideally E2E if available) of all flows that previously relied on the Stripe webhook to ensure they function correctly with the new generic endpoint.
-            *   [ ] **4.1.3.2.8.8: [BE] [REFACTOR] Remove Old `webhooks-stripe/index.ts`:** Once all consumers are transitioned and verified, delete the `supabase/functions/webhooks-stripe/` directory and its contents (including old tests).
-        *   [ ] **4.1.3.2.9: [COMMIT]** "feat(BE|ARCH|FE): Complete generic webhook implementation and transition from old Stripe webhook"
+        *   [🚧] **4.1.3.2.8: [BE] [REFACTOR] Enhance `StripePaymentAdapter` to Handle All Critical Stripe Webhook Events (Persistent Tokens)**
+            *   **Goal:** Ensure the `StripePaymentAdapter`, when invoked by the generic `/webhooks/stripe` router, correctly processes all necessary Stripe events for payments, token awards, subscription lifecycle management, and product/price synchronization, replicating and improving upon the logic from the old `stripe-webhook` function. **All tokens awarded are persistent and do not expire.**
+            *   [🚧] **4.1.3.2.8.1: [ANALYZE] Finalize Review of `stripe-webhook/handlers/` and `stripe-webhook/services/`**
+                *   Complete review of `product.ts`, `price.ts` handlers, and associated services (`product_webhook_service.ts`, `price_webhook_service.ts`).
+                *   Consolidate all identified logic and database interactions for porting.
+            *   [✅] **4.1.3.2.8.2: [DB] [TYPES] Define and Confirm Target Supabase Table Strategy**
+                *   **`payment_transactions`:** Confirm as the primary log for all payment attempts and their outcomes (both one-time and subscription-initial). Ensure it captures sufficient detail for auditing token awards.
+                *   **`user_subscriptions`:** Confirm existence and schema. This table is critical for storing `user_id`, `stripe_customer_id`, `stripe_subscription_id`, current `status` (e.g., active, past_due, canceled), `plan_id` (FK to `subscription_plans`), `current_period_start`, `current_period_end`, `cancel_at_period_end`.
+                *   **`subscription_plans`:** Confirm as the SOLE target for product/price data synced from Stripe (via webhooks). It should store `stripe_product_id`, `stripe_price_id`, `name`, `description`, `amount`, `currency`, `interval`, `active`, `tokens_awarded` (if applicable to the plan itself), `plan_type` (one-time, subscription), `item_id_internal`.
+                *   **`users` (or `user_profiles`):** Confirm if a user `status` or `role` field needs to be updated based on subscription active/inactive status (e.g., 'free_user', 'subscriber_basic', 'subscriber_premium').
+                *   **Retire `subscription_transactions`?** Evaluate if the old `subscription_transactions` table can be retired, with its essential logging purposes absorbed by `payment_transactions` (for payments) and detailed adapter logging for other event types.
+            *   [🚧] **4.1.3.2.8.3: [BE] [REFACTOR] Implement Comprehensive `checkout.session.completed` Handling in `StripePaymentAdapter`**
+                *   **Distinguish Mode:** If `session.mode === 'payment'` (one-time purchase, e.g., token pack):
+                    *   Update `payment_transactions` status to 'COMPLETED'.
+                    *   Award tokens via `TokenWalletService`, linking to `payment_transactions.id`.
+                *   If `session.mode === 'subscription'` (new subscription): 
+                    *   Create/Update `user_subscriptions` record with details from Stripe Session and retrieved Stripe Subscription object (plan, status, period dates, Stripe IDs).
+                    *   Update user status/role in `users` or `user_profiles` table if applicable.
+                    *   Update `payment_transactions` for the initial payment.
+                    *   Award tokens associated with the subscription plan's initiation via `TokenWalletService`.
+                *   Ensure idempotency and robust error handling.
+                *   [TEST-UNIT] Add unit tests covering both one-time and subscription scenarios, including token awards and user/subscription table updates.
+            *   [🚧] **4.1.3.2.8.4: [BE] [REFACTOR] Implement Subscription Lifecycle Event Handling (`customer.subscription.updated`, `customer.subscription.deleted`) in `StripePaymentAdapter`**
+                *   `customer.subscription.updated`:
+                    *   Update the corresponding record in `user_subscriptions` (status, plan, period dates, `cancel_at_period_end`).
+                    *   Update user status/role if necessary.
+                    *   Handle plan changes (upgrades/downgrades) if applicable.
+                *   `customer.subscription.deleted` (or `status: 'canceled'` within an update event):
+                    *   Update `user_subscriptions.status` to 'canceled'.
+                    *   Update user status/role if necessary.
+                *   Ensure idempotency.
+                *   [TEST-UNIT] Add unit tests for various subscription update/deletion scenarios.
+            *   [🚧] **4.1.3.2.8.5: [BE] [REFACTOR] Implement Invoice Event Handling (`invoice.payment_succeeded`, `invoice.payment_failed`) in `StripePaymentAdapter`**
+                *   `invoice.payment_succeeded`:
+                    *   Primarily for recurring subscription payments.
+                    *   Verify `user_subscriptions` record is active and period dates align.
+                    *   Log the successful recurring payment (e.g., could be a new entry in `payment_transactions` with a type like 'RENEWAL', or update an existing one if applicable).
+                    *   **Credit the user's wallet with the full token amount defined by the renewed subscription plan using `TokenWalletService`.** (Tokens are persistent).
+                *   `invoice.payment_failed`:
+                    *   Update `user_subscriptions.status` to 'past_due' or 'unpaid'.
+                    *   Update user status/role if necessary (e.g., downgrade access).
+                *   Ensure idempotency.
+                *   [TEST-UNIT] Add unit tests for invoice payment success (including token award) and failure.
+            *   [🚧] **4.1.3.2.8.6: [BE] [REFACTOR] Implement Product & Price Synchronization (`product.*`, `price.*`) in `StripePaymentAdapter`**
+                *   `product.created`: When a `product.created` event occurs, the adapter will primarily take note of the new `stripe_product_id` and its associated details (name, description, active status). Actual entries in `subscription_plans` will be primarily driven by subsequent `price.created` events for this product. If the `product.created` event includes a default price, an initial entry in `subscription_plans` can be made.
+                *   `product.updated`: If `product.name` or `product.description` changes, update these fields in all `subscription_plans` records where `stripe_product_id` matches the event's product ID. If `product.active` status changes, update the `active` status in all corresponding `subscription_plans` records (e.g., if product becomes inactive, all its plans become inactive).
+                *   `price.created`, `price.updated`:
+                    *   Upsert into `subscription_plans` table using `price.id` as `stripe_price_id`.
+                    *   Populate/update specific price fields: `amount` (from `price.unit_amount`), `currency` (from `price.currency`), `interval` (from `price.recurring.interval` if applicable), `active` (from `price.active`), `plan_type` (from `price.type`).
+                    *   Extract `tokens_awarded` and `item_id_internal` from `price.metadata`.
+                    *   Ensure `name` and `description` for the `subscription_plans` entry are sourced from the parent Stripe Product's details (associated via `price.product` ID). This may involve fetching the Stripe Product object by its ID if its details are not fully included in the Price event payload.
+                    *   Link to the `stripe_product_id` (from `price.product`).
+                *   `product.deleted`: Mark all `subscription_plans` entries where `stripe_product_id` matches the deleted product's ID as inactive (soft delete).
+                *   `price.deleted`: Mark the specific `subscription_plans` entry where `stripe_price_id` matches the deleted price's ID as inactive (soft delete).
+                *   Ensure this logic correctly populates all fields required by `initiatePayment` and other parts of the system relying on `subscription_plans`.
+                *   [TEST-UNIT] Add unit tests for product/price create, update, and delete scenarios and their effect on `subscription_plans`.
+            *   [🚧] **4.1.3.2.8.7: [BE] [TEST-INT] Comprehensive Integration Testing for All Handled Event Types**
+                *   Expand tests for `webhooks/index.test.ts` to simulate all Stripe events now handled by `StripePaymentAdapter`.
+                *   Verify correct processing flow, database updates (all relevant tables), and token awards.
+                *   Test idempotency thoroughly for each event type.
+            *   [🚧] **4.1.3.2.8.8: [COMMIT]** "refactor(BE|TEST): Enhance StripePaymentAdapter for comprehensive webhook event handling (payments, subscriptions, products, prices, tokens)"
+    *   [🚧] **4.1.3.2.9: [BE] Decommission Old `stripe-webhook/index.ts` Function**
+        *   [🚧] **4.1.3.2.9.1: [INFRA] Update Stripe Dashboard Webhook URL** (Point to new generic `/webhooks/stripe`)
+        *   [🚧] **4.1.3.2.9.2: [MONITOR] Monitor New `/webhooks/stripe` Endpoint for all event types.**
+        *   [🚧] **4.1.3.2.9.3: [BE] Delete `supabase/functions/stripe-webhook/` Directory** (After successful porting and monitoring)
+        *   [🚧] **4.1.3.2.9.4: [DOCS] Update Internal Documentation**
+        *   [🚧] **4.1.3.2.9.5: [COMMIT]** "feat(BE|INFRA): Decommission old stripe-webhook function after porting all logic to new webhook router"
+    *   [🚧] **4.1.3.2.10: [BE] Decommission `sync-stripe-plans/index.ts` Function**
+        *   [🚧] **4.1.3.2.10.1: [ANALYZE] Confirm `sync-stripe-plans` No Longer Needed** (Ensure real-time webhook handling for products/prices is sufficient and no other process relies on the batch sync).
+        *   [🚧] **4.1.3.2.10.2: [BE] Delete `supabase/functions/sync-stripe-plans/` Directory**
+        *   [🚧] **4.1.3.2.10.3: [DOCS] Remove any documentation or scheduled triggers for `sync-stripe-plans`.**
+        *   [🚧] **4.1.3.2.10.4: [COMMIT]** "refactor(BE): Decommission sync-stripe-plans function, replaced by real-time webhook sync"
+    *   [🚧] **4.1.3.2.11: [BE] [ARCH] Implement Universal Periodic Token Allocation System**
+        *   **Goal:** Periodically grant a base number of tokens to all eligible users (e.g., free tier users, or all users as a baseline).
+        *   [ ] **4.1.3.2.11.1: [ARCH] Define Allocation Rules & Schedule**
+            *   Determine token amount, frequency (e.g., monthly, weekly), and eligibility criteria (e.g., all active users, users on a specific 'free' plan type).
+        *   [ ] **4.1.3.2.11.2: [DB] [TYPES] User Plan/Tier Tracking (If Needed)**
+            *   If allocation depends on user tier (e.g. 'free' vs 'paid'), ensure `users` or `user_subscriptions` table can identify this tier.
+        *   [ ] **4.1.3.2.11.3: [BE] Create Scheduled Edge Function (`/allocate-periodic-tokens`)**
+            *   This function will query eligible users.
+            *   For each eligible user, it will use `TokenWalletService.recordTransaction` to credit their wallet with the defined token amount.
+            *   Type could be `CREDIT_PERIODIC_ALLOCATION` or similar.
+            *   Ensure idempotency for the allocation period (e.g., a user doesn't get tokens twice for the same month if the function reruns).
+        *   [ ] **4.1.3.2.11.4: [TEST-UNIT] Unit Test the Allocation Logic**
+            *   Mock `TokenWalletService` and user data sources.
+            *   Verify correct users are selected and correct token amounts are calculated for credit.
+        *   [ ] **4.1.3.2.11.5: [INFRA] Schedule the Function (e.g., using Supabase Cron Jobs)**
+        *   [ ] **4.1.3.2.11.6: [COMMIT]** "feat(BE|ARCH): Implement universal periodic token allocation system"
+*   [✅] **4.1.3.A: [BE] [TEST-UNIT] Unit Test Payment Adapter Factory (`adapterFactory.ts`)**
+    *   [✅] **Goal:** Ensure the `getPaymentAdapter` function in `_shared/adapters/adapterFactory.ts` correctly instantiates and returns the appropriate payment gateway adapters with their necessary dependencies.
+    *   [✅] **4.1.3.A.1: [TEST-UNIT] Define Test Cases for `adapterFactory.getPaymentAdapter`**
+        *   Mock adapter constructors (e.g., `StripePaymentAdapter`).
+        *   Mock services passed to adapters (e.g., `TokenWalletService`, `createSupabaseAdminClient`).
+        *   Mock `Deno.env.get` for environment variables (e.g., webhook secrets).
+        *   Verify correct adapter instantiation for 'stripe' (with correct dependencies: admin client, token wallet service, Stripe webhook secret).
+        *   Verify `null` or error for 'unknown-source'.
+        *   (Future) Verify correct adapter instantiation for 'coinbase' if added.
+    *   [✅] **4.1.3.A.2: [TEST-UNIT] Create Test File: `supabase/functions/_shared/adapters/tests/adapterFactory.test.ts`**
+    *   [✅] **4.1.3.A.3: [TEST-UNIT] Write Failing Tests for `getPaymentAdapter` (RED)**
+    *   [✅] **4.1.3.A.4: [BE] Implement/Update `adapterFactory.getPaymentAdapter` to use the Real `StripePaymentAdapter` (GREEN)`
+        *   `Ensure `getPaymentAdapter` for source 'stripe' imports and instantiates the functional `StripePaymentAdapter` (from `_shared/adapters/stripePaymentAdapter.ts`).`
+        *   `This includes fetching the Stripe webhook secret (e.g., from Deno.env.get) and passing it, along with `adminClient` and `tokenWalletService`, to the `StripePaymentAdapter` constructor.`
+        *   `Ensure it robustly handles other sources (returning null) and that all test cases defined in 4.1.3.A.1 now pass.`
+    *   [✅] **4.1.3.A.5: [TEST-UNIT] Run `adapterFactory` Tests until GREEN.**
+    *   [✅] **4.1.3.A.6: [REFACTOR] Refactor `adapterFactory.ts` and its Tests for Clarity and Robustness.**
+    *   [✅] **4.1.3.A.7: [COMMIT]** "feat(BE|TEST): Implement, test, and refine Payment Adapter Factory (`adapterFactory.ts`)"
 
 ### 4.1.4: [BE] Placeholder for Coinbase/Crypto Payment Gateway Adapter
 *   [ ] **4.1.4.1: [BE] Create `supabase/functions/_shared/adapters/coinbasePaymentAdapter.ts` (Skeleton)**

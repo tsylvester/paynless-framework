@@ -1,43 +1,11 @@
-import { IPaymentGatewayAdapter, PaymentConfirmation, PaymentInitiationResult, PaymentOrchestrationContext } from '../types/payment.types.ts';
+import { IPaymentGatewayAdapter } from '../types/payment.types.ts';
 import { ITokenWalletService } from '../types/tokenWallet.types.ts';
-import { SupabaseClient } from '@supabase/supabase-js';
+import { SupabaseClient } from 'npm:@supabase/supabase-js';
 import type { Database } from '../../types_db.ts';
+import Stripe from 'npm:stripe'; // Import the Stripe SDK
+import { StripePaymentAdapter } from './stripePaymentAdapter.ts'; // Import the real StripePaymentAdapter
 
-// Dummy Stripe Adapter for placeholder
-class DummyStripeAdapter implements IPaymentGatewayAdapter {
-  gatewayId = 'stripe';
-  private adminClient: SupabaseClient<Database>;
-  private tokenWalletService: ITokenWalletService;
-
-  constructor(
-    adminClient: SupabaseClient<Database>,
-    tokenWalletService: ITokenWalletService,
-  ) {
-    this.adminClient = adminClient;
-    this.tokenWalletService = tokenWalletService;
-  }
-
-  async initiatePayment(
-    context: PaymentOrchestrationContext,
-  ): Promise<PaymentInitiationResult> {
-    console.log('[DummyStripeAdapter] initiatePayment called with context:', context);
-    return Promise.resolve({
-      success: false,
-      transactionId: context.internalPaymentId,
-      error: 'DummyStripeAdapter.initiatePayment not implemented',
-    });
-  }
-
-  async handleWebhook(
-    rawBody: string | Uint8Array,
-    signature: string | undefined,
-    webhookSecret: string,
-  ): Promise<PaymentConfirmation> {
-    console.log('[DummyStripeAdapter] handleWebhook called with rawBody (type):', typeof rawBody, 'signature:', signature);
-    console.log('[DummyStripeAdapter] webhookSecret received:', webhookSecret ? '******' : 'NOT PROVIDED');
-    return { success: true, transactionId: 'dummy-txn-id-from-stripe-webhook' };
-  }
-}
+// The DummyStripeAdapter class is no longer needed here and will be removed.
 
 export function getPaymentAdapter(
   source: string,
@@ -45,7 +13,65 @@ export function getPaymentAdapter(
   tokenWalletService: ITokenWalletService,
 ): IPaymentGatewayAdapter | null {
   if (source === 'stripe') {
-    return new DummyStripeAdapter(adminClient, tokenWalletService);
+    const isTestMode = Deno.env.get('VITE_STRIPE_TEST_MODE') === 'true';
+
+    let stripeSecretKey: string | undefined;
+    let stripeWebhookSecret: string | undefined;
+
+    if (isTestMode) {
+      stripeSecretKey = Deno.env.get('STRIPE_SECRET_TEST_KEY');
+      if (!stripeSecretKey) {
+        console.error('[adapterFactory] Test mode: STRIPE_SECRET_TEST_KEY is not set. Cannot create Stripe adapter.');
+        return null;
+      }
+      // Only get webhook secret if secret key was found
+      stripeWebhookSecret = Deno.env.get('STRIPE_TEST_WEBHOOK_SECRET');
+      if (!stripeWebhookSecret) {
+        console.error('[adapterFactory] Test mode: STRIPE_TEST_WEBHOOK_SECRET is not set. Cannot create Stripe adapter.');
+        return null;
+      }
+    } else {
+      // Default to LIVE keys if VITE_STRIPE_TEST_MODE is not 'true' (i.e., 'false', undefined, or any other value)
+      stripeSecretKey = Deno.env.get('STRIPE_SECRET_LIVE_KEY');
+      if (!stripeSecretKey) {
+        console.error('[adapterFactory] Live mode: STRIPE_SECRET_LIVE_KEY is not set. Cannot create Stripe adapter.');
+        return null;
+      }
+      // Only get webhook secret if secret key was found
+      stripeWebhookSecret = Deno.env.get('STRIPE_LIVE_WEBHOOK_SECRET');
+      if (!stripeWebhookSecret) {
+        console.error('[adapterFactory] Live mode: STRIPE_LIVE_WEBHOOK_SECRET is not set. Cannot create Stripe adapter.');
+        return null;
+      }
+    }
+
+    // The following existing logic for initializing Stripe and returning the adapter remains largely the same,
+    // but it will now use the conditionally determined stripeSecretKey and stripeWebhookSecret.
+    // We ensure stripeSecretKey and stripeWebhookSecret are checked again, though the paths above should return null if they are missing.
+    // This is more of a defensive check. The primary checks and error messages are now mode-specific.
+
+    if (!stripeSecretKey) {
+      // This case should theoretically be caught by the mode-specific checks above,
+      // but kept as a final safeguard or if logic changes.
+      console.error('[adapterFactory] Stripe secret key is ultimately undefined. Cannot create Stripe adapter.');
+      return null;
+    }
+    if (!stripeWebhookSecret) {
+      // Similar safeguard for webhook secret.
+      console.error('[adapterFactory] Stripe webhook secret is ultimately undefined. Cannot create Stripe adapter.');
+      return null;
+    }
+
+    try {
+      const stripeInstance = new Stripe(stripeSecretKey, {
+        apiVersion: '2023-10-16', // Specify a fixed API version
+        // httpClient: Stripe.createFetchHttpClient(), // Optional: Explicitly use Deno's fetch if needed
+      });
+      return new StripePaymentAdapter(stripeInstance, adminClient, tokenWalletService, stripeWebhookSecret);
+    } catch (error) {
+      console.error('[adapterFactory] Error initializing Stripe SDK:', error);
+      return null;
+    }
   }
   
   console.warn(`[adapterFactory] No adapter found for source: ${source}`);

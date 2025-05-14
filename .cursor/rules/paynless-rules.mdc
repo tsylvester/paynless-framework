@@ -126,6 +126,13 @@ alwaysApply: true
     
     *    The goal of these rules is to ensure I approach problems in a way that makes adopting best practices like DIP, DI, and specific testing patterns the logical and preferred outcome, rather than listing every single pattern as a separate rule.
 
+23. **Tests are Siblings to Source**
+    *   Do not place tests anywhere except as a **sibling** to the source being tested. 
+    *   Do not create test-specific folders. 
+
+24. **Testing Strings for Deno**
+    * deno test --allow-all --env=../.env ./[path].test.ts
+
 # **In Conclusion**
 
     *    Employ sound software design principles (e.g., SOLID, DI, interface-based design) and utilize appropriate, well-understood testing techniques, including lifecycle-managed mocking and stubbing," we can certainly incorporate that too. However, I believe the current set robustly guides me towards these positive outcome.
