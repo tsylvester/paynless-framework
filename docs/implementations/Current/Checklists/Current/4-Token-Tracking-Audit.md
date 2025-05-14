@@ -325,7 +325,7 @@ The implementation plan uses the following labels to categorize work steps:
             *   Run integration tests targeting the new `/webhooks/` function with a `/stripe` path segment.
         *   [🚧] **4.1.3.2.8: [BE] [REFACTOR] Enhance `StripePaymentAdapter` to Handle All Critical Stripe Webhook Events (Persistent Tokens)**
             *   **Goal:** Ensure the `StripePaymentAdapter`, when invoked by the generic `/webhooks/stripe` router, correctly processes all necessary Stripe events for payments, token awards, subscription lifecycle management, and product/price synchronization, replicating and improving upon the logic from the old `stripe-webhook` function. **All tokens awarded are persistent and do not expire.**
-            *   [🚧] **4.1.3.2.8.1: [ANALYZE] Finalize Review of `stripe-webhook/handlers/` and `stripe-webhook/services/`**
+            *   [ ] **4.1.3.2.8.1: [ANALYZE] Finalize Review of `stripe-webhook/handlers/` and `stripe-webhook/services/`**
                 *   Complete review of `product.ts`, `price.ts` handlers, and associated services (`product_webhook_service.ts`, `price_webhook_service.ts`).
                 *   Consolidate all identified logic and database interactions for porting.
             *   [✅] **4.1.3.2.8.2: [DB] [TYPES] Define and Confirm Target Supabase Table Strategy**
@@ -334,7 +334,7 @@ The implementation plan uses the following labels to categorize work steps:
                 *   **`subscription_plans`:** Confirm as the SOLE target for product/price data synced from Stripe (via webhooks). It should store `stripe_product_id`, `stripe_price_id`, `name`, `description`, `amount`, `currency`, `interval`, `active`, `tokens_awarded` (if applicable to the plan itself), `plan_type` (one-time, subscription), `item_id_internal`.
                 *   **`users` (or `user_profiles`):** Confirm if a user `status` or `role` field needs to be updated based on subscription active/inactive status (e.g., 'free_user', 'subscriber_basic', 'subscriber_premium').
                 *   **Retire `subscription_transactions`?** Evaluate if the old `subscription_transactions` table can be retired, with its essential logging purposes absorbed by `payment_transactions` (for payments) and detailed adapter logging for other event types.
-            *   [🚧] **4.1.3.2.8.3: [BE] [REFACTOR] Implement Comprehensive `checkout.session.completed` Handling in `StripePaymentAdapter`**
+            *   [ ] **4.1.3.2.8.3: [BE] [REFACTOR] Implement Comprehensive `checkout.session.completed` Handling in `StripePaymentAdapter`**
                 *   [TEST-UNIT] Add unit tests covering both one-time and subscription scenarios, including token awards and user/subscription table updates.
                 *   Tests go in supabase/functions/_shared/adapters/stripe.checkout.test.ts
                 *   **Distinguish Mode:** If `session.mode === 'payment'` (one-time purchase, e.g., token pack):
@@ -346,7 +346,7 @@ The implementation plan uses the following labels to categorize work steps:
                     *   Update `payment_transactions` for the initial payment.
                     *   Award tokens associated with the subscription plan's initiation via `TokenWalletService`.
                 *   Ensure idempotency and robust error handling.
-            *   [🚧] **4.1.3.2.8.4: [BE] [REFACTOR] Implement Subscription Lifecycle Event Handling (`customer.subscription.updated`, `customer.subscription.deleted`) in `StripePaymentAdapter`**
+            *   [ ] **4.1.3.2.8.4: [BE] [REFACTOR] Implement Subscription Lifecycle Event Handling (`customer.subscription.updated`, `customer.subscription.deleted`) in `StripePaymentAdapter`**
                 *   [TEST-UNIT] Add unit tests for various subscription update/deletion scenarios.
                 *   Tests go in supabase/functions/_shared/adapters/stripe.updates.test.ts
                 *   `customer.subscription.updated`:
@@ -357,7 +357,7 @@ The implementation plan uses the following labels to categorize work steps:
                     *   Update `user_subscriptions.status` to 'canceled'.
                     *   Update user status/role if necessary.
                 *   Ensure idempotency.
-            *   [🚧] **4.1.3.2.8.5: [BE] [REFACTOR] Implement Invoice Event Handling (`invoice.payment_succeeded`, `invoice.payment_failed`) in `StripePaymentAdapter`**
+            *   [ ] **4.1.3.2.8.5: [BE] [REFACTOR] Implement Invoice Event Handling (`invoice.payment_succeeded`, `invoice.payment_failed`) in `StripePaymentAdapter`**
                 *   [TEST-UNIT] Add unit tests for invoice payment success (including token award) and failure.
                 *   Tests go in supabase/functions/_shared/adapters/stripe.invoices.test.ts
                 *   `invoice.payment_succeeded`:
@@ -369,7 +369,7 @@ The implementation plan uses the following labels to categorize work steps:
                     *   Update `user_subscriptions.status` to 'past_due' or 'unpaid'.
                     *   Update user status/role if necessary (e.g., downgrade access).
                 *   Ensure idempotency.
-            *   [🚧] **4.1.3.2.8.6: [BE] [REFACTOR] Implement Product & Price Synchronization (`product.*`, `price.*`) in `StripePaymentAdapter`**
+            *   [ ] **4.1.3.2.8.6: [BE] [REFACTOR] Implement Product & Price Synchronization (`product.*`, `price.*`) in `StripePaymentAdapter`**
                 *   [TEST-UNIT] Add unit tests for product/price create, update, and delete scenarios and their effect on `subscription_plans`.
                 *   Tests go in supabase/functions/_shared/adapters/stripe.sync.test.ts
                 *   `product.created`: When a `product.created` event occurs, the adapter will primarily take note of the new `stripe_product_id` and its associated details (name, description, active status). Actual entries in `subscription_plans` will be primarily driven by subsequent `price.created` events for this product. If the `product.created` event includes a default price, an initial entry in `subscription_plans` can be made.
@@ -383,23 +383,23 @@ The implementation plan uses the following labels to categorize work steps:
                 *   `product.deleted`: Mark all `subscription_plans` entries where `stripe_product_id` matches the deleted product's ID as inactive (soft delete).
                 *   `price.deleted`: Mark the specific `subscription_plans` entry where `stripe_price_id` matches the deleted price's ID as inactive (soft delete).
                 *   Ensure this logic correctly populates all fields required by `initiatePayment` and other parts of the system relying on `subscription_plans`.
-            *   [🚧] **4.1.3.2.8.7: [BE] [TEST-INT] Comprehensive Integration Testing for All Handled Event Types**
+            *   [ ] **4.1.3.2.8.7: [BE] [TEST-INT] Comprehensive Integration Testing for All Handled Event Types**
                 *   Expand tests for `webhooks/index.test.ts` to simulate all Stripe events now handled by `StripePaymentAdapter`.
                 *   Verify correct processing flow, database updates (all relevant tables), and token awards.
                 *   Test idempotency thoroughly for each event type.
-            *   [🚧] **4.1.3.2.8.8: [COMMIT]** "refactor(BE|TEST): Enhance StripePaymentAdapter for comprehensive webhook event handling (payments, subscriptions, products, prices, tokens)"
-    *   [🚧] **4.1.3.2.9: [BE] Decommission Old `stripe-webhook/index.ts` Function**
-        *   [🚧] **4.1.3.2.9.1: [INFRA] Update Stripe Dashboard Webhook URL** (Point to new generic `/webhooks/stripe`)
-        *   [🚧] **4.1.3.2.9.2: [MONITOR] Monitor New `/webhooks/stripe` Endpoint for all event types.**
-        *   [🚧] **4.1.3.2.9.3: [BE] Delete `supabase/functions/stripe-webhook/` Directory** (After successful porting and monitoring)
-        *   [🚧] **4.1.3.2.9.4: [DOCS] Update Internal Documentation**
-        *   [🚧] **4.1.3.2.9.5: [COMMIT]** "feat(BE|INFRA): Decommission old stripe-webhook function after porting all logic to new webhook router"
-    *   [🚧] **4.1.3.2.10: [BE] Decommission `sync-stripe-plans/index.ts` Function**
-        *   [🚧] **4.1.3.2.10.1: [ANALYZE] Confirm `sync-stripe-plans` No Longer Needed** (Ensure real-time webhook handling for products/prices is sufficient and no other process relies on the batch sync).
-        *   [🚧] **4.1.3.2.10.2: [BE] Delete `supabase/functions/sync-stripe-plans/` Directory**
-        *   [🚧] **4.1.3.2.10.3: [DOCS] Remove any documentation or scheduled triggers for `sync-stripe-plans`.**
-        *   [🚧] **4.1.3.2.10.4: [COMMIT]** "refactor(BE): Decommission sync-stripe-plans function, replaced by real-time webhook sync"
-    *   [🚧] **4.1.3.2.11: [BE] [ARCH] Implement Universal Periodic Token Allocation System**
+            *   [ ] **4.1.3.2.8.8: [COMMIT]** "refactor(BE|TEST): Enhance StripePaymentAdapter for comprehensive webhook event handling (payments, subscriptions, products, prices, tokens)"
+    *   [ ] **4.1.3.2.9: [BE] Decommission Old `stripe-webhook/index.ts` Function**
+        *   [ ] **4.1.3.2.9.1: [INFRA] Update Stripe Dashboard Webhook URL** (Point to new generic `/webhooks/stripe`)
+        *   [ ] **4.1.3.2.9.2: [MONITOR] Monitor New `/webhooks/stripe` Endpoint for all event types.**
+        *   [ ] **4.1.3.2.9.3: [BE] Delete `supabase/functions/stripe-webhook/` Directory** (After successful porting and monitoring)
+        *   [ ] **4.1.3.2.9.4: [DOCS] Update Internal Documentation**
+        *   [ ] **4.1.3.2.9.5: [COMMIT]** "feat(BE|INFRA): Decommission old stripe-webhook function after porting all logic to new webhook router"
+    *   [ ] **4.1.3.2.10: [BE] Decommission `sync-stripe-plans/index.ts` Function**
+        *   [ ] **4.1.3.2.10.1: [ANALYZE] Confirm `sync-stripe-plans` No Longer Needed** (Ensure real-time webhook handling for products/prices is sufficient and no other process relies on the batch sync).
+        *   [ ] **4.1.3.2.10.2: [BE] Delete `supabase/functions/sync-stripe-plans/` Directory**
+        *   [ ] **4.1.3.2.10.3: [DOCS] Remove any documentation or scheduled triggers for `sync-stripe-plans`.**
+        *   [ ] **4.1.3.2.10.4: [COMMIT]** "refactor(BE): Decommission sync-stripe-plans function, replaced by real-time webhook sync"
+    *   [ ] **4.1.3.2.11: [BE] [ARCH] Implement Universal Periodic Token Allocation System**
         *   **Goal:** Periodically grant a base number of tokens to all eligible users (e.g., free tier users, or all users as a baseline).
         *   [ ] **4.1.3.2.11.1: [ARCH] Define Allocation Rules & Schedule**
             *   Determine token amount, frequency (e.g., monthly, weekly), and eligibility criteria (e.g., all active users, users on a specific 'free' plan type).
