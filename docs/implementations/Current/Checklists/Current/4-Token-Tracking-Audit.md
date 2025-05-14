@@ -91,6 +91,29 @@ The implementation plan uses the following labels to categorize work steps:
 
 ---
 
+## Phase 4.0.A: [ARCH] Wallet Provisioning Strategy
+
+**Goal:** Ensure all relevant entities (users, organizations) have a token wallet provisioned automatically and reliably.
+
+*   [ ] **4.0.A.1: [BE] [DB] Define Wallet Provisioning Triggers & Logic**
+    *   [ ] **4.0.A.1.1: [BE] User Wallet Provisioning:**
+        *   [ ] **Option 1 (Preferred for new users):** Modify user creation process (e.g., after Supabase `auth.users` insertion, trigger a function or use a DB trigger) to automatically call `TokenWalletService.createWallet` for the new user.
+        *   [ ] **Option 2 (For existing users / fallback):** Implement logic triggered on user login (e.g., in a custom `/on-login` endpoint or session handler) to check for and create a user wallet if one doesn't exist using `TokenWalletService.getWalletForContext` and `TokenWalletService.createWallet`.
+        *   [ ] **Decision Point:** Choose and document the primary mechanism for user wallet creation.
+    *   [ ] **4.0.A.1.2: [BE] Organization Wallet Provisioning:**
+        *   [ ] Define the trigger for organization wallet creation (e.g., upon organization creation via API/service, or on first relevant action requiring an org wallet).
+        *   [ ] Implement the call to `TokenWalletService.createWallet` for the new organization.
+    *   [ ] **4.0.A.1.3: [DB] [BE] Idempotency:** Ensure wallet creation logic is idempotent (i.e., attempting to create a wallet that already exists does not cause errors or duplicates). `TokenWalletService.createWallet` should handle this, or the calling logic should check first. (Note: `createWallet` already has some checks, but the overall flow needs to be robust).
+*   [ ] **4.0.A.2: [BE] [TEST-UNIT] Write Unit/Integration Tests for Wallet Provisioning**
+    *   Test automatic user wallet creation upon new user signup.
+    *   Test user wallet creation on login for users missing a wallet.
+    *   Test organization wallet creation.
+*   [ ] **4.0.A.3: [BE] [DB] (Optional) Backfill Wallets for Existing Entities**
+    *   [ ] Develop and run a script/process to create wallets for any existing users/organizations that do not currently have one. (Only if a significant number of entities exist prior to this system going live).
+*   [ ] **4.0.A.4: [COMMIT]** "feat(ARCH|BE): Implement and test automatic wallet provisioning strategy"
+
+---
+
 ## Phase 4.1: [BE] Core Wallet Service & Payment Gateway Integration
 
 **Goal:** Implement the backend service for managing token wallets and integrate the first payment gateway (Stripe).
@@ -202,7 +225,7 @@ The implementation plan uses the following labels to categorize work steps:
     *   [✅] **4.1.1.4.5: [COMMIT]** "feat(RLS): Implement row-level security for tokenomics tables"
 
 ### 4.1.2: [BE] Implement Stripe Payment Gateway Adapter
-*   [🚧] **4.1.2.1: [BE] Design and Implement `StripePaymentAdapter`**
+*   [✅] **4.1.2.1: [BE] Design and Implement `StripePaymentAdapter`**
     *   **Location:** `supabase/functions/_shared/adapters/stripePaymentAdapter.ts`
     *   **Interface Implementation:** Implement `IPaymentGatewayAdapter` for Stripe.
     *   **Dependencies:** The adapter will require an initialized Stripe SDK instance, an admin Supabase client, an instance of `TokenWalletService`, and the Stripe webhook secret (via environment variables).
@@ -210,32 +233,32 @@ The implementation plan uses the following labels to categorize work steps:
         *   [✅] **4.1.2.1.1: [DB] [BE] Item Mapping:** Determine Stripe Price ID and `tokens_to_award` from `request.itemId`.
             *   This involves querying a local table (e.g., `stripe_plans` or `service_offerings`, synced via `sync-stripe-plans` function) that maps an internal `itemId` to a `stripe_price_id` and `tokens_awarded`.
             *   Ensure `sync-stripe-plans` function correctly populates/maintains this mapping table.
-        *   [ ] **4.1.2.1.2: [BE] Target Wallet Identification:** Determine `target_wallet_id` using `TokenWalletService.getWalletForContext(request.userId, request.organizationId)`.
+        *   [✅] **4.1.2.1.2: [BE] Target Wallet Identification:** Determine `target_wallet_id` using `TokenWalletService.getWalletForContext(request.userId, request.organizationId)`.
             *   If no wallet exists, decide on creation strategy (e.g., create on-the-fly via `TokenWalletService.createWallet` or return an error).
-        *   [ ] **4.1.2.1.3: [BE] Create `payment_transactions` Record:** Insert a new record into `payment_transactions` with `status: 'PENDING'`, `target_wallet_id`, `tokens_to_award`, `payment_gateway_id: 'stripe'`, and other relevant details from `PurchaseRequest`. Store the new `payment_transactions.id` (as `internalPaymentId`).
-        *   [ ] **4.1.2.1.4: [BE] Stripe Session Creation:** Refactor existing Stripe Checkout Session (or Payment Intent) creation logic.
+        *   [✅] **4.1.2.1.3: [BE] Create `payment_transactions` Record:** Insert a new record into `payment_transactions` with `status: 'PENDING'`, `target_wallet_id`, `tokens_to_award`, `payment_gateway_id: 'stripe'`, and other relevant details from `PurchaseRequest`. Store the new `payment_transactions.id` (as `internalPaymentId`).
+        *   [✅] **4.1.2.1.4: [BE] Stripe Session Creation:** Refactor existing Stripe Checkout Session (or Payment Intent) creation logic.
             *   Include `internalPaymentId` in Stripe's `metadata`.
             *   Populate `success_url` and `cancel_url` with `internalPaymentId` as a query parameter for potential client-side reconciliation if needed.
-        *   [ ] **4.1.2.1.5: [BE] Return `PaymentInitiationResult`:** Populate and return the standardized result object.
+        *   [✅] **4.1.2.1.5: [BE] Return `PaymentInitiationResult`:** Populate and return the standardized result object.
     *   **`handleWebhook(rawBody: string | Buffer, signature: string | undefined)` Method:**
-        *   [ ] **4.1.2.1.6: [BE] Webhook Signature Verification:** Verify the Stripe webhook signature using the raw body, signature header, and webhook secret.
-        *   [ ] **4.1.2.1.7: [BE] Event Processing:** Handle relevant Stripe events (e.g., `checkout.session.completed`, `payment_intent.succeeded`, `payment_intent.payment_failed`).
-        *   [ ] **4.1.2.1.8: [BE] Retrieve `internalPaymentId`:** Extract `internalPaymentId` from webhook event metadata.
-        *   [ ] **4.1.2.1.9: [BE] Update `payment_transactions` Record:**
+        *   [✅] **4.1.2.1.6: [BE] Webhook Signature Verification:** Verify the Stripe webhook signature using the raw body, signature header, and webhook secret.
+        *   [✅] **4.1.2.1.7: [BE] Event Processing:** Handle relevant Stripe events (e.g., `checkout.session.completed`, `payment_intent.succeeded`, `payment_intent.payment_failed`).
+        *   [✅] **4.1.2.1.8: [BE] Retrieve `internalPaymentId`:** Extract `internalPaymentId` from webhook event metadata.
+        *   [✅] **4.1.2.1.9: [BE] Update `payment_transactions` Record:**
             *   Fetch the existing `payment_transactions` record using `internalPaymentId`.
             *   Implement idempotency check (e.g., if status is already 'COMPLETED' or 'FAILED').
             *   On success event, update status to 'COMPLETED', store `gateway_transaction_id`.
             *   On failure event, update status to 'FAILED'.
-        *   [ ] **4.1.2.1.10: [BE] Award Tokens on Success:** If payment successful, call `TokenWalletService.recordTransaction` to credit the `target_wallet_id` with `tokens_to_award` from the `payment_transactions` record.
+        *   [✅] **4.1.2.1.10: [BE] Award Tokens on Success:** If payment successful, call `TokenWalletService.recordTransaction` to credit the `target_wallet_id` with `tokens_to_award` from the `payment_transactions` record.
             *   Use `paymentTx.user_id` as `recordedByUserId`.
             *   Use `internalPaymentId` as `relatedEntityId` and `'payment_transaction'` as `relatedEntityType`.
             *   Handle potential failures in token awarding (e.g., update `payment_transactions.status` to 'TOKEN_AWARD_FAILED').
-        *   [ ] **4.1.2.1.11: [BE] Return `PaymentConfirmation`:** Populate and return the standardized result object.
-    *   [ ] **4.1.2.1.12: [TEST-UNIT] Write Unit Tests for `StripePaymentAdapter`**
+        *   [✅] **4.1.2.1.11: [BE] Return `PaymentConfirmation`:** Populate and return the standardized result object.
+    *   [✅] **4.1.2.1.12: [TEST-UNIT] Write Unit Tests for `StripePaymentAdapter`**
         *   In `supabase/functions/_shared/adapters/tests/stripePaymentAdapter.test.ts`.
         *   Mock Stripe SDK, Supabase client (`adminClient`), and `TokenWalletService`.
         *   Cover success and failure scenarios for both `initiatePayment` and `handleWebhook`, including idempotency.
-*   [ ] **4.1.2.2: [COMMIT]** "feat(BE): Implement StripePaymentAdapter, abstracting Stripe logic, with tests"
+*   [✅] **4.1.2.2: [COMMIT]** "feat(BE): Implement StripePaymentAdapter, abstracting Stripe logic, with tests"
 
 ### 4.1.3: [BE] Payment Initiation & Webhook Endpoints (Refactored)
 *   [🚧] **4.1.3.1: [BE] Refactor/Create Central `POST /initiate-payment` Edge Function**

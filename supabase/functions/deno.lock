@@ -1,6 +1,7 @@
 {
   "version": "4",
   "specifiers": {
+    "jsr:@std/assert@*": "0.225.3",
     "jsr:@std/assert@0.225.3": "0.225.3",
     "jsr:@std/assert@1.0.0-rc.1": "1.0.0-rc.1",
     "jsr:@std/internal@1": "1.0.6",
@@ -28,6 +29,7 @@
     "npm:stripe@*": "14.11.0",
     "npm:stripe@14.11.0": "14.11.0",
     "npm:stripe@18.0.0": "18.0.0",
+    "npm:stripe@^18.1.0": "18.1.0_@types+node@20.17.32",
     "npm:typescript@5": "5.8.3",
     "npm:typescript@5.8.3": "5.8.3"
   },
@@ -1274,6 +1276,13 @@
         "qs"
       ]
     },
+    "stripe@18.1.0_@types+node@20.17.32": {
+      "integrity": "sha512-MLDiniPTHqcfIT3anyBPmOEcaiDhYa7/jRaNypQ3Rt2SJnayQZBvVbFghIziUCZdltGAndm/ZxVOSw6uuSCDig==",
+      "dependencies": [
+        "@types/node@20.17.32",
+        "qs"
+      ]
+    },
     "supports-color@7.2.0": {
       "integrity": "sha512-qpCAvRl9stuOHveKsn7HncJRvv501qIacKzQlO/+Lwxc9+0q2wLyv4Dfvt80/DPn2pqOBsJdDiogXGR9+OvwRw==",
       "dependencies": [
@@ -1592,7 +1601,8 @@
   },
   "workspace": {
     "dependencies": [
-      "npm:@types/node@20"
+      "npm:@types/node@20",
+      "npm:stripe@^18.1.0"
     ],
     "packageJson": {
       "dependencies": [
