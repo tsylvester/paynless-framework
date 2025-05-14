@@ -335,6 +335,8 @@ The implementation plan uses the following labels to categorize work steps:
                 *   **`users` (or `user_profiles`):** Confirm if a user `status` or `role` field needs to be updated based on subscription active/inactive status (e.g., 'free_user', 'subscriber_basic', 'subscriber_premium').
                 *   **Retire `subscription_transactions`?** Evaluate if the old `subscription_transactions` table can be retired, with its essential logging purposes absorbed by `payment_transactions` (for payments) and detailed adapter logging for other event types.
             *   [🚧] **4.1.3.2.8.3: [BE] [REFACTOR] Implement Comprehensive `checkout.session.completed` Handling in `StripePaymentAdapter`**
+                *   [TEST-UNIT] Add unit tests covering both one-time and subscription scenarios, including token awards and user/subscription table updates.
+                *   Tests go in supabase/functions/_shared/adapters/stripe.checkout.test.ts
                 *   **Distinguish Mode:** If `session.mode === 'payment'` (one-time purchase, e.g., token pack):
                     *   Update `payment_transactions` status to 'COMPLETED'.
                     *   Award tokens via `TokenWalletService`, linking to `payment_transactions.id`.
@@ -344,8 +346,9 @@ The implementation plan uses the following labels to categorize work steps:
                     *   Update `payment_transactions` for the initial payment.
                     *   Award tokens associated with the subscription plan's initiation via `TokenWalletService`.
                 *   Ensure idempotency and robust error handling.
-                *   [TEST-UNIT] Add unit tests covering both one-time and subscription scenarios, including token awards and user/subscription table updates.
             *   [🚧] **4.1.3.2.8.4: [BE] [REFACTOR] Implement Subscription Lifecycle Event Handling (`customer.subscription.updated`, `customer.subscription.deleted`) in `StripePaymentAdapter`**
+                *   [TEST-UNIT] Add unit tests for various subscription update/deletion scenarios.
+                *   Tests go in supabase/functions/_shared/adapters/stripe.updates.test.ts
                 *   `customer.subscription.updated`:
                     *   Update the corresponding record in `user_subscriptions` (status, plan, period dates, `cancel_at_period_end`).
                     *   Update user status/role if necessary.
@@ -354,8 +357,9 @@ The implementation plan uses the following labels to categorize work steps:
                     *   Update `user_subscriptions.status` to 'canceled'.
                     *   Update user status/role if necessary.
                 *   Ensure idempotency.
-                *   [TEST-UNIT] Add unit tests for various subscription update/deletion scenarios.
             *   [🚧] **4.1.3.2.8.5: [BE] [REFACTOR] Implement Invoice Event Handling (`invoice.payment_succeeded`, `invoice.payment_failed`) in `StripePaymentAdapter`**
+                *   [TEST-UNIT] Add unit tests for invoice payment success (including token award) and failure.
+                *   Tests go in supabase/functions/_shared/adapters/stripe.invoices.test.ts
                 *   `invoice.payment_succeeded`:
                     *   Primarily for recurring subscription payments.
                     *   Verify `user_subscriptions` record is active and period dates align.
@@ -365,8 +369,9 @@ The implementation plan uses the following labels to categorize work steps:
                     *   Update `user_subscriptions.status` to 'past_due' or 'unpaid'.
                     *   Update user status/role if necessary (e.g., downgrade access).
                 *   Ensure idempotency.
-                *   [TEST-UNIT] Add unit tests for invoice payment success (including token award) and failure.
             *   [🚧] **4.1.3.2.8.6: [BE] [REFACTOR] Implement Product & Price Synchronization (`product.*`, `price.*`) in `StripePaymentAdapter`**
+                *   [TEST-UNIT] Add unit tests for product/price create, update, and delete scenarios and their effect on `subscription_plans`.
+                *   Tests go in supabase/functions/_shared/adapters/stripe.sync.test.ts
                 *   `product.created`: When a `product.created` event occurs, the adapter will primarily take note of the new `stripe_product_id` and its associated details (name, description, active status). Actual entries in `subscription_plans` will be primarily driven by subsequent `price.created` events for this product. If the `product.created` event includes a default price, an initial entry in `subscription_plans` can be made.
                 *   `product.updated`: If `product.name` or `product.description` changes, update these fields in all `subscription_plans` records where `stripe_product_id` matches the event's product ID. If `product.active` status changes, update the `active` status in all corresponding `subscription_plans` records (e.g., if product becomes inactive, all its plans become inactive).
                 *   `price.created`, `price.updated`:
@@ -378,7 +383,6 @@ The implementation plan uses the following labels to categorize work steps:
                 *   `product.deleted`: Mark all `subscription_plans` entries where `stripe_product_id` matches the deleted product's ID as inactive (soft delete).
                 *   `price.deleted`: Mark the specific `subscription_plans` entry where `stripe_price_id` matches the deleted price's ID as inactive (soft delete).
                 *   Ensure this logic correctly populates all fields required by `initiatePayment` and other parts of the system relying on `subscription_plans`.
-                *   [TEST-UNIT] Add unit tests for product/price create, update, and delete scenarios and their effect on `subscription_plans`.
             *   [🚧] **4.1.3.2.8.7: [BE] [TEST-INT] Comprehensive Integration Testing for All Handled Event Types**
                 *   Expand tests for `webhooks/index.test.ts` to simulate all Stripe events now handled by `StripePaymentAdapter`.
                 *   Verify correct processing flow, database updates (all relevant tables), and token awards.

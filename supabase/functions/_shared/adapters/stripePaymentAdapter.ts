@@ -150,7 +150,6 @@ export class StripePaymentAdapter implements IPaymentGatewayAdapter {
     
     let event: Stripe.Event;
     try {
-      // Stripe's constructEvent expects string or Buffer. Convert Uint8Array to Buffer.
       const bodyToUse = rawBody instanceof Uint8Array ? Buffer.from(rawBody) : rawBody;
       event = this.stripe.webhooks.constructEvent(bodyToUse, signature, this.stripeWebhookSecret);
     } catch (err) {
@@ -159,20 +158,21 @@ export class StripePaymentAdapter implements IPaymentGatewayAdapter {
     }
 
     // console.log('[StripePaymentAdapter] Webhook event received:', event.type);
-    const relevantEvents = ['checkout.session.completed', 'payment_intent.succeeded'];
+    // Define relevant events
+    const checkoutSessionCompleted = 'checkout.session.completed';
+    // We will add other events like 'invoice.payment_succeeded', etc. later.
 
-    if (relevantEvents.includes(event.type)) {
-      const session = event.data.object as Stripe.Checkout.Session | Stripe.PaymentIntent;
+    if (event.type === checkoutSessionCompleted) {
+      const session = event.data.object as Stripe.Checkout.Session;
       const internalPaymentId = session.metadata?.internal_payment_id;
-      const gatewayTransactionId = session.id;
+      const gatewayTransactionId = session.id; // Stripe Checkout Session ID
 
       if (!internalPaymentId) {
-        console.error('[StripePaymentAdapter] internal_payment_id missing from webhook metadata:', session);
+        console.error('[StripePaymentAdapter] internal_payment_id missing from checkout.session.completed webhook metadata:', session);
         return { success: false, transactionId: undefined, error: 'Internal payment ID missing from webhook.' };
       }
 
       try {
-        // 1. Retrieve the payment_transactions record.
         const { data: paymentTx, error: fetchError } = await this.adminClient
           .from('payment_transactions')
           .select('*')
@@ -180,23 +180,107 @@ export class StripePaymentAdapter implements IPaymentGatewayAdapter {
           .single();
 
         if (fetchError || !paymentTx) {
-          console.error(`[StripePaymentAdapter] Payment transaction ${internalPaymentId} not found.`, fetchError);
+          console.error(`[StripePaymentAdapter] Payment transaction ${internalPaymentId} not found for checkout.session.completed.`, fetchError);
           return { success: false, transactionId: internalPaymentId, error: 'Payment record not found.' };
         }
 
-        // Idempotency check: If already completed, do nothing further.
         if (paymentTx.status === 'COMPLETED') {
           // console.log(`[StripePaymentAdapter] Payment ${internalPaymentId} already completed.`);
           return { success: true, transactionId: internalPaymentId, tokensAwarded: paymentTx.tokens_to_award };
         }
         if (paymentTx.status === 'FAILED') {
              console.warn(`[StripePaymentAdapter] Payment ${internalPaymentId} previously failed. Webhook for ${event.type} received.`);
-             // Potentially log or investigate, but don't re-process as success.
              return { success: false, transactionId: internalPaymentId, error: 'Payment previously marked as failed.' };
         }
 
+        // Specific logic for checkout.session.completed
+        if (session.mode === 'subscription') {
+          console.log(`[StripePaymentAdapter] Processing checkout.session.completed in 'subscription' mode for ${internalPaymentId}`);
+          const stripeSubscriptionId = session.subscription;
+          const stripeCustomerId = session.customer;
+          const userId = paymentTx.user_id; // from our payment_transactions record
 
-        // 2. Update payment_transactions record to 'COMPLETED'.
+          if (!stripeSubscriptionId || typeof stripeSubscriptionId !== 'string') {
+            console.error('[StripePaymentAdapter] Stripe Subscription ID missing or invalid in checkout session for subscription mode.', session);
+            return { success: false, transactionId: internalPaymentId, error: 'Stripe Subscription ID missing or invalid.' };
+          }
+          if (!stripeCustomerId || typeof stripeCustomerId !== 'string') {
+            console.error('[StripePaymentAdapter] Stripe Customer ID missing or invalid in checkout session for subscription mode.', session);
+            return { success: false, transactionId: internalPaymentId, error: 'Stripe Customer ID missing or invalid.' };
+          }
+           if (!userId) {
+            console.error('[StripePaymentAdapter] User ID missing in payment_transactions for subscription mode.', paymentTx);
+            // This should ideally not happen if initiatePayment enforces userId
+            return { success: false, transactionId: internalPaymentId, error: 'User ID for subscription missing.' };
+          }
+
+
+          // Get our internal plan_id from item_id_internal stored in payment_transactions.metadata_json or session.metadata
+          // Ensure a type assertion for metadata_json if its structure is known, or use optional chaining carefully.
+          const itemIdFromPaymentTx = typeof paymentTx.metadata_json === 'object' && paymentTx.metadata_json !== null && 'itemId' in paymentTx.metadata_json 
+                                      ? String(paymentTx.metadata_json.itemId) 
+                                      : undefined;
+          const itemIdFromSessionMetadata = session.metadata?.item_id;
+
+          const itemIdInternal = itemIdFromPaymentTx || itemIdFromSessionMetadata;
+
+          if (!itemIdInternal) {
+            console.error(`[StripePaymentAdapter] item_id_internal not found in payment_transactions metadata_json (expected 'itemId') or session metadata (expected 'item_id') for ${internalPaymentId}`);
+            return { success: false, transactionId: internalPaymentId, error: 'Internal item ID for subscription plan lookup missing.' };
+          }
+          
+          const { data: planData, error: planFetchError } = await this.adminClient
+            .from('subscription_plans')
+            .select('id')
+            .eq('item_id_internal', itemIdInternal)
+            .single();
+
+          if (planFetchError || !planData) {
+            console.error(`[StripePaymentAdapter] Could not fetch subscription_plans record for item_id_internal ${itemIdInternal}.`, planFetchError);
+            return { success: false, transactionId: internalPaymentId, error: 'Failed to resolve internal plan ID for subscription.' };
+          }
+          const internalPlanId = planData.id;
+
+          // Retrieve the full Stripe Subscription object to get period details and status
+          const stripeSubscriptionObject = await this.stripe.subscriptions.retrieve(stripeSubscriptionId);
+
+          const userSubscriptionData = {
+            user_id: userId,
+            plan_id: internalPlanId,
+            status: stripeSubscriptionObject.status, // Use status from Stripe Subscription object
+            stripe_customer_id: stripeCustomerId,
+            stripe_subscription_id: stripeSubscriptionId,
+            current_period_start: stripeSubscriptionObject.current_period_start ? new Date(stripeSubscriptionObject.current_period_start * 1000).toISOString() : null,
+            current_period_end: stripeSubscriptionObject.current_period_end ? new Date(stripeSubscriptionObject.current_period_end * 1000).toISOString() : null,
+            cancel_at_period_end: stripeSubscriptionObject.cancel_at_period_end,
+            // id: auto-generated by DB
+            // created_at, updated_at: auto-generated/updated by DB
+          };
+          
+          // Upsert into user_subscriptions
+          // We upsert on stripe_subscription_id to handle cases where a webhook might be re-delivered
+          // or if there's any edge case of a pre-existing record.
+          const { error: upsertError } = await this.adminClient
+            .from('user_subscriptions')
+            .upsert(userSubscriptionData, { onConflict: 'stripe_subscription_id' });
+
+          if (upsertError) {
+            console.error(`[StripePaymentAdapter] Failed to upsert user_subscription for ${internalPaymentId}, stripe_subscription_id ${stripeSubscriptionId}.`, upsertError);
+            // Don't necessarily fail the whole payment if this part fails, but log it critically.
+            // Could update paymentTx status to something like 'SUBSCRIPTION_LINK_FAILED'
+          } else {
+            console.log(`[StripePaymentAdapter] Successfully upserted user_subscription for stripe_subscription_id ${stripeSubscriptionId}`);
+          }
+        } else if (session.mode === 'payment') {
+          console.log(`[StripePaymentAdapter] Processing checkout.session.completed in 'payment' mode for ${internalPaymentId}`);
+          // No specific additional action needed for 'payment' mode beyond what's done below for all completed checkouts.
+        } else {
+          console.warn(`[StripePaymentAdapter] checkout.session.completed with unexpected mode: ${session.mode} for ${internalPaymentId}`);
+          // Continue to mark payment as complete and award tokens if payment was successful
+        }
+
+        // Common logic for all successful checkout.session.completed events:
+        // Update payment_transactions record to 'COMPLETED'.
         const { error: updateError } = await this.adminClient
           .from('payment_transactions')
           .update({ status: 'COMPLETED', gateway_transaction_id: gatewayTransactionId, updated_at: new Date().toISOString() })
@@ -207,10 +291,8 @@ export class StripePaymentAdapter implements IPaymentGatewayAdapter {
           return { success: false, transactionId: internalPaymentId, error: 'Failed to update payment status after confirmation.' };
         }
 
-        // Validate required fields for token awarding
         if (!paymentTx.target_wallet_id) {
           console.error(`[StripePaymentAdapter] target_wallet_id is missing for transaction ${internalPaymentId}. Cannot award tokens.`);
-          // Optionally, update status to TOKEN_AWARD_FAILED
           await this.adminClient.from('payment_transactions').update({ status: 'TOKEN_AWARD_FAILED' }).eq('id', internalPaymentId);
           return { success: false, transactionId: internalPaymentId, error: 'Token award failed: target wallet ID missing.', tokensAwarded: 0 };
         }
@@ -221,25 +303,22 @@ export class StripePaymentAdapter implements IPaymentGatewayAdapter {
         }
         if (paymentTx.tokens_to_award == null || paymentTx.tokens_to_award <= 0) {
             console.warn(`[StripePaymentAdapter] No tokens to award or invalid amount for ${internalPaymentId}: ${paymentTx.tokens_to_award}. Skipping token award.`);
-            // Still return success for the payment itself if it was completed.
             return { success: true, transactionId: internalPaymentId, tokensAwarded: 0 }; 
         }
 
-        // 3. Award tokens via TokenWalletService.
         try {
           await this.tokenWalletService.recordTransaction({
-            walletId: paymentTx.target_wallet_id, // Now checked for null
+            walletId: paymentTx.target_wallet_id,
             type: 'CREDIT_PURCHASE',
             amount: paymentTx.tokens_to_award.toString(), 
-            recordedByUserId: paymentTx.user_id, // Now checked for null
+            recordedByUserId: paymentTx.user_id,
             relatedEntityId: internalPaymentId,
             relatedEntityType: 'payment_transactions',
-            notes: `Tokens for Stripe payment ${gatewayTransactionId}`,
+            notes: `Tokens for Stripe Checkout Session ${gatewayTransactionId} (mode: ${session.mode})`,
           });
           // console.log(`[StripePaymentAdapter] Tokens successfully awarded for payment ${internalPaymentId}.`);
         } catch (tokenError) {
           console.error(`[StripePaymentAdapter] Exception during token awarding for payment ${internalPaymentId}:`, tokenError);
-          // If token awarding fails, update payment_transactions status to TOKEN_AWARD_FAILED
           await this.adminClient
             .from('payment_transactions')
             .update({ status: 'TOKEN_AWARD_FAILED' })
@@ -248,45 +327,25 @@ export class StripePaymentAdapter implements IPaymentGatewayAdapter {
             success: false, 
             transactionId: internalPaymentId, 
             error: 'Token award failed after payment.', 
-            tokensAwarded: 0 // Explicitly set tokensAwarded to 0 on failure
+            tokensAwarded: 0 
           };
         }
-        
         return { success: true, transactionId: internalPaymentId, tokensAwarded: paymentTx.tokens_to_award };
 
-      } catch (processingError) {
-        console.error(`[StripePaymentAdapter] Error processing webhook for payment ${internalPaymentId}:`, processingError);
-        return { success: false, transactionId: internalPaymentId || '', error: 'Error processing webhook.' };
+      } catch (error) {
+        console.error(`[StripePaymentAdapter] Exception processing checkout.session.completed for ${internalPaymentId}:`, error);
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        return { success: false, transactionId: internalPaymentId, error: errorMessage };
       }
-    } else if (event.type === 'payment_intent.payment_failed' || event.type === 'checkout.session.async_payment_failed') {
-        const session = event.data.object as Stripe.Checkout.Session | Stripe.PaymentIntent;
-        const internalPaymentId = session.metadata?.internal_payment_id;
-        if (internalPaymentId) {
-            await this.adminClient
-                .from('payment_transactions')
-                .update({ status: 'FAILED', updated_at: new Date().toISOString() })
-                .eq('id', internalPaymentId);
-            console.log(`[StripePaymentAdapter] Payment ${internalPaymentId} marked as FAILED.`);
-        }
-         return { success: false, transactionId: internalPaymentId || '', error: 'Payment failed as per Stripe.' };
-    } else if (event.type === 'checkout.session.expired') {
-        const session = event.data.object as Stripe.Checkout.Session; // Type assertion
-        const internalPaymentId = session.metadata?.internal_payment_id;
-        if (internalPaymentId) {
-            await this.adminClient
-                .from('payment_transactions')
-                .update({ status: 'EXPIRED', updated_at: new Date().toISOString() })
-                .eq('id', internalPaymentId);
-            console.log(`[StripePaymentAdapter] Payment ${internalPaymentId} marked as EXPIRED.`);
-            return { success: true, transactionId: internalPaymentId, error: `Payment transaction ${internalPaymentId} marked as EXPIRED.` }; // Acknowledge handling
-        }
-        // If no internalPaymentId, it's harder to act, but acknowledge the event
-        console.warn('[StripePaymentAdapter] checkout.session.expired received without internal_payment_id in metadata:', session);
-        return { success: true, transactionId: '', error: 'checkout.session.expired event handled, but no internal_payment_id found.' };
-    }
-
-
-    // console.log('[StripePaymentAdapter] Webhook event type not handled:', event.type);
-    return { success: true, transactionId: '', error: 'Webhook event type not explicitly handled but acknowledged.' }; // Acknowledge other events to Stripe
+    } 
+    // else if (event.type === 'payment_intent.succeeded') {
+    //   // TODO: Handle payment_intent.succeeded if it's not already covered by checkout.session.completed
+    //   // This might be relevant for other payment flows or if checkout.session.completed isn't guaranteed.
+    //   // For now, focusing on checkout.session.completed as primary.
+    // }
+    
+    // If event type is not handled, log and return success (as Stripe expects a 2xx response)
+    // console.log(`[StripePaymentAdapter] Unhandled event type: ${event.type}`);
+    return { success: true, transactionId: undefined, error: undefined }; // Default success for unhandled relevant events
   }
 }

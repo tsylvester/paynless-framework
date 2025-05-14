@@ -6,6 +6,7 @@ import type { Stub } from 'https://deno.land/std@0.224.0/testing/mock.ts';
 type CheckoutSessionCreateType = Stripe['checkout']['sessions']['create'];
 type WebhookConstructEventType = Stripe['webhooks']['constructEvent'];
 type PaymentIntentsRetrieveType = Stripe['paymentIntents']['retrieve'];
+type SubscriptionsRetrieveType = Stripe['subscriptions']['retrieve'];
 
 // Define a type for the structure of the mocked Stripe, exposing stubs
 export interface MockStripe {
