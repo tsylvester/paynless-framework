@@ -180,7 +180,7 @@ The implementation plan uses the following labels to categorize work steps:
     *   This function takes transaction parameters (including a mandatory `p_recorded_by_user_id`), updates `token_wallets.balance`, inserts into `token_wallet_transactions` (with `recorded_by_user_id NOT NULL`), and returns the new transaction record. It MUST run within a transaction and implement robust idempotency. (Verified as completed in existing migration `20250513135601_record_token_transaction.sql`)
 *   [✅] **4.1.1.3: [COMMIT]** "feat(BE|DB): Implement core TokenWalletService and atomic DB transaction function with tests"
 
-*   [✅] **4.1.1.4: [BE] [RLS] Secure Tokenomics Tables**
+*   [🚧] **4.1.1.4: [BE] [RLS] Secure Tokenomics Tables**
     *   **Goal:** Implement Row-Level Security for `token_wallets`, `token_wallet_transactions`, and `payment_transactions` to ensure data integrity and proper access control.
     *   [✅] **4.1.1.4.1: [RLS] Define and Apply RLS for `token_wallets`** (All sub-points verified as complete through various migrations, culminating in `is_admin_of_org_for_wallet` helper for org admin SELECT.)
         *   `SELECT`: Users can select their own wallet(s) (`user_id = auth.uid()`) or wallets of organizations they are an **admin** member of (requires join with `organization_members` and check for `role = 'admin'`). Service role for full access.
@@ -192,8 +192,9 @@ The implementation plan uses the following labels to categorize work steps:
         *   `INSERT`: Restrict to `service_role` or the `record_token_transaction` function (which is `SECURITY DEFINER`). End-users should not directly insert ledger entries. (Implemented)
         *   `UPDATE`: Forbid all updates (`USING (false)` and `WITH CHECK (false)`). Ledger entries should be immutable. (Implemented for authenticated users. `service_role` can currently bypass - potential refinement needed for strict immutability).
         *   `DELETE`: Forbid all deletes. Ledger entries should be immutable. (Implemented for authenticated users. `service_role` can currently bypass - potential refinement needed for strict immutability).
-    *   [✅] **4.1.1.4.3: [RLS] Define and Apply RLS for `payment_transactions`**
+    *   [🚧] **4.1.1.4.3: [RLS] Define and Apply RLS for `payment_transactions`**
         *   `SELECT`: Users can select their own payment transactions (`user_id = auth.uid()`) or payments related to organizations they manage. (User part implemented. Org part is missing).
+        *   [ ] **Sub-task: Implement SELECT RLS for organization-managed `payment_transactions`.**
         *   `INSERT`: Primarily by backend services when initiating payments. Authenticated users might trigger this via an edge function that runs with elevated privileges for the insert. (Implemented via disallowing direct user inserts).
         *   `UPDATE`: Status updates (e.g., 'pending' to 'completed') should be handled by trusted backend processes (like webhook handlers or payment confirmation services), not directly by users. (Implemented via disallowing direct user updates).
         *   `DELETE`: Generally restrict or disallow. Refunds should be new transactions or status updates. (Implemented via disallowing direct user deletes).
@@ -201,39 +202,62 @@ The implementation plan uses the following labels to categorize work steps:
     *   [✅] **4.1.1.4.5: [COMMIT]** "feat(RLS): Implement row-level security for tokenomics tables"
 
 ### 4.1.2: [BE] Implement Stripe Payment Gateway Adapter
-*   [ ] **4.1.2.1: [BE] [TEST-UNIT] Create `supabase/functions/_shared/adapters/stripePaymentAdapter.ts`**
-    *   Implement `IPaymentGatewayAdapter` for Stripe (using Stripe SDK).
-    *   `initiatePayment`: Create Stripe Checkout Session or Payment Intent. Create a `payment_transactions` record in 'PENDING' state, store its ID in Stripe metadata.
-    *   `handleWebhook`: Process Stripe webhooks (e.g., `checkout.session.completed`, `payment_intent.succeeded`).
-        *   Verify webhook signature.
-        *   Retrieve `payment_transactions.id` from Stripe metadata.
-        *   Update `payment_transactions` record to 'COMPLETED' and store `gateway_transaction_id`.
-        *   Call `TokenWalletService.recordTransaction` to credit the user's wallet with `tokens_to_award` from the `payment_transactions` record.
-    *   Write unit tests (mocking Stripe SDK, Supabase client, and `TokenWalletService`).
-*   [ ] **4.1.2.2: [COMMIT]** "feat(BE): Implement StripePaymentAdapter with tests"
+*   [🚧] **4.1.2.1: [BE] Design and Implement `StripePaymentAdapter`**
+    *   **Location:** `supabase/functions/_shared/adapters/stripePaymentAdapter.ts`
+    *   **Interface Implementation:** Implement `IPaymentGatewayAdapter` for Stripe.
+    *   **Dependencies:** The adapter will require an initialized Stripe SDK instance, an admin Supabase client, an instance of `TokenWalletService`, and the Stripe webhook secret (via environment variables).
+    *   **`initiatePayment(request: PurchaseRequest)` Method:**
+        *   [✅] **4.1.2.1.1: [DB] [BE] Item Mapping:** Determine Stripe Price ID and `tokens_to_award` from `request.itemId`.
+            *   This involves querying a local table (e.g., `stripe_plans` or `service_offerings`, synced via `sync-stripe-plans` function) that maps an internal `itemId` to a `stripe_price_id` and `tokens_awarded`.
+            *   Ensure `sync-stripe-plans` function correctly populates/maintains this mapping table.
+        *   [ ] **4.1.2.1.2: [BE] Target Wallet Identification:** Determine `target_wallet_id` using `TokenWalletService.getWalletForContext(request.userId, request.organizationId)`.
+            *   If no wallet exists, decide on creation strategy (e.g., create on-the-fly via `TokenWalletService.createWallet` or return an error).
+        *   [ ] **4.1.2.1.3: [BE] Create `payment_transactions` Record:** Insert a new record into `payment_transactions` with `status: 'PENDING'`, `target_wallet_id`, `tokens_to_award`, `payment_gateway_id: 'stripe'`, and other relevant details from `PurchaseRequest`. Store the new `payment_transactions.id` (as `internalPaymentId`).
+        *   [ ] **4.1.2.1.4: [BE] Stripe Session Creation:** Refactor existing Stripe Checkout Session (or Payment Intent) creation logic.
+            *   Include `internalPaymentId` in Stripe's `metadata`.
+            *   Populate `success_url` and `cancel_url` with `internalPaymentId` as a query parameter for potential client-side reconciliation if needed.
+        *   [ ] **4.1.2.1.5: [BE] Return `PaymentInitiationResult`:** Populate and return the standardized result object.
+    *   **`handleWebhook(rawBody: string | Buffer, signature: string | undefined)` Method:**
+        *   [ ] **4.1.2.1.6: [BE] Webhook Signature Verification:** Verify the Stripe webhook signature using the raw body, signature header, and webhook secret.
+        *   [ ] **4.1.2.1.7: [BE] Event Processing:** Handle relevant Stripe events (e.g., `checkout.session.completed`, `payment_intent.succeeded`, `payment_intent.payment_failed`).
+        *   [ ] **4.1.2.1.8: [BE] Retrieve `internalPaymentId`:** Extract `internalPaymentId` from webhook event metadata.
+        *   [ ] **4.1.2.1.9: [BE] Update `payment_transactions` Record:**
+            *   Fetch the existing `payment_transactions` record using `internalPaymentId`.
+            *   Implement idempotency check (e.g., if status is already 'COMPLETED' or 'FAILED').
+            *   On success event, update status to 'COMPLETED', store `gateway_transaction_id`.
+            *   On failure event, update status to 'FAILED'.
+        *   [ ] **4.1.2.1.10: [BE] Award Tokens on Success:** If payment successful, call `TokenWalletService.recordTransaction` to credit the `target_wallet_id` with `tokens_to_award` from the `payment_transactions` record.
+            *   Use `paymentTx.user_id` as `recordedByUserId`.
+            *   Use `internalPaymentId` as `relatedEntityId` and `'payment_transaction'` as `relatedEntityType`.
+            *   Handle potential failures in token awarding (e.g., update `payment_transactions.status` to 'TOKEN_AWARD_FAILED').
+        *   [ ] **4.1.2.1.11: [BE] Return `PaymentConfirmation`:** Populate and return the standardized result object.
+    *   [ ] **4.1.2.1.12: [TEST-UNIT] Write Unit Tests for `StripePaymentAdapter`**
+        *   In `supabase/functions/_shared/adapters/tests/stripePaymentAdapter.test.ts`.
+        *   Mock Stripe SDK, Supabase client (`adminClient`), and `TokenWalletService`.
+        *   Cover success and failure scenarios for both `initiatePayment` and `handleWebhook`, including idempotency.
+*   [ ] **4.1.2.2: [COMMIT]** "feat(BE): Implement StripePaymentAdapter, abstracting Stripe logic, with tests"
 
-### 4.1.3: [BE] Payment Initiation & Webhook Endpoints
-*   [ ] **4.1.3.1: [BE] Create Edge Function `POST /initiate-payment`**
-    *   `supabase/functions/initiate-payment/index.ts`:
-        *   Authenticates user, identifies `target_wallet_id`.
-        *   Takes `PurchaseRequest` (e.g., `itemId`, `paymentGatewayId`).
-        *   (Service layer?) Determines `tokens_to_award`, `amount_fiat/crypto` based on `itemId`.
-        *   Dynamically selects adapter based on `paymentGatewayId` from `PurchaseRequest`.
-        *   Calls `adapter.initiatePayment`.
-        *   Returns `PaymentInitiationResult`.
-    *   [TEST-INT] Write integration tests.
-*   [ ] **4.1.3.2: [BE] Create Edge Function `POST /webhooks/stripe`**
-    *   `supabase/functions/webhooks-stripe/index.ts`:
-        *   Securely verifies and processes Stripe webhook.
-        *   Instantiates `StripePaymentAdapter`.
-        *   Calls `adapter.handleWebhook`.
-    *   [TEST-INT] Write integration tests (may require Stripe CLI for local testing).
-*   [ ] **4.1.3.3: [COMMIT]** "feat(BE): Add endpoints for payment initiation and Stripe webhooks"
+### 4.1.3: [BE] Payment Initiation & Webhook Endpoints (Refactored)
+*   [🚧] **4.1.3.1: [BE] Refactor/Create Central `POST /initiate-payment` Edge Function**
+    *   **Path:** `supabase/functions/initiate-payment/index.ts`
+    *   **Functionality:**
+        *   [ ] **4.1.3.1.1: [BE] Authentication & Request Handling:** Authenticate user. Parse `PurchaseRequest` from request body.
+        *   [ ] **4.1.3.1.2: [BE] Adapter Factory/Selection:** Implement a mechanism to select and instantiate the correct payment adapter based on `PurchaseRequest.paymentGatewayId` (e.g., 'stripe').
+        *   [ ] **4.1.3.1.3: [BE] Adapter Instantiation:** Instantiate the selected adapter (e.g., `StripePaymentAdapter`) with its required dependencies (Stripe SDK instance, admin Supabase client, `TokenWalletService` instance, webhook secret from env).
+        *   [ ] **4.1.3.1.4: [BE] Call Adapter:** Call `adapter.initiatePayment(request)`.
+        *   [ ] **4.1.3.1.5: [BE] Return Response:** Return the `PaymentInitiationResult` to the client.
+    *   [ ] **4.1.3.1.6: [TEST-INT] Write/Update Integration Tests for `/initiate-payment`**. Test with 'stripe' gateway.
+*   [🚧] **4.1.3.2: [BE] Refactor `POST /webhooks/stripe` Edge Function**
+    *   **Path:** `supabase/functions/webhooks-stripe/index.ts`
+    *   **Functionality (Thin Wrapper):**
+        *   [ ] **4.1.3.2.1: [BE] Adapter Instantiation:** Instantiate `StripePaymentAdapter` with its dependencies.
+        *   [ ] **4.1.3.2.2: [BE] Delegate to Adapter:** Pass the raw request body and signature header to `adapter.handleWebhook(rawBody, signature)`.
+        *   [ ] **4.1.3.2.3: [BE] HTTP Response:** Return appropriate HTTP status code to Stripe based on `PaymentConfirmation` result.
+    *   [ ] **4.1.3.2.4: [TEST-INT] Write/Update Integration Tests for `/webhooks/stripe`**. (May require Stripe CLI for local testing).
+*   [ ] **4.1.3.3: [COMMIT]** "feat(BE): Refactor payment endpoints to use Payment Gateway Adapter pattern"
 
 ### 4.1.4: [BE] Placeholder for Coinbase/Crypto Payment Gateway Adapter
 *   [ ] **4.1.4.1: [BE] Create `supabase/functions/_shared/adapters/coinbasePaymentAdapter.ts` (Skeleton)**
-    *   Define the class implementing `IPaymentGatewayAdapter` with methods throwing `NotImplementedError`.
-*   [ ] **4.1.4.2: [COMMIT]** "feat(BE): Add skeleton for CoinbasePaymentAdapter"
 
 ---
 

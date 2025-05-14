@@ -413,10 +413,13 @@ export type Database = {
           id: string
           interval: string
           interval_count: number
+          item_id_internal: string | null
           metadata: Json | null
           name: string
+          plan_type: string
           stripe_price_id: string
           stripe_product_id: string | null
+          tokens_awarded: number | null
           updated_at: string
         }
         Insert: {
@@ -428,10 +431,13 @@ export type Database = {
           id?: string
           interval: string
           interval_count?: number
+          item_id_internal?: string | null
           metadata?: Json | null
           name: string
+          plan_type?: string
           stripe_price_id: string
           stripe_product_id?: string | null
+          tokens_awarded?: number | null
           updated_at?: string
         }
         Update: {
@@ -443,10 +449,13 @@ export type Database = {
           id?: string
           interval?: string
           interval_count?: number
+          item_id_internal?: string | null
           metadata?: Json | null
           name?: string
+          plan_type?: string
           stripe_price_id?: string
           stripe_product_id?: string | null
+          tokens_awarded?: number | null
           updated_at?: string
         }
         Relationships: []

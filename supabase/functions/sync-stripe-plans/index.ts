@@ -5,22 +5,19 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import Stripe from "npm:stripe@14.11.0";
 import { createClient as actualCreateClient } from "jsr:@supabase/supabase-js@2"; // Assuming version from previous files
 // Use JSR import for SupabaseClient types as well
-import type { SupabaseClient, SupabaseClientOptions, PostgrestResponse } from "jsr:@supabase/supabase-js@2"; 
+import type { SupabaseClient } from "jsr:@supabase/supabase-js@2"; 
 import { 
     handleCorsPreflightRequest as actualHandleCorsPreflightRequest, // Import the handler
     createErrorResponse as actualCreateErrorResponse, 
     createSuccessResponse as actualCreateSuccessResponse, 
-    // corsHeaders // Remove direct import of headers object
 } from "../_shared/cors-headers.ts";
 // Import the new service
-import { ISyncPlansService, SyncPlansService } from "./services/sync_plans_service.ts";
+import { SyncPlansService, PlanUpsertData, ExistingPlanData } from "./services/sync_plans_service.ts"; // Assuming PlanUpsertData is exported now
 import { Database } from "../types_db.ts"; // Import the Database type
 
 // Define dependency types
 // Export StripeConstructor
 export type StripeConstructor = new (key: string, config?: Stripe.StripeConfig) => Stripe;
-// Keep client type for service creation
-type CreateClientFn = (url: string, key: string, options?: SupabaseClientOptions<any>) => SupabaseClient<Database>; // Use Database type
 
 // Define dependencies interface
 export interface SyncPlansHandlerDeps {
@@ -28,9 +25,7 @@ export interface SyncPlansHandlerDeps {
     createErrorResponse: typeof actualCreateErrorResponse;
     createSuccessResponse: typeof actualCreateSuccessResponse;
     stripeConstructor: StripeConstructor;
-    // Remove createSupabaseClient, add service instance
-    // createSupabaseClient: CreateClientFn; 
-    syncPlansService: ISyncPlansService; 
+    syncPlansService: SyncPlansService; // Use concrete class if interface import is troublesome
 }
 
 // Default dependencies
@@ -51,7 +46,6 @@ const defaultDeps: SyncPlansHandlerDeps = {
     createErrorResponse: actualCreateErrorResponse,
     createSuccessResponse: actualCreateSuccessResponse,
     stripeConstructor: Stripe,
-    // Provide the instantiated service
     syncPlansService: defaultSyncPlansService,
 };
 
@@ -112,7 +106,7 @@ export async function handleSyncPlansRequest(
     // Initialize Stripe using injected constructor
     const stripe = new deps.stripeConstructor(stripeKey, {
       httpClient: Stripe.createFetchHttpClient(),
-      apiVersion: "2025-03-31.basil",
+      apiVersion: "2023-10-16",
     });
     console.log(`Stripe client initialized in ${isTestMode ? 'TEST' : 'LIVE'} mode.`);
 
@@ -143,37 +137,73 @@ export async function handleSyncPlansRequest(
     console.log(`Fetched ${prices.data.length} active prices.`);
 
     // 4. Format data for Supabase upsert
-    const plansToUpsert = prices.data
-      .filter(price => price.product && typeof price.product === 'object' && price.recurring?.interval) // Ensure product is expanded and price is recurring
-      .map((price) => {
-        const product = price.product as Stripe.Product; // Type assertion after filter
+    const plansToUpsert: PlanUpsertData[] = prices.data
+      .filter((price: Stripe.Price) => price.product && typeof price.product === 'object') // Ensure product is expanded
+      .map((price: Stripe.Price) => {
+        const product = price.product as Stripe.Product;
         
         let subtitle = product.name;
         try {
           if (price.metadata?.subtitle && typeof price.metadata.subtitle === 'string') {
             subtitle = price.metadata.subtitle;
+          } else if (product.metadata?.subtitle && typeof product.metadata.subtitle === 'string') {
+            subtitle = product.metadata.subtitle;
           }
         } catch (metaError) {
-           console.error('[sync-stripe-plans] Error accessing price metadata:', { priceId: price.id, metaError });
+           console.error('[sync-stripe-plans] Error accessing metadata subtitle:', { priceId: price.id, productId: product.id, metaError });
         }
 
-        const descriptionJson = { subtitle, features: [] }; // Always empty features
+        const features: string[] = [];
+        try {
+            const featuresString = price.metadata?.features || product.metadata?.features;
+            if (featuresString && typeof featuresString === 'string') {
+                features.push(...featuresString.split(',').map(f => f.trim()).filter(f => f));
+            }
+        } catch (metaError) {
+            console.error('[sync-stripe-plans] Error accessing metadata features:', { priceId: price.id, productId: product.id, metaError });
+        }
+        
+        const planType = price.type === 'one_time' ? 'one_time_purchase' : 'subscription';
 
-        return {
+        const tokensAwardedString = product.metadata?.tokens_awarded || price.metadata?.tokens_awarded;
+        let tokensAwarded: number | undefined = undefined; // Initialize as undefined
+        if (tokensAwardedString) {
+            const parsedTokens = parseInt(tokensAwardedString, 10);
+            if (!isNaN(parsedTokens)) {
+                tokensAwarded = parsedTokens;
+            } else {
+                console.warn(`[sync-stripe-plans] Invalid non-numeric value for tokens_awarded metadata: "${tokensAwardedString}". Product ID: ${product.id}, Price ID: ${price.id}. Setting tokens_awarded to undefined.`);
+            }
+        }
+
+        const itemIdInternal = product.metadata?.item_id_internal || price.metadata?.item_id_internal || undefined; // Default to undefined
+
+        if ((product.metadata?.is_token_package === 'true' || price.metadata?.is_token_package === 'true') && (!tokensAwarded || tokensAwarded <= 0)) {
+          console.warn(`[sync-stripe-plans] Product/Price marked as token package but has invalid/missing or non-positive tokens_awarded metadata. Product ID: ${product.id}, Price ID: ${price.id}. tokens_awarded evaluated to: ${tokensAwarded}`);
+        }
+        
+        const planData: PlanUpsertData = {
           stripe_price_id: price.id,
           stripe_product_id: product.id,
           name: product.name,
-          description: descriptionJson,
-          amount: price.unit_amount ?? 0,
+          description: { subtitle, features }, 
+          amount: typeof price.unit_amount === 'number' ? price.unit_amount : null, // Store raw cents from Stripe
           currency: price.currency,
-          interval: price.recurring?.interval,
-          interval_count: price.recurring?.interval_count ?? 1,
+          interval: price.recurring?.interval || undefined,
+          interval_count: price.recurring?.interval_count || undefined,
           active: price.active,
-          metadata: price.metadata ?? null,
+          metadata: { ...product.metadata, ...price.metadata }, // Price metadata takes precedence
+          item_id_internal: itemIdInternal,
+          tokens_awarded: tokensAwarded,
+          plan_type: planType,
         };
+        return planData;
       });
 
-    console.log(`Formatted ${plansToUpsert.length} recurring plans for upsert.`);
+    console.log(`[sync-stripe-plans] Formatted ${plansToUpsert.length} plans (including one-time purchases and subscriptions) for upsert.`);
+
+    // Detailed log of the data to be upserted
+    console.log('[sync-stripe-plans] Attempting to upsert the following plans:', JSON.stringify(plansToUpsert, null, 2));
 
     if (plansToUpsert.length === 0) {
       console.log("No recurring plans found to upsert.");
@@ -182,15 +212,15 @@ export async function handleSyncPlansRequest(
 
     // **** Upsert data via the Service ****
     console.log("Upserting plans via service...");
-    const upsertResult = await deps.syncPlansService.upsertPlans(plansToUpsert);
+    const upsertResult = await deps.syncPlansService.upsertPlans(plansToUpsert as Database['public']['Tables']['subscription_plans']['Insert'][]);
     if (upsertResult.error) {
       // Pass req to error response
-      return deps.createErrorResponse(`Supabase upsert failed via service: ${upsertResult.error.message}`, 500, req);
+      return deps.createErrorResponse(`Supabase upsert failed via service: ${upsertResult.error.message} - Details: ${upsertResult.error.details}`, 500, req, upsertResult.error);
     }
 
     // --- BEGIN DEACTIVATION LOGIC ---
     try {
-        const activePriceIdsFromStripe = new Set(plansToUpsert.map(p => p.stripe_price_id));
+        const activePriceIdsFromStripe = new Set(plansToUpsert.map((p: PlanUpsertData) => p.stripe_price_id));
         console.log("[sync-stripe-plans] Fetching existing plans via service...");
         // **** Fetch existing plans via the Service ****
         const { data: existingPlans, error: fetchError } = await deps.syncPlansService.getExistingPlans();
@@ -200,8 +230,8 @@ export async function handleSyncPlansRequest(
           // Potentially return an error response here if critical, passing req
         } else if (existingPlans) {
           const plansToDeactivate = existingPlans
-            .filter(p => p.stripe_price_id && p.stripe_price_id !== 'price_FREE') 
-            .filter(p => p.active === true && !activePriceIdsFromStripe.has(p.stripe_price_id))
+            .filter((p: ExistingPlanData) => p.stripe_price_id && p.stripe_price_id !== 'price_FREE') 
+            .filter((p: ExistingPlanData) => p.active === true && !activePriceIdsFromStripe.has(p.stripe_price_id))
 
           if (plansToDeactivate.length > 0) {
             console.log(`[sync-stripe-plans] Attempting to deactivate ${plansToDeactivate.length} plans via service.`);

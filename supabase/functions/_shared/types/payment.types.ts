@@ -41,6 +41,12 @@ export interface PaymentConfirmation {
  * Interface for a payment gateway adapter.
  * Each specific gateway (Stripe, Coinbase, etc.) will implement this.
  */
+
+/**
+ * @interface IPaymentGatewayAdapter
+ * Defines the contract for payment gateway adapters.
+ * Each payment gateway (Stripe, Coinbase, etc.) will implement this interface.
+ */
 export interface IPaymentGatewayAdapter {
   /**
    * A unique identifier for the payment gateway (e.g., 'stripe', 'coinbase').
@@ -63,7 +69,7 @@ export interface IPaymentGatewayAdapter {
    * processing the event (e.g., payment success, failure), updating internal
    * transaction records, and potentially awarding tokens or services.
    *
-   * @param rawBody - The raw request body of the webhook, as a Uint8Array or string.
+   * @param rawBody - The raw request body of the webhook.
    * @param signature - The signature header from the webhook request (e.g., 'stripe-signature').
    * @param webhookSecret - The secret key used to verify the webhook signature.
    * @returns A promise that resolves to a PaymentConfirmation.
@@ -74,4 +80,3 @@ export interface IPaymentGatewayAdapter {
   // processRefund(transactionId: string, amount?: number): Promise<RefundResult>;
   // getTransactionDetails(gatewayTransactionId: string): Promise<TransactionDetails>;
 }
- 
