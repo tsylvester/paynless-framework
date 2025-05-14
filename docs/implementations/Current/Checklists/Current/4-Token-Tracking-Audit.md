@@ -298,14 +298,41 @@ The implementation plan uses the following labels to categorize work steps:
         *   [✅] **4.1.3.1.5: [BE] Return Response:** (As before)
     *   [✅] **4.1.3.1.6: [TEST-INT] Write/Update Integration Tests for `/initiate-payment`**.
         *   Ensure tests verify the orchestration logic passes a purely **generic** `PaymentOrchestrationContext` to the adapter.
-*   [🚧] **4.1.3.2: [BE] Refactor `POST /webhooks/stripe` Edge Function**
-    *   **Path:** `supabase/functions/webhooks-stripe/index.ts`
-    *   **Functionality (Thin Wrapper):**
-        *   [ ] **4.1.3.2.1: [BE] Adapter Instantiation:** Instantiate `StripePaymentAdapter` with its dependencies.
-        *   [ ] **4.1.3.2.2: [BE] Delegate to Adapter:** Pass the raw request body and signature header to `adapter.handleWebhook(rawBody, signature)`.
-        *   [ ] **4.1.3.2.3: [BE] HTTP Response:** Return appropriate HTTP status code to Stripe based on `PaymentConfirmation` result.
-    *   [ ] **4.1.3.2.4: [TEST-INT] Write/Update Integration Tests for `/webhooks/stripe`**. (May require Stripe CLI for local testing).
-*   [ ] **4.1.3.3: [COMMIT]** "feat(BE): Refactor payment endpoints to use Payment Gateway Adapter pattern"
+*   [🚧] **4.1.3.2: [BE] [ARCH] Implement Generic Webhook Router at `/webhooks/{source}` & Integrate Stripe**
+    *   **Goal:** Create a single Edge Function at `/webhooks/` that acts as a router. It will use a path segment (e.g., `/webhooks/stripe`, `/webhooks/coinbase`) to identify the webhook source, fetch the appropriate payment gateway adapter, and delegate handling.
+    *   **Sub-Tasks:**
+        *   [✅] **4.1.3.2.1: [ARCH] Design Generic Webhook Router Function at `/webhooks/`**
+            *   The function will be deployed to handle requests to `supabase/functions/webhooks/index.ts`.
+            *   It will parse the URL to extract the `{source}` (e.g., 'stripe', 'coinbase') from `/webhooks/{source}`.
+            *   It will read the raw request body and relevant signature headers.
+        *   [✅] **4.1.3.2.2: [TEST-INT] Define and Write Failing Integration Tests for Generic Webhook Router (RED)**
+            *   Test routing `/webhooks/nonexistent-source` (expect 404 or 400).
+            *   Test routing `/webhooks/stripe` (expect mock `StripePaymentAdapter.handleWebhook` to be called with correct parameters).
+            *   (Optional) Test routing `/webhooks/coinbase` (expect mock `CoinbasePaymentAdapter.handleWebhook` to be called if a skeleton adapter exists).
+        *   [✅] **4.1.3.2.3: [BE] [DI] Utilize/Adapt Adapter Factory for Webhooks**
+            *   Ensure `getPaymentAdapter` (or a similar factory, potentially in `_shared/adapters/adapterFactory.ts`) can provide the router with the correct `IPaymentGatewayAdapter` instance based on the `{source}`.
+            *   The factory should ensure the adapter is instantiated with all necessary dependencies (e.g., admin Supabase client, `TokenWalletService`, and its specific `webhookSecret`).
+        *   [✅] **4.1.3.2.4: [TYPES] Verify `IPaymentGatewayAdapter.handleWebhook` Interface Signature**
+            *   Confirm the existing signature: `handleWebhook(rawBody: string | Uint8Array, signature: string | undefined): Promise<PaymentConfirmation>;` The adapter holds its own webhook secret, so the router doesn't pass it.
+        *   [✅] **4.1.3.2.5: [BE] Implement Generic Webhook Router Logic at `supabase/functions/webhooks/index.ts` (GREEN)**
+            *   Implement the router to:
+                *   Parse `{source}` from the path.
+                *   Get the adapter using the factory.
+                *   Pass the raw body and signature (extracted by the router) to `adapter.handleWebhook()`.
+                *   Translate the `PaymentConfirmation` result from the adapter into an appropriate HTTP response.
+        *   [✅] **4.1.3.2.6: [REFACTOR] Refactor Router and Associated Tests.**
+        *   [✅] **4.1.3.2.7: [TEST-INT] Ensure Stripe Webhook Processing via `/webhooks/stripe` Passes Tests.**
+            *   Run integration tests targeting the new `/webhooks/` function with a `/stripe` path segment.
+        *   [ ] **4.1.3.2.8: [BE] [REFACTOR] [API] [UI] [TEST-UNIT] [TEST-INT] Safely Decommission Old `webhooks-stripe/index.ts` Function and Transition to Generic `/webhooks/stripe` Endpoint.**
+            *   [ ] **4.1.3.2.8.1: [BE] [ARCH] Review Existing `webhooks-stripe/index.ts`:** Analyze its current functionality, logic, and any direct integrations or assumptions it makes.
+            *   [ ] **4.1.3.2.8.2: [BE] [ARCH] Gap Analysis:** Compare the functionality of the old `webhooks-stripe/index.ts` with the new generic `/webhooks/stripe` path (handled by `webhooks/index.ts` + `StripePaymentAdapter`). Identify any functional differences, potential behavioral changes, or missing pieces in the new implementation that could impact existing consumers.
+            *   [ ] **4.1.3.2.8.3: [BE] [REFACTOR] Resolve Gaps/Bugs:** If any critical gaps or bugs are identified in the new generic webhook implementation (specifically for Stripe handling via the adapter) that would prevent existing functionality from working correctly, address these in `webhooks/index.ts` or `StripePaymentAdapter.ts` and their tests.
+            *   [ ] **4.1.3.2.8.4: [API] [UI] Identify Frontend Consumers:** Search the codebase (primarily `apps/web/` and potentially `packages/api/` or `packages/store/`) to find all locations where the old `/webhooks-stripe` endpoint is explicitly called or configured.
+            *   [ ] **4.1.3.2.8.5: [API] [UI] [REFACTOR] Transition Frontend Calls:** Update all identified frontend locations to use the new generic `/webhooks/stripe` endpoint. This might involve changes to API client methods, store actions, or direct fetch/service calls in UI components.
+            *   [ ] **4.1.3.2.8.6: [TEST-UNIT] [TEST-INT] Update Affected Tests:** Review and update any unit or integration tests in the frontend (`apps/web/`) or shared packages (`packages/api/`, `packages/store/`) that were asserting behavior related to the old `/webhooks-stripe` endpoint. Ensure they now correctly reflect calls and expected behavior with the new `/webhooks/stripe` endpoint.
+            *   [ ] **4.1.3.2.8.7: [TEST-INT] [E2E] Full Flow Verification:** After frontend changes, conduct thorough testing (integration, and ideally E2E if available) of all flows that previously relied on the Stripe webhook to ensure they function correctly with the new generic endpoint.
+            *   [ ] **4.1.3.2.8.8: [BE] [REFACTOR] Remove Old `webhooks-stripe/index.ts`:** Once all consumers are transitioned and verified, delete the `supabase/functions/webhooks-stripe/` directory and its contents (including old tests).
+        *   [ ] **4.1.3.2.9: [COMMIT]** "feat(BE|ARCH|FE): Complete generic webhook implementation and transition from old Stripe webhook"
 
 ### 4.1.4: [BE] Placeholder for Coinbase/Crypto Payment Gateway Adapter
 *   [ ] **4.1.4.1: [BE] Create `supabase/functions/_shared/adapters/coinbasePaymentAdapter.ts` (Skeleton)**
