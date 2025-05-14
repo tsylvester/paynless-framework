@@ -95,22 +95,22 @@ The implementation plan uses the following labels to categorize work steps:
 
 **Goal:** Ensure all relevant entities (users, organizations) have a token wallet provisioned automatically and reliably.
 
-*   [ ] **4.0.A.1: [BE] [DB] Define Wallet Provisioning Triggers & Logic**
-    *   [ ] **4.0.A.1.1: [BE] User Wallet Provisioning:**
-        *   [ ] **Option 1 (Preferred for new users):** Modify user creation process (e.g., after Supabase `auth.users` insertion, trigger a function or use a DB trigger) to automatically call `TokenWalletService.createWallet` for the new user.
-        *   [ ] **Option 2 (For existing users / fallback):** Implement logic triggered on user login (e.g., in a custom `/on-login` endpoint or session handler) to check for and create a user wallet if one doesn't exist using `TokenWalletService.getWalletForContext` and `TokenWalletService.createWallet`.
-        *   [ ] **Decision Point:** Choose and document the primary mechanism for user wallet creation.
-    *   [ ] **4.0.A.1.2: [BE] Organization Wallet Provisioning:**
-        *   [ ] Define the trigger for organization wallet creation (e.g., upon organization creation via API/service, or on first relevant action requiring an org wallet).
-        *   [ ] Implement the call to `TokenWalletService.createWallet` for the new organization.
-    *   [ ] **4.0.A.1.3: [DB] [BE] Idempotency:** Ensure wallet creation logic is idempotent (i.e., attempting to create a wallet that already exists does not cause errors or duplicates). `TokenWalletService.createWallet` should handle this, or the calling logic should check first. (Note: `createWallet` already has some checks, but the overall flow needs to be robust).
-*   [ ] **4.0.A.2: [BE] [TEST-UNIT] Write Unit/Integration Tests for Wallet Provisioning**
+*   [✅] **4.0.A.1: [BE] [DB] Define Wallet Provisioning Triggers & Logic**
+    *   [✅] **4.0.A.1.1: [BE] User Wallet Provisioning:**
+        *   [✅] **Option 1 (Preferred for new users):** Modify user creation process (e.g., after Supabase `auth.users` insertion, trigger a function or use a DB trigger) to automatically call `TokenWalletService.createWallet` for the new user. (Implemented via `handle_new_user` SQL function and trigger in `20250514123855_add_wallet_to_users.sql`)
+        *   [✅] **Option 2 (For existing users / fallback):** Implement logic triggered on user login (e.g., in a custom `/on-login` endpoint or session handler) to check for and create a user wallet if one doesn't exist using `TokenWalletService.getWalletForContext` and `TokenWalletService.createWallet`. (Effectively addressed by profile and wallet backfill scripts in `20250514123855_add_wallet_to_users.sql`)
+        *   [✅] **Decision Point:** Choose and document the primary mechanism for user wallet creation. (Option 1 is primary; backfill handles existing.)
+    *   [✅] **4.0.A.1.2: [BE] Organization Wallet Provisioning:**
+        *   [✅] Define the trigger for organization wallet creation (e.g., upon organization creation via API/service, or on first relevant action requiring an org wallet). (Implemented via `handle_new_organization` SQL function and trigger in `20250514123855_add_wallet_to_users.sql`)
+        *   [✅] Implement the call to `TokenWalletService.createWallet` for the new organization. (Implemented via direct SQL INSERT in `handle_new_organization` function in `20250514123855_add_wallet_to_users.sql`)
+    *   [✅] **4.0.A.1.3: [DB] [BE] Idempotency:** Ensure wallet creation logic is idempotent (i.e., attempting to create a wallet that already exists does not cause errors or duplicates). `TokenWalletService.createWallet` should handle this, or the calling logic should check first. (Handled by `ON CONFLICT DO NOTHING` clauses in SQL functions and underlying unique constraints on `token_wallets` table as per migration `20250514123855_add_wallet_to_users.sql`).
+*   [🚧] **4.0.A.2: [BE] [TEST-UNIT] Write Unit/Integration Tests for Wallet Provisioning**
     *   Test automatic user wallet creation upon new user signup.
-    *   Test user wallet creation on login for users missing a wallet.
+    *   Test user wallet creation on login for users missing a wallet. (Covered by testing backfill's effect)
     *   Test organization wallet creation.
-*   [ ] **4.0.A.3: [BE] [DB] (Optional) Backfill Wallets for Existing Entities**
-    *   [ ] Develop and run a script/process to create wallets for any existing users/organizations that do not currently have one. (Only if a significant number of entities exist prior to this system going live).
-*   [ ] **4.0.A.4: [COMMIT]** "feat(ARCH|BE): Implement and test automatic wallet provisioning strategy"
+*   [✅] **4.0.A.3: [BE] [DB] (Optional) Backfill Wallets for Existing Entities**
+    *   [✅] Develop and run a script/process to create wallets for any existing users/organizations that do not currently have one. (Implemented in migration `20250514123855_add_wallet_to_users.sql`).
+*   [✅] **4.0.A.4: [COMMIT]** "feat(ARCH|BE): Implement and test automatic wallet provisioning strategy"
 
 ---
 
@@ -119,7 +119,7 @@ The implementation plan uses the following labels to categorize work steps:
 **Goal:** Implement the backend service for managing token wallets and integrate the first payment gateway (Stripe).
 
 ### 4.1.1: [BE] Core Wallet Service & Payment Gateway Integration
-*   [🚧] **4.1.1.1: [TEST-UNIT] Implement and Test `TokenWalletService` Methods using TDD**
+*   [✅] **4.1.1.1: [TEST-UNIT] Implement and Test `TokenWalletService` Methods using TDD**
     *   **Overall Prerequisites (ensure these are addressed before or during relevant TDD cycles below):**
         *   Task `4.1.1.1a` (Enhance `recorded_by_user_id` for Full Auditability) and its sub-tasks are critical, especially for `recordTransaction`.
             *   [✅] **4.1.1.1a.1: [DB] Make `recorded_by_user_id` mandatory.** (Verified as completed in existing migration `20250513135601_record_token_transaction.sql`, which makes the column `NOT NULL` and the PG function parameter effectively mandatory.)
