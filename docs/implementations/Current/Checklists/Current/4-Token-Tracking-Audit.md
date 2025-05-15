@@ -365,9 +365,9 @@ The implementation plan uses the following labels to categorize work steps:
                     *   [✅] Update `payment_transactions` for the initial payment.
                     *   [✅] Award tokens associated with the subscription plan's initiation via `TokenWalletService`.
                 *   [✅] Ensure idempotency and robust error handling.
-            *   [ ] **4.1.3.2.8.4: [BE] [REFACTOR] Implement Subscription Lifecycle Event Handling (`customer.subscription.updated`, `customer.subscription.deleted`) in `StripePaymentAdapter`**
-                *   [🚧]   [TEST-UNIT] Add unit tests for various subscription update/deletion scenarios.
-                *   [ ]   Tests go in supabase/functions/_shared/adapters/stripe.subscriptionUpdated.test.ts and stripe.subscriptionDeleted.test.ts
+            *   [✅] **4.1.3.2.8.4: [BE] [REFACTOR] Implement Subscription Lifecycle Event Handling (`customer.subscription.updated`, `customer.subscription.deleted`) in `StripePaymentAdapter`**
+                *   [✅]   [TEST-UNIT] Add unit tests for various subscription update/deletion scenarios.
+                *   [✅]   Tests go in supabase/functions/_shared/adapters/stripe.subscriptionUpdated.test.ts and stripe.subscriptionDeleted.test.ts
                 *   `customer.subscription.updated`:
                     *   Update the corresponding record in `user_subscriptions` (status, plan, period dates, `cancel_at_period_end`).
                     *   Update user status/role if necessary.

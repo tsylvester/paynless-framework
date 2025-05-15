@@ -15,6 +15,10 @@ import {
     IMockClientSpies,
     MockSupabaseClientSetup,
     User,
+    MockQueryBuilderState,
+    MockSupabaseDataConfig,
+    MockPGRSTError,
+    MockResolveQueryResult
   } from "./types.ts";
   
   // Environment variable check
@@ -80,56 +84,6 @@ import {
     return { url, serviceRoleKey, anonKey };
   }
   
-
-// Define type for the internal state of the mock query builder
-export interface MockQueryBuilderState {
-    tableName: string;
-    operation: 'select' | 'insert' | 'update' | 'delete' | 'upsert';
-    filters: { column?: string; value?: unknown; type: string; criteria?: object; operator?: string; filters?: string; referencedTable?: string }[];
-    selectColumns: string | null;
-    insertData: object | unknown[] | null;
-    updateData: object | null; 
-    upsertData: object | unknown[] | null;
-    upsertOptions?: { onConflict?: string, ignoreDuplicates?: boolean };
-    rangeFrom?: number;
-    rangeTo?: number;
-    orderBy?: { column: string; options?: { ascending?: boolean; nullsFirst?: boolean; referencedTable?: string } };
-    limitCount?: number;
-    orClause?: string; 
-    matchQuery?: object;
-    textSearchQuery?: { column: string, query: string, options?: { config?: string, type?: 'plain' | 'phrase' | 'websearch' } };
-}
-
-/** Configurable data/handlers for the mock Supabase client */
-export interface MockSupabaseDataConfig {
-    getUserResult?: { data: { user: User | null }; error: Error | null }; 
-    genericMockResults?: {
-        [tableName: string]: {
-            select?: { data: object[] | null; error?: Error | null; count?: number | null; status?: number; statusText?: string } | ((state: MockQueryBuilderState) => Promise<{ data: object[] | null; error?: Error | null; count?: number | null; status?: number; statusText?: string }>);
-            insert?: { data: object[] | null; error?: Error | null; count?: number | null; status?: number; statusText?: string } | ((state: MockQueryBuilderState) => Promise<{ data: object[] | null; error?: Error | null; count?: number | null; status?: number; statusText?: string }>);
-            update?: { data: object[] | null; error?: Error | null; count?: number | null; status?: number; statusText?: string } | ((state: MockQueryBuilderState) => Promise<{ data: object[] | null; error?: Error | null; count?: number | null; status?: number; statusText?: string }>);
-            upsert?: { data: object[] | null; error?: Error | null; count?: number | null; status?: number; statusText?: string } | ((state: MockQueryBuilderState) => Promise<{ data: object[] | null; error?: Error | null; count?: number | null; status?: number; statusText?: string }>);
-            delete?: { data: object[] | null; error?: Error | null; count?: number | null; status?: number; statusText?: string } | ((state: MockQueryBuilderState) => Promise<{ data: object[] | null; error?: Error | null; count?: number | null; status?: number; statusText?: string }>);
-        };
-    };
-    rpcResults?: {
-        [functionName: string]: { data?: object | object[] | null; error?: Error | null } | (() => Promise<{ data?: object | object[] | null; error?: Error | null }>);
-    };
-    mockUser?: User | null; 
-    simulateAuthError?: Error | null;
-}
-
-// Type for the resolved query result, to be used internally and by IMockQueryBuilder terminators
-// Allowing error to be a more structured object for mock errors like PGRST116
-export type MockPGRSTError = { name: string; message: string; code: string; details?: string; hint?: string };
-export type MockResolveQueryResult = { 
-    data: object | unknown[] | null; // Broadened to cover single object, array of unknowns, or null
-    error: Error | MockPGRSTError | null; 
-    count: number | null; 
-    status: number; 
-    statusText: string; 
-};
-
 // --- MockQueryBuilder Implementation ---
 class MockQueryBuilder implements IMockQueryBuilder {
     public methodSpies: { [key: string]: Spy<(...args: unknown[]) => unknown> } = {};
