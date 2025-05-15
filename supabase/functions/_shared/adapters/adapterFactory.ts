@@ -3,7 +3,7 @@ import { ITokenWalletService } from '../types/tokenWallet.types.ts';
 import { SupabaseClient } from 'npm:@supabase/supabase-js';
 import type { Database } from '../../types_db.ts';
 import Stripe from 'npm:stripe'; // Import the Stripe SDK
-import { StripePaymentAdapter } from './stripePaymentAdapter.ts'; // Import the real StripePaymentAdapter
+import { StripePaymentAdapter } from './stripe/stripePaymentAdapter.ts'; // Import the real StripePaymentAdapter
 
 // The DummyStripeAdapter class is no longer needed here and will be removed.
 

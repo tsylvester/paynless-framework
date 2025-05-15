@@ -3,21 +3,21 @@ import Stripe from 'npm:stripe';
 import {
 	Price,
 	Product,
-} from './stripe.types.ts';
+} from '../stripe.types.ts';
 import { Buffer } from "node:buffer"; // Import Buffer for Deno/Node compatibility
 import { 
   Database, 
   Json,
   TablesUpdate
- } from '../../types_db.ts'; // Your generated DB types
+ } from '../../../types_db.ts'; // Your generated DB types
 import {
   IPaymentGatewayAdapter,
   PaymentInitiationResult,
   PaymentConfirmation,
   PaymentOrchestrationContext,
-} from '../types/payment.types.ts'; // Assuming types are in this package
-import { ITokenWalletService } from '../../_shared/types/tokenWallet.types.ts'; // For token awarding
-import { logger } from '../../_shared/services/logger.ts';
+} from '../../types/payment.types.ts'; // Assuming types are in this package
+import { ITokenWalletService } from '../../types/tokenWallet.types.ts'; // For token awarding
+import { Logger } from '../logger.ts';
 type SyncPlansFunctionResult = {
 	data: unknown | null; // Replace 'unknown' with a more specific type if available
 	error: { message: string; name: string } | null;
@@ -855,7 +855,7 @@ export class StripePaymentAdapter implements IPaymentGatewayAdapter {
 		product: Product,
 	): Promise<PaymentConfirmation> {
 		const functionName = '_handleProductCreated';
-		logger.info(`[${functionName}] Handling ${event.type} for product ${product.id}, Event ID: ${event.id}`);
+		Logger.info(`[${functionName}] Handling ${event.type} for product ${product.id}, Event ID: ${event.id}`);
 		const isTestMode = event.livemode === false;
 
 		// Update payment_transactions log
@@ -866,7 +866,7 @@ export class StripePaymentAdapter implements IPaymentGatewayAdapter {
 		});
 
 		try {
-			logger.info(`[${functionName}] Invoking sync-stripe-plans function (isTestMode: ${isTestMode}).`);
+			Logger.info(`[${functionName}] Invoking sync-stripe-plans function (isTestMode: ${isTestMode}).`);
 			const { data: invokeData, error: invokeError } = await this.adminClient.functions.invoke<
 				SyncPlansFunctionResult // Specify the expected return type
 			>('sync-stripe-plans', {
@@ -877,7 +877,7 @@ export class StripePaymentAdapter implements IPaymentGatewayAdapter {
 				const errDetails = invokeError instanceof Error
 					? { message: invokeError.message, name: invokeError.name, stack: invokeError.stack }
 					: invokeError;
-				logger.error(
+				Logger.error(
 					{ err: errDetails, functionName: 'sync-stripe-plans', isTestMode },
 					`[${functionName}] Error invoking sync-stripe-plans function.`,
 				);
@@ -893,7 +893,7 @@ export class StripePaymentAdapter implements IPaymentGatewayAdapter {
 				};
 			}
 
-			logger.info(
+			Logger.info(
 				`[${functionName}] Successfully invoked sync-stripe-plans. Result: ${JSON.stringify(invokeData)}`,
 			);
 			await this._updatePaymentTransaction(event.id, PaymentTransactionStatus.PROCESSED_SUCCESS, {
@@ -905,7 +905,7 @@ export class StripePaymentAdapter implements IPaymentGatewayAdapter {
 				// No specific transactionId for this, but the event is logged.
 			};
 		} catch (err) {
-			logger.error(
+			Logger.error(
 				{ err, eventId: event.id, productId: product.id },
 				`[${functionName}] Unexpected error: ${err.message}`,
 			);
@@ -925,7 +925,7 @@ export class StripePaymentAdapter implements IPaymentGatewayAdapter {
 		product: Product,
 	): Promise<PaymentConfirmation> {
 		const functionName = '_handleProductUpdated';
-		logger.info(
+		Logger.info(
 			`[${functionName}] Handling ${event.type} for product ${product.id}. Active: ${product.active}, Event ID: ${event.id}`,
 		);
 
@@ -937,7 +937,7 @@ export class StripePaymentAdapter implements IPaymentGatewayAdapter {
 		});
 
 		if (product.id === 'price_FREE') {
-			logger.info(`[${functionName}] Ignoring product.updated event for 'price_FREE'.`);
+			Logger.info(`[${functionName}] Ignoring product.updated event for 'price_FREE'.`);
 			await this._updatePaymentTransaction(event.id, PaymentTransactionStatus.SKIPPED, {
 				reason: "Ignoring 'price_FREE'",
 			});
@@ -959,7 +959,7 @@ export class StripePaymentAdapter implements IPaymentGatewayAdapter {
 				.eq('stripe_product_id', product.id);
 
 			if (updateError) {
-				logger.error(
+				Logger.error(
 					{ err: updateError, productId: product.id, active: product.active },
 					`[${functionName}] Error updating subscription_plan for product ${product.id}.`,
 				);
@@ -973,7 +973,7 @@ export class StripePaymentAdapter implements IPaymentGatewayAdapter {
 				};
 			}
 
-			logger.info(
+			Logger.info(
 				`[${functionName}] Successfully updated plan status/details for product ${product.id}. Active: ${product.active}.`,
 			);
 			await this._updatePaymentTransaction(event.id, PaymentTransactionStatus.PROCESSED_SUCCESS);
@@ -982,7 +982,7 @@ export class StripePaymentAdapter implements IPaymentGatewayAdapter {
 				message: `Product ${product.id} update processed. Plan active status set to ${product.active}.`,
 			};
 		} catch (err) {
-			logger.error(
+			Logger.error(
 				{ err, eventId: event.id, productId: product.id },
 				`[${functionName}] Unexpected error: ${err.message}`,
 			);
@@ -1002,7 +1002,7 @@ export class StripePaymentAdapter implements IPaymentGatewayAdapter {
 		price: Price,
 	): Promise<PaymentConfirmation> {
 		const functionName = '_handlePriceCreated';
-		logger.info(
+		Logger.info(
 			`[${functionName}] Handling ${event.type} for price ${price.id}. Active: ${price.active}, Product: ${typeof price.product === 'string' ? price.product : price.product.id}, Event ID: ${event.id}`,
 		);
 		const isTestMode = event.livemode === false;
@@ -1016,7 +1016,7 @@ export class StripePaymentAdapter implements IPaymentGatewayAdapter {
 		});
 
 		if (price.id === 'price_FREE') {
-			logger.info(`[${functionName}] Ignoring price.created event for 'price_FREE'.`);
+			Logger.info(`[${functionName}] Ignoring price.created event for 'price_FREE'.`);
 			await this._updatePaymentTransaction(event.id, PaymentTransactionStatus.SKIPPED, {
 				reason: "Ignoring 'price_FREE'",
 			});
@@ -1037,19 +1037,19 @@ export class StripePaymentAdapter implements IPaymentGatewayAdapter {
 
 			if (updateError) {
 				// Log error but don't necessarily fail yet, as sync might fix it.
-				logger.warn(
+				Logger.warn(
 					{ err: updateError, priceId: price.id, active: price.active },
 					`[${functionName}] Error updating subscription_plan for new price ${price.id} (might not exist yet). Sync will follow.`,
 				);
 				// Update transaction with partial info if needed
 			} else {
-				logger.info(
+				Logger.info(
 					`[${functionName}] Initial update for price ${price.id} active status to ${price.active} processed (if plan existed).`,
 				);
 			}
 
 			// 2. Invoke sync-stripe-plans
-			logger.info(`[${functionName}] Invoking sync-stripe-plans function (isTestMode: ${isTestMode}).`);
+			Logger.info(`[${functionName}] Invoking sync-stripe-plans function (isTestMode: ${isTestMode}).`);
 			const { data: invokeData, error: invokeError } = await this.adminClient.functions.invoke<
 				SyncPlansFunctionResult
 			>('sync-stripe-plans', {
@@ -1060,7 +1060,7 @@ export class StripePaymentAdapter implements IPaymentGatewayAdapter {
 				const errDetails = invokeError instanceof Error
 					? { message: invokeError.message, name: invokeError.name, stack: invokeError.stack }
 					: invokeError;
-				logger.error(
+				Logger.error(
 					{ err: errDetails, functionName: 'sync-stripe-plans', isTestMode },
 					`[${functionName}] Error invoking sync-stripe-plans function for new price.`,
 				);
@@ -1079,7 +1079,7 @@ export class StripePaymentAdapter implements IPaymentGatewayAdapter {
 				};
 			}
 
-			logger.info(
+			Logger.info(
 				`[${functionName}] Successfully invoked sync-stripe-plans for new price. Result: ${
 					JSON.stringify(invokeData)
 				}`,
@@ -1093,7 +1093,7 @@ export class StripePaymentAdapter implements IPaymentGatewayAdapter {
 				message: 'Price created event processed and plan sync invoked.',
 			};
 		} catch (err) {
-			logger.error(
+			Logger.error(
 				{ err, eventId: event.id, priceId: price.id },
 				`[${functionName}] Unexpected error: ${err.message}`,
 			);
@@ -1113,7 +1113,7 @@ export class StripePaymentAdapter implements IPaymentGatewayAdapter {
 		price: Price,
 	): Promise<PaymentConfirmation> {
 		const functionName = '_handlePriceUpdated';
-		logger.info(
+		Logger.info(
 			`[${functionName}] Handling ${event.type} for price ${price.id}. Active: ${price.active}, Event ID: ${event.id}`,
 		);
 
@@ -1126,7 +1126,7 @@ export class StripePaymentAdapter implements IPaymentGatewayAdapter {
 		});
 
 		if (price.id === 'price_FREE') {
-			logger.info(`[${functionName}] Ignoring price.updated event for 'price_FREE'.`);
+			Logger.info(`[${functionName}] Ignoring price.updated event for 'price_FREE'.`);
 			await this._updatePaymentTransaction(event.id, PaymentTransactionStatus.SKIPPED, {
 				reason: "Ignoring 'price_FREE'",
 			});
@@ -1148,7 +1148,7 @@ export class StripePaymentAdapter implements IPaymentGatewayAdapter {
 				.eq('stripe_price_id', price.id);
 
 			if (updateError) {
-				logger.error(
+				Logger.error(
 					{ err: updateError, priceId: price.id, active: price.active },
 					`[${functionName}] Error updating subscription_plan for price ${price.id}.`,
 				);
@@ -1162,7 +1162,7 @@ export class StripePaymentAdapter implements IPaymentGatewayAdapter {
 				};
 			}
 
-			logger.info(
+			Logger.info(
 				`[${functionName}] Successfully updated plan status/details for price ${price.id}. Active: ${price.active}.`,
 			);
 			await this._updatePaymentTransaction(event.id, PaymentTransactionStatus.PROCESSED_SUCCESS);
@@ -1171,7 +1171,7 @@ export class StripePaymentAdapter implements IPaymentGatewayAdapter {
 				message: `Price ${price.id} update processed. Plan active status set to ${price.active}.`,
 			};
 		} catch (err) {
-			logger.error(
+			Logger.error(
 				{ err, eventId: event.id, priceId: price.id },
 				`[${functionName}] Unexpected error: ${err.message}`,
 			);
@@ -1193,7 +1193,7 @@ export class StripePaymentAdapter implements IPaymentGatewayAdapter {
 		const functionName = '_handlePriceDeleted';
 		// Price object for deleted event might be the state before deletion. Active status might be true.
 		// The key is that the event is 'price.deleted'.
-		logger.info(
+		Logger.info(
 			`[${functionName}] Handling ${event.type} for price ${price.id}. Event ID: ${event.id}`,
 		);
 		const targetActiveStatus = false; // When a price is deleted, associated plan should become inactive.
@@ -1207,7 +1207,7 @@ export class StripePaymentAdapter implements IPaymentGatewayAdapter {
 		});
 
 		if (price.id === 'price_FREE') {
-			logger.info(`[${functionName}] Ignoring price.deleted event for 'price_FREE'.`);
+			Logger.info(`[${functionName}] Ignoring price.deleted event for 'price_FREE'.`);
 			await this._updatePaymentTransaction(event.id, PaymentTransactionStatus.SKIPPED, {
 				reason: "Ignoring 'price_FREE'",
 			});
@@ -1224,7 +1224,7 @@ export class StripePaymentAdapter implements IPaymentGatewayAdapter {
 				.eq('stripe_price_id', price.id);
 
 			if (updateError) {
-				logger.error(
+				Logger.error(
 					{ err: updateError, priceId: price.id },
 					`[${functionName}] Error deactivating subscription_plan for deleted price ${price.id}.`,
 				);
@@ -1238,7 +1238,7 @@ export class StripePaymentAdapter implements IPaymentGatewayAdapter {
 				};
 			}
 
-			logger.info(
+			Logger.info(
 				`[${functionName}] Successfully deactivated plan associated with deleted price ${price.id}.`,
 			);
 			await this._updatePaymentTransaction(event.id, PaymentTransactionStatus.PROCESSED_SUCCESS);
@@ -1247,7 +1247,7 @@ export class StripePaymentAdapter implements IPaymentGatewayAdapter {
 				message: `Price ${price.id} deletion processed. Associated plan set to inactive.`,
 			};
 		} catch (err) {
-			logger.error(
+			Logger.error(
 				{ err, eventId: event.id, priceId: price.id },
 				`[${functionName}] Unexpected error: ${err.message}`,
 			);
@@ -1296,7 +1296,7 @@ export class StripePaymentAdapter implements IPaymentGatewayAdapter {
 				.eq('stripe_event_id', identifier)
 				.single();
 			if (fetchError) {
-				logger.warn(
+				Logger.warn(
 					`[${'_updatePaymentTransaction'}] Error fetching existing transaction for event ${identifier} to merge metadata: ${fetchError.message}`,
 				);
 			} else if (existingTransaction?.metadata_json && typeof existingTransaction.metadata_json === 'object') {
@@ -1356,12 +1356,12 @@ export class StripePaymentAdapter implements IPaymentGatewayAdapter {
 		const { error: updateError } = await queryBuilder;
 
 		if (updateError) {
-			logger.error(
+			Logger.error(
 				{ err: updateError, identifier, status, additionalData },
 				`[${'_updatePaymentTransaction'}] Failed to update payment_transactions for ${identifier} to status ${status}.`,
 			);
 		} else {
-			logger.info(
+			Logger.info(
 				`[${'_updatePaymentTransaction'}] payment_transactions for ${identifier} updated to status ${status}.`,
 			);
 		}

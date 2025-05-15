@@ -14,7 +14,7 @@ import {
   IPaymentGatewayAdapter,
 } from '../_shared/types/payment.types.ts';
 import { TokenWalletService } from '../_shared/services/tokenWalletService.ts';
-import { StripePaymentAdapter } from '../_shared/adapters/stripePaymentAdapter.ts';
+import { StripePaymentAdapter } from '../_shared/adapters/stripe/stripePaymentAdapter.ts';
 import { Database } from '../types_db.ts'; // Assuming this is the path for your DB types
 
 console.log('Initializing initiate-payment function');
