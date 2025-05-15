@@ -278,7 +278,8 @@ export interface IMockQueryBuilder {
   // For RPC-like calls if the builder supports it (e.g. PostgREST functions)
   returns: () => IMockQueryBuilder; // Or Promise<any> if it's terminal
 
-  // TODO: Add other methods as needed: e.g., rpc within builder, with, modifiers like .csv()
+  // ADDED THIS LINE
+  methodSpies: { [key: string]: Spy<(...args: unknown[]) => unknown> };
 }
 
 export interface IMockSupabaseAuth {
@@ -294,6 +295,7 @@ export interface IMockSupabaseClient {
   // Define simplified auth object for now based on what's typically used client-side
   auth: IMockSupabaseAuth; 
   rpc: (name: string, params?: object, options?: { head?: boolean, count?: 'exact' | 'planned' | 'estimated' }) => Promise<{ data: unknown | null; error: Error | null; count: number | null; status: number; statusText: string; }>;
+  getLatestBuilder(tableName: string): IMockQueryBuilder | undefined;
   // Add removeChannel, getChannels etc. if realtime is tested
 }
 

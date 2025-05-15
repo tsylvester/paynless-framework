@@ -64,13 +64,14 @@ export interface PaymentInitiationResult {
 /**
  * Represents the result of confirming a payment, often via webhook.
  */
-export interface PaymentConfirmation {
+export type PaymentConfirmation = {
   success: boolean;
-  transactionId: string | undefined; // Allow undefined for cases like signature failure before ID is known
-  paymentGatewayTransactionId?: string;
+  transactionId: string | undefined; // Our internal payment_transactions.id. Undefined if payment initiation failed early or webhook processing had no internal ID.
+  paymentGatewayTransactionId?: string; // Stripe's session_id, etc. Can be undefined if not applicable or not yet known.
   tokensAwarded?: number;
   error?: string;
-}
+  message?: string; // Optional informational message
+};
 
 /**
  * Interface for a payment gateway adapter.

@@ -21,42 +21,57 @@ export async function handleCheckoutSessionCompleted(
       '[handleCheckoutSessionCompleted] internal_payment_id missing from metadata:',
       { sessionDetails: session }
     );
-    return { success: false, transactionId: undefined, error: 'Internal payment ID missing from webhook.' };
+    return { 
+      success: false, 
+      transactionId: undefined, 
+      paymentGatewayTransactionId: gatewayTransactionId, 
+      error: 'Internal payment ID missing from webhook metadata.' 
+    };
   }
 
   try {
     const { data: paymentTx, error: fetchError } = await context.supabaseClient
       .from('payment_transactions')
-      .select('*') // Select all needed fields: target_wallet_id, tokens_to_award, user_id, status, metadata_json
+      .select('*')
       .eq('id', internalPaymentId)
       .single();
 
     if (fetchError || !paymentTx) {
       context.logger.error(
-        `[handleCheckoutSessionCompleted] Payment transaction ${internalPaymentId} not found.`, 
+        `[handleCheckoutSessionCompleted] Payment transaction not found: ${internalPaymentId}.`, 
         { error: fetchError }
-      );
-      return { success: false, transactionId: internalPaymentId, error: 'Payment record not found.' };
-    }
-
-    if (paymentTx.status === 'COMPLETED') {
-      context.logger.info(`[handleCheckoutSessionCompleted] Payment ${internalPaymentId} already completed.`);
-      return { 
-        success: true, 
-        transactionId: internalPaymentId, 
-        paymentGatewayTransactionId: gatewayTransactionId,
-        tokensAwarded: paymentTx.tokens_to_award ?? undefined 
-      };
-    }
-    if (paymentTx.status === 'FAILED') {
-      context.logger.warn(
-        `[handleCheckoutSessionCompleted] Payment ${internalPaymentId} previously failed. Webhook for ${event.type} received.`
       );
       return { 
         success: false, 
         transactionId: internalPaymentId, 
         paymentGatewayTransactionId: gatewayTransactionId,
-        error: 'Payment previously marked as failed.' 
+        error: `Payment transaction not found: ${internalPaymentId}` 
+      };
+    }
+
+    if (paymentTx.status === 'COMPLETED') {
+      context.logger.info(`[handleCheckoutSessionCompleted] Transaction ${internalPaymentId} already processed with status COMPLETED.`);
+      return { 
+        success: true, 
+        transactionId: internalPaymentId, 
+        paymentGatewayTransactionId: paymentTx.gateway_transaction_id || gatewayTransactionId, // Prefer stored one if available
+        tokensAwarded: paymentTx.tokens_to_award ?? undefined,
+        message: `Transaction ${internalPaymentId} already processed with status COMPLETED.`
+      };
+    }
+    if (paymentTx.status === 'FAILED') {
+      context.logger.warn(
+        `[handleCheckoutSessionCompleted] Transaction ${internalPaymentId} already processed with status FAILED. Webhook for ${event.type} (${event.id}) received.`
+      );
+      // It's a "successful" handling of an idempotent event for an already failed transaction.
+      // The error property indicates the original failure.
+      return { 
+        success: true, // Idempotent handling successful
+        transactionId: internalPaymentId, 
+        paymentGatewayTransactionId: paymentTx.gateway_transaction_id || gatewayTransactionId,
+        tokensAwarded: 0, // No tokens for a failed transaction
+        message: `Transaction ${internalPaymentId} already processed with status FAILED. Original status: FAILED.`,
+        error: `Payment transaction ${internalPaymentId} was previously marked as FAILED.` // Clarify original state
       };
     }
 
@@ -67,16 +82,19 @@ export async function handleCheckoutSessionCompleted(
       const userId = paymentTx.user_id;
 
       if (!stripeSubscriptionId || typeof stripeSubscriptionId !== 'string') {
-        context.logger.error('[handleCheckoutSessionCompleted] Stripe Subscription ID missing/invalid in session:', { sessionDetails: session });
-        return { success: false, transactionId: internalPaymentId, paymentGatewayTransactionId: gatewayTransactionId, error: 'Stripe Subscription ID missing or invalid.' };
+        const errMsg = 'Stripe Subscription ID missing or invalid in session.';
+        context.logger.error(`[handleCheckoutSessionCompleted] ${errMsg}`, { sessionDetails: session });
+        return { success: false, transactionId: internalPaymentId, paymentGatewayTransactionId: gatewayTransactionId, error: errMsg };
       }
       if (!stripeCustomerId || typeof stripeCustomerId !== 'string') {
-        context.logger.error('[handleCheckoutSessionCompleted] Stripe Customer ID missing/invalid in session:', { sessionDetails: session });
-        return { success: false, transactionId: internalPaymentId, paymentGatewayTransactionId: gatewayTransactionId, error: 'Stripe Customer ID missing or invalid.' };
+        const errMsg = 'Stripe Customer ID missing or invalid in session.';
+        context.logger.error(`[handleCheckoutSessionCompleted] ${errMsg}`, { sessionDetails: session });
+        return { success: false, transactionId: internalPaymentId, paymentGatewayTransactionId: gatewayTransactionId, error: errMsg };
       }
       if (!userId) {
-        context.logger.error('[handleCheckoutSessionCompleted] User ID missing in payment_transactions:', { paymentTransactionDetails: paymentTx });
-        return { success: false, transactionId: internalPaymentId, paymentGatewayTransactionId: gatewayTransactionId, error: 'User ID for subscription missing in payment transaction.' };
+        const errMsg = 'User ID for subscription missing in payment transaction.';
+        context.logger.error(`[handleCheckoutSessionCompleted] ${errMsg}`, { paymentTransactionDetails: paymentTx });
+        return { success: false, transactionId: internalPaymentId, paymentGatewayTransactionId: gatewayTransactionId, error: errMsg };
       }
 
       const itemIdFromPaymentTx = 
@@ -89,8 +107,21 @@ export async function handleCheckoutSessionCompleted(
       const itemIdInternal = itemIdFromPaymentTx || itemIdFromSessionMetadata;
 
       if (!itemIdInternal) {
-        context.logger.error(`[handleCheckoutSessionCompleted] item_id_internal not found for ${internalPaymentId}.`, { paymentTxMeta: paymentTx.metadata_json, sessionMeta: session.metadata });
-        return { success: false, transactionId: internalPaymentId, paymentGatewayTransactionId: gatewayTransactionId, error: 'Internal item ID for subscription plan lookup missing.' };
+        const errMsg = `Internal item ID for subscription plan lookup missing for payment ${internalPaymentId}.`;
+        context.logger.error(`[handleCheckoutSessionCompleted] ${errMsg}`, { paymentTxMeta: paymentTx.metadata_json, sessionMeta: session.metadata });
+        return { success: false, transactionId: internalPaymentId, paymentGatewayTransactionId: gatewayTransactionId, error: errMsg };
+      }
+      
+      let stripeSubscriptionObject: Stripe.Subscription;
+      try {
+        stripeSubscriptionObject = await context.stripe.subscriptions.retrieve(stripeSubscriptionId);
+      } catch (retrieveError) {
+        const retrieveErrorMessage = retrieveError instanceof Error ? retrieveError.message : String(retrieveError);
+        const errMsg = `Failed to retrieve Stripe subscription ${stripeSubscriptionId}: ${retrieveErrorMessage}`;
+        context.logger.error(`[handleCheckoutSessionCompleted] ${errMsg}`, { error: retrieveError });
+        // Attempt to mark paymentTx as FAILED due to this critical step failing
+        await context.updatePaymentTransaction(internalPaymentId, { status: 'FAILED' }, event.id);
+        return { success: false, transactionId: internalPaymentId, paymentGatewayTransactionId: gatewayTransactionId, error: errMsg };
       }
       
       const { data: planData, error: planFetchError } = await context.supabaseClient
@@ -100,26 +131,19 @@ export async function handleCheckoutSessionCompleted(
         .single();
 
       if (planFetchError || !planData) {
-        context.logger.error(
-          `[handleCheckoutSessionCompleted] Could not fetch subscription_plans for item_id_internal ${itemIdInternal}.`, 
-          { error: planFetchError }
-        );
-        return { success: false, transactionId: internalPaymentId, paymentGatewayTransactionId: gatewayTransactionId, error: 'Failed to resolve internal plan ID for subscription.' };
+        const errMsg = `Could not find internal subscription plan ID for item_id: ${itemIdInternal}.`;
+        context.logger.error(`[handleCheckoutSessionCompleted] ${errMsg}`, { error: planFetchError });
+        await context.updatePaymentTransaction(internalPaymentId, { status: 'FAILED' }, event.id);
+        return { success: false, transactionId: internalPaymentId, paymentGatewayTransactionId: gatewayTransactionId, error: errMsg };
       }
       const internalPlanId = planData.id;
-
-      const stripeSubscriptionObject = await context.stripe.subscriptions.retrieve(stripeSubscriptionId);
-      if (!stripeSubscriptionObject) {
-           context.logger.error(`[handleCheckoutSessionCompleted] Failed to retrieve Stripe Subscription object for ID: ${stripeSubscriptionId}`);
-           return { success: false, transactionId: internalPaymentId, paymentGatewayTransactionId: gatewayTransactionId, error: 'Failed to retrieve Stripe Subscription object.' };
-      }
       
       const userSubscriptionData = {
         user_id: userId,
         plan_id: internalPlanId,
         status: stripeSubscriptionObject.status,
-        stripe_customer_id: stripeCustomerId as string, // already checked it's a string
-        stripe_subscription_id: stripeSubscriptionId, // already checked it's a string
+        stripe_customer_id: stripeCustomerId as string,
+        stripe_subscription_id: stripeSubscriptionId,
         current_period_start: stripeSubscriptionObject.current_period_start ? new Date(stripeSubscriptionObject.current_period_start * 1000).toISOString() : null,
         current_period_end: stripeSubscriptionObject.current_period_end ? new Date(stripeSubscriptionObject.current_period_end * 1000).toISOString() : null,
         cancel_at_period_end: stripeSubscriptionObject.cancel_at_period_end,
@@ -130,48 +154,62 @@ export async function handleCheckoutSessionCompleted(
         .upsert(userSubscriptionData, { onConflict: 'stripe_subscription_id' });
 
       if (upsertError) {
-        context.logger.error(
-          `[handleCheckoutSessionCompleted] Failed to upsert user_subscription for ${stripeSubscriptionId}.`, 
-          { error: upsertError }
-        );
-        // Optionally update paymentTx status to 'SUBSCRIPTION_LINK_FAILED' via context.updatePaymentTransaction
+        const upsertErrorMessage = upsertError instanceof Error ? upsertError.message : String(upsertError);
+        const errMsg = `Failed to upsert user_subscription for ${stripeSubscriptionId}: ${upsertErrorMessage}`;
+        context.logger.error(`[handleCheckoutSessionCompleted] ${errMsg}`, { error: upsertError });
+        // Payment was successful, but linking subscription failed. Mark payment as COMPLETED but return error for this handler.
+        // Tokens should not be awarded if subscription linking fails.
+        await context.updatePaymentTransaction(internalPaymentId, { status: 'COMPLETED' }, event.id); // Mark payment as completed
+        return { success: false, transactionId: internalPaymentId, paymentGatewayTransactionId: gatewayTransactionId, error: errMsg, tokensAwarded: 0 };
       } else {
         context.logger.info(`[handleCheckoutSessionCompleted] Upserted user_subscription for ${stripeSubscriptionId}`);
       }
     } else if (session.mode === 'payment') {
       context.logger.info(`[handleCheckoutSessionCompleted] Processing 'payment' mode for ${internalPaymentId}`);
     } else {
-      context.logger.warn(`[handleCheckoutSessionCompleted] Unexpected session mode: ${session.mode} for ${internalPaymentId}`);
+      // This case should ideally not happen if Stripe sends valid modes.
+      const errMsg = `Unexpected session mode: ${session.mode} for ${internalPaymentId}`;
+      context.logger.warn(`[handleCheckoutSessionCompleted] ${errMsg}`);
+      // Mark as failed because we can't process it.
+      await context.updatePaymentTransaction(internalPaymentId, { status: 'FAILED' }, event.id);
+      return { success: false, transactionId: internalPaymentId, paymentGatewayTransactionId: gatewayTransactionId, error: errMsg };
     }
 
-    const updateResult = await context.updatePaymentTransaction(
+    const updatedPaymentTx = await context.updatePaymentTransaction(
       internalPaymentId,
       { status: 'COMPLETED', gateway_transaction_id: gatewayTransactionId },
       event.id
     );
 
-    if (!updateResult) {
-      context.logger.error(
-        `[handleCheckoutSessionCompleted] Failed to update payment_transactions ${internalPaymentId} to COMPLETED.`
-      );
-      return { success: false, transactionId: internalPaymentId, paymentGatewayTransactionId: gatewayTransactionId, error: 'Failed to update payment status after confirmation.' };
+    if (!updatedPaymentTx) {
+      // This implies updatePaymentTransaction itself failed, which is a serious issue.
+      const errMsg = `Critical: Failed to update payment_transactions ${internalPaymentId} to COMPLETED.`;
+      context.logger.error(`[handleCheckoutSessionCompleted] ${errMsg}`);
+      return { success: false, transactionId: internalPaymentId, paymentGatewayTransactionId: gatewayTransactionId, error: errMsg };
     }
 
     if (!paymentTx.target_wallet_id) {
-      context.logger.error(`[handleCheckoutSessionCompleted] target_wallet_id missing for ${internalPaymentId}. Cannot award tokens.`);
+      const errMsg = `Token award failed for ${internalPaymentId}: target_wallet_id missing.`;
+      context.logger.error(`[handleCheckoutSessionCompleted] ${errMsg}`);
       await context.updatePaymentTransaction(internalPaymentId, { status: 'TOKEN_AWARD_FAILED' }, event.id);
-      return { success: false, transactionId: internalPaymentId, paymentGatewayTransactionId: gatewayTransactionId, error: 'Token award failed: target wallet ID missing.', tokensAwarded: 0 };
+      return { success: false, transactionId: internalPaymentId, paymentGatewayTransactionId: gatewayTransactionId, error: errMsg, tokensAwarded: 0 };
     }
     if (!paymentTx.user_id) {
-      context.logger.error(`[handleCheckoutSessionCompleted] user_id missing for transaction ${internalPaymentId}. Cannot determine token recipient.`);
+      const errMsg = `Token award failed for ${internalPaymentId}: user_id missing.`;
+      context.logger.error(`[handleCheckoutSessionCompleted] ${errMsg}`);
       await context.updatePaymentTransaction(internalPaymentId, { status: 'TOKEN_AWARD_FAILED' }, event.id);
-      return { success: false, transactionId: internalPaymentId, paymentGatewayTransactionId: gatewayTransactionId, error: 'Token award failed: user ID missing.', tokensAwarded: 0 };
+      return { success: false, transactionId: internalPaymentId, paymentGatewayTransactionId: gatewayTransactionId, error: errMsg, tokensAwarded: 0 };
     }
     if (paymentTx.tokens_to_award == null || paymentTx.tokens_to_award <= 0) {
-        context.logger.warn(
-          `[handleCheckoutSessionCompleted] No tokens to award or invalid amount for ${internalPaymentId}: ${paymentTx.tokens_to_award}. Skipping token award.`
-        );
-        return { success: true, transactionId: internalPaymentId, paymentGatewayTransactionId: gatewayTransactionId, tokensAwarded: 0 }; 
+        const msg = `No tokens to award or invalid amount for ${internalPaymentId}: ${paymentTx.tokens_to_award}. Skipping token award.`;
+        context.logger.warn(`[handleCheckoutSessionCompleted] ${msg}`);
+        return { 
+            success: true, 
+            transactionId: internalPaymentId, 
+            paymentGatewayTransactionId: gatewayTransactionId, 
+            tokensAwarded: 0,
+            message: msg 
+        }; 
     }
 
     try {
@@ -186,13 +224,19 @@ export async function handleCheckoutSessionCompleted(
       });
       context.logger.info(`[handleCheckoutSessionCompleted] Tokens awarded for ${internalPaymentId}.`);
     } catch (tokenError) {
-      context.logger.error(
-        `[handleCheckoutSessionCompleted] Token awarding exception for ${internalPaymentId}:`,
-        { error: tokenError }
-      );
+      const tokenErrorMessage = tokenError instanceof Error ? tokenError.message : String(tokenError);
+      const errMsg = `Failed to award tokens for payment transaction ${internalPaymentId}: ${tokenErrorMessage}`;
+      context.logger.error(`[handleCheckoutSessionCompleted] Token awarding exception for ${internalPaymentId}:`, { error: tokenError } );
       await context.updatePaymentTransaction(internalPaymentId, { status: 'TOKEN_AWARD_FAILED' }, event.id);
-      return { success: false, transactionId: internalPaymentId, paymentGatewayTransactionId: gatewayTransactionId, error: 'Token award failed after payment.', tokensAwarded: 0 };
+      return { 
+        success: false, 
+        transactionId: internalPaymentId, 
+        paymentGatewayTransactionId: gatewayTransactionId, 
+        error: errMsg, 
+        tokensAwarded: 0 
+      };
     }
+    
     return { 
       success: true, 
       transactionId: internalPaymentId, 
@@ -201,12 +245,14 @@ export async function handleCheckoutSessionCompleted(
     };
 
   } catch (error) {
+    // General catch-all; should ideally be more specific catches above.
+    const generalErrorMessage = error instanceof Error ? error.message : String(error);
     context.logger.error(
-      `[handleCheckoutSessionCompleted] General exception for ${internalPaymentId}:`,
+      `[handleCheckoutSessionCompleted] General exception for ${internalPaymentId || 'unknown_internal_id'}:`,
       { error: error }
     );
-    const errorMessage = error instanceof Error ? error.message : String(error);
-    if (internalPaymentId) {
+    
+    if (internalPaymentId) { // Attempt to mark as FAILED if we have an ID
       try {
         await context.updatePaymentTransaction(internalPaymentId, { status: 'FAILED' }, event.id);
       } catch (updateErr) {
@@ -216,6 +262,11 @@ export async function handleCheckoutSessionCompleted(
         );
       }
     }
-    return { success: false, transactionId: internalPaymentId, paymentGatewayTransactionId: gatewayTransactionId, error: errorMessage };
+    return { 
+      success: false, 
+      transactionId: internalPaymentId, // Might be undefined if error happened before it was parsed
+      paymentGatewayTransactionId: gatewayTransactionId, 
+      error: `General processing error: ${generalErrorMessage}` 
+    };
   }
 }

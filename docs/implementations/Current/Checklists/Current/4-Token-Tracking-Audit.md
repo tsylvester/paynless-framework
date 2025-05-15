@@ -325,25 +325,25 @@ The implementation plan uses the following labels to categorize work steps:
             *   Run integration tests targeting the new `/webhooks/` function with a `/stripe` path segment.
         *   [🚧] **4.1.3.2.8: [BE] [REFACTOR] Enhance `StripePaymentAdapter` to Handle All Critical Stripe Webhook Events (Persistent Tokens)**
             *   **Goal:** Ensure the `StripePaymentAdapter`, when invoked by the generic `/webhooks/stripe` router, correctly processes all necessary Stripe events for payments, token awards, subscription lifecycle management, and product/price synchronization, replicating and improving upon the logic from the old `stripe-webhook` function. **All tokens awarded are persistent and do not expire.**
-            *   [🚧] **4.1.3.2.8.A: [REFACTOR] Internal `StripePaymentAdapter` Refactor for Separation of Concerns (SoC)**
+            *   [✅] **4.1.3.2.8.A: [REFACTOR] Internal `StripePaymentAdapter` Refactor for Separation of Concerns (SoC)**
                 *   **Goal:** Improve maintainability and testability of `StripePaymentAdapter.ts` by breaking it down into smaller, focused modules.
-                *   [ ] **4.1.3.2.8.A.1: [BE] Create Directory Structure:**
+                *   [✅] **4.1.3.2.8.A.1: [BE] Create Directory Structure:**
                     *   Confirm/create `supabase/functions/_shared/adapters/stripe/`.
                     *   Confirm/create `supabase/functions/_shared/adapters/stripe/handlers/`.
                     *   Confirm/create `supabase/functions/_shared/adapters/stripe/utils/` (for helpers like `updatePaymentTransaction`).
-                *   [ ] **4.1.3.2.8.A.2: [BE] Externalize `_updatePaymentTransaction` Helper:**
+                *   [✅] **4.1.3.2.8.A.2: [BE] Externalize `_updatePaymentTransaction` Helper:**
                     *   Move logic from `_updatePaymentTransaction` into `supabase/functions/_shared/adapters/stripe/utils/updatePaymentTransaction.ts`.
                     *   Ensure it takes necessary context (Supabase client, logger) as parameters.
                     *   Update `StripePaymentAdapter` to use this utility if it was calling its own private method.
-                *   [ ] **4.1.3.2.8.A.3: [BE] Define `HandlerContext` Type:**
+                *   [✅] **4.1.3.2.8.A.3: [BE] Define `HandlerContext` Type:**
                     *   Create a type (e.g., in `supabase/functions/_shared/adapters/stripe/stripeTypes.ts` or similar) for `HandlerContext` that includes `stripe`, `supabaseClient`, `log`, `tokenWalletService`, the `updatePaymentTransaction` utility function, etc.
-                *   [ ] **4.1.3.2.8.A.4: [BE] Externalize Individual Event Handler Logic (Iterative):**
+                *   [✅] **4.1.3.2.8.A.4: [BE] Externalize Individual Event Handler Logic (Iterative):**
                     *   For each private `_handle...` method in `stripePaymentAdapter.ts` (e.g., `_handleCheckoutSessionCompleted`, `_handleInvoicePaymentSucceeded`, etc.):
                         *   Move its core logic to a new, corresponding file in `supabase/functions/_shared/adapters/stripe/handlers/` (e.g., `handleCheckoutSessionCompleted.ts`).
                         *   The new file will export a function that accepts the `HandlerContext`, the Stripe `Event`, and the specific event `data.object`.
                         *   Update the main `stripePaymentAdapter.ts` to import and call these new handler functions from its `handleWebhook` switch statement, passing the `HandlerContext` and event details.
-                *   [ ] **4.1.3.2.8.A.5: [TEST-UNIT] Write Unit Test for `updatePaymentTransaction` Utility.**
-                *   [ ] **4.1.3.2.8.A.6: [COMMIT]** "refactor(BE): Restructure StripePaymentAdapter for SoC, externalizing handlers and utils"
+                *   [✅] **4.1.3.2.8.A.5: [TEST-UNIT] Write Unit Test for `updatePaymentTransaction` Utility.**
+                *   [✅] **4.1.3.2.8.A.6: [COMMIT]** "refactor(BE): Restructure StripePaymentAdapter for SoC, externalizing handlers and utils"
             *   [✅] **4.1.3.2.8.1: [ANALYZE] Finalize Review of `stripe-webhook/handlers/` and `stripe-webhook/services/`**
                 *   Complete review of `product.ts`, `price.ts` handlers, and associated services (`product_webhook_service.ts`, `price_webhook_service.ts`).
                 *   Consolidate all identified logic and database interactions for porting.
@@ -353,18 +353,18 @@ The implementation plan uses the following labels to categorize work steps:
                 *   **`subscription_plans`:** Confirm as the SOLE target for product/price data synced from Stripe (via webhooks). It should store `stripe_product_id`, `stripe_price_id`, `name`, `description`, `amount`, `currency`, `interval`, `active`, `tokens_awarded` (if applicable to the plan itself), `plan_type` (one-time, subscription), `item_id_internal`.
                 *   **`users` (or `user_profiles`):** Confirm if a user `status` or `role` field needs to be updated based on subscription active/inactive status (e.g., 'free_user', 'subscriber_basic', 'subscriber_premium').
                 *   **Retire `subscription_transactions`?** Evaluate if the old `subscription_transactions` table can be retired, with its essential logging purposes absorbed by `payment_transactions` (for payments) and detailed adapter logging for other event types.
-            *   [ ] **4.1.3.2.8.3: [BE] [REFACTOR] Implement Comprehensive `checkout.session.completed` Handling in `StripePaymentAdapter`**
-                *   [ ]   [TEST-UNIT] Add unit tests covering both one-time and subscription scenarios, including token awards and user/subscription table updates.
-                *   [ ]   Tests go in supabase/functions/_shared/adapters/stripe.checkoutSessionCompleted.test.ts and stripe.checkoutSessionErrors.test.ts
-                *   **Distinguish Mode:** If `session.mode === 'payment'` (one-time purchase, e.g., token pack):
-                    *   Update `payment_transactions` status to 'COMPLETED'.
-                    *   Award tokens via `TokenWalletService`, linking to `payment_transactions.id`.
-                *   If `session.mode === 'subscription'` (new subscription): 
-                    *   Create/Update `user_subscriptions` record with details from Stripe Session and retrieved Stripe Subscription object (plan, status, period dates, Stripe IDs).
-                    *   Update user status/role in `users` or `user_profiles` table if applicable.
-                    *   Update `payment_transactions` for the initial payment.
-                    *   Award tokens associated with the subscription plan's initiation via `TokenWalletService`.
-                *   Ensure idempotency and robust error handling.
+            *   [✅] **4.1.3.2.8.3: [BE] [REFACTOR] Implement Comprehensive `checkout.session.completed` Handling in `StripePaymentAdapter`**
+                *   [✅]   [TEST-UNIT] Add unit tests covering both one-time and subscription scenarios, including token awards and user/subscription table updates.
+                *   [✅]   Tests go in supabase/functions/_shared/adapters/stripe.checkoutSessionCompleted.test.ts and stripe.checkoutSessionErrors.test.ts
+                *   [✅] **Distinguish Mode:** If `session.mode === 'payment'` (one-time purchase, e.g., token pack):
+                    *   [✅] Update `payment_transactions` status to 'COMPLETED'.
+                    *   [✅] Award tokens via `TokenWalletService`, linking to `payment_transactions.id`.
+                *   [✅] If `session.mode === 'subscription'` (new subscription): 
+                    *   [✅] Create/Update `user_subscriptions` record with details from Stripe Session and retrieved Stripe Subscription object (plan, status, period dates, Stripe IDs).
+                    *   [✅] Update user status/role in `users` or `user_profiles` table if applicable.
+                    *   [✅] Update `payment_transactions` for the initial payment.
+                    *   [✅] Award tokens associated with the subscription plan's initiation via `TokenWalletService`.
+                *   [✅] Ensure idempotency and robust error handling.
             *   [ ] **4.1.3.2.8.4: [BE] [REFACTOR] Implement Subscription Lifecycle Event Handling (`customer.subscription.updated`, `customer.subscription.deleted`) in `StripePaymentAdapter`**
                 *   [ ]   [TEST-UNIT] Add unit tests for various subscription update/deletion scenarios.
                 *   [ ]   Tests go in supabase/functions/_shared/adapters/stripe.subscriptionUpdated.test.ts and stripe.subscriptionDeleted.test.ts

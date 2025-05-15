@@ -27,6 +27,11 @@ export interface MockStripe {
       Parameters<Stripe.PaymentIntentsResource['retrieve']>,
       Promise<Stripe.Response<Stripe.PaymentIntent>>
     >;
+    subscriptionsRetrieve: Stub<
+      Stripe.SubscriptionsResource,
+      Parameters<Stripe.SubscriptionsResource['retrieve']>,
+      Promise<Stripe.Response<Stripe.Subscription>>
+    >;
   };
   clearStubs: () => void;
 }
@@ -86,6 +91,19 @@ const getMockStripeInstance = (): Stripe => ({
         },
       } as Stripe.Response<Stripe.PaymentIntent>),
   } as Stripe.PaymentIntentsResource,
+  subscriptions: {
+    retrieve: (id: string, params?: Stripe.SubscriptionRetrieveParams, options?: Stripe.RequestOptions) =>
+      Promise.resolve({
+        id: id,
+        object: 'subscription',
+        status: 'active',
+        lastResponse: {
+          headers: {},
+          requestId: 'req_default_sub_retrieve',
+          statusCode: 200,
+        },
+      } as Stripe.Response<Stripe.Subscription>),
+  } as Stripe.SubscriptionsResource,
 }) as Stripe;
 
 export function createMockStripe(): MockStripe {
@@ -95,17 +113,20 @@ export function createMockStripe(): MockStripe {
     checkoutSessionsCreate: stub(mockInstance.checkout.sessions, "create"),
     webhooksConstructEvent: stub(mockInstance.webhooks, "constructEvent"),
     paymentIntentsRetrieve: stub(mockInstance.paymentIntents, "retrieve"),
+    subscriptionsRetrieve: stub(mockInstance.subscriptions, "retrieve"),
   };
 
   const clearStubs = () => {
     stubs.checkoutSessionsCreate.restore();
     stubs.webhooksConstructEvent.restore();
     stubs.paymentIntentsRetrieve.restore();
+    stubs.subscriptionsRetrieve.restore();
     
     mockInstance = getMockStripeInstance(); 
     stubs.checkoutSessionsCreate = stub(mockInstance.checkout.sessions, "create");
     stubs.webhooksConstructEvent = stub(mockInstance.webhooks, "constructEvent");
     stubs.paymentIntentsRetrieve = stub(mockInstance.paymentIntents, "retrieve");
+    stubs.subscriptionsRetrieve = stub(mockInstance.subscriptions, "retrieve");
   };
 
   return {
