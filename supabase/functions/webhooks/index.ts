@@ -64,24 +64,15 @@ export async function handleWebhookRequestLogic(
     }
 
     let signature: string | undefined | null = null;
-    let webhookSecret: string | undefined = undefined;
 
     if (source === 'stripe') {
       signature = req.headers.get('stripe-signature');
-      webhookSecret = deps.getEnv('STRIPE_WEBHOOK_SECRET');
-      if (!webhookSecret) {
-        console.error('[/webhooks/stripe] STRIPE_WEBHOOK_SECRET is not set. Cannot process webhook.');
-        return new Response(JSON.stringify({ error: 'Stripe webhook secret not configured.' }), {
-          status: 500,
-          headers: { ...baseCorsHeaders, 'Content-Type': 'application/json' },
-        });
-      }
     } else {
-      console.warn(`[/webhooks] Signature/secret retrieval not implemented for source: ${source}`);
+      console.warn(`[/webhooks] Signature header retrieval logic currently specific to Stripe. Source: ${source} may not be handled correctly if it requires a signature.`);
     }
 
     const rawBody = await req.text();
-    const confirmation: PaymentConfirmation = await adapter.handleWebhook(rawBody, signature || undefined, webhookSecret || '');
+    const confirmation: PaymentConfirmation = await adapter.handleWebhook(rawBody, signature || undefined);
 
     if (confirmation.success) {
       console.log(`[/webhooks/${source}] Webhook processed successfully. Transaction ID: ${confirmation.transactionId}`);

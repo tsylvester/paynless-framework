@@ -3,13 +3,13 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 // Revert to explicit npm/jsr specifiers
 import Stripe from "npm:stripe@14.11.0";
-import { createClient as actualCreateClient } from "jsr:@supabase/supabase-js@2"; // Assuming version from previous files
+import { createClient } from "jsr:@supabase/supabase-js@2"; // Assuming version from previous files
 // Use JSR import for SupabaseClient types as well
 import type { SupabaseClient } from "jsr:@supabase/supabase-js@2"; 
 import { 
-    handleCorsPreflightRequest as actualHandleCorsPreflightRequest, // Import the handler
-    createErrorResponse as actualCreateErrorResponse, 
-    createSuccessResponse as actualCreateSuccessResponse, 
+    handleCorsPreflightRequest, // Import the handler
+    createErrorResponse, 
+    createSuccessResponse, 
 } from "../_shared/cors-headers.ts";
 // Import the new service
 import { SyncPlansService, PlanUpsertData, ExistingPlanData } from "./services/sync_plans_service.ts"; // Assuming PlanUpsertData is exported now
@@ -21,9 +21,9 @@ export type StripeConstructor = new (key: string, config?: Stripe.StripeConfig) 
 
 // Define dependencies interface
 export interface SyncPlansHandlerDeps {
-    handleCorsPreflightRequest: typeof actualHandleCorsPreflightRequest; // Add to deps
-    createErrorResponse: typeof actualCreateErrorResponse;
-    createSuccessResponse: typeof actualCreateSuccessResponse;
+    handleCorsPreflightRequest: typeof handleCorsPreflightRequest; // Add to deps
+    createErrorResponse: typeof createErrorResponse;
+    createSuccessResponse: typeof createSuccessResponse;
     stripeConstructor: StripeConstructor;
     syncPlansService: SyncPlansService; // Use concrete class if interface import is troublesome
 }
@@ -36,15 +36,15 @@ const createDefaultSupabaseClient = (): SupabaseClient<Database> => { // Use Dat
     if (!supabaseUrl || !supabaseServiceRoleKey) {
       throw new Error("Missing Supabase URL or Service Role Key for default client creation.");
     }
-    return actualCreateClient(supabaseUrl, supabaseServiceRoleKey, { auth: { persistSession: false } });
+    return createClient(supabaseUrl, supabaseServiceRoleKey, { auth: { persistSession: false } });
 };
 const defaultSupabaseClient = createDefaultSupabaseClient();
 const defaultSyncPlansService = new SyncPlansService(defaultSupabaseClient);
 
 const defaultDeps: SyncPlansHandlerDeps = {
-    handleCorsPreflightRequest: actualHandleCorsPreflightRequest, // Add default
-    createErrorResponse: actualCreateErrorResponse,
-    createSuccessResponse: actualCreateSuccessResponse,
+    handleCorsPreflightRequest, // Add default
+    createErrorResponse,
+    createSuccessResponse,
     stripeConstructor: Stripe,
     syncPlansService: defaultSyncPlansService,
 };

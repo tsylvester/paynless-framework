@@ -1,5 +1,5 @@
 import { StripePaymentAdapter } from './stripePaymentAdapter.ts';
-import type { ITokenWalletService, TokenWallet, TokenWalletTransaction } from '../../_shared/types/tokenWallet.types.ts';
+import type { ITokenWalletService, TokenWallet, TokenWalletTransaction } from '../types/tokenWallet.types.ts';
 import type { SupabaseClient } from 'npm:@supabase/supabase-js';
 import Stripe from 'npm:stripe';
 import type { PurchaseRequest, PaymentConfirmation, PaymentOrchestrationContext } from '../types/payment.types.ts';

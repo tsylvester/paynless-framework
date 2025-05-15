@@ -109,7 +109,7 @@ export interface IPaymentGatewayAdapter {
    * @param webhookSecret - The secret key used to verify the webhook signature.
    * @returns A promise that resolves to a PaymentConfirmation.
    */
-  handleWebhook(rawBody: string | Uint8Array, signature: string | undefined, webhookSecret: string): Promise<PaymentConfirmation>;
+  handleWebhook(rawBody: string | Uint8Array, signature: string | undefined): Promise<PaymentConfirmation>;
 
   // Future methods might include:
   // processRefund(transactionId: string, amount?: number): Promise<RefundResult>;

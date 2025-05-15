@@ -32,7 +32,7 @@ export interface PaymentInitiationResult {
  */
 export interface PaymentConfirmation {
   success: boolean;
-  transactionId: string; // Our internal payment_transactions.id
+  transactionId?: string; // Our internal payment_transactions.id
   tokensAwarded?: number;
   error?: string;
 }
@@ -65,10 +65,9 @@ export interface IPaymentGatewayAdapter {
    *
    * @param rawBody - The raw request body of the webhook, as a Uint8Array or string.
    * @param signature - The signature header from the webhook request (e.g., 'stripe-signature').
-   * @param webhookSecret - The secret key used to verify the webhook signature.
    * @returns A promise that resolves to a PaymentConfirmation.
    */
-  handleWebhook(rawBody: string | Uint8Array, signature: string | undefined, webhookSecret: string): Promise<PaymentConfirmation>;
+  handleWebhook(rawBody: string | Uint8Array, signature: string | undefined): Promise<PaymentConfirmation>;
 
   // Future methods might include:
   // processRefund(transactionId: string, amount?: number): Promise<RefundResult>;

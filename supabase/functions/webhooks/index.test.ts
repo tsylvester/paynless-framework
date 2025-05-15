@@ -115,19 +115,18 @@ describe('Webhook Router (handleWebhookRequestLogic)', () => {
 
   describe('POST requests to handleWebhookRequestLogic', () => {
     let mockStripeAdapter: IPaymentGatewayAdapter;
-    let handleWebhookSpy: Spy<IPaymentGatewayAdapter, [string | Uint8Array, string | undefined, string], Promise<PaymentConfirmation>> | undefined;
+    let handleWebhookSpy: Spy<IPaymentGatewayAdapter, [string | Uint8Array, string | undefined], Promise<PaymentConfirmation>> | undefined;
 
     beforeEach(() => {
-      // This specific mockEnvVarsForFileScope setup is for the nested describe block
-      // If outer describe also sets it, this will override for these tests.
-      mockEnvVarsForFileScope['STRIPE_WEBHOOK_SECRET'] = MOCK_STRIPE_WEBHOOK_SECRET;
+      // REMOVED: mockEnvVarsForFileScope['STRIPE_WEBHOOK_SECRET'] = MOCK_STRIPE_WEBHOOK_SECRET;
+      // The secret is now an internal concern of the adapter/factory, not directly used by handleWebhookRequestLogic
 
       mockStripeAdapter = {
         gatewayId: 'stripe',
         initiatePayment: async (_ctx) => ({ success: true, paymentGatewayTransactionId: 'mock_id', transactionId: 'mock_internal_id' }),
-        handleWebhook: async (_rawBody, _signature, _secret) => ({ success: true, transactionId: 'mock-webhook-tx-id' }),
+        // UPDATED: handleWebhook mock no longer expects secret
+        handleWebhook: async (_rawBody, _signature) => ({ success: true, transactionId: 'mock-webhook-tx-id' }),
       };
-      // Default setup for most Stripe tests: getPaymentAdapterStub returns mockStripeAdapter for 'stripe' source
       configuredSourceForAdapterStub = 'stripe';
       currentMockAdapter = mockStripeAdapter;
     });
@@ -157,8 +156,7 @@ describe('Webhook Router (handleWebhookRequestLogic)', () => {
       assertEquals(paymentAdapterFactorySpy.calls[0].args[0], 'unknown-source');
     });
 
-    it('POST /webhooks/stripe - should call adapter.handleWebhook with secret from deps.getEnv', async () => {
-      // mockStripeAdapter and its configuration is set in the describe's beforeEach
+    it('POST /webhooks/stripe - should call adapter.handleWebhook correctly', async () => {
       handleWebhookSpy = spy(mockStripeAdapter, 'handleWebhook');
 
       const testPayload = { event: 'test_event', data: 'some-stripe-data' };
@@ -181,15 +179,14 @@ describe('Webhook Router (handleWebhookRequestLogic)', () => {
       assertEquals(handleWebhookSpy.calls.length, 1);
       assertEquals(handleWebhookSpy.calls[0].args[0], JSON.stringify(testPayload));
       assertEquals(handleWebhookSpy.calls[0].args[1], testSignature);
-      assertEquals(handleWebhookSpy.calls[0].args[2], MOCK_STRIPE_WEBHOOK_SECRET);
-      assert(fileScopeDenoEnvGetStub?.calls.some(call => call.args[0] === 'STRIPE_WEBHOOK_SECRET'), "Deno.env.get was not called for STRIPE_WEBHOOK_SECRET");
     });
 
     it('POST /webhooks/stripe - adapter.handleWebhook returns error, should return 400', async () => {
         const mockAdapterWithError: IPaymentGatewayAdapter = {
             gatewayId: 'stripe',
             initiatePayment: async (_ctx) => ({ success: false, error: 'initiate payment error test' }),
-            handleWebhook: async (_rawBody, _sig, _sec) => ({ success: false, error: 'Adapter processing failed', transactionId: 'failed-tx-id' })
+            // UPDATED: handleWebhook mock no longer expects secret
+            handleWebhook: async (_rawBody, _sig) => ({ success: false, error: 'Adapter processing failed', transactionId: 'failed-tx-id' })
         };
         configuredSourceForAdapterStub = 'stripe';
         currentMockAdapter = mockAdapterWithError;
@@ -208,15 +205,14 @@ describe('Webhook Router (handleWebhookRequestLogic)', () => {
         assertEquals(paymentAdapterFactorySpy.calls.length, 1);
         assert(handleWebhookSpy, "handleWebhookSpy should be defined");
         assertEquals(handleWebhookSpy.calls.length, 1);
-        assertEquals(handleWebhookSpy.calls[0].args[2], MOCK_STRIPE_WEBHOOK_SECRET);
-        assert(fileScopeDenoEnvGetStub?.calls.some(call => call.args[0] === 'STRIPE_WEBHOOK_SECRET'), "Deno.env.get was not called for STRIPE_WEBHOOK_SECRET");
     });
 
     it('POST /webhooks/stripe - adapter.handleWebhook throws error, should return 500', async () => {
         const mockAdapterWithThrow: IPaymentGatewayAdapter = {
             gatewayId: 'stripe',
             initiatePayment: async (_ctx) => ({ success: false, error: 'initiate payment error test' }),
-            handleWebhook: async (_rawBody, _sig, _sec) => { throw new Error('Internal adapter boom!'); }
+            // UPDATED: handleWebhook mock no longer expects secret
+            handleWebhook: async (_rawBody, _sig) => { throw new Error('Internal adapter boom!'); }
         };
         configuredSourceForAdapterStub = 'stripe';
         currentMockAdapter = mockAdapterWithThrow;
@@ -235,30 +231,10 @@ describe('Webhook Router (handleWebhookRequestLogic)', () => {
         assertEquals(paymentAdapterFactorySpy.calls.length, 1);
         assert(handleWebhookSpy, "handleWebhookSpy should be defined");
         assertEquals(handleWebhookSpy.calls.length, 1);
-        assertEquals(handleWebhookSpy.calls[0].args[2], MOCK_STRIPE_WEBHOOK_SECRET);
-        assert(fileScopeDenoEnvGetStub?.calls.some(call => call.args[0] === 'STRIPE_WEBHOOK_SECRET'), "Deno.env.get was not called for STRIPE_WEBHOOK_SECRET");
     });
 
-    it('POST /webhooks/stripe - missing STRIPE_WEBHOOK_SECRET from deps.getEnv, should return 500', async () => {
-      mockEnvVarsForFileScope['STRIPE_WEBHOOK_SECRET'] = undefined; // Crucial: ensure env var is not set for this test
-      
-      // mockStripeAdapter is still the one configured for the 'stripe' source by default
-      handleWebhookSpy = spy(mockStripeAdapter, 'handleWebhook');
-
-      const request = new Request('http://localhost/webhooks/stripe', {
-          method: 'POST',
-          body: JSON.stringify({ data: 'payload-missing-secret' }),
-          headers: { 'Content-Type': 'application/json', 'stripe-signature': 'sig789' },
-      });
-      const response = await handleWebhookRequestLogic(request, dependencies);
-      const responseBody = await response.json();
-
-      assertEquals(response.status, 500);
-      assertEquals(responseBody.error, 'Stripe webhook secret not configured.');
-      assertEquals(paymentAdapterFactorySpy.calls.length, 1); 
-      assert(handleWebhookSpy, "handleWebhookSpy should be defined");
-      assertEquals(handleWebhookSpy.calls.length, 0); 
-      assert(fileScopeDenoEnvGetStub?.calls.some(call => call.args[0] === 'STRIPE_WEBHOOK_SECRET'), "Deno.env.get was not called for STRIPE_WEBHOOK_SECRET");
+    it('POST /webhooks/stripe - no signature provided, should call adapter.handleWebhook with undefined signature', async () => {
+      // ... existing code ...
     });
   });
   

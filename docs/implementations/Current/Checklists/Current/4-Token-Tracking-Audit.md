@@ -325,7 +325,7 @@ The implementation plan uses the following labels to categorize work steps:
             *   Run integration tests targeting the new `/webhooks/` function with a `/stripe` path segment.
         *   [🚧] **4.1.3.2.8: [BE] [REFACTOR] Enhance `StripePaymentAdapter` to Handle All Critical Stripe Webhook Events (Persistent Tokens)**
             *   **Goal:** Ensure the `StripePaymentAdapter`, when invoked by the generic `/webhooks/stripe` router, correctly processes all necessary Stripe events for payments, token awards, subscription lifecycle management, and product/price synchronization, replicating and improving upon the logic from the old `stripe-webhook` function. **All tokens awarded are persistent and do not expire.**
-            *   [ ] **4.1.3.2.8.1: [ANALYZE] Finalize Review of `stripe-webhook/handlers/` and `stripe-webhook/services/`**
+            *   [✅] **4.1.3.2.8.1: [ANALYZE] Finalize Review of `stripe-webhook/handlers/` and `stripe-webhook/services/`**
                 *   Complete review of `product.ts`, `price.ts` handlers, and associated services (`product_webhook_service.ts`, `price_webhook_service.ts`).
                 *   Consolidate all identified logic and database interactions for porting.
             *   [✅] **4.1.3.2.8.2: [DB] [TYPES] Define and Confirm Target Supabase Table Strategy**
@@ -335,8 +335,8 @@ The implementation plan uses the following labels to categorize work steps:
                 *   **`users` (or `user_profiles`):** Confirm if a user `status` or `role` field needs to be updated based on subscription active/inactive status (e.g., 'free_user', 'subscriber_basic', 'subscriber_premium').
                 *   **Retire `subscription_transactions`?** Evaluate if the old `subscription_transactions` table can be retired, with its essential logging purposes absorbed by `payment_transactions` (for payments) and detailed adapter logging for other event types.
             *   [ ] **4.1.3.2.8.3: [BE] [REFACTOR] Implement Comprehensive `checkout.session.completed` Handling in `StripePaymentAdapter`**
-                *   [TEST-UNIT] Add unit tests covering both one-time and subscription scenarios, including token awards and user/subscription table updates.
-                *   Tests go in supabase/functions/_shared/adapters/stripe.checkout.test.ts
+                *   [ ]   [TEST-UNIT] Add unit tests covering both one-time and subscription scenarios, including token awards and user/subscription table updates.
+                *   [ ]   Tests go in supabase/functions/_shared/adapters/stripe.checkoutSessionCompleted.test.ts and stripe.checkoutSessionErrors.test.ts
                 *   **Distinguish Mode:** If `session.mode === 'payment'` (one-time purchase, e.g., token pack):
                     *   Update `payment_transactions` status to 'COMPLETED'.
                     *   Award tokens via `TokenWalletService`, linking to `payment_transactions.id`.
@@ -347,8 +347,8 @@ The implementation plan uses the following labels to categorize work steps:
                     *   Award tokens associated with the subscription plan's initiation via `TokenWalletService`.
                 *   Ensure idempotency and robust error handling.
             *   [ ] **4.1.3.2.8.4: [BE] [REFACTOR] Implement Subscription Lifecycle Event Handling (`customer.subscription.updated`, `customer.subscription.deleted`) in `StripePaymentAdapter`**
-                *   [TEST-UNIT] Add unit tests for various subscription update/deletion scenarios.
-                *   Tests go in supabase/functions/_shared/adapters/stripe.updates.test.ts
+                *   [ ]   [TEST-UNIT] Add unit tests for various subscription update/deletion scenarios.
+                *   [ ]   Tests go in supabase/functions/_shared/adapters/stripe.subscriptionUpdated.test.ts and stripe.subscriptionDeleted.test.ts
                 *   `customer.subscription.updated`:
                     *   Update the corresponding record in `user_subscriptions` (status, plan, period dates, `cancel_at_period_end`).
                     *   Update user status/role if necessary.
@@ -358,8 +358,8 @@ The implementation plan uses the following labels to categorize work steps:
                     *   Update user status/role if necessary.
                 *   Ensure idempotency.
             *   [ ] **4.1.3.2.8.5: [BE] [REFACTOR] Implement Invoice Event Handling (`invoice.payment_succeeded`, `invoice.payment_failed`) in `StripePaymentAdapter`**
-                *   [TEST-UNIT] Add unit tests for invoice payment success (including token award) and failure.
-                *   Tests go in supabase/functions/_shared/adapters/stripe.invoices.test.ts
+                *   [ ]   [TEST-UNIT] Add unit tests for invoice payment success (including token award) and failure.
+                *   [ ]   Tests go in supabase/functions/_shared/adapters/stripe.invoicePaymentFailed.test.ts and stripe.invoicePaymentSucceeded.test.ts
                 *   `invoice.payment_succeeded`:
                     *   Primarily for recurring subscription payments.
                     *   Verify `user_subscriptions` record is active and period dates align.
@@ -370,24 +370,16 @@ The implementation plan uses the following labels to categorize work steps:
                     *   Update user status/role if necessary (e.g., downgrade access).
                 *   Ensure idempotency.
             *   [ ] **4.1.3.2.8.6: [BE] [REFACTOR] Implement Product & Price Synchronization (`product.*`, `price.*`) in `StripePaymentAdapter`**
-                *   [TEST-UNIT] Add unit tests for product/price create, update, and delete scenarios and their effect on `subscription_plans`.
-                *   Tests go in supabase/functions/_shared/adapters/stripe.sync.test.ts
-                *   `product.created`: When a `product.created` event occurs, the adapter will primarily take note of the new `stripe_product_id` and its associated details (name, description, active status). Actual entries in `subscription_plans` will be primarily driven by subsequent `price.created` events for this product. If the `product.created` event includes a default price, an initial entry in `subscription_plans` can be made.
-                *   `product.updated`: If `product.name` or `product.description` changes, update these fields in all `subscription_plans` records where `stripe_product_id` matches the event's product ID. If `product.active` status changes, update the `active` status in all corresponding `subscription_plans` records (e.g., if product becomes inactive, all its plans become inactive).
-                *   `price.created`, `price.updated`:
-                    *   Upsert into `subscription_plans` table using `price.id` as `stripe_price_id`.
-                    *   Populate/update specific price fields: `amount` (from `price.unit_amount`), `currency` (from `price.currency`), `interval` (from `price.recurring.interval` if applicable), `active` (from `price.active`), `plan_type` (from `price.type`).
-                    *   Extract `tokens_awarded` and `item_id_internal` from `price.metadata`.
-                    *   Ensure `name` and `description` for the `subscription_plans` entry are sourced from the parent Stripe Product's details (associated via `price.product` ID). This may involve fetching the Stripe Product object by its ID if its details are not fully included in the Price event payload.
-                    *   Link to the `stripe_product_id` (from `price.product`).
-                *   `product.deleted`: Mark all `subscription_plans` entries where `stripe_product_id` matches the deleted product's ID as inactive (soft delete).
-                *   `price.deleted`: Mark the specific `subscription_plans` entry where `stripe_price_id` matches the deleted price's ID as inactive (soft delete).
-                *   Ensure this logic correctly populates all fields required by `initiatePayment` and other parts of the system relying on `subscription_plans`.
-            *   [ ] **4.1.3.2.8.7: [BE] [TEST-INT] Comprehensive Integration Testing for All Handled Event Types**
+                *   [ ]   [TEST-UNIT] Add unit tests for product/price create, update, and delete scenarios and their effect on `subscription_plans`.
+                *   [ ]   Tests go in supabase/functions/_shared/adapters/stripe.priceCreated.test.ts, stripe.priceUpdated.test.ts, and stripe.priceDeleted.test.ts, stripe.productCreated.test.ts, stripe.productUpdated.test.ts, and stripe.productDeleted.test.ts
+            *   [ ] **4.1.3.2.8.7: [BE] [REFACTOR] Implement Product & Price Synchronization (`product.*`, `price.*`) in `StripePaymentAdapter`**
+                *   Move each major function into its own file
+                *   Break down test into a test for each file                 
+            *   [ ] **4.1.3.2.8.8: [BE] [TEST-INT] Comprehensive Integration Testing for All Handled Event Types**
                 *   Expand tests for `webhooks/index.test.ts` to simulate all Stripe events now handled by `StripePaymentAdapter`.
                 *   Verify correct processing flow, database updates (all relevant tables), and token awards.
                 *   Test idempotency thoroughly for each event type.
-            *   [ ] **4.1.3.2.8.8: [COMMIT]** "refactor(BE|TEST): Enhance StripePaymentAdapter for comprehensive webhook event handling (payments, subscriptions, products, prices, tokens)"
+            *   [ ] **4.1.3.2.8.9: [COMMIT]** "refactor(BE|TEST): Enhance StripePaymentAdapter for comprehensive webhook event handling (payments, subscriptions, products, prices, tokens)"
     *   [ ] **4.1.3.2.9: [BE] Decommission Old `stripe-webhook/index.ts` Function**
         *   [ ] **4.1.3.2.9.1: [INFRA] Update Stripe Dashboard Webhook URL** (Point to new generic `/webhooks/stripe`)
         *   [ ] **4.1.3.2.9.2: [MONITOR] Monitor New `/webhooks/stripe` Endpoint for all event types.**
