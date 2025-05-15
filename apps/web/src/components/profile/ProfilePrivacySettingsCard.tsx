@@ -53,7 +53,7 @@ export const ProfilePrivacySettingsCard: React.FC = () => {
     {
       value: 'private',
       label: 'Private',
-      description: 'Only you and members of organizations you share can see your profile details.'
+      description: 'Only you and members of organizations can see your details.'
     },
     {
       value: 'public',
@@ -71,12 +71,11 @@ export const ProfilePrivacySettingsCard: React.FC = () => {
   const selectedOptionDetails = privacyOptions.find(opt => opt.value === (currentSetting || 'private'));
 
   return (
-    <Card className="w-full max-w-md mx-auto">
+    <div className="w-full max-w-lg p-8 bg-surface rounded-lg shadow-md mx-auto my-10">
       <CardHeader className="text-center">
         <CardTitle className="text-2xl font-bold text-textPrimary">Profile Privacy</CardTitle>
-        <CardDescription>Adjust who can see your profile information.</CardDescription>
       </CardHeader>
-      <CardContent className="space-y-6 pt-6">
+      <div className="space-y-6 pt-6">
         <div className="space-y-2">
           <Label htmlFor="profile-privacy-select" className="font-semibold text-textSecondary">Privacy Setting</Label>
           <Select 
@@ -84,9 +83,8 @@ export const ProfilePrivacySettingsCard: React.FC = () => {
             onValueChange={(value) => handleSettingChange(value as ProfilePrivacySetting)}
             disabled={isLoading || !profile} // Also disable if profile somehow still null here
             name="profile-privacy-select"
-            id="profile-privacy-select"
           >
-            <SelectTrigger className="w-full text-left" data-testid="privacy-select-trigger">
+            <SelectTrigger className="w-full text-left py-7" data-testid="privacy-select-trigger">
               {/* Display current selection's label and description in the trigger */}
               {selectedOptionDetails ? (
                 <div className="flex flex-col">
@@ -113,11 +111,11 @@ export const ProfilePrivacySettingsCard: React.FC = () => {
               ))}
             </SelectContent>
           </Select>
-          <p className="text-sm text-muted-foreground pt-1">
-            This setting controls who can view your profile details like name and activity.
+          <p className="text-xs text-muted-foreground pt-1">
+            This setting controls who can view your profile details.
           </p>
         </div>
-      </CardContent>
+      </div>
       {(isLoading || error) && (
         <CardFooter className={`border-t pt-4 mt-6 ${error ? 'bg-destructive/10 border-destructive/30' : ''}`}>
           {isLoading && !error && <p data-testid="loading-indicator" className="text-sm text-muted-foreground animate-pulse w-full text-center">Saving settings...</p>}
@@ -129,6 +127,6 @@ export const ProfilePrivacySettingsCard: React.FC = () => {
           )}
         </CardFooter>
       )}
-    </Card>
+    </div>
   );
 }; 

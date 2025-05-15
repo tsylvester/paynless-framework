@@ -115,9 +115,6 @@ export function Header() {
                           {getInitials(profile?.first_name, profile?.last_name) || <User size={16}/>}
                         </AvatarFallback>
                       </Avatar>
-                      <span className="text-sm text-textSecondary">
-                        {profile?.first_name || user.email}
-                      </span>
                     </button>
                   }
                 >
