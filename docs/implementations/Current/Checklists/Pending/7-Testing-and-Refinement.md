@@ -239,6 +239,8 @@ AI Selection
     *   Refactor tests into smaller independent units.
     *   Fix failed tests. 
 
+*   [ ] Add a sliding context window to the Chat Context so that users can see how much of the window is used and what all messages are included in the context 
+
 ## Phase 4.5: [ARCH] Tauri/Rust Desktop Wallet Integration Strategy (High-Level Design)
 
 **Goal:** Outline how the web platform's token wallet could potentially interact or synchronize with the Tauri/Rust desktop crypto wallet. This is a research and design phase.

@@ -46,6 +46,43 @@ export const selectCurrentChatMessages = createSelector(
   }
 );
 
+// Base selector for selectedMessagesMap
+const selectSelectedMessagesMap = (state: AiState) => state.selectedMessagesMap;
+
+/**
+ * Selects active and selected messages for the current chat.
+ * Filters messages where is_active_in_thread is true.
+ * A message is considered selected if its ID is in selectedMessagesMap[currentChatId] and true,
+ * or if its ID is NOT in selectedMessagesMap[currentChatId] (defaults to selected).
+ * @param state The AiState object.
+ * @returns An array of ChatMessage objects.
+ */
+export const selectSelectedChatMessages = createSelector(
+  [selectCurrentChatId, selectMessagesByChatId, selectSelectedMessagesMap],
+  (currentChatId, messagesByChatId, selectedMessagesMap): ChatMessage[] => {
+    if (!currentChatId) {
+      return [];
+    }
+    const messages = messagesByChatId[currentChatId] || [];
+    if (messages.length === 0) {
+      return [];
+    }
+
+    const currentChatSelections = selectedMessagesMap[currentChatId];
+
+    return messages.filter(message => {
+      // Only include messages that are explicitly active (true or undefined)
+      // Exclude messages that are explicitly inactive (false)
+      if (message.is_active_in_thread === false) {
+        return false;
+      }
+      // If currentChatSelections is undefined or message.id is not a key, default to selected (true).
+      // Otherwise, use the explicit boolean value from the map.
+      return currentChatSelections?.[message.id] ?? true;
+    });
+  }
+);
+
 // --- Other Selectors (can be simple functions or use createSelector if deriving data) ---
 
 // Base selector for isLoadingHistoryByContext

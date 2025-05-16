@@ -159,6 +159,9 @@ export interface AiState {
     messagesByChatId: { [chatId: string]: ChatMessage[] };
     currentChatId: Chat['id'] | null; // Remains the same
 
+    // Message Selection State
+    selectedMessagesMap: { [chatId: string]: { [messageId: string]: boolean } };
+
     // Loading states
     isLoadingAiResponse: boolean; // Remains the same
     isConfigLoading: boolean;   // Remains the same
@@ -218,10 +221,35 @@ export interface AiActions {
   setChatContextHydrated: (hydrated: boolean) => void;
   hydrateChatContext: (chatContext: ChatContextPreferences | null) => void;
   resetChatContextToDefaults: () => void;
+
+  // Message Selection Actions
+  toggleMessageSelection: (chatId: string, messageId: string) => void;
+  selectAllMessages: (chatId: string) => void;
+  deselectAllMessages: (chatId: string) => void;
+  clearMessageSelections: (chatId: string) => void;
+
+  // --- Internal actions exposed for testing or complex workflows ---
+  _addOptimisticUserMessage: (msgContent: string, explicitChatId?: string | null) => { tempId: string, chatIdUsed: string, createdTimestamp: string };
+  addOptimisticMessageForReplay: (messageContent: string, existingChatId?: string | null) => { tempId: string, chatIdForOptimistic: string };
+  _updateChatContextInProfile: (contextUpdate: Partial<ChatContextPreferences>) => Promise<void>;
+  _fetchAndStoreUserProfiles: (userIds: string[]) => Promise<void>;
+  _dangerouslySetStateForTesting: (newState: Partial<AiState>) => void;
 }
 
 // Combined type for the store
 export type AiStore = AiState & AiActions; 
+
+// +++ ADDED PendingAction Type +++
+export type PendingAction = 
+  | 'SEND_MESSAGE' 
+  | 'LOAD_HISTORY' 
+  | 'LOAD_DETAILS' 
+  | 'DELETE_CHAT'
+  | 'LOAD_CONFIG'
+  | 'REPLAY_ACTION'
+  | 'REWIND_ACTION'
+  | null;
+// +++ END PendingAction Type +++
 
 // +++ ADDED Chat Context Preferences Type +++
 /**
@@ -269,4 +297,5 @@ export const initialAiStateValues: AiState = {
   selectedPromptId: null,
   isChatContextHydrated: false, 
   chatParticipantsProfiles: {}, 
+  selectedMessagesMap: {},
 };
