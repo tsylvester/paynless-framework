@@ -1,6 +1,6 @@
 import type Stripe from 'npm:stripe';
 import { stub, type Stub } from 'jsr:@std/testing@0.225.1/mock';
-
+import type { MockStripe } from './types/payment.types.ts';
 // Get the actual method types
 type CheckoutSessionCreateType = Stripe['checkout']['sessions']['create'];
 type WebhookConstructEventType = Stripe['webhooks']['constructEvent'];
@@ -8,38 +8,7 @@ type PaymentIntentsRetrieveType = Stripe['paymentIntents']['retrieve'];
 type SubscriptionsRetrieveType = Stripe['subscriptions']['retrieve'];
 type ProductsRetrieveType = Stripe['products']['retrieve'];
 
-// Define a type for the structure of the mocked Stripe, exposing stubs
-export interface MockStripe {
-  instance: Stripe;
-  stubs: {
-    checkoutSessionsCreate: Stub<
-      Stripe.Checkout.SessionsResource, 
-      Parameters<Stripe.Checkout.SessionsResource['create']>,
-      Promise<Stripe.Response<Stripe.Checkout.Session>>
-    >;
-    webhooksConstructEvent: Stub<
-      Stripe.Webhooks, 
-      Parameters<Stripe.Webhooks['constructEvent']>,
-      Stripe.Event
-    >;
-    paymentIntentsRetrieve: Stub<
-      Stripe.PaymentIntentsResource,
-      Parameters<Stripe.PaymentIntentsResource['retrieve']>,
-      Promise<Stripe.Response<Stripe.PaymentIntent>>
-    >;
-    subscriptionsRetrieve: Stub<
-      Stripe.SubscriptionsResource,
-      Parameters<Stripe.SubscriptionsResource['retrieve']>,
-      Promise<Stripe.Response<Stripe.Subscription>>
-    >;
-    productsRetrieve: Stub<
-      Stripe.ProductsResource,
-      [id: string, options?: Stripe.RequestOptions],
-      Promise<Stripe.Response<Stripe.Product | Stripe.DeletedProduct>>
-    >;
-  };
-  clearStubs: () => void;
-}
+
 
 // A simplified mock of the Stripe instance parts we use
 const getMockStripeInstance = (): Stripe => ({

@@ -1,6 +1,6 @@
 import Stripe from "npm:stripe";
 import { ProductPriceHandlerContext, PaymentConfirmation } from "../types.ts";
-import { TablesUpdate } from "../../../../types_db.ts"; // Adjusted path
+import { TablesUpdate, Json } from "../../../../types_db.ts"; // Reverted import
 
 export async function handlePriceUpdated(
   context: ProductPriceHandlerContext,
@@ -11,11 +11,15 @@ export async function handlePriceUpdated(
   const functionName = 'handlePriceUpdated'; // For logger clarity
 
   logger.info(
-    `[${functionName}] Handling ${event.type} for price ${price.id}. Active: ${price.active}`,
+    `[${functionName}] Handling ${event.type} for price ${price.id}. Active: ${price.active}, Nickname: ${price.nickname}, Currency: ${price.currency}, UnitAmount: ${price.unit_amount}`,
     {
       eventId: event.id,
       priceId: price.id,
       active: price.active,
+      nickname: price.nickname,
+      currency: price.currency,
+      unitAmount: price.unit_amount,
+      metadata: price.metadata, // Log full metadata for debugging
       livemode: event.livemode
     }
   );
@@ -33,13 +37,40 @@ export async function handlePriceUpdated(
   }
 
   try {
+    // Extract tokens_awarded from metadata
+    let tokensAwarded: number | undefined = undefined;
+    const tokensAwardedString = price.metadata?.tokens_awarded;
+    if (tokensAwardedString) {
+      const parsedTokens = parseInt(tokensAwardedString, 10);
+      if (!isNaN(parsedTokens)) {
+        tokensAwarded = parsedTokens;
+      } else {
+        logger.warn(`[${functionName}] Invalid non-numeric value for tokens_awarded metadata: "${tokensAwardedString}". Price ID: ${price.id}. Not updating tokens_awarded.`);
+      }
+    }
+
+    const planType = price.type === 'one_time' ? 'one_time_purchase' : 'subscription';
+
     const updateData: TablesUpdate<'subscription_plans'> = {
       active: price.active,
-      // If you decide to sync more price fields (e.g., nickname, metadata), add them here.
-      // For now, only `active` status is managed based on the old handler logic.
-      // metadata_json: price.metadata as unknown as Json, // Example if syncing metadata
+      metadata: price.metadata as unknown as Json,
+      item_id_internal: price.nickname,
+      currency: price.currency,
+      amount: typeof price.unit_amount === 'number' ? price.unit_amount / 100 : undefined,
+      plan_type: planType,
+      interval: price.recurring?.interval,
+      interval_count: price.recurring?.interval_count,
       updated_at: new Date().toISOString(),
     };
+
+    // Conditionally add tokens_awarded to updateData if it's valid
+    if (tokensAwarded !== undefined) {
+      updateData.tokens_awarded = tokensAwarded;
+    } else if (tokensAwardedString !== undefined && tokensAwarded === undefined) {
+      // If tokens_awarded was in metadata but invalid, explicitly set to null to clear potentially old valid values.
+      // If tokens_awarded was never in metadata, we don't add it to updateData, leaving existing db value.
+      updateData.tokens_awarded = null;
+    }
 
     const { error: updateError, data: updatedPlans } = await supabaseClient
       .from('subscription_plans')
@@ -65,11 +96,11 @@ export async function handlePriceUpdated(
     }
 
     logger.info(
-      `[${functionName}] Successfully updated ${updatedPlans?.length || 0} subscription plan(s) for price ${price.id}. Active: ${price.active}.`,
+      `[${functionName}] Successfully updated ${updatedPlans?.length || 0} subscription plan(s) for price ${price.id}. Details: ${JSON.stringify(updateData)}`,
       {
         eventId: event.id,
         priceId: price.id,
-        active: price.active,
+        updatedData: updateData, // Log the data we attempted to update with
         updatedCount: updatedPlans?.length || 0,
       }
     );

@@ -5,7 +5,7 @@ import {
     type SupabaseClient,
   } from "npm:@supabase/supabase-js@^2.43.4";
   import type { User as SupabaseUser } from "npm:@supabase/gotrue-js@^2.6.3";
-  import { spy, stub, type Spy } from "jsr:@std/testing/mock";
+  import { spy, stub, type Spy, type Stub } from "jsr:@std/testing/mock";
   
   // Internal types
   import type {
