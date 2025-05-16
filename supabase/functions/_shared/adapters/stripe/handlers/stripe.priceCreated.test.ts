@@ -9,6 +9,7 @@ import {
   assertSpyCalls,
   spy,
   type Spy,
+  stub,
 } from 'jsr:@std/testing@0.225.1/mock';
 import { createMockStripe } from '../../../stripe.mock.ts';
 import { MockStripe } from '../../../types/payment.types.ts';
@@ -400,6 +401,7 @@ Deno.test('handlePriceCreated specific tests', async (t) => {
 
   await t.step('Product retrieval from Stripe fails', async () => {
     let stepSpies = null;
+    const originalRetrieve = mockStripeSdk.instance.products.retrieve; // Save original
     try {
       stepSpies = initializeTestContext({});
       const mockEventFailRetrieve = createMockPriceCreatedEvent({ product: 'prod_fail_retrieve' });
@@ -434,6 +436,7 @@ Deno.test('handlePriceCreated specific tests', async (t) => {
           assertSpyCalls(upsertSpy, 0); 
       }
     } finally {
+      mockStripeSdk.instance.products.retrieve = originalRetrieve; // Restore original
       teardownTestContext(stepSpies);
     }
   });
@@ -442,8 +445,7 @@ Deno.test('handlePriceCreated specific tests', async (t) => {
     let stepSpies = null;
     try {
       stepSpies = initializeTestContext({});
-      const mockEventNoProdId = createMockPriceCreatedEvent({ id: 'price_no_prod_id' });
-      // Manually make product ID an empty string to simulate a missing/invalid product reference
+      const mockEventNoProdId = createMockPriceCreatedEvent({ id: 'price_no_prod_id_v2' });
       (mockEventNoProdId.data.object as Stripe.Price).product = ""; 
 
       const result = await handlePriceCreated(handlerContext, mockEventNoProdId);
@@ -462,13 +464,8 @@ Deno.test('handlePriceCreated specific tests', async (t) => {
       }
       assert(loggedMessageNoProdId && loggedMessageNoProdId.includes('Product ID is missing or not a string on price object'));
       
-      const spiedRetrieve = mockStripeSdk.instance.products.retrieve as Spy; 
-      if (spiedRetrieve.calls) { 
-        // This assertion needs care if spiedRetrieve is not freshly spied for this step
-        // For this specific test, we expect 0 NEW calls to the Stripe SDK's product retrieve.
-        // Consider asserting based on its initial call count if it's a shared spy,
-        // or ensure it's a fresh, specific spy if that's the intent.
-      }
+      assertSpyCalls(mockStripeSdk.stubs.productsRetrieve, 0); // Assert on the mock's own stub
+
       const plansBuilder = mockSupabase.client.getLatestBuilder('subscription_plans');
       const upsertSpy = plansBuilder?.methodSpies['upsert'];
       if (upsertSpy) {
@@ -481,6 +478,7 @@ Deno.test('handlePriceCreated specific tests', async (t) => {
 
   await t.step('Upsert to subscription_plans fails', async () => {
     let stepSpies = null;
+    const originalRetrieve = mockStripeSdk.instance.products.retrieve; // Save original
     try {
       stepSpies = initializeTestContext({
           genericMockResults: {
@@ -542,6 +540,7 @@ Deno.test('handlePriceCreated specific tests', async (t) => {
       }
       assert(loggedMessageUpsertFail && loggedMessageUpsertFail.includes('Error upserting subscription_plan for price'));
     } finally {
+      mockStripeSdk.instance.products.retrieve = originalRetrieve; // Restore original
       teardownTestContext(stepSpies);
     }
   });
@@ -726,6 +725,168 @@ Deno.test('handlePriceCreated specific tests', async (t) => {
       assertExists(upsertArg.description, 'Plan description object should exist');
       assertEquals(upsertArg.description.subtitle, productDescriptionPlain, 'Subtitle should be the plain string description');
       assertEquals(upsertArg.description.features, [], 'Features should be empty when description is plain string');
+    } finally {
+      teardownTestContext(stepSpies);
+    }
+  });
+
+  await t.step('Ignores price_FREE event', async () => {
+    let stepSpies = null;
+    try {
+      stepSpies = initializeTestContext({});
+      const mockEvent = createMockPriceCreatedEvent({ id: 'price_FREE' });
+
+      const result = await handlePriceCreated(handlerContext, mockEvent);
+
+      assertEquals(result.success, true);
+      assertEquals(result.transactionId, mockEvent.id);
+      assertEquals(result.error, "Price 'price_FREE' event ignored as per specific rule.");
+
+      assertSpyCalls(stepSpies.stepInfoSpy, 2); 
+      assert(stepSpies.stepInfoSpy.calls[1].args[0].includes("Ignoring price.created event for 'price_FREE'"));
+      
+      assertSpyCalls(mockStripeSdk.stubs.productsRetrieve, 0); // Assert on the mock's own stub
+
+      const plansBuilder = mockSupabase.client.getLatestBuilder('subscription_plans');
+      if (plansBuilder) {
+        const upsertSpy = plansBuilder.methodSpies['upsert'];
+        assertSpyCalls(upsertSpy!, 0); 
+      } 
+
+      assertSpyCalls(stepSpies.stepWarnSpy, 0);
+      assertSpyCalls(stepSpies.stepErrorSpy, 0);
+
+    } finally {
+      teardownTestContext(stepSpies);
+    }
+  });
+
+  await t.step('Handles missing product ID on price object', async () => {
+    let stepSpies = null;
+    try {
+      stepSpies = initializeTestContext({});
+      const mockEvent = createMockPriceCreatedEvent({ 
+        id: 'price_no_prod_id', 
+        product: null as any, 
+      });
+
+      const result = await handlePriceCreated(handlerContext, mockEvent);
+
+      assertEquals(result.success, false);
+      assertEquals(result.transactionId, mockEvent.id);
+      assertEquals(result.error, "Product ID missing or invalid on price object.");
+
+      assertSpyCalls(stepSpies.stepErrorSpy, 1);
+      const errorLogMessage = stepSpies.stepErrorSpy.calls[0].args[0] as string;
+      assert(errorLogMessage.includes("Product ID is missing or not a string"));
+      
+      assertSpyCalls(mockStripeSdk.stubs.productsRetrieve, 0); // Assert on the mock's own stub
+
+      const plansBuilder = mockSupabase.client.getLatestBuilder('subscription_plans');
+      if (plansBuilder) {
+        const upsertSpy = plansBuilder.methodSpies['upsert'];
+        assertSpyCalls(upsertSpy!, 0);
+      }
+
+      assertSpyCalls(stepSpies.stepInfoSpy, 1); 
+      assertSpyCalls(stepSpies.stepWarnSpy, 0);
+
+    } finally {
+      teardownTestContext(stepSpies);
+    }
+  });
+
+  await t.step('Handles invalid unit_amount on price object', async () => {
+    let stepSpies = null;
+    const priceIdWithInvalidAmount = 'price_invalid_amount';
+    try {
+      stepSpies = initializeTestContext({});
+      const mockEvent = createMockPriceCreatedEvent({ 
+        id: priceIdWithInvalidAmount,
+        product: 'prod_for_invalid_amount',
+        unit_amount: null as any, 
+      });
+
+      const result = await handlePriceCreated(handlerContext, mockEvent);
+
+      assertEquals(result.success, false);
+      assertEquals(result.transactionId, mockEvent.id);
+      assertEquals(result.error, `Price ${priceIdWithInvalidAmount} has invalid unit_amount. Cannot sync.`);
+
+      assertSpyCalls(stepSpies.stepErrorSpy, 1);
+      const errorLogMessage = stepSpies.stepErrorSpy.calls[0].args[0] as string;
+      assert(errorLogMessage.includes(`Price ${priceIdWithInvalidAmount} has null or undefined unit_amount`));
+      
+      assertSpyCalls(mockStripeSdk.stubs.productsRetrieve, 0); // Assert on the mock's own stub
+
+      const plansBuilder = mockSupabase.client.getLatestBuilder('subscription_plans');
+      if (plansBuilder) {
+        const upsertSpy = plansBuilder.methodSpies['upsert'];
+        assertSpyCalls(upsertSpy!, 0);
+      }
+
+      assertSpyCalls(stepSpies.stepInfoSpy, 1); 
+      assertSpyCalls(stepSpies.stepWarnSpy, 0);
+
+    } finally {
+      teardownTestContext(stepSpies);
+    }
+  });
+
+  await t.step('Handles non-numeric tokens_awarded metadata', async () => {
+    let stepSpies = null;
+    const productIdWithInvalidTokenMeta = 'prod_invalid_token_meta';
+    const priceIdForInvalidTokenMeta = 'price_invalid_token_meta';
+    let spiedCustomRetrieve: Spy | null = null; // For our local spied function
+
+    try {
+      stepSpies = initializeTestContext({});
+      const mockProduct = createMockStripeProduct({
+        id: productIdWithInvalidTokenMeta,
+        name: 'Product with Invalid Token Meta',
+        metadata: { tokens_awarded: 'not-a-number' },
+      });
+      const mockEvent = createMockPriceCreatedEvent({
+        id: priceIdForInvalidTokenMeta,
+        product: productIdWithInvalidTokenMeta,
+        unit_amount: 2000,
+      });
+
+      // Define a local custom implementation for product retrieval
+      const customRetrieveLogic = async (...args: any[]): Promise<Stripe.Response<Stripe.Product>> => {
+        const id = args[0] as string;
+        if (id === productIdWithInvalidTokenMeta) {
+          return { ...mockProduct, lastResponse: {headers: {}, requestId: 'req_mock_custom', statusCode: 200} } as Stripe.Response<Stripe.Product>;
+        }
+        throw new Error(`Custom mock retrieve logic called with unexpected ID: ${id}`);
+      };
+      spiedCustomRetrieve = spy(customRetrieveLogic);
+      mockStripeSdk.instance.products.retrieve = spiedCustomRetrieve; // Assign our spied local function
+      
+      mockSupabase.client.from('subscription_plans'); 
+
+      const result = await handlePriceCreated(handlerContext, mockEvent);
+
+      assertEquals(result.success, true);
+      assert(result.error === undefined);
+
+      assertSpyCalls(stepSpies.stepWarnSpy, 1);
+      const warnLogMessage = stepSpies.stepWarnSpy.calls[0].args[0] as string;
+      assert(warnLogMessage.includes('Invalid non-numeric value for tokens_awarded metadata: "not-a-number"'));
+
+      const plansBuilder = mockSupabase.client.getLatestBuilder('subscription_plans');
+      assertExists(plansBuilder);
+      const upsertSpy = plansBuilder.methodSpies['upsert'];
+      assertExists(upsertSpy);
+      assertSpyCalls(upsertSpy, 1);
+      const upsertData = upsertSpy.calls[0].args[0] as any; 
+      assertEquals(upsertData.tokens_awarded, undefined);
+
+      assertExists(spiedCustomRetrieve); 
+      assertSpyCalls(spiedCustomRetrieve!, 1); 
+      assertSpyCalls(stepSpies.stepInfoSpy, 4); 
+      assertSpyCalls(stepSpies.stepErrorSpy, 0);
+
     } finally {
       teardownTestContext(stepSpies);
     }

@@ -1,73 +1,73 @@
 import Stripe from 'npm:stripe';
-import { ProductPriceHandlerContext } from '../../../types.ts'; // Using ProductPriceHandlerContext
+import { ProductPriceHandlerContext } from '../../../types.ts';
 import { PaymentConfirmation } from '../../../types/payment.types.ts';
-// Json import was here, but not used after removing _updatePaymentTransaction calls that used invoke_result.
-// import { Json } from '../../../../types_db.ts'; 
-
-// Define a simple type for the expected result of sync-stripe-plans if known, otherwise use any/unknown
-interface SyncPlansFunctionResult {
-  success: boolean;
-  message?: string;
-  // add other expected properties
-}
+import { parseProductDescription } from '../../../utils/productDescriptionParser.ts'; // Utility for description
 
 export async function handleProductCreated(
   context: ProductPriceHandlerContext,
-  event: Stripe.Event // Assuming the product is in event.data.object
+  event: Stripe.Event
 ): Promise<PaymentConfirmation> {
   const product = event.data.object as Stripe.Product;
-  context.logger.info(`[handleProductCreated] Handling ${event.type} for product ${product.id}, Event ID: ${event.id}`);
-  const isTestMode = event.livemode === false;
+  const { logger, supabaseClient } = context;
 
-  // Removed _updatePaymentTransaction call for initial processing log
+  logger.info(
+    `[handleProductCreated] Handling ${event.type} for product ${product.id}. Active: ${product.active}`,
+    { eventId: event.id, productId: product.id, active: product.active, livemode: event.livemode }
+  );
 
   try {
-    context.logger.info(`[handleProductCreated] Invoking sync-stripe-plans function (isTestMode: ${isTestMode}).`);
-    const { data: invokeData, error: invokeError } = await context.supabaseClient.functions.invoke<
-      SyncPlansFunctionResult 
-    >('sync-stripe-plans', {
-        body: { isTestMode }, 
-    });
+    const parsedDescription = parseProductDescription(product.name, product.description);
 
-    if (invokeError) {
-      const errorMessage = invokeError.message || JSON.stringify(invokeError);
-      context.logger.error(
-          `[handleProductCreated] Error invoking sync-stripe-plans function.`,
-          { error: invokeError, functionName: 'sync-stripe-plans', isTestMode }
+    const planDataToUpsert = {
+      stripe_product_id: product.id,
+      name: product.name,
+      description: parsedDescription, // Parsed { subtitle, features }
+      active: product.active,
+      metadata: product.metadata || {}, // Default to empty object if null/undefined
+      // item_id_internal: product.id, // Default internal ID to product ID
+      // plan_type: 'product_shell', // Indicate this is a product shell, not a full plan
+      // Fields like amount, currency, interval, tokens_awarded will be set by price.created
+    };
+
+    logger.info(
+      `[handleProductCreated] Prepared data for subscription_plans upsert for product ${product.id}.`,
+      { planData: JSON.stringify(planDataToUpsert, null, 2) }
+    );
+
+    const { error: upsertError } = await supabaseClient
+      .from('subscription_plans')
+      .upsert(planDataToUpsert, { onConflict: 'stripe_product_id' });
+
+    if (upsertError) {
+      logger.error(
+        `[handleProductCreated] Error upserting subscription_plan for product ${product.id}.`,
+        { error: upsertError, productId: product.id }
       );
-      // Removed _updatePaymentTransaction call for error logging
       return {
-          success: false,
-          // message: `Product created, but failed to invoke sync-stripe-plans: ${invokeError.message || JSON.stringify(invokeError)}`,
-          error: `Product created, but failed to invoke sync-stripe-plans: ${errorMessage}`,
-          // error: { type: 'FunctionInvocationError', details: invokeError }, // Simplified error reporting for PaymentConfirmation
-          transactionId: event.id // Added transactionId for consistency
+        success: false,
+        error: `Failed to upsert plan for product ${product.id}: ${upsertError.message}`,
+        transactionId: event.id,
       };
     }
 
-    context.logger.info(
-        `[handleProductCreated] Successfully invoked sync-stripe-plans. Result: ${JSON.stringify(invokeData)}`,
+    logger.info(
+      `[handleProductCreated] Successfully upserted product information for product ${product.id}.`
     );
-    // Removed _updatePaymentTransaction call for success logging
     return {
-        success: true,
-        // message: 'Product created event processed and plan sync invoked.',
-        transactionId: event.id // Return eventId as a reference
+      success: true,
+      transactionId: event.id,
     };
+
   } catch (err) {
-    const errorMessage = err instanceof Error ? err.message : String(err); // Type check for err
-    context.logger.error(
-        `[handleProductCreated] Unexpected error: ${errorMessage}`,
-        // Pass the original error object if it's an Error, otherwise the stringified version
-        { error: err instanceof Error ? err : String(err), eventId: event.id, productId: product.id }
+    const errorMessage = err instanceof Error ? err.message : String(err);
+    logger.error(
+      `[handleProductCreated] Unexpected error processing ${event.type} for product ${product.id}: ${errorMessage}`,
+      { error: err, eventId: event.id, productId: product.id }
     );
-    // Removed _updatePaymentTransaction call for unexpected error
     return {
-        success: false,
-        // message: `Unexpected error processing product.created: ${err.message}`,
-        error: `Unexpected error processing product.created: ${errorMessage}`,
-        // error: { type: 'InternalError', details: err }, // Simplified error reporting
-        transactionId: event.id
+      success: false,
+      error: `Unexpected error processing ${event.type} for product ${product.id}: ${errorMessage}`,
+      transactionId: event.id,
     };
   }
 }
