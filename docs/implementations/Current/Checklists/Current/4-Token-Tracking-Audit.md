@@ -388,16 +388,17 @@ The implementation plan uses the following labels to categorize work steps:
                     *   Update `user_subscriptions.status` to 'past_due' or 'unpaid'.
                     *   Update user status/role if necessary (e.g., downgrade access).
                 *   Ensure idempotency.
-            *   [ ] **4.1.3.2.8.6: [BE] [REFACTOR] Implement Product & Price Synchronization (`product.*`, `price.*`) in `StripePaymentAdapter`**
-                *   [ ]   [TEST-UNIT] Add unit tests for product/price create, update, and delete scenarios and their effect on `subscription_plans`.
-                *   [ ]   Tests go in supabase/functions/_shared/adapters/stripe.priceCreated.test.ts, stripe.priceUpdated.test.ts, and stripe.priceDeleted.test.ts, stripe.productCreated.test.ts, stripe.productUpdated.test.ts, and stripe.productDeleted.test.ts
-            *   [ ] **4.1.3.2.8.7: [BE] [REFACTOR] Implement Product & Price Synchronization (`product.*`, `price.*`) in `StripePaymentAdapter`**
+            *   [✅] **4.1.3.2.8.6: [BE] [REFACTOR] Implement Product & Price Synchronization (`product.*`, `price.*`) in `StripePaymentAdapter`**
+                *   [✅]   [TEST-UNIT] Add unit tests for product/price create, update, and delete scenarios and their effect on `subscription_plans`.
+                *   [✅]   Tests go in supabase/functions/_shared/adapters/stripe.priceCreated.test.ts, stripe.priceUpdated.test.ts, and stripe.priceDeleted.test.ts, stripe.productCreated.test.ts, stripe.productUpdated.test.ts, and stripe.productDeleted.test.ts
+            *   [✅] **4.1.3.2.8.7: [BE] [REFACTOR] Implement Product & Price Synchronization (`product.*`, `price.*`) in `StripePaymentAdapter`**
                 *   Move each major function into its own file
                 *   Break down test into a test for each file                 
-            *   [ ] **4.1.3.2.8.8: [BE] [TEST-INT] Comprehensive Integration Testing for All Handled Event Types**
+            *   [🚧] **4.1.3.2.8.8: [BE] [TEST-INT] Comprehensive Integration Testing for All Handled Event Types**
                 *   Expand tests for `webhooks/index.test.ts` to simulate all Stripe events now handled by `StripePaymentAdapter`.
                 *   Verify correct processing flow, database updates (all relevant tables), and token awards.
                 *   Test idempotency thoroughly for each event type.
+                *   Currently a few failing tests but most pass 
             *   [ ] **4.1.3.2.8.9: [COMMIT]** "refactor(BE|TEST): Enhance StripePaymentAdapter for comprehensive webhook event handling (payments, subscriptions, products, prices, tokens)"
     *   [ ] **4.1.3.2.9: [BE] Decommission Old `stripe-webhook/index.ts` Function**
         *   [ ] **4.1.3.2.9.1: [INFRA] Update Stripe Dashboard Webhook URL** (Point to new generic `/webhooks/stripe`)
@@ -593,6 +594,37 @@ The implementation plan uses the following labels to categorize work steps:
 
 ---
 
+## Phase 4.5: [API-STORE-UI] Improve AI Chat Context
+
+**Goal:** Improve Context for AI Chat.
+
+### 4.5.1: [UI] Chat Context Selection 
+*   [ ] **[UI] [TEST-UNIT]**
+    *   [ ] Build failing Test Units to describe the following (RED): 
+        *   [ ] Add checkbox to all ChatItems in ChatMessages
+        *   [ ] Automatically tick checkboxes for all ChatItems loaded in Chatbox
+        *   [ ] Enable users to untick checkboxes of any message
+        *   [ ] Add "Check All" and "Uncheck All" for easy selection
+        *   [ ] Token accounting accounts for entire context size, not just new context
+    *   [ ] Implement the above functionality 
+    *   [ ] Retest (GREEN)
+    *   [ ] [COMMIT]
+
+
+### 4.5.2: [] Chat Context Passing
+*   [ ] **[] [TEST-UNIT]**
+    *   [ ] Build failing Test Units to describe the following (RED): 
+        *   [ ] All checked messages from Chatbox populated ChatItems are sent to AI 
+        *   [ ] No unchecked messages from Chatbox populated ChatItems are sent to AI 
+        *   [ ] AI is sent current prompt selection with every submit interaction
+        *   [ ] AI is only sent one prompt selection once with every submit interaction
+    *   [ ] Implement the above functionality
+    *   [ ] Retest (GREEN)
+    *   [ ] [COMMIT]
+
+---
+
+
 
 ## Phase 4.6: End-to-End Testing, Refinement, and Security Review
 
@@ -616,3 +648,5 @@ The implementation plan uses the following labels to categorize work steps:
 *   [ ] **4.6.4: [COMMIT]** "refactor: Final refinements and hardening for advanced tokenomics system"
 
 ---
+
+

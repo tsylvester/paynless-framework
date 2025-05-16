@@ -78,7 +78,7 @@ export async function handleInvoicePaymentSucceeded(
   try {
     const { data: userDetails, error: userDetailsError } = await context.supabaseClient
       .from('user_subscriptions')
-      .select('user_id')
+      .select('user_id, plan_id')
       .eq('stripe_customer_id', stripeCustomerId)
       .limit(1)
       .single();

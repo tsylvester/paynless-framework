@@ -227,7 +227,17 @@ AI Selection
         *   Document these placeholder IDs and their intended future replacements.
     *   [ ] **4.1.1.1a.4: [PLAN] Schedule Future Work: Implement Traceable System/Admin IDs.**
         *   Add tasks to later phases (e.g., Admin Panel Implementation, Subscription Management) to replace placeholder `recorded_by_user_id` values with actual `subscription_id`s (linked to `payment_transactions` or a new `subscriptions` table) or `admin_user_id`s from an admin authentication system. This ensures long-term, granular auditability of all system-generated transactions.
+        
+## Test Fixes and Refactors
 
+**Goal:** Fix, Reduce, Refactor All Tests, Consolidate Mocks.
+
+*   [ ] **[REFACTOR] Consolidate Mocks**
+    *   Move interfaces & Types back into supbase.mock, stripe.mock, wallet.mock
+    *   Update references to call consolidated mocks 
+*   [ ] **4.6.1: [TEST-INT] Fix Webhook Index Tests**
+    *   Refactor tests into smaller independent units.
+    *   Fix failed tests. 
 
 ## Phase 4.5: [ARCH] Tauri/Rust Desktop Wallet Integration Strategy (High-Level Design)
 

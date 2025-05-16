@@ -13,7 +13,7 @@ export async function handleCustomerSubscriptionDeleted(
   const eventId = event.id;
   context.logger.info(`[handleCustomerSubscriptionDeleted] Processing deleted subscription ${subscription.id}, Event ID: ${eventId}`);
 
-  const newStatus = 'DELETED';
+  const newStatus = 'canceled';
   let internalPlanId: string | undefined = undefined;
 
   try {

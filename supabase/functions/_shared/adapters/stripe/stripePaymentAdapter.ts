@@ -208,39 +208,39 @@ export class StripePaymentAdapter implements IPaymentGatewayAdapter {
           this.handlerContext,
           event as Stripe.CustomerSubscriptionDeletedEvent
         );
-      case 'product.created':
+      case 'product.created': 
         return handleProductCreated(
           productPriceHandlerContext, 
           event
         );
-      case 'product.updated':
+      case 'product.updated': 
         return handleProductUpdated(
           productPriceHandlerContext, 
           event
         );
-      case 'product.deleted':
+      case 'product.deleted': 
         return handleProductDeleted(
           productPriceHandlerContext, 
           event
         );
-      case 'price.created':
+      case 'price.created': 
         return handlePriceCreated(
           productPriceHandlerContext, 
           event
         );
-      case 'price.updated':
+      case 'price.updated': 
         return handlePriceUpdated(
           productPriceHandlerContext, 
           event
         );
-      case 'price.deleted':
+      case 'price.deleted': 
         return handlePriceDeleted(
           productPriceHandlerContext, 
           event
         );
       default:
         this.handlerContext.logger.info(`[StripePaymentAdapter handleWebhook] Unhandled event type: ${event.type}. Acknowledging with success.`);
-        return { success: true, transactionId: event.id, paymentGatewayTransactionId: event.id };
+        return { success: true, transactionId: event.id };
     }
   }
   // All private _handle... methods and _updatePaymentTransaction should be removed.
