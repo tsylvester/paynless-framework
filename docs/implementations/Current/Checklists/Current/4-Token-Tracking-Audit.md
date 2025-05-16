@@ -400,39 +400,39 @@ The implementation plan uses the following labels to categorize work steps:
                 *   Test idempotency thoroughly for each event type.
                 *   Currently a few failing tests but most pass 
             *   [ ] **4.1.3.2.8.9: [COMMIT]** "refactor(BE|TEST): Enhance StripePaymentAdapter for comprehensive webhook event handling (payments, subscriptions, products, prices, tokens)"
-    *   [ ] **4.1.3.2.9: [BE] Decommission Old `stripe-webhook/index.ts` Function**
+    *   [🚧] **4.1.3.2.9: [BE] Decommission Old `stripe-webhook/index.ts` Function**
         *   [✅] **4.1.3.2.9.1: [INFRA] Update Stripe Dashboard Webhook URL** (Point to new generic `/webhooks/stripe` - User confirmed for Sandbox)
-        *   [ ] **4.1.3.2.9.2: [TEST-SETUP] Install/Configure Stripe CLI and Start Webhook Listening**
-            *   [ ] Ensure Stripe CLI is installed.
-            *   [ ] Run `stripe login` if first time (User confirmed completed).
-            *   [ ] Execute `stripe listen --forward-to http://localhost:54321/functions/v1/webhooks/stripe` (User confirmed running, secret `whsec_bcf8937105a230e3d33714dbbd66430260ee31c3da7b2337288a0860058cebd5` obtained).
-            *   [ ] Note the `whsec_...` signing secret provided by `stripe listen`.
-            *   [ ] Update local environment (e.g., `.env` file used by `supabase start` or Supabase local dev Vault) with this `whsec_...` for `STRIPE_WEBHOOK_SIGNING_SECRET`. Restart Supabase local dev server if needed.
-        *   [ ] **4.1.3.2.9.3: [TEST-INT] Trigger and Verify Stripe Test Events via CLI**
+        *   [🚧] **4.1.3.2.9.2: [TEST-SETUP] Install/Configure Stripe CLI and Start Webhook Listening**
+            *   [✅] Ensure Stripe CLI is installed.
+            *   [✅] Run `stripe login` if first time (User confirmed completed).
+            *   [✅] Execute `stripe listen --forward-to http://localhost:54321/functions/v1/webhooks/stripe` (User confirmed running, secret `whsec_bcf8937105a230e3d33714dbbd66430260ee31c3da7b2337288a0860058cebd5` obtained and confirmed by logs).
+            *   [✅] Note the `whsec_...` signing secret provided by `stripe listen`.
+            *   [✅] Update local environment (e.g., `.env` file used by `supabase start` or Supabase local dev Vault) with this `whsec_...` for `STRIPE_WEBHOOK_SIGNING_SECRET_TEST` (used by adapter) and `STRIPE_WEBHOOK_SIGNING_SECRET` (potentially for other direct uses, though adapter uses _TEST). Restart Supabase local dev server if needed. (User confirmed `STRIPE_WEBHOOK_SIGNING_SECRET_TEST` is correctly set and used).
+        *   [🚧] **4.1.3.2.9.3: [TEST-INT] Trigger and Verify Stripe Test Events via CLI**
             *   For each of the critical event types your `StripePaymentAdapter` handles:
-                *   `checkout.session.completed` (mode: payment)
-                *   `checkout.session.completed` (mode: subscription)
-                *   `invoice.payment_succeeded`
-                *   `invoice.payment_failed`
-                *   `customer.subscription.updated`
-                *   `customer.subscription.deleted`
-                *   `product.created`, `product.updated`, `product.deleted`
-                *   `price.created`, `price.updated`, `price.deleted`
-            *   [ ] **Sub-task (for each event type listed above):**
-                *   [ ] Identify/Create necessary test data in Stripe Sandbox (Customer IDs, Price IDs, Product IDs, Subscription IDs, etc.).
-                *   [ ] Construct the `stripe trigger <event_name> ...` command with appropriate test data, including `internal_payment_id` in metadata where applicable.
-                *   [ ] Execute the command.
-                *   [ ] **Observe Stripe CLI `listen` output:** Confirm event is forwarded and a `2xx` response is received from your local endpoint.
-                *   [ ] **Observe Supabase function logs:** Check for any errors and verify expected log messages from your `StripePaymentAdapter` and its handlers.
-                *   [ ] **Verify database state:** Query relevant tables (`payment_transactions`, `token_wallets`, `token_wallet_transactions`, `user_subscriptions`, `subscription_plans`) to ensure records were created/updated correctly and idempotency holds if applicable.
-                *   [ ] **Verify token awards:** Ensure `TokenWalletService.recordTransaction` was called correctly and tokens were awarded for relevant events.
+                *   `checkout.session.completed` (mode: payment) - [🚧] Partially working. CLI fixture interaction complex. Able to trigger default and minimal override. `internal_payment_id` handling fixed.
+                *   `checkout.session.completed` (mode: subscription) - [🚧] CLI error: `The price specified is a one-time price, but mode is subscription.` Needs a confirmed recurring Price ID.
+                *   `invoice.payment_succeeded` - [🚧] CLI error `resource_missing` for `subscription`. Needs a valid existing subscription.
+                *   `invoice.payment_failed` - [🚧] CLI error `resource_missing` for `subscription`. Needs a valid existing subscription.
+                *   `customer.subscription.updated` - [🚧] CLI error `resource_missing` for `id`. Needs a valid existing subscription ID.
+                *   `customer.subscription.deleted` - [🚧] CLI error `resource_missing` for `id`. Needs a valid existing subscription ID.
+                *   `product.created`, `product.updated`, `product.deleted` - [✅] Working with default fixtures.
+                *   `price.created`, `price.updated`, `price.deleted` - [✅] Working with default fixtures.
+            *   [🚧] **Sub-task (for each event type listed above, focusing on [🚧] items):**
+                *   [❓] Identify/Create necessary test data in Stripe Sandbox (Customer IDs, Recurring Price IDs, Product IDs, Subscription IDs, etc.) **OR** develop a strategy to manage/clean up Stripe objects created by CLI fixtures to allow for repeatable tests.
+                *   [🚧] Construct the `stripe trigger <event_name> ...` command with appropriate test data. PowerShell script (`trigger_stripe_test_events.ps1`) exists and has been iteratively refined. Focus on providing correct, existing Stripe object IDs for overrides where the default fixture is insufficient.
+                *   [✅] Execute the command. (Process established).
+                *   [✅] **Observe Stripe CLI `listen` output:** Confirm event is forwarded and a `2xx` response is received from your local endpoint. (Process established).
+                *   [✅] **Observe Supabase function logs:** Check for any errors and verify expected log messages from your `StripePaymentAdapter` and its handlers. (Process established, logging added).
+                *   [🚧] **Verify database state:** Query relevant tables (`payment_transactions`, `token_wallets`, `token_wallet_transactions`, `user_subscriptions`, `subscription_plans`) to ensure records were created/updated correctly. (Partially verified for working events).
+                *   [🚧] **Verify token awards:** Ensure `TokenWalletService.recordTransaction` was called correctly and tokens were awarded for relevant events. (Partially verified for working events).
         *   [ ] **4.1.3.2.9.4: [MONITOR] (Placeholder for Production) Monitor New `/webhooks/stripe` Endpoint for all event types.** (Once deployed, you'd monitor this in Supabase logs and Stripe Dashboard).
-        *   [ ] **4.1.3.2.9.5: [BE] Delete `supabase/functions/stripe-webhook/` Directory** (After successful local testing and confident porting)
-        *   [ ] **4.1.3.2.9.6: [DOCS] Update Internal Documentation** (Reflect new webhook structure and testing procedures).
+        *   [✅] **4.1.3.2.9.5: [BE] Delete `supabase/functions/stripe-webhook/` Directory** (After successful local testing and confident porting)
+        *   [ ] **4.1.3.2.9.6: [DOCS] Update Internal Documentation** (Reflect new webhook structure and testing procedures, especially regarding Stripe CLI fixture management).
         *   [ ] **4.1.3.2.9.7: [COMMIT]** "feat(BE|INFRA|TEST): Decommission old stripe-webhook, test new router with Stripe CLI"
     *   [ ] **4.1.3.2.10: [BE] Decommission `sync-stripe-plans/index.ts` Function**
         *   [ ] **4.1.3.2.10.1: [ANALYZE] Confirm `sync-stripe-plans` No Longer Needed** (Ensure real-time webhook handling for products/prices is sufficient and no other process relies on the batch sync).
-        *   [ ] **4.1.3.2.10.2: [BE] Delete `supabase/functions/sync-stripe-plans/` Directory**
+        *   [✅] **4.1.3.2.10.2: [BE] Delete `supabase/functions/sync-stripe-plans/` Directory**
         *   [ ] **4.1.3.2.10.3: [DOCS] Remove any documentation or scheduled triggers for `sync-stripe-plans`.**
         *   [ ] **4.1.3.2.10.4: [COMMIT]** "refactor(BE): Decommission sync-stripe-plans function, replaced by real-time webhook sync"
     *   [ ] **4.1.3.2.11: [BE] [ARCH] Implement Universal Periodic Token Allocation System**

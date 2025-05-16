@@ -9,11 +9,11 @@ export async function handleCheckoutSessionCompleted(
   event: Stripe.CheckoutSessionCompletedEvent
 ): Promise<PaymentConfirmation> {
   const session = event.data.object;
-  const internalPaymentId = session.metadata?.internal_payment_id;
+  let internalPaymentId = session.metadata?.internal_payment_id;
   const gatewayTransactionId = session.id;
 
   context.logger.info(
-    `[handleCheckoutSessionCompleted] Processing for session ${gatewayTransactionId}, internalPaymentId: ${internalPaymentId}`
+    `[handleCheckoutSessionCompleted] Processing for session ${gatewayTransactionId}, initial internalPaymentId from metadata: ${internalPaymentId}`
   );
 
   if (!internalPaymentId) {
@@ -27,6 +27,15 @@ export async function handleCheckoutSessionCompleted(
       paymentGatewayTransactionId: gatewayTransactionId, 
       error: 'Internal payment ID missing from webhook metadata.' 
     };
+  }
+
+  // Strip 'ipid_' prefix if present, as the DB expects a pure UUID
+  if (internalPaymentId.startsWith('ipid_')) {
+    const originalId = internalPaymentId;
+    internalPaymentId = internalPaymentId.substring(5); // Length of 'ipid_'
+    context.logger.info(
+      `[handleCheckoutSessionCompleted] Transformed internalPaymentId from ${originalId} to ${internalPaymentId} (stripped 'ipid_')`
+    );
   }
 
   try {

@@ -1,4 +1,4 @@
-import { SupabaseClient, createClient } from '@supabase/supabase-js';
+import { SupabaseClient, createClient } from 'npm:@supabase/supabase-js';
 import { createSupabaseAdminClient } from '../auth.ts';
 import { Database } from '../../types_db.ts';
 import {

@@ -153,7 +153,7 @@ export class StripePaymentAdapter implements IPaymentGatewayAdapter {
     }
   }
 
-  async handleWebhook(rawBody: string | Uint8Array, signature: string | undefined): Promise<PaymentConfirmation> {
+  async handleWebhook(rawBody: ArrayBuffer, signature: string | undefined): Promise<PaymentConfirmation> {
     this.handlerContext.logger.info('[StripePaymentAdapter handleWebhook] Called.');
     if (!signature) {
       this.handlerContext.logger.warn('[StripePaymentAdapter handleWebhook] Webhook signature missing.');
@@ -162,8 +162,17 @@ export class StripePaymentAdapter implements IPaymentGatewayAdapter {
     
     let event: Stripe.Event;
     try {
-      const bodyToUse = rawBody instanceof Uint8Array ? Buffer.from(rawBody) : rawBody;
-      event = this.stripe.webhooks.constructEvent(bodyToUse, signature, this.handlerContext.stripeWebhookSecret);
+      // Convert ArrayBuffer to Node.js Buffer for the Stripe SDK
+      const bodyAsNodeBuffer = Buffer.from(rawBody);
+
+      // Log the webhook secret being used (partially)
+      const secretFromContext = this.handlerContext.stripeWebhookSecret;
+      const partialSecretFromContext = secretFromContext.length > 15
+        ? `${secretFromContext.substring(0, 10)}...${secretFromContext.substring(secretFromContext.length - 5)}`
+        : secretFromContext;
+      this.handlerContext.logger.info(`[StripePaymentAdapter handleWebhook] Attempting to verify with secret (partial): ${partialSecretFromContext}`);
+
+      event = await this.stripe.webhooks.constructEventAsync(bodyAsNodeBuffer, signature, this.handlerContext.stripeWebhookSecret);
     } catch (err) {
       this.handlerContext.logger.error('[StripePaymentAdapter handleWebhook] Webhook signature verification failed.', { error: err instanceof Error ? err.message : String(err), stack: err instanceof Error ? err.stack : undefined });
       return { success: false, transactionId: undefined, error: 'Webhook signature verification failed.' };

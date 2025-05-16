@@ -71,7 +71,7 @@ export async function handleWebhookRequestLogic(
       console.warn(`[/webhooks] Signature header retrieval logic currently specific to Stripe. Source: ${source} may not be handled correctly if it requires a signature.`);
     }
 
-    const rawBody = await req.text();
+    const rawBody: ArrayBuffer = await req.arrayBuffer();
     const confirmation: PaymentConfirmation = await adapter.handleWebhook(rawBody, signature || undefined);
 
     if (confirmation.success) {

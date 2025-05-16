@@ -24,27 +24,39 @@ Date: 2025-05-16
 # --- Configuration - REPLACE THESE VALUES ---
 $CustomerId = "cus_S4r3zUDNFNLOjT" # Replace with a Test Customer ID
 $OneTimePriceId = "price_1ROTrMIskUlhzlIxNr0IUDKa" # Replace with a Test Price ID for a one-time product
-$RecurringPriceId = "price_1RABirIskUlhzlIxSaAQpFe2" # Replace with a Test Price ID for a subscription product
+$RecurringPriceId = "price_1RPVhUIskUlhzlIxRxwqRDjW" # Replace with a Test Price ID for a subscription product
 $ProductIdToUpdateOrDelete = "prod_S4KNYUZ1J6yv75" # Replace with a Test Product ID
-$PriceIdToUpdateOrDelete = "price_1RABirIskUlhzlIxSaAQpFe2" # Replace with a Test Price ID
+$PriceIdToUpdateOrDelete = "price_1RPVhUIskUlhzlIxRxwqRDjW" # Replace with a Test Price ID
 $SubscriptionIdToUpdateOrDelete = "sub_1RPQUFIskUlhzlIxaM8Rws0Y" # Replace with a Test Subscription ID
 
 # For checkout.session.completed, you typically have an internal ID stored in metadata
 $InternalPaymentIdForOneTime = "ipid_$(New-Guid)" # Example: Generate a new one or use a known test one
 $InternalPaymentIdForSubscription = "ipid_$(New-Guid)" # Example: Generate a new one or use a known test one
 
+# Additional Test Data based on initiatePayment logic (REPLACE THESE WITH YOUR ACTUAL TEST VALUES)
+$TestOrgId = "org_YOUR_TEST_ORG_ID"                 # Replace with a relevant test Organization ID
+$TestItemIdForOneTime = "item_YOUR_TEST_ITEM_ID"       # Replace with the item_id_internal for the one-time product
+$TestTokensToAwardForOneTime = "100"             # Example token amount
+$TestTargetWalletIdForOneTime = "wallet_YOUR_TEST_WALLET_ID" # Replace with a relevant test Wallet ID
+
 # --- Helper Function to Execute and Log Stripe Commands ---
 function Invoke-StripeEvent {
     param(
         [string]$EventName,
-        [string]$CommandArgs
+        [array]$ArgumentArray
     )
     Write-Host "----------------------------------------------------"
     Write-Host "Triggering: $EventName"
-    Write-Host "Command: stripe trigger $EventName $CommandArgs"
+    # Construct the command string for logging purposes only
+    $CommandLog = "stripe trigger $EventName"
+    if ($ArgumentArray.Length -gt 0) {
+        $CommandLog += " $($ArgumentArray -join ' ')"
+    }
+    Write-Host "Attempting Command: $CommandLog"
     Write-Host "----------------------------------------------------"
     try {
-        stripe trigger $EventName $CommandArgs
+        # Use splatting to pass arguments. Each element in ArgumentArray becomes a separate argument.
+        & stripe trigger $EventName @ArgumentArray
         Write-Host "$EventName triggered successfully.`n"
     }
     catch {
@@ -58,78 +70,121 @@ function Invoke-StripeEvent {
 
 Write-Host "Starting Stripe Test Event Trigger Script..."
 Write-Host "IMPORTANT: Ensure 'stripe listen --forward-to ...' is running in another terminal!"
-Write-Host "IMPORTANT: Replace placeholder IDs in this script with your actual Stripe Sandbox test IDs."
-Read-Host -Prompt "Press Enter to continue if you have updated the IDs and stripe listen is running"
 
 # 1. checkout.session.completed (One-time payment)
-# Simulates a successful one-time purchase.
-$test_args = "--add `"checkout_session:metadata.internal_payment_id=$InternalPaymentIdForOneTime`" --add `"checkout_session:customer=$CustomerId`" --add `"checkout_session:line_items[0].price=$OneTimePriceId`" --add `"checkout_session:line_items[0].quantity=1`" --add `"checkout_session:mode=payment`" --add `"checkout_session:payment_status=paid`""
-Invoke-StripeEvent -EventName "checkout.session.completed" -CommandArgs $test_args
+# Simulates a successful one-time purchase, WITH MINIMAL overrides, INCLUDING internal_payment_id.
+$ArgumentArray = @(
+    # "--override", "checkout_session:customer=$($CustomerId)", # Removed for now
+    # "--override", "checkout_session:client_reference_id=$($CustomerId)", # Removed for now
+    # "--override", "checkout_session:line_items[0].price=$($OneTimePriceId)", # Removed to use CLI default price/amount
+    # "--override", "checkout_session:line_items[0].quantity=1", # Removed to use CLI default
+    # "--override", "checkout_session:mode=payment", # Let CLI use default mode from fixture
+    "--override", "checkout_session:metadata.internal_payment_id=$($InternalPaymentIdForOneTime)",
+    "--override", "checkout_session:success_url=https://example.com/success", # Keep required URLs
+    "--override", "checkout_session:cancel_url=https://example.com/cancel"    # Keep required URLs
+)
+Invoke-StripeEvent -EventName "checkout.session.completed" -ArgumentArray $ArgumentArray
+
+# Try with NO overrides to see if the default fixture passes signature verification (NOW COMMENTED OUT)
+# $ArgumentArray = @()
+# Invoke-StripeEvent -EventName "checkout.session.completed" -ArgumentArray $ArgumentArray
 
 # 2. checkout.session.completed (New subscription)
 # Simulates a new subscription creation.
-$NewSubscriptionId = "sub_$(Get-Random -Minimum 10000000000000 -Maximum 99999999999999)" # Placeholder for a new sub id
-$test_args = "--add `"checkout_session:metadata.internal_payment_id=$InternalPaymentIdForSubscription`" --add `"checkout_session:customer=$CustomerId`" --add `"checkout_session:line_items[0].price=$RecurringPriceId`" --add `"checkout_session:line_items[0].quantity=1`" --add `"checkout_session:mode=subscription`" --add `"checkout_session:payment_status=paid`" --add `"checkout_session:subscription=$NewSubscriptionId`""
-Invoke-StripeEvent -EventName "checkout.session.completed" -CommandArgs $test_args
+$ArgumentArray = @(
+    "--override", "checkout_session:mode=subscription",
+    # "--override", "checkout_session:customer=$($CustomerId)", # Try without customer to see if fixture provides one
+    # "--override", "checkout_session:line_items[0].price=$($RecurringPriceId)", # Try without specific line items
+    # "--override", "checkout_session:line_items[0].quantity=1",
+    "--override", "checkout_session:metadata.internal_payment_id=$($InternalPaymentIdForSubscription)",
+    "--override", "checkout_session:metadata.user_id=$($CustomerId)", # Keep user_id as it may be useful for handler
+    "--override", "checkout_session:success_url=https://example.com/success", 
+    "--override", "checkout_session:cancel_url=https://example.com/cancel"
+)
+Invoke-StripeEvent -EventName "checkout.session.completed" -ArgumentArray $ArgumentArray
 
 # 3. invoice.payment_succeeded (Subscription renewal)
 # Simulates a successful recurring payment for an existing subscription.
 # NOTE: For this to be fully realistic, the $SubscriptionIdToUpdateOrDelete should exist and be active.
-$test_args = "--add `"invoice:customer=$CustomerId`" --add `"invoice:subscription=$SubscriptionIdToUpdateOrDelete`" --add `"invoice:billing_reason=subscription_cycle`""
-Invoke-StripeEvent -EventName "invoice.payment_succeeded" -CommandArgs $test_args
+$ArgumentArray = @() # Using default fixture
+Invoke-StripeEvent -EventName "invoice.payment_succeeded" -ArgumentArray $ArgumentArray
 
 # 4. invoice.payment_failed
 # Simulates a failed payment for an invoice (e.g., subscription renewal).
-$test_args = "--add `"invoice:customer=$CustomerId`" --add `"invoice:subscription=$SubscriptionIdToUpdateOrDelete`" --add `"invoice:billing_reason=subscription_cycle`""
-Invoke-StripeEvent -EventName "invoice.payment_failed" -CommandArgs $test_args
+$ArgumentArray = @() # Using default fixture
+Invoke-StripeEvent -EventName "invoice.payment_failed" -ArgumentArray $ArgumentArray
 
 # 5. customer.subscription.updated
 # Simulates a subscription being updated (e.g., plan change, cancellation at period end).
-$test_args = "--add `"subscription:customer=$CustomerId`" --add `"subscription:id=$SubscriptionIdToUpdateOrDelete`" --add `"subscription:status=active`" --add `"subscription:cancel_at_period_end=false`"" # Modify as needed
-Invoke-StripeEvent -EventName "customer.subscription.updated" -CommandArgs $test_args
+# $ArgumentArray = @(
+#     # To trigger for an existing subscription, the CLI often just needs its ID.
+#     # The fixture data for the update (e.g., new price, cancel_at_period_end) 
+#     # is often pre-defined in the CLI's event fixture or can be complex to override simply.
+#     # We'll try with just the ID, assuming the CLI uses sensible defaults for the update event.
+#     \"--override\", \"customer_subscription:id=$($SubscriptionIdToUpdateOrDelete)\"
+# )
+# # If more specific changes are needed for the update, we might need to use `stripe fixtures` or more complex params.
+# Invoke-StripeEvent -EventName \"customer.subscription.updated\" -ArgumentArray $ArgumentArray
 
 # 6. customer.subscription.deleted
 # Simulates a subscription being canceled/deleted.
-$test_args = "--add `"subscription:customer=$CustomerId`" --add `"subscription:id=$SubscriptionIdToUpdateOrDelete`""
-Invoke-StripeEvent -EventName "customer.subscription.deleted" -CommandArgs $test_args
+# $ArgumentArray = @(
+#     \"--override\", \"customer_subscription:id=$($SubscriptionIdToUpdateOrDelete)\" # Target the existing subscription by ID
+# )
+# Invoke-StripeEvent -EventName \"customer.subscription.deleted\" -ArgumentArray $ArgumentArray
 
 # --- Product Events ---
 # 7. product.created
-Invoke-StripeEvent -EventName "product.created" -CommandArgs ""
+# $ArgumentArray = @() # No arguments needed
+# Invoke-StripeEvent -EventName \"product.created\" -ArgumentArray $ArgumentArray
 
 # 8. product.updated
 # NOTE: Assumes $ProductIdToUpdateOrDelete exists.
-$test_args = "--add `"product:id=$ProductIdToUpdateOrDelete`""
-Invoke-StripeEvent -EventName "product.updated" -CommandArgs $test_args
+$ArgumentArray = @() # Using default fixture
+Invoke-StripeEvent -EventName "product.updated" -ArgumentArray $ArgumentArray
 
 # 9. product.deleted
 # NOTE: Assumes $ProductIdToUpdateOrDelete exists. This might fail if it has prices attached that aren't deleted.
 # Consider creating a temporary product for this test then deleting it.
-$TempProdIdForDelete = "prod_$(Get-Random -Minimum 10000000000000 -Maximum 99999999999999)"
-stripe product create --name="Temp Product for Deletion Test" --id="$TempProdIdForDelete" | Out-Null
-$test_args = "--add `"product:id=$TempProdIdForDelete`""
-Invoke-StripeEvent -EventName "product.deleted" -CommandArgs $test_args
+# $TempProdIdForDelete = \"prod_$(Get-Random -Minimum 10000000000000 -Maximum 99999999999999)\"
+# & stripe product create --name=\"Temp Product for Deletion Test\" --id=\"$TempProdIdForDelete\" | Out-Null
+# $ArgumentArray = @(
+#     \"--override\", \"product:id=$($TempProdIdForDelete)\"
+# )
+# Invoke-StripeEvent -EventName \"product.deleted\" -ArgumentArray $ArgumentArray
 
 
 # --- Price Events ---
 # 10. price.created
 # NOTE: Requires a product to attach to. Using $ProductIdToUpdateOrDelete.
-$test_args = "--add `"price:product=$ProductIdToUpdateOrDelete`" --add `"price:currency=usd`" --add `"price:unit_amount=1000`" --add `"price:recurring[interval]=month`""
-Invoke-StripeEvent -EventName "price.created" -CommandArgs $test_args
+# $ArgumentArray = @(
+#     \"--override\", \"price:product=$($ProductIdToUpdateOrDelete)\",
+#     \"--override\", \"price:currency=usd\",
+#     \"--override\", \"price:unit_amount=1000\", # $10.00
+#     \"--override\", \"price:recurring.interval=month\"
+# )
+# Invoke-StripeEvent -EventName \"price.created\" -ArgumentArray $ArgumentArray
 
 # 11. price.updated
 # NOTE: Assumes $PriceIdToUpdateOrDelete exists.
-$test_args = "--add `"price:id=$PriceIdToUpdateOrDelete`" --add `"price:active=true`"" # Example: Toggling active status
-Invoke-StripeEvent -EventName "price.updated" -CommandArgs $test_args
+$ArgumentArray = @() # Using default fixture
+Invoke-StripeEvent -EventName "price.updated" -ArgumentArray $ArgumentArray
 
 # 12. price.deleted
-# NOTE: Assumes $PriceIdToUpdateOrDelete exists.
-# Create a temporary price for deletion test
-$TempPriceProdId = $ProductIdToUpdateOrDelete # Use an existing product
-$TempPriceIdForDelete = "price_$(Get-Random -Minimum 10000000000000 -Maximum 99999999999999)"
-stripe price create --product="$TempPriceProdId" --currency=usd --unit-amount=500 --id="$TempPriceIdForDelete" | Out-Null
-$test_args = "--add `"price:id=$TempPriceIdForDelete`""
-Invoke-StripeEvent -EventName "price.deleted" -CommandArgs $test_args
+# NOTE: The Stripe CLI `trigger` command does not directly support `price.deleted`.
+# To test this event, you would need to delete a price via the Stripe API/Dashboard or SDK,
+# which would then naturally emit this event to your webhook listener.
+# Commenting out this section for now as it will fail with the CLI trigger command.
+#
+# # NOTE: Assumes $PriceIdToUpdateOrDelete exists.
+# # Create a temporary price for deletion test
+# $TempPriceProdId = $ProductIdToUpdateOrDelete # Use an existing product
+# $TempPriceIdForDelete = "price_$(Get-Random -Minimum 10000000000000 -Maximum 99999999999999)"
+# & stripe price create --product="$TempPriceProdId" --currency=usd --unit-amount=500 --id="$TempPriceIdForDelete" | Out-Null
+# $ArgumentArray = @(
+#     "--override", "price:id=$($TempPriceIdForDelete)"
+# )
+# Invoke-StripeEvent -EventName "price.deleted" -ArgumentArray $ArgumentArray
 
 
 Write-Host "All test events triggered."

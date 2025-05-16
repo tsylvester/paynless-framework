@@ -13,7 +13,9 @@ export function getPaymentAdapter(
   tokenWalletService: ITokenWalletService,
 ): IPaymentGatewayAdapter | null {
   if (source === 'stripe') {
-    const isTestMode = Deno.env.get('VITE_STRIPE_TEST_MODE') === 'true';
+    // Align with getStripeMode() in stripe-client.ts
+    const isTestMode = Deno.env.get('STRIPE_TEST_MODE') !== 'false'; 
+    // console.log(`[adapterFactory] stripeTestModeEnv: ${stripeTestModeEnv}, isTestMode: ${isTestMode}`);
 
     let stripeSecretKey: string | undefined;
     let stripeWebhookSecret: string | undefined;
@@ -61,6 +63,12 @@ export function getPaymentAdapter(
       console.error('[adapterFactory] Stripe webhook secret is ultimately undefined. Cannot create Stripe adapter.');
       return null;
     }
+
+    // Log the retrieved webhook secret (partially)
+    const partialWebhookSecret = stripeWebhookSecret.length > 15 
+      ? `${stripeWebhookSecret.substring(0, 10)}...${stripeWebhookSecret.substring(stripeWebhookSecret.length - 5)}`
+      : stripeWebhookSecret;
+    console.log(`[adapterFactory] Using Stripe Webhook Secret (partial): ${partialWebhookSecret}`);
 
     try {
       const stripeInstance = new Stripe(stripeSecretKey, {

@@ -111,24 +111,25 @@ export async function handlePriceCreated(
       { planData: JSON.stringify(planDataToUpsert, null, 2) }
     );
 
-    const { error: upsertError } = await supabaseClient
+    const { error: updateError } = await supabaseClient
       .from('subscription_plans')
-      .upsert(planDataToUpsert, { onConflict: 'stripe_price_id' });
+      .update(planDataToUpsert)
+      .eq('stripe_product_id', stripeProduct.id);
 
-    if (upsertError) {
+    if (updateError) {
       logger.error(
-        `[${functionName}] Error upserting subscription_plan for price ${price.id}.`,
-        { error: upsertError, priceId: price.id }
+        `[${functionName}] Error updating subscription_plan for price ${price.id}.`,
+        { error: updateError, priceId: price.id }
       );
       return {
         success: false,
-        error: `Failed to upsert plan for price ${price.id}: ${upsertError.message}`,
+        error: `Failed to update plan for price ${price.id}: ${updateError.message}`,
         transactionId: event.id,
       };
     }
 
     logger.info(
-      `[${functionName}] Successfully upserted plan for price ${price.id}.`,
+      `[${functionName}] Successfully updated plan for price ${price.id}.`,
     );
     return {
       success: true,
