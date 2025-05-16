@@ -376,9 +376,9 @@ The implementation plan uses the following labels to categorize work steps:
                     *   Update `user_subscriptions.status` to 'canceled'.
                     *   Update user status/role if necessary.
                 *   Ensure idempotency.
-            *   [ ] **4.1.3.2.8.5: [BE] [REFACTOR] Implement Invoice Event Handling (`invoice.payment_succeeded`, `invoice.payment_failed`) in `StripePaymentAdapter`**
-                *   [ ]   [TEST-UNIT] Add unit tests for invoice payment success (including token award) and failure.
-                *   [ ]   Tests go in supabase/functions/_shared/adapters/stripe.invoicePaymentFailed.test.ts and stripe.invoicePaymentSucceeded.test.ts
+            *   [✅] **4.1.3.2.8.5: [BE] [REFACTOR] Implement Invoice Event Handling (`invoice.payment_succeeded`, `invoice.payment_failed`) in `StripePaymentAdapter`**
+                *   [✅]   [TEST-UNIT] Add unit tests for invoice payment success (including token award) and failure.
+                *   [✅]   Tests go in supabase/functions/_shared/adapters/stripe.invoicePaymentFailed.test.ts and stripe.invoicePaymentSucceeded.test.ts
                 *   `invoice.payment_succeeded`:
                     *   Primarily for recurring subscription payments.
                     *   Verify `user_subscriptions` record is active and period dates align.

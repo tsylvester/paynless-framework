@@ -9,7 +9,7 @@ import {
 } from 'npm:@supabase/supabase-js@2';
 import { Database, TablesInsert, TablesUpdate } from "../../types_db.ts";
 import { logger } from "../../_shared/logger.ts"; // Use relative path
-import type { SyncResult } from '../sync-ai-models/index.ts'; // Import SyncResult
+import type { SyncResult } from '../../sync-ai-models/index.ts'; // Import SyncResult
 
 /**
  * Interface for Supabase interactions needed by the price change webhook handler.

@@ -1,7 +1,7 @@
 import { SupabaseClient } from '@supabase/supabase-js';
 import Stripe from 'npm:stripe';
 import { Buffer } from "node:buffer";
-import { Database, Json } from '../../../types_db.ts'; // Assuming Price & Product might come from here or Stripe SDK
+import { Database } from '../../../types_db.ts'; // Assuming Price & Product might come from here or Stripe SDK
 import {
   IPaymentGatewayAdapter,
   PaymentInitiationResult,
