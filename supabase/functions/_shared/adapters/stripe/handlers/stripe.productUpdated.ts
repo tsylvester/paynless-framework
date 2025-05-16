@@ -1,9 +1,9 @@
 import Stripe from 'npm:stripe';
-import { ProductPriceHandlerContext } from '../../../types.ts';
-import { PaymentConfirmation } from '../../../types/payment.types.ts';
+import { PaymentConfirmation } from '../../../types.ts';
 import { parseProductDescription } from '../../../utils/productDescriptionParser.ts';
 import { TablesUpdate, Json } from '../../../../types_db.ts';
 // import { Json } from '../../../../types_db.ts'; // Import if syncing metadata_json
+import type { ProductPriceHandlerContext } from '../../../stripe.mock.ts';
 
 export async function handleProductUpdated(
   context: ProductPriceHandlerContext,
@@ -35,9 +35,9 @@ export async function handleProductUpdated(
 
     const fieldsToUpdate: TablesUpdate<'subscription_plans'> = {
       name: product.name,
-      description: parsedDescription as any as Json,
+      description: parsedDescription as unknown as Json,
       active: product.active,
-      metadata: (product.metadata || {}) as any as Json,
+      metadata: product.metadata || {},
       updated_at: new Date().toISOString(),
     };
 

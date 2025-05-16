@@ -1,5 +1,5 @@
 import Stripe from 'npm:stripe';
-import { HandlerContext } from '../../../types.ts';
+import { HandlerContext } from '../../../stripe.mock.ts';
 import { PaymentConfirmation } from '../../../types/payment.types.ts';
 
 export async function handleInvoicePaymentSucceeded(

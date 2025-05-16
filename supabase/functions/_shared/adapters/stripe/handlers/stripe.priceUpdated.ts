@@ -1,6 +1,7 @@
 import Stripe from "npm:stripe";
-import { ProductPriceHandlerContext, PaymentConfirmation } from "../../../types.ts";
+import { PaymentConfirmation } from "../../../types.ts";
 import { TablesUpdate, Json } from "../../../../types_db.ts"; // Reverted import
+import type { ProductPriceHandlerContext } from '../../../stripe.mock.ts';
 
 export async function handlePriceUpdated(
   context: ProductPriceHandlerContext,

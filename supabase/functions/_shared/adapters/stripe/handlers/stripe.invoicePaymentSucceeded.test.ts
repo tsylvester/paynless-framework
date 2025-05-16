@@ -16,14 +16,13 @@ import {
   type SpyCall,
   type Spy
 } from 'jsr:@std/testing@0.225.1/mock';
-import { createMockStripe } from '../../../stripe.mock.ts';
-import { MockStripe } from '../../../types/payment.types.ts';
-import { createMockSupabaseClient } from '../../../supabase.mock.ts';
+import { createMockStripe, MockStripe } from '../../../stripe.mock.ts';
+import { createMockSupabaseClient, MockSupabaseClientSetup, MockSupabaseDataConfig, MockQueryBuilderState } from '../../../supabase.mock.ts';
 import { createMockTokenWalletService } from '../../../services/tokenWalletService.mock.ts';
-import { HandlerContext } from '../../../types.ts';
 import { Database } from '../../../../types_db.ts';
-import { ILogger, LogMetadata, MockSupabaseClientSetup, MockSupabaseDataConfig, MockQueryBuilderState } from '../../../types.ts';
+import { ILogger, LogMetadata } from '../../../types.ts';
 import { handleInvoicePaymentSucceeded } from './stripe.invoicePaymentSucceeded.ts';
+import { HandlerContext } from '../../../stripe.mock.ts';
 
 Deno.test('StripePaymentAdapter: initiatePayment', async (t) => {
   

@@ -1,7 +1,7 @@
 import Stripe from 'npm:stripe';
-import { ProductPriceHandlerContext } from '../../../types.ts';
 import { PaymentConfirmation } from '../../../types/payment.types.ts';
 import { parseProductDescription } from '../../../utils/productDescriptionParser.ts'; // Utility for description
+import type { ProductPriceHandlerContext } from '../../../stripe.mock.ts';
 
 export async function handleProductCreated(
   context: ProductPriceHandlerContext,

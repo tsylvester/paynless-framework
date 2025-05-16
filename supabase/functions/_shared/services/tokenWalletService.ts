@@ -1,12 +1,12 @@
 import { SupabaseClient, createClient } from '@supabase/supabase-js';
+import { createSupabaseAdminClient } from '../auth.ts';
+import { Database } from '../../types_db.ts';
 import {
   ITokenWalletService,
   TokenWallet,
   TokenWalletTransaction,
   TokenWalletTransactionType,
 } from '../types/tokenWallet.types.ts';
-//import { logError, logInfo } from '../utils/logging.ts';
-import type { Database } from '../../types_db.ts';
 
 /**
  * Service class for managing token wallets and transactions.

@@ -5,22 +5,74 @@ import {
     type SupabaseClient,
   } from "npm:@supabase/supabase-js@^2.43.4";
   import type { User as SupabaseUser } from "npm:@supabase/gotrue-js@^2.6.3";
-  import { spy, stub, type Spy, type Stub } from "jsr:@std/testing/mock";
-  
+  import { spy, stub, type Spy } from "jsr:@std/testing/mock";
+  import type { Database } from "../types_db.ts";
+
   // Internal types
   import type {
     IMockQueryBuilder,
     IMockSupabaseAuth,
     IMockSupabaseClient,
     IMockClientSpies,
-    MockSupabaseClientSetup,
     User,
-    MockQueryBuilderState,
-    MockSupabaseDataConfig,
-    MockPGRSTError,
-    MockResolveQueryResult
   } from "./types.ts";
   
+
+  export interface MockSupabaseClientSetup {
+    client: IMockSupabaseClient;
+    spies: IMockClientSpies;
+    clearAllStubs?: () => void;
+  }
+  
+
+  // --- START: Types moved from supabase.mock.ts ---
+  
+  export interface MockQueryBuilderState {
+      tableName: string;
+      operation: 'select' | 'insert' | 'update' | 'delete' | 'upsert';
+      filters: { column?: string; value?: unknown; type: string; criteria?: object; operator?: string; filters?: string; referencedTable?: string }[];
+      selectColumns: string | null;
+      insertData: object | unknown[] | null;
+      updateData: object | null; 
+      upsertData: object | unknown[] | null;
+      upsertOptions?: { onConflict?: string, ignoreDuplicates?: boolean };
+      rangeFrom?: number;
+      rangeTo?: number;
+      orderBy?: { column: string; options?: { ascending?: boolean; nullsFirst?: boolean; referencedTable?: string } };
+      limitCount?: number;
+      orClause?: string; 
+      matchQuery?: object;
+      textSearchQuery?: { column: string, query: string, options?: { config?: string, type?: 'plain' | 'phrase' | 'websearch' } };
+  }
+  
+  export interface MockSupabaseDataConfig {
+      getUserResult?: { data: { user: User | null }; error: Error | null }; // User is already defined in this file
+      genericMockResults?: {
+          [tableName: string]: {
+              select?: { data: object[] | null; error?: Error | null; count?: number | null; status?: number; statusText?: string } | ((state: MockQueryBuilderState) => Promise<{ data: object[] | null; error?: Error | null; count?: number | null; status?: number; statusText?: string }>);
+              insert?: { data: object[] | null; error?: Error | null; count?: number | null; status?: number; statusText?: string } | ((state: MockQueryBuilderState) => Promise<{ data: object[] | null; error?: Error | null; count?: number | null; status?: number; statusText?: string }>);
+              update?: { data: object[] | null; error?: Error | null; count?: number | null; status?: number; statusText?: string } | ((state: MockQueryBuilderState) => Promise<{ data: object[] | null; error?: Error | null; count?: number | null; status?: number; statusText?: string }>);
+              upsert?: { data: object[] | null; error?: Error | null; count?: number | null; status?: number; statusText?: string } | ((state: MockQueryBuilderState) => Promise<{ data: object[] | null; error?: Error | null; count?: number | null; status?: number; statusText?: string }>);
+              delete?: { data: object[] | null; error?: Error | null; count?: number | null; status?: number; statusText?: string } | ((state: MockQueryBuilderState) => Promise<{ data: object[] | null; error?: Error | null; count?: number | null; status?: number; statusText?: string }>);
+          };
+      };
+      rpcResults?: {
+          [functionName: string]: { data?: object | object[] | null; error?: Error | null } | (() => Promise<{ data?: object | object[] | null; error?: Error | null }>);
+      };
+      mockUser?: User | null; 
+      simulateAuthError?: Error | null;
+  }
+  
+  export type MockPGRSTError = { name: string; message: string; code: string; details?: string; hint?: string };
+  
+  export type MockResolveQueryResult = { 
+      data: object | unknown[] | null;
+      error: Error | MockPGRSTError | null; 
+      count: number | null; 
+      status: number; 
+      statusText: string; 
+  };  
+
   // Environment variable check
   const envSupabaseUrl = Deno.env.get("SUPABASE_URL");
   const envServiceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");

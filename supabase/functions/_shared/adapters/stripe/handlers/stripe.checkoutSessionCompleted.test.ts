@@ -2,14 +2,12 @@ import { StripePaymentAdapter } from '../stripePaymentAdapter.ts';
 import type { ITokenWalletService, TokenWalletTransaction } from '../../../types/tokenWallet.types.ts';
 import { MockTokenWalletService } from '../../../services/tokenWalletService.mock.ts';
 import type { SupabaseClient } from 'npm:@supabase/supabase-js';
-import { MockSupabaseDataConfig, HandlerContext } from "../../../types.ts";
 import { Database } from "../../../../types_db.ts";
 import Stripe from 'npm:stripe';
 import type { PaymentConfirmation } from '../../../types/payment.types.ts';
 import {
   assert,
   assertEquals,
-  assertRejects,
 } from 'https://deno.land/std@0.224.0/assert/mod.ts';
 import {
   assertSpyCalls,
@@ -18,13 +16,11 @@ import {
   type Stub,
   type Spy,
 } from 'jsr:@std/testing@0.225.1/mock';
-import { createMockStripe } from '../../../stripe.mock.ts';
-import { createMockSupabaseClient } from '../../../supabase.mock.ts';
+import { createMockStripe, MockStripe, HandlerContext } from '../../../stripe.mock.ts';
+import { createMockSupabaseClient, MockSupabaseClientSetup, MockSupabaseDataConfig } from '../../../supabase.mock.ts';
 import { createMockTokenWalletService } from '../../../services/tokenWalletService.mock.ts';
-import { MockStripe } from '../../../types/payment.types.ts';
 import { handleCheckoutSessionCompleted } from "./stripe.checkoutSessionCompleted.ts";
-import type { PaymentTransaction } from "../../../types.ts";
-import type { ILogger, LogMetadata, MockSupabaseClientSetup } from "../../../types.ts";
+import type { PaymentTransaction, ILogger, LogMetadata } from "../../../types.ts";
 
 // Helper to create a mock Stripe.Event
 const createMockCheckoutSessionCompletedEvent = (

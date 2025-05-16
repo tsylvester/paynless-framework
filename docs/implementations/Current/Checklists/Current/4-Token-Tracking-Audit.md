@@ -401,11 +401,35 @@ The implementation plan uses the following labels to categorize work steps:
                 *   Currently a few failing tests but most pass 
             *   [ ] **4.1.3.2.8.9: [COMMIT]** "refactor(BE|TEST): Enhance StripePaymentAdapter for comprehensive webhook event handling (payments, subscriptions, products, prices, tokens)"
     *   [ ] **4.1.3.2.9: [BE] Decommission Old `stripe-webhook/index.ts` Function**
-        *   [ ] **4.1.3.2.9.1: [INFRA] Update Stripe Dashboard Webhook URL** (Point to new generic `/webhooks/stripe`)
-        *   [ ] **4.1.3.2.9.2: [MONITOR] Monitor New `/webhooks/stripe` Endpoint for all event types.**
-        *   [ ] **4.1.3.2.9.3: [BE] Delete `supabase/functions/stripe-webhook/` Directory** (After successful porting and monitoring)
-        *   [ ] **4.1.3.2.9.4: [DOCS] Update Internal Documentation**
-        *   [ ] **4.1.3.2.9.5: [COMMIT]** "feat(BE|INFRA): Decommission old stripe-webhook function after porting all logic to new webhook router"
+        *   [✅] **4.1.3.2.9.1: [INFRA] Update Stripe Dashboard Webhook URL** (Point to new generic `/webhooks/stripe` - User confirmed for Sandbox)
+        *   [ ] **4.1.3.2.9.2: [TEST-SETUP] Install/Configure Stripe CLI and Start Webhook Listening**
+            *   [ ] Ensure Stripe CLI is installed.
+            *   [ ] Run `stripe login` if first time (User confirmed completed).
+            *   [ ] Execute `stripe listen --forward-to http://localhost:54321/functions/v1/webhooks/stripe` (User confirmed running, secret `whsec_bcf8937105a230e3d33714dbbd66430260ee31c3da7b2337288a0860058cebd5` obtained).
+            *   [ ] Note the `whsec_...` signing secret provided by `stripe listen`.
+            *   [ ] Update local environment (e.g., `.env` file used by `supabase start` or Supabase local dev Vault) with this `whsec_...` for `STRIPE_WEBHOOK_SIGNING_SECRET`. Restart Supabase local dev server if needed.
+        *   [ ] **4.1.3.2.9.3: [TEST-INT] Trigger and Verify Stripe Test Events via CLI**
+            *   For each of the critical event types your `StripePaymentAdapter` handles:
+                *   `checkout.session.completed` (mode: payment)
+                *   `checkout.session.completed` (mode: subscription)
+                *   `invoice.payment_succeeded`
+                *   `invoice.payment_failed`
+                *   `customer.subscription.updated`
+                *   `customer.subscription.deleted`
+                *   `product.created`, `product.updated`, `product.deleted`
+                *   `price.created`, `price.updated`, `price.deleted`
+            *   [ ] **Sub-task (for each event type listed above):**
+                *   [ ] Identify/Create necessary test data in Stripe Sandbox (Customer IDs, Price IDs, Product IDs, Subscription IDs, etc.).
+                *   [ ] Construct the `stripe trigger <event_name> ...` command with appropriate test data, including `internal_payment_id` in metadata where applicable.
+                *   [ ] Execute the command.
+                *   [ ] **Observe Stripe CLI `listen` output:** Confirm event is forwarded and a `2xx` response is received from your local endpoint.
+                *   [ ] **Observe Supabase function logs:** Check for any errors and verify expected log messages from your `StripePaymentAdapter` and its handlers.
+                *   [ ] **Verify database state:** Query relevant tables (`payment_transactions`, `token_wallets`, `token_wallet_transactions`, `user_subscriptions`, `subscription_plans`) to ensure records were created/updated correctly and idempotency holds if applicable.
+                *   [ ] **Verify token awards:** Ensure `TokenWalletService.recordTransaction` was called correctly and tokens were awarded for relevant events.
+        *   [ ] **4.1.3.2.9.4: [MONITOR] (Placeholder for Production) Monitor New `/webhooks/stripe` Endpoint for all event types.** (Once deployed, you'd monitor this in Supabase logs and Stripe Dashboard).
+        *   [ ] **4.1.3.2.9.5: [BE] Delete `supabase/functions/stripe-webhook/` Directory** (After successful local testing and confident porting)
+        *   [ ] **4.1.3.2.9.6: [DOCS] Update Internal Documentation** (Reflect new webhook structure and testing procedures).
+        *   [ ] **4.1.3.2.9.7: [COMMIT]** "feat(BE|INFRA|TEST): Decommission old stripe-webhook, test new router with Stripe CLI"
     *   [ ] **4.1.3.2.10: [BE] Decommission `sync-stripe-plans/index.ts` Function**
         *   [ ] **4.1.3.2.10.1: [ANALYZE] Confirm `sync-stripe-plans` No Longer Needed** (Ensure real-time webhook handling for products/prices is sufficient and no other process relies on the batch sync).
         *   [ ] **4.1.3.2.10.2: [BE] Delete `supabase/functions/sync-stripe-plans/` Directory**
@@ -451,6 +475,130 @@ The implementation plan uses the following labels to categorize work steps:
 
 ---
 
+**Phase 4.5: [API-STORE-UI-BE] Enhanced AI Chat Context Management**
+
+**Goal:** Provide users with granular control over the chat messages included in the context sent to the AI, and ensure accurate token accounting for this dynamic context. This allows users to curate the conversation history, potentially improving AI responses and managing token consumption effectively.
+
+---
+
+**4.5.1: [UI|STORE] Implement Chat Message Selection UI and State**
+
+**Goal:** Develop the frontend components and state management for selecting/deselecting chat messages for context.
+
+*   [ ] **4.5.1.1: [STORE] Enhance `useAiStore` for Message Selection State**
+    *   [ ] **4.5.1.1.1: [STORE] [TEST-UNIT] Define Test Cases for `useAiStore` Message Selection**
+        *   Test adding/updating an `isSelected` property (boolean) to your `ChatMessage` type (or using a parallel data structure, e.g., a `Map<messageId, boolean>`) to track selection.
+        *   Test an action to toggle the selection state for a single message ID.
+        *   Test actions for "select all" currently visible/loaded messages and "deselect all" currently visible/loaded messages.
+        *   Test a selector that returns an array of all currently selected `ChatMessage` objects.
+        *   Test that newly added/streamed messages are selected by default.
+    *   [ ] **4.5.1.1.2: [STORE] [TEST-UNIT] Write Failing Tests for `useAiStore` Message Selection (RED)**
+    *   [ ] **4.5.1.1.3: [STORE] Implement `useAiStore` Enhancements**
+        *   Modify your `ChatMessage` type or implement a selection map.
+        *   Add actions: `toggleMessageSelection(messageId: string): void`, `selectAllMessages(): void`, `deselectAllMessages(): void`.
+        *   Update logic for adding new messages to ensure they are initialized with `isSelected: true`.
+        *   Add selector: `selectSelectedChatMessages(): ChatMessage[]`.
+    *   [ ] **4.5.1.1.4: [STORE] [TEST-UNIT] Run `useAiStore` Tests until GREEN.**
+    *   [ ] **4.5.1.1.5: [REFACTOR] Refactor `useAiStore` Message Selection Logic and Associated Tests for clarity and efficiency.**
+    *   [ ] **4.5.1.1.6: [COMMIT]** "feat(STORE): Enhance useAiStore for chat message selection state"
+
+*   [ ] **4.5.1.2: [UI] Update Chat Message Display for Selection (`ChatMessageBubble.tsx` or equivalent)**
+    *   [ ] **4.5.1.2.1: [UI] [TEST-UNIT] Define Test Cases for `ChatMessageBubble` with Checkbox**
+        *   Verify a checkbox UI element is rendered for each chat message.
+        *   Verify the checkbox's checked state accurately reflects the `isSelected` status from `useAiStore` for that message.
+        *   Verify that interacting with the checkbox (e.g., clicking it) dispatches the `toggleMessageSelection` action with the correct message ID.
+    *   [ ] **4.5.1.2.2: [UI] [TEST-UNIT] Write Failing Tests for `ChatMessageBubble` (RED)**
+    *   [ ] **4.5.1.2.3: [UI] Implement Checkbox in `ChatMessageBubble.tsx`**
+        *   Add a checkbox input component to each message bubble.
+        *   Subscribe to `useAiStore` to get the selection state for the specific message and bind it to the checkbox.
+        *   Ensure the `onChange` handler of the checkbox dispatches `toggleMessageSelection`.
+    *   [ ] **4.5.1.2.4: [UI] [TEST-UNIT] Run `ChatMessageBubble` Tests until GREEN.**
+    *   [ ] **4.5.1.2.5: [REFACTOR] Refactor `ChatMessageBubble` Implementation and Tests.**
+    *   [ ] **4.5.1.2.6: [COMMIT]** "feat(UI): Add selection checkbox to ChatMessageBubble"
+
+*   [ ] **4.5.1.3: [UI] Implement "Select All" / "Deselect All" Controls (e.g., in `ChatControls.tsx` or near the chat input area)**
+    *   [ ] **4.5.1.3.1: [UI] [TEST-UNIT] Define Test Cases for Select/Deselect All Controls**
+        *   Verify "Select All" and "Deselect All" buttons/controls are rendered.
+        *   Verify clicking "Select All" dispatches the `selectAllMessages` action from `useAiStore`.
+        *   Verify clicking "Deselect All" dispatches the `deselectAllMessages` action from `useAiStore`.
+    *   [ ] **4.5.1.3.2: [UI] [TEST-UNIT] Write Failing Tests for Select/Deselect All Controls (RED)**
+    *   [ ] **4.5.1.3.3: [UI] Implement Select/Deselect All UI Elements**
+        *   Add the necessary button components.
+        *   Connect their `onClick` handlers to dispatch the respective actions from `useAiStore`.
+    *   [ ] **4.5.1.3.4: [UI] [TEST-UNIT] Run Select/Deselect All Control Tests until GREEN.**
+    *   [ ] **4.5.1.3.5: [REFACTOR] Refactor Select/Deselect All Control Implementation and Tests.**
+    *   [ ] **4.5.1.3.6: [COMMIT]** "feat(UI): Implement select/deselect all chat message controls"
+
+---
+
+**4.5.2: [UI|API|BE] Adapt Token Accounting and Context Passing**
+
+**Goal:** Ensure token estimation and the context sent to the AI accurately reflect the user's message selections. The backend must process this curated context, including any overarching system prompt.
+
+*   [ ] **4.5.2.1: [UI|STORE] Update Token Estimator (`useTokenEstimator`) and Affordability Hook (`useAIChatAffordabilityStatus`)**
+    *   [ ] **4.5.2.1.1: [UI] [TEST-UNIT] Define Test Cases for `useTokenEstimator` with Selected Context**
+        *   Test that the estimator correctly calculates token counts based on the current user input text PLUS the content of all messages returned by `useAiStore(selectSelectedChatMessages)`.
+        *   Test that the estimated token count updates dynamically when messages are selected or deselected via `useAiStore` actions.
+    *   [ ] **4.5.2.1.2: [UI] [TEST-UNIT] Write Failing Tests for `useTokenEstimator` (RED)**
+    *   [ ] **4.5.2.1.3: [UI] Modify `apps/web/src/hooks/useTokenEstimator.ts`**
+        *   The hook should now subscribe to `useAiStore(selectSelectedChatMessages)`.
+        *   It needs to iterate through these selected messages, concatenate their textual content with the current input field's text, and then calculate the total token count.
+    *   [ ] **4.5.2.1.4: [UI] [TEST-UNIT] Run `useTokenEstimator` Tests until GREEN.**
+    *   [ ] **4.5.2.1.5: [UI] [TEST-UNIT] Review and Update Tests for `useAIChatAffordabilityStatus`**
+        *   Ensure tests for `useAIChatAffordabilityStatus.unit.test.ts` are still valid or update them to reflect that `useTokenEstimator` now provides the total estimated cost including the selected context. The hook itself might not need changes if `useTokenEstimator`'s output remains its input.
+    *   [ ] **4.5.2.1.6: [REFACTOR] Refactor `useTokenEstimator` and its tests. Review `useAIChatAffordabilityStatus` for any indirect impacts.**
+    *   [ ] **4.5.2.1.7: [COMMIT]** "feat(UI|STORE): Update token estimator for dynamic chat context selection"
+
+*   [ ] **4.5.2.2: [API] Modify API Client for Context Passing**
+    *   [ ] **4.5.2.2.1: [API] [TEST-UNIT] Define Test Cases for the Chat API Method (e.g., in `AiApiClient.ts`)**
+        *   Test that the primary chat method (e.g., `streamedChatRequest` or similar) now accepts an array of `ChatMessage` objects (or a simplified version like `{ role: string, content: string }[]`) representing the selected context.
+        *   Test that the HTTP request payload sent to the backend correctly includes this array of context messages.
+    *   [ ] **4.5.2.2.2: [API] [TEST-UNIT] Write Failing Tests for API Client Chat Method (RED)**
+    *   [ ] **4.5.2.2.3: [API] Update `packages/api/src/clients/AiApiClient.ts` (or the relevant API client file)**
+        *   Modify the signature of the chat method to accept the array of selected `ChatMessage` objects.
+        *   Ensure this array is properly formatted and included in the request body sent to the `/chat` backend endpoint.
+    *   [ ] **4.5.2.2.4: [API] [TEST-UNIT] Run API Client Tests until GREEN.**
+    *   [ ] **4.5.2.2.5: [REFACTOR] Refactor the API Client Chat Method and its tests.**
+    *   [ ] **4.5.2.2.6: [COMMIT]** "feat(API): Update AI API client to send selected chat messages as context"
+
+*   [ ] **4.5.2.3: [UI] Update Chat Submission Logic (e.g., in `AiChatbox.tsx` or `ChatInput.tsx`)**
+    *   [ ] **4.5.2.3.1: [UI] [TEST-UNIT] Define Test Cases for Chat Submission Logic**
+        *   Verify that when a user submits a message, the logic retrieves the currently selected messages using `useAiStore(selectSelectedChatMessages)`.
+        *   Verify that this array of selected messages (along with the new user input) is passed to the updated API client chat method.
+    *   [ ] **4.5.2.3.2: [UI] [TEST-UNIT] Write Failing Tests for Chat Submission Logic (RED)**
+    *   [ ] **4.5.2.3.3: [UI] Modify Chat Submission Logic**
+        *   On message submission:
+            *   Get the array of `ChatMessage` objects from `useAiStore(selectSelectedChatMessages)`.
+            *   Prepare the new user message (e.g., `{ role: 'user', content: newText }`).
+            *   Pass the combined context (selected messages + new user message) to the API client method.
+    *   [ ] **4.5.2.3.4: [UI] [TEST-UNIT] Run Chat Submission Logic Tests until GREEN.**
+    *   [ ] **4.5.2.3.5: [REFACTOR] Refactor Chat Submission Logic and its tests.**
+    *   [ ] **4.5.2.3.6: [COMMIT]** "feat(UI): Update chat submission to use selected messages for context"
+
+*   [ ] **4.5.2.4: [BE] Adapt `/chat` Edge Function for Selected Context and System Prompt**
+    *   [ ] **4.5.2.4.1: [BE] [TEST-INT] Define Integration Test Cases for `/chat` Endpoint**
+        *   Test scenarios where the endpoint receives an array of selected context messages in the request body.
+        *   Test how the "current prompt selection" (system prompt) is handled:
+            *   If sent by the client: test it's correctly received and prepended.
+            *   If retrieved by the backend: test this retrieval and prepending.
+        *   Test that the final history constructed for the AI provider (e.g., OpenAI) accurately reflects the system prompt (once) followed by the user-selected messages and the latest user input.
+        *   Test that only messages marked as selected (or all messages if selection feature is bypassed for a simpler call) are used to form the context.
+    *   [ ] **4.5.2.4.2: [BE] [TEST-INT] Write Failing Integration Tests for `/chat` Endpoint (RED)**
+    *   [ ] **4.5.2.4.3: [BE] Modify `supabase/functions/chat/index.ts`**
+        *   Update the request body parsing to expect an optional array of `selectedMessages` (e.g., `ChatMessage[]`).
+        *   Implement logic for handling the "current prompt selection" (system prompt). This could be a string passed in the request body (e.g., `systemPrompt: "You are a helpful assistant."`) or retrieved server-side based on user/org settings.
+        *   Construct the final message history for the AI provider:
+            1.  Start with the system prompt (if any).
+            2.  Append the `selectedMessages` provided by the client.
+            3.  Append the latest user message from the current request.
+            *   Ensure the system prompt is included exactly once at the beginning.
+        *   The `relatedEntityId` for `TokenWalletService.recordTransaction` should continue to be the ID of the newly created `chat_messages` table entry that stores the user's latest turn and the AI's response.
+    *   [ ] **4.5.2.4.4: [BE] [TEST-INT] Run `/chat` Integration Tests until GREEN.**
+    *   [ ] **4.5.2.4.5: [REFACTOR] Refactor `/chat` Endpoint Logic and its tests for clarity and robustness.**
+    *   [ ] **4.5.2.4.6: [COMMIT]** "feat(BE): Adapt /chat endpoint for selected context and system prompt integration"
+
+---
+
 ## Phase 4.2: [BE] Token Consumption Logic
 
 **Goal:** Adapt AI service usage to debit tokens from the new wallet system.
@@ -460,7 +608,7 @@ The implementation plan uses the following labels to categorize work steps:
         1.  Get `userId` and `organizationId` for context.
         2.  Instantiate `TokenWalletService`.
         3.  Call `tokenWalletService.getWalletForContext(userId, organizationId)` to get `walletId` and `currentBalance`.
-        4.  Estimate `tokensRequiredForNextMessage` (using server-side `tiktoken` on user prompt, or a pre-defined cost).
+        4.  Estimate `tokensRequiredForNextMessage` (using server-side `tiktoken` on user prompt, or a pre-defined cost - **Note: this estimation will now incorporate the full selected context as developed in Phase 4.5**).
         5.  If `currentBalance < tokensRequiredForNextMessage`, return 402 error "Insufficient token balance".
         6.  Proceed to call AI Provider.
         7.  On successful AI response, get `actualTokensConsumed` from provider's response (prompt + completion).
@@ -468,12 +616,10 @@ The implementation plan uses the following labels to categorize work steps:
         9.  If `recordTransaction` fails (e.g., rare concurrent update led to insufficient balance despite initial check), handle gracefully (log error, potentially don't show AI response or mark as failed). *This step requires careful thought on UX vs. strict accounting.*
     *   Still log `actualTokensConsumed` in `chat_messages.token_usage` for granular per-message data.
 *   [ ] **4.2.2: [TEST-INT] Update `POST /chat` Integration Tests**
-    *   Verify wallet balance checks before AI call.
+    *   Verify wallet balance checks before AI call (now with full context estimation).
     *   Verify wallet debits occur after successful AI call via `token_wallet_transactions` ledger.
     *   Verify error handling for insufficient funds.
-*   [ ] **4.2.3: [COMMIT]** "feat(BE): Integrate AI chat with token wallet for debits"
-
----
+*   [ ] **4.2.3: [COMMIT]** "feat(BE): Integrate AI chat with token wallet for debits (with full context estimation)"
 
 ## Phase 4.3: [API] [STORE] API Client & State Management for Wallets
 
@@ -505,16 +651,17 @@ The implementation plan uses the following labels to categorize work steps:
 
 ### 4.4.1: [UI] Token Estimator Hook (`useTokenEstimator`)
 *   [ ] **4.4.1.1: [UI] [TEST-UNIT] Define Test Cases for `useTokenEstimator` Hook**
-    *   In `apps/web/src/hooks/useTokenEstimator.unit.test.ts`. Mock `tiktoken`. Test samples, empty string.
+    *   **Note:** The functionality described in section 4.4.1 (Token Estimator Hook) is now comprehensively addressed by **Phase 4.5.2.1 ([UI|STORE] Update Token Estimator (`useTokenEstimator`) and Affordability Hook (`useAIChatAffordabilityStatus`))**, which implements token estimation based on the full selected chat context. This section 4.4.1 is considered fulfilled by the tasks in Phase 4.5.2.1. The original sub-tasks below are superseded.
+    *   // *   In `apps/web/src/hooks/useTokenEstimator.unit.test.ts`. Mock `tiktoken`. Test samples, empty string.
 *   [ ] **4.4.1.2: [UI] Create hook `apps/web/src/hooks/useTokenEstimator.ts`**
-    *   `import { getEncoding } from 'tiktoken'; const encoding = getEncoding('cl100k_base'); export const useTokenEstimator = (text: string) => React.useMemo(() => text ? encoding.encode(text).length : 0, [text]);`
+    *   // *   `import { getEncoding } from 'tiktoken'; const encoding = getEncoding('cl100k_base'); export const useTokenEstimator = (text: string) => React.useMemo(() => text ? encoding.encode(text).length : 0, [text]);`
 *   [ ] **4.4.1.3: [UI] [TEST-UNIT] Write tests for the hook. Expect failure (RED).**
 *   [ ] **4.4.1.4: [UI] Implement the hook. Run tests until pass (GREEN).**
 *   [ ] **4.4.1.5: [UI] Integrate Hook into Chat Input Component (`AiChatbox.tsx` or `ChatInput.tsx`)**
-    *   Use the `useTokenEstimator` hook with the current text input value.
-    *   Display the estimated count near the input field (e.g., "Tokens for this message: ~{count}").
+    *   // *   Use the `useTokenEstimator` hook with the current text input value.
+    *   // *   Display the estimated count near the input field (e.g., "Tokens for this message: ~{count}").
 *   [ ] **4.4.1.6: [UI] [TEST-UNIT] Write/Update component tests for chat input to verify display.**
-*   [ ] **4.4.1.7: [COMMIT]** "feat(UI): Implement token estimator hook and display in chat input w/ tests"
+*   [ ] **4.4.1.7: [COMMIT]** "feat(UI): Implement token estimator hook and display in chat input w/ tests" (Commit message will be covered by 4.5.2.1.7)
 
 ### 4.4.2: [UI] Per-Message Token Usage Display (`ChatMessageBubble.tsx`)
 *   [ ] **4.4.2.1: [UI] [TEST-UNIT] Define Test Cases for `ChatMessageBubble.tsx`**
@@ -555,21 +702,21 @@ The implementation plan uses the following labels to categorize work steps:
 *   [ ] **4.4.5.1: [UI] [TEST-UNIT] Define Test Cases for `useAIChatAffordabilityStatus` Hook**
     *   In `apps/web/src/hooks/useAIChatAffordabilityStatus.unit.test.ts`.
     *   Mocks `useWalletStore` (for `selectCurrentWalletBalance`).
-    *   Mocks `useTokenEstimator` (or takes estimated cost as prop).
+    *   Mocks `useTokenEstimator` (or takes estimated cost as prop - **this will be the enhanced version from Phase 4.5.2.1 that considers full context**).
     *   Test various balance/cost scenarios.
     *   Verify correct status: `{ currentBalance: string, estimatedNextCost: number, canAffordNext: boolean, lowBalanceWarning: boolean }`.
 *   [ ] **4.4.5.2: [UI] Create `apps/web/src/hooks/useAIChatAffordabilityStatus.ts` Hook**
-    *   Takes `estimatedNextCost: number` as input.
+    *   Takes `estimatedNextCost: number` as input (derived from the comprehensive `useTokenEstimator` developed in **Phase 4.5.2.1**).
     *   Gets `currentBalance` from `useWalletStore(selectCurrentWalletBalance)`.
     *   Compares. `lowBalanceWarning` if `currentBalance < estimatedNextCost * 3` (configurable threshold).
 *   [ ] **4.4.5.3: [UI] [TEST-UNIT] Write tests for the hook. Debug until (GREEN).**
 *   [ ] **4.4.5.4: [UI] Integrate Hook into Chat Input (`AiChatbox.tsx` or `ChatInput.tsx`)**
-    *   Use `estimatedTokens = useTokenEstimator(currentInputValue)`.
+    *   Use `estimatedTokens = useTokenEstimator(currentInputValue)` (this `useTokenEstimator` refers to the enhanced version from **Phase 4.5.2.1**).
     *   Use `const { canAffordNext, lowBalanceWarning } = useAIChatAffordabilityStatus(estimatedTokens);`.
     *   If `lowBalanceWarning`, display a message (e.g., "Token balance is low").
     *   If `!canAffordNext`, disable send button and show message (e.g., "Insufficient balance for this message").
 *   [ ] **4.4.5.5: [UI] [TEST-UNIT] Update Chat Input component tests for these conditional UI changes.**
-*   [ ] **4.4.5.6: [COMMIT]** "feat(UI): Implement AI chat affordability hook and integrate into chat input w/ tests"
+*   [ ] **4.4.5.6: [COMMIT]** "feat(UI): Implement AI chat affordability hook (with full context) and integrate into chat input w/ tests"
 
 ### 4.4.6: [UI] Wallet Balance Display, Top-Up, and History Pages
 *   [ ] **4.4.6.1: [UI] Wallet Balance Display Component (`WalletBalanceDisplay.tsx`)**
@@ -593,38 +740,6 @@ The implementation plan uses the following labels to categorize work steps:
 *   [ ] **4.4.6.4: [COMMIT]** "feat(UI): Implement wallet balance display, top-up page, and transaction history page w/ tests"
 
 ---
-
-## Phase 4.5: [API-STORE-UI] Improve AI Chat Context
-
-**Goal:** Improve Context for AI Chat.
-
-### 4.5.1: [UI] Chat Context Selection 
-*   [ ] **[UI] [TEST-UNIT]**
-    *   [ ] Build failing Test Units to describe the following (RED): 
-        *   [ ] Add checkbox to all ChatItems in ChatMessages
-        *   [ ] Automatically tick checkboxes for all ChatItems loaded in Chatbox
-        *   [ ] Enable users to untick checkboxes of any message
-        *   [ ] Add "Check All" and "Uncheck All" for easy selection
-        *   [ ] Token accounting accounts for entire context size, not just new context
-    *   [ ] Implement the above functionality 
-    *   [ ] Retest (GREEN)
-    *   [ ] [COMMIT]
-
-
-### 4.5.2: [] Chat Context Passing
-*   [ ] **[] [TEST-UNIT]**
-    *   [ ] Build failing Test Units to describe the following (RED): 
-        *   [ ] All checked messages from Chatbox populated ChatItems are sent to AI 
-        *   [ ] No unchecked messages from Chatbox populated ChatItems are sent to AI 
-        *   [ ] AI is sent current prompt selection with every submit interaction
-        *   [ ] AI is only sent one prompt selection once with every submit interaction
-    *   [ ] Implement the above functionality
-    *   [ ] Retest (GREEN)
-    *   [ ] [COMMIT]
-
----
-
-
 
 ## Phase 4.6: End-to-End Testing, Refinement, and Security Review
 

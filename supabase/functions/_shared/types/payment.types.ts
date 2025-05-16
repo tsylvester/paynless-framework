@@ -120,36 +120,3 @@ export interface IPaymentGatewayAdapter {
   // processRefund(transactionId: string, amount?: number): Promise<RefundResult>;
   // getTransactionDetails(gatewayTransactionId: string): Promise<TransactionDetails>;
 }
-
-// Define a type for the structure of the mocked Stripe, exposing stubs
-export interface MockStripe {
-  instance: Stripe;
-  stubs: {
-    checkoutSessionsCreate: Stub<
-      Stripe.Checkout.SessionsResource, 
-      Parameters<Stripe.Checkout.SessionsResource['create']>,
-      Promise<Stripe.Response<Stripe.Checkout.Session>>
-    >;
-    webhooksConstructEvent: Stub<
-      Stripe.Webhooks, 
-      Parameters<Stripe.Webhooks['constructEvent']>,
-      Stripe.Event
-    >;
-    paymentIntentsRetrieve: Stub<
-      Stripe.PaymentIntentsResource,
-      Parameters<Stripe.PaymentIntentsResource['retrieve']>,
-      Promise<Stripe.Response<Stripe.PaymentIntent>>
-    >;
-    subscriptionsRetrieve: Stub<
-      Stripe.SubscriptionsResource,
-      Parameters<Stripe.SubscriptionsResource['retrieve']>,
-      Promise<Stripe.Response<Stripe.Subscription>>
-    >;
-    productsRetrieve: Stub<
-      Stripe.ProductsResource,
-      [id: string, options?: Stripe.RequestOptions],
-      Promise<Stripe.Response<Stripe.Product | Stripe.DeletedProduct>>
-    >;
-  };
-  clearStubs: () => void;
-}

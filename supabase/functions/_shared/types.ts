@@ -6,9 +6,6 @@ import type { handleCorsPreflightRequest, createSuccessResponse, createErrorResp
 import { createClient } from "npm:@supabase/supabase-js";
 import type { Spy } from "jsr:@std/testing@0.225.1/mock";
 import type { User as SupabaseUser } from "npm:@supabase/supabase-js";
-import Stripe from 'stripe';
-import { SupabaseClient } from '@supabase/supabase-js';
-import { ITokenWalletService } from '../_shared/types/tokenWallet.types.ts';
 import { Json, Tables } from '../types_db.ts';
 
 // Define PaymentTransaction using the Tables helper type from types_db.ts
@@ -24,25 +21,6 @@ export type UpdatePaymentTransactionFn = (
   stripeEventId?: string
 ) => Promise<PaymentTransaction | null>;
 
-export interface HandlerContext {
-  stripe: Stripe;
-  supabaseClient: SupabaseClient;
-  logger: ILogger;
-  tokenWalletService: ITokenWalletService;
-  updatePaymentTransaction: UpdatePaymentTransactionFn;
-  featureFlags?: Record<string, boolean>; // Optional feature flags
-  functionsUrl: string; // Base URL for invoking other functions if needed
-  stripeWebhookSecret: string; // The specific webhook secret for this adapter
-}
-
-// Specific context for product/price handlers that might not need token wallet or full payment transaction updates directly
-export interface ProductPriceHandlerContext {
-  stripe: Stripe;
-  supabaseClient: SupabaseClient;
-  logger: ILogger;
-  functionsUrl: string;
-  stripeWebhookSecret: string;
-}
 
 // We can add more specific context types if needed for other categories of handlers.
 
@@ -259,6 +237,28 @@ export interface ILogger {
   // setLogLevel?: (level: LogLevel) => void; // Example if needed
 }
 
+  // Define the specific type for the RPC parameters based on types_db.ts
+  export type PerformChatRewindArgs = Database['public']['Functions']['perform_chat_rewind']['Args'];
+  
+  // Define derived DB types needed locally
+  export type ChatMessageInsert = Database['public']['Tables']['chat_messages']['Insert'];
+  export type ChatMessageRow = Database['public']['Tables']['chat_messages']['Row'];
+  // type ChatRow = Database['public']['Tables']['chats']['Row']; // Not directly used in handlePostRequest return
+  
+  export interface ChatHandlerSuccessResponse {
+    userMessage?: ChatMessageRow;       // Populated for normal new messages and new user message in rewind
+    assistantMessage: ChatMessageRow;  // Always populated on success
+    isRewind?: boolean;                 // True if this was a rewind operation
+    isDummy?: boolean;                  // True if dummy provider was used
+  }
+  export interface ChatDetailsHandlerDeps {
+    createSupabaseClient: typeof createClient;
+    createJsonResponse: typeof createSuccessResponse;
+    createErrorResponse: typeof createErrorResponse;
+    // Add other specific dependencies if needed, e.g., a logger
+  }
+  
+
 export interface ChatHandlerDeps {
   createSupabaseClient: typeof createClient;
   fetch: typeof fetch; // Global fetch type
@@ -358,74 +358,3 @@ export interface IMockClientSpies {
     then?: Spy<IMockQueryBuilder['then']>;
   } | undefined);
 }
-
-export interface MockSupabaseClientSetup {
-  client: IMockSupabaseClient;
-  spies: IMockClientSpies;
-  clearAllStubs?: () => void;
-}
-
-// Define the specific type for the RPC parameters based on types_db.ts
-export type PerformChatRewindArgs = Database['public']['Functions']['perform_chat_rewind']['Args'];
-
-// Define derived DB types needed locally
-export type ChatMessageInsert = Database['public']['Tables']['chat_messages']['Insert'];
-export type ChatMessageRow = Database['public']['Tables']['chat_messages']['Row'];
-// type ChatRow = Database['public']['Tables']['chats']['Row']; // Not directly used in handlePostRequest return
-
-export interface ChatHandlerSuccessResponse {
-  userMessage?: ChatMessageRow;       // Populated for normal new messages and new user message in rewind
-  assistantMessage: ChatMessageRow;  // Always populated on success
-  isRewind?: boolean;                 // True if this was a rewind operation
-  isDummy?: boolean;                  // True if dummy provider was used
-}
-
-// --- START: Types moved from supabase.mock.ts ---
-
-export interface MockQueryBuilderState {
-    tableName: string;
-    operation: 'select' | 'insert' | 'update' | 'delete' | 'upsert';
-    filters: { column?: string; value?: unknown; type: string; criteria?: object; operator?: string; filters?: string; referencedTable?: string }[];
-    selectColumns: string | null;
-    insertData: object | unknown[] | null;
-    updateData: object | null; 
-    upsertData: object | unknown[] | null;
-    upsertOptions?: { onConflict?: string, ignoreDuplicates?: boolean };
-    rangeFrom?: number;
-    rangeTo?: number;
-    orderBy?: { column: string; options?: { ascending?: boolean; nullsFirst?: boolean; referencedTable?: string } };
-    limitCount?: number;
-    orClause?: string; 
-    matchQuery?: object;
-    textSearchQuery?: { column: string, query: string, options?: { config?: string, type?: 'plain' | 'phrase' | 'websearch' } };
-}
-
-export interface MockSupabaseDataConfig {
-    getUserResult?: { data: { user: User | null }; error: Error | null }; // User is already defined in this file
-    genericMockResults?: {
-        [tableName: string]: {
-            select?: { data: object[] | null; error?: Error | null; count?: number | null; status?: number; statusText?: string } | ((state: MockQueryBuilderState) => Promise<{ data: object[] | null; error?: Error | null; count?: number | null; status?: number; statusText?: string }>);
-            insert?: { data: object[] | null; error?: Error | null; count?: number | null; status?: number; statusText?: string } | ((state: MockQueryBuilderState) => Promise<{ data: object[] | null; error?: Error | null; count?: number | null; status?: number; statusText?: string }>);
-            update?: { data: object[] | null; error?: Error | null; count?: number | null; status?: number; statusText?: string } | ((state: MockQueryBuilderState) => Promise<{ data: object[] | null; error?: Error | null; count?: number | null; status?: number; statusText?: string }>);
-            upsert?: { data: object[] | null; error?: Error | null; count?: number | null; status?: number; statusText?: string } | ((state: MockQueryBuilderState) => Promise<{ data: object[] | null; error?: Error | null; count?: number | null; status?: number; statusText?: string }>);
-            delete?: { data: object[] | null; error?: Error | null; count?: number | null; status?: number; statusText?: string } | ((state: MockQueryBuilderState) => Promise<{ data: object[] | null; error?: Error | null; count?: number | null; status?: number; statusText?: string }>);
-        };
-    };
-    rpcResults?: {
-        [functionName: string]: { data?: object | object[] | null; error?: Error | null } | (() => Promise<{ data?: object | object[] | null; error?: Error | null }>);
-    };
-    mockUser?: User | null; 
-    simulateAuthError?: Error | null;
-}
-
-export type MockPGRSTError = { name: string; message: string; code: string; details?: string; hint?: string };
-
-export type MockResolveQueryResult = { 
-    data: object | unknown[] | null;
-    error: Error | MockPGRSTError | null; 
-    count: number | null; 
-    status: number; 
-    statusText: string; 
-};
-
-// --- END: Types moved from supabase.mock.ts ---

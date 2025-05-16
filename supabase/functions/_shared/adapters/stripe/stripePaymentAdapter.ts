@@ -10,8 +10,8 @@ import {
 } from '../../types/payment.types.ts';
 import { ITokenWalletService } from '../../types/tokenWallet.types.ts';
 import { logger } from '../../logger.ts'; // Import the logger instance
-import { HandlerContext, ProductPriceHandlerContext } from '../../types.ts'; // HandlerContext
 import { updatePaymentTransaction } from './utils/stripe.updatePaymentTransaction.ts';
+import type { HandlerContext, ProductPriceHandlerContext } from '../../stripe.mock.ts';
 
 // Import individual handlers
 import { handleCheckoutSessionCompleted } from './handlers/stripe.checkoutSessionCompleted.ts';
@@ -21,7 +21,6 @@ import { handleCustomerSubscriptionUpdated } from './handlers/stripe.subscriptio
 import { handleCustomerSubscriptionDeleted } from './handlers/stripe.subscriptionDeleted.ts';
 import { handleProductCreated } from './handlers/stripe.productCreated.ts';
 import { handleProductUpdated } from './handlers/stripe.productUpdated.ts';
-// Assuming stripe.productDeleted.ts exports handleProductDeleted
 import { handleProductDeleted } from './handlers/stripe.productDeleted.ts'; 
 import { handlePriceCreated } from './handlers/stripe.priceCreated.ts';
 import { handlePriceUpdated } from './handlers/stripe.priceUpdated.ts';
@@ -29,7 +28,6 @@ import { handlePriceDeleted } from './handlers/stripe.priceDeleted.ts';
 
 // Stripe-specific types used by old handlers, ensure these are available to new handlers
 // or imported within them. For the adapter itself, we might not need them directly anymore.
-// import { Price, Product } from '../stripe.types.ts'; // Likely moved to individual handlers
 
 export class StripePaymentAdapter implements IPaymentGatewayAdapter {
   public gatewayId = 'stripe';

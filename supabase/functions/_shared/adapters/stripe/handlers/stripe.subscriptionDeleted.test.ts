@@ -1,6 +1,5 @@
 import { handleCustomerSubscriptionDeleted } from './stripe.subscriptionDeleted.ts';
-import type { HandlerContext } from "../../../types.ts";
-import type { ILogger, LogMetadata, MockSupabaseClientSetup, MockSupabaseDataConfig } from "../../../types.ts";
+import type { MockSupabaseClientSetup, MockSupabaseDataConfig } from "../../../supabase.mock.ts";
 import { Database } from "../../../../types_db.ts";
 import type { SupabaseClient } from 'npm:@supabase/supabase-js';
 import Stripe from 'npm:stripe';
@@ -13,10 +12,10 @@ import {
   spy,
   type Spy,
 } from 'jsr:@std/testing@0.225.1/mock';
-import { createMockStripe } from '../../../stripe.mock.ts';
+import { createMockStripe, MockStripe, HandlerContext } from '../../../stripe.mock.ts';
 import { createMockSupabaseClient } from '../../../supabase.mock.ts';
 import { createMockTokenWalletService, MockTokenWalletService } from '../../../services/tokenWalletService.mock.ts';
-import { MockStripe } from '../../../types/payment.types.ts';
+import type { ILogger, LogMetadata } from '../../../types.ts';
 
 const FREE_TIER_ITEM_ID_INTERNAL = 'SYS_FREE_TIER'; // Define constant for free tier
 

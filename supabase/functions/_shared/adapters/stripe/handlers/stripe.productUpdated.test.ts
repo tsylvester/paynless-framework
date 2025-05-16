@@ -8,11 +8,10 @@ import {
   assertSpyCalls,
   spy,
 } from 'jsr:@std/testing@0.225.1/mock';
-import { createMockSupabaseClient } from '../../../supabase.mock.ts';
-import { MockSupabaseDataConfig, ProductPriceHandlerContext } from '../../../types.ts';
+import { createMockSupabaseClient, MockSupabaseDataConfig } from '../../../supabase.mock.ts';
 import { handleProductUpdated } from './stripe.productUpdated.ts';
 import { logger } from '../../../logger.ts';
-import { createMockStripe } from '../../../stripe.mock.ts';
+import { createMockStripe, ProductPriceHandlerContext } from '../../../stripe.mock.ts';
 import { ParsedProductDescription } from '../../../utils/productDescriptionParser.ts';
 
 // Helper to create a mock Stripe.Product object for updates

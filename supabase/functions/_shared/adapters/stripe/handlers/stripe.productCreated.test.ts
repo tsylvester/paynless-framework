@@ -10,10 +10,8 @@ import {
   // type Spy,
   // stub,
 } from 'jsr:@std/testing@0.225.1/mock';
-import { createMockStripe } from '../../../stripe.mock.ts';
-// import { MockStripe } from '../../../types/payment.types.ts'; // Not directly used now
-import { createMockSupabaseClient } from '../../../supabase.mock.ts';
-import { MockSupabaseDataConfig, ProductPriceHandlerContext } from '../../../types.ts';
+import { createMockStripe, ProductPriceHandlerContext } from '../../../stripe.mock.ts';
+import { createMockSupabaseClient, MockSupabaseDataConfig } from '../../../supabase.mock.ts';
 import { handleProductCreated } from './stripe.productCreated.ts';
 import { logger } from '../../../logger.ts';
 import { ParsedProductDescription } from '../../../utils/productDescriptionParser.ts';
@@ -62,7 +60,6 @@ const createMockProductCreatedEvent = (productOverrides: Partial<Stripe.Product>
 };
 
 Deno.test('handleProductCreated specific tests', async (t) => {
-  // let mockStripeSdk: MockStripe; // Not directly manipulating its methods here
   let mockSupabase: ReturnType<typeof createMockSupabaseClient>;
   let handlerContext: ProductPriceHandlerContext;
 

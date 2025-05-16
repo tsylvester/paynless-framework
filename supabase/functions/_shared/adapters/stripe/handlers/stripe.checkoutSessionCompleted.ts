@@ -1,6 +1,6 @@
 import Stripe from 'npm:stripe';
-import { HandlerContext } from '../../../types.ts';
 import { PaymentConfirmation } from '../../../types/payment.types.ts';
+import type { HandlerContext } from '../../../stripe.mock.ts';
 // We assume PaymentTransaction is defined in HandlerContext or through context.supabaseClient queries
 // or we might need to import Tables from '../../../../types_db.ts' and define it if used directly.
 

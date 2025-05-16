@@ -12,11 +12,8 @@ import {
   stub,
   type Spy,
 } from 'jsr:@std/testing@0.225.1/mock';
-import { createMockStripe  } from '../../../stripe.mock.ts';
-import { createMockSupabaseClient  } from '../../../supabase.mock.ts';
-import { createMockTokenWalletService, MockTokenWalletService } from '../../../services/tokenWalletService.mock.ts';
-import { ProductPriceHandlerContext, MockSupabaseDataConfig } from '../../../types.ts';
-import { MockStripe } from '../../../types/payment.types.ts';
+import { createMockStripe, MockStripe, ProductPriceHandlerContext } from '../../../stripe.mock.ts';
+import { createMockSupabaseClient, MockSupabaseDataConfig } from '../../../supabase.mock.ts';
 import { handlePriceDeleted } from './stripe.priceDeleted.ts';
 import { logger, type Logger } from '../../../logger.ts';
 import { ILogger, LogMetadata } from '../../../types.ts';

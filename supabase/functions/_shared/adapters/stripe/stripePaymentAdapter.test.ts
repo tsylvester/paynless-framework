@@ -11,11 +11,10 @@ import {
   spy,
   stub,
 } from 'jsr:@std/testing@0.225.1/mock';
-import { createMockStripe } from '../../stripe.mock.ts';
+import { createMockStripe, MockStripe } from '../../stripe.mock.ts';
 import { createMockSupabaseClient } from '../../supabase.mock.ts';
 import { createMockTokenWalletService, MockTokenWalletService } from '../../services/tokenWalletService.mock.ts';
 import { MockSupabaseDataConfig } from '../../types.ts';
-import { MockStripe } from '../../types/payment.types.ts';
 
 // Helper to create a mock Stripe.CustomerSubscriptionUpdatedEvent (copied from stripe.subscriptionUpdated.test.ts)
 const createMockSubscriptionUpdatedEvent = (

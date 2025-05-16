@@ -9,11 +9,10 @@ import {
   spy,
   // stub, // Keep for potential future use if direct Stripe SDK calls were made
 } from 'jsr:@std/testing@0.225.1/mock';
-import { createMockSupabaseClient } from '../../../supabase.mock.ts';
-import { MockSupabaseDataConfig, ProductPriceHandlerContext } from '../../../types.ts';
+import { createMockSupabaseClient, MockSupabaseDataConfig } from '../../../supabase.mock.ts';
 import { handleProductDeleted } from './stripe.productDeleted.ts';
 import { logger } from '../../../logger.ts';
-import { createMockStripe } from '../../../stripe.mock.ts'; // Added for dummy stripe instance
+import { createMockStripe, ProductPriceHandlerContext } from '../../../stripe.mock.ts'; // Added for dummy stripe instance
 
 // Helper to create a mock Stripe.Product object (focused on what product.deleted provides)
 const createMockStripeDeletedProduct = (overrides: Partial<Stripe.Product> = {}): Stripe.Product => {

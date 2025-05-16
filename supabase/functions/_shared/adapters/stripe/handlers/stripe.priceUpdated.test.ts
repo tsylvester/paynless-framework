@@ -1,7 +1,5 @@
-import { StripePaymentAdapter } from '../stripePaymentAdapter.ts';
 import type { SupabaseClient } from 'npm:@supabase/supabase-js';
 import Stripe from 'npm:stripe';
-import type { MockStripe } from '../../../types/payment.types.ts';
 import {
   assert,
   assertEquals,
@@ -14,9 +12,8 @@ import {
   type Spy,
   type Stub,
 } from 'jsr:@std/testing@0.225.1/mock';
-import { createMockStripe } from '../../../stripe.mock.ts';
+import { createMockStripe, MockStripe, ProductPriceHandlerContext } from '../../../stripe.mock.ts';
 import { createMockSupabaseClient } from '../../../supabase.mock.ts';
-import { ProductPriceHandlerContext } from '../../../types.ts';
 import { handlePriceUpdated } from './stripe.priceUpdated.ts';
 import { logger, type Logger } from '../../../logger.ts';
 
