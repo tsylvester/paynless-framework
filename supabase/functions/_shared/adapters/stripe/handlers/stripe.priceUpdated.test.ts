@@ -16,7 +16,7 @@ import {
 } from 'jsr:@std/testing@0.225.1/mock';
 import { createMockStripe } from '../../../stripe.mock.ts';
 import { createMockSupabaseClient } from '../../../supabase.mock.ts';
-import { ProductPriceHandlerContext } from '../types.ts';
+import { ProductPriceHandlerContext } from '../../../types.ts';
 import { handlePriceUpdated } from './stripe.priceUpdated.ts';
 import { logger, type Logger } from '../../../logger.ts';
 

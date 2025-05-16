@@ -1,38 +1,38 @@
 import Stripe from "npm:stripe";
-import { ProductPriceHandlerContext, PaymentConfirmation } from "../types.ts";
+import { ProductPriceHandlerContext, PaymentConfirmation } from "../../../types.ts";
 import { TablesUpdate } from "../../../../types_db.ts"; // Adjusted path
 
-export async function handlePriceDeleted(
+export const handlePriceDeleted = async (
     context: ProductPriceHandlerContext,
     event: Stripe.Event // Price object is in event.data.object
-): Promise<PaymentConfirmation> {
+): Promise<PaymentConfirmation> => {
     const { supabaseClient, logger } = context;
     const price = event.data.object as Stripe.Price;
     const functionName = 'handlePriceDeleted'; // For logger clarity
     const targetActiveStatus = false; // When a price is deleted, associated plan should become inactive.
 
-    logger.info(
-        `[${functionName}] Handling ${event.type} for price ${price.id}. Setting active to ${targetActiveStatus}.`,
-        {
-            eventId: event.id,
-            priceId: price.id,
-            livemode: event.livemode
-        }
-    );
-
-    if (price.id === 'price_FREE') {
-        logger.info(`[${functionName}] Ignoring price.deleted event for 'price_FREE'.`, {
-            eventId: event.id,
-            priceId: price.id
-        });
-        return {
-            success: true,
-            transactionId: event.id,
-            error: "Price 'price_FREE' deletion event ignored.", // Using error to convey info
-        };
-    }
-
     try {
+        logger.info(
+            `[${functionName}] Handling ${event.type} for price ${price.id}. Setting active to ${targetActiveStatus}.`,
+            {
+                eventId: event.id,
+                priceId: price.id,
+                livemode: event.livemode
+            }
+        );
+
+        if (price.id === 'price_FREE') {
+            logger.info(`[${functionName}] Ignoring price.deleted event for 'price_FREE'.`, {
+                eventId: event.id,
+                priceId: price.id
+            });
+            return {
+                success: true,
+                transactionId: event.id,
+                error: "Price 'price_FREE' deletion event ignored.", // Using error to convey info
+            };
+        }
+
         const updateData: TablesUpdate<'subscription_plans'> = {
             active: targetActiveStatus,
             updated_at: new Date().toISOString(),

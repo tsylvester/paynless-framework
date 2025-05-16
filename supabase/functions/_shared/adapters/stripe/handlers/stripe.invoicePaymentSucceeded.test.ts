@@ -1,8 +1,9 @@
 import { StripePaymentAdapter } from '../stripePaymentAdapter.ts';
-import type { ITokenWalletService, TokenWallet, TokenWalletTransaction } from '../../../types/tokenWallet.types.ts';
+import type { TokenWalletTransaction } from '../../../types/tokenWallet.types.ts';
+import { MockTokenWalletService } from '../../../services/tokenWalletService.mock.ts';
 import type { SupabaseClient } from 'npm:@supabase/supabase-js';
 import Stripe from 'npm:stripe';
-import type { PurchaseRequest, PaymentConfirmation, PaymentOrchestrationContext } from '../../../types/payment.types.ts';
+import type { PurchaseRequest, PaymentOrchestrationContext } from '../../../types/payment.types.ts';
 import {
   assert,
   assertEquals,
@@ -15,10 +16,11 @@ import {
   type SpyCall,
   type Spy
 } from 'jsr:@std/testing@0.225.1/mock';
-import { createMockStripe, MockStripe } from '../../../stripe.mock.ts';
+import { createMockStripe } from '../../../stripe.mock.ts';
+import { MockStripe } from '../../../types/payment.types.ts';
 import { createMockSupabaseClient } from '../../../supabase.mock.ts';
-import { createMockTokenWalletService, MockTokenWalletService } from '../../../services/tokenWalletService.mock.ts';
-import { HandlerContext } from '../types.ts';
+import { createMockTokenWalletService } from '../../../services/tokenWalletService.mock.ts';
+import { HandlerContext } from '../../../types.ts';
 import { Database } from '../../../../types_db.ts';
 import { ILogger, LogMetadata, MockSupabaseClientSetup, MockSupabaseDataConfig, MockQueryBuilderState } from '../../../types.ts';
 import { handleInvoicePaymentSucceeded } from './stripe.invoicePaymentSucceeded.ts';

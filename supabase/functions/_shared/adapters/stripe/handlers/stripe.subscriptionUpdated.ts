@@ -1,8 +1,7 @@
 import Stripe from 'npm:stripe';
-import { HandlerContext } from '../types.ts';
+import { HandlerContext } from '../../../types.ts';
 import { PaymentConfirmation } from '../../../types/payment.types.ts';
 import { Database } from '../../../../types_db.ts'; // Added import for Database types
-import type { SupabaseClient } from 'npm:@supabase/supabase-js';
 
 const FREE_TIER_ITEM_ID_INTERNAL = 'SYS_FREE_TIER'; // Define constant for free tier
 

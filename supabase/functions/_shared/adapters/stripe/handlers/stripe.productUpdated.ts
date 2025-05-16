@@ -1,5 +1,5 @@
 import Stripe from 'npm:stripe';
-import { ProductPriceHandlerContext } from '../types.ts';
+import { ProductPriceHandlerContext } from '../../../types.ts';
 import { PaymentConfirmation } from '../../../types/payment.types.ts';
 // import { Json } from '../../../../types_db.ts'; // Import if syncing metadata_json
 

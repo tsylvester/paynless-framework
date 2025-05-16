@@ -1,8 +1,7 @@
 import { handleInvoicePaymentFailed } from './stripe.invoicePaymentFailed.ts';
-import type { HandlerContext } from '../types.ts';
+import type { HandlerContext } from '../../../types.ts';
 import type { ILogger, LogMetadata, MockSupabaseClientSetup, MockSupabaseDataConfig } from '../../../types.ts';
 import { Database } from '../../../../types_db.ts';
-import type { ITokenWalletService } from '../../../types/tokenWallet.types.ts';
 import type { SupabaseClient } from 'npm:@supabase/supabase-js';
 import Stripe from 'npm:stripe';
 import {
@@ -16,9 +15,10 @@ import {
   stub,
   type Spy,
 } from 'jsr:@std/testing@0.225.1/mock';
-import { createMockStripe, MockStripe } from '../../../stripe.mock.ts';
+import { createMockStripe } from '../../../stripe.mock.ts';
 import { createMockSupabaseClient } from '../../../supabase.mock.ts';
 import { createMockTokenWalletService, MockTokenWalletService } from '../../../services/tokenWalletService.mock.ts';
+import { MockStripe } from '../../../types/payment.types.ts';
 
 // Constants for reused mock IDs
 const MOCK_STRIPE_CUSTOMER_ID = 'cus_test_invoice_customer';

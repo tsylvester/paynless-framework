@@ -1,21 +1,10 @@
 import { StripePaymentAdapter } from '../stripePaymentAdapter.ts';
-import type { ITokenWalletService, TokenWallet, TokenWalletTransaction } from '../../../types/tokenWallet.types.ts';
 import type { SupabaseClient } from 'npm:@supabase/supabase-js';
-import Stripe from 'npm:stripe';
-import type { PurchaseRequest, PaymentConfirmation, PaymentOrchestrationContext } from '../../../types/payment.types.ts';
-import {
-  assert,
-  assertEquals,
-  assertRejects,
-} from 'https://deno.land/std@0.224.0/assert/mod.ts';
-import {
-  assertSpyCalls,
-  spy,
-  stub,
-} from 'jsr:@std/testing@0.225.1/mock';
-import { createMockStripe, MockStripe } from '../../../stripe.mock.ts';
-import { createMockSupabaseClient, type MockSupabaseDataConfig } from '../../../supabase.mock.ts';
+import { createMockStripe } from '../../../stripe.mock.ts';
+import { createMockSupabaseClient } from '../../../supabase.mock.ts';
 import { createMockTokenWalletService, MockTokenWalletService } from '../../../services/tokenWalletService.mock.ts';
+import { MockStripe } from '../../../types/payment.types.ts';
+import { MockSupabaseDataConfig } from '../../../types.ts';
 
 Deno.test('StripePaymentAdapter: handleWebhook', async (t) => {
   let mockStripe: MockStripe;

@@ -1,5 +1,5 @@
 import Stripe from "npm:stripe";
-import { ProductPriceHandlerContext, PaymentConfirmation } from "../types.ts";
+import { ProductPriceHandlerContext, PaymentConfirmation } from "../../../types.ts";
 import { Database } from "../../../../types_db.ts";
 
 export async function handlePriceCreated(

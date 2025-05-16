@@ -15,7 +15,6 @@ import {
 import { spy, stub, type Spy, type Stub } from 'jsr:@std/testing@0.225.1/mock';
 
 import { getPaymentAdapter } from './adapterFactory.ts';
-import type { IPaymentGatewayAdapter } from '../types/payment.types.ts';
 import type { ITokenWalletService } from '../types/tokenWallet.types.ts';
 import type { SupabaseClient } from 'npm:@supabase/supabase-js';
 import type { Database } from '../../types_db.ts';

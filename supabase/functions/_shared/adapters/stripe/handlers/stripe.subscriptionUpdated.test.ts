@@ -1,11 +1,8 @@
 import { handleCustomerSubscriptionUpdated } from './stripe.subscriptionUpdated.ts';
-import type { HandlerContext, PaymentTransaction } from "../types.ts"; // Assuming PaymentTransaction might not be directly used, but HandlerContext is.
-import type { ILogger, LogMetadata, MockSupabaseClientSetup } from "../../../types.ts";
+import type { ILogger, LogMetadata, MockSupabaseClientSetup, HandlerContext } from "../../../types.ts";
 import { Database } from "../../../../types_db.ts";
-import type { ITokenWalletService } from '../../../types/tokenWallet.types.ts'; // Not directly used by this handler but part of context
 import type { SupabaseClient } from 'npm:@supabase/supabase-js';
 import Stripe from 'npm:stripe';
-import type { PaymentConfirmation } from '../../../types/payment.types.ts';
 import {
   assert,
   assertEquals,
@@ -13,13 +10,13 @@ import {
 import {
   assertSpyCalls,
   spy,
-  stub,
-  type Stub,
   type Spy,
 } from 'jsr:@std/testing@0.225.1/mock';
-import { createMockStripe, MockStripe } from '../../../stripe.mock.ts';
-import { createMockSupabaseClient, type MockSupabaseDataConfig } from '../../../supabase.mock.ts';
+import { createMockStripe } from '../../../stripe.mock.ts';
+import { createMockSupabaseClient } from '../../../supabase.mock.ts';
 import { createMockTokenWalletService, MockTokenWalletService } from '../../../services/tokenWalletService.mock.ts';
+import { MockSupabaseDataConfig } from '../../../types.ts';
+import { MockStripe } from '../../../types/payment.types.ts';
 
 const FREE_TIER_ITEM_ID_INTERNAL = 'SYS_FREE_TIER'; // Define constant for free tier
 

@@ -10,7 +10,7 @@ import {
 } from '../../types/payment.types.ts';
 import { ITokenWalletService } from '../../types/tokenWallet.types.ts';
 import { logger } from '../../logger.ts'; // Import the logger instance
-import { HandlerContext, ProductPriceHandlerContext } from './types.ts'; // HandlerContext
+import { HandlerContext, ProductPriceHandlerContext } from '../../types.ts'; // HandlerContext
 import { updatePaymentTransaction } from './utils/stripe.updatePaymentTransaction.ts';
 
 // Import individual handlers

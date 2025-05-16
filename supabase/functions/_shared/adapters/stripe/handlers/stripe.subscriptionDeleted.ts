@@ -1,5 +1,5 @@
 import Stripe from 'npm:stripe';
-import { HandlerContext } from '../types.ts';
+import { HandlerContext } from '../../../types.ts';
 import { PaymentConfirmation } from '../../../types/payment.types.ts';
 import { Database } from '../../../../types_db.ts';
 

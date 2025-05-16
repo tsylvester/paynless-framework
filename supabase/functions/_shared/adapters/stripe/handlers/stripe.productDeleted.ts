@@ -1,5 +1,5 @@
 import Stripe from "npm:stripe";
-import { ProductPriceHandlerContext, PaymentConfirmation } from "../types.ts";
+import { ProductPriceHandlerContext, PaymentConfirmation } from "../../../types.ts";
 import { TablesUpdate } from "../../../../types_db.ts"; // Adjusted path
 
 export async function handleProductDeleted(

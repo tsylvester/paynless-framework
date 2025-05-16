@@ -1,5 +1,5 @@
 import Stripe from 'npm:stripe';
-import { ProductPriceHandlerContext } from '../types.ts'; // Using ProductPriceHandlerContext
+import { ProductPriceHandlerContext } from '../../../types.ts'; // Using ProductPriceHandlerContext
 import { PaymentConfirmation } from '../../../types/payment.types.ts';
 // Json import was here, but not used after removing _updatePaymentTransaction calls that used invoke_result.
 // import { Json } from '../../../../types_db.ts'; 
