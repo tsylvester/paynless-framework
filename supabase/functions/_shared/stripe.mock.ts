@@ -1,12 +1,12 @@
 import type Stripe from 'npm:stripe';
-import { stub } from 'https://deno.land/std@0.224.0/testing/mock.ts';
-import type { Stub } from 'https://deno.land/std@0.224.0/testing/mock.ts';
+import { stub, type Stub } from 'jsr:@std/testing@0.225.1/mock';
 
 // Get the actual method types
 type CheckoutSessionCreateType = Stripe['checkout']['sessions']['create'];
 type WebhookConstructEventType = Stripe['webhooks']['constructEvent'];
 type PaymentIntentsRetrieveType = Stripe['paymentIntents']['retrieve'];
 type SubscriptionsRetrieveType = Stripe['subscriptions']['retrieve'];
+type ProductsRetrieveType = Stripe['products']['retrieve'];
 
 // Define a type for the structure of the mocked Stripe, exposing stubs
 export interface MockStripe {
@@ -31,6 +31,11 @@ export interface MockStripe {
       Stripe.SubscriptionsResource,
       Parameters<Stripe.SubscriptionsResource['retrieve']>,
       Promise<Stripe.Response<Stripe.Subscription>>
+    >;
+    productsRetrieve: Stub<
+      Stripe.ProductsResource,
+      [id: string, options?: Stripe.RequestOptions],
+      Promise<Stripe.Response<Stripe.Product | Stripe.DeletedProduct>>
     >;
   };
   clearStubs: () => void;
@@ -104,6 +109,34 @@ const getMockStripeInstance = (): Stripe => ({
         },
       } as Stripe.Response<Stripe.Subscription>),
   } as Stripe.SubscriptionsResource,
+  products: {
+    retrieve: (id: string, params?: Stripe.ProductRetrieveParams, options?: Stripe.RequestOptions) => 
+      Promise.resolve({
+        id: id,
+        object: 'product' as const,
+        active: true,
+        name: 'Mocked Product',
+        description: 'Default mocked product description',
+        metadata: {},
+        default_price: null,
+        type: 'service',
+        marketing_features: [],
+        features: [],
+        created: Math.floor(Date.now() / 1000),
+        updated: Math.floor(Date.now() / 1000),
+        livemode: false,
+        images: [],
+        package_dimensions: null,
+        shippable: null,
+        tax_code: null,
+        url: null,
+        lastResponse: {
+            headers: {},
+            requestId: 'req_default_prod_retrieve',
+            statusCode: 200,
+        },
+      } as Stripe.Response<Stripe.Product | Stripe.DeletedProduct>),
+  } as Stripe.ProductsResource,
 }) as Stripe;
 
 export function createMockStripe(): MockStripe {
@@ -114,6 +147,7 @@ export function createMockStripe(): MockStripe {
     webhooksConstructEvent: stub(mockInstance.webhooks, "constructEvent"),
     paymentIntentsRetrieve: stub(mockInstance.paymentIntents, "retrieve"),
     subscriptionsRetrieve: stub(mockInstance.subscriptions, "retrieve"),
+    productsRetrieve: stub(mockInstance.products, "retrieve"),
   };
 
   const clearStubs = () => {
@@ -121,12 +155,14 @@ export function createMockStripe(): MockStripe {
     stubs.webhooksConstructEvent.restore();
     stubs.paymentIntentsRetrieve.restore();
     stubs.subscriptionsRetrieve.restore();
+    stubs.productsRetrieve.restore();
     
     mockInstance = getMockStripeInstance(); 
     stubs.checkoutSessionsCreate = stub(mockInstance.checkout.sessions, "create");
     stubs.webhooksConstructEvent = stub(mockInstance.webhooks, "constructEvent");
     stubs.paymentIntentsRetrieve = stub(mockInstance.paymentIntents, "retrieve");
     stubs.subscriptionsRetrieve = stub(mockInstance.subscriptions, "retrieve");
+    stubs.productsRetrieve = stub(mockInstance.products, "retrieve");
   };
 
   return {
