@@ -153,35 +153,43 @@ const AiChatboxComponent: React.FC<AiChatboxProps> = () => {
       className="flex flex-col h-full border rounded-md p-4 space-y-4"
       data-testid="ai-chatbox-container"
     >
-      {/* Message Display Area */}
+      {/* Message Display Area and Session Usage Container */}
       <div 
-        className="flex-grow pr-4 overflow-y-auto min-h-[200px]"
+        className="flex-grow pr-4 overflow-y-auto min-h-[200px]" // This is the main scrollable area
         data-testid="ai-chatbox-scroll-area"
         ref={scrollContainerRef}
       >
-        <div className="flex flex-col space-y-2">
-          {currentChatMessages.map((msg: ChatMessage) => (
-            <ChatMessageBubble
-              key={msg.id}
-              message={msg}
-              onEditClick={msg.role === 'user' ? handleEditClick : undefined}
-            />
-          ))}
+        <div className="flex flex-col space-y-2"> {/* This div handles the vertical stacking of message rows */}
+          {currentChatMessages.map((msg: ChatMessage, index: number) => {
+            const isLastMessage = index === currentChatMessages.length - 1;
+            const isAssistant = msg.role === 'assistant';
+
+            return (
+              // Each "row" can contain the bubble and potentially the session usage
+              <div key={msg.id} className="flex flex-row items-start w-full">
+                <ChatMessageBubble
+                  message={msg}
+                  onEditClick={msg.role === 'user' ? handleEditClick : undefined}
+                />
+                {/* Conditionally render Session Usage to the far right of this row */}
+                {isAssistant && isLastMessage && currentChatId && currentChatMessages.length > 0 && (
+                  <div className="ml-auto pl-4 self-center flex-shrink-0 w-48"> {/* Pushed to right, self-center vertically, fixed width */}
+                    <ChatTokenUsageDisplay />
+                  </div>
+                )}
+              </div>
+            );
+          })}
           {isLoadingAiResponse && (
             <div className="flex items-center space-x-2 justify-start pl-2 pt-2">
               <Loader2 className="h-4 w-4 animate-spin text-[rgb(var(--color-textSecondary))]" />
-              <span className="text-sm text-[rgb(var(--color-textSecondary))]">
+              <span className="text-sm text-[rgb(var(--color-textSecondary)))]">
                 Assistant is thinking...
               </span>
             </div>
           )}
         </div>
       </div>
-
-      {/* Display Session Token Usage */}
-      {currentChatId && currentChatMessages && currentChatMessages.length > 0 && (
-        <ChatTokenUsageDisplay />
-      )}
 
       {/* Error Display */}
       {aiError && (
@@ -197,15 +205,22 @@ const AiChatboxComponent: React.FC<AiChatboxProps> = () => {
       {/* Input Area */}
       <div className="flex items-center space-x-2 border-t pt-4 border-[rgb(var(--color-border))]">
         <MessageSelectionControls />
-        <Textarea
-          placeholder={rewindTargetMessageId ? "Edit your message..." : "Type your message here..."}
-          value={inputMessage}
-          onChange={handleInputChange}
-          onKeyDown={handleKeyDown}
-          rows={1}
-          className="flex-grow resize-none min-h-[40px] max-h-[150px] overflow-y-auto"
-          disabled={isLoadingAiResponse}
-        />
+        {/* New relative wrapper for Textarea and its overlay */}
+        <div className="relative flex-grow">
+          <Textarea
+            placeholder={rewindTargetMessageId ? "Edit your message..." : "Type your message here..."}
+            value={inputMessage}
+            onChange={handleInputChange}
+            onKeyDown={handleKeyDown}
+            rows={1}
+            className="w-full resize-none min-h-[40px] max-h-[150px] overflow-y-auto pr-24" // Increased padding for estimator
+            disabled={isLoadingAiResponse}
+          />
+          {/* Token Estimator Display - positioned relative to the Textarea wrapper */}
+          <div className="absolute right-3 top-1/2 transform -translate-y-1/2 pointer-events-none">
+            <CurrentMessageTokenEstimator textInput={inputMessage} />
+          </div>
+        </div>
         {rewindTargetMessageId ? (
           <div className="flex space-x-2">
             <Button
@@ -230,10 +245,6 @@ const AiChatboxComponent: React.FC<AiChatboxProps> = () => {
             Send
           </Button>
         )}
-      </div>
-      {/* Token Estimator Display for current message */}
-      <div className="pt-1 flex justify-end">
-        <CurrentMessageTokenEstimator textInput={inputMessage} />
       </div>
     </div>
   )

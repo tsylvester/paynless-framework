@@ -171,13 +171,13 @@ export const selectChatTokenUsage = createSelector(
             total = typeof tokenObject['total_tokens'] === 'number' ? tokenObject['total_tokens'] as number : (prompt + completion);
           }
 
-          acc.promptTokens += prompt;
-          acc.completionTokens += completion;
-          acc.totalTokens += total;
+          acc.prompt_tokens += prompt;
+          acc.completion_tokens += completion;
+          acc.total_tokens += total;
         }
         return acc;
       },
-      { promptTokens: 0, completionTokens: 0, totalTokens: 0 } as TokenUsage // Initial accumulator typed as TokenUsage
+      { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 } as TokenUsage // Initial accumulator typed as TokenUsage
     );
   }
 );
@@ -208,7 +208,6 @@ export const selectCurrentChatSessionTokenUsage = createSelector(
   [selectCurrentChatMessages],
   (currentChatMessages): ChatSessionTokenUsageDetails => {
     const totals: ChatSessionTokenUsageDetails = {
-      userTokens: 0,
       assistantPromptTokens: 0,
       assistantCompletionTokens: 0,
       assistantTotalTokens: 0,
@@ -216,34 +215,52 @@ export const selectCurrentChatSessionTokenUsage = createSelector(
     };
 
     for (const message of currentChatMessages) {
-      const tu = message.token_usage as any; 
+      if (message.role === 'assistant') {
+        const tu = message.token_usage as unknown as TokenUsage;
+        if (tu && typeof tu === 'object' && !Array.isArray(tu)) {
+          const prompt = Number(tu.prompt_tokens || 0);
+          const completion = Number(tu.completion_tokens || 0);
+          const messageTotalFromRecord = Number(tu.total_tokens || 0);
+          
+          const calculatedMessageTotal = prompt + completion;
+          const messageTurnTotal = (messageTotalFromRecord > 0 && !isNaN(messageTotalFromRecord)) ? messageTotalFromRecord : calculatedMessageTotal;
 
-      if (tu && typeof tu === 'object' && !Array.isArray(tu)) {
-        const prompt = Number(tu.promptTokens || tu.prompt_tokens || 0);
-        const completion = Number(tu.completionTokens || tu.completion_tokens || 0);
-        const messageTotalFromRecord = Number(tu.totalTokens || tu.total_tokens);
-        
-        // If totalTokens is not present or NaN from the record, calculate it from prompt and completion
-        const calculatedMessageTotal = prompt + completion;
-        const messageTotal = !isNaN(messageTotalFromRecord) ? messageTotalFromRecord : calculatedMessageTotal;
-
-        if (message.role === 'user') {
-          totals.userTokens += messageTotal; 
-        } else if (message.role === 'assistant') {
           totals.assistantPromptTokens += prompt;
           totals.assistantCompletionTokens += completion;
-          // assistantTotalTokens should be the sum of its own prompt and completion for this message
-          totals.assistantTotalTokens += messageTotal; // this is the total for *this one* assistant message
+          totals.assistantTotalTokens += messageTurnTotal; 
         }
       }
     }
-    // After iterating all messages, calculate overallTotalTokens from accumulated user and assistant totals.
-    // This avoids double-counting if messageTotal was already added in the loop.
-    // The logic within the loop for assistantTotalTokens sums each assistant message's total.
-    // So, overallTotalTokens should be sum of all userTokens and all assistantTotalTokens (from all assistant messages)
-    // Let's recalculate overallTotalTokens at the end based on summed user and assistant tokens for clarity and correctness.
-    totals.overallTotalTokens = totals.userTokens + totals.assistantTotalTokens;
+    
+    totals.overallTotalTokens = totals.assistantPromptTokens + totals.assistantCompletionTokens;
+
+    if (totals.overallTotalTokens !== totals.assistantTotalTokens) {
+        console.warn('Discrepancy in token calculation:', {
+            overall: totals.overallTotalTokens,
+            assistantSum: totals.assistantTotalTokens,
+            calculatedSum: totals.assistantPromptTokens + totals.assistantCompletionTokens
+        });
+        totals.overallTotalTokens = totals.assistantPromptTokens + totals.assistantCompletionTokens;
+    }
 
     return totals;
   }
-); 
+);
+
+export type ChatSelectionState = 'all' | 'none' | 'some' | 'empty';
+
+export const selectCurrentChatSelectionState = createSelector(
+  [selectCurrentChatMessages, selectSelectedChatMessages],
+  (activeMessages, selectedMessages): ChatSelectionState => {
+    if (activeMessages.length === 0) {
+      return 'empty';
+    }
+    if (selectedMessages.length === 0) {
+      return 'none';
+    }
+    if (selectedMessages.length === activeMessages.length) {
+      return 'all';
+    }
+    return 'some';
+  }
+);

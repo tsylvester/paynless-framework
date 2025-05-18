@@ -2,7 +2,8 @@
 // Do not use path aliases (like @shared/) as they will cause deployment failures.
 import { serve } from 'https://deno.land/std@0.224.0/http/server.ts'
 import { createClient, type SupabaseClient } from 'npm:@supabase/supabase-js@2'
-import { get_encoding } from 'https://esm.sh/tiktoken@1.0.14'; // Import tiktoken via esm.sh
+// Use js-tiktoken for simpler Deno compatibility
+import { getEncoding } from 'https://esm.sh/js-tiktoken@1.0.10';
 // Import shared response/error handlers
 import { 
     handleCorsPreflightRequest, 
@@ -26,18 +27,10 @@ import { verifyApiKey } from '../_shared/auth.ts'; // Assuming verifyApiKey is n
 import { logger } from '../_shared/logger.ts';
 
 // Initialize tiktoken encoder (cl100k_base is common for OpenAI models)
-let encoding: ReturnType<typeof get_encoding>;
-try {
-  encoding = get_encoding('cl100k_base');
-} catch (e) {
-  console.error("Failed to initialize tiktoken encoding:", e);
-  // Fallback or error handling if tiktoken fails. For dummy, we might default to 0 if it fails.
-  // For real providers, this would be a more critical failure.
-}
-
-// Redefine ChatHandlerDeps if it's different from _shared/types.ts or ensure they are aligned.
-// For now, using ActualChatHandlerDeps from _shared/types.ts implies it has all necessary fields like logger.
-// If ChatHandlerDeps in this file was different, it should be merged or aliased.
+// Aligning with Supabase example: direct initialization.
+// If this fails due to esm.sh unavailability, the function boot will fail, clearly indicating the problem.
+const encoding = getEncoding('cl100k_base');
+logger.info('tiktoken encoding initialized successfully using js-tiktoken.');
 
 // Create default dependencies using actual implementations
 export const defaultDeps: ChatHandlerDeps = {
@@ -447,23 +440,30 @@ async function handlePostRequest(
 
                 // 2. Prepare and Insert Dummy Assistant Response with tokenization
                 const dummyAssistantContent = `Echo from Dummy: ${userMessageContent}`;
-                let promptTokens = 0;
-                let completionTokens = 0;
-                let totalTokens = 0;
+                let token_usage_json: Json = { 
+                    prompt_tokens: 0, 
+                    completion_tokens: 0, 
+                    total_tokens: 0 
+                };
 
-                if (encoding) {
+                if (encoding) { // 'encoding' is the global variable initialized at the top
                     try {
-                        promptTokens = encoding.encode(userMessageContent).length;
-                        completionTokens = encoding.encode(dummyAssistantContent).length;
-                        totalTokens = promptTokens + completionTokens;
+                        const promptTokens = encoding.encode(userMessageContent).length;
+                        const completionTokens = encoding.encode(dummyAssistantContent).length;
+                        token_usage_json = {
+                            prompt_tokens: promptTokens,
+                            completion_tokens: completionTokens,
+                            total_tokens: promptTokens + completionTokens
+                        };
                     } catch (e: unknown) {
                         logger.error('Dummy provider: Failed to encode messages with tiktoken', { error: e instanceof Error ? e.stack : String(e) });
-                        // Keep tokens as 0 if encoding fails
+                        // token_usage_json remains with 0s if encoding.encode fails
                     }
                 } else {
-                    logger.warn('Dummy provider: tiktoken encoding not available. Token counts will be 0.');
+                    logger.warn('Dummy provider: tiktoken encoding not available globally. Token counts will be 0.');
+                    // token_usage_json remains with 0s if global encoding failed
                 }
-
+                
                 const dummyAssistantMessageInsert: ChatMessageInsert = {
                     id: generateUUID(), 
                     chat_id: currentChatId,
@@ -472,7 +472,7 @@ async function handlePostRequest(
                     is_active_in_thread: true,
                     ai_provider_id: requestProviderId,
                     system_prompt_id: systemPromptDbId,
-                    token_usage: { prompt_tokens: promptTokens, completion_tokens: completionTokens, total_tokens: totalTokens } as Json,
+                    token_usage: token_usage_json, 
                 };
                 const { data: dummyAssistantInsertResult, error: assistantInsertError } = await supabaseClient
                     .from('chat_messages')

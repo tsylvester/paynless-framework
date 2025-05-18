@@ -105,13 +105,16 @@ describe('ChatTokenUsageDisplay', () => {
 
     render(<ChatTokenUsageDisplay />);
 
-    expect(screen.getByText(/User: 50/i)).toBeInTheDocument();
-    expect(screen.getByText(/AI Prompt: 100/i)).toBeInTheDocument();
-    expect(screen.getByText(/AI Completion: 150/i)).toBeInTheDocument();
-    expect(screen.getByText(/AI Total: 250/i)).toBeInTheDocument();
-    expect(screen.getByText(/Session Total: 300/i)).toBeInTheDocument();
+    expect(screen.queryByText(/User: 50/i)).not.toBeInTheDocument();
+    expect(screen.getByText("AI Prompt:")).toBeInTheDocument();
+    expect(screen.getByText("100")).toBeInTheDocument();
+    expect(screen.getByText("AI Completion:")).toBeInTheDocument();
+    expect(screen.getByText("150")).toBeInTheDocument();
+    expect(screen.getByText("AI Total:")).toBeInTheDocument();
+    expect(screen.getByText("250")).toBeInTheDocument();
+    expect(screen.getByText("Session Total:")).toBeInTheDocument();
+    expect(screen.getByText("300")).toBeInTheDocument();
     expect(mockAnalyticsTrack).toHaveBeenCalledWith('token_usage_displayed', {
-        userTokens: 50,
         assistantPromptTokens: 100,
         assistantCompletionTokens: 150,
         assistantTotalTokens: 250,
@@ -127,11 +130,17 @@ describe('ChatTokenUsageDisplay', () => {
     mockGetAiState.mockReturnValue({ currentChatId: 'zero-usage-chat-id' }); 
     render(<ChatTokenUsageDisplay />);
 
-    expect(screen.getByText(/User: 0/i)).toBeInTheDocument();
-    expect(screen.getByText(/AI Prompt: 0/i)).toBeInTheDocument();
-    expect(screen.getByText(/AI Completion: 0/i)).toBeInTheDocument();
-    expect(screen.getByText(/AI Total: 0/i)).toBeInTheDocument();
-    expect(screen.getByText(/Session Total: 0/i)).toBeInTheDocument();
+    expect(screen.queryByText(/User: 0/i)).not.toBeInTheDocument();
+    expect(screen.getByText("AI Prompt:")).toBeInTheDocument();
+    expect(screen.getAllByText("0").length).toBeGreaterThanOrEqual(3); // AI Prompt, AI Completion, AI Total can be 0
+    expect(screen.getByText("AI Completion:")).toBeInTheDocument();
+    expect(screen.getByText("AI Total:")).toBeInTheDocument();
+    expect(screen.getByText("Session Total:")).toBeInTheDocument();
+    // Check the session total "0" specifically.
+    const sessionTotalLabel = screen.getByText("Session Total:");
+    // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+    const sessionTotalValue = sessionTotalLabel.parentElement!.querySelector('.font-mono');
+    expect(sessionTotalValue).toHaveTextContent("0");
     expect(mockAnalyticsTrack).not.toHaveBeenCalled();
   });
 
@@ -143,13 +152,24 @@ describe('ChatTokenUsageDisplay', () => {
 
     render(<ChatTokenUsageDisplay />);
 
-    expect(screen.getByText(/User: 75/i)).toBeInTheDocument();
-    expect(screen.getByText(/AI Prompt: 0/i)).toBeInTheDocument();
-    expect(screen.getByText(/AI Completion: 0/i)).toBeInTheDocument();
-    expect(screen.getByText(/AI Total: 0/i)).toBeInTheDocument();
-    expect(screen.getByText(/Session Total: 75/i)).toBeInTheDocument();
+    expect(screen.queryByText(/User: 75/i)).not.toBeInTheDocument();
+    expect(screen.getByText("AI Prompt:")).toBeInTheDocument();
+    // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+    expect(screen.getByText("AI Prompt:").parentElement!.querySelector("span.font-mono")).toHaveTextContent("0");
+
+    expect(screen.getByText("AI Completion:")).toBeInTheDocument();
+    // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+    expect(screen.getByText("AI Completion:").parentElement!.querySelector("span.font-mono")).toHaveTextContent("0");
+    
+    expect(screen.getByText("AI Total:")).toBeInTheDocument();
+    // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+    expect(screen.getByText("AI Total:").parentElement!.querySelector("span.font-mono")).toHaveTextContent("0");
+
+    expect(screen.getByText("Session Total:")).toBeInTheDocument();
+    // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+    expect(screen.getByText("Session Total:").parentElement!.querySelector("span.font-mono")).toHaveTextContent("75");
+
     expect(mockAnalyticsTrack).toHaveBeenCalledWith('token_usage_displayed', {
-        userTokens: 75,
         assistantPromptTokens: 0,
         assistantCompletionTokens: 0,
         assistantTotalTokens: 0,

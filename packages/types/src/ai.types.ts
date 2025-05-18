@@ -44,11 +44,10 @@ export interface TokenUsage {
  * Detailed breakdown of token usage for a chat session.
  */
 export interface ChatSessionTokenUsageDetails {
-  userTokens: number;
   assistantPromptTokens: number;
   assistantCompletionTokens: number;
   assistantTotalTokens: number; // Sum of assistant's prompt & completion for all assistant messages
-  overallTotalTokens: number;  // Sum of userTokens + assistantTotalTokens for the session
+  overallTotalTokens: number;  // Sum of assistantPromptTokens + assistantCompletionTokens for the session
 }
 
 /**
@@ -267,10 +266,14 @@ export interface AiStoreSelectors {
   selectChatTokenUsage: (chatId: string) => TokenUsage | null;
   selectAllPersonalChatMessages: () => ChatMessage[];
   selectCurrentChatSessionTokenUsage: () => ChatSessionTokenUsageDetails;
+  selectCurrentChatSelectionState: () => 'all' | 'none' | 'some' | 'empty';
 }
 
 // Combined type for the store
 export type AiStore = AiState & AiActions; 
+
+// Type for the new selector's return value
+export type ChatSelectionState = 'all' | 'none' | 'some' | 'empty';
 
 // +++ ADDED PendingAction Type +++
 export type AiPendingChatAction = 

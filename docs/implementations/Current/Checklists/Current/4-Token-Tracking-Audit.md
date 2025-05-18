@@ -503,7 +503,7 @@ The implementation plan uses the following labels to categorize work steps:
         *   [✅] Implement selector `selectSelectedChatMessages: ChatMessage[]`.
     *   [✅] **4.5.1.1.4: [STORE] [TEST-UNIT] Ensure All Tests Pass for `useAiStore` Message Selection (GREEN)**
     *   [✅] **4.5.1.1.5: [STORE] Refactor and Cleanup `useAiStore` Message Selection Logic** (As needed after tests pass)
-*   [🚧] **4.5.1.2: [UI] Update Chat Message Display for Selection (`ChatMessageBubble.tsx` or equivalent)**
+*   [✅] **4.5.1.2: [UI] Update Chat Message Display for Selection (`ChatMessageBubble.tsx` or equivalent)**
     *   [✅] **4.5.1.2.1: [UI] [TEST-UNIT] Define Test Cases for Selection UI in `ChatMessageBubble.test.tsx`**
         *   [✅] Test for the presence of a checkbox for selection.
         *   [✅] Test that checkbox state reflects `selectedMessagesMap` from `useAiStore`.
@@ -520,7 +520,7 @@ The implementation plan uses the following labels to categorize work steps:
         *   [✅] Ensure `is_active_in_thread` still controls overall visibility/styling if applicable.
     *   [✅] **4.5.1.2.4: [UI] [TEST-UNIT] Ensure All Tests Pass for Selection UI (GREEN)**
     *   [✅] **4.5.1.2.5: [UI] Refactor and Cleanup Selection UI in `ChatMessageBubble.tsx`**
-*   [🚧] **4.5.1.3: [UI] Implement "Select All" / "Deselect All" Controls (`MessageSelectionControls.tsx` integrated into `AiChatbox.tsx`)**
+*   [✅] **4.5.1.3: [UI] Implement "Select All" / "Deselect All" Controls (`MessageSelectionControls.tsx` integrated into `AiChatbox.tsx`)**
     *   [✅] **4.5.1.3.1: [UI] [TEST-UNIT] Define Test Cases for "Select All" / "Deselect All" (in `apps/web/src/components/ai/MessageSelectionControls.test.tsx`)**
         *   [✅] Test that a "Select All" button is rendered.
         *   [✅] Test that a "Deselect All" button is rendered.
@@ -540,7 +540,7 @@ The implementation plan uses the following labels to categorize work steps:
 
 **Goal:** Ensure token estimation and the context sent to the AI accurately reflect the user's message selections. The backend must process this curated context, including any overarching system prompt.
 
-*   [🚧] **4.5.2.1: [UI|STORE] Update Token Estimator (`useTokenEstimator`) and Affordability Hook (`useAIChatAffordabilityStatus`)**
+*   [✅] **4.5.2.1: [UI|STORE] Update Token Estimator (`useTokenEstimator`) and Affordability Hook (`useAIChatAffordabilityStatus`)**
     *   [✅] **4.5.2.1.1: [UI] [TEST-UNIT] Define Test Cases for `useTokenEstimator` with Selected Context**
         *   Test that the estimator correctly calculates token counts based on the current user input text PLUS the content of all messages returned by `useAiStore(selectSelectedChatMessages)`.
         *   Test that the estimated token count updates dynamically when messages are selected or deselected via `useAiStore` actions.
@@ -551,8 +551,8 @@ The implementation plan uses the following labels to categorize work steps:
     *   [✅] **4.5.2.1.4: [UI] [TEST-UNIT] Run `useTokenEstimator` Tests until GREEN.**
     *   [⏸️] **4.5.2.1.5: [UI] [TEST-UNIT] Review and Update Tests for `useAIChatAffordabilityStatus`**
         *   Ensure tests for `useAIChatAffordabilityStatus.unit.test.ts` are still valid or update them to reflect that `useTokenEstimator` now provides the total estimated cost including the selected context. The hook itself might not need changes if `useTokenEstimator`'s output remains its input. (Discovery: `useWalletStore` dependency is not yet implemented - see 4.3.3)
-    *   [ ] **4.5.2.1.6: [REFACTOR] Refactor `useTokenEstimator` and its tests. Review `useAIChatAffordabilityStatus` for any indirect impacts.**
-    *   [ ] **4.5.2.1.7: [COMMIT]** "feat(UI|STORE): Update token estimator for dynamic chat context selection"
+    *   [✅] **4.5.2.1.6: [REFACTOR] Refactor `useTokenEstimator` and its tests. Review `useAIChatAffordabilityStatus` for any indirect impacts.**
+    *   [✅] **4.5.2.1.7: [COMMIT]** "feat(UI|STORE): Update token estimator for dynamic chat context selection"
 
 *   [ ] **4.5.2.2: [API] Modify API Client for Context Passing**
     *   [ ] **4.5.2.2.1: [API] [TEST-UNIT] Define Test Cases for the Chat API Method (e.g., in `AiApiClient.ts`)**
@@ -665,11 +665,11 @@ The implementation plan uses the following labels to categorize work steps:
     *   // *   `import { getEncoding } from 'tiktoken'; const encoding = getEncoding('cl100k_base'); export const useTokenEstimator = (text: string) => React.useMemo(() => text ? encoding.encode(text).length : 0, [text]);`
 *   [✅] **4.4.1.3: [UI] [TEST-UNIT] Write tests for the hook. Expect failure (RED).** (*Fulfilled by 4.5.2.1.2*)
 *   [✅] **4.4.1.4: [UI] Implement the hook. Run tests until pass (GREEN).** (*Fulfilled by 4.5.2.1.4*)
-*   [ ] **4.4.1.5: [UI] Integrate Hook into Chat Input Component (`AiChatbox.tsx` or `ChatInput.tsx`)**
+*   [✅] **4.4.1.5: [UI] Integrate Hook into Chat Input Component (`AiChatbox.tsx` or `ChatInput.tsx`)**
     *   // *   Use the `useTokenEstimator` hook with the current text input value.
     *   // *   Display the estimated count near the input field (e.g., "Tokens for this message: ~{count}").
-*   [ ] **4.4.1.6: [UI] [TEST-UNIT] Write/Update component tests for chat input to verify display.**
-*   [ ] **4.4.1.7: [COMMIT]** "feat(UI): Implement token estimator hook and display in chat input w/ tests" 
+*   [✅] **4.4.1.6: [UI] [TEST-UNIT] Write/Update component tests for chat input to verify display.**
+*   [✅] **4.4.1.7: [COMMIT]** "feat(UI): Implement token estimator hook and display in chat input w/ tests" 
 
 ### 4.4.2: [UI] Per-Message Token Usage Display (`ChatMessageBubble.tsx`)
 *   [✅] **4.4.2.1: [UI] [TEST-UNIT] Define Test Cases for `ChatMessageBubble.tsx`**
@@ -696,15 +696,15 @@ The implementation plan uses the following labels to categorize work steps:
   *   Displays: `Session Usage - User: {userTokens}, AI: {assistantTokens}, Total: {totalTokens}`.
 *   [✅] **4.4.3.5: [UI] [TEST-UNIT] Run component tests. Debug until pass (GREEN).** (Tests are passing after analytics and state mock fixes)
 *   [✅] **4.4.3.6: [REFACTOR]** Optimize calculation if needed. Ensure clear display. (Logic appears straightforward, considered done unless issues arise)
-*   [ ] **4.4.3.7: [COMMIT]** "feat(UI|STORE): Create cumulative session token usage display component & selector w/ tests"
+*   [✅] **4.4.3.7: [COMMIT]** "feat(UI|STORE): Create cumulative session token usage display component & selector w/ tests"
 
 ### 4.4.4: [UI] Integrate Token UI into Main Chat Page (`AiChatPage.tsx`)
 *   [✅] **4.4.4.1: [UI] Update `apps/web/src/pages/AiChatPage.tsx`** (Relevant components CurrentMessageTokenEstimator and ChatTokenUsageDisplay are integrated via AiChatbox; analytics for token_usage_displayed handled within ChatTokenUsageDisplay)
   *   Ensure token estimator is displayed near input (covered by 4.4.1.5).
   *   Integrate `ChatTokenUsageDisplay` component. Place appropriately.
   *   Trigger `token_usage_displayed` analytics event when `ChatTokenUsageDisplay` is visible and has data.
-*   [ ] **4.4.4.2: [TEST-INT] Perform manual integration tests.** Send messages, verify estimator updates. Verify assistant messages show tokens. Verify cumulative display updates. Verify analytics.
-*   [ ] **4.4.4.3: [COMMIT]** "feat(UI): Integrate token tracking UI components into chat page w/ manual tests & analytics"
+*   [✅] **4.4.4.2: [TEST-INT] Perform manual integration tests.** Send messages, verify estimator updates. Verify assistant messages show tokens. Verify cumulative display updates. Verify analytics.
+*   [✅] **4.4.4.3: [COMMIT]** "feat(UI): Integrate token tracking UI components into chat page w/ manual tests & analytics"
 
 ### 4.4.5: [UI] Wallet Balance Check Hook (`useAIChatAffordabilityStatus`) & Chat Input Integration
 *   [✅] **4.4.5.1: [UI] [TEST-UNIT] Define Test Cases for `useAIChatAffordabilityStatus` Hook** (Tests in .test.tsx, .unit.test.ts, .unit.test.tsx are passing)
@@ -749,7 +749,7 @@ The implementation plan uses the following labels to categorize work steps:
 
 ---
 
-## Phase 4.6: Improved prompt structuring
+## Phase 4.6: Improved prompt structuring & chat streaming
 
 **Goal:** Better management of the total prompt content sent to the AI. 
 *   [ ] Always send the chosen system prompt
@@ -759,7 +759,8 @@ The implementation plan uses the following labels to categorize work steps:
     *   [ ] Calculation showing how much of context window is used
     *   [ ] Calculation showing how much the message will cost 
     *   [ ] Calculation showing the estimated cost of receiving the answer
-*   [ ] 
+*   [ ] Get chat input streamed so multi-user chats show real time 
+*   [ ] Stream chat history so new chats show up without a refresh
 
 
 
