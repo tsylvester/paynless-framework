@@ -35,9 +35,9 @@ export type Chat = Database['public']['Tables']['chats']['Row'];
  * Represents the token usage for a message or a chat.
  */
 export interface TokenUsage {
-  promptTokens: number;
-  completionTokens: number;
-  totalTokens: number;
+  prompt_tokens: number;
+  completion_tokens: number;
+  total_tokens: number;
 }
 
 /**

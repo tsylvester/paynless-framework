@@ -180,9 +180,9 @@ export const useAiStore = create<AiStore>()(
                         for (const message of activeMessages) { // Iterate over active messages only
                             if (message.token_usage) {
                                 const usage = message.token_usage as unknown as TokenUsage;
-                                const prompt = usage.promptTokens || 0;
-                                const completion = usage.completionTokens || 0;
-                                const total = usage.totalTokens || 0;
+                                const prompt = usage.prompt_tokens || 0;
+                                const completion = usage.completion_tokens || 0;
+                                const total = usage.total_tokens || 0;
                                 
                                 if (message.role === 'user') {
                                     userTokens += total;

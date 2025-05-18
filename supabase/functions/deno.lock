@@ -33,6 +33,7 @@
     "npm:stripe@14.20.0": "14.20.0",
     "npm:stripe@18.0.0": "18.0.0",
     "npm:stripe@^18.1.0": "18.1.0_@types+node@20.17.32",
+    "npm:tiktoken@1.0.14": "1.0.14",
     "npm:typescript@5": "5.8.3",
     "npm:typescript@5.8.3": "5.8.3"
   },
@@ -1334,6 +1335,9 @@
         "glob",
         "minimatch"
       ]
+    },
+    "tiktoken@1.0.14": {
+      "integrity": "sha512-g5zd5r/DoH8Kw0fiYbYpVhb6WO8BHO1unXqmBBWKwoT17HwSounnDtMDFUKm2Pko8U47sjQarOe+9aUrnqmmTg=="
     },
     "tmpl@1.0.5": {
       "integrity": "sha512-3f0uOEAQwIqGuWW2MVzYg8fV/QNnc/IpuJNG837rLuczAaLVHslWHZQj4IGiEl5Hs3kkbhwL9Ab7Hrsmuj+Smw=="

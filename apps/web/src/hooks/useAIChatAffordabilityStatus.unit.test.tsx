@@ -1,18 +1,24 @@
 import { renderHook } from '@testing-library/react-hooks';
-import { vi, describe, beforeEach, it, expect, MockedFunction } from 'vitest'; // Removed MockedFunction
-import { useWalletStore, WalletStore } from '@paynless/store'; // Assuming path
-import { useAIChatAffordabilityStatus } from './useAIChatAffordabilityStatus';
+import { vi, describe, beforeEach, it, expect, MockedFunction } from 'vitest';
+import { useWalletStore } from '@paynless/store';
+import { useAIChatAffordabilityStatus } from './useAIChatAffordabilityStatus.ts';
 
-// Mock useWalletStore with Vitest
+// Mock @paynless/store and provide specific mocks for its exports
 vi.mock('@paynless/store', async (importOriginal) => {
-  const original = await importOriginal() as Record<string, unknown>;
+  const actual = await importOriginal() as Record<string, unknown>;
   return {
-    ...original, // Preserve other exports from @paynless/store if any are used
-    useWalletStore: vi.fn(),
+    ...actual, // Spread actual exports
+    useWalletStore: vi.fn(), // Mock useWalletStore specifically
+    // Add other specific mocks if needed, e.g., useAiStore, useAnalyticsStore
   };
 });
 
-const mockUseWalletStore = useWalletStore as unknown as MockedFunction<typeof useWalletStore>;
+const mockUseWalletStore = useWalletStore as MockedFunction<typeof useWalletStore>;
+
+interface MockWalletState {
+  selectCurrentWalletBalance: () => string | null;
+  // Add other relevant parts of WalletState that selectCurrentWalletBalance might rely on or that are used in tests
+}
 
 interface AffordabilityStatus {
   currentBalance: string;
@@ -23,20 +29,24 @@ interface AffordabilityStatus {
 
 describe('useAIChatAffordabilityStatus', () => {
   beforeEach(() => {
+    // Ensure mockUseWalletStore is correctly initialized and reset
+    // If useWalletStore itself is a mock (vi.fn()), it should have .mockReset()
+    // If useWalletStore returns an object with methods, those methods (if mocks) should be reset.
     mockUseWalletStore.mockReset();
   });
 
   const setupHook = (balance: string | null, estimatedCost: number) => {
-    mockUseWalletStore.mockImplementation(
-      (selectorFn: (state: WalletStore) => any) => {
-        // Construct a minimal mock state that has the selectCurrentWalletBalance method
-        const mockState = {
-          selectCurrentWalletBalance: () => balance, // This will be called by the hook's selector
-          // Add other store properties here if the hook or its selectors were to use them
-        };
-        return selectorFn(mockState as WalletStore);
-      }
-    );
+    // Mock the implementation of useWalletStore to return a function that, when called with a selector,
+    // returns the desired value for that selector.
+    mockUseWalletStore.mockImplementation((selectorFn: (state: MockWalletState) => any) => {
+        // This simplified mock assumes selectorFn directly returns the value.
+        // For more complex selectors, you might need to simulate the state object.
+        if (selectorFn && (selectorFn.name.includes('selectCurrentWalletBalance') || selectorFn.toString().includes('selectCurrentWalletBalance'))) {
+            return balance;
+        }
+        return undefined;
+    });
+
     const { result } = renderHook(() => useAIChatAffordabilityStatus(estimatedCost));
     return result.current;
   };

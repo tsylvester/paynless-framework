@@ -681,25 +681,25 @@ The implementation plan uses the following labels to categorize work steps:
 *   [✅] **4.4.2.5: [COMMIT]** "feat(UI): Add token usage display to assistant chat messages w/ tests"
 
 ### 4.4.3: [UI] Cumulative Session Token Usage Display (`ChatTokenUsageDisplay.tsx`)
-*   [ ] **4.4.3.1: [STORE] Enhance `useAiStore` for Cumulative Session Tokens** (If not already fully covered by 4.2.3 from the previous plan)
+*   [✅] **4.4.3.1: [STORE] Enhance `useAiStore` for Cumulative Session Tokens** (Selector implemented and tested)
     *   `packages/store/src/aiStore.ts`:
         *   Selector: `selectCurrentChatSessionTokenUsage: () => { userTokens: number, assistantTokens: number, totalTokens: number }`
             *   Calculates sum from `currentChatMessages`' `token_usage` fields.
     *   [TEST-UNIT] Write/verify tests in `aiStore.selectors.test.ts`.
-*   [ ] **4.4.3.2: [UI] [TEST-UNIT] Define Test Cases for `ChatTokenUsageDisplay.tsx`**
+*   [✅] **4.4.3.2: [UI] [TEST-UNIT] Define Test Cases for `ChatTokenUsageDisplay.tsx`** (Tests defined in `ChatTokenUsageDisplay.test.tsx`)
     *   In `apps/web/src/components/ai/ChatTokenUsageDisplay.unit.test.tsx`.
     *   Mocks `useAiStore` with `selectCurrentChatSessionTokenUsage`.
     *   Verifies correct display of User/Assistant/Total tokens for the *current session*.
-*   [ ] **4.4.3.3: [UI] [TEST-UNIT] Write tests. Expect RED.**
-*   [ ] **4.4.3.4: [UI] Create component `apps/web/src/components/ai/ChatTokenUsageDisplay.tsx`**
+*   [✅] **4.4.3.3: [UI] [TEST-UNIT] Write tests. Expect RED.** (Tests written)
+*   [✅] **4.4.3.4: [UI] Create component `apps/web/src/components/ai/ChatTokenUsageDisplay.tsx`** (Component created and uses selector)
   *   Uses `useAiStore(selectCurrentChatSessionTokenUsage)`.
   *   Displays: `Session Usage - User: {userTokens}, AI: {assistantTokens}, Total: {totalTokens}`.
-*   [ ] **4.4.3.5: [UI] [TEST-UNIT] Run component tests. Debug until pass (GREEN).**
-*   [ ] **4.4.3.6: [REFACTOR]** Optimize calculation if needed. Ensure clear display.
+*   [✅] **4.4.3.5: [UI] [TEST-UNIT] Run component tests. Debug until pass (GREEN).** (Tests are passing after analytics and state mock fixes)
+*   [✅] **4.4.3.6: [REFACTOR]** Optimize calculation if needed. Ensure clear display. (Logic appears straightforward, considered done unless issues arise)
 *   [ ] **4.4.3.7: [COMMIT]** "feat(UI|STORE): Create cumulative session token usage display component & selector w/ tests"
 
 ### 4.4.4: [UI] Integrate Token UI into Main Chat Page (`AiChatPage.tsx`)
-*   [ ] **4.4.4.1: [UI] Update `apps/web/src/pages/AiChatPage.tsx`**
+*   [✅] **4.4.4.1: [UI] Update `apps/web/src/pages/AiChatPage.tsx`** (Relevant components CurrentMessageTokenEstimator and ChatTokenUsageDisplay are integrated via AiChatbox; analytics for token_usage_displayed handled within ChatTokenUsageDisplay)
   *   Ensure token estimator is displayed near input (covered by 4.4.1.5).
   *   Integrate `ChatTokenUsageDisplay` component. Place appropriately.
   *   Trigger `token_usage_displayed` analytics event when `ChatTokenUsageDisplay` is visible and has data.
@@ -707,17 +707,17 @@ The implementation plan uses the following labels to categorize work steps:
 *   [ ] **4.4.4.3: [COMMIT]** "feat(UI): Integrate token tracking UI components into chat page w/ manual tests & analytics"
 
 ### 4.4.5: [UI] Wallet Balance Check Hook (`useAIChatAffordabilityStatus`) & Chat Input Integration
-*   [ ] **4.4.5.1: [UI] [TEST-UNIT] Define Test Cases for `useAIChatAffordabilityStatus` Hook**
+*   [✅] **4.4.5.1: [UI] [TEST-UNIT] Define Test Cases for `useAIChatAffordabilityStatus` Hook** (Tests in .test.tsx, .unit.test.ts, .unit.test.tsx are passing)
     *   In `apps/web/src/hooks/useAIChatAffordabilityStatus.unit.test.ts`.
     *   Mocks `useWalletStore` (for `selectCurrentWalletBalance`).
     *   Mocks `useTokenEstimator` (or takes estimated cost as prop - **this will be the enhanced version from Phase 4.5.2.1 that considers full context**).
     *   Test various balance/cost scenarios.
     *   Verify correct status: `{ currentBalance: string, estimatedNextCost: number, canAffordNext: boolean, lowBalanceWarning: boolean }`.
-*   [ ] **4.4.5.2: [UI] Create `apps/web/src/hooks/useAIChatAffordabilityStatus.ts` Hook**
+*   [✅] **4.4.5.2: [UI] Create `apps/web/src/hooks/useAIChatAffordabilityStatus.ts` Hook** (Hook implemented)
     *   Takes `estimatedNextCost: number` as input (derived from the comprehensive `useTokenEstimator` developed in **Phase 4.5.2.1**).
     *   Gets `currentBalance` from `useWalletStore(selectCurrentWalletBalance)`.
     *   Compares. `lowBalanceWarning` if `currentBalance < estimatedNextCost * 3` (configurable threshold).
-*   [ ] **4.4.5.3: [UI] [TEST-UNIT] Write tests for the hook. Debug until (GREEN).**
+*   [✅] **4.4.5.3: [UI] [TEST-UNIT] Write tests for the hook. Debug until (GREEN).** (All unit tests passing after mock refinement)
 *   [ ] **4.4.5.4: [UI] Integrate Hook into Chat Input (`AiChatbox.tsx` or `ChatInput.tsx`)**
     *   Use `estimatedTokens = useTokenEstimator(currentInputValue)` (this `useTokenEstimator` refers to the enhanced version from **Phase 4.5.2.1**).
     *   Use `const { canAffordNext, lowBalanceWarning } = useAIChatAffordabilityStatus(estimatedTokens);`.

@@ -2,6 +2,7 @@
 // Do not use path aliases (like @shared/) as they will cause deployment failures.
 import { serve } from 'https://deno.land/std@0.224.0/http/server.ts'
 import { createClient, type SupabaseClient } from 'npm:@supabase/supabase-js@2'
+import { get_encoding } from 'https://esm.sh/tiktoken@1.0.14'; // Import tiktoken via esm.sh
 // Import shared response/error handlers
 import { 
     handleCorsPreflightRequest, 
@@ -23,6 +24,16 @@ import type {
 import type { Database, Json } from "../types_db.ts"; 
 import { verifyApiKey } from '../_shared/auth.ts'; // Assuming verifyApiKey is not used in this specific flow but kept for DI consistency
 import { logger } from '../_shared/logger.ts';
+
+// Initialize tiktoken encoder (cl100k_base is common for OpenAI models)
+let encoding: ReturnType<typeof get_encoding>;
+try {
+  encoding = get_encoding('cl100k_base');
+} catch (e) {
+  console.error("Failed to initialize tiktoken encoding:", e);
+  // Fallback or error handling if tiktoken fails. For dummy, we might default to 0 if it fails.
+  // For real providers, this would be a more critical failure.
+}
 
 // Redefine ChatHandlerDeps if it's different from _shared/types.ts or ensure they are aligned.
 // For now, using ActualChatHandlerDeps from _shared/types.ts implies it has all necessary fields like logger.
@@ -417,15 +428,15 @@ async function handlePostRequest(
                 // --- Dummy Provider Logic (within normal path) ---
                 logger.info(`DUMMY PROVIDER DETECTED (Normal Path): providerString="${providerString}". Proceeding with echo logic.`);
 
-                // 1. Store User's Message
+                // 1. Store User's Message (token_usage for user message is typically not set here, but on client or if system pre-calculates)
                 const userMessageInsert: ChatMessageInsert = {
                     chat_id: currentChatId,
                     user_id: userId,
                     role: 'user',
                     content: userMessageContent,
                     is_active_in_thread: true,
-                    ai_provider_id: requestProviderId, // Link user message to provider choice
-                    system_prompt_id: systemPromptDbId, // Link user message to prompt choice
+                    ai_provider_id: requestProviderId, 
+                    system_prompt_id: systemPromptDbId, 
                 };
                 const { error: userInsertError } = await supabaseClient.from('chat_messages').insert(userMessageInsert);
                 if (userInsertError) {
@@ -434,18 +445,34 @@ async function handlePostRequest(
                 }
                 logger.info('Dummy provider: Inserted user message.');
 
-                // 2. Prepare and Insert Dummy Assistant Response
+                // 2. Prepare and Insert Dummy Assistant Response with tokenization
                 const dummyAssistantContent = `Echo from Dummy: ${userMessageContent}`;
+                let promptTokens = 0;
+                let completionTokens = 0;
+                let totalTokens = 0;
+
+                if (encoding) {
+                    try {
+                        promptTokens = encoding.encode(userMessageContent).length;
+                        completionTokens = encoding.encode(dummyAssistantContent).length;
+                        totalTokens = promptTokens + completionTokens;
+                    } catch (e: unknown) {
+                        logger.error('Dummy provider: Failed to encode messages with tiktoken', { error: e instanceof Error ? e.stack : String(e) });
+                        // Keep tokens as 0 if encoding fails
+                    }
+                } else {
+                    logger.warn('Dummy provider: tiktoken encoding not available. Token counts will be 0.');
+                }
+
                 const dummyAssistantMessageInsert: ChatMessageInsert = {
-                    id: generateUUID(), // Generate an ID for the dummy response
+                    id: generateUUID(), 
                     chat_id: currentChatId,
                     role: 'assistant',
                     content: dummyAssistantContent,
                     is_active_in_thread: true,
                     ai_provider_id: requestProviderId,
                     system_prompt_id: systemPromptDbId,
-                    token_usage: { prompt_tokens: 0, completion_tokens: 0 } as Json,
-                    // user_id should be null for assistant messages
+                    token_usage: { prompt_tokens: promptTokens, completion_tokens: completionTokens, total_tokens: totalTokens } as Json,
                 };
                 const { data: dummyAssistantInsertResult, error: assistantInsertError } = await supabaseClient
                     .from('chat_messages')
