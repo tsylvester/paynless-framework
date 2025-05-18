@@ -541,16 +541,16 @@ The implementation plan uses the following labels to categorize work steps:
 **Goal:** Ensure token estimation and the context sent to the AI accurately reflect the user's message selections. The backend must process this curated context, including any overarching system prompt.
 
 *   [🚧] **4.5.2.1: [UI|STORE] Update Token Estimator (`useTokenEstimator`) and Affordability Hook (`useAIChatAffordabilityStatus`)**
-    *   [ ] **4.5.2.1.1: [UI] [TEST-UNIT] Define Test Cases for `useTokenEstimator` with Selected Context**
+    *   [✅] **4.5.2.1.1: [UI] [TEST-UNIT] Define Test Cases for `useTokenEstimator` with Selected Context**
         *   Test that the estimator correctly calculates token counts based on the current user input text PLUS the content of all messages returned by `useAiStore(selectSelectedChatMessages)`.
         *   Test that the estimated token count updates dynamically when messages are selected or deselected via `useAiStore` actions.
-    *   [ ] **4.5.2.1.2: [UI] [TEST-UNIT] Write Failing Tests for `useTokenEstimator` (RED)**
-    *   [ ] **4.5.2.1.3: [UI] Modify `apps/web/src/hooks/useTokenEstimator.ts`**
+    *   [✅] **4.5.2.1.2: [UI] [TEST-UNIT] Write Failing Tests for `useTokenEstimator` (RED)**
+    *   [✅] **4.5.2.1.3: [UI] Modify `apps/web/src/hooks/useTokenEstimator.ts`**
         *   The hook should now subscribe to `useAiStore(selectSelectedChatMessages)`.
         *   It needs to iterate through these selected messages, concatenate their textual content with the current input field's text, and then calculate the total token count.
-    *   [ ] **4.5.2.1.4: [UI] [TEST-UNIT] Run `useTokenEstimator` Tests until GREEN.**
-    *   [ ] **4.5.2.1.5: [UI] [TEST-UNIT] Review and Update Tests for `useAIChatAffordabilityStatus`**
-        *   Ensure tests for `useAIChatAffordabilityStatus.unit.test.ts` are still valid or update them to reflect that `useTokenEstimator` now provides the total estimated cost including the selected context. The hook itself might not need changes if `useTokenEstimator`'s output remains its input.
+    *   [✅] **4.5.2.1.4: [UI] [TEST-UNIT] Run `useTokenEstimator` Tests until GREEN.**
+    *   [⏸️] **4.5.2.1.5: [UI] [TEST-UNIT] Review and Update Tests for `useAIChatAffordabilityStatus`**
+        *   Ensure tests for `useAIChatAffordabilityStatus.unit.test.ts` are still valid or update them to reflect that `useTokenEstimator` now provides the total estimated cost including the selected context. The hook itself might not need changes if `useTokenEstimator`'s output remains its input. (Discovery: `useWalletStore` dependency is not yet implemented - see 4.3.3)
     *   [ ] **4.5.2.1.6: [REFACTOR] Refactor `useTokenEstimator` and its tests. Review `useAIChatAffordabilityStatus` for any indirect impacts.**
     *   [ ] **4.5.2.1.7: [COMMIT]** "feat(UI|STORE): Update token estimator for dynamic chat context selection"
 
@@ -630,22 +630,25 @@ The implementation plan uses the following labels to categorize work steps:
 
 **Goal:** Expose wallet functionalities through the API client and manage wallet state on the frontend.
 
-*   [ ] **4.3.1: [API] Add Wallet Methods to API Client**
-    *   `packages/api/src/clients/WalletApiClient.ts` (new):
-        *   `getWalletInfo(organizationId?: string | null): Promise<ApiResponse<TokenWallet | null>>`
-        *   `getWalletTransactionHistory(organizationId?: string | null, limit?: number, offset?: number): Promise<ApiResponse<TokenWalletTransaction[]>>`
-        *   `initiateTokenPurchase(request: PurchaseRequest): Promise<ApiResponse<PaymentInitiationResult>>`
-    *   [TEST-UNIT] Write unit tests for these new API client methods in `packages/api/src/tests/clients/WalletApiClient.test.ts`.
+*   [✅] **4.3.1: [API] Add Wallet Methods to API Client**
+    *   [✅] `packages/api/src/clients/WalletApiClient.ts` (new):
+        *   [✅] `getWalletInfo(organizationId?: string | null): Promise<ApiResponse<TokenWallet | null>>`
+        *   [✅] `getWalletTransactionHistory(organizationId?: string | null, limit?: number, offset?: number): Promise<ApiResponse<TokenWalletTransaction[]>>`
+        *   [✅] `initiateTokenPurchase(request: PurchaseRequest): Promise<ApiResponse<PaymentInitiationResult>>` (placeholder implemented)
+    *   [✅] [TEST-UNIT] Write unit tests for these new API client methods in `packages/api/src/wallet.api.test.ts`.
 *   [ ] **4.3.2: [BE] Create Backend Endpoints for Wallet Info & History**
     *   `GET /wallet-info`: Uses `TokenWalletService.getWalletForContext`.
     *   `GET /wallet-history`: Uses `TokenWalletService.getTransactionHistory`.
     *   [TEST-INT] Write integration tests for these new endpoints (`supabase/functions/wallet-info/index.ts`, `supabase/functions/wallet-history/index.ts`).
-*   [ ] **4.3.3: [STORE] Create `useWalletStore`**
+*   [⏸️] **4.3.3: [STORE] Create `useWalletStore`**
     *   `packages/store/src/walletStore.ts`:
-        *   State: `currentWallet: TokenWallet | null`, `transactionHistory: TokenWalletTransaction[]`, `isLoadingWallet: boolean`, `isLoadingHistory: boolean`, `isLoadingPurchase: boolean`, `walletError: Error | null`, `purchaseError: Error | null`.
-        *   Actions: `loadWallet(organizationId?: string | null)`, `loadTransactionHistory(organizationId?: string | null, ...paging)`, `initiatePurchase(request: PurchaseRequest): Promise<PaymentInitiationResult | null>`.
-        *   Selectors: `selectCurrentWalletBalance` (returns `currentWallet.balance` or '0'), `selectWalletTransactions`.
-    *   [TEST-UNIT] Write unit tests in `packages/store/src/tests/walletStore.test.ts`.
+        *   [✅] State: `currentWallet: TokenWallet | null`, `transactionHistory: TokenWalletTransaction[]`, `isLoadingWallet: boolean`, `isLoadingHistory: boolean`, `isLoadingPurchase: boolean`, `walletError: Error | null`, `purchaseError: Error | null`.
+        *   [🚧] Actions: 
+            *   [✅] `loadWallet(organizationId?: string | null)`
+            *   [✅] `loadTransactionHistory(organizationId?: string | null, ...paging)`
+            *   [ ] `initiatePurchase(request: PurchaseRequest): Promise<PaymentInitiationResult | null>`.
+        *   [✅] Selectors: `selectCurrentWalletBalance` (returns `currentWallet.balance` or '0'), `selectWalletTransactions`.
+    *   [🚧] [TEST-UNIT] Write unit tests in `packages/store/src/tests/walletStore.test.ts`. (Initial state, selectors, `loadWallet`, and `loadTransactionHistory` actions and tests pass; `initiatePurchase` pending).
 *   [ ] **4.3.4: [COMMIT]** "feat(API|STORE|BE): Expose wallet info/history via API and manage in useWalletStore"
 
 ---
@@ -745,6 +748,20 @@ The implementation plan uses the following labels to categorize work steps:
 *   [ ] **4.4.6.4: [COMMIT]** "feat(UI): Implement wallet balance display, top-up page, and transaction history page w/ tests"
 
 ---
+
+## Phase 4.6: Improved prompt structuring
+
+**Goal:** Better management of the total prompt content sent to the AI. 
+*   [ ] Always send the chosen system prompt
+*   [ ] Send the full content of all the selected chats
+*   [ ] Send the users' latest input
+*   [ ] Sliding chat content window based on providers context window
+    *   [ ] Calculation showing how much of context window is used
+    *   [ ] Calculation showing how much the message will cost 
+    *   [ ] Calculation showing the estimated cost of receiving the answer
+*   [ ] 
+
+
 
 ## Phase 4.6: End-to-End Testing, Refinement, and Security Review
 

@@ -12,6 +12,7 @@ import { AiApiClient } from './ai.api';
 import { NotificationApiClient } from './notifications.api'; // Import new client
 import { OrganizationApiClient } from './organizations.api'; // <<< Import Org client
 import { UserApiClient } from './users.api'; // +++ Add import
+import { WalletApiClient } from './wallet.api'; // Corrected WalletApiClient import path
 import { logger } from '@paynless/utils';
 import type { Database } from '@paynless/db-types'; // Keep this for createClient
 
@@ -54,6 +55,7 @@ export class ApiClient {
     public notifications: NotificationApiClient; // Add new client property
     public organizations: OrganizationApiClient; // <<< Add Org client property
     public users: UserApiClient; // +++ Add users property
+    public wallet: WalletApiClient; // Added wallet property
 
     // Update constructor signature
     constructor(options: ApiClientConstructorOptions) {
@@ -70,6 +72,7 @@ export class ApiClient {
         this.notifications = new NotificationApiClient(this); // Initialize new client
         this.organizations = new OrganizationApiClient(this); // <<< Initialize Org client
         this.users = new UserApiClient(this); // +++ Initialize UserApiClient
+        this.wallet = new WalletApiClient(this); // Initialize WalletApiClient
     }
 
     /**
@@ -285,6 +288,7 @@ export const api = {
     notifications: () => getApiClient().notifications,
     organizations: () => getApiClient().organizations,
     users: () => getApiClient().users,
+    wallet: () => getApiClient().wallet, // Added wallet accessor
     getSupabaseClient: (): SupabaseClient<Database> => 
         getApiClient().getSupabaseClient(),
 }; 
