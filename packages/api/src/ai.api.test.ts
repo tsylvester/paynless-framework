@@ -180,6 +180,29 @@ describe('AiApiClient', () => {
             expect(mockApiClient.post).toHaveBeenCalledWith('chat', chatRequestData, undefined);
         });
 
+        it('should call apiClient.post with contextMessages when provided', async () => {
+            // Arrange
+            const chatRequestDataWithContext: ChatApiRequest = {
+                ...chatRequestData,
+                contextMessages: [
+                    { role: 'user', content: 'Previous user message' },
+                    { role: 'assistant', content: 'Previous assistant response' },
+                ],
+            };
+            const mockResponse: ApiResponse<ChatMessage> = {
+                data: mockAssistantMessage,
+                status: 200,
+            };
+            (mockApiClient.post as vi.Mock).mockResolvedValue(mockResponse);
+
+            // Act
+            await aiApiClient.sendChatMessage(chatRequestDataWithContext);
+
+            // Assert
+            expect(mockApiClient.post).toHaveBeenCalledTimes(1);
+            expect(mockApiClient.post).toHaveBeenCalledWith('chat', chatRequestDataWithContext, undefined);
+        });
+
         it('should return the assistant message object on successful response', async () => {
              // Arrange
              const mockResponse: ApiResponse<ChatMessage> = {

@@ -69,6 +69,7 @@ export interface ChatApiRequest {
   promptId: SystemPrompt['id']; // Reference aliased type
   chatId?: Chat['id'] | null;   // Reference aliased type (optional for new chats)
   organizationId?: string | null; // Add optional organizationId
+  contextMessages?: { role: 'user' | 'assistant' | 'system'; content: string }[]; // Added for selected context
 }
 
 /**
@@ -214,6 +215,7 @@ export interface AiActions {
     providerId: AiProvider['id']; // Use aliased type
     promptId: SystemPrompt['id'] | null; // MODIFIED HERE
     chatId?: Chat['id'] | null; // Use aliased type
+    contextMessages?: { role: 'user' | 'assistant' | 'system'; content: string }[]; // Added for selected context
   }) => Promise<ChatMessage | null>; // Use aliased type
   loadChatHistory: (organizationId?: string | null) => Promise<void>;
   loadChatDetails: (chatId: Chat['id']) => Promise<void>; // Use aliased type

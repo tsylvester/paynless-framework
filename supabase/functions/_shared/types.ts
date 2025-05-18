@@ -144,6 +144,13 @@ export interface ChatApiRequest {
   providerId: string; // uuid for ai_providers table
   promptId: string;   // uuid for system_prompts table, or '__none__'
   chatId?: string;   // uuid, optional for new chats
+  selectedMessages?: { // User-selected messages for context
+    role: 'system' | 'user' | 'assistant';
+    content: string;
+    // Potentially include other relevant fields from ChatMessage if needed by adapter,
+    // e.g., id, if adapters need to reference original messages.
+    // For now, keeping it minimal to role and content.
+  }[];
   messages?: { // For sending history to adapter, optional
     role: 'system' | 'user' | 'assistant';
     content: string;
@@ -248,6 +255,7 @@ export interface ILogger {
   export interface ChatHandlerSuccessResponse {
     userMessage?: ChatMessageRow;       // Populated for normal new messages and new user message in rewind
     assistantMessage: ChatMessageRow;  // Always populated on success
+    chatId: string;                    // ID of the chat session (new or existing) - ADDED
     isRewind?: boolean;                 // True if this was a rewind operation
     isDummy?: boolean;                  // True if dummy provider was used
   }
@@ -357,4 +365,13 @@ export interface IMockClientSpies {
     maybeSingle?: Spy<IMockQueryBuilder['maybeSingle']>;
     then?: Spy<IMockQueryBuilder['then']>;
   } | undefined);
+}
+
+export type PerformChatRewindResult = Database['public']['Functions']['perform_chat_rewind']['Returns'];
+
+// Add this new interface
+export interface TokenUsage {
+  prompt_tokens: number;
+  completion_tokens: number;
+  total_tokens: number;
 }

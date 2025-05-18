@@ -310,6 +310,7 @@ The implementation plan uses the following labels to categorize work steps:
             *   Test routing `/webhooks/stripe` (expect mock `StripePaymentAdapter.handleWebhook` to be called with correct parameters).
             *   (Optional) Test routing `/webhooks/coinbase` (expect mock `CoinbasePaymentAdapter.handleWebhook` to be called if a skeleton adapter exists).
         *   [✅] **4.1.3.2.3: [BE] [DI] Utilize/Adapt Adapter Factory for Webhooks**
+            *   Ensure `getPaymentAdapter` (or a similar factory, potentially in `_shared/adapters/adapters/adapterFactory.ts`) can provide the router with the correct `IPaymentGatewayAdapter` instance based on the `{source}`.
             *   Ensure `getPaymentAdapter` (or a similar factory, potentially in `_shared/adapters/adapterFactory.ts`) can provide the router with the correct `IPaymentGatewayAdapter` instance based on the `{source}`.
             *   The factory should ensure the adapter is instantiated with all necessary dependencies (e.g., admin Supabase client, `TokenWalletService`, and its specific `webhookSecret`).
         *   [✅] **4.1.3.2.4: [TYPES] Verify `IPaymentGatewayAdapter.handleWebhook` Interface Signature**
@@ -554,51 +555,55 @@ The implementation plan uses the following labels to categorize work steps:
     *   [✅] **4.5.2.1.6: [REFACTOR] Refactor `useTokenEstimator` and its tests. Review `useAIChatAffordabilityStatus` for any indirect impacts.**
     *   [✅] **4.5.2.1.7: [COMMIT]** "feat(UI|STORE): Update token estimator for dynamic chat context selection"
 
-*   [ ] **4.5.2.2: [API] Modify API Client for Context Passing**
-    *   [ ] **4.5.2.2.1: [API] [TEST-UNIT] Define Test Cases for the Chat API Method (e.g., in `AiApiClient.ts`)**
-        *   Test that the primary chat method (e.g., `streamedChatRequest` or similar) now accepts an array of `ChatMessage` objects (or a simplified version like `{ role: string, content: string }[]`) representing the selected context.
-        *   Test that the HTTP request payload sent to the backend correctly includes this array of context messages.
-    *   [ ] **4.5.2.2.2: [API] [TEST-UNIT] Write Failing Tests for API Client Chat Method (RED)**
-    *   [ ] **4.5.2.2.3: [API] Update `packages/api/src/clients/AiApiClient.ts` (or the relevant API client file)**
-        *   Modify the signature of the chat method to accept the array of selected `ChatMessage` objects.
-        *   Ensure this array is properly formatted and included in the request body sent to the `/chat` backend endpoint.
-    *   [ ] **4.5.2.2.4: [API] [TEST-UNIT] Run API Client Tests until GREEN.**
-    *   [ ] **4.5.2.2.5: [REFACTOR] Refactor the API Client Chat Method and its tests.**
-    *   [ ] **4.5.2.2.6: [COMMIT]** "feat(API): Update AI API client to send selected chat messages as context"
+*   [✅] **4.5.2.2: [API] Modify API Client for Context Passing**
+    *   [✅] **4.5.2.2.1: [API] [TEST-UNIT] Define Test Cases for the Chat API Method (e.g., in `AiApiClient.ts`)**
+        *   [✅] Test that the primary chat method (e.g., `streamedChatRequest` or similar) now accepts an array of `ChatMessage` objects (or a simplified version like `{ role: string, content: string }[]`) representing the selected context.
+        *   [✅] Test that the HTTP request payload sent to the backend correctly includes this array of context messages.
+    *   [✅] **4.5.2.2.2: [API] [TEST-UNIT] Write Failing Tests for API Client Chat Method (RED)**
+    *   [✅] **4.5.2.2.3: [API] Update `packages/api/src/clients/AiApiClient.ts` (or the relevant API client file)**
+        *   [✅] Modify the signature of the chat method to accept the array of selected `ChatMessage` objects.
+        *   [✅] Ensure this array is properly formatted and included in the request body sent to the `/chat` backend endpoint.
+    *   [✅] **4.5.2.2.4: [API] [TEST-UNIT] Run API Client Tests until GREEN.**
+    *   [✅] **4.5.2.2.5: [REFACTOR] Refactor the API Client Chat Method and its tests.**
+    *   [✅] **4.5.2.2.6: [COMMIT]** "feat(API): Update AI API client to send selected chat messages as context"
 
-*   [ ] **4.5.2.3: [UI] Update Chat Submission Logic (e.g., in `AiChatbox.tsx` or `ChatInput.tsx`)**
-    *   [ ] **4.5.2.3.1: [UI] [TEST-UNIT] Define Test Cases for Chat Submission Logic**
-        *   Verify that when a user submits a message, the logic retrieves the currently selected messages using `useAiStore(selectSelectedChatMessages)`.
-        *   Verify that this array of selected messages (along with the new user input) is passed to the updated API client chat method.
-    *   [ ] **4.5.2.3.2: [UI] [TEST-UNIT] Write Failing Tests for Chat Submission Logic (RED)**
-    *   [ ] **4.5.2.3.3: [UI] Modify Chat Submission Logic**
-        *   On message submission:
-            *   Get the array of `ChatMessage` objects from `useAiStore(selectSelectedChatMessages)`.
-            *   Prepare the new user message (e.g., `{ role: 'user', content: newText }`).
-            *   Pass the combined context (selected messages + new user message) to the API client method.
-    *   [ ] **4.5.2.3.4: [UI] [TEST-UNIT] Run Chat Submission Logic Tests until GREEN.**
-    *   [ ] **4.5.2.3.5: [REFACTOR] Refactor Chat Submission Logic and its tests.**
-    *   [ ] **4.5.2.3.6: [COMMIT]** "feat(UI): Update chat submission to use selected messages for context"
+*   [✅] **4.5.2.3: [UI] Update Chat Submission Logic (e.g., in `AiChatbox.tsx` or `ChatInput.tsx`)**
+    *   [✅] **4.5.2.3.1: [UI] [TEST-UNIT] Define Test Cases for Chat Submission Logic**
+        *   [✅] Verify that when a user submits a message, the logic retrieves the currently selected messages using `useAiStore(selectSelectedChatMessages)`.
+        *   [✅] Verify that this array of selected messages (along with the new user input) is passed to the updated API client chat method.
+    *   [✅] **4.5.2.3.2: [UI] [TEST-UNIT] Write Failing Tests for Chat Submission Logic (RED)**
+    *   [✅] **4.5.2.3.3: [UI] Modify Chat Submission Logic**
+        *   [✅] On message submission:
+            *   [✅] Get the array of `ChatMessage` objects from `useAiStore(selectSelectedChatMessages)`.
+            *   [✅] Prepare the new user message (e.g., `{ role: 'user', content: newText }`).
+            *   [✅] Pass the combined context (selected messages + new user message) to the API client method.
+    *   [✅] **4.5.2.3.4: [UI] [TEST-UNIT] Run Chat Submission Logic Tests until GREEN.**
+    *   [✅] **4.5.2.3.5: [REFACTOR] Refactor Chat Submission Logic and its tests.**
+    *   [✅] **4.5.2.3.6: [COMMIT]** "feat(UI): Update chat submission to use selected messages for context"
 
-*   [ ] **4.5.2.4: [BE] Adapt `/chat` Edge Function for Selected Context and System Prompt**
-    *   [ ] **4.5.2.4.1: [BE] [TEST-INT] Define Integration Test Cases for `/chat` Endpoint**
-        *   Test scenarios where the endpoint receives an array of selected context messages in the request body.
+*   [🚧] **4.5.2.4: [BE] Adapt `/chat` Edge Function for Selected Context and System Prompt**
+    *   [✅] **4.5.2.4.1: [BE] [TEST-INT] Define Integration Test Cases for `/chat` Endpoint**
+        *   Test scenarios where the endpoint receives an array of selected context messages in the request body. (Implemented)
         *   Test how the "current prompt selection" (system prompt) is handled:
-            *   If sent by the client: test it's correctly received and prepended.
-            *   If retrieved by the backend: test this retrieval and prepending.
-        *   Test that the final history constructed for the AI provider (e.g., OpenAI) accurately reflects the system prompt (once) followed by the user-selected messages and the latest user input.
-        *   Test that only messages marked as selected (or all messages if selection feature is bypassed for a simpler call) are used to form the context.
-    *   [ ] **4.5.2.4.2: [BE] [TEST-INT] Write Failing Integration Tests for `/chat` Endpoint (RED)**
-    *   [ ] **4.5.2.4.3: [BE] Modify `supabase/functions/chat/index.ts`**
-        *   Update the request body parsing to expect an optional array of `selectedMessages` (e.g., `ChatMessage[]`).
-        *   Implement logic for handling the "current prompt selection" (system prompt). This could be a string passed in the request body (e.g., `systemPrompt: "You are a helpful assistant."`) or retrieved server-side based on user/org settings.
-        *   Construct the final message history for the AI provider:
+            *   If sent by the client: test it's correctly received and prepended. (Implemented)
+            *   If retrieved by the backend: test this retrieval and prepending. (Implemented)
+        *   Test that the final history constructed for the AI provider (e.g., OpenAI) accurately reflects the system prompt (once) followed by the user-selected messages and the latest user input. (Implemented)
+        *   Test that only messages marked as selected (or all messages if selection feature is bypassed for a simpler call) are used to form the context. (Implemented)
+        *   *Note: Test execution revealed issues with `promptId: "__none__"` persistence for assistant messages and org chat mock assertions.*
+    *   [✅] **4.5.2.4.2: [BE] [TEST-INT] Write Failing Integration Tests for `/chat` Endpoint (RED)**
+        *   *Initial tests written. Most pass, but specific failures identified for `promptId: "__none__"`, history fetch error resulting in incorrect chat linking, and an org chat mock assertion.*
+    *   [✅] **4.5.2.4.3: [BE] Modify `supabase/functions/chat/index.ts`**
+        *   [✅] Update the request body parsing to expect an optional array of `selectedMessages` (e.g., `ChatMessage[]`).
+        *   [✅] Implement logic for handling the "current prompt selection" (system prompt). This could be a string passed in the request body (e.g., `systemPrompt: "You are a helpful assistant."`) or retrieved server-side based on user/org settings.
+        *   [✅] Construct the final message history for the AI provider:
             1.  Start with the system prompt (if any).
             2.  Append the `selectedMessages` provided by the client.
             3.  Append the latest user message from the current request.
             *   Ensure the system prompt is included exactly once at the beginning.
-        *   The `relatedEntityId` for `TokenWalletService.recordTransaction` should continue to be the ID of the newly created `chat_messages` table entry that stores the user's latest turn and the AI's response.
-    *   [ ] **4.5.2.4.4: [BE] [TEST-INT] Run `/chat` Integration Tests until GREEN.**
+        *   [✅] The `relatedEntityId` for `TokenWalletService.recordTransaction` should continue to be the ID of the newly created `chat_messages` table entry that stores the user's latest turn and the AI's response.
+        *   [✅] *[FIX REQUIRED]* Ensure `system_prompt_id` is saved as `null` for assistant messages when the request's `promptId` is `__none__`.
+        *   [✅] *[FIX REQUIRED]* If history fetch for an `existingChatId` fails, ensure a new chat session is created and used for saving messages, rather than reusing the problematic `existingChatId`.
+    *   [✅] **4.5.2.4.4: [BE] [TEST-INT] Run `/chat` Integration Tests until GREEN.**
     *   [ ] **4.5.2.4.5: [REFACTOR] Refactor `/chat` Endpoint Logic and its tests for clarity and robustness.**
     *   [ ] **4.5.2.4.6: [COMMIT]** "feat(BE): Adapt /chat endpoint for selected context and system prompt integration"
 
