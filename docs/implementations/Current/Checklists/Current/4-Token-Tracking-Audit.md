@@ -640,15 +640,15 @@ The implementation plan uses the following labels to categorize work steps:
     *   `GET /wallet-info`: Uses `TokenWalletService.getWalletForContext`.
     *   `GET /wallet-history`: Uses `TokenWalletService.getTransactionHistory`.
     *   [TEST-INT] Write integration tests for these new endpoints (`supabase/functions/wallet-info/index.ts`, `supabase/functions/wallet-history/index.ts`).
-*   [⏸️] **4.3.3: [STORE] Create `useWalletStore`**
+*   [✅] **4.3.3: [STORE] Create `useWalletStore`**
     *   `packages/store/src/walletStore.ts`:
         *   [✅] State: `currentWallet: TokenWallet | null`, `transactionHistory: TokenWalletTransaction[]`, `isLoadingWallet: boolean`, `isLoadingHistory: boolean`, `isLoadingPurchase: boolean`, `walletError: Error | null`, `purchaseError: Error | null`.
-        *   [🚧] Actions: 
+        *   [✅] Actions: 
             *   [✅] `loadWallet(organizationId?: string | null)`
             *   [✅] `loadTransactionHistory(organizationId?: string | null, ...paging)`
-            *   [ ] `initiatePurchase(request: PurchaseRequest): Promise<PaymentInitiationResult | null>`.
+            *   [✅] `initiatePurchase(request: PurchaseRequest): Promise<PaymentInitiationResult | null>`.
         *   [✅] Selectors: `selectCurrentWalletBalance` (returns `currentWallet.balance` or '0'), `selectWalletTransactions`.
-    *   [🚧] [TEST-UNIT] Write unit tests in `packages/store/src/tests/walletStore.test.ts`. (Initial state, selectors, `loadWallet`, and `loadTransactionHistory` actions and tests pass; `initiatePurchase` pending).
+    *   [✅] [TEST-UNIT] Write unit tests in `packages/store/src/tests/walletStore.test.ts`. (All state, selectors, and actions are implemented and tested).
 *   [ ] **4.3.4: [COMMIT]** "feat(API|STORE|BE): Expose wallet info/history via API and manage in useWalletStore"
 
 ---
