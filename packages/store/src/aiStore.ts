@@ -15,7 +15,8 @@ import {
     UserProfileUpdate, // Added for typing the updateProfile payload
     ChatContextPreferences,
     UserProfile, // Import UserProfile from @paynless/types
-    ChatHandlerSuccessResponse
+    ChatHandlerSuccessResponse,
+    TokenUsage, // Added TokenUsage
 } from '@paynless/types';
 
 // Import api AFTER other local/utility imports but BEFORE code that might use types that cause issues with mocking
@@ -155,6 +156,52 @@ export const useAiStore = create<AiStore>()(
                 return {
                     // --- State Properties ---
                     ...initialAiStateValues,
+
+                    // --- Selectors (Derived State) ---
+                    selectSelectedChatMessages: () => {
+                        const { messagesByChatId, currentChatId, selectedMessagesMap } = get();
+                        if (!currentChatId || !messagesByChatId[currentChatId]) {
+                            return [];
+                        }
+                        return messagesByChatId[currentChatId].filter(msg => selectedMessagesMap[msg.id]);
+                    },
+                    selectCurrentChatSessionTokenUsage: () => {
+                        const { messagesByChatId, currentChatId } = get();
+                        const allMessagesInChat = currentChatId ? messagesByChatId[currentChatId] || [] : [];
+                        // Filter for active messages before summing token usage
+                        const activeMessages = allMessagesInChat.filter(msg => msg.is_active_in_thread !== false);
+                        
+                        let userTokens = 0;
+                        let assistantPromptTokens = 0;
+                        let assistantCompletionTokens = 0;
+                        let assistantTotalTokens = 0;
+                        let overallTotalTokens = 0;
+
+                        for (const message of activeMessages) { // Iterate over active messages only
+                            if (message.token_usage) {
+                                const usage = message.token_usage as unknown as TokenUsage;
+                                const prompt = usage.promptTokens || 0;
+                                const completion = usage.completionTokens || 0;
+                                const total = usage.totalTokens || 0;
+                                
+                                if (message.role === 'user') {
+                                    userTokens += total;
+                                } else if (message.role === 'assistant') {
+                                    assistantPromptTokens += prompt;
+                                    assistantCompletionTokens += completion;
+                                    assistantTotalTokens += total;
+                                }
+                                overallTotalTokens += total;
+                            }
+                        }
+                        return {
+                            userTokens,
+                            assistantPromptTokens,
+                            assistantCompletionTokens,
+                            assistantTotalTokens,
+                            overallTotalTokens,
+                        };
+                    },
 
                     // --- Internal Helper Actions (now part of the store interface) ---
                     _updateChatContextInProfile, // Expose if needed by other actions/tests

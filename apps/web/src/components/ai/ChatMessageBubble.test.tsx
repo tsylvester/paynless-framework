@@ -2,7 +2,7 @@ import { render, screen, fireEvent } from '@testing-library/react';
 import { ChatMessageBubble, ChatMessageBubbleProps } from './ChatMessageBubble';
 import { vi } from 'vitest';
 // import type { Mock } from 'vitest'; // Mock type is not a direct fit for Zustand hooks after import
-import type { ChatMessage, UserProfile } from '@paynless/types';
+import type { ChatMessage, UserProfile, TokenUsage } from '@paynless/types';
 import type { AttributionDisplayProps } from '../common/AttributionDisplay';
 import type { MarkdownRendererProps } from '../common/MarkdownRenderer';
 import type { MessageSelectionCheckboxProps } from './MessageSelectionCheckbox';
@@ -25,6 +25,15 @@ vi.mock('../common/MarkdownRenderer', () => ({
 const actualMockMessageSelectionCheckbox = vi.fn();
 vi.mock('./MessageSelectionCheckbox', () => ({
   MessageSelectionCheckbox: (props: MessageSelectionCheckboxProps) => actualMockMessageSelectionCheckbox(props),
+}));
+
+// Mock TokenUsageDisplay (New)
+export interface TokenUsageDisplayProps { // Exporting for use in tests if needed, though primarily for mock definition
+  tokenUsage: TokenUsage | null;
+}
+const actualMockTokenUsageDisplay = vi.fn();
+vi.mock('./TokenUsageDisplay', () => ({ // Assuming it will be in the same directory
+  TokenUsageDisplay: (props: TokenUsageDisplayProps) => actualMockTokenUsageDisplay(props),
 }));
 
 // Mock stores: The factory creates the mocks.
@@ -116,6 +125,7 @@ describe('ChatMessageBubble', () => {
     actualMockAttributionDisplay.mockClear();
     actualMockMarkdownRenderer.mockClear();
     actualMockMessageSelectionCheckbox.mockClear();
+    actualMockTokenUsageDisplay.mockClear();
     // Check if hooks are initialized before calling mockClear
     if (mockedAuthStoreHook) mockedAuthStoreHook.mockClear();
     if (mockedOrgStoreHook) mockedOrgStoreHook.mockClear();
@@ -305,4 +315,61 @@ describe('ChatMessageBubble', () => {
   });
 
   // Markdown rendering tests have been moved to MarkdownRenderer.test.tsx
+
+  describe('Token Usage Display', () => {
+    const mockAssistantMessageWithTokenUsage: ChatMessage = {
+      ...defaultMockAssistantMessage,
+      id: 'assistant-token-usage-1',
+      token_usage: { prompt: 15, completion: 25, total: 40 },
+    };
+
+    const mockAssistantMessageWithoutTokenUsage: ChatMessage = {
+      ...defaultMockAssistantMessage,
+      id: 'assistant-no-token-usage-1',
+      token_usage: null,
+    };
+
+    const mockUserMessageWithTokenData: ChatMessage = {
+      ...defaultMockUserMessage,
+      id: 'user-with-token-data-1',
+      token_usage: { prompt: 5, completion: 0, total: 5 }, 
+    };
+
+    it('should call TokenUsageDisplay with token_usage data for assistant messages', () => {
+      renderComponent({ message: mockAssistantMessageWithTokenUsage });
+      expect(actualMockTokenUsageDisplay).toHaveBeenCalledTimes(1);
+      expect(actualMockTokenUsageDisplay).toHaveBeenCalledWith(
+        expect.objectContaining({ tokenUsage: mockAssistantMessageWithTokenUsage.token_usage })
+      );
+    });
+
+    it('should not call TokenUsageDisplay for assistant messages if token_usage is null', () => {
+      renderComponent({ message: mockAssistantMessageWithoutTokenUsage });
+      expect(actualMockTokenUsageDisplay).not.toHaveBeenCalled();
+    });
+
+    it('should call TokenUsageDisplay with partial/malformed token_usage data for assistant messages', () => {
+      const assistantMessageMissingTokens: ChatMessage = {
+        ...defaultMockAssistantMessage,
+        id: 'assistant-missing-tokens-1',
+        // @ts-expect-error Testing with intentionally partial/malformed TokenUsage data.
+        token_usage: { total: 30 } as unknown as TokenUsage, 
+      };
+      renderComponent({ message: assistantMessageMissingTokens });
+      expect(actualMockTokenUsageDisplay).toHaveBeenCalledTimes(1);
+      expect(actualMockTokenUsageDisplay).toHaveBeenCalledWith(
+        expect.objectContaining({ tokenUsage: assistantMessageMissingTokens.token_usage })
+      );
+    });
+    
+    it('should not call TokenUsageDisplay for user messages, even if token_usage data is present', () => {
+      renderComponent({ message: mockUserMessageWithTokenData });
+      expect(actualMockTokenUsageDisplay).not.toHaveBeenCalled();
+    });
+
+    it('should not call TokenUsageDisplay for user messages when token_usage is null (standard case)', () => {
+      renderComponent({ message: defaultMockUserMessage }); 
+      expect(actualMockTokenUsageDisplay).not.toHaveBeenCalled();
+    });
+  });
 }); 

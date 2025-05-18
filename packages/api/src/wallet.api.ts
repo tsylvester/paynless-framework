@@ -86,7 +86,6 @@ export class WalletApiClient {
         // transactionId: 'temp-txn-id',
         // redirectUrl: 'temp-redirect-url' 
       } as PaymentInitiationResult, // Cast to ensure type match for placeholder
-      error: null,
     });
   }
 } 

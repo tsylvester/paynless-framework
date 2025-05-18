@@ -1,5 +1,5 @@
 import React from 'react';
-import { ChatMessage } from '@paynless/types'; // Corrected import path
+import { ChatMessage, TokenUsage } from '@paynless/types'; // Corrected import path & Added TokenUsage
 import { Card } from '@/components/ui/card';
 import { AttributionDisplay } from '../common/AttributionDisplay';
 import { 
@@ -9,6 +9,7 @@ import { MarkdownRenderer } from '../common/MarkdownRenderer';
 import { Pencil } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { MessageSelectionCheckbox } from './MessageSelectionCheckbox';
+import { TokenUsageDisplay } from './TokenUsageDisplay';
 
 export interface ChatMessageBubbleProps {
   message: ChatMessage;
@@ -70,6 +71,12 @@ export const ChatMessageBubble: React.FC<ChatMessageBubbleProps> = ({ message, o
         <div className="mt-1">
           <MarkdownRenderer content={message.content} />
         </div>
+        {/* Conditionally render TokenUsageDisplay for assistant messages */}
+        {message.role === 'assistant' && message.token_usage && (
+          <div className="mt-1">
+            <TokenUsageDisplay tokenUsage={message.token_usage as unknown as TokenUsage | null} />
+          </div>
+        )}
       </Card>
 
       {/* Controls for Assistant Message (Right Side) */}

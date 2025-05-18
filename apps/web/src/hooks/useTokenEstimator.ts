@@ -1,9 +1,9 @@
 import { useMemo } from 'react';
-import { getEncoding } from 'tiktoken';
+import { get_encoding } from 'tiktoken';
 import { useAiStore } from '../../../../packages/store/src/aiStore'; // Adjusted path
 import { ChatMessage } from '@paynless/types';
 
-const encoding = getEncoding('cl100k_base');
+const encoding = get_encoding('cl100k_base');
 
 export const useTokenEstimator = (textInput: string): number => {
   const {

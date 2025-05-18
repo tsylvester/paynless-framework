@@ -1,5 +1,11 @@
 import { vi } from 'vitest';
-import { ApiResponse, TokenWallet, TokenWalletTransaction, PaymentInitiationResult, ApiError, PurchaseRequest } from '@paynless/types';
+import { 
+  ApiResponse, 
+  TokenWallet, 
+  TokenWalletTransaction, 
+  PaymentInitiationResult, 
+  PurchaseRequest 
+} from '@paynless/types';
 
 // Define the type for the object returned by api.wallet()
 export type MockWalletApiClient = {

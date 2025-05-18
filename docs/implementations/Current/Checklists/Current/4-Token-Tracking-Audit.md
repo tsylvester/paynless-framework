@@ -649,7 +649,7 @@ The implementation plan uses the following labels to categorize work steps:
             *   [✅] `initiatePurchase(request: PurchaseRequest): Promise<PaymentInitiationResult | null>`.
         *   [✅] Selectors: `selectCurrentWalletBalance` (returns `currentWallet.balance` or '0'), `selectWalletTransactions`.
     *   [✅] [TEST-UNIT] Write unit tests in `packages/store/src/tests/walletStore.test.ts`. (All state, selectors, and actions are implemented and tested).
-*   [ ] **4.3.4: [COMMIT]** "feat(API|STORE|BE): Expose wallet info/history via API and manage in useWalletStore"
+*   [✅] **4.3.4: [COMMIT]** "feat(API|STORE|BE): Expose wallet info/history via API and manage in useWalletStore"
 
 ---
 
@@ -658,27 +658,27 @@ The implementation plan uses the following labels to categorize work steps:
 **Goal:** Implement UI for users to view their token wallet, acquire tokens, and see usage. The "budget audit" concept shifts to "wallet balance check".
 
 ### 4.4.1: [UI] Token Estimator Hook (`useTokenEstimator`)
-*   [ ] **4.4.1.1: [UI] [TEST-UNIT] Define Test Cases for `useTokenEstimator` Hook**
+*   [✅] **4.4.1.1: [UI] [TEST-UNIT] Define Test Cases for `useTokenEstimator` Hook** (*Fulfilled by 4.5.2.1.1*)
     *   **Note:** The functionality described in section 4.4.1 (Token Estimator Hook) is now comprehensively addressed by **Phase 4.5.2.1 ([UI|STORE] Update Token Estimator (`useTokenEstimator`) and Affordability Hook (`useAIChatAffordabilityStatus`))**, which implements token estimation based on the full selected chat context. This section 4.4.1 is considered fulfilled by the tasks in Phase 4.5.2.1. The original sub-tasks below are superseded.
     *   // *   In `apps/web/src/hooks/useTokenEstimator.unit.test.ts`. Mock `tiktoken`. Test samples, empty string.
-*   [ ] **4.4.1.2: [UI] Create hook `apps/web/src/hooks/useTokenEstimator.ts`**
+*   [✅] **4.4.1.2: [UI] Create hook `apps/web/src/hooks/useTokenEstimator.ts`** (*Fulfilled by 4.5.2.1.3*)
     *   // *   `import { getEncoding } from 'tiktoken'; const encoding = getEncoding('cl100k_base'); export const useTokenEstimator = (text: string) => React.useMemo(() => text ? encoding.encode(text).length : 0, [text]);`
-*   [ ] **4.4.1.3: [UI] [TEST-UNIT] Write tests for the hook. Expect failure (RED).**
-*   [ ] **4.4.1.4: [UI] Implement the hook. Run tests until pass (GREEN).**
+*   [✅] **4.4.1.3: [UI] [TEST-UNIT] Write tests for the hook. Expect failure (RED).** (*Fulfilled by 4.5.2.1.2*)
+*   [✅] **4.4.1.4: [UI] Implement the hook. Run tests until pass (GREEN).** (*Fulfilled by 4.5.2.1.4*)
 *   [ ] **4.4.1.5: [UI] Integrate Hook into Chat Input Component (`AiChatbox.tsx` or `ChatInput.tsx`)**
     *   // *   Use the `useTokenEstimator` hook with the current text input value.
     *   // *   Display the estimated count near the input field (e.g., "Tokens for this message: ~{count}").
 *   [ ] **4.4.1.6: [UI] [TEST-UNIT] Write/Update component tests for chat input to verify display.**
-*   [ ] **4.4.1.7: [COMMIT]** "feat(UI): Implement token estimator hook and display in chat input w/ tests" (Commit message will be covered by 4.5.2.1.7)
+*   [ ] **4.4.1.7: [COMMIT]** "feat(UI): Implement token estimator hook and display in chat input w/ tests" 
 
 ### 4.4.2: [UI] Per-Message Token Usage Display (`ChatMessageBubble.tsx`)
-*   [ ] **4.4.2.1: [UI] [TEST-UNIT] Define Test Cases for `ChatMessageBubble.tsx`**
-    *   Verify token count (e.g., "P:{prompt}/C:{completion}") displays only for assistant messages with `message.token_usage` data.
-*   [ ] **4.4.2.2: [UI] [TEST-UNIT] Write/Update tests for `apps/web/src/components/ai/ChatMessageBubble.tsx`.**
-*   [ ] **4.4.2.3: [UI] Update `ChatMessageBubble.tsx`**
-  *   If `message.role === 'assistant'` and `message.token_usage` (e.g., `message.token_usage.completionTokens`, `message.token_usage.promptTokens`), display the count. Style subtly.
-*   [ ] **4.4.2.4: [UI] [TEST-UNIT] Run tests. Debug until pass (GREEN).**
-*   [ ] **4.4.2.5: [COMMIT]** "feat(UI): Add token usage display to assistant chat messages w/ tests"
+*   [✅] **4.4.2.1: [UI] [TEST-UNIT] Define Test Cases for `ChatMessageBubble.tsx`**
+    *   Verify token count (e.g., "P:{prompt}/C:{completion}") displays only for assistant messages with `message.token_usage` data. (Revised to test for `TokenUsageDisplay` mock invocation)
+*   [✅] **4.4.2.2: [UI] [TEST-UNIT] Write/Update tests for `apps/web/src/components/ai/ChatMessageBubble.tsx`.**
+*   [✅] **4.4.2.3: [UI] Update `ChatMessageBubble.tsx`**
+  *   If `message.role === 'assistant'` and `message.token_usage` (e.g., `message.token_usage.completionTokens`, `message.token_usage.promptTokens`), display the count. Style subtly. (Implemented by integrating `TokenUsageDisplay` component)
+*   [✅] **4.4.2.4: [UI] [TEST-UNIT] Run tests. Debug until pass (GREEN).**
+*   [✅] **4.4.2.5: [COMMIT]** "feat(UI): Add token usage display to assistant chat messages w/ tests"
 
 ### 4.4.3: [UI] Cumulative Session Token Usage Display (`ChatTokenUsageDisplay.tsx`)
 *   [ ] **4.4.3.1: [STORE] Enhance `useAiStore` for Cumulative Session Tokens** (If not already fully covered by 4.2.3 from the previous plan)

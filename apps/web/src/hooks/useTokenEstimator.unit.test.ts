@@ -1,13 +1,13 @@
 import { renderHook, act } from '@testing-library/react-hooks';
 import { vi, describe, beforeEach, it, expect } from 'vitest'; // Removed MockedFunction
 import { useAiStore } from '../../../../packages/store/src/aiStore'; // Adjusted path
-import { useTokenEstimator } from './useTokenEstimator';
+import { useTokenEstimator } from './useTokenEstimator.ts';
 import { ChatMessage } from '@paynless/types';
 
 // Mock tiktoken with Vitest
 vi.mock('tiktoken', () => ({
   __esModule: true, // Still good practice for ES Modules
-  getEncoding: vi.fn(() => ({
+  get_encoding: vi.fn(() => ({
     encode: vi.fn((text: string) => {
       return text.split(' ').filter(s => s.length > 0);
     }),

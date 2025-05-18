@@ -2,7 +2,7 @@ import React from 'react';
 import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
 import { AiChatbox, AiChatboxProps } from './AiChatbox';
 import { vi } from 'vitest';
-import { ChatMessage, AiProvider, SystemPrompt, ChatMessageRow, AiStore } from '@paynless/types'; 
+import { ChatMessage, AiProvider, SystemPrompt, ChatMessageRow, AiStore, TokenUsage, Json } from '@paynless/types';
 
 // Import the shared mock utilities
 import { 
@@ -24,13 +24,31 @@ vi.mock('./ChatMessageBubble', () => ({
   ChatMessageBubble: (props: { message: ChatMessage; onEditClick?: (id: string, content: string) => void; }) => mockChatMessageBubble(props), 
 }));
 
+// Mock CurrentMessageTokenEstimator (New)
+interface MockCurrentMessageTokenEstimatorProps { // Renamed to avoid conflict if imported
+  textInput: string;
+}
+const mockCurrentMessageTokenEstimator = vi.fn((props: MockCurrentMessageTokenEstimatorProps) => (
+  <div data-testid="mock-current-message-token-estimator">Est. tokens for: {props.textInput}</div>
+));
+vi.mock('./CurrentMessageTokenEstimator', () => ({
+  CurrentMessageTokenEstimator: (props: MockCurrentMessageTokenEstimatorProps) => mockCurrentMessageTokenEstimator(props),
+}));
+
 // Mock the store using the shared mock logic
 vi.mock('@paynless/store', async (importOriginal) => {
   const originalModule = await importOriginal() as { useAiStore: typeof useAiStore; selectCurrentChatMessages: typeof selectCurrentChatMessages }; 
+  // Prepare mock for useAnalyticsStore
+  const mockTrackEvent = vi.fn();
+  const mockGetStateAnalytics = vi.fn(() => ({ trackEvent: mockTrackEvent }));
+
   return {
     ...originalModule,
     useAiStore: (selector: (state: AiStore) => unknown) => mockedUseAiStoreHookLogic(selector as unknown as (state: AiStore) => unknown), 
     selectCurrentChatMessages: originalModule.selectCurrentChatMessages, 
+    useAnalyticsStore: vi.fn(() => ({ // Add mock for useAnalyticsStore
+      getState: mockGetStateAnalytics,
+    })),
   };
 });
 
@@ -57,7 +75,7 @@ const mockAssistantMessage: ChatMessageRow = {
   content: 'Hello from assistant',
   created_at: new Date().toISOString(),
   updated_at: new Date().toISOString(),
-  token_usage: { prompt: 10, completion: 20, total: 30 } as TokenUsage, 
+  token_usage: { promptTokens: 10, completionTokens: 20, totalTokens: 30 } as unknown as Json,
   ai_provider_id: 'provider-1', 
   system_prompt_id: null, 
   is_active_in_thread: true,
@@ -538,5 +556,35 @@ describe('AiChatbox', () => {
   it('should render MessageSelectionControls', () => {
     renderAiChatbox();
     expect(screen.queryByRole('button', { name: /(Select All|Deselect All)/i })).toBeInTheDocument();
+  });
+
+  it('should display the current message token estimator and pass input to it', () => {
+    renderAiChatbox();
+    const textarea = screen.getByPlaceholderText(/Type your message here/i) as HTMLTextAreaElement;
+
+    // Initial render, estimator should be present
+    expect(mockCurrentMessageTokenEstimator).toHaveBeenCalled();
+    // Initial input is empty, so textInput prop should be empty
+    expect(mockCurrentMessageTokenEstimator).toHaveBeenLastCalledWith(expect.objectContaining({ textInput: '' }));
+
+    // Simulate typing in the textarea
+    fireEvent.change(textarea, { target: { value: 'Hello estimator' } });
+
+    // Estimator should be called again with the new text
+    // Due to potential debouncing or async updates in the actual hook, we might need waitFor if it was real.
+    // But for a direct prop pass in AiChatbox, it should be synchronous.
+    expect(mockCurrentMessageTokenEstimator).toHaveBeenLastCalledWith(expect.objectContaining({ textInput: 'Hello estimator' }));
+
+    // Check the mock's output (optional, but good for verifying the mock itself is working as expected in tests)
+    expect(screen.getByTestId('mock-current-message-token-estimator')).toHaveTextContent('Est. tokens for: Hello estimator');
+
+    // Simulate clearing the textarea
+    fireEvent.change(textarea, { target: { value: '' } });
+    expect(mockCurrentMessageTokenEstimator).toHaveBeenLastCalledWith(expect.objectContaining({ textInput: '' }));
+  });
+
+  // Test for scrolling behavior
+  describe('Scrolling Behavior', () => {
+    // ... existing code ...
   });
 });

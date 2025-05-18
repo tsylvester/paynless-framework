@@ -1,5 +1,5 @@
 import { createSelector } from 'reselect';
-import type { AiState, ChatMessage, Chat, TokenUsage } from '@paynless/types';
+import type { AiState, ChatMessage, Chat, TokenUsage, ChatSessionTokenUsageDetails } from '@paynless/types';
 
 // Base selector for chatsByContext
 const selectChatsByContext = (state: AiState) => state.chatsByContext;
@@ -203,3 +203,47 @@ export const selectAllPersonalChatMessages = createSelector(
 
 // Selector for the whole AiState (if ever needed, though generally discouraged)
 // export const selectFullAiState = (state: AiState) => state; 
+
+export const selectCurrentChatSessionTokenUsage = createSelector(
+  [selectCurrentChatMessages],
+  (currentChatMessages): ChatSessionTokenUsageDetails => {
+    const totals: ChatSessionTokenUsageDetails = {
+      userTokens: 0,
+      assistantPromptTokens: 0,
+      assistantCompletionTokens: 0,
+      assistantTotalTokens: 0,
+      overallTotalTokens: 0,
+    };
+
+    for (const message of currentChatMessages) {
+      const tu = message.token_usage as any; 
+
+      if (tu && typeof tu === 'object' && !Array.isArray(tu)) {
+        const prompt = Number(tu.promptTokens || tu.prompt_tokens || 0);
+        const completion = Number(tu.completionTokens || tu.completion_tokens || 0);
+        const messageTotalFromRecord = Number(tu.totalTokens || tu.total_tokens);
+        
+        // If totalTokens is not present or NaN from the record, calculate it from prompt and completion
+        const calculatedMessageTotal = prompt + completion;
+        const messageTotal = !isNaN(messageTotalFromRecord) ? messageTotalFromRecord : calculatedMessageTotal;
+
+        if (message.role === 'user') {
+          totals.userTokens += messageTotal; 
+        } else if (message.role === 'assistant') {
+          totals.assistantPromptTokens += prompt;
+          totals.assistantCompletionTokens += completion;
+          // assistantTotalTokens should be the sum of its own prompt and completion for this message
+          totals.assistantTotalTokens += messageTotal; // this is the total for *this one* assistant message
+        }
+      }
+    }
+    // After iterating all messages, calculate overallTotalTokens from accumulated user and assistant totals.
+    // This avoids double-counting if messageTotal was already added in the loop.
+    // The logic within the loop for assistantTotalTokens sums each assistant message's total.
+    // So, overallTotalTokens should be sum of all userTokens and all assistantTotalTokens (from all assistant messages)
+    // Let's recalculate overallTotalTokens at the end based on summed user and assistant tokens for clarity and correctness.
+    totals.overallTotalTokens = totals.userTokens + totals.assistantTotalTokens;
+
+    return totals;
+  }
+); 

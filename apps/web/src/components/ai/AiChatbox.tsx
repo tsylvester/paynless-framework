@@ -10,6 +10,8 @@ import { Terminal, Loader2 } from 'lucide-react'
 import { ChatMessageBubble } from './ChatMessageBubble'
 import { MessageSelectionControls } from './MessageSelectionControls'
 import { toast } from "sonner"
+import { CurrentMessageTokenEstimator } from './CurrentMessageTokenEstimator'
+import { ChatTokenUsageDisplay } from './ChatTokenUsageDisplay'
 
 
 export interface AiChatboxProps {
@@ -176,6 +178,11 @@ const AiChatboxComponent: React.FC<AiChatboxProps> = () => {
         </div>
       </div>
 
+      {/* Display Session Token Usage */}
+      {currentChatId && currentChatMessages && currentChatMessages.length > 0 && (
+        <ChatTokenUsageDisplay />
+      )}
+
       {/* Error Display */}
       {aiError && (
         <div className="p-4 rounded-md bg-red-100 text-red-800 border border-red-300 dark:bg-red-900/30 dark:text-red-300 dark:border-red-700">
@@ -223,6 +230,10 @@ const AiChatboxComponent: React.FC<AiChatboxProps> = () => {
             Send
           </Button>
         )}
+      </div>
+      {/* Token Estimator Display for current message */}
+      <div className="pt-1 flex justify-end">
+        <CurrentMessageTokenEstimator textInput={inputMessage} />
       </div>
     </div>
   )

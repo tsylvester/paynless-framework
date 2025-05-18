@@ -1,37 +1,41 @@
+import { useWalletStore } from '@paynless/store';
 import { useMemo } from 'react';
-import { useWalletStore } from '../../../../packages/store/src/walletStore'; // Assuming path
-// It's common for Zustand stores to export selectors directly, or for the component/hook to define its own selector function.
-// For this example, let's assume selectCurrentWalletBalance is a conceptual selector we implement here or is exported.
 
-// Conceptual selector (if not directly exported by useWalletStore, or if you prefer inline)
-const selectCurrentWalletBalance = (state: any): string | null => state.currentWallet?.balance ?? null;
-
-export interface AIChatAffordabilityStatus {
+interface AffordabilityStatus {
   currentBalance: string;
   estimatedNextCost: number;
   canAffordNext: boolean;
   lowBalanceWarning: boolean;
 }
 
-export const useAIChatAffordabilityStatus = (estimatedNextCost: number): AIChatAffordabilityStatus => {
-  // Subscribe to the specific piece of state needed from the wallet store
-  const currentBalanceString = useWalletStore(selectCurrentWalletBalance);
+const LOW_BALANCE_MULTIPLIER = 3;
+
+export const useAIChatAffordabilityStatus = (estimatedNextCost: number): AffordabilityStatus => {
+  const currentBalanceStr = useWalletStore(state => state.selectCurrentWalletBalance());
 
   return useMemo(() => {
-    const balanceNum = parseFloat(currentBalanceString || '0');
-    const costNum = estimatedNextCost < 0 ? 0 : estimatedNextCost; // Ensure cost is not negative
+    const currentBalanceForDisplay = currentBalanceStr || '0';
+    const numericBalance = parseInt(currentBalanceStr, 10);
 
-    const canAfford = balanceNum >= costNum;
-    // Low balance warning if balance is less than 3 times the cost, but only if they can actually afford it.
-    // Or, always show if balance is low, even if they can't afford (as per test cases implying this).
-    // Let's stick to the test case implication: warning if balance < cost * 3.
-    const lowWarning = balanceNum < (costNum * 3);
+    if (currentBalanceStr === null || isNaN(numericBalance)) {
+      // Handle cases where balance might be null or not a valid number
+      return {
+        currentBalance: '0',
+        estimatedNextCost,
+        canAffordNext: false,
+        lowBalanceWarning: true,
+      };
+    }
+
+    const canAfford = numericBalance >= estimatedNextCost;
+    const isLowBalance = !canAfford || (numericBalance < estimatedNextCost * LOW_BALANCE_MULTIPLIER);
+    const lowWarning = (estimatedNextCost === 0 && numericBalance >= 0) ? false : isLowBalance;
 
     return {
-      currentBalance: currentBalanceString || '0',
-      estimatedNextCost: costNum,
+      currentBalance: currentBalanceForDisplay,
+      estimatedNextCost,
       canAffordNext: canAfford,
       lowBalanceWarning: lowWarning,
     };
-  }, [currentBalanceString, estimatedNextCost]);
+  }, [currentBalanceStr, estimatedNextCost]);
 }; 

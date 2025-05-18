@@ -41,6 +41,17 @@ export interface TokenUsage {
 }
 
 /**
+ * Detailed breakdown of token usage for a chat session.
+ */
+export interface ChatSessionTokenUsageDetails {
+  userTokens: number;
+  assistantPromptTokens: number;
+  assistantCompletionTokens: number;
+  assistantTotalTokens: number; // Sum of assistant's prompt & completion for all assistant messages
+  overallTotalTokens: number;  // Sum of userTokens + assistantTotalTokens for the session
+}
+
+/**
  * Represents a single message within a Chat.
  * Derived from the `chat_messages` table.
  */
@@ -228,12 +239,34 @@ export interface AiActions {
   deselectAllMessages: (chatId: string) => void;
   clearMessageSelections: (chatId: string) => void;
 
+  // --- Selectors exposed on the store instance ---
+  selectSelectedChatMessages: () => ChatMessage[];
+  selectCurrentChatSessionTokenUsage: () => ChatSessionTokenUsageDetails;
+
   // --- Internal actions exposed for testing or complex workflows ---
   _addOptimisticUserMessage: (msgContent: string, explicitChatId?: string | null) => { tempId: string, chatIdUsed: string, createdTimestamp: string };
   addOptimisticMessageForReplay: (messageContent: string, existingChatId?: string | null) => { tempId: string, chatIdForOptimistic: string };
   _updateChatContextInProfile: (contextUpdate: Partial<ChatContextPreferences>) => Promise<void>;
   _fetchAndStoreUserProfiles: (userIds: string[]) => Promise<void>;
   _dangerouslySetStateForTesting: (newState: Partial<AiState>) => void;
+}
+
+/**
+ * Defines the selectors that are directly available on the AiStore instance.
+ */
+export interface AiStoreSelectors {
+  selectChatHistoryList: (contextId: string | null) => Chat[];
+  selectCurrentChatMessages: () => ChatMessage[];
+  selectSelectedChatMessages: () => ChatMessage[];
+  selectIsHistoryLoading: (contextId: string | null) => boolean;
+  selectIsDetailsLoading: () => boolean;
+  selectIsLoadingAiResponse: () => boolean;
+  selectAiError: () => string | null;
+  selectRewindTargetMessageId: () => string | null;
+  selectIsRewinding: () => boolean;
+  selectChatTokenUsage: (chatId: string) => TokenUsage | null;
+  selectAllPersonalChatMessages: () => ChatMessage[];
+  selectCurrentChatSessionTokenUsage: () => ChatSessionTokenUsageDetails;
 }
 
 // Combined type for the store
