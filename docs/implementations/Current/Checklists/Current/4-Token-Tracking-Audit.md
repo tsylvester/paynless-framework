@@ -496,41 +496,43 @@ The implementation plan uses the following labels to categorize work steps:
         *   [✅] Test that messages loaded via `loadChatDetails` are selected by default.
         *   [✅] Test that `startNewChat` correctly initializes/clears selections for the new chat context.
     *   [✅] **4.5.1.1.2: [STORE] [TEST-UNIT] Write Failing Tests for `useAiStore` Message Selection (RED)** (All interactions: core actions, _addOptimisticUserMessage, `sendMessage`, `loadChatDetails`, `startNewChat`, and selectSelectedChatMessages selector are now covered with tests)
-    *   [🚧] **4.5.1.1.3: [STORE] Implement `useAiStore` Enhancements**
-        *   [ ] Modify your `ChatMessage` type or implement a selection map. // This sub-item is still pending if a type change is needed, otherwise N/A. Current implementation uses selectedMessagesMap.
+    *   [✅] **4.5.1.1.3: [STORE] Implement `useAiStore` Enhancements**
+        *   [N/A] ~~Modify your `ChatMessage` type or implement a selection map.~~ (Decision: `selectedMessagesMap` in store is sufficient)
         *   [✅] Add actions: `toggleMessageSelection(messageId: string): void`, `selectAllMessages(): void`, `deselectAllMessages(): void`, `clearMessageSelections(chatId: string): void`.
-        *   [✅] Update logic for adding new messages to ensure they are initialized with `isSelected: true`. (Covered for _addOptimisticUserMessage, `sendMessage`, `loadChatDetails`, `startNewChat`)
-        *   [✅] Add selector: `selectSelectedChatMessages(): ChatMessage[]`.
-    *   [✅] **4.5.1.1.4: [STORE] [TEST-UNIT] Run `useAiStore` Tests until GREEN.** (All tests for message selection logic in `useAiStore` should now be passing)
-    *   [✅] **4.5.1.1.5: [REFACTOR] Refactor `useAiStore` Message Selection Logic and Associated Tests for clarity and efficiency.**
-    *   [✅] **4.5.1.1.6: [COMMIT]** "feat(STORE): Enhance useAiStore for chat message selection state"
-
-*   [ ] **4.5.1.2: [UI] Update Chat Message Display for Selection (`ChatMessageBubble.tsx` or equivalent)**
-    *   [ ] **4.5.1.2.1: [UI] [TEST-UNIT] Define Test Cases for `ChatMessageBubble` with Checkbox**
-        *   Verify a checkbox UI element is rendered for each chat message.
-        *   Verify the checkbox's checked state accurately reflects the `isSelected` status from `useAiStore` for that message.
-        *   Verify that interacting with the checkbox (e.g., clicking it) dispatches the `toggleMessageSelection` action with the correct message ID.
-    *   [ ] **4.5.1.2.2: [UI] [TEST-UNIT] Write Failing Tests for `ChatMessageBubble` (RED)**
-    *   [ ] **4.5.1.2.3: [UI] Implement Checkbox in `ChatMessageBubble.tsx`**
-        *   Add a checkbox input component to each message bubble.
-        *   Subscribe to `useAiStore` to get the selection state for the specific message and bind it to the checkbox.
-        *   Ensure the `onChange` handler of the checkbox dispatches `toggleMessageSelection`.
-    *   [ ] **4.5.1.2.4: [UI] [TEST-UNIT] Run `ChatMessageBubble` Tests until GREEN.**
-    *   [ ] **4.5.1.2.5: [REFACTOR] Refactor `ChatMessageBubble` Implementation and Tests.**
-    *   [ ] **4.5.1.2.6: [COMMIT]** "feat(UI): Add selection checkbox to ChatMessageBubble"
-
-*   [ ] **4.5.1.3: [UI] Implement "Select All" / "Deselect All" Controls (e.g., in `ChatControls.tsx` or near the chat input area)**
-    *   [ ] **4.5.1.3.1: [UI] [TEST-UNIT] Define Test Cases for Select/Deselect All Controls**
-        *   Verify "Select All" and "Deselect All" buttons/controls are rendered.
-        *   Verify clicking "Select All" dispatches the `selectAllMessages` action from `useAiStore`.
-        *   Verify clicking "Deselect All" dispatches the `deselectAllMessages` action from `useAiStore`.
-    *   [ ] **4.5.1.3.2: [UI] [TEST-UNIT] Write Failing Tests for Select/Deselect All Controls (RED)**
-    *   [ ] **4.5.1.3.3: [UI] Implement Select/Deselect All UI Elements**
-        *   Add the necessary button components.
-        *   Connect their `onClick` handlers to dispatch the respective actions from `useAiStore`.
-    *   [ ] **4.5.1.3.4: [UI] [TEST-UNIT] Run Select/Deselect All Control Tests until GREEN.**
-    *   [ ] **4.5.1.3.5: [REFACTOR] Refactor Select/Deselect All Control Implementation and Tests.**
-    *   [ ] **4.5.1.3.6: [COMMIT]** "feat(UI): Implement select/deselect all chat message controls"
+        *   [✅] Modify existing actions (`_addOptimisticUserMessage`, `sendMessage` success, `loadChatDetails`, `startNewChat`) to ensure new messages default to selected (`true` in `selectedMessagesMap`).
+        *   [✅] Implement selector `selectSelectedChatMessages: ChatMessage[]`.
+    *   [✅] **4.5.1.1.4: [STORE] [TEST-UNIT] Ensure All Tests Pass for `useAiStore` Message Selection (GREEN)**
+    *   [✅] **4.5.1.1.5: [STORE] Refactor and Cleanup `useAiStore` Message Selection Logic** (As needed after tests pass)
+*   [🚧] **4.5.1.2: [UI] Update Chat Message Display for Selection (`ChatMessageBubble.tsx` or equivalent)**
+    *   [✅] **4.5.1.2.1: [UI] [TEST-UNIT] Define Test Cases for Selection UI in `ChatMessageBubble.test.tsx`**
+        *   [✅] Test for the presence of a checkbox for selection.
+        *   [✅] Test that checkbox state reflects `selectedMessagesMap` from `useAiStore`.
+        *   [✅] Test that clicking checkbox calls `toggleMessageSelection` action.
+        *   [✅] Test for new layout of checkbox and edit button (outside the bubble, stacked column for user, right-aligned for AI).
+        *   [✅] Test edit button remains functional for user messages and absent for AI messages.
+    *   [✅] **4.5.1.2.2: [UI] [TEST-UNIT] Write Failing Tests for Selection UI (RED)** (Ensure tests from 4.5.1.2.1 actually fail before implementation)
+    *   [✅] **4.5.1.2.3: [UI] Implement Selection UI in `ChatMessageBubble.tsx`**
+        *   [✅] Add a checkbox (e.g., from ShadCN/ui or custom) to `ChatMessageBubble.tsx`.
+        *   [✅] Connect checkbox to `useAiStore`'s `selectedMessagesMap` and `toggleMessageSelection` action.
+        *   [✅] Reposition checkbox and edit button: 
+            *   For user messages: Checkbox and Edit button stacked vertically to the left of the bubble.
+            *   For AI messages: Checkbox to the right of the bubble. No edit button.
+        *   [✅] Ensure `is_active_in_thread` still controls overall visibility/styling if applicable.
+    *   [✅] **4.5.1.2.4: [UI] [TEST-UNIT] Ensure All Tests Pass for Selection UI (GREEN)**
+    *   [✅] **4.5.1.2.5: [UI] Refactor and Cleanup Selection UI in `ChatMessageBubble.tsx`**
+*   [🚧] **4.5.1.3: [UI] Implement "Select All" / "Deselect All" Controls (`MessageSelectionControls.tsx` integrated into `AiChatbox.tsx`)**
+    *   [✅] **4.5.1.3.1: [UI] [TEST-UNIT] Define Test Cases for "Select All" / "Deselect All" (in `apps/web/src/components/ai/MessageSelectionControls.test.tsx`)**
+        *   [✅] Test that a "Select All" button is rendered.
+        *   [✅] Test that a "Deselect All" button is rendered.
+        *   [✅] Test that clicking the "Select All" button calls the `selectAllMessages` action from `useAiStore`.
+        *   [✅] Test that clicking the "Deselect All" button calls the `deselectAllMessages` action from `useAiStore`.
+        *   [✅] (Future consideration: Test button states if/when they become conditional, e.g., disabled if no messages or all already selected/deselected).
+    *   [✅] **4.5.1.3.2: [UI] [TEST-UNIT] Write Failing Tests (RED) for `MessageSelectionControls.tsx`**
+    *   [✅] **4.5.1.3.3: [UI] Implement UI Component `MessageSelectionControls.tsx`**
+    *   [✅] **4.5.1.3.4: [UI] [TEST-UNIT] Ensure All Tests Pass (GREEN) for `MessageSelectionControls.tsx`**
+    *   [✅] **4.5.1.3.5: [UI] Refactor and Cleanup `MessageSelectionControls.tsx`**
+    *   [✅] **4.5.1.3.6: [UI] Integrate `MessageSelectionControls` into `AiChatbox.tsx` (or `ChatInput.tsx`)**
+    *   [✅] **4.5.1.3.7: [UI] [TEST-UNIT] Update `AiChatbox.test.tsx` to verify `MessageSelectionControls` is rendered.**
 
 ---
 
@@ -538,7 +540,7 @@ The implementation plan uses the following labels to categorize work steps:
 
 **Goal:** Ensure token estimation and the context sent to the AI accurately reflect the user's message selections. The backend must process this curated context, including any overarching system prompt.
 
-*   [ ] **4.5.2.1: [UI|STORE] Update Token Estimator (`useTokenEstimator`) and Affordability Hook (`useAIChatAffordabilityStatus`)**
+*   [🚧] **4.5.2.1: [UI|STORE] Update Token Estimator (`useTokenEstimator`) and Affordability Hook (`useAIChatAffordabilityStatus`)**
     *   [ ] **4.5.2.1.1: [UI] [TEST-UNIT] Define Test Cases for `useTokenEstimator` with Selected Context**
         *   Test that the estimator correctly calculates token counts based on the current user input text PLUS the content of all messages returned by `useAiStore(selectSelectedChatMessages)`.
         *   Test that the estimated token count updates dynamically when messages are selected or deselected via `useAiStore` actions.

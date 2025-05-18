@@ -240,7 +240,7 @@ export interface AiActions {
 export type AiStore = AiState & AiActions; 
 
 // +++ ADDED PendingAction Type +++
-export type PendingAction = 
+export type AiPendingChatAction = 
   | 'SEND_MESSAGE' 
   | 'LOAD_HISTORY' 
   | 'LOAD_DETAILS' 

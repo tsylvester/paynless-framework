@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { Terminal, Loader2 } from 'lucide-react'
 import { ChatMessageBubble } from './ChatMessageBubble'
+import { MessageSelectionControls } from './MessageSelectionControls'
 import { toast } from "sonner"
 
 
@@ -188,6 +189,7 @@ const AiChatboxComponent: React.FC<AiChatboxProps> = () => {
 
       {/* Input Area */}
       <div className="flex items-center space-x-2 border-t pt-4 border-[rgb(var(--color-border))]">
+        <MessageSelectionControls />
         <Textarea
           placeholder={rewindTargetMessageId ? "Edit your message..." : "Type your message here..."}
           value={inputMessage}

@@ -23,6 +23,15 @@ let currentAiMockState: AiStore = {
     setChatContextHydrated: vi.fn(),
     hydrateChatContext: vi.fn(),
     resetChatContextToDefaults: vi.fn(),
+    toggleMessageSelection: vi.fn(),
+    selectAllMessages: vi.fn(),
+    deselectAllMessages: vi.fn(),
+    clearMessageSelections: vi.fn(),
+    _addOptimisticUserMessage: vi.fn() as unknown as AiStore['_addOptimisticUserMessage'],
+    _updateChatContextInProfile: vi.fn(),
+    _fetchAndStoreUserProfiles: vi.fn(),
+    _dangerouslySetStateForTesting: vi.fn(),
+    addOptimisticMessageForReplay: vi.fn() as unknown as AiStore['addOptimisticMessageForReplay'],
 };
 
 const mockSetState = vi.fn((updater) => {
@@ -61,6 +70,21 @@ useAiStoreHookImpl.subscribe = vi.fn(() => vi.fn()) as typeof originalUseAiStore
 useAiStoreHookImpl.destroy = vi.fn() as typeof originalUseAiStore.destroy;
 
 export const mockedUseAiStoreHookLogic = useAiStoreHookImpl as typeof originalUseAiStore;
+
+// --- Export mockSetState directly for easier use in tests ---
+export { mockSetState }; 
+// --- End export ---
+
+// --- New Exported Getters ---
+export const getAiStoreState = (): AiStore => {
+    return currentAiMockState;
+};
+
+export const getToggleMessageSelectionSpy = (): vi.Mock => {
+    // Ensure the function is indeed a mock (it is, by initialization)
+    return currentAiMockState.toggleMessageSelection as vi.Mock;
+};
+// --- End New Exported Getters ---
 
 // Setter utilities for tests to modify parts of the mock state
 export const mockSetAvailableProviders = (providers: AiProvider[]) => {
@@ -150,6 +174,15 @@ export const resetAiStoreMock = () => {
         setChatContextHydrated: vi.fn(),
         hydrateChatContext: vi.fn(),
         resetChatContextToDefaults: vi.fn(),
+        toggleMessageSelection: vi.fn(),
+        selectAllMessages: vi.fn(),
+        deselectAllMessages: vi.fn(),
+        clearMessageSelections: vi.fn(),
+        _addOptimisticUserMessage: vi.fn() as unknown as AiStore['_addOptimisticUserMessage'],
+        _updateChatContextInProfile: vi.fn(),
+        _fetchAndStoreUserProfiles: vi.fn(),
+        _dangerouslySetStateForTesting: vi.fn(),
+        addOptimisticMessageForReplay: vi.fn() as unknown as AiStore['addOptimisticMessageForReplay'],
     };
     // The vi.fn() calls above ensure mocks are fresh, no need to loop and clear.
 }; 
