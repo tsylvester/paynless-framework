@@ -7,6 +7,7 @@ import { createClient } from "npm:@supabase/supabase-js";
 import type { Spy } from "jsr:@std/testing@0.225.1/mock";
 import type { User as SupabaseUser } from "npm:@supabase/supabase-js";
 import { Json, Tables } from '../types_db.ts';
+import type { ITokenWalletService } from './types/tokenWallet.types.ts';
 
 // Define PaymentTransaction using the Tables helper type from types_db.ts
 export type PaymentTransaction = Tables<'payment_transactions'>;
@@ -267,6 +268,19 @@ export interface ILogger {
   }
   
 
+// Interface for messages argument in CountTokensForMessagesFn
+export interface MessageForTokenCounting {
+  role: "system" | "user" | "assistant" | "function";
+  content: string | null;
+  name?: string;
+}
+
+// Signature for countTokensForMessages function
+export type CountTokensForMessagesFn = (
+  messages: MessageForTokenCounting[],
+  modelName: string
+) => number;
+
 export interface ChatHandlerDeps {
   createSupabaseClient: typeof createClient;
   fetch: typeof fetch; // Global fetch type
@@ -276,6 +290,8 @@ export interface ChatHandlerDeps {
   getAiProviderAdapter: GetAiProviderAdapter; // Use the new specific type
   verifyApiKey: VerifyApiKey;
   logger: ILogger;
+  tokenWalletService?: ITokenWalletService; // Made optional
+  countTokensForMessages?: CountTokensForMessagesFn; // Added new dependency
 }
 
 // --- Interfaces for Mock Supabase Client (for testing) ---

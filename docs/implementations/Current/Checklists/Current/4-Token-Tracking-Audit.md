@@ -604,8 +604,8 @@ The implementation plan uses the following labels to categorize work steps:
         *   [✅] *[FIX REQUIRED]* Ensure `system_prompt_id` is saved as `null` for assistant messages when the request's `promptId` is `__none__`.
         *   [✅] *[FIX REQUIRED]* If history fetch for an `existingChatId` fails, ensure a new chat session is created and used for saving messages, rather than reusing the problematic `existingChatId`.
     *   [✅] **4.5.2.4.4: [BE] [TEST-INT] Run `/chat` Integration Tests until GREEN.**
-    *   [ ] **4.5.2.4.5: [REFACTOR] Refactor `/chat` Endpoint Logic and its tests for clarity and robustness.**
-    *   [ ] **4.5.2.4.6: [COMMIT]** "feat(BE): Adapt /chat endpoint for selected context and system prompt integration"
+    *   [✅] **4.5.2.4.5: [REFACTOR] Refactor `/chat` Endpoint Logic and its tests for clarity and robustness.**
+    *   [✅] **4.5.2.4.6: [COMMIT]** "feat(BE): Adapt /chat endpoint for selected context and system prompt integration"
 
 ---
 

@@ -1,5 +1,4 @@
-import { stub } from 'https://deno.land/std@0.224.0/testing/mock.ts';
-import type { Stub } from 'https://deno.land/std@0.224.0/testing/mock.ts';
+import { stub, type Stub } from 'jsr:@std/testing@0.225.1/mock';
 import type { 
     ITokenWalletService, 
     TokenWallet, 
@@ -7,33 +6,82 @@ import type {
     TokenWalletTransactionType
 } from '../types/tokenWallet.types.ts';
 
-// Define a dummy class that implements the interface with placeholder methods
-class DummyTokenWalletService implements ITokenWalletService {
-    createWallet(_userId?: string, _organizationId?: string): Promise<TokenWallet> { 
-        return Promise.resolve({ walletId: 'dummy', userId: _userId, balance: '0', currency: 'AI_TOKEN', createdAt: new Date(), updatedAt: new Date() } as TokenWallet); 
-    }
-    getWallet(_walletId: string): Promise<TokenWallet | null> { 
-        return Promise.resolve(null); 
-    }
-    getWalletForContext(_userId?: string, _organizationId?: string): Promise<TokenWallet | null> { 
-        return Promise.resolve(null); 
-    }
-    getBalance(_walletId: string): Promise<string> { 
-        return Promise.resolve('0'); 
-    }
-    recordTransaction(params: { walletId: string; type: TokenWalletTransactionType; amount: string; recordedByUserId: string; relatedEntityId?: string; relatedEntityType?: string; notes?: string; }): Promise<TokenWalletTransaction> { 
-        return Promise.resolve({ transactionId: 'dummy-txn', walletId: params.walletId, type: params.type, amount: params.amount, balanceAfterTxn: '0', recordedByUserId: params.recordedByUserId, timestamp: new Date() } as TokenWalletTransaction); 
-    }
-    checkBalance(_walletId: string, _amountToSpend: string): Promise<boolean> { 
-        return Promise.resolve(false); 
-    }
-    getTransactionHistory(_walletId: string, _limit?: number, _offset?: number): Promise<TokenWalletTransaction[]> { 
+// Define a type for the configuration of mock implementations
+export type TokenWalletServiceMethodImplementations = {
+  createWallet?: ITokenWalletService['createWallet'];
+  getWallet?: ITokenWalletService['getWallet'];
+  getWalletForContext?: ITokenWalletService['getWalletForContext'];
+  getBalance?: ITokenWalletService['getBalance'];
+  recordTransaction?: ITokenWalletService['recordTransaction'];
+  checkBalance?: ITokenWalletService['checkBalance'];
+  getTransactionHistory?: ITokenWalletService['getTransactionHistory'];
+};
+
+const getMockTokenWalletServiceInternalDefaults = (): Required<TokenWalletServiceMethodImplementations> => ({
+    createWallet: (_userId?: string, _organizationId?: string): Promise<TokenWallet> => { 
+        const now = new Date();
+        return Promise.resolve({
+            walletId: 'dummy-wallet-id-default',
+            userId: _userId || 'dummy-user-default',
+            organizationId: _organizationId,
+            balance: '1000',
+            currency: 'AI_TOKEN',
+            createdAt: now,
+            updatedAt: now,
+        } as TokenWallet);
+    },
+    getWallet: (_walletId: string): Promise<TokenWallet | null> => { 
+        const now = new Date();
+        return Promise.resolve({
+            walletId: _walletId,
+            userId: 'dummy-user-for-' + _walletId + '-default',
+            balance: '500',
+            currency: 'AI_TOKEN',
+            createdAt: now,
+            updatedAt: now,
+        } as TokenWallet);
+    },
+    getWalletForContext: (_userId?: string, _organizationId?: string): Promise<TokenWallet | null> => { 
+        const now = new Date();
+        if (!_userId && !_organizationId) return Promise.resolve(null);
+        return Promise.resolve({
+            walletId: `dummy-wallet-ctx-${_userId || _organizationId}-default`,
+            userId: _userId,
+            organizationId: _organizationId,
+            balance: '2000',
+            currency: 'AI_TOKEN',
+            createdAt: now,
+            updatedAt: now,
+        } as TokenWallet);
+    },
+    getBalance: (_walletId: string): Promise<string> => { 
+        return Promise.resolve('750'); 
+    },
+    recordTransaction: (params: { walletId: string; type: TokenWalletTransactionType; amount: string; recordedByUserId: string; relatedEntityId?: string; relatedEntityType?: string; notes?: string; }): Promise<TokenWalletTransaction> => { 
+        const now = new Date();
+        return Promise.resolve({
+            transactionId: 'dummy-txn-default-' + Date.now(),
+            walletId: params.walletId,
+            type: params.type,
+            amount: params.amount,
+            balanceAfterTxn: '100', // Dummy value
+            recordedByUserId: params.recordedByUserId,
+            relatedEntityId: params.relatedEntityId,
+            relatedEntityType: params.relatedEntityType,
+            notes: params.notes,
+            timestamp: now,
+        } as TokenWalletTransaction);
+    },
+    checkBalance: (_walletId: string, _amountToSpend: string): Promise<boolean> => { 
+        return Promise.resolve(parseFloat(_amountToSpend) <= 1000); // Default logic
+    },
+    getTransactionHistory: (_walletId: string, _limit?: number, _offset?: number): Promise<TokenWalletTransaction[]> => { 
         return Promise.resolve([]); 
     }
-}
+});
 
-// Define a type for the structure of the mocked service, exposing stubs
-export interface MockTokenWalletService extends ITokenWalletService {
+export interface MockTokenWalletService {
+  instance: ITokenWalletService;
   stubs: {
     createWallet: Stub<ITokenWalletService, Parameters<ITokenWalletService['createWallet']>, ReturnType<ITokenWalletService['createWallet']>>;
     getWallet: Stub<ITokenWalletService, Parameters<ITokenWalletService['getWallet']>, ReturnType<ITokenWalletService['getWallet']>>;
@@ -46,50 +94,51 @@ export interface MockTokenWalletService extends ITokenWalletService {
   clearStubs: () => void;
 }
 
-export function createMockTokenWalletService(): MockTokenWalletService {
-  const dummyInstance = new DummyTokenWalletService();
+export function createMockTokenWalletService(
+  config: TokenWalletServiceMethodImplementations = {}
+): MockTokenWalletService {
+  // Get default implementations
+  const defaults = getMockTokenWalletServiceInternalDefaults();
+
+  // Create the actual instance. Its methods will initially be the defaults.
+  // We will then stub these default methods, and the stubs will use either
+  // the user's provided config function (which could be a spy) or the default.
+  const mockServiceInstance: ITokenWalletService = {
+    createWallet: defaults.createWallet,
+    getWallet: defaults.getWallet,
+    getWalletForContext: defaults.getWalletForContext,
+    getBalance: defaults.getBalance,
+    recordTransaction: defaults.recordTransaction,
+    checkBalance: defaults.checkBalance,
+    getTransactionHistory: defaults.getTransactionHistory,
+  };
   
+  // Create stubs. The third argument is the fake implementation.
+  // This fake implementation will be the user's configured function (if any) or the default.
   const stubs = {
-    createWallet: stub(dummyInstance, 'createWallet'),
-    getWallet: stub(dummyInstance, 'getWallet'),
-    getWalletForContext: stub(dummyInstance, 'getWalletForContext'),
-    getBalance: stub(dummyInstance, 'getBalance'),
-    recordTransaction: stub(dummyInstance, 'recordTransaction'),
-    checkBalance: stub(dummyInstance, 'checkBalance'),
-    getTransactionHistory: stub(dummyInstance, 'getTransactionHistory'),
+    createWallet: stub(mockServiceInstance, 'createWallet', config.createWallet || defaults.createWallet),
+    getWallet: stub(mockServiceInstance, 'getWallet', config.getWallet || defaults.getWallet),
+    getWalletForContext: stub(mockServiceInstance, 'getWalletForContext', config.getWalletForContext || defaults.getWalletForContext),
+    getBalance: stub(mockServiceInstance, 'getBalance', config.getBalance || defaults.getBalance),
+    recordTransaction: stub(mockServiceInstance, 'recordTransaction', config.recordTransaction || defaults.recordTransaction),
+    checkBalance: stub(mockServiceInstance, 'checkBalance', config.checkBalance || defaults.checkBalance),
+    getTransactionHistory: stub(mockServiceInstance, 'getTransactionHistory', config.getTransactionHistory || defaults.getTransactionHistory),
   };
 
   const clearStubs = () => {
-    stubs.createWallet.restore(); 
-    stubs.createWallet = stub(dummyInstance, 'createWallet');
+    (Object.values(stubs) as Stub<any, any[], any>[]).forEach(s => {
+      if (s && typeof s.restore === 'function' && !s.restored) {
+        s.restore();
+      }
+    });
 
-    stubs.getWallet.restore();
-    stubs.getWallet = stub(dummyInstance, 'getWallet');
-
-    stubs.getWalletForContext.restore();
-    stubs.getWalletForContext = stub(dummyInstance, 'getWalletForContext');
-    
-    stubs.getBalance.restore();
-    stubs.getBalance = stub(dummyInstance, 'getBalance');
-
-    stubs.recordTransaction.restore();
-    stubs.recordTransaction = stub(dummyInstance, 'recordTransaction');
-
-    stubs.checkBalance.restore();
-    stubs.checkBalance = stub(dummyInstance, 'checkBalance');
-
-    stubs.getTransactionHistory.restore();
-    stubs.getTransactionHistory = stub(dummyInstance, 'getTransactionHistory');
+    // DO NOT Re-create instance or re-stub here. 
+    // The original mockServiceInstance methods are restored by s.restore().
+    // If a new set of stubs is needed, createMockTokenWalletService should be called again.
   };
 
   return {
-    createWallet: (...args) => stubs.createWallet(...args),
-    getWallet: (...args) => stubs.getWallet(...args),
-    getWalletForContext: (...args) => stubs.getWalletForContext(...args),
-    getBalance: (...args) => stubs.getBalance(...args),
-    recordTransaction: (...args) => stubs.recordTransaction(...args),
-    checkBalance: (...args) => stubs.checkBalance(...args),
-    getTransactionHistory: (...args) => stubs.getTransactionHistory(...args),
+    instance: mockServiceInstance,
     stubs,
     clearStubs,
   };
