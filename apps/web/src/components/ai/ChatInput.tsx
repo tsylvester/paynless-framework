@@ -8,9 +8,12 @@ import { Textarea } from '@/components/ui/textarea';
 import { MessageSelectionControls } from './MessageSelectionControls';
 import { toast } from 'sonner';
 import { CurrentMessageTokenEstimator } from './CurrentMessageTokenEstimator';
+import { useAIChatAffordabilityStatus } from '@/hooks/useAIChatAffordabilityStatus';
+import { useTokenEstimator } from '@/hooks/useTokenEstimator';
+import { AlertCircle, Info } from 'lucide-react';
 
 export interface ChatInputProps {
-  // Props to potentially receive from AiChatbox if needed, e.g., currentChatId if not directly from store
+  // Props to potentially receive from AiChatbox if needed, e.g., currentChatId if not passed as prop
   // For now, assuming ChatInput will get most from useAiStore directly
 }
 
@@ -18,26 +21,28 @@ const ChatInput: React.FC<ChatInputProps> = () => {
   const [inputMessage, setInputMessage] = useState('');
 
   const {
-    currentChatId, // Added: needed for sendMessage if not passed as prop
+    currentChatId,
     isLoadingAiResponse,
     sendMessage,
     clearAiError,
     rewindTargetMessageId,
-    // prepareRewind, // prepareRewind is called by AiChatbox/ChatMessageBubble, ChatInput reacts to rewindTargetMessageId
     cancelRewindPreparation,
-    messagesByChatId, // Added: needed to get message content for editing
+    messagesByChatId,
   } = useAiStore(state => ({
     currentChatId: state.currentChatId,
     isLoadingAiResponse: state.isLoadingAiResponse,
     sendMessage: state.sendMessage,
     clearAiError: state.clearAiError,
     rewindTargetMessageId: state.rewindTargetMessageId,
-    // prepareRewind: state.prepareRewind,
+    prepareRewind: state.prepareRewind,
     cancelRewindPreparation: state.cancelRewindPreparation,
-    messagesByChatId: state.messagesByChatId, // For fetching message content to edit
+    messagesByChatId: state.messagesByChatId,
   }));
 
-  // Effect to populate inputMessage when rewindTargetMessageId changes
+  // Token estimation and affordability
+  const estimatedTokens = useTokenEstimator(inputMessage);
+  const { canAffordNext, lowBalanceWarning, currentBalance } = useAIChatAffordabilityStatus(estimatedTokens);
+
   React.useEffect(() => {
     if (rewindTargetMessageId && currentChatId) {
       const messagesInCurrentChat = messagesByChatId[currentChatId];
@@ -52,25 +57,23 @@ const ChatInput: React.FC<ChatInputProps> = () => {
     }
   }, [rewindTargetMessageId, currentChatId, messagesByChatId]);
 
-
   const handleSend = async () => {
-    if (!inputMessage.trim() || isLoadingAiResponse) return;
+    if (!inputMessage.trim() || isLoadingAiResponse || !canAffordNext) return;
 
     clearAiError();
     const messageToSend = inputMessage;
-    // setInputMessage(''); // Clear input after send - moved to after successful send or if rewind is cancelled
 
     const wasRewinding = !!rewindTargetMessageId;
 
     const { selectedProviderId, selectedPromptId } = useAiStore.getState();
-    const selectedMessages = useAiStore.getState().selectSelectedChatMessages(); // Selector for currently selected messages
+    const selectedMessages = useAiStore.getState().selectSelectedChatMessages();
     
     const contextMessages = selectedMessages.map(msg => ({
       role: msg.role as 'user' | 'assistant' | 'system',
       content: msg.content,
     }));
 
-    logger.info(`[ChatInput] handleSend called. Provider: ${selectedProviderId}, Prompt: ${selectedPromptId}, Rewinding: ${wasRewinding}`);
+    logger.info(`[ChatInput] handleSend called. Provider: ${selectedProviderId}, Prompt: ${selectedPromptId}, Rewinding: ${wasRewinding}, Can Afford: ${canAffordNext}`);
 
     if (!selectedProviderId) {
       logger.error('[ChatInput] Cannot send message: No provider selected');
@@ -87,10 +90,10 @@ const ChatInput: React.FC<ChatInputProps> = () => {
         contextMessages: contextMessages,
       });
 
-      setInputMessage(''); // Clear input only on successful send
+      setInputMessage('');
 
       if (wasRewinding) {
-        cancelRewindPreparation(); // Clear rewind state
+        cancelRewindPreparation();
         toast.success("Message rewound and resubmitted successfully");
       }
     } catch (error: unknown) {
@@ -112,57 +115,71 @@ const ChatInput: React.FC<ChatInputProps> = () => {
     }
   };
 
-  // handleEditClick is no longer here; AiChatbox calls prepareRewind, ChatInput reacts to rewindTargetMessageId
-
   const handleCancelRewind = () => {
     cancelRewindPreparation();
     setInputMessage(''); // Clear input when cancelling rewind
   };
 
+  const sendButtonDisabled = isLoadingAiResponse || !inputMessage.trim() || !canAffordNext;
+
   return (
-    <div className="flex items-center space-x-2 border-t pt-4 border-[rgb(var(--color-border))]">
-      <MessageSelectionControls />
-      <div className="relative flex-grow">
-        <Textarea
-          placeholder={rewindTargetMessageId ? "Edit your message..." : "Type your message here..."}
-          value={inputMessage}
-          onChange={handleInputChange}
-          onKeyDown={handleKeyDown}
-          rows={1}
-          className="w-full resize-none min-h-[40px] max-h-[150px] overflow-y-auto pr-24"
-          disabled={isLoadingAiResponse}
-          data-testid="chat-input-textarea"
-        />
-        <div className="absolute right-3 top-1/2 transform -translate-y-1/2 pointer-events-none">
-          <CurrentMessageTokenEstimator textInput={inputMessage} />
-        </div>
-      </div>
-      {rewindTargetMessageId ? (
-        <div className="flex space-x-2">
-          <Button
-            onClick={handleCancelRewind}
-            variant="outline"
+    <div className="flex flex-col space-y-2">
+      <div className="flex items-center space-x-2 border-t pt-4 border-[rgb(var(--color-border))]">
+        <MessageSelectionControls />
+        <div className="relative flex-grow">
+          <Textarea
+            placeholder={rewindTargetMessageId ? "Edit your message..." : "Type your message here..."}
+            value={inputMessage}
+            onChange={handleInputChange}
+            onKeyDown={handleKeyDown}
+            rows={1}
+            className="w-full resize-none min-h-[40px] max-h-[150px] overflow-y-auto pr-24"
             disabled={isLoadingAiResponse}
-            data-testid="cancel-rewind-button"
-          >
-            Cancel
-          </Button>
+            data-testid="chat-input-textarea"
+          />
+          <div className="absolute right-3 top-1/2 transform -translate-y-1/2 pointer-events-none">
+            <CurrentMessageTokenEstimator textInput={inputMessage} />
+          </div>
+        </div>
+        {rewindTargetMessageId ? (
+          <div className="flex space-x-2">
+            <Button
+              onClick={handleCancelRewind}
+              variant="outline"
+              disabled={isLoadingAiResponse}
+              data-testid="cancel-rewind-button"
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handleSend}
+              disabled={sendButtonDisabled}
+              data-testid="resubmit-message-button"
+            >
+              Resubmit
+            </Button>
+          </div>
+        ) : (
           <Button
             onClick={handleSend}
-            disabled={isLoadingAiResponse || !inputMessage.trim()}
-            data-testid="resubmit-message-button"
+            disabled={sendButtonDisabled}
+            data-testid="send-message-button"
           >
-            Resubmit
+            Send
           </Button>
+        )}
+      </div>
+      {!canAffordNext && (
+        <div className="flex items-center p-2 text-sm text-red-700 bg-red-100 border border-red-300 rounded-md dark:bg-red-900/30 dark:text-red-300 dark:border-red-700" data-testid="insufficient-balance-alert">
+          <AlertCircle className="w-4 h-4 mr-2 flex-shrink-0" />
+          Insufficient token balance to send this message. Current balance: {currentBalance} tokens.
         </div>
-      ) : (
-        <Button
-          onClick={handleSend}
-          disabled={isLoadingAiResponse || !inputMessage.trim()}
-          data-testid="send-message-button"
-        >
-          Send
-        </Button>
+      )}
+      {canAffordNext && lowBalanceWarning && (
+        <div className="flex items-center p-2 text-sm text-yellow-700 bg-yellow-50 border border-yellow-300 rounded-md dark:bg-yellow-900/30 dark:text-yellow-300 dark:border-yellow-700" data-testid="low-balance-alert">
+          <Info className="w-4 h-4 mr-2 flex-shrink-0" />
+          Low token balance. Current balance: {currentBalance} tokens.
+        </div>
       )}
     </div>
   );
