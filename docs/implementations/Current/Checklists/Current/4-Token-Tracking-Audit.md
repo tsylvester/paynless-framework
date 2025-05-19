@@ -613,7 +613,7 @@ The implementation plan uses the following labels to categorize work steps:
 
 **Goal:** Adapt AI service usage to debit tokens from the new wallet system.
 
-*   [ ] **4.2.1: [BE] Modify `chat` Edge Function for Wallet Debits**
+*   [✅] **4.2.1: [BE] Modify `chat` Edge Function for Wallet Debits**
     *   In `supabase/functions/chat/index.ts`:
         1.  Get `userId` and `organizationId` for context.
         2.  Instantiate `TokenWalletService`.
@@ -625,22 +625,22 @@ The implementation plan uses the following labels to categorize work steps:
         8.  Call `tokenWalletService.recordTransaction({ walletId, type: 'DEBIT_USAGE', amount: actualTokensConsumed.toString(), relatedEntityId: newChatMessage.id, relatedEntityType: 'chat_message' })`.
         9.  If `recordTransaction` fails (e.g., rare concurrent update led to insufficient balance despite initial check), handle gracefully (log error, potentially don't show AI response or mark as failed). *This step requires careful thought on UX vs. strict accounting.*
     *   Still log `actualTokensConsumed` in `chat_messages.token_usage` for granular per-message data.
-*   [ ] **4.2.2: [TEST-INT] Update `POST /chat` Integration Tests**
+*   [✅] **4.2.2: [TEST-INT] Update `POST /chat` Integration Tests**
     *   Verify wallet balance checks before AI call (now with full context estimation).
     *   Verify wallet debits occur after successful AI call via `token_wallet_transactions` ledger.
     *   Verify error handling for insufficient funds.
-*   [ ] **4.2.3: [COMMIT]** "feat(BE): Integrate AI chat with token wallet for debits (with full context estimation)"
+*   [✅] **4.2.3: [COMMIT]** "feat(BE): Integrate AI chat with token wallet for debits (with full context estimation)"
 
 ## Phase 4.3: [API] [STORE] API Client & State Management for Wallets
 
 **Goal:** Expose wallet functionalities through the API client and manage wallet state on the frontend.
 
 *   [✅] **4.3.1: [API] Add Wallet Methods to API Client**
-    *   [✅] `packages/api/src/clients/WalletApiClient.ts` (new):
+    *   `packages/api/src/clients/WalletApiClient.ts` (new):
         *   [✅] `getWalletInfo(organizationId?: string | null): Promise<ApiResponse<TokenWallet | null>>`
         *   [✅] `getWalletTransactionHistory(organizationId?: string | null, limit?: number, offset?: number): Promise<ApiResponse<TokenWalletTransaction[]>>`
-        *   [✅] `initiateTokenPurchase(request: PurchaseRequest): Promise<ApiResponse<PaymentInitiationResult>>` (placeholder implemented)
-    *   [✅] [TEST-UNIT] Write unit tests for these new API client methods in `packages/api/src/wallet.api.test.ts`.
+        *   [🚧] `initiateTokenPurchase(request: PurchaseRequest): Promise<ApiResponse<PaymentInitiationResult>>` // Placeholder implemented
+    *   [✅] [TEST-UNIT] Write unit tests for these new API client methods in `packages/api/src/wallet.api.test.ts`. // Tests reflect current state
 *   [ ] **4.3.2: [BE] Create Backend Endpoints for Wallet Info & History**
     *   `GET /wallet-info`: Uses `TokenWalletService.getWalletForContext`.
     *   `GET /wallet-history`: Uses `TokenWalletService.getTransactionHistory`.
@@ -651,10 +651,10 @@ The implementation plan uses the following labels to categorize work steps:
         *   [✅] Actions: 
             *   [✅] `loadWallet(organizationId?: string | null)`
             *   [✅] `loadTransactionHistory(organizationId?: string | null, ...paging)`
-            *   [✅] `initiatePurchase(request: PurchaseRequest): Promise<PaymentInitiationResult | null>`.
+            *   [✅] `initiatePurchase(request: PurchaseRequest): Promise<PaymentInitiationResult | null>`. // Tested against API placeholder
         *   [✅] Selectors: `selectCurrentWalletBalance` (returns `currentWallet.balance` or '0'), `selectWalletTransactions`.
-    *   [✅] [TEST-UNIT] Write unit tests in `packages/store/src/tests/walletStore.test.ts`. (All state, selectors, and actions are implemented and tested).
-*   [✅] **4.3.4: [COMMIT]** "feat(API|STORE|BE): Expose wallet info/history via API and manage in useWalletStore"
+    *   [✅] [TEST-UNIT] Write unit tests in `packages/store/src/tests/walletStore.test.ts`. // All state, selectors, and actions are implemented and tested
+*   [🚧] **4.3.4: [COMMIT]** "feat(API|STORE|BE): Expose wallet info/history via API and manage in useWalletStore" // Changed to Incomplete
 
 ---
 
