@@ -7,6 +7,7 @@ import { getPaymentAdapter } from '../_shared/adapters/adapterFactory.ts';
 import { PaymentConfirmation, IPaymentGatewayAdapter } from '../_shared/types/payment.types.ts';
 import type { SupabaseClient } from 'npm:@supabase/supabase-js';
 import type { Database } from '../types_db.ts';
+import Stripe from 'npm:stripe';
 
 console.log('[/webhooks] Edge Function initialized');
 
@@ -89,8 +90,16 @@ export async function handleWebhookRequestLogic(
     }
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-    console.error(`[/webhooks/${source}] Internal Server Error:`, errorMessage, error);
-    return new Response(JSON.stringify({ error: 'Internal Server Error during webhook processing.' }), {
+    console.error(`[/webhooks/${source}] Error during webhook processing:`, errorMessage, error);
+
+    if (error instanceof Stripe.errors.StripeError) {
+      return new Response(JSON.stringify({ error: `Stripe API Error: ${errorMessage}` }), {
+        status: 500,
+        headers: { ...baseCorsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
+    return new Response(JSON.stringify({ error: `Internal Server Error: ${errorMessage}` }), {
       status: 500,
       headers: { ...baseCorsHeaders, 'Content-Type': 'application/json' },
     });

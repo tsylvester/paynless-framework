@@ -550,7 +550,7 @@ The implementation plan uses the following labels to categorize work steps:
         *   The hook should now subscribe to `useAiStore(selectSelectedChatMessages)`.
         *   It needs to iterate through these selected messages, concatenate their textual content with the current input field's text, and then calculate the total token count.
     *   [✅] **4.5.2.1.4: [UI] [TEST-UNIT] Run `useTokenEstimator` Tests until GREEN.**
-    *   [⏸️] **4.5.2.1.5: [UI] [TEST-UNIT] Review and Update Tests for `useAIChatAffordabilityStatus`**
+    *   [✅] **4.5.2.1.5: [UI] [TEST-UNIT] Review and Update Tests for `useAIChatAffordabilityStatus`**
         *   Ensure tests for `useAIChatAffordabilityStatus.unit.test.ts` are still valid or update them to reflect that `useTokenEstimator` now provides the total estimated cost including the selected context. The hook itself might not need changes if `useTokenEstimator`'s output remains its input. (Discovery: `useWalletStore` dependency is not yet implemented - see 4.3.3)
     *   [✅] **4.5.2.1.6: [REFACTOR] Refactor `useTokenEstimator` and its tests. Review `useAIChatAffordabilityStatus` for any indirect impacts.**
     *   [✅] **4.5.2.1.7: [COMMIT]** "feat(UI|STORE): Update token estimator for dynamic chat context selection"
@@ -631,30 +631,41 @@ The implementation plan uses the following labels to categorize work steps:
     *   Verify error handling for insufficient funds.
 *   [✅] **4.2.3: [COMMIT]** "feat(BE): Integrate AI chat with token wallet for debits (with full context estimation)"
 
-## Phase 4.3: [API] [STORE] API Client & State Management for Wallets
+## Phase 4.3: [BE] Backend Support & Admin Features
 
-**Goal:** Expose wallet functionalities through the API client and manage wallet state on the frontend.
+**Goal:** Finalize backend endpoints, add admin functionalities, and ensure robust logging/auditing.
 
-*   [✅] **4.3.1: [API] Add Wallet Methods to API Client**
-    *   `packages/api/src/clients/WalletApiClient.ts` (new):
-        *   [✅] `getWalletInfo(organizationId?: string | null): Promise<ApiResponse<TokenWallet | null>>`
-        *   [✅] `getWalletTransactionHistory(organizationId?: string | null, limit?: number, offset?: number): Promise<ApiResponse<TokenWalletTransaction[]>>`
-        *   [🚧] `initiateTokenPurchase(request: PurchaseRequest): Promise<ApiResponse<PaymentInitiationResult>>` // Placeholder implemented
-    *   [✅] [TEST-UNIT] Write unit tests for these new API client methods in `packages/api/src/wallet.api.test.ts`. // Tests reflect current state
-*   [ ] **4.3.2: [BE] Create Backend Endpoints for Wallet Info & History**
-    *   `GET /wallet-info`: Uses `TokenWalletService.getWalletForContext`.
-    *   `GET /wallet-history`: Uses `TokenWalletService.getTransactionHistory`.
-    *   [TEST-INT] Write integration tests for these new endpoints (`supabase/functions/wallet-info/index.ts`, `supabase/functions/wallet-history/index.ts`).
-*   [✅] **4.3.3: [STORE] Create `useWalletStore`**
-    *   `packages/store/src/walletStore.ts`:
-        *   [✅] State: `currentWallet: TokenWallet | null`, `transactionHistory: TokenWalletTransaction[]`, `isLoadingWallet: boolean`, `isLoadingHistory: boolean`, `isLoadingPurchase: boolean`, `walletError: Error | null`, `purchaseError: Error | null`.
-        *   [✅] Actions: 
-            *   [✅] `loadWallet(organizationId?: string | null)`
-            *   [✅] `loadTransactionHistory(organizationId?: string | null, ...paging)`
-            *   [✅] `initiatePurchase(request: PurchaseRequest): Promise<PaymentInitiationResult | null>`. // Tested against API placeholder
-        *   [✅] Selectors: `selectCurrentWalletBalance` (returns `currentWallet.balance` or '0'), `selectWalletTransactions`.
-    *   [✅] [TEST-UNIT] Write unit tests in `packages/store/src/tests/walletStore.test.ts`. // All state, selectors, and actions are implemented and tested
-*   [🚧] **4.3.4: [COMMIT]** "feat(API|STORE|BE): Expose wallet info/history via API and manage in useWalletStore" // Changed to Incomplete
+*   [ ] **4.3.1: [BE] [RLS] Roles and Permissions for Token Management**
+    *   [ ] **4.3.1.1: [RLS] [DB] Define `token_admin` role.** (May or may not be a literal PG role, could be a flag on `users` or membership in a special org).
+    *   [ ] **4.3.1.2: [RLS] Adjust RLS policies on `token_wallets` and `token_wallet_transactions` to allow `token_admin` broader access (e.g., view any wallet/transaction for auditing).**
+    *   [ ] **4.3.1.3: [BE] [TEST-INT] Test admin access patterns.**
+    *   [ ] **4.3.1.4: [COMMIT]** "feat(BE|RLS): Define and implement token_admin role and permissions"
+
+*   [🚧] **4.3.2: [BE] [TEST-UNIT] [TEST-INT] Implement Wallet Information & History Endpoints**
+    *   **Goal:** Provide secure, RLS-aware endpoints for clients to fetch wallet details and transaction history.
+    *   [✅] **4.3.2.1: [BE] [TEST-UNIT] [TEST-INT] GET `/wallet-info` Endpoint**
+        *   [✅] **4.3.2.1.1: [TEST-UNIT] Define Test Cases:** (Authentication, RLS for user/org context, wallet found, wallet not found, service errors).
+        *   [✅] **4.3.2.1.2: [TEST-UNIT] Write Failing Tests (RED).**
+        *   [✅] **4.3.2.1.3: [BE] Implement Handler:** (`supabase/functions/wallet-info/index.ts`)
+            *   Extracts user/org context from Supabase client.
+            *   Calls `TokenWalletService.getWalletForContext`.
+            *   Returns wallet details or appropriate error (401, 403, 404, 500).
+        *   [✅] **4.3.2.1.4: [TEST-UNIT] Run Tests until GREEN.**
+        *   [✅] **4.3.2.1.5: [REFACTOR] Refactor and Ensure Comprehensive Test Coverage.**
+    *   [✅] **4.3.2.2: [BE] [TEST-UNIT] [TEST-INT] GET `/wallet-history` Endpoint**
+        *   [✅] **4.3.2.2.1: [TEST-UNIT] Define Test Cases:** (Authentication, RLS for user/org context, pagination params (page, pageSize), wallet found/not found, transactions exist/don't exist, service errors).
+        *   [✅] **4.3.2.2.2: [TEST-UNIT] Write Failing Tests (RED).**
+        *   [✅] **4.3.2.2.3: [BE] Implement Handler:** (`supabase/functions/wallet-history/index.ts`)
+            *   Extracts user/org context.
+            *   Parses `page`, `pageSize` query params (with defaults).
+            *   Calls `TokenWalletService.getWalletForContext` to get `walletId`.
+            *   If wallet found, calls `TokenWalletService.getTransactionHistory` with `walletId` and pagination.
+            *   Returns transaction list or appropriate error.
+        *   [✅] **4.3.2.2.4: [TEST-UNIT] Run Tests until GREEN.**
+        *   [✅] **4.3.2.2.5: [REFACTOR] Refactor and Ensure Comprehensive Test Coverage.**
+    *   [✅] **4.3.2.3: [COMMIT]** "feat(BE|TEST): Implement /wallet-info and /wallet-history endpoints"
+*   [ ] **4.3.3: [BE] POST `/initiate-payment` Endpoint**
+    *   **Location:** `supabase/functions/initiate-payment/index.ts`
 
 ---
 
@@ -723,13 +734,13 @@ The implementation plan uses the following labels to categorize work steps:
     *   Gets `currentBalance` from `useWalletStore(selectCurrentWalletBalance)`.
     *   Compares. `lowBalanceWarning` if `currentBalance < estimatedNextCost * 3` (configurable threshold).
 *   [✅] **4.4.5.3: [UI] [TEST-UNIT] Write tests for the hook. Debug until (GREEN).** (All unit tests passing after mock refinement)
-*   [ ] **4.4.5.4: [UI] Integrate Hook into Chat Input (`AiChatbox.tsx` or `ChatInput.tsx`)**
+*   [✅] **4.4.5.4: [UI] Integrate Hook into Chat Input (`AiChatbox.tsx` or `ChatInput.tsx`)**
     *   Use `estimatedTokens = useTokenEstimator(currentInputValue)` (this `useTokenEstimator` refers to the enhanced version from **Phase 4.5.2.1**).
     *   Use `const { canAffordNext, lowBalanceWarning } = useAIChatAffordabilityStatus(estimatedTokens);`.
     *   If `lowBalanceWarning`, display a message (e.g., "Token balance is low").
     *   If `!canAffordNext`, disable send button and show message (e.g., "Insufficient balance for this message").
-*   [ ] **4.4.5.5: [UI] [TEST-UNIT] Update Chat Input component tests for these conditional UI changes.**
-*   [ ] **4.4.5.6: [COMMIT]** "feat(UI): Implement AI chat affordability hook (with full context) and integrate into chat input w/ tests"
+*   [✅] **4.4.5.5: [UI] [TEST-UNIT] Update Chat Input component tests for these conditional UI changes.**
+*   [✅] **4.4.5.6: [COMMIT]** "feat(UI): Implement AI chat affordability hook (with full context) and integrate into chat input w/ tests"
 
 ### 4.4.6: [UI] Wallet Balance Display, Top-Up, and History Pages
 *   [ ] **4.4.6.1: [UI] Wallet Balance Display Component (`WalletBalanceDisplay.tsx`)**
@@ -754,7 +765,7 @@ The implementation plan uses the following labels to categorize work steps:
 
 ---
 
-## Phase 4.6: Improved prompt structuring & chat streaming
+## Phase 4.7: Improved prompt structuring & chat streaming
 
 **Goal:** Better management of the total prompt content sent to the AI. 
 *   [ ] Always send the chosen system prompt
@@ -767,29 +778,84 @@ The implementation plan uses the following labels to categorize work steps:
 *   [ ] Get chat input streamed so multi-user chats show real time 
 *   [ ] Stream chat history so new chats show up without a refresh
 
+## Phase 4.8: Review & Finish Incomplete Sections
+
+**Goal:** Consolidate all remaining work, address outstanding issues, and ensure all previous phases related to tokenomics, payments, and UI are fully completed and verified.
+
+*   [ ] **4.8.1: [BE] [TEST-INT] Stabilize Stripe Webhook Integration (Address `4.1.3.2.8` and `4.1.3.2.9`)**
+    *   [ ] **4.8.1.1: Resolve Failing Integration Tests for Webhooks (`4.1.3.2.8.8`)**
+        *   [ ] Review `supabase/functions/webhooks/index.test.ts` and associated TypeScript errors.
+        *   [ ] Fix type errors related to `spy` and `IPaymentGatewayAdapter` method signatures.
+        *   [ ] Fix type errors related to `MockTokenWalletService` and `ITokenWalletService` interface.
+        *   [ ] Fix type errors related to `SubscriptionItem` properties.
+        *   [ ] Ensure all integration tests for the `/webhooks/stripe` router pass.
+    *   [ ] **4.8.1.2: Complete Stripe CLI Event Triggering and Verification (`4.1.3.2.9.3`)**
+        *   [ ] **4.8.1.2.1: [❓] Review Stripe Sandbox Data Strategy:**
+            *   Confirm availability of persistent Stripe Sandbox data (Customer IDs, **recurring** Price IDs, Product IDs, Subscription IDs) for `stripe trigger` overrides.
+            *   If not available, decide on strategy: create new persistent data or refine override usage with default CLI fixtures.
+        *   [ ] **4.8.1.2.2: Systematically Test All Critical Stripe Events via CLI:**
+            *   `checkout.session.completed` (mode: payment)
+            *   `checkout.session.completed` (mode: subscription)
+            *   `invoice.payment_succeeded`
+            *   `invoice.payment_failed`
+            *   `customer.subscription.updated`
+            *   `customer.subscription.deleted`
+            *   `product.created`, `product.updated`, `product.deleted`
+            *   `price.created`, `price.updated`, `price.deleted`
+            *   For each: Execute command, observe CLI listen output, observe Supabase logs, verify DB state, verify token awards.
+    *   [ ] **4.8.1.3: Finalize Decommissioning of Old Webhook (`4.1.3.2.9`)**
+        *   [ ] Mark `4.1.3.2.9.3` as `[✅]` once CLI testing is satisfactory.
+        *   [ ] Confirm deletion of `supabase/functions/stripe-webhook/` (`4.1.3.2.9.5`).
+        *   [ ] Address `4.1.3.2.9.6` (Docs) and `4.1.3.2.9.7` (Commit for decommissioning).
+        *   [ ] Mark `4.1.3.2.8.9` (Commit for webhook enhancements) as `[✅]`.
+
+*   [ ] **4.8.2: [BE] Confirm `sync-stripe-plans` Decommissioning (`4.1.3.2.10`)**
+    *   [ ] **4.8.2.1: Analyze Need (`4.1.3.2.10.1`)**: Confirm `sync-stripe-plans` is redundant due to real-time product/price webhooks.
+    *   [ ] **4.8.2.2: Finalize Decommissioning**:
+        *   Ensure `4.1.3.2.10.2` (Delete directory) is appropriate.
+        *   Address `4.1.3.2.10.3` (Docs) and `4.1.3.2.10.4` (Commit).
+
+*   [ ] **4.8.3: [BE] [ARCH] Implement Token Allocation System (`4.1.3.2.11`)**
+    *   [ ] **4.8.3.1: [❓] Define Allocation Rules & Schedule (`4.1.3.2.11.1`)**
+        *   **Free Users:** Amount? Frequency? Eligibility criteria (e.g., no active paid subscription)?
+        *   **Subscribers:** Does `invoice.payment_succeeded` webhook (`4.1.3.2.8.5`) already cover token awards on renewal? Is this periodic allocation an additional bonus, or only for free users? Clarify interaction.
+    *   [ ] **4.8.3.2: [DB] [TYPES] User Plan/Tier Tracking Updates (`4.1.3.2.11.2`)**: Ensure DB can identify eligible users.
+    *   [ ] **4.8.3.3: [BE] Create Scheduled Edge Function (`/allocate-periodic-tokens`) (`4.1.3.2.11.3`)**: Design logic for querying users, calling `TokenWalletService.recordTransaction` (e.g., `CREDIT_MONTHLY_ALLOCATION_FREE`), and ensuring idempotency.
+    *   [ ] **4.8.3.4: [TEST-UNIT] Unit Test Allocation Logic (`4.1.3.2.11.4`)**.
+    *   [ ] **4.8.3.5: [INFRA] Schedule the Function (`4.1.3.2.11.5`)**.
+    *   [ ] **4.8.3.6: [COMMIT] (`4.1.3.2.11.6`)**.
+
+*   [ ] **4.8.4: [UI] Implement Wallet UI (`4.4.6`)**
+    *   [ ] **4.8.4.1: Wallet Balance Display (`4.4.6.1`)**: Create `WalletBalanceDisplay.tsx`, integrate, test.
+    *   [ ] **4.8.4.2: Token Top-Up UI (`4.4.6.2`)**: Create `TopUpPage.tsx` (or modal), integrate, test.
+    *   [ ] **4.8.4.3: Wallet Transaction History UI (`4.4.6.3`)**: Create `WalletHistoryPage.tsx`, integrate, test.
+    *   [ ] **4.8.4.4: [COMMIT] (`4.4.6.4`)**.
+
+---
+(This is the end of the document, ensure no critical content is below this line before adding)
 
 
-## Phase 4.6: End-to-End Testing, Refinement, and Security Review
+
+## Phase 4.9: End-to-End Testing, Refinement, and Security Review
 
 **Goal:** Ensure the entire advanced tokenomics system is robust, secure, and functions correctly.
 
-*   [ ] **4.6.1: [TEST-INT] Comprehensive E2E Testing**
+*   [ ] **4.9.1: [TEST-INT] Comprehensive E2E Testing**
     *   Test full lifecycle: User sign-up -> No AI tokens -> Top-up via Stripe -> Wallet balance updates -> Use AI services (verify debits) -> View transaction history.
     *   Test with organization wallets if applicable.
     *   Test insufficient funds scenarios during AI usage and top-up.
     *   Test Stripe webhook processing reliability and idempotency (e.g., if webhook is sent twice).
     *   Test error handling and UI feedback for payment failures.
-*   [ ] **4.6.2: [REFACTOR] Code Review and Refinement**
+*   [ ] **4.9.2: [REFACTOR] Code Review and Refinement**
     *   Review all new services, adapters, stores, and UI components.
     *   Focus on atomicity of ledger transactions (DB functions/service layer transactions), error handling in payment flows, and clarity of abstractions (interfaces, adapters).
-*   [ ] **4.6.3: [SECURITY] Security Review**
+*   [ ] **4.9.3: [SECURITY] Security Review**
     *   Payment initiation: CSRF protection, input validation.
     *   Webhook verification: Strict signature checking, protection against replay.
     *   RLS policies for all new tables (`token_wallets`, `token_wallet_transactions`, `payment_transactions`).
     *   Authorization for all new backend endpoints.
     *   Prevention of unauthorized balance modifications.
-*   [ ] **4.6.4: [COMMIT]** "refactor: Final refinements and hardening for advanced tokenomics system"
+*   [ ] **4.9.4: [COMMIT]** "refactor: Final refinements and hardening for advanced tokenomics system"
 
 ---
-
 

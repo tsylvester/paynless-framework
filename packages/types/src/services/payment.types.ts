@@ -67,7 +67,7 @@ export interface IPaymentGatewayAdapter {
    * @param signature - The signature header from the webhook request (e.g., 'stripe-signature').
    * @returns A promise that resolves to a PaymentConfirmation.
    */
-  handleWebhook(rawBody: string | Uint8Array, signature: string | undefined): Promise<PaymentConfirmation>;
+  handleWebhook(rawBody: ArrayBuffer, signature: string | undefined): Promise<PaymentConfirmation>;
 
   // Future methods might include:
   // processRefund(transactionId: string, amount?: number): Promise<RefundResult>;

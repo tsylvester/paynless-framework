@@ -7,7 +7,7 @@ import type { ILogger } from './types.ts';
 
 // Get the actual method types
 export type CheckoutSessionCreateType = Stripe['checkout']['sessions']['create'];
-export type WebhookConstructEventType = Stripe['webhooks']['constructEvent'];
+export type WebhookConstructEventType = Stripe['webhooks']['constructEventAsync'];
 export type PaymentIntentsRetrieveType = Stripe['paymentIntents']['retrieve'];
 export type SubscriptionsRetrieveType = Stripe['subscriptions']['retrieve'];
 export type ProductsRetrieveType = Stripe['products']['retrieve'];
@@ -23,8 +23,8 @@ export interface MockStripe {
     >;
     webhooksConstructEvent: Stub<
       Stripe.Webhooks, 
-      Parameters<Stripe.Webhooks['constructEvent']>,
-      Stripe.Event
+      Parameters<Stripe.Webhooks['constructEventAsync']>,
+      Promise<Stripe.Event>
     >;
     paymentIntentsRetrieve: Stub<
       Stripe.PaymentIntentsResource,
@@ -94,8 +94,8 @@ const getMockStripeInstance = (): Stripe => ({
       cryptoProvider?: Stripe.CryptoProvider
     ): Stripe.Event =>
       ({
-        id: 'evt_test_default',
-        type: 'checkout.session.completed',
+        id: 'evt_test_default_sync',
+        type: 'charge.succeeded' as Stripe.Event.Type,
         object: 'event', 
         api_version: '2020-08-27',
         created: Math.floor(Date.now() / 1000),
@@ -103,9 +103,29 @@ const getMockStripeInstance = (): Stripe => ({
         pending_webhooks: 0,
         request: { id: null, idempotency_key: null },
         data: {
-          object: { id: 'cs_test_default_data', object: 'checkout.session' } as Stripe.Checkout.Session 
+          object: { id: 'cs_test_default_data_sync', object: 'checkout.session' } as Stripe.Checkout.Session 
         }
       } as Stripe.Event),
+    constructEventAsync: (
+      payload: string | Uint8Array, 
+      sig: string | string[] | Uint8Array, 
+      secret: string,
+      tolerance?: number,
+      cryptoProvider?: Stripe.CryptoProvider
+    ): Promise<Stripe.Event> =>
+      Promise.resolve(({
+        id: 'evt_test_default_async',
+        type: 'charge.succeeded' as Stripe.Event.Type,
+        object: 'event', 
+        api_version: '2020-08-27',
+        created: Math.floor(Date.now() / 1000),
+        livemode: false,
+        pending_webhooks: 0,
+        request: { id: null, idempotency_key: null },
+        data: {
+          object: { id: 'cs_test_default_data_async', object: 'checkout.session' } as Stripe.Checkout.Session 
+        }
+      } as Stripe.Event)),
   } as Stripe.Webhooks,
   paymentIntents: {
     retrieve: (id: string, params?: Stripe.PaymentIntentRetrieveParams, options?: Stripe.RequestOptions) =>
@@ -169,7 +189,7 @@ export function createMockStripe(): MockStripe {
 
   const stubs = {
     checkoutSessionsCreate: stub(mockInstance.checkout.sessions, "create"),
-    webhooksConstructEvent: stub(mockInstance.webhooks, "constructEvent"),
+    webhooksConstructEvent: stub(mockInstance.webhooks, "constructEventAsync"),
     paymentIntentsRetrieve: stub(mockInstance.paymentIntents, "retrieve"),
     subscriptionsRetrieve: stub(mockInstance.subscriptions, "retrieve"),
     productsRetrieve: stub(mockInstance.products, "retrieve"),
@@ -184,7 +204,7 @@ export function createMockStripe(): MockStripe {
     
     mockInstance = getMockStripeInstance(); 
     stubs.checkoutSessionsCreate = stub(mockInstance.checkout.sessions, "create");
-    stubs.webhooksConstructEvent = stub(mockInstance.webhooks, "constructEvent");
+    stubs.webhooksConstructEvent = stub(mockInstance.webhooks, "constructEventAsync");
     stubs.paymentIntentsRetrieve = stub(mockInstance.paymentIntents, "retrieve");
     stubs.subscriptionsRetrieve = stub(mockInstance.subscriptions, "retrieve");
     stubs.productsRetrieve = stub(mockInstance.products, "retrieve");
