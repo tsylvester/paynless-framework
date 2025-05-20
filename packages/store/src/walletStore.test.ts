@@ -321,14 +321,13 @@ describe('useWalletStore', () => {
       });
 
       it('should handle null data from API (e.g., specific non-error failure) and return null', async () => {
-        const response: SuccessResponse<null> = { data: null, error: undefined, status: 200 }; // Or maybe a 4xx status for specific failures
-        mockInitiateTokenPurchase.mockResolvedValue(response as unknown as ApiResponse<PaymentInitiationResult | null>);
+        mockInitiateTokenPurchase.mockResolvedValue({ success: false, data: null, error: null } as unknown as ApiResponse<PaymentInitiationResult | null>);
 
         const result = await useWalletStore.getState().initiatePurchase(mockPurchaseRequest);
 
         const state = useWalletStore.getState();
         expect(state.isLoadingPurchase).toBe(false);
-        expect(state.purchaseError).toEqual(expect.objectContaining({ message: 'Failed to initiate purchase: No initiation data returned', code: 'NO_DATA'}));
+        expect(state.purchaseError).toEqual(expect.objectContaining({ message: 'Failed to initiate purchase: No initiation data returned from API', code: 'NO_DATA_FROM_API'}));
         expect(result).toBeNull();
       });
 

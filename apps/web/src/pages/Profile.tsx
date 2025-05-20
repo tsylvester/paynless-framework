@@ -1,6 +1,8 @@
 import { useAuthStore } from '@paynless/store'
 import { ProfileEditor } from '../components/profile/ProfileEditor'
 import { ProfilePrivacySettingsCard } from '../components/profile/ProfilePrivacySettingsCard'
+import { WalletBalanceDisplay } from '../components/wallet/WalletBalanceDisplay'
+
 export function ProfilePage() {
   const {
     profile: currentProfile,
@@ -11,6 +13,8 @@ export function ProfilePage() {
     isLoading: state.isLoading,
     error: state.error,
   }))
+
+
 
   if (authLoading && !currentProfile) {
     return (
@@ -35,6 +39,7 @@ export function ProfilePage() {
   return (
     <div>
       <div className="py-20 pt-6">
+        <WalletBalanceDisplay />
         <ProfileEditor />
         <ProfilePrivacySettingsCard />
       </div>

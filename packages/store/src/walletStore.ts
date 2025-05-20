@@ -82,9 +82,9 @@ export const useWalletStore = create<WalletStore>((set, get) => ({
       }
 
       set({ currentWallet: response.data, isLoadingWallet: false, walletError: null });
-    } catch (error: any) {
+    } catch (error: unknown) {
       set({
-        walletError: { message: error?.message || 'An unknown network error occurred', code: 'NETWORK_ERROR' },
+        walletError: { message: error instanceof Error ? error.message : 'An unknown network error occurred', code: 'NETWORK_ERROR' },
         isLoadingWallet: false,
         currentWallet: null,
       });
@@ -119,9 +119,9 @@ export const useWalletStore = create<WalletStore>((set, get) => ({
       }
       // Ensure data is an array, even if it's empty, it's a valid response.
       set({ transactionHistory: response.data || [], isLoadingHistory: false, walletError: null });
-    } catch (error: any) {
+    } catch (error: unknown) {
       set({
-        walletError: { message: error?.message || 'An unknown network error occurred while fetching history', code: 'NETWORK_ERROR' },
+        walletError: { message: error instanceof Error ? error.message : 'An unknown network error occurred while fetching history', code: 'NETWORK_ERROR' },
         isLoadingHistory: false,
         transactionHistory: [],
       });
@@ -133,28 +133,47 @@ export const useWalletStore = create<WalletStore>((set, get) => ({
     try {
       const response = await api.wallet().initiateTokenPurchase(request);
 
+      // Case 1: The API call itself failed (e.g., network error, 500 from gateway function before returning PaymentInitiationResult)
       if (response.error) {
         const errorToSet: ApiErrorType = 
-          response.error && typeof response.error.message === 'string' && typeof response.error.code === 'string'
-          ? response.error
-          : { message: String(response.error) || 'Failed to initiate purchase', code: 'UNKNOWN_API_ERROR' }; 
+          response.error && typeof response.error.message === 'string' // response.error is already ApiErrorType
+          ? response.error 
+          : { message: String(response.error) || 'Failed to initiate purchase due to API error', code: 'UNKNOWN_API_ERROR' }; 
         set({ purchaseError: errorToSet, isLoadingPurchase: false });
-        return null;
+        return null; // Return null as PaymentInitiationResult is not available
       }
 
+      // Case 2: API call was successful, but response.data is unexpectedly null or undefined
       if (response.data === null || response.data === undefined) {
         set({
-          purchaseError: { message: 'Failed to initiate purchase: No initiation data returned', code: 'NO_DATA' },
+          purchaseError: { message: 'Failed to initiate purchase: No initiation data returned from API', code: 'NO_DATA_FROM_API' },
           isLoadingPurchase: false,
         });
-        return null;
+        return null; // Return null as PaymentInitiationResult is not available
+      }
+
+      // Case 3: API call was successful and returned PaymentInitiationResult in response.data
+      // Now, check the contents of PaymentInitiationResult
+      const initiationResult = response.data;
+      if (!initiationResult.success) {
+        // Payment initiation failed, use error from initiationResult if available
+        set({
+          purchaseError: { 
+            message: initiationResult.error || 'Payment initiation failed for an unknown reason.', 
+            code: 'PAYMENT_INITIATION_FAILED' 
+          },
+          isLoadingPurchase: false,
+        });
+        return initiationResult; // Still return the result, as it might contain useful info like transactionId
       }
       
+      // Payment initiation was successful according to the gateway
       set({ isLoadingPurchase: false, purchaseError: null });
-      return response.data; // This is PaymentInitiationResult
-    } catch (error: any) {
+      return initiationResult; // Return the successful PaymentInitiationResult
+
+    } catch (error: unknown) { // Catch errors from the api.wallet().initiateTokenPurchase() call itself
       set({
-        purchaseError: { message: error?.message || 'An unknown network error occurred during purchase initiation', code: 'NETWORK_ERROR' },
+        purchaseError: { message: error instanceof Error ? error.message : 'An unknown network error occurred during purchase initiation', code: 'NETWORK_CATCH_ERROR' },
         isLoadingPurchase: false,
       });
       return null;

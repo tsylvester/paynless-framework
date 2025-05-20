@@ -4,14 +4,6 @@ import type { ApiClient } from './apiClient';
 import type { ApiResponse, SubscriptionPlan, UserSubscription, SubscriptionUsageMetrics, CheckoutSessionResponse, PortalSessionResponse, FetchOptions } from '@paynless/types';
 import { logger } from '@paynless/utils';
 
-// Define the request body type for checkout session creation
-interface CreateCheckoutSessionRequest {
-  priceId: string;
-  isTestMode: boolean;
-  successUrl: string;
-  cancelUrl: string;
-}
-
 /**
  * API client for Stripe operations
  */
@@ -20,45 +12,6 @@ export class StripeApiClient {
   
   constructor(apiClient: ApiClient) { 
     this.apiClient = apiClient;
-  }
-  
-  /**
-   * Create Stripe checkout session
-   */
-  async createCheckoutSession(
-    priceId: string, 
-    isTestMode: boolean,
-    successUrl: string,
-    cancelUrl: string,
-    options?: FetchOptions
-  ): Promise<ApiResponse<CheckoutSessionResponse>> {
-    try {
-      logger.info('Creating Stripe checkout session', { priceId, isTestMode });
-      // Use the new request body type
-      const body: CreateCheckoutSessionRequest = { 
-        priceId, 
-        isTestMode, 
-        successUrl, 
-        cancelUrl 
-      };
-      const result = await this.apiClient.post<CheckoutSessionResponse, CreateCheckoutSessionRequest>(
-        'api-subscriptions/checkout',
-        body,
-        options
-      );
-      if (result.error) {
-         logger.warn('Checkout session creation API returned an error', { error: result.error });
-         return result;
-      }
-      return result;
-    } catch (error) {
-      logger.error('Unexpected error creating Stripe checkout session', {
-        error: error instanceof Error ? error.message : 'Unknown error',
-        priceId,
-      });
-      const message = error instanceof Error ? error.message : 'An unknown error occurred';
-      return { status: 500, error: { code: 'CLIENT_EXCEPTION', message } };
-    }
   }
   
   /**

@@ -7,7 +7,9 @@ import type { Database } from '@paynless/db-types';
  * Represents a subscription plan offered.
  * Derived from the `subscription_plans` table.
  */
-export type SubscriptionPlan = Database['public']['Tables']['subscription_plans']['Row'];
+export type SubscriptionPlan = Omit<Database['public']['Tables']['subscription_plans']['Row'], 'stripe_price_id'> & {
+  stripe_price_id: string | null;
+};
 
 /**
  * Represents a user's specific subscription status and details.
@@ -67,11 +69,6 @@ export interface ResumeSubscriptionRequest {
   subscriptionId: string;
 }
 
-// Define response type for creating a checkout session
-export interface CheckoutSessionResponse {
-  sessionUrl: string | null; // Ensure this matches the backend response
-}
-
 // Define response type for creating a portal session
 export interface PortalSessionResponse {
   url: string; // Expecting the Stripe Billing Portal URL
@@ -83,12 +80,6 @@ export interface SubscriptionPlansResponse {
 }
 
 // --- Subscription API Specific Types (Moved from _shared/types.ts) ---
-
-export interface CheckoutSessionRequest {
-  priceId: string;
-  successUrl: string;
-  cancelUrl: string;
-}
 
 export interface BillingPortalRequest {
   returnUrl: string;

@@ -110,7 +110,7 @@ export function PlanCard({
               isProcessing ? 'opacity-75 cursor-not-allowed' : ''
             }`}
           >
-            {userIsOnPaidPlan ? 'Change Plan' : 'Subscribe'}
+            {isProcessing ? 'Processing...' : (userIsOnPaidPlan ? 'Change Plan' : 'Subscribe')}
           </button>
         )}
       </div>

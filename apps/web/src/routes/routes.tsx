@@ -12,6 +12,7 @@ import NotificationsPage from '../pages/Notifications';
 import { AcceptInvitePage } from '../pages/AcceptInvitePage';
 import { OrganizationHubPage } from '../pages/OrganizationHubPage';
 import { OrganizationFocusedViewPage } from '../pages/OrganizationFocusedViewPage';
+import { TransactionHistoryPage } from '../pages/TransactionHistory';
 //import { ForgotPassword } from '../pages/ForgotPassword';
 //import { ResetPassword } from '../pages/ResetPassword';
 //import { VerifyEmail } from '../pages/VerifyEmail';
@@ -73,6 +74,14 @@ const routes: RouteObject[] = [
         element: (
           <ProtectedRoute>
             <SubscriptionSuccessPage />
+          </ProtectedRoute>
+        ),
+      },
+      {
+        path: 'transaction-history',
+        element: (
+          <ProtectedRoute>
+            <TransactionHistoryPage />
           </ProtectedRoute>
         ),
       },

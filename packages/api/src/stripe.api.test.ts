@@ -23,66 +23,6 @@ describe('StripeApiClient', () => {
         expect(stripeApiClient).toBeDefined();
     });
 
-    describe('createCheckoutSession', () => {
-        const priceId = 'price_123';
-        const isTestMode = false;
-        const expectedEndpoint = 'api-subscriptions/checkout';
-
-        it('should call the correct endpoint and return session ID on success', async () => {
-            const mockResponseData = { sessionId: 'cs_test_123' };
-            const mockApiResponse: ApiResponse<{ sessionId: string }> = { status: 200, data: mockResponseData };
-            vi.mocked(mockApiClient.post).mockResolvedValue(mockApiResponse);
-
-            const result = await stripeApiClient.createCheckoutSession(priceId, isTestMode, undefined!, undefined!);
-
-            expect(mockApiClient.post).toHaveBeenCalledTimes(1);
-            expect(mockApiClient.post).toHaveBeenCalledWith(
-                expectedEndpoint, 
-                { priceId, isTestMode, successUrl: undefined, cancelUrl: undefined }, 
-                undefined 
-            );
-            expect(result.status).toBe(200);
-            expect(result.error).toBeUndefined();
-            expect(result.data?.sessionId).toBe('cs_test_123');
-        });
-
-        it('should return ApiResponse with error on 400 Bad Request', async () => {
-            const errorResponse: ApiErrorType = { code: 'INVALID_PRICE_ID', message: 'Invalid Stripe Price ID provided.' };
-            const mockApiResponse: ApiResponse<any> = { status: 400, error: errorResponse };
-            vi.mocked(mockApiClient.post).mockResolvedValue(mockApiResponse);
-
-            const result = await stripeApiClient.createCheckoutSession(priceId, isTestMode, undefined!, undefined!);
-
-            expect(mockApiClient.post).toHaveBeenCalledTimes(1);
-            expect(mockApiClient.post).toHaveBeenCalledWith(
-                expectedEndpoint, 
-                { priceId, isTestMode, successUrl: undefined, cancelUrl: undefined }, 
-                undefined
-            );
-            expect(result.status).toBe(400);
-            expect(result.data).toBeUndefined();
-            expect(result.error).toEqual(errorResponse);
-        });
-
-        it('should return ApiResponse with error on 500 Internal Server Error', async () => {
-            const errorResponse: ApiErrorType = { code: 'STRIPE_API_DOWN', message: 'Stripe API is temporarily unavailable.' };
-            const mockApiResponse: ApiResponse<any> = { status: 500, error: errorResponse };
-            vi.mocked(mockApiClient.post).mockResolvedValue(mockApiResponse);
-
-            const result = await stripeApiClient.createCheckoutSession(priceId, isTestMode, undefined!, undefined!);
-            
-            expect(mockApiClient.post).toHaveBeenCalledTimes(1);
-            expect(mockApiClient.post).toHaveBeenCalledWith(
-                expectedEndpoint, 
-                { priceId, isTestMode, successUrl: undefined, cancelUrl: undefined }, 
-                undefined
-            );
-            expect(result.status).toBe(500);
-            expect(result.data).toBeUndefined();
-            expect(result.error).toEqual(errorResponse);
-        });
-    });
-
     describe('createPortalSession', () => {
         const isTestMode = false;
         const expectedEndpoint = 'api-subscriptions/billing-portal';

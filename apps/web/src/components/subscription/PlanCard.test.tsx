@@ -1,14 +1,13 @@
 import { describe, it, expect, vi } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, within } from '@testing-library/react';
 import { PlanCard } from './PlanCard';
 import type { SubscriptionPlan } from '@paynless/types';
-import React from 'react'; // Needed for JSX
 
 // --- Mock Data & Functions ---
 const mockPlan: SubscriptionPlan = {
   id: 'plan_basic_123',
   stripe_price_id: 'price_basic_stripe_123',
-  stripeProductId: 'prod_basic_stripe',
+  stripe_product_id: 'prod_basic_stripe',
   name: 'Basic Plan',
   description: { 
     subtitle: 'Good for starters', 
@@ -20,8 +19,11 @@ const mockPlan: SubscriptionPlan = {
   interval_count: 1,
   active: true,
   metadata: null,
-  createdAt: new Date().toISOString(),
-  updatedAt: new Date().toISOString(),
+  created_at: new Date().toISOString(),
+  updated_at: new Date().toISOString(),
+  item_id_internal: null,
+  plan_type: 'subscription',
+  tokens_awarded: 1000,
 };
 
 const mockHandleSubscribe = vi.fn();
@@ -96,6 +98,22 @@ describe('PlanCard Component', () => {
   
   // --- Tests for button logic --- 
   describe('Button Logic', () => {
+    const freePlan: SubscriptionPlan = {
+      ...mockPlan, // Spread mockPlan to get defaults for other fields
+      id: 'plan_free_001', // Ensure a unique ID
+      stripe_price_id: 'price_Free',
+      stripe_product_id: null,
+      name: 'Free',
+      description: { 
+        subtitle: 'Basic free features', 
+        features: ['Limited Access'] 
+      },
+      amount: 0,
+      plan_type: 'subscription', // Or 'subscription' if appropriate, ensure consistency
+      item_id_internal: 'default_free',
+      tokens_awarded: 0,
+    };
+
     beforeEach(() => {
       // Clear mock calls before each button test
       mockHandleSubscribe.mockClear();
@@ -158,22 +176,26 @@ describe('PlanCard Component', () => {
     });
 
     it('should disable action buttons when isProcessing is true', () => {
-      // Test with Subscribe button scenario
-      render(<PlanCard {...defaultProps} isProcessing={true} />);
-      expect(screen.getByRole('button', { name: /Subscribe/i })).toBeDisabled();
+      // Test for a typical paid plan that is NOT the current plan
+      const { rerender } = render(<PlanCard {...defaultProps} isCurrentPlan={false} userIsOnPaidPlan={true} isProcessing={false} plan={mockPlan} />);
+      expect(screen.getByRole('button', { name: /Change Plan/i })).toBeEnabled();
 
-      // Test with Downgrade button scenario - Find by 'Processing...' text
-      const freePlan = { ...mockPlan, amount: 0 };
-      // Need to unmount the previous render to avoid duplicates in screen
-      const { unmount } = render(<PlanCard {...defaultProps} plan={freePlan} userIsOnPaidPlan={true} isProcessing={true} />); 
-      expect(screen.getByRole('button', { name: /Processing.../i })).toBeDisabled();
-      unmount(); // Clean up
+      rerender(<PlanCard {...defaultProps} isCurrentPlan={false} userIsOnPaidPlan={true} isProcessing={true} plan={mockPlan} />);
+      const processingButton = screen.getByRole('button', { name: /Processing.../i });
+      expect(processingButton).toBeInTheDocument();
+      expect(processingButton).toBeDisabled();
+      expect(screen.queryByRole('button', { name: /Change Plan/i })).not.toBeInTheDocument();
 
-       // Test with Change Plan button scenario
-       // Need to unmount the previous render to avoid duplicates in screen
-      const { unmount: unmount2 } = render(<PlanCard {...defaultProps} userIsOnPaidPlan={true} isProcessing={true} />);
-      expect(screen.getByRole('button', { name: /Change Plan/i })).toBeDisabled();
-      unmount2(); // Clean up
+      // Test for the "Downgrade to Free" button on the Free plan card when user is on a paid plan
+      const { rerender: rerenderFree, container: freePlanContainer } = render(<PlanCard {...defaultProps} isCurrentPlan={false} userIsOnPaidPlan={true} isProcessing={false} plan={freePlan} />);
+      expect(within(freePlanContainer).getByRole('button', { name: /Downgrade to Free/i })).toBeEnabled();
+      
+      rerenderFree(<PlanCard {...defaultProps} isCurrentPlan={false} userIsOnPaidPlan={true} isProcessing={true} plan={freePlan} />);
+      // Scope the search for the processing button to within the freePlanContainer
+      const downgradeProcessingButton = within(freePlanContainer).getByRole('button', { name: /Processing.../i });
+      expect(downgradeProcessingButton).toBeInTheDocument();
+      expect(downgradeProcessingButton).toBeDisabled();
+      expect(within(freePlanContainer).queryByRole('button', { name: /Downgrade to Free/i })).not.toBeInTheDocument();
     });
 
      it('should use plan.id as fallback if stripePriceId is missing', () => {

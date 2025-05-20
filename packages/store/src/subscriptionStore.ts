@@ -27,7 +27,6 @@ export interface SubscriptionStore extends SubscriptionState {
   // API actions
   loadSubscriptionData: (userId: string) => Promise<void>;
   refreshSubscription: () => Promise<boolean>;
-  createCheckoutSession: (priceId: string) => Promise<string | null>;
   createBillingPortalSession: () => Promise<string | null>;
   cancelSubscription: (subscriptionId: string) => Promise<boolean>;
   resumeSubscription: (subscriptionId: string) => Promise<boolean>;
@@ -161,56 +160,7 @@ export const useSubscriptionStore = create<SubscriptionStore>()(
             return false; // <-- Return false on error
         }
       },
-      
-      createCheckoutSession: async (priceId: string): Promise<string | null> => {
-        const { user, session } = useAuthStore.getState();
-        const token = session?.access_token;
-        if (!user?.id || !token) {
-          logger.error('User not authenticated for checkout session');
-          set({ error: new Error('User not authenticated'), isSubscriptionLoading: false });
-          return null;
-        }
-
-        set({ isSubscriptionLoading: true, error: null });
-
-        try {
-          const isTestMode = get().isTestMode;
-          // Construct success and cancel URLs based on current origin
-          const currentOrigin = window.location.origin;
-          const successUrl = `${currentOrigin}/subscriptionsuccess`;
-          const cancelUrl = `${currentOrigin}/`;
-          
-          const response = await api.billing().createCheckoutSession(
-            priceId, 
-            isTestMode, 
-            successUrl,
-            cancelUrl,
-            { token }
-          );
-
-          // Check for response.data.url (Corrected property name)
-          if (response.error || !response.data?.sessionUrl) { 
-            const errorMessage = response.error?.message || 'Failed to get checkout session URL from API';
-            logger.error('Error response from createCheckoutSession API', {
-              error: response.error,
-              responseData: response.data
-            });
-            throw new Error(errorMessage);
-          }
-
-          // Log and return the sessionUrl
-          logger.info('Received checkout session URL', { url: response.data.sessionUrl }); 
-          set({ isSubscriptionLoading: false, error: null });
-          return response.data.sessionUrl; 
-
-        } catch (error) {
-          const errorToSet = error instanceof Error ? error : new Error('Failed to create checkout session');
-          logger.error('Error creating checkout session', { error: errorToSet });
-          set({ error: errorToSet, isSubscriptionLoading: false });
-          return null; // Return null on error, like other actions
-        }
-      },
-      
+            
       createBillingPortalSession: async (): Promise<string | null> => {
         const { user, session } = useAuthStore.getState();
         const token = session?.access_token;

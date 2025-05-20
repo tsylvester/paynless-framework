@@ -743,21 +743,37 @@ The implementation plan uses the following labels to categorize work steps:
 *   [✅] **4.4.5.6: [COMMIT]** "feat(UI): Implement AI chat affordability hook (with full context) and integrate into chat input w/ tests"
 
 ### 4.4.6: [UI] Wallet Balance Display, Top-Up, and History Pages
-*   [ ] **4.4.6.1: [UI] Wallet Balance Display Component (`WalletBalanceDisplay.tsx`)**
+*   [✅] **4.4.6.1: [UI] Wallet Balance Display Component (`WalletBalanceDisplay.tsx`)**
     *   Create `apps/web/src/components/wallet/WalletBalanceDisplay.tsx`.
     *   Uses `useWalletStore(selectCurrentWalletBalance)` and `state.isLoadingWallet`.
     *   Displays balance or loading/error.
     *   [TEST-UNIT] Write tests.
-    *   Integrate into `UserAccountPage.tsx` and relevant Org views. On mount, call `useWalletStore.getState().loadWallet()`.
-*   [ ] **4.4.6.2: [UI] Token Acquisition/Top-Up UI (`TopUpPage.tsx` or Modal)**
-    *   Create `apps/web/src/pages/TopUpPage.tsx`.
-    *   User selects token package (defined statically or fetched).
-    *   User selects payment method (Stripe initially).
-    *   Calls `useWalletStore.getState().initiatePurchase({ itemId, paymentGatewayId: 'stripe', ... })`.
-    *   Handles `PaymentInitiationResult` (e.g., redirect to Stripe or use Stripe Elements).
-    *   [TEST-UNIT] Write tests (mocking store action).
-*   [ ] **4.4.6.3: [UI] Wallet Transaction History UI (`WalletHistoryPage.tsx`)**
-    *   Create `apps/web/src/pages/WalletHistoryPage.tsx`.
+    *   Integrate into `Profile.tsx` and relevant Org views. On mount, call `useWalletStore.getState().loadWallet()`.
+*   [✅] **4.4.6.2: [UI] Modify Token Acquisition in `SubscriptionPage.tsx` (`apps/web/src/pages/subscription.tsx`)**
+    *   **Goal:** Adapt the existing subscription page to use the new `useWalletStore.initiatePurchase` flow for all token-awarding purchases (one-time packages and new subscriptions).
+    *   [✅] **4.4.6.2.1: [API] Ensure `WalletApiClient.initiateTokenPurchase` calls `/initiate-payment` endpoint.** (This was previously a placeholder).
+    *   [✅] **4.4.6.2.2: [UI] Modify `SubscriptionPage.tsx`'s `handleSubscribe` function:**
+        *   Import and use `useWalletStore`.
+        *   When a user subscribes/purchases a plan (identified by `priceId`):
+            *   Retrieve plan details (especially `currency`, `stripe_price_id` as `itemId`) from `availablePlans`.
+            *   Construct a `PurchaseRequest` object (e.g., `{ userId, itemId: plan.stripe_price_id, quantity: 1, currency: plan.currency, paymentGatewayId: 'stripe', metadata: { planName: plan.name, planId: plan.id } }`).
+            *   Call `useWalletStore.getState().initiatePurchase(purchaseRequest)`.
+            *   Handle the returned `PaymentInitiationResult`:
+                *   If `result.success && result.redirectUrl`, redirect using `window.location.href = result.redirectUrl`.
+                *   Display errors based on `result.error` or `useWalletStore.purchaseError`.
+            *   Integrate `useWalletStore.isLoadingPurchase` for loading indicators on buttons.
+    *   [✅] **4.4.6.2.3: [TEST-UNIT] Update/Create tests for `SubscriptionPage.tsx` (`apps/web/src/pages/Subscription.test.tsx`):**
+        *   Mock `useAuthStore` (to provide user ID).
+        *   Mock `useSubscriptionStore` (to provide `availablePlans`).
+        *   Mock `useWalletStore` (specifically `initiatePurchase`, `isLoadingPurchase`, `purchaseError`).
+        *   Verify `handleSubscribe` constructs the correct `PurchaseRequest`.
+        *   Verify `initiatePurchase` is called.
+        *   Verify redirection on success.
+        *   Verify error display and loading state handling.
+    *   [ ] **4.4.6.2.4: [REFACTOR] Review if `useSubscriptionStore.createCheckoutSession` is now deprecated.**
+        *   If `initiatePurchase` covers all scenarios, plan for removal of `createCheckoutSession` from `useSubscriptionStore` and its API client counterpart (`api.billing().createCheckoutSession`) if it's no longer used.
+*   [✅] **4.4.6.3: [UI] Wallet Transaction History UI (`TransactionHistory.tsx`)**
+    *   Create `apps/web/src/pages/TransactionHistory.tsx`.
     *   Uses `useWalletStore(selectWalletTransactions)` and `state.isLoadingHistory`.
     *   Calls `useWalletStore.getState().loadTransactionHistory()` on mount. Supports pagination.
     *   [TEST-UNIT] Write tests.
@@ -832,9 +848,6 @@ The implementation plan uses the following labels to categorize work steps:
     *   [ ] **4.8.4.4: [COMMIT] (`4.4.6.4`)**.
 
 ---
-(This is the end of the document, ensure no critical content is below this line before adding)
-
-
 
 ## Phase 4.9: End-to-End Testing, Refinement, and Security Review
 

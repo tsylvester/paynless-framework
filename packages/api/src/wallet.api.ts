@@ -73,19 +73,7 @@ export class WalletApiClient {
     request: PurchaseRequest,
     options?: FetchOptions
   ): Promise<ApiResponse<PaymentInitiationResult>> {
-    // const endpoint = '/initiate-payment'; // Endpoint to be confirmed/created
-    // return this.client.post<PaymentInitiationResult, PurchaseRequest>(endpoint, request, options);
-
-    // Placeholder implementation until endpoint is ready:
-    console.warn('initiateTokenPurchase is a placeholder and does not make an API call yet.', request, options);
-    return Promise.resolve({
-      status: 200,
-      statusText: 'OK',
-      data: {
-        success: true,
-        // transactionId: 'temp-txn-id',
-        // redirectUrl: 'temp-redirect-url' 
-      } as PaymentInitiationResult, // Cast to ensure type match for placeholder
-    });
+    const endpoint = '/initiate-payment'; 
+    return this.client.post<PaymentInitiationResult, PurchaseRequest>(endpoint, request, options);
   }
 } 
