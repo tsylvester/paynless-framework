@@ -37,14 +37,14 @@ export const OrganizationSwitcher: React.FC = () => {
   const isListLoading = isLoading && userOrganizations.length === 0;
 
   useEffect(() => {
-    const shouldFetch = userOrganizations.length === 0 && !isLoading;
+    // const shouldFetch = userOrganizations.length === 0 && !isLoading;
     // We don't need to check for user explicitly here, as fetchUserOrganizations internally checks auth
     // and handles the case where the user might have logged out between renders.
-    if (shouldFetch) {
-      logger.debug('[OrganizationSwitcher] Initial fetch triggered: No orgs loaded and not currently loading.');
+    // if (shouldFetch) {
+      // logger.debug('[OrganizationSwitcher] Initial fetch triggered: No orgs loaded and not currently loading.');
       fetchUserOrganizations(); // Call without params to use store's current page/limit
-    }
-  }, [userOrganizations.length, isLoading, fetchUserOrganizations]); // Dependencies
+    // }
+  }, []); // Dependencies
 
   const handleSelectOrganization = (orgId: string | null) => {
     // If clicking the currently selected org, deselect it (set to null)
