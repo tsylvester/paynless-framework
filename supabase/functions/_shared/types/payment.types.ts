@@ -75,6 +75,7 @@ export type PaymentConfirmation = {
   tokensAwarded?: number;
   error?: string;
   message?: string; // Optional informational message
+  status?: number; // Optional HTTP status code to be returned by the webhook handler
 };
 
 /**

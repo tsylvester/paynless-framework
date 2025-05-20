@@ -1,5 +1,5 @@
 import Stripe from "npm:stripe";
-import { PaymentConfirmation } from "../../../types.ts";
+import { PaymentConfirmation } from "../../../types/payment.types.ts";
 import { parseProductDescription } from '../../../utils/productDescriptionParser.ts';
 import type { ProductPriceHandlerContext } from '../../../stripe.mock.ts';
 
@@ -124,6 +124,7 @@ export async function handlePriceCreated(
         success: false,
         error: `Failed to upsert plan for price ${price.id}: ${upsertError.message}`,
         transactionId: event.id,
+        status: 500,
       };
     }
 
@@ -145,6 +146,7 @@ export async function handlePriceCreated(
       success: false,
       error: `Unexpected error processing ${event.type} for price ${price.id}: ${errorMessage}`,
       transactionId: event.id,
+      status: 500,
     };
   }
 }

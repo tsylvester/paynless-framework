@@ -282,7 +282,7 @@ import {
           const responseBody = await response.json();
   
           assertEquals(response.status, 500);
-          assert(responseBody.error.includes('Internal Server Error during webhook processing.'));
+          assert(responseBody.error.includes('Internal adapter boom!'));
           assertEquals(paymentAdapterFactorySpy.calls.length, 1);
           assert(handleWebhookSpy, "handleWebhookSpy should be defined");
           assertEquals(handleWebhookSpy.calls.length, 1);

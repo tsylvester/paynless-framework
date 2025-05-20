@@ -53,7 +53,8 @@ export async function handleCheckoutSessionCompleted(
       success: false, 
       transactionId: internalPaymentId, 
       paymentGatewayTransactionId: gatewayTransactionId,
-      error: `Payment transaction not found: ${internalPaymentId}` 
+      error: `Payment transaction not found: ${internalPaymentId}`,
+      status: 404 // Explicitly set 404 for not found
     };
   }
 
@@ -200,7 +201,13 @@ export async function handleCheckoutSessionCompleted(
     // This implies updatePaymentTransaction itself failed, which is a serious issue.
     const errMsg = `Critical: Failed to update payment_transactions ${internalPaymentId} to COMPLETED.`;
     context.logger.error(`[handleCheckoutSessionCompleted] ${errMsg}`);
-    return { success: false, transactionId: internalPaymentId, paymentGatewayTransactionId: gatewayTransactionId, error: errMsg };
+    return { 
+      success: false, 
+      transactionId: internalPaymentId, 
+      paymentGatewayTransactionId: gatewayTransactionId, 
+      error: errMsg, 
+      status: 500 // Indicate server-side error
+    };
   }
 
   if (!paymentTx.target_wallet_id) {

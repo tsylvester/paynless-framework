@@ -436,30 +436,30 @@ The implementation plan uses the following labels to categorize work steps:
         *   [✅] **4.1.3.2.10.2: [BE] Delete `supabase/functions/sync-stripe-plans/` Directory**
         *   [ ] **4.1.3.2.10.3: [DOCS] Remove any documentation or scheduled triggers for `sync-stripe-plans`.**
         *   [ ] **4.1.3.2.10.4: [COMMIT]** "refactor(BE): Decommission sync-stripe-plans function, replaced by real-time webhook sync"
-    *   [ ] **4.1.3.2.11: [BE] [ARCH] Implement Universal Periodic Token Allocation System**
+    *   [✅] **4.1.3.2.11: [BE] [ARCH] Implement Universal Periodic Token Allocation System**
         *   **Goal:** Periodically grant a base number of tokens to all eligible users (e.g., free tier users, or all users as a baseline).
-        *   [ ] **4.1.3.2.11.1: [ARCH] Define Allocation Rules & Schedule**
+        *   [✅] **4.1.3.2.11.1: [ARCH] Define Allocation Rules & Schedule**
             *   Determine token amount, frequency (e.g., monthly, weekly), and eligibility criteria (e.g., all active users, users on a specific 'free' plan type).
             *   Free users get 100k tokens per month
             *   $9.99 subscription users get 10m tokens per month
             *   $99.99 subscription users get 120m tokens annually
             *   $9.99 OTP users get 10m tokens once 
-        *   [ ] **4.1.3.2.11.2: [DB] [TYPES] User Plan/Tier Tracking (If Needed)**
+        *   [✅] **4.1.3.2.11.2: [DB] [TYPES] User Plan/Tier Tracking (If Needed)**
             *   If allocation depends on user tier (e.g. 'free' vs 'paid'), ensure `users` or `user_subscriptions` table can identify this tier.
             *   TokenWallet tracks use and balance
             *   Subscription plan or OTP defines top-up timing
             *   Free users get token grant at start of new period 
-        *   [ ] **4.1.3.2.11.3: [BE] Create Scheduled Edge Function (`/allocate-periodic-tokens`)**
+        *   [✅] **4.1.3.2.11.3: [BE] Create Scheduled Edge Function (`/allocate-periodic-tokens`)**
             *   **QUESTION: WHY IS THIS NEEDED? WHY ISN'T THE SUBSCRIPTION PLAN SUFFICIENT?** 
             *   This function will query eligible users.
             *   For each eligible user, it will use `TokenWalletService.recordTransaction` to credit their wallet with the defined token amount.
             *   Type could be `CREDIT_PERIODIC_ALLOCATION` or similar.
             *   Ensure idempotency for the allocation period (e.g., a user doesn't get tokens twice for the same month if the function reruns).
-        *   [ ] **4.1.3.2.11.4: [TEST-UNIT] Unit Test the Allocation Logic**
+        *   [✅] **4.1.3.2.11.4: [TEST-UNIT] Unit Test the Allocation Logic**
             *   Mock `TokenWalletService` and user data sources.
             *   Verify correct users are selected and correct token amounts are calculated for credit.
         *   [ ] **4.1.3.2.11.5: [INFRA] Schedule the Function (e.g., using Supabase Cron Jobs)**
-        *   [ ] **4.1.3.2.11.6: [COMMIT]** "feat(BE|ARCH): Implement universal periodic token allocation system"
+        *   [✅] **4.1.3.2.11.6: [COMMIT]** "feat(BE|ARCH): Implement universal periodic token allocation system"
 *   [✅] **4.1.3.A: [BE] [TEST-UNIT] Unit Test Payment Adapter Factory (`adapterFactory.ts`)**
     *   [✅] **Goal:** Ensure the `getPaymentAdapter` function in `_shared/adapters/adapterFactory.ts` correctly instantiates and returns the appropriate payment gateway adapters with their necessary dependencies.
     *   [✅] **4.1.3.A.1: [TEST-UNIT] Define Test Cases for `adapterFactory.getPaymentAdapter`**

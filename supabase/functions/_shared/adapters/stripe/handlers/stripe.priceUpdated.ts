@@ -1,5 +1,5 @@
 import Stripe from "npm:stripe";
-import { PaymentConfirmation } from "../../../types.ts";
+import { PaymentConfirmation } from "../../../types/payment.types.ts";
 import { TablesUpdate, Json } from "../../../../types_db.ts"; // Reverted import
 import type { ProductPriceHandlerContext } from '../../../stripe.mock.ts';
 
@@ -93,6 +93,7 @@ export async function handlePriceUpdated(
         success: false,
         transactionId: event.id,
         error: `Failed to update plan status for price ${price.id}: ${updateError.message}`,
+        status: 500,
       };
     }
 
