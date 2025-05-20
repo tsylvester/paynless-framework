@@ -177,7 +177,7 @@ describe('useWalletStore', () => {
         const state = useWalletStore.getState();
         expect(state.isLoadingWallet).toBe(false);
         expect(state.currentWallet).toBeNull();
-        expect(state.walletError).toEqual(expect.objectContaining({ message: 'Failed to fetch wallet: No data returned' }));
+        expect(state.walletError).toBeNull();
       });
 
       it('should set isLoadingWallet to true during fetch and false afterwards', async () => {

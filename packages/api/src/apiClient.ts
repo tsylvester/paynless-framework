@@ -122,19 +122,30 @@ export class ApiClient {
             logger.info('[apiClient] Response Content-Type:', { contentType });
             
             let responseData: unknown;
-            try {
-                responseData = contentType?.includes('application/json') 
-                                    ? await response.json() 
-                                    : await response.text(); 
-            } catch (parseError: unknown) {
-                 logger.error('[apiClient] Failed to parse response body:', { error: (parseError as Error)?.message ?? String(parseError) });
-                 // Use the imported ApiErrorType structure for consistency when throwing
-                 const errorPayload: ApiErrorType = {
-                    code: String(response.status), // Use status as code if parsing failed
-                    message: (parseError as Error)?.message ?? 'Failed to parse response body'
-                 };
-                throw new ApiError(errorPayload.message, errorPayload.code);
+
+            // --- BEGIN MODIFICATION ---
+            // Handle 204 No Content: Body should be empty, do not parse
+            if (response.status === 204) {
+                responseData = null; // Or undefined, or a specific marker object
+                logger.info('[apiClient] Received 204 No Content. Skipping body parsing.');
+            } else {
+            // --- END MODIFICATION ---
+                try {
+                    responseData = contentType?.includes('application/json') 
+                                        ? await response.json() 
+                                        : await response.text(); 
+                } catch (parseError: unknown) {
+                     logger.error('[apiClient] Failed to parse response body:', { error: (parseError as Error)?.message ?? String(parseError) });
+                     // Use the imported ApiErrorType structure for consistency when throwing
+                     const errorPayload: ApiErrorType = {
+                        code: String(response.status), // Use status as code if parsing failed
+                        message: (parseError as Error)?.message ?? 'Failed to parse response body'
+                     };
+                    throw new ApiError(errorPayload.message, errorPayload.code);
+                }
+            // --- ADDED closing brace for the new else block ---
             }
+            // --- END ADDED closing brace ---
 
             // ---> Add specific debug log for 401 response data (using WARN level) <--- 
             if (response.status === 401) {

@@ -226,11 +226,11 @@ describe('apiClient', () => {
         );
 
         const response = await api.get(endpoint);
-        expect(response.data).toBeUndefined();
+        expect(response.data).toBeUndefined(); // Data is undefined in error cases
         expect(response.status).toBe(401);
         expect(response.error).toBeDefined();
         expect(response.error?.code).toBe('401'); // Just status code
-        expect(response.error?.message).toBe(errorResponse.message);
+        expect(response.error?.message).toBe('Unauthorized'); // Expect standard 401 message from statusText
         // IMPORTANT: Should NOT throw AuthRequiredError
     });
 
@@ -388,8 +388,8 @@ describe('apiClient', () => {
       expect(response.error).toBeUndefined();
       expect(response.status).toBe(204);
       // Data might be null if fetch doesn't parse empty response, or T if expected
-      // ---> Expect empty string for 204 No Content response based on response.text() fallback <---
-      expect(response.data).toBe(''); 
+      // ---> Expect null for 204 No Content response <---
+      expect(response.data).toBeNull();
     });
 
 

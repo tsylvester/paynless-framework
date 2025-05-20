@@ -14,11 +14,10 @@ export const useAIChatAffordabilityStatus = (estimatedNextCost: number): Afforda
   const currentBalanceStr = useWalletStore(state => state.selectCurrentWalletBalance());
 
   return useMemo(() => {
-    const currentBalanceForDisplay = currentBalanceStr || '0';
+    const currentBalanceForDisplay = currentBalanceStr;
     const numericBalance = parseInt(currentBalanceStr, 10);
 
-    if (currentBalanceStr === null || isNaN(numericBalance)) {
-      // Handle cases where balance might be null or not a valid number
+    if (isNaN(numericBalance)) {
       return {
         currentBalance: '0',
         estimatedNextCost,

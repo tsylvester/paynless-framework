@@ -17,21 +17,38 @@ vi.mock('@paynless/store', async (importOriginal) => {
 const mockedUseWalletStore = useWalletStore as vi.MockedFunction<typeof useWalletStore>;
 
 describe('useAIChatAffordabilityStatus', () => {
-  const mockSelectCurrentWalletBalance = vi.fn();
-
   beforeEach(() => {
     vi.clearAllMocks();
-    // Setup the mock for useWalletStore to return our specific selector mock
-    mockedUseWalletStore.mockImplementation((selector?: (state: any) => any) => {
-      if (selector && selector.toString().includes('selectCurrentWalletBalance')) {
-        return mockSelectCurrentWalletBalance();
-      }
-      return {}; // Default mock for other parts of the store
+    // Default mock implementation, now includes the selector
+    mockedUseWalletStore.mockImplementation(selector => {
+      const mockState = {
+        currentWallet: null,
+        isLoadingWallet: false,
+        walletError: null,
+        loadWallet: vi.fn(),
+        // Define the selector as it would be in the real store
+        selectCurrentWalletBalance: () => (mockState.currentWallet?.balance || '0'),
+      };
+      return selector(mockState);
     });
   });
 
+  const setupMockWalletState = (balance: string | null) => {
+    mockedUseWalletStore.mockImplementation(selector => {
+      const mockState = {
+        currentWallet: balance !== null ? { balance } : null,
+        isLoadingWallet: false,
+        walletError: null,
+        loadWallet: vi.fn(),
+        // Define the selector consistent with the store's behavior
+        selectCurrentWalletBalance: () => (mockState.currentWallet?.balance || '0'),
+      };
+      return selector(mockState);
+    });
+  };
+
   it('should return canAffordNext: true and no warning when balance is sufficient', () => {
-    mockSelectCurrentWalletBalance.mockReturnValue('1000'); // Wallet has 1000 tokens
+    setupMockWalletState('1000');
     const estimatedNextCost = 100;
     const { result } = renderHook(() => useAIChatAffordabilityStatus(estimatedNextCost));
 
@@ -42,17 +59,17 @@ describe('useAIChatAffordabilityStatus', () => {
   });
 
   it('should return canAffordNext: false when balance is insufficient', () => {
-    mockSelectCurrentWalletBalance.mockReturnValue('50'); // Wallet has 50 tokens
+    setupMockWalletState('50');
     const estimatedNextCost = 100;
     const { result } = renderHook(() => useAIChatAffordabilityStatus(estimatedNextCost));
 
     expect(result.current.canAffordNext).toBe(false);
-    expect(result.current.lowBalanceWarning).toBe(true); // Also a low balance warning
+    expect(result.current.lowBalanceWarning).toBe(true);
   });
 
-  it('should return lowBalanceWarning: true when balance is low (e.g., < cost * 3) but still affordable', () => {
-    mockSelectCurrentWalletBalance.mockReturnValue('250'); // Wallet has 250 tokens
-    const estimatedNextCost = 100; // Cost * 3 = 300. Balance is < 300 but > 100.
+  it('should return lowBalanceWarning: true when balance is low but still affordable', () => {
+    setupMockWalletState('250');
+    const estimatedNextCost = 100;
     const { result } = renderHook(() => useAIChatAffordabilityStatus(estimatedNextCost));
 
     expect(result.current.canAffordNext).toBe(true);
@@ -60,16 +77,16 @@ describe('useAIChatAffordabilityStatus', () => {
   });
 
   it('should handle zero balance and zero cost correctly (can afford, no warning)', () => {
-    mockSelectCurrentWalletBalance.mockReturnValue('0');
+    setupMockWalletState('0');
     const estimatedNextCost = 0;
     const { result } = renderHook(() => useAIChatAffordabilityStatus(estimatedNextCost));
 
-    expect(result.current.canAffordNext).toBe(true); // Can afford to send a zero-cost message
-    expect(result.current.lowBalanceWarning).toBe(false); // Not a low balance if cost is also zero
+    expect(result.current.canAffordNext).toBe(true);
+    expect(result.current.lowBalanceWarning).toBe(false);
   });
 
   it('should handle non-zero balance and zero cost correctly (can afford, no warning)', () => {
-    mockSelectCurrentWalletBalance.mockReturnValue('100');
+    setupMockWalletState('100');
     const estimatedNextCost = 0;
     const { result } = renderHook(() => useAIChatAffordabilityStatus(estimatedNextCost));
 
@@ -78,16 +95,16 @@ describe('useAIChatAffordabilityStatus', () => {
   });
 
   it('should return canAffordNext: false for zero balance and non-zero cost', () => {
-    mockSelectCurrentWalletBalance.mockReturnValue('0');
+    setupMockWalletState('0');
     const estimatedNextCost = 10;
     const { result } = renderHook(() => useAIChatAffordabilityStatus(estimatedNextCost));
 
     expect(result.current.canAffordNext).toBe(false);
-    expect(result.current.lowBalanceWarning).toBe(true); // Warning because balance is 0 and cost > 0
+    expect(result.current.lowBalanceWarning).toBe(true);
   });
 
   it('should parse string balance from store correctly', () => {
-    mockSelectCurrentWalletBalance.mockReturnValue('500');
+    setupMockWalletState('500');
     const estimatedNextCost = 50;
     const { result } = renderHook(() => useAIChatAffordabilityStatus(estimatedNextCost));
     expect(result.current.currentBalance).toBe('500');
@@ -95,7 +112,7 @@ describe('useAIChatAffordabilityStatus', () => {
   });
 
   it('should consider balance exactly equal to cost * 3 as not a low balance warning but affordable', () => {
-    mockSelectCurrentWalletBalance.mockReturnValue('300');
+    setupMockWalletState('300');
     const estimatedNextCost = 100;
     const { result } = renderHook(() => useAIChatAffordabilityStatus(estimatedNextCost));
     expect(result.current.canAffordNext).toBe(true);
@@ -103,10 +120,19 @@ describe('useAIChatAffordabilityStatus', () => {
   });
 
    it('should consider balance exactly equal to cost as affordable and warning', () => {
-    mockSelectCurrentWalletBalance.mockReturnValue('100');
+    setupMockWalletState('100');
     const estimatedNextCost = 100;
     const { result } = renderHook(() => useAIChatAffordabilityStatus(estimatedNextCost));
     expect(result.current.canAffordNext).toBe(true);
     expect(result.current.lowBalanceWarning).toBe(true);
+  });
+
+  it('should correctly parse a decimal string balance from store to an integer', () => {
+    setupMockWalletState('100.75'); // Wallet has 100.75 tokens, should be parsed as 100
+    const estimatedNextCost = 50;
+    const { result } = renderHook(() => useAIChatAffordabilityStatus(estimatedNextCost));
+    expect(result.current.currentBalance).toBe('100.75'); // currentBalanceForDisplay keeps original string
+    expect(result.current.canAffordNext).toBe(true); // 100 >= 50
+    expect(result.current.lowBalanceWarning).toBe(true); // 100 < 50*3 (150)
   });
 }); 

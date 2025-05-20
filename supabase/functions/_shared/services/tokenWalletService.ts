@@ -18,8 +18,8 @@ export class TokenWalletService implements ITokenWalletService {
   constructor(userSupabaseClient: SupabaseClient<Database>) {
     this.supabaseClient = userSupabaseClient; // Client with user's auth context
     // Initialize admin client - ensure SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are in env
-    const supabaseUrl = Deno.env.get('SUPABASE_URL');
-    const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+    const supabaseUrl = Deno.env.get('SB_URL');
+    const serviceRoleKey = Deno.env.get('SB_SERVICE_ROLE_KEY');
     if (!supabaseUrl || !serviceRoleKey) {
       throw new Error('SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY must be set for TokenWalletService admin operations.');
     }
@@ -162,9 +162,9 @@ export class TokenWalletService implements ITokenWalletService {
     userId?: string,
     organizationId?: string
   ): Promise<TokenWallet | null> {
-    console.log("[TokenWalletService] Attempting to get wallet for context", { userId, organizationId });
+    console.log("[TokenWalletService GCTX_ENTRY] Attempting to get wallet for context", { userId, organizationId }); // GCTX for GetContext
     if (!userId && !organizationId) {
-      console.log("[TokenWalletService] getWalletForContext requires userId or organizationId", { userId, organizationId });
+      console.log("[TokenWalletService GCTX_DEBUG] getWalletForContext requires userId or organizationId", { userId, organizationId });
       return null;
     }
 
@@ -173,41 +173,35 @@ export class TokenWalletService implements ITokenWalletService {
       .select('wallet_id, user_id, organization_id, balance, currency, created_at, updated_at');
 
     if (organizationId) {
-      // If orgId is provided, always prioritize it.
-      // RLS will ensure the user has access to this organization's wallet.
+      console.log("[TokenWalletService GCTX_DEBUG] Querying for organization wallet", { organizationId });
       query = query.eq('organization_id', organizationId);
       if (userId) {
-        // If userId is also provided with orgId, it can be used as an additional filter
-        // or for RLS policies that might depend on the user context for an org wallet.
-        // For now, we assume RLS on organization_id is sufficient for access control.
-        // If a specific user's view of an org wallet is needed, this might change.
-        // query = query.eq('user_id', userId); // Example if user_id was also on org wallets for some reason
+        console.log("[TokenWalletService GCTX_DEBUG] UserID also provided with OrgID, RLS will handle access based on org.", { userId });
+        // query = query.eq('user_id', userId); // Not typically needed if RLS on org is primary
       }
     } else if (userId) {
-      // If only userId is provided, fetch the user's personal wallet.
-      // RLS will ensure it's the authenticated user's own wallet.
+      console.log("[TokenWalletService GCTX_DEBUG] Querying for user-specific wallet", { userId });
       query = query.eq('user_id', userId).is('organization_id', null);
     }
 
     const { data, error } = await query.maybeSingle();
 
     if (error) {
-      console.error("[TokenWalletService] Error fetching wallet for context:", { userId, organizationId, error });
-      // Consider specific error handling, e.g., if error is due to RLS (PostgREST might return 401/403 or empty data)
-      // For now, any error results in null.
+      console.error("[TokenWalletService GCTX_ERROR] Error fetching wallet for context:", { userId, organizationId, errorCode: error.code, errorMessage: error.message, errorDetails: error.details, errorHint: error.hint });
       return null;
     }
 
     if (!data) {
-      console.log("[TokenWalletService] Wallet not found for context", { userId, organizationId });
+      console.log("[TokenWalletService GCTX_DEBUG] Wallet not found for context (data is null/undefined after query)", { userId, organizationId });
       return null;
     }
 
-    console.log("[TokenWalletService] Wallet found for context, transforming...", { data });
-    // With explicit select, Supabase types might be more specific, but an explicit cast
-    // can still be useful if the exact type for _transformDbWalletToTokenWallet is very precise.
-    // For now, assuming the selected columns match the expected input structure of the helper.
-    return this._transformDbWalletToTokenWallet(data); 
+    console.log("[TokenWalletService GCTX_SUCCESS_RAW_DB_DATA] RAW DB DATA for wallet context:", JSON.stringify(data));
+    
+    const transformedWallet = this._transformDbWalletToTokenWallet(data);
+    console.log("[TokenWalletService GCTX_SUCCESS_TRANSFORMED_DATA] Transformed wallet data:", JSON.stringify(transformedWallet));
+
+    return transformedWallet;
   }
 
   async getBalance(walletId: string): Promise<string> {

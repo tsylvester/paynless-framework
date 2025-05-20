@@ -22,8 +22,8 @@ export interface WalletInfoHandlerDeps {
 }
 
 // Create Default Dependencies
-const supabaseUrlForDefault = Deno.env.get("SUPABASE_URL");
-const serviceRoleKeyForDefault = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+const supabaseUrlForDefault = Deno.env.get("SB_URL");
+const serviceRoleKeyForDefault = Deno.env.get("SB_SERVICE_ROLE_KEY");
 
 // Note: Default TokenWalletService instantiation might be complex if it needs an async-created client.
 // For now, we'll rely on it being created inside the handler if not provided, using the client from deps.
@@ -70,14 +70,15 @@ export async function walletInfoRequestHandler(req: Request, deps: WalletInfoHan
     const organizationId = url.searchParams.get("organizationId") || undefined;
     const userId = user.id;
 
-    logger.info(`Fetching wallet info for user: ${userId}, org: ${organizationId}`);
+    logger.info(`[WalletInfoHandler INFO] Fetching wallet info for user: ${userId}, org: ${organizationId}`);
 
     const tokenWalletService = tokenWalletServiceInstance || new NewTokenWalletService(supabaseUserClient);
 
     const wallet = await tokenWalletService.getWalletForContext(userId, organizationId);
+    logger.info(`[WalletInfoHandler INFO] Wallet data returned by tokenWalletService.getWalletForContext: ${JSON.stringify(wallet)}`);
 
-    const responseBody: WalletInfoResponse = { data: wallet };
-    return createSuccessResponse(responseBody, 200, req);
+    logger.info(`[WalletInfoHandler INFO] Sending wallet directly as response body: ${JSON.stringify(wallet)}`);
+    return createSuccessResponse(wallet, 200, req);
 
   } catch (error: unknown) {
     const err = error instanceof Error ? error : new Error(String(error));

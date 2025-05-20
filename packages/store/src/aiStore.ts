@@ -26,6 +26,7 @@ import { api } from '@paynless/api'; // MOVED HERE
 
 import { logger } from '@paynless/utils';
 import { useAuthStore } from './authStore';
+import { useWalletStore } from './walletStore'; // <<< --- ADD THIS IMPORT --- >>>
 
 // Use the imported AiStore type
 export const useAiStore = create<AiStore>()(
@@ -654,6 +655,17 @@ export const useAiStore = create<AiStore>()(
                                     };
                                 });
                                 logger.info('Message sent and response received:', { messageId: assistantMessage.id, chatId: finalChatIdForLog, rewound: responseIsRewind ?? isRewindOperation });
+                                
+                                // <<< --- REFRESH WALLET AFTER SUCCESSFUL SEND/RECEIVE --- >>>
+                                try {
+                                    logger.info('[aiStore sendMessage] Triggering wallet refresh after successful message.');
+                                    useWalletStore.getState().loadWallet(); // No need for await if we don't want to block this return
+                                } catch (walletError) {
+                                    logger.error('[aiStore sendMessage] Error triggering wallet refresh:', { error: String(walletError) });
+                                    // Decide if this error should be surfaced to the user or just logged
+                                }
+                                // <<< --- END WALLET REFRESH --- >>>
+
                                 return assistantMessage; // Keep returning assistant message for potential UI focus etc.
                             } else {
                                 throw new Error('API returned success status but no data.');

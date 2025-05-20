@@ -60,31 +60,39 @@ export const useWalletStore = create<WalletStore>((set, get) => ({
 
   loadWallet: async (organizationId?: string | null) => {
     set({ isLoadingWallet: true, walletError: null });
+    console.log('[WalletStore loadWallet] Initiating fetch', { organizationId }); // Log initiation
     try {
       const response = await api.wallet().getWalletInfo(organizationId);
+      console.log('[WalletStore loadWallet] API response received:', response); // Log raw API response
 
       if (response.error) {
         const errorToSet: ApiErrorType = 
           response.error && typeof response.error.message === 'string' && typeof response.error.code === 'string'
           ? response.error
           : { message: String(response.error) || 'Failed to fetch wallet', code: 'UNKNOWN_API_ERROR' }; 
-        set({ currentWallet: null, walletError: errorToSet, isLoadingWallet: false });
-        return;
-      }
+        console.log('[WalletStore loadWallet] Setting error state:', errorToSet);
+        set({ isLoadingWallet: false, walletError: errorToSet, currentWallet: null });
+      } else {
+        // response.data is now directly TokenWallet | null, not { data: TokenWallet | null }
+        const walletData = response.data;
+        console.log('[WalletStore loadWallet] API success. response.data (should be TokenWallet | null):', walletData);
+        console.log('[WalletStore loadWallet] Wallet balance from walletData?.balance:', walletData?.balance);
+        
+        const walletToSet = walletData && typeof walletData === 'object' && 'walletId' in walletData ? walletData : null;
+        console.log('[WalletStore loadWallet] Wallet object being set to store:', walletToSet);
 
-      if (response.data === null || response.data === undefined) {
         set({
-          currentWallet: null,
-          walletError: { message: 'Failed to fetch wallet: No data returned', code: 'NOT_FOUND' },
           isLoadingWallet: false,
+          currentWallet: walletToSet, // Set the wallet object or null
+          walletError: null,
         });
-        return;
+        console.log('[WalletStore loadWallet] State SET with wallet. currentWallet?.balance should now be:', walletToSet?.balance);
       }
-
-      set({ currentWallet: response.data, isLoadingWallet: false, walletError: null });
     } catch (error: unknown) {
+      const networkError = { message: error instanceof Error ? error.message : 'An unknown network error occurred', code: 'NETWORK_ERROR' };
+      console.log('[WalletStore loadWallet] Setting catch error state:', networkError, error);
       set({
-        walletError: { message: error instanceof Error ? error.message : 'An unknown network error occurred', code: 'NETWORK_ERROR' },
+        walletError: networkError,
         isLoadingWallet: false,
         currentWallet: null,
       });

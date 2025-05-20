@@ -440,9 +440,17 @@ The implementation plan uses the following labels to categorize work steps:
         *   **Goal:** Periodically grant a base number of tokens to all eligible users (e.g., free tier users, or all users as a baseline).
         *   [ ] **4.1.3.2.11.1: [ARCH] Define Allocation Rules & Schedule**
             *   Determine token amount, frequency (e.g., monthly, weekly), and eligibility criteria (e.g., all active users, users on a specific 'free' plan type).
+            *   Free users get 100k tokens per month
+            *   $9.99 subscription users get 10m tokens per month
+            *   $99.99 subscription users get 120m tokens annually
+            *   $9.99 OTP users get 10m tokens once 
         *   [ ] **4.1.3.2.11.2: [DB] [TYPES] User Plan/Tier Tracking (If Needed)**
             *   If allocation depends on user tier (e.g. 'free' vs 'paid'), ensure `users` or `user_subscriptions` table can identify this tier.
+            *   TokenWallet tracks use and balance
+            *   Subscription plan or OTP defines top-up timing
+            *   Free users get token grant at start of new period 
         *   [ ] **4.1.3.2.11.3: [BE] Create Scheduled Edge Function (`/allocate-periodic-tokens`)**
+            *   **QUESTION: WHY IS THIS NEEDED? WHY ISN'T THE SUBSCRIPTION PLAN SUFFICIENT?** 
             *   This function will query eligible users.
             *   For each eligible user, it will use `TokenWalletService.recordTransaction` to credit their wallet with the defined token amount.
             *   Type could be `CREDIT_PERIODIC_ALLOCATION` or similar.
@@ -777,22 +785,23 @@ The implementation plan uses the following labels to categorize work steps:
     *   Uses `useWalletStore(selectWalletTransactions)` and `state.isLoadingHistory`.
     *   Calls `useWalletStore.getState().loadTransactionHistory()` on mount. Supports pagination.
     *   [TEST-UNIT] Write tests.
-*   [ ] **4.4.6.4: [COMMIT]** "feat(UI): Implement wallet balance display, top-up page, and transaction history page w/ tests"
+*   [✅] **4.4.6.4: [COMMIT]** "feat(UI): Implement wallet balance display, top-up page, and transaction history page w/ tests"
 
 ---
 
 ## Phase 4.7: Improved prompt structuring & chat streaming
 
 **Goal:** Better management of the total prompt content sent to the AI. 
-*   [ ] Always send the chosen system prompt
-*   [ ] Send the full content of all the selected chats
-*   [ ] Send the users' latest input
-*   [ ] Sliding chat content window based on providers context window
+*   [✅] Always send the chosen system prompt
+*   [✅] Send the full content of all the selected chats
+*   [✅] Send the users' latest input
+*   [ ] Sliding chat context window based on providers context window
     *   [ ] Calculation showing how much of context window is used
-    *   [ ] Calculation showing how much the message will cost 
+    *   [✅] Calculation showing how much the message will cost 
     *   [ ] Calculation showing the estimated cost of receiving the answer
 *   [ ] Get chat input streamed so multi-user chats show real time 
 *   [ ] Stream chat history so new chats show up without a refresh
+
 
 ## Phase 4.8: Review & Finish Incomplete Sections
 
@@ -843,10 +852,12 @@ The implementation plan uses the following labels to categorize work steps:
 
 *   [ ] **4.8.4: [UI] Implement Wallet UI (`4.4.6`)**
     *   [ ] **4.8.4.1: Wallet Balance Display (`4.4.6.1`)**: Create `WalletBalanceDisplay.tsx`, integrate, test.
-    *   [ ] **4.8.4.2: Token Top-Up UI (`4.4.6.2`)**: Create `TopUpPage.tsx` (or modal), integrate, test.
     *   [ ] **4.8.4.3: Wallet Transaction History UI (`4.4.6.3`)**: Create `WalletHistoryPage.tsx`, integrate, test.
     *   [ ] **4.8.4.4: [COMMIT] (`4.4.6.4`)**.
-
+*   [ ] Fix Wallet Overview card
+*   [ ] Fix Wallet fetch errors
+*   [ ] Fix Transaction History page 
+*   [ ] Build WalletBalanceDisplay test 
 ---
 
 ## Phase 4.9: End-to-End Testing, Refinement, and Security Review

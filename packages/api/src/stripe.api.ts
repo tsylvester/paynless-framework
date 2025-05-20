@@ -1,7 +1,7 @@
 // src/api/clients/stripe.api.ts
 
 import type { ApiClient } from './apiClient';
-import type { ApiResponse, SubscriptionPlan, UserSubscription, SubscriptionUsageMetrics, CheckoutSessionResponse, PortalSessionResponse, FetchOptions } from '@paynless/types';
+import type { ApiResponse, SubscriptionPlan, UserSubscription, SubscriptionUsageMetrics, PortalSessionResponse, FetchOptions } from '@paynless/types';
 import { logger } from '@paynless/utils';
 
 /**

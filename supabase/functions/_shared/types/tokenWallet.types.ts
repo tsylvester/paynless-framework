@@ -22,6 +22,7 @@ export type TokenWalletTransactionType =
   | 'CREDIT_PURCHASE' // Tokens added via payment
   | 'CREDIT_ADJUSTMENT' // Manual credit by admin
   | 'CREDIT_REFERRAL' // Tokens awarded for referral
+  | 'CREDIT_MONTHLY_FREE_ALLOCATION' // Tokens for monthly free plan users (NEW)
   | 'DEBIT_USAGE' // Tokens consumed by AI service usage
   | 'DEBIT_ADJUSTMENT' // Manual debit by admin
   | 'TRANSFER_IN' // Tokens received from another wallet (future)
