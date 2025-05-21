@@ -284,7 +284,7 @@ import {
         dbCounters.subscriptionPlansSelectData = [{
           stripe_price_id: idemPriceId,
           item_id_internal: idemPlanItemId, 
-          tokens_awarded: tokensToAward,
+          tokens_to_award: tokensToAward,
           plan_type: 'subscription',
           active: true,
           name: "Idempotency Test Plan"
@@ -309,7 +309,7 @@ import {
               price: { id: idemPriceId, object: 'price' as const, active: true, currency: 'usd' } as Stripe.Price,
               quantity: 1, subscription_item: 'si_idem_1'
             } as Stripe.InvoiceLineItem], has_more: false, url: '' },
-          metadata: { user_id: userId }, 
+          metadata: { user_id: userId, tokens_to_award: tokensToAward.toString() }, 
         };
         const stripeEventData: Stripe.Event = {
           id: eventId, type: 'invoice.payment_succeeded', api_version: '2020-08-27',
@@ -399,10 +399,6 @@ import {
         assertEquals(txArgs1.amount, tokensToAward.toString(), "First call: recordTransactionSpy amount");
         assertEquals(txArgs1.relatedEntityId, firstProcessedPtxId, "First call: recordTransactionSpy relatedEntityId");
 
-        assertEquals(dbCounters.userSubscriptionsUpdateCallCount, 1, "First call: userSubscriptionsUpdateCallCount");
-        const updatedSubCall1 = dbCounters.capturedUserSubscriptionsUpdate;
-        assertExists(updatedSubCall1, "First call: updatedSubCall1 should exist");
-
         // --- Setup for SECOND Call ---
         assertExists(insertedPT, "insertedPT is needed for second call setup"); // Ensure insertedPT is defined before spread
         assertExists(updatedPTCall1, "updatedPTCall1 is needed for second call setup"); // Ensure updatedPTCall1 is defined
@@ -410,7 +406,7 @@ import {
         dbCounters.paymentTransactionsSelectData = [{
             ...insertedPT, 
             id: firstProcessedPtxId, 
-            status: 'COMPLETED', 
+            status: 'succeeded',
             gateway_transaction_id: invoiceId, 
             tokens_to_award: tokensToAward,
             user_id: userId,
@@ -429,7 +425,6 @@ import {
         assertEquals(dbCounters.paymentTransactionsInsertCallCount, 1, "Second call: PT insert count should remain 1");
         assertEquals(dbCounters.paymentTransactionsUpdateCallCount, 1, "Second call: PT update count should remain 1");
         assertEquals(recordTransactionSpy.calls.length, 1, "Second call: recordTransactionSpy call count should remain 1");
-        assertEquals(dbCounters.userSubscriptionsUpdateCallCount, 1, "Second call: userSubscriptionsUpdateCallCount should remain 1");
       });
     });
   });

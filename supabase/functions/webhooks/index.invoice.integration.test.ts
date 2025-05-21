@@ -164,7 +164,7 @@ import {
       dbCounters.subscriptionPlansSelectData = [{ 
           stripe_price_id: 'price_for_invoice_ps', 
           item_id_internal: 'item_id_for_invoice_ps', 
-          tokens_awarded: 7500 
+          tokens_to_award: 7500 
       }];
       dbCounters.subscriptionPlansSelectShouldReturnEmpty = false; 
       dbCounters.tokenWalletsSelectData = null; 
@@ -521,7 +521,7 @@ import {
         dbCounters.subscriptionPlansSelectData = [{
           stripe_price_id: 'price_id_for_sub_invoice_ps_test_int', // Use the literal string value
           item_id_internal: 'item_id_for_invoice_ps_renewal', 
-          tokens_awarded: 7500, // Changed from 3000 to 7500
+          tokens_to_award: 7500, // Changed from 3000 to 7500
           plan_type: 'subscription',
           active: true,
           name: "Test Plan for Renewal"
