@@ -17,7 +17,7 @@ export async function handlePriceUpdated(
       eventId: event.id,
       priceId: price.id,
       active: price.active,
-      nickname: price.nickname,
+      nickname: price.nickname, // Still log original nickname for context
       currency: price.currency,
       unitAmount: price.unit_amount,
       metadata: price.metadata, // Log full metadata for debugging
@@ -38,15 +38,16 @@ export async function handlePriceUpdated(
   }
 
   try {
-    // Extract tokens_awarded from metadata
+    const itemIdInternalFromMeta = price.metadata?.item_id_internal as string | undefined;
+
     let tokensAwarded: number | undefined = undefined;
-    const tokensAwardedString = price.metadata?.tokens_awarded;
+    const tokensAwardedString = price.metadata?.tokens_to_award;
     if (tokensAwardedString) {
       const parsedTokens = parseInt(tokensAwardedString, 10);
       if (!isNaN(parsedTokens)) {
         tokensAwarded = parsedTokens;
       } else {
-        logger.warn(`[${functionName}] Invalid non-numeric value for tokens_awarded metadata: "${tokensAwardedString}". Price ID: ${price.id}. Not updating tokens_awarded.`);
+        logger.warn(`[${functionName}] Invalid non-numeric value for tokens_to_award metadata: "${tokensAwardedString}". Price ID: ${price.id}. Not updating tokens_to_award.`);
       }
     }
 
@@ -57,20 +58,20 @@ export async function handlePriceUpdated(
       metadata: price.metadata as unknown as Json,
       item_id_internal: price.nickname,
       currency: price.currency,
-      amount: typeof price.unit_amount === 'number' ? price.unit_amount / 100 : undefined,
+      amount: price.unit_amount,
       plan_type: planType,
       interval: price.recurring?.interval,
       interval_count: price.recurring?.interval_count,
       updated_at: new Date().toISOString(),
     };
 
-    // Conditionally add tokens_awarded to updateData if it's valid
+    // Conditionally add tokens_to_award to updateData if it's valid
     if (tokensAwarded !== undefined) {
-      updateData.tokens_awarded = tokensAwarded;
+      updateData.tokens_to_award = tokensAwarded;
     } else if (tokensAwardedString !== undefined && tokensAwarded === undefined) {
-      // If tokens_awarded was in metadata but invalid, explicitly set to null to clear potentially old valid values.
-      // If tokens_awarded was never in metadata, we don't add it to updateData, leaving existing db value.
-      updateData.tokens_awarded = null;
+      // If tokens_to_award was in metadata but invalid, explicitly set to null to clear potentially old valid values.
+      // If tokens_to_award was never in metadata, we don't add it to updateData, leaving existing db value.
+      updateData.tokens_to_award = null;
     }
 
     const { error: updateError, data: updatedPlans } = await supabaseClient

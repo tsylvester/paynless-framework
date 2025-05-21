@@ -294,7 +294,7 @@ import {
           name: 'Mock Plan for Update',
           active: true,
           plan_type: 'subscription',
-          tokens_awarded: 100, // Example
+          tokens_to_award: 100, // Example
         }];
 
         const mockUpdatedSubscription: Partial<Stripe.Subscription> = {
@@ -390,7 +390,7 @@ import {
           name: 'System Free Tier',
           active: true,
           plan_type: 'subscription',
-          tokens_awarded: 0, 
+          tokens_to_award: 0, 
         }];
 
         const mockDeletedSubscription: Partial<Stripe.Subscription> = {

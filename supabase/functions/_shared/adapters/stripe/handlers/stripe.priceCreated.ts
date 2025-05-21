@@ -2,6 +2,7 @@ import Stripe from "npm:stripe";
 import { PaymentConfirmation } from "../../../types/payment.types.ts";
 import { parseProductDescription } from '../../../utils/productDescriptionParser.ts';
 import type { ProductPriceHandlerContext } from '../../../stripe.mock.ts';
+import { TablesInsert, Json } from "../../../../types_db.ts";
 
 export async function handlePriceCreated(
   context: ProductPriceHandlerContext,
@@ -12,12 +13,13 @@ export async function handlePriceCreated(
   const functionName = 'handlePriceCreated';
 
   logger.info(
-    `[${functionName}] Handling ${event.type} for price ${price.id}. Active: ${price.active}, Product ID: ${price.product}`,
+    `[${functionName}] Handling ${event.type} for price ${price.id}. Product ID: ${typeof price.product === 'string' ? price.product : price.product?.id}, Active: ${price.active}`,
     {
       eventId: event.id,
       priceId: price.id,
       productId: typeof price.product === 'string' ? price.product : price.product?.id,
       active: price.active,
+      metadata: price.metadata,
       livemode: event.livemode
     }
   );
@@ -61,6 +63,7 @@ export async function handlePriceCreated(
     const productResponse = await stripe.products.retrieve(price.product);
     logger.info(
       `[${functionName}] Successfully retrieved product ${price.product} for price ${price.id}.`,
+      { eventId: event.id, priceId: price.id, productId: price.product }
     );
 
     if (productResponse.deleted) {
@@ -79,11 +82,11 @@ export async function handlePriceCreated(
     const parsedDescription = parseProductDescription(stripeProduct.name, stripeProduct.description);
 
     let tokensAwarded: number | undefined = undefined;
-    if (stripeProduct.metadata?.tokens_awarded) {
-      const parsedTokens = parseInt(stripeProduct.metadata.tokens_awarded, 10);
+    if (stripeProduct.metadata?.tokens_to_award) {
+      const parsedTokens = parseInt(stripeProduct.metadata.tokens_to_award, 10);
       if (isNaN(parsedTokens)) {
         logger.warn(
-          `[${functionName}] Invalid non-numeric value for tokens_awarded metadata: "${stripeProduct.metadata.tokens_awarded}". Product ID: ${stripeProduct.id}, Price ID: ${price.id}. Setting tokens_awarded to undefined.`
+          `[${functionName}] Invalid non-numeric value for tokens_to_award metadata: "${stripeProduct.metadata.tokens_to_award}". Product ID: ${stripeProduct.id}, Price ID: ${price.id}. Setting tokens_to_award to undefined.`
         );
       } else {
         tokensAwarded = parsedTokens;
@@ -101,7 +104,7 @@ export async function handlePriceCreated(
       interval_count: price.recurring?.interval_count || 1,
       active: price.active,
       metadata: price.metadata || {},
-      tokens_awarded: tokensAwarded,
+      tokens_to_award: tokensAwarded,
       item_id_internal: price.id,
       plan_type: price.type === 'recurring' ? 'subscription' : 'one_time_purchase',
     };

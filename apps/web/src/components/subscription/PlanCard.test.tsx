@@ -23,7 +23,7 @@ const mockPlan: SubscriptionPlan = {
   updated_at: new Date().toISOString(),
   item_id_internal: null,
   plan_type: 'subscription',
-  tokens_awarded: 1000,
+  tokens_to_award: 1000,
 };
 
 const mockHandleSubscribe = vi.fn();
@@ -111,7 +111,7 @@ describe('PlanCard Component', () => {
       amount: 0,
       plan_type: 'subscription', // Or 'subscription' if appropriate, ensure consistency
       item_id_internal: 'default_free',
-      tokens_awarded: 0,
+      tokens_to_award: 0,
     };
 
     beforeEach(() => {

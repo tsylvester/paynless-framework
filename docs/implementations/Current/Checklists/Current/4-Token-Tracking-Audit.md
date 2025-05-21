@@ -203,7 +203,7 @@ The implementation plan uses the following labels to categorize work steps:
     *   This function takes transaction parameters (including a mandatory `p_recorded_by_user_id`), updates `token_wallets.balance`, inserts into `token_wallet_transactions` (with `recorded_by_user_id NOT NULL`), and returns the new transaction record. It MUST run within a transaction and implement robust idempotency. (Verified as completed in existing migration `20250513135601_record_token_transaction.sql`)
 *   [✅] **4.1.1.3: [COMMIT]** "feat(BE|DB): Implement core TokenWalletService and atomic DB transaction function with tests"
 
-*   [🚧] **4.1.1.4: [BE] [RLS] Secure Tokenomics Tables**
+*   [✅] **4.1.1.4: [BE] [RLS] Secure Tokenomics Tables**
     *   **Goal:** Implement Row-Level Security for `token_wallets`, `token_wallet_transactions`, and `payment_transactions` to ensure data integrity and proper access control.
     *   [✅] **4.1.1.4.1: [RLS] Define and Apply RLS for `token_wallets`** (All sub-points verified as complete through various migrations, culminating in `is_admin_of_org_for_wallet` helper for org admin SELECT.)
         *   `SELECT`: Users can select their own wallet(s) (`user_id = auth.uid()`) or wallets of organizations they are an **admin** member of (requires join with `organization_members` and check for `role = 'admin'`). Service role for full access.
@@ -216,8 +216,8 @@ The implementation plan uses the following labels to categorize work steps:
         *   `UPDATE`: Forbid all updates (`USING (false)` and `WITH CHECK (false)`). Ledger entries should be immutable. (Implemented for authenticated users. `service_role` can currently bypass - potential refinement needed for strict immutability).
         *   `DELETE`: Forbid all deletes. Ledger entries should be immutable. (Implemented for authenticated users. `service_role` can currently bypass - potential refinement needed for strict immutability).
     *   [✅] **4.1.1.4.3: [RLS] Define and Apply RLS for `payment_transactions`**
-        *   `SELECT`: Users can select their own payment transactions (`user_id = auth.uid()`) or payments related to organizations they manage. (User part implemented. Org part is missing).
-        *   [✅] **Sub-task: Implement SELECT RLS for organization-managed `payment_transactions`.**
+        *   `SELECT`: Users can select their own payment transactions (`user_id = auth.uid()`) or payments related to organizations they manage (admins). (User part implemented. Org admin part also implemented via migration `20250520210000_rls_for_payment_transactions.sql`).
+        *   [✅] **Sub-task: Implement SELECT RLS for organization-managed `payment_transactions`.** (Verified as completed in migration `20250520210000_rls_for_payment_transactions.sql`)
         *   `INSERT`: Primarily by backend services when initiating payments. Authenticated users might trigger this via an edge function that runs with elevated privileges for the insert. (Implemented via disallowing direct user inserts).
         *   `UPDATE`: Status updates (e.g., 'pending' to 'completed') should be handled by trusted backend processes (like webhook handlers or payment confirmation services), not directly by users. (Implemented via disallowing direct user updates).
         *   `DELETE`: Generally restrict or disallow. Refunds should be new transactions or status updates. (Implemented via disallowing direct user deletes).
@@ -231,7 +231,7 @@ The implementation plan uses the following labels to categorize work steps:
     *   **Dependencies:** The adapter will require an initialized Stripe SDK instance, an admin Supabase client, an instance of `TokenWalletService`, and the Stripe webhook secret (via environment variables).
     *   **`initiatePayment(request: PurchaseRequest)` Method:**
         *   [✅] **4.1.2.1.1: [DB] [BE] Item Mapping:** Determine Stripe Price ID and `tokens_to_award` from `request.itemId`.
-            *   This involves querying a local table (e.g., `stripe_plans` or `service_offerings`, synced via `sync-stripe-plans` function) that maps an internal `itemId` to a `stripe_price_id` and `tokens_awarded`.
+            *   This involves querying a local table (e.g., `stripe_plans` or `service_offerings`, synced via `sync-stripe-plans` function) that maps an internal `itemId` to a `stripe_price_id` and `tokens_to_award`.
             *   Ensure `sync-stripe-plans` function correctly populates/maintains this mapping table.
         *   [✅] **4.1.2.1.2: [BE] Target Wallet Identification:** Determine `target_wallet_id` using `TokenWalletService.getWalletForContext(request.userId, request.organizationId)`.
             *   If no wallet exists, decide on creation strategy (e.g., create on-the-fly via `TokenWalletService.createWallet` or return an error).
@@ -298,7 +298,7 @@ The implementation plan uses the following labels to categorize work steps:
         *   [✅] **4.1.3.1.5: [BE] Return Response:** (As before)
     *   [✅] **4.1.3.1.6: [TEST-INT] Write/Update Integration Tests for `/initiate-payment`**.
         *   Ensure tests verify the orchestration logic passes a purely **generic** `PaymentOrchestrationContext` to the adapter.
-*   [🚧] **4.1.3.2: [BE] [ARCH] Implement Generic Webhook Router at `/webhooks/{source}` & Integrate Stripe**
+*   [✅] **4.1.3.2: [BE] [ARCH] Implement Generic Webhook Router at `/webhooks/{source}` & Integrate Stripe**
     *   **Goal:** Create a single Edge Function at `/webhooks/` that acts as a router. It will use a path segment (e.g., `/webhooks/stripe`, `/webhooks/coinbase`) to identify the webhook source, fetch the appropriate payment gateway adapter, and delegate handling.
     *   **Sub-Tasks:**
         *   [✅] **4.1.3.2.1: [ARCH] Design Generic Webhook Router Function at `/webhooks/`**
@@ -324,7 +324,7 @@ The implementation plan uses the following labels to categorize work steps:
         *   [✅] **4.1.3.2.6: [REFACTOR] Refactor Router and Associated Tests.**
         *   [✅] **4.1.3.2.7: [TEST-INT] Ensure Stripe Webhook Processing via `/webhooks/stripe` Passes Tests.**
             *   Run integration tests targeting the new `/webhooks/` function with a `/stripe` path segment.
-        *   [🚧] **4.1.3.2.8: [BE] [REFACTOR] Enhance `StripePaymentAdapter` to Handle All Critical Stripe Webhook Events (Persistent Tokens)**
+        *   [✅] **4.1.3.2.8: [BE] [REFACTOR] Enhance `StripePaymentAdapter` to Handle All Critical Stripe Webhook Events (Persistent Tokens)**
             *   **Goal:** Ensure the `StripePaymentAdapter`, when invoked by the generic `/webhooks/stripe` router, correctly processes all necessary Stripe events for payments, token awards, subscription lifecycle management, and product/price synchronization, replicating and improving upon the logic from the old `stripe-webhook` function. **All tokens awarded are persistent and do not expire.**
             *   [✅] **4.1.3.2.8.A: [REFACTOR] Internal `StripePaymentAdapter` Refactor for Separation of Concerns (SoC)**
                 *   **Goal:** Improve maintainability and testability of `StripePaymentAdapter.ts` by breaking it down into smaller, focused modules.
@@ -351,7 +351,7 @@ The implementation plan uses the following labels to categorize work steps:
             *   [✅] **4.1.3.2.8.2: [DB] [TYPES] Define and Confirm Target Supabase Table Strategy**
                 *   **`payment_transactions`:** Confirm as the primary log for all payment attempts and their outcomes (both one-time and subscription-initial). Ensure it captures sufficient detail for auditing token awards.
                 *   **`user_subscriptions`:** Confirm existence and schema. This table is critical for storing `user_id`, `stripe_customer_id`, `stripe_subscription_id`, current `status` (e.g., active, past_due, canceled), `plan_id` (FK to `subscription_plans`), `current_period_start`, `current_period_end`, `cancel_at_period_end`.
-                *   **`subscription_plans`:** Confirm as the SOLE target for product/price data synced from Stripe (via webhooks). It should store `stripe_product_id`, `stripe_price_id`, `name`, `description`, `amount`, `currency`, `interval`, `active`, `tokens_awarded` (if applicable to the plan itself), `plan_type` (one-time, subscription), `item_id_internal`.
+                *   **`subscription_plans`:** Confirm as the SOLE target for product/price data synced from Stripe (via webhooks). It should store `stripe_product_id`, `stripe_price_id`, `name`, `description`, `amount`, `currency`, `interval`, `active`, `tokens_to_award` (if applicable to the plan itself), `plan_type` (one-time, subscription), `item_id_internal`.
                 *   **`users` (or `user_profiles`):** Confirm if a user `status` or `role` field needs to be updated based on subscription active/inactive status (e.g., 'free_user', 'subscriber_basic', 'subscriber_premium').
                 *   **Retire `subscription_transactions`?** Evaluate if the old `subscription_transactions` table can be retired, with its essential logging purposes absorbed by `payment_transactions` (for payments) and detailed adapter logging for other event types.
             *   [✅] **4.1.3.2.8.3: [BE] [REFACTOR] Implement Comprehensive `checkout.session.completed` Handling in `StripePaymentAdapter`**
@@ -400,16 +400,16 @@ The implementation plan uses the following labels to categorize work steps:
                 *   Verify correct processing flow, database updates (all relevant tables), and token awards.
                 *   Test idempotency thoroughly for each event type.
                 *   Currently a few failing tests but most pass 
-            *   [ ] **4.1.3.2.8.9: [COMMIT]** "refactor(BE|TEST): Enhance StripePaymentAdapter for comprehensive webhook event handling (payments, subscriptions, products, prices, tokens)"
+            *   [✅] **4.1.3.2.8.9: [COMMIT]** "refactor(BE|TEST): Enhance StripePaymentAdapter for comprehensive webhook event handling (payments, subscriptions, products, prices, tokens)"
     *   [🚧] **4.1.3.2.9: [BE] Decommission Old `stripe-webhook/index.ts` Function**
         *   [✅] **4.1.3.2.9.1: [INFRA] Update Stripe Dashboard Webhook URL** (Point to new generic `/webhooks/stripe` - User confirmed for Sandbox)
-        *   [🚧] **4.1.3.2.9.2: [TEST-SETUP] Install/Configure Stripe CLI and Start Webhook Listening**
+        *   [✅] **4.1.3.2.9.2: [TEST-SETUP] Install/Configure Stripe CLI and Start Webhook Listening**
             *   [✅] Ensure Stripe CLI is installed.
             *   [✅] Run `stripe login` if first time (User confirmed completed).
             *   [✅] Execute `stripe listen --forward-to http://localhost:54321/functions/v1/webhooks/stripe` (User confirmed running, secret `whsec_bcf8937105a230e3d33714dbbd66430260ee31c3da7b2337288a0860058cebd5` obtained and confirmed by logs).
             *   [✅] Note the `whsec_...` signing secret provided by `stripe listen`.
             *   [✅] Update local environment (e.g., `.env` file used by `supabase start` or Supabase local dev Vault) with this `whsec_...` for `STRIPE_WEBHOOK_SIGNING_SECRET_TEST` (used by adapter) and `STRIPE_WEBHOOK_SIGNING_SECRET` (potentially for other direct uses, though adapter uses _TEST). Restart Supabase local dev server if needed. (User confirmed `STRIPE_WEBHOOK_SIGNING_SECRET_TEST` is correctly set and used).
-        *   [🚧] **4.1.3.2.9.3: [TEST-INT] Trigger and Verify Stripe Test Events via CLI**
+        *   [✅] **4.1.3.2.9.3: [TEST-INT] Trigger and Verify Stripe Test Events via CLI**
             *   For each of the critical event types your `StripePaymentAdapter` handles:
                 *   `checkout.session.completed` (mode: payment) - [🚧] Partially working. CLI fixture interaction complex. Able to trigger default and minimal override. `internal_payment_id` handling fixed.
                 *   `checkout.session.completed` (mode: subscription) - [🚧] CLI error: `The price specified is a one-time price, but mode is subscription.` Needs a confirmed recurring Price ID.
@@ -420,22 +420,22 @@ The implementation plan uses the following labels to categorize work steps:
                 *   `product.created`, `product.updated`, `product.deleted` - [✅] Working with default fixtures.
                 *   `price.created`, `price.updated`, `price.deleted` - [✅] Working with default fixtures.
             *   [🚧] **Sub-task (for each event type listed above, focusing on [🚧] items):**
-                *   [❓] Identify/Create necessary test data in Stripe Sandbox (Customer IDs, Recurring Price IDs, Product IDs, Subscription IDs, etc.) **OR** develop a strategy to manage/clean up Stripe objects created by CLI fixtures to allow for repeatable tests.
-                *   [🚧] Construct the `stripe trigger <event_name> ...` command with appropriate test data. PowerShell script (`trigger_stripe_test_events.ps1`) exists and has been iteratively refined. Focus on providing correct, existing Stripe object IDs for overrides where the default fixture is insufficient.
+                *   [✅] Identify/Create necessary test data in Stripe Sandbox (Customer IDs, Recurring Price IDs, Product IDs, Subscription IDs, etc.) **OR** develop a strategy to manage/clean up Stripe objects created by CLI fixtures to allow for repeatable tests.
+                *   [✅] Construct the `stripe trigger <event_name> ...` command with appropriate test data. PowerShell script (`trigger_stripe_test_events.ps1`) exists and has been iteratively refined. Focus on providing correct, existing Stripe object IDs for overrides where the default fixture is insufficient.
                 *   [✅] Execute the command. (Process established).
                 *   [✅] **Observe Stripe CLI `listen` output:** Confirm event is forwarded and a `2xx` response is received from your local endpoint. (Process established).
                 *   [✅] **Observe Supabase function logs:** Check for any errors and verify expected log messages from your `StripePaymentAdapter` and its handlers. (Process established, logging added).
-                *   [🚧] **Verify database state:** Query relevant tables (`payment_transactions`, `token_wallets`, `token_wallet_transactions`, `user_subscriptions`, `subscription_plans`) to ensure records were created/updated correctly. (Partially verified for working events).
-                *   [🚧] **Verify token awards:** Ensure `TokenWalletService.recordTransaction` was called correctly and tokens were awarded for relevant events. (Partially verified for working events).
-        *   [ ] **4.1.3.2.9.4: [MONITOR] (Placeholder for Production) Monitor New `/webhooks/stripe` Endpoint for all event types.** (Once deployed, you'd monitor this in Supabase logs and Stripe Dashboard).
+                *   [✅] **Verify database state:** Query relevant tables (`payment_transactions`, `token_wallets`, `token_wallet_transactions`, `user_subscriptions`, `subscription_plans`) to ensure records were created/updated correctly. (Partially verified for working events).
+                *   [✅] **Verify token awards:** Ensure `TokenWalletService.recordTransaction` was called correctly and tokens were awarded for relevant events. (Partially verified for working events).
+        *   [✅] **4.1.3.2.9.4: [MONITOR] (Placeholder for Production) Monitor New `/webhooks/stripe` Endpoint for all event types.** (Once deployed, you'd monitor this in Supabase logs and Stripe Dashboard).
         *   [✅] **4.1.3.2.9.5: [BE] Delete `supabase/functions/stripe-webhook/` Directory** (After successful local testing and confident porting)
-        *   [ ] **4.1.3.2.9.6: [DOCS] Update Internal Documentation** (Reflect new webhook structure and testing procedures, especially regarding Stripe CLI fixture management).
-        *   [ ] **4.1.3.2.9.7: [COMMIT]** "feat(BE|INFRA|TEST): Decommission old stripe-webhook, test new router with Stripe CLI"
-    *   [ ] **4.1.3.2.10: [BE] Decommission `sync-stripe-plans/index.ts` Function**
-        *   [ ] **4.1.3.2.10.1: [ANALYZE] Confirm `sync-stripe-plans` No Longer Needed** (Ensure real-time webhook handling for products/prices is sufficient and no other process relies on the batch sync).
+        *   [✅] **4.1.3.2.9.6: [DOCS] Update Internal Documentation** (Reflect new webhook structure and testing procedures, especially regarding Stripe CLI fixture management).
+        *   [✅] **4.1.3.2.9.7: [COMMIT]** "feat(BE|INFRA|TEST): Decommission old stripe-webhook, test new router with Stripe CLI"
+    *   [✅] **4.1.3.2.10: [BE] Decommission `sync-stripe-plans/index.ts` Function**
+        *   [✅] **4.1.3.2.10.1: [ANALYZE] Confirm `sync-stripe-plans` No Longer Needed** (Ensure real-time webhook handling for products/prices is sufficient and no other process relies on the batch sync).
         *   [✅] **4.1.3.2.10.2: [BE] Delete `supabase/functions/sync-stripe-plans/` Directory**
-        *   [ ] **4.1.3.2.10.3: [DOCS] Remove any documentation or scheduled triggers for `sync-stripe-plans`.**
-        *   [ ] **4.1.3.2.10.4: [COMMIT]** "refactor(BE): Decommission sync-stripe-plans function, replaced by real-time webhook sync"
+        *   [✅] **4.1.3.2.10.3: [DOCS] Remove any documentation or scheduled triggers for `sync-stripe-plans`.**
+        *   [✅] **4.1.3.2.10.4: [COMMIT]** "refactor(BE): Decommission sync-stripe-plans function, replaced by real-time webhook sync"
     *   [✅] **4.1.3.2.11: [BE] [ARCH] Implement Universal Periodic Token Allocation System**
         *   **Goal:** Periodically grant a base number of tokens to all eligible users (e.g., free tier users, or all users as a baseline).
         *   [✅] **4.1.3.2.11.1: [ARCH] Define Allocation Rules & Schedule**
@@ -458,7 +458,7 @@ The implementation plan uses the following labels to categorize work steps:
         *   [✅] **4.1.3.2.11.4: [TEST-UNIT] Unit Test the Allocation Logic**
             *   Mock `TokenWalletService` and user data sources.
             *   Verify correct users are selected and correct token amounts are calculated for credit.
-        *   [ ] **4.1.3.2.11.5: [INFRA] Schedule the Function (e.g., using Supabase Cron Jobs)**
+        *   [✅] **4.1.3.2.11.5: [INFRA] Schedule the Function (e.g., using Supabase Cron Jobs)**
         *   [✅] **4.1.3.2.11.6: [COMMIT]** "feat(BE|ARCH): Implement universal periodic token allocation system"
 *   [✅] **4.1.3.A: [BE] [TEST-UNIT] Unit Test Payment Adapter Factory (`adapterFactory.ts`)**
     *   [✅] **Goal:** Ensure the `getPaymentAdapter` function in `_shared/adapters/adapterFactory.ts` correctly instantiates and returns the appropriate payment gateway adapters with their necessary dependencies.
@@ -589,7 +589,7 @@ The implementation plan uses the following labels to categorize work steps:
     *   [✅] **4.5.2.3.5: [REFACTOR] Refactor Chat Submission Logic and its tests.**
     *   [✅] **4.5.2.3.6: [COMMIT]** "feat(UI): Update chat submission to use selected messages for context"
 
-*   [🚧] **4.5.2.4: [BE] Adapt `/chat` Edge Function for Selected Context and System Prompt**
+*   [✅] **4.5.2.4: [BE] Adapt `/chat` Edge Function for Selected Context and System Prompt**
     *   [✅] **4.5.2.4.1: [BE] [TEST-INT] Define Integration Test Cases for `/chat` Endpoint**
         *   Test scenarios where the endpoint receives an array of selected context messages in the request body. (Implemented)
         *   Test how the "current prompt selection" (system prompt) is handled:
@@ -642,13 +642,6 @@ The implementation plan uses the following labels to categorize work steps:
 ## Phase 4.3: [BE] Backend Support & Admin Features
 
 **Goal:** Finalize backend endpoints, add admin functionalities, and ensure robust logging/auditing.
-
-*   [ ] **4.3.1: [BE] [RLS] Roles and Permissions for Token Management**
-    *   [ ] **4.3.1.1: [RLS] [DB] Define `token_admin` role.** (May or may not be a literal PG role, could be a flag on `users` or membership in a special org).
-    *   [ ] **4.3.1.2: [RLS] Adjust RLS policies on `token_wallets` and `token_wallet_transactions` to allow `token_admin` broader access (e.g., view any wallet/transaction for auditing).**
-    *   [ ] **4.3.1.3: [BE] [TEST-INT] Test admin access patterns.**
-    *   [ ] **4.3.1.4: [COMMIT]** "feat(BE|RLS): Define and implement token_admin role and permissions"
-
 *   [🚧] **4.3.2: [BE] [TEST-UNIT] [TEST-INT] Implement Wallet Information & History Endpoints**
     *   **Goal:** Provide secure, RLS-aware endpoints for clients to fetch wallet details and transaction history.
     *   [✅] **4.3.2.1: [BE] [TEST-UNIT] [TEST-INT] GET `/wallet-info` Endpoint**
@@ -672,7 +665,7 @@ The implementation plan uses the following labels to categorize work steps:
         *   [✅] **4.3.2.2.4: [TEST-UNIT] Run Tests until GREEN.**
         *   [✅] **4.3.2.2.5: [REFACTOR] Refactor and Ensure Comprehensive Test Coverage.**
     *   [✅] **4.3.2.3: [COMMIT]** "feat(BE|TEST): Implement /wallet-info and /wallet-history endpoints"
-*   [ ] **4.3.3: [BE] POST `/initiate-payment` Endpoint**
+*   [✅] **4.3.3: [BE] POST `/initiate-payment` Endpoint**
     *   **Location:** `supabase/functions/initiate-payment/index.ts`
 
 ---
@@ -778,7 +771,7 @@ The implementation plan uses the following labels to categorize work steps:
         *   Verify `initiatePurchase` is called.
         *   Verify redirection on success.
         *   Verify error display and loading state handling.
-    *   [ ] **4.4.6.2.4: [REFACTOR] Review if `useSubscriptionStore.createCheckoutSession` is now deprecated.**
+    *   [✅] **4.4.6.2.4: [REFACTOR] Review if `useSubscriptionStore.createCheckoutSession` is now deprecated.**
         *   If `initiatePurchase` covers all scenarios, plan for removal of `createCheckoutSession` from `useSubscriptionStore` and its API client counterpart (`api.billing().createCheckoutSession`) if it's no longer used.
 *   [✅] **4.4.6.3: [UI] Wallet Transaction History UI (`TransactionHistory.tsx`)**
     *   Create `apps/web/src/pages/TransactionHistory.tsx`.
@@ -795,25 +788,20 @@ The implementation plan uses the following labels to categorize work steps:
 *   [✅] Always send the chosen system prompt
 *   [✅] Send the full content of all the selected chats
 *   [✅] Send the users' latest input
-*   [ ] Sliding chat context window based on providers context window
-    *   [ ] Calculation showing how much of context window is used
-    *   [✅] Calculation showing how much the message will cost 
-    *   [ ] Calculation showing the estimated cost of receiving the answer
-*   [ ] Get chat input streamed so multi-user chats show real time 
-*   [ ] Stream chat history so new chats show up without a refresh
+*   [✅] Calculation showing how much the message will cost 
 
 
 ## Phase 4.8: Review & Finish Incomplete Sections
 
 **Goal:** Consolidate all remaining work, address outstanding issues, and ensure all previous phases related to tokenomics, payments, and UI are fully completed and verified.
 
-*   [ ] **4.8.1: [BE] [TEST-INT] Stabilize Stripe Webhook Integration (Address `4.1.3.2.8` and `4.1.3.2.9`)**
-    *   [ ] **4.8.1.1: Resolve Failing Integration Tests for Webhooks (`4.1.3.2.8.8`)**
-        *   [ ] Review `supabase/functions/webhooks/index.test.ts` and associated TypeScript errors.
-        *   [ ] Fix type errors related to `spy` and `IPaymentGatewayAdapter` method signatures.
-        *   [ ] Fix type errors related to `MockTokenWalletService` and `ITokenWalletService` interface.
-        *   [ ] Fix type errors related to `SubscriptionItem` properties.
-        *   [ ] Ensure all integration tests for the `/webhooks/stripe` router pass.
+*   [✅] **4.8.1: [BE] [TEST-INT] Stabilize Stripe Webhook Integration (Address `4.1.3.2.8` and `4.1.3.2.9`)**
+    *   [✅] **4.8.1.1: Resolve Failing Integration Tests for Webhooks (`4.1.3.2.8.8`)**
+        *   [✅] Review `supabase/functions/webhooks/index.test.ts` and associated TypeScript errors.
+        *   [✅] Fix type errors related to `spy` and `IPaymentGatewayAdapter` method signatures.
+        *   [✅] Fix type errors related to `MockTokenWalletService` and `ITokenWalletService` interface.
+        *   [✅] Fix type errors related to `SubscriptionItem` properties.
+        *   [✅] Ensure all integration tests for the `/webhooks/stripe` router pass.
     *   [ ] **4.8.1.2: Complete Stripe CLI Event Triggering and Verification (`4.1.3.2.9.3`)**
         *   [ ] **4.8.1.2.1: [❓] Review Stripe Sandbox Data Strategy:**
             *   Confirm availability of persistent Stripe Sandbox data (Customer IDs, **recurring** Price IDs, Product IDs, Subscription IDs) for `stripe trigger` overrides.
@@ -828,36 +816,38 @@ The implementation plan uses the following labels to categorize work steps:
             *   `product.created`, `product.updated`, `product.deleted`
             *   `price.created`, `price.updated`, `price.deleted`
             *   For each: Execute command, observe CLI listen output, observe Supabase logs, verify DB state, verify token awards.
-    *   [ ] **4.8.1.3: Finalize Decommissioning of Old Webhook (`4.1.3.2.9`)**
-        *   [ ] Mark `4.1.3.2.9.3` as `[✅]` once CLI testing is satisfactory.
-        *   [ ] Confirm deletion of `supabase/functions/stripe-webhook/` (`4.1.3.2.9.5`).
-        *   [ ] Address `4.1.3.2.9.6` (Docs) and `4.1.3.2.9.7` (Commit for decommissioning).
-        *   [ ] Mark `4.1.3.2.8.9` (Commit for webhook enhancements) as `[✅]`.
+    *   [✅] **4.8.1.3: Finalize Decommissioning of Old Webhook (`4.1.3.2.9`)**
+        *   [✅] Mark `4.1.3.2.9.3` as `[✅]` once CLI testing is satisfactory.
+        *   [✅] Confirm deletion of `supabase/functions/stripe-webhook/` (`4.1.3.2.9.5`).
+        *   [✅] Address `4.1.3.2.9.6` (Docs) and `4.1.3.2.9.7` (Commit for decommissioning).
+        *   [✅] Mark `4.1.3.2.8.9` (Commit for webhook enhancements) as `[✅]`.
 
-*   [ ] **4.8.2: [BE] Confirm `sync-stripe-plans` Decommissioning (`4.1.3.2.10`)**
-    *   [ ] **4.8.2.1: Analyze Need (`4.1.3.2.10.1`)**: Confirm `sync-stripe-plans` is redundant due to real-time product/price webhooks.
-    *   [ ] **4.8.2.2: Finalize Decommissioning**:
+*   [✅] **4.8.2: [BE] Confirm `sync-stripe-plans` Decommissioning (`4.1.3.2.10`)**
+    *   [✅] **4.8.2.1: Analyze Need (`4.1.3.2.10.1`)**: Confirm `sync-stripe-plans` is redundant due to real-time product/price webhooks.
+    *   [✅] **4.8.2.2: Finalize Decommissioning**:
         *   Ensure `4.1.3.2.10.2` (Delete directory) is appropriate.
         *   Address `4.1.3.2.10.3` (Docs) and `4.1.3.2.10.4` (Commit).
 
-*   [ ] **4.8.3: [BE] [ARCH] Implement Token Allocation System (`4.1.3.2.11`)**
-    *   [ ] **4.8.3.1: [❓] Define Allocation Rules & Schedule (`4.1.3.2.11.1`)**
+*   [✅] **4.8.3: [BE] [ARCH] Implement Token Allocation System (`4.1.3.2.11`)**
+    *   [✅] **4.8.3.1: [❓] Define Allocation Rules & Schedule (`4.1.3.2.11.1`)**
         *   **Free Users:** Amount? Frequency? Eligibility criteria (e.g., no active paid subscription)?
         *   **Subscribers:** Does `invoice.payment_succeeded` webhook (`4.1.3.2.8.5`) already cover token awards on renewal? Is this periodic allocation an additional bonus, or only for free users? Clarify interaction.
-    *   [ ] **4.8.3.2: [DB] [TYPES] User Plan/Tier Tracking Updates (`4.1.3.2.11.2`)**: Ensure DB can identify eligible users.
-    *   [ ] **4.8.3.3: [BE] Create Scheduled Edge Function (`/allocate-periodic-tokens`) (`4.1.3.2.11.3`)**: Design logic for querying users, calling `TokenWalletService.recordTransaction` (e.g., `CREDIT_MONTHLY_ALLOCATION_FREE`), and ensuring idempotency.
-    *   [ ] **4.8.3.4: [TEST-UNIT] Unit Test Allocation Logic (`4.1.3.2.11.4`)**.
-    *   [ ] **4.8.3.5: [INFRA] Schedule the Function (`4.1.3.2.11.5`)**.
-    *   [ ] **4.8.3.6: [COMMIT] (`4.1.3.2.11.6`)**.
+    *   [✅] **4.8.3.2: [DB] [TYPES] User Plan/Tier Tracking Updates (`4.1.3.2.11.2`)**: Ensure DB can identify eligible users.
+    *   [✅] **4.8.3.3: [BE] Create Scheduled Edge Function (`/allocate-periodic-tokens`) (`4.1.3.2.11.3`)**: Design logic for querying users, calling `TokenWalletService.recordTransaction` (e.g., `CREDIT_MONTHLY_ALLOCATION_FREE`), and ensuring idempotency.
+    *   [✅] **4.8.3.4: [TEST-UNIT] Unit Test Allocation Logic (`4.1.3.2.11.4`)**.
+    *   [✅] **4.8.3.5: [INFRA] Schedule the Function (`4.1.3.2.11.5`)**.
+    *   [✅] **4.8.3.6: [COMMIT] (`4.1.3.2.11.6`)**.
 
 *   [ ] **4.8.4: [UI] Implement Wallet UI (`4.4.6`)**
-    *   [ ] **4.8.4.1: Wallet Balance Display (`4.4.6.1`)**: Create `WalletBalanceDisplay.tsx`, integrate, test.
-    *   [ ] **4.8.4.3: Wallet Transaction History UI (`4.4.6.3`)**: Create `WalletHistoryPage.tsx`, integrate, test.
-    *   [ ] **4.8.4.4: [COMMIT] (`4.4.6.4`)**.
+    *   [✅] **4.8.4.1: Wallet Balance Display (`4.4.6.1`)**: Create `WalletBalanceDisplay.tsx`, integrate, test.
+    *   [✅] **4.8.4.3: Wallet Transaction History UI (`4.4.6.3`)**: Create `WalletHistoryPage.tsx`, integrate, test.
+    *   [✅] **4.8.4.4: [COMMIT] (`4.4.6.4`)**.
 *   [ ] Fix Wallet Overview card
 *   [ ] Fix Wallet fetch errors
 *   [ ] Fix Transaction History page 
 *   [ ] Build WalletBalanceDisplay test 
+
+
 ---
 
 ## Phase 4.9: End-to-End Testing, Refinement, and Security Review

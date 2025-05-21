@@ -31,8 +31,8 @@ BEGIN
             RAISE EXCEPTION '[grant_initial_free_tokens_to_user] _vars temp table not found. It must be created and populated with system_user_id by the calling migration.';
     END;
 
-    -- Get tokens_awarded from the free plan
-    SELECT tokens_awarded INTO v_tokens_to_award
+    -- Get tokens_to_award from the free plan
+    SELECT tokens_to_award INTO v_tokens_to_award
     FROM public.subscription_plans
     WHERE id = p_free_plan_id AND name = 'Free';
 

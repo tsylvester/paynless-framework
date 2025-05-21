@@ -36,13 +36,13 @@ DO $$
 DECLARE
     user_rec RECORD;
     v_free_plan_id uuid;
-    v_free_plan_tokens_awarded NUMERIC;
+    v_free_plan_tokens_to_award NUMERIC;
     v_allocation_count INTEGER := 0;
     v_processed_count INTEGER := 0;
 BEGIN
     RAISE LOG '[Token Backfill v2] Starting definitive backfill of initial tokens for existing free users...';
 
-    SELECT id, tokens_awarded INTO v_free_plan_id, v_free_plan_tokens_awarded
+    SELECT id, tokens_to_award INTO v_free_plan_id, v_free_plan_tokens_to_award
     FROM public.subscription_plans
     WHERE name = 'Free' AND item_id_internal = 'SYSTEM_FREE_TIER_MONTHLY_ALLOWANCE'
     LIMIT 1;
@@ -52,12 +52,12 @@ BEGIN
         RETURN;
     END IF;
 
-    IF v_free_plan_tokens_awarded IS NULL OR v_free_plan_tokens_awarded <= 0 THEN
-        RAISE WARNING '[Token Backfill v2] Crucial Error: ''Free'' plan (ID: %) has no tokens_awarded. Cannot perform token backfill.', v_free_plan_id;
+    IF v_free_plan_tokens_to_award IS NULL OR v_free_plan_tokens_to_award <= 0 THEN
+        RAISE WARNING '[Token Backfill v2] Crucial Error: ''Free'' plan (ID: %) has no tokens_to_award. Cannot perform token backfill.', v_free_plan_id;
         RETURN;
     END IF;
 
-    RAISE LOG '[Token Backfill v2] Identified Free Plan ID: %. Tokens to Award: %', v_free_plan_id, v_free_plan_tokens_awarded;
+    RAISE LOG '[Token Backfill v2] Identified Free Plan ID: %. Tokens to Award: %', v_free_plan_id, v_free_plan_tokens_to_award;
 
     FOR user_rec IN
         SELECT us.user_id, tw.wallet_id

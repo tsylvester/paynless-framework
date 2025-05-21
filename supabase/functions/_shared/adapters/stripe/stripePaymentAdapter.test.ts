@@ -14,7 +14,8 @@ import {
 import { createMockStripe, MockStripe } from '../../stripe.mock.ts';
 import { createMockSupabaseClient } from '../../supabase.mock.ts';
 import { createMockTokenWalletService, MockTokenWalletService } from '../../services/tokenWalletService.mock.ts';
-import { MockSupabaseDataConfig } from '../../types.ts';
+import { MockSupabaseDataConfig } from '../../supabase.mock.ts';
+import { TokenWalletService } from '../../services/tokenWalletService.ts';
 
 // Helper to create a mock Stripe.CustomerSubscriptionUpdatedEvent (copied from stripe.subscriptionUpdated.test.ts)
 const createMockSubscriptionUpdatedEvent = (
@@ -64,6 +65,7 @@ Deno.test('StripePaymentAdapter: handleWebhook', async (t) => {
   let mockSupabaseSetup: ReturnType<typeof createMockSupabaseClient>;
   let mockTokenWalletService: MockTokenWalletService;
   let adapter: StripePaymentAdapter;
+  let constructEventAsyncStub: any;
 
   const MOCK_SITE_URL = 'http://localhost:3000';
   const MOCK_WEBHOOK_SECRET = 'whsec_test_valid_secret';
@@ -72,7 +74,7 @@ Deno.test('StripePaymentAdapter: handleWebhook', async (t) => {
   const MOCK_PAYMENT_TRANSACTION_ID = 'ptxn_webhook_test_123';
   const MOCK_STRIPE_CHECKOUT_SESSION_ID = 'cs_test_webhook_session_abc123';
   const MOCK_STRIPE_PAYMENT_INTENT_ID = 'pi_test_webhook_payment_intent_def456';
-  const TOKENS_TO_AWARD = 500;
+  const tokens_to_award = 500;
 
   const setupMocksAndAdapterForWebhook = (supabaseConfig: MockSupabaseDataConfig = {}) => {
     Deno.env.set('SITE_URL', MOCK_SITE_URL);
@@ -84,7 +86,7 @@ Deno.test('StripePaymentAdapter: handleWebhook', async (t) => {
     adapter = new StripePaymentAdapter(
       mockStripe.instance,
       mockSupabaseSetup.client as unknown as SupabaseClient,
-      mockTokenWalletService,
+      mockTokenWalletService as unknown as TokenWalletService,
       MOCK_WEBHOOK_SECRET
     );
   };
@@ -92,11 +94,16 @@ Deno.test('StripePaymentAdapter: handleWebhook', async (t) => {
   const teardownWebhookMocks = () => {
     Deno.env.delete('SITE_URL');
     Deno.env.delete('STRIPE_WEBHOOK_SECRET');
-    mockStripe.clearStubs();
-    mockTokenWalletService.clearStubs();
+    if (constructEventAsyncStub && constructEventAsyncStub.restored === false) {
+      constructEventAsyncStub.restore();
+    }
+    constructEventAsyncStub = undefined;
+    mockStripe?.clearStubs();
+    mockTokenWalletService?.clearStubs();
   };
 
   await t.step('Empty test', () => {
+    setupMocksAndAdapterForWebhook();
     teardownWebhookMocks();
   });
 
@@ -142,18 +149,27 @@ Deno.test('StripePaymentAdapter: handleWebhook', async (t) => {
       eventId
     );
 
-    if (mockStripe.stubs.webhooksConstructEvent?.restore) mockStripe.stubs.webhooksConstructEvent.restore();
-    mockStripe.stubs.webhooksConstructEvent = stub(mockStripe.instance.webhooks, "constructEvent", () => mockStripeEvent);
+    if (mockStripe.stubs.webhooksConstructEvent?.restore) {
+        mockStripe.stubs.webhooksConstructEvent.restore();
+        (mockStripe.stubs as any).webhooksConstructEvent = undefined;
+    }
+    // Ensure webhooks object exists on the mock Stripe instance
+    mockStripe.instance.webhooks = mockStripe.instance.webhooks || {} as any;
+    // Correctly stub constructEventAsync and store in the higher scoped variable
+    constructEventAsyncStub = stub(mockStripe.instance.webhooks, "constructEventAsync", async () => mockStripeEvent as Stripe.Event);
 
-    const rawBodyString = JSON.stringify(mockStripeEvent);
-    const dummySignature = 'whsec_test_sub_updated_signature';
+    // This is the new rawBody preparation from rawBodyString
+    const rawBodyJsonString = JSON.stringify(mockStripeEvent); // Keep this intermediate for clarity if preferred, or inline
+    const rawBody = new TextEncoder().encode(rawBodyJsonString).buffer as ArrayBuffer;
+    // dummySignature was already defined in the original code block, ensure it's present.
+    const dummySignature = 'whsec_test_sub_updated_signature'; // This should be present from original code
 
-    const result = await adapter.handleWebhook(rawBodyString, dummySignature);
+    const result = await adapter.handleWebhook(rawBody, dummySignature); // Use rawBody (ArrayBuffer)
 
     assert(result.success, `Webhook handling for subscription.updated should be successful. Error: ${result.error}`);
     assertEquals(result.transactionId, eventId);
 
-    assertSpyCalls(mockStripe.stubs.webhooksConstructEvent, 1);
+    assertSpyCalls(constructEventAsyncStub, 1); // assertSpyCalls uses the new local stub
 
     // Check DB calls
     const subPlansBuilder = mockSupabaseSetup.client.getLatestBuilder('subscription_plans');

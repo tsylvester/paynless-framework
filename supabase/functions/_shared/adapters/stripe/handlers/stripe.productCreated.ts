@@ -1,6 +1,6 @@
 import Stripe from 'npm:stripe';
 import { PaymentConfirmation } from '../../../types/payment.types.ts';
-import { parseProductDescription } from '../../../utils/productDescriptionParser.ts'; // Utility for description
+// import { parseProductDescription } from '../../../utils/productDescriptionParser.ts'; // Not needed if not writing to DB
 import type { ProductPriceHandlerContext } from '../../../stripe.mock.ts';
 
 export async function handleProductCreated(
@@ -8,66 +8,22 @@ export async function handleProductCreated(
   event: Stripe.Event
 ): Promise<PaymentConfirmation> {
   const product = event.data.object as Stripe.Product;
-  const { logger, supabaseClient } = context;
+  const { logger } = context; // supabaseClient might not be needed if not writing to DB
 
   logger.info(
-    `[handleProductCreated] Handling ${event.type} for product ${product.id}. Active: ${product.active}`,
+    `[handleProductCreated] Handling ${event.type} for product ${product.id}. Active: ${product.active}. Product data will be synced when associated prices are processed. `,
     { eventId: event.id, productId: product.id, active: product.active, livemode: event.livemode }
   );
 
-  try {
-    const parsedDescription = parseProductDescription(product.name, product.description);
+  // No direct database interaction with subscription_plans for product.created event in this model.
+  // The plan entries, keyed by stripe_price_id, will be created/updated by price-related events (price.created, price.updated),
+  // which will fetch and include necessary product details at that time.
+  // The handleProductUpdated function will handle updates to product information across existing plan records.
 
-    const planDataToUpsert = {
-      stripe_product_id: product.id,
-      name: product.name,
-      description: parsedDescription, // Parsed { subtitle, features }
-      active: product.active,
-      metadata: product.metadata || {}, // Default to empty object if null/undefined
-      // item_id_internal: product.id, // Default internal ID to product ID
-      // plan_type: 'product_shell', // Indicate this is a product shell, not a full plan
-      // Fields like amount, currency, interval, tokens_awarded will be set by price.created
-    };
+  // If other actions unrelated to subscription_plans were needed for product.created, they would go here.
 
-    logger.info(
-      `[handleProductCreated] Prepared data for subscription_plans upsert for product ${product.id}.`,
-      { planData: JSON.stringify(planDataToUpsert, null, 2) }
-    );
-
-    const { error: upsertError } = await supabaseClient
-      .from('subscription_plans')
-      .upsert(planDataToUpsert, { onConflict: 'stripe_product_id' });
-
-    if (upsertError) {
-      logger.error(
-        `[handleProductCreated] Error upserting subscription_plan for product ${product.id}.`,
-        { error: upsertError, productId: product.id }
-      );
-      return {
-        success: false,
-        error: `Failed to upsert plan for product ${product.id}: ${upsertError.message}`,
-        transactionId: event.id,
-      };
-    }
-
-    logger.info(
-      `[handleProductCreated] Successfully upserted product information for product ${product.id}.`
-    );
-    return {
-      success: true,
-      transactionId: event.id,
-    };
-
-  } catch (err) {
-    const errorMessage = err instanceof Error ? err.message : String(err);
-    logger.error(
-      `[handleProductCreated] Unexpected error processing ${event.type} for product ${product.id}: ${errorMessage}`,
-      { error: err, eventId: event.id, productId: product.id }
-    );
-    return {
-      success: false,
-      error: `Unexpected error processing ${event.type} for product ${product.id}: ${errorMessage}`,
-      transactionId: event.id,
-    };
-  }
+  return {
+    success: true,
+    transactionId: event.id, // Acknowledge the Stripe event was received and handled by this function
+  };
 }

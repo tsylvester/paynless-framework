@@ -25,6 +25,7 @@ import { handleProductDeleted } from './handlers/stripe.productDeleted.ts';
 import { handlePriceCreated } from './handlers/stripe.priceCreated.ts';
 import { handlePriceUpdated } from './handlers/stripe.priceUpdated.ts';
 import { handlePriceDeleted } from './handlers/stripe.priceDeleted.ts';
+import { handlePlanCreated } from './handlers/stripe.planCreated.ts';
 
 // Stripe-specific types used by old handlers, ensure these are available to new handlers
 // or imported within them. For the adapter itself, we might not need them directly anymore.
@@ -66,8 +67,8 @@ export class StripePaymentAdapter implements IPaymentGatewayAdapter {
     try {
       const { data: planData, error: planError } = await this.handlerContext.supabaseClient
         .from('subscription_plans')
-        .select('stripe_price_id, plan_type, tokens_awarded, amount, currency')
-        .eq('item_id_internal', context.itemId)
+        .select('stripe_price_id, item_id_internal, plan_type, tokens_to_award, amount, currency')
+        .eq('stripe_price_id', context.itemId)
         .single();
 
       if (planError || !planData) {
@@ -100,8 +101,8 @@ export class StripePaymentAdapter implements IPaymentGatewayAdapter {
       const userId = context.userId;
       const organizationId = context.organizationId;
       const quantity = context.quantity;
-      const successUrl = `${Deno.env.get('SITE_URL') || 'http://localhost:3000'}/payment/success?payment_id=${internalPaymentId}&session_id={CHECKOUT_SESSION_ID}`;
-      const cancelUrl = `${Deno.env.get('SITE_URL') || 'http://localhost:3000'}/payment/cancelled?payment_id=${internalPaymentId}`;
+      const successUrl = `${Deno.env.get('SITE_URL') || 'http://localhost:5173'}/subscriptionsuccess?payment_id=${internalPaymentId}&session_id={CHECKOUT_SESSION_ID}`;
+      const cancelUrl = `${Deno.env.get('SITE_URL') || 'http://localhost:5173'}/subscription?payment_id=${internalPaymentId}`;
 
       const sessionParams: Stripe.Checkout.SessionCreateParams = {
         line_items: [{ price: stripePriceId, quantity: quantity }],
@@ -114,7 +115,7 @@ export class StripePaymentAdapter implements IPaymentGatewayAdapter {
           user_id: userId,
           organization_id: organizationId || '',
           item_id: context.itemId,
-          tokens_to_award: String(planData.tokens_awarded || context.tokensToAward || 0), 
+          tokens_to_award: String(planData.tokens_to_award || context.tokensToAward || 0), 
           target_wallet_id: context.targetWalletId,
         },
       };
@@ -243,6 +244,11 @@ export class StripePaymentAdapter implements IPaymentGatewayAdapter {
       case 'price.deleted': 
         return handlePriceDeleted(
           productPriceHandlerContext, 
+          event
+        );
+      case 'plan.created':
+        return handlePlanCreated(
+          productPriceHandlerContext,
           event
         );
       default:

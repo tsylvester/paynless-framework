@@ -291,7 +291,7 @@ import {
           name: 'Associated Product for Price',
           description: 'Product description for price.created test.',
           active: true,
-          metadata: { product_meta_key: 'product_meta_value', tokens_awarded: '500' },
+          metadata: { product_meta_key: 'product_meta_value', tokens_to_award: '500' },
         };
   
         // Stub stripe.products.retrieve
@@ -370,8 +370,8 @@ import {
         // Assert metadata (comes from price.metadata)
         assertEquals((planData.metadata as Record<string, any>).price_meta_key, mockStripePrice.metadata?.price_meta_key);
         
-        // Assert tokens_awarded (comes from product.metadata.tokens_awarded)
-        assertEquals(planData.tokens_awarded, 500); 
+        // Assert tokens_to_award (comes from product.metadata.tokens_to_award)
+        assertEquals(planData.tokens_to_award, 500); 
   
         assert(planData.created_at, 'created_at should be set');
         assert(planData.updated_at, 'updated_at should be set');
@@ -443,7 +443,7 @@ import {
           name: 'Product for DB Upsert Fail Test',
           description: 'This product is part of a test for DB upsert failures.',
           active: true,
-          metadata: { tokens_awarded: '750' },
+          metadata: { tokens_to_award: '750' },
         };
 
         // Stub stripe.products.retrieve to succeed (productRetrieveStub is defined in the outer describe block's beforeEach)
@@ -569,7 +569,7 @@ import {
         //   name: 'Associated Product for Price Update',
         //   description: 'Product description for price.updated test.',
         //   active: true,
-        //   metadata: { product_v2_meta: 'v2_val', tokens_awarded: '600' },
+        //   metadata: { product_v2_meta: 'v2_val', tokens_to_award: '600' },
         // };
   
         // productRetrieveStub = stub(stripeInstance.products, 'retrieve', async () => {
@@ -645,11 +645,11 @@ import {
         assertEquals(updatedFields.active, mockUpdatedStripePrice.active); 
         assertEquals(updatedFields.metadata?.updated_price_key, mockUpdatedStripePrice.metadata?.updated_price_key); 
         assertEquals(updatedFields.currency, mockUpdatedStripePrice.currency); 
-        assertEquals(updatedFields.amount, 12); // mockUpdatedStripePrice.unit_amount (1200) / 100
+        assertEquals(updatedFields.amount, 1200); // mockUpdatedStripePrice.unit_amount (1200) / 100
         assertEquals(updatedFields.plan_type, 'one_time_purchase'); 
-        // assertEquals(updatedFields.tokens_awarded, 600); // From mockAssociatedProductForUpdate.metadata.tokens_awarded
+        // assertEquals(updatedFields.tokens_to_award, 600); // From mockAssociatedProductForUpdate.metadata.tokens_to_award
         // Check based on price metadata instead
-        assertEquals(updatedFields.tokens_awarded, undefined); // Since mockUpdatedStripePrice.metadata does not have tokens_awarded
+        assertEquals(updatedFields.tokens_to_award, undefined); // Since mockUpdatedStripePrice.metadata does not have tokens_to_award
         
         assertExists(updatedFields.updated_at, 'updated_at should be set after price.updated');
       });
@@ -802,8 +802,10 @@ import {
           type: 'price.updated' as Stripe.Event.Type,
           data: { object: mockUpdatedStripePriceNotFound as Stripe.Price },
           // ... other required event fields
-          object: 'event' as const, api_version: '2020-08-27', created: Math.floor(Date.now() / 1000),
-          livemode: false, pending_webhooks: 0, request: { id: null, idempotency_key: null },
+          object: 'event' as const, api_version: '2020-08-27', 
+          created: Math.floor(Date.now() / 1000),
+          livemode: false, pending_webhooks: 0, 
+          request: { id: null, idempotency_key: null },
         } as Stripe.Event;
 
         if (constructEventStub && !constructEventStub.restored) constructEventStub.restore();
@@ -929,8 +931,10 @@ import {
           id: `evt_price_deleted_db_fail_${priceIdForDbDeleteFail}`,
           type: 'price.deleted' as Stripe.Event.Type,
           data: { object: mockDeletedStripePriceDbFail as Stripe.Price },
-          object: 'event' as const, api_version: '2020-08-27', created: Math.floor(Date.now() / 1000),
-          livemode: false, pending_webhooks: 0, request: { id: null, idempotency_key: null },
+          object: 'event' as const, api_version: '2020-08-27', 
+          created: Math.floor(Date.now() / 1000),
+          livemode: false, pending_webhooks: 0, 
+          request: { id: null, idempotency_key: null },
         } as Stripe.Event;
 
         if (constructEventStub && !constructEventStub.restored) constructEventStub.restore();

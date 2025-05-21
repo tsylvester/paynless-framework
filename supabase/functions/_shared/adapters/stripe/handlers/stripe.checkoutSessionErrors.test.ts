@@ -30,7 +30,7 @@ Deno.test('StripePaymentAdapter: handleWebhook', async (t) => {
   const MOCK_PAYMENT_TRANSACTION_ID = 'ptxn_webhook_test_123';
   const MOCK_STRIPE_CHECKOUT_SESSION_ID = 'cs_test_webhook_session_abc123';
   const MOCK_STRIPE_PAYMENT_INTENT_ID = 'pi_test_webhook_payment_intent_def456';
-  const TOKENS_TO_AWARD = 500;
+  const tokens_to_award = 500;
 
   const setupMocksAndAdapterForWebhook = (supabaseConfig: MockSupabaseDataConfig = {}) => {
     Deno.env.set('SITE_URL', MOCK_SITE_URL);
@@ -84,7 +84,7 @@ Deno.test('StripePaymentAdapter: handleWebhook', async (t) => {
       user_id: MOCK_USER_ID,
       target_wallet_id: MOCK_WALLET_ID, 
       status: 'PENDING', 
-      tokens_to_award: TOKENS_TO_AWARD, 
+      tokens_to_award: tokens_to_award, 
       payment_gateway_id: 'stripe',
       gateway_transaction_id: 'cs_test_async_fail_session',
     };
@@ -159,7 +159,7 @@ Deno.test('StripePaymentAdapter: handleWebhook', async (t) => {
       user_id: MOCK_USER_ID,
       target_wallet_id: MOCK_WALLET_ID,
       status: 'PENDING',
-      tokens_to_award: TOKENS_TO_AWARD,
+      tokens_to_award: tokens_to_award,
       payment_gateway_id: 'stripe',
       gateway_transaction_id: 'cs_test_expired_session',
     };

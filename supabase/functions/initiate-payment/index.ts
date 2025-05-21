@@ -20,7 +20,12 @@ import { Database } from '../types_db.ts'; // Assuming this is the path for your
 console.log('Initializing initiate-payment function');
 
 // Initialize Stripe SDK
-const stripeKey = Deno.env.get('STRIPE_SECRET_KEY');
+let stripeKey: string | undefined;
+if (Deno.env.get('SUPA_ENV') === 'local' || Deno.env.get('VITE_STRIPE_TEST_MODE') === 'true') {
+  stripeKey = Deno.env.get('STRIPE_SECRET_TEST_KEY');
+} else {
+  stripeKey = Deno.env.get('STRIPE_SECRET_LIVE_KEY');
+}
 if (!stripeKey) {
   console.error('STRIPE_SECRET_KEY is not set.');
   // Consider throwing an error here or handling it more gracefully depending on requirements
@@ -119,9 +124,9 @@ async function initiatePaymentHandler(
     // 3. Generic Item Details Extraction (from subscription_plans)
     const { data: planData, error: planError } = await adminClient
       .from('subscription_plans')
-      .select('item_id_internal, tokens_awarded, amount, currency') 
-      .eq('item_id_internal', purchaseRequest.itemId)
-      .eq('active', true) 
+      .select('stripe_price_id, item_id_internal, tokens_to_award, amount, currency')  // Ensure stripe_price_id is also selected for consistency, and item_id_internal is still useful
+      .eq('stripe_price_id', purchaseRequest.itemId) // Corrected to query by stripe_price_id
+      .eq('active', true)
       .single();
 
     if (planError) {
@@ -149,14 +154,14 @@ async function initiatePaymentHandler(
     }
     
     // Original check for incomplete data - this should come after validating planData exists
-    if (planData.tokens_awarded == null || planData.amount == null || !planData.currency) {
+    if (planData.tokens_to_award == null || planData.amount == null || !planData.currency) {
         const errMessage = 'Service offering configuration error for the selected item.';
         console.error('[initiate-payment] Plan data is incomplete for item:', purchaseRequest.itemId, planData);
         return createErrorResponse(errMessage, 500, req);
     }
     console.log('[initiate-payment] Fetched plan data:', planData);
 
-    const tokensToAward = planData.tokens_awarded;
+    const tokensToAward = planData.tokens_to_award;
     const amountForGateway = planData.amount * purchaseRequest.quantity; // Assuming planData.amount is per unit
     const currencyForGateway = planData.currency.toLowerCase(); // Ensure consistent casing
 

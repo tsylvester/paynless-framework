@@ -1,7 +1,7 @@
 -- Migration: token_allocation_for_new_users
 -- Purpose: 
 -- 1. Create a dedicated system user for token allocations.
--- 2. Configure the 'Free' plan in subscription_plans with tokens_awarded.
+-- 2. Configure the 'Free' plan in subscription_plans with tokens_to_award.
 -- 3. Create a helper function to grant initial tokens to new free users.
 -- 4. Modify handle_new_user trigger to set period dates and grant initial tokens.
 -- 5. Backfill period dates for existing free users.
@@ -79,7 +79,7 @@ END $$;
 -- 2. Configure the 'Free' plan in subscription_plans
 UPDATE public.subscription_plans
 SET
-    tokens_awarded = 100000,
+    tokens_to_award = 100000,
     item_id_internal = 'SYSTEM_FREE_TIER_MONTHLY_ALLOWANCE', -- Unique internal identifier
     plan_type = 'subscription', -- Explicitly set plan type
     interval = 'month', -- Ensure interval is month
@@ -114,7 +114,7 @@ BEGIN
         RAISE EXCEPTION '[grant_initial_free_tokens_to_user] System user ID is not set in _vars.';
     END IF;
 
-    SELECT tokens_awarded INTO v_tokens_to_award
+    SELECT tokens_to_award INTO v_tokens_to_award
     FROM public.subscription_plans
     WHERE id = p_free_plan_id AND name = 'Free';
 

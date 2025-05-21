@@ -196,11 +196,21 @@ export function createMockStripe(): MockStripe {
   };
 
   const clearStubs = () => {
-    stubs.checkoutSessionsCreate.restore();
-    stubs.webhooksConstructEvent.restore();
-    stubs.paymentIntentsRetrieve.restore();
-    stubs.subscriptionsRetrieve.restore();
-    stubs.productsRetrieve.restore();
+    if (stubs.checkoutSessionsCreate?.restore) {
+      stubs.checkoutSessionsCreate.restore();
+    }
+    if (stubs.webhooksConstructEvent?.restore) {
+      stubs.webhooksConstructEvent.restore();
+    }
+    if (stubs.paymentIntentsRetrieve?.restore) {
+      stubs.paymentIntentsRetrieve.restore();
+    }
+    if (stubs.subscriptionsRetrieve?.restore) {
+      stubs.subscriptionsRetrieve.restore();
+    }
+    if (stubs.productsRetrieve?.restore) {
+      stubs.productsRetrieve.restore();
+    }
     
     mockInstance = getMockStripeInstance(); 
     stubs.checkoutSessionsCreate = stub(mockInstance.checkout.sessions, "create");

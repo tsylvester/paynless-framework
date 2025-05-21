@@ -172,12 +172,13 @@ export async function handleInvoicePaymentFailed(
     }
 
     if (capturedSubRetrieveError) {
-      const warningMessage = `Stripe API error retrieving subscription: ${capturedSubRetrieveError.message}. Main payment transaction ${paymentTransactionIdForReturn} processed as FAILED.`;
-      context.logger.warn(`[handleInvoicePaymentFailed] ${warningMessage} Invoice: ${invoice.id}.`);
+      const errorMessage = `Stripe API error retrieving subscription ${invoice.subscription} for invoice ${invoice.id}: ${capturedSubRetrieveError.message}. While the payment transaction ${paymentTransactionIdForReturn} has been marked FAILED, the subscription status could not be verified/updated due to this internal error.`;
+      context.logger.error(`[handleInvoicePaymentFailed] ${errorMessage}`);
       return {
-        success: true,
+        success: false,
         transactionId: paymentTransactionIdForReturn,
-        message: warningMessage,
+        error: errorMessage,
+        status: 500
       };
     }
 

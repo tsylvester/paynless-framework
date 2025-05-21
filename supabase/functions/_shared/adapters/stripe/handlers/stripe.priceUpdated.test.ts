@@ -309,7 +309,7 @@ Deno.test('handlePriceUpdated specific tests', async (t) => {
     }
   });
 
-  await t.step('Updates multiple plan fields (nickname, currency, amount, tokens_awarded)', async () => {
+  await t.step('Updates multiple plan fields (nickname, currency, amount, tokens_to_award)', async () => {
     let stepSpies = null;
     try {
       const newNickname = 'pro-plan-monthly-v2';
@@ -326,13 +326,13 @@ Deno.test('handlePriceUpdated specific tests', async (t) => {
           nickname: newNickname,
           currency: newCurrency,
           unit_amount: newUnitAmount,
-          metadata: { tokens_awarded: String(newTokensAwarded), other_meta: 'data' }
+          metadata: { tokens_to_award: String(newTokensAwarded), other_meta: 'data' }
         },
         { 
           nickname: 'old-nickname',
           currency: 'usd',
           unit_amount: 1000,
-          metadata: { tokens_awarded: '5000' }
+          metadata: { tokens_to_award: '5000' }
         } // previous_attributes
       );
 
@@ -350,9 +350,9 @@ Deno.test('handlePriceUpdated specific tests', async (t) => {
         active: true,
         item_id_internal: newNickname,
         currency: newCurrency,
-        amount: newUnitAmount / 100, // 25.00
-        tokens_awarded: newTokensAwarded,
-        metadata: { tokens_awarded: String(newTokensAwarded), other_meta: 'data' }, // Ensure original metadata is preserved
+        amount: newUnitAmount, // 25.00
+        tokens_to_award: newTokensAwarded,
+        metadata: { tokens_to_award: String(newTokensAwarded), other_meta: 'data' }, // Ensure original metadata is preserved
         // updated_at will also be there, but its exact value is hard to assert, so we check its existence
       };
       assertExists(updateSpy.calls[0].args[0].updated_at);
@@ -367,7 +367,7 @@ Deno.test('handlePriceUpdated specific tests', async (t) => {
     }
   });
 
-  await t.step('Handles invalid tokens_awarded metadata (non-numeric)', async () => {
+  await t.step('Handles invalid tokens_to_award metadata (non-numeric)', async () => {
     let stepSpies = null;
     try {
       stepSpies = initializeTestContext({});
@@ -376,9 +376,9 @@ Deno.test('handlePriceUpdated specific tests', async (t) => {
           id: PRICE_ID_DEFAULT + '_invalid_tokens',
           active: true,
           product: PRODUCT_ID_DEFAULT,
-          metadata: { tokens_awarded: 'not-a-number' }
+          metadata: { tokens_to_award: 'not-a-number' }
         },
-        { metadata: { tokens_awarded: '123' } } // Previous valid value
+        { metadata: { tokens_to_award: '123' } } // Previous valid value
       );
       mockSupabase.client.from('subscription_plans');
       const result = await handlePriceUpdated(handlerContext, mockEventInvalidTokens);
@@ -389,26 +389,26 @@ Deno.test('handlePriceUpdated specific tests', async (t) => {
       const updateSpy = plansBuilder.methodSpies['update'];
       assertExists(updateSpy);
       assertSpyCalls(updateSpy, 1);
-      assertEquals(updateSpy.calls[0].args[0].tokens_awarded, null, 'tokens_awarded should be set to null due to invalid input');
+      assertEquals(updateSpy.calls[0].args[0].tokens_to_award, null, 'tokens_to_award should be set to null due to invalid input');
       assertSpyCalls(stepSpies.stepWarnSpy!, 1); // Warning for invalid metadata
-      assert(stepSpies.stepWarnSpy!.calls[0].args[0].includes('Invalid non-numeric value for tokens_awarded metadata'));
+      assert(stepSpies.stepWarnSpy!.calls[0].args[0].includes('Invalid non-numeric value for tokens_to_award metadata'));
     } finally {
       teardownTestContext(stepSpies);
     }
   });
 
-  await t.step('Handles missing tokens_awarded metadata (should not clear existing)', async () => {
+  await t.step('Handles missing tokens_to_award metadata (should not clear existing)', async () => {
     let stepSpies = null;
     try {
-      stepSpies = initializeTestContext({}); // No specific DB mock for this, we check no tokens_awarded in payload
+      stepSpies = initializeTestContext({}); // No specific DB mock for this, we check no tokens_to_award in payload
       const mockEventNoTokensMeta = createMockPriceUpdatedEvent(
         {
           id: PRICE_ID_DEFAULT + '_no_tokens_meta',
           active: true,
           product: PRODUCT_ID_DEFAULT,
-          metadata: { other_data: 'some_value' } // No tokens_awarded here
+          metadata: { other_data: 'some_value' } // No tokens_to_award here
         },
-        { metadata: { tokens_awarded: '123' } } // Previous value was present
+        { metadata: { tokens_to_award: '123' } } // Previous value was present
       );
       mockSupabase.client.from('subscription_plans');
       const result = await handlePriceUpdated(handlerContext, mockEventNoTokensMeta);
@@ -419,7 +419,7 @@ Deno.test('handlePriceUpdated specific tests', async (t) => {
       const updateSpy = plansBuilder.methodSpies['update'];
       assertExists(updateSpy);
       assertSpyCalls(updateSpy, 1);
-      assertEquals(updateSpy.calls[0].args[0].tokens_awarded, undefined, 'tokens_awarded should be undefined in update payload');
+      assertEquals(updateSpy.calls[0].args[0].tokens_to_award, undefined, 'tokens_to_award should be undefined in update payload');
       assertSpyCalls(stepSpies.stepWarnSpy!, 0); // No warning, as it's not invalid, just absent
     } finally {
       teardownTestContext(stepSpies);

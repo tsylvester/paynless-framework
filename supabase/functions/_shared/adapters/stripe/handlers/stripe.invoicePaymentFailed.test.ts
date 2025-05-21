@@ -549,24 +549,31 @@ Deno.test('[stripe.invoicePaymentFailed.ts] Tests - handleInvoicePaymentFailed',
     const event = createMockInvoicePaymentFailedEvent({ id: specificInvoiceId, subscription: specificSubId });
     const result = await handleInvoicePaymentFailed(handlerContext, event);
 
-    assert(result.success, `Expected overall success even if Stripe subscription retrieve fails, got error: ${result.error}`);
-    assertEquals(result.transactionId, specificPtxnId);
-    assertExists(result.message, "Result message should exist when subscription retrieval fails but overall success is true");
-    assert(result.message?.includes(stripeSubRetrieveError.message), "Result message should include the Stripe API error");
-    assert(result.message?.includes(`Main payment transaction ${specificPtxnId} processed as FAILED`), "Result message should indicate PT was processed as FAILED");
+    assert(!result.success, `Expected overall failure when Stripe subscription retrieve fails, but got success: true`);
+    assertEquals(result.transactionId, specificPtxnId, "Transaction ID should still be returned on failure");
+    assertExists(result.error, "result.error should contain the error message");
+    assert(result.error?.includes(stripeSubRetrieveError.message), "result.error should include the Stripe API error message");
+    assert(result.error?.includes(`subscription status could not be verified/updated`), "result.error should explain that subscription status update failed");
+    assertEquals(result.status, 500, "Status code should be 500 for this failure scenario");
 
-    const warnSpy = mockLogger.warn as Spy<any, any[], any>;
-    assertSpyCalls(warnSpy, 2); // Expect 2 calls now
+    const errorSpy = mockLogger.error as Spy<any, any[], any>;
+    assertSpyCalls(errorSpy, 1); 
 
-    // First warning: from the catch block during stripe.subscriptions.retrieve
-    assert(String(warnSpy.calls[0].args[0]).includes(`Failed to retrieve Stripe subscription ${specificSubId} during failed invoice processing for ${specificInvoiceId}. Status may not be updated in user_subscriptions.`), "First warning message mismatch");
-    assertExists(warnSpy.calls[0].args[1]?.error, "First warning should log the error object");
-    assertEquals(warnSpy.calls[0].args[1]?.error.message, stripeSubRetrieveError.message, "First warning logged error message mismatch");
+    const expectedErrorMessage = `Stripe API error retrieving subscription ${specificSubId} for invoice ${specificInvoiceId}: ${stripeSubRetrieveError.message}. While the payment transaction ${specificPtxnId} has been marked FAILED, the subscription status could not be verified/updated due to this internal error.`;
+    assert(String(errorSpy.calls[0].args[0]).includes(expectedErrorMessage), "Error log message mismatch");
     
-    // Second warning: from the new logic before returning success: true
-    const expectedSecondWarning = `Stripe API error retrieving subscription: ${stripeSubRetrieveError.message}. Main payment transaction ${specificPtxnId} processed as FAILED.`;
-    assert(String(warnSpy.calls[1].args[0]).includes(expectedSecondWarning), "Second warning message mismatch");
-    assert(String(warnSpy.calls[1].args[0]).includes(`Invoice: ${specificInvoiceId}`), "Second warning is missing invoice ID context");
+    const warnSpy = mockLogger.warn as Spy<any, any[], any>;
+    // Check if the initial warning from the catch block (before the error return) is still there.
+    // This depends on whether the logger.warn inside the catch block of stripe.subscriptions.retrieve is still desired
+    // For now, assuming it's still there. If not, this check needs to be adjusted or removed.
+    const initialWarnCall = warnSpy.calls.find(call => String(call.args[0]).includes(`Failed to retrieve Stripe subscription ${specificSubId}`));
+    assertExists(initialWarnCall, "Initial warning about failed subscription retrieval should still be present");
+    if (initialWarnCall) {
+      assert(String(initialWarnCall.args[0]).includes(`Failed to retrieve Stripe subscription ${specificSubId} during failed invoice processing for ${specificInvoiceId}. Status may not be updated in user_subscriptions.`), "Initial warning message mismatch");
+      assertExists(initialWarnCall.args[1]?.error, "Initial warning should log the error object");
+      assertEquals(initialWarnCall.args[1]?.error.message, stripeSubRetrieveError.message, "Initial warning logged error message mismatch");
+    }
+
 
     assertSpyCalls(mockStripe.stubs.subscriptionsRetrieve, 1); // Attempt to retrieve is made
 

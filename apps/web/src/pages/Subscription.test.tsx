@@ -61,8 +61,8 @@ const authStoreInitialState = {
 
 const subscriptionStoreInitialState = {
   availablePlans: [
-      { id: 'plan-1', name: 'Basic Plan', stripe_price_id: 'price_basic', amount: 1000, currency: 'usd', interval: 'month', interval_count: 1, description: { subtitle: 'Basic Sub', features: ['Feature 1'] }, tokens_awarded: 1000 } as unknown as SubscriptionPlan,
-      { id: 'plan-2', name: 'Pro Plan', stripe_price_id: 'price_pro', amount: 5000, currency: 'usd', interval: 'month', interval_count: 1, description: { subtitle: 'Pro Sub', features: ['Feature A', 'Feature B'] }, tokens_awarded: 5000 } as unknown as SubscriptionPlan
+      { id: 'plan-1', name: 'Basic Plan', stripe_price_id: 'price_basic', amount: 1000, currency: 'usd', interval: 'month', interval_count: 1, description: { subtitle: 'Basic Sub', features: ['Feature 1'] }, tokens_to_award: 1000 } as unknown as SubscriptionPlan,
+      { id: 'plan-2', name: 'Pro Plan', stripe_price_id: 'price_pro', amount: 5000, currency: 'usd', interval: 'month', interval_count: 1, description: { subtitle: 'Pro Sub', features: ['Feature A', 'Feature B'] }, tokens_to_award: 5000 } as unknown as SubscriptionPlan
   ],
   userSubscription: {
     id: 'sub-db-id-123', 
@@ -74,7 +74,7 @@ const subscriptionStoreInitialState = {
     // The 'plan' object here might be overridden by currentUserResolvedPlan in the component,
     // but keeping it for now in case other selectors or direct access uses it.
     // Ideally, the component relies on currentUserResolvedPlan for consistency.
-    plan: { id: 'plan-1', name: 'Basic Plan', stripe_price_id: 'price_basic', amount: 1000, currency: 'usd', interval: 'month', interval_count: 1, description: { subtitle: 'Basic Sub', features: ['Feature 1'] }, tokens_awarded: 1000 } 
+    plan: { id: 'plan-1', name: 'Basic Plan', stripe_price_id: 'price_basic', amount: 1000, currency: 'usd', interval: 'month', interval_count: 1, description: { subtitle: 'Basic Sub', features: ['Feature 1'] }, tokens_to_award: 1000 } 
   } as unknown as UserSubscription,
   isSubscriptionLoading: false,
   hasActiveSubscription: true, // This is usually derived state, but set for mock

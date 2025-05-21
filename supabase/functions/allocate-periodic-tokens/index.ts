@@ -32,7 +32,7 @@ export async function handleAllocatePeriodicTokens(
     // 2. Get Free Plan Details
     const { data: freePlan, error: planError } = await supabaseAdminClientInstance
       .from('subscription_plans')
-      .select('id, tokens_awarded, interval, interval_count')
+      .select('id, tokens_to_award, interval, interval_count')
       .eq('item_id_internal', FREE_PLAN_ITEM_ID)
       .eq('name', 'Free') // Additional guard
       .single();
@@ -45,15 +45,15 @@ export async function handleAllocatePeriodicTokens(
       });
     }
 
-    if (!freePlan.tokens_awarded || freePlan.tokens_awarded <= 0) {
-      console.error('Free plan has no tokens_awarded configured:', freePlan);
-      return new Response(JSON.stringify({ error: 'Free plan tokens_awarded is not configured or is zero.' }), {
+    if (!freePlan.tokens_to_award || freePlan.tokens_to_award <= 0) {
+      console.error('Free plan has no tokens_to_award configured:', freePlan);
+      return new Response(JSON.stringify({ error: 'Free plan tokens_to_award is not configured or is zero.' }), {
         status: 500,
         headers: { 'Content-Type': 'application/json' },
       });
     }
     
-    const tokensToAward = freePlan.tokens_awarded;
+    const tokensToAward = freePlan.tokens_to_award;
     // Assuming free plan is always monthly for this logic.
     // If interval/interval_count from freePlan needs to be dynamically used for date math, adjust accordingly.
     // For simplicity, we assume '1 month' as per initial requirements for free tier.

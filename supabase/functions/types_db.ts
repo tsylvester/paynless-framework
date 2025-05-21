@@ -406,56 +406,56 @@ export type Database = {
       subscription_plans: {
         Row: {
           active: boolean
-          amount: number
+          amount: number | null
           created_at: string
-          currency: string
+          currency: string | null
           description: Json | null
           id: string
-          interval: string
-          interval_count: number
+          interval: string | null
+          interval_count: number | null
           item_id_internal: string | null
           metadata: Json | null
           name: string
           plan_type: string
-          stripe_price_id: string
+          stripe_price_id: string | null
           stripe_product_id: string | null
-          tokens_awarded: number | null
+          tokens_to_award: number | null
           updated_at: string
         }
         Insert: {
           active?: boolean
-          amount: number
+          amount?: number | null
           created_at?: string
-          currency: string
+          currency?: string | null
           description?: Json | null
           id?: string
-          interval: string
-          interval_count?: number
+          interval?: string | null
+          interval_count?: number | null
           item_id_internal?: string | null
           metadata?: Json | null
           name: string
           plan_type?: string
-          stripe_price_id: string
+          stripe_price_id?: string | null
           stripe_product_id?: string | null
-          tokens_awarded?: number | null
+          tokens_to_award?: number | null
           updated_at?: string
         }
         Update: {
           active?: boolean
-          amount?: number
+          amount?: number | null
           created_at?: string
-          currency?: string
+          currency?: string | null
           description?: Json | null
           id?: string
-          interval?: string
-          interval_count?: number
+          interval?: string | null
+          interval_count?: number | null
           item_id_internal?: string | null
           metadata?: Json | null
           name?: string
           plan_type?: string
-          stripe_price_id?: string
+          stripe_price_id?: string | null
           stripe_product_id?: string | null
-          tokens_awarded?: number | null
+          tokens_to_award?: number | null
           updated_at?: string
         }
         Relationships: []
@@ -825,6 +825,10 @@ export type Database = {
       delete_chat_and_messages_debug: {
         Args: { p_chat_id: string; p_user_id: string }
         Returns: string
+      }
+      grant_initial_free_tokens_to_user: {
+        Args: { p_user_id: string; p_free_plan_id: string }
+        Returns: undefined
       }
       is_admin_of_org_for_wallet: {
         Args: { p_organization_id: string }

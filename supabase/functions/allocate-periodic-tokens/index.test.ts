@@ -130,7 +130,7 @@ describe("POST /allocate-periodic-tokens", () => {
     assertSpyCalls(qbSpies.single, 1);
   });
   
-  it("should return 500 if free plan has no tokens_awarded", async () => {
+  it("should return 500 if free plan has no tokens_to_award", async () => {
     const request = new Request(`${mockSupabaseUrl}/functions/v1/allocate-periodic-tokens`, {
         method: "POST",
         headers: { 'Content-Type': 'application/json' },
@@ -143,7 +143,7 @@ describe("POST /allocate-periodic-tokens", () => {
                 select: () => Promise.resolve({
                     data: [{ 
                         id: 'free-plan-id-mock', 
-                        tokens_awarded: 0, // Key condition for this test
+                        tokens_to_award: 0, // Key condition for this test
                         interval: 'month', 
                         interval_count: 1 
                     }],
@@ -164,7 +164,7 @@ describe("POST /allocate-periodic-tokens", () => {
 
     assertEquals(response.status, 500);
     const body = await response.json();
-    assertEquals(body.error, "Free plan tokens_awarded is not configured or is zero.");
+    assertEquals(body.error, "Free plan tokens_to_award is not configured or is zero.");
   });
 
   it("should return 200 if no users are due for allocation", async () => {
@@ -178,7 +178,7 @@ describe("POST /allocate-periodic-tokens", () => {
         genericMockResults: {
             subscription_plans: {
                 select: () => Promise.resolve({
-                    data: [{ id: 'free-plan-id-mock', tokens_awarded: 100000, interval: 'month', interval_count: 1 }],
+                    data: [{ id: 'free-plan-id-mock', tokens_to_award: 100000, interval: 'month', interval_count: 1 }],
                     error: null, count: 1, status: 200, statusText: "OK"
                 })
             },
@@ -234,7 +234,7 @@ describe("POST /allocate-periodic-tokens", () => {
         genericMockResults: {
             subscription_plans: {
                 select: () => Promise.resolve({
-                    data: [{ id: mockPlanId, tokens_awarded: tokensToAward, interval: 'month', interval_count: 1 }],
+                    data: [{ id: mockPlanId, tokens_to_award: tokensToAward, interval: 'month', interval_count: 1 }],
                     error: null, count: 1, status: 200, statusText: "OK"
                 })
             },
@@ -376,7 +376,7 @@ describe("POST /allocate-periodic-tokens", () => {
       { userId: "user-multi-3", subId: "sub-multi-3", walletId: "wallet-multi-3", current_period_end_iso: oldPeriodEnd.toISOString() },
     ];
 
-    const mockSubscriptionPlanData = { id: mockPlanId, tokens_awarded: tokensToAward, interval: 'month', interval_count: 1 };
+    const mockSubscriptionPlanData = { id: mockPlanId, tokens_to_award: tokensToAward, interval: 'month', interval_count: 1 };
     const mockUserSubscriptionsData = users.map(u => ({ id: u.subId, user_id: u.userId, plan_id: mockPlanId, current_period_start: oldPeriodStart.toISOString(), current_period_end: u.current_period_end_iso, status: 'free' }));
     const mockTokenWalletsData = users.map(u => ({ wallet_id: u.walletId, user_id: u.userId }));
     const mockTransactionResults: TokenWalletTransaction[] = users.map(u => ({ transactionId: `txn-${u.userId}`, walletId: u.walletId, type: "CREDIT_MONTHLY_FREE_ALLOCATION", amount: String(tokensToAward), balanceAfterTxn: String(tokensToAward), recordedByUserId: "19c35c50-eab5-49db-997f-e6fea60253eb", timestamp: new Date(), relatedEntityId: mockPlanId, relatedEntityType: 'subscription_plan' }));
@@ -494,7 +494,7 @@ describe("POST /allocate-periodic-tokens", () => {
       { userId: "user-mw-3", subId: "sub-mw-3", walletId: "wallet-mw-3", hasWallet: true, current_period_end_iso: oldPeriodEnd.toISOString() },
     ];
 
-    const mockSubscriptionPlanData = { id: mockPlanId, tokens_awarded: tokensToAward, interval: 'month', interval_count: 1 };
+    const mockSubscriptionPlanData = { id: mockPlanId, tokens_to_award: tokensToAward, interval: 'month', interval_count: 1 };
     
     const mockUserSubscriptionsData = usersSetup.map(u => ({
       id: u.subId,
@@ -643,7 +643,7 @@ describe("POST /allocate-periodic-tokens", () => {
     const userWhoFailsTxn = usersSetup.find(u => u.shouldFailTxn)!;
     const successfulUsers = usersSetup.filter(u => !u.shouldFailTxn);
 
-    const mockSubscriptionPlanData = { id: mockPlanId, tokens_awarded: tokensToAward, interval: 'month', interval_count: 1 };
+    const mockSubscriptionPlanData = { id: mockPlanId, tokens_to_award: tokensToAward, interval: 'month', interval_count: 1 };
     
     const mockUserSubscriptionsData = usersSetup.map(u => ({
       id: u.subId,
@@ -791,7 +791,7 @@ describe("POST /allocate-periodic-tokens", () => {
     const successfulUsersOverall = usersSetup.filter(u => !u.shouldFailSubUpdate);
     const mockSubUpdateError = new Error("Simulated Subscription Update Error");
 
-    const mockSubscriptionPlanData = { id: mockPlanId, tokens_awarded: tokensToAward, interval: 'month', interval_count: 1 };
+    const mockSubscriptionPlanData = { id: mockPlanId, tokens_to_award: tokensToAward, interval: 'month', interval_count: 1 };
     
     const mockUserSubscriptionsData = usersSetup.map(u => ({
       id: u.subId,

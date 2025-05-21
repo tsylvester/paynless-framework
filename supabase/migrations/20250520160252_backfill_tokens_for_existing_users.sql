@@ -3,7 +3,7 @@
 -- This script relies on functions and configurations set up by the
 -- '20250520154343_token_allocation_for_new_users.sql' migration, including:
 --   - The system user created in auth.users.
---   - The 'Free' plan being configured with tokens_awarded in subscription_plans.
+--   - The 'Free' plan being configured with tokens_to_award in subscription_plans.
 --   - The existence of public.grant_initial_free_tokens_to_user(user_id, free_plan_id) function.
 
 BEGIN;
@@ -36,14 +36,14 @@ DO $$
 DECLARE
     user_rec RECORD;
     v_free_plan_id uuid;
-    v_free_plan_tokens_awarded NUMERIC;
+    v_free_plan_tokens_to_award NUMERIC;
     v_allocation_count INTEGER := 0;
     v_processed_count INTEGER := 0;
 BEGIN
     RAISE LOG '[Token Backfill] Starting backfill of initial tokens for existing free users...';
 
-    -- Get Free Plan details (ID and tokens_awarded)
-    SELECT id, tokens_awarded INTO v_free_plan_id, v_free_plan_tokens_awarded
+    -- Get Free Plan details (ID and tokens_to_award)
+    SELECT id, tokens_to_award INTO v_free_plan_id, v_free_plan_tokens_to_award
     FROM public.subscription_plans
     WHERE name = 'Free' AND item_id_internal = 'SYSTEM_FREE_TIER_MONTHLY_ALLOWANCE' -- Match configured free plan
     LIMIT 1;
@@ -53,12 +53,12 @@ BEGIN
         RETURN; -- Exit this DO block
     END IF;
 
-    IF v_free_plan_tokens_awarded IS NULL OR v_free_plan_tokens_awarded <= 0 THEN
-        RAISE WARNING '[Token Backfill] Crucial Error: ''Free'' plan (ID: %) has no tokens_awarded configured or is zero. Cannot perform token backfill.', v_free_plan_id;
+    IF v_free_plan_tokens_to_award IS NULL OR v_free_plan_tokens_to_award <= 0 THEN
+        RAISE WARNING '[Token Backfill] Crucial Error: ''Free'' plan (ID: %) has no tokens_to_award configured or is zero. Cannot perform token backfill.', v_free_plan_id;
         RETURN; -- Exit this DO block
     END IF;
 
-    RAISE LOG '[Token Backfill] Identified Free Plan ID: %. Tokens to Award per user: %', v_free_plan_id, v_free_plan_tokens_awarded;
+    RAISE LOG '[Token Backfill] Identified Free Plan ID: %. Tokens to Award per user: %', v_free_plan_id, v_free_plan_tokens_to_award;
 
     -- Loop through users who are on the free plan
     FOR user_rec IN

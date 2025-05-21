@@ -143,7 +143,7 @@ export async function handleCheckoutSessionCompleted(
     const { data: planData, error: planFetchError } = await context.supabaseClient
       .from('subscription_plans')
       .select('id')
-      .eq('item_id_internal', itemIdInternal)
+      .eq('stripe_price_id', itemIdInternal)
       .single();
 
     if (planFetchError || !planData) {
@@ -167,7 +167,7 @@ export async function handleCheckoutSessionCompleted(
     
     const { error: upsertError } = await context.supabaseClient
       .from('user_subscriptions')
-      .upsert(userSubscriptionData, { onConflict: 'stripe_subscription_id' });
+      .upsert(userSubscriptionData, { onConflict: 'user_id' });
 
     if (upsertError) {
       const upsertErrorMessage = upsertError instanceof Error ? upsertError.message : String(upsertError);
