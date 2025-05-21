@@ -99,7 +99,12 @@ export async function handleInvoicePaymentFailed(
 
     if (!userId || !targetWalletIdForFailedTx) {
       context.logger.error(`[handleInvoicePaymentFailed] CRITICAL: Could not determine user_id and/or target_wallet_id for failed invoice ${invoice.id}. Cannot log to payment_transactions. User: ${userId}, Wallet: ${targetWalletIdForFailedTx}`);
-      return { success: false, transactionId: paymentTransactionIdForReturn, error: `Essential user/wallet info missing for failed invoice ${invoice.id}.` };
+      return { 
+        success: false, 
+        transactionId: paymentTransactionIdForReturn, 
+        error: `Essential user/wallet info missing for failed invoice ${invoice.id}.`,
+        status: 500
+      };
     }
 
     const paymentTxData = {
@@ -125,18 +130,20 @@ export async function handleInvoicePaymentFailed(
        },
     };
 
-    const { data: failedPaymentTx, error: upsertPaymentError } = await context.supabaseClient
+    const { data: failedPaymentTx, error: ptUpsertError } = await context.supabaseClient
       .from('payment_transactions')
       .upsert(paymentTxData, { onConflict: 'gateway_transaction_id, payment_gateway_id' })
       .select('id')
       .single();
 
-    if (upsertPaymentError || !failedPaymentTx) {
-      context.logger.error(`[handleInvoicePaymentFailed] Failed to upsert FAILED payment_transactions record for invoice ${invoice.id}.`, { error: upsertPaymentError });
-      return { success: false, transactionId: paymentTransactionIdForReturn, error: `DB error upserting failed payment: ${upsertPaymentError?.message}` };
+    if (ptUpsertError || !failedPaymentTx) {
+      context.logger.error(`[handleInvoicePaymentFailed] Failed to upsert FAILED payment_transactions record for invoice ${invoice.id}.`, { error: ptUpsertError });
+      return { success: false, transactionId: paymentTransactionIdForReturn, error: `DB error upserting failed payment: ${ptUpsertError?.message}` };
     }
-    paymentTransactionIdForReturn = failedPaymentTx.id; 
+    paymentTransactionIdForReturn = failedPaymentTx.id;
     
+    let capturedSubRetrieveError: Error | null = null;
+
     if (invoice.subscription && typeof invoice.subscription === 'string') {
       try {
         const stripeSubscription = await context.stripe.subscriptions.retrieve(invoice.subscription);
@@ -153,18 +160,38 @@ export async function handleInvoicePaymentFailed(
           context.logger.info(`[handleInvoicePaymentFailed] Updated user_subscription ${invoice.subscription} to status ${newStatus} for invoice ${invoice.id}.`);
         }
       } catch (stripeSubError) {
+          if (stripeSubError instanceof Error) {
+            capturedSubRetrieveError = stripeSubError;
+          } else {
+            capturedSubRetrieveError = new Error(String(stripeSubError));
+          }
           context.logger.warn(`[handleInvoicePaymentFailed] Failed to retrieve Stripe subscription ${invoice.subscription} during failed invoice processing for ${invoice.id}. Status may not be updated in user_subscriptions.`, { error: stripeSubError });
       }
     } else {
         context.logger.info(`[handleInvoicePaymentFailed] Invoice ${invoice.id} is not linked to a subscription. No user_subscription update performed.`);
     }
 
-    context.logger.info(`[handleInvoicePaymentFailed] Successfully processed failed invoice ${invoice.id}, payment transaction ${failedPaymentTx.id} marked FAILED.`);
-    return { success: true, transactionId: failedPaymentTx.id };
+    if (capturedSubRetrieveError) {
+      const warningMessage = `Stripe API error retrieving subscription: ${capturedSubRetrieveError.message}. Main payment transaction ${paymentTransactionIdForReturn} processed as FAILED.`;
+      context.logger.warn(`[handleInvoicePaymentFailed] ${warningMessage} Invoice: ${invoice.id}.`);
+      return {
+        success: true,
+        transactionId: paymentTransactionIdForReturn,
+        message: warningMessage,
+      };
+    }
+
+    context.logger.info(`[handleInvoicePaymentFailed] Successfully processed failed invoice ${invoice.id}, payment transaction ${paymentTransactionIdForReturn} marked FAILED.`);
+    return { success: true, transactionId: paymentTransactionIdForReturn };
 
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
     context.logger.error(`[handleInvoicePaymentFailed] General error processing failed invoice ${invoice.id}, Event ${eventId}.`, { message: errorMessage, errorDetails: error });
-    return { success: false, transactionId: paymentTransactionIdForReturn, error: errorMessage };
+    return { 
+      success: false, 
+      transactionId: paymentTransactionIdForReturn, 
+      error: errorMessage,
+      status: 500
+    };
   }
 }

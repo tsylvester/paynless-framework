@@ -46,19 +46,19 @@ File: `supabase/functions/webhooks/index.invoice.integration.test.ts`
 *   **`invoice.payment_succeeded` (Subscription Renewals)**
     *   `[x]` **Success:** Updates `payment_transactions` (creates a new one for renewal or updates existing), updates `user_subscriptions` (e.g. period dates), awards tokens for renewal, and returns 200.
     *   `[x]` **Idempotency:** Process the same event twice; ensure tokens are awarded only once, and `payment_transactions`/`user_subscriptions` states are consistent. (Tested in `index.invoice.idempotency.integration.test.ts`)
-    *   `[ ]` **Token Award Failure:** Simulate `TokenWalletService.recordTransaction` failure; verify `payment_transactions.status` (e.g., `TOKEN_AWARD_FAILED` or `RENEWAL_TOKEN_FAIL`) and appropriate HTTP response.
-    *   `[ ]` **DB Update Failure (UserSubscriptions):** Simulate failure updating `user_subscriptions` (e.g., period dates); verify error handling, logging, and potentially `payment_transactions` status.
-    *   `[ ]` **DB Update/Insert Failure (PaymentTransaction):** Simulate failure creating/updating the `payment_transactions` record for the renewal; verify error handling.
-    *   `[ ]` **Missing User Subscription:** Handle scenario where `user_subscriptions` record is not found for the `customer_id` on the invoice.
-    *   `[ ]` **Missing Token Wallet:** Handle scenario where `token_wallets` record is not found for the `user_id` associated with the subscription.
-    *   `[ ]` **Missing Subscription Plan:** Handle scenario where `subscription_plans` record for the invoice line item's price ID is not found.
+    *   `[x]` **Token Award Failure:** Simulate `TokenWalletService.recordTransaction` failure; verify `payment_transactions.status` (e.g., `TOKEN_AWARD_FAILED` or `RENEWAL_TOKEN_FAIL`) and appropriate HTTP response.
+    *   `[x]` **DB Update Failure (UserSubscriptions):** Simulate failure updating `user_subscriptions` (e.g., period dates); verify error handling, logging, and potentially `payment_transactions` status.
+    *   `[x]` **DB Update/Insert Failure (PaymentTransaction):** Simulate failure creating/updating the `payment_transactions` record for the renewal; verify error handling.
+    *   `[x]` **Missing User Subscription:** Handle scenario where `user_subscriptions` record is not found for the `customer_id` on the invoice.
+    *   `[x]` **Missing Token Wallet:** Handle scenario where `token_wallets` record is not found for the `user_id` associated with the subscription.
+    *   `[x]` **Missing Subscription Plan:** Handle scenario where `subscription_plans` record for the invoice line item's price ID is not found.
 *   **`invoice.payment_failed`**
-    *   `[ ]` **Success (Scenario: Main):** Updates `payment_transactions` to `FAILED` and `user_subscriptions` status (e.g., `past_due`, `unpaid`), returns 200.
+    *   `[x]` **Success (Scenario: Main):** Updates `payment_transactions` to `FAILED` and `user_subscriptions` status (e.g., `past_due`, `unpaid`), returns 200.
     *   `[x]` **Success (Scenario: MOVED):** Similar to Main, covering specific data.
     *   `[x]` **Success (Scenario: A):** Similar to Main, covering specific data.
     *   `[x]` **Success (Scenario: B / second failure):** Similar to Main, covering specific data.
-    *   `[ ]` **Stripe API Error (`stripe.subscriptions.retrieve` fails):** If the handler attempts to retrieve the subscription and fails, ensure graceful error handling and appropriate status updates.
-    *   `[ ]` **Missing User Subscription:** Handle if `user_subscriptions` record for the `customer_id` is not found.
+    *   `[x]` **Stripe API Error (`stripe.subscriptions.retrieve` fails):** If the handler attempts to retrieve the subscription and fails, ensure graceful error handling and appropriate status updates.
+    *   `[x]` **Missing User Subscription:** Handle if `user_subscriptions` record for the `customer_id` is not found.
 
 ### 4. `price.*` Events (Product Pricing)
 

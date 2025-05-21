@@ -91,7 +91,8 @@ export async function handleInvoicePaymentSucceeded(
         success: false, 
         transactionId: stripeEventId, 
         error: `User not found for customer ${stripeCustomerId}`,
-        status: 404 
+        status: 500,
+        tokensAwarded: 0,
       };
     }
     const userId = userDetails.user_id;
@@ -157,7 +158,7 @@ export async function handleInvoicePaymentSucceeded(
             success: false, 
             transactionId: stripeEventId, 
             error: `Subscription plan details not found for price ID ${stripePriceId}.`,
-            status: 422 
+            status: 404
           };
         } else {
           tokensToAward = planInfo.tokens_awarded ?? 0;
@@ -217,6 +218,7 @@ export async function handleInvoicePaymentSucceeded(
 
     let userSubscriptionUpdateFailed = false;
     let stripeSubscriptionRetrievalFailed = false;
+    let capturedSubUpdateError: Error | null = null;
 
     if (invoice.subscription && typeof invoice.subscription === 'string') {
       try {
@@ -226,16 +228,17 @@ export async function handleInvoicePaymentSucceeded(
           current_period_start: stripeSubscription.current_period_start ? new Date(stripeSubscription.current_period_start * 1000).toISOString() : null,
           current_period_end: stripeSubscription.current_period_end ? new Date(stripeSubscription.current_period_end * 1000).toISOString() : null,
         };
-        const { error: subUpdateError } = await context.supabaseClient
+        const { error: subUpdateDbError } = await context.supabaseClient
           .from('user_subscriptions')
           .update(subUpdateData)
           .eq('stripe_subscription_id', invoice.subscription);
 
-        if (subUpdateError) {
+        if (subUpdateDbError) {
           userSubscriptionUpdateFailed = true;
+          capturedSubUpdateError = subUpdateDbError;
           context.logger.error(
-            `[handleInvoicePaymentSucceeded] CRITICAL: Failed to update user_subscription ${invoice.subscription} for invoice ${invoice.id}. PT ID: ${newPaymentTx.id}. Error: ${subUpdateError.message}`,
-            { invoiceId: invoice.id, paymentTransactionId: newPaymentTx.id, stripeSubscriptionId: invoice.subscription, error: subUpdateError }
+            `[handleInvoicePaymentSucceeded] CRITICAL: Failed to update user_subscription ${invoice.subscription} for invoice ${invoice.id}. PT ID: ${newPaymentTx.id}. Error: ${subUpdateDbError.message}`,
+            { invoiceId: invoice.id, paymentTransactionId: newPaymentTx.id, stripeSubscriptionId: invoice.subscription, error: subUpdateDbError }
           );
         }
       } catch (stripeSubRetrieveError: unknown) {
@@ -244,7 +247,7 @@ export async function handleInvoicePaymentSucceeded(
         const retrieveErrorMessage = stripeSubRetrieveError instanceof Error ? stripeSubRetrieveError.message : String(stripeSubRetrieveError);
         context.logger.error(
           `[handleInvoicePaymentSucceeded] CRITICAL: Failed to retrieve Stripe subscription ${invoice.subscription} for invoice ${invoice.id} to update user_subscription. PT ID: ${newPaymentTx.id}. Error: ${retrieveErrorMessage}`,
-          { invoiceId: invoice.id, paymentTransactionId: newPaymentTx.id, stripeSubscriptionId: invoice.subscription, error: stripeSubRetrieveError }
+          { error: stripeSubRetrieveError, errorMessage: retrieveErrorMessage, stripeSubscriptionId: invoice.subscription, invoiceId: invoice.id, paymentTransactionId: newPaymentTx.id }
         );
       }
     }
@@ -311,17 +314,29 @@ export async function handleInvoicePaymentSucceeded(
           };
         }
         if (userSubscriptionUpdateFailed) {
-             context.logger.warn(
-                `[handleInvoicePaymentSucceeded] User subscription update failed earlier for invoice ${invoice.id}. Tokens awarded, PT COMPLETED. Returning 500 due to subscription inconsistency or Stripe API failure. PT ID: ${newPaymentTx.id}.`,
-                { invoiceId: invoice.id, paymentTransactionId: newPaymentTx.id }
-            );
-            return {
-                success: false,
-                status: 500,
-                transactionId: newPaymentTx.id,
-                tokensAwarded: stripeSubscriptionRetrievalFailed ? 0 : tokensToAward,
-                error: 'Failed to update user subscription record after payment. The payment transaction reflects token award status, but subscription data is inconsistent.',
-            };
+          const baseMessage = 'Failed to update user subscription record after payment.';
+          let detailMessage = '';
+          if (stripeSubscriptionRetrievalFailed) {
+            detailMessage = 'Stripe subscription could not be retrieved to update local record.';
+          } else if (capturedSubUpdateError) {
+            detailMessage = `Database error updating subscription: ${capturedSubUpdateError.message}`;
+          } else {
+            detailMessage = 'The payment transaction reflects token award status, but subscription data is inconsistent.';
+          }
+          
+          const finalErrorMessage = `${baseMessage} ${detailMessage}`;
+          
+          context.logger.warn(
+            `[handleInvoicePaymentSucceeded] User subscription update failed earlier for invoice ${invoice.id}. Tokens awarded, PT COMPLETED. Returning 500 due to subscription inconsistency or Stripe API failure. PT ID: ${paymentTransactionIdForReturn}.`,
+            { invoiceId: invoice.id, paymentTransactionId: paymentTransactionIdForReturn }
+          );
+          return {
+            success: false,
+            transactionId: paymentTransactionIdForReturn,
+            error: finalErrorMessage,
+            status: 500,
+            tokensAwarded: tokensToAward, 
+          };
         }
         return {
           success: true,
@@ -392,17 +407,29 @@ export async function handleInvoicePaymentSucceeded(
       }
 
       if (userSubscriptionUpdateFailed) {
-           context.logger.warn(
-               `[handleInvoicePaymentSucceeded] User subscription update failed earlier for invoice ${invoice.id}. No tokens to award, PT COMPLETED. Returning 500 due to subscription inconsistency. PT ID: ${newPaymentTx.id}.`,
-                { invoiceId: invoice.id, paymentTransactionId: newPaymentTx.id }
-            );
-          return {
-            success: false, 
-            status: 500,
-            transactionId: newPaymentTx.id,
-            tokensAwarded: 0,
-            error: 'Failed to update user subscription record after payment. The payment transaction reflects token award status, but subscription data is inconsistent.',
-          };
+        const baseMessage = 'Failed to update user subscription record after payment.';
+        let detailMessage = '';
+        if (stripeSubscriptionRetrievalFailed) {
+          detailMessage = 'Stripe subscription could not be retrieved to update local record.';
+        } else if (capturedSubUpdateError) {
+          detailMessage = `Database error updating subscription: ${capturedSubUpdateError.message}`;
+        } else {
+          detailMessage = 'The payment transaction reflects token award status, but subscription data is inconsistent.';
+        }
+        
+        const finalErrorMessage = `${baseMessage} ${detailMessage}`;
+        
+        context.logger.warn(
+          `[handleInvoicePaymentSucceeded] User subscription update failed earlier for invoice ${invoice.id}. Tokens awarded, PT COMPLETED. Returning 500 due to subscription inconsistency or Stripe API failure. PT ID: ${paymentTransactionIdForReturn}.`,
+          { invoiceId: invoice.id, paymentTransactionId: paymentTransactionIdForReturn }
+        );
+        return {
+          success: false,
+          transactionId: paymentTransactionIdForReturn,
+          error: finalErrorMessage,
+          status: 500,
+          tokensAwarded: tokensToAward, 
+        };
       }
       return {
         success: true,

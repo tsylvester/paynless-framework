@@ -125,7 +125,7 @@ Deno.test('[stripe.invoicePaymentFailed.ts] Tests - handleInvoicePaymentFailed',
     handlerContext = {
       supabaseClient: mockSupabaseClient,
       logger: mockLogger,
-      tokenWalletService: mockTokenWalletService, // Not directly used by this handler but part of context
+      tokenWalletService: mockTokenWalletService.instance, // Not directly used by this handler but part of context
       stripe: mockStripe.instance,
       updatePaymentTransaction: spy() as any, // Mocked, not used by this handler directly
       featureFlags: {},
@@ -551,11 +551,23 @@ Deno.test('[stripe.invoicePaymentFailed.ts] Tests - handleInvoicePaymentFailed',
 
     assert(result.success, `Expected overall success even if Stripe subscription retrieve fails, got error: ${result.error}`);
     assertEquals(result.transactionId, specificPtxnId);
+    assertExists(result.message, "Result message should exist when subscription retrieval fails but overall success is true");
+    assert(result.message?.includes(stripeSubRetrieveError.message), "Result message should include the Stripe API error");
+    assert(result.message?.includes(`Main payment transaction ${specificPtxnId} processed as FAILED`), "Result message should indicate PT was processed as FAILED");
 
     const warnSpy = mockLogger.warn as Spy<any, any[], any>;
-    assertSpyCalls(warnSpy, 1);
-    assert(String(warnSpy.calls[0].args[0]).includes(`Failed to retrieve Stripe subscription ${specificSubId} during failed invoice processing`));
+    assertSpyCalls(warnSpy, 2); // Expect 2 calls now
+
+    // First warning: from the catch block during stripe.subscriptions.retrieve
+    assert(String(warnSpy.calls[0].args[0]).includes(`Failed to retrieve Stripe subscription ${specificSubId} during failed invoice processing for ${specificInvoiceId}. Status may not be updated in user_subscriptions.`), "First warning message mismatch");
+    assertExists(warnSpy.calls[0].args[1]?.error, "First warning should log the error object");
+    assertEquals(warnSpy.calls[0].args[1]?.error.message, stripeSubRetrieveError.message, "First warning logged error message mismatch");
     
+    // Second warning: from the new logic before returning success: true
+    const expectedSecondWarning = `Stripe API error retrieving subscription: ${stripeSubRetrieveError.message}. Main payment transaction ${specificPtxnId} processed as FAILED.`;
+    assert(String(warnSpy.calls[1].args[0]).includes(expectedSecondWarning), "Second warning message mismatch");
+    assert(String(warnSpy.calls[1].args[0]).includes(`Invoice: ${specificInvoiceId}`), "Second warning is missing invoice ID context");
+
     assertSpyCalls(mockStripe.stubs.subscriptionsRetrieve, 1); // Attempt to retrieve is made
 
     const historicUserSubBuilders = mockSupabaseSetup.client.getHistoricBuildersForTable('user_subscriptions');
