@@ -53,7 +53,7 @@ File: `supabase/functions/webhooks/index.invoice.integration.test.ts`
     *   `[ ]` **Missing Token Wallet:** Handle scenario where `token_wallets` record is not found for the `user_id` associated with the subscription.
     *   `[ ]` **Missing Subscription Plan:** Handle scenario where `subscription_plans` record for the invoice line item's price ID is not found.
 *   **`invoice.payment_failed`**
-    *   `[x]` **Success (Scenario: Main):** Updates `payment_transactions` to `FAILED` and `user_subscriptions` status (e.g., `past_due`, `unpaid`), returns 200.
+    *   `[ ]` **Success (Scenario: Main):** Updates `payment_transactions` to `FAILED` and `user_subscriptions` status (e.g., `past_due`, `unpaid`), returns 200.
     *   `[x]` **Success (Scenario: MOVED):** Similar to Main, covering specific data.
     *   `[x]` **Success (Scenario: A):** Similar to Main, covering specific data.
     *   `[x]` **Success (Scenario: B / second failure):** Similar to Main, covering specific data.

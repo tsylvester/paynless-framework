@@ -85,6 +85,7 @@ export async function handleWebhookRequestLogic(
       console.error(`[/webhooks/${source}] Webhook processing failed by adapter: ${confirmation.error}`);
       const responseStatus = typeof confirmation.status === 'number' ? confirmation.status : 400;
       return new Response(JSON.stringify({ 
+        success: false,
         error: confirmation.error || 'Webhook processing failed by adapter',
         transactionId: confirmation.transactionId
       }), {
