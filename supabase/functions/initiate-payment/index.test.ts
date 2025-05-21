@@ -11,13 +11,10 @@ import type {
     IPaymentGatewayAdapter,
     PaymentConfirmation
 } from '../_shared/types/payment.types.ts';
-import type { TokenWallet } from '../_shared/types/tokenWallet.types.ts';
-import type { Database } from '../types_db.ts'; // For SupabaseClient types
 
 // Mock Creators
 // import { createMockSupabaseClient, type MockSupabaseClientSetup, type MockSupabaseDataConfig } from '../_shared/supabase.mock.ts';
-import { createMockSupabaseClient, type MockSupabaseDataConfig } from '../_shared/supabase.mock.ts';
-import type { MockSupabaseClientSetup } from '../_shared/types.ts'; // Import directly from types.ts
+import { createMockSupabaseClient, type MockSupabaseDataConfig, type MockSupabaseClientSetup } from '../_shared/supabase.mock.ts';
 // We won't use MockTokenWalletService directly, but mock DB calls for the real service.
 
 // --- Constants for Mocking ---
@@ -27,7 +24,7 @@ const MOCK_ITEM_ID = 'item_abc_123';
 const MOCK_INVALID_ITEM_ID = 'item_invalid_xxx';
 const MOCK_INCOMPLETE_ITEM_ID = 'item_incomplete_cfg';
 const MOCK_WRONG_CURRENCY_ITEM_ID = 'item_wrong_currency';
-const MOCK_TOKENS_AWARDED = 1000;
+const MOCK_tokens_to_award = 1000;
 const MOCK_ITEM_AMOUNT = 20; // e.g., 20 USD
 const MOCK_CURRENCY = 'usd';
 const MOCK_WALLET_ID = 'wallet-id-for-user';
@@ -134,13 +131,13 @@ Deno.test("initiate-payment function tests", async (t) => {
 
                         if (itemIdFilter && activeFilter) {
                             if (itemIdFilter.value === MOCK_ITEM_ID) {
-                                return { data: [{ item_id_internal: MOCK_ITEM_ID, tokens_awarded: MOCK_TOKENS_AWARDED, amount: MOCK_ITEM_AMOUNT, currency: MOCK_CURRENCY, active: true }], error: null, count: 1, status: 200, statusText: 'OK' };
+                                return { data: [{ item_id_internal: MOCK_ITEM_ID, tokens_to_award: MOCK_tokens_to_award, amount: MOCK_ITEM_AMOUNT, currency: MOCK_CURRENCY, active: true }], error: null, count: 1, status: 200, statusText: 'OK' };
                             }
                             if (itemIdFilter.value === MOCK_INCOMPLETE_ITEM_ID) {
-                                return { data: [{ item_id_internal: MOCK_INCOMPLETE_ITEM_ID, tokens_awarded: null, amount: MOCK_ITEM_AMOUNT, currency: MOCK_CURRENCY, active: true }], error: null, count: 1, status: 200, statusText: 'OK' };
+                                return { data: [{ item_id_internal: MOCK_INCOMPLETE_ITEM_ID, tokens_to_award: null, amount: MOCK_ITEM_AMOUNT, currency: MOCK_CURRENCY, active: true }], error: null, count: 1, status: 200, statusText: 'OK' };
                             }
                             if (itemIdFilter.value === MOCK_WRONG_CURRENCY_ITEM_ID) {
-                                return { data: [{ item_id_internal: MOCK_WRONG_CURRENCY_ITEM_ID, tokens_awarded: MOCK_TOKENS_AWARDED, amount: MOCK_ITEM_AMOUNT, currency: 'eur', active: true }], error: null, count: 1, status: 200, statusText: 'OK' };
+                                return { data: [{ item_id_internal: MOCK_WRONG_CURRENCY_ITEM_ID, tokens_to_award: MOCK_tokens_to_award, amount: MOCK_ITEM_AMOUNT, currency: 'eur', active: true }], error: null, count: 1, status: 200, statusText: 'OK' };
                             }
                             if (itemIdFilter.value === MOCK_INVALID_ITEM_ID) { // Simulate item not found or inactive by returning empty
                                 return { data: [], error: null, count: 0, status: 200, statusText: 'OK' };
@@ -323,7 +320,7 @@ Deno.test("initiate-payment function tests", async (t) => {
             afterEachScoped();
         });
 
-        await t.step("should return 500 if plan data is incomplete (e.g., missing tokens_awarded)", async () => {
+        await t.step("should return 500 if plan data is incomplete (e.g., missing tokens_to_award)", async () => {
             beforeEachScoped(); // Default admin mock returns incomplete plan for MOCK_INCOMPLETE_ITEM_ID
             const purchaseRequestBody: PurchaseRequest = { itemId: MOCK_INCOMPLETE_ITEM_ID, quantity: 1, currency: MOCK_CURRENCY, paymentGatewayId: 'stripe', userId: MOCK_USER_ID };
             const req = createMockRequest('POST', '/initiate-payment', purchaseRequestBody, { Authorization: 'Bearer valid.token' });
@@ -386,7 +383,7 @@ Deno.test("initiate-payment function tests", async (t) => {
             assertEquals(insertArg.user_id, MOCK_USER_ID);
             assertEquals(insertArg.target_wallet_id, MOCK_WALLET_ID);
             assertEquals(insertArg.status, 'PENDING');
-            assertEquals(insertArg.tokens_to_award, MOCK_TOKENS_AWARDED);
+            assertEquals(insertArg.tokens_to_award, MOCK_tokens_to_award);
             assertEquals(insertArg.amount_requested_fiat, MOCK_ITEM_AMOUNT * purchaseRequestBody.quantity); // Total amount
             
             // Verify adapter was called

@@ -19,7 +19,7 @@ Deno.test('StripePaymentAdapter: handleWebhook', async (t) => {
   const MOCK_PAYMENT_TRANSACTION_ID = 'ptxn_webhook_test_123';
   const MOCK_STRIPE_CHECKOUT_SESSION_ID = 'cs_test_webhook_session_abc123';
   const MOCK_STRIPE_PAYMENT_INTENT_ID = 'pi_test_webhook_payment_intent_def456';
-  const TOKENS_TO_AWARD = 500;
+  const tokens_to_award = 500;
 
   const setupMocksAndAdapterForWebhook = (supabaseConfig: MockSupabaseDataConfig = {}) => {
     Deno.env.set('SITE_URL', MOCK_SITE_URL);

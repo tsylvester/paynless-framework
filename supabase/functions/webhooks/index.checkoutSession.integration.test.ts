@@ -264,7 +264,7 @@ import {
           { 
             stripe_price_id: 'price_for_invoice_ps', 
             item_id_internal: 'item_id_for_invoice_ps', 
-            tokens_awarded: 7500,
+            tokens_to_award: 7500,
             id: 'plan_for_invoice_ps' // Added id
           },
           // For checkout.session.completed (mode: subscription) success test
@@ -272,34 +272,34 @@ import {
             id: 'plan_sub_test_integration',
             item_id_internal: 'test_subscription_item_id', 
             stripe_price_id: 'price_sub_test_integration', 
-            tokens_awarded: 5000,
+            tokens_to_award: 5000,
           },
           // For checkout.session.completed (mode: subscription) idempotency test
           {
             id: 'plan_sub_idem_test_integration', 
             item_id_internal: 'test_subscription_item_id_idem', 
             stripe_price_id: 'price_sub_idem_test_integration', 
-            tokens_awarded: 5000,
+            tokens_to_award: 5000,
           },
           // For checkout.session.completed (mode: subscription) - Token Award Failure (Initial Payment) Test
           {
             id: 'plan_sub_token_f_init_int',
             item_id_internal: 'item_id_sub_token_f_init',
-            tokens_awarded: 777,
+            tokens_to_award: 777,
             stripe_price_id: 'price_for_sub_token_fail',
           },
           // For checkout.session.completed (mode: subscription) - DB Upsert Failure (UserSubscriptions) Test
           {
             id: 'plan_sub_us_upsert_f_int',
             item_id_internal: 'item_id_sub_us_upsert_f',
-            tokens_awarded: 888,
+            tokens_to_award: 888,
             stripe_price_id: 'price_for_sub_us_upsert_fail',
           },
           // For checkout.session.completed (mode: subscription) - DB Update Failure (PaymentTransaction - Initial) Test
           {
             id: 'plan_sub_pt_upd_f_init_int',
             item_id_internal: 'item_id_sub_pt_upd_f_init',
-            tokens_awarded: 999,
+            tokens_to_award: 999,
             stripe_price_id: 'price_for_sub_pt_upd_fail_init', // Corrected to match typical usage
           }
           // Note: The "Missing Subscription Plan" test explicitly sets dbCounters.subscriptionPlansSelectData = []
@@ -1555,7 +1555,7 @@ import {
         dbCounters.subscriptionPlansSelectData = [{ // Specific plan for this test
           id: planIdLookup,
           item_id_internal: internalItemIdForLookup,
-          tokens_awarded: tokensToAward, // Match expected tokens
+          tokens_to_award: tokensToAward, // Match expected tokens
           stripe_price_id: 'price_for_sub_token_fail', // Any valid price ID
         }];
         dbCounters.userSubscriptionsSelectData = []; // No existing subscription initially
@@ -1653,7 +1653,7 @@ import {
         dbCounters.subscriptionPlansSelectData = [{ // Specific plan for this test
           id: planIdLookup,
           item_id_internal: internalItemIdForLookup,
-          tokens_awarded: tokensToAward,
+          tokens_to_award: tokensToAward,
           stripe_price_id: 'price_for_sub_us_upsert_fail',
         }];
         dbCounters.userSubscriptionsSelectData = [];
@@ -1749,7 +1749,7 @@ import {
         dbCounters.subscriptionPlansSelectData = [{ // Specific plan for this test
           id: planIdLookup,
           item_id_internal: internalItemIdForLookup,
-          tokens_awarded: tokensToAward,
+          tokens_to_award: tokensToAward,
           stripe_price_id: 'price_for_sub_pt_upd_fail',
         }];
         dbCounters.userSubscriptionsSelectData = [];
