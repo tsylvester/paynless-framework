@@ -1,6 +1,16 @@
 import React, { useEffect } from 'react';
 import { useWalletStore } from '@paynless/store'; // Adjust path as needed
 import { Link } from 'react-router-dom'; // Added for linking to transaction history
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardFooter,
+  CardHeader,
+  CardTitle,
+} from '@/components/ui/card';
+import { Button } from '@/components/ui/button'; // For a potential top-up button
+import { ViewTransactionHistoryButton } from './ViewTransactionHistoryButton'; // Import the new component
 
 export const WalletBalanceDisplay: React.FC = () => {
   const {
@@ -33,38 +43,43 @@ export const WalletBalanceDisplay: React.FC = () => {
   } else if (walletError) {
     content = <p className="text-red-500">Error: {walletError.message || 'Could not load balance.'}</p>;
   } else {
-    // The logic for currentWalletBalance being null to show 'N/A' or value for '0' is now handled by the selector
-    // However, the display text formatting should remain.
-    const balanceText = currentWalletBalance === 'N/A' || currentWalletBalance === null 
-                          ? 'N/A' 
-                          : `${currentWalletBalance} AI Tokens`;
-    content = <p className="text-2xl font-semibold text-textPrimary">{balanceText}</p>;
+    let formattedBalance = 'N/A';
+    if (currentWalletBalance !== 'N/A' && currentWalletBalance !== null) {
+      const numericBalance = typeof currentWalletBalance === 'string' 
+        ? parseFloat(currentWalletBalance) 
+        : currentWalletBalance;
+
+      if (typeof numericBalance === 'number' && !isNaN(numericBalance)) {
+        formattedBalance = `${new Intl.NumberFormat('en-US').format(numericBalance)} Tokens`;
+      } else {
+        // Fallback if parsing fails or it's an unexpected type but not 'N/A' or null initially
+        formattedBalance = `${currentWalletBalance} Tokens`; 
+      }
+    }
+    content = <p className="text-2xl font-semibold text-textPrimary">{formattedBalance}</p>;
   }
 
   // Log what the component is about to render with
   console.log('[WBDisplay Render] isLoadingWallet:', isLoadingWallet, 'walletError:', walletError, 'currentWalletBalance for display:', currentWalletBalance);
 
   return (
-    <div className="bg-backgroundOffset shadow-lg rounded-lg p-6 my-4 w-full max-w-md">
-      <h2 className="text-xl font-semibold text-textPrimary mb-4">Wallet Overview</h2>
-      {content}
-      <div className="mt-4">
-        <Link 
-          to="/transaction-history"
-          className="text-sm text-primary hover:underline"
-        >
-          View Transaction History
-        </Link>
-      </div>
-      {/* Placeholder for a top-up link/button if desired */}
-      {/* <div className="mt-2">
-        <Link 
-          to="/subscription" // Or a dedicated top-up page
-          className="text-sm text-primary hover:underline"
-        >
-          Purchase More Tokens
-        </Link>
-      </div> */}
-    </div>
+    <Card className="w-full max-w-lg mx-auto">
+      <CardHeader className="text-center">
+        <CardTitle className="text-2xl font-bold text-textPrimary">Wallet Overview</CardTitle>
+        <CardDescription>
+          Your current token balance and transaction history.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="p-6">
+        {content}
+      </CardContent>
+      <CardFooter className="flex flex-col items-start space-y-2 sm:flex-row sm:justify-between sm:space-y-0">
+        <ViewTransactionHistoryButton />
+        {/* Optional: Button to navigate to subscription/top-up page */}
+        <Button asChild variant="outline" size="sm">
+            <Link to="/subscription">Purchase Tokens</Link>
+        </Button>
+      </CardFooter>
+    </Card>
   );
 }; 

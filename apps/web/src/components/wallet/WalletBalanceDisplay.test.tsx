@@ -82,7 +82,7 @@ describe('WalletBalanceDisplay', () => {
         <WalletBalanceDisplay />
       </MemoryRouter>
     );
-    expect(screen.getByText(/1000 AI Tokens/i)).toBeInTheDocument();
+    expect(screen.getByText(/1,000 Tokens/i)).toBeInTheDocument();
   });
 
   it('should render N/A if balance is not available (currentWallet is null)', () => {
@@ -92,7 +92,7 @@ describe('WalletBalanceDisplay', () => {
         isLoadingWallet: false,
         walletError: null,
         loadWallet: vi.fn(),
-        selectCurrentWalletBalance: () => (mockState.currentWallet?.balance || '0'),
+        selectCurrentWalletBalance: () => null,
       };
       return selector(mockState);
     });
@@ -101,15 +101,7 @@ describe('WalletBalanceDisplay', () => {
         <WalletBalanceDisplay />
       </MemoryRouter>
     );
-    // The component selector `state.currentWallet?.balance || '0'` will result in '0'.
-    // The component itself then has logic: `currentWalletBalance === 'N/A' || currentWalletBalance === null ? 'N/A' : ...`
-    // Since `currentWalletBalance` will be '0', it will render '0 AI Tokens'.
-    // If the intent is to show N/A when currentWallet is null, the component's display logic needs adjustment or selector needs to return null.
-    // For now, matching the behavior of `state.currentWallet?.balance || '0'` which results in '0 AI Tokens'.
-    expect(screen.getByText(/0 AI Tokens/i)).toBeInTheDocument(); 
-    // If truly N/A is desired when currentWallet is null, the component's selector would need to be
-    // currentWalletBalance: state.currentWallet ? state.currentWallet.balance : null, 
-    // and then the display logic `balanceText = currentWalletBalance !== null ? ... : 'N/A'` would work.
+    expect(screen.getByText('N/A')).toBeInTheDocument();
   });
 
   it('should render 0 if balance is "0" (currentWallet.balance is "0")', () => {
@@ -128,6 +120,6 @@ describe('WalletBalanceDisplay', () => {
         <WalletBalanceDisplay />
       </MemoryRouter>
     );
-    expect(screen.getByText(/0 AI Tokens/i)).toBeInTheDocument();
+    expect(screen.getByText(/0 Tokens/i)).toBeInTheDocument();
   });
 }); 
