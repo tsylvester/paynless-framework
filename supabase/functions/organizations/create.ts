@@ -9,7 +9,7 @@ export async function handleCreateOrganization(
     req: Request, // Keep req for potential header/context access
     supabaseClient: SupabaseClient<Database>,
     user: User, // Pass the authenticated user directly
-    body: any // Pass the parsed body directly
+    body: Database['public']['Tables']['organizations']['Insert'] // Pass the parsed body directly
 ): Promise<Response> {
     console.log('[create.ts] Handling POST /organizations...');
     

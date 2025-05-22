@@ -5,6 +5,7 @@ import { useOrganizationStore, selectCurrentUserRoleInOrg } from '@paynless/stor
 import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
+import { DeleteOrganizationDialog } from './DeleteOrganizationDialog'; // Added import
 
 // Add shadcn/ui imports
 import {
@@ -19,9 +20,6 @@ import {
 import { toast } from 'sonner';
 import { AdminBadge } from './AdminBadge'; // Import the badge
 
-// Import the new chat settings component
-import { OrganizationChatSettings } from './OrganizationChatSettings';
-
 // Placeholder for DeleteOrganizationDialog trigger
 // import { useDeleteOrganizationDialog } from './DeleteOrganizationDialog';
 
@@ -33,7 +31,7 @@ const settingsSchema = z.object({
 
 type SettingsFormData = z.infer<typeof settingsSchema>;
 
-export const OrganizationSettingsCard: React.FC = () => {
+export const OrganizationPrivacyCard: React.FC = () => {
   const {
     currentOrganizationDetails,
     updateOrganization,
@@ -41,6 +39,7 @@ export const OrganizationSettingsCard: React.FC = () => {
     openDeleteDialog, // Import the action
     isLoading, // Use main loading for now, maybe specific loading state later
     currentOrganizationId,
+    isDeleteDialogOpen, // Added state for dialog
   } = useOrganizationStore();
 
   const {
@@ -89,7 +88,7 @@ export const OrganizationSettingsCard: React.FC = () => {
     try {
       // Call the update action from the store
       await updateOrganization(currentOrganizationId, data);
-      toast.success("Organization settings updated successfully!");
+      toast.success("Organization privacy settings updated successfully!");
       // Optional: reset form to new values if needed, though useEffect handles external changes
       // reset(data); 
     } catch (error: unknown) { // Use unknown for safer error handling
@@ -97,7 +96,7 @@ export const OrganizationSettingsCard: React.FC = () => {
       if (error instanceof Error) {
         errorMessage = error.message;
       }
-      toast.error(`Failed to update settings: ${errorMessage}`);
+      toast.error(`Failed to update privacy settings: ${errorMessage}`);
     }
   };
 
@@ -121,82 +120,79 @@ export const OrganizationSettingsCard: React.FC = () => {
   const formDisabled = isLoading || isSubmitting;
 
   return (
-    <Card>
-      <CardHeader className="flex flex-row items-center">
-        <CardTitle>Organization Settings</CardTitle>
-        <AdminBadge />
-        {/* Optional: Add CardDescription here */}
-      </CardHeader>
-      <form onSubmit={handleSubmit(onSubmit)}>
-        <CardContent className="space-y-6">
-          {/* Name Field */}
-          <div className="space-y-1">
-            <Label htmlFor="org-name">Organization Name</Label>
-            <Input
-              id="org-name"
-              {...register("name")}
-              disabled={formDisabled}
-            />
-            {errors.name && <p className="text-sm text-red-500">{errors.name.message}</p>}
-          </div>
-          
-          {/* Combined Visibility and Buttons Row */}
-          <div className="flex items-end gap-4"> 
-            {/* Visibility Field */}  
-            <div className="flex-grow space-y-1"> {/* Allow dropdown to take available space */}
-              <Label htmlFor="org-visibility">Visibility</Label>
-              <Controller
-                name="visibility"
-                control={control}
-                render={({ field }) => (
-                  <Select
-                    onValueChange={field.onChange}
-                    defaultValue={field.value}
-                    value={field.value}
-                    disabled={formDisabled}
-                  >
-                    <SelectTrigger id="org-visibility">
-                      <SelectValue placeholder="Select visibility" />
-                    </SelectTrigger>
-                    <SelectContent className="bg-background/70 backdrop-blur-md border border-border">
-                      <SelectItem value="private">Private</SelectItem>
-                      <SelectItem value="public">Public</SelectItem>
-                    </SelectContent>
-                  </Select>
-                )}
+    <>
+      <Card data-testid="org-settings-card">
+        <CardHeader className="flex flex-row items-center">
+          <CardTitle>Organization Privacy</CardTitle>
+          <AdminBadge />
+          {/* Optional: Add CardDescription here */}
+        </CardHeader>
+        <form onSubmit={handleSubmit(onSubmit)}>
+          <CardContent className="space-y-6">
+            {/* Name Field */}
+            <div className="space-y-1">
+              <Label htmlFor="org-name">Organization Name</Label>
+              <Input
+                id="org-name"
+                {...register("name")}
+                disabled={formDisabled}
               />
-              {errors.visibility && <p className="text-sm text-red-500">{errors.visibility.message}</p>}
+              {errors.name && <p className="text-sm text-red-500">{errors.name.message}</p>}
             </div>
             
-            {/* Update Button */} 
-            <Button
-              type="submit"
-              disabled={formDisabled}
-              className="shrink-0" // Prevent shrinking
-            >
-              {isSubmitting ? 'Updating...' : 'Update'} {/* Shortened text */}
-            </Button>
-            
-            {/* Delete Button */} 
-            <Button
-              variant="destructive"
-              onClick={() => openDeleteDialog()}
-              type="button"
-              disabled={formDisabled || !currentOrganizationId}
-              className="shrink-0" // Prevent shrinking
-            >
-              Delete {/* Shortened text */}
-            </Button>
-          </div>
-          
-          {/* --- Organization Chat Settings --- */}
-          <div className="space-y-2 pt-4 border-t border-border/40 mt-6">
-            <h4 className="text-md font-medium">Chat Permissions</h4>
-            <OrganizationChatSettings />
-          </div>
-          
-        </CardContent>
-      </form>
-    </Card>
+            {/* Combined Visibility and Buttons Row */}
+            <div className="flex items-end gap-4"> 
+              {/* Visibility Field */}  
+              <div className="flex-grow space-y-1"> {/* Allow dropdown to take available space */}
+                <Label htmlFor="org-visibility">Visibility</Label>
+                <Controller
+                  name="visibility"
+                  control={control}
+                  render={({ field }) => (
+                    <Select
+                      onValueChange={field.onChange}
+                      defaultValue={field.value}
+                      value={field.value}
+                      disabled={formDisabled}
+                    >
+                      <SelectTrigger id="org-visibility">
+                        <SelectValue placeholder="Select visibility" />
+                      </SelectTrigger>
+                      <SelectContent className="bg-background/70 backdrop-blur-md border border-border">
+                        <SelectItem value="private">Private</SelectItem>
+                        <SelectItem value="public">Public</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  )}
+                />
+                {errors.visibility && <p className="text-sm text-red-500">{errors.visibility.message}</p>}
+              </div>
+              
+              {/* Update Button */} 
+              <Button
+                type="submit"
+                disabled={formDisabled}
+                className="shrink-0" // Prevent shrinking
+              >
+                {isSubmitting ? 'Updating...' : 'Update'} {/* Shortened text */}
+              </Button>
+              
+              {/* Delete Button */} 
+              <Button
+                variant="destructive"
+                onClick={() => openDeleteDialog()}
+                type="button"
+                disabled={formDisabled || !currentOrganizationId}
+                className="shrink-0" // Prevent shrinking
+              >
+                Delete {/* Shortened text */}
+              </Button>
+            </div>
+          </CardContent>
+        </form>
+      </Card>
+      {/* Render the Delete Dialog here, controlled by the store state */}
+      {isDeleteDialogOpen && <DeleteOrganizationDialog />}
+    </>
   );
 }; 

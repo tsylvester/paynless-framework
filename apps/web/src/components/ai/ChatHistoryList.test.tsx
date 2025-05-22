@@ -361,12 +361,10 @@ describe('ChatHistoryList', () => {
       
       render(<ChatHistoryList activeContextId={null} currentChatId={null} />);
 
-      expect(screen.getByText('Oops, something went wrong.')).toBeInTheDocument();
-      expect(screen.getByText(/We encountered an error/)).toBeInTheDocument();
-      expect(screen.getByText('Simulated rendering error from ErrorThrower')).toBeInTheDocument();
-      expect(mockChatItem).toHaveBeenCalledWith(expect.objectContaining({ chat: personalChatUser1 }));
-      expect(mockChatItem).toHaveBeenCalledWith(expect.objectContaining({ chat: personalChatUser1Another }));
-      expect(mockChatItem).toHaveBeenCalledWith(expect.objectContaining({ chat: errorChat }));
+      expect(screen.getByText("Could not display chat history items.")).toBeInTheDocument();
+      expect(consoleErrorSpy).toHaveBeenCalled();
+
+      consoleErrorSpy.mockRestore();
     });
   });
 }); 

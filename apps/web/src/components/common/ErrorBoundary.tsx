@@ -1,6 +1,7 @@
 'use client';
 
 import React, { Component, ErrorInfo, ReactNode } from 'react';
+import { logger } from '@paynless/utils';
 
 interface Props {
   children: ReactNode;
@@ -24,7 +25,7 @@ class ErrorBoundary extends Component<Props, State> {
 
   public override componentDidCatch(error: Error, errorInfo: ErrorInfo) {
     // Log the error assuming logger takes message and context/error object
-    console.error('ErrorBoundary caught an error:', { error, errorInfo });
+    logger.error('[ErrorBoundary] Uncaught error:', { error: error.message, componentStack: errorInfo.componentStack });
   }
 
   public override render() {
@@ -39,7 +40,8 @@ class ErrorBoundary extends Component<Props, State> {
           <p className="text-sm">
             We encountered an error. Please try refreshing the page or contact support if the problem persists.
           </p>
-          {this.state.error && (
+          {/* Conditionally render error details based on environment */}
+          {process.env.NODE_ENV !== 'production' && this.state.error && (
             <pre className="mt-2 text-xs text-left whitespace-pre-wrap bg-red-100 p-2 rounded">
               {this.state.error.message}
             </pre>

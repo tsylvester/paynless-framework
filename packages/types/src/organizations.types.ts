@@ -128,7 +128,13 @@ export interface OrganizationActions {
   denyRequest: (membershipId: string) => Promise<boolean>;
   cancelInvite: (inviteId: string) => Promise<boolean>;
   fetchInviteDetails: (token: string) => Promise<InviteDetails | null>; 
-  updateOrganizationSettings: (organizationId: string, settings: { allow_member_chat_creation: boolean }) => Promise<boolean>; // Added
+  updateOrganizationSettings: (
+    organizationId: string, 
+    settings: { 
+      allow_member_chat_creation?: boolean; // Keep optional
+      token_usage_policy?: 'member_tokens' | 'organization_tokens'; // Add new policy, use string literals
+    }
+  ) => Promise<boolean>; 
   // --- Pagination Actions ---
   setOrgListPage: (page: number) => void;
   setOrgListPageSize: (size: number) => void;
@@ -146,7 +152,7 @@ export interface OrganizationUIState {
 export interface OrganizationUIActions {
   openCreateModal: () => void;
   closeCreateModal: () => void;
-  openDeleteDialog: () => void;
+  openDeleteDialog: () => void; // REVERTED - No parameter needed
   closeDeleteDialog: () => void;
 }
 

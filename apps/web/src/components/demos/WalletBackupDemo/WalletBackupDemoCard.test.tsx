@@ -126,11 +126,13 @@ describe('WalletBackupDemoCard Component', () => {
     };
     renderComponent(mockUnavailableState);
 
-    // Check for unavailable alert specifically by its title
-    const unavailableAlert = screen.getByRole('alert', { name: /File System Unavailable/i });
+    // Find the AlertTitle first, then its parent alert
+    const alertTitle = screen.getByText(/File System Unavailable/i);
+    expect(alertTitle).toBeInTheDocument();
+    
+    const unavailableAlert = alertTitle.closest('[role="alert"]');
     expect(unavailableAlert).toBeInTheDocument();
-    expect(within(unavailableAlert).getByText(/File System Unavailable/i)).toBeInTheDocument();
-    expect(unavailableAlert).not.toHaveClass('text-destructive'); // Should be default variant
+    expect(unavailableAlert).not.toHaveClass('border-destructive'); // Should be default variant, not error styling
 
     // Check controls are rendered but disabled
     expect(screen.getByTestId('mnemonic-input')).toBeDisabled();
@@ -189,8 +191,9 @@ describe('WalletBackupDemoCard Component', () => {
       renderComponent(mockAvailableState);
       const textArea = screen.getByTestId('mnemonic-input');
       const exportButton = screen.getByTestId('export-mnemonic-button');
-      // const statusDisplay = screen.queryByTestId('status-display'); // Initial check removed
-      expect(screen.queryByTestId('status-display')).not.toBeInTheDocument();
+      // StatusDisplay is always rendered, initially with "Information" title if message is null.
+      // So, we don't check for its absence. We can check its initial state if needed.
+      // For this test, we are interested in its state after the export action.
 
       // Setup mocks for success
       const mockSavePath = '/fake/export-mnemonic.txt';
@@ -216,8 +219,11 @@ describe('WalletBackupDemoCard Component', () => {
 
       // Check final status display
       const finalStatus = await screen.findByTestId('status-display');
-      expect(finalStatus).toHaveTextContent('Mnemonic exported successfully!');
-      expect(finalStatus).toHaveAttribute('data-variant', 'success');
+      expect(within(finalStatus).getByText('Success')).toBeInTheDocument(); // Check title for Success
+      expect(within(finalStatus).getByText('Mnemonic exported successfully!')).toBeInTheDocument(); // Check message
+      // The underlying Alert component will have variant="default" for success, not a specific "success" data-variant.
+      // We can check it's not destructive, or rely on title/message.
+      expect(finalStatus).not.toHaveClass('border-destructive'); // Example check for non-error styling
       // Ensure mnemonic input wasn't changed
       expect(textArea).toHaveValue(testMnemonic);
     });
@@ -248,8 +254,10 @@ describe('WalletBackupDemoCard Component', () => {
 
       // Check final status display
       const finalStatus = await screen.findByTestId('status-display');
-      expect(finalStatus).toHaveTextContent(`Export Error: ${backendError}`);
-      expect(finalStatus).toHaveAttribute('data-variant', 'error');
+      expect(within(finalStatus).getByText('Error')).toBeInTheDocument(); // Check title for Error
+      // Error message should match "Export Error: ActualErrorMessage"
+      expect(within(finalStatus).getByText(/^Export Error: CouldNotRetrieveMnemonic$/i)).toBeInTheDocument(); 
+      expect(finalStatus).toHaveClass('border-destructive'); 
       // Ensure mnemonic input wasn't changed
       expect(textArea).toHaveValue(initialMnemonic);
     });
@@ -258,17 +266,19 @@ describe('WalletBackupDemoCard Component', () => {
       renderComponent(mockAvailableState);
       const textArea = screen.getByTestId('mnemonic-input');
       const exportButton = screen.getByTestId('export-mnemonic-button');
-      fireEvent.change(textArea, { target: { value: testMnemonic } });
+      const initialMnemonic = 'another mnemonic for file write test';
+      fireEvent.change(textArea, { target: { value: initialMnemonic } });
       await waitFor(() => expect(exportButton).toBeEnabled());
-
+      
       // Setup mocks for file write failure
       const mockSavePath = '/fake/export-mnemonic.txt';
       const exportedMnemonicFromBackend = 'export different winner thank wave sausage worth useful legal winner thank yellow';
-      const writeError = new Error('Disk full');
+      const writeError = new Error('File write failed'); // This error object will be caught
       vi.mocked(ask).mockResolvedValue(true); 
       vi.mocked(invoke).mockResolvedValue(exportedMnemonicFromBackend); 
       vi.mocked(mockAvailableFileSystem.pickSaveFile).mockResolvedValue(mockSavePath);
-      vi.mocked(mockAvailableFileSystem.writeFile).mockRejectedValue(writeError); // Write fails
+      // Ensure this mock is correctly awaited in the component if it's truly async
+      vi.mocked(mockAvailableFileSystem.writeFile).mockRejectedValueOnce(writeError);
 
       // Click export
       fireEvent.click(exportButton);
@@ -283,10 +293,12 @@ describe('WalletBackupDemoCard Component', () => {
 
       // Check final status display
       const finalStatus = await screen.findByTestId('status-display');
-      expect(finalStatus).toHaveTextContent(`Export Error: ${writeError.message}`);
-      expect(finalStatus).toHaveAttribute('data-variant', 'error');
+      expect(within(finalStatus).getByText('Error')).toBeInTheDocument(); // Check title for Error
+      // Error message should match "Export Error: ActualErrorMessage"
+      expect(within(finalStatus).getByText(/^Export Error: File write failed$/i)).toBeInTheDocument(); 
+      expect(finalStatus).toHaveClass('border-destructive');
       // Ensure mnemonic input wasn't changed
-      expect(textArea).toHaveValue(testMnemonic);
+      expect(textArea).toHaveValue(initialMnemonic);
     });
 
   });

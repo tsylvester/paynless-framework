@@ -114,7 +114,7 @@ export function ChatHistoryList({
       data-testid="chat-history-bounding-box"
     >
       {renderTitle()}
-      <ErrorBoundary fallbackMessage="Could not display chat history items.">
+      <ErrorBoundary fallback="Could not display chat history items.">
         <div className="space-y-1">
           {chatsToDisplay.map((chat: Chat) => (
             <ChatItem

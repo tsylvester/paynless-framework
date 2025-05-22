@@ -37,7 +37,7 @@ vi.mock('../components/organizations/OrganizationDetailsCard', async (importOrig
   return { ...original, OrganizationDetailsCard: () => <div data-testid="org-details-card">OrgDetailsCard Mock</div> };
 });
 vi.mock('../components/organizations/OrganizationSettingsCard', async (importOriginal) => {
-  const original = await importOriginal<typeof import('../components/organizations/OrganizationSettingsCard')>();
+  const original = await importOriginal<typeof import('../components/organizations/OrganizationPrivacyCard')>();
   return { ...original, OrganizationSettingsCard: () => <div data-testid="org-settings-card">OrgSettingsCard Mock</div> };
 });
 vi.mock('../components/organizations/MemberListCard', async (importOriginal) => {

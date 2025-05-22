@@ -314,6 +314,7 @@ export type Database = {
           deleted_at: string | null
           id: string
           name: string
+          token_usage_policy: Database["public"]["Enums"]["org_token_usage_policy_enum"]
           visibility: string
         }
         Insert: {
@@ -322,6 +323,7 @@ export type Database = {
           deleted_at?: string | null
           id?: string
           name: string
+          token_usage_policy?: Database["public"]["Enums"]["org_token_usage_policy_enum"]
           visibility?: string
         }
         Update: {
@@ -330,6 +332,7 @@ export type Database = {
           deleted_at?: string | null
           id?: string
           name?: string
+          token_usage_policy?: Database["public"]["Enums"]["org_token_usage_policy_enum"]
           visibility?: string
         }
         Relationships: []
@@ -903,6 +906,7 @@ export type Database = {
       }
     }
     Enums: {
+      org_token_usage_policy_enum: "member_tokens" | "organization_tokens"
       user_role: "user" | "admin"
     }
     CompositeTypes: {
@@ -1022,6 +1026,7 @@ export const Constants = {
   },
   public: {
     Enums: {
+      org_token_usage_policy_enum: ["member_tokens", "organization_tokens"],
       user_role: ["user", "admin"],
     },
   },
