@@ -4,24 +4,43 @@ import { vi, describe, it, expect, beforeEach, MockInstance } from 'vitest';
 import { ChatAffordabilityIndicator } from './ChatAffordabilityIndicator';
 import { useTokenEstimator } from '@/hooks/useTokenEstimator';
 import { useAIChatAffordabilityStatus } from '@/hooks/useAIChatAffordabilityStatus';
+import { useChatWalletDecision } from '@/hooks/useChatWalletDecision';
 
 // Mock the hooks
 vi.mock('@/hooks/useTokenEstimator');
 vi.mock('@/hooks/useAIChatAffordabilityStatus');
+vi.mock('@/hooks/useChatWalletDecision');
 
-const mockedUseTokenEstimator = useTokenEstimator as MockInstance<[string], number>;
-const mockedUseAIChatAffordabilityStatus = useAIChatAffordabilityStatus as MockInstance<
+const mockedUseTokenEstimator = useTokenEstimator as unknown as MockInstance<[string], number>;
+const mockedUseAIChatAffordabilityStatus = useAIChatAffordabilityStatus as unknown as MockInstance<
   [number],
   { canAffordNext: boolean; lowBalanceWarning: boolean; currentBalance: string; estimatedNextCost: number }
 >;
+const mockedUseChatWalletDecision = useChatWalletDecision as unknown as MockInstance<[], { 
+  effectiveOutcome: { outcome: string; message?: string }; 
+  giveConsent: () => void; 
+  refuseConsent: () => void; 
+  isLoadingConsent: boolean; 
+  resetConsent: () => void; 
+}>;
 
 describe('ChatAffordabilityIndicator', () => {
-  let mockOnAffordabilityChange: MockInstance<(canAfford: boolean) => void, []>;
+  let mockOnAffordabilityChange: (canAfford: boolean, reason?: string) => void;
 
   beforeEach(() => {
     mockOnAffordabilityChange = vi.fn();
     mockedUseTokenEstimator.mockReset();
     mockedUseAIChatAffordabilityStatus.mockReset();
+    mockedUseChatWalletDecision.mockReset();
+
+    // Default mock for useChatWalletDecision to simplify tests
+    mockedUseChatWalletDecision.mockReturnValue({
+      effectiveOutcome: { outcome: 'use_personal_wallet' },
+      giveConsent: vi.fn(),
+      refuseConsent: vi.fn(),
+      isLoadingConsent: false,
+      resetConsent: vi.fn(),
+    });
   });
 
   it('Scenario 1: Sufficient Balance, No Warning', () => {
@@ -42,7 +61,7 @@ describe('ChatAffordabilityIndicator', () => {
 
     expect(screen.queryByText(/Token balance is low/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/Insufficient balance for this message/i)).not.toBeInTheDocument();
-    expect(mockOnAffordabilityChange).toHaveBeenCalledWith(true);
+    expect(mockOnAffordabilityChange as unknown as MockInstance<[boolean, (string | undefined)?], void>).toHaveBeenCalledWith(true, "");
   });
 
   it('Scenario 2: Sufficient Balance, Low Balance Warning', () => {
@@ -63,7 +82,7 @@ describe('ChatAffordabilityIndicator', () => {
 
     expect(screen.getByText(/Token balance is low/i)).toBeInTheDocument();
     expect(screen.queryByText(/Insufficient balance for this message/i)).not.toBeInTheDocument();
-    expect(mockOnAffordabilityChange).toHaveBeenCalledWith(true);
+    expect(mockOnAffordabilityChange as unknown as MockInstance<[boolean, (string | undefined)?], void>).toHaveBeenCalledWith(true, "");
   });
 
   it('Scenario 3: Insufficient Balance', () => {
@@ -84,7 +103,7 @@ describe('ChatAffordabilityIndicator', () => {
 
     expect(screen.queryByText(/Token balance is low/i)).not.toBeInTheDocument(); // Insufficient implies low, but specific msg takes precedence
     expect(screen.getByText(/Insufficient balance for this message/i)).toBeInTheDocument();
-    expect(mockOnAffordabilityChange).toHaveBeenCalledWith(false);
+    expect(mockOnAffordabilityChange as unknown as MockInstance<[boolean, (string | undefined)?], void>).toHaveBeenCalledWith(false, "");
   });
 
   it('Scenario 4: Input Text Changes, leading to different affordability', () => {
@@ -104,9 +123,9 @@ describe('ChatAffordabilityIndicator', () => {
       />
     );
 
-    expect(mockOnAffordabilityChange).toHaveBeenCalledWith(true);
+    expect(mockOnAffordabilityChange as unknown as MockInstance<[boolean, (string | undefined)?], void>).toHaveBeenCalledWith(true, "");
     expect(screen.queryByText(/Insufficient balance/i)).not.toBeInTheDocument();
-    mockOnAffordabilityChange.mockClear(); // Clear for next assertion
+    (mockOnAffordabilityChange as unknown as MockInstance<[boolean, (string | undefined)?], void>).mockClear(); // Clear for next assertion
 
     // Rerender with new text: unaffordable
     mockedUseTokenEstimator.mockReturnValueOnce(200);
@@ -127,7 +146,7 @@ describe('ChatAffordabilityIndicator', () => {
     expect(mockedUseTokenEstimator).toHaveBeenCalledWith("hello world this is a long message");
     expect(mockedUseAIChatAffordabilityStatus).toHaveBeenCalledWith(200);
     expect(screen.getByText(/Insufficient balance for this message/i)).toBeInTheDocument();
-    expect(mockOnAffordabilityChange).toHaveBeenCalledWith(false);
+    expect(mockOnAffordabilityChange as unknown as MockInstance<[boolean, (string | undefined)?], void>).toHaveBeenCalledWith(false, "");
   });
 
   it('Scenario 5: Zero Estimated Tokens', () => {
@@ -148,6 +167,6 @@ describe('ChatAffordabilityIndicator', () => {
 
     expect(screen.queryByText(/Token balance is low/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/Insufficient balance for this message/i)).not.toBeInTheDocument();
-    expect(mockOnAffordabilityChange).toHaveBeenCalledWith(true);
+    expect(mockOnAffordabilityChange as unknown as MockInstance<[boolean, (string | undefined)?], void>).toHaveBeenCalledWith(true, "");
   });
 }); 

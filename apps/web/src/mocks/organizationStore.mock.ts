@@ -1,4 +1,4 @@
-import { vi } from 'vitest';
+import { vi, Mock } from 'vitest';
 import type {
     User,
     UserProfile,
@@ -8,12 +8,14 @@ import type {
     OrganizationState,
     OrganizationActions,
     OrganizationUIState,
-    OrganizationUIActions
+    OrganizationUIActions,
+    MembershipRequest,
+    InviteDetails
 } from '@paynless/types';
 
 // Import ACTUAL selectors that will be used by the mock logic AND potentially re-exported
 import {
-    selectCurrentUserRoleInOrg  // Import with an alias
+    selectCurrentUserRoleInOrg
 } from '../../../../packages/store/src/organizationStore.selectors';
 
 // --- Mock State and Types (Internal to this implementation file) ---
@@ -22,31 +24,24 @@ type MockAuthStoreState = Pick<AuthStore, 'user' | 'session' | 'profile' | 'isLo
 // Define the shape of our mock OrganizationStore's state values
 type MockOrganizationStoreStateValues = OrganizationState & OrganizationUIState;
 
-// Define the shape of our mock OrganizationStore's actions
+// Define the shape of our mock OrganizationStore's actions based on imported types
 // This combines OrganizationActions and OrganizationUIActions
 type MockOrganizationStoreActions = {
-    [K in keyof (OrganizationActions & OrganizationUIActions)]: ReturnType<typeof vi.fn>;
+    [K in keyof OrganizationActions]: Mock<Parameters<OrganizationActions[K]>, ReturnType<OrganizationActions[K]>>;
+} & {
+    [K in keyof OrganizationUIActions]: Mock<Parameters<OrganizationUIActions[K]>, ReturnType<OrganizationUIActions[K]>>;
 };
 
-// Define the shape of our mock OrganizationStore's state more precisely for what's used
-// This combines parts of OrganizationState, OrganizationUIState, and specific actions.
-// It should align with what the actual store's state structure is for the parts being mocked.
+
 type MockOrganizationStoreInternalStateType =
-    MockOrganizationStoreStateValues & // Use the new state values type
-    // Only include actions that are directly part of the internal state or explicitly spied upon.
-    // Other actions will be part of the `createMockActions` utility.
-    // For `OrganizationStoreType` properties not in `OrganizationState` or `OrganizationUIState`,
-    // they are mainly actions or selectors. Selectors are handled by direct import if needed (like selectCurrentUserRoleInOrg).
-    // Actions are mostly covered by `createMockActions` or the spied actions below.
+    MockOrganizationStoreStateValues &
     Pick<MockOrganizationStoreActions,
         'inviteUser' |
         'updateOrganization' |
-        'openDeleteDialog' | // This is a UI action, but often spied on
+        'openDeleteDialog' |
         'updateMemberRole' |
         'removeMember' |
         'fetchCurrentOrganizationMembers'
-        // Add other specific actions here if they need to be part of the internal default state
-        // and are not covered by createMockActions being spread into the final mock store.
     >;
 
 
@@ -60,46 +55,45 @@ let internalMockAuthStoreState: MockAuthStoreState = {
   navigate: null,
 };
 
-const internalInviteUserSpy = vi.fn().mockResolvedValue(true); // Keep the spy internal
-const internalUpdateOrganizationSpy = vi.fn(); // New spy for updateOrganization
-const internalOpenDeleteDialogSpy = vi.fn();   // New spy for openDeleteDialog
-// New spies for MemberListCard actions
-const internalUpdateMemberRoleSpy = vi.fn();
-const internalRemoveMemberSpy = vi.fn();
-const internalFetchCurrentOrganizationMembersSpy = vi.fn();
+// Typed Spies
+const internalInviteUserSpy = vi.fn<Parameters<OrganizationActions['inviteUser']>, ReturnType<OrganizationActions['inviteUser']>>().mockResolvedValue(true);
+const internalUpdateOrganizationSpy = vi.fn<Parameters<OrganizationActions['updateOrganization']>, ReturnType<OrganizationActions['updateOrganization']>>().mockResolvedValue(true);
+const internalOpenDeleteDialogSpy = vi.fn<Parameters<OrganizationUIActions['openDeleteDialog']>, ReturnType<OrganizationUIActions['openDeleteDialog']>>();
+const internalUpdateMemberRoleSpy = vi.fn<Parameters<OrganizationActions['updateMemberRole']>, ReturnType<OrganizationActions['updateMemberRole']>>().mockResolvedValue(true);
+const internalRemoveMemberSpy = vi.fn<Parameters<OrganizationActions['removeMember']>, ReturnType<OrganizationActions['removeMember']>>().mockResolvedValue(true);
+const internalFetchCurrentOrganizationMembersSpy = vi.fn<Parameters<OrganizationActions['fetchCurrentOrganizationMembers']>, ReturnType<OrganizationActions['fetchCurrentOrganizationMembers']>>().mockResolvedValue(undefined);
 
-// Helper to create mock actions
+
+// Helper to create mock actions with correct types
 export const createMockActions = (): MockOrganizationStoreActions => ({
     // OrganizationActions
-    fetchUserOrganizations: vi.fn().mockImplementation(() => {
-        // console.log('[Mock Store] fetchUserOrganizations called by test'); // Optional debug
-        return Promise.resolve(undefined); // Simulate async action
-    }),
-    setCurrentOrganizationId: vi.fn(),
-    fetchCurrentOrganizationDetails: vi.fn().mockResolvedValue(undefined),
-    fetchCurrentOrganizationMembers: internalFetchCurrentOrganizationMembersSpy.mockResolvedValue(undefined), // Use spy
-    createOrganization: vi.fn().mockResolvedValue(true),
-    softDeleteOrganization: vi.fn().mockResolvedValue(true),
-    updateOrganization: internalUpdateOrganizationSpy.mockResolvedValue(true), // Use spy
-    inviteUser: internalInviteUserSpy.mockResolvedValue(true), // Use spy
-    leaveOrganization: vi.fn().mockResolvedValue(true),
-    updateMemberRole: internalUpdateMemberRoleSpy.mockResolvedValue(true), // Use spy
-    removeMember: internalRemoveMemberSpy.mockResolvedValue(true), // Use spy
-    acceptInvite: vi.fn().mockResolvedValue(true),
-    declineInvite: vi.fn().mockResolvedValue(true),
-    requestJoin: vi.fn().mockResolvedValue(null),
-    approveRequest: vi.fn().mockResolvedValue(true),
-    denyRequest: vi.fn().mockResolvedValue(true),
-    cancelInvite: vi.fn().mockResolvedValue(true),
-    fetchInviteDetails: vi.fn().mockResolvedValue(null),
-    updateOrganizationSettings: vi.fn().mockResolvedValue(true),
-    setOrgListPage: vi.fn(),
-    setOrgListPageSize: vi.fn(),
+    fetchUserOrganizations: vi.fn<Parameters<OrganizationActions['fetchUserOrganizations']>, Promise<void>>().mockResolvedValue(undefined),
+    setCurrentOrganizationId: vi.fn<Parameters<OrganizationActions['setCurrentOrganizationId']>, void>(),
+    fetchCurrentOrganizationDetails: vi.fn<Parameters<OrganizationActions['fetchCurrentOrganizationDetails']>, Promise<void>>().mockResolvedValue(undefined),
+    fetchCurrentOrganizationMembers: internalFetchCurrentOrganizationMembersSpy,
+    createOrganization: vi.fn<Parameters<OrganizationActions['createOrganization']>, Promise<boolean>>().mockResolvedValue(true),
+    softDeleteOrganization: vi.fn<Parameters<OrganizationActions['softDeleteOrganization']>, Promise<boolean>>().mockResolvedValue(true),
+    updateOrganization: internalUpdateOrganizationSpy,
+    inviteUser: internalInviteUserSpy,
+    leaveOrganization: vi.fn<Parameters<OrganizationActions['leaveOrganization']>, Promise<boolean>>().mockResolvedValue(true),
+    updateMemberRole: internalUpdateMemberRoleSpy,
+    removeMember: internalRemoveMemberSpy,
+    acceptInvite: vi.fn<Parameters<OrganizationActions['acceptInvite']>, Promise<boolean>>().mockResolvedValue(true),
+    declineInvite: vi.fn<Parameters<OrganizationActions['declineInvite']>, Promise<boolean>>().mockResolvedValue(true),
+    requestJoin: vi.fn<Parameters<OrganizationActions['requestJoin']>, Promise<MembershipRequest | null>>().mockResolvedValue(null),
+    approveRequest: vi.fn<Parameters<OrganizationActions['approveRequest']>, Promise<boolean>>().mockResolvedValue(true),
+    denyRequest: vi.fn<Parameters<OrganizationActions['denyRequest']>, Promise<boolean>>().mockResolvedValue(true),
+    cancelInvite: vi.fn<Parameters<OrganizationActions['cancelInvite']>, Promise<boolean>>().mockResolvedValue(true),
+    fetchInviteDetails: vi.fn<Parameters<OrganizationActions['fetchInviteDetails']>, Promise<InviteDetails | null>>().mockResolvedValue(null),
+    updateOrganizationSettings: vi.fn<Parameters<OrganizationActions['updateOrganizationSettings']>, Promise<boolean>>().mockResolvedValue(true),
+    setOrgListPage: vi.fn<Parameters<OrganizationActions['setOrgListPage']>, void>(),
+    setOrgListPageSize: vi.fn<Parameters<OrganizationActions['setOrgListPageSize']>, void>(),
+
     // OrganizationUIActions
-    openCreateModal: vi.fn(),
-    closeCreateModal: vi.fn(),
-    openDeleteDialog: internalOpenDeleteDialogSpy, // Use spy
-    closeDeleteDialog: vi.fn(),
+    openCreateModal: vi.fn<Parameters<OrganizationUIActions['openCreateModal']>, void>(),
+    closeCreateModal: vi.fn<Parameters<OrganizationUIActions['closeCreateModal']>, void>(),
+    openDeleteDialog: internalOpenDeleteDialogSpy,
+    closeDeleteDialog: vi.fn<Parameters<OrganizationUIActions['closeDeleteDialog']>, void>(),
 });
 
 
@@ -159,44 +153,74 @@ export const mockSetMemberCurrentPage = (page: number) => { internalMockOrgStore
 export const mockSetMemberPageSize = (size: number) => { internalMockOrgStoreState.memberPageSize = size; };
 export const mockSetMemberTotalCount = (count: number) => { internalMockOrgStoreState.memberTotalCount = count; };
 
-export const getInternalInviteUserSpy = () => internalInviteUserSpy; // Export getter for the spy
-// New exported getters for new spies
+export const getInternalInviteUserSpy = () => internalInviteUserSpy;
 export const getInternalUpdateOrganizationSpy = () => internalUpdateOrganizationSpy;
 export const getInternalOpenDeleteDialogSpy = () => internalOpenDeleteDialogSpy;
-// New exported getters for new spies
 export const getInternalUpdateMemberRoleSpy = () => internalUpdateMemberRoleSpy;
 export const getInternalRemoveMemberSpy = () => internalRemoveMemberSpy;
 export const getInternalFetchCurrentOrganizationMembersSpy = () => internalFetchCurrentOrganizationMembersSpy;
 
 // --- Exported Mock Hook Implementations (to be used by vi.mock factory) ---
+
+// --- Auth Store Mock Logic ---
 const internalMockAuthStoreGetState = (): MockAuthStoreState => internalMockAuthStoreState;
 
-export const mockedUseAuthStoreHookLogic = <TResult>(selector?: (state: MockAuthStoreState) => TResult): TResult | MockAuthStoreState => {
+function useAuthStoreHookImpl<TResult>(selector?: (state: MockAuthStoreState) => TResult): TResult | MockAuthStoreState {
   const state = internalMockAuthStoreGetState();
   return selector ? selector(state) : state;
-};
-// Attach .getState() to the logic function itself if tests/selectors expect it on the hook function
-(mockedUseAuthStoreHookLogic as any).getState = internalMockAuthStoreGetState;
+}
 
+export const mockedUseAuthStoreHookLogic = Object.assign(
+  useAuthStoreHookImpl,
+  {
+    getState: internalMockAuthStoreGetState,
+    // Add other static methods like setState, subscribe, destroy if the actual useAuthStore has them and they need mocking
+    // For example:
+    // setState: vi.fn(), 
+    // subscribe: vi.fn(() => vi.fn()),
+    // destroy: vi.fn(),
+  }
+);
 
+// --- Organization Store Mock Logic ---
 export const internalMockOrgStoreGetState = (): MockOrganizationStoreInternalStateType => internalMockOrgStoreState;
 
-export const mockedUseOrganizationStoreHookLogic = <TResult>(selector?: (state: MockOrganizationStoreInternalStateType) => TResult): TResult | MockOrganizationStoreInternalStateType => {
-  const state = internalMockOrgStoreGetState();
-  return selector ? selector(state) : state;
-};
-// Attach .getState()
-(mockedUseOrganizationStoreHookLogic as any).getState = internalMockOrgStoreGetState;
+export type FullMockOrgStoreState = MockOrganizationStoreStateValues & MockOrganizationStoreActions;
 
+function useOrganizationStoreHookImpl<TResult>(selector?: (state: FullMockOrgStoreState) => TResult): TResult | FullMockOrgStoreState {
+  const stateValues = internalMockOrgStoreGetState(); 
+  const allActions = createMockActions();
+  const combinedState: FullMockOrgStoreState = {
+      ...allActions, 
+      ...stateValues,
+  };
+  return selector ? selector(combinedState) : combinedState;
+}
+
+const organizationStoreGetState = (): FullMockOrgStoreState => {
+    const stateValues = internalMockOrgStoreGetState();
+    const allActions = createMockActions();
+    return { ...allActions, ...stateValues };
+};
+
+export const mockedUseOrganizationStoreHookLogic = Object.assign(
+  useOrganizationStoreHookImpl,
+  {
+    getState: organizationStoreGetState,
+    // Add other static methods like setState, subscribe, destroy if the actual useOrganizationStore has them and they need mocking
+    // For example:
+    // setState: vi.fn((updater) => { /* logic to update internalMockOrgStoreState */ }),
+    // subscribe: vi.fn(() => vi.fn()),
+    // destroy: vi.fn(),
+  }
+);
 
 // --- Create Mock Store Function (Revised) ---
-// Allow overriding specific actions for more targeted testing
 export const createMockOrganizationStore = (overrideActions?: Partial<MockOrganizationStoreActions>) => {
   const defaultActions = createMockActions();
-  const actions = { ...defaultActions, ...overrideActions }; // Apply overrides
+  const actions = { ...defaultActions, ...overrideActions }; 
 
   let stateValues: MockOrganizationStoreStateValues = {
-      // Initialize with all state properties from OrganizationState & OrganizationUIState
       userOrganizations: [],
       currentOrganizationId: null,
       currentOrganizationDetails: null,
@@ -219,13 +243,10 @@ export const createMockOrganizationStore = (overrideActions?: Partial<MockOrgani
   };
 
   return {
-      // getState returns the shape Zustand selectors expect (state values + actions)
       getState: (): MockOrganizationStoreStateValues & MockOrganizationStoreActions => ({ ...stateValues, ...actions }),
-      // setState updates only the stateValues part
       setState: (newState: Partial<MockOrganizationStoreStateValues>) => {
           stateValues = { ...stateValues, ...newState };
       },
-      // Expose actions directly on the returned store object for easy access in tests
       ...actions,
   };
 };
@@ -237,15 +258,15 @@ export const resetAllStoreMocks = () => {
     user: null, session: null, profile: null, isLoading: false, error: null, navigate: null,
   };
 
-  // Reset Organization Store
+  // Reset Organization Store spies
   internalInviteUserSpy.mockClear().mockResolvedValue(true);
-  internalUpdateOrganizationSpy.mockClear(); // Clear new spy
-  internalOpenDeleteDialogSpy.mockClear();   // Clear new spy
-  // Clear new spies
-  internalUpdateMemberRoleSpy.mockClear();
-  internalRemoveMemberSpy.mockClear();
-  internalFetchCurrentOrganizationMembersSpy.mockClear();
+  internalUpdateOrganizationSpy.mockClear().mockResolvedValue(true);
+  internalOpenDeleteDialogSpy.mockClear();
+  internalUpdateMemberRoleSpy.mockClear().mockResolvedValue(true);
+  internalRemoveMemberSpy.mockClear().mockResolvedValue(true);
+  internalFetchCurrentOrganizationMembersSpy.mockClear().mockResolvedValue(undefined);
 
+  // Reset Organization Store state values to their initial defaults
   internalMockOrgStoreState = {
     // OrganizationState
     userOrganizations: [],
@@ -268,8 +289,8 @@ export const resetAllStoreMocks = () => {
     // OrganizationUIState
     isCreateModalOpen: false,
     isDeleteDialogOpen: false,
-    // Spied Actions
-    inviteUser: internalInviteUserSpy, 
+    // Spied Actions (re-assign spies after clearing them)
+    inviteUser: internalInviteUserSpy,
     updateOrganization: internalUpdateOrganizationSpy,
     openDeleteDialog: internalOpenDeleteDialogSpy,
     updateMemberRole: internalUpdateMemberRoleSpy,

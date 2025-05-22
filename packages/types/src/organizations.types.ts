@@ -10,6 +10,7 @@ type InvitesTable = Database['public']['Tables']['invites']; // Add invites tabl
 // --- Organization Types ---
 export type Organization = OrganizationsTable['Row'] & {
     allow_member_chat_creation?: boolean | null; // Added for chat settings
+    token_usage_policy?: 'member_tokens' | 'organization_tokens' | null; // Added for wallet selection logic
 };
 export type OrganizationInsert = OrganizationsTable['Insert'];
 export type OrganizationUpdate = OrganizationsTable['Update'];

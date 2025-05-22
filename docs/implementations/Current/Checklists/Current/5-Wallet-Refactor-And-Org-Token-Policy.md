@@ -2,49 +2,49 @@
 
 ## Phase 1: Foundation & UI for Org Token Policy (User Pays Default)
 
-*   [ ] **Database Schema Update:**
-    *   [ ] Add a new field to the `organizations` table (e.g., `token_usage_policy` type: string, values: `'member_tokens'`, `'organization_tokens'`, default: `'member_tokens'`).
-    *   [ ] Consider if a corresponding field is needed in `organization_settings` if that's a separate table.
-*   [ ] **API Layer:**
-    *   [ ] Update API endpoint for fetching organization settings to include the new `token_usage_policy`.
-    *   [ ] Update API endpoint for updating organization settings to allow modification of `token_usage_policy`.
-*   [ ] **UI - Organization Settings Card:**
-    *   [ ] Identify the component rendering the organization settings card (likely in `apps/web/src/components/organization/`).
-    *   [ ] Add UI elements (toggle pair) to manage the "Token source for organization chats" setting.
-    *   [ ] Initially, the "Organization Tokens" option should be disabled.
-    *   [ ] Display an informational message/toast (e.g., "Organization wallets are not yet enabled. Org chats will use member tokens by default.") when "Organization Tokens" is interacted with or hovered over while disabled.
-    *   [ ] Connect UI to the store/API to save the `token_usage_policy` setting.
-*   [ ] **Store (`organizationStore.ts`):**
-    *   [ ] Ensure `userOrganizations` (or the specific org details type) includes the `token_usage_policy` field.
-    *   [ ] Update actions for fetching/updating organization settings to handle this new field.
-*   [ ] **Define Unified Chat Wallet Determination & User Consent Logic:**
-    *   [ ] **Core Decision Logic Function/Selector:**
-        *   [ ] Design and implement a centralized function/selector (e.g., in `walletStore` or as a utility) that takes `newChatContext` (orgId or null from `aiStore`) and the specific organization's `token_usage_policy` (from `organizationStore`) as input.
-        *   [ ] This logic should determine the *intended* wallet source:
+*   [x] **Database Schema Update:**
+    *   [x] Add a new field to the `organizations` table (e.g., `token_usage_policy` type: string, values: `'member_tokens'`, `'organization_tokens'`, default: `'member_tokens'`).
+    *   [x] Consider if a corresponding field is needed in `organization_settings` if that's a separate table.
+*   [x] **API Layer:**
+    *   [x] Update API endpoint for fetching organization settings to include the new `token_usage_policy`.
+    *   [x] Update API endpoint for updating organization settings to allow modification of `token_usage_policy`.
+*   [x] **UI - Organization Settings Card:**
+    *   [x] Identify the component rendering the organization settings card (likely in `apps/web/src/components/organization/`).
+    *   [x] Add UI elements (toggle pair) to manage the "Token source for organization chats" setting.
+    *   [x] Initially, the "Organization Tokens" option should be disabled.
+    *   [x] Display an informational message/toast (e.g., "Organization wallets are not yet enabled. Org chats will use member tokens by default.") when "Organization Tokens" is interacted with or hovered over while disabled.
+    *   [x] Connect UI to the store/API to save the `token_usage_policy` setting.
+*   [x] **Store (`organizationStore.ts`):**
+    *   [x] Ensure `userOrganizations` (or the specific org details type) includes the `token_usage_policy` field.
+    *   [x] Update actions for fetching/updating organization settings to handle this new field.
+*   [x] **Define Unified Chat Wallet Determination & User Consent Logic:**
+    *   [x] **Core Decision Logic Function/Selector:**
+        *   [x] Design and implement a centralized function/selector (e.g., in `walletStore` or as a utility) that takes `newChatContext` (orgId or null from `aiStore`) and the specific organization's `token_usage_policy` (from `organizationStore`) as input.
+        *   [x] This logic should determine the *intended* wallet source:
             *   Returns `{ outcome: 'use_personal_wallet' }` if `newChatContext` is `null`.
             *   Returns `{ outcome: 'use_personal_wallet_for_org', orgId }` if `newChatContext` is `orgId` AND `orgTokenPolicy` is `'member_tokens'`.
             *   Returns `{ outcome: 'use_organization_wallet', orgId }` if `newChatContext` is `orgId` AND `orgTokenPolicy` is `'organization_tokens'`.
-    *   [ ] **User Consent Mechanism for "Member Tokens" in Org Chat:**
-        *   [ ] If Core Decision Logic outcome is `'use_personal_wallet_for_org'`:
-            *   [ ] Check for stored user consent for this specific `orgId` (e.g., in `localStorage` keyed by `user_org_token_consent_[orgId]`, or a new user profile field).
-            *   [ ] If consent not previously given/stored:
-                *   [ ] Trigger a UI popup/modal: "This organization chat will use your personal tokens. [Accept] [Decline]".
-                *   [ ] On "Accept": Store consent (e.g., `true`). Allow chat interaction.
-                *   [ ] On "Decline": Store refusal (e.g., `false`). Chat input must be disabled (view-only mode for this org chat).
-            *   [ ] If consent previously refused: Chat input remains disabled for this org context when personal tokens would be used.
-            *   [ ] Provide an "Enable Chat" button that switches the users' choice to consent to using their own tokens if org tokens are unavailable so the user is not permanently locked into an initial decision.
-*   [ ] **Initial Chat Feature Adaptation (Using Unified Logic - User Wallet Focus):**
-    *   [ ] **`ChatAffordabilityIndicator.tsx`:**
-        *   [ ] Consume the Unified Chat Wallet Determination Logic.
-        *   [ ] If logic output is `'use_personal_wallet'` or (`'use_personal_wallet_for_org'` AND consent given): Display balance from the globally loaded personal wallet (`walletStore.currentWallet`).
-        *   [ ] If logic output is `'use_organization_wallet'`: Display "Organization Wallet (Not Yet Available)" or similar, as `walletStore` cannot yet provide this.
-        *   [ ] If `'use_personal_wallet_for_org'` AND consent refused: Indicator might show personal balance but chat is disabled.
-        *   [ ] The "Enable Chat" button provides user consent and permits chat to occur. 
-    *   [ ] **`aiStore.sendMessage` (and subsequent API calls):**
-        *   [ ] Consume the Unified Chat Wallet Determination Logic.
-        *   [ ] If logic output is `'use_personal_wallet'` or (`'use_personal_wallet_for_org'` AND consent given): Ensure API call targets the user's personal wallet for debit.
-        *   [ ] If logic output is `'use_organization_wallet'`: Block the send message action (or clearly explain org wallets aren't usable yet), as debiting an org wallet is not yet supported.
-        *   [ ] If `'use_personal_wallet_for_org'` AND consent refused: Block the send message action and show the "Enable Chat" button.
+    *   [x] **User Consent Mechanism for "Member Tokens" in Org Chat:**
+        *   [x] If Core Decision Logic outcome is `'use_personal_wallet_for_org'`:
+            *   [x] Check for stored user consent for this specific `orgId` (e.g., in `localStorage` keyed by `user_org_token_consent_[orgId]`, or a new user profile field).
+            *   [x] If consent not previously given/stored:
+                *   [x] Trigger a UI popup/modal: "This organization chat will use your personal tokens. [Accept] [Decline]".
+                *   [x] On "Accept": Store consent (e.g., `true`). Allow chat interaction.
+                *   [x] On "Decline": Store refusal (e.g., `false`). Chat input must be disabled (view-only mode for this org chat).
+            *   [x] If consent previously refused: Chat input remains disabled for this org context when personal tokens would be used.
+            *   [x] Provide an "Enable Chat" button that switches the users' choice to consent to using their own tokens if org tokens are unavailable so the user is not permanently locked into an initial decision.
+*   [x] **Initial Chat Feature Adaptation (Using Unified Logic - User Wallet Focus):**
+    *   [x] **`ChatAffordabilityIndicator.tsx`:**
+        *   [x] Consume the Unified Chat Wallet Determination Logic.
+        *   [x] If logic output is `'use_personal_wallet'` or (`'use_personal_wallet_for_org'` AND consent given): Display balance from the globally loaded personal wallet (`walletStore.currentWallet`).
+        *   [x] If logic output is `'use_organization_wallet'`: Display "Organization Wallet (Not Yet Available)" or similar, as `walletStore` cannot yet provide this.
+        *   [x] If `'use_personal_wallet_for_org'` AND consent refused: Indicator might show personal balance but chat is disabled.
+        *   [x] The "Enable Chat" button provides user consent and permits chat to occur. 
+    *   [x] **`aiStore.sendMessage` (and subsequent API calls):**
+        *   [x] Consume the Unified Chat Wallet Determination Logic.
+        *   [x] If logic output is `'use_personal_wallet'` or (`'use_personal_wallet_for_org'` AND consent given): Ensure API call targets the user's personal wallet for debit.
+        *   [x] If logic output is `'use_organization_wallet'`: Block the send message action (or clearly explain org wallets aren't usable yet), as debiting an org wallet is not yet supported.
+        *   [x] If `'use_personal_wallet_for_org'` AND consent refused: Block the send message action and show the "Enable Chat" button.
 
 ## Phase 2: `walletStore` Refactor (Manage Multiple Wallets)
 

@@ -1,5 +1,5 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { useWalletStore, WalletStore } from './walletStore.ts'; // Changed WalletState to WalletStore
+import { describe, it, expect, beforeEach, vi, MockedFunction } from 'vitest';
+import { useWalletStore, WalletStore, WalletSelectors } from './walletStore.ts'; // Changed WalletState to WalletStore
 import { 
   TokenWallet, 
   TokenWalletTransaction, 
@@ -8,12 +8,33 @@ import {
   ErrorResponse, 
   SuccessResponse, 
   PurchaseRequest, 
-  PaymentInitiationResult 
+  PaymentInitiationResult, 
+  Organization 
 } from '@paynless/types';
 
 // Import the actual api for type casting, and the reset function from our mock file
 import { api as actualApiForTyping } from '@paynless/api'; 
 import { resetApiMock, MockApi, MockWalletApiClient } from '../../api/src/mocks/api.mock.ts'; // Assuming MockApi type is exported from api.mock.ts
+
+// Import actual stores to get their types, but they will be mocked.
+// We will mock their actual source files './aiStore' and './organizationStore' below
+// import { useAiStore as actualUseAiStore, useOrganizationStore as actualUseOrganizationStore } from '@paynless/store';
+
+// Import utilities from OUR OWN mock files for AiStore and OrganizationStore
+import { 
+  getAiStoreState as getMockAiState, 
+  resetAiStoreMock,
+  mockSetState as mockSetAiState // Provides fine-grained control if needed
+} from '../../../apps/web/src/mocks/aiStore.mock';
+import { 
+  internalMockOrgStoreGetState as getMockOrgState, 
+  resetAllStoreMocks as resetOrgAndAuthMocks, // Resets org store mock state
+  mockSetCurrentOrganizationDetails,
+  mockSetOrgIsLoading,
+  createMockActions as createOrgMockActions // Import to provide full action set for OrganizationStore mock
+} from '../../../apps/web/src/mocks/organizationStore.mock';
+// Import default mock organization to satisfy Organization type
+import { defaultMockOrganization } from '../../api/src/mocks/organizations.mock';
 
 // Mock the entire @paynless/api module
 vi.mock('@paynless/api', async () => {
@@ -23,10 +44,40 @@ vi.mock('@paynless/api', async () => {
   };
 });
 
+// Mock the direct local dependencies of walletStore.ts
+vi.mock('./aiStore', () => ({
+  useAiStore: {
+    getState: vi.fn(() => {
+      console.log('****** MEGA DEBUG: ./aiStore MOCK CALLED VIA WALLETSTORE TEST ******');
+      const state = getMockAiState();
+      console.log('--- AiStore.getState() (./aiStore mock) --- newChatContext:', state.newChatContext);
+      return state;
+    })
+  }
+}));
+
+vi.mock('./organizationStore', () => ({
+  useOrganizationStore: {
+    getState: vi.fn(() => {
+      console.log('****** MEGA DEBUG: ./organizationStore MOCK CALLED VIA WALLETSTORE TEST ******');
+      const state = {
+        ...getMockOrgState(),
+        ...createOrgMockActions()
+      };
+      console.log('--- OrgStore.getState() (./organizationStore mock) --- isLoading:', state.isLoading, 'currentOrg.id:', state.currentOrganizationDetails?.id, 'policy:', state.currentOrganizationDetails?.token_usage_policy);
+      return state;
+    })
+  }
+}));
+
 // This api should now be the mocked version due to vi.mock hoisting and execution.
 // We will cast it to our MockApi type for TypeScript intellisense and type checking.
 import { api as potentiallyMockedApi } from '@paynless/api';
 const api = potentiallyMockedApi as unknown as MockApi;
+
+// These are now correctly typed and point to the vi.fn instances within the vi.mock above.
+// REMOVED: const mockedUseAiStoreGetState = actualUseAiStore.getState as MockedFunction<typeof actualUseAiStore.getState>;
+// REMOVED: const mockedUseOrganizationStoreGetState = actualUseOrganizationStore.getState as MockedFunction<typeof actualUseOrganizationStore.getState>;
 
 // We need top-level variables to assign the specific mock functions for tests.
 let mockGetWalletInfo: MockWalletApiClient['getWalletInfo'];
@@ -101,6 +152,87 @@ describe('useWalletStore', () => {
         useWalletStore.setState({ transactionHistory: mockTransactions });
         const transactions = useWalletStore.getState().selectWalletTransactions();
         expect(transactions).toEqual(mockTransactions);
+      });
+    });
+
+    describe('determineChatWallet', () => {
+      beforeEach(() => {
+        resetAiStoreMock();
+        resetOrgAndAuthMocks(); 
+        // REMOVED: mockedUseAiStoreGetState.mockImplementation(...);
+        // REMOVED: mockedUseOrganizationStoreGetState.mockImplementation(...);
+      });
+
+      it('should return loading outcome if org details are loading for a specific org context', () => {
+        mockSetAiState({ newChatContext: 'org123' });
+        mockSetOrgIsLoading(true);
+        mockSetCurrentOrganizationDetails({ ...defaultMockOrganization, id: 'org123' }); 
+
+        // ***** START PRE-CALL DEBUG LOGS *****
+        const preCallAiState = getMockAiState();
+        const preCallOrgState = getMockOrgState();
+        console.log('PRE-CALL DEBUG - Ai State newChatContext:', preCallAiState.newChatContext);
+        console.log('PRE-CALL DEBUG - Org State isLoading:', preCallOrgState.isLoading);
+        console.log('PRE-CALL DEBUG - Org State currentOrgId:', preCallOrgState.currentOrganizationDetails?.id);
+        console.log('PRE-CALL DEBUG - Org State currentOrg token_usage_policy:', preCallOrgState.currentOrganizationDetails?.token_usage_policy);
+        // ***** END PRE-CALL DEBUG LOGS *****
+
+        const result = useWalletStore.getState().determineChatWallet();
+        expect(result).toEqual({ outcome: 'loading' });
+      });
+
+      it('should return use_personal_wallet if newChatContext is null', () => {
+        mockSetAiState({ newChatContext: null });
+        const result = useWalletStore.getState().determineChatWallet();
+        expect(result).toEqual({ outcome: 'use_personal_wallet' });
+      });
+
+      it('should return error if org details are not available or not matching context for a specific orgId', () => {
+        mockSetAiState({ newChatContext: 'org123' });
+        mockSetCurrentOrganizationDetails(null); 
+        mockSetOrgIsLoading(false);
+        let result = useWalletStore.getState().determineChatWallet();
+        expect(result).toEqual({ outcome: 'error', message: 'Organization details for org123 not available or not matching context.' });
+
+        mockSetCurrentOrganizationDetails({ ...defaultMockOrganization, id: 'org456' }); 
+        result = useWalletStore.getState().determineChatWallet();
+        expect(result).toEqual({ outcome: 'error', message: 'Organization details for org123 not available or not matching context.' });
+      });
+
+      it("should return org_wallet_not_available_policy_org if policy is 'organization_tokens'", () => {
+        mockSetAiState({ newChatContext: 'org123' });
+        mockSetCurrentOrganizationDetails({ 
+            ...defaultMockOrganization, 
+            id: 'org123', 
+            token_usage_policy: 'organization_tokens' 
+        }); 
+        mockSetOrgIsLoading(false);
+        const result = useWalletStore.getState().determineChatWallet();
+        expect(result).toEqual({ outcome: 'org_wallet_not_available_policy_org', orgId: 'org123' });
+      });
+
+      it("should return user_consent_required if policy is 'member_tokens'", () => {
+        mockSetAiState({ newChatContext: 'org123' });
+        mockSetCurrentOrganizationDetails({ 
+            ...defaultMockOrganization, 
+            id: 'org123', 
+            token_usage_policy: 'member_tokens' 
+        });
+        mockSetOrgIsLoading(false);
+        const result = useWalletStore.getState().determineChatWallet();
+        expect(result).toEqual({ outcome: 'user_consent_required', orgId: 'org123' });
+      });
+
+      it('should return error for unexpected token_usage_policy', () => {
+        mockSetAiState({ newChatContext: 'org123' });
+        mockSetCurrentOrganizationDetails({ 
+            ...defaultMockOrganization, 
+            id: 'org123', 
+            token_usage_policy: 'some_unknown_policy' as any 
+        });
+        mockSetOrgIsLoading(false);
+        const result = useWalletStore.getState().determineChatWallet();
+        expect(result).toEqual({ outcome: 'error', message: 'Unexpected token usage policy: some_unknown_policy' });
       });
     });
   });

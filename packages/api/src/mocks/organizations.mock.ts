@@ -45,6 +45,7 @@ export const defaultMockOrganization: Organization = {
   visibility: 'private',
   deleted_at: null,
   allow_member_chat_creation: true,
+  token_usage_policy: 'member_tokens',
 };
 
 // Correct defaultMockMembers based on actual type from linter error

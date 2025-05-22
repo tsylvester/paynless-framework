@@ -114,4 +114,33 @@ export interface ITokenWalletService {
     limit?: number,
     offset?: number
   ): Promise<TokenWalletTransaction[]>;
-} 
+}
+
+// --- Unified Chat Wallet Determination Logic Types ---
+
+export type WalletDecisionOutcome = 
+  | { outcome: 'use_personal_wallet' }
+  | { outcome: 'use_personal_wallet_for_org', orgId: string }
+  | { outcome: 'use_organization_wallet', orgId: string }
+  | { outcome: 'org_wallet_not_available_policy_member', orgId: string } // Org policy is member_tokens, but org wallet exists (should not happen with current phase 1 UI but good for future)
+  | { outcome: 'org_wallet_not_available_policy_org', orgId: string }   // Org policy is org_tokens, but org wallet doesn't exist or error
+  | { outcome: 'user_consent_required', orgId: string }
+  | { outcome: 'user_consent_refused', orgId: string }
+  | { outcome: 'loading' } // Indicates necessary data (e.g., org policy) is still loading
+  | { outcome: 'error', message: string }; // For unexpected errors in determination
+
+export interface WalletDecisionContext {
+  newChatContextOrgId: string | null; // from aiStore.newChatContext
+  organizationTokenPolicy?: 'member_tokens' | 'organization_tokens'; // from organizationStore.currentOrganizationDetails.token_usage_policy
+  isOrgPolicyLoading: boolean; // To know if org details are still loading
+  // Future additions:
+  // hasOrgWallet?: boolean; 
+  // isOrgWalletLoading?: boolean;
+  // userConsentForOrg?: boolean | null; // null if not yet asked
+}
+
+// --- End Unified Chat Wallet Determination Logic Types ---
+
+/**
+ * Represents the structure of data required for initiating a payment.
+ */ 

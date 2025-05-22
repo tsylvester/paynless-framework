@@ -390,10 +390,50 @@ export const useAiStore = create<AiStore>()(
                             newChatContext,
                             selectedProviderId,
                             selectedPromptId,
-                            _addOptimisticUserMessage, // Ensure it's destructured from get()
+                            _addOptimisticUserMessage,
                         } = get();
 
-                        // Define isRewindOperation flag based on client state BEFORE the main try block
+                        // --- Wallet Decision Logic --- 
+                        const walletDecision = useWalletStore.getState().determineChatWallet();
+                        logger.info('[aiStore sendMessage] Wallet Decision Outcome:', walletDecision);
+
+                        // Block message if wallet decision is not favorable
+                        switch (walletDecision.outcome) {
+                            case 'loading':
+                                logger.warn('[aiStore sendMessage] Blocked: Wallet decision still loading.');
+                                set({ isLoadingAiResponse: false, aiError: 'Wallet information is loading. Please try again shortly.' });
+                                return null;
+                            case 'error':
+                                logger.error('[aiStore sendMessage] Blocked: Error in wallet decision.', { message: walletDecision.message });
+                                set({ isLoadingAiResponse: false, aiError: `Wallet Error: ${walletDecision.message}` });
+                                return null;
+                            case 'org_wallet_not_available_policy_org':
+                                logger.warn('[aiStore sendMessage] Blocked: Org wallet selected by policy but not available.');
+                                set({ isLoadingAiResponse: false, aiError: 'Organization wallet is selected by policy, but not yet available for use. Cannot send message.' });
+                                return null;
+                            case 'user_consent_required':
+                                logger.warn('[aiStore sendMessage] Blocked: User consent required for org chat with personal tokens.');
+                                // The UI (ChatAffordabilityIndicator/ChatInput) should primarily handle prompting for consent.
+                                // This is a fallback block if a send is attempted before consent is given.
+                                set({ isLoadingAiResponse: false, aiError: 'Please accept or decline the use of personal tokens for this organization chat.' });
+                                return null;
+                            case 'user_consent_refused':
+                                logger.warn('[aiStore sendMessage] Blocked: User consent refused for org chat with personal tokens.');
+                                set({ isLoadingAiResponse: false, aiError: 'Chat disabled. Consent to use personal tokens was refused for this organization.' });
+                                return null;
+                            case 'use_personal_wallet':
+                            case 'use_personal_wallet_for_org':
+                                // Proceed with sending message
+                                logger.info('[aiStore sendMessage] Proceeding with send message. Wallet outcome:', { outcome: walletDecision.outcome });
+                                break;
+                            default:
+                                // Should not happen with exhaustive switch and WalletDecisionOutcome type
+                                logger.error('[aiStore sendMessage] Blocked: Unknown wallet decision outcome.', walletDecision);
+                                set({ isLoadingAiResponse: false, aiError: 'An unexpected issue occurred with wallet selection. Cannot send message.' });
+                                return null;
+                        }
+                        // --- End Wallet Decision Logic ---
+
                         const isRewindOperation = !!(inputChatId && currentRewindTargetId);
 
                         // DETAILED LOGGING FOR DEBUGGING ORG CHAT RESET
@@ -450,6 +490,8 @@ export const useAiStore = create<AiStore>()(
                             ...(effectiveChatIdForApi && currentRewindTargetId && { rewindFromMessageId: currentRewindTargetId })
                         };
                         const options: FetchOptions = { token }; 
+
+                        set({ isLoadingAiResponse: true, aiError: null });
                         
                         try {
                             // Expect ChatHandlerResponse, use type assertion if API client type is not updated yet
@@ -502,7 +544,7 @@ export const useAiStore = create<AiStore>()(
                                         let baseHistory: ChatMessage[] = [];
                                         const rewindPointIdx = messagesInStoreForChat.findIndex(m => m.id === currentRewindTargetId); 
                                         if (rewindPointIdx !== -1) {
-                                            baseHistory = messagesInStoreForChat.slice(0, rewindPointIdx + 1); 
+                                            baseHistory = messagesInStoreForChat.slice(0, rewindPointIdx); 
                                         } else {
                                             logger.warn(`[sendMessage] Rewind target ${currentRewindTargetId} not found in chat ${actualNewChatId} for history reconstruction.`);
                                             baseHistory = messagesInStoreForChat.filter(m => m.id !== tempUserMessageId);
@@ -604,6 +646,9 @@ export const useAiStore = create<AiStore>()(
                                         // Requires finding the chat in the list and updating it.
                                     }
 
+                                    // Determine if newChatContext should be cleared
+                                    const shouldClearNewChatContext = optimisticMessageChatId !== actualNewChatId;
+
                                     return {
                                         ...state, 
                                         messagesByChatId: newMessagesByChatId,
@@ -614,6 +659,7 @@ export const useAiStore = create<AiStore>()(
                                         // Clear rewind target on successful rewind
                                         rewindTargetMessageId: wasRewind ? null : state.rewindTargetMessageId, 
                                         selectedMessagesMap: newSelectedMessagesMap, // Ensure this is included in the return
+                                        newChatContext: shouldClearNewChatContext ? null : state.newChatContext, // Clear if new chat was made
                                     };
                                 });
                                 logger.info('Message sent and response received:', { messageId: assistantMessage.id, chatId: finalChatIdForLog, rewound: responseIsRewind ?? isRewindOperation });
@@ -621,7 +667,8 @@ export const useAiStore = create<AiStore>()(
                                 // <<< --- REFRESH WALLET AFTER SUCCESSFUL SEND/RECEIVE --- >>>
                                 try {
                                     logger.info('[aiStore sendMessage] Triggering wallet refresh after successful message.');
-                                    useWalletStore.getState().loadWallet(); // No need for await if we don't want to block this return
+                                    // For Phase 1, personal wallet is reloaded. Phase 2 will require more specific reload.
+                                    useWalletStore.getState().loadWallet(); 
                                 } catch (walletError) {
                                     logger.error('[aiStore sendMessage] Error triggering wallet refresh:', { error: String(walletError) });
                                     // Decide if this error should be surfaced to the user or just logged

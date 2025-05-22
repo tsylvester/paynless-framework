@@ -5,8 +5,14 @@ import {
   ApiError as ApiErrorType,
   PurchaseRequest,
   PaymentInitiationResult,
+  WalletDecisionOutcome,
+  WalletDecisionContext,
+  // Ensure org_token_usage_policy_enum is available if directly used, or rely on Organization type
 } from '@paynless/types';
 import { api } from '@paynless/api'; // Uncommented for action implementation
+import { useOrganizationStore } from './organizationStore'; // For accessing organization details
+import { useAiStore } from './aiStore'; // For newChatContext
+import { useAuthStore } from './authStore'; // For user consent (future)
 
 export interface WalletStateValues {
   currentWallet: TokenWallet | null;
@@ -32,6 +38,7 @@ export interface WalletActions {
 export interface WalletSelectors {
   selectCurrentWalletBalance: () => string;
   selectWalletTransactions: () => TokenWalletTransaction[];
+  determineChatWallet: () => WalletDecisionOutcome; // Added new selector
 }
 
 export type WalletStore = WalletStateValues & WalletActions & WalletSelectors;
@@ -56,6 +63,58 @@ export const useWalletStore = create<WalletStore>((set, get) => ({
 
   selectWalletTransactions: () => {
     return get().transactionHistory;
+  },
+
+  determineChatWallet: (): WalletDecisionOutcome => {
+    const newChatContextOrgId = useAiStore.getState().newChatContext;
+    const organizationDetails = useOrganizationStore.getState().currentOrganizationDetails;
+    const isOrgDetailsLoading = useOrganizationStore.getState().isLoading; // Assuming isLoading refers to current org details
+
+    // TODO: Integrate user consent from authStore or localStorage in a later step
+    // const userConsentForOrg = useAuthStore.getState().profile?.org_token_consents?.[newChatContextOrgId ?? ''];
+
+    if (isOrgDetailsLoading && newChatContextOrgId) {
+      return { outcome: 'loading' };
+    }
+
+    if (!newChatContextOrgId) {
+      return { outcome: 'use_personal_wallet' };
+    }
+
+    // At this point, newChatContextOrgId is not null
+    const orgId = newChatContextOrgId;
+
+    if (!organizationDetails || organizationDetails.id !== orgId) {
+      // This can happen if org details are for a different org or not loaded yet for the specific context
+      // If isOrgDetailsLoading was false, it means we don't have the details for *this* orgId.
+      // This scenario should ideally be handled by ensuring organizationDetails are loaded for newChatContextOrgId.
+      // For now, treat as an error or a specific loading state if a fetch is triggered.
+      // However, the UI should typically ensure that if newChatContextOrgId is set, its details are loaded or loading.
+      return { outcome: 'error', message: `Organization details for ${orgId} not available or not matching context.` };
+    }
+
+    const orgTokenPolicy = organizationDetails.token_usage_policy;
+
+    if (orgTokenPolicy === 'organization_tokens') {
+      // Phase 1: Org wallets not yet available from walletStore for balance display or debit.
+      // So, even if policy is 'organization_tokens', we can't use them yet client-side for debit.
+      // The backend will handle the debit correctly if an orgId is passed.
+      // For UI (ChatAffordabilityIndicator), this means we can't show org balance.
+      // For sendMessage, this means we should inform the user.
+      return { outcome: 'org_wallet_not_available_policy_org', orgId };
+    }
+
+    if (orgTokenPolicy === 'member_tokens') {
+      // Here, we'd check for user consent in a subsequent step.
+      // For Phase 1, we'll assume consent or proceed to ask for it.
+      // This outcome will trigger the consent flow.
+      // For now, let's return a more specific outcome that implies consent is the next step.
+      return { outcome: 'user_consent_required', orgId }; 
+      // This will be refined to: { outcome: 'use_personal_wallet_for_org', orgId } once consent is given.
+    }
+    
+    // Fallback or unexpected policy value
+    return { outcome: 'error', message: `Unexpected token usage policy: ${orgTokenPolicy}` };
   },
 
   loadWallet: async (organizationId?: string | null) => {
