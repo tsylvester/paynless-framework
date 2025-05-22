@@ -240,10 +240,6 @@ export interface AiActions {
   deselectAllMessages: (chatId: string) => void;
   clearMessageSelections: (chatId: string) => void;
 
-  // --- Selectors exposed on the store instance ---
-  selectSelectedChatMessages: () => ChatMessage[];
-  selectCurrentChatSessionTokenUsage: () => ChatSessionTokenUsageDetails;
-
   // --- Internal actions exposed for testing or complex workflows ---
   _addOptimisticUserMessage: (msgContent: string, explicitChatId?: string | null) => { tempId: string, chatIdUsed: string, createdTimestamp: string };
   addOptimisticMessageForReplay: (messageContent: string, existingChatId?: string | null) => { tempId: string, chatIdForOptimistic: string };

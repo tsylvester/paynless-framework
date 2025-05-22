@@ -1,9 +1,9 @@
 import React, { useEffect } from 'react';
-import { useAiStore, useAnalyticsStore } from '@paynless/store';
+import { useAiStore, useAnalyticsStore, selectCurrentChatSessionTokenUsage } from '@paynless/store';
 
 export const ChatTokenUsageDisplay: React.FC = () => {
-  // Use the selector from the store instance, consistent with how it was added to AiActions
-  const usage = useAiStore(state => state.selectCurrentChatSessionTokenUsage());
+  // Use the imported selector function directly with the useAiStore hook
+  const usage = useAiStore(selectCurrentChatSessionTokenUsage);
   const trackEvent = useAnalyticsStore(state => state.track);
   const currentChatId = useAiStore(state => state.currentChatId); // Get currentChatId at the top level
 

@@ -3,7 +3,8 @@ import { router } from './routes/routes'
 import { RouterProvider } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { useEffect /*useRef */ } from 'react'
-import { useAuthStore, useAiStore } from '@paynless/store'
+import { useAuthStore, useAiStore, useWalletStore, useOrganizationStore } from '@paynless/store'
+import type { ChatContextPreferences } from '@paynless/types'
 import { ThemeProvider } from './context/theme.context'
 import { logger } from '@paynless/utils'
 import { useSubscriptionStore } from '@paynless/store'
@@ -41,6 +42,17 @@ export function NavigateInjector() {
 function AppContent() {
   const profile = useAuthStore((state) => state.profile);
   const isAuthLoading = useAuthStore((state) => state.isLoading);
+  const { currentOrganizationId } = useOrganizationStore(state => ({ currentOrganizationId: state.currentOrganizationId })); // Get current org ID
+
+  const {
+    loadWallet,
+    currentWallet,
+    isLoadingWallet,
+  } = useWalletStore(state => ({
+    loadWallet: state.loadWallet,
+    currentWallet: state.currentWallet,
+    isLoadingWallet: state.isLoadingWallet,
+  }));
   
   const {
     isChatContextHydrated,
@@ -66,6 +78,14 @@ function AppContent() {
       resetChatContextToDefaults();
     }
   }, [profile, isChatContextHydrated, hydrateChatContext, resetChatContextToDefaults]);
+
+  // Effect to load wallet information
+  useEffect(() => {
+    if (profile && !currentWallet && !isLoadingWallet) {
+      logger.info('[AppContent] Profile available, wallet not loaded. Loading wallet...');
+      loadWallet(); // Load wallet globally for the user session. Any other wallets are set locally from a users action.
+    }
+  }, [profile, currentWallet, isLoadingWallet, loadWallet]);
 
   if (isLoadingCapabilities) {
     return (

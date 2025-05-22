@@ -842,11 +842,31 @@ The implementation plan uses the following labels to categorize work steps:
     *   [✅] **4.8.4.1: Wallet Balance Display (`4.4.6.1`)**: Create `WalletBalanceDisplay.tsx`, integrate, test.
     *   [✅] **4.8.4.3: Wallet Transaction History UI (`4.4.6.3`)**: Create `WalletHistoryPage.tsx`, integrate, test.
     *   [✅] **4.8.4.4: [COMMIT] (`4.4.6.4`)**.
-*   [ ] Fix Wallet Overview card
-*   [ ] Fix Wallet fetch errors
-*   [ ] Fix Transaction History page 
-*   [ ] Build WalletBalanceDisplay test 
-
+*   [✅] Fix Wallet Overview card
+*   [✅] Fix Wallet fetch errors
+*   [✅] Build WalletBalanceDisplay test 
+*   [ ] **4.8.5: [UI] Refactor Profile Page (`Profile.tsx`) and Components**
+    *   [✅] **4.8.5.1: [UI] [TEST-UNIT] Define and Write Failing Tests for `EditName.tsx` and `EditEmail.tsx`**
+        *   Tests for rendering, displaying current store value, editing, calling store action, and matching `ProfileEditor` styling.
+    *   [✅] **4.8.5.2: [UI] Create `EditName.tsx` and `EditEmail.tsx` Components**
+        *   Extract logic from `ProfileEditor.tsx`.
+        *   Make them self-managing.
+        *   Implement to pass tests.
+    *   [✅] **4.8.5.3: [UI] [TEST-UNIT] Update Tests for `WalletBalanceDisplay.tsx` and `ProfilePrivacySettingsCard.tsx` for Styling**
+        *   Verify usage of ShadCN Card and styling similar to `ProfileEditor`.
+    *   [✅] **4.8.5.4: [UI] Update `WalletBalanceDisplay.tsx` and `ProfilePrivacySettingsCard.tsx` Styling**
+        *   Wrap in ShadCN Card and apply styling. Implement to pass tests.
+    *   [✅] **4.8.5.5: [UI] Refactor `ProfileEditor.tsx`**
+        *   Remove name/email editing. Consider its new role (container or removal).
+    *   [✅] **4.8.5.6: [UI] [TEST-INT] Define and Write Failing Integration Tests for `Profile.tsx`**
+        *   Verify `WalletBalanceDisplay`, `EditName`, `EditEmail`, `ProfilePrivacySettingsCard` are rendered within ShadCN Cards.
+        *   Verify flex-grid layout.
+    *   [✅] **4.8.5.7: [UI] Update `Profile.tsx`**
+        *   Import and use new/updated components.
+        *   Implement flex-grid layout (e.g., `grid grid-cols-1 md:grid-cols-2 gap-4`).
+        *   Wrap components in ShadCN `Card`. Implement to pass tests.
+    *   [✅] **4.8.5.8: [REFACTOR] Refactor All Involved Components and Tests**
+*   [✅] **4.8.5.9: [COMMIT]** "feat(UI): Refactor Profile page with EditName, EditEmail, and unified ShadCN card styling"
 
 ---
 
