@@ -1,11 +1,10 @@
-import React from 'react';
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach, Mock } from 'vitest';
 import { OrganizationHubPage } from './OrganizationHubPage'; // Adjust path relative to tests/unit/pages
 import { useOrganizationStore, selectCurrentUserRoleInOrg, useAuthStore } from '@paynless/store';
 import { useCurrentUser } from '../hooks/useCurrentUser'; // Adjust path relative to tests/unit/pages
 import { User } from '@supabase/supabase-js';
-import { UserOrganizationLink, Organization, OrganizationMemberWithProfile } from '@paynless/types'; // Add Organization types
+import { Organization, OrganizationMemberWithProfile, OrganizationState, OrganizationUIState } from '@paynless/types'; // Add Organization types
 
 // --- Mocks ---
 
@@ -36,9 +35,9 @@ vi.mock('../components/organizations/OrganizationDetailsCard', async (importOrig
   const original = await importOriginal<typeof import('../components/organizations/OrganizationDetailsCard')>();
   return { ...original, OrganizationDetailsCard: () => <div data-testid="org-details-card">OrgDetailsCard Mock</div> };
 });
-vi.mock('../components/organizations/OrganizationSettingsCard', async (importOriginal) => {
+vi.mock('../components/organizations/OrganizationPrivacyCard', async (importOriginal) => {
   const original = await importOriginal<typeof import('../components/organizations/OrganizationPrivacyCard')>();
-  return { ...original, OrganizationSettingsCard: () => <div data-testid="org-settings-card">OrgSettingsCard Mock</div> };
+  return { ...original, OrganizationPrivacyCard: () => <div data-testid="org-privacy-card">OrgPrivacyCard Mock</div> };
 });
 vi.mock('../components/organizations/MemberListCard', async (importOriginal) => {
   const original = await importOriginal<typeof import('../components/organizations/MemberListCard')>();
@@ -212,7 +211,7 @@ describe('OrganizationHubPage', () => {
     });
     render(<OrganizationHubPage />);
     expect(screen.getByText('You are not part of any organizations yet. Create one!')).toBeInTheDocument();
-    expect(screen.queryByTestId('org-details-card')).toBeNull();
+    expect(screen.queryByTestId('org-settings-card')).toBeNull();
   });
 
   it('renders message to select org when orgs exist but none selected', () => {
@@ -224,19 +223,20 @@ describe('OrganizationHubPage', () => {
      });
      render(<OrganizationHubPage />);
      expect(screen.getByText('Select an organization to view details.')).toBeInTheDocument();
-     expect(screen.queryByTestId('org-details-card')).toBeNull();
+     expect(screen.queryByTestId('org-settings-card')).toBeNull();
   });
 
   it('renders correct cards for a selected organization (member role)', () => {
      setupMocksAndState({
        currentOrganizationId: 'org-1',
        userOrganizations: [{ id: 'org-1', name: 'Org One', membership_id: 'mem-1' }],
+       currentOrganizationDetails: { id: 'org-1', name: 'Org One', membership_id: 'mem-1' },
        isLoading: false,
      });
      render(<OrganizationHubPage />);
-     expect(screen.getByTestId('org-details-card')).toBeInTheDocument();
+     expect(screen.getByTestId('org-settings-card')).toBeInTheDocument();
      expect(screen.getByTestId('member-list-card')).toBeInTheDocument();
-     expect(screen.queryByTestId('org-settings-card')).toBeNull();
+     expect(screen.queryByTestId('org-privacy-card')).toBeNull();
      expect(screen.queryByTestId('invite-member-card')).toBeNull();
      expect(screen.queryByTestId('pending-actions-card')).toBeNull();
   });
@@ -259,6 +259,9 @@ describe('OrganizationHubPage', () => {
          created_at: new Date().toISOString(), 
          updated_at: new Date().toISOString(),
          last_selected_org_id: null,
+         profile_privacy_setting: 'private',
+         chat_context: null,
+
        }
      };
      const orgDetails: Organization = { 
@@ -275,9 +278,9 @@ describe('OrganizationHubPage', () => {
      }, adminUserId); // Pass the adminUserId as authUserId
 
      render(<OrganizationHubPage />);
-     expect(screen.getByTestId('org-details-card')).toBeInTheDocument();
-     expect(screen.getByTestId('member-list-card')).toBeInTheDocument();
      expect(screen.getByTestId('org-settings-card')).toBeInTheDocument();
+     expect(screen.getByTestId('org-privacy-card')).toBeInTheDocument();
+     expect(screen.getByTestId('member-list-card')).toBeInTheDocument();
      expect(screen.getByTestId('invite-member-card')).toBeInTheDocument();
      expect(screen.getByTestId('pending-actions-card')).toBeInTheDocument();
   });

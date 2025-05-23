@@ -106,7 +106,7 @@ describe('aiStore - loadChatDetails', () => {
     await useAiStore.getState().loadChatDetails(mockPersonalChat.id);
 
     const state = useAiStore.getState();
-    expect(mockGetChatWithMessagesFn).toHaveBeenCalledWith(mockPersonalChat.id, MOCK_TOKEN);
+    expect(mockGetChatWithMessagesFn).toHaveBeenCalledWith(mockPersonalChat.id, MOCK_TOKEN, undefined);
     expect(state.isDetailsLoading).toBe(false);
     expect(state.aiError).toBeNull();
     expect(state.currentChatId).toBe(mockPersonalChat.id);
@@ -133,7 +133,7 @@ describe('aiStore - loadChatDetails', () => {
     await useAiStore.getState().loadChatDetails(mockOrgChat.id);
 
     const state = useAiStore.getState();
-    expect(mockGetChatWithMessagesFn).toHaveBeenCalledWith(mockOrgChat.id, MOCK_TOKEN);
+    expect(mockGetChatWithMessagesFn).toHaveBeenCalledWith(mockOrgChat.id, MOCK_TOKEN, mockOrgChat.organization_id);
     expect(state.isDetailsLoading).toBe(false);
     expect(state.aiError).toBeNull();
     expect(state.currentChatId).toBe(mockOrgChat.id);
@@ -177,7 +177,7 @@ describe('aiStore - loadChatDetails', () => {
 
     const state = useAiStore.getState();
     expect(state.isDetailsLoading).toBe(false);
-    expect(state.aiError).toBe(apiError.message);
+    expect(state.aiError).toBe(`Failed to load messages for chat any-chat-id: ${apiError.message}`);
   });
 
   it('should handle authentication error (no token)', async () => {
@@ -198,7 +198,7 @@ describe('aiStore - loadChatDetails', () => {
     const state = useAiStore.getState();
     expect(mockGetChatWithMessagesFn).not.toHaveBeenCalled();
     expect(state.isDetailsLoading).toBe(false);
-    expect(state.aiError).toBe('Authentication required to load chat details.');
+    expect(state.aiError).toBe('Authentication token not found.');
   });
 
   it('should handle invalid data structure from API', async () => {
@@ -212,7 +212,7 @@ describe('aiStore - loadChatDetails', () => {
 
     const state = useAiStore.getState();
     expect(state.isDetailsLoading).toBe(false);
-    expect(state.aiError).toBe('Invalid data structure received from API for chat details.');
+    expect(state.aiError).toBe(`Failed to load messages for chat ${mockPersonalChat.id}: Failed to load chat messages.`);
   });
 
 });

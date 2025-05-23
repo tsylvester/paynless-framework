@@ -10,7 +10,6 @@ import {
     OrganizationActions,
     OrganizationUIState,
     OrganizationUIActions,
-    OrganizationUpdate,
 } from '@paynless/types';
 // Import the specific client class and the base api object
 import { 
@@ -997,7 +996,7 @@ export const useOrganizationStore = create<OrganizationStoreImplementation>()(
           token_usage_policy?: 'member_tokens' | 'organization_tokens';
         }
       ): Promise<boolean> => {
-        const { _setLoading, _setError, currentOrganizationId, currentOrganizationDetails, userOrganizations, fetchCurrentOrganizationDetails } = get();
+        const { _setLoading, _setError, currentOrganizationId } = get();
         _setLoading(true);
         _setError(null);
 
@@ -1012,9 +1011,9 @@ export const useOrganizationStore = create<OrganizationStoreImplementation>()(
 
         try {
           const apiClient = getApiClient();
-          // Call the renamed method updateOrganizationDetails with the new settings structure
+          // Call the renamed method updateOrganizationSettings with the new settings structure
           // The 'settings' object here is already a partial update.
-          const response = await apiClient.organizations.updateOrganizationDetails(orgId, settings);
+          const response = await apiClient.organizations.updateOrganizationSettings(orgId, settings);
 
           if (response.error || !response.data) { // Check for error or if response.data is null/undefined
             const errorMsg = response.error?.message ?? 'Failed to update organization settings.';

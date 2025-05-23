@@ -10,7 +10,7 @@ import type {
 // Mock implementations using vi.fn()
 // Define expected argument types and return shapes based on common patterns
 export const mockListUserOrganizations = vi.fn<[string], Promise<ApiResponse<Organization[]>>>(); // Arg: userId
-export const mockGetOrganizationDetails = vi.fn<[string], Promise<ApiResponse<Organization>>>(); // Arg: orgId
+export const mockSetCurrentOrganizationSettings = vi.fn<[string], Promise<ApiResponse<Organization>>>(); // Arg: orgId
 export const mockCreateOrganization = vi.fn<[Pick<Organization, 'name' | 'visibility'>], Promise<ApiResponse<Organization>>>();
 export const mockDeleteOrganization = vi.fn<[string], Promise<ApiResponse<void>>>(); // Arg: orgId
 export const mockGetCurrentOrganization = vi.fn<[], Promise<ApiResponse<Organization | null>>>();
@@ -94,7 +94,7 @@ export const defaultMockMembers: OrganizationMemberWithProfile[] = [ // Use Orga
 // Reset function
 export const resetOrganizationMocks = () => {
   mockListUserOrganizations.mockReset();
-  mockGetOrganizationDetails.mockReset();
+  mockSetCurrentOrganizationSettings.mockReset();
   mockCreateOrganization.mockReset();
   mockDeleteOrganization.mockReset();
   mockGetCurrentOrganization.mockReset();
@@ -113,7 +113,7 @@ export const resetOrganizationMocks = () => {
 
   // Set default successful resolutions with error: undefined and status code
   mockListUserOrganizations.mockResolvedValue({ status: 200, data: [{ ...defaultMockOrganization }], error: undefined });
-  mockGetOrganizationDetails.mockResolvedValue({ status: 200, data: { ...defaultMockOrganization }, error: undefined });
+  mockSetCurrentOrganizationSettings.mockResolvedValue({ status: 200, data: { ...defaultMockOrganization }, error: undefined });
   mockCreateOrganization.mockResolvedValue({ status: 201, data: { ...defaultMockOrganization, id: 'new-org-id' }, error: undefined });
   mockDeleteOrganization.mockResolvedValue({ status: 204, data: undefined, error: undefined }); // 204 for successful void response
   mockGetCurrentOrganization.mockResolvedValue({ status: 200, data: { ...defaultMockOrganization }, error: undefined });

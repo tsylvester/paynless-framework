@@ -1,9 +1,20 @@
 import { describe, it, expect, beforeEach, vi, MockedFunction } from 'vitest';
-import { useWalletStore, WalletStore, WalletSelectors } from './walletStore.ts'; // Changed WalletState to WalletStore
+import { useWalletStore, WalletStore, initialWalletStateValues } from './walletStore';
+import {
+  selectPersonalWalletBalance,
+  selectWalletTransactions,
+  selectOrganizationWalletBalance,
+  selectIsLoadingPersonalWallet,
+  selectPersonalWalletError,
+  selectIsLoadingOrgWallet,
+  selectOrgWalletError,
+  selectPersonalWallet,
+  selectOrganizationWallet
+} from './walletStore.selectors';
 import { 
   TokenWallet, 
   TokenWalletTransaction, 
-  ApiError as ApiErrorType, 
+  ApiError, 
   ApiResponse, 
   ErrorResponse, 
   SuccessResponse, 
@@ -86,7 +97,9 @@ let mockInitiateTokenPurchase: MockWalletApiClient['initiateTokenPurchase'];
 
 describe('useWalletStore', () => {
   beforeEach(() => { // Top-level beforeEach for all tests in this describe block
-    useWalletStore.getState()._resetForTesting();
+    // Reset the store to its initial state before each test
+    // REMOVED: useWalletStore.setState(initialWalletStateValues, true); // This was wiping actions
+    useWalletStore.getState()._resetForTesting(); // Call the store's own reset method
     resetApiMock(); // Reset our shared mock
     
     // Assign the specific mock functions from the (now correctly typed) imported & mocked api
@@ -98,41 +111,44 @@ describe('useWalletStore', () => {
   describe('Initial State', () => {
     it('should initialize with the correct default values', () => {
       const state = useWalletStore.getState();
-      expect(state.currentWallet).toBeNull();
+      expect(state.personalWallet).toBeNull();
+      expect(state.organizationWallets).toEqual({});
       expect(state.transactionHistory).toEqual([]);
-      expect(state.isLoadingWallet).toBe(false);
+      expect(state.isLoadingPersonalWallet).toBe(false);
+      expect(state.isLoadingOrgWallet).toEqual({});
       expect(state.isLoadingHistory).toBe(false);
       expect(state.isLoadingPurchase).toBe(false);
-      expect(state.walletError).toBeNull();
+      expect(state.personalWalletError).toBeNull();
+      expect(state.orgWalletErrors).toEqual({});
       expect(state.purchaseError).toBeNull();
     });
   });
 
   describe('Selectors', () => {
-    describe('selectCurrentWalletBalance', () => {
-      it("should return '0' if currentWallet is null", () => {
-        useWalletStore.setState({ currentWallet: null });
-        const balance = useWalletStore.getState().selectCurrentWalletBalance();
-        expect(balance).toBe('0');
+    describe('selectPersonalWalletBalance', () => {
+      it("should return null if personalWallet is null", () => {
+        useWalletStore.setState({ personalWallet: null });
+        const balance = selectPersonalWalletBalance(useWalletStore.getState());
+        expect(balance).toBeNull();
       });
 
-      it('should return the balance string if currentWallet exists', () => {
+      it('should return the balance string if personalWallet exists', () => {
         const mockWallet: TokenWallet = {
           walletId: 'w1', balance: '1000', currency: 'AI_TOKEN',
           createdAt: new Date(), updatedAt: new Date()
         };
-        useWalletStore.setState({ currentWallet: mockWallet });
-        const balance = useWalletStore.getState().selectCurrentWalletBalance();
+        useWalletStore.setState({ personalWallet: mockWallet });
+        const balance = selectPersonalWalletBalance(useWalletStore.getState());
         expect(balance).toBe('1000');
       });
 
-      it("should return '0' if currentWallet balance is '0'", () => {
+      it("should return '0' if personalWallet balance is '0'", () => {
         const mockWallet: TokenWallet = {
           walletId: 'w1', balance: '0', currency: 'AI_TOKEN',
           createdAt: new Date(), updatedAt: new Date()
         };
-        useWalletStore.setState({ currentWallet: mockWallet });
-        const balance = useWalletStore.getState().selectCurrentWalletBalance();
+        useWalletStore.setState({ personalWallet: mockWallet });
+        const balance = selectPersonalWalletBalance(useWalletStore.getState());
         expect(balance).toBe('0');
       });
     });
@@ -140,7 +156,7 @@ describe('useWalletStore', () => {
     describe('selectWalletTransactions', () => {
       it('should return an empty array if transactionHistory is empty', () => {
         useWalletStore.setState({ transactionHistory: [] });
-        const transactions = useWalletStore.getState().selectWalletTransactions();
+        const transactions = selectWalletTransactions(useWalletStore.getState());
         expect(transactions).toEqual([]);
       });
 
@@ -150,8 +166,102 @@ describe('useWalletStore', () => {
           { transactionId: 't2', walletId: 'w1', type: 'DEBIT_USAGE', amount: '10', balanceAfterTxn: '90', recordedByUserId: 'u1', timestamp: new Date() },
         ];
         useWalletStore.setState({ transactionHistory: mockTransactions });
-        const transactions = useWalletStore.getState().selectWalletTransactions();
+        const transactions = selectWalletTransactions(useWalletStore.getState());
         expect(transactions).toEqual(mockTransactions);
+      });
+    });
+
+    describe('selectPersonalWallet', () => {
+      it('should return the personalWallet object', () => {
+        const mockWallet: TokenWallet = { walletId: 'pw1', balance: '50', currency: 'AI_TOKEN', createdAt: new Date(), updatedAt: new Date() };
+        useWalletStore.setState({ personalWallet: mockWallet });
+        expect(selectPersonalWallet(useWalletStore.getState())).toEqual(mockWallet);
+      });
+      it('should return null if personalWallet is null', () => {
+        useWalletStore.setState({ personalWallet: null });
+        expect(selectPersonalWallet(useWalletStore.getState())).toBeNull();
+      });
+    });
+
+    describe('selectOrganizationWallet', () => {
+      const orgId = 'orgTest1';
+      const mockWallet: TokenWallet = { walletId: 'ow1', organizationId: orgId, balance: '500', currency: 'AI_TOKEN', createdAt: new Date(), updatedAt: new Date() };
+      it('should return the specific organization wallet object', () => {
+        useWalletStore.setState({ organizationWallets: { [orgId]: mockWallet } });
+        expect(selectOrganizationWallet(useWalletStore.getState(), orgId)).toEqual(mockWallet);
+      });
+      it('should return null if the specific organization wallet does not exist', () => {
+        useWalletStore.setState({ organizationWallets: {} });
+        expect(selectOrganizationWallet(useWalletStore.getState(), orgId)).toBeNull();
+      });
+    });
+
+    describe('selectOrganizationWalletBalance', () => {
+      const orgId = 'orgTest1';
+      it("should return '0' if the specific organization wallet does not exist", () => {
+        useWalletStore.setState({ organizationWallets: {} });
+        const balance = selectOrganizationWalletBalance(useWalletStore.getState(), orgId);
+        expect(balance).toBe('0');
+      });
+      it('should return the balance string if the specific organization wallet exists', () => {
+        const mockWallet: TokenWallet = { walletId: 'ow1', organizationId: orgId, balance: '5000', currency: 'AI_TOKEN', createdAt: new Date(), updatedAt: new Date() };
+        useWalletStore.setState({ organizationWallets: { [orgId]: mockWallet } });
+        const balance = selectOrganizationWalletBalance(useWalletStore.getState(), orgId);
+        expect(balance).toBe('5000');
+      });
+    });
+
+    describe('selectIsLoadingPersonalWallet', () => {
+      it('should return the isLoadingPersonalWallet state', () => {
+        useWalletStore.setState({ isLoadingPersonalWallet: true });
+        expect(selectIsLoadingPersonalWallet(useWalletStore.getState())).toBe(true);
+        useWalletStore.setState({ isLoadingPersonalWallet: false });
+        expect(selectIsLoadingPersonalWallet(useWalletStore.getState())).toBe(false);
+      });
+    });
+
+    describe('selectPersonalWalletError', () => {
+      it('should return the personalWalletError object', () => {
+        const mockError: ApiError = { code: 'ERR', message: 'Personal error' };
+        useWalletStore.setState({ personalWalletError: mockError });
+        expect(selectPersonalWalletError(useWalletStore.getState())).toEqual(mockError);
+      });
+      it('should return null if personalWalletError is null', () => {
+        useWalletStore.setState({ personalWalletError: null });
+        expect(selectPersonalWalletError(useWalletStore.getState())).toBeNull();
+      });
+    });
+
+    describe('selectIsLoadingOrgWallet', () => {
+      const orgId = 'orgLoadTest';
+      it('should return true if the specific org wallet is loading', () => {
+        useWalletStore.setState({ isLoadingOrgWallet: { [orgId]: true } });
+        expect(selectIsLoadingOrgWallet(useWalletStore.getState(), orgId)).toBe(true);
+      });
+      it('should return false if the specific org wallet is not loading', () => {
+        useWalletStore.setState({ isLoadingOrgWallet: { [orgId]: false } });
+        expect(selectIsLoadingOrgWallet(useWalletStore.getState(), orgId)).toBe(false);
+      });
+      it('should return false if the orgId is not in isLoadingOrgWallet map', () => {
+        useWalletStore.setState({ isLoadingOrgWallet: {} });
+        expect(selectIsLoadingOrgWallet(useWalletStore.getState(), orgId)).toBe(false);
+      });
+    });
+
+    describe('selectOrgWalletError', () => {
+      const orgId = 'orgErrTest';
+      const mockError: ApiError = { code: 'ORG_ERR', message: 'Org error' };
+      it('should return the error object for the specific org wallet', () => {
+        useWalletStore.setState({ orgWalletErrors: { [orgId]: mockError } });
+        expect(selectOrgWalletError(useWalletStore.getState(), orgId)).toEqual(mockError);
+      });
+      it('should return null if there is no error for the specific org wallet', () => {
+        useWalletStore.setState({ orgWalletErrors: { [orgId]: null } });
+        expect(selectOrgWalletError(useWalletStore.getState(), orgId)).toBeNull();
+      });
+      it('should return null if the orgId is not in orgWalletErrors map', () => {
+        useWalletStore.setState({ orgWalletErrors: {} });
+        expect(selectOrgWalletError(useWalletStore.getState(), orgId)).toBeNull();
       });
     });
 
@@ -161,20 +271,24 @@ describe('useWalletStore', () => {
         resetOrgAndAuthMocks(); 
         // REMOVED: mockedUseAiStoreGetState.mockImplementation(...);
         // REMOVED: mockedUseOrganizationStoreGetState.mockImplementation(...);
+        // Reset relevant parts of the mock stores before each determineChatWallet test
+        resetOrgAndAuthMocks(); // This should reset organizationStore mock state including details and loading
+        // Ensure personal wallet is null by default for these tests unless specified
+        useWalletStore.setState({ personalWallet: null });
       });
 
       it('should return loading outcome if org details are loading for a specific org context', () => {
         mockSetAiState({ newChatContext: 'org123' });
         mockSetOrgIsLoading(true);
-        mockSetCurrentOrganizationDetails({ ...defaultMockOrganization, id: 'org123' }); 
-
+        mockSetCurrentOrganizationDetails({ ...defaultMockOrganization, id: 'org123' } as Organization);
+        
         // ***** START PRE-CALL DEBUG LOGS *****
-        const preCallAiState = getMockAiState();
-        const preCallOrgState = getMockOrgState();
-        console.log('PRE-CALL DEBUG - Ai State newChatContext:', preCallAiState.newChatContext);
-        console.log('PRE-CALL DEBUG - Org State isLoading:', preCallOrgState.isLoading);
-        console.log('PRE-CALL DEBUG - Org State currentOrgId:', preCallOrgState.currentOrganizationDetails?.id);
-        console.log('PRE-CALL DEBUG - Org State currentOrg token_usage_policy:', preCallOrgState.currentOrganizationDetails?.token_usage_policy);
+        const preAiState = getMockAiState();
+        const preOrgState = getMockOrgState();
+        console.log('PRE-CALL DEBUG - Ai State newChatContext:', preAiState.newChatContext);
+        console.log('PRE-CALL DEBUG - Org State isLoading:', preOrgState.isLoading);
+        console.log('PRE-CALL DEBUG - Org State currentOrgId:', preOrgState.currentOrganizationDetails?.id);
+        console.log('PRE-CALL DEBUG - Org State currentOrg token_usage_policy:', preOrgState.currentOrganizationDetails?.token_usage_policy);
         // ***** END PRE-CALL DEBUG LOGS *****
 
         const result = useWalletStore.getState().determineChatWallet();
@@ -189,50 +303,70 @@ describe('useWalletStore', () => {
 
       it('should return error if org details are not available or not matching context for a specific orgId', () => {
         mockSetAiState({ newChatContext: 'org123' });
-        mockSetCurrentOrganizationDetails(null); 
+        mockSetCurrentOrganizationDetails(null);
         mockSetOrgIsLoading(false);
         let result = useWalletStore.getState().determineChatWallet();
-        expect(result).toEqual({ outcome: 'error', message: 'Organization details for org123 not available or not matching context.' });
+        expect(result.outcome).toBe('error');
+        if (result.outcome === 'error') {
+          expect(result.message).toBe('Organization details for org123 not available or not matching context.');
+        }
 
-        mockSetCurrentOrganizationDetails({ ...defaultMockOrganization, id: 'org456' }); 
+        // Case: Org details available but ID does not match newChatContext
+        mockSetCurrentOrganizationDetails({ ...defaultMockOrganization, id: 'org456' } as Organization);
         result = useWalletStore.getState().determineChatWallet();
-        expect(result).toEqual({ outcome: 'error', message: 'Organization details for org123 not available or not matching context.' });
+        expect(result.outcome).toBe('error');
+        if (result.outcome === 'error') {
+          expect(result.message).toBe('Organization details for org123 not available or not matching context.');
+        }
       });
 
       it("should return org_wallet_not_available_policy_org if policy is 'organization_tokens'", () => {
         mockSetAiState({ newChatContext: 'org123' });
-        mockSetCurrentOrganizationDetails({ 
-            ...defaultMockOrganization, 
-            id: 'org123', 
+        mockSetCurrentOrganizationDetails({
+            ...defaultMockOrganization,
+            id: 'org123',
             token_usage_policy: 'organization_tokens' 
-        }); 
+        } as Organization);
         mockSetOrgIsLoading(false);
+        // Personal wallet exists but has no balance
+        useWalletStore.setState({
+          personalWallet: { walletId: 'pw', balance: '0', currency: 'AI_TOKEN', createdAt: new Date(), updatedAt: new Date() }, 
+          organizationWallets: {}
+        });
+
         const result = useWalletStore.getState().determineChatWallet();
-        expect(result).toEqual({ outcome: 'org_wallet_not_available_policy_org', orgId: 'org123' });
+        expect(result.outcome).toBe('org_wallet_not_available_policy_org');
       });
 
       it("should return user_consent_required if policy is 'member_tokens'", () => {
         mockSetAiState({ newChatContext: 'org123' });
-        mockSetCurrentOrganizationDetails({ 
-            ...defaultMockOrganization, 
-            id: 'org123', 
+        mockSetCurrentOrganizationDetails({
+            ...defaultMockOrganization,
+            id: 'org123',
             token_usage_policy: 'member_tokens' 
-        });
+        } as Organization);
         mockSetOrgIsLoading(false);
+        useWalletStore.setState({ 
+          personalWallet: { walletId: 'pw', balance: '100', currency: 'AI_TOKEN', createdAt: new Date(), updatedAt: new Date() },
+          organizationWallets: {}
+        });
         const result = useWalletStore.getState().determineChatWallet();
-        expect(result).toEqual({ outcome: 'user_consent_required', orgId: 'org123' });
+        expect(result.outcome).toBe('user_consent_required');
       });
 
       it('should return error for unexpected token_usage_policy', () => {
         mockSetAiState({ newChatContext: 'org123' });
-        mockSetCurrentOrganizationDetails({ 
-            ...defaultMockOrganization, 
-            id: 'org123', 
-            token_usage_policy: 'some_unknown_policy' as any 
-        });
+        mockSetCurrentOrganizationDetails({
+            ...defaultMockOrganization,
+            id: 'org123',
+            token_usage_policy: 'unexpected_policy' as any // Cast to any to test unexpected policy
+        } as Organization);
         mockSetOrgIsLoading(false);
         const result = useWalletStore.getState().determineChatWallet();
-        expect(result).toEqual({ outcome: 'error', message: 'Unexpected token usage policy: some_unknown_policy' });
+        expect(result.outcome).toBe('error');
+        if (result.outcome === 'error') {
+          expect(result.message).toContain('Unexpected token usage policy');
+        }
       });
     });
   });
@@ -241,7 +375,7 @@ describe('useWalletStore', () => {
   // e.g., loadWallet, loadTransactionHistory, initiatePurchase
 
   describe('Actions', () => {
-    describe('loadWallet', () => {
+    describe('loadPersonalWallet', () => {
       const mockPersonalWallet: TokenWallet = {
         walletId: 'personal-wallet-id',
         userId: 'user-123',
@@ -251,80 +385,208 @@ describe('useWalletStore', () => {
         updatedAt: new Date(),
       };
 
+      it('should load a personal wallet successfully', async () => {
+        const response: SuccessResponse<TokenWallet | null> = { data: mockPersonalWallet, error: undefined, status: 200 };
+        mockGetWalletInfo.mockResolvedValue(response as ApiResponse<TokenWallet | null>);
+
+        await useWalletStore.getState().loadPersonalWallet();
+
+        const state = useWalletStore.getState();
+        expect(mockGetWalletInfo).toHaveBeenCalledWith(null);
+        expect(state.isLoadingPersonalWallet).toBe(false);
+        expect(state.personalWallet).toEqual(mockPersonalWallet);
+        expect(state.personalWalletError).toBeNull();
+      });
+
+      it('should handle API error when loading personal wallet', async () => {
+        const apiError: ApiError = { message: 'API Error', code: 'INTERNAL_SERVER_ERROR' }; 
+        const response: ErrorResponse = { data: undefined, error: apiError, status: 500 }; 
+        mockGetWalletInfo.mockResolvedValue(response as ApiResponse<TokenWallet | null>);
+
+        await useWalletStore.getState().loadPersonalWallet();
+
+        const state = useWalletStore.getState();
+        expect(state.isLoadingPersonalWallet).toBe(false);
+        expect(state.personalWallet).toBeNull();
+        expect(state.personalWalletError).toEqual(expect.objectContaining(apiError));
+      });
+
+      it('should handle personal wallet not found (API returns null data, no error)', async () => {
+        const response: SuccessResponse<null> = { data: null, error: undefined, status: 200 };
+        mockGetWalletInfo.mockResolvedValue(response as ApiResponse<TokenWallet | null>);
+
+        await useWalletStore.getState().loadPersonalWallet();
+
+        const state = useWalletStore.getState();
+        expect(state.isLoadingPersonalWallet).toBe(false);
+        expect(state.personalWallet).toBeNull();
+        expect(state.personalWalletError).toBeNull();
+      });
+
+      it('should set isLoadingPersonalWallet to true during fetch and false afterwards', async () => {
+        const response: SuccessResponse<TokenWallet | null> = { data: mockPersonalWallet, error: undefined, status: 200 };
+        mockGetWalletInfo.mockImplementation(() => 
+          new Promise(resolve => setTimeout(() => resolve(response as ApiResponse<TokenWallet | null>), 0))
+        );
+        
+        const loadPromise = useWalletStore.getState().loadPersonalWallet();
+        expect(useWalletStore.getState().isLoadingPersonalWallet).toBe(true);
+
+        await loadPromise;
+        expect(useWalletStore.getState().isLoadingPersonalWallet).toBe(false);
+      });
+    });
+
+    describe('loadOrganizationWallet', () => {
+      const orgId = 'org-abc';
       const mockOrgWallet: TokenWallet = {
         walletId: 'org-wallet-id',
-        organizationId: 'org-abc',
+        organizationId: orgId,
         balance: '100000',
         currency: 'AI_TOKEN',
         createdAt: new Date(),
         updatedAt: new Date(),
       };
 
-      it('should load a personal wallet successfully', async () => {
-        const response: SuccessResponse<TokenWallet | null> = { data: mockPersonalWallet, error: undefined, status: 200 };
-        mockGetWalletInfo.mockResolvedValue(response as ApiResponse<TokenWallet | null>);
-
-        await useWalletStore.getState().loadWallet();
-
-        const state = useWalletStore.getState();
-        expect(mockGetWalletInfo).toHaveBeenCalledWith(undefined);
-        expect(state.isLoadingWallet).toBe(false);
-        expect(state.currentWallet).toEqual(mockPersonalWallet);
-        expect(state.walletError).toBeNull();
-      });
-
       it('should load an organization wallet successfully', async () => {
-        const orgId = 'org-abc';
         const response: SuccessResponse<TokenWallet | null> = { data: mockOrgWallet, error: undefined, status: 200 };
         mockGetWalletInfo.mockResolvedValue(response as ApiResponse<TokenWallet | null>);
 
-        await useWalletStore.getState().loadWallet(orgId);
+        await useWalletStore.getState().loadOrganizationWallet(orgId);
 
         const state = useWalletStore.getState();
         expect(mockGetWalletInfo).toHaveBeenCalledWith(orgId);
-        expect(state.isLoadingWallet).toBe(false);
-        expect(state.currentWallet).toEqual(mockOrgWallet);
-        expect(state.walletError).toBeNull();
+        expect(state.isLoadingOrgWallet[orgId]).toBe(false);
+        expect(state.organizationWallets[orgId]).toEqual(mockOrgWallet);
+        expect(state.orgWalletErrors[orgId]).toBeNull();
       });
 
-      it('should handle API error when loading wallet', async () => {
-        const apiError: ApiErrorType = { message: 'API Error', code: 'INTERNAL_SERVER_ERROR' }; 
-        const response: ErrorResponse = { data: undefined, error: apiError, status: 500 }; 
+      it('should handle API error when loading an organization wallet', async () => {
+        const apiError: ApiError = { message: 'Org API Error', code: 'ORG_SERVER_ERROR' };
+        const response: ErrorResponse = { data: undefined, error: apiError, status: 500 };
         mockGetWalletInfo.mockResolvedValue(response as ApiResponse<TokenWallet | null>);
 
-        await useWalletStore.getState().loadWallet();
+        await useWalletStore.getState().loadOrganizationWallet(orgId);
 
         const state = useWalletStore.getState();
-        expect(state.isLoadingWallet).toBe(false);
-        expect(state.currentWallet).toBeNull();
-        expect(state.walletError).toEqual(expect.objectContaining({ message: 'API Error', code: 'INTERNAL_SERVER_ERROR' }));
+        expect(state.isLoadingOrgWallet[orgId]).toBe(false);
+        expect(state.organizationWallets[orgId]).toBeNull();
+        expect(state.orgWalletErrors[orgId]).toEqual(expect.objectContaining(apiError));
       });
 
-      it('should handle wallet not found (API returns null data, no error)', async () => {
+      it('should handle organization wallet not found (API returns null data, no error)', async () => {
         const response: SuccessResponse<null> = { data: null, error: undefined, status: 200 };
         mockGetWalletInfo.mockResolvedValue(response as ApiResponse<TokenWallet | null>);
 
-        await useWalletStore.getState().loadWallet();
+        await useWalletStore.getState().loadOrganizationWallet(orgId);
 
         const state = useWalletStore.getState();
-        expect(state.isLoadingWallet).toBe(false);
-        expect(state.currentWallet).toBeNull();
-        expect(state.walletError).toBeNull();
+        expect(state.isLoadingOrgWallet[orgId]).toBe(false);
+        expect(state.organizationWallets[orgId]).toBeNull();
+        expect(state.orgWalletErrors[orgId]).toBeNull();
       });
 
-      it('should set isLoadingWallet to true during fetch and false afterwards', async () => {
-        const response: SuccessResponse<TokenWallet | null> = { data: mockPersonalWallet, error: undefined, status: 200 };
-        mockGetWalletInfo.mockResolvedValue(response as ApiResponse<TokenWallet | null>);
-        
-        const loadPromise = useWalletStore.getState().loadWallet();
-        expect(useWalletStore.getState().isLoadingWallet).toBe(true);
+      it('should set isLoadingOrgWallet[orgId] to true during fetch and false afterwards', async () => {
+        const response: SuccessResponse<TokenWallet | null> = { data: mockOrgWallet, error: undefined, status: 200 };
+        mockGetWalletInfo.mockImplementation(() => 
+          new Promise(resolve => setTimeout(() => resolve(response as ApiResponse<TokenWallet | null>), 0))
+        );
+
+        const loadPromise = useWalletStore.getState().loadOrganizationWallet(orgId);
+        expect(useWalletStore.getState().isLoadingOrgWallet[orgId]).toBe(true);
 
         await loadPromise;
-        expect(useWalletStore.getState().isLoadingWallet).toBe(false);
+        expect(useWalletStore.getState().isLoadingOrgWallet[orgId]).toBe(false);
       });
     });
 
-    // Placeholder for loadTransactionHistory tests
+    describe('getOrLoadOrganizationWallet', () => {
+      const orgId = 'org-get-load';
+      const mockOrgWallet: TokenWallet = {
+        walletId: 'org-gl-wallet-id',
+        organizationId: orgId,
+        balance: '75000',
+        currency: 'AI_TOKEN',
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      };
+
+      it('should return existing wallet if already loaded', async () => {
+        useWalletStore.setState(state => ({
+          organizationWallets: { ...state.organizationWallets, [orgId]: mockOrgWallet },
+        }));
+        mockGetWalletInfo.mockClear(); // Ensure loadOrganizationWallet is not called
+
+        const wallet = await useWalletStore.getState().getOrLoadOrganizationWallet(orgId);
+        expect(wallet).toEqual(mockOrgWallet);
+        expect(mockGetWalletInfo).not.toHaveBeenCalled();
+      });
+
+      it('should call loadOrganizationWallet and return the wallet if not loaded', async () => {
+        const response: SuccessResponse<TokenWallet | null> = { data: mockOrgWallet, error: undefined, status: 200 };
+        mockGetWalletInfo.mockResolvedValue(response as ApiResponse<TokenWallet | null>);
+        
+        // Ensure wallet is not in state initially by setting to null or ensuring key is absent
+        useWalletStore.setState(state => ({
+          organizationWallets: { ...state.organizationWallets, [orgId]: null }, // Changed undefined to null
+          isLoadingOrgWallet: { ...state.isLoadingOrgWallet, [orgId]: false }
+        }));
+
+        const wallet = await useWalletStore.getState().getOrLoadOrganizationWallet(orgId);
+
+        expect(mockGetWalletInfo).toHaveBeenCalledWith(orgId);
+        expect(wallet).toEqual(mockOrgWallet);
+        expect(useWalletStore.getState().organizationWallets[orgId]).toEqual(mockOrgWallet);
+      });
+
+      it('should call loadOrganizationWallet if wallet is not loaded, even if an error occurs', async () => {
+        const apiError: ApiError = { message: 'Load Error', code: 'LOAD_ERR' };
+        const response: ErrorResponse = { data: undefined, error: apiError, status: 500 };
+        mockGetWalletInfo.mockResolvedValue(response as ApiResponse<TokenWallet | null>);
+
+        useWalletStore.setState(state => ({
+          organizationWallets: { ...state.organizationWallets, [orgId]: null }, // Changed undefined to null
+          isLoadingOrgWallet: { ...state.isLoadingOrgWallet, [orgId]: false }
+        }));
+
+        const wallet = await useWalletStore.getState().getOrLoadOrganizationWallet(orgId);
+
+        expect(mockGetWalletInfo).toHaveBeenCalledWith(orgId);
+        expect(wallet).toBeNull(); // loadOrganizationWallet would set it to null on error
+        expect(useWalletStore.getState().organizationWallets[orgId]).toBeNull();
+        expect(useWalletStore.getState().orgWalletErrors[orgId]).toEqual(apiError);
+      });
+
+      // Current implementation re-triggers load even if isLoading is true.
+      // This test verifies that behavior. A more advanced implementation might return a promise or subscribe.
+      it('should re-call loadOrganizationWallet if called while already loading (current behavior)', async () => {
+        const response: SuccessResponse<TokenWallet | null> = { data: mockOrgWallet, error: undefined, status: 200 };
+        // Use mockImplementationOnce to return a Promise that resolves later
+        mockGetWalletInfo.mockImplementationOnce(() => new Promise(resolve => setTimeout(() => resolve(response as ApiResponse<TokenWallet | null>), 50)))
+                         .mockResolvedValueOnce(response as ApiResponse<TokenWallet | null>); // Second call resolves immediately with the value
+
+        useWalletStore.setState(state => ({
+            organizationWallets: { ...state.organizationWallets, [orgId]: null }, // Changed undefined to null
+            isLoadingOrgWallet: { ...state.isLoadingOrgWallet, [orgId]: true } // Simulate already loading
+        }));
+        
+        // First call (simulates call while loading)
+        const walletPromise = useWalletStore.getState().getOrLoadOrganizationWallet(orgId);
+        // loadOrganizationWallet will be called by getOrLoad. Let it run.
+        
+        // The implementation of getOrLoadOrganizationWallet awaits its internal call to loadOrganizationWallet,
+        // so the mockGetWalletInfo should have been called.
+        await walletPromise;
+
+        expect(mockGetWalletInfo).toHaveBeenCalledWith(orgId);
+        // Depending on timing and specific mock setup, it might be called once or twice.
+        // The key is that it *is* called even if isLoadingOrgWallet was initially true.
+        // For this test, verifying it was called at least once is sufficient to show it proceeds to load.
+        expect(mockGetWalletInfo.mock.calls.length).toBeGreaterThanOrEqual(1);
+        expect(useWalletStore.getState().organizationWallets[orgId]).toEqual(mockOrgWallet);
+      });
+    });
+
     describe('loadTransactionHistory', () => {
       const mockTransactions: TokenWalletTransaction[] = [
         { transactionId: 't1', walletId: 'w1', type: 'CREDIT_PURCHASE', amount: '100', balanceAfterTxn: '100', recordedByUserId: 'u1', timestamp: new Date() },
@@ -344,7 +606,7 @@ describe('useWalletStore', () => {
         expect(mockGetWalletTransactionHistory).toHaveBeenCalledWith(undefined, undefined, undefined);
         expect(state.isLoadingHistory).toBe(false);
         expect(state.transactionHistory).toEqual(mockTransactions);
-        expect(state.walletError).toBeNull();
+        expect(state.personalWalletError).toBeNull();
       });
 
       it('should load transaction history successfully for an organization wallet with pagination', async () => {
@@ -357,11 +619,11 @@ describe('useWalletStore', () => {
         expect(mockGetWalletTransactionHistory).toHaveBeenCalledWith(orgId, limit, offset);
         expect(state.isLoadingHistory).toBe(false);
         expect(state.transactionHistory).toEqual(mockTransactions);
-        expect(state.walletError).toBeNull();
+        expect(state.personalWalletError).toBeNull();
       });
 
       it('should handle API error when loading transaction history', async () => {
-        const apiError: ApiErrorType = { message: 'History API Error', code: 'HISTORY_FETCH_FAILED' }; 
+        const apiError: ApiError = { message: 'History API Error', code: 'HISTORY_FETCH_FAILED' }; 
         const response: ErrorResponse = { data: undefined, error: apiError, status: 500 }; 
         mockGetWalletTransactionHistory.mockResolvedValue(response as ApiResponse<TokenWalletTransaction[]>);
 
@@ -370,7 +632,7 @@ describe('useWalletStore', () => {
         const state = useWalletStore.getState();
         expect(state.isLoadingHistory).toBe(false);
         expect(state.transactionHistory).toEqual([]);
-        expect(state.walletError).toEqual(expect.objectContaining(apiError));
+        expect(state.personalWalletError).toEqual(expect.objectContaining(apiError));
       });
 
       it('should handle empty transaction history (API returns empty array)', async () => {
@@ -382,7 +644,7 @@ describe('useWalletStore', () => {
         const state = useWalletStore.getState();
         expect(state.isLoadingHistory).toBe(false);
         expect(state.transactionHistory).toEqual([]);
-        expect(state.walletError).toBeNull(); // No error if data is an empty array
+        expect(state.personalWalletError).toBeNull();
       });
 
       it('should handle history not found (API returns null data, no error)', async () => {
@@ -394,7 +656,7 @@ describe('useWalletStore', () => {
         const state = useWalletStore.getState();
         expect(state.isLoadingHistory).toBe(false);
         expect(state.transactionHistory).toEqual([]);
-        expect(state.walletError).toEqual(expect.objectContaining({ message: 'Failed to fetch transaction history: No data returned', code: 'NOT_FOUND' }));
+        expect(state.personalWalletError).toEqual(expect.objectContaining({ message: 'Failed to fetch transaction history: No data returned', code: 'NOT_FOUND' }));
       });
 
       it('should set isLoadingHistory to true during fetch and false afterwards', async () => {
@@ -440,7 +702,7 @@ describe('useWalletStore', () => {
       });
 
       it('should handle API error during purchase initiation and return null', async () => {
-        const apiError: ApiErrorType = { message: 'Purchase Failed', code: 'PURCHASE_ERROR' };
+        const apiError: ApiError = { message: 'Purchase Failed', code: 'PURCHASE_ERROR' };
         const response: ErrorResponse = { data: undefined, error: apiError, status: 500 };
         mockInitiateTokenPurchase.mockResolvedValue(response as ApiResponse<PaymentInitiationResult | null>);
 

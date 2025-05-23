@@ -10,9 +10,10 @@ export * from './analyticsStore';
 export * from './aiStore.selectors';
 export * from './organizationStore.selectors';
 export * from './subscriptionStore.selectors';
+export * from './walletStore.selectors';
+export * from './walletStore';
 // Add other selector exports if they exist and are needed externally
 // export type { useNotificationStore } from './notificationStore'; // Removed redundant/conflicting type export
-export * from './walletStore';
 
 // Add other necessary type exports here if needed 
 

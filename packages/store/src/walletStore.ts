@@ -2,30 +2,33 @@ import { create, StoreApi } from 'zustand';
 import {
   TokenWallet,
   TokenWalletTransaction,
-  ApiError as ApiErrorType,
+  ApiError,
   PurchaseRequest,
   PaymentInitiationResult,
   WalletDecisionOutcome,
-  WalletDecisionContext,
   // Ensure org_token_usage_policy_enum is available if directly used, or rely on Organization type
 } from '@paynless/types';
 import { api } from '@paynless/api'; // Uncommented for action implementation
 import { useOrganizationStore } from './organizationStore'; // For accessing organization details
 import { useAiStore } from './aiStore'; // For newChatContext
-import { useAuthStore } from './authStore'; // For user consent (future)
 
 export interface WalletStateValues {
-  currentWallet: TokenWallet | null;
+  personalWallet: TokenWallet | null;
+  organizationWallets: { [orgId: string]: TokenWallet | null };
   transactionHistory: TokenWalletTransaction[];
-  isLoadingWallet: boolean;
+  isLoadingPersonalWallet: boolean;
+  isLoadingOrgWallet: { [orgId: string]: boolean };
   isLoadingHistory: boolean;
   isLoadingPurchase: boolean;
-  walletError: ApiErrorType | null;
-  purchaseError: ApiErrorType | null;
+  personalWalletError: ApiError | null;
+  orgWalletErrors: { [orgId: string]: ApiError | null };
+  purchaseError: ApiError | null;
 }
 
 export interface WalletActions {
-  loadWallet: (organizationId?: string | null) => Promise<void>;
+  loadPersonalWallet: () => Promise<void>;
+  loadOrganizationWallet: (organizationId: string) => Promise<void>;
+  getOrLoadOrganizationWallet: (organizationId: string) => Promise<TokenWallet | null>;
   loadTransactionHistory: (
     organizationId?: string | null,
     limit?: number,
@@ -33,37 +36,26 @@ export interface WalletActions {
   ) => Promise<void>;
   initiatePurchase: (request: PurchaseRequest) => Promise<PaymentInitiationResult | null>;
   _resetForTesting: () => void; // For test cleanup
+  determineChatWallet: () => WalletDecisionOutcome; // Kept here as it uses get() internally
 }
 
-export interface WalletSelectors {
-  selectCurrentWalletBalance: () => string;
-  selectWalletTransactions: () => TokenWalletTransaction[];
-  determineChatWallet: () => WalletDecisionOutcome; // Added new selector
-}
-
-export type WalletStore = WalletStateValues & WalletActions & WalletSelectors;
+export type WalletStore = WalletStateValues & WalletActions;
 
 export const initialWalletStateValues: WalletStateValues = {
-  currentWallet: null,
+  personalWallet: null,
+  organizationWallets: {},
   transactionHistory: [],
-  isLoadingWallet: false,
+  isLoadingPersonalWallet: false,
+  isLoadingOrgWallet: {},
   isLoadingHistory: false,
   isLoadingPurchase: false,
-  walletError: null,
+  personalWalletError: null,
+  orgWalletErrors: {},
   purchaseError: null,
 };
 
 export const useWalletStore = create<WalletStore>((set, get) => ({
   ...initialWalletStateValues,
-
-  selectCurrentWalletBalance: () => {
-    const { currentWallet } = get();
-    return currentWallet?.balance || '0';
-  },
-
-  selectWalletTransactions: () => {
-    return get().transactionHistory;
-  },
 
   determineChatWallet: (): WalletDecisionOutcome => {
     const newChatContextOrgId = useAiStore.getState().newChatContext;
@@ -117,45 +109,115 @@ export const useWalletStore = create<WalletStore>((set, get) => ({
     return { outcome: 'error', message: `Unexpected token usage policy: ${orgTokenPolicy}` };
   },
 
-  loadWallet: async (organizationId?: string | null) => {
-    set({ isLoadingWallet: true, walletError: null });
-    console.log('[WalletStore loadWallet] Initiating fetch', { organizationId }); // Log initiation
+  loadPersonalWallet: async () => {
+    set({ isLoadingPersonalWallet: true, personalWalletError: null });
+    console.log('[WalletStore loadPersonalWallet] Initiating fetch');
     try {
-      const response = await api.wallet().getWalletInfo(organizationId);
-      console.log('[WalletStore loadWallet] API response received:', response); // Log raw API response
+      const response = await api.wallet().getWalletInfo(null);
+      console.log('[WalletStore loadPersonalWallet] API response received:', response);
 
       if (response.error) {
-        const errorToSet: ApiErrorType = 
+        const errorToSet: ApiError = 
           response.error && typeof response.error.message === 'string' && typeof response.error.code === 'string'
           ? response.error
-          : { message: String(response.error) || 'Failed to fetch wallet', code: 'UNKNOWN_API_ERROR' }; 
-        console.log('[WalletStore loadWallet] Setting error state:', errorToSet);
-        set({ isLoadingWallet: false, walletError: errorToSet, currentWallet: null });
+          : { message: String(response.error) || 'Failed to fetch personal wallet', code: 'UNKNOWN_API_ERROR' }; 
+        console.log('[WalletStore loadPersonalWallet] Setting error state:', errorToSet);
+        set({ isLoadingPersonalWallet: false, personalWalletError: errorToSet, personalWallet: null });
       } else {
-        // response.data is now directly TokenWallet | null, not { data: TokenWallet | null }
         const walletData = response.data;
-        console.log('[WalletStore loadWallet] API success. response.data (should be TokenWallet | null):', walletData);
-        console.log('[WalletStore loadWallet] Wallet balance from walletData?.balance:', walletData?.balance);
+        console.log('[WalletStore loadPersonalWallet] API success. response.data:', walletData);
         
         const walletToSet = walletData && typeof walletData === 'object' && 'walletId' in walletData ? walletData : null;
-        console.log('[WalletStore loadWallet] Wallet object being set to store:', walletToSet);
+        console.log('[WalletStore loadPersonalWallet] Wallet object being set to store:', walletToSet);
 
         set({
-          isLoadingWallet: false,
-          currentWallet: walletToSet, // Set the wallet object or null
-          walletError: null,
+          isLoadingPersonalWallet: false,
+          personalWallet: walletToSet,
+          personalWalletError: null,
         });
-        console.log('[WalletStore loadWallet] State SET with wallet. currentWallet?.balance should now be:', walletToSet?.balance);
+        console.log('[WalletStore loadPersonalWallet] State SET with personal wallet. personalWallet?.balance should now be:', walletToSet?.balance);
       }
     } catch (error: unknown) {
-      const networkError = { message: error instanceof Error ? error.message : 'An unknown network error occurred', code: 'NETWORK_ERROR' };
-      console.log('[WalletStore loadWallet] Setting catch error state:', networkError, error);
+      const networkError: ApiError = { message: error instanceof Error ? error.message : 'An unknown network error occurred', code: 'NETWORK_ERROR' };
+      console.log('[WalletStore loadPersonalWallet] Setting catch error state:', networkError, error);
       set({
-        walletError: networkError,
-        isLoadingWallet: false,
-        currentWallet: null,
+        personalWalletError: networkError,
+        isLoadingPersonalWallet: false,
+        personalWallet: null,
       });
     }
+  },
+
+  loadOrganizationWallet: async (organizationId: string) => {
+    set(state => ({
+      isLoadingOrgWallet: { ...state.isLoadingOrgWallet, [organizationId]: true },
+      orgWalletErrors: { ...state.orgWalletErrors, [organizationId]: null },
+    }));
+    console.log('[WalletStore loadOrganizationWallet] Initiating fetch for org:', organizationId);
+    try {
+      const response = await api.wallet().getWalletInfo(organizationId);
+      console.log('[WalletStore loadOrganizationWallet] API response received for org:', organizationId, response);
+
+      if (response.error) {
+        const errorToSet: ApiError = 
+          response.error && typeof response.error.message === 'string' && typeof response.error.code === 'string'
+          ? response.error
+          : { message: String(response.error) || `Failed to fetch wallet for org ${organizationId}`, code: 'UNKNOWN_API_ERROR' }; 
+        console.log('[WalletStore loadOrganizationWallet] Setting error state for org:', organizationId, errorToSet);
+        set(state => ({
+          isLoadingOrgWallet: { ...state.isLoadingOrgWallet, [organizationId]: false },
+          orgWalletErrors: { ...state.orgWalletErrors, [organizationId]: errorToSet },
+          organizationWallets: { ...state.organizationWallets, [organizationId]: null },
+        }));
+      } else {
+        const walletData = response.data;
+        console.log('[WalletStore loadOrganizationWallet] API success for org:', organizationId, 'response.data:', walletData);
+        
+        const walletToSet = walletData && typeof walletData === 'object' && 'walletId' in walletData ? walletData : null;
+        console.log('[WalletStore loadOrganizationWallet] Wallet object being set to store for org:', organizationId, walletToSet);
+
+        set(state => ({
+          isLoadingOrgWallet: { ...state.isLoadingOrgWallet, [organizationId]: false },
+          organizationWallets: { ...state.organizationWallets, [organizationId]: walletToSet },
+          orgWalletErrors: { ...state.orgWalletErrors, [organizationId]: null },
+        }));
+        console.log('[WalletStore loadOrganizationWallet] State SET for org wallet:', organizationId, 'balance:', walletToSet?.balance);
+      }
+    } catch (error: unknown) {
+      const networkError: ApiError = { message: error instanceof Error ? error.message : 'An unknown network error occurred', code: 'NETWORK_ERROR' };
+      console.log('[WalletStore loadOrganizationWallet] Setting catch error state for org:', organizationId, networkError, error);
+      set(state => ({
+        orgWalletErrors: { ...state.orgWalletErrors, [organizationId]: networkError },
+        isLoadingOrgWallet: { ...state.isLoadingOrgWallet, [organizationId]: false },
+        organizationWallets: { ...state.organizationWallets, [organizationId]: null },
+      }));
+    }
+  },
+
+  getOrLoadOrganizationWallet: async (organizationId: string): Promise<TokenWallet | null> => {
+    const { organizationWallets, isLoadingOrgWallet } = get();
+    const existingWallet = organizationWallets[organizationId];
+
+    if (existingWallet) {
+      return existingWallet;
+    }
+
+    // If it's already loading, don't trigger another load, but callers might need to subscribe to changes.
+    // For simplicity here, we re-trigger load. A more sophisticated approach might involve a promise cache.
+    if (isLoadingOrgWallet[organizationId]) {
+      // Optionally, instead of reloading, we could return a promise that resolves when the current load finishes.
+      // For now, we proceed to load, which is idempotent if multiple calls happen.
+      // Or, simply return null and let UI observe isLoadingOrgWallet[organizationId]
+      console.log(`[WalletStore getOrLoadOrganizationWallet] Wallet for org ${organizationId} is already loading.`);
+      // Depending on desired behavior, you might await a loading promise or just return null.
+      // To ensure it loads if called, we can proceed to call loadOrganizationWallet.
+    }
+
+    console.log(`[WalletStore getOrLoadOrganizationWallet] Wallet for org ${organizationId} not found or not loading, fetching now.`);
+    await get().loadOrganizationWallet(organizationId); // Call the actual loading action
+    // After loading, the state will be updated, so we get the fresh state.
+    // Note: This means the function resolves *after* the load attempt.
+    return get().organizationWallets[organizationId] || null;
   },
 
   loadTransactionHistory: async (
@@ -163,32 +225,32 @@ export const useWalletStore = create<WalletStore>((set, get) => ({
     limit?: number,
     offset?: number
   ) => {
-    set({ isLoadingHistory: true, walletError: null, transactionHistory: [] }); // Reset history on new load
+    set({ isLoadingHistory: true, personalWalletError: null, transactionHistory: [] });
     try {
       const response = await api.wallet().getWalletTransactionHistory(organizationId, limit, offset);
 
       if (response.error) {
-        const errorToSet: ApiErrorType = 
+        const errorToSet: ApiError = 
           response.error && typeof response.error.message === 'string' && typeof response.error.code === 'string'
           ? response.error
           : { message: String(response.error) || 'Failed to fetch transaction history', code: 'UNKNOWN_API_ERROR' }; 
-        set({ walletError: errorToSet, isLoadingHistory: false, transactionHistory: [] });
+        set({ personalWalletError: errorToSet, isLoadingHistory: false, transactionHistory: [] });
         return;
       }
 
       if (response.data === null || response.data === undefined) {
         set({
           transactionHistory: [],
-          walletError: { message: 'Failed to fetch transaction history: No data returned', code: 'NOT_FOUND' },
+          personalWalletError: { message: 'Failed to fetch transaction history: No data returned', code: 'NOT_FOUND' } as ApiError,
           isLoadingHistory: false,
         });
         return;
       }
       // Ensure data is an array, even if it's empty, it's a valid response.
-      set({ transactionHistory: response.data || [], isLoadingHistory: false, walletError: null });
+      set({ transactionHistory: response.data || [], isLoadingHistory: false, personalWalletError: null });
     } catch (error: unknown) {
       set({
-        walletError: { message: error instanceof Error ? error.message : 'An unknown network error occurred while fetching history', code: 'NETWORK_ERROR' },
+        personalWalletError: { message: error instanceof Error ? error.message : 'An unknown network error occurred while fetching history', code: 'NETWORK_ERROR' } as ApiError,
         isLoadingHistory: false,
         transactionHistory: [],
       });
@@ -202,8 +264,8 @@ export const useWalletStore = create<WalletStore>((set, get) => ({
 
       // Case 1: The API call itself failed (e.g., network error, 500 from gateway function before returning PaymentInitiationResult)
       if (response.error) {
-        const errorToSet: ApiErrorType = 
-          response.error && typeof response.error.message === 'string' // response.error is already ApiErrorType
+        const errorToSet: ApiError = 
+          response.error && typeof response.error.message === 'string' 
           ? response.error 
           : { message: String(response.error) || 'Failed to initiate purchase due to API error', code: 'UNKNOWN_API_ERROR' }; 
         set({ purchaseError: errorToSet, isLoadingPurchase: false });
@@ -213,7 +275,7 @@ export const useWalletStore = create<WalletStore>((set, get) => ({
       // Case 2: API call was successful, but response.data is unexpectedly null or undefined
       if (response.data === null || response.data === undefined) {
         set({
-          purchaseError: { message: 'Failed to initiate purchase: No initiation data returned from API', code: 'NO_DATA_FROM_API' },
+          purchaseError: { message: 'Failed to initiate purchase: No initiation data returned from API', code: 'NO_DATA_FROM_API' } as ApiError,
           isLoadingPurchase: false,
         });
         return null; // Return null as PaymentInitiationResult is not available
@@ -228,7 +290,7 @@ export const useWalletStore = create<WalletStore>((set, get) => ({
           purchaseError: { 
             message: initiationResult.error || 'Payment initiation failed for an unknown reason.', 
             code: 'PAYMENT_INITIATION_FAILED' 
-          },
+          } as ApiError,
           isLoadingPurchase: false,
         });
         return initiationResult; // Still return the result, as it might contain useful info like transactionId
@@ -240,7 +302,7 @@ export const useWalletStore = create<WalletStore>((set, get) => ({
 
     } catch (error: unknown) { // Catch errors from the api.wallet().initiateTokenPurchase() call itself
       set({
-        purchaseError: { message: error instanceof Error ? error.message : 'An unknown network error occurred during purchase initiation', code: 'NETWORK_CATCH_ERROR' },
+        purchaseError: { message: error instanceof Error ? error.message : 'An unknown network error occurred during purchase initiation', code: 'NETWORK_CATCH_ERROR' } as ApiError,
         isLoadingPurchase: false,
       });
       return null;

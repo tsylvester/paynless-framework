@@ -668,7 +668,7 @@ export const useAiStore = create<AiStore>()(
                                 try {
                                     logger.info('[aiStore sendMessage] Triggering wallet refresh after successful message.');
                                     // For Phase 1, personal wallet is reloaded. Phase 2 will require more specific reload.
-                                    useWalletStore.getState().loadWallet(); 
+                                    useWalletStore.getState().loadPersonalWallet(); 
                                 } catch (walletError) {
                                     logger.error('[aiStore sendMessage] Error triggering wallet refresh:', { error: String(walletError) });
                                     // Decide if this error should be surfaced to the user or just logged

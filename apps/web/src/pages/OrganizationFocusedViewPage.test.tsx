@@ -53,7 +53,7 @@ vi.mock('react-router-dom', async (importOriginal) => {
 
 // Mock child components...
 vi.mock('../components/organizations/OrganizationDetailsCard', async (importOriginal) => {
-  const original = await importOriginal<typeof import('../components/organizations/OrganizationDetailsCard')>();
+  const original = await importOriginal<typeof import('../components/organizations/OrganizationSettingsCard')>();
   return {
     ...original,
     OrganizationDetailsCard: () => <div data-testid="org-details-card">Details Mocked Robustly</div>,

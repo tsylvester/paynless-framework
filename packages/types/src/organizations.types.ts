@@ -82,7 +82,7 @@ export interface OrganizationState {
   memberCurrentPage: number;
   memberPageSize: number;
   memberTotalCount: number;
-  // No direct state property for allow_member_chat_creation here, it's part of currentOrganizationDetails
+  // No direct state property for allow_member_chat_creation here, it's part of currentOrganizationSettings
 }
 
 // Type for the details needed on the Invite Accept page

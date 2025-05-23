@@ -158,7 +158,7 @@ export class OrganizationApiClient {
    * @param updateData - An object containing the fields to update.
    * @returns An ApiResponse containing the updated organization details or an error.
    */
-  async updateOrganizationDetails(
+  async updateOrganizationSettings(
       orgId: string, 
       updateData: {
           name?: string;

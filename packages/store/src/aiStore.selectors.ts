@@ -215,32 +215,41 @@ export const selectCurrentChatSessionTokenUsage = createSelector(
     };
 
     for (const message of currentChatMessages) {
-      if (message.role === 'assistant') {
-        const tu = message.token_usage as unknown as TokenUsage;
-        if (tu && typeof tu === 'object' && !Array.isArray(tu)) {
-          const prompt = Number(tu.prompt_tokens || 0);
-          const completion = Number(tu.completion_tokens || 0);
-          const messageTotalFromRecord = Number(tu.total_tokens || 0);
-          
-          const calculatedMessageTotal = prompt + completion;
-          const messageTurnTotal = (messageTotalFromRecord > 0 && !isNaN(messageTotalFromRecord)) ? messageTotalFromRecord : calculatedMessageTotal;
+      const tu = message.token_usage as unknown as TokenUsage;
+      let messageTurnTotal = 0;
 
+      if (tu && typeof tu === 'object' && !Array.isArray(tu)) {
+        const prompt = Number(tu.prompt_tokens || 0);
+        const completion = Number(tu.completion_tokens || 0);
+        const totalFromRecord = Number(tu.total_tokens || 0);
+        
+        // Calculate message turn total: use total_tokens if valid, otherwise sum of prompt and completion
+        messageTurnTotal = (totalFromRecord > 0 && !isNaN(totalFromRecord)) ? totalFromRecord : (prompt + completion);
+
+        if (message.role === 'assistant') {
           totals.assistantPromptTokens += prompt;
           totals.assistantCompletionTokens += completion;
-          totals.assistantTotalTokens += messageTurnTotal; 
+          totals.assistantTotalTokens += messageTurnTotal;
         }
       }
+      // Add current message's total tokens to overallTotalTokens regardless of role
+      totals.overallTotalTokens += messageTurnTotal;
     }
     
-    totals.overallTotalTokens = totals.assistantPromptTokens + totals.assistantCompletionTokens;
+    // Ensure assistantTotalTokens is consistent if it was based on individual message totals
+    // If assistantTotalTokens was intended to be a sum of its prompt & completion, this might need adjustment
+    // For now, we trust the per-message calculation for assistantTotalTokens derived above.
 
-    if (totals.overallTotalTokens !== totals.assistantTotalTokens) {
-        console.warn('Discrepancy in token calculation:', {
-            overall: totals.overallTotalTokens,
-            assistantSum: totals.assistantTotalTokens,
-            calculatedSum: totals.assistantPromptTokens + totals.assistantCompletionTokens
+    // The console.warn for discrepancy can be removed or adjusted if this new logic is correct.
+    // For example, a discrepancy might still occur if a user message had prompt/completion tokens but no total_tokens.
+    // However, overallTotalTokens now aims to sum all messageTurnTotals.
+    if (totals.assistantPromptTokens + totals.assistantCompletionTokens !== totals.assistantTotalTokens && totals.assistantTotalTokens !== 0) {
+        console.warn('Discrepancy in assistant token calculation:', {
+            sumOfPromptAndCompletion: totals.assistantPromptTokens + totals.assistantCompletionTokens,
+            assistantTotalTokensFromMessages: totals.assistantTotalTokens,
         });
-        totals.overallTotalTokens = totals.assistantPromptTokens + totals.assistantCompletionTokens;
+        // Optionally, decide on a source of truth if they differ, e.g.:
+        // totals.assistantTotalTokens = totals.assistantPromptTokens + totals.assistantCompletionTokens;
     }
 
     return totals;

@@ -11,56 +11,51 @@ import {
 } from '@/components/ui/card';
 import { Button } from '@/components/ui/button'; // For a potential top-up button
 import { ViewTransactionHistoryButton } from './ViewTransactionHistoryButton'; // Import the new component
+import { 
+  selectPersonalWalletBalance, 
+  selectIsLoadingPersonalWallet, 
+  selectPersonalWalletError 
+} from '@paynless/store'; // Assuming path to selectors
+// Import WalletStore type for explicit typing if needed
+import type { WalletStore } from '@paynless/store';
 
 export const WalletBalanceDisplay: React.FC = () => {
-  const {
-    currentWalletBalance,
-    isLoadingWallet,
-    walletError,
-    loadWallet,
-  } = useWalletStore(state => {
-    // Log what the selector receives AND what it's about to return
-    console.log('[WBDisplay Selector] state.currentWallet before selection:', state.currentWallet);
-    console.log('[WBDisplay Selector] state.currentWallet?.balance before selection:', state.currentWallet?.balance);
-    const balanceToReturn = state.selectCurrentWalletBalance();
-    console.log('[WBDisplay Selector] Balance selected by selectCurrentWalletBalance():', balanceToReturn);
-    return {
-      currentWalletBalance: balanceToReturn,
-      isLoadingWallet: state.isLoadingWallet,
-      walletError: state.walletError,
-      loadWallet: state.loadWallet,
-    };
-  });
+  // Use selectors directly with the state from useWalletStore()
+  const personalWalletBalance = useWalletStore(selectPersonalWalletBalance);
+  const isLoadingPersonalWallet = useWalletStore(selectIsLoadingPersonalWallet);
+  const personalWalletError = useWalletStore(selectPersonalWalletError);
+  // Explicitly type state parameter if linter complains
+  const loadPersonalWallet = useWalletStore((state: WalletStore) => state.loadPersonalWallet);
 
   useEffect(() => {
-    console.log('[WBDisplay Effect] Calling loadWallet() ON MOUNT');
-    loadWallet();
-  }, []); // Empty dependency array to run only on mount
+    // console.log('[WBDisplay Effect] Calling loadPersonalWallet() ON MOUNT');
+    loadPersonalWallet();
+  }, [loadPersonalWallet]); // loadPersonalWallet should be stable, but good practice to include if it's from the store
   
   let content;
-  if (isLoadingWallet) {
+  if (isLoadingPersonalWallet) {
     content = <p className="text-textSecondary">Loading wallet balance...</p>;
-  } else if (walletError) {
-    content = <p className="text-red-500">Error: {walletError.message || 'Could not load balance.'}</p>;
+  } else if (personalWalletError && typeof personalWalletError.message === 'string') {
+    content = <p className="text-red-500">Error: {personalWalletError.message || 'Could not load balance.'}</p>;
+  } else if (personalWalletError) {
+    content = <p className="text-red-500">Error: Could not load balance (unknown error structure).</p>;
   } else {
     let formattedBalance = 'N/A';
-    if (currentWalletBalance !== 'N/A' && currentWalletBalance !== null) {
-      const numericBalance = typeof currentWalletBalance === 'string' 
-        ? parseFloat(currentWalletBalance) 
-        : currentWalletBalance;
+    if (personalWalletBalance !== 'N/A' && personalWalletBalance !== null) {
+      const numericBalance = typeof personalWalletBalance === 'string' 
+        ? parseFloat(personalWalletBalance) 
+        : parseFloat(String(personalWalletBalance)); // Ensure it's a string before parsing
 
       if (typeof numericBalance === 'number' && !isNaN(numericBalance)) {
         formattedBalance = `${new Intl.NumberFormat('en-US').format(numericBalance)} Tokens`;
       } else {
-        // Fallback if parsing fails or it's an unexpected type but not 'N/A' or null initially
-        formattedBalance = `${currentWalletBalance} Tokens`; 
+        formattedBalance = `${personalWalletBalance} Tokens`; 
       }
     }
     content = <p className="text-2xl font-semibold text-textPrimary">{formattedBalance}</p>;
   }
 
-  // Log what the component is about to render with
-  console.log('[WBDisplay Render] isLoadingWallet:', isLoadingWallet, 'walletError:', walletError, 'currentWalletBalance for display:', currentWalletBalance);
+  // console.log('[WBDisplay Render] isLoadingPersonalWallet:', isLoadingPersonalWallet, 'personalWalletError:', personalWalletError, 'personalWalletBalance for display:', personalWalletBalance);
 
   return (
     <Card className="w-full max-w-lg mx-auto">

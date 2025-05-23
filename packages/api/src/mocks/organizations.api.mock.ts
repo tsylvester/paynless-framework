@@ -24,7 +24,7 @@ export const createMockOrganizationApiClient = (): OrganizationApiClient => ({
     listUserOrganizations: vi.fn() as Mock<[number?, number?], Promise<ApiResponse<PaginatedOrganizationsResponse>>>,
     getOrganizationDetails: vi.fn() as Mock<[string], Promise<ApiResponse<Organization>>>,
     getOrganizationMembers: vi.fn() as Mock<[string, number?, number?], Promise<ApiResponse<PaginatedMembersResponse>>>,
-    updateOrganizationSettings: vi.fn() as Mock<[string, { allow_member_chat_creation: boolean }], Promise<ApiResponse<Organization>>>,
+    updateOrganizationSettings: vi.fn() as Mock<[string, { name?: string; visibility?: 'public' | 'private'; allow_member_chat_creation?: boolean; token_usage_policy?: 'member_tokens' | 'organization_tokens'; }], Promise<ApiResponse<Organization>>>,
     inviteUserByEmail: vi.fn() as Mock<[string, string, string], Promise<ApiResponse<Invite>>>,
     inviteUserById: vi.fn() as Mock<[string, string, string], Promise<ApiResponse<Invite>>>,
     acceptOrganizationInvite: vi.fn() as Mock<[string], Promise<ApiResponse<{ message: string; membershipId: string; organizationId: string }>>>,
