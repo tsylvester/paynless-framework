@@ -19,15 +19,13 @@ const mockedUseWalletStore = useWalletStore as vi.MockedFunction<typeof useWalle
 describe('useAIChatAffordabilityStatus', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    // Default mock implementation, now includes the selector
+    // Default mock implementation
     mockedUseWalletStore.mockImplementation(selector => {
       const mockState = {
-        currentWallet: null,
+        personalWallet: null,
         isLoadingWallet: false,
         walletError: null,
         loadWallet: vi.fn(),
-        // Define the selector as it would be in the real store
-        selectCurrentWalletBalance: () => (mockState.currentWallet?.balance || '0'),
       };
       return selector(mockState);
     });
@@ -36,12 +34,10 @@ describe('useAIChatAffordabilityStatus', () => {
   const setupMockWalletState = (balance: string | null) => {
     mockedUseWalletStore.mockImplementation(selector => {
       const mockState = {
-        currentWallet: balance !== null ? { balance } : null,
+        personalWallet: balance !== null ? { balance } : null,
         isLoadingWallet: false,
         walletError: null,
         loadWallet: vi.fn(),
-        // Define the selector consistent with the store's behavior
-        selectCurrentWalletBalance: () => (mockState.currentWallet?.balance || '0'),
       };
       return selector(mockState);
     });

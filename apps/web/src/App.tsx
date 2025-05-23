@@ -45,13 +45,13 @@ function AppContent() {
   const { currentOrganizationId } = useOrganizationStore(state => ({ currentOrganizationId: state.currentOrganizationId })); // Get current org ID
 
   const {
-    loadWallet,
-    currentWallet,
-    isLoadingWallet,
+    loadPersonalWallet,
+    personalWallet,
+    isLoadingPersonalWallet,
   } = useWalletStore(state => ({
-    loadWallet: state.loadWallet,
-    currentWallet: state.currentWallet,
-    isLoadingWallet: state.isLoadingWallet,
+    loadPersonalWallet: state.loadPersonalWallet,
+    personalWallet: state.personalWallet,
+    isLoadingPersonalWallet: state.isLoadingPersonalWallet,
   }));
   
   const {
@@ -81,11 +81,11 @@ function AppContent() {
 
   // Effect to load wallet information
   useEffect(() => {
-    if (profile && !currentWallet && !isLoadingWallet) {
-      logger.info('[AppContent] Profile available, wallet not loaded. Loading wallet...');
-      loadWallet(); // Load wallet globally for the user session. Any other wallets are set locally from a users action.
+    if (profile && !personalWallet && !isLoadingPersonalWallet) {
+      logger.info('[AppContent] Profile available, personal wallet not loaded. Loading personal wallet...');
+      loadPersonalWallet();
     }
-  }, [profile, currentWallet, isLoadingWallet, loadWallet]);
+  }, [profile, personalWallet, isLoadingPersonalWallet, loadPersonalWallet]);
 
   if (isLoadingCapabilities) {
     return (

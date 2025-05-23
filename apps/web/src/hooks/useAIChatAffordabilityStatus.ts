@@ -1,4 +1,4 @@
-import { useWalletStore } from '@paynless/store';
+import { useWalletStore, selectPersonalWalletBalance } from '@paynless/store';
 import { useMemo } from 'react';
 
 interface AffordabilityStatus {
@@ -11,15 +11,16 @@ interface AffordabilityStatus {
 const LOW_BALANCE_MULTIPLIER = 3;
 
 export const useAIChatAffordabilityStatus = (estimatedNextCost: number): AffordabilityStatus => {
-  const currentBalanceStr = useWalletStore(state => state.selectCurrentWalletBalance());
+  const currentBalanceStr = useWalletStore(selectPersonalWalletBalance);
 
   return useMemo(() => {
-    const currentBalanceForDisplay = currentBalanceStr;
-    const numericBalance = parseInt(currentBalanceStr, 10);
+    const balanceForParsing = currentBalanceStr ?? '0';
+    const numericBalance = parseInt(balanceForParsing, 10);
+    const currentBalanceForDisplay = currentBalanceStr ?? 'N/A';
 
     if (isNaN(numericBalance)) {
       return {
-        currentBalance: '0',
+        currentBalance: currentBalanceForDisplay,
         estimatedNextCost,
         canAffordNext: false,
         lowBalanceWarning: true,
