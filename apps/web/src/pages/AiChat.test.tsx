@@ -1,11 +1,11 @@
 import React from 'react';
-import { render, screen, act, waitFor } from '@testing-library/react';
+import { render, screen, act, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { vi, describe, it, expect, beforeEach } from 'vitest';
 
 import AiChatPage from './AiChat';
 import { useAiStore, useAuthStore, useOrganizationStore } from '@paynless/store';
-import type { Organization, Chat, User, AiProvider, SystemPrompt } from '@paynless/types';
+import type { Organization, Chat, User, AiProvider, SystemPrompt, ChatMessage, AiStore } from '@paynless/types';
 
 // --- Global Mocks ---
 vi.mock('@paynless/analytics', () => ({
@@ -33,10 +33,15 @@ vi.mock('../components/ai/ChatContextSelector', () => ({
   ChatContextSelector: vi.fn(() => <div data-testid="chat-context-selector-mock">Chat Context Selector</div>),
 }));
 
+// --- WalletSelector Mock ---
+vi.mock('../components/ai/WalletSelector', () => ({
+  WalletSelector: vi.fn(() => <div data-testid="wallet-selector-mock">Wallet Selector</div>),
+}));
+
 // --- Store Mocks & Initial States ---
 const mockUser: User = { id: 'user-test-123', email: 'test@example.com' };
-const orgA: Organization = { id: 'org-A', name: 'Org A', created_at: '2023-01-01T00:00:00Z', allow_member_chat_creation: true, visibility: 'private', deleted_at: null };
-const orgB: Organization = { id: 'org-B', name: 'Org B', created_at: '2023-01-01T00:00:00Z', allow_member_chat_creation: true, visibility: 'private', deleted_at: null };
+const orgA: Organization = { id: 'org-A', name: 'Org A', created_at: '2023-01-01T00:00:00Z', allow_member_chat_creation: true, visibility: 'private', deleted_at: null, token_usage_policy: 'organization_tokens' };
+const orgB: Organization = { id: 'org-B', name: 'Org B', created_at: '2023-01-01T00:00:00Z', allow_member_chat_creation: true, visibility: 'private', deleted_at: null, token_usage_policy: 'member_tokens' };
 
 const chatPersonal1: Chat = { id: 'chat-p1', title: 'Personal Chat 1', organization_id: null, user_id: mockUser.id, created_at: '2023-01-01T00:00:00Z', updated_at: '2023-01-01T00:00:00Z', system_prompt_id: null };
 const chatOrgA1: Chat = { id: 'chat-a1', title: 'Org A Chat 1', organization_id: orgA.id, user_id: mockUser.id, created_at: '2023-01-01T00:00:00Z', updated_at: '2023-01-01T00:00:00Z', system_prompt_id: null };
@@ -90,6 +95,7 @@ const setupStoreAndSpies = async (
         },
       },
       messagesByChatId: {},
+      selectedMessagesMap: {},
       currentChatId: null,
       selectedProviderId: null, // Add initial value for selectedProviderId
       selectedPromptId: null, // Add initial value for selectedPromptId
@@ -281,45 +287,50 @@ describe('AiChatPage Integration Tests', () => {
   it('renders ChatMessageBubble for user and assistant messages with the correct alignment', async () => {
     vi.unmock('../components/ai/AiChatbox');
     // Setup: Add a chat with both user and assistant messages
-    const userId = mockUser.id;
-    const chatId = 'chat-p1';
-    const messages = [
-      {
-        id: 'msg-user-1',
-        chat_id: chatId,
-        user_id: userId,
-        role: 'user',
-        content: 'User message',
-        created_at: new Date().toISOString(),
-        ai_provider_id: null,
-        is_active_in_thread: true,
-        system_prompt_id: null,
-        token_usage: null
-      },
-      {
-        id: 'msg-assistant-1',
-        chat_id: chatId,
-        user_id: userId,
-        role: 'assistant',
-        content: 'Assistant message',
-        created_at: new Date().toISOString(),
-        ai_provider_id: 'prov-1',
-        is_active_in_thread: true,
-        system_prompt_id: null,
-        token_usage: null
-      },
-    ];
-    mocks.mockLoadChatDetails.mockImplementation(async (id) => {
-      if (id === chatId) {
-        act(() => {
-          useAiStore.setState(prev => ({
-            ...prev,
-            messagesByChatId: { ...prev.messagesByChatId, [chatId]: messages },
-            currentChatId: chatId,
-            isDetailsLoading: false
-          }));
-        });
-      }
+    const chatId = chatOrgA1.id;
+    const userMessage: ChatMessage = { 
+      id: 'msg1-alignment',
+      role: 'user', 
+      content: 'User message for alignment test', 
+      created_at: new Date().toISOString(), 
+      user_id: mockUser.id, 
+      chat_id: chatId,
+      system_prompt_id: null,
+      ai_provider_id: null,
+      token_usage: null,
+      updated_at: new Date().toISOString(),
+      is_active_in_thread: true,
+    } as ChatMessage;
+    const assistantMessage: ChatMessage = { 
+      id: 'msg2-alignment',
+      role: 'assistant', 
+      content: 'Assistant message for alignment test', 
+      created_at: new Date().toISOString(), 
+      ai_provider_id: 'prov-1',
+      chat_id: chatId,
+      user_id: null,
+      system_prompt_id: null,
+      token_usage: { promptTokens: 10, completionTokens: 20, totalTokens: 30 },
+      updated_at: new Date().toISOString(),
+      is_active_in_thread: true,
+    } as ChatMessage;
+
+    act(() => {
+      const existingState = useAiStore.getState(); // Get existing state to merge critical parts
+      useAiStore.setState({
+        ...existingState, // Preserve other parts of state
+        messagesByChatId: {
+          [chatId]: [userMessage, assistantMessage],
+        },
+        currentChatId: chatId,
+        // Ensure selectedMessagesMap is present and correctly structured for the current chat
+        selectedMessagesMap: { 
+          ...(existingState.selectedMessagesMap || {}), // Merge with existing selections if any
+          [chatId]: { [userMessage.id]: true, [assistantMessage.id]: true } 
+        },
+        isDetailsLoading: false, // Explicitly set as the original test logic might have done this via mockLoadChatDetails side effect
+      }, true); // Replace state
+      mocks.mockLoadChatDetails.mockResolvedValueOnce(undefined); // Simulate action completion
     });
     render(<AiChatPage />);
     await act(async () => {
@@ -328,57 +339,78 @@ describe('AiChatPage Integration Tests', () => {
     await waitFor(() => {
       expect(screen.getAllByTestId('chat-message-bubble-card')).toHaveLength(2);
     });
-    const bubbles = screen.getAllByTestId('chat-message-bubble-card');
-    // User message should have self-end
-    expect(bubbles[0].className).toMatch(/self-end/);
-    // Assistant message should have self-start
-    expect(bubbles[1].className).toMatch(/self-start/);
+    // User message should be aligned to the end (right)
+    const userMessageLayout = screen.getByTestId('chat-message-layout-user');
+    expect(userMessageLayout.className).toMatch(/justify-end/);
+    // Assistant message should be aligned to the start (left)
+    const assistantMessageLayout = screen.getByTestId('chat-message-layout-assistant');
+    expect(assistantMessageLayout.className).toMatch(/justify-start/);
   });
 
   // Test 5.1b: AttributionDisplay
   it('uses AttributionDisplay to render user name and date correctly for user and assistant messages', async () => {
     vi.unmock('../components/ai/AiChatbox');
     // Setup: Add a chat with both user and assistant messages
-    const userId = mockUser.id;
-    const chatId = 'chat-p1';
-    const now = new Date();
-    const messages = [
-      {
-        id: 'msg-user-1',
-        chat_id: chatId,
-        user_id: userId,
+    const chatId = 'chat-with-attribution';
+    const userMessage: ChatMessage = { 
+      id: 'msg3-attribution',
+      role: 'user', 
+      content: 'Another User message for attribution', 
+      created_at: new Date(2023, 0, 15, 10, 30).toISOString(), 
+      user_id: mockUser.id,
+      chat_id: chatId,
+      system_prompt_id: null,
+      ai_provider_id: null,
+      token_usage: null,
+      updated_at: new Date(2023, 0, 15, 10, 30).toISOString(),
+      is_active_in_thread: true,
+    } as ChatMessage; 
+    const assistantMessage: ChatMessage = { 
+      id: 'msg4-attribution',
+      role: 'assistant', 
+      content: 'Another Assistant message for attribution', 
+      created_at: new Date(2023, 0, 15, 10, 31).toISOString(), 
+      ai_provider_id: 'prov-1',
+      chat_id: chatId,
+      user_id: null,
+      system_prompt_id: null,
+      token_usage: { promptTokens: 15, completionTokens: 25, totalTokens: 40 },
+      updated_at: new Date(2023, 0, 15, 10, 31).toISOString(),
+      is_active_in_thread: true,
+    } as ChatMessage;
+
+    // Mock user profiles
+    const mockProfiles: AiStore['chatParticipantsProfiles'] = { 
+      [mockUser.id]: { 
+        id: mockUser.id, 
+        first_name: 'Test',
+        last_name: 'User',
+        chat_context: { defaultPromptId: 'prompt-1', defaultProviderId: 'prov-1' },
+        created_at: new Date().toISOString(),
+        last_selected_org_id: orgA.id,
+        profile_privacy_setting: 'private',
         role: 'user',
-        content: 'User message',
-        created_at: now.toISOString(),
-        ai_provider_id: null,
-        is_active_in_thread: true,
-        system_prompt_id: null,
-        token_usage: null
-      },
-      {
-        id: 'msg-assistant-1',
-        chat_id: chatId,
-        user_id: userId,
-        role: 'assistant',
-        content: 'Assistant message',
-        created_at: now.toISOString(),
-        ai_provider_id: 'prov-1',
-        is_active_in_thread: true,
-        system_prompt_id: null,
-        token_usage: null
-      },
-    ];
-    mocks.mockLoadChatDetails.mockImplementation(async (id) => {
-      if (id === chatId) {
-        act(() => {
-          useAiStore.setState(prev => ({
-            ...prev,
-            messagesByChatId: { ...prev.messagesByChatId, [chatId]: messages },
-            currentChatId: chatId,
-            isDetailsLoading: false
-          }));
-        });
+        updated_at: new Date().toISOString(),
       }
+    };
+    
+    act(() => {
+      const existingState = useAiStore.getState();
+      useAiStore.setState({
+        ...existingState,
+        chatParticipantsProfiles: mockProfiles, // This was the primary purpose of this setState
+        messagesByChatId: {
+          ...(existingState.messagesByChatId || {}),
+          [chatId]: [userMessage, assistantMessage],
+        },
+        currentChatId: chatId,
+        selectedMessagesMap: {
+          ...(existingState.selectedMessagesMap || {}),
+          [chatId]: { [userMessage.id]: true, [assistantMessage.id]: true }
+        },
+        isDetailsLoading: false, // Explicitly set
+      }, true); // Replace state
+      mocks.mockLoadChatDetails.mockResolvedValueOnce(undefined); // Simulate action completion
     });
     render(<AiChatPage />);
     await act(async () => {
@@ -388,10 +420,14 @@ describe('AiChatPage Integration Tests', () => {
       expect(screen.getAllByTestId('chat-message-bubble-card')).toHaveLength(2);
     });
     // User attribution: should show email or truncated ID
-    expect(screen.getByText(/test@example.com \(You\)|user-test-123 \(You\)|User \(You\)/)).toBeInTheDocument();
+    const userBubble = within(screen.getByTestId('chat-message-layout-user'));
+    expect(userBubble.getByText(/test@example.com \(You\)|user-test-123 \(You\)|User \(You\)/)).toBeInTheDocument();
     // Assistant attribution: should show 'Assistant'
-    expect(screen.getByText(/Assistant/)).toBeInTheDocument();
+    const assistantBubble = within(screen.getByTestId('chat-message-layout-assistant'));
+    expect(assistantBubble.getByText(/Assistant/)).toBeInTheDocument();
     // Timestamp: should show a relative time (e.g., 'less than a minute ago')
-    expect(screen.getAllByTitle(/ago|AM|PM|GMT|UTC/).length).toBeGreaterThanOrEqual(2);
+    // Check within each bubble to ensure timestamps are present for both
+    expect(userBubble.getAllByTitle(/ago|AM|PM|GMT|UTC/).length).toBeGreaterThanOrEqual(1);
+    expect(assistantBubble.getAllByTitle(/ago|AM|PM|GMT|UTC/).length).toBeGreaterThanOrEqual(1);
   });
 }); 

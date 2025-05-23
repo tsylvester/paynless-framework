@@ -1,14 +1,13 @@
 'use client'
 
-import React, { useRef, useEffect, memo } from 'react'
+import React, { useRef, useEffect, memo, useState } from 'react'
 import { useAiStore, selectCurrentChatMessages } from '@paynless/store'
 import type { ChatMessage, AiState } from '@paynless/types'
-import { logger } from '@paynless/utils'
+//import { logger } from '@paynless/utils'
 import { Terminal, Loader2 } from 'lucide-react'
 import { ChatMessageBubble } from './ChatMessageBubble'
 import { ChatTokenUsageDisplay } from './ChatTokenUsageDisplay'
 import ChatInput from './ChatInput'
-
 export interface AiChatboxProps {
   // Props can be defined if AiChatbox needs to pass anything down to ChatInput
   // or if it has its own specific props not related to input.
@@ -28,6 +27,13 @@ const AiChatboxComponent: React.FC<AiChatboxProps> = () => {
     aiError: state.aiError,
   }));
 
+  const rewindTargetMessageId = useAiStore(state => state.rewindTargetMessageId);
+  const prepareRewind = useAiStore(state => state.prepareRewind);
+
+  const [textInput, setTextInput] = useState('');
+  const [isRewindMode, setIsRewindMode] = useState(false);
+  const [originalContentForRewind, setOriginalContentForRewind] = useState('');
+
   useEffect(() => {
     if (currentChatMessages.length === 0) return;
     const latestMessage = currentChatMessages[currentChatMessages.length - 1];
@@ -46,21 +52,28 @@ const AiChatboxComponent: React.FC<AiChatboxProps> = () => {
   }, [currentChatMessages]);
 
   useEffect(() => {
-    logger.info("AiChatbox MOUNTED");
+    //logger.info("AiChatbox MOUNTED");
     return () => {
-      logger.info("AiChatbox UNMOUNTING");
+      //logger.info("AiChatbox UNMOUNTING");
     };
   }, []);
 
-  const handleEditClick = (messageId: string, messageContent: string) => {
-    const currentChatIdFromState = useAiStore.getState().currentChatId;
-    if (!currentChatIdFromState) {
-      logger.error('[AiChatbox] Cannot prepare rewind: No current chat ID in state');
-      return;
+  const handleEditClick = (messageId: string, currentContent: string) => {
+    if (currentChatId) {
+      setOriginalContentForRewind(currentContent);
+      setTextInput(currentContent);
+      setIsRewindMode(true);
+      prepareRewind(messageId, currentChatId);
     }
-    useAiStore.getState().prepareRewind(messageId, currentChatIdFromState);
-    logger.info(`[AiChatbox] handleEditClick called for messageId: ${messageId}. Called prepareRewind.`);
   };
+
+  useEffect(() => {
+    if (!rewindTargetMessageId && isRewindMode) {
+      setIsRewindMode(false);
+      setTextInput('');
+      setOriginalContentForRewind('');
+    }
+  }, [rewindTargetMessageId, isRewindMode]);
 
   return (
     <div 

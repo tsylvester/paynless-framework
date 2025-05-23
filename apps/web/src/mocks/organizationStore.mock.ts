@@ -299,9 +299,8 @@ export const resetAllStoreMocks = () => {
   };
 };
 
-// This file no longer exports useAuthStore or useOrganizationStore directly.
-// Those will be constructed in the test file's vi.mock factory
-// using mockedUseAuthStoreHookLogic and mockedUseOrganizationStoreHookLogic. 
+// Export the mocked hook logic directly as useOrganizationStore for easier consumption in vi.mock factory
+export const useOrganizationStore = mockedUseOrganizationStoreHookLogic;
 
 // Explicitly export the selector (using its imported alias)
 export { selectCurrentUserRoleInOrg }; 

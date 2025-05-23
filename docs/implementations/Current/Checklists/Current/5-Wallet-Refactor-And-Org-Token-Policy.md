@@ -48,28 +48,28 @@
 
 ## Phase 2: `walletStore` Refactor (Manage Multiple Wallets)
 
-*   [ ] **State Design (`walletStore.ts`):**
-    *   [ ] Modify `WalletStateValues` to hold:
-        *   `personalWallet: TokenWallet | null` (replaces `currentWallet` for clarity).
-        *   `organizationWallets: { [orgId: string]: TokenWallet | null }` (to store fetched org wallets).
-        *   `isLoadingPersonalWallet: boolean`.
-        *   `isLoadingOrgWallet: { [orgId: string]: boolean }`.
-        *   `personalWalletError: ApiErrorType | null`.
-        *   `orgWalletErrors: { [orgId: string]: ApiErrorType | null }`.
-*   [ ] **Actions (`walletStore.ts`):**
-    *   [ ] Rename `loadWallet` to `loadPersonalWallet()` globally (this was the previous `loadWallet(null)`).
-    *   [ ] Create `loadOrganizationWallet(organizationId: string)`:
-        *   Fetches a specific organization's wallet.
-        *   Stores it in `organizationWallets[organizationId]`.
-        *   Handles loading and error states for that specific org wallet.
-    *   [ ] Consider an action like `getOrLoadOrganizationWallet(organizationId: string)` which returns a cached wallet or loads it if not present.
-*   [ ] **Selectors (`walletStore.selectors.ts`):**
-    *   [ ] Export existing wallet selectors to the new selector file.
-    *   [ ] `selectPersonalWalletBalance()`.
-    *   [ ] `selectOrganizationWalletBalance(organizationId: string)`.
-    *   [ ] Selectors for loading/error states of personal and specific org wallets.
-*   [ ] **Global Load (`App.tsx`):**
-    *   [ ] Ensure `AppContent` calls `loadPersonalWallet()` on auth.
+*   [x] **State Design (`walletStore.ts`):**
+    *   [x] Modify `WalletStateValues` to hold:
+        *   [x] `personalWallet: TokenWallet | null` (replaces `currentWallet` for clarity).
+        *   [x] `organizationWallets: { [orgId: string]: TokenWallet | null }` (to store fetched org wallets).
+        *   [x] `isLoadingPersonalWallet: boolean`.
+        *   [x] `isLoadingOrgWallet: { [orgId: string]: boolean }`.
+        *   [x] `personalWalletError: ApiErrorType | null`.
+        *   [x] `orgWalletErrors: { [orgId: string]: ApiErrorType | null }`.
+*   [x] **Actions (`walletStore.ts`):**
+    *   [x] Rename `loadWallet` to `loadPersonalWallet()` globally (this was the previous `loadWallet(null)`).
+    *   [x] Create `loadOrganizationWallet(organizationId: string)`:
+        *   [x] Fetches a specific organization's wallet.
+        *   [x] Stores it in `organizationWallets[organizationId]`.
+        *   [x] Handles loading and error states for that specific org wallet.
+    *   [x] Consider an action like `getOrLoadOrganizationWallet(organizationId: string)` which returns a cached wallet or loads it if not present.
+*   [x] **Selectors (`walletStore.selectors.ts`):**
+    *   [x] Export existing wallet selectors to the new selector file.
+    *   [x] `selectPersonalWalletBalance()`.
+    *   [x] `selectOrganizationWalletBalance(organizationId: string)`.
+    *   [x] Selectors for loading/error states of personal and specific org wallets.
+*   [x] **Global Load (`App.tsx`):**
+    *   [x] Ensure `AppContent` calls `loadPersonalWallet()` on auth.
 *   [ ] **Full Chat Feature Adaptation (Using Unified Logic & Refactored `walletStore`):**
     *   [ ] **`ChatAffordabilityIndicator.tsx`:**
         *   [ ] Consume the Unified Chat Wallet Determination Logic.

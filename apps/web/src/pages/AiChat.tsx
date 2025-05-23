@@ -7,11 +7,14 @@ import { PromptSelector } from '../components/ai/PromptSelector';
 import { AiChatbox } from '../components/ai/AiChatbox';
 import { ChatHistoryList } from '../components/ai/ChatHistoryList';
 import { ChatContextSelector } from '../components/ai/ChatContextSelector';
+import { WalletSelector } from '../components/ai/WalletSelector';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Plus } from 'lucide-react';
 import type { Chat } from '@paynless/types'; // Import Chat type
 import ErrorBoundary from '../components/common/ErrorBoundary'; // Added ErrorBoundary
+import { useChatWalletDecision } from '../hooks/useChatWalletDecision'; // Added
+import { OrgTokenConsentModal } from '../components/modals/OrgTokenConsentModal'; // Added
 // import type { Organization, AiProvider, SystemPrompt } from '@paynless/types'; // Organization, AiProvider, SystemPrompt commented out as they are not used
 // import type { Chat } from '@paynless/types'; // Chat type might no longer be needed here if currentChatHistoryList is removed
 
@@ -56,7 +59,24 @@ export default function AiChatPage() {
     userOrganizations: state.userOrganizations,
   }));
 
-  console.log("AiChatPage rendering/re-rendering. isDetailsLoading:", isDetailsLoading);
+  // Chat Wallet Decision Hook
+  const {
+    isLoadingConsent,
+    effectiveOutcome,
+    isConsentModalOpen,
+    openConsentModal,
+    closeConsentModal,
+    orgIdForModal,
+    resetOrgTokenConsent,
+  } = useChatWalletDecision();
+
+  const orgNameForModal = useMemo(() => {
+    if (!orgIdForModal || !userOrganizations) return undefined;
+    const org = userOrganizations.find(o => o.id === orgIdForModal);
+    return org?.name;
+  }, [orgIdForModal, userOrganizations]);
+
+  console.log("AiChatPage rendering/re-rendering. isDetailsLoading:", isDetailsLoading, "Effective Wallet Outcome:", effectiveOutcome);
 
   useEffect(() => {
     console.log("AiChatPage MOUNTED");
@@ -139,6 +159,20 @@ export default function AiChatPage() {
     const contextForNewChat = newChatContext === undefined ? globalCurrentOrgId : newChatContext;
     logger.info(`[AiChatPage] Starting new chat with context: ${contextForNewChat}`);
     
+    // Prevent new chat if consent is required but not given for an org context
+    if (contextForNewChat && effectiveOutcome.outcome === 'user_consent_required') {
+      openConsentModal();
+      logger.warn('[AiChatPage] New chat blocked, user consent required for org context.');
+      // Optionally, show a toast or inline message here
+      return;
+    }
+    if (contextForNewChat && effectiveOutcome.outcome === 'user_consent_refused') {
+      // User has actively refused, maybe re-prompt them or show a specific message
+      openConsentModal(); // Or a more specific prompt to change their mind
+      logger.warn('[AiChatPage] New chat blocked, user consent previously refused for org context.');
+      return;
+    }
+
     const contextIdForAnalytics = contextForNewChat === null ? 'personal' : contextForNewChat || 'unknown';
 
     analytics.track('Chat: Clicked New Chat', {
@@ -164,9 +198,35 @@ export default function AiChatPage() {
           <div className="md:col-span-2 flex flex-col border border-border rounded-lg bg-card shadow-sm overflow-y-auto min-h-0 max-h-[calc(100vh-12rem)]"> 
             <div className="p-4 border-b border-border sticky top-0 bg-card z-10 space-y-2">
               <div>
-                {/*<h2 className="text-lg font-semibold text-card-foreground">
-                  dynamicHeaderText
-                </h2>*/}
+                {/* Wallet Outcome / Consent Prompt Area */}
+                {isLoadingConsent && effectiveOutcome.outcome === 'loading' && (
+                  <p className="text-sm text-muted-foreground">Loading wallet configuration...</p>
+                )}
+                {effectiveOutcome.outcome === 'user_consent_required' && orgIdForModal && (
+                  <div className="p-2 my-2 bg-yellow-100 border-l-4 border-yellow-500 text-yellow-700">
+                    <p className="font-bold">Action Required</p>
+                    <p>To use your personal tokens for {orgNameForModal || "this organization's"} chats, please provide consent.</p>
+                    <Button variant="link" className="p-0 h-auto text-yellow-700 font-bold" onClick={openConsentModal}>Review Consent</Button>
+                  </div>
+                )}
+                {effectiveOutcome.outcome === 'user_consent_refused' && orgIdForModal && (
+                  <div className="p-2 my-2 bg-red-100 border-l-4 border-red-500 text-red-700">
+                    <p className="font-bold">Chat Disabled</p>
+                    <p>You previously declined to use personal tokens for {orgNameForModal || "this organization's"} chats.</p>
+                    <Button variant="link" className="p-0 h-auto text-red-700 font-bold" onClick={() => {
+                      resetOrgTokenConsent(orgIdForModal);
+                      // The hook's useEffect will then pick up the change, and outcome should become 'user_consent_required'
+                      // which will then show the prompt to open the modal.
+                      // For a more immediate modal opening, call openConsentModal() after a slight delay or manage state differently.
+                    }}>Enable Chat (Review Consent)</Button>
+                  </div>
+                )}
+                 {effectiveOutcome.outcome === 'org_wallet_not_available_policy_org' && orgIdForModal && (
+                  <div className="p-2 my-2 bg-blue-100 border-l-4 border-blue-500 text-blue-700">
+                    <p className="font-bold">Information</p>
+                    <p>{orgNameForModal || "This organization's"} chats use organization tokens, but these are not yet available. Chat may be limited.</p>
+                  </div>
+                )}
               </div>
               
               <div className="flex flex-wrap items-center gap-x-2 gap-y-2">
@@ -177,6 +237,7 @@ export default function AiChatPage() {
                 />
                 <ModelSelector />
                 <PromptSelector />
+                <WalletSelector />
                 <Button variant="default" onClick={handleNewChat} className="ml-auto" data-testid="new-chat-button">
                   <Plus className="mr-2 h-4 w-4" /> New Chat
                 </Button>
@@ -199,7 +260,16 @@ export default function AiChatPage() {
                 <>
                   {/* Conditional console.log for debugging */}
                   {typeof window !== 'undefined' && console.log("AiChatPage: Rendering AiChatbox because isDetailsLoading is false")}
-                  <AiChatbox />
+                  <AiChatbox 
+                    // Example: Disable chatbox based on wallet outcome
+                    disabled={(
+                      effectiveOutcome.outcome === 'user_consent_required' || 
+                      effectiveOutcome.outcome === 'user_consent_refused' || 
+                      effectiveOutcome.outcome === 'org_wallet_not_available_policy_org' ||
+                      effectiveOutcome.outcome === 'loading' ||
+                      effectiveOutcome.outcome === 'error'
+                    ) && !!newChatContext} // only disable if in an org context with these issues
+                  />
                 </>
               )}
             </div>
@@ -214,6 +284,14 @@ export default function AiChatPage() {
           </div>
         </div>
       </div>
+      {orgIdForModal && (
+        <OrgTokenConsentModal
+          isOpen={isConsentModalOpen}
+          onClose={closeConsentModal}
+          orgId={orgIdForModal}
+          orgName={orgNameForModal}
+        />
+      )}
     </ErrorBoundary>
   );
 } 

@@ -1,8 +1,19 @@
 import React from 'react';
-import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, act, within } from '@testing-library/react';
 import { AiChatbox, AiChatboxProps } from './AiChatbox';
 import { vi } from 'vitest';
 import { ChatMessage, AiProvider, SystemPrompt, ChatMessageRow, AiStore, TokenUsage, Json } from '@paynless/types';
+
+// Mock @paynless/utils
+vi.mock('@paynless/utils', () => ({
+  logger: {
+    info: vi.fn(),
+    warn: vi.fn(),
+    error: vi.fn(),
+    debug: vi.fn(),
+  },
+  // Add any other exports from @paynless/utils that are used
+}));
 
 // Import the shared mock utilities
 import { 
@@ -36,17 +47,18 @@ vi.mock('./CurrentMessageTokenEstimator', () => ({
 }));
 
 // Mock the store using the shared mock logic
-vi.mock('@paynless/store', async (importOriginal) => {
-  const originalModule = await importOriginal() as { useAiStore: typeof useAiStore; selectCurrentChatMessages: typeof selectCurrentChatMessages }; 
-  // Prepare mock for useAnalyticsStore
+vi.mock('@paynless/store', async () => {
+  const originalStoreModule = await vi.importActual<typeof import('@paynless/store')>('@paynless/store');
+  const { mockedUseAiStoreHookLogic } = await vi.importActual<typeof import('../../mocks/aiStore.mock')>('../../mocks/aiStore.mock');
+  
   const mockTrackEvent = vi.fn();
   const mockGetStateAnalytics = vi.fn(() => ({ trackEvent: mockTrackEvent }));
 
   return {
-    ...originalModule,
-    useAiStore: (selector: (state: AiStore) => unknown) => mockedUseAiStoreHookLogic(selector as unknown as (state: AiStore) => unknown), 
-    selectCurrentChatMessages: originalModule.selectCurrentChatMessages, 
-    useAnalyticsStore: vi.fn(() => ({ // Add mock for useAnalyticsStore
+    ...originalStoreModule, 
+    useAiStore: mockedUseAiStoreHookLogic, 
+    // selectCurrentChatMessages will be taken from originalStoreModule
+    useAnalyticsStore: vi.fn(() => ({
       getState: mockGetStateAnalytics,
     })),
   };
@@ -194,7 +206,15 @@ describe('AiChatbox', () => {
     const sendButton = screen.getByRole('button', { name: /Send/i });
     const testMessage = 'This is a test message';
 
-    fireEvent.change(textarea, { target: { value: testMessage } });
+    // Simulate typing
+    await act(async () => {
+      fireEvent.change(textarea, { target: { value: testMessage } });
+    });
+
+    // Wait for the button to become enabled
+    await waitFor(() => expect(sendButton).toBeEnabled());
+
+    // Click the send button
     await act(async () => {
       fireEvent.click(sendButton);
     });
@@ -216,9 +236,16 @@ describe('AiChatbox', () => {
     const textarea = screen.getByPlaceholderText(/Type your message here/i) as HTMLTextAreaElement;
     const sendButton = screen.getByRole('button', { name: /Send/i });
 
-    fireEvent.change(textarea, { target: { value: 'Another message' } });
-    expect(textarea.value).toBe('Another message');
+    // Simulate typing
+    await act(async () => {
+      fireEvent.change(textarea, { target: { value: 'Another message' } });
+    });
+    expect(textarea.value).toBe('Another message'); 
     
+    // Wait for the button to become enabled
+    await waitFor(() => expect(sendButton).toBeEnabled());
+
+    // Click the send button
     await act(async () => {
       fireEvent.click(sendButton);
     });
@@ -242,7 +269,10 @@ describe('AiChatbox', () => {
     const errorMessage = 'Something went wrong!';
     mockSetState({ aiError: errorMessage }); 
     renderAiChatbox();
-    expect(screen.getByText(errorMessage)).toBeInTheDocument();
+    // Check that the specific error alert container is present and contains the message
+    const errorAlert = screen.getByTestId('ai-error-alert');
+    expect(errorAlert).toBeInTheDocument();
+    expect(within(errorAlert).getByText(errorMessage)).toBeInTheDocument();
   });
 
   it('should display loading indicator when isLoadingAiResponse is true', () => {
@@ -254,17 +284,32 @@ describe('AiChatbox', () => {
   it('should clear AI error when sending a new message', async () => {
     mockSetState({ aiError: 'Previous error!' }); 
     renderAiChatbox();
-    expect(screen.getByText('Previous error!')).toBeInTheDocument();
+    // Check specific alert for initial error
+    const initialErrorAlert = screen.getByTestId('ai-error-alert');
+    expect(initialErrorAlert).toBeInTheDocument();
+    expect(within(initialErrorAlert).getByText('Previous error!')).toBeInTheDocument();
 
     const textarea = screen.getByPlaceholderText(/Type your message here/i);
     const sendButton = screen.getByRole('button', { name: /Send/i });
     
-    fireEvent.change(textarea, { target: { value: 'New message' } });
+    // Simulate typing
+    await act(async () => {
+      fireEvent.change(textarea, { target: { value: 'New message' } });
+    });
+
+    // Wait for the button to become enabled
+    await waitFor(() => expect(sendButton).toBeEnabled());
+    
+    // Click the send button
     await act(async () => {
       fireEvent.click(sendButton);
     });
 
-    expect(storeActions.clearAiError).toHaveBeenCalledTimes(1);
+    await waitFor(() => {
+      expect(storeActions.clearAiError).toHaveBeenCalledTimes(1);
+    });
+    // After clearing, the alert should not be present
+    expect(screen.queryByTestId('ai-error-alert')).not.toBeInTheDocument();
   });
 
   it('should not send message if providerId is null', async () => {
@@ -351,8 +396,10 @@ describe('AiChatbox', () => {
       expect(storeActions.prepareRewind).toHaveBeenCalledTimes(1);
       expect(storeActions.prepareRewind).toHaveBeenCalledWith(mockUserMessageToEdit.id, 'chat-1-rewind');
       
-      const textarea = await screen.findByPlaceholderText('Edit your message...', {}, { timeout: 3000 }) as HTMLTextAreaElement;
-      expect(textarea.value).toBe(mockUserMessageToEdit.content);
+      // Wait for the textarea placeholder to change, indicating ChatInput has updated based on store state
+      const textarea = await screen.findByPlaceholderText('Edit your message...', {}, { timeout: 3000 });
+      expect(textarea).toBeInTheDocument(); // Ensure it's found
+      expect((textarea as HTMLTextAreaElement).value).toBe(mockUserMessageToEdit.content);
 
       expect(screen.getByRole('button', { name: /Resubmit/i })).toBeInTheDocument();
       expect(screen.getByRole('button', { name: /Cancel/i })).toBeInTheDocument();
@@ -396,14 +443,20 @@ describe('AiChatbox', () => {
       renderAiChatbox(); 
       await triggerEditOnUserMessageViaBubble(mockUserMessageToEdit);
 
+      // Wait for rewind mode to be active by checking for the placeholder
+      const textarea = await screen.findByPlaceholderText('Edit your message...', {}, { timeout: 3000 }) as HTMLTextAreaElement;
+      expect(textarea).toBeInTheDocument(); // Ensure it's found before proceeding
+
       const editedContent = 'This is the EDITED message for resubmission.';
-      const textarea = screen.getByPlaceholderText('Edit your message...') as HTMLTextAreaElement;
-      
       await act(async () => {
         fireEvent.change(textarea, { target: { value: editedContent } });
       });
       
       const resubmitButton = screen.getByRole('button', { name: /Resubmit/i });
+      
+      // Wait for the resubmit button to be enabled (it should be by default if input is not empty)
+      await waitFor(() => expect(resubmitButton).toBeEnabled());
+      
       await act(async () => {
         fireEvent.click(resubmitButton);
       });
@@ -441,8 +494,14 @@ describe('AiChatbox', () => {
       const sendButton = screen.getByRole('button', { name: /Send/i });
       const testMessage = 'Standard test message, not a rewind.';
 
+      // Simulate typing
       await act(async () => {
         fireEvent.change(textarea, { target: { value: testMessage } });
+      });
+      // Wait for the button to become enabled
+      await waitFor(() => expect(sendButton).toBeEnabled());
+      // Click the send button
+      await act(async () => {
         fireEvent.click(sendButton);
       });
 
@@ -555,7 +614,9 @@ describe('AiChatbox', () => {
 
   it('should render MessageSelectionControls', () => {
     renderAiChatbox();
-    expect(screen.queryByRole('button', { name: /(Select All|Deselect All)/i })).toBeInTheDocument();
+    // The Checkbox component renders a button with role="checkbox"
+    // and an associated label. We find the checkbox via its label.
+    expect(screen.getByLabelText(/(Select All|Deselect All)/i)).toBeInTheDocument();
   });
 
   it('should display the current message token estimator and pass input to it', () => {

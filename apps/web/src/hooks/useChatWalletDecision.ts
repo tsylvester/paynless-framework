@@ -1,119 +1,99 @@
 import { useEffect, useState, useCallback } from 'react';
-import { useWalletStore, useOrganizationStore, useAiStore } from '@paynless/store';
-import type { WalletDecisionOutcome, Organization } from '@paynless/types';
+import { useWalletStore, useAiStore } from '@paynless/store';
+import type { WalletDecisionOutcome } from '@paynless/types';
 import { logger } from '@paynless/utils';
 
-const getConsentKey = (orgId: string) => `user_org_token_consent_${orgId}`;
-
-interface UseChatWalletDecisionReturn extends WalletDecisionOutcome {
-  giveConsent: () => void;
-  refuseConsent: () => void;
-  resetConsent: () => void; // To allow changing mind
+interface UseChatWalletDecisionReturn {
   isLoadingConsent: boolean;
   effectiveOutcome: WalletDecisionOutcome;
+  isConsentModalOpen: boolean;
+  openConsentModal: () => void;
+  closeConsentModal: () => void;
+  orgIdForModal: string | null;
+  resetOrgTokenConsent: (orgId: string) => void;
 }
 
 export const useChatWalletDecision = (): UseChatWalletDecisionReturn => {
-  const determineChatWalletSelector = useWalletStore(state => state.determineChatWallet);
+  logger.debug('[useChatWalletDecision] Hook executing/re-evaluating.');
+
+  const determineChatWallet = useWalletStore(state => state.determineChatWallet);
+  const userOrgTokenConsent = useWalletStore(state => state.userOrgTokenConsent);
+  const { 
+    loadUserOrgTokenConsent,
+    clearUserOrgTokenConsent 
+  } = useWalletStore.getState();
+  
   const newChatContextOrgId = useAiStore(state => state.newChatContext);
-  // Re-evaluate when newChatContextOrgId, or org details relevant to it, change.
-  const organizationDetails = useOrganizationStore(state => 
-    state.currentOrganizationId === newChatContextOrgId ? state.currentOrganizationDetails : null
-  );
-  const isOrgDetailsLoading = useOrganizationStore(state => state.currentOrganizationId === newChatContextOrgId && state.isLoading);
+  logger.debug('[useChatWalletDecision] newChatContextOrgId', { newChatContextOrgId });
+  logger.debug('[useChatWalletDecision] Current userOrgTokenConsent state from store', { consentState: JSON.parse(JSON.stringify(userOrgTokenConsent)) });
 
-  const [consentStatus, setConsentStatus] = useState<boolean | null>(null); // null: not asked, true: given, false: refused
-  const [isLoadingConsent, setIsLoadingConsent] = useState<boolean>(true);
+  const [isConsentModalOpen, setIsConsentModalOpen] = useState(false);
 
-  // Load consent from localStorage when component mounts or orgId changes
   useEffect(() => {
+    logger.debug('[useChatWalletDecision] useEffect for loading consent running', { newChatContextOrgId });
+    if (newChatContextOrgId && userOrgTokenConsent[newChatContextOrgId] === undefined) {
+      logger.info('[useChatWalletDecision] Consent for org is undefined. Calling loadUserOrgTokenConsent', { orgId: newChatContextOrgId });
+      loadUserOrgTokenConsent(newChatContextOrgId);
+    } else if (newChatContextOrgId) {
+      logger.debug('[useChatWalletDecision] Consent for org is already defined in store', { orgId: newChatContextOrgId, consent: userOrgTokenConsent[newChatContextOrgId] });
+    }
+  }, [newChatContextOrgId, userOrgTokenConsent, loadUserOrgTokenConsent]);
+
+  const openConsentModal = useCallback(() => {
+    logger.info('[useChatWalletDecision] openConsentModal called', { newChatContextOrgId });
     if (newChatContextOrgId) {
-      setIsLoadingConsent(true);
-      try {
-        const storedConsent = localStorage.getItem(getConsentKey(newChatContextOrgId));
-        if (storedConsent === 'true') {
-          setConsentStatus(true);
-        } else if (storedConsent === 'false') {
-          setConsentStatus(false);
-        } else {
-          setConsentStatus(null); // Not yet determined or explicitly cleared
-        }
-      } catch (error) {
-        logger.error('[useChatWalletDecision] Error reading consent from localStorage', { error, orgId: newChatContextOrgId });
-        setConsentStatus(null); // Default to needing to ask if error
-      }
-      setIsLoadingConsent(false);
-    } else {
-      setConsentStatus(null); // No org context, no consent needed/stored this way
-      setIsLoadingConsent(false);
+      setIsConsentModalOpen(true);
     }
   }, [newChatContextOrgId]);
 
-  const initialDecision = determineChatWalletSelector();
+  const closeConsentModal = useCallback(() => {
+    logger.info('[useChatWalletDecision] closeConsentModal called.');
+    setIsConsentModalOpen(false);
+  }, []);
 
-  const giveConsent = useCallback(() => {
-    if (newChatContextOrgId) {
-      try {
-        localStorage.setItem(getConsentKey(newChatContextOrgId), 'true');
-        setConsentStatus(true);
-      } catch (error) {
-        logger.error('[useChatWalletDecision] Error saving consent to localStorage', { error, orgId: newChatContextOrgId });
-        // Potentially notify user of error
-      }
-    }
-  }, [newChatContextOrgId]);
+  const resetOrgTokenConsent = useCallback((orgIdToReset: string) => {
+    logger.info('[useChatWalletDecision] resetOrgTokenConsent called', { orgId: orgIdToReset });
+    clearUserOrgTokenConsent(orgIdToReset);
+  }, [clearUserOrgTokenConsent]);
 
-  const refuseConsent = useCallback(() => {
-    if (newChatContextOrgId) {
-      try {
-        localStorage.setItem(getConsentKey(newChatContextOrgId), 'false');
-        setConsentStatus(false);
-      } catch (error) {
-        logger.error('[useChatWalletDecision] Error saving refusal to localStorage', { error, orgId: newChatContextOrgId });
-      }
-    }
-  }, [newChatContextOrgId]);
+  const latestUserOrgTokenConsent = useWalletStore(state => state.userOrgTokenConsent);
+  const initialDecision = determineChatWallet();
+  logger.debug('[useChatWalletDecision] initialDecision from determineChatWallet', { initialDecision });
+  logger.debug('[useChatWalletDecision] latestUserOrgTokenConsent from store for outcome calc', { consentState: JSON.parse(JSON.stringify(latestUserOrgTokenConsent)) });
 
-  const resetConsent = useCallback(() => {
-    if (newChatContextOrgId) {
-      try {
-        localStorage.removeItem(getConsentKey(newChatContextOrgId));
-        setConsentStatus(null);
-      } catch (error) {
-        logger.error('[useChatWalletDecision] Error resetting consent in localStorage', { error, orgId: newChatContextOrgId });
-      }
-    }
-  }, [newChatContextOrgId]);
-
-  // Determine effective outcome based on consent
   let effectiveOutcome: WalletDecisionOutcome = initialDecision;
-  if (initialDecision.outcome === 'user_consent_required' && newChatContextOrgId) {
-    if (isLoadingConsent) {
-        effectiveOutcome = { outcome: 'loading' }; // Show loading while consent is checked
-    } else if (consentStatus === true) {
-        effectiveOutcome = { outcome: 'use_personal_wallet_for_org', orgId: newChatContextOrgId };
-    } else if (consentStatus === false) {
-        effectiveOutcome = { outcome: 'user_consent_refused', orgId: newChatContextOrgId };
-    } 
-    // If consentStatus is null, initialDecision { outcome: 'user_consent_required' } remains, prompting UI to ask.
-  }
+  let isLoadingConsent = false;
 
-  // This ensures the hook re-evaluates if relevant parts of the store that `determineChatWalletSelector` depends on change.
-  // The dependencies are: newChatContext, currentOrganizationDetails (for the context org), and isLoading (for that org).
-  // The selector itself is stable, but its internal `getState()` calls will get fresh values upon re-render if these trigger it.
-  // By including `organizationDetails` and `isOrgDetailsLoading` (which are reactive to currentOrganizationId and specific org data)
-  // in this hook's dependencies, we ensure re-evaluation when those specific pieces of data change.
-  useEffect(() => {
-    // This effect is just to make sure the hook re-runs when these dependencies change.
-    // The actual logic is driven by the selector and consent state.
-  }, [initialDecision, consentStatus, isLoadingConsent, organizationDetails, isOrgDetailsLoading, newChatContextOrgId]);
+  if (newChatContextOrgId && initialDecision.outcome === 'user_consent_required') {
+    logger.debug('[useChatWalletDecision] initialDecision is user_consent_required', { orgId: newChatContextOrgId });
+    const consentForCurrentOrg = latestUserOrgTokenConsent[newChatContextOrgId];
+    logger.debug('[useChatWalletDecision] consentForCurrentOrg from latestUserOrgTokenConsent', { consentForCurrentOrg });
+    if (consentForCurrentOrg === undefined) {
+      logger.debug('[useChatWalletDecision] consentForCurrentOrg is undefined. Setting isLoadingConsent = true, outcome = loading.');
+      isLoadingConsent = true;
+      effectiveOutcome = { outcome: 'loading' }; 
+    } else if (consentForCurrentOrg === true) {
+      logger.debug('[useChatWalletDecision] consentForCurrentOrg is true. Setting outcome = use_personal_wallet_for_org.');
+      effectiveOutcome = { outcome: 'use_personal_wallet_for_org', orgId: newChatContextOrgId };
+    } else if (consentForCurrentOrg === false) {
+      logger.debug('[useChatWalletDecision] consentForCurrentOrg is false. Setting outcome = user_consent_refused.');
+      effectiveOutcome = { outcome: 'user_consent_refused', orgId: newChatContextOrgId };
+    } else {
+      logger.debug('[useChatWalletDecision] consentForCurrentOrg is null (or other). initialDecision outcome remains user_consent_required.');
+    }
+  } else {
+    logger.debug('[useChatWalletDecision] initialDecision is NOT user_consent_required or no newChatContextOrgId. Initial decision stands or other logic applies.', { initialDecisionOutcome: initialDecision.outcome, newChatContextOrgId });
+  }
+  
+  logger.debug('[useChatWalletDecision] Final results', { effectiveOutcome, isLoadingConsent });
 
   return {
-    ...initialDecision, // returns the initial decision from selector (e.g., 'user_consent_required')
-    giveConsent,
-    refuseConsent,
-    resetConsent,
     isLoadingConsent,
-    effectiveOutcome, // returns the outcome after consent logic is applied
+    effectiveOutcome,
+    isConsentModalOpen,
+    openConsentModal,
+    closeConsentModal,
+    orgIdForModal: newChatContextOrgId,
+    resetOrgTokenConsent,
   };
 }; 

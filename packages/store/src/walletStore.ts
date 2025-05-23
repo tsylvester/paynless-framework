@@ -11,6 +11,7 @@ import {
 import { api } from '@paynless/api'; // Uncommented for action implementation
 import { useOrganizationStore } from './organizationStore'; // For accessing organization details
 import { useAiStore } from './aiStore'; // For newChatContext
+import { logger } from '@paynless/utils'; // Added for logging
 
 export interface WalletStateValues {
   personalWallet: TokenWallet | null;
@@ -23,6 +24,7 @@ export interface WalletStateValues {
   personalWalletError: ApiError | null;
   orgWalletErrors: { [orgId: string]: ApiError | null };
   purchaseError: ApiError | null;
+  userOrgTokenConsent: { [orgId: string]: boolean | null };
 }
 
 export interface WalletActions {
@@ -37,6 +39,9 @@ export interface WalletActions {
   initiatePurchase: (request: PurchaseRequest) => Promise<PaymentInitiationResult | null>;
   _resetForTesting: () => void; // For test cleanup
   determineChatWallet: () => WalletDecisionOutcome; // Kept here as it uses get() internally
+  setUserOrgTokenConsent: (orgId: string, consent: boolean) => void;
+  loadUserOrgTokenConsent: (orgId: string) => void;
+  clearUserOrgTokenConsent: (orgId: string) => void;
 }
 
 export type WalletStore = WalletStateValues & WalletActions;
@@ -52,61 +57,129 @@ export const initialWalletStateValues: WalletStateValues = {
   personalWalletError: null,
   orgWalletErrors: {},
   purchaseError: null,
+  userOrgTokenConsent: {},
 };
+
+const USER_ORG_TOKEN_CONSENT_KEY_PREFIX = 'user_org_token_consent_';
 
 export const useWalletStore = create<WalletStore>((set, get) => ({
   ...initialWalletStateValues,
 
-  determineChatWallet: (): WalletDecisionOutcome => {
-    const newChatContextOrgId = useAiStore.getState().newChatContext;
-    const organizationDetails = useOrganizationStore.getState().currentOrganizationDetails;
-    const isOrgDetailsLoading = useOrganizationStore.getState().isLoading; // Assuming isLoading refers to current org details
-
-    // TODO: Integrate user consent from authStore or localStorage in a later step
-    // const userConsentForOrg = useAuthStore.getState().profile?.org_token_consents?.[newChatContextOrgId ?? ''];
-
-    if (isOrgDetailsLoading && newChatContextOrgId) {
-      return { outcome: 'loading' };
+  setUserOrgTokenConsent: (orgId: string, consent: boolean) => {
+    try {
+      localStorage.setItem(`${USER_ORG_TOKEN_CONSENT_KEY_PREFIX}${orgId}`, JSON.stringify(consent));
+    } catch (e) {
+      console.error("Failed to save consent to localStorage", e);
     }
+    set(state => ({
+      userOrgTokenConsent: { ...state.userOrgTokenConsent, [orgId]: consent },
+    }));
+  },
+
+  loadUserOrgTokenConsent: (orgId: string) => {
+    let consentValue: boolean | null = null;
+    try {
+      const storedConsent = localStorage.getItem(`${USER_ORG_TOKEN_CONSENT_KEY_PREFIX}${orgId}`);
+      if (storedConsent !== null) {
+        consentValue = JSON.parse(storedConsent) as boolean;
+      }
+    } catch (e) {
+      console.error("Failed to load consent from localStorage", e);
+      // consentValue remains null
+    }
+    set(state => ({
+      userOrgTokenConsent: { ...state.userOrgTokenConsent, [orgId]: consentValue },
+    }));
+  },
+
+  clearUserOrgTokenConsent: (orgId: string) => {
+    try {
+      localStorage.removeItem(`${USER_ORG_TOKEN_CONSENT_KEY_PREFIX}${orgId}`);
+    } catch (e) {
+      console.error("Failed to remove consent from localStorage", e);
+    }
+    set(state => ({
+      userOrgTokenConsent: { ...state.userOrgTokenConsent, [orgId]: null },
+    }));
+  },
+
+  determineChatWallet: (): WalletDecisionOutcome => {
+    logger.debug('[walletStore.determineChatWallet] Determining chat wallet...');
+    const newChatContextOrgId = useAiStore.getState().newChatContext;
+    
+    const orgStoreState = useOrganizationStore.getState();
+    const relevantOrgDetails = newChatContextOrgId ? orgStoreState.userOrganizations.find(org => org.id === newChatContextOrgId) : null;
+    const currentConsentState = get().userOrgTokenConsent;
+
+    logger.debug('[walletStore.determineChatWallet] Inputs:', {
+      newChatContextOrgId,
+      relevantOrgDetailsId: relevantOrgDetails?.id,
+      relevantOrgNameFromDetails: relevantOrgDetails?.name,
+      relevantOrgTokenPolicy: relevantOrgDetails?.token_usage_policy,
+      isOrgStoreLoading: orgStoreState.isLoading, // General loading state of orgStore
+      isCurrentOrgInStoreLoading: orgStoreState.currentOrganizationId === newChatContextOrgId && orgStoreState.isLoading,
+      currentConsentStateForOrg: newChatContextOrgId ? currentConsentState[newChatContextOrgId] : 'N/A',
+    });
 
     if (!newChatContextOrgId) {
+      logger.debug('[walletStore.determineChatWallet] Outcome: use_personal_wallet (no org context)');
       return { outcome: 'use_personal_wallet' };
     }
 
-    // At this point, newChatContextOrgId is not null
-    const orgId = newChatContextOrgId;
-
-    if (!organizationDetails || organizationDetails.id !== orgId) {
-      // This can happen if org details are for a different org or not loaded yet for the specific context
-      // If isOrgDetailsLoading was false, it means we don't have the details for *this* orgId.
-      // This scenario should ideally be handled by ensuring organizationDetails are loaded for newChatContextOrgId.
-      // For now, treat as an error or a specific loading state if a fetch is triggered.
-      // However, the UI should typically ensure that if newChatContextOrgId is set, its details are loaded or loading.
-      return { outcome: 'error', message: `Organization details for ${orgId} not available or not matching context.` };
+    // If we have an org context, check if the specific details for THAT org are available and loaded.
+    if (!relevantOrgDetails) {
+        // If the orgStore is currently loading AND its currentOrganizationId has already been updated to our newChatContextOrgId,
+        // then we are truly waiting for these specific details to populate.
+        if (orgStoreState.currentOrganizationId === newChatContextOrgId && orgStoreState.isLoading) {
+            logger.debug('[walletStore.determineChatWallet] Outcome: loading (orgStore currentOrganizationId matches newChatContextOrgId and orgStore is loading)', { orgId: newChatContextOrgId });
+            return { outcome: 'loading' };
+        }
+        // Otherwise, the details are simply not found in the loaded userOrganizations list.
+        // This could mean they haven't been fetched yet, or there's a mismatch.
+        logger.warn('[walletStore.determineChatWallet] Relevant org details for newChatContextOrgId not found in userOrganizations. Outcome: error.', { orgId: newChatContextOrgId });
+        return { outcome: 'error', message: `Organization details for ${newChatContextOrgId} are not available in the current list.` };
     }
-
-    const orgTokenPolicy = organizationDetails.token_usage_policy;
+    
+    // At this point, relevantOrgDetails should be populated for the newChatContextOrgId.
+    const orgTokenPolicy = relevantOrgDetails.token_usage_policy || 'member_tokens'; // Default to 'member_tokens' if null or undefined
+    logger.debug('[walletStore.determineChatWallet] Org token policy for orgId:' + newChatContextOrgId + ' is ' + orgTokenPolicy);
 
     if (orgTokenPolicy === 'organization_tokens') {
-      // Phase 1: Org wallets not yet available from walletStore for balance display or debit.
-      // So, even if policy is 'organization_tokens', we can't use them yet client-side for debit.
-      // The backend will handle the debit correctly if an orgId is passed.
-      // For UI (ChatAffordabilityIndicator), this means we can't show org balance.
-      // For sendMessage, this means we should inform the user.
-      return { outcome: 'org_wallet_not_available_policy_org', orgId };
+      logger.debug('[walletStore.determineChatWallet] Outcome: org_wallet_not_available_policy_org (org policy is org_tokens)', { orgId: newChatContextOrgId });
+      return { outcome: 'org_wallet_not_available_policy_org', orgId: newChatContextOrgId };
     }
 
     if (orgTokenPolicy === 'member_tokens') {
-      // Here, we'd check for user consent in a subsequent step.
-      // For Phase 1, we'll assume consent or proceed to ask for it.
-      // This outcome will trigger the consent flow.
-      // For now, let's return a more specific outcome that implies consent is the next step.
-      return { outcome: 'user_consent_required', orgId }; 
-      // This will be refined to: { outcome: 'use_personal_wallet_for_org', orgId } once consent is given.
+      const consentForOrg = currentConsentState[newChatContextOrgId];
+      logger.debug('[walletStore.determineChatWallet] Org policy is member_tokens. Consent state for org:' + newChatContextOrgId + ' is ' + consentForOrg);
+      
+      if (consentForOrg === undefined) {
+        logger.debug('[walletStore.determineChatWallet] Consent for org is undefined. Outcome: user_consent_required (pending load)', { orgId: newChatContextOrgId });
+        return { outcome: 'user_consent_required', orgId: newChatContextOrgId }; 
+      }
+      
+      if (consentForOrg === true) {
+        logger.debug('[walletStore.determineChatWallet] Consent is true. Outcome: use_personal_wallet_for_org', { orgId: newChatContextOrgId });
+        return { outcome: 'use_personal_wallet_for_org', orgId: newChatContextOrgId };
+      } else if (consentForOrg === false) {
+        logger.debug('[walletStore.determineChatWallet] Consent is false. Outcome: user_consent_refused', { orgId: newChatContextOrgId });
+        return { outcome: 'user_consent_refused', orgId: newChatContextOrgId };
+      } else { // consentForOrg is null
+        logger.debug('[walletStore.determineChatWallet] Consent is null. Outcome: user_consent_required', { orgId: newChatContextOrgId });
+        return { outcome: 'user_consent_required', orgId: newChatContextOrgId };
+      }
     }
     
-    // Fallback or unexpected policy value
-    return { outcome: 'error', message: `Unexpected token usage policy: ${orgTokenPolicy}` };
+    // This path should ideally not be reached if policy is defaulted and all policies are handled.
+    // However, to be safe, if somehow an unknown policy still gets through:
+    if (orgTokenPolicy !== 'member_tokens' && orgTokenPolicy !== 'organization_tokens') {
+      logger.error('[walletStore.determineChatWallet] Outcome: error (unexpected token usage policy after defaulting)', { orgTokenPolicy, orgId: newChatContextOrgId });
+      return { outcome: 'error', message: `Unexpected token usage policy for ${newChatContextOrgId}: ${orgTokenPolicy}` };
+    }
+
+    // Fallback if logic somehow doesn't return earlier. This indicates a logic flaw.
+    logger.error('[walletStore.determineChatWallet] Outcome: error (unhandled case in logic)', { orgId: newChatContextOrgId, orgTokenPolicy });
+    return { outcome: 'error', message: `Unhandled wallet determination case for org ${newChatContextOrgId}.` };
   },
 
   loadPersonalWallet: async () => {
