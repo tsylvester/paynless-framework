@@ -200,6 +200,8 @@ export interface AiState {
 
     chatParticipantsProfiles: { [userId: string]: UserProfile }; 
 
+    pendingAction: AiPendingChatAction; // Added missing state property
+
     // Token Tracking (placeholders, to be detailed in STEP-2.1.8)
     // Example: chatTokenUsage?: { [chatId: string]: { promptTokens: number; completionTokens: number; totalTokens: number } };
     // Example: sessionTokenUsage?: { promptTokens: number; completionTokens: number; totalTokens: number };
@@ -332,4 +334,17 @@ export const initialAiStateValues: AiState = {
   isChatContextHydrated: false, 
   chatParticipantsProfiles: {}, 
   selectedMessagesMap: {},
+  pendingAction: null,
 };
+// Type definitions for the new selector
+export type ActiveChatWalletInfoStatus = 'ok' | 'loading' | 'error' | 'consent_required' | 'consent_refused' | 'policy_org_wallet_unavailable' | 'policy_member_wallet_unavailable';
+
+export interface ActiveChatWalletInfo {
+  status: ActiveChatWalletInfoStatus;
+  type: 'personal' | 'organization' | null; 
+  walletId: string | null; 
+  orgId: string | null; 
+  balance: string | null; 
+  message?: string; // General message, can be error or informational
+  isLoadingPrimaryWallet: boolean; // True if the determined primary wallet (personal or specific org) is loading its details
+}

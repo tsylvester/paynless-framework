@@ -1,5 +1,5 @@
 import { vi } from 'vitest';
-import type { AuthStore, User, Session, UserProfile, NavigateFunction, UserProfileUpdate } from '@paynless/types';
+import type { AuthStore, User, Session, UserProfile, NavigateFunction } from '@paynless/types';
 
 // Use the full AuthStore type for the internal state
 let internalMockAuthStoreState: AuthStore;
@@ -96,3 +96,5 @@ export const resetAuthStoreMock = () => {
 
 // Note: The previous MockAuthStoreState type is no longer needed.
 // The previous mockAuthStoreActions object is also simplified/removed. 
+
+export const useAuthStore = mockedUseAuthStoreHookLogic;

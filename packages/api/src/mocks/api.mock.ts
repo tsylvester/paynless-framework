@@ -6,6 +6,7 @@ import {
   PaymentInitiationResult, 
   PurchaseRequest 
 } from '@paynless/types';
+import { createMockAiApiClient, resetMockAiApiClient, type MockedAiApiClient } from './ai.api.mock'; // Import from sibling
 
 // Define the type for the object returned by api.wallet()
 export type MockWalletApiClient = {
@@ -14,11 +15,15 @@ export type MockWalletApiClient = {
   initiateTokenPurchase: ReturnType<typeof vi.fn<[request: PurchaseRequest], Promise<ApiResponse<PaymentInitiationResult | null>>>>;
 };
 
+// --- AI Client Mock Setup ---
+// Create an instance of the AI client mock. This will be returned by api.ai()
+// It's declared with 'let' so resetApiMock can re-assign it for a fresh instance.
+const mockAiClientInstance: MockedAiApiClient = createMockAiApiClient();
+
 // Define the type for the main mocked api object
 export type MockApi = {
   wallet: ReturnType<typeof vi.fn<[], MockWalletApiClient>>;
-  // Add other api clients like ai, stripe as needed, e.g.:
-  // ai: ReturnType<typeof vi.fn<[], MockAiInstance>>;
+  ai: ReturnType<typeof vi.fn<[], MockedAiApiClient>>; // Added ai client
 };
 
 // Create the actual mock functions for the wallet client
@@ -31,7 +36,7 @@ const mockWalletClientInstance: MockWalletApiClient = {
 // The main mocked api object that will be imported by tests
 export const api: MockApi = {
   wallet: vi.fn(() => mockWalletClientInstance),
-  // ai: vi.fn(() => mockAiInstance), // Example for other clients
+  ai: vi.fn(() => mockAiClientInstance), // Ensure api.ai() returns our mock AI client instance
 };
 
 /**
@@ -44,12 +49,24 @@ export function resetApiMock() {
   mockWalletClientInstance.getWalletTransactionHistory.mockReset();
   mockWalletClientInstance.initiateTokenPurchase.mockReset();
 
-  // Reset the main accessor mock if needed (e.g., to clear call counts to api.wallet() itself)
-  // This ensures that if a test checks api.wallet().toHaveBeenCalledTimes(1), it's accurate for that test.
-  api.wallet.mockClear(); 
-  // Restore the default implementation in case a test overwrote it.
+  // Reset the AI client instance using its specific reset function
+  resetMockAiApiClient(mockAiClientInstance);
+  // Optionally, to ensure absolutely no state leakage if tests improperly hold references:
+  // mockAiClientInstance = createMockAiApiClient();
+
+  // Reset the main accessor mocks
+  api.wallet.mockClear();
+  api.ai.mockClear();
+  // Restore the default implementations to return the (potentially recreated) instances
   api.wallet.mockImplementation(() => mockWalletClientInstance);
+  api.ai.mockImplementation(() => mockAiClientInstance);
 }
+
+/**
+ * Helper to get the current instance of the mock AI client.
+ * Useful for tests to access specific mock functions like sendChatMessage.
+ */
+export const getMockAiClient = (): MockedAiApiClient => mockAiClientInstance;
 
 // Make sure 'api' is exported and is the mockApiObject
 // ... existing code ... 

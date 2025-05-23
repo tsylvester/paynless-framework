@@ -26,6 +26,9 @@ export const mockSetUserOrgTokenConsent = vi.fn();
 export const mockLoadUserOrgTokenConsent = vi.fn();
 export const mockClearUserOrgTokenConsent = vi.fn();
 
+// Mock for the selector used by aiStore
+export const selectActiveChatWalletInfo = vi.fn();
+
 // Helper to initialize/reset the mock state for each test
 export const initializeMockWalletStore = (initialState?: Partial<WalletStateValues>) => {
   currentMockWalletStoreState = {
@@ -54,6 +57,11 @@ export const initializeMockWalletStore = (initialState?: Partial<WalletStateValu
     personalWalletError: initialState?.personalWalletError !== undefined ? initialState.personalWalletError : null,
     orgWalletErrors: initialState?.orgWalletErrors || {},
     purchaseError: initialState?.purchaseError !== undefined ? initialState.purchaseError : null,
+    // currentChatWalletDecision is part of WalletStateValues and will be spread from initialWalletStateValues
+    // and then potentially overridden by initialState if provided.
+    currentChatWalletDecision: initialState?.currentChatWalletDecision !== undefined 
+        ? initialState.currentChatWalletDecision 
+        : initialWalletStateValues.currentChatWalletDecision, 
   } as MockableWalletStore;
 };
 

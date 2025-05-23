@@ -1,98 +1,75 @@
 import React, { useEffect } from 'react';
 import { useTokenEstimator } from '@/hooks/useTokenEstimator';
 import { useAIChatAffordabilityStatus } from '@/hooks/useAIChatAffordabilityStatus';
-import { useChatWalletDecision } from '@/hooks/useChatWalletDecision';
-import { Button } from '@/components/ui/button';
+import { useWalletStore, selectActiveChatWalletInfo } from '@paynless/store';
+import { logger } from '@paynless/utils';
 
 interface ChatAffordabilityIndicatorProps {
   textInput: string;
   onAffordabilityChange: (canAfford: boolean, reason?: string) => void;
 }
 
+// Placeholder for organization wallet affordability check - to be implemented properly
+const checkOrgWalletAffordability = (estimatedTokens: number, balanceString: string | null): { canAfford: boolean; reason?: string } => {
+  if (balanceString === null) return { canAfford: false, reason: "Organization wallet balance not available." };
+  const balance = parseFloat(balanceString);
+  if (isNaN(balance)) return { canAfford: false, reason: "Invalid organization wallet balance." };
+  
+  // TODO: Implement actual token cost calculation for org wallets if different from personal
+  // For now, a simple check: can afford if balance > estimated tokens (assuming 1 token = 1 unit of balance)
+  // This is a placeholder and needs proper implementation based on actual tokenomics for orgs.
+  const canAfford = balance >= estimatedTokens;
+  if (!canAfford) {
+    return { canAfford: false, reason: "Insufficient organization tokens for this message." };
+  }
+  // TODO: Add low balance warning for org wallets if required
+  return { canAfford: true }; 
+};
+
 export const ChatAffordabilityIndicator: React.FC<ChatAffordabilityIndicatorProps> = ({ textInput, onAffordabilityChange }) => {
   const estimatedTokens = useTokenEstimator(textInput);
-  const { canAffordNext, lowBalanceWarning } = useAIChatAffordabilityStatus(estimatedTokens);
-  const { effectiveOutcome, giveConsent, refuseConsent, isLoadingConsent, resetConsent } = useChatWalletDecision();
+  const { canAffordNext: canAffordNextWithPersonalWallet, lowBalanceWarning: lowBalanceWarningWithPersonalWallet } = useAIChatAffordabilityStatus(estimatedTokens);
+  
+  const activeWalletInfo = useWalletStore(selectActiveChatWalletInfo);
 
   useEffect(() => {
     let overallCanAfford = false;
-    let affordabilityReason = "";
+    let affordabilityReason: string | undefined = undefined;
 
-    switch (effectiveOutcome.outcome) {
-      case 'use_personal_wallet':
-      case 'use_personal_wallet_for_org':
-        overallCanAfford = canAffordNext;
-        break;
-      case 'org_wallet_not_available_policy_org':
+    logger.debug('[ChatAffordabilityIndicator] Evaluating affordability. Active Wallet Info:', { activeWalletInfo });
+
+    if (activeWalletInfo.status === 'ok') {
+      if (activeWalletInfo.type === 'personal') {
+        overallCanAfford = canAffordNextWithPersonalWallet;
+        if (!overallCanAfford) {
+          affordabilityReason = "Insufficient personal tokens for this message.";
+        } else if (lowBalanceWarningWithPersonalWallet) {
+          affordabilityReason = "Personal token balance is low."; // This is a warning, still can afford
+        }
+      } else if (activeWalletInfo.type === 'organization') {
+        const orgAffordability = checkOrgWalletAffordability(estimatedTokens, activeWalletInfo.balance);
+        overallCanAfford = orgAffordability.canAfford;
+        affordabilityReason = orgAffordability.reason;
+      } else {
+        // Should not happen if status is 'ok' and type is null
         overallCanAfford = false;
-        affordabilityReason = "Organization wallet is not yet available for use.";
-        break;
-      case 'user_consent_required':
-        overallCanAfford = false;
-        affordabilityReason = "Consent required to use personal tokens for this organization.";
-        break;
-      case 'user_consent_refused':
-        overallCanAfford = false;
-        affordabilityReason = "Chat disabled: Consent refused for using personal tokens.";
-        break;
-      case 'loading':
-        overallCanAfford = false;
-        affordabilityReason = "Checking wallet policy...";
-        break;
-      case 'error':
-        overallCanAfford = false;
-        affordabilityReason = effectiveOutcome.message;
-        break;
-      default:
-        overallCanAfford = false;
-        affordabilityReason = "Unknown wallet status.";
+        affordabilityReason = "Affordability check error: Wallet type unclear but status is OK.";
+      }
+    } else {
+      // Wallet is not in an 'ok' state (e.g., loading, error, consent needed)
+      // Affordability cannot be determined or is blocked by other factors.
+      overallCanAfford = false;
+      affordabilityReason = activeWalletInfo.message || "Wallet not ready for chat or affordability check.";
+      // More specific messages like consent required, etc., are handled by WalletSelector/OrgTokenConsentModal.
+      // This component just signals it can't proceed with an affordability check.
     }
+    
     onAffordabilityChange(overallCanAfford, affordabilityReason);
-  }, [canAffordNext, effectiveOutcome, onAffordabilityChange]);
 
-  if (isLoadingConsent || effectiveOutcome.outcome === 'loading') {
-    return <div className="p-2 text-xs text-muted-foreground bg-muted rounded-md">Loading wallet information...</div>;
-  }
+  }, [activeWalletInfo, estimatedTokens, canAffordNextWithPersonalWallet, lowBalanceWarningWithPersonalWallet, onAffordabilityChange]);
 
-  if (effectiveOutcome.outcome === 'error') {
-    return <div className="p-2 text-xs text-destructive-foreground bg-destructive rounded-md">Error: {effectiveOutcome.message}</div>;
-  }
-
-  if (effectiveOutcome.outcome === 'org_wallet_not_available_policy_org') {
-    return <div className="p-2 text-xs text-warning-foreground bg-warning rounded-md">Organization wallet is selected by policy, but not yet available for use. Chat will be unavailable.</div>;
-  }
-
-  if (effectiveOutcome.outcome === 'user_consent_required') {
-    return (
-      <div className="p-2 text-xs text-info-foreground bg-info rounded-md">
-        This organization chat will use your personal tokens. Do you agree?
-        <div className="mt-2 space-x-2">
-          <Button size="sm" onClick={giveConsent}>Accept</Button>
-          <Button size="sm" variant="outline" onClick={refuseConsent}>Decline</Button>
-        </div>
-      </div>
-    );
-  }
-
-  if (effectiveOutcome.outcome === 'user_consent_refused') {
-    return (
-        <div className="p-2 text-xs text-destructive-foreground bg-destructive rounded-md">
-            Chat disabled. You declined to use your personal tokens for this organization chat.
-            <Button size="sm" variant="link" onClick={resetConsent} className="ml-2 p-0 h-auto text-destructive-foreground hover:text-destructive-foreground/80">
-                Change preference?
-            </Button>
-        </div>
-    );
-  }
-
-  if (effectiveOutcome.outcome === 'use_personal_wallet' || effectiveOutcome.outcome === 'use_personal_wallet_for_org') {
-    if (!canAffordNext) {
-      return <div className="p-2 text-xs text-destructive-foreground bg-destructive rounded-md">Insufficient balance for this message.</div>;
-    }
-    if (lowBalanceWarning) {
-      return <div className="p-2 text-xs text-warning-foreground bg-warning rounded-md">Token balance is low.</div>;
-    }
-  }
-  
+  // This component no longer renders any direct UI based on wallet status (consent prompts, errors, etc.)
+  // That is handled by WalletSelector and OrgTokenConsentModal.
+  // It only communicates affordability via onAffordabilityChange.
   return null;
 }; 

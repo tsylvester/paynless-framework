@@ -42,6 +42,8 @@ import {
   resetAllStoreMocks as resetOrgAndAuthMocks, // Resets org store mock state
   mockSetCurrentOrganizationDetails,
   mockSetOrgIsLoading,
+  mockSetUserOrganizations,
+  mockSetCurrentOrgId,
   createMockActions as createOrgMockActions // Import to provide full action set for OrganizationStore mock
 } from '../../../apps/web/src/mocks/organizationStore.mock';
 // Import default mock organization to satisfy Organization type
@@ -266,106 +268,125 @@ describe('useWalletStore', () => {
     });
 
     describe('determineChatWallet', () => {
-      beforeEach(() => {
-        resetAiStoreMock();
-        resetOrgAndAuthMocks(); 
-        // REMOVED: mockedUseAiStoreGetState.mockImplementation(...);
-        // REMOVED: mockedUseOrganizationStoreGetState.mockImplementation(...);
-        // Reset relevant parts of the mock stores before each determineChatWallet test
-        resetOrgAndAuthMocks(); // This should reset organizationStore mock state including details and loading
-        // Ensure personal wallet is null by default for these tests unless specified
-        useWalletStore.setState({ personalWallet: null });
-      });
-
-      it('should return loading outcome if org details are loading for a specific org context', () => {
-        mockSetAiState({ newChatContext: 'org123' });
-        mockSetOrgIsLoading(true);
-        mockSetCurrentOrganizationDetails({ ...defaultMockOrganization, id: 'org123' } as Organization);
+      // Define a helper to reset mocks and set initial states for these specific tests
+      const setupDetermineChatWalletTest = ({ orgId, policy, isLoading, newChatContextIsNull }: 
+        { orgId?: string, policy?: 'member_tokens' | 'organization_tokens' | 'unexpected_policy' | null, isLoading?: boolean, newChatContextIsNull?: boolean }) => {
         
-        // ***** START PRE-CALL DEBUG LOGS *****
+        resetOrgAndAuthMocks(); // Reset all relevant mock stores
+        
+        const orgToUse = orgId ? { ...defaultMockOrganization, id: orgId, token_usage_policy: policy as any } : null;
+
+        if (newChatContextIsNull) {
+          mockSetAiState({ newChatContext: null });
+        } else if (orgId) {
+          mockSetAiState({ newChatContext: orgId });
+          // Crucially, set userOrganizations in the mocked organizationStore
+          mockSetUserOrganizations(orgToUse ? [orgToUse as Organization] : []);
+          mockSetCurrentOrganizationDetails(orgToUse as Organization); // Also set current for consistency if needed by other logic
+        } else {
+          // Default case if orgId is not provided but newChatContext isn't null (should be handled by test logic)
+          mockSetAiState({ newChatContext: 'some_org_context_without_details' });
+          mockSetUserOrganizations([]);
+          mockSetCurrentOrganizationDetails(null);
+        }
+        
+        if (isLoading !== undefined) {
+          mockSetOrgIsLoading(isLoading);
+        } else {
+          mockSetOrgIsLoading(false); // Default to not loading
+        }
+
+        // ***** START PRE-CALL DEBUG LOGS (Optional, can be removed after debugging) *****
         const preAiState = getMockAiState();
-        const preOrgState = getMockOrgState();
+        const preOrgState = getMockOrgState(); // This will now include userOrganizations
         console.log('PRE-CALL DEBUG - Ai State newChatContext:', preAiState.newChatContext);
         console.log('PRE-CALL DEBUG - Org State isLoading:', preOrgState.isLoading);
         console.log('PRE-CALL DEBUG - Org State currentOrgId:', preOrgState.currentOrganizationDetails?.id);
         console.log('PRE-CALL DEBUG - Org State currentOrg token_usage_policy:', preOrgState.currentOrganizationDetails?.token_usage_policy);
+        console.log('PRE-CALL DEBUG - Org State userOrganizations:', JSON.stringify(preOrgState.userOrganizations)); // Log userOrgs
         // ***** END PRE-CALL DEBUG LOGS *****
+      };
+
+      it('should return loading outcome if org details are loading for a specific org context', () => {
+        resetOrgAndAuthMocks();
+        mockSetAiState({ newChatContext: 'org123' });
+        
+        mockSetUserOrganizations([]); 
+        
+        mockSetOrgIsLoading(true);
+        
+        mockSetCurrentOrgId('org123');
+
+        mockSetCurrentOrganizationDetails({ ...defaultMockOrganization, id: 'org123', token_usage_policy: undefined } as Organization);
 
         const result = useWalletStore.getState().determineChatWallet();
         expect(result).toEqual({ outcome: 'loading' });
       });
 
       it('should return use_personal_wallet if newChatContext is null', () => {
-        mockSetAiState({ newChatContext: null });
+        setupDetermineChatWalletTest({ newChatContextIsNull: true });
         const result = useWalletStore.getState().determineChatWallet();
         expect(result).toEqual({ outcome: 'use_personal_wallet' });
       });
 
       it('should return error if org details are not available or not matching context for a specific orgId', () => {
-        mockSetAiState({ newChatContext: 'org123' });
-        mockSetCurrentOrganizationDetails(null);
-        mockSetOrgIsLoading(false);
+        // Test Case 1: Org details not available (userOrganizations is empty or doesn't have org123)
+        setupDetermineChatWalletTest({ orgId: 'org123' }); // This will set newChatContext to 'org123'
+        mockSetUserOrganizations([]); // Explicitly set userOrganizations to be empty
+        mockSetCurrentOrganizationDetails(null); // Ensure no current org details either
+
         let result = useWalletStore.getState().determineChatWallet();
         expect(result.outcome).toBe('error');
         if (result.outcome === 'error') {
-          expect(result.message).toBe('Organization details for org123 not available or not matching context.');
+          // The message comes from the !relevantOrgDetails block when not loading
+          expect(result.message).toBe('Organization details for org123 are not available in the current list.');
         }
 
-        // Case: Org details available but ID does not match newChatContext
+        // Test Case 2: Org details available in userOrganizations but ID does not match newChatContext (this scenario is implicitly handled by the first check)
+        // The `find` operation `orgStoreState.userOrganizations.find(org => org.id === newChatContextOrgId)` would not find it.
+        // So the result is the same as above.
+        setupDetermineChatWalletTest({ orgId: 'org123' }); // newChatContext is 'org123'
+         // userOrganizations has a DIFFERENT org
+        mockSetUserOrganizations([{ ...defaultMockOrganization, id: 'org456' } as Organization]);
         mockSetCurrentOrganizationDetails({ ...defaultMockOrganization, id: 'org456' } as Organization);
+
+
         result = useWalletStore.getState().determineChatWallet();
         expect(result.outcome).toBe('error');
         if (result.outcome === 'error') {
-          expect(result.message).toBe('Organization details for org123 not available or not matching context.');
+          expect(result.message).toBe('Organization details for org123 are not available in the current list.');
         }
       });
 
       it("should return org_wallet_not_available_policy_org if policy is 'organization_tokens'", () => {
-        mockSetAiState({ newChatContext: 'org123' });
-        mockSetCurrentOrganizationDetails({
-            ...defaultMockOrganization,
-            id: 'org123',
-            token_usage_policy: 'organization_tokens' 
-        } as Organization);
-        mockSetOrgIsLoading(false);
-        // Personal wallet exists but has no balance
+        setupDetermineChatWalletTest({ orgId: 'org123', policy: 'organization_tokens' });
+        // Personal wallet exists but has no balance (though not strictly necessary for this outcome)
         useWalletStore.setState({
           personalWallet: { walletId: 'pw', balance: '0', currency: 'AI_TOKEN', createdAt: new Date(), updatedAt: new Date() }, 
-          organizationWallets: {}
         });
 
         const result = useWalletStore.getState().determineChatWallet();
         expect(result.outcome).toBe('org_wallet_not_available_policy_org');
+        expect(result.orgId).toBe('org123');
       });
 
       it("should return user_consent_required if policy is 'member_tokens'", () => {
-        mockSetAiState({ newChatContext: 'org123' });
-        mockSetCurrentOrganizationDetails({
-            ...defaultMockOrganization,
-            id: 'org123',
-            token_usage_policy: 'member_tokens' 
-        } as Organization);
-        mockSetOrgIsLoading(false);
+        setupDetermineChatWalletTest({ orgId: 'org123', policy: 'member_tokens' });
         useWalletStore.setState({ 
           personalWallet: { walletId: 'pw', balance: '100', currency: 'AI_TOKEN', createdAt: new Date(), updatedAt: new Date() },
-          organizationWallets: {}
+          userOrgTokenConsent: { 'org123': null } // Explicitly set consent to null (pending)
         });
         const result = useWalletStore.getState().determineChatWallet();
         expect(result.outcome).toBe('user_consent_required');
+        expect(result.orgId).toBe('org123');
       });
 
       it('should return error for unexpected token_usage_policy', () => {
-        mockSetAiState({ newChatContext: 'org123' });
-        mockSetCurrentOrganizationDetails({
-            ...defaultMockOrganization,
-            id: 'org123',
-            token_usage_policy: 'unexpected_policy' as any // Cast to any to test unexpected policy
-        } as Organization);
-        mockSetOrgIsLoading(false);
+        setupDetermineChatWalletTest({ orgId: 'org123', policy: 'unexpected_policy' as any });
         const result = useWalletStore.getState().determineChatWallet();
         expect(result.outcome).toBe('error');
         if (result.outcome === 'error') {
-          expect(result.message).toContain('Unexpected token usage policy');
+          expect(result.message).toContain('Unexpected token usage policy for org123: unexpected_policy');
         }
       });
     });

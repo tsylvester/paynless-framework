@@ -19,8 +19,8 @@ export const useChatWalletDecision = (): UseChatWalletDecisionReturn => {
   const determineChatWallet = useWalletStore(state => state.determineChatWallet);
   const userOrgTokenConsent = useWalletStore(state => state.userOrgTokenConsent);
   const { 
-    loadUserOrgTokenConsent,
-    clearUserOrgTokenConsent 
+    clearUserOrgTokenConsent,
+    setCurrentChatWalletDecision,
   } = useWalletStore.getState();
   
   const newChatContextOrgId = useAiStore(state => state.newChatContext);
@@ -28,16 +28,6 @@ export const useChatWalletDecision = (): UseChatWalletDecisionReturn => {
   logger.debug('[useChatWalletDecision] Current userOrgTokenConsent state from store', { consentState: JSON.parse(JSON.stringify(userOrgTokenConsent)) });
 
   const [isConsentModalOpen, setIsConsentModalOpen] = useState(false);
-
-  useEffect(() => {
-    logger.debug('[useChatWalletDecision] useEffect for loading consent running', { newChatContextOrgId });
-    if (newChatContextOrgId && userOrgTokenConsent[newChatContextOrgId] === undefined) {
-      logger.info('[useChatWalletDecision] Consent for org is undefined. Calling loadUserOrgTokenConsent', { orgId: newChatContextOrgId });
-      loadUserOrgTokenConsent(newChatContextOrgId);
-    } else if (newChatContextOrgId) {
-      logger.debug('[useChatWalletDecision] Consent for org is already defined in store', { orgId: newChatContextOrgId, consent: userOrgTokenConsent[newChatContextOrgId] });
-    }
-  }, [newChatContextOrgId, userOrgTokenConsent, loadUserOrgTokenConsent]);
 
   const openConsentModal = useCallback(() => {
     logger.info('[useChatWalletDecision] openConsentModal called', { newChatContextOrgId });
@@ -56,35 +46,17 @@ export const useChatWalletDecision = (): UseChatWalletDecisionReturn => {
     clearUserOrgTokenConsent(orgIdToReset);
   }, [clearUserOrgTokenConsent]);
 
-  const latestUserOrgTokenConsent = useWalletStore(state => state.userOrgTokenConsent);
-  const initialDecision = determineChatWallet();
-  logger.debug('[useChatWalletDecision] initialDecision from determineChatWallet', { initialDecision });
-  logger.debug('[useChatWalletDecision] latestUserOrgTokenConsent from store for outcome calc', { consentState: JSON.parse(JSON.stringify(latestUserOrgTokenConsent)) });
+  const calculatedOutcome = determineChatWallet();
 
-  let effectiveOutcome: WalletDecisionOutcome = initialDecision;
-  let isLoadingConsent = false;
-
-  if (newChatContextOrgId && initialDecision.outcome === 'user_consent_required') {
-    logger.debug('[useChatWalletDecision] initialDecision is user_consent_required', { orgId: newChatContextOrgId });
-    const consentForCurrentOrg = latestUserOrgTokenConsent[newChatContextOrgId];
-    logger.debug('[useChatWalletDecision] consentForCurrentOrg from latestUserOrgTokenConsent', { consentForCurrentOrg });
-    if (consentForCurrentOrg === undefined) {
-      logger.debug('[useChatWalletDecision] consentForCurrentOrg is undefined. Setting isLoadingConsent = true, outcome = loading.');
-      isLoadingConsent = true;
-      effectiveOutcome = { outcome: 'loading' }; 
-    } else if (consentForCurrentOrg === true) {
-      logger.debug('[useChatWalletDecision] consentForCurrentOrg is true. Setting outcome = use_personal_wallet_for_org.');
-      effectiveOutcome = { outcome: 'use_personal_wallet_for_org', orgId: newChatContextOrgId };
-    } else if (consentForCurrentOrg === false) {
-      logger.debug('[useChatWalletDecision] consentForCurrentOrg is false. Setting outcome = user_consent_refused.');
-      effectiveOutcome = { outcome: 'user_consent_refused', orgId: newChatContextOrgId };
-    } else {
-      logger.debug('[useChatWalletDecision] consentForCurrentOrg is null (or other). initialDecision outcome remains user_consent_required.');
-    }
-  } else {
-    logger.debug('[useChatWalletDecision] initialDecision is NOT user_consent_required or no newChatContextOrgId. Initial decision stands or other logic applies.', { initialDecisionOutcome: initialDecision.outcome, newChatContextOrgId });
-  }
+  const isLoadingConsent = calculatedOutcome.outcome === 'loading';
   
+  const effectiveOutcome: WalletDecisionOutcome = calculatedOutcome;
+
+  useEffect(() => {
+    logger.debug('[useChatWalletDecision] useEffect for setCurrentChatWalletDecision. Current effectiveOutcome:', effectiveOutcome);
+    setCurrentChatWalletDecision(effectiveOutcome);
+  }, [effectiveOutcome, setCurrentChatWalletDecision]);
+
   logger.debug('[useChatWalletDecision] Final results', { effectiveOutcome, isLoadingConsent });
 
   return {

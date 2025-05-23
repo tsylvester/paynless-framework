@@ -37,7 +37,7 @@ const useWalletStore = actualUseWalletStore as unknown as MockedUseWalletStore;
 
 describe('useChatWalletDecision', () => {
   beforeEach(() => {
-    vi.clearAllMocks();
+    vi.resetAllMocks();
     resetAiStoreMock();
     // Initialize with a basic state. determineChatWallet will be the vi.fn() from the mock file.
     // Its return value will be set per test.
@@ -96,56 +96,65 @@ describe('useChatWalletDecision', () => {
 
   it('should be loading consent initially then resolve if orgId is present and consent required', async () => {
     const orgId = 'test-org-loading';
-    setupOrgContext(orgId, "Test Org Loading");
-    // Crucially, set the return value for determineChatWallet for THIS test case
-    mockDetermineChatWallet.mockReturnValue({ outcome: 'user_consent_required', orgId });
+    setupOrgContext(orgId, "Test Org Loading", 'member_tokens'); // policy is member_tokens for consent path
+
+    // Stage 1: Initial render - outcome is 'loading'
+    // Ensure mockDetermineChatWallet is primed BEFORE the hook renders for the first time.
+    mockDetermineChatWallet.mockReset().mockReturnValueOnce({ outcome: 'loading' });
     
-    let resolveLoadConsent: (value: boolean | null) => void;
-    mockLoadUserOrgTokenConsent.mockImplementation((loadedOrgId) => {
-      if (loadedOrgId === orgId) {
-        return new Promise((resolve) => { resolveLoadConsent = resolve; });
-      }
-      return Promise.resolve(null);
-    });
-
     const { result, rerender } = renderHook(() => useChatWalletDecision());
-    expect(result.current.isLoadingConsent).toBe(true); // Should be true initially
+    
+    // On initial render, determineChatWallet should return 'loading'
+    expect(result.current.isLoadingConsent).toBe(true);
+    expect(result.current.effectiveOutcome.outcome).toBe('loading');
 
+    // Stage 2: After rerender - outcome is 'user_consent_required'
+    // Prime mockDetermineChatWallet for the call that happens upon rerender.
+    mockDetermineChatWallet.mockReset().mockReturnValueOnce({ outcome: 'user_consent_required', orgId });
+    
     await act(async () => {
-      resolveLoadConsent!(null); // Resolve the promise, simulating async load completing
-      await Promise.resolve(); // Allow microtasks to flush
+      rerender(); 
     });
-    rerender(); // Rerender to get the latest state after async operations
 
-    expect(result.current.isLoadingConsent).toBe(false);
+    expect(result.current.isLoadingConsent).toBe(false); 
     expect(result.current.effectiveOutcome.outcome).toBe('user_consent_required');
+    expect((result.current.effectiveOutcome as { outcome: string; orgId: string }).orgId).toBe(orgId);
   });
 
 
   it('should use stored consent if already given (true)', async () => {
     const orgId = 'test-org-given';
-    setupOrgContext(orgId, "Test Org Given");
-    mockDetermineChatWallet.mockReturnValue({ outcome: 'user_consent_required', orgId });
-    mockLoadUserOrgTokenConsent.mockImplementation(async (loadedOrgId) => loadedOrgId === orgId ? true : null);
+    setupOrgContext(orgId, "Test Org Given", 'member_tokens'); 
+    
+    // Set determineChatWallet to the expected outcome *before* initializing store state for this specific test
+    mockDetermineChatWallet.mockReturnValue({ outcome: 'use_personal_wallet_for_org', orgId });
+    
+    initializeMockWalletStore({
+      userOrgTokenConsent: { [orgId]: true }
+    });
 
-    const { result, rerender } = renderHook(() => useChatWalletDecision());
+    const { result } = renderHook(() => useChatWalletDecision()); 
+    
     await act(async () => { /* allow effects to run */ });
-    rerender();
 
-    expect(result.current.isLoadingConsent).toBe(false);
+    expect(result.current.isLoadingConsent).toBe(false); 
     expect(result.current.effectiveOutcome.outcome).toBe('use_personal_wallet_for_org');
     expect((result.current.effectiveOutcome as { outcome: string; orgId: string }).orgId).toBe(orgId);
   });
 
   it('should use stored consent if already refused (false)', async () => {
     const orgId = 'test-org-refused';
-    setupOrgContext(orgId, "Test Org Refused");
-    mockDetermineChatWallet.mockReturnValue({ outcome: 'user_consent_required', orgId });
-    mockLoadUserOrgTokenConsent.mockImplementation(async (loadedOrgId) => loadedOrgId === orgId ? false : null);
+    setupOrgContext(orgId, "Test Org Refused", 'member_tokens'); 
 
-    const { result, rerender } = renderHook(() => useChatWalletDecision());
+    // Set determineChatWallet to the expected outcome *before* initializing store state
+    mockDetermineChatWallet.mockReturnValue({ outcome: 'user_consent_refused', orgId });
+
+    initializeMockWalletStore({
+      userOrgTokenConsent: { [orgId]: false }
+    });
+
+    const { result } = renderHook(() => useChatWalletDecision()); 
     await act(async () => { /* allow effects to run */ });
-    rerender();
 
     expect(result.current.isLoadingConsent).toBe(false);
     expect(result.current.effectiveOutcome.outcome).toBe('user_consent_refused');
@@ -154,92 +163,90 @@ describe('useChatWalletDecision', () => {
 
   it('should update consent to true when setUserOrgTokenConsent is called (simulating giveConsent)', async () => {
     const orgId = 'test-org-give-consent';
-    setupOrgContext(orgId, "Test Org Give");
+    setupOrgContext(orgId, "Test Org Give", 'member_tokens');
+    
+    // For initial render:
     mockDetermineChatWallet.mockReturnValue({ outcome: 'user_consent_required', orgId });
-    mockLoadUserOrgTokenConsent.mockImplementation(async () => null); // Initially no consent
+    initializeMockWalletStore({
+      userOrgTokenConsent: { [orgId]: null } // Start with consent pending
+    });
 
     const { result, rerender } = renderHook(() => useChatWalletDecision());
-    await act(async () => { /* allow effects to run */ });
-    rerender();
-
+    
+    await act(async () => { /* allow initial effects */ });
     expect(result.current.effectiveOutcome.outcome).toBe('user_consent_required');
 
+    // For render after consent is given:
+    mockDetermineChatWallet.mockReturnValue({ outcome: 'use_personal_wallet_for_org', orgId });
+    // No need to call initializeMockWalletStore again if only userOrgTokenConsent changed by an action
+    
     await act(async () => {
-      // Simulate user giving consent - this would be done via a UI element calling setUserOrgTokenConsent
-      // For testing the hook's reaction, we call the store's action directly
       useWalletStore.getState().setUserOrgTokenConsent(orgId, true);
     });
-    rerender(); // Store update should trigger rerender
+    await act(async () => { rerender() }); 
 
-    expect(mockSetUserOrgTokenConsent).toHaveBeenCalledWith(orgId, true); // This mock is from walletStore.mock.ts
+    expect(useWalletStore.getState().setUserOrgTokenConsent).toHaveBeenCalledWith(orgId, true);
     expect(result.current.effectiveOutcome.outcome).toBe('use_personal_wallet_for_org');
+    expect((result.current.effectiveOutcome as { outcome: string; orgId: string }).orgId).toBe(orgId);
   });
 
   it('should update consent to false when setUserOrgTokenConsent is called (simulating refuseConsent)', async () => {
     const orgId = 'test-org-refuse-consent';
-    setupOrgContext(orgId, "Test Org Refuse");    
+    setupOrgContext(orgId, "Test Org Refuse", 'member_tokens');    
+    
+    // For initial render:
     mockDetermineChatWallet.mockReturnValue({ outcome: 'user_consent_required', orgId });
-    mockLoadUserOrgTokenConsent.mockImplementation(async () => null); // Initially no consent
+    initializeMockWalletStore({
+      userOrgTokenConsent: { [orgId]: null } // Start with consent pending
+    });
 
     const { result, rerender } = renderHook(() => useChatWalletDecision());
-    await act(async () => { /* allow effects to run */ });
-    rerender();
+    await act(async () => { /* allow initial effects */ });
+    expect(result.current.effectiveOutcome.outcome).toBe('user_consent_required');
+
+    // For render after consent is refused:
+    mockDetermineChatWallet.mockReturnValue({ outcome: 'user_consent_refused', orgId });
 
     await act(async () => {
-      // Simulate user refusing consent
       useWalletStore.getState().setUserOrgTokenConsent(orgId, false);
     });
-    rerender();
+    await act(async () => { rerender() }); 
 
-    expect(mockSetUserOrgTokenConsent).toHaveBeenCalledWith(orgId, false);
+    expect(useWalletStore.getState().setUserOrgTokenConsent).toHaveBeenCalledWith(orgId, false);
     expect(result.current.effectiveOutcome.outcome).toBe('user_consent_refused');
+    expect((result.current.effectiveOutcome as { outcome: string; orgId: string }).orgId).toBe(orgId);
   });
 
   it('should reset consent when resetOrgTokenConsent is called', async () => {
     const orgId = 'test-org-reset-consent';
-    setupOrgContext(orgId, "Test Org Reset");
-    mockDetermineChatWallet.mockReturnValue({ outcome: 'user_consent_required', orgId });
-    mockLoadUserOrgTokenConsent.mockImplementation(async (loadedOrgId) => loadedOrgId === orgId ? true : null); // Start with consent given
+    setupOrgContext(orgId, "Test Org Reset", 'member_tokens');
+    
+    // For initial render (consent given):
+    mockDetermineChatWallet.mockReturnValue({ outcome: 'use_personal_wallet_for_org', orgId });
+    initializeMockWalletStore({
+      userOrgTokenConsent: { [orgId]: true } // Start with consent given
+    });
 
     const { result, rerender } = renderHook(() => useChatWalletDecision());
-    await act(async () => { /* allow effects to run */ });
-    rerender();
-
+    await act(async () => { /* allow initial effects */ });
     expect(result.current.effectiveOutcome.outcome).toBe('use_personal_wallet_for_org');
 
-    await act(async () => {
-      result.current.resetOrgTokenConsent(orgId); // Call the hook's reset function
-    });
-    rerender();
-    
-    // The hook's resetOrgTokenConsent calls clearUserOrgTokenConsent from the store,
-    // which in turn should set the consent to null.
-    // We check if mockSetUserOrgTokenConsent was called by clearUserOrgTokenConsent with null.
-    // This depends on the implementation of clearUserOrgTokenConsent in the mock.
-    // For this test, we'll assume clearUserOrgTokenConsent sets it to null via setUserOrgTokenConsent.
-    // If clearUserOrgTokenConsent is mocked differently, this assertion needs to change.
-    // Let's spy on useWalletStore.getState().clearUserOrgTokenConsent directly for better precision.
     const clearConsentSpy = vi.spyOn(useWalletStore.getState(), 'clearUserOrgTokenConsent');
+
+    // For render after consent is reset:
+    mockDetermineChatWallet.mockReturnValue({ outcome: 'user_consent_required', orgId });
     
     await act(async () => {
-      result.current.resetOrgTokenConsent(orgId);
+      result.current.resetOrgTokenConsent(orgId); 
     });
-
+    
     expect(clearConsentSpy).toHaveBeenCalledWith(orgId);
-    // After consent is cleared (becomes null or undefined), the outcome should be user_consent_required
-    // We might need a rerender or to wait for the state to propagate if using mockLoadUserOrgTokenConsent
-    // to simulate the load again after clearing.
-    // For now, assuming clearing makes it undefined which leads to 'user_consent_required'
-    // Or 'loading' if loadUserOrgTokenConsent is triggered again and hasn't resolved.
-    // Let's update mockLoadUserOrgTokenConsent to reflect the cleared state (returns null)
-    mockLoadUserOrgTokenConsent.mockImplementation(async (loadedOrgId) => loadedOrgId === orgId ? null : true);
-
-
-    // Re-render or wait for state update
-    await act(async () => { /* allow effects to run */ });
-    rerender(); // Force rerender after mock update and state change
+    await act(async () => { rerender(); }); 
 
     expect(result.current.effectiveOutcome.outcome).toBe('user_consent_required');
+    expect((result.current.effectiveOutcome as { outcome: string; orgId: string }).orgId).toBe(orgId);
+
+    clearConsentSpy.mockRestore();
   });
 
   it('should default to personal_wallet if newChatContextOrgId is null', async () => {
@@ -260,16 +267,23 @@ describe('useChatWalletDecision', () => {
   });
 
   it('should handle org_wallet_not_available_policy_org outcome correctly', async () => {
-    const orgId = 'test-org-policy';
-    setupOrgContext(orgId, "Test Org Policy", 'organization_tokens');
-    mockDetermineChatWallet.mockReturnValue({ outcome: 'org_wallet_not_available_policy_org', orgId });
+    const orgId = 'test-org-policy-org';
+    setupOrgContext(orgId, 'Test Org Policy Org', 'organization_tokens');
 
-    const { result, rerender } = renderHook(() => useChatWalletDecision());
-    await act(async () => { /* allow effects to run */ });
-    rerender();
+    // Set determineChatWallet to the expected outcome *before* rendering the hook
+    mockDetermineChatWallet.mockReturnValue({ outcome: 'org_wallet_not_available_policy_org', orgId });
+    
+    const loadConsentSpy = vi.spyOn(mockLoadUserOrgTokenConsent, 'getMockImplementation' as any || 'apply');
+
+    const { result } = renderHook(() => useChatWalletDecision()); // No rerender needed
+
+    await act(async () => { /* allow initial effects */ });
 
     expect(result.current.effectiveOutcome.outcome).toBe('org_wallet_not_available_policy_org');
-    expect(result.current.isLoadingConsent).toBe(false);
+    expect((result.current.effectiveOutcome as { outcome: string; orgId: string }).orgId).toBe(orgId);
+    expect(result.current.isLoadingConsent).toBe(false); 
+    
     expect(mockLoadUserOrgTokenConsent).not.toHaveBeenCalled(); 
+    loadConsentSpy.mockRestore();
   });
 }); 

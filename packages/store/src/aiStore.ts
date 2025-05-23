@@ -25,7 +25,8 @@ import { api } from '@paynless/api'; // MOVED HERE
 
 import { logger } from '@paynless/utils';
 import { useAuthStore } from './authStore';
-import { useWalletStore } from './walletStore'; // <<< --- ADD THIS IMPORT --- >>>
+import { useWalletStore } from './walletStore'; // Keep this for getState()
+import { selectActiveChatWalletInfo } from './walletStore.selectors'; // Corrected import path
 
 // Use the imported AiStore type
 export const useAiStore = create<AiStore>()(
@@ -225,10 +226,9 @@ export const useAiStore = create<AiStore>()(
                         set(state => ({
                             messagesByChatId: updatedMessagesByChatId,
                             selectedMessagesMap: updatedSelectedMessagesMap,
-                            currentChatId: isNewChat ? chatIdUsed : state.currentChatId, // Update currentChatId if it was a new chat
-                            // currentChatMessages: updatedMessagesForChat, // Consider if this direct update is needed or if selectors handle it
-                            isSending: true, // Indicate that an operation is in progress
-                            pendingAction: 'SEND_MESSAGE', // Reflect the action - Corrected: Use string literal
+                            currentChatId: isNewChat ? chatIdUsed : state.currentChatId,
+                            isLoadingAiResponse: true, // CORRECTED from isSending
+                            pendingAction: 'SEND_MESSAGE', // Store 'SEND_MESSAGE' when optimistically sending
                         }));
                         logger.info('[aiStore._addOptimisticUserMessage] Added optimistic user message:', { tempId, chatIdUsed, newChat: isNewChat });
                         return { tempId, chatIdUsed, createdTimestamp };
@@ -387,52 +387,88 @@ export const useAiStore = create<AiStore>()(
                         const { 
                             currentChatId: existingChatIdFromState,
                             rewindTargetMessageId: currentRewindTargetId,
-                            newChatContext,
+                            newChatContext, 
                             selectedProviderId,
                             selectedPromptId,
                             _addOptimisticUserMessage,
                         } = get();
 
-                        // --- Wallet Decision Logic --- 
-                        const walletDecision = useWalletStore.getState().determineChatWallet();
-                        logger.info('[aiStore sendMessage] Wallet Decision Outcome:', walletDecision);
+                        // --- Get Active Wallet Info (and authStore state needed in switch) ---
+                        const activeWalletInfo = selectActiveChatWalletInfo(useWalletStore.getState());
+                        const { user: authStoreUser, navigate: authStoreNavigate } = useAuthStore.getState(); // Moved declaration here
+                        logger.info('[aiStore sendMessage] Active Wallet Info:', { activeWalletInfo });
 
-                        // Block message if wallet decision is not favorable
-                        switch (walletDecision.outcome) {
+                        // Block message if wallet status is not favorable
+                        switch (activeWalletInfo.status) {
+                            case 'ok':
+                                // Proceed with sending message
+                                logger.info('[aiStore sendMessage] Proceeding with send message. Wallet status: ok', 
+                                    { type: activeWalletInfo.type, walletId: activeWalletInfo.walletId, orgId: activeWalletInfo.orgId }
+                                );
+                                break; // Break and continue to the sending logic
                             case 'loading':
-                                logger.warn('[aiStore sendMessage] Blocked: Wallet decision still loading.');
-                                set({ isLoadingAiResponse: false, aiError: 'Wallet information is loading. Please try again shortly.' });
+                                // const { user: currentUserLoadingCheck, navigate: authNavigate } = useAuthStore.getState(); // Original position
+                                if (!authStoreUser) { // Anonymous user, using the authStoreUser from above
+                                    logger.warn('[aiStore sendMessage] Blocked: Anonymous user and wallet information is loading. Setting auth error and pending action.');
+                                    set({ 
+                                        isLoadingAiResponse: false, 
+                                        aiError: 'Auth required.', 
+                                        pendingAction: 'SEND_MESSAGE'
+                                    });
+                                    if (authStoreNavigate) { // Check if navigate exists
+                                        logger.info('[aiStore sendMessage] Anonymous user, wallet loading, attempting to navigate to login.');
+                                        authStoreNavigate('/login'); // Call navigate
+                                    }
+                                } else { // Authenticated user
+                                    logger.warn('[aiStore sendMessage] Blocked: Authenticated user and wallet information is loading.');
+                                    set({ 
+                                        isLoadingAiResponse: false, 
+                                        aiError: activeWalletInfo.message || 'Wallet information is loading. Please try again shortly.'
+                                    });
+                                }
                                 return null;
                             case 'error':
-                                logger.error('[aiStore sendMessage] Blocked: Error in wallet decision.', { message: walletDecision.message });
-                                set({ isLoadingAiResponse: false, aiError: `Wallet Error: ${walletDecision.message}` });
+                                logger.error('[aiStore sendMessage] Blocked: Error with wallet.', { message: activeWalletInfo.message });
+                                set({ isLoadingAiResponse: false, aiError: `Wallet Error: ${activeWalletInfo.message || 'Unknown wallet error.'}` });
                                 return null;
-                            case 'org_wallet_not_available_policy_org':
-                                logger.warn('[aiStore sendMessage] Blocked: Org wallet selected by policy but not available.');
-                                set({ isLoadingAiResponse: false, aiError: 'Organization wallet is selected by policy, but not yet available for use. Cannot send message.' });
+                            case 'consent_required':
+                                logger.warn('[aiStore sendMessage] Blocked: User consent required.');
+                                set({ isLoadingAiResponse: false, aiError: activeWalletInfo.message || 'Please accept or decline the use of personal tokens for this organization chat.' });
                                 return null;
-                            case 'user_consent_required':
-                                logger.warn('[aiStore sendMessage] Blocked: User consent required for org chat with personal tokens.');
-                                // The UI (ChatAffordabilityIndicator/ChatInput) should primarily handle prompting for consent.
-                                // This is a fallback block if a send is attempted before consent is given.
-                                set({ isLoadingAiResponse: false, aiError: 'Please accept or decline the use of personal tokens for this organization chat.' });
+                            case 'consent_refused':
+                                logger.warn('[aiStore sendMessage] Blocked: User consent refused.');
+                                set({ isLoadingAiResponse: false, aiError: activeWalletInfo.message || 'Chat disabled. Consent to use personal tokens was refused.' });
                                 return null;
-                            case 'user_consent_refused':
-                                logger.warn('[aiStore sendMessage] Blocked: User consent refused for org chat with personal tokens.');
-                                set({ isLoadingAiResponse: false, aiError: 'Chat disabled. Consent to use personal tokens was refused for this organization.' });
+                            case 'policy_org_wallet_unavailable':
+                                logger.warn('[aiStore sendMessage] Blocked: Organization wallet unavailable by policy.');
+                                set({ isLoadingAiResponse: false, aiError: activeWalletInfo.message || 'Organization wallet is selected by policy, but not yet available. Cannot send message.' });
                                 return null;
-                            case 'use_personal_wallet':
-                            case 'use_personal_wallet_for_org':
-                                // Proceed with sending message
-                                logger.info('[aiStore sendMessage] Proceeding with send message. Wallet outcome:', { outcome: walletDecision.outcome });
-                                break;
+                            // Potentially handle other statuses like 'policy_member_wallet_unavailable' if it becomes distinct
                             default:
-                                // Should not happen with exhaustive switch and WalletDecisionOutcome type
-                                logger.error('[aiStore sendMessage] Blocked: Unknown wallet decision outcome.', walletDecision);
-                                set({ isLoadingAiResponse: false, aiError: 'An unexpected issue occurred with wallet selection. Cannot send message.' });
+                                logger.error('[aiStore sendMessage] Blocked: Unhandled or unfavorable wallet status.', { activeWalletInfo });
+                                set({ isLoadingAiResponse: false, aiError: activeWalletInfo.message || 'An unexpected issue occurred with wallet selection. Cannot send message.' });
                                 return null;
                         }
-                        // --- End Wallet Decision Logic ---
+                        // --- End Wallet Status Check ---
+
+                        const token = useAuthStore.getState().session?.access_token;
+
+                        // --- Auth Check ---
+                        if (!token) {
+                            logger.warn('[aiStore sendMessage] Authentication required. No token found.');
+                            const navigate = useAuthStore.getState().navigate;
+                            set(_state => ({ // Use functional update to preserve existing pendingAction if any (though unlikely here)
+                                aiError: 'Auth required.',
+                                isLoadingAiResponse: false,
+                                pendingAction: 'SEND_MESSAGE', // Explicitly set for this auth failure path
+                            }));
+                            if (navigate) {
+                                // localStorage pending action for cross-session replay is handled in the main catch block
+                                navigate('/login'); 
+                            }
+                            return null; 
+                        }
+                        // --- End Auth Check ---
 
                         const isRewindOperation = !!(inputChatId && currentRewindTargetId);
 
@@ -447,15 +483,12 @@ export const useAiStore = create<AiStore>()(
                             stateRewindTargetMessageId: currentRewindTargetId
                         });
 
-                        const token = useAuthStore.getState().session?.access_token;
-
                         if (!selectedProviderId) {
                             logger.error('[sendMessage] No provider selected. Cannot send message.');
                             set({ isLoadingAiResponse: false, aiError: 'No AI provider selected.' });
                             return null;
                         }
-
-                        const providerId = selectedProviderId;
+                        const providerId = selectedProviderId; // Now string
                         const promptId = selectedPromptId;
 
                         // --- Helper to add optimistic user message (remains largely the same) ---
@@ -466,11 +499,22 @@ export const useAiStore = create<AiStore>()(
                         // --- Existing API Call Logic ---
                         const effectiveChatIdForApi = inputChatId ?? existingChatIdFromState ?? undefined;
                         let organizationIdForApi: string | undefined | null = undefined;
+
+                        // Determine organizationIdForApi based on the chat type (new vs existing) and wallet context
                         if (!effectiveChatIdForApi) { // It's a new chat
+                            // For a new chat, newChatContext from aiStore IS the orgId (or null for personal)
+                            // activeWalletInfo.orgId should align with this if it's an org chat
                             organizationIdForApi = newChatContext; 
+                            logger.info('[aiStore sendMessage DEBUG] New chat. organizationIdForApi set from newChatContext:', { organizationIdForApi });
                         } else {
-                            // For existing chats, orgId is implicit in the chatId, API/backend handles this.
-                            organizationIdForApi = undefined; 
+                            // It's an existing chat.
+                            if (activeWalletInfo.type === 'organization' && activeWalletInfo.orgId) {
+                                organizationIdForApi = activeWalletInfo.orgId;
+                                logger.info('[aiStore sendMessage DEBUG] Existing org chat. organizationIdForApi set from activeWalletInfo.orgId:', { organizationIdForApi });
+                            } else {
+                                organizationIdForApi = undefined; // Personal chat or org chat where backend infers orgId from chatId
+                                logger.info('[aiStore sendMessage DEBUG] Existing personal chat or org chat with implicit orgId. organizationIdForApi set to undefined.');
+                            }
                         }
 
                         // DETAILED LOGGING FOR DEBUGGING ORG CHAT RESET - Part 2
@@ -667,8 +711,14 @@ export const useAiStore = create<AiStore>()(
                                 // <<< --- REFRESH WALLET AFTER SUCCESSFUL SEND/RECEIVE --- >>>
                                 try {
                                     logger.info('[aiStore sendMessage] Triggering wallet refresh after successful message.');
-                                    // For Phase 1, personal wallet is reloaded. Phase 2 will require more specific reload.
-                                    useWalletStore.getState().loadPersonalWallet(); 
+                                    const { type: walletTypeToRefresh, orgId: walletOrgIdToRefresh } = activeWalletInfo;
+                                    if (walletTypeToRefresh === 'organization' && walletOrgIdToRefresh) {
+                                        logger.info(`[aiStore sendMessage] Refreshing organization wallet for orgId: ${walletOrgIdToRefresh}`);
+                                        useWalletStore.getState().loadOrganizationWallet(walletOrgIdToRefresh);
+                                    } else {
+                                        logger.info('[aiStore sendMessage] Refreshing personal wallet.');
+                                        useWalletStore.getState().loadPersonalWallet();
+                                    }
                                 } catch (walletError) {
                                     logger.error('[aiStore sendMessage] Error triggering wallet refresh:', { error: String(walletError) });
                                     // Decide if this error should be surfaced to the user or just logged
@@ -681,62 +731,22 @@ export const useAiStore = create<AiStore>()(
                             }
 
                         } catch (err: unknown) {
-                            let errorHandled = false;
+                            const errorHandled = false;
                             let requiresLogin = false;
-                            // Safely access message
                             let errorMessage = (err instanceof Error ? err.message : String(err)) || 'Unknown error'; 
 
-                            // Check 1: Was it the specific AuthRequiredError thrown by apiClient?
-                            // Check name property as well for robustness
                             if (err instanceof AuthRequiredError || (typeof err === 'object' && err !== null && 'name' in err && err.name === 'AuthRequiredError')) {
-                                logger.warn('sendMessage caught AuthRequiredError. Initiating login flow...');
+                                logger.warn('sendMessage caught AuthRequiredError. Attempting to handle pending action and navigate...');
                                 requiresLogin = true;
-                                // Use specific message if available, otherwise fall back
-                                errorMessage = (err instanceof Error ? err.message : null) || 'Authentication required'; 
-                            }
-                            // Check 2: (Simplified - rely on AuthRequiredError being thrown explicitly)
-
-                            // If AuthRequiredError was caught, try to save pending action and navigate
-                            if (requiresLogin) {
-                                let storageSuccess = false;
-                                try {
-                                    const pendingAction = {
-                                        endpoint: 'chat',
-                                        method: 'POST',
-                                        body: { ...requestData, chatId: effectiveChatIdForApi ?? null },
-                                        returnPath: 'chat' 
-                                    };
-                                    logger.info('[sendMessage] Attempting to call localStorage.setItem with pendingAction:', pendingAction);
-                                    localStorage.setItem('pendingAction', JSON.stringify(pendingAction));
-                                    logger.info('Stored pending chat action:', pendingAction);
-                                    storageSuccess = true;
-                                } catch (storageError: unknown) {
-                                   logger.error('Failed to store pending action in localStorage:', { 
-                                        error: storageError instanceof Error ? storageError.message : String(storageError)
-                                   });
-                                }
-
-                                if (storageSuccess) {
-                                    const navigate = useAuthStore.getState().navigate;
-                                    if (navigate) {
-                                        navigate('login');
-                                        errorHandled = true; // Set flag: state cleanup should clear aiError
-                                    } else {
-                                        logger.error('Navigate function not found after successful storage...');
-                                        // Proceed with error state if navigation fails
-                                    }
-                                }
-                                // If storage failed, we also proceed to show an error state
+                                errorMessage = (err instanceof Error ? err.message : null) || 'Auth required'; 
                             }
 
-                            // State update: Clean up optimistic message. Set error ONLY if login wasn't triggered/successful.
                             set(state => {
-                                // Use optimisticMessageChatId to ensure we are looking at the correct chat's messages
                                 const messagesForChat = state.messagesByChatId[optimisticMessageChatId] || [];
                                 const finalMessages = messagesForChat.filter(
                                     (msg) => msg.id !== tempUserMessageId
                                 );
-                                const finalError = errorHandled ? null : errorMessage;
+                                const finalError = requiresLogin ? 'Auth required' : errorMessage; // Consistent error
 
                                 if (!errorHandled) {
                                      logger.error('Error during send message API call (catch block):', { error: finalError });
@@ -745,8 +755,30 @@ export const useAiStore = create<AiStore>()(
                                     messagesByChatId: { ...state.messagesByChatId, [optimisticMessageChatId]: finalMessages },
                                     aiError: finalError,
                                     isLoadingAiResponse: false,
+                                    pendingAction: requiresLogin ? 'SEND_MESSAGE' : state.pendingAction, // Set pendingAction if auth error
                                  };
                             });
+
+                            if (requiresLogin) {
+                                // Attempt to store full pending action details in localStorage for cross-session resumption
+                                try {
+                                    const pendingActionDetails: PendingAction = {
+                                        endpoint: 'chat',
+                                        method: 'POST',
+                                        body: { ...data, chatId: effectiveChatIdForApi ?? null, organizationId: newChatContext || null }, 
+                                        returnPath: 'chat'
+                                    };
+                                    localStorage.setItem('pendingActionDetails', JSON.stringify(pendingActionDetails));
+                                    logger.info('[sendMessage] Stored full pendingActionDetails to localStorage.');
+                                } catch (storageError) {
+                                   logger.error('Failed to store pendingActionDetails in localStorage:', { error: storageError });
+                                }
+
+                                const navigate = useAuthStore.getState().navigate;
+                                if (navigate) {
+                                    navigate('/login');
+                                }
+                            }
                             return null;
                         }
                     },

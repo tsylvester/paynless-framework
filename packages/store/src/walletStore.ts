@@ -25,6 +25,7 @@ export interface WalletStateValues {
   orgWalletErrors: { [orgId: string]: ApiError | null };
   purchaseError: ApiError | null;
   userOrgTokenConsent: { [orgId: string]: boolean | null };
+  currentChatWalletDecision: WalletDecisionOutcome | null;
 }
 
 export interface WalletActions {
@@ -40,8 +41,8 @@ export interface WalletActions {
   _resetForTesting: () => void; // For test cleanup
   determineChatWallet: () => WalletDecisionOutcome; // Kept here as it uses get() internally
   setUserOrgTokenConsent: (orgId: string, consent: boolean) => void;
-  loadUserOrgTokenConsent: (orgId: string) => void;
   clearUserOrgTokenConsent: (orgId: string) => void;
+  setCurrentChatWalletDecision: (decision: WalletDecisionOutcome) => void;
 }
 
 export type WalletStore = WalletStateValues & WalletActions;
@@ -58,49 +59,29 @@ export const initialWalletStateValues: WalletStateValues = {
   orgWalletErrors: {},
   purchaseError: null,
   userOrgTokenConsent: {},
+  currentChatWalletDecision: { outcome: 'loading' },
 };
-
-const USER_ORG_TOKEN_CONSENT_KEY_PREFIX = 'user_org_token_consent_';
 
 export const useWalletStore = create<WalletStore>((set, get) => ({
   ...initialWalletStateValues,
 
+  setCurrentChatWalletDecision: (decision: WalletDecisionOutcome) => {
+    set({ currentChatWalletDecision: decision });
+    logger.debug('[walletStore.setCurrentChatWalletDecision] Decision updated:', decision);
+  },
+
   setUserOrgTokenConsent: (orgId: string, consent: boolean) => {
-    try {
-      localStorage.setItem(`${USER_ORG_TOKEN_CONSENT_KEY_PREFIX}${orgId}`, JSON.stringify(consent));
-    } catch (e) {
-      console.error("Failed to save consent to localStorage", e);
-    }
     set(state => ({
       userOrgTokenConsent: { ...state.userOrgTokenConsent, [orgId]: consent },
     }));
-  },
-
-  loadUserOrgTokenConsent: (orgId: string) => {
-    let consentValue: boolean | null = null;
-    try {
-      const storedConsent = localStorage.getItem(`${USER_ORG_TOKEN_CONSENT_KEY_PREFIX}${orgId}`);
-      if (storedConsent !== null) {
-        consentValue = JSON.parse(storedConsent) as boolean;
-      }
-    } catch (e) {
-      console.error("Failed to load consent from localStorage", e);
-      // consentValue remains null
-    }
-    set(state => ({
-      userOrgTokenConsent: { ...state.userOrgTokenConsent, [orgId]: consentValue },
-    }));
+    logger.debug('[walletStore.setUserOrgTokenConsent] Consent set in Zustand state:', { orgId, consent });
   },
 
   clearUserOrgTokenConsent: (orgId: string) => {
-    try {
-      localStorage.removeItem(`${USER_ORG_TOKEN_CONSENT_KEY_PREFIX}${orgId}`);
-    } catch (e) {
-      console.error("Failed to remove consent from localStorage", e);
-    }
     set(state => ({
       userOrgTokenConsent: { ...state.userOrgTokenConsent, [orgId]: null },
     }));
+    logger.debug('[walletStore.clearUserOrgTokenConsent] Consent cleared in Zustand state (set to null):', { orgId });
   },
 
   determineChatWallet: (): WalletDecisionOutcome => {
