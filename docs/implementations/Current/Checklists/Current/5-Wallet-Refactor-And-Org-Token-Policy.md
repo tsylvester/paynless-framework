@@ -143,36 +143,74 @@
             *   [x] Calculate `max_spendable_output_tokens = floor(budget_for_output / modelConfig.output_token_cost_rate)`.
             *   [x] Determine the dynamic hard cap: `dynamic_hard_cap = min(floor(0.20 * user_balance_tokens), modelConfig.hard_cap_output_tokens || Infinity)`. (Use `modelConfig.hard_cap_output_tokens` which is the provider's absolute cap. Ensure `user_balance_tokens` for the 20% calculation is the total current balance).
             *   [x] Clamp result: `max(0, min(max_spendable_output_tokens, dynamic_hard_cap))`.
-*   [ ] **Refactor aiStore to export `aiStore.sendMessage` into its own function**
-    *   [ ] Import the new independent sub function into aiStore. 
-    *   [ ] Refactor, DRY, simplify, flatten aiStore.sendMessage into a DIP/DI adapter interface model to improve readability, testability, and maintainability. 
-    *   [ ] Update the aiStore.sendMessage test to test the new external function. 
-*   [ ] **Integrate `getMaxOutputTokens` into Chat Sending Logic:**
-    *   [ ] **`aiStore.sendMessage` (or equivalent):**
-        *   [ ] Before sending a message to the backend:
-            *   [ ] Get current user/org wallet balance (`user_balance_tokens`).
-            *   [ ] Get the `AiModelExtendedConfig` for the selected model.
-            *   [ ] Estimate input tokens for the prompt using `estimateInputTokens(prompt, modelConfig)`.
-            *   [ ] Calculate `maxAllowedOutputTokens = getMaxOutputTokens(user_balance_tokens, estimated_input_tokens, modelConfig, chosen_deficit)`.
-            *   [ ] If `maxAllowedOutputTokens <= 0`, block the request and inform the user (e.g., "Insufficient balance").
-            *   [ ] When calling the backend chat endpoint, pass this `maxAllowedOutputTokens` as a parameter (e.g., `max_tokens_to_generate`).
-*   [ ] **Backend Adaptation for `max_tokens_to_generate`:**
-    *   [ ] **`supabase/functions/chat/index.ts` (or equivalent handler):**
-        *   [ ] Modify the handler to accept the `max_tokens_to_generate` parameter from the client.
-        *   [ ] Pass this value to the AI provider adapter's `sendMessage` method.
-    *   [ ] **AI Provider Adapters (`openai_adapter.ts`, etc.):**
-        *   [ ] Modify the `sendMessage` method in each adapter to accept `max_tokens_to_generate`.
-        *   [ ] Use this value to set the appropriate `max_tokens` (or equivalent) parameter in the API call to the specific AI provider.
-*   [ ] **Backend Token Usage Verification & Wallet Debit:**
-    *   [ ] After receiving a response from the AI provider:
-        *   [ ] The backend should still use the actual `prompt_tokens` and `completion_tokens` returned by the provider (or re-calculate them securely on the backend if the provider doesn't return them, using `tokenizer_utils.ts` or provider-specific counting).
-        *   [ ] Calculate the *actual cost*: `(actual_prompt_tokens * input_token_cost_rate) + (actual_completion_tokens * output_token_cost_rate)`.
-        *   [ ] Debit this actual cost from the user's/org's wallet. This ensures accurate accounting even if client-side estimates were slightly off or the `max_tokens_to_generate` was just a cap.
-*   [ ] **Testing:**
-    *   [ ] Unit tests for `estimateInputTokens` with various model configs and inputs.
-    *   [ ] Unit tests for `getMaxOutputTokens` with different balances, costs, and caps.
-    *   [ ] Integration tests for the chat flow, ensuring `max_tokens` is passed and respected, and balances are checked and debited correctly.
-    *   [ ] Test with models using different tokenization strategies.
+*   [X] **Refactor aiStore to export `aiStore.sendMessage` into its own function as ai.SendMessage.ts**
+    *   [X] Define the contract for the externalized function (`SendMessageParams`, `SendMessageResult` in `ai.sendMessage.types.ts`).
+    *   [X] Implement the external `handleSendMessage(params: HandleSendMessageServiceParams)` function in `ai.SendMessage.ts`, using injected dependencies.
+    *   [~] **Verify Full Functionality Replication:**
+        *   [~] Thoroughly compare the logic in the original `aiStore.sendMessage` (and any functions it called that aren't being passed as dependencies) with the new `handleSendMessage` in `ai.sendMessage.ts`.
+        *   [~] Ensure all features, edge cases, error handling, logging, and side effects (e.g., state updates, API calls) from the original function are present and correctly implemented in the new function or handled by the calling `aiStore.sendMessage` wrapper.
+        *   [~] Pay close attention to:
+            *   User and organization context.
+            *   Chat history management (including `currentChat`, `currentMessages`).
+            *   New chat creation vs. appending to existing chat.
+            *   System prompt handling.
+            *   API interaction (request preparation, response handling, error handling).
+            *   State updates for loading, errors, messages, and chat metadata.
+            *   Token estimation and max output token calculation integration.
+            *   Wallet selection and balance checks (though this might be passed in via params).
+    *   [X] **Refactor `aiStore.sendMessage`:**
+        *   [X] Modify the `aiStore.sendMessage` action to:
+            *   Gather all necessary data and dependencies to construct the `SendMessageParams` object.
+            *   Call `handleSendMessage(params)`.
+            *   Handle the `SendMessageResult` to update the Zustand store state (e.g., update messages, chat ID, loading states, errors). (Achieved by `handleSendMessage` using injected service)
+        *   [X] Once confident that `handleSendMessage` correctly encapsulates all core logic and `aiStore.sendMessage` is a lean wrapper, remove the duplicated core logic from `aiStore.sendMessage`.
+    *   [~] **Update `aiStore.sendMessage` Tests:**
+        *   [~] Adapt existing tests or write new ones to specifically target the refactored `aiStore.sendMessage` (which now acts as an integrator). (Existing tests call the new sendMessage)
+        *   [~] Ensure tests cover the interaction with `handleSendMessage`.
+        *   [X] Create separate unit tests for `handleSendMessage` in `ai.sendMessage.test.ts` (or similar) to test its logic in isolation, using mock dependencies.
+*   [~] **Integrate `getMaxOutputTokens` into Chat Sending Logic:**
+    *   [X] **`aiStore.sendMessage` (or equivalent):**
+        *   [X] Before sending a message to the backend:
+            *   [X] Get current user/org wallet balance (`user_balance_tokens`).
+            *   [X] Get the `AiModelExtendedConfig` for the selected model.
+            *   [X] Estimate input tokens for the prompt using `estimateInputTokens(prompt, modelConfig)`.
+            *   [X] Calculate `maxAllowedOutputTokens = getMaxOutputTokens(user_balance_tokens, estimated_input_tokens, modelConfig, chosen_deficit)`.
+            *   [X] If `maxAllowedOutputTokens <= 0`, block the request and inform the user (e.g., "Insufficient balance").
+            *   [X] When calling the backend chat endpoint, pass this `maxAllowedOutputTokens` as a parameter (e.g., `max_tokens_to_generate`).
+*   [X] **Backend Adaptation for `max_tokens_to_generate`:**
+    *   [X] **`supabase/functions/chat/index.ts` (or equivalent handler):**
+        *   [X] Modify the handler to accept the `max_tokens_to_generate` parameter from the client.
+        *   [X] Pass this value to the AI provider adapter's `sendMessage` method.
+    *   [X] **AI Provider Adapters (`openai_adapter.ts`, etc.):**
+        *   [X] Modify the `sendMessage` method in each adapter to accept `max_tokens_to_generate`.
+        *   [X] Use this value to set the appropriate `max_tokens` (or equivalent) parameter in the API call to the specific AI provider.
+*   [X] **Backend Token Usage Verification & Wallet Debit:**
+    *   [X] After receiving a response from the AI provider:
+        *   [X] The backend should still use the actual `prompt_tokens` and `completion_tokens` returned by the provider (or re-calculate them securely on the backend if the provider doesn't return them, using `tokenizer_utils.ts` or provider-specific counting).
+        *   [X] Calculate the *actual cost*: `(actual_prompt_tokens * input_token_cost_rate) + (actual_completion_tokens * output_token_cost_rate)`.
+            *   [X] **Create Cost Calculation Helper Function (e.g., in `supabase/functions/_shared/utils/cost_utils.ts`):**
+                *   [X] Define a function (e.g., `calculateActualChatCost`) that takes `tokenUsage` (from adapter), `modelConfig` (parsed `AiModelExtendedConfig`), and an optional `logger` as input.
+                *   [X] Implement the function to:
+                    *   [X] Extract `prompt_tokens` and `completion_tokens` from `tokenUsage`.
+                    *   [X] Extract `input_token_cost_rate` and `output_token_cost_rate` from `modelConfig`.
+                    *   [X] Apply default rates (e.g., 1.0) and log a warning if specific rates are missing.
+                    *   [X] Calculate `cost = (prompt_tokens * input_rate) + (completion_tokens * output_rate)`.
+                    *   [X] Round the result (e.g., `Math.ceil(cost)`) and return it.
+                *   [X] **Add unit tests for `calculateActualChatCost` in `cost_utils.test.ts` covering various scenarios (happy path, edge cases for inputs, missing rates, logger interaction).**
+            *   [X] **Update `supabase/functions/chat/index.ts` (`handlePostRequest` function):**
+                *   [X] Import the new `calculateActualChatCost` helper function.
+                *   [X] Ensure the full `config` column (containing `AiModelExtendedConfig`) is fetched from the `ai_providers` table along with other provider data.
+                *   [X] Parse the fetched `providerData.config` JSON into an `AiModelExtendedConfig` object (handle potential errors).
+                *   [X] In both the normal chat path and the rewind path, after receiving `adapterResponsePayload.token_usage` and having the parsed `modelConfig`:
+                    *   [X] Call `calculateActualChatCost(adapterResponsePayload.token_usage, modelConfig, logger)`.
+                *   [X] Use the `calculatedCost` returned by the helper function as the `amount` when calling `tokenWalletService.recordTransaction`.
+        *   [X] Debit this actual cost from the user's/org's wallet. (Note: Now debits cost calculated with DB rates via helper function).
+*   [X] **Testing:**
+    *   [X] Unit tests for `calculateActualChatCost` in `supabase/functions/_shared/utils/cost_utils.test.ts`
+    *   [X] Unit tests for `estimateInputTokens` in `packages/utils/src/tokenCostUtils.spec.ts` with various model configs and inputs.
+    *   [X] Unit tests for `getMaxOutputTokens` in `packages/utils/src/tokenCostUtils.spec.ts` with different balances, costs, and caps.
+    *   [ ] Integration tests for the chat flow, ensuring `max_tokens` is passed and respected, and balances are checked and debited correctly (consider Playwright or similar end-to-end tests).
+    *   [~] Test with models using different tokenization strategies.
 *   [ ] **Documentation:**
     *   [ ] Update developer documentation on how to configure new models in `ai_providers.config`.
     *   [ ] Document the token estimation and cost calculation logic.

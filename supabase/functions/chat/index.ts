@@ -22,12 +22,15 @@ import type {
     ChatMessageInsert,
     ChatMessageRow,
     TokenUsage,
+    AiModelExtendedConfig,
+    ILogger
  } from '../_shared/types.ts'; 
 import type { Database, Json } from "../types_db.ts"; 
 import { verifyApiKey } from '../_shared/auth.ts'; // Assuming verifyApiKey is not used in this specific flow but kept for DI consistency
 import { logger as defaultLogger } from '../_shared/logger.ts'; // Renamed to avoid conflict with deps.logger
 import { TokenWalletService } from '../_shared/services/tokenWalletService.ts';
 import { countTokensForMessages } from '../_shared/utils/tokenizer_utils.ts';
+import { calculateActualChatCost } from '../_shared/utils/cost_utils.ts';
 import { TokenWallet, TokenWalletTransactionType } from '../_shared/types/tokenWallet.types.ts';
 
 // Pre-fetch env vars for defaultDeps to handle potential early init issues in tests
@@ -313,7 +316,7 @@ async function handlePostRequest(
 
         const { data: providerData, error: providerError } = await supabaseClient
           .from('ai_providers')
-          .select('api_identifier, provider')
+          .select('api_identifier, provider, config')
           .eq('id', requestProviderId)
           .eq('is_active', true)
           .single();
@@ -329,6 +332,19 @@ async function handlePostRequest(
             return { error: { message: 'AI provider configuration error on server [missing provider string].', status: 500 }};
         }
         logger.info(`Fetched provider details: provider=${providerString}, api_identifier=${apiIdentifier}`);
+
+        // --- START: Parse providerData.config (moved higher) ---
+        let modelConfigForCosting: AiModelExtendedConfig | null = null;
+        if (providerData.config && typeof providerData.config === 'object' && providerData.config !== null) {
+            // Using 'as unknown as AiModelExtendedConfig' for now due to Json type from DB
+            // A proper validation/parsing function is recommended for production.
+            modelConfigForCosting = providerData.config as unknown as AiModelExtendedConfig;
+            logger.info('Parsed AiModelExtendedConfig from providerData.config', { modelIdentifier: apiIdentifier });
+        } else {
+            logger.warn('Provider config not found, not an object, or null. Cost calculation might use defaults.', { providerId: requestProviderId, modelIdentifier: apiIdentifier });
+            // modelConfigForCosting remains null, calculateActualChatCost will handle defaults
+        }
+        // --- END: Parse providerData.config ---
 
         let wallet: TokenWallet | null = null;
         try {
@@ -505,43 +521,39 @@ async function handlePostRequest(
             
             // --- START: Token Debit for Rewind Path (Non-Dummy) ---
             if (providerString !== 'dummy') {
-                const tokenUsageFromAdapter = adapterResponsePayload.token_usage;
-                if (tokenUsageFromAdapter && typeof tokenUsageFromAdapter === 'object' && !Array.isArray(tokenUsageFromAdapter) && 'total_tokens' in tokenUsageFromAdapter) {
-                    const tokenUsage = tokenUsageFromAdapter as unknown as TokenUsage; // Cast to unknown first
-                    if (typeof tokenUsage.total_tokens === 'number' && tokenUsage.total_tokens > 0) {
-                        const actualTokensConsumed = tokenUsage.total_tokens;
-                        logger.info('Attempting to record token transaction (debit) for rewind.', { 
+                const tokenUsageFromAdapter = adapterResponsePayload.token_usage as TokenUsage | null;
+                const actualTokensToDebit = calculateActualChatCost(tokenUsageFromAdapter, modelConfigForCosting, logger);
+
+                if (actualTokensToDebit > 0) {
+                    logger.info('Attempting to record token transaction (debit) for rewind.', { 
+                        walletId: wallet.walletId, 
+                        actualTokensToDebit, 
+                        relatedEntityId: newAssistantMessageFromRpc.id 
+                    });
+                    try {
+                        const transactionData = {
+                            walletId: wallet.walletId,
+                            type: 'DEBIT_USAGE' as TokenWalletTransactionType,
+                            amount: actualTokensToDebit.toString(),
+                            relatedEntityId: newAssistantMessageFromRpc.id,
+                            relatedEntityType: 'chat_message' as const,
+                            recordedByUserId: userId,
+                            notes: `Chat completion (rewind) for chat ${currentChatId}`
+                        };
+                        const transaction = await tokenWalletService.recordTransaction(transactionData);
+                        logger.info('Token transaction recorded (debit) for rewind.', { transactionId: transaction.transactionId, walletId: wallet.walletId, amount: actualTokensToDebit });
+                    } catch (debitError: unknown) {
+                        const typedDebitError = debitError instanceof Error ? debitError : new Error(String(debitError));
+                        logger.error('Failed to record token debit transaction for rewind:', { 
+                            error: typedDebitError.message, 
                             walletId: wallet.walletId, 
-                            actualTokensConsumed, 
-                            relatedEntityId: newAssistantMessageFromRpc.id 
+                            actualTokensConsumed: actualTokensToDebit 
                         });
-                        try {
-                            const transactionData = {
-                                walletId: wallet.walletId,
-                                type: 'DEBIT_USAGE' as TokenWalletTransactionType,
-                                amount: actualTokensConsumed.toString(),
-                                relatedEntityId: newAssistantMessageFromRpc.id, // Use the ID of the assistant message from RPC
-                                relatedEntityType: 'chat_message' as const,
-                                recordedByUserId: userId,
-                                notes: `Chat completion (rewind) for chat ${currentChatId}`
-                            };
-                            const transaction = await tokenWalletService.recordTransaction(transactionData);
-                            logger.info('Token transaction recorded (debit) for rewind.', { transactionId: transaction.transactionId, walletId: wallet.walletId, amount: actualTokensConsumed });
-                        } catch (debitError: unknown) {
-                            const typedDebitError = debitError instanceof Error ? debitError : new Error(String(debitError));
-                            logger.error('Failed to record token debit transaction for rewind:', { 
-                                error: typedDebitError.message, 
-                                walletId: wallet.walletId, 
-                                actualTokensConsumed 
-                            });
-                            // Non-fatal for response, but needs monitoring.
-                        }
-                    } else {
-                        logger.warn('Token usage total_tokens is not a positive number for rewind, skipping debit.', { tokenUsage });
+                        // Non-fatal for response, but needs monitoring.
                     }
                 } else {
-                    logger.warn('No valid token_usage object with total_tokens for rewind, skipping debit.', { tokenUsageFromAdapter });
-                }
+                    logger.warn('Calculated debit amount for rewind is zero or less, skipping debit.', { tokenUsageFromAdapter, calculatedAmount: actualTokensToDebit });
+                 }
             }
             // --- END: Token Debit for Rewind Path (Non-Dummy) ---
             
@@ -763,64 +775,45 @@ async function handlePostRequest(
 
                 // --- START: Token Debit for Normal Path (Moved Before Message Saves) ---
                 let transactionRecordedSuccessfully = false;
-                const tokenUsageFromAdapterNormal = adapterResponsePayload.token_usage;
+                const tokenUsageFromAdapterNormal = adapterResponsePayload.token_usage as TokenUsage | null;
+                const actualTokensToDebitNormal = calculateActualChatCost(tokenUsageFromAdapterNormal, modelConfigForCosting, logger);
 
-                if (tokenUsageFromAdapterNormal && typeof tokenUsageFromAdapterNormal === 'object' && !Array.isArray(tokenUsageFromAdapterNormal) && 'total_tokens' in tokenUsageFromAdapterNormal) {
-                    const tokenUsageNormal = tokenUsageFromAdapterNormal as unknown as TokenUsage;
-                    if (typeof tokenUsageNormal.total_tokens === 'number' && tokenUsageNormal.total_tokens > 0) {
-                        const actualTokensConsumed = tokenUsageNormal.total_tokens;
-                        logger.info('Attempting to record token transaction (debit) for normal path BEFORE saving messages.', { 
+                if (actualTokensToDebitNormal > 0) {
+                    logger.info('Attempting to record token transaction (debit) for normal path BEFORE saving messages.', { 
+                        walletId: wallet.walletId, 
+                        actualTokensToDebit: actualTokensToDebitNormal,
+                    });
+                    try {
+                        const transactionData = {
+                            walletId: wallet.walletId,
+                            type: 'DEBIT_USAGE' as TokenWalletTransactionType,
+                            amount: actualTokensToDebitNormal.toString(),
+                            relatedEntityType: 'chat_message' as const,
+                            recordedByUserId: userId,
+                            notes: `Chat completion for chat ${currentChatId}`
+                        };
+                        const transaction = await tokenWalletService.recordTransaction(transactionData);
+                        logger.info('Token transaction recorded (debit) successfully.', { transactionId: transaction.transactionId, walletId: wallet.walletId, amount: actualTokensToDebitNormal });
+                        transactionRecordedSuccessfully = true;
+                    } catch (debitError: unknown) {
+                        const typedDebitError = debitError instanceof Error ? debitError : new Error(String(debitError));
+                        logger.error('CRITICAL: Failed to record token debit transaction for normal path AFTER successful AI response. Messages will NOT be saved.', { 
+                            error: typedDebitError.message, 
                             walletId: wallet.walletId, 
-                            actualTokensConsumed, 
-                            // relatedEntityId will be set after assistant message is hypothetically saved, but debit happens first.
-                            // For now, we can't use assistantInsertResult.id here.
+                            actualTokensConsumed: actualTokensToDebitNormal,
+                            aiResponseContent: adapterResponsePayload.content.substring(0, 100) // Log a snippet
                         });
-                        try {
-                            const transactionData = {
-                                walletId: wallet.walletId,
-                                type: 'DEBIT_USAGE' as TokenWalletTransactionType,
-                                amount: actualTokensConsumed.toString(),
-                                // relatedEntityId: assistantInsertResult.id, // Cannot use yet
-                                relatedEntityType: 'chat_message' as const,
-                                recordedByUserId: userId,
-                                notes: `Chat completion for chat ${currentChatId}` // relatedEntityId for message will be added later if needed or make generic.
-                            };
-                            const transaction = await tokenWalletService.recordTransaction(transactionData);
-                            logger.info('Token transaction recorded (debit) successfully.', { transactionId: transaction.transactionId, walletId: wallet.walletId, amount: actualTokensConsumed });
-                            transactionRecordedSuccessfully = true;
-                        } catch (debitError: unknown) {
-                            const typedDebitError = debitError instanceof Error ? debitError : new Error(String(debitError));
-                            logger.error('CRITICAL: Failed to record token debit transaction for normal path AFTER successful AI response. Messages will NOT be saved.', { 
-                                error: typedDebitError.message, 
-                                walletId: wallet.walletId, 
-                                actualTokensConsumed,
-                                aiResponseContent: adapterResponsePayload.content.substring(0, 100) // Log a snippet
-                            });
-                            // This is a critical failure. The AI call was made, but we couldn't debit.
-                            // Return 500 to the user, do not save messages.
-                            return { 
-                                error: { 
-                                    message: 'AI response was generated, but a critical error occurred while finalizing your transaction. Your message has not been saved. Please try again. If the issue persists, contact support.', 
-                                    status: 500 
-                                } 
-                            };
-                        }
-                    } else {
-                        logger.warn('Token usage total_tokens is not a positive number for normal path, debit skipped. This might be an issue.', { tokenUsageNormal });
-                        // If debit is skipped due to bad token data from AI, we might still proceed but this should be reviewed.
-                        // For now, let's assume if total_tokens is 0 or invalid, we don't debit and proceed with saving messages.
-                        // However, this could be problematic if tokens *should* have been debited.
-                        // Consider if this should be a hard error or a soft one.
-                        // For now, treating as non-fatal IF total_tokens is explicitly not positive.
-                        // If token_usage object itself is bad, it's caught by the outer 'else'.
-                        transactionRecordedSuccessfully = true; // Marking as true to allow message saving if debit is legitimately zero.
+                        return { 
+                            error: { 
+                                message: 'AI response was generated, but a critical error occurred while finalizing your transaction. Your message has not been saved. Please try again. If the issue persists, contact support.', 
+                                status: 500 
+                            } 
+                        };
                     }
                 } else {
-                    logger.warn('No valid token_usage object with total_tokens for normal path, debit skipped. AI response will still be saved.', { tokenUsageFromAdapterNormal });
-                    // If the adapter completely fails to provide token_usage, we log it and proceed.
-                    // This is a policy decision: save the message even if we can't account for tokens from this specific response?
-                    // For now, we allow it, but this requires careful monitoring.
-                    transactionRecordedSuccessfully = true; // Marking as true to allow message saving.
+                    // Log if debit is zero or less, but still mark as successful for message saving purposes if cost is genuinely zero.
+                    logger.warn('Calculated debit amount for normal path is zero or less, debit step will be skipped if not already.', { tokenUsageFromAdapterNormal, calculatedAmount: actualTokensToDebitNormal });
+                    transactionRecordedSuccessfully = true; 
                 }
 
                 // If debit failed critically (and returned 500), we won't reach here.
