@@ -58,7 +58,54 @@ export type ChatMessage = Database['public']['Tables']['chat_messages']['Row']
 
 // --- Application/API/Adapter/Store Specific Types ---
 
-// Keep existing API/Usage types...
+// Accepted Tiktoken encoding names
+export type TiktokenEncoding = 'cl100k_base' | 'p50k_base' | 'r50k_base' | 'gpt2' | 'o200k_base';
+
+/**
+ * Interface for messages used in token counting functions.
+ */
+export interface MessageForTokenCounting {
+  role: "system" | "user" | "assistant" | "function"; // Function role might be needed for some models
+  content: string | null; // Content can be null for some function calls
+  name?: string; // Optional, for function calls
+}
+
+/**
+ * Extended configuration for an AI model, stored in the `ai_providers.config` JSON column.
+ * This structure holds information crucial for dynamic token cost calculation, output capping,
+ * and input token estimation strategies.
+ */
+export interface AiModelExtendedConfig {
+  // Token Costing & Limits (for getMaxOutputTokens logic)
+  input_token_cost_rate: number;    // How many wallet tokens 1 input token costs (e.g., 1.0)
+  output_token_cost_rate: number;   // How many wallet tokens 1 output token costs (e.g., 3.0)
+  hard_cap_output_tokens?: number; // Provider's absolute max output tokens (e.g., 4096, 8192, 200000)
+                                    // This is the 'global_max_tokens' or 'hard_cap' in ChatGPT's suggestion.
+  context_window_tokens?: number;   // Provider's max context window (input + output usually)
+
+  // Input Token Estimation Strategy (for client-side estimateInputTokens)
+  tokenization_strategy: {
+    type: 'tiktoken' | 'rough_char_count' | 'provider_specific_api' | 'unknown';
+    // For 'tiktoken'
+    tiktoken_encoding_name?: TiktokenEncoding; // e.g., 'cl100k_base', 'p50k_base', 'r50k_base', 'gpt2'
+    is_chatml_model?: boolean; // If true, apply ChatML counting rules (like in tokenizer_utils.ts)
+                                // We might need more granular rules here if ChatML varies.
+    api_identifier_for_tokenization?: string; // e.g., "gpt-4o", "gpt-3.5-turbo", for direct use with tiktoken's encodingForModel
+    // For 'rough_char_count'
+    chars_per_token_ratio?: number; // e.g., 4.0 (average chars per token)
+    // For 'provider_specific_api'
+    // No extra fields needed here; implies server-side call or pre-fetched from provider if available
+  };
+
+  // Optional: Provider-returned limits (can be synced automatically if API provides them)
+  provider_max_input_tokens?: number;
+  provider_max_output_tokens?: number; // This could directly inform hard_cap_output_tokens
+
+  // Optional: Default parameters for the model
+  default_temperature?: number;
+  default_top_p?: number;
+  // ... other common model params
+}
 
 /**
  * Structure for sending a message via the 'chat' Edge Function.
@@ -69,7 +116,25 @@ export interface ChatApiRequest {
   promptId: SystemPrompt['id']; // Reference aliased type
   chatId?: Chat['id'] | null;   // Reference aliased type (optional for new chats)
   organizationId?: string | null; // Add optional organizationId
-  contextMessages?: { role: 'user' | 'assistant' | 'system'; content: string }[]; // Added for selected context
+  contextMessages?: MessageForTokenCounting[]; // Added for selected context
+  rewindFromMessageId?: string | null; // Added for rewind
+  max_tokens_to_generate?: number; // Added for output capping
+  temperature?: number; // Added for temperature control
+  top_p?: number; // Added for top_p control
+  presence_penalty?: number; // Added for presence penalty
+  frequency_penalty?: number; // Added for frequency penalty
+  seed?: number; // Added for seed control
+  stop?: string[]; // Added for stop sequences
+  stream?: boolean; // Added for streaming responses
+  user?: string; // Added for user identification
+  response_format?: { type: string }; // Added for structured output
+  tools?: { type: string; function: { name: string; description: string, parameters: Record<string, unknown> } }[]; // Added for tool calling
+  tool_choice?: string; // Added for tool choice
+  logprobs?: number; // Added for logprobs
+  echo?: boolean; // Added for echoing messages
+  best_of?: number; // Added for best of responses
+  logit_bias?: Record<string, number>; // Added for logit bias
+  max_tokens?: number; // Added for max tokens
 }
 
 /**
@@ -148,6 +213,7 @@ export interface AiProviderAdapter {
 export interface ChatHandlerSuccessResponse {
   userMessage?: ChatMessageRow;       // Populated for normal new messages and new user message in rewind
   assistantMessage: ChatMessageRow;  // Always populated on success
+  chatId: string;                    // ID of the chat session (new or existing)
   isRewind?: boolean;                 // True if this was a rewind operation
   isDummy?: boolean;                  // True if dummy provider was used
 }

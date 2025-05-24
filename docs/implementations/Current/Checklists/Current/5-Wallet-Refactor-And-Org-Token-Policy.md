@@ -103,17 +103,17 @@
 
 ## Phase 4: Dynamic Token Costing & Max Output Calculation
 
-*   [ ] **Define `AiModelExtendedConfig` Interface:**
-    *   [ ] Create/update a type definition (e.g., in `packages/types/src/ai.types.ts`) for the `AiModelExtendedConfig` structure to be stored in the `ai_providers.config` JSON column. Include fields for token cost rates, hard caps, tokenization strategy (type, encoding name, char ratio, chatml flag), and any provider-returned limits.
-    *   [ ] Set hard_cap at 20% of users token balance or the model providers cap, whichever is smaller. 
-*   [ ] **Update `ai_providers` Table & `sync-ai-models` Logic:**
-    *   [ ] **Review `DbAiProvider` Interface:** In `supabase/functions/sync-ai-models/index.ts`, ensure the `DbAiProvider` interface (or the fields selected in `getCurrentDbModels`) includes the `config` column if it's to be manipulated during sync.
-    *   [ ] **Enhance Provider Sync Functions (`openai_sync.ts`, `anthropic_sync.ts`, `google_sync.ts`):**
-        *   [ ] Modify each provider's sync function (`<provider>_sync.ts`) to attempt to extract known token limit information (like `inputTokenLimit`, `outputTokenLimit`) from the provider's API response when listing models.
-        *   [ ] Store this extracted information into the `provider_max_input_tokens` and `provider_max_output_tokens` fields within the `config: AiModelExtendedConfig` JSON object for each model in the `ai_providers` table.
-        *   [ ] Ensure the sync logic intelligently merges these API-driven fields with any pre-existing manually configured fields in the `config` JSON (i.e., don't wipe out manual settings like `input_token_cost_rate` unless the API is the source for that specific sub-field).
-    *   [ ] **Manual `config` Population:**
-        *   [ ] For existing models in the `ai_providers` table, manually populate the `config` JSON column with initial default values for:
+*   [x] **Define `AiModelExtendedConfig` Interface:**
+    *   [x] Create/update a type definition (e.g., in `packages/types/src/ai.types.ts`) for the `AiModelExtendedConfig` structure to be stored in the `ai_providers.config` JSON column. Include fields for token cost rates, hard caps, tokenization strategy (type, encoding name, char ratio, chatml flag), and any provider-returned limits.
+    *   [x] Set hard_cap at 20% of users token balance or the model providers cap, whichever is smaller. 
+*   [x] **Update `ai_providers` Table & `sync-ai-models` Logic:**
+    *   [x] **Review `DbAiProvider` Interface:** In `supabase/functions/sync-ai-models/index.ts`, ensure the `DbAiProvider` interface (or the fields selected in `getCurrentDbModels`) includes the `config` column if it's to be manipulated during sync.
+    *   [x] **Enhance Provider Sync Functions (`openai_sync.ts`, `anthropic_sync.ts`, `google_sync.ts`):**
+        *   [x] Modify each provider's sync function (`<provider>_sync.ts`) to attempt to extract known token limit information (like `inputTokenLimit`, `outputTokenLimit`) from the provider's API response when listing models.
+        *   [x] Store this extracted information into the `provider_max_input_tokens` and `provider_max_output_tokens` fields within the `config: AiModelExtendedConfig` JSON object for each model in the `ai_providers` table.
+        *   [x] Ensure the sync logic intelligently merges these API-driven fields with any pre-existing manually configured fields in the `config` JSON (i.e., don't wipe out manual settings like `input_token_cost_rate` unless the API is the source for that specific sub-field).
+    *   [x] **Manual `config` Population:**
+        *   [x] For existing models in the `ai_providers` table, manually populate the `config` JSON column with initial default values for:
             *   `input_token_cost_rate` (e.g., 1.0)
             *   `output_token_cost_rate` (e.g., 1.0 or a model-specific multiplier)
             *   `hard_cap_output_tokens` (a sensible default or known model limit)
@@ -122,27 +122,27 @@
                 *   `tiktoken_encoding_name`: (e.g., `'cl100k_base'` for relevant OpenAI models)
                 *   `is_chatml_model`: (`true` for OpenAI chat models)
                 *   `chars_per_token_ratio`: (e.g., 4 if type is `rough_char_count`)
-        *   [ ] Document the process for adding new models, emphasizing the need to configure these `config` fields.
-*   [ ] **Implement Client-Side Input Token Estimator:**
-    *   [ ] **Create `packages/utils/src/tokenCostUtils.ts`:**
-        *   [ ] Implement `estimateInputTokens(textOrMessages: string | MessageForTokenCounting[], modelConfig: AiModelExtendedConfig): number`.
-            *   This function will use `modelConfig.tokenization_strategy` to decide how to count.
-            *   If `type` is `'tiktoken'`, use `tiktoken` library with `modelConfig.tokenization_strategy.tiktoken_encoding_name`. If `is_chatml_model` is true, apply generic ChatML-style counting logic (consider adapting parts of `tokenizer_utils.ts` or making it more generic).
-            *   If `type` is `'rough_char_count'`, use `text.length / modelConfig.tokenization_strategy.chars_per_token_ratio`.
-            *   Handle cases where `modelConfig` or strategy details are missing (return a high estimate or throw error).
-        *   [ ] Export `MessageForTokenCounting` interface if it's not already in a shared types package.
-    *   [ ] **Refactor `apps/web/src/hooks/useTokenEstimator.ts`:**
-        *   [ ] Modify this hook to retrieve the `AiModelExtendedConfig` for the currently selected AI model (likely from `aiStore` or a new `modelStore` which should load `ai_providers` data).
-        *   [ ] Call the new `estimateInputTokens` from `tokenCostUtils.ts`, passing the message content and the model's `config`.
-*   [ ] **Implement `getMaxOutputTokens` Function:**
-    *   [ ] **In `packages/utils/src/tokenCostUtils.ts`:**
-        *   [ ] Implement `getMaxOutputTokens(user_balance_tokens: number, prompt_input_tokens: number, modelConfig: AiModelExtendedConfig, deficit_tokens_allowed: number = 0): number`.
-            *   Use `modelConfig.input_token_cost_rate`, `modelConfig.output_token_cost_rate`.
-            *   Calculate available budget for output: `budget_for_output = ((user_balance_tokens + deficit_tokens_allowed) - (prompt_input_tokens * modelConfig.input_token_cost_rate))`.
-            *   If `budget_for_output <= 0`, return `0`.
-            *   Calculate `max_spendable_output_tokens = floor(budget_for_output / modelConfig.output_token_cost_rate)`.
-            *   Determine the dynamic hard cap: `dynamic_hard_cap = min(floor(0.20 * user_balance_tokens), modelConfig.hard_cap_output_tokens || Infinity)`. (Use `modelConfig.hard_cap_output_tokens` which is the provider's absolute cap. Ensure `user_balance_tokens` for the 20% calculation is the total current balance).
-            *   Clamp result: `max(0, min(max_spendable_output_tokens, dynamic_hard_cap))`.
+        *   [x] Document the process for adding new models, emphasizing the need to configure these `config` fields.
+*   [x] **Implement Client-Side Input Token Estimator:**
+    *   [x] **Create `packages/utils/src/tokenCostUtils.ts`:**
+        *   [x] Implement `estimateInputTokens(textOrMessages: string | MessageForTokenCounting[], modelConfig: AiModelExtendedConfig): number`.
+            *   [x] This function will use `modelConfig.tokenization_strategy` to decide how to count.
+            *   [x] If `type` is `'tiktoken'`, use `tiktoken` library with `modelConfig.tokenization_strategy.tiktoken_encoding_name`. If `is_chatml_model` is true, apply generic ChatML-style counting logic (consider adapting parts of `tokenizer_utils.ts` or making it more generic).
+            *   [x] If `type` is `'rough_char_count'`, use `text.length / modelConfig.tokenization_strategy.chars_per_token_ratio`.
+            *   [x] Handle cases where `modelConfig` or strategy details are missing (return a high estimate or throw error).
+        *   [x] Export `MessageForTokenCounting` interface if it's not already in a shared types package.
+    *   [x] **Refactor `apps/web/src/hooks/useTokenEstimator.ts`:**
+        *   [x] Modify this hook to retrieve the `AiModelExtendedConfig` for the currently selected AI model (likely from `aiStore` or a new `modelStore` which should load `ai_providers` data).
+        *   [x] Call the new `estimateInputTokens` from `tokenCostUtils.ts`, passing the message content and the model's `config`.
+*   [x] **Implement `getMaxOutputTokens` Function:**
+    *   [x] **In `packages/utils/src/tokenCostUtils.ts`:**
+        *   [x] Implement `getMaxOutputTokens(user_balance_tokens: number, prompt_input_tokens: number, modelConfig: AiModelExtendedConfig, deficit_tokens_allowed: number = 0): number`.
+            *   [x] Use `modelConfig.input_token_cost_rate`, `modelConfig.output_token_cost_rate`.
+            *   [x] Calculate available budget for output: `budget_for_output = ((user_balance_tokens + deficit_tokens_allowed) - (prompt_input_tokens * modelConfig.input_token_cost_rate))`.
+            *   [x] If `budget_for_output <= 0`, return `0`.
+            *   [x] Calculate `max_spendable_output_tokens = floor(budget_for_output / modelConfig.output_token_cost_rate)`.
+            *   [x] Determine the dynamic hard cap: `dynamic_hard_cap = min(floor(0.20 * user_balance_tokens), modelConfig.hard_cap_output_tokens || Infinity)`. (Use `modelConfig.hard_cap_output_tokens` which is the provider's absolute cap. Ensure `user_balance_tokens` for the 20% calculation is the total current balance).
+            *   [x] Clamp result: `max(0, min(max_spendable_output_tokens, dynamic_hard_cap))`.
 *   [ ] **Refactor aiStore to export `aiStore.sendMessage` into its own function**
     *   [ ] Import the new independent sub function into aiStore. 
     *   [ ] Refactor, DRY, simplify, flatten aiStore.sendMessage into a DIP/DI adapter interface model to improve readability, testability, and maintainability. 

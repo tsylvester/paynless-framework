@@ -6,7 +6,6 @@ import {
   } from "npm:@supabase/supabase-js@^2.43.4";
   import type { User as SupabaseUser } from "npm:@supabase/gotrue-js@^2.6.3";
   import { spy, stub, type Spy } from "jsr:@std/testing/mock";
-  import type { Database } from "../types_db.ts";
 
   // Internal types
   import type {

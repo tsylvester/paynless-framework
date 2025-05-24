@@ -1,10 +1,5 @@
 import { type TiktokenModel, encodingForModel } from "https://esm.sh/js-tiktoken@1.0.10";
-
-interface MessageForTokenCounting {
-  role: "system" | "user" | "assistant" | "function"; // Function role might be needed for some models
-  content: string | null; // Content can be null for some function calls
-  name?: string; // Optional, for function calls
-}
+import type { MessageForTokenCounting } from "../types.ts"; // Import from the shared types file
 
 /**
  * Counts the number of tokens in a list of messages for a given model.

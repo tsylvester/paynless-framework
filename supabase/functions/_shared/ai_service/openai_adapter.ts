@@ -37,12 +37,22 @@ export class OpenAiAdapter implements AiProviderAdapter {
       openaiMessages.push({ role: 'user', content: request.message });
     }
 
-    const openaiPayload = {
+    const openaiPayload: { 
+      model: string;
+      messages: { role: string; content: string }[];
+      max_tokens?: number; // Define max_tokens as optional here
+      // temperature: number; // Example of other params
+    } = {
       model: modelApiName,
       messages: openaiMessages,
       // Add other parameters as needed
       // temperature: 0.7,
     };
+
+    // Add max_tokens to the payload if it's provided in the request
+    if (request.max_tokens_to_generate && request.max_tokens_to_generate > 0) {
+      openaiPayload.max_tokens = request.max_tokens_to_generate;
+    }
 
     console.log(`Sending fetch request to OpenAI model: ${modelApiName}`);
 

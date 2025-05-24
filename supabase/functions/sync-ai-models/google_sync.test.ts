@@ -196,7 +196,8 @@ Deno.test("syncGoogleModels", {
                 name: commonApiModel.name,
                 description: commonApiModel.description ?? null,
                 is_active: true, // Ensure it's active
-                provider: 'google' // Correct provider
+                provider: 'google', // Correct provider
+                config: null // Added missing config property
             };
 
             // Mock dependencies
@@ -230,7 +231,7 @@ Deno.test("syncGoogleModels", {
 
     await t.step("should return error result if DB insert fails", async () => {
         // let listModelsStub: Stub | undefined; // No longer needed
-        const dbError = { message: "Insert failed", code: "23505" };
+        const dbError = { name: "Error", message: "Insert failed", code: "23505" }; // Added name property
         try {
             const mockApiModels = [{ api_identifier: 'google-new-model', name: 'Google New Model', description: undefined }];
             
@@ -258,7 +259,10 @@ Deno.test("syncGoogleModels", {
             assertSpyCall(mockDeps.getCurrentDbModels as Spy, 0);
             assertSpyCall(mockDeps.error as Spy, 0); // Log the DB error
             assert((mockDeps.error as Spy).calls[0].args[0] === `Insert resolved with error object for ${PROVIDER_NAME}:`);
-            assert((mockDeps.error as Spy).calls[0].args[1] === dbError, "The original dbError object should be logged");
+            const loggedInsertError = (mockDeps.error as Spy).calls[0].args[1];
+            assertEquals(loggedInsertError.name, dbError.name, "Error name should match");
+            assertEquals(loggedInsertError.message, dbError.message, "Error message should match");
+            assertEquals(loggedInsertError.code, dbError.code, "Error code should match");
 
             // Check Supabase insert attempt
             const fromSpy = spies.fromSpy;
@@ -277,18 +281,28 @@ Deno.test("syncGoogleModels", {
 
      await t.step("should return error result if DB update fails", async () => {
         // let listModelsStub: Stub | undefined; // No longer needed
-        const dbError = { message: "Update failed", code: "xxxxx" };
-        const modelId = 'db-id-g1';
+        const dbError = { name: "Error", message: "Update conflict", code: "23503" }; // Added name property
+        const modelId = 'google-existing';
         try {
-            const mockApiModels = [{ api_identifier: 'google-gemini-1.5-pro-latest', name: 'Google Gemini 1.5 Pro UPDATED', description: undefined }];
-            const existingDbModels: DbAiProvider[] = [
-                { id: modelId, api_identifier: 'google-gemini-1.5-pro-latest', name: 'Google Gemini 1.5 Pro', description: null, is_active: true, provider: PROVIDER_NAME },
-            ];
+            const existingDbModel: DbAiProvider = {
+                id: "db-google-update",
+                api_identifier: modelId,
+                name: "Old Name",
+                description: null,
+                is_active: true,
+                provider: PROVIDER_NAME,
+                config: null // Added missing config property
+            };
+            const apiModelUpdate = {
+                api_identifier: modelId,
+                name: 'Google Gemini 1.5 Pro UPDATED',
+                description: undefined
+            };
 
             // Mock dependencies
              const mockDeps = createMockSyncDeps({
-                listProviderModels: spy(async () => mockApiModels),
-                getCurrentDbModels: spy(async () => existingDbModels) 
+                listProviderModels: spy(async () => [apiModelUpdate]),
+                getCurrentDbModels: spy(async () => [existingDbModel]) 
             });
 
             // Configure Supabase mock for UPDATE failure
@@ -296,7 +310,7 @@ Deno.test("syncGoogleModels", {
             const mockSupabaseConfig: MockSupabaseDataConfig = {
                  genericMockResults: {
                     ai_providers: {
-                        select: { data: existingDbModels, error: null, count: 1 },
+                        select: { data: [existingDbModel], error: null, count: 1 },
                         // Simulate update failure
                         update: { data: null, error: dbError }
                     }
@@ -309,41 +323,47 @@ Deno.test("syncGoogleModels", {
             assertSpyCall(mockDeps.listProviderModels as Spy, 0, { args: [GOOGLE_API_KEY] });
             assertSpyCall(mockDeps.getCurrentDbModels as Spy, 0, { args: [mockClient as any, PROVIDER_NAME] });
             assertSpyCall(mockDeps.error as Spy, 0); // Error should be logged
-            assert((mockDeps.error as Spy).calls[0].args[0] === `Update resolved with error object for model ID ${modelId} (${PROVIDER_NAME}):`);
-            assert((mockDeps.error as Spy).calls[0].args[1] === dbError, "The original dbError object should be logged");
+            assert((mockDeps.error as Spy).calls[0].args[0] === `Update resolved with error object for model ID ${existingDbModel.id} (${PROVIDER_NAME}):`);
+
+            // Check the second argument (the error object itself)
+            const loggedErrorObject = (mockDeps.error as Spy).calls[0].args[1];
+            assertEquals(loggedErrorObject.name, dbError.name, "Logged error's name should match dbError");
+            assertEquals(loggedErrorObject.message, dbError.message, "Logged error's message should match dbError");
+            assertEquals(loggedErrorObject.code, dbError.code, "Logged error's code should match dbError");
 
             const fromSpy = spies.fromSpy;
             // Check that Supabase .from() was called exactly once for the update attempt
             assertEquals(fromSpy.calls.length, 1, "from() should be called once for the update attempt");
             // Check the details of the first (and only) call
             assertSpyCall(fromSpy.calls[0].returned.update, 0);
-            assertSpyCall(fromSpy.calls[0].returned.eq, 0, { args: ['id', modelId] });
+            assertSpyCall(fromSpy.calls[0].returned.eq, 0, { args: ['id', existingDbModel.id] });
 
             assertEquals(result.inserted, 0);
             assertEquals(result.updated, 0); // Update failed
             assertEquals(result.deactivated, 0);
-            assertEquals(result.error, `Update process failed for ${PROVIDER_NAME}: Update failed for model ID ${modelId} (${PROVIDER_NAME}): ${dbError.message}`); 
+            assertEquals(result.error, `Update failed for model ID ${existingDbModel.id} (${PROVIDER_NAME}): ${dbError.message}`);
         } finally {
             // listModelsStub?.restore(); // No stub to restore
         }
     });
     
     await t.step("should return error result if DB deactivate fails", async () => {
-        const dbError = { message: "Deactivation failed", code: "xxxxx" };
+        const mockApiKey = "test-google-key";
+        const dbError = { name: "Error", message: "Deactivation constraint violation", code: "23504" }; // Added name property
         try {
-            // API returns empty list, triggering deactivation
-            const mockApiModels: ProviderModelInfo[] = [];
+            // Mock API returns empty list
+            const apiModels: ProviderModelInfo[] = [];
 
-            // DB has active models to deactivate
+            // Mock DB returns active models that need deactivation
             const existingDbModels: DbAiProvider[] = [
-                { id: 'db-google-deact1', api_identifier: 'google-old1', name: 'Old 1', description: null, is_active: true, provider: PROVIDER_NAME },
-                { id: 'db-google-deact2', api_identifier: 'google-old2', name: 'Old 2', description: null, is_active: true, provider: PROVIDER_NAME },
+                { id: 'db-google-deact1', api_identifier: 'google-old1', name: 'Old 1', description: null, is_active: true, provider: PROVIDER_NAME, config: null }, // Added config
+                { id: 'db-google-deact2', api_identifier: 'google-old2', name: 'Old 2', description: null, is_active: true, provider: PROVIDER_NAME, config: null }, // Added config
             ];
             const idsToDeactivate = existingDbModels.map(m => m.id);
 
             // Mock dependencies
             const mockDeps = createMockSyncDeps({
-                listProviderModels: spy(async () => mockApiModels), // API is empty
+                listProviderModels: spy(async () => apiModels), // API is empty
                 getCurrentDbModels: spy(async () => existingDbModels) // DB has models to deactivate
             });
 
@@ -359,14 +379,17 @@ Deno.test("syncGoogleModels", {
             const { client: mockClient, spies } = createMockSupabaseClient(mockSupabaseConfig);
             
             // Call function
-            const result = await syncGoogleModels(mockClient as any, GOOGLE_API_KEY, mockDeps);
+            const result = await syncGoogleModels(mockClient as any, mockApiKey, mockDeps);
 
             // Assertions
-            assertSpyCall(mockDeps.listProviderModels as Spy, 0, { args: [GOOGLE_API_KEY] });
+            assertSpyCall(mockDeps.listProviderModels as Spy, 0, { args: [mockApiKey] });
             assertSpyCall(mockDeps.getCurrentDbModels as Spy, 0, { args: [mockClient as any, PROVIDER_NAME] });
             assertSpyCall(mockDeps.error as Spy, 0); // Error should be logged
             assert((mockDeps.error as Spy).calls[0].args[0] === `Deactivation resolved with error object for ${PROVIDER_NAME}:`);
-            assert((mockDeps.error as Spy).calls[0].args[1] === dbError, "The original dbError object should be logged");
+            const loggedDeactivateError = (mockDeps.error as Spy).calls[0].args[1];
+            assertEquals(loggedDeactivateError.name, dbError.name, "Error name should match");
+            assertEquals(loggedDeactivateError.message, dbError.message, "Error message should match");
+            assertEquals(loggedDeactivateError.code, dbError.code, "Error code should match");
 
             // Check Supabase DEACTIVATE update attempt
             const fromSpy = spies.fromSpy;
@@ -392,29 +415,28 @@ Deno.test("syncGoogleModels", {
         } finally { }
     });
 
-    await t.step("should reactivate inactive model if it reappears in API", async () => {
+    await t.step("should reactivate and update an inactive model if it reappears in API", async () => {
         const mockApiKey = "test-google-key";
-        const modelId = 'db-google-reactivate';
         try {
-            // Define the model that appears in the API
-            const apiModel: ProviderModelInfo = { 
-                api_identifier: "google-reactivate-model", 
-                name: "Google Reactivate", 
-                description: "Should be reactivated"
-            };
-            // Define the same model as existing in the DB but inactive
+            const modelId = 'google-reactivate-model';
             const existingInactiveDbModel: DbAiProvider = {
-                id: modelId,
-                api_identifier: apiModel.api_identifier,
-                name: "Google Reactivate Old Name", // Simulate name/desc update too
-                description: "Old description",
-                is_active: false, // Key part: it's inactive
-                provider: 'google'
+                id: "db-google-reactivate",
+                api_identifier: modelId,
+                name: "Old Reactivate Name",
+                description: "Was inactive",
+                is_active: false, // Key: model is inactive in DB
+                provider: PROVIDER_NAME,
+                config: null // Added missing config property
+            };
+            const apiModelReactivated: ProviderModelInfo = {
+                api_identifier: "google-reactivate-model",
+                name: "Google Reactivate",
+                description: "Should be reactivated"
             };
             
             // Mock dependencies
             const mockDeps = createMockSyncDeps({
-                listProviderModels: spy(async () => [apiModel]), // API returns the model
+                listProviderModels: spy(async () => [apiModelReactivated]), // API returns the model
                 getCurrentDbModels: spy(async () => [existingInactiveDbModel]), // DB has it, but inactive
             });
 
@@ -445,13 +467,13 @@ Deno.test("syncGoogleModels", {
             
             // Check the payload sent to update
             const updatePayload = updateCall.returned.update.calls[0].args[0];
-            assertEquals(updatePayload.name, apiModel.name, "Name should be updated");
-            assertEquals(updatePayload.description, apiModel.description, "Description should be updated"); 
+            assertEquals(updatePayload.name, apiModelReactivated.name, "Name should be updated");
+            assertEquals(updatePayload.description, apiModelReactivated.description, "Description should be updated"); 
             assertEquals(updatePayload.is_active, true, "is_active should be set to true");
 
             // Check that the correct model ID was targeted
             assertExists(updateCall.returned.eq, "eq spy should exist");
-            assertSpyCall(updateCall.returned.eq, 0, { args: ['id', modelId] });
+            assertSpyCall(updateCall.returned.eq, 0, { args: ['id', existingInactiveDbModel.id] });
             
             // Check SyncResult
             assertEquals(result.provider, 'google');
@@ -471,9 +493,9 @@ Deno.test("syncGoogleModels", {
 
             // Mock DB returns active and inactive models
             const existingDbModels: DbAiProvider[] = [
-                { id: 'db-google-active1', api_identifier: 'google-active1', name: 'Active 1', description: null, is_active: true, provider: 'google' },
-                { id: 'db-google-active2', api_identifier: 'google-active2', name: 'Active 2', description: null, is_active: true, provider: 'google' },
-                { id: 'db-google-inactive', api_identifier: 'google-inactive', name: 'Inactive', description: null, is_active: false, provider: 'google' },
+                { id: 'db-google-active1', api_identifier: 'google-active1', name: 'Active 1', description: null, is_active: true, provider: 'google', config: null }, // Added config
+                { id: 'db-google-active2', api_identifier: 'google-active2', name: 'Active 2', description: null, is_active: true, provider: 'google', config: null }, // Added config
+                { id: 'db-google-inactive', api_identifier: 'google-inactive', name: 'Inactive', description: null, is_active: false, provider: 'google', config: null }, // Added config
             ];
             const activeModelIds = ['db-google-active1', 'db-google-active2'];
             
@@ -529,5 +551,65 @@ Deno.test("syncGoogleModels", {
 
     // --- Additional Google Specific Tests (Optional) ---
     // Add any tests specific to Google's API behavior or model properties if needed.
+
+    await t.step("should deactivate models present in DB but not in API response", async () => {
+        const mockApiKey = "test-google-key";
+        try {
+            const mockApiModels: ProviderModelInfo[] = [];
+            const existingDbModels: DbAiProvider[] = [
+                { id: 'db-google-1', api_identifier: 'google-to-deactivate-1', name: 'Old Model 1', description: null, is_active: true, provider: PROVIDER_NAME, config: null },
+                { id: 'db-google-2', api_identifier: 'google-to-deactivate-2', name: 'Old Model 2', description: null, is_active: true, provider: PROVIDER_NAME, config: null },
+                { id: 'db-google-3', api_identifier: 'google-already-inactive', name: 'Already Inactive', description: null, is_active: false, provider: PROVIDER_NAME, config: null },
+            ];
+
+            // Mock dependencies
+            const mockDeps = createMockSyncDeps({
+                listProviderModels: spy(async () => mockApiModels),
+                getCurrentDbModels: spy(async () => existingDbModels)
+            });
+
+            // Configure Supabase mock for the expected DEACTIVATE update operation
+            const mockSupabaseConfig: MockSupabaseDataConfig = {
+                genericMockResults: {
+                    ai_providers: {
+                        // Expect successful deactivation update call
+                        update: { data: ['db-google-1', 'db-google-2'].map(id => ({ id, is_active: false })), error: null, count: 2 } 
+                    }
+                }
+            };
+            const { client: mockClient, spies } = createMockSupabaseClient(mockSupabaseConfig);
+            
+            // Call function with mock deps
+            const result = await syncGoogleModels(mockClient as any, mockApiKey, mockDeps);
+
+            // Assertions
+            assertSpyCall(mockDeps.listProviderModels as Spy, 0, { args: [mockApiKey] });
+            assertSpyCall(mockDeps.getCurrentDbModels as Spy, 0, { args: [mockClient as any, 'google'] });
+
+            // Check Supabase DEACTIVATE update call
+            const fromSpy = spies.fromSpy;
+            assertEquals(fromSpy.calls.length, 1, "Only one Supabase call (deactivate update) should happen");
+            
+            const deactivateCall = fromSpy.calls[0];
+            assertExists(deactivateCall.returned.update, "Update spy should exist");
+            assertSpyCall(deactivateCall.returned.update, 0, { args: [{ is_active: false }] }); // Check the payload
+            
+            // Check that the .in() filter targeted the correct IDs
+            assertExists(deactivateCall.returned.in, "in spy should exist");
+            assertSpyCall(deactivateCall.returned.in, 0);
+            const inArgs = deactivateCall.returned.in.calls[0].args;
+            assertEquals(inArgs[0], 'id');
+            assertEquals(inArgs[1]?.length, 2, "Should target correct IDs for deactivation");
+            assert(inArgs[1]?.includes('db-google-1'));
+            assert(inArgs[1]?.includes('db-google-2'));
+            
+            // Check SyncResult
+            assertEquals(result.provider, 'google');
+            assertEquals(result.inserted, 0);
+            assertEquals(result.updated, 0);
+            assertEquals(result.deactivated, 2); // Only the initially active models
+            assertEquals(result.error, undefined);
+        } finally { }
+    });
 
 }); 

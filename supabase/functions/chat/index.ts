@@ -248,7 +248,8 @@ async function handlePostRequest(
         chatId: existingChatId, 
         rewindFromMessageId,
         selectedMessages,
-        organizationId 
+        organizationId,
+        max_tokens_to_generate
     } = requestBody;
 
     // --- 1. Input Validation ---
@@ -454,6 +455,7 @@ async function handlePostRequest(
                     providerId: requestProviderId, 
                     promptId: requestPromptId,
                     chatId: currentChatId,
+                    max_tokens_to_generate: max_tokens_to_generate
                 };
                 adapterResponsePayload = await adapter.sendMessage(
                     adapterChatRequest, 
@@ -745,6 +747,7 @@ async function handlePostRequest(
                         promptId: requestPromptId, 
                         chatId: currentChatId,
                         organizationId: organizationId,
+                        max_tokens_to_generate: max_tokens_to_generate
                     };
                     adapterResponsePayload = await adapter.sendMessage(
                         adapterChatRequestNormal,

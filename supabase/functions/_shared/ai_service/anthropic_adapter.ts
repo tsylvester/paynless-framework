@@ -78,11 +78,18 @@ export class AnthropicAdapter implements AiProviderAdapter {
         console.error('Anthropic request format error: Last message must be from user after filtering.', anthropicMessages);
         throw new Error('Cannot send request to Anthropic: message history format invalid.');
     }
+
+    // Determine max_tokens: use request.max_tokens_to_generate if valid, else default to 4096
+    const maxTokensForPayload = 
+        (request.max_tokens_to_generate && request.max_tokens_to_generate > 0) 
+        ? request.max_tokens_to_generate 
+        : 4096; // Default if not specified or invalid
+
     const anthropicPayload = {
       model: modelApiName,
       system: systemPrompt || undefined,
       messages: anthropicMessages,
-      max_tokens: 1024, 
+      max_tokens: maxTokensForPayload,
     };
     const response = await fetch(messagesUrl, {
       method: 'POST',

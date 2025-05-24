@@ -3,7 +3,7 @@ import type {
     // REMOVED: ChatMessage, // Not returned directly
     ProviderModelInfo, 
     ChatApiRequest, 
-    AdapterResponsePayload // Import this
+    AdapterResponsePayload
 } from '../types.ts';
 import type { Json } from '../../../functions/types_db.ts';
 // REMOVED: import type { VertexAI } from 'npm:@google-cloud/vertexai'; // Remove unused import
@@ -26,6 +26,8 @@ interface GoogleModelItem {
   displayName?: string;
   description?: string;
   supportedGenerationMethods?: string[];
+  inputTokenLimit?: number;
+  outputTokenLimit?: number;
   // Add other fields if needed
   [key: string]: unknown;
 }
@@ -126,14 +128,24 @@ export class GoogleAdapter implements AiProviderAdapter {
       throw new Error('Cannot send request to Google Gemini: message history format invalid.');
     }
 
-    const googlePayload = {
+    const googlePayload: {
+      contents: GoogleContent[];
+      generationConfig?: { // Define generationConfig as optional
+        temperature?: number;
+        maxOutputTokens?: number;
+        // Add other Google generation config params as needed
+      };
+    } = {
       contents: googleContents,
-      // Add generationConfig if needed (temperature, maxOutputTokens, etc.)
-      // generationConfig: {
-      //   temperature: 0.7,
-      //   maxOutputTokens: 1024,
-      // },
     };
+
+    // Add generationConfig if max_tokens_to_generate is provided
+    if (request.max_tokens_to_generate && request.max_tokens_to_generate > 0) {
+      googlePayload.generationConfig = {
+        ...(googlePayload.generationConfig || {}), // Preserve other potential generationConfig settings
+        maxOutputTokens: request.max_tokens_to_generate,
+      };
+    }
 
     console.log(`Sending request to Google Gemini model: ${modelApiName}`);
     // console.debug('Google Gemini Payload:', JSON.stringify(googlePayload));
@@ -250,30 +262,40 @@ export class GoogleAdapter implements AiProviderAdapter {
     }
 
     const jsonResponse = await response.json();
-    const models: ProviderModelInfo[] = [];
+    // console.debug('Google Models Response:', JSON.stringify(jsonResponse));
 
-    if (jsonResponse.models && Array.isArray(jsonResponse.models)) {
-      jsonResponse.models.forEach((model: GoogleModelItem) => {
-        // Filter for models that support 'generateContent' (for chat-like interactions)
-        // And potentially filter out older/preview models unless desired
-        if (model.name && model.supportedGenerationMethods?.includes('generateContent') && model.name.includes('gemini')) { 
-            // Extract the core model ID after "models/"
-            const modelId = model.name.split('/').pop() || model.name;
-            models.push({
-                api_identifier: `google-${modelId}`, // Prepend 'google-'
-                name: model.displayName || model.name, // Use displayName if available
-                description: model.description,
-                // config: { // Example of adding config
-                //   contextWindow: model.inputTokenLimit,
-                //   outputLimit: model.outputTokenLimit,
-                // },
-            });
-        }
-      });
+    // Check if jsonResponse.models is an array
+    if (!Array.isArray(jsonResponse.models)) {
+      console.error('Google Gemini API response for models is not an array:', jsonResponse);
+      throw new Error('Invalid response format from Google Gemini API when fetching models.');
     }
 
-    console.log(`Found ${models.length} potentially usable models from Google Gemini.`);
-    return models;
+    return jsonResponse.models
+      .filter((model: GoogleModelItem) => 
+        model.supportedGenerationMethods?.includes('generateContent')
+      )
+      .map((model: GoogleModelItem) => {
+      const modelIdPart = model.name?.split('/').pop() || model.name;
+      
+      let rawConfigForProviderModelInfo: { provider_max_input_tokens?: number; provider_max_output_tokens?: number } | undefined = undefined;
+
+      if (typeof model.inputTokenLimit === 'number' || typeof model.outputTokenLimit === 'number') {
+        rawConfigForProviderModelInfo = {}; // Initialize if at least one limit is present
+        if (typeof model.inputTokenLimit === 'number') {
+          rawConfigForProviderModelInfo.provider_max_input_tokens = model.inputTokenLimit;
+        }
+        if (typeof model.outputTokenLimit === 'number') {
+          rawConfigForProviderModelInfo.provider_max_output_tokens = model.outputTokenLimit;
+        }
+      }
+
+      return {
+        api_identifier: `google-${modelIdPart}`,
+        name: model.displayName || model.name || 'Unknown Google Model',
+        description: model.description,
+        config: rawConfigForProviderModelInfo ? rawConfigForProviderModelInfo as Json : undefined,
+      };
+    });
   }
 }
 
