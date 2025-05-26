@@ -1,11 +1,14 @@
-import { vi, type Mock } from 'vitest';
-import type { ActiveWalletInfo, IWalletService } from '@paynless/types';
+import { vi } from 'vitest';
+import type { ActiveChatWalletInfo, IWalletService } from '@paynless/types';
+
+// Create the actual mock function instance
+const getActiveWalletInfoMock = vi.fn<[], ActiveChatWalletInfo>();
 
 export const mockWalletService: IWalletService = {
-  getActiveWalletInfo: vi.fn() as Mock<[], ActiveWalletInfo>,
+  getActiveWalletInfo: (...args: []) => getActiveWalletInfoMock(...args),
   // Add other methods if they become necessary
 };
 
 export const resetMockWalletService = () => {
-  mockWalletService.getActiveWalletInfo.mockReset();
+  getActiveWalletInfoMock.mockReset();
 };

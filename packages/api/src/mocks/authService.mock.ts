@@ -1,15 +1,20 @@
-import { vi, type Mock } from 'vitest';
+import { vi } from 'vitest';
 import type { User, Session, IAuthService } from '@paynless/types';
 
+// Create the actual mock function instances
+const getCurrentUserMock = vi.fn<[], User | null>();
+const getSessionMock = vi.fn<[], Session | null>();
+const requestLoginNavigationMock = vi.fn<[], void>();
+
 export const mockAuthService: IAuthService = {
-  getCurrentUser: vi.fn() as Mock<[], User | null>,
-  getSession: vi.fn() as Mock<[], Session | null>,
-  requestLoginNavigation: vi.fn() as Mock<[], void>,
+  getCurrentUser: (...args: []) => getCurrentUserMock(...args),
+  getSession: (...args: []) => getSessionMock(...args),
+  requestLoginNavigation: (...args: []) => requestLoginNavigationMock(...args),
   // Add other methods if they become necessary
 };
 
 export const resetMockAuthService = () => {
-  mockAuthService.getCurrentUser.mockReset();
-  mockAuthService.getSession.mockReset();
-  mockAuthService.requestLoginNavigation.mockReset();
+  getCurrentUserMock.mockReset();
+  getSessionMock.mockReset();
+  requestLoginNavigationMock.mockReset();
 };

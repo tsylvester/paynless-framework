@@ -1,7 +1,7 @@
-import type { AiProviderAdapter } from '../types.ts';
-import { openAiAdapter } from './openai_adapter.ts';
-import { anthropicAdapter } from './anthropic_adapter.ts';
-import { googleAdapter } from './google_adapter.ts';
+import type { AiProviderAdapter, ILogger } from '../types.ts';
+import { OpenAiAdapter } from './openai_adapter.ts';
+import { AnthropicAdapter } from './anthropic_adapter.ts';
+import { GoogleAdapter } from './google_adapter.ts';
 // Import necessary types for the dummy adapter
 import type { ChatApiRequest as AdapterChatRequest, AdapterResponsePayload, ProviderModelInfo } from '../types.ts';
 import type { Database } from '../../../functions/types_db.ts'; // For TokenUsageJson
@@ -56,27 +56,39 @@ const dummyAdapter: AiProviderAdapter = {
  * Factory function to get the appropriate AI provider adapter based on the provider identifier.
  *
  * @param provider - The provider identifier string (e.g., 'openai', 'anthropic', 'google').
+ * @param apiKey - The API key for the specified provider.
+ * @param logger - Optional logger instance.
  * @returns The corresponding AiProviderAdapter instance, or null if the provider is unknown or unsupported.
  */
-export function getAiProviderAdapter(provider: string): AiProviderAdapter | null {
+export function getAiProviderAdapter(provider: string, apiKey: string, logger?: ILogger): AiProviderAdapter | null {
+  // Ensure a default logger is available if none is provided, for consistent internal logging.
+  const effectiveLogger = logger || {
+    debug: (message: string, metadata?: object) => console.debug(`[FactoryDefaultLogger/DEBUG] ${message}`, metadata || ''),
+    info:  (message: string, metadata?: object) => console.info(`[FactoryDefaultLogger/INFO] ${message}`, metadata || ''),
+    warn:  (message: string, metadata?: object) => console.warn(`[FactoryDefaultLogger/WARN] ${message}`, metadata || ''),
+    error: (message: string | Error, metadata?: object) => console.error(`[FactoryDefaultLogger/ERROR] ${message}`, metadata || ''),
+  } as ILogger;
+
   switch (provider.toLowerCase()) {
     case 'openai':
-      console.log('Using OpenAI Adapter');
-      return openAiAdapter;
+      effectiveLogger.info('Creating OpenAI Adapter instance');
+      return new OpenAiAdapter(apiKey, effectiveLogger);
     case 'anthropic':
-      console.log('Using Anthropic Adapter');
-      return anthropicAdapter;
+      effectiveLogger.info('Creating Anthropic Adapter instance');
+      return new AnthropicAdapter(apiKey, effectiveLogger);
     case 'google':
-      console.log('Using Google Adapter');
-      return googleAdapter;
+      effectiveLogger.info('Creating Google Adapter instance');
+      return new GoogleAdapter(apiKey, effectiveLogger);
     case 'dummy': // Added case for dummy provider
-      console.log('Using Dummy Adapter');
+      effectiveLogger.info('Using shared Dummy Adapter instance');
+      // Dummy adapter doesn't need apiKey or logger in its current form, so we return the singleton.
+      // If it were to use them, it would need to be instantiated too.
       return dummyAdapter;
     // Add cases for other providers here as they are implemented
     // case 'perplexity':
     //   return perplexityAdapter;
     default:
-      console.warn(`Unknown or unsupported AI provider requested: ${provider}`);
+      effectiveLogger.warn(`Unknown or unsupported AI provider requested: ${provider}`);
       return null;
   }
 } 

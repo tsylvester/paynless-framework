@@ -79,8 +79,10 @@ export type Database = {
           chat_id: string
           content: string
           created_at: string
+          error_type: string | null
           id: string
           is_active_in_thread: boolean
+          response_to_message_id: string | null
           role: string
           system_prompt_id: string | null
           token_usage: Json | null
@@ -92,8 +94,10 @@ export type Database = {
           chat_id: string
           content: string
           created_at?: string
+          error_type?: string | null
           id?: string
           is_active_in_thread?: boolean
+          response_to_message_id?: string | null
           role: string
           system_prompt_id?: string | null
           token_usage?: Json | null
@@ -105,8 +109,10 @@ export type Database = {
           chat_id?: string
           content?: string
           created_at?: string
+          error_type?: string | null
           id?: string
           is_active_in_thread?: boolean
+          response_to_message_id?: string | null
           role?: string
           system_prompt_id?: string | null
           token_usage?: Json | null
@@ -133,6 +139,13 @@ export type Database = {
             columns: ["system_prompt_id"]
             isOneToOne: false
             referencedRelation: "system_prompts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "fk_chat_messages_response_to_message_id"
+            columns: ["response_to_message_id"]
+            isOneToOne: false
+            referencedRelation: "chat_messages"
             referencedColumns: ["id"]
           },
         ]
@@ -857,24 +870,16 @@ export type Database = {
           p_user_id: string
           p_new_user_message_content: string
           p_new_user_message_ai_provider_id: string
-          p_new_user_message_system_prompt_id: string
           p_new_assistant_message_content: string
-          p_new_assistant_message_token_usage: Json
           p_new_assistant_message_ai_provider_id: string
-          p_new_assistant_message_system_prompt_id: string
+          p_new_user_message_system_prompt_id?: string
+          p_new_assistant_message_token_usage?: Json
+          p_new_assistant_message_system_prompt_id?: string
+          p_new_assistant_message_error_type?: string
         }
         Returns: {
-          id: string
-          chat_id: string
-          user_id: string
-          role: string
-          content: string
-          created_at: string
-          updated_at: string
-          is_active_in_thread: boolean
-          token_usage: Json
-          ai_provider_id: string
-          system_prompt_id: string
+          new_user_message_id: string
+          new_assistant_message_id: string
         }[]
       }
       record_token_transaction: {

@@ -3,7 +3,8 @@ import type {
     // REMOVED: ChatMessage, // Not returned directly
     ProviderModelInfo, 
     ChatApiRequest, 
-    AdapterResponsePayload
+    AdapterResponsePayload,
+    ILogger // Added ILogger
 } from '../types.ts';
 import type { Json } from '../../../functions/types_db.ts';
 // REMOVED: import type { VertexAI } from 'npm:@google-cloud/vertexai'; // Remove unused import
@@ -37,14 +38,15 @@ interface GoogleModelItem {
  */
 export class GoogleAdapter implements AiProviderAdapter {
 
+  constructor(private apiKey: string, private logger: ILogger) {}
+
   private async _countTokens(
     modelApiName: string,
-    apiKey: string,
     contents: GoogleContent[],
     fetchFn: typeof fetch = fetch // Allow fetch to be injectable for testing
   ): Promise<number | null> {
-    const countTokensUrl = `${GOOGLE_API_BASE}/${modelApiName}:countTokens?key=${apiKey}`;
-    console.log(`Counting tokens for model: ${modelApiName} with ${contents.length} content blocks.`);
+    const countTokensUrl = `${GOOGLE_API_BASE}/${modelApiName}:countTokens?key=${this.apiKey}`;
+    this.logger.debug(`Counting tokens for model: ${modelApiName} with ${contents.length} content blocks.`, { url: countTokensUrl });
     try {
       const response = await fetchFn(countTokensUrl, {
         method: 'POST',
@@ -56,14 +58,14 @@ export class GoogleAdapter implements AiProviderAdapter {
 
       if (!response.ok) {
         const errorBody = await response.text();
-        console.error(`Google Gemini API error during countTokens (${response.status}): ${errorBody}`);
+        this.logger.error(`Google Gemini API error during countTokens (${response.status}): ${errorBody}`, { modelApiName, status: response.status });
         // Do not throw here, allow main sendMessage to proceed with null tokens
         return null;
       }
       const jsonResponse = await response.json();
       return jsonResponse.totalTokens as number;
     } catch (error) {
-      console.error('Failed to count tokens:', error);
+      this.logger.error('Failed to count tokens:', { error: error instanceof Error ? error.message : String(error), modelApiName });
       return null;
     }
   }
@@ -71,11 +73,11 @@ export class GoogleAdapter implements AiProviderAdapter {
   async sendMessage(
     request: ChatApiRequest,
     modelIdentifier: string, // e.g., "google-gemini-1.5-pro-latest"
-    apiKey: string
   ): Promise<AdapterResponsePayload> {
+    this.logger.debug('[GoogleAdapter] sendMessage called', { modelIdentifier });
     // Map our internal identifier to Google's format (e.g., "models/gemini-1.5-pro-latest")
     const modelApiName = `models/${modelIdentifier.replace(/^google-/i, '')}`;
-    const generateContentUrl = `${GOOGLE_API_BASE}/${modelApiName}:generateContent?key=${apiKey}`;
+    const generateContentUrl = `${GOOGLE_API_BASE}/${modelApiName}:generateContent?key=${this.apiKey}`;
 
     // --- Map messages to Google Gemini format ---
     // Gemini uses alternating 'user' and 'model' roles.
@@ -124,7 +126,7 @@ export class GoogleAdapter implements AiProviderAdapter {
     
     // Basic safety check
     if (googleContents.length === 0 || googleContents[googleContents.length - 1].role !== 'user') {
-      console.error('Google Gemini request format error: History must end with a user message.', googleContents);
+      this.logger.error('Google Gemini request format error: History must end with a user message.', { googleContents, modelApiName });
       throw new Error('Cannot send request to Google Gemini: message history format invalid.');
     }
 
@@ -147,7 +149,7 @@ export class GoogleAdapter implements AiProviderAdapter {
       };
     }
 
-    console.log(`Sending request to Google Gemini model: ${modelApiName}`);
+    this.logger.info(`Sending request to Google Gemini model: ${modelApiName}`, { url: generateContentUrl });
     // console.debug('Google Gemini Payload:', JSON.stringify(googlePayload));
 
     const response = await fetch(generateContentUrl, {
@@ -160,7 +162,7 @@ export class GoogleAdapter implements AiProviderAdapter {
 
     if (!response.ok) {
       const errorBody = await response.text();
-      console.error(`Google Gemini API error (${response.status}): ${errorBody}`);
+      this.logger.error(`Google Gemini API error (${response.status}): ${errorBody}`, { modelApiName, status: response.status });
       
       // Construct base message
       const baseErrorMessage = `Google Gemini API request failed: ${response.status}`;
@@ -192,11 +194,11 @@ export class GoogleAdapter implements AiProviderAdapter {
         assistantMessageContent = candidate.content.parts[0].text.trim();
     } else if (candidate?.finishReason && candidate.finishReason !== 'STOP') {
         // Handle other finish reasons (MAX_TOKENS, SAFETY, RECITATION, OTHER)
-        console.warn(`Google Gemini response finished with reason: ${candidate.finishReason}`);
+        this.logger.warn(`Google Gemini response finished with reason: ${candidate.finishReason}`, { modelApiName, finishReason: candidate.finishReason });
         // Potentially return a specific message or throw error based on reason
         assistantMessageContent = `[Response stopped due to: ${candidate.finishReason}]`; 
     } else {
-        console.error("Google Gemini response missing valid content or finish reason:", jsonResponse);
+        this.logger.error("Google Gemini response missing valid content or finish reason:", { response: jsonResponse, modelApiName });
         // Consider checking promptFeedback for block reasons
         const blockReason = jsonResponse.promptFeedback?.blockReason;
         if (blockReason) {
@@ -216,14 +218,14 @@ export class GoogleAdapter implements AiProviderAdapter {
     let completionTokens: number | null = null;
 
     try {
-      promptTokens = await this._countTokens(modelApiName, apiKey, googlePayload.contents);
+      promptTokens = await this._countTokens(modelApiName, googlePayload.contents);
       if (assistantMessageContent) {
         const completionContents: GoogleContent[] = [{ role: 'model', parts: [{ text: assistantMessageContent }] }];
-        completionTokens = await this._countTokens(modelApiName, apiKey, completionContents);
+        completionTokens = await this._countTokens(modelApiName, completionContents);
       }
     } catch (tokenError) {
       // Log error but don't let token counting failure break the main response
-      console.error("Error during token counting calls:", tokenError);
+      this.logger.error("Error during token counting calls:", { error: tokenError instanceof Error ? tokenError.message : String(tokenError), modelApiName });
     }
     
     const tokenUsage: Json | null = (promptTokens !== null || completionTokens !== null) 
@@ -243,38 +245,45 @@ export class GoogleAdapter implements AiProviderAdapter {
       token_usage: tokenUsage, 
       // REMOVED fields not provided by adapter: id, chat_id, created_at, user_id
     };
-
+    this.logger.debug('[GoogleAdapter] sendMessage successful', { modelApiName });
     return assistantResponse;
   }
 
-  async listModels(apiKey: string): Promise<ProviderModelInfo[]> {
-    const modelsUrl = `${GOOGLE_API_BASE}/models?key=${apiKey}`;
-    console.log("Fetching models from Google Gemini...");
+  async listModels(/* apiKey parameter removed */): Promise<ProviderModelInfo[]> {
+    // Note: Google's generativelanguage.googleapis.com/v1beta/models endpoint needs API key in URL query param.
+    const modelsUrl = `${GOOGLE_API_BASE}/models?key=${this.apiKey}`;
+    this.logger.info("[GoogleAdapter] Fetching models from Google Gemini...", { url: modelsUrl });
 
     const response = await fetch(modelsUrl, {
       method: 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+      },
     });
+    this.logger.debug(`[GoogleAdapter] After fetch call for models (Status: ${response.status})`);
 
     if (!response.ok) {
       const errorBody = await response.text();
-      console.error(`Google Gemini API error fetching models (${response.status}): ${errorBody}`);
+      this.logger.error(`[GoogleAdapter] Google Gemini API error fetching models (${response.status}): ${errorBody}`, { status: response.status });
       throw new Error(`Google Gemini API request failed fetching models: ${response.status} ${response.statusText}`);
     }
 
+    this.logger.debug("[GoogleAdapter] Before response.json() call for models");
     const jsonResponse = await response.json();
-    // console.debug('Google Models Response:', JSON.stringify(jsonResponse));
+    this.logger.debug("[GoogleAdapter] After response.json() call for models", { responseKeys: Object.keys(jsonResponse) });
 
     // Check if jsonResponse.models is an array
     if (!Array.isArray(jsonResponse.models)) {
-      console.error('Google Gemini API response for models is not an array:', jsonResponse);
+      this.logger.error('Google Gemini API response for models is not an array:', jsonResponse);
       throw new Error('Invalid response format from Google Gemini API when fetching models.');
     }
 
-    return jsonResponse.models
+    const models: ProviderModelInfo[] = [];
+    jsonResponse.models
       .filter((model: GoogleModelItem) => 
         model.supportedGenerationMethods?.includes('generateContent')
       )
-      .map((model: GoogleModelItem) => {
+      .forEach((model: GoogleModelItem) => {
       const modelIdPart = model.name?.split('/').pop() || model.name;
       
       let rawConfigForProviderModelInfo: { provider_max_input_tokens?: number; provider_max_output_tokens?: number } | undefined = undefined;
@@ -289,15 +298,17 @@ export class GoogleAdapter implements AiProviderAdapter {
         }
       }
 
-      return {
+      models.push({
         api_identifier: `google-${modelIdPart}`,
         name: model.displayName || model.name || 'Unknown Google Model',
         description: model.description,
         config: rawConfigForProviderModelInfo ? rawConfigForProviderModelInfo as Json : undefined,
-      };
+      });
     });
+
+    this.logger.info(`[GoogleAdapter] Found ${models.length} usable models from Google Gemini.`);
+    return models;
   }
 }
 
-// Export an instance or the class itself
-export const googleAdapter = new GoogleAdapter(); 
+// Removed: export const googleAdapter = new GoogleAdapter(); 

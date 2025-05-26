@@ -1,4 +1,4 @@
-import type { AiProviderAdapter, ChatMessage, ProviderModelInfo, ChatApiRequest, AdapterResponsePayload } from '../types.ts';
+import type { AiProviderAdapter, ChatMessage, ProviderModelInfo, ChatApiRequest, AdapterResponsePayload, ILogger } from '../types.ts';
 import type { Json } from '../../../functions/types_db.ts';
 
 const OPENAI_API_BASE = 'https://api.openai.com/v1';
@@ -16,11 +16,13 @@ interface OpenAIModelItem {
  */
 export class OpenAiAdapter implements AiProviderAdapter {
 
+  constructor(private apiKey: string, private logger: ILogger) {}
+
   async sendMessage(
     request: ChatApiRequest, // Contains previous messages if chatId was provided
     modelIdentifier: string, // e.g., "openai-gpt-4o" -> "gpt-4o"
-    apiKey: string
   ): Promise<AdapterResponsePayload> {
+    this.logger.debug('[OpenAiAdapter] sendMessage called', { modelIdentifier });
     // Use fetch directly
     const openaiUrl = `${OPENAI_API_BASE}/chat/completions`;
     // Remove provider prefix if present (ensure this matches your DB data convention)
@@ -54,20 +56,20 @@ export class OpenAiAdapter implements AiProviderAdapter {
       openaiPayload.max_tokens = request.max_tokens_to_generate;
     }
 
-    console.log(`Sending fetch request to OpenAI model: ${modelApiName}`);
+    this.logger.info(`Sending fetch request to OpenAI model: ${modelApiName}`, { url: openaiUrl });
 
     const response = await fetch(openaiUrl, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${apiKey}`,
+        'Authorization': `Bearer ${this.apiKey}`,
       },
       body: JSON.stringify(openaiPayload),
     });
 
     if (!response.ok) {
       const errorBody = await response.text();
-      console.error(`OpenAI API fetch error (${response.status}): ${errorBody}`);
+      this.logger.error(`OpenAI API fetch error (${response.status}): ${errorBody}`, { modelApiName, status: response.status });
       throw new Error(`OpenAI API request failed: ${response.status} ${response.statusText}`);
     }
 
@@ -75,7 +77,7 @@ export class OpenAiAdapter implements AiProviderAdapter {
 
     const aiContent = jsonResponse.choices?.[0]?.message?.content?.trim();
     if (!aiContent) {
-      console.error("OpenAI fetch response missing message content:", jsonResponse);
+      this.logger.error("OpenAI fetch response missing message content:", { response: jsonResponse, modelApiName });
       throw new Error('OpenAI response content is empty or missing.');
     }
 
@@ -94,32 +96,32 @@ export class OpenAiAdapter implements AiProviderAdapter {
       token_usage: tokenUsage,
       // REMOVED fields not provided by adapter: id, chat_id, created_at, user_id
     };
-
+    this.logger.debug('[OpenAiAdapter] sendMessage successful', { modelApiName });
     return assistantResponse;
   }
 
-  async listModels(apiKey: string): Promise<ProviderModelInfo[]> {
+  async listModels(): Promise<ProviderModelInfo[]> {
     const modelsUrl = `${OPENAI_API_BASE}/models`;
-    console.log("[openai_adapter] Fetching models from OpenAI...");
+    this.logger.info("[OpenAiAdapter] Fetching models from OpenAI...", { url: modelsUrl });
 
-    console.log("[openai_adapter] Before fetch call");
+    this.logger.debug("[OpenAiAdapter] Before fetch call");
     const response = await fetch(modelsUrl, {
       method: 'GET',
       headers: {
-        'Authorization': `Bearer ${apiKey}`,
+        'Authorization': `Bearer ${this.apiKey}`,
       },
     });
-    console.log(`[openai_adapter] After fetch call (Status: ${response.status})`);
+    this.logger.debug(`[OpenAiAdapter] After fetch call (Status: ${response.status})`);
 
     if (!response.ok) {
       const errorBody = await response.text();
-      console.error(`[openai_adapter] OpenAI API error fetching models (${response.status}): ${errorBody}`);
+      this.logger.error(`[OpenAiAdapter] OpenAI API error fetching models (${response.status}): ${errorBody}`, { status: response.status });
       throw new Error(`OpenAI API request failed fetching models: ${response.status} ${response.statusText}`);
     }
 
-    console.log("[openai_adapter] Before response.json() call");
+    this.logger.debug("[OpenAiAdapter] Before response.json() call");
     const jsonResponse = await response.json();
-    console.log("[openai_adapter] After response.json() call");
+    this.logger.debug("[OpenAiAdapter] After response.json() call");
     const models: ProviderModelInfo[] = [];
 
     if (jsonResponse.data && Array.isArray(jsonResponse.data)) {
@@ -137,10 +139,10 @@ export class OpenAiAdapter implements AiProviderAdapter {
       });
     }
 
-    console.log(`Found ${models.length} potentially usable models from OpenAI.`);
+    this.logger.info(`[OpenAiAdapter] Found ${models.length} potentially usable models from OpenAI.`);
     return models;
   }
 }
 
-// Export an instance or the class itself depending on factory preference
-export const openAiAdapter = new OpenAiAdapter(); 
+// Removed: export const openAiAdapter = new OpenAiAdapter(); 
+// The class OpenAiAdapter is now exported directly and will be instantiated by the factory. 

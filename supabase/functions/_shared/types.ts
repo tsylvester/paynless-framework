@@ -3,7 +3,7 @@
 // Types directly related to DB tables should be imported from ../types_db.ts
 import type { Database, Json } from '../types_db.ts';
 import type { handleCorsPreflightRequest, createSuccessResponse, createErrorResponse } from './cors-headers.ts';
-import { createClient } from "npm:@supabase/supabase-js";
+import { createClient, SupabaseClient } from "npm:@supabase/supabase-js";
 import type { Spy } from "jsr:@std/testing@0.225.1/mock";
 import type { User as SupabaseUser } from "npm:@supabase/supabase-js";
 import { Tables } from '../types_db.ts';
@@ -253,7 +253,8 @@ export interface ILogger {
   export type PerformChatRewindArgs = Database['public']['Functions']['perform_chat_rewind']['Args'];
   
   // Define derived DB types needed locally
-  export type ChatMessageInsert = Database['public']['Tables']['chat_messages']['Insert'];
+  export type ChatMessageInsert = Database['public']['Tables']['chat_messages']['Insert']; // Added for storing AI provider errors
+  
   export type ChatMessageRow = Database['public']['Tables']['chat_messages']['Row'];
   // type ChatRow = Database['public']['Tables']['chats']['Row']; // Not directly used in handlePostRequest return
   
@@ -286,47 +287,77 @@ export interface MessageForTokenCounting {
   name?: string; // Optional, for function calls
 }
 
-// Accepted Tiktoken encoding names
+// Accepted Tiktoken encoding names - aligned with js-tiktoken
 export type TiktokenEncoding = 'cl100k_base' | 'p50k_base' | 'r50k_base' | 'gpt2' | 'o200k_base';
 
-export interface AiModelExtendedConfig {
-  // Token Costing & Limits (for getMaxOutputTokens logic)
-  input_token_cost_rate: number;    // How many wallet tokens 1 input token costs (e.g., 1.0)
-  output_token_cost_rate: number;   // How many wallet tokens 1 output token costs (e.g., 3.0)
-  hard_cap_output_tokens?: number; // Provider's absolute max output tokens (e.g., 4096, 8192, 200000)
-                                    // This is the 'global_max_tokens' or 'hard_cap' in ChatGPT's suggestion.
-  context_window_tokens?: number;   // Provider's max context window (input + output usually)
+// Helper type for tiktoken_model_name_for_rules_fallback
+export type TiktokenModelForRules = 'gpt-4' | 'gpt-3.5-turbo' | 'gpt-4o' | 'gpt-3.5-turbo-0301';
 
-  // Input Token Estimation Strategy (for client-side estimateInputTokens)
+// This AiModelConfig is a simpler version, potentially for getMaxOutputTokens internal logic after defaults.
+// It is NOT the source of truth for the DB ai_providers.config structure.
+export interface AiModelConfig {
+  input_token_cost_rate: number;
+  output_token_cost_rate: number;
+  hard_cap_output_tokens?: number;
+  context_window_tokens?: number;
   tokenization_strategy: {
     type: 'tiktoken' | 'rough_char_count' | 'provider_specific_api' | 'unknown';
-    // For 'tiktoken'
-    tiktoken_encoding_name?: TiktokenEncoding; // e.g., 'cl100k_base', 'p50k_base', 'r50k_base', 'gpt2'
-    is_chatml_model?: boolean; // If true, apply ChatML counting rules (like in tokenizer_utils.ts)
-                                // We might need more granular rules here if ChatML varies.
-    api_identifier_for_tokenization?: string; // e.g., "gpt-4o", "gpt-3.5-turbo", for direct use with tiktoken's encodingForModel
-    // For 'rough_char_count'
-    chars_per_token_ratio?: number; // e.g., 4.0 (average chars per token)
-    // For 'provider_specific_api'
-    // No extra fields needed here; implies server-side call or pre-fetched from provider if available
+    tiktoken_encoding_name?: TiktokenEncoding;
+    is_chatml_model?: boolean;
+    api_identifier_for_tokenization?: string;
+    chars_per_token_ratio?: number;
   };
-
-  // Optional: Provider-returned limits (can be synced automatically if API provides them)
   provider_max_input_tokens?: number;
-  provider_max_output_tokens?: number; // This could directly inform hard_cap_output_tokens
-
-  // Optional: Default parameters for the model
+  provider_max_output_tokens?: number;
   default_temperature?: number;
   default_top_p?: number;
-  // ... other common model params
 }
 
+// Comprehensive configuration for an AI model, reflecting ai_providers.config structure
+export interface AiModelExtendedConfig {
+  model_id?: string; // Optional: Internal model ID or name, for display or logging
+  api_identifier: string; // Crucial: The string used to call the AI provider's API (e.g., "gpt-4-turbo")
+  
+  input_token_cost_rate: number | null; // Cost per 1000 input tokens, can be null from DB
+  output_token_cost_rate: number | null; // Cost per 1000 output tokens, can be null from DB
+  
+  tokenization_strategy: 
+    | { type: 'tiktoken'; tiktoken_encoding_name: TiktokenEncoding; tiktoken_model_name_for_rules_fallback?: TiktokenModelForRules; } 
+    | { type: 'rough_char_count'; chars_per_token_ratio?: number; }
+    | { type: 'claude_tokenizer'; } // Placeholder for Anthropic's official tokenizer
+    | { type: 'google_gemini_tokenizer'; } // Placeholder for Google's official tokenizer
+    | { type: 'none'; }; // If token counting is not applicable or handled externally
 
-// Signature for countTokensForMessages function
-export type CountTokensForMessagesFn = (
-  messages: MessageForTokenCounting[], 
-  modelName: string
-) => number;
+  hard_cap_output_tokens?: number; // An absolute maximum for output tokens
+  context_window_tokens?: number;   // Provider's max context window (input + output usually)
+  
+  // Defaults that might be applied if the main rates are null (e.g., from a service-level config)
+  service_default_input_cost_rate?: number; 
+  service_default_output_cost_rate?: number;
+  
+  status?: 'active' | 'beta' | 'deprecated' | 'experimental';
+  features?: string[]; // e.g., ["json_mode", "tool_use", "image_input"]
+  max_context_window_tokens?: number; // Duplicates context_window_tokens? Consolidate if same meaning.
+  notes?: string;
+
+  // Optional: Provider-returned limits (can be synced automatically if API provides them)
+  // These seem to overlap with hard_cap_output_tokens and context_window_tokens above.
+  // Let's keep the ones defined initially for AiModelConfig (lines 300-301) if they are distinct.
+  // provider_max_input_tokens?: number; // from the other AiModelConfig def
+  // provider_max_output_tokens?: number; // from the other AiModelConfig def
+
+  // Optional: Default parameters for the model (also from other AiModelConfig def)
+  default_temperature?: number;
+  default_top_p?: number;
+  // is_chatml_model?: boolean; // Covered by tiktoken_model_name_for_rules_fallback or inferred
+  // api_identifier_for_tokenization?: string; // Covered by main api_identifier generally
+}
+
+// Signature for countTokensForMessages function (this might be an old definition)
+// export type CountTokensForMessagesFn = (
+//   messages: MessageForTokenCounting[], 
+//   modelName: string
+// ) => number;
 
 export interface ChatHandlerDeps {
   createSupabaseClient: typeof createClient;
@@ -334,11 +365,13 @@ export interface ChatHandlerDeps {
   handleCorsPreflightRequest: typeof handleCorsPreflightRequest;
   createSuccessResponse: typeof createSuccessResponse; // Use the corrected type name
   createErrorResponse: typeof createErrorResponse;
-  getAiProviderAdapter: GetAiProviderAdapter; // Use the new specific type
-  verifyApiKey: VerifyApiKey;
+  getAiProviderAdapter: (provider: string, apiKey: string, logger?: ILogger) => AiProviderAdapter;
+  getAiProviderAdapterOverride?: (provider: string, apiKey: string, logger?: ILogger) => AiProviderAdapter; // For testing
+  verifyApiKey: (apiKey: string, providerName: string) => Promise<boolean>;
   logger: ILogger;
-  tokenWalletService?: ITokenWalletService; // Made optional
-  countTokensForMessages?: CountTokensForMessagesFn; // Added new dependency
+  tokenWalletService?: ITokenWalletService; 
+  countTokensForMessages: (messages: MessageForTokenCounting[], modelConfig: AiModelExtendedConfig) => number; // Updated signature
+  supabaseClient?: SupabaseClient; // Added for test overrides
 }
 
 // --- Interfaces for Mock Supabase Client (for testing) ---

@@ -1,4 +1,5 @@
 import type { AiModelExtendedConfig, TokenUsage, ILogger } from '../types.ts'; // Import ILogger from main types
+import { DEFAULT_INPUT_TOKEN_COST_RATE, DEFAULT_OUTPUT_TOKEN_COST_RATE } from '../config/token_cost_defaults.ts';
 
 /**
  * Calculates the actual cost of a chat interaction in wallet units.
@@ -33,7 +34,7 @@ export function calculateActualChatCost(
     logger?.warn(
         '[calculateActualChatCost] prompt_tokens and completion_tokens are zero, but total_tokens is present. ' +
         'Cost calculation will proceed using specific rates, which might differ from a direct total_tokens debit if rates are not 1.0.',
-        { tokenUsage, modelContext: modelConfig.tokenization_strategy?.tiktoken_encoding_name || 'N/A' }
+        { tokenUsage, modelContext: modelConfig.tokenization_strategy?.type === 'tiktoken' ? modelConfig.tokenization_strategy.tiktoken_encoding_name : 'N/A' }
     );
   }
 
@@ -42,25 +43,25 @@ export function calculateActualChatCost(
 
   if (typeof inputCostRate !== 'number' || isNaN(inputCostRate) || inputCostRate < 0) {
     logger?.warn(
-      `[calculateActualChatCost] Invalid or missing input_token_cost_rate for model (context: ${modelConfig.tokenization_strategy?.tiktoken_encoding_name || 'N/A'}). Defaulting to 1.0.`,
+      `[calculateActualChatCost] Invalid or missing input_token_cost_rate for model (context: ${modelConfig.tokenization_strategy?.type === 'tiktoken' ? modelConfig.tokenization_strategy.tiktoken_encoding_name : 'N/A'}). Defaulting to ${DEFAULT_INPUT_TOKEN_COST_RATE}.`,
       { originalRate: inputCostRate }
     );
-    inputCostRate = 1.0;
+    inputCostRate = DEFAULT_INPUT_TOKEN_COST_RATE;
   }
 
   if (typeof outputCostRate !== 'number' || isNaN(outputCostRate) || outputCostRate < 0) {
     logger?.warn(
-      `[calculateActualChatCost] Invalid or missing output_token_cost_rate for model (context: ${modelConfig.tokenization_strategy?.tiktoken_encoding_name || 'N/A'}). Defaulting to 1.0.`,
+      `[calculateActualChatCost] Invalid or missing output_token_cost_rate for model (context: ${modelConfig.tokenization_strategy?.type === 'tiktoken' ? modelConfig.tokenization_strategy.tiktoken_encoding_name : 'N/A'}). Defaulting to ${DEFAULT_OUTPUT_TOKEN_COST_RATE}.`,
       { originalRate: outputCostRate }
     );
-    outputCostRate = 1.0;
+    outputCostRate = DEFAULT_OUTPUT_TOKEN_COST_RATE;
   }
 
   const calculatedCost = (promptTokens * inputCostRate) + (completionTokens * outputCostRate);
 
   if (calculatedCost < 0) {
     logger?.warn(
-        `[calculateActualChatCost] Calculated cost is negative for model (context: ${modelConfig.tokenization_strategy?.tiktoken_encoding_name || 'N/A'}). Defaulting to 0. This should not happen.`,
+        `[calculateActualChatCost] Calculated cost is negative for model (context: ${modelConfig.tokenization_strategy?.type === 'tiktoken' ? modelConfig.tokenization_strategy.tiktoken_encoding_name : 'N/A'}). Defaulting to 0. This should not happen.`,
         { promptTokens, completionTokens, inputCostRate, outputCostRate, calculatedCost }
     );
     return 0;

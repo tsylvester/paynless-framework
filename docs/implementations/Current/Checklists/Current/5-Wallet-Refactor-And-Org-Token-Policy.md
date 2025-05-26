@@ -93,14 +93,6 @@
 *   [ ] **Chat Logic:**
     *   [ ] Fully activate the logic paths that use the organization's wallet when `token_usage_policy` is `'organization_tokens'` and the org wallet is available (this should be covered by the full adaptation in Phase 2). (Blocked by UI settings and `determineChatWallet` returning `org_wallet_not_available_policy_org` instead of `use_organization_wallet`)
 
-*   [ ] Fix Personal Transaction History page (Shows loading spinner but nothing loads or is visible)
-*   [ ] Fix Tiktoken / token estimator 
-        Server error: Could not estimate token cost or check balance. Unsupported model for token counting: dummy-echo-v1. The tiktoken library could not find an encoding for this model. Original error: Unknown model
-*   [ ] Ensure chats debit wallet balance 
-*   [ ] Create Org Balance Card & Transaction History page
-    *   [~] Org Balance Card (Display in chat context e.g. `WalletSelector.tsx` is partially implemented but blocked by `determineChatWallet` logic; dedicated card for org dashboard/settings not evident)
-    *   [ ] Org Transaction History page (Page not implemented, though store can fetch data)
-
 ## Phase 4: Dynamic Token Costing & Max Output Calculation
 
 *   [x] **Define `AiModelExtendedConfig` Interface:**
@@ -214,4 +206,37 @@
 *   [ ] **Documentation:**
     *   [ ] Update developer documentation on how to configure new models in `ai_providers.config`.
     *   [ ] Document the token estimation and cost calculation logic.
+
+
+Integration tests for chat 
+
+1.  [X] **`[Edge Case] Database error during message saving (after AI call & debit)`**: This was partially stubbed but needs to be fleshed out. The key here is to mock the database insert operation for `chat_messages` to simulate a failure *after* the AI call and token debit have occurred.
+2.  [X] **`[Specific Config] Model with missing cost rates (defaults applied for debit)`**: This was also partially stubbed. We need to ensure a provider is seeded with `null` or missing cost rates, then verify that the debit occurs using the default rates defined in `cost_utils.ts`.
+3.  [X] **`[Security/Auth] Invalid or expired JWT`**: Test how the handler reacts to a malformed, expired, or otherwise invalid JWT. It should return a 401 or similar auth error.
+4.  [X] **`[Security/Auth] User not found for JWT (e.g., user deleted after JWT issued)`**: If a valid JWT is presented but the `sub` (user ID) doesn't exist in `auth.users`, it should be handled gracefully (e.g., 401/403).
+5.  [X] **`[Input Validation] Missing required fields in request body`**: Test various scenarios where `providerId`, `message`, etc., are missing from the `ChatApiRequest`. Expect 400 errors.
+6.  [X] **`[Input Validation] Invalid providerId (not a valid UUID or not found)`**: Test with a malformed UUID and a valid UUID that doesn't correspond to any provider in `ai_providers`. Expect 400/404. (Malformed UUID tested; non-existent provider tested in specific_configs)
+7.  [X] **`[Input Validation] Invalid promptId (not '__none__' or a valid UUID)`**: If `promptId` is something other than `__none__` and not a valid UUID, it should result in an error. (Malformed UUID tested).
+8.  [ ] **`[Concurrency/Race Conditions] (Harder to test reliably)`**: While difficult to test deterministically in integration tests, consider if any specific logic paths are prone to race conditions (e.g., multiple rapid requests from the same user). (For now, this will be a placeholder comment).
+9.  [X] **`[Tokenization] Chat with a provider using 'rough_char_count'`**: Specifically test a provider configured with `rough_char_count` to ensure token estimation and cost calculation are correct based on character count.
+10. [X] **`[Cost Calculation] Zero-cost interaction (AI reports 0 tokens)`**: If the AI provider (mock) returns 0 for all token usage fields, ensure no debit occurs.
+11. [X] **`[System Prompt] Successful chat using a valid system_prompt_id`**: Test a scenario where a valid `promptId` (referencing a seeded `system_prompts` entry) is provided, and verify the system prompt content is correctly used/prepended.
+12. [X] **`[System Prompt] Chat with non-existent system_prompt_id`**: If a `promptId` is a valid UUID but doesn't exist in `system_prompts`, test how it's handled (e.g., error or fallback to no system prompt).
+13. [X] **`[Context Handling] Chat continuation with existing chatId`**: Ensure that providing an `existingChatId` correctly appends to the history of that chat, and the AI context is built correctly.
+14. [X] **`[Context Handling] Chat continuation with selected messages`**: Test providing `selectedMessages` in the request and verify only those are used for context, overriding the default history fetch for that `chatId`.
+15. [X] **`[Error Handling] Provider config missing tokenization_strategy`**: Seed a provider without a `tokenization_strategy` in its config. The system should handle this gracefully, likely erroring out as token counting is impossible.
+16. [X] **`[Error Handling] Provider config has invalid tokenization_strategy type`**: Seed a provider with an unknown `type` in `tokenization_strategy`. This should also lead to an error.
+Additional items specific to our recent test implementations:
+*   [X] **`[Specific Config] Model with hard cap on output tokens (cap respected when AI returns more)`**
+*   [X] **`[Specific Config] Inactive Provider (should result in error)`**
+
+I'll add these as new `t.step` blocks within the main `Deno.test` block in `supabase/functions/chat/index.integration.test.ts`.
+
+*   [ ] Fix Personal Transaction History page (Shows loading spinner but nothing loads or is visible)
+*   [ ] Fix Tiktoken / token estimator 
+        Server error: Could not estimate token cost or check balance. Unsupported model for token counting: dummy-echo-v1. The tiktoken library could not find an encoding for this model. Original error: Unknown model
+*   [ ] Ensure chats debit wallet balance 
+*   [ ] Create Org Balance Card & Transaction History page
+    *   [~] Org Balance Card (Display in chat context e.g. `WalletSelector.tsx` is partially implemented but blocked by `determineChatWallet` logic; dedicated card for org dashboard/settings not evident)
+    *   [ ] Org Transaction History page (Page not implemented, though store can fetch data)
 

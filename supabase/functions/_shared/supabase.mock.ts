@@ -376,9 +376,11 @@ class MockQueryBuilder implements IMockQueryBuilder {
 class MockSupabaseAuth implements IMockSupabaseAuth {
     public readonly getUserSpy: Spy;
     private _config: MockSupabaseDataConfig;
+    private _currentTestUserId?: string;
 
-    constructor(config: MockSupabaseDataConfig) {
+    constructor(config: MockSupabaseDataConfig, currentTestUserId?: string) {
         this._config = config;
+        this._currentTestUserId = currentTestUserId;
         this.getUserSpy = spy(this, 'getUser'); 
     }
 
@@ -387,27 +389,28 @@ class MockSupabaseAuth implements IMockSupabaseAuth {
         if (this._config.simulateAuthError) {
             return { data: { user: null }, error: this._config.simulateAuthError };
         }
-        if (this._config.getUserResult) {
-            return this._config.getUserResult;
-        }
-        const userToReturn = this._config.mockUser === undefined ? { id: 'mock-user-id' } as User : this._config.mockUser;
-        return { data: { user: userToReturn }, error: null };
+        const userIdToReturn = this._currentTestUserId || (this._config.mockUser ? this._config.mockUser.id : "mock-user-id");
+        const userToReturn = this._config.mockUser ? 
+            { ...this._config.mockUser, id: userIdToReturn } : 
+            { id: userIdToReturn, aud: "authenticated", role: "authenticated", email: `${userIdToReturn}@example.com` };
+
+        return Promise.resolve({ data: { user: userToReturn as User }, error: null });
     }
 }
 
 class MockSupabaseClient implements IMockSupabaseClient {
     public readonly auth: MockSupabaseAuth;
-    public readonly rpcSpy: Spy;
-    public readonly fromSpy: Spy;
+    public readonly rpcSpy: Spy<IMockSupabaseClient['rpc']>;
+    public readonly fromSpy: Spy<IMockSupabaseClient['from']>;
     private _config: MockSupabaseDataConfig;
     private _latestBuilders: Map<string, MockQueryBuilder> = new Map();
     private _historicBuildersByTable: Map<string, MockQueryBuilder[]> = new Map();
 
-    constructor(config: MockSupabaseDataConfig) {
+    constructor(config: MockSupabaseDataConfig, auth: MockSupabaseAuth) {
         this._config = config;
-        this.auth = new MockSupabaseAuth(config);
-        this.rpcSpy = spy(this, 'rpc'); 
-        this.fromSpy = spy(this, 'from');
+        this.auth = auth;
+        this.rpcSpy = spy(this, 'rpc') as unknown as Spy<IMockSupabaseClient['rpc']>;
+        this.fromSpy = spy(this, 'from') as unknown as Spy<IMockSupabaseClient['from']>;
     }
 
     from(tableName: string): IMockQueryBuilder { 
@@ -459,50 +462,36 @@ class MockSupabaseClient implements IMockSupabaseClient {
 // --- Refactored createMockSupabaseClient (Phase 3) ---
 /** Creates a mocked Supabase client instance for unit testing (Revised & Extended) */
 export function createMockSupabaseClient(
+    currentTestUserId?: string,
     config: MockSupabaseDataConfig = {}
 ): MockSupabaseClientSetup {
-    const mockClientInstance = new MockSupabaseClient(config);
+    console.log(`[Mock Supabase] Creating mock client. TestUserId: ${currentTestUserId || 'N/A (will use default or config)'}`);
 
-    const spies = { // Temporarily remove IMockClientSpies type to avoid type error for new method
+    const mockAuth = new MockSupabaseAuth(config, currentTestUserId);
+    const mockClientInstance = new MockSupabaseClient(config, mockAuth);
+
+    const clientSpies: IMockClientSpies = {
         auth: {
-            getUserSpy: mockClientInstance.auth.getUserSpy,
+            getUserSpy: mockAuth.getUserSpy,
         },
         rpcSpy: mockClientInstance.rpcSpy,
         fromSpy: mockClientInstance.fromSpy,
         getLatestQueryBuilderSpies: (tableName: string) => {
             const builder = mockClientInstance.getLatestBuilder(tableName);
-            // Cast to MockQueryBuilder to access methodSpies if IMockQueryBuilder doesn't expose it
             return (builder as MockQueryBuilder)?.methodSpies as ReturnType<IMockClientSpies['getLatestQueryBuilderSpies']> | undefined;
         },
-        getHistoricQueryBuilderSpies: (tableName: string, methodName: string) => { // methodName as string
-            const historicBuilders = mockClientInstance.getHistoricBuildersForTable(tableName);
-            let totalCallCount = 0;
-            const allCallsArgs: any[][] = []; 
-
-            if (historicBuilders && historicBuilders.length > 0) {
-                historicBuilders.forEach(builderInstance => {
-                    // Cast builderInstance to MockQueryBuilder to access methodSpies
-                    const concreteBuilder = builderInstance as MockQueryBuilder;
-                    const spy = concreteBuilder.methodSpies[methodName] as Spy<any, any[], any> | undefined;
-                    if (spy && spy.calls) { 
-                        totalCallCount += spy.calls.length;
-                        allCallsArgs.push(...spy.calls.map(call => call.args)); 
-                    }
-                });
-            }
-            return { callsArgs: allCallsArgs, callCount: totalCallCount }; 
-        }
-    } as IMockClientSpies; // Add back IMockClientSpies, acknowledging the structural addition
+    };
 
     const clearAllStubs = () => {
         // Restore client-level spies
-        const clientSpiesToRestore: Array<Spy<any, any[], any> | undefined> = [
-            spies.auth.getUserSpy as Spy<any, any[], any> | undefined,
-            spies.rpcSpy as Spy<any, any[], any> | undefined,
-            spies.fromSpy as Spy<any, any[], any> | undefined,
+        const spiesToRestore: Array<Spy<any, any[], any> | undefined> = [
+            clientSpies.auth.getUserSpy as Spy<any, any[], any> | undefined,
+            clientSpies.rpcSpy as Spy<any, any[], any> | undefined,
+            clientSpies.fromSpy as Spy<any, any[], any> | undefined,
         ];
 
-        clientSpiesToRestore.forEach(s => {
+        // Iterate over spies and restore if they are actual spy instances
+        spiesToRestore.forEach(s => {
             if (s && typeof s.restore === 'function' && !s.restored) {
                 try {
                     s.restore();
@@ -531,7 +520,7 @@ export function createMockSupabaseClient(
 
     return {
         client: mockClientInstance,
-        spies,
+        spies: clientSpies,
         clearAllStubs, // Provide the cleanup function
     };
 }

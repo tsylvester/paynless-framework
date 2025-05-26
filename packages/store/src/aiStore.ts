@@ -217,6 +217,8 @@ export const useAiStore = create<AiStore>()(
                             system_prompt_id: null,
                             token_usage: null,
                             is_active_in_thread: true,
+                            error_type: null,
+                            response_to_message_id: null,
                         };
 
                         const currentMessagesForChat = messagesByChatId[chatIdUsed] || [];
@@ -283,6 +285,8 @@ export const useAiStore = create<AiStore>()(
                             system_prompt_id: null,
                             token_usage: null,
                             is_active_in_thread: true,
+                            error_type: null,
+                            response_to_message_id: null,
                         };
                     
                         const currentMessagesForChat = messagesByChatId[chatIdForOptimistic] || [];
@@ -622,7 +626,9 @@ export const useAiStore = create<AiStore>()(
                                 token_usage: null,
                                 created_at: new Date(parseInt(tempId.split('-')[2])).toISOString(),
                                 is_active_in_thread: true,
-                                updated_at: new Date(parseInt(tempId.split('-')[2])).toISOString()
+                                updated_at: new Date(parseInt(tempId.split('-')[2])).toISOString(),
+                                error_type: null,
+                                response_to_message_id: null,
                             };
 
                             set(state => ({

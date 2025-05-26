@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import { estimateInputTokens, getMaxOutputTokens } from './tokenCostUtils';
-import type { AiModelExtendedConfig, MessageForTokenCounting, TokenizationStrategy } from '../../types/src/ai.types';
+import type { AiModelExtendedConfig, MessageForTokenCounting } from '../../types/src/ai.types';
 import { getEncoding, encodingForModel } from 'js-tiktoken'; // Import anmes for direct mocking
 
 // Mock js-tiktoken
@@ -61,7 +61,7 @@ const MOCK_MODEL_CONFIG_UNKNOWN_STRATEGY: AiModelExtendedConfig = {
 
 const MOCK_MODEL_CONFIG_NO_STRATEGY: AiModelExtendedConfig = {
     ...MOCK_MODEL_CONFIG_TIKTOKEN_CHATML,
-    tokenization_strategy: undefined as unknown as TokenizationStrategy, // To simulate missing strategy
+    tokenization_strategy: undefined as unknown as AiModelExtendedConfig['tokenization_strategy'], // To simulate missing strategy
 };
 
 

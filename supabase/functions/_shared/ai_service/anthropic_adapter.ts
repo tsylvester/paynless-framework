@@ -1,5 +1,5 @@
 // Import types from the shared location
-import type { AiProviderAdapter, ProviderModelInfo, ChatApiRequest, AdapterResponsePayload } from '../types.ts';
+import type { AiProviderAdapter, ProviderModelInfo, ChatApiRequest, AdapterResponsePayload, ILogger } from '../types.ts';
 import type { Database } from '../../types_db.ts';
 
 
@@ -20,6 +20,8 @@ interface AnthropicModelItem {
  * Implements AiProviderAdapter for Anthropic models (Claude).
  */
 export class AnthropicAdapter implements AiProviderAdapter {
+
+  constructor(private apiKey: string, private logger: ILogger) {}
 
   // Hardcoded list as fallback for listModels
   private readonly hardcodedModels: ProviderModelInfo[] = [
@@ -42,9 +44,9 @@ export class AnthropicAdapter implements AiProviderAdapter {
 
   async sendMessage(
     request: ChatApiRequest,
-    modelIdentifier: string, 
-    apiKey: string
+    modelIdentifier: string
   ): Promise<AdapterResponsePayload> {
+    this.logger.debug('[AnthropicAdapter] sendMessage called', { modelIdentifier });
     const messagesUrl = `${ANTHROPIC_API_BASE}/messages`;
     const modelApiName = modelIdentifier.replace(/^anthropic-/i, '');
     let systemPrompt = '';
@@ -67,15 +69,15 @@ export class AnthropicAdapter implements AiProviderAdapter {
             anthropicMessages.push(message);
             expectedRole = (expectedRole === 'user') ? 'assistant' : 'user';
         } else {
-             console.warn(`Skipping message with role '${message.role}' because '${expectedRole}' was expected.`);
+             this.logger.warn(`Skipping message with role '${message.role}' because '${expectedRole}' was expected.`, { currentMessage: message, expectedRole });
         }
     }
      if (anthropicMessages.length === 0) {
-        console.error('Anthropic request format error: No valid user/assistant messages found after filtering.', preliminaryMessages);
+        this.logger.error('Anthropic request format error: No valid user/assistant messages found after filtering.', { preliminaryMessages, modelApiName });
         throw new Error('Cannot send request to Anthropic: No valid messages to send.');
      }
     if (anthropicMessages[anthropicMessages.length - 1].role !== 'user') {
-        console.error('Anthropic request format error: Last message must be from user after filtering.', anthropicMessages);
+        this.logger.error('Anthropic request format error: Last message must be from user after filtering.', { anthropicMessages, modelApiName });
         throw new Error('Cannot send request to Anthropic: message history format invalid.');
     }
 
@@ -91,18 +93,19 @@ export class AnthropicAdapter implements AiProviderAdapter {
       messages: anthropicMessages,
       max_tokens: maxTokensForPayload,
     };
+    this.logger.info('Sending request to Anthropic', { url: messagesUrl, modelApiName });
     const response = await fetch(messagesUrl, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'x-api-key': apiKey,
+        'x-api-key': this.apiKey,
         'anthropic-version': ANTHROPIC_VERSION,
       },
       body: JSON.stringify(anthropicPayload),
     });
     if (!response.ok) {
       const errorBody = await response.text();
-      console.error(`Anthropic API error (${response.status}): ${errorBody}`);
+      this.logger.error(`Anthropic API error (${response.status}): ${errorBody}`, { modelApiName, status: response.status });
       throw new Error(`Anthropic API request failed: ${response.status} ${response.statusText}`);
     }
     const jsonResponse = await response.json();
@@ -111,7 +114,7 @@ export class AnthropicAdapter implements AiProviderAdapter {
         ? jsonResponse.content[0].text.trim()
         : '';
     if (!assistantMessageContent) {
-        console.error("Anthropic response missing message content:", jsonResponse);
+        this.logger.error("Anthropic response missing message content:", { response: jsonResponse, modelApiName });
         throw new Error("Received empty response from Anthropic.");
     }
     const tokenUsage: Database['public']['Tables']['chat_messages']['Row']['token_usage'] = jsonResponse.usage ? {
@@ -127,35 +130,42 @@ export class AnthropicAdapter implements AiProviderAdapter {
       ai_provider_id: request.providerId, // This is the DB ID of the provider
       system_prompt_id: request.promptId !== '__none__' ? request.promptId : null, // DB ID of system prompt
       token_usage: tokenUsage,
-      created_at: new Date().toISOString(),
     };
-
+    this.logger.debug('[AnthropicAdapter] sendMessage successful', { modelApiName });
     return adapterResponse; // Return the correctly typed object
   }
 
-  async listModels(apiKey: string): Promise<ProviderModelInfo[]> {
+  async listModels(): Promise<ProviderModelInfo[]> {
     const modelsUrl = `${ANTHROPIC_API_BASE}/models`; // Correct endpoint
-    console.log("Fetching models dynamically from Anthropic...");
+    this.logger.info("[AnthropicAdapter] Fetching models from Anthropic...", { url: modelsUrl });
 
     const response = await fetch(modelsUrl, {
       method: 'GET',
       headers: {
-        'x-api-key': apiKey,
+        'x-api-key': this.apiKey,
         'anthropic-version': ANTHROPIC_VERSION, 
       },
     });
+    this.logger.debug(`[AnthropicAdapter] After fetch call for models (Status: ${response.status})`);
 
     if (!response.ok) {
       const errorBody = await response.text();
-      console.error(`Anthropic API error fetching models (${response.status}): ${errorBody}`);
+      this.logger.error(`[AnthropicAdapter] Anthropic API error fetching models (${response.status}): ${errorBody}`, { status: response.status });
+      // Fallback to hardcoded models if dynamic fetch fails
+      // this.logger.warn("[AnthropicAdapter] Dynamic model fetch failed, returning hardcoded models as fallback.");
+      // return this.hardcodedModels;
       throw new Error(`Anthropic API request failed fetching models: ${response.status} ${response.statusText}`);
     }
 
     const jsonResponse = await response.json();
+    this.logger.debug("[AnthropicAdapter] After response.json() call for models");
     
     // Assuming response structure has a 'data' array based on docs
     if (!jsonResponse?.data || !Array.isArray(jsonResponse.data)) {
-        console.error("Anthropic listModels response missing or invalid 'data' array:", jsonResponse);
+        this.logger.error("[AnthropicAdapter] listModels response missing or invalid 'data' array:", { response: jsonResponse });
+        // Fallback to hardcoded models if dynamic fetch fails
+        // this.logger.warn("[AnthropicAdapter] Dynamic model data invalid, returning hardcoded models as fallback.");
+        // return this.hardcodedModels;
         throw new Error("Invalid response format received from Anthropic models API.");
     }
 
@@ -166,10 +176,7 @@ export class AnthropicAdapter implements AiProviderAdapter {
         description: undefined // API does not provide description, use undefined
     }));
 
-    console.log(`Found ${models.length} models from Anthropic dynamically.`);
+    this.logger.info(`[AnthropicAdapter] Found ${models.length} models from Anthropic dynamically.`);
     return models;
   }
 }
-
-// Export an instance or the class itself
-export const anthropicAdapter = new AnthropicAdapter();
