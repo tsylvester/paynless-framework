@@ -233,10 +233,9 @@ Additional items specific to our recent test implementations:
 I'll add these as new `t.step` blocks within the main `Deno.test` block in `supabase/functions/chat/index.integration.test.ts`.
 
 *   [ ] Fix Personal Transaction History page (Shows loading spinner but nothing loads or is visible)
-*   [ ] Fix Tiktoken / token estimator 
+*   [X] Fix Tiktoken / token estimator 
         Server error: Could not estimate token cost or check balance. Unsupported model for token counting: dummy-echo-v1. The tiktoken library could not find an encoding for this model. Original error: Unknown model
-*   [ ] Ensure chats debit wallet balance 
-*   [ ] Create Org Balance Card & Transaction History page
-    *   [~] Org Balance Card (Display in chat context e.g. `WalletSelector.tsx` is partially implemented but blocked by `determineChatWallet` logic; dedicated card for org dashboard/settings not evident)
-    *   [ ] Org Transaction History page (Page not implemented, though store can fetch data)
-
+*   [X] Ensure chats debit wallet balance 
+*   [ ] Fix chat-history?organizationId=personal 
+*   [ ] Fix chat remounting problem 
+*   [ ] Fix "Maximum update depth exceeded. This can happen when a component repeatedly calls setState inside componentWillUpdate or componentDidUpdate." 
