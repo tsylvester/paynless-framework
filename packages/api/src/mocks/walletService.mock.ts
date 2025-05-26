@@ -5,7 +5,7 @@ import type { ActiveChatWalletInfo, IWalletService } from '@paynless/types';
 const getActiveWalletInfoMock = vi.fn<[], ActiveChatWalletInfo>();
 
 export const mockWalletService: IWalletService = {
-  getActiveWalletInfo: (...args: []) => getActiveWalletInfoMock(...args),
+  getActiveWalletInfo: getActiveWalletInfoMock,
   // Add other methods if they become necessary
 };
 

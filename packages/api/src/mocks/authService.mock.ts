@@ -7,9 +7,9 @@ const getSessionMock = vi.fn<[], Session | null>();
 const requestLoginNavigationMock = vi.fn<[], void>();
 
 export const mockAuthService: IAuthService = {
-  getCurrentUser: (...args: []) => getCurrentUserMock(...args),
-  getSession: (...args: []) => getSessionMock(...args),
-  requestLoginNavigation: (...args: []) => requestLoginNavigationMock(...args),
+  getCurrentUser: getCurrentUserMock,
+  getSession: getSessionMock,
+  requestLoginNavigation: requestLoginNavigationMock,
   // Add other methods if they become necessary
 };
 

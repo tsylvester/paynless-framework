@@ -1,6 +1,5 @@
 import { useEffect } from 'react';
 import type { Chat } from '@paynless/types';
-import { cn } from '@/lib/utils';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useAiStore } from '@paynless/store';
 import { ChatItem } from './ChatItem';
@@ -23,27 +22,31 @@ export function ChatHistoryList({
   const historyErrorByContext = useAiStore(state => state.historyErrorByContext);
 
   useEffect(() => {
-    const contextKey = activeContextId === null ? 'personal' : activeContextId;
+    const orgIdToLoad = activeContextId === 'personal' ? null : activeContextId;
 
-    const chatsForContext = contextKey === 'personal' 
-      ? chatsByContext.personal 
-      : chatsByContext.orgs[contextKey];
+    const contextKeyForLookup = activeContextId === null ? 'personal' : activeContextId;
 
-    const isLoadingForContext = contextKey === 'personal' 
-      ? isLoadingHistoryByContext.personal 
-      : isLoadingHistoryByContext.orgs[contextKey];
+    const chatsForContext = contextKeyForLookup === 'personal'
+      ? chatsByContext.personal
+      : chatsByContext.orgs[contextKeyForLookup];
 
-    const errorForContext = contextKey === 'personal' 
-      ? historyErrorByContext.personal 
-      : historyErrorByContext.orgs[contextKey];
+    const isLoadingForContext = contextKeyForLookup === 'personal'
+      ? isLoadingHistoryByContext.personal
+      : isLoadingHistoryByContext.orgs[contextKeyForLookup];
 
-    const shouldLoad = chatsForContext === undefined && 
-        !isLoadingForContext && 
+    const errorForContext = contextKeyForLookup === 'personal'
+      ? historyErrorByContext.personal
+      : historyErrorByContext.orgs[contextKeyForLookup];
+
+    // Only attempt to load if data isn't already present, not loading, and no error
+    const shouldLoad = chatsForContext === undefined &&
+        !isLoadingForContext &&
         !errorForContext;
 
     if (shouldLoad) {
-      storeLoadChatHistory(activeContextId);
+      storeLoadChatHistory(orgIdToLoad); // Pass null for personal, actual ID for orgs
     }
+    // Ensure all dependencies that could trigger a reload or use stale data are included.
   }, [activeContextId, chatsByContext, isLoadingHistoryByContext, historyErrorByContext, storeLoadChatHistory]);
 
   const getChatsForDisplay = () => {

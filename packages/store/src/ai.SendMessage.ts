@@ -60,10 +60,14 @@ async function coreMessageProcessing(
     }
 
     const apiRequest: ChatApiRequest = {
-      message: messageContent, providerId: targetProviderId, promptId: targetPromptId || '__none__',
-      chatId: targetChatId, organizationId: effectiveOrganizationId,
+      message: messageContent, 
+      providerId: targetProviderId, 
+      promptId: targetPromptId || '__none__',
+      ...(targetChatId && { chatId: targetChatId }),
+      ...(effectiveOrganizationId && { organizationId: effectiveOrganizationId }),
       ...(rewindTargetMessageId && { rewindFromMessageId: rewindTargetMessageId }),
-      max_tokens_to_generate: maxAllowedOutputTokens, contextMessages: selectedContextMessages,
+      max_tokens_to_generate: maxAllowedOutputTokens, 
+      contextMessages: selectedContextMessages,
     };
     // Use RequestInit for fetch options, token is passed in headers
     const response = await callChatApi(apiRequest, { headers: { Authorization: `Bearer ${token}` } });
@@ -295,19 +299,30 @@ export async function handleSendMessage(
        } else {
            newMessagesByChatId[actualNewChatId] = messagesForChatProcessing;
        }
+
        const newSelectedMessagesMap = { ...state.selectedMessagesMap };
        if (optimisticMessageChatId !== actualNewChatId && newSelectedMessagesMap[optimisticMessageChatId]) {
            delete newSelectedMessagesMap[optimisticMessageChatId];
        }
-       const selectionsForActualChat = { ...(newSelectedMessagesMap[actualNewChatId] || {}) };
-       let finalUserMessageIdToSelect: string | undefined = finalUserMessage?.id;
-       if (!finalUserMessageIdToSelect) {
-            const processedUserMessage = messagesForChatProcessing.find((msg: ChatMessage) => msg.role === 'user' && msg.id === tempUserMessageId);
-            if (processedUserMessage) finalUserMessageIdToSelect = processedUserMessage.id;
+
+       if (isActualRewind) {
+           const selectionsForRewoundChat: { [messageId: string]: boolean } = {};
+           messagesForChatProcessing.forEach(msg => {
+               selectionsForRewoundChat[msg.id] = true;
+           });
+           newSelectedMessagesMap[actualNewChatId] = selectionsForRewoundChat;
+       } else {
+           const selectionsForActualChat = { ...(newSelectedMessagesMap[actualNewChatId] || {}) };
+           let finalUserMessageIdToSelect: string | undefined = finalUserMessage?.id;
+           if (!finalUserMessageIdToSelect) {
+               const processedUserMessage = messagesForChatProcessing.find((msg: ChatMessage) => msg.role === 'user' && msg.id === tempUserMessageId);
+               if (processedUserMessage) finalUserMessageIdToSelect = processedUserMessage.id;
+           }
+           if (finalUserMessageIdToSelect) selectionsForActualChat[finalUserMessageIdToSelect] = true;
+           selectionsForActualChat[assistantMessage.id] = true;
+           newSelectedMessagesMap[actualNewChatId] = selectionsForActualChat;
        }
-       if (finalUserMessageIdToSelect) selectionsForActualChat[finalUserMessageIdToSelect] = true;
-       selectionsForActualChat[assistantMessage.id] = true;
-       newSelectedMessagesMap[actualNewChatId] = selectionsForActualChat;
+
        let updatedChatsByContext = { ...state.chatsByContext };
        if (optimisticMessageChatId !== actualNewChatId) {
            const newChatEntry: Chat = { 

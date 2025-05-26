@@ -100,10 +100,12 @@ export class ApiClient {
         headers.append('Content-Type', 'application/json');
         headers.append('apikey', this.supabaseAnonKey); // <<< Always add apikey header
 
-        const token = options.token || (await this.getToken());
-
-        if (!options.isPublic && token) {
-            headers.append('Authorization', `Bearer ${token}`);
+        // Only add Authorization if not already present in options.headers and not public
+        if (!options.isPublic && !headers.has('Authorization')) {
+            const tokenFromAuthGetSession = options.token || (await this.getToken());
+            if (tokenFromAuthGetSession) {
+                headers.append('Authorization', `Bearer ${tokenFromAuthGetSession}`);
+            }
         }
         
         // ---> Log headers right before fetch (Revised) <--- 

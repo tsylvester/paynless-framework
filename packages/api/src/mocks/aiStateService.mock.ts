@@ -12,9 +12,9 @@ const setAiStateMock = vi.fn<SetAiStateArgs, void>();
 const addOptimisticUserMessageMock = vi.fn<AddOptimisticUserMessageArgs, AddOptimisticUserMessageReturn>();
 
 export const mockAiStateService: IAiStateService = {
-  getAiState: (...args: []) => getAiStateMock(...args),
-  setAiState: (...args: SetAiStateArgs) => setAiStateMock(...args),
-  addOptimisticUserMessage: (...args: AddOptimisticUserMessageArgs) => addOptimisticUserMessageMock(...args),
+  getAiState: getAiStateMock,
+  setAiState: setAiStateMock,
+  addOptimisticUserMessage: addOptimisticUserMessageMock,
   // Add other methods if they become necessary for handleSendMessage tests
 };
 

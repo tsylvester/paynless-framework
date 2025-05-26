@@ -92,7 +92,9 @@ export interface SendMessageParams {
   // API interaction (dependency injection)
   callChatApi: ( 
     request: ChatApiRequest, // Correctly uses the new type
-    options: FetchOptions    // Expects options for token
+    options: FetchOptions,    // Expects options for token
+    assistantMessage: string,
+    chatId: string
   ) => Promise<ApiResponse<ChatHandlerSuccessResponse>>;
 
   // Logger (dependency injection)

@@ -54,7 +54,10 @@ export interface ChatSessionTokenUsageDetails {
  * Represents a single message within a Chat.
  * Derived from the `chat_messages` table.
  */
-export type ChatMessage = Database['public']['Tables']['chat_messages']['Row'] 
+export type ChatMessage = Omit<Database['public']['Tables']['chat_messages']['Row'], 'token_usage'> & {
+  token_usage?: TokenUsage | null; 
+  status?: 'pending' | 'sent' | 'error';
+};
 
 // --- Application/API/Adapter/Store Specific Types ---
 
@@ -216,6 +219,7 @@ export interface ChatHandlerSuccessResponse {
   chatId: string;                    // ID of the chat session (new or existing)
   isRewind?: boolean;                 // True if this was a rewind operation
   isDummy?: boolean;                  // True if dummy provider was used
+  
 }
 
 // --- Zustand Store Types ---
