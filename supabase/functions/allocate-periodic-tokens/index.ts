@@ -121,6 +121,7 @@ export async function handleAllocatePeriodicTokens(
           type: TRANSACTION_TYPE_RECURRING_FREE,
           amount: tokensToAward.toString(),
           recordedByUserId: SYSTEM_USER_ID,
+          idempotencyKey: `${sub.id}-${freePlan.id}-${sub.current_period_end}`,
           relatedEntityId: sub.plan_id ?? undefined,
           relatedEntityType: 'subscription_plans',
           notes: String(`Monthly free token allocation. Period ending ${new Date(sub.current_period_end!).toISOString().substring(0,10)}.`),

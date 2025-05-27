@@ -3,6 +3,7 @@ import {
   assertRejects,
   assertExists,
   assertNotEquals,
+  // assertIsNull, // Removed as it's not a standard Deno assertion
 } from "https://deno.land/std@0.224.0/assert/mod.ts";
 import {
   stub,
@@ -176,6 +177,53 @@ Deno.test("TokenWalletService (Integration with Dev Server)", async (t) => {
     console.log(`[Test Cleanup - ${stepName || 'Global'}] Cleaning up data. Wallets to clean: ${walletsToCleanup.length}, Orgs to clean: ${orgsToCleanup.length}`);
     console.log(`[Test Cleanup - ${stepName || 'Global'}] Wallet IDs: ${JSON.stringify(walletsToCleanup)}`);
     console.log(`[Test Cleanup - ${stepName || 'Global'}] Org IDs: ${JSON.stringify(orgsToCleanup)}`);
+
+    // --- BEGINNING OF CRITICAL CHANGES: Delete payment_transactions first ---
+
+    // 1. Delete payment_transactions linked to the main testUserProfileId
+    if (testUserProfileId) {
+        console.log(`[Test Cleanup - ${stepName || 'Global'}] Attempting to delete payment_transactions by user_id: ${testUserProfileId}`);
+        const { error: ptxUserError } = await supabaseAdminClient
+            .from('payment_transactions')
+            .delete()
+            .eq('user_id', testUserProfileId); // Match the main test user
+        if (ptxUserError) {
+            // Log error but continue cleanup, as some transactions might not be user-linked but wallet/org linked
+            console.error(`[Test Cleanup - ${stepName || 'Global'}] Error cleaning payment_transactions by user_id ${testUserProfileId}:`, ptxUserError);
+        } else {
+            console.log(`[Test Cleanup - ${stepName || 'Global'}] Successfully deleted payment_transactions by user_id ${testUserProfileId}.`);
+        }
+    }
+
+    // 2. Delete payment_transactions linked to wallets marked for cleanup
+    if (walletsToCleanup.length > 0) {
+        console.log(`[Test Cleanup - ${stepName || 'Global'}] Attempting to delete payment_transactions by target_wallet_id(s): ${JSON.stringify(walletsToCleanup)}`);
+        const { error: ptxWalletError } = await supabaseAdminClient
+            .from('payment_transactions')
+            .delete()
+            .in('target_wallet_id', walletsToCleanup);
+        if (ptxWalletError) {
+            console.error(`[Test Cleanup - ${stepName || 'Global'}] Error cleaning payment_transactions by target_wallet_id:`, ptxWalletError);
+        } else {
+            console.log(`[Test Cleanup - ${stepName || 'Global'}] Successfully deleted payment_transactions by target_wallet_id.`);
+        }
+    }
+
+    // 3. Delete payment_transactions linked to orgs marked for cleanup
+    // This might overlap with user/wallet deletions but ensures org-specific ones are caught.
+    if (orgsToCleanup.length > 0) {
+        console.log(`[Test Cleanup - ${stepName || 'Global'}] Attempting to delete payment_transactions by organization_id(s): ${JSON.stringify(orgsToCleanup)}`);
+        const { error: ptxOrgError } = await supabaseAdminClient
+            .from('payment_transactions')
+            .delete()
+            .in('organization_id', orgsToCleanup);
+        if (ptxOrgError) {
+            console.error(`[Test Cleanup - ${stepName || 'Global'}] Error cleaning payment_transactions by organization_id:`, ptxOrgError);
+        } else {
+            console.log(`[Test Cleanup - ${stepName || 'Global'}] Successfully deleted payment_transactions by organization_id.`);
+        }
+    }
+    // --- END OF CRITICAL CHANGES ---
 
     for (const walletId of walletsToCleanup) {
       console.log(`[Test Cleanup - ${stepName || 'Global'}] Attempting to delete transactions for wallet ${walletId}`);
@@ -417,15 +465,32 @@ Deno.test("TokenWalletService (Integration with Dev Server)", async (t) => {
       testUserWalletId = newWallet.walletId;
       walletsToCleanup.push(testUserWalletId);
 
+      const generatedPaymentTxId = crypto.randomUUID(); // Store the generated UUID
+
       const params = {
         walletId: testUserWalletId, // Use the walletId from the newly created wallet
         type: 'CREDIT_PURCHASE' as TokenWalletTransactionType,
         amount: '1000',
         recordedByUserId: testUserProfileId, 
+        idempotencyKey: crypto.randomUUID(),
         relatedEntityId: `payment-${Date.now()}`,
         relatedEntityType: 'payment_transaction',
+        paymentTransactionId: generatedPaymentTxId, // Use the stored UUID
         notes: 'Test credit purchase via service-created wallet',
       };
+
+      // Insert a dummy payment_transactions record
+      const { error: paymentTxError } = await supabaseAdminClient // Changed to supabaseAdminClient
+        .from('payment_transactions')
+        .insert({
+          id: generatedPaymentTxId, // Use the same UUID
+          target_wallet_id: testUserWalletId,
+          payment_gateway_id: 'TEST_GATEWAY',
+          tokens_to_award: parseInt(params.amount),
+          status: 'COMPLETED', // Changed to uppercase
+          user_id: testUserProfileId, 
+        });
+      assertEquals(paymentTxError, null, `Failed to insert dummy payment transaction: ${paymentTxError?.message}`);
 
       const transactionResult = await tokenWalletService.recordTransaction(params);
 
@@ -487,13 +552,31 @@ Deno.test("TokenWalletService (Integration with Dev Server)", async (t) => {
       testUserWalletId = newWallet.walletId;
       walletsToCleanup.push(testUserWalletId);
 
+      const generatedCreditPaymentTxId = crypto.randomUUID(); // New UUID for the credit part
+
+      // Insert a dummy payment_transactions record for the credit FIRST
+      const { error: creditPaymentTxError } = await supabaseAdminClient // Use admin client for setup
+        .from('payment_transactions')
+        .insert({
+          id: generatedCreditPaymentTxId, // Explicitly set the ID to match what will be used in token_wallet_transactions
+          target_wallet_id: testUserWalletId,
+          payment_gateway_id: 'TEST_GATEWAY_CREDIT_SETUP',
+          tokens_to_award: parseInt(initialCreditAmount),
+          status: 'COMPLETED', // Changed to uppercase
+          user_id: testUserProfileId,
+        });
+      assertEquals(creditPaymentTxError, null, `Failed to insert dummy payment transaction for credit setup: ${creditPaymentTxError?.message}`);
+
       const creditParams = {
         walletId: testUserWalletId,
         type: 'CREDIT_PURCHASE' as TokenWalletTransactionType,
         amount: initialCreditAmount,
         recordedByUserId: testUserProfileId,
+        idempotencyKey: `credit-idempotency-${Date.now()}`,
+        paymentTransactionId: generatedCreditPaymentTxId, // Use the same UUID used in the payment_transactions insert
         notes: 'Initial credit for debit test',
       };
+      
       const creditResult = await tokenWalletService.recordTransaction(creditParams);
       assertExists(creditResult, "Initial credit transaction should succeed.");
       assertEquals(creditResult.balanceAfterTxn, initialCreditAmount, "Balance after initial credit should be correct.");
@@ -504,8 +587,10 @@ Deno.test("TokenWalletService (Integration with Dev Server)", async (t) => {
         type: 'DEBIT_USAGE' as TokenWalletTransactionType,
         amount: debitAmount,
         recordedByUserId: testUserProfileId,
+        idempotencyKey: `debit-idempotency-${crypto.randomUUID()}`,
         relatedEntityId: `usage-${crypto.randomUUID()}`,
         relatedEntityType: 'ai_service_usage',
+        paymentTransactionId: undefined, // DEBIT_USAGE should not create a new payment_transaction
         notes: 'Test debit usage',
       };
       const debitResult = await tokenWalletService.recordTransaction(debitParams);
@@ -552,6 +637,7 @@ Deno.test("TokenWalletService (Integration with Dev Server)", async (t) => {
       type: 'DEBIT_USAGE' as TokenWalletTransactionType,
       amount: '50',
       recordedByUserId: PRE_EXISTING_TEST_AUTH_USER_ID, // Use a valid existing user ID
+      idempotencyKey: crypto.randomUUID(),
       notes: 'Test debit from non-existent wallet',
     };
 
@@ -582,7 +668,11 @@ Deno.test("TokenWalletService (Integration with Dev Server)", async (t) => {
             p_transaction_type: 'CREDIT_ADJUSTMENT' as TokenWalletTransactionType,
             p_input_amount_text: '10',
             p_recorded_by_user_id: null, // Intentionally null to trigger the NOT NULL constraint
-            p_notes: 'Test attempt with null recordedByUserId for RPC direct call'
+            p_idempotency_key: crypto.randomUUID(), // Ensured this is present
+            p_related_entity_id: null, // Added
+            p_related_entity_type: null, // Added
+            p_notes: 'Test attempt with null recordedByUserId for RPC direct call',
+            p_payment_transaction_id: null // Added
           } as any); // Cast to 'any' to bypass TypeScript compile-time check for null argument
 
           if (error) {
@@ -997,17 +1087,36 @@ Deno.test("TokenWalletService (Integration with Dev Server)", async (t) => {
       userWallet = await tokenWalletService.createWallet(testUserProfileId!);
       assertExists(userWallet, "User wallet should be created for setup.");
       walletsToCleanup.push(userWallet.walletId);
+
+      const generatedPaymentTxId = crypto.randomUUID();
+      const creditAmount = '12345';
+
+      // Insert a dummy payment_transactions record
+      const { error: paymentTxError } = await supabaseAdminClient // Changed to supabaseAdminClient
+        .from('payment_transactions')
+        .insert({
+          id: generatedPaymentTxId,
+          target_wallet_id: userWallet.walletId,
+          payment_gateway_id: 'TEST_GATEWAY_GETBALANCE_USER',
+          tokens_to_award: parseInt(creditAmount),
+          status: 'COMPLETED', // Changed to uppercase
+          user_id: testUserProfileId!,
+        });
+      assertEquals(paymentTxError, null, `Failed to insert dummy payment transaction: ${paymentTxError?.message}`);
+
       await tokenWalletService.recordTransaction({
         walletId: userWallet.walletId,
         type: 'CREDIT_PURCHASE',
-        amount: '12345',
+        amount: creditAmount,
         recordedByUserId: testUserProfileId!,
-        notes: "Initial credit for getBalance test"
+        notes: "Initial credit for getBalance test",
+        idempotencyKey: crypto.randomUUID(),
+        paymentTransactionId: generatedPaymentTxId, // Use the same UUID
       });
 
       // This will initially fail as getBalance is not implemented
       const balance = await tokenWalletService.getBalance(userWallet.walletId);
-      assertEquals(balance, '12345');
+      assertEquals(balance, creditAmount);
     } finally {
       await cleanupStepData(stepName);
     }
@@ -1022,16 +1131,36 @@ Deno.test("TokenWalletService (Integration with Dev Server)", async (t) => {
       orgWallet = await tokenWalletService.getWalletForContext(testUserProfileId!, orgId);
       assertExists(orgWallet, "Org wallet should be created/fetched for setup.");
       walletsToCleanup.push(orgWallet.walletId);
+
+      const generatedPaymentTxId = crypto.randomUUID();
+      const creditAmount = '54321';
+
+      // Insert a dummy payment_transactions record
+      const { error: paymentTxError } = await supabaseAdminClient // Changed to supabaseAdminClient
+        .from('payment_transactions')
+        .insert({
+          id: generatedPaymentTxId,
+          target_wallet_id: orgWallet.walletId,
+          payment_gateway_id: 'TEST_GATEWAY_GETBALANCE_ORG',
+          tokens_to_award: parseInt(creditAmount),
+          status: 'COMPLETED', // Changed to uppercase
+          user_id: testUserProfileId!, // Assuming the admin user initiates this for the org
+          organization_id: orgId, // Link to the organization
+        });
+      assertEquals(paymentTxError, null, `Failed to insert dummy payment transaction for org: ${paymentTxError?.message}`);
+
       await tokenWalletService.recordTransaction({
         walletId: orgWallet.walletId,
         type: 'CREDIT_PURCHASE',
-        amount: '54321',
+        amount: creditAmount,
         recordedByUserId: testUserProfileId!, // Assuming admin performs this for the org
-        notes: "Initial credit for org getBalance test"
+        notes: "Initial credit for org getBalance test",
+        idempotencyKey: crypto.randomUUID(),
+        paymentTransactionId: generatedPaymentTxId, // Use the same UUID
       });
 
       const balance = await tokenWalletService.getBalance(orgWallet.walletId);
-      assertEquals(balance, '54321');
+      assertEquals(balance, creditAmount);
     } finally {
       await cleanupStepData(stepName);
     }
@@ -1126,7 +1255,7 @@ Deno.test("TokenWalletService (Integration with Dev Server)", async (t) => {
       await assertRejects(
         async () => { await secondUserFullCtx!.service.getBalance(orgWallet!.walletId); },
         Error,
-        "Wallet not found" // RLS will likely manifest as not found for non-admin
+        "Wallet not found" // RLS denial should appear as not found
       );
     } finally {
       if (secondUserFullCtx?.user.id) {
@@ -1186,11 +1315,30 @@ Deno.test("TokenWalletService (Integration with Dev Server)", async (t) => {
       assertExists(userWallet, "User wallet should be created.");
       userWalletId = userWallet.walletId;
       walletsToCleanup.push(userWalletId);
+
+      const generatedPaymentTxId = crypto.randomUUID();
+      const creditAmount = '100';
+
+      // Insert a dummy payment_transactions record
+      const { error: paymentTxError } = await supabaseAdminClient // Changed to supabaseAdminClient
+        .from('payment_transactions')
+        .insert({
+          id: generatedPaymentTxId,
+          target_wallet_id: userWalletId,
+          payment_gateway_id: 'TEST_GATEWAY_CHECKBALANCE_SUFFICIENT',
+          tokens_to_award: parseInt(creditAmount),
+          status: 'COMPLETED', // Changed to uppercase
+          user_id: testUserProfileId!,
+        });
+      assertEquals(paymentTxError, null, `Failed to insert dummy payment transaction: ${paymentTxError?.message}`);
+
       await tokenWalletService.recordTransaction({
         walletId: userWalletId,
         type: 'CREDIT_PURCHASE',
-        amount: '100',
+        amount: creditAmount,
         recordedByUserId: testUserProfileId!,
+        idempotencyKey: crypto.randomUUID(),
+        paymentTransactionId: generatedPaymentTxId, // Use the same UUID
       });
       const canSpend = await tokenWalletService.checkBalance(userWalletId, '50');
       assertEquals(canSpend, true);
@@ -1208,13 +1356,32 @@ Deno.test("TokenWalletService (Integration with Dev Server)", async (t) => {
       assertExists(userWallet, "User wallet should be created.");
       userWalletId = userWallet.walletId;
       walletsToCleanup.push(userWalletId);
+
+      const generatedPaymentTxId = crypto.randomUUID();
+      const creditAmount = '100';
+
+      // Insert a dummy payment_transactions record
+      const { error: paymentTxError } = await supabaseAdminClient // Changed to supabaseAdminClient
+        .from('payment_transactions')
+        .insert({
+          id: generatedPaymentTxId,
+          target_wallet_id: userWalletId,
+          payment_gateway_id: 'TEST_GATEWAY_CHECKBALANCE_EXACT',
+          tokens_to_award: parseInt(creditAmount),
+          status: 'COMPLETED', // Changed to uppercase
+          user_id: testUserProfileId!,
+        });
+      assertEquals(paymentTxError, null, `Failed to insert dummy payment transaction: ${paymentTxError?.message}`);
+
       await tokenWalletService.recordTransaction({
         walletId: userWalletId,
         type: 'CREDIT_PURCHASE',
-        amount: '100',
+        amount: creditAmount,
         recordedByUserId: testUserProfileId!,
+        idempotencyKey: crypto.randomUUID(),
+        paymentTransactionId: generatedPaymentTxId, // Use the same UUID
       });
-      const canSpend = await tokenWalletService.checkBalance(userWalletId, '100');
+      const canSpend = await tokenWalletService.checkBalance(userWalletId, creditAmount);
       assertEquals(canSpend, true);
     } finally {
       await cleanupStepData(stepName);
@@ -1230,11 +1397,30 @@ Deno.test("TokenWalletService (Integration with Dev Server)", async (t) => {
       assertExists(userWallet, "User wallet should be created.");
       userWalletId = userWallet.walletId;
       walletsToCleanup.push(userWalletId);
+
+      const generatedPaymentTxId = crypto.randomUUID();
+      const creditAmount = '100';
+
+      // Insert a dummy payment_transactions record
+      const { error: paymentTxError } = await supabaseAdminClient // Changed to supabaseAdminClient
+        .from('payment_transactions')
+        .insert({
+          id: generatedPaymentTxId,
+          target_wallet_id: userWalletId,
+          payment_gateway_id: 'TEST_GATEWAY_CHECKBALANCE_INSUFFICIENT',
+          tokens_to_award: parseInt(creditAmount),
+          status: 'COMPLETED', // Changed to uppercase
+          user_id: testUserProfileId!,
+        });
+      assertEquals(paymentTxError, null, `Failed to insert dummy payment transaction: ${paymentTxError?.message}`);
+
       await tokenWalletService.recordTransaction({
         walletId: userWalletId,
         type: 'CREDIT_PURCHASE',
-        amount: '100',
+        amount: creditAmount,
         recordedByUserId: testUserProfileId!,
+        idempotencyKey: crypto.randomUUID(),
+        paymentTransactionId: generatedPaymentTxId, // Use the same UUID
       });
       const canSpend = await tokenWalletService.checkBalance(userWalletId, '101');
       assertEquals(canSpend, false);
@@ -1359,9 +1545,33 @@ Deno.test("TokenWalletService (Integration with Dev Server)", async (t) => {
       const userWallet = await tokenWalletService.createWallet(testUserProfileId!);
       assertExists(userWallet, "User wallet should be created.");
       userWalletId = userWallet.walletId;
-      walletsToCleanup.push(userWalletId);
-      await tokenWalletService.recordTransaction({ walletId: userWalletId, type: 'CREDIT_PURCHASE', amount: '100', recordedByUserId: testUserProfileId! });
-      
+      walletsToCleanup.push(userWalletId!);
+
+      const generatedPaymentTxId = crypto.randomUUID();
+      const creditAmount = '100';
+
+      // Insert a dummy payment_transactions record
+      const { error: paymentTxError } = await supabaseAdminClient // Changed to supabaseAdminClient
+        .from('payment_transactions')
+        .insert({
+          id: generatedPaymentTxId,
+          target_wallet_id: userWalletId,
+          payment_gateway_id: 'TEST_GATEWAY_CHECKBALANCE_INVALID_NONNUMERIC',
+          tokens_to_award: parseInt(creditAmount),
+          status: 'COMPLETED', // Changed to uppercase
+          user_id: testUserProfileId!,
+        });
+      assertEquals(paymentTxError, null, `Failed to insert dummy payment transaction: ${paymentTxError?.message}`);
+
+      await tokenWalletService.recordTransaction({
+        walletId: userWalletId!,
+        type: 'CREDIT_PURCHASE',
+        amount: creditAmount,
+        recordedByUserId: testUserProfileId!,
+        idempotencyKey: crypto.randomUUID(),
+        paymentTransactionId: generatedPaymentTxId, // Use the same UUID
+      });
+
       await assertRejects(
         async () => { await tokenWalletService.checkBalance(userWalletId!, "not-a-number"); },
         Error,
@@ -1380,8 +1590,32 @@ Deno.test("TokenWalletService (Integration with Dev Server)", async (t) => {
       const userWallet = await tokenWalletService.createWallet(testUserProfileId!);
       assertExists(userWallet, "User wallet should be created.");
       userWalletId = userWallet.walletId;
-      walletsToCleanup.push(userWalletId);
-      await tokenWalletService.recordTransaction({ walletId: userWalletId, type: 'CREDIT_PURCHASE', amount: '100', recordedByUserId: testUserProfileId! });
+      walletsToCleanup.push(userWalletId!);
+
+      const generatedPaymentTxId = crypto.randomUUID();
+      const creditAmount = '100';
+
+      // Insert a dummy payment_transactions record
+      const { error: paymentTxError } = await supabaseAdminClient // Changed to supabaseAdminClient
+        .from('payment_transactions')
+        .insert({
+          id: generatedPaymentTxId,
+          target_wallet_id: userWalletId,
+          payment_gateway_id: 'TEST_GATEWAY_CHECKBALANCE_INVALID_NEGATIVE',
+          tokens_to_award: parseInt(creditAmount),
+          status: 'COMPLETED', // Changed to uppercase
+          user_id: testUserProfileId!,
+        });
+      assertEquals(paymentTxError, null, `Failed to insert dummy payment transaction: ${paymentTxError?.message}`);
+
+      await tokenWalletService.recordTransaction({
+        walletId: userWalletId!,
+        type: 'CREDIT_PURCHASE',
+        amount: creditAmount,
+        recordedByUserId: testUserProfileId!,
+        idempotencyKey: crypto.randomUUID(),
+        paymentTransactionId: generatedPaymentTxId, // Use the same UUID
+      });
 
       await assertRejects(
         async () => { await tokenWalletService.checkBalance(userWalletId!, "-10"); },
@@ -1401,9 +1635,33 @@ Deno.test("TokenWalletService (Integration with Dev Server)", async (t) => {
       const userWallet = await tokenWalletService.createWallet(testUserProfileId!);
       assertExists(userWallet, "User wallet should be created.");
       userWalletId = userWallet.walletId;
-      walletsToCleanup.push(userWalletId);
-      await tokenWalletService.recordTransaction({ walletId: userWalletId, type: 'CREDIT_PURCHASE', amount: '100', recordedByUserId: testUserProfileId! });
-      
+      walletsToCleanup.push(userWalletId!);
+
+      const generatedPaymentTxId = crypto.randomUUID();
+      const creditAmount = '100';
+
+      // Insert a dummy payment_transactions record
+      const { error: paymentTxError } = await supabaseAdminClient // Changed to supabaseAdminClient
+        .from('payment_transactions')
+        .insert({
+          id: generatedPaymentTxId,
+          target_wallet_id: userWalletId,
+          payment_gateway_id: 'TEST_GATEWAY_CHECKBALANCE_VALID_ZERO',
+          tokens_to_award: parseInt(creditAmount),
+          status: 'COMPLETED', // Changed to uppercase
+          user_id: testUserProfileId!,
+        });
+      assertEquals(paymentTxError, null, `Failed to insert dummy payment transaction: ${paymentTxError?.message}`);
+
+      await tokenWalletService.recordTransaction({
+        walletId: userWalletId!,
+        type: 'CREDIT_PURCHASE',
+        amount: creditAmount,
+        recordedByUserId: testUserProfileId!,
+        idempotencyKey: crypto.randomUUID(),
+        paymentTransactionId: generatedPaymentTxId, // Use the same UUID
+      });
+
       const canSpend = await tokenWalletService.checkBalance(userWalletId!, '0');
       assertEquals(canSpend, true);
     } finally {
@@ -1427,8 +1685,8 @@ Deno.test("TokenWalletService (Integration with Dev Server)", async (t) => {
         p_transaction_type: 'CREDIT_ADJUSTMENT',
         p_input_amount_text: largeAmount,
         p_recorded_by_user_id: testUserProfileId!,
+        p_idempotency_key: `idem-checkbalance-large-sufficient-${crypto.randomUUID()}`, // Corrected
         p_notes: 'Test credit of very large amount',
-        p_idempotency_key: `idem-large-${crypto.randomUUID()}`,
         p_payment_transaction_id: undefined
       });
       assertEquals(!rpcError, true, `RPC call failed for large credit: ${rpcError?.message}`);
@@ -1457,7 +1715,9 @@ Deno.test("TokenWalletService (Integration with Dev Server)", async (t) => {
           p_transaction_type: 'CREDIT_ADJUSTMENT',
           p_input_amount_text: currentBalance,
           p_recorded_by_user_id: testUserProfileId!,
+          p_idempotency_key: `idem-checkbalance-large-insufficient-${crypto.randomUUID()}`, // Added
           p_notes: 'Large credit for checkBalance insufficient test'
+          // p_payment_transaction_id can be omitted to use default null
       });
       assertEquals(!rpcError, true, `RPC call failed for large credit (insufficient): ${rpcError?.message}`);
       
@@ -1476,54 +1736,72 @@ Deno.test("TokenWalletService (Integration with Dev Server)", async (t) => {
     const stepName = "getTransactionHistory_user";
     let userWalletId: string | undefined;
     try {
-      // Create wallet and add some transactions
       const userWallet = await tokenWalletService.createWallet(testUserProfileId!);
       assertExists(userWallet, "User wallet should be created.");
       userWalletId = userWallet.walletId;
-      walletsToCleanup.push(userWalletId);
+      walletsToCleanup.push(userWalletId!);
 
-      // Add transactions sequentially
-      await tokenWalletService.recordTransaction({
-        walletId: userWalletId,
-        type: 'CREDIT_PURCHASE',
-        amount: '100',
-        recordedByUserId: testUserProfileId!,
-        notes: 'First credit'
+      // Transaction 1: CREDIT_PURCHASE
+      const paymentTxId1 = crypto.randomUUID();
+      const creditAmount1 = '100';
+      const { error: ptxError1 } = await supabaseAdminClient.from('payment_transactions').insert({ // Changed to supabaseAdminClient
+        id: paymentTxId1, target_wallet_id: userWalletId, payment_gateway_id: 'GTH_USER1', tokens_to_award: parseInt(creditAmount1), status: 'COMPLETED', user_id: testUserProfileId!, // Changed to uppercase
       });
-      await tokenWalletService.recordTransaction({
-        walletId: userWalletId,
+      assertEquals(ptxError1, null, `Failed to insert dummy payment transaction 1: ${ptxError1?.message}`);
+      const tx1 = await tokenWalletService.recordTransaction({
+        walletId: userWalletId!,
+        type: 'CREDIT_PURCHASE',
+        amount: creditAmount1,
+        recordedByUserId: testUserProfileId!,
+        idempotencyKey: `history-credit1-${Date.now()}`,
+        paymentTransactionId: paymentTxId1,
+        notes: "First credit"
+      });
+      assertExists(tx1, "First transaction should be recorded.");
+
+      // Transaction 2: DEBIT_USAGE
+      const debitAmount = '30';
+      const tx2 = await tokenWalletService.recordTransaction({
+        walletId: userWalletId!,
         type: 'DEBIT_USAGE',
-        amount: '30',
+        amount: debitAmount,
         recordedByUserId: testUserProfileId!,
-        notes: 'First debit'
+        idempotencyKey: `history-debit-${Date.now()}`,
+        relatedEntityId: 'some-usage-id',
+        relatedEntityType: 'test_usage',
+        notes: "First debit"
       });
-      await tokenWalletService.recordTransaction({
-        walletId: userWalletId,
-        type: 'CREDIT_PURCHASE',
-        amount: '50',
-        recordedByUserId: testUserProfileId!,
-        notes: 'Second credit'
-      });
+      assertExists(tx2, "Second transaction should be recorded.");
 
-      // Fetch history
-      const history = await tokenWalletService.getTransactionHistory(userWalletId);
+      // Transaction 3: CREDIT_PURCHASE
+      const paymentTxId3 = crypto.randomUUID();
+      const creditAmount2 = '50';
+      const { error: ptxError3 } = await supabaseAdminClient.from('payment_transactions').insert({ // Changed to supabaseAdminClient
+        id: paymentTxId3, target_wallet_id: userWalletId, payment_gateway_id: 'GTH_USER2', tokens_to_award: parseInt(creditAmount2), status: 'COMPLETED', user_id: testUserProfileId!, // Changed to uppercase
+      });
+      assertEquals(ptxError3, null, `Failed to insert dummy payment transaction 3: ${ptxError3?.message}`);
+      const tx3 = await tokenWalletService.recordTransaction({
+        walletId: userWalletId!,
+        type: 'CREDIT_PURCHASE',
+        amount: creditAmount2,
+        recordedByUserId: testUserProfileId!,
+        idempotencyKey: `history-credit2-${Date.now()}`,
+        paymentTransactionId: paymentTxId3,
+        notes: "Second credit"
+      });
+      assertExists(tx3, "Third transaction should be recorded.");
+
+      const history = await tokenWalletService.getTransactionHistory(userWalletId!); // Default: page 1, limit 10
       assertExists(history, "Transaction history should exist.");
       assertEquals(history.length, 3, "Should return all transactions.");
       
-      // Verify transactions are ordered by timestamp (newest first)
-      const sortedHistory = [...history].sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime());
-      assertEquals(history, sortedHistory, "Transactions should be ordered by timestamp descending");
+      const sortedByTimestamp = [...history].sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+      assertEquals(history, sortedByTimestamp, "History should be sorted by timestamp descending by default.");
 
-      // Verify transaction details
-      const firstTxn = history[0];
-      assertEquals(firstTxn.walletId, userWalletId);
-      assertEquals(firstTxn.type, 'CREDIT_PURCHASE');
-      assertEquals(firstTxn.amount, '50');
-      assertEquals(firstTxn.notes, 'Second credit');
-      assertExists(firstTxn.transactionId);
-      assertExists(firstTxn.timestamp);
-      assertExists(firstTxn.balanceAfterTxn);
-      assertExists(firstTxn.recordedByUserId);
+      assertEquals(history[0].notes, "Second credit");
+      assertEquals(history[1].notes, "First debit");
+      assertEquals(history[2].notes, "First credit");
+
     } finally {
       await cleanupStepData(stepName);
     }
@@ -1533,8 +1811,9 @@ Deno.test("TokenWalletService (Integration with Dev Server)", async (t) => {
     assertExists(testUserProfileId, "Test user profile ID must exist.");
     const stepName = "getTransactionHistory_org";
     let orgWalletId: string | undefined;
+
     try {
-      // Create org and make user admin
+      // Setup: Create a dummy organization and add the test user as an admin
       const orgId = await createOrgAndMakeUserAdmin("TxHistoryOrg", supabaseAdminClient, testUserProfileId!, orgsToCleanup);
       
       // Create/fetch org wallet
@@ -1543,33 +1822,61 @@ Deno.test("TokenWalletService (Integration with Dev Server)", async (t) => {
       orgWalletId = orgWallet.walletId;
       walletsToCleanup.push(orgWalletId);
 
-      // Add transactions sequentially
+      // Transaction 1: CREDIT_PURCHASE for org
+      const paymentTxIdOrg1 = crypto.randomUUID();
+      const creditAmountOrg1 = '200';
+      const { error: ptxErrorOrg1 } = await supabaseAdminClient.from('payment_transactions').insert({ // Changed to supabaseAdminClient
+        id: paymentTxIdOrg1, target_wallet_id: orgWalletId, payment_gateway_id: 'GTH_ORG1', tokens_to_award: parseInt(creditAmountOrg1), status: 'COMPLETED', user_id: testUserProfileId!, organization_id: orgId, // Changed to uppercase
+      });
+      assertEquals(ptxErrorOrg1, null, `Failed to insert dummy payment transaction for org 1: ${ptxErrorOrg1?.message}`);
       await tokenWalletService.recordTransaction({
         walletId: orgWalletId,
         type: 'CREDIT_PURCHASE',
-        amount: '200',
+        amount: creditAmountOrg1,
         recordedByUserId: testUserProfileId!,
-        notes: 'Org first credit'
+        notes: 'Org first credit',
+        idempotencyKey: `org-history-credit1-${Date.now()}`,
+        paymentTransactionId: paymentTxIdOrg1,
       });
+
+      // Transaction 2: DEBIT_USAGE for org
       await tokenWalletService.recordTransaction({
         walletId: orgWalletId,
         type: 'DEBIT_USAGE',
         amount: '75',
         recordedByUserId: testUserProfileId!,
-        notes: 'Org first debit'
+        notes: 'Org first debit',
+        idempotencyKey: `org-history-debit1-${Date.now()}`,
       });
 
-      // Fetch history
+      // Transaction 3: CREDIT_PURCHASE for org
+      const paymentTxIdOrg3 = crypto.randomUUID();
+      const creditAmountOrg2 = '120';
+      const { error: ptxErrorOrg3 } = await supabaseAdminClient.from('payment_transactions').insert({ // Changed to supabaseAdminClient
+        id: paymentTxIdOrg3, target_wallet_id: orgWalletId, payment_gateway_id: 'GTH_ORG2', tokens_to_award: parseInt(creditAmountOrg2), status: 'COMPLETED', user_id: testUserProfileId!, organization_id: orgId, // Changed to uppercase
+      });
+      assertEquals(ptxErrorOrg3, null, `Failed to insert dummy payment transaction for org 3: ${ptxErrorOrg3?.message}`);
+      await tokenWalletService.recordTransaction({
+        walletId: orgWalletId,
+        type: 'CREDIT_PURCHASE',
+        amount: creditAmountOrg2,
+        recordedByUserId: testUserProfileId!,
+        notes: 'Org second credit',
+        idempotencyKey: `org-history-credit2-${Date.now()}`,
+        paymentTransactionId: paymentTxIdOrg3,
+      });
+
       const history = await tokenWalletService.getTransactionHistory(orgWalletId);
       assertExists(history, "Transaction history should exist.");
-      assertEquals(history.length, 2, "Should return all org transactions.");
-      
-      // Verify transactions
-      const firstTxn = history[0];
-      assertEquals(firstTxn.walletId, orgWalletId);
-      assertEquals(firstTxn.type, 'DEBIT_USAGE');
-      assertEquals(firstTxn.amount, '75');
-      assertEquals(firstTxn.notes, 'Org first debit');
+      assertEquals(history.length, 3, "Should return all org transactions.");
+
+      const sortedByTimestamp = [...history].sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+      assertEquals(history, sortedByTimestamp, "History should be sorted by timestamp descending by default.");
+
+      assertEquals(history[0].notes, "Org second credit");
+      assertEquals(history[1].notes, "Org first debit");
+      assertEquals(history[2].notes, "Org first credit");
+
     } finally {
       await cleanupStepData(stepName);
     }
@@ -1586,25 +1893,42 @@ Deno.test("TokenWalletService (Integration with Dev Server)", async (t) => {
       userWalletId = userWallet.walletId;
       walletsToCleanup.push(userWalletId);
 
-      // Add 5 transactions
-      for (let i = 1; i <= 5; i++) {
+      const transactionsToCreate = 5;
+      for (let i = 1; i <= transactionsToCreate; i++) {
+        const paymentTxId = crypto.randomUUID();
+        const amount = (i * 10).toString();
+        const { error: ptxError } = await supabaseAdminClient.from('payment_transactions').insert({ // Changed to supabaseAdminClient
+          id: paymentTxId, target_wallet_id: userWalletId, payment_gateway_id: `GTH_PAGINATION_${i}`,
+          tokens_to_award: parseInt(amount), status: 'COMPLETED', user_id: testUserProfileId!, // Changed to uppercase
+        });
+        assertEquals(ptxError, null, `Failed to insert dummy payment transaction for pagination test ${i}: ${ptxError?.message}`);
         await tokenWalletService.recordTransaction({
-          walletId: userWalletId,
+          walletId: userWalletId!,
           type: 'CREDIT_PURCHASE',
-          amount: (i * 10).toString(),
+          amount,
           recordedByUserId: testUserProfileId!,
-          notes: `Transaction ${i}`
+          notes: `Transaction ${i}`,
+          idempotencyKey: `pagination-tx-${i}-${Date.now()}`,
+          paymentTransactionId: paymentTxId,
         });
       }
 
-      // Test limit
-      const limitedHistory = await tokenWalletService.getTransactionHistory(userWalletId, 3);
-      assertEquals(limitedHistory.length, 3, "Should respect limit parameter");
+      // Test Case 1: Get first page, limit 2
+      const limitedHistory = await tokenWalletService.getTransactionHistory(userWalletId, 2);
+      assertEquals(limitedHistory.length, 2, "Should respect limit parameter");
+      assertEquals(limitedHistory[0].notes, "Transaction 5", "Should return newest transactions first");
+      assertEquals(limitedHistory[1].notes, "Transaction 4", "Should return newest transactions first");
 
-      // Test offset
-      const offsetHistory = await tokenWalletService.getTransactionHistory(userWalletId, 2, 2);
+      // Test Case 2: Get second page, limit 2
+      const offsetHistory = await tokenWalletService.getTransactionHistory(userWalletId, 2, 2); // page 2, limit 2 means offset 2
       assertEquals(offsetHistory.length, 2, "Should respect offset parameter");
-      assertEquals(offsetHistory[0].amount, '30', "Should skip first two transactions");
+      assertEquals(offsetHistory[0].notes, "Transaction 3", "Should skip first two newest transactions");
+      assertEquals(offsetHistory[1].notes, "Transaction 2", "Should return third and fourth newest transactions");
+
+      // Test Case 3: Get third page, limit 2
+      const offsetHistory2 = await tokenWalletService.getTransactionHistory(userWalletId, 2, 4); // page 3, limit 2 means offset 4
+      assertEquals(offsetHistory2.length, 1, "Should respect offset parameter for last page");
+      assertEquals(offsetHistory2[0].notes, "Transaction 1", "Should return oldest transaction");
     } finally {
       await cleanupStepData(stepName);
     }
@@ -1638,15 +1962,28 @@ Deno.test("TokenWalletService (Integration with Dev Server)", async (t) => {
       const originalUserWallet = await tokenWalletService.createWallet(testUserProfileId!);
       assertExists(originalUserWallet, "Original user's wallet should be created.");
       originalUserWalletId = originalUserWallet.walletId;
-      walletsToCleanup.push(originalUserWalletId);
+      walletsToCleanup.push(originalUserWallet.walletId);
 
       // Add a transaction
+      const paymentTxIdRlsUserFixed = crypto.randomUUID();
+      const { error: ptxErrorRlsUserFixed } = await supabaseAdminClient.from('payment_transactions').insert({
+        id: paymentTxIdRlsUserFixed,
+        target_wallet_id: originalUserWalletId,
+        payment_gateway_id: 'GTH_RLS_USER_FIXED',
+        tokens_to_award: 100,
+        status: 'COMPLETED',
+        user_id: testUserProfileId!,
+      });
+      assertEquals(ptxErrorRlsUserFixed, null, `Failed to insert payment_transaction for RLS user test (FIXED): ${ptxErrorRlsUserFixed?.message}`);
+
       await tokenWalletService.recordTransaction({
         walletId: originalUserWalletId,
         type: 'CREDIT_PURCHASE',
         amount: '100',
         recordedByUserId: testUserProfileId!,
-        notes: 'Test transaction'
+        notes: 'Test transaction',
+        idempotencyKey: crypto.randomUUID(),
+        paymentTransactionId: paymentTxIdRlsUserFixed, // <<< Ensure this uses the new const
       });
 
       // Create second user
@@ -1680,14 +2017,28 @@ Deno.test("TokenWalletService (Integration with Dev Server)", async (t) => {
       walletsToCleanup.push(orgWalletId);
 
       // Add a transaction
+      const paymentTxIdRlsOrgFixed = crypto.randomUUID();
+      const { error: ptxErrorRlsOrgFixed } = await supabaseAdminClient.from('payment_transactions').insert({
+        id: paymentTxIdRlsOrgFixed,
+        target_wallet_id: orgWalletId,
+        payment_gateway_id: 'GTH_RLS_ORG_FIXED',
+        tokens_to_award: 100,
+        status: 'COMPLETED',
+        user_id: testUserProfileId!,
+        organization_id: orgId // Important: Link to the org
+      });
+      assertEquals(ptxErrorRlsOrgFixed, null, `Failed to insert payment_transaction for RLS org test (FIXED): ${ptxErrorRlsOrgFixed?.message}`);
+
       await tokenWalletService.recordTransaction({
         walletId: orgWalletId,
         type: 'CREDIT_PURCHASE',
         amount: '100',
         recordedByUserId: testUserProfileId!,
-        notes: 'Org test transaction'
+        notes: 'Org test transaction',
+        idempotencyKey: crypto.randomUUID(),
+        paymentTransactionId: paymentTxIdRlsOrgFixed, // <<< Ensure this uses the new const
       });
-
+      
       // Create second user (not admin of org)
       secondUserFullCtx = await setupSecondUserContext(supabaseAdminClient);
       

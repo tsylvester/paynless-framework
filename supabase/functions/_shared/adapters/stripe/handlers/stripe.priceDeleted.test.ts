@@ -78,7 +78,7 @@ Deno.test('handlePriceDeleted specific tests', async (t) => {
     options?: { skipInfoSpy?: boolean } // Option to skip spying on logger.info
   ) => {
     mockStripeSdk = createMockStripe(); 
-    mockSupabase = createMockSupabaseClient(supabaseConfig);
+    mockSupabase = createMockSupabaseClient(undefined, supabaseConfig);
     
     if (!options?.skipInfoSpy) {
       stepInfoSpy = spy(logger, 'info') as Spy<Logger, [message: string, metadata?: any], void>;

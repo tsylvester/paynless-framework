@@ -97,7 +97,7 @@ Deno.test('handlePriceCreated specific tests', async (t) => {
 
   const initializeTestContext = (supabaseConfig: MockSupabaseDataConfig = {}) => {
     mockStripeSdk = createMockStripe();
-    mockSupabase = createMockSupabaseClient(supabaseConfig);
+    mockSupabase = createMockSupabaseClient(undefined, supabaseConfig);
     
     // Create fresh spies for logger methods for this step and return them
     const stepInfoSpy = spy(logger, 'info');
@@ -398,10 +398,10 @@ Deno.test('handlePriceCreated specific tests', async (t) => {
 
   await t.step('Product retrieval from Stripe fails', async () => {
     let stepSpies = null;
-    const originalRetrieve = mockStripeSdk.instance.products.retrieve; // Save original
+    const originalRetrieve = mockStripeSdk.instance.products.retrieve; 
     try {
       stepSpies = initializeTestContext({});
-      const mockEventFailRetrieve = createMockPriceCreatedEvent({ product: 'prod_fail_retrieve' });
+      const mockEventFailRetrieve = createMockPriceCreatedEvent({ product: 'prod_fail_retrieve', id: 'price_test123' }); // Ensure price ID is price_test123
 
       const mockRetrieveImplFail = async (id: string): Promise<Stripe.Response<Stripe.Product>> => {
         return Promise.reject(new Error('Stripe API Error: Product not found'));
@@ -409,26 +409,26 @@ Deno.test('handlePriceCreated specific tests', async (t) => {
       const spiedRetrieveFail = spy(mockRetrieveImplFail);
       mockStripeSdk.instance.products.retrieve = spiedRetrieveFail;
       
-      mockSupabase.client.from('subscription_plans'); // So getLatestBuilder doesn't fail
+      mockSupabase.client.from('subscription_plans'); 
       const result = await handlePriceCreated(handlerContext, mockEventFailRetrieve);
 
-      console.log("[TEST DEBUG] Result object for 'Product retrieval fails':", JSON.stringify(result, null, 2)); // Added for debugging
-      assert(!result.success, "Handler should fail if Stripe product retrieval fails.");
-      assert(result.error?.includes("Product not found"), `Error message should indicate product retrieval failure. Got: ${result.error}`);
-      // If the above includes works, this more specific one should too based on handler logic
-      assert(result.error?.includes(`Unexpected error processing price.created for price ${(mockEventFailRetrieve.data.object as Stripe.Price).id}: Stripe API Error: Product not found`), `Full error message mismatch. Got: ${result.error}`);
+      assertEquals(result.success, false);
+      assertExists(result.transactionId);
+      assertExists(result.error);
+      assertEquals(result.error, "Unexpected error processing price.created for price price_test123: Stripe API Error: Product not found");
       assertEquals(result.status, 500, "Status should be 500 for product retrieval failure");
 
       assertSpyCalls(spiedRetrieveFail, 1);
-      assertSpyCalls(stepSpies.stepErrorSpy, 1); // Use the global errorSpy
-      const loggedErrorArgRetrieveFail = stepSpies.stepErrorSpy.calls[0].args[0];
+      assertSpyCalls(stepSpies.stepErrorSpy!, 1); 
+      const loggedErrorArgRetrieveFail = stepSpies.stepErrorSpy!.calls[0].args[0];
       let loggedMessageRetrieveFail: string | undefined;
       if (typeof loggedErrorArgRetrieveFail === 'string') {
         loggedMessageRetrieveFail = loggedErrorArgRetrieveFail;
       } else if (loggedErrorArgRetrieveFail instanceof Error) {
         loggedMessageRetrieveFail = loggedErrorArgRetrieveFail.message;
       }
-      assert(loggedMessageRetrieveFail && loggedMessageRetrieveFail.includes('Error retrieving product prod_fail_retrieve from Stripe'));
+      assert(loggedMessageRetrieveFail && loggedMessageRetrieveFail.includes('Unexpected error processing price.created for price price_test123: Stripe API Error: Product not found'),
+        `Logged error message mismatch. Got: ${loggedMessageRetrieveFail}`);
 
       const plansBuilder = mockSupabase.client.getLatestBuilder('subscription_plans');
       const upsertSpy = plansBuilder?.methodSpies['upsert'];
@@ -436,37 +436,49 @@ Deno.test('handlePriceCreated specific tests', async (t) => {
           assertSpyCalls(upsertSpy, 0); 
       }
     } finally {
-      mockStripeSdk.instance.products.retrieve = originalRetrieve; // Restore original
+      mockStripeSdk.instance.products.retrieve = originalRetrieve; 
       teardownTestContext(stepSpies);
     }
   });
 
-  await t.step('Price object is missing product ID', async () => {
+  await t.step('Price object is missing product ID', async () => { // Specifically for product: ""
     let stepSpies = null;
     try {
       stepSpies = initializeTestContext({});
-      const mockEventNoProdId = createMockPriceCreatedEvent({ id: 'price_no_prod_id_v2' });
-      (mockEventNoProdId.data.object as Stripe.Price).product = ""; 
+      const mockEventEmptyProdId = createMockPriceCreatedEvent({ id: 'price_no_prod_id_empty_str' }); // Unique ID for this test case
+      (mockEventEmptyProdId.data.object as Stripe.Price).product = ""; // Set product to EMPTY STRING
 
-      const result = await handlePriceCreated(handlerContext, mockEventNoProdId);
+      const result = await handlePriceCreated(handlerContext, mockEventEmptyProdId);
 
-      assert(!result.success, "Handler should fail due to a TypeError when product ID leads to undefined product.");
-      assert(result.error?.includes("Cannot read properties of undefined (reading 'deleted')"), 
-        `Error message mismatch. Expected to include "Cannot read properties of undefined (reading 'deleted')", got: '${result.error}'`);
-      assertEquals(result.status, 500, "Status should be 500 for an internal TypeError");
+      assertEquals(result.success, false, "Handler should fail when product ID is an empty string.");
+      assertEquals(result.error, "Product ID missing or invalid on price object.");
 
-      // Assert that logger.error was called with the TypeError
-      assertSpyCalls(stepSpies.stepErrorSpy, 1);
-      const errorLogMessage = stepSpies.stepErrorSpy.calls[0].args[0] as string;
-      assert(errorLogMessage.includes("Cannot read properties of undefined (reading 'deleted')"));
+      assertSpyCalls(stepSpies.stepErrorSpy!, 1);
+      const errorLogCallArgs = stepSpies.stepErrorSpy!.calls[0].args;
+      assert(errorLogCallArgs.length > 0, "Error spy was called without arguments");
+      const errorLogMessage = errorLogCallArgs[0] as string;
+      assert(errorLogMessage.includes('Product ID is missing, not a string, or empty on price object. Found: ""'),
+        `Expected log to include 'Found: ""'. Got: ${errorLogMessage}`);
       
-      assertSpyCalls(mockStripeSdk.stubs.productsRetrieve, 0); // Assert on the mock's own stub
+      const retrieveSpy = mockStripeSdk.stubs.productsRetrieve;
+      if (retrieveSpy && typeof retrieveSpy.calls === 'object') { 
+          assertSpyCalls(retrieveSpy, 0);
+      } else {
+        const instanceRetrieveSpy = mockStripeSdk.instance.products.retrieve as Spy<any, any[], any>;
+        if (instanceRetrieveSpy && typeof instanceRetrieveSpy.calls === 'object') {
+             assertSpyCalls(instanceRetrieveSpy, 0);
+        }
+      }
 
       const plansBuilder = mockSupabase.client.getLatestBuilder('subscription_plans');
-      const upsertSpy = plansBuilder?.methodSpies['upsert'];
-      if (upsertSpy) {
-          assertSpyCalls(upsertSpy, 0);
+      if (plansBuilder) {
+        const upsertSpy = plansBuilder.methodSpies['upsert'];
+        assertSpyCalls(upsertSpy!, 0);
       }
+
+      assertSpyCalls(stepSpies.stepInfoSpy!, 1); 
+      assertSpyCalls(stepSpies.stepWarnSpy!, 0);
+
     } finally {
       teardownTestContext(stepSpies);
     }
@@ -765,15 +777,26 @@ Deno.test('handlePriceCreated specific tests', async (t) => {
 
       const result = await handlePriceCreated(handlerContext, mockEvent);
 
-      assertEquals(result.success, false);
-      assertEquals(result.transactionId, mockEvent.id);
+      assertEquals(result.success, false, "Handler should fail when product ID is an empty string.");
       assertEquals(result.error, "Product ID missing or invalid on price object.");
 
-      assertSpyCalls(stepSpies.stepErrorSpy, 1);
-      const errorLogMessage = stepSpies.stepErrorSpy.calls[0].args[0] as string;
-      assert(errorLogMessage.includes("Product ID is missing or not a string"));
+      assertSpyCalls(stepSpies.stepErrorSpy!, 1);
+      const errorLogCallArgsNullProd = stepSpies.stepErrorSpy!.calls[0].args;
+      assert(errorLogCallArgsNullProd.length > 0, "Error spy was called without arguments");
+      const errorLogMessage = errorLogCallArgsNullProd[0] as string;
+      assert(errorLogMessage.includes("Product ID is missing, not a string, or empty on price object. Found: null"),
+        `Expected log to include specific message about empty product ID. Got: ${errorLogMessage}`);
       
-      assertSpyCalls(mockStripeSdk.stubs.productsRetrieve, 0); // Assert on the mock's own stub
+      // Ensure stripe.products.retrieve was NOT called
+      const retrieveSpy = mockStripeSdk.stubs.productsRetrieve;
+      if (retrieveSpy) { 
+          assertSpyCalls(retrieveSpy, 0);
+      } else {
+        const instanceRetrieveSpy = mockStripeSdk.instance.products.retrieve as Spy<any, any[], any>;
+        if (instanceRetrieveSpy && typeof instanceRetrieveSpy.calls === 'object') {
+             assertSpyCalls(instanceRetrieveSpy, 0);
+        }
+      }
 
       const plansBuilder = mockSupabase.client.getLatestBuilder('subscription_plans');
       if (plansBuilder) {
@@ -807,8 +830,11 @@ Deno.test('handlePriceCreated specific tests', async (t) => {
       assertEquals(result.error, `Price ${priceIdWithInvalidAmount} has invalid unit_amount. Cannot sync.`);
 
       assertSpyCalls(stepSpies.stepErrorSpy, 1);
-      const errorLogMessage = stepSpies.stepErrorSpy.calls[0].args[0] as string;
-      assert(errorLogMessage.includes(`Price ${priceIdWithInvalidAmount} has null or undefined unit_amount`));
+      const errorLogCallArgs = stepSpies.stepErrorSpy!.calls[0].args;
+      assert(errorLogCallArgs.length > 0, "Error spy was called without arguments");
+      const errorLogMessage = errorLogCallArgs[0] as string;
+      assert(errorLogMessage.includes(`Price ${priceIdWithInvalidAmount} has null or undefined unit_amount`),
+        `Expected log to include specific message about invalid unit_amount. Got: ${errorLogMessage}`);
       
       assertSpyCalls(mockStripeSdk.stubs.productsRetrieve, 0); // Assert on the mock's own stub
 

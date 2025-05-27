@@ -390,6 +390,7 @@ Deno.test("Chat Wallet Functionality Tests", async (t) => {
       message: "Test message, AI token_usage will be invalid",
       providerId: ChatTestConstants.testProviderId,
       promptId: ChatTestConstants.testPromptId,
+      chatId: ChatTestConstants.testChatId,
     };
 
     const req = new Request("http://localhost/chat", {

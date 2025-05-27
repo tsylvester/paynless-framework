@@ -211,13 +211,6 @@ export function createMockStripe(): MockStripe {
     if (stubs.productsRetrieve?.restore) {
       stubs.productsRetrieve.restore();
     }
-    
-    mockInstance = getMockStripeInstance(); 
-    stubs.checkoutSessionsCreate = stub(mockInstance.checkout.sessions, "create");
-    stubs.webhooksConstructEvent = stub(mockInstance.webhooks, "constructEventAsync");
-    stubs.paymentIntentsRetrieve = stub(mockInstance.paymentIntents, "retrieve");
-    stubs.subscriptionsRetrieve = stub(mockInstance.subscriptions, "retrieve");
-    stubs.productsRetrieve = stub(mockInstance.products, "retrieve");
   };
 
   return {

@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
 import { useAiStore } from '../../../../packages/store/src/aiStore';
-import type { ChatMessage, AiModelExtendedConfig, MessageForTokenCounting } from '@paynless/types'; // Assuming @paynless/types resolves to packages/types/src
+import type { ChatMessage, AiModelExtendedConfig, MessageForTokenCounting, SystemPrompt } from '@paynless/types'; // Assuming @paynless/types resolves to packages/types/src
 import { estimateInputTokens } from '../../../../packages/utils/src/tokenCostUtils.ts';
 
 export const useTokenEstimator = (textInput: string): number => {
@@ -10,6 +10,8 @@ export const useTokenEstimator = (textInput: string): number => {
     selectedMessagesMap,
     selectedProviderId,
     availableProviders,
+    selectedPromptId,
+    availablePrompts,
   } = useAiStore(
     (state) => ({
       currentChatId: state.currentChatId,
@@ -17,6 +19,8 @@ export const useTokenEstimator = (textInput: string): number => {
       selectedMessagesMap: state.selectedMessagesMap,
       selectedProviderId: state.selectedProviderId,
       availableProviders: state.availableProviders,
+      selectedPromptId: state.selectedPromptId,
+      availablePrompts: state.availablePrompts,
     }),
   );
 
@@ -29,6 +33,15 @@ export const useTokenEstimator = (textInput: string): number => {
       return 0; // Or a fallback rough estimate if preferred
     }
     const modelConfig = selectedProvider.config as unknown as AiModelExtendedConfig; // Cast, assuming valid structure
+
+    // Find the selected system prompt content
+    let systemPromptContent: string | null = null;
+    if (selectedPromptId && selectedPromptId !== '__none__') {
+      const prompt = availablePrompts.find((p: SystemPrompt) => p.id === selectedPromptId);
+      if (prompt) {
+        systemPromptContent = prompt.prompt_text;
+      }
+    }
 
     let historyMessages: ChatMessage[] = [];
     if (currentChatId) {
@@ -46,11 +59,16 @@ export const useTokenEstimator = (textInput: string): number => {
       modelConfig.tokenization_strategy?.type === 'tiktoken' &&
       modelConfig.tokenization_strategy?.is_chatml_model
     ) {
-      const messagesForTokenCounting: MessageForTokenCounting[] = historyMessages.map(msg => ({
-        role: msg.role as 'user' | 'assistant' | 'system', // Cast needed if ChatMessage.role is broader
-        content: msg.content,
-        // name: undefined, // Add if names are used
-      }));
+      const messagesForTokenCounting: MessageForTokenCounting[] = [];
+      if (systemPromptContent) {
+        messagesForTokenCounting.push({ role: 'system', content: systemPromptContent });
+      }
+      historyMessages.forEach(msg => {
+        messagesForTokenCounting.push({
+          role: msg.role as 'user' | 'assistant' | 'system',
+          content: msg.content,
+        });
+      });
       if (textInput.trim()) {
         messagesForTokenCounting.push({ role: 'user', content: textInput });
       }
@@ -60,9 +78,10 @@ export const useTokenEstimator = (textInput: string): number => {
       if (inputForEstimator.length === 0) return 0; // Or let estimateInputTokens handle it
     } else {
       // For non-ChatML tiktoken or rough_char_count, combine into a single string.
-      let combinedText = historyMessages.map(msg => msg.content).join('\n'); // Join with newline
+      let combinedText = systemPromptContent ? systemPromptContent + '\n' : '';
+      combinedText += historyMessages.map(msg => msg.content).join('\n');
       if (textInput.trim()) {
-        combinedText = combinedText ? combinedText + '\n' + textInput : textInput;
+        combinedText = combinedText.trim() ? combinedText.trim() + '\n' + textInput : textInput;
       }
       inputForEstimator = combinedText.trim();
       if (!inputForEstimator) return 0;
@@ -78,7 +97,7 @@ export const useTokenEstimator = (textInput: string): number => {
         : (inputForEstimator as MessageForTokenCounting[]).map(m => m.content || '').join('\n');
       return Math.ceil(fallbackText.length / 4); // Default rough estimate
     }
-  }, [textInput, currentChatId, messagesByChatId, selectedMessagesMap, selectedProviderId, availableProviders]);
+  }, [textInput, currentChatId, messagesByChatId, selectedMessagesMap, selectedProviderId, availableProviders, selectedPromptId, availablePrompts]);
 
   return estimatedTokens;
 }; 

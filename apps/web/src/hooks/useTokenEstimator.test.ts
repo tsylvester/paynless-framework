@@ -2,7 +2,7 @@ import { renderHook, act } from '@testing-library/react-hooks';
 import { vi, describe, beforeEach, it, expect } from 'vitest'; // Removed MockedFunction
 import { useAiStore } from '../../../../packages/store/src/aiStore.ts'; // Adjusted path
 import { useTokenEstimator } from './useTokenEstimator.ts';
-import { ChatMessage, AiProvider, AiModelExtendedConfig, Json } from '@paynless/types';
+import { ChatMessage, AiProvider, AiModelExtendedConfig, Json, SystemPrompt } from '@paynless/types';
 
 // Mock tiktoken with Vitest
 vi.mock('tiktoken', () => ({
@@ -23,25 +23,56 @@ vi.mock('../../../../packages/store/src/aiStore', () => ({ // Adjusted path
 const mockUseAiStore = vi.mocked(useAiStore); // Use vi.mocked for better type inference with Vitest
 
 // Define MOCK_MODEL_CONFIG and MOCK_AI_PROVIDER
-const MOCK_MODEL_CONFIG: AiModelExtendedConfig = {
+const MOCK_MODEL_CONFIG_CHATML: AiModelExtendedConfig = {
   input_token_cost_rate: 1,
   output_token_cost_rate: 1,
   hard_cap_output_tokens: 2048,
   context_window_tokens: 4096,
-  tokenization_strategy: { type: 'tiktoken', tiktoken_encoding_name: 'cl100k_base', is_chatml_model: true }, // ensure tiktoken is used, set is_chatml_model to true
+  tokenization_strategy: { type: 'tiktoken', tiktoken_encoding_name: 'cl100k_base', is_chatml_model: true },
 };
 
-const MOCK_AI_PROVIDER: AiProvider = {
-  id: 'test-provider-uuid', // Must be a UUID like string for AiProvider['id']
-  name: 'Test Provider',
-  api_identifier: 'test-model-api-id',
-  description: 'A test provider',
+const MOCK_MODEL_CONFIG_STRING: AiModelExtendedConfig = {
+    input_token_cost_rate: 1,
+    output_token_cost_rate: 1,
+    hard_cap_output_tokens: 2048,
+    context_window_tokens: 4096,
+    tokenization_strategy: { type: 'tiktoken', tiktoken_encoding_name: 'cl100k_base', is_chatml_model: false }, // is_chatml_model: false
+  };
+
+// Use a more specific provider mock that includes the config we want to test with
+const MOCK_AI_PROVIDER_CHATML: AiProvider = {
+  id: 'test-provider-uuid-chatml',
+  name: 'Test ChatML Provider',
+  api_identifier: 'test-model-api-id-chatml',
+  description: 'A test ChatML provider',
   is_active: true,
-  config: MOCK_MODEL_CONFIG as unknown as Json, // Embed the model config, cast to Json
+  config: MOCK_MODEL_CONFIG_CHATML as unknown as Json,
   created_at: new Date().toISOString(),
   updated_at: new Date().toISOString(),
-  provider: 'openai', // Example provider type string
+  provider: 'openai',
   is_enabled: true, 
+};
+
+const MOCK_AI_PROVIDER_STRING: AiProvider = {
+    id: 'test-provider-uuid-string',
+    name: 'Test String Provider',
+    api_identifier: 'test-model-api-id-string',
+    description: 'A test string provider',
+    is_active: true,
+    config: MOCK_MODEL_CONFIG_STRING as unknown as Json,
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+    provider: 'openai',
+    is_enabled: true, 
+  };
+
+const MOCK_SYSTEM_PROMPT_1: SystemPrompt = {
+  id: 'system-prompt-uuid-1',
+  name: 'Test System Prompt 1',
+  prompt_text: 'You are a helpful assistant.', // Tiktoken: ['You', 'are', 'a', 'helpful', 'assistant', '.'] = 6 tokens. ChatML adds ~4 more.
+  is_active: true,
+  created_at: new Date().toISOString(),
+  updated_at: new Date().toISOString(),
 };
 
 // Helper to create mock ChatMessage
@@ -69,18 +100,22 @@ describe('useTokenEstimator', () => {
     // e.g., vi.mocked(getEncoding).mockClear(); but ensure getEncoding is imported from tiktoken if doing so.
   });
 
-  // Default state for useAiStore mock
+  // Updated getDefaultAiStoreState
   const getDefaultAiStoreState = (
     messages: ChatMessage[] = [],
     selectedMessages: { [messageId: string]: boolean } = {},
-    currentChatId = 'chat1'
+    currentChatId = 'chat1',
+    selectedPromptId: string | null = null, // New
+    availablePrompts: SystemPrompt[] = [],  // New
+    provider: AiProvider = MOCK_AI_PROVIDER_CHATML // Default to ChatML provider
   ) => ({
     currentChatId,
     messagesByChatId: { [currentChatId]: messages },
     selectedMessagesMap: { [currentChatId]: selectedMessages },
-    selectedProviderId: MOCK_AI_PROVIDER.id, // Add selectedProviderId
-    availableProviders: [MOCK_AI_PROVIDER], // Add availableProviders
-    // Add other store properties if the hook uses them, otherwise keep minimal
+    selectedProviderId: provider.id,
+    availableProviders: [provider],
+    selectedPromptId,                      
+    availablePrompts,                      
   });
 
   it('should return 0 tokens for empty input and no selected messages', () => {
@@ -217,8 +252,8 @@ describe('useTokenEstimator', () => {
       currentChatId: 'chatWithNoMessages',
       messagesByChatId: {}, 
       selectedMessagesMap: {},
-      selectedProviderId: MOCK_AI_PROVIDER.id, // Added
-      availableProviders: [MOCK_AI_PROVIDER], // Added
+      selectedProviderId: MOCK_AI_PROVIDER_CHATML.id, // Added
+      availableProviders: [MOCK_AI_PROVIDER_CHATML], // Added
     });
     const { result } = renderHook(() => useTokenEstimator('Some input')); // "Some input" = 2 tokens
     expect(result.current).toBe(9); // WAS 2
@@ -240,6 +275,108 @@ describe('useTokenEstimator', () => {
     });
     const { result: result2 } = renderHook(() => useTokenEstimator(''));
     expect(result2.current).toBe(0);
+  });
+
+  // New Test Cases for System Prompts
+
+  it('should include system prompt tokens for ChatML models', () => {
+    mockUseAiStore.mockReturnValue(
+      getDefaultAiStoreState(
+        [], // No messages
+        {}, // No selections
+        'chat1',
+        MOCK_SYSTEM_PROMPT_1.id, // Select the system prompt
+        [MOCK_SYSTEM_PROMPT_1],   // Make it available
+        MOCK_AI_PROVIDER_CHATML   // Use ChatML provider
+      )
+    );
+    const { result } = renderHook(() => useTokenEstimator('Test')); // User input: "Test" (1 token by mock)
+    expect(result.current).toBe(18);
+  });
+
+  it('should include system prompt tokens for non-ChatML models (string concatenation)', () => {
+    // System prompt: "You are a helpful assistant." (6 tokens by mock tokenizer)
+    // User input: "Hello there" (2 tokens by mock tokenizer)
+    // Combined string: "You are a helpful assistant.\nHello there"
+    // estimateInputTokens (non-ChatML) just counts tokens from this combined string.
+    // The mock tokenizer splits by space. "You are a helpful assistant. Hello there" -> 8 tokens.
+    mockUseAiStore.mockReturnValue(
+      getDefaultAiStoreState(
+        [], 
+        {}, 
+        'chat1',
+        MOCK_SYSTEM_PROMPT_1.id, 
+        [MOCK_SYSTEM_PROMPT_1], 
+        MOCK_AI_PROVIDER_STRING // provider with non-ChatML config
+      )
+    );
+    const { result } = renderHook(() => useTokenEstimator('Hello there'));
+    expect(result.current).toBe(8);
+  });
+
+  it('should NOT include system prompt tokens if selectedPromptId is null', () => {
+    mockUseAiStore.mockReturnValue(
+      getDefaultAiStoreState(
+        [], // No messages
+        {}, // No selections
+        'chat1',
+        null, // selectedPromptId is null
+        [MOCK_SYSTEM_PROMPT_1],
+        MOCK_AI_PROVIDER_CHATML
+      )
+    );
+    const { result } = renderHook(() => useTokenEstimator('Test'));
+    expect(result.current).toBe(8); // Only user input with ChatML overhead
+  });
+
+  it('should NOT include system prompt tokens if selectedPromptId is __none__', () => {
+    mockUseAiStore.mockReturnValue(
+      getDefaultAiStoreState(
+        [], // No messages
+        {}, // No selections
+        'chat1',
+        '__none__', // selectedPromptId is __none__
+        [MOCK_SYSTEM_PROMPT_1],
+        MOCK_AI_PROVIDER_CHATML
+      )
+    );
+    const { result } = renderHook(() => useTokenEstimator('Test'));
+    expect(result.current).toBe(8);
+  });
+
+  it('should NOT include system prompt tokens if selectedPromptId is invalid/not found', () => {
+    mockUseAiStore.mockReturnValue(
+      getDefaultAiStoreState(
+        [], // No messages
+        {}, // No selections
+        'chat1',
+        'invalid-prompt-id', // selectedPromptId is invalid
+        [MOCK_SYSTEM_PROMPT_1], // System prompt exists but ID won't match
+        MOCK_AI_PROVIDER_CHATML
+      )
+    );
+    const { result } = renderHook(() => useTokenEstimator('Test'));
+    expect(result.current).toBe(8);
+  });
+
+  it('should correctly combine system prompt, selected history, and user input for ChatML', () => {
+    const messages = [
+      createMockChatMessage('msg1', 'History one.', 'user', '2023-01-01T10:00:00Z'),      // 2 tokens + ChatML message overhead
+      createMockChatMessage('msg2', 'History two.', 'assistant', '2023-01-01T10:01:00Z'), // 2 tokens + ChatML message overhead
+    ];
+    const selected = { 'msg1': true, 'msg2': true };
+    mockUseAiStore.mockReturnValue(
+      getDefaultAiStoreState(
+        messages, 
+        selected, 
+        'chat1',
+        MOCK_SYSTEM_PROMPT_1.id, // System prompt selected
+        [MOCK_SYSTEM_PROMPT_1],   // System prompt available
+        MOCK_AI_PROVIDER_CHATML
+      )
+    );
+    const { result } = renderHook(() => useTokenEstimator('New q'));
+    expect(result.current).toBe(33);
   });
 
 });

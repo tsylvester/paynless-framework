@@ -1,8 +1,19 @@
 import {
+    assert,
     assertEquals,
-    assertExists,
+    assertExists
+    // Add other specific assert functions if they are actually used in this file,
+    // e.g., assertRejects, assertMatch, etc.
+    // For now, only listing those currently identified as used or previously attempted.
+} from "https://deno.land/std@0.224.0/assert/mod.ts";
+import {
     spy,
-    assertSpyCalls,
+    assertSpyCalls
+    // Add other specific mock functions if used, e.g. stub
+} from "jsr:@std/testing@0.225.1/mock";
+
+// Imports from the local/shared test utility file
+import {
     handler,
     createTestDeps,
     envGetStub,
@@ -11,7 +22,9 @@ import {
     ChatTestConstants,
     type ChatMessageRow,
     mockSupabaseUrl,
-    mockAdapterTokenData,
+    mockAdapterTokenData
+    // Removed assertion and spy functions from here, as they are now imported directly.
+    // Keep other necessary shared utilities.
 } from "./index.test.ts";
 import type {
     Database,
@@ -128,8 +141,18 @@ Deno.test("Chat Function Tests (Adapter Refactor)", async (t) => {
                 assertExists(insertData.organization_id, "organization_id should be in chats.insert data");
                 assertEquals(insertData.organization_id, orgId);
                 assertEquals(insertData.title, expectedChatTitle);
-                // Ensure the returned data structure matches the expected one after insert, including orgId
-                return { data: [{ id: testChatId, user_id: testUserId, organization_id: orgId, title: expectedChatTitle, system_prompt_id:testPromptId, created_at: new Date().toISOString(), updated_at: new Date().toISOString(), metadata: null, ai_provider_id: null }], error: null, count: 1, status: 201 };
+                assertExists(insertData.id, "A chat ID should be provided by the handler during insert");
+                return { data: [{ 
+                    id: insertData.id,
+                    user_id: testUserId, 
+                    organization_id: orgId, 
+                    title: expectedChatTitle, 
+                    system_prompt_id:testPromptId, 
+                    created_at: new Date().toISOString(), 
+                    updated_at: new Date().toISOString(), 
+                    metadata: null, 
+                    ai_provider_id: null 
+                }], error: null, count: 1, status: 201 };
             });
 
             const chatMessagesInsertSpy = spy((state: import('../_shared/supabase.mock.ts').MockQueryBuilderState) => {
@@ -198,7 +221,11 @@ Deno.test("Chat Function Tests (Adapter Refactor)", async (t) => {
             assertSpyCalls(chatInsertSpy, 1);
             
             const chatResponse = await response.json() as ChatHandlerSuccessResponse; // Uses ChatHandlerSuccessResponse
-            assertEquals(chatResponse.chatId, testChatId);
+            assert(typeof chatResponse.chatId === 'string' && chatResponse.chatId.length > 0, "chatResponse.chatId should be a valid string ID");
+            
+            const insertedChatData = chatInsertSpy.calls[0].args[0].insertData as Database['public']['Tables']['chats']['Insert'];
+            assertEquals(chatResponse.chatId, insertedChatData.id, "chatId in response should match the id provided during chat insert");
+
             assertExists(chatResponse.userMessage);
             assertEquals((chatResponse.userMessage as Record<string, any>)?.organization_id, undefined, "organization_id should NOT be present on userMessage object"); 
             assertEquals(chatResponse.userMessage?.content, expectedChatTitle);

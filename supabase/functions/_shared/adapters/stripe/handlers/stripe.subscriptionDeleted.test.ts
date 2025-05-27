@@ -107,13 +107,13 @@ Deno.test('[stripe.subscriptionDeleted.ts] Tests - handleCustomerSubscriptionDel
       }
     };
 
-    mockSupabaseSetup = createMockSupabaseClient({ genericMockResults });
+    mockSupabaseSetup = createMockSupabaseClient(undefined, { genericMockResults });
     mockSupabaseClient = mockSupabaseSetup.client as unknown as SupabaseClient<Database>;
     
     handlerContext = {
       supabaseClient: mockSupabaseClient,
       logger: mockLogger,
-      tokenWalletService: mockTokenWalletService,
+      tokenWalletService: mockTokenWalletService.instance,
       stripe: mockStripeInstance,
       updatePaymentTransaction: spy() as any,
       featureFlags: {},
@@ -125,7 +125,7 @@ Deno.test('[stripe.subscriptionDeleted.ts] Tests - handleCustomerSubscriptionDel
   await t.step("Successful update - status becomes 'DELETED' and plan set to free tier", async () => {
     const stripeSubscriptionId = "sub_deleted_successfully";
     const eventId = "evt_deleted_successfully_1";
-    const expectedStatus = "DELETED";
+    const expectedStatus = "canceled";
     const freePlanId = "plan_free_tier_uuid";
 
     setup({
@@ -151,7 +151,7 @@ Deno.test('[stripe.subscriptionDeleted.ts] Tests - handleCustomerSubscriptionDel
     assertSpyCalls(infoSpy, 3); // Initial processing + Found free plan ID + Successfully processed
     assert(String(infoSpy.calls[0].args[0]).includes(`Processing deleted subscription ${stripeSubscriptionId}`), "Initial log wrong");
     assert(String(infoSpy.calls[1].args[0]).includes(`Found free plan ID ${freePlanId} for subscription ${stripeSubscriptionId}`), "Found free plan log wrong");
-    assert(String(infoSpy.calls[2].args[0]).includes(`Successfully processed delete event for subscription ${stripeSubscriptionId}. Marked as ${expectedStatus}`), "Success log wrong");
+    assert(String(infoSpy.calls[2].args[0]).includes(`Successfully processed delete event for subscription ${stripeSubscriptionId}. Marked as ${expectedStatus}. Updated records: 1`), "Success log wrong");
 
     const subPlansBuilder = mockSupabaseSetup.client.getLatestBuilder('subscription_plans');
     assert(subPlansBuilder, "subscription_plans query builder not used for free plan lookup.");
@@ -199,7 +199,7 @@ Deno.test('[stripe.subscriptionDeleted.ts] Tests - handleCustomerSubscriptionDel
     assertSpyCalls(userSubsBuilder.methodSpies.update, 1);
     const updateCallArgs = userSubsBuilder.methodSpies.update.calls[0].args[0];
     assertEquals(updateCallArgs.plan_id, undefined, "plan_id should be undefined as free plan lookup failed");
-    assertEquals(updateCallArgs.status, "DELETED");
+    assertEquals(updateCallArgs.status, "canceled");
   });
 
   await t.step("Free plan lookup - plan not found", async () => {
@@ -226,7 +226,7 @@ Deno.test('[stripe.subscriptionDeleted.ts] Tests - handleCustomerSubscriptionDel
     assertSpyCalls(userSubsBuilder.methodSpies.update, 1);
     const updateCallArgs = userSubsBuilder.methodSpies.update.calls[0].args[0];
     assertEquals(updateCallArgs.plan_id, undefined, "plan_id should be undefined as free plan was not found");
-    assertEquals(updateCallArgs.status, "DELETED");
+    assertEquals(updateCallArgs.status, "canceled");
   });
 
   await t.step("user_subscriptions update - DB error", async () => {
@@ -249,7 +249,7 @@ Deno.test('[stripe.subscriptionDeleted.ts] Tests - handleCustomerSubscriptionDel
 
     const errorSpy = mockLogger.error as Spy<any, any[], any>;
     assertSpyCalls(errorSpy, 1);
-    assert(String(errorSpy.calls[0].args[0]).includes(`Error updating user_subscription ${stripeSubscriptionId} to status DELETED`), "Error log for user_subscriptions update incorrect or missing");
+    assert(String(errorSpy.calls[0].args[0]).includes(`Error updating user_subscription ${stripeSubscriptionId} to status canceled`), "Error log for user_subscriptions update incorrect or missing");
     assertEquals((errorSpy.calls[0].args[1] as any)?.error?.message, dbErrorMessage);
   });
 
@@ -271,7 +271,7 @@ Deno.test('[stripe.subscriptionDeleted.ts] Tests - handleCustomerSubscriptionDel
 
     const warnSpy = mockLogger.warn as Spy<any, any[], any>;
     assertSpyCalls(warnSpy, 1);
-    assert(String(warnSpy.calls[0].args[0]).includes(`No user_subscription found with stripe_subscription_id ${stripeSubscriptionId} to mark as DELETED`), "Warning for no user_subscription record incorrect or missing");
+    assert(String(warnSpy.calls[0].args[0]).includes(`No user_subscription found with stripe_subscription_id ${stripeSubscriptionId} to mark as canceled`), "Warning for no user_subscription record incorrect or missing");
 
     const userSubsBuilder = mockSupabaseSetup.client.getLatestBuilder('user_subscriptions');
     assert(userSubsBuilder, "user_subscriptions query builder should still be used.");

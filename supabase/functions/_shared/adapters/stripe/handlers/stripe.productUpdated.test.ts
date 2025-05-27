@@ -62,7 +62,7 @@ Deno.test('handleProductUpdated specific tests', async (t) => {
   let handlerContext: ProductPriceHandlerContext;
   
   const initializeTestContext = (supabaseConfig: MockSupabaseDataConfig = {}) => {
-    mockSupabase = createMockSupabaseClient(supabaseConfig);
+    mockSupabase = createMockSupabaseClient(undefined, supabaseConfig);
     const mockStripeInternal = createMockStripe(); 
     
     const stepInfoSpy = spy(logger, 'info');

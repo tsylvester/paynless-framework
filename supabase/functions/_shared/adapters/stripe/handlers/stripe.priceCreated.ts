@@ -36,8 +36,8 @@ export async function handlePriceCreated(
     };
   }
 
-  if (typeof price.product !== 'string') {
-    const errDetail = `Product ID is missing or not a string on price object. Found: ${JSON.stringify(price.product)}`;
+  if (typeof price.product !== 'string' || !price.product) {
+    const errDetail = `Product ID is missing, not a string, or empty on price object. Found: ${JSON.stringify(price.product)}`;
     logger.error(
       `[${functionName}] ${errDetail}`,
       { priceId: price.id, productField: price.product }

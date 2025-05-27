@@ -194,12 +194,9 @@ export const useAiStore = create<AiStore>()(
                         if (!chatIdUsed) {
                             isNewChat = true;
                             // Determine if this is for an org or personal based on newChatContext
-                            if (newChatContext && newChatContext !== 'personal') { // Assuming 'personal' or null means user's personal context
-                                chatIdUsed = `temp-chat-org-${newChatContext}-${Date.now()}`; // Org context
-                            } else {
-                                chatIdUsed = `temp-chat-user-${currentUser?.id || 'anon'}-${Date.now()}`; // User's personal context
-                            }
-                            logger.info('[aiStore._addOptimisticUserMessage] No explicit or current chatId, generated temporary chatIdUsed for new chat:', { chatIdUsed });
+                            // No longer need to check newChatContext for ID generation, just for logging if desired.
+                            chatIdUsed = crypto.randomUUID(); // Generate UUID for new chat
+                            logger.info('[aiStore._addOptimisticUserMessage] No explicit or current chatId, generated UUID for new chat:', { chatIdUsed, forOrgContext: newChatContext && newChatContext !== 'personal' });
                         } else {
                             logger.info('[aiStore._addOptimisticUserMessage] Using existing or explicit chatId:', { chatIdUsed });
                         }
@@ -258,16 +255,9 @@ export const useAiStore = create<AiStore>()(
                         let chatIdForOptimistic = existingChatId;
                         if (!chatIdForOptimistic) {
                             // If no existingChatId is provided (e.g., truly new chat for replay or error state),
-                            // generate a temporary one. This mirrors logic in _addOptimisticUserMessage.
-                            // For replay, it might be more common to ALWAYS have an existingChatId,
-                            // but this handles edge cases.
-                            const newChatContext = get().newChatContext; // Get current newChatContext
-                            if (newChatContext && newChatContext !== 'personal') {
-                                chatIdForOptimistic = `temp-chat-org-${newChatContext}-${Date.now()}-replay`;
-                            } else {
-                                chatIdForOptimistic = `temp-chat-user-${currentUser?.id || 'anon'}-${Date.now()}-replay`;
-                            }
-                            logger.warn('[aiStore.addOptimisticMessageForReplay] No existingChatId provided for replay, generated temporary ID:', { chatIdForOptimistic });
+                            // generate a UUID.
+                            chatIdForOptimistic = crypto.randomUUID();
+                            logger.warn('[aiStore.addOptimisticMessageForReplay] No existingChatId provided for replay, generated UUID:', { chatIdForOptimistic });
                         } else {
                             logger.info('[aiStore.addOptimisticMessageForReplay] Using provided existingChatId for replay:', { chatIdForOptimistic });
                         }
@@ -545,18 +535,15 @@ export const useAiStore = create<AiStore>()(
                     },
 
                     startNewChat: (organizationId?: string | null) => {
-                        const currentUser = useAuthStore.getState().user;
-                        const currentTimestamp = Date.now();
+                        //const currentUser = useAuthStore.getState().user;
+                        //const currentTimestamp = Date.now(); // Keep for logging if needed, but not for ID
                         // Ensure newChatContext is correctly set if organizationId is provided
-                        // This part of the logic might need review based on how newChatContext is used elsewhere.
                         const contextForNewChat = organizationId || 'personal'; 
 
-                        // Logic to generate a temporary chat ID if needed, or set currentChatId to null
-                        // For now, let's assume a new temp ID is always generated for a truly new chat context
-                        // to ensure optimistic messages have a place before a real ID is assigned.
-                        const newTempChatId = `temp-chat-${currentUser?.id || 'unknown'}-${currentTimestamp}`;
+                        // Generate a UUID for the new chat.
+                        const newTempChatId = crypto.randomUUID();
 
-                        logger.info(`[aiStore] startNewChat called. Org ID: ${organizationId}. New context: ${contextForNewChat}. New temp chat ID: ${newTempChatId}`);
+                        logger.info(`[aiStore] startNewChat called. Org ID: ${organizationId}. New context: ${contextForNewChat}. New UUID chat ID: ${newTempChatId}`);
 
                         set(state => {
                             const newSelectedMessagesMap = { ...state.selectedMessagesMap };

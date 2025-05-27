@@ -236,6 +236,6 @@ I'll add these as new `t.step` blocks within the main `Deno.test` block in `supa
 *   [X] Fix Tiktoken / token estimator 
         Server error: Could not estimate token cost or check balance. Unsupported model for token counting: dummy-echo-v1. The tiktoken library could not find an encoding for this model. Original error: Unknown model
 *   [X] Ensure chats debit wallet balance 
-*   [ ] Fix chat-history?organizationId=personal 
-*   [ ] Fix chat remounting problem 
-*   [ ] Fix "Maximum update depth exceeded. This can happen when a component repeatedly calls setState inside componentWillUpdate or componentDidUpdate." 
+*   [X] Fix chat-history?organizationId=personal 
+*   [X] Fix chat remounting problem 
+*   [X] Fix "Maximum update depth exceeded. This can happen when a component repeatedly calls setState inside componentWillUpdate or componentDidUpdate." 

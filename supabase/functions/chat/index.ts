@@ -662,11 +662,12 @@ async function handlePostRequest(
                     const transactionData = {
                         walletId: wallet.walletId,
                         type: 'DEBIT_USAGE' as TokenWalletTransactionType,
-                        amount: actualTokensToDebit.toString(),
-                        relatedEntityId: newAssistantMessageFromRpc.id,
-                        relatedEntityType: 'chat_message' as const,
+                        amount: String(actualTokensToDebit),
                         recordedByUserId: userId,
-                        notes: `Chat completion (rewind) for chat ${currentChatId}`
+                        idempotencyKey: crypto.randomUUID(),
+                        relatedEntityId: newAssistantMessageFromRpc.id,
+                        relatedEntityType: 'chat_message',
+                        notes: `Token usage for rewind and new message in chat ${currentChatId}. Model: ${modelConfig?.api_identifier || 'unknown'}. Input Tokens: ${tokenUsageFromAdapter?.prompt_tokens || 0}, Output Tokens: ${tokenUsageFromAdapter?.completion_tokens || 0}.`,
                     };
                     const transaction = await tokenWalletService!.recordTransaction(transactionData);
                     logger.info('Token transaction recorded (debit) for rewind.', { transactionId: transaction.transactionId, walletId: wallet.walletId, amount: actualTokensToDebit });
@@ -695,62 +696,142 @@ async function handlePostRequest(
             // --- 4b. Normal Path (No Rewind) ---
             logger.info('Normal request processing (no rewind).');
             
-            if (!currentChatId) {
-                logger.info('No existingChatId provided, creating new chat session.');
+            if (currentChatId) {
+                // A chatId (UUID) was provided by the client. Check if it exists.
+                logger.info(`Client provided chatId: ${currentChatId}. Checking if chat exists.`);
+                const { data: chatLookupData, error: chatLookupError } = await supabaseClient
+                    .from('chats')
+                    .select('id')
+                    .eq('id', currentChatId)
+                    .maybeSingle(); // Use maybeSingle to not error if not found
+
+                if (chatLookupError) {
+                    logger.error(`Error looking up chat by client-provided ID ${currentChatId}:`, { error: chatLookupError });
+                    return { error: { message: `Error verifying chat session: ${chatLookupError.message}`, status: 500 } };
+                }
+
+                if (chatLookupData) {
+                    logger.info(`Chat with client-provided ID ${currentChatId} already exists. Proceeding.`);
+                    // currentChatId is already correctly set.
+                } else {
+                    // Chat does not exist, create it with the client-provided UUID.
+                    logger.info(`Chat with client-provided ID ${currentChatId} not found. Creating new chat session with this ID.`);
+                    const { data: newChatInsertData, error: newChatInsertError } = await supabaseClient
+                        .from('chats')
+                        .insert({ 
+                            id: currentChatId, // Use the client-provided UUID
+                            user_id: userId, 
+                            organization_id: organizationId || null,
+                            system_prompt_id: finalSystemPromptIdForDb,
+                            title: userMessageContent.substring(0, 50) 
+                        })
+                        .select('id') // Select to confirm
+                        .single();
+
+                    if (newChatInsertError) {
+                        // Error could be due to a race condition (e.g., unique violation '23505' if another request created it just now)
+                        if (newChatInsertError.code === '23505') {
+                            logger.warn(`Attempted to insert new chat with ID '${currentChatId}', but it was likely created by a concurrent request. Proceeding.`, { error: newChatInsertError });
+                            // currentChatId is already correct.
+                        } else {
+                            logger.error(`Error creating new chat session with client-provided ID ${currentChatId}:`, { error: newChatInsertError });
+                            return { error: { message: newChatInsertError.message || `Failed to create new chat session with ID ${currentChatId}.`, status: 500 } };
+                        }
+                    } else if (!newChatInsertData) {
+                         logger.error(`Failed to create new chat session with client-provided ID ${currentChatId} (no data returned from insert).`);
+                         return { error: { message: `Failed to create new chat session with ID ${currentChatId} (no data).`, status: 500 } };
+                    } else {
+                        logger.info(`New chat session successfully created with client-provided ID: ${newChatInsertData.id}`);
+                        // currentChatId is already correct (and newChatInsertData.id should match)
+                    }
+                }
+            } else {
+                // No chatId provided by the client (fallback, should be rare if client always sends UUID)
+                logger.warn('No existingChatId provided by client. Generating new UUID for chat session server-side.');
+                currentChatId = crypto.randomUUID(); // Generate UUID server-side
+                
                 const { data: newChatData, error: newChatError } = await supabaseClient
                     .from('chats')
                     .insert({ 
+                        id: currentChatId, // Use server-generated UUID
                         user_id: userId, 
                         organization_id: organizationId || null,
-                        system_prompt_id: finalSystemPromptIdForDb, // Use the validated/nulled ID
+                        system_prompt_id: finalSystemPromptIdForDb,
                         title: userMessageContent.substring(0, 50) 
                     })
-                    .select('id') 
+                    .select('id')
                     .single();
+
                 if (newChatError || !newChatData) {
-                    logger.error('Error creating new chat session:', { error: newChatError });
+                    logger.error('Error creating new chat session with server-generated UUID:', { error: newChatError, generatedId: currentChatId });
                     return { error: { message: newChatError?.message || 'Failed to create new chat session.', status: 500 } };
                 }
-                currentChatId = newChatData.id;
-                logger.info(`New chat session created with ID: ${currentChatId}`);
+                // currentChatId was already set to the generated UUID
+                logger.info(`New chat session created with server-generated ID: ${currentChatId}`);
             }
 
             // --- Construct Message History using the helper function ---
-            const { history: messagesForProvider, historyFetchError } = await constructMessageHistory(
+            // At this point, currentChatId is guaranteed to be a valid UUID for an existing or just-created chat.
+            // The constructMessageHistory function will attempt to fetch messages.
+            // If it's a brand new chat, it will correctly find no messages, which is fine.
+            let { history: messagesForProvider, historyFetchError } = await constructMessageHistory(
                 supabaseClient,
-                currentChatId,
+                currentChatId, // This might be an existingChatId or a newly generated one
                 userMessageContent,
                 actualSystemPromptText,
-                rewindFromMessageId,
+                rewindFromMessageId, // null in this path
                 selectedMessages,
                 logger
             );
-            
-            // If history fetch failed for an existing chat, treat as a new chat creation
-            if (historyFetchError && existingChatId) {
-                logger.warn(`History fetch failed for existing chatId '${existingChatId}'. Treating as a new chat.`, { error: historyFetchError });
-                currentChatId = null; // This will trigger new chat creation block below
-            }
-            
-            if (!currentChatId) {
-                logger.info('No existingChatId provided or history fetch failed for existing, creating new chat session.');
+
+            if (historyFetchError && existingChatId && existingChatId === currentChatId) {
+                // An error occurred fetching history for a chat that was supposed to exist (client-provided ID).
+                // Log the error and treat this as a new chat creation.
+                logger.warn(`Error fetching message history for client-provided chatId ${existingChatId}. Proceeding to create a new chat.`, { error: historyFetchError });
+                
+                // Generate a new chatId
+                const newChatIdAfterHistoryError = crypto.randomUUID();
+                logger.info(`New chat ID generated after history fetch error: ${newChatIdAfterHistoryError}`);
+
+                // Attempt to insert this new chat
                 const { data: newChatData, error: newChatError } = await supabaseClient
                     .from('chats')
                     .insert({ 
+                        id: newChatIdAfterHistoryError, // Use the NEW server-generated UUID
                         user_id: userId, 
                         organization_id: organizationId || null,
-                        system_prompt_id: finalSystemPromptIdForDb, // Use the validated/nulled ID
+                        system_prompt_id: finalSystemPromptIdForDb,
                         title: userMessageContent.substring(0, 50) 
                     })
-                    .select('id') 
+                    .select('id')
                     .single();
+
                 if (newChatError || !newChatData) {
-                    logger.error('Error creating new chat session:', { error: newChatError });
-                    return { error: { message: newChatError?.message || 'Failed to create new chat session.', status: 500 } };
+                    logger.error('Error creating new chat session after history fetch error:', { error: newChatError, generatedId: newChatIdAfterHistoryError });
+                    // If even creating a new chat fails, then it's a more serious problem.
+                    return { error: { message: newChatError?.message || 'Failed to create new chat session after history error.', status: 500 } };
                 }
-                currentChatId = newChatData.id;
-                logger.info(`New chat session created with ID: ${currentChatId}`);
+                
+                currentChatId = newChatIdAfterHistoryError; // Update currentChatId to the new one
+                logger.info(`Successfully created new chat ${currentChatId} after previous history fetch failure.`);
+                
+                // Re-construct messagesForProvider: it will be just the system prompt (if any) and the user message
+                // as no DB history is available for this new chat.
+                messagesForProvider = [];
+                if (actualSystemPromptText) {
+                    messagesForProvider.push({ role: 'system', content: actualSystemPromptText });
+                }
+                messagesForProvider.push({ role: 'user', content: userMessageContent });
+                historyFetchError = undefined; // Clear the error as we've handled it by creating a new chat
+
+            } else if (historyFetchError) {
+                // This is an error fetching history, but it wasn't for an existingChatId that the client specified,
+                // or some other unhandled scenario. This path should ideally not be hit if the logic above is correct for new chats.
+                // For safety, retain the original error behavior.
+                logger.error(`Error fetching message history for chat ${currentChatId} (chat should exist or was just server-created):`, { error: historyFetchError });
+                return { error: { message: `Failed to fetch message history: ${historyFetchError.message}`, status: 500 } };
             }
+            // The old blocks for re-checking !currentChatId or handling historyFetchError by nulling currentChatId are removed.
 
             logger.info(`Processing with real provider: ${providerData.provider}`);
             // apiKeyNormal is fetched and used in this block, separate from rewind path's apiKey
@@ -939,10 +1020,11 @@ async function handlePostRequest(
                     const transactionData = {
                         walletId: wallet.walletId,
                         type: 'DEBIT_USAGE' as TokenWalletTransactionType,
-                        amount: actualTokensToDebitNormal.toString(),
-                        relatedEntityType: 'chat_message' as const,
+                        amount: String(actualTokensToDebitNormal),
                         recordedByUserId: userId,
-                        notes: `Chat completion for chat ${currentChatId}`
+                        idempotencyKey: crypto.randomUUID(),
+                        relatedEntityType: 'chat_message' as const,
+                        notes: `Token usage for chat message in chat ${currentChatId}. Model: ${modelConfig?.api_identifier || 'unknown'}. Input Tokens: ${tokenUsageFromAdapterNormal?.prompt_tokens || 0}, Output Tokens: ${tokenUsageFromAdapterNormal?.completion_tokens || 0}.`,
                     };
                     const transaction = await tokenWalletService!.recordTransaction(transactionData);
                     logger.info('Token transaction recorded (debit) successfully.', { transactionId: transaction.transactionId, walletId: wallet.walletId, amount: actualTokensToDebitNormal });

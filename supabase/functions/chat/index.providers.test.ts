@@ -300,8 +300,30 @@ Deno.test("Chat Provider Tests", async (t) => { // Added Deno.test wrapper
               select: { data: null, error: new Error("Should not be called for __none__"), status: 404, count: 0 }
             },
             'chats': {
-              insert: { data: [{ id: 'chat-no-prompt-test', system_prompt_id: null, title: "test no prompt", user_id: testUserId, organization_id: null }], error: null, status: 201, count: 1 },
-              select: { data: [{ id: 'chat-no-prompt-test', system_prompt_id: null, title: "test no prompt", user_id: testUserId, organization_id: null }], error: null, status: 200, count: 1 }
+              insert: spy((state: import('../_shared/supabase.mock.ts').MockQueryBuilderState) => {
+                const insertData = state.insertData as Database['public']['Tables']['chats']['Insert'];
+                assertExists(insertData.id, "Handler should provide an ID for chat insert");
+                assertEquals(insertData.title, "test no prompt");
+                assertEquals(insertData.system_prompt_id, null);
+                return { data: [{ 
+                    id: insertData.id, // Use the ID from the insertData
+                    user_id: testUserId, 
+                    organization_id: null, 
+                    title: insertData.title, 
+                    system_prompt_id: null,
+                    created_at: new Date().toISOString(), 
+                    updated_at: new Date().toISOString(), 
+                    metadata: null, 
+                    ai_provider_id: null 
+                }], error: null, count: 1, status: 201 };
+              }) as any,
+              select: ((state: import('../_shared/supabase.mock.ts').MockQueryBuilderState) => {
+                const filterId = state.filters.find(f => f.column === 'id')?.value;
+                if(filterId) {
+                   return { data: [{ id: filterId, system_prompt_id: null, title: "test no prompt", user_id: testUserId, organization_id: null }], error: null, status: 200, count: 1 };
+                }
+                return { data: null, error: new Error("Chat select mock not finding ID"), status: 404, count: 0 };
+              }) as any,
             },
             'chat_messages': {
               insert: ((callArgs?: any) => {
@@ -332,13 +354,9 @@ Deno.test("Chat Provider Tests", async (t) => { // Added Deno.test wrapper
                 const chatResponse = responseData as ChatHandlerSuccessResponse; 
 
                 assertExists(chatResponse.chatId, "Response data should include chatId for new chat");
-                if (tc.mockSupaConfig?.genericMockResults?.chats?.insert && 
-                    typeof tc.mockSupaConfig.genericMockResults.chats.insert === 'object' && 
-                    'data' in tc.mockSupaConfig.genericMockResults.chats.insert && 
-                    Array.isArray(tc.mockSupaConfig.genericMockResults.chats.insert.data) && 
-                    tc.mockSupaConfig.genericMockResults.chats.insert.data.length > 0) {
-                    assertEquals(chatResponse.chatId, tc.mockSupaConfig.genericMockResults.chats.insert.data[0].id);
-                }
+                const chatInsertSpy = tc.mockSupaConfig.genericMockResults.chats.insert as unknown as Spy<any, any[], any>; // Cast to Spy
+                const insertedChatData = chatInsertSpy.calls[0].args[0].insertData as Database['public']['Tables']['chats']['Insert'];
+                assertEquals(chatResponse.chatId, insertedChatData.id, "chatId in response should match the id provided during chat insert");
 
                 assertExists(chatResponse.userMessage, "userMessage should exist in the response");
                 assertExists(chatResponse.userMessage?.id, "userMessage.id should exist");

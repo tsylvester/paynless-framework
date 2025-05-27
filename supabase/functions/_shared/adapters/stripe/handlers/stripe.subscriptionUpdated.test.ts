@@ -76,7 +76,7 @@ Deno.test('[stripe.subscriptionUpdated.ts] Tests - handleCustomerSubscriptionUpd
   let mockSupabaseSetup: MockSupabaseClientSetup;
   let mockTokenWalletService: MockTokenWalletService; // Though not directly used by handler, it's part of context
   let mockLogger: ILogger;
-  let mockStripeInstance: MockStripe['instance']; // Keep stripe instance for context if needed by other parts
+  let mockStripe: MockStripe; // Keep stripe instance for context if needed by other parts
   let handlerContext: HandlerContext;
 
   const setup = (dbQueryResults?: { 
@@ -86,8 +86,8 @@ Deno.test('[stripe.subscriptionUpdated.ts] Tests - handleCustomerSubscriptionUpd
     userSubscriptionsUpdateError?: Error | null;
   }) => {
     mockLogger = createMockLoggerInternal();
-    mockTokenWalletService = createMockTokenWalletService(); // For HandlerContext
-    mockStripeInstance = createMockStripe().instance; // For HandlerContext
+    mockStripe = createMockStripe(); // Uses default stubs
+    mockTokenWalletService = createMockTokenWalletService();
 
     const genericMockResults: MockSupabaseDataConfig['genericMockResults'] = {};
     
@@ -123,15 +123,15 @@ Deno.test('[stripe.subscriptionUpdated.ts] Tests - handleCustomerSubscriptionUpd
       }
     };
 
-    mockSupabaseSetup = createMockSupabaseClient({ genericMockResults });
+    mockSupabaseSetup = createMockSupabaseClient(undefined, { genericMockResults });
     mockSupabaseClient = mockSupabaseSetup.client as unknown as SupabaseClient<Database>;
     
     handlerContext = {
       supabaseClient: mockSupabaseClient,
       logger: mockLogger,
-      tokenWalletService: mockTokenWalletService,
-      stripe: mockStripeInstance, // Pass the actual Stripe SDK instance
-      updatePaymentTransaction: spy() as any, // Mocked as it's not used by this handler directly
+      tokenWalletService: mockTokenWalletService.instance,
+      stripe: mockStripe.instance,
+      updatePaymentTransaction: spy() as any, // Mocked, not used by this handler directly
       featureFlags: {},
       functionsUrl: "http://localhost:54321/functions/v1",
       stripeWebhookSecret: "whsec_test_secret_subscription_updated", // Can be specific if needed

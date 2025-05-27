@@ -31,6 +31,8 @@ import type {
 import { logger } from '../_shared/logger.ts';
 
 import type { ChatHandlerSuccessResponse } from '../_shared/types.ts';
+import { MockSupabaseDataConfig } from "../_shared/supabase.mock.ts";
+import { assertMatch } from "https://deno.land/std@0.224.0/assert/mod.ts";
 
 interface MockAdapterTokenUsage {
   prompt_tokens: number;
@@ -166,11 +168,11 @@ Deno.test("Chat Function Tests (Adapter Refactor)", async (t) => {
         await t.step("POST request with history fetch error proceeds as new chat", async () => {
             // Define expected rows for *this specific test's inserts*
             const userMessageContentForThisTest = "initiate with bad history chatid";
-            const newChatIdForThisTest = "new-chat-after-fail";
 
-            const expectedUserMessageInsertResult: ChatMessageRow = {
-                id: ChatTestConstants.testUserMsgId, // Can use a generic ID or a new one
-                chat_id: newChatIdForThisTest,
+            // Expected message results will use the chatId captured by the chats.insert spy
+            const getExpectedUserMessageInsertResult = (chatId: string): ChatMessageRow => ({
+                id: ChatTestConstants.testUserMsgId,
+                chat_id: chatId, // Use dynamic chatId
                 role: 'user',
                 content: userMessageContentForThisTest,
                 created_at: ChatTestConstants.nowISO,
@@ -182,12 +184,12 @@ Deno.test("Chat Function Tests (Adapter Refactor)", async (t) => {
                 is_active_in_thread: true,
                 error_type: null,
                 response_to_message_id: null
-            };
-            const expectedAssistantMessageInsertResult: ChatMessageRow = {
-                id: ChatTestConstants.testAsstMsgId, // Can use a generic ID or a new one
-                chat_id: newChatIdForThisTest,
+            });
+            const getExpectedAssistantMessageInsertResult = (chatId: string): ChatMessageRow => ({
+                id: ChatTestConstants.testAsstMsgId,
+                chat_id: chatId, // Use dynamic chatId
                 role: 'assistant',
-                content: ChatTestConstants.testAiContent, // This is 'Mock AI response content from adapter'
+                content: ChatTestConstants.testAiContent,
                 created_at: ChatTestConstants.nowISO,
                 updated_at: ChatTestConstants.nowISO,
                 user_id: null,
@@ -201,7 +203,7 @@ Deno.test("Chat Function Tests (Adapter Refactor)", async (t) => {
                 is_active_in_thread: true,
                 error_type: null,
                 response_to_message_id: null
-            };
+            });
 
             const historyErrorSupaConfig = { 
                 ...currentTestSupaConfigBase, 
@@ -210,22 +212,30 @@ Deno.test("Chat Function Tests (Adapter Refactor)", async (t) => {
                     'chat_messages': {
                         ...currentTestSupaConfigBase.genericMockResults!['chat_messages'],
                         select: { data: null, error: new Error("Simulated DB history fetch error"), status: 500, count: 0 },
-                        // Provide the specific insert results for this test's flow
                         insert: (state: any) => {
-                            // The actual data being inserted is in state.insertData
                             const payloadArray = Array.isArray(state.insertData) ? state.insertData : [state.insertData];
                             const actualInsertedPayload = payloadArray[0] as Partial<ChatMessageRow> | undefined;
+                            // The chat_id for these messages will come from the handler, which generates a new one
+                            // due to the history fetch error. We can't predict it here directly for the expected result
+                            // so the test assertions later will verify the AI response.
+                            // The key is that the insert mock for chat_messages receives the correct chat_id from the handler.
+                            const dynamicChatId = actualInsertedPayload?.chat_id;
+                            if (!dynamicChatId) {
+                                const err = new Error("chat_messages insert mock did not receive a chat_id in payload");
+                                logger.error(err.message, { actualInsertedPayload });
+                                return Promise.resolve({ data: null, error: err, status: 500, count: 0 });
+                            }
             
                             if (actualInsertedPayload?.role === 'assistant') {
                                 return Promise.resolve({
-                                    data: [expectedAssistantMessageInsertResult],
+                                    data: [getExpectedAssistantMessageInsertResult(dynamicChatId)],
                                     error: null,
                                     status: 201,
                                     count: 1
                                 });
                             } else if (actualInsertedPayload?.role === 'user') {
                                 return Promise.resolve({
-                                    data: [expectedUserMessageInsertResult],
+                                    data: [getExpectedUserMessageInsertResult(dynamicChatId)],
                                     error: null,
                                     status: 201,
                                     count: 1
@@ -238,32 +248,70 @@ Deno.test("Chat Function Tests (Adapter Refactor)", async (t) => {
                     },
                     'chats': {
                         ...currentTestSupaConfigBase.genericMockResults!['chats'],
-                        insert: { data: [{ id: newChatIdForThisTest, user_id: testUserId, system_prompt_id: testPromptId, title: userMessageContentForThisTest.substring(0,50) }], error: null, status: 201, count: 1 }
+                        // MODIFIED: chats.insert is now a spy to capture the handler-generated ID
+                        insert: spy((state: import('../_shared/supabase.mock.ts').MockQueryBuilderState) => {
+                            const insertData = state.insertData as Database['public']['Tables']['chats']['Insert'];
+                            assertExists(insertData.id, "Handler should provide an ID for new chat insert");
+                            assertEquals(insertData.user_id, testUserId);
+                            assertEquals(insertData.system_prompt_id, testPromptId); // Assuming testPromptId is used
+                            assertEquals(insertData.title, userMessageContentForThisTest.substring(0,50));
+                            return { 
+                                data: [{ 
+                                    id: insertData.id, // Return the ID that the handler provided
+                                    user_id: insertData.user_id, 
+                                    system_prompt_id: insertData.system_prompt_id, 
+                                    title: insertData.title,
+                                    organization_id: insertData.organization_id || null,
+                                    created_at: new Date().toISOString(),
+                                    updated_at: new Date().toISOString(),
+                                    metadata: null,
+                                    ai_provider_id: null // Or map from providerId if available
+                                }], 
+                                error: null, 
+                                status: 201, 
+                                count: 1 
+                            };
+                        })
                     }
                 }
             };
             const { deps } = createTestDeps(
-                historyErrorSupaConfig, 
-                localMockAdapterSuccessResponse, // Adapter should succeed for the new chat part
+                historyErrorSupaConfig as unknown as MockSupabaseDataConfig, 
+                localMockAdapterSuccessResponse,
                 { getWalletForContext: () => Promise.resolve({ walletId: 'wallet-hist-err', balance: '1000', currency:'AI_TOKEN', createdAt: new Date(), updatedAt: new Date(), user_id: testUserId }) },
                 () => 10
             );
             const req = new Request('http://localhost/chat', {
                 method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer test-jwt-token' },
                 body: JSON.stringify({ 
-                    message: "initiate with bad history chatid", 
+                    message: userMessageContentForThisTest, 
                     providerId: testProviderId, 
                     promptId: testPromptId, 
-                    chatId: ChatTestConstants.testChatId
+                    chatId: ChatTestConstants.testChatId // This is the "existing" chat ID that will fail history fetch
                 })
             });
             const response = await handler(req, deps);
             assertEquals(response.status, 200);
-            const responseData = await response.json();
-            assertExists(responseData.chatId);
-            assertEquals(responseData.chatId, newChatIdForThisTest); // Ensure new chat ID is used
-            assertExists(responseData.assistantMessage);
+            const responseData = await response.json() as ChatHandlerSuccessResponse;
+            
+            assertExists(responseData.chatId, "Response data should include chatId");
+            assert(typeof responseData.chatId === 'string', "responseData.chatId should be a string");
+            assertMatch(responseData.chatId, /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/, "responseData.chatId should be a UUID");
+
+            // Verify that the chatId in the response matches the ID captured by the chats.insert spy
+            const chatInsertSpy = historyErrorSupaConfig.genericMockResults.chats.insert as unknown as Spy<any, any[], any>;
+            assertSpyCalls(chatInsertSpy, 1);
+            const insertedChatData = chatInsertSpy.calls[0].args[0].insertData as Database['public']['Tables']['chats']['Insert'];
+            assertExists(insertedChatData.id, "Chat insert spy should have captured an ID from the handler");
+            assertEquals(responseData.chatId, insertedChatData.id, "chatId in response should match the id provided by the handler during chat insert");
+            
+            assertExists(responseData.assistantMessage, "Assistant message should exist in response");
             assertEquals(responseData.assistantMessage.content, ChatTestConstants.testAiContent);
+            // Also ensure the assistant message's chat_id matches the new chat ID
+            assertEquals(responseData.assistantMessage.chat_id, responseData.chatId, "Assistant message chat_id should match the new chatId");
+            // And the user message's chat_id also matches
+            assertExists(responseData.userMessage, "User message should exist in response");
+            assertEquals(responseData.userMessage?.chat_id, responseData.chatId, "User message chat_id should match the new chatId");
         });
 
         await t.step("POST request with message insert error returns 500", async () => {

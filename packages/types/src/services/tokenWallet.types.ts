@@ -37,6 +37,7 @@ export interface TokenWalletTransaction {
   amount: string; // Change in balance (positive for credit, negative for debit - handled by type), string for precision
   balanceAfterTxn: string; // Wallet balance after this transaction, string for precision
   recordedByUserId: string; // ID of the user or system entity that recorded this transaction
+  idempotencyKey: string; // Added as optional
   relatedEntityId?: string; // e.g., chatMessageId, paymentTransactionId, referredUserId
   relatedEntityType?: string; // e.g., 'chat_message', 'payment_transaction', 'user_profile'
   paymentTransactionId?: string; // Added to match DB and RPC return
@@ -89,8 +90,10 @@ export interface ITokenWalletService {
     type: TokenWalletTransactionType;
     amount: string; // Absolute amount for the transaction type
     recordedByUserId: string; // ID of the user or system entity that initiated this transaction
+    idempotencyKey?: string;
     relatedEntityId?: string;
     relatedEntityType?: string;
+    paymentTransactionId?: string;
     notes?: string;
   }): Promise<TokenWalletTransaction>;
 

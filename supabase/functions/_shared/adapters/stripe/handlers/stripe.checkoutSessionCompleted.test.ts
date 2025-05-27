@@ -86,7 +86,7 @@ Deno.test('StripePaymentAdapter: handleWebhook', async (t) => {
     Deno.env.set('SITE_URL', MOCK_SITE_URL);
     Deno.env.set('STRIPE_WEBHOOK_SECRET', MOCK_WEBHOOK_SECRET);
     mockStripe = createMockStripe();
-    mockSupabaseSetup = createMockSupabaseClient(supabaseConfig);
+    mockSupabaseSetup = createMockSupabaseClient(undefined, supabaseConfig);
     mockTokenWalletService = createMockTokenWalletService();
 
     adapter = new StripePaymentAdapter(
@@ -177,11 +177,11 @@ Deno.test('StripePaymentAdapter: handleWebhook', async (t) => {
         recordedByUserId: userId,
         relatedEntityId: internalPaymentId,
         relatedEntityType: 'payment_transaction',
+        idempotencyKey: `evt_webhook_otp_completed_789_${internalPaymentId}`,
         timestamp: new Date(),
         notes: 'Tokens awarded from Stripe payment'
     };
     if (mockTokenWalletService.stubs.recordTransaction?.restore) mockTokenWalletService.stubs.recordTransaction.restore();
-    // Attempt to remove 'as any' by ensuring the mock function signature matches
     mockTokenWalletService.stubs.recordTransaction = stub(
         mockTokenWalletService.instance, 
         "recordTransaction", 
@@ -215,14 +215,19 @@ Deno.test('StripePaymentAdapter: handleWebhook', async (t) => {
     const paymentTransactionsFromCalls = mockSupabaseSetup.spies.fromSpy.calls.filter((call: { args: any[] }) => call.args[0] === 'payment_transactions').length;
     console.log(`DEBUG: from('payment_transactions') called ${paymentTransactionsFromCalls} times (OTP).`);
 
-    // Check DB calls using getHistoricQueryBuilderSpies
-    const selectSpiesInfo = (mockSupabaseSetup.spies as any).getHistoricQueryBuilderSpies('payment_transactions', 'select');
-    assert(selectSpiesInfo, "Historic select spies info should exist for payment_transactions (OTP)");
-    assertEquals(selectSpiesInfo.callCount, 2, "select should have been called twice on payment_transactions (OTP)");
+    // Check DB calls by iterating over historic builders
+    const historicPaymentTxBuildersOtp = (mockSupabaseSetup.client as any).getHistoricBuildersForTable('payment_transactions');
+    assert(historicPaymentTxBuildersOtp && historicPaymentTxBuildersOtp.length > 0, "No historic query builders found for payment_transactions (OTP)");
 
-    const updateSpiesInfo = (mockSupabaseSetup.spies as any).getHistoricQueryBuilderSpies('payment_transactions', 'update');
-    assert(updateSpiesInfo, "Historic update spies info should exist for payment_transactions (OTP)");
-    assertEquals(updateSpiesInfo.callCount, 1, "update should have been called once on payment_transactions (OTP)");
+    const totalSelectCallsOtp = historicPaymentTxBuildersOtp.reduce((sum: number, builder: { methodSpies: { select?: { calls: { length: number }[] } } }) => {
+      return sum + (builder.methodSpies.select?.calls?.length || 0);
+    }, 0);
+    assertEquals(totalSelectCallsOtp, 2, "select should have been called twice on payment_transactions (OTP)");
+
+    const totalUpdateCallsOtp = historicPaymentTxBuildersOtp.reduce((sum: number, builder: { methodSpies: { update?: { calls: { length: number }[] } } }) => {
+      return sum + (builder.methodSpies.update?.calls?.length || 0);
+    }, 0);
+    assertEquals(totalUpdateCallsOtp, 1, "update should have been called once on payment_transactions (OTP)");
 
     // Check token wallet service call
     assertSpyCalls(mockTokenWalletService.stubs.recordTransaction, 1);
@@ -372,6 +377,7 @@ Deno.test('StripePaymentAdapter: handleWebhook', async (t) => {
         recordedByUserId: userId,
         relatedEntityId: internalPaymentId,
         relatedEntityType: 'payment_transactions',
+        idempotencyKey: `${mockStripeEvent.id}_${internalPaymentId}`,
         timestamp: new Date(),
         notes: `Tokens for Stripe Checkout Session ${stripeSessionId} (mode: subscription)` // Note updated
     };
@@ -407,39 +413,62 @@ Deno.test('StripePaymentAdapter: handleWebhook', async (t) => {
     // Check Stripe SDK calls
     assertSpyCalls(mockStripe.stubs.subscriptionsRetrieve, 1);
     
-    // Check DB calls using getHistoricQueryBuilderSpies
-    const paymentTxSelectSpies = (mockSupabaseSetup.spies as any).getHistoricQueryBuilderSpies('payment_transactions', 'select');
-    assert(paymentTxSelectSpies, "Historic select spies info should exist for payment_transactions (Sub)");
-    assertEquals(paymentTxSelectSpies.callCount, 2, "select should have been called twice on payment_transactions (Sub)");
+    // Check DB calls by iterating over historic builders
+    const historicPaymentTxBuildersSub = (mockSupabaseSetup.client as any).getHistoricBuildersForTable('payment_transactions');
+    assert(historicPaymentTxBuildersSub && historicPaymentTxBuildersSub.length > 0, "No historic query builders found for payment_transactions (Sub)");
 
-    const paymentTxUpdateSpies = (mockSupabaseSetup.spies as any).getHistoricQueryBuilderSpies('payment_transactions', 'update');
-    assert(paymentTxUpdateSpies, "Historic update spies info should exist for payment_transactions (Sub)");
-    assertEquals(paymentTxUpdateSpies.callCount, 1, "update should have been called once on payment_transactions (Sub)");
+    const totalSelectCallsSub = historicPaymentTxBuildersSub.reduce((sum: number, builder: { methodSpies: { select?: { calls: { length: number }[] } } }) => {
+      return sum + (builder.methodSpies.select?.calls?.length || 0);
+    }, 0);
+    assertEquals(totalSelectCallsSub, 2, "select should have been called twice on payment_transactions (Sub)");
+
+    const totalUpdateCallsSub = historicPaymentTxBuildersSub.reduce((sum: number, builder: { methodSpies: { update?: { calls: { length: number }[] } } }) => {
+      return sum + (builder.methodSpies.update?.calls?.length || 0);
+    }, 0);
+    assertEquals(totalUpdateCallsSub, 1, "update should have been called once on payment_transactions (Sub)");
     
-    // Accessing arguments of the update call
-    assert(paymentTxUpdateSpies.callsArgs && paymentTxUpdateSpies.callsArgs.length > 0 && paymentTxUpdateSpies.callsArgs[0].length > 0, "Update call arguments not found in callsArgs");
-    const updateObject = paymentTxUpdateSpies.callsArgs[0][0] as { status?: string; gateway_transaction_id?: string }; // The actual object passed to .update()
+    // Accessing arguments of the update call from the relevant builder
+    // Assuming the update call is on the second builder instance in this flow (first is select, second is update)
+    const updateBuilderInstanceSub = historicPaymentTxBuildersSub.find(
+      (b: { methodSpies: { update?: { calls?: { length: number }[], callsArgs?: any[][] } } }) => 
+        b.methodSpies.update?.calls && b.methodSpies.update.calls.length > 0
+    );
+    assert(updateBuilderInstanceSub, "Could not find the builder instance that performed the update (Sub)");
+    assert(updateBuilderInstanceSub.methodSpies.update?.calls && updateBuilderInstanceSub.methodSpies.update.calls.length > 0 && updateBuilderInstanceSub.methodSpies.update.calls[0].args.length > 0, "Update call arguments not found in spy calls (Sub)");
+    const updateObject = updateBuilderInstanceSub.methodSpies.update.calls[0].args[0] as { status?: string; gateway_transaction_id?: string };
 
     assertEquals(updateObject.status, 'COMPLETED');
     assertEquals(updateObject.gateway_transaction_id, stripeSessionId);
 
 
-    const subPlansSelectSpies = (mockSupabaseSetup.spies as any).getHistoricQueryBuilderSpies('subscription_plans', 'select');
-    assert(subPlansSelectSpies, "Historic select spies info should exist for subscription_plans (Sub)");
-    assertEquals(subPlansSelectSpies.callCount, 1, "select on subscription_plans should have been called once (Sub)");
-    const subPlansEqArgs = (mockSupabaseSetup.spies as any).getHistoricQueryBuilderSpies('subscription_plans', 'eq');
-    assertEquals(subPlansEqArgs.callsArgs[0], ['stripe_price_id', itemIdInternal], "eq on subscription_plans called with wrong stripe_price_id");
-
-
-    const userSubUpsertSpies = (mockSupabaseSetup.spies as any).getHistoricQueryBuilderSpies('user_subscriptions', 'upsert');
-    assert(userSubUpsertSpies, "Historic upsert spies info should exist for user_subscriptions (Sub)");
-    assertEquals(userSubUpsertSpies.callCount, 1, "upsert on user_subscriptions should have been called once (Sub)");
+    const subPlansSelectSpies = (mockSupabaseSetup.client as any).getHistoricBuildersForTable('subscription_plans');
+    assert(subPlansSelectSpies && subPlansSelectSpies.length > 0, "Historic select spies info should exist for subscription_plans (Sub)");
+    const totalSubPlansSelectCalls = subPlansSelectSpies.reduce((sum: number, builder: { methodSpies: { select?: { calls: { length: number }[] } } }) => {
+      return sum + (builder.methodSpies.select?.calls?.length || 0);
+    }, 0);
+    assertEquals(totalSubPlansSelectCalls, 1, "select on subscription_plans should have been called once (Sub)");
     
-    const upsertData = userSubUpsertSpies.callsArgs[0][0]; // Accessing the data object from the call
-    assert(upsertData, "Upsert data not found");
-    // No longer assert if it's an array, as we pass a single object to upsert
-    // assert(Array.isArray(upsertDataArray) && upsertDataArray.length > 0, "Upsert data not found or not an array");
-    // const upsertData = upsertDataArray[0]; 
+    const subPlansBuilderInstance = subPlansSelectSpies[0]; // Assuming first builder is the one we need
+    assert(subPlansBuilderInstance?.methodSpies.eq, "Eq spy not found on subscription_plans builder");
+    assert(subPlansBuilderInstance.methodSpies.eq.calls && subPlansBuilderInstance.methodSpies.eq.calls.length > 0, "No calls found for eq on subscription_plans");
+    assert(subPlansBuilderInstance.methodSpies.eq.calls[0].args && subPlansBuilderInstance.methodSpies.eq.calls[0].args.length > 0, "No call arguments for eq on subscription_plans");
+    assertEquals(subPlansBuilderInstance.methodSpies.eq.calls[0].args, ['stripe_price_id', itemIdInternal], "eq on subscription_plans called with wrong stripe_price_id");
+
+
+    const userSubUpsertSpies = (mockSupabaseSetup.client as any).getHistoricBuildersForTable('user_subscriptions');
+    assert(userSubUpsertSpies && userSubUpsertSpies.length > 0, "Historic upsert spies info should exist for user_subscriptions (Sub)");
+    const totalUserSubUpsertCalls = userSubUpsertSpies.reduce((sum: number, builder: { methodSpies: { upsert?: { calls: { length: number }[] } } }) => {
+      return sum + (builder.methodSpies.upsert?.calls?.length || 0);
+    }, 0);
+    assertEquals(totalUserSubUpsertCalls, 1, "upsert on user_subscriptions should have been called once (Sub)");
+    
+    const userSubBuilderInstance = userSubUpsertSpies[0]; // Assuming first builder
+    assert(userSubBuilderInstance?.methodSpies.upsert, "Upsert spy not found on user_subscriptions builder");
+    assert(userSubBuilderInstance.methodSpies.upsert.calls && userSubBuilderInstance.methodSpies.upsert.calls.length > 0, "No calls found for upsert on user_subscriptions");
+    assert(userSubBuilderInstance.methodSpies.upsert.calls[0].args && userSubBuilderInstance.methodSpies.upsert.calls[0].args.length > 0, "No call arguments for upsert on user_subscriptions");
+    const upsertDataArray = userSubBuilderInstance.methodSpies.upsert.calls[0].args; // Accessing the data object from the call
+    assert(upsertDataArray && upsertDataArray.length > 0, "Upsert data not found");
+    const upsertData = upsertDataArray[0];
 
     assertEquals(upsertData.user_id, userId, "user_subscriptions upserted with wrong user_id");
     assertEquals(upsertData.plan_id, internalPlanId, "user_subscriptions upserted with wrong plan_id");
@@ -523,7 +552,7 @@ Deno.test("[stripe.checkoutSessionCompleted.ts] Tests", async (t) => {
         };
     }
 
-    mockSupabaseSetup = createMockSupabaseClient({ genericMockResults });
+    mockSupabaseSetup = createMockSupabaseClient(undefined, { genericMockResults });
     mockSupabaseClient = mockSupabaseSetup.client as unknown as SupabaseClient<Database>;
     
     // Restore the default stub for subscriptions.retrieve created by createMockStripe()

@@ -1,7 +1,7 @@
 // IMPORTANT: Supabase Edge Functions require relative paths for imports from shared modules.
 // Do not use path aliases (like @shared/) as they will cause deployment failures.
-import ActualStripe from "npm:stripe@18.0.0";
-import type Stripe from "npm:stripe@18.0.0";
+import ActualStripe from "npm:stripe@^18";
+import type Stripe from "npm:stripe@^18";
 
 // IMPORTANT: Supabase CLI does NOT automatically load .env files into the function runtime.
 // When testing functions locally using `supabase start`, you MUST pass the environment file:
@@ -47,7 +47,7 @@ export const getStripeClient = (
   
   // Only configure the API version explicitly, let Stripe handle the rest.
   const config: Stripe.StripeConfig = {
-    apiVersion: "2025-03-31.basil", // Use the version expected by v18.0.0
+    apiVersion: "2023-10-16", // Use the version expected by v18.0.0
   };
 
   return new stripeConstructor(secretKey, config);

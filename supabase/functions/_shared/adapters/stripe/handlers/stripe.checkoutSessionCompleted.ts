@@ -240,8 +240,10 @@ export async function handleCheckoutSessionCompleted(
       type: 'CREDIT_PURCHASE',
       amount: String(paymentTx.tokens_to_award),
       recordedByUserId: paymentTx.user_id!,
+      idempotencyKey: event.id,
       relatedEntityId: internalPaymentId,
       relatedEntityType: 'payment_transactions',
+      paymentTransactionId: internalPaymentId,
       notes: `Tokens for Stripe Checkout Session ${gatewayTransactionId} (mode: ${session.mode})`,
     });
     context.logger.info(`[handleCheckoutSessionCompleted] Tokens awarded for ${internalPaymentId}.`);

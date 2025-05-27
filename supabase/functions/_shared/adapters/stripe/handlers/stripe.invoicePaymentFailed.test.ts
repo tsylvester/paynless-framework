@@ -119,7 +119,7 @@ Deno.test('[stripe.invoicePaymentFailed.ts] Tests - handleInvoicePaymentFailed',
     }
 
 
-    mockSupabaseSetup = createMockSupabaseClient(dbConfig || {});
+    mockSupabaseSetup = createMockSupabaseClient(undefined, dbConfig || {});
     mockSupabaseClient = mockSupabaseSetup.client as unknown as SupabaseClient<Database>;
 
     handlerContext = {

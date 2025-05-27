@@ -343,7 +343,10 @@ class MockQueryBuilder implements IMockQueryBuilder {
             // then PostgREST would typically return a PGRST116 error.
             // We set this error directly on the result object to be returned.
             console.log(`[Mock QB ${this._state.tableName}] _resolveQuery: .single() called, data is null, no mock error. Setting PGRST116.`);
-            result.error = { name: 'PGRST116', message: 'Query returned no rows (data was null after .single())', code: 'PGRST116' };
+            const pgrstError = new Error('Query returned no rows (data was null after .single())') as Error & MockPGRSTError;
+            pgrstError.name = 'PGRST116';
+            pgrstError.code = 'PGRST116';
+            result.error = pgrstError;
             result.status = 406; // Not Acceptable
             result.statusText = 'Not Acceptable';
             result.count = 0;
@@ -456,6 +459,38 @@ class MockSupabaseClient implements IMockSupabaseClient {
     public clearAllTrackedBuilders(): void {
         this._latestBuilders.clear();
         this._historicBuildersByTable.clear();
+        console.log('[MockSupabaseClient] Cleared all tracked query builders.');
+    }
+
+    public getSpiesForTableQueryMethod(tableName: string, methodName: keyof IMockQueryBuilder, callIndex = -1): Spy | undefined {
+        const historicBuilders = this.getHistoricBuildersForTable(tableName);
+        if (!historicBuilders || historicBuilders.length === 0) {
+            console.warn(`[MockSupabaseClient getSpiesForTableQueryMethod] No historic builders found for table: ${tableName}`);
+            return undefined;
+        }
+
+        let targetBuilder: IMockQueryBuilder | undefined;
+
+        if (callIndex === -1) {
+            // Default to the latest builder instance for this table if callIndex is -1
+            targetBuilder = historicBuilders[historicBuilders.length - 1];
+        } else if (callIndex >= 0 && callIndex < historicBuilders.length) {
+            targetBuilder = historicBuilders[callIndex];
+        } else {
+            console.warn(`[MockSupabaseClient getSpiesForTableQueryMethod] Invalid callIndex ${callIndex} for table ${tableName}. Max index: ${historicBuilders.length - 1}`);
+            return undefined;
+        }
+
+        if (!targetBuilder) {
+            console.warn(`[MockSupabaseClient getSpiesForTableQueryMethod] Could not determine target builder for table ${tableName} with callIndex ${callIndex}`);
+            return undefined;
+        }
+
+        const spy = targetBuilder.methodSpies[methodName];
+        if (!spy) {
+            console.warn(`[MockSupabaseClient getSpiesForTableQueryMethod] Spy for method '${String(methodName)}' not found on builder for table '${tableName}'. Available spies: ${Object.keys(targetBuilder.methodSpies).join(', ')}`);
+        }
+        return spy;
     }
 }
 
@@ -480,6 +515,34 @@ export function createMockSupabaseClient(
             const builder = mockClientInstance.getLatestBuilder(tableName);
             return (builder as MockQueryBuilder)?.methodSpies as ReturnType<IMockClientSpies['getLatestQueryBuilderSpies']> | undefined;
         },
+        getHistoricQueryBuilderSpies: (tableName: string, methodName: string): { callCount: number; callsArgs: unknown[][] } => {
+            const historicBuilders = mockClientInstance.getHistoricBuildersForTable(tableName);
+            let totalCallCount = 0;
+            const allCallsArgs: unknown[][] = [];
+            if (historicBuilders) { // Ensure historicBuilders is not undefined
+                for (const builder of historicBuilders) {
+                    // Ensure builder and methodSpies are defined, and methodName is a valid key
+                    if (builder && builder.methodSpies && methodName in builder.methodSpies) {
+                        const spyCandidate = builder.methodSpies[methodName as keyof typeof builder.methodSpies];
+                        // Check if spyCandidate looks like a Deno Spy object before asserting its type
+                        if (spyCandidate && 
+                            typeof (spyCandidate as any).callCount === 'number' && 
+                            (spyCandidate as any).callCount > 0 && 
+                            Array.isArray((spyCandidate as any).calls)) {
+
+                            // Use (spyCandidate as any) to access properties if linter complains about Spy type
+                            totalCallCount += (spyCandidate as any).callCount;
+                            ((spyCandidate as any).calls as Array<{args: unknown[]}>).forEach(call => {
+                                if (call && Array.isArray(call.args)) { // Ensure call and call.args are valid
+                                    allCallsArgs.push(call.args);
+                                }
+                            });
+                        }
+                    }
+                }
+            }
+            return { callCount: totalCallCount, callsArgs: allCallsArgs };
+        }
     };
 
     const clearAllStubs = () => {

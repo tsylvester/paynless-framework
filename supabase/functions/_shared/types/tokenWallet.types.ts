@@ -43,6 +43,7 @@ export interface TokenWalletTransaction {
   paymentTransactionId?: string; // Link to payment if this was a purchase
   notes?: string; // Optional notes, e.g., reason for manual adjustment
   timestamp: Date; // Should be string if coming directly from DB, or properly parsed.
+  idempotencyKey: string;
 }
 
 /**
@@ -90,8 +91,10 @@ export interface ITokenWalletService {
     type: TokenWalletTransactionType;
     amount: string; // Absolute amount for the transaction type
     recordedByUserId: string;
+    idempotencyKey: string;
     relatedEntityId?: string;
     relatedEntityType?: string;
+    paymentTransactionId?: string;
     notes?: string;
   }): Promise<TokenWalletTransaction>;
 

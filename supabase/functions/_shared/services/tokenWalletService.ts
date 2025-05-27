@@ -248,8 +248,10 @@ export class TokenWalletService implements ITokenWalletService {
     type: TokenWalletTransactionType;
     amount: string;
     recordedByUserId: string;
+    idempotencyKey: string;
     relatedEntityId?: string;
     relatedEntityType?: string;
+    paymentTransactionId?: string;
     notes?: string;
   }): Promise<TokenWalletTransaction> {
     console.log('[TokenWalletService] Recording transaction via RPC', params);
@@ -261,8 +263,10 @@ export class TokenWalletService implements ITokenWalletService {
         p_transaction_type: params.type,
         p_input_amount_text: params.amount,
         p_recorded_by_user_id: params.recordedByUserId,
+        p_idempotency_key: params.idempotencyKey,
         p_related_entity_id: params.relatedEntityId,
         p_related_entity_type: params.relatedEntityType,
+        p_payment_transaction_id: params.paymentTransactionId,
         p_notes: params.notes,
       }
     );
@@ -387,6 +391,7 @@ export class TokenWalletService implements ITokenWalletService {
         amount,
         balance_after_txn,
         recorded_by_user_id,
+        idempotency_key,
         related_entity_id,
         related_entity_type,
         payment_transaction_id,
@@ -421,6 +426,7 @@ export class TokenWalletService implements ITokenWalletService {
       amount: tx.amount?.toString(),
       balanceAfterTxn: tx.balance_after_txn?.toString(),
       recordedByUserId: tx.recorded_by_user_id,
+      idempotencyKey: tx.idempotency_key!,
       relatedEntityId: tx.related_entity_id || undefined,
       relatedEntityType: tx.related_entity_type || undefined,
       paymentTransactionId: tx.payment_transaction_id || undefined,

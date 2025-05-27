@@ -447,6 +447,7 @@ export interface IMockSupabaseClient {
   getLatestBuilder(tableName: string): IMockQueryBuilder | undefined;
   getHistoricBuildersForTable(tableName: string): IMockQueryBuilder[] | undefined;
   clearAllTrackedBuilders(): void;
+  getSpiesForTableQueryMethod: (tableName: string, methodName: keyof IMockQueryBuilder, callIndex?: number) => Spy | undefined;
 }
 
 export interface IMockClientSpies {
@@ -471,6 +472,7 @@ export interface IMockClientSpies {
     maybeSingle?: Spy<IMockQueryBuilder['maybeSingle']>;
     then?: Spy<IMockQueryBuilder['then']>;
   } | undefined);
+  getHistoricQueryBuilderSpies: (tableName: string, methodName: string) => { callCount: number; callsArgs: unknown[][] } | undefined;
 }
 
 export type PerformChatRewindResult = Database['public']['Functions']['perform_chat_rewind']['Returns'];

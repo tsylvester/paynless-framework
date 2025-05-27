@@ -80,7 +80,7 @@ Deno.test('handlePriceUpdated specific tests', async (t) => {
 
   const initializeTestContext = (supabaseConfig: any = {}) => {
     mockStripeSdk = createMockStripe();
-    mockSupabase = createMockSupabaseClient(supabaseConfig);
+    mockSupabase = createMockSupabaseClient(undefined, supabaseConfig);
     
     // Create fresh spies for logger methods for this step
     stepInfoSpy = spy(logger, 'info');
