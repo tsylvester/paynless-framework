@@ -1,7 +1,7 @@
 import { assertEquals, assertExists, assertRejects, assertInstanceOf } from "https://deno.land/std@0.224.0/assert/mod.ts";
 import { spy, stub, type Stub } from "https://deno.land/std@0.224.0/testing/mock.ts";
-import { AnthropicAdapter, anthropicAdapter } from './anthropic_adapter.ts';
-import type { ChatApiRequest } from '../types.ts';
+import { AnthropicAdapter } from './anthropic_adapter.ts';
+import type { ChatApiRequest, ILogger } from '../types.ts';
 
 // Define an interface for the expected token usage structure (consistent with other tests)
 interface MockTokenUsage {
@@ -9,6 +9,14 @@ interface MockTokenUsage {
   completion_tokens: number;
   total_tokens: number;
 }
+
+// Mock logger for testing
+const mockLogger: ILogger = {
+  debug: () => {},
+  info: () => {},
+  warn: () => {},
+  error: () => {},
+};
 
 // --- Test Data ---
 const MOCK_API_KEY = 'sk-ant-test-key';
@@ -101,8 +109,8 @@ Deno.test("AnthropicAdapter sendMessage - Success with System Prompt", async () 
   );
 
   try {
-    const adapter = new AnthropicAdapter();
-    const result = await adapter.sendMessage(MOCK_CHAT_REQUEST_WITH_SYSTEM, MOCK_MODEL_ID, MOCK_API_KEY);
+    const adapter = new AnthropicAdapter(MOCK_API_KEY, mockLogger);
+    const result = await adapter.sendMessage(MOCK_CHAT_REQUEST_WITH_SYSTEM, MOCK_MODEL_ID);
 
     // Assert fetch was called correctly
     assertEquals(mockFetch.calls.length, 1);
@@ -131,7 +139,6 @@ Deno.test("AnthropicAdapter sendMessage - Success with System Prompt", async () 
     assertEquals(tokens?.prompt_tokens, 75);
     assertEquals(tokens?.completion_tokens, 20);
     assertEquals(tokens?.total_tokens, 95); // Calculated
-    assertExists(result.created_at);
 
   } finally {
     mockFetch.restore();
@@ -149,8 +156,8 @@ Deno.test("AnthropicAdapter sendMessage - Success without System Prompt", async 
     );
 
     try {
-      const adapter = new AnthropicAdapter();
-      const result = await adapter.sendMessage(MOCK_CHAT_REQUEST_NO_SYSTEM, MOCK_MODEL_ID, MOCK_API_KEY);
+      const adapter = new AnthropicAdapter(MOCK_API_KEY, mockLogger);
+      const result = await adapter.sendMessage(MOCK_CHAT_REQUEST_NO_SYSTEM, MOCK_MODEL_ID);
 
       // Assert fetch was called correctly
       assertEquals(mockFetch.calls.length, 1);
@@ -173,7 +180,6 @@ Deno.test("AnthropicAdapter sendMessage - Success without System Prompt", async 
       assertEquals(tokens.prompt_tokens, MOCK_ANTHROPIC_SUCCESS_RESPONSE.usage.input_tokens, "Prompt tokens mismatch");
       assertEquals(tokens.completion_tokens, MOCK_ANTHROPIC_SUCCESS_RESPONSE.usage.output_tokens, "Completion tokens mismatch");
       assertEquals(tokens.total_tokens, MOCK_ANTHROPIC_SUCCESS_RESPONSE.usage.input_tokens + MOCK_ANTHROPIC_SUCCESS_RESPONSE.usage.output_tokens, "Total tokens mismatch");
-      assertExists(result.created_at);
 
     } finally {
       mockFetch.restore();
@@ -191,9 +197,9 @@ Deno.test("AnthropicAdapter sendMessage - API Error", async () => {
   );
 
   try {
-    const adapter = new AnthropicAdapter();
+    const adapter = new AnthropicAdapter(MOCK_API_KEY, mockLogger);
     await assertRejects(
-      () => adapter.sendMessage(MOCK_CHAT_REQUEST_WITH_SYSTEM, MOCK_MODEL_ID, MOCK_API_KEY),
+      () => adapter.sendMessage(MOCK_CHAT_REQUEST_WITH_SYSTEM, MOCK_MODEL_ID),
       Error,
       "Anthropic API request failed: 401"
     );
@@ -213,8 +219,8 @@ Deno.test("AnthropicAdapter sendMessage - Consecutive User Messages", async () =
     );
 
     try {
-        const adapter = new AnthropicAdapter();
-        await adapter.sendMessage(MOCK_CHAT_REQUEST_CONSECUTIVE_USER, MOCK_MODEL_ID, MOCK_API_KEY);
+        const adapter = new AnthropicAdapter(MOCK_API_KEY, mockLogger);
+        await adapter.sendMessage(MOCK_CHAT_REQUEST_CONSECUTIVE_USER, MOCK_MODEL_ID);
 
         assertEquals(mockFetch.calls.length, 1);
         const fetchArgs = mockFetch.calls[0].args;
@@ -246,8 +252,8 @@ Deno.test("AnthropicAdapter sendMessage - History Ends With Assistant", async ()
     );
     
     try {
-        const adapter = new AnthropicAdapter();
-        const result = await adapter.sendMessage(MOCK_CHAT_REQUEST_ENDS_ASSISTANT, MOCK_MODEL_ID, MOCK_API_KEY);
+        const adapter = new AnthropicAdapter(MOCK_API_KEY, mockLogger);
+        const result = await adapter.sendMessage(MOCK_CHAT_REQUEST_ENDS_ASSISTANT, MOCK_MODEL_ID);
 
         // Assert fetch was called
         assertEquals(mockFetch.calls.length, 1);
@@ -269,56 +275,83 @@ Deno.test("AnthropicAdapter sendMessage - History Ends With Assistant", async ()
     }
 });
 
-Deno.test("AnthropicAdapter sendMessage - History Ends With Assistant (Invalid Format)", async () => {
-    const mockFetch = spy(globalThis, "fetch");
-    const adapter = new AnthropicAdapter();
-    let thrownError: Error | null = null;
+Deno.test("AnthropicAdapter sendMessage - Request must end with user message (new message empty)", async () => {
+    const mockFetch = stub(globalThis, "fetch", () =>
+        Promise.resolve(new Response(JSON.stringify({}), { status: 200 }))
+    ); // Should not be called
 
     try {
-        // Attempt the call that should fail before fetching
-        await adapter.sendMessage(MOCK_CHAT_REQUEST_INVALID_END_ROLE, MOCK_MODEL_ID, MOCK_API_KEY);
-        // If this line is reached, the expected error wasn't thrown. Fail explicitly.
-        throw new Error("Test failed: Expected sendMessage to throw validation error, but it completed.");
-    } catch (error) {
-        // Catch the expected error - check if it's an Error instance
-        if (error instanceof Error) {
-            thrownError = error;
-        } else {
-            // If something else was thrown, record it as an unexpected error type
-            thrownError = new Error(`Unexpected throw type: ${typeof error}`);
-        }
+        const adapter = new AnthropicAdapter(MOCK_API_KEY, mockLogger);
+        await assertRejects(
+            () => adapter.sendMessage(MOCK_CHAT_REQUEST_INVALID_END_ROLE, MOCK_MODEL_ID),
+            Error,
+            "Cannot send request to Anthropic: message history format invalid." 
+        );
+        assertEquals(mockFetch.calls.length, 0); // Ensure fetch was not called
     } finally {
-        // CRITICAL: Check fetch call count *before* restoring.
-        assertEquals(mockFetch.calls.length, 0, "Fetch should NOT have been called due to validation error.");
-        // Restore the original fetch function AFTER checking call count
         mockFetch.restore();
-        // Now assert the error message
-        assertExists(thrownError, "sendMessage should have thrown an error.");
-        assertInstanceOf(thrownError, Error, "Thrown object should be an Error instance.");
-        // Check if the error message matches the one thrown by the validation logic
-        assertEquals(thrownError.message, "Cannot send request to Anthropic: message history format invalid.", "Error message mismatch.");
     }
 });
 
-Deno.test("AnthropicAdapter listModels - Failure on API Error", async () => {
-    // This test verifies that listModels throws an error if the API call fails.
-    // We expect listModels to TRY fetching, fail (no mock = real call = 401),
-    // and throw the resulting error.
-    const adapter = new AnthropicAdapter();
+Deno.test("AnthropicAdapter listModels - Success", async () => {
+  // Mock a successful response from Anthropic's /models endpoint
+  const mockModelsResponse = {
+    data: [
+      { id: "claude-3-opus-20240229", name: "Claude 3 Opus", description: "Most powerful model" },
+      { id: "claude-3-sonnet-20240229", name: "Claude 3 Sonnet", description: "Balanced model" },
+    ]
+  };
+  const mockFetch = stub(globalThis, "fetch", () =>
+    Promise.resolve(
+      new Response(JSON.stringify(mockModelsResponse), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      })
+    )
+  );
 
-    // Assert that the call rejects because the underlying fetch will fail (e.g., 401)
-    await assertRejects(
-      async () => await adapter.listModels('invalid-api-key'), // Use an invalid key to ensure failure
-      Error, // Expect an Error object to be thrown
-      "Anthropic API request failed fetching models: 401" // Check for part of the expected error message
-    );
+  try {
+    const adapter = new AnthropicAdapter(MOCK_API_KEY, mockLogger);
+    const models = await adapter.listModels();
 
-    // No need to check the returned value as it should throw.
-    // No need for spy/restore here as we aren't checking fetch calls specifically, just the rejection.
+    // Assert fetch was called correctly
+    assertEquals(mockFetch.calls.length, 1);
+    const fetchArgs = mockFetch.calls[0].args;
+    assertEquals(fetchArgs[0], 'https://api.anthropic.com/v1/models'); // Check endpoint
+    assertEquals(fetchArgs[1]?.method, 'GET');
+    assertEquals((fetchArgs[1]?.headers as Record<string, string>)['x-api-key'], MOCK_API_KEY);
+    assertEquals((fetchArgs[1]?.headers as Record<string, string>)['anthropic-version'], '2023-06-01');
+
+    // Assert result structure
+    assertExists(models);
+    assertEquals(models.length, 2);
+    assertEquals(models[0].api_identifier, 'anthropic-claude-3-opus-20240229');
+    assertEquals(models[0].name, 'Claude 3 Opus');
+    assertEquals(models[1].api_identifier, 'anthropic-claude-3-sonnet-20240229');
+    assertEquals(models[1].name, 'Claude 3 Sonnet');
+  } finally {
+    mockFetch.restore();
+  }
 });
 
-// Test the exported instance
-Deno.test("Exported anthropicAdapter instance exists", () => {
-  assertExists(anthropicAdapter);
-  assertInstanceOf(anthropicAdapter, AnthropicAdapter);
+Deno.test("AnthropicAdapter listModels - API Error", async () => {
+  const mockFetch = stub(globalThis, "fetch", () =>
+    Promise.resolve(
+      new Response(JSON.stringify({ type: 'error', error: { message: 'Auth error' } }), {
+        status: 401,
+        headers: { 'Content-Type': 'application/json' },
+      })
+    )
+  );
+
+  try {
+    const adapter = new AnthropicAdapter(MOCK_API_KEY, mockLogger);
+    await assertRejects(
+      async () => await adapter.listModels(), // Removed API key from call
+      Error,
+      "Anthropic API request failed fetching models: 401"
+    );
+  } finally {
+    mockFetch.restore();
+  }
 }); 

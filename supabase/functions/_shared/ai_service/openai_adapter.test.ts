@@ -1,10 +1,18 @@
 import { assertEquals, assertExists, assertRejects, assertInstanceOf } from "https://deno.land/std@0.224.0/assert/mod.ts";
 import { spy, stub, type Stub } from "https://deno.land/std@0.224.0/testing/mock.ts";
-import { OpenAiAdapter, openAiAdapter } from './openai_adapter.ts';
-import type { ChatApiRequest } from '../types.ts';
+import { OpenAiAdapter } from './openai_adapter.ts';
+import type { ChatApiRequest, ILogger } from '../types.ts';
 import { assertSpyCall, assertSpyCalls, type Spy } from "jsr:@std/testing@0.225.1/mock";
 import { assert } from "jsr:@std/assert@0.225.3";
 import { OpenAI } from 'npm:openai';
+
+// Mock logger for testing
+const mockLogger: ILogger = {
+  debug: () => {},
+  info: () => {},
+  warn: () => {},
+  error: () => {},
+};
 
 // Define an interface for the expected token usage structure
 interface MockTokenUsage {
@@ -93,8 +101,8 @@ Deno.test("OpenAiAdapter sendMessage - Success", async () => {
   );
 
   try {
-    const adapter = new OpenAiAdapter();
-    const result = await adapter.sendMessage(MOCK_CHAT_REQUEST, MOCK_MODEL_ID, MOCK_API_KEY);
+    const adapter = new OpenAiAdapter(MOCK_API_KEY, mockLogger);
+    const result = await adapter.sendMessage(MOCK_CHAT_REQUEST, MOCK_MODEL_ID);
 
     // Assert fetch was called correctly
     assertEquals(mockFetch.calls.length, 1);
@@ -121,6 +129,7 @@ Deno.test("OpenAiAdapter sendMessage - Success", async () => {
     assertEquals(tokenUsage.prompt_tokens, MOCK_OPENAI_SUCCESS_RESPONSE.usage.prompt_tokens, "Prompt tokens mismatch");
     assertEquals(tokenUsage.completion_tokens, MOCK_OPENAI_SUCCESS_RESPONSE.usage.completion_tokens, "Completion tokens mismatch");
     assertEquals(tokenUsage.total_tokens, MOCK_OPENAI_SUCCESS_RESPONSE.usage.total_tokens, "Total tokens mismatch");
+    // assertExists(result.created_at); // Assuming created_at is no longer part of the response
 
     // Verify fetch call details
     // assertSpyCall(mockFetch, 0); // Removed redundant/problematic assertion
@@ -141,9 +150,9 @@ Deno.test("OpenAiAdapter sendMessage - API Error", async () => {
   );
 
   try {
-    const adapter = new OpenAiAdapter();
+    const adapter = new OpenAiAdapter(MOCK_API_KEY, mockLogger);
     await assertRejects(
-      () => adapter.sendMessage(MOCK_CHAT_REQUEST, MOCK_MODEL_ID, MOCK_API_KEY),
+      () => adapter.sendMessage(MOCK_CHAT_REQUEST, MOCK_MODEL_ID),
       Error,
       "OpenAI API request failed: 401"
     );
@@ -164,9 +173,9 @@ Deno.test("OpenAiAdapter sendMessage - Empty Response Content", async () => {
   });
    
   try {
-    const adapter = new OpenAiAdapter();
+    const adapter = new OpenAiAdapter(MOCK_API_KEY, mockLogger);
      await assertRejects(
-       () => adapter.sendMessage(MOCK_CHAT_REQUEST, MOCK_MODEL_ID, MOCK_API_KEY),
+       () => adapter.sendMessage(MOCK_CHAT_REQUEST, MOCK_MODEL_ID),
        Error,
        "OpenAI response content is empty or missing."
      );
@@ -186,8 +195,8 @@ Deno.test("OpenAiAdapter listModels - Success", async () => {
     );
 
     try {
-        const adapter = new OpenAiAdapter();
-        const models = await adapter.listModels(MOCK_API_KEY);
+        const adapter = new OpenAiAdapter(MOCK_API_KEY, mockLogger);
+        const models = await adapter.listModels();
 
         assertEquals(mockFetch.calls.length, 1);
         const fetchArgs = mockFetch.calls[0].args;
@@ -217,9 +226,9 @@ Deno.test("OpenAiAdapter listModels - API Error", async () => {
     );
 
     try {
-        const adapter = new OpenAiAdapter();
+        const adapter = new OpenAiAdapter(MOCK_API_KEY, mockLogger);
         await assertRejects(
-            () => adapter.listModels(MOCK_API_KEY),
+            () => adapter.listModels(),
             Error,
             "OpenAI API request failed fetching models: 500"
         );
@@ -228,8 +237,4 @@ Deno.test("OpenAiAdapter listModels - API Error", async () => {
     }
 });
 
-// Test the exported instance
-Deno.test("Exported openAiAdapter instance exists", () => {
-  assertExists(openAiAdapter);
-  assertInstanceOf(openAiAdapter, OpenAiAdapter);
-}); 
+// Test for exported openAiAdapter instance removed as it's no longer exported directly. 

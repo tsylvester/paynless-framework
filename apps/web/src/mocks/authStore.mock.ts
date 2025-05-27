@@ -1,35 +1,59 @@
 import { vi } from 'vitest';
 import type { AuthStore, User, Session, UserProfile, NavigateFunction } from '@paynless/types';
 
-// Define the shape of our mock AuthStore's state values
-type MockAuthStoreState = Pick<AuthStore, 'user' | 'session' | 'profile' | 'isLoading' | 'error' | 'navigate'>;
+// Use the full AuthStore type for the internal state
+let internalMockAuthStoreState: AuthStore;
 
-// Minimal complete initial state for AuthStore (actions will be part of the hook logic or spied)
-const initialAuthState: MockAuthStoreState = {
+// Initialize all AuthStore properties, with actions as vi.fn()
+const initializeMockAuthState = (): AuthStore => ({
+  // State properties
   user: null,
   session: null,
   profile: null,
   isLoading: false,
   error: null,
   navigate: null,
-};
 
-let internalMockAuthStoreState: MockAuthStoreState = { ...initialAuthState };
+  // Setters
+  setUser: vi.fn((user: User | null) => { internalMockAuthStoreState.user = user; }),
+  setSession: vi.fn((session: Session | null) => { internalMockAuthStoreState.session = session; }),
+  setProfile: vi.fn((profile: UserProfile | null) => { internalMockAuthStoreState.profile = profile; }),
+  setIsLoading: vi.fn((isLoading: boolean) => { internalMockAuthStoreState.isLoading = isLoading; }),
+  setError: vi.fn((error: Error | null) => { internalMockAuthStoreState.error = error; }),
+  setNavigate: vi.fn((navigateFn: NavigateFunction) => { internalMockAuthStoreState.navigate = navigateFn; }),
 
-export const internalMockAuthStoreGetState = (): MockAuthStoreState => internalMockAuthStoreState;
+  // Core Auth Actions
+  login: vi.fn().mockResolvedValue(undefined),
+  register: vi.fn().mockResolvedValue(undefined),
+  logout: vi.fn().mockResolvedValue(undefined),
+  updateProfile: vi.fn().mockResolvedValue(null as UserProfile | null),
+  updateEmail: vi.fn().mockResolvedValue(true),
+  uploadAvatar: vi.fn().mockResolvedValue(null as string | null),
+  fetchProfile: vi.fn().mockResolvedValue(null as UserProfile | null),
+  checkEmailExists: vi.fn().mockResolvedValue(false),
+  requestPasswordReset: vi.fn().mockResolvedValue(true),
+  handleOAuthLogin: vi.fn().mockResolvedValue(undefined),
+});
 
+// Initialize the state
+internalMockAuthStoreState = initializeMockAuthState();
+
+// Getter for the current state
+export const internalMockAuthStoreGetState = (): AuthStore => internalMockAuthStoreState;
+
+// The main hook logic, now using AuthStore
 export const mockedUseAuthStoreHookLogic = <TResult>(
-  selector?: (state: MockAuthStoreState) => TResult
-): TResult | MockAuthStoreState => {
+  selector?: (state: AuthStore) => TResult,
+  _equalityFn?: (a: TResult, b: TResult) => boolean // Added for zustand spyOn compatibility
+): TResult | AuthStore => {
   const state = internalMockAuthStoreGetState();
   return selector ? selector(state) : state;
 };
 
-// Attach .getState() to the logic function itself if tests/selectors expect it on the hook function
-// This is primarily for compatibility with how the actual useStore().getState() works.
+// Attach .getState() to the logic function itself
 (mockedUseAuthStoreHookLogic as any).getState = internalMockAuthStoreGetState;
 
-// --- Helper Functions for Test Setup ---
+// --- Helper Functions for Test Setup (Update to modify the new internal state structure) ---
 export const mockSetAuthUser = (user: User | null) => {
   internalMockAuthStoreState.user = user;
 };
@@ -56,35 +80,21 @@ export const mockSetAuthNavigate = (navigate: NavigateFunction | null) => {
 
 // --- Reset Function ---
 export const resetAuthStoreMock = () => {
-  internalMockAuthStoreState = { ...initialAuthState };
+  // Re-initialize to get fresh vi.fn() mocks for actions and reset state
+  internalMockAuthStoreState = initializeMockAuthState();
 };
 
-// Export an object containing all actions, mocked, if direct action calls are needed from tests
-// For ChatItem, we mostly care about the state, so this might be overkill for now.
-// If actions were dispatched directly from components using useAuthStore.getState().someAction(),
-// then those actions would need to be mocked here.
-export const mockAuthStoreActions = {
-  setUser: vi.fn(),
-  setSession: vi.fn(),
-  setProfile: vi.fn(),
-  setIsLoading: vi.fn(),
-  setError: vi.fn(),
-  setNavigate: vi.fn(),
-  login: vi.fn().mockResolvedValue(undefined),
-  register: vi.fn().mockResolvedValue(undefined),
-  logout: vi.fn().mockResolvedValue(undefined),
-  updateProfile: vi.fn().mockResolvedValue(null),
-  updateEmail: vi.fn().mockResolvedValue(true),
-  uploadAvatar: vi.fn().mockResolvedValue(null),
-  fetchProfile: vi.fn().mockResolvedValue(null),
-  checkEmailExists: vi.fn().mockResolvedValue(false),
-  requestPasswordReset: vi.fn().mockResolvedValue(true),
-  handleOAuthLogin: vi.fn().mockResolvedValue(undefined),
-  // clearError is not in AuthStore type
-};
+// mockAuthStoreActions is no longer strictly necessary if state includes actions,
+// but can be kept if direct access to action mocks is preferred by some tests.
+// For simplicity, we'll rely on actions being part of the state.
+// If needed, it can be reconstructed:
+// export const mockAuthStoreActions = {
+//   setUser: internalMockAuthStoreState.setUser,
+//   setSession: internalMockAuthStoreState.setSession,
+//   // ... and so on for all actions
+// };
 
-// To make the mockedUseAuthStoreHookLogic return actions as well if needed:
-// Modify MockAuthStoreState to be the full AuthStore type
-// Modify internalMockAuthStoreGetState to return { ...internalMockAuthStoreState, ...mockAuthStoreActions }
-// Modify initialAuthState to include all actions from AuthStore, mocked.
-// For now, keeping it simple as ChatItem mostly consumes state. 
+// Note: The previous MockAuthStoreState type is no longer needed.
+// The previous mockAuthStoreActions object is also simplified/removed. 
+
+export const useAuthStore = mockedUseAuthStoreHookLogic;

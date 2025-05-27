@@ -34,7 +34,7 @@ export function CurrentSubscriptionCard({
               <span className="text-sm text-textSecondary">Price: </span>
               <span className="font-medium">
                 {formatAmount(userSubscription.plan.amount, userSubscription.plan.currency)}
-                {' '}{formatInterval(userSubscription.plan.interval, userSubscription.plan.intervalCount)}
+                {' '}{formatInterval(userSubscription.plan.interval, userSubscription.plan.interval_count)}
               </span>
             </div>
             <div>
@@ -47,15 +47,15 @@ export function CurrentSubscriptionCard({
                 {userSubscription.status}
               </span>
             </div>
-            {userSubscription.currentPeriodEnd && (
+            {userSubscription.current_period_end && (
               <div>
                 <span className="text-sm text-textSecondary">Current period ends: </span>
                 <span className="font-medium">
-                  {new Date(userSubscription.currentPeriodEnd).toLocaleDateString()}
+                  {new Date(userSubscription.current_period_end).toLocaleDateString()}
                 </span>
               </div>
             )}
-            {userSubscription.cancelAtPeriodEnd && (
+            {userSubscription.cancel_at_period_end && (
               <div className="col-span-full mt-1">
                 <span className="text-sm text-yellow-600">
                   Your subscription will be canceled at the end of the current billing period.
@@ -72,9 +72,9 @@ export function CurrentSubscriptionCard({
               }`}
             >
               <CreditCard className="mr-2 h-4 w-4" />
-              Manage Billing / Payment
+              {isProcessing ? 'Processing...' : 'Manage Billing / Payment'}
             </button>
-            {userSubscription.status === 'active' && !userSubscription.cancelAtPeriodEnd && (
+            {userSubscription.status === 'active' && !userSubscription.cancel_at_period_end && (
                <button
                  onClick={handleCancelSubscription}
                  disabled={isProcessing}
@@ -82,7 +82,7 @@ export function CurrentSubscriptionCard({
                    isProcessing ? 'opacity-75 cursor-not-allowed' : ''
                  }`}
                >
-                 Cancel Subscription
+                 {isProcessing ? 'Processing...' : 'Cancel Subscription'}
                </button>
             )}
           </div>

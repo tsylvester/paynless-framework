@@ -12,7 +12,7 @@ import {
   // selectUserOrganizations, // Removed - Selector doesn't exist
 } from '@paynless/store';
 import { OrganizationDetailsCard } from '../components/organizations/OrganizationDetailsCard';
-import { OrganizationSettingsCard } from '../components/organizations/OrganizationSettingsCard';
+import { OrganizationPrivacyCard } from '../components/organizations/OrganizationPrivacyCard';
 import { MemberListCard } from '../components/organizations/MemberListCard';
 import { InviteMemberCard } from '../components/organizations/InviteMemberCard';
 import { PendingActionsCard } from '../components/organizations/PendingActionsCard';
@@ -20,7 +20,7 @@ import { useCurrentUser } from '../hooks/useCurrentUser';
 import { Skeleton } from '@/components/ui/skeleton';
 import ErrorBoundary from '../components/common/ErrorBoundary';
 import { logger } from '@paynless/utils'; // For logging errors/redirects
-
+import { OrganizationChatSettings } from '../components/organizations/OrganizationChatSettings';
 export const OrganizationFocusedViewPage: React.FC = () => {
   const { orgId } = useParams<{ orgId: string }>(); // Get orgId from URL
   const navigate = useNavigate();
@@ -156,12 +156,12 @@ export const OrganizationFocusedViewPage: React.FC = () => {
         {currentOrganizationDetails?.name ?? 'Organization'}
       </h1>
       {/* Wrap the entire grid in an ErrorBoundary */}
-      <ErrorBoundary fallbackMessage="Could not load organization management cards.">
+      <ErrorBoundary fallback={<p>Could not load organization management cards.</p>}>
           {/* Use responsive grid for management cards */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <OrganizationDetailsCard />
               {isAdmin && (
-                  <OrganizationSettingsCard />
+                  <OrganizationPrivacyCard />
               )}
               <MemberListCard />
               {isAdmin && (
@@ -170,8 +170,13 @@ export const OrganizationFocusedViewPage: React.FC = () => {
               {isAdmin && (
                   <PendingActionsCard />
               )}
+              {isAdmin && (
+                  <OrganizationChatSettings />
+              )}
           </div>
       </ErrorBoundary>
+      {/* Render the Delete Dialog here */}
+      {/* {isDeleteDialogOpen && <DeleteOrganizationDialog />} // REMOVED dialog rendering */}
     </div>
   );
 }; 

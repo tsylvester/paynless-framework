@@ -1,82 +1,91 @@
-import type { AiProviderAdapter } from '../types.ts';
-import { openAiAdapter } from './openai_adapter.ts';
-import { anthropicAdapter } from './anthropic_adapter.ts';
-import { googleAdapter } from './google_adapter.ts';
-// Import necessary types for the dummy adapter
-import type { ChatApiRequest as AdapterChatRequest, AdapterResponsePayload, ProviderModelInfo } from '../types.ts';
-import type { Database } from '../../../functions/types_db.ts'; // For TokenUsageJson
-
-// Define a simple dummy adapter
-const dummyAdapter: AiProviderAdapter = {
-    sendMessage: async (request: AdapterChatRequest, modelIdentifier: string, _apiKey: string): Promise<AdapterResponsePayload> => {
-        console.log("[Dummy Adapter] sendMessage called with request:", request);
-        const lastUserMessage = request.messages && request.messages.length > 0 ? request.messages[request.messages.length - 1] : null;
-        // If there are no past messages, use the main `request.message` which is the current one being sent.
-        const currentMessageContent = request.message;
-        const contentToEcho = currentMessageContent || lastUserMessage?.content || 'This is a dummy echo response.';
-        const finalContent = `Echo from Dummy: ${contentToEcho}`;
-        
-        // Construct token usage as per Database['public']['Tables']['chat_messages']['Row']['token_usage']
-        // which is expected to be `Json | null`. Let's assume it's an object or null.
-        const tokenUsage: Database['public']['Tables']['chat_messages']['Row']['token_usage'] = {
-            prompt_tokens: 0,
-            completion_tokens: 10, // Dummy value for echoed content
-            total_tokens: 10
-        };
-
-        return {
-            // success: true, // AdapterResponsePayload doesn't have a 'success' field
-            // data: { // AdapterResponsePayload is the data itself
-                // id: `dummy-msg-${Date.now()}`, // Not part of AdapterResponsePayload
-                role: 'assistant',
-                content: finalContent,
-                // model: modelIdentifier, // Not part of AdapterResponsePayload, model info is implicit or part of request
-                ai_provider_id: request.providerId, // Pass through from the original request
-                system_prompt_id: request.promptId !== '__none__' ? request.promptId : null, // Pass through
-                token_usage: tokenUsage,
-                // stop_reason: 'dummy_stop', // Not part of AdapterResponsePayload
-            // }
-        };
-    },
-    listModels: async (_apiKey: string): Promise<ProviderModelInfo[]> => {
-        return Promise.resolve([
-            {
-                id: 'dummy-model-id-1', // Actual ID of the model record in ai_models table if it exists, or a mock
-                api_identifier: 'dummy-echo-v1', // The identifier used by the API/adapter
-                name: 'Dummy Echo v1',
-                description: 'A dummy model that echoes input.',
-                // provider: 'dummy', // This is usually handled by the context where listModels is called
-                // Add other fields from ProviderModelInfo if necessary (e.g., context_window, is_active)
-            },
-        ]);
-    }
-};
-
+import type { AiProviderAdapter, ILogger } from '../types.ts';
+import { OpenAiAdapter } from './openai_adapter.ts';
+import { AnthropicAdapter } from './anthropic_adapter.ts';
+import { GoogleAdapter } from './google_adapter.ts';
+import { DummyAdapter, type DummyAdapterConfig } from './dummy_adapter.ts';
+import type { Json } from '../../../functions/types_db.ts';
 /**
- * Factory function to get the appropriate AI provider adapter based on the provider identifier.
+ * Factory function to get the appropriate AI provider adapter.
  *
- * @param provider - The provider identifier string (e.g., 'openai', 'anthropic', 'google').
- * @returns The corresponding AiProviderAdapter instance, or null if the provider is unknown or unsupported.
+ * @param providerApiIdentifier - The API identifier of the provider (e.g., 'openai-gpt-4o', 'dummy-echo-v1').
+ * @param providerDbConfig - The 'config' JSON object from the ai_providers table in the database.
+ * @param apiKey - The API key for the specified provider (used for real providers).
+ * @param logger - Optional logger instance.
+ * @returns The corresponding AiProviderAdapter instance, or null if the provider is unknown or configuration is invalid.
  */
-export function getAiProviderAdapter(provider: string): AiProviderAdapter | null {
-  switch (provider.toLowerCase()) {
-    case 'openai':
-      console.log('Using OpenAI Adapter');
-      return openAiAdapter;
-    case 'anthropic':
-      console.log('Using Anthropic Adapter');
-      return anthropicAdapter;
-    case 'google':
-      console.log('Using Google Adapter');
-      return googleAdapter;
-    case 'dummy': // Added case for dummy provider
-      console.log('Using Dummy Adapter');
-      return dummyAdapter;
-    // Add cases for other providers here as they are implemented
-    // case 'perplexity':
-    //   return perplexityAdapter;
-    default:
-      console.warn(`Unknown or unsupported AI provider requested: ${provider}`);
+export function getAiProviderAdapter(
+    providerApiIdentifier: string,
+    providerDbConfig: Json | null,
+    apiKey: string,
+    logger?: ILogger
+): AiProviderAdapter | null {
+  const effectiveLogger = logger || {
+    debug: (message: string, metadata?: object) => console.debug(`[FactoryDefaultLogger/DEBUG] ${message}`, metadata || ''),
+    info:  (message: string, metadata?: object) => console.info(`[FactoryDefaultLogger/INFO] ${message}`, metadata || ''),
+    warn:  (message: string, metadata?: object) => console.warn(`[FactoryDefaultLogger/WARN] ${message}`, metadata || ''),
+    error: (message: string | Error, metadata?: object) => console.error(`[FactoryDefaultLogger/ERROR] ${message}`, metadata || ''),
+  } as ILogger;
+
+  const identifierLower = providerApiIdentifier.toLowerCase();
+
+  if (identifierLower.startsWith('dummy-')) {
+    effectiveLogger.info(`[Factory] Attempting to create DummyAdapter for: ${providerApiIdentifier}`);
+
+    if (!providerDbConfig || typeof providerDbConfig !== 'object') {
+      effectiveLogger.error(`[Factory] CRITICAL: No database config (AiProvider.config) provided or not an object for dummy provider ${providerApiIdentifier}. DummyAdapter cannot be configured.`);
       return null;
+    }
+
+    // Directly cast and use the database config.
+    // Perform runtime validation for key fields.
+    const adapterConfig = providerDbConfig as unknown as DummyAdapterConfig;
+
+    // Validate essential fields from the database config
+    if (!adapterConfig.mode) {
+      effectiveLogger.error(`[Factory] CRITICAL: 'mode' is missing in database config for dummy provider ${providerApiIdentifier}.`);
+      return null;
+    }
+    if (!adapterConfig.tokenization_strategy) {
+      effectiveLogger.error(`[Factory] CRITICAL: 'tokenization_strategy' is missing in database config for dummy provider ${providerApiIdentifier}.`);
+      return null;
+    }
+    
+    // Ensure modelId is set, defaulting to providerApiIdentifier if not in config
+    // This is a reasonable default as the identifier itself can serve as the modelId for dummy adapters.
+    if (!adapterConfig.modelId) {
+      effectiveLogger.warn(`[Factory] 'modelId' missing in DB config for ${providerApiIdentifier}. Using api_identifier as fallback.`);
+      adapterConfig.modelId = providerApiIdentifier;
+    }
+
+    // Apply defaults for optional numeric fields if not present
+    adapterConfig.tokensPerChar = adapterConfig.tokensPerChar ?? 0.25;
+    adapterConfig.basePromptTokens = adapterConfig.basePromptTokens ?? 10;
+
+    // Validate fixedResponse if mode requires it
+    if (adapterConfig.mode === 'fixed_response' && (!adapterConfig.fixedResponse || typeof adapterConfig.fixedResponse.content !== 'string')) {
+         effectiveLogger.error(`[Factory] CRITICAL: mode is 'fixed_response' but 'fixedResponse.content' is missing or invalid in database config for ${providerApiIdentifier}.`);
+         return null;
+    }
+
+    effectiveLogger.info(`[Factory] Successfully configured DummyAdapter for ${providerApiIdentifier} using database config.`);
+    return new DummyAdapter(adapterConfig, effectiveLogger);
   }
+
+  // Logic for real providers based on providerApiIdentifier prefix
+  if (identifierLower.startsWith('openai-')) {
+    effectiveLogger.info(`Creating OpenAI Adapter for ${providerApiIdentifier}`);
+    // Future: OpenAIAdapter could also use providerDbConfig for model-specific settings (e.g., context window from DB)
+    return new OpenAiAdapter(apiKey, effectiveLogger /*, providerDbConfig */);
+  }
+  if (identifierLower.startsWith('anthropic-')) {
+    effectiveLogger.info(`Creating Anthropic Adapter for ${providerApiIdentifier}`);
+    return new AnthropicAdapter(apiKey, effectiveLogger /*, providerDbConfig */);
+  }
+  if (identifierLower.startsWith('google-')) {
+    effectiveLogger.info(`Creating Google Adapter for ${providerApiIdentifier}`);
+    return new GoogleAdapter(apiKey, effectiveLogger /*, providerDbConfig */);
+  }
+
+  effectiveLogger.warn(`[Factory] Unknown or unsupported AI provider api_identifier: ${providerApiIdentifier}.`);
+  return null;
 } 

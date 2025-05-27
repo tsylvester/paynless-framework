@@ -68,7 +68,7 @@ export const ChatContextSelector: React.FC<ChatContextSelectorProps> = ({
       onValueChange={handleValueChange}
       disabled={disabled || isOrgLoading} // Use passed disabled prop
     >
-      <SelectTrigger className={cn("min-w-[180px]", className)}>
+      <SelectTrigger className={cn("w-auto", className)}>
         <SelectValue placeholder="Select context">
           {getDisplayName()} 
         </SelectValue>

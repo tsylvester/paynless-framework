@@ -79,8 +79,10 @@ export type Database = {
           chat_id: string
           content: string
           created_at: string
+          error_type: string | null
           id: string
           is_active_in_thread: boolean
+          response_to_message_id: string | null
           role: string
           system_prompt_id: string | null
           token_usage: Json | null
@@ -92,8 +94,10 @@ export type Database = {
           chat_id: string
           content: string
           created_at?: string
+          error_type?: string | null
           id?: string
           is_active_in_thread?: boolean
+          response_to_message_id?: string | null
           role: string
           system_prompt_id?: string | null
           token_usage?: Json | null
@@ -105,8 +109,10 @@ export type Database = {
           chat_id?: string
           content?: string
           created_at?: string
+          error_type?: string | null
           id?: string
           is_active_in_thread?: boolean
+          response_to_message_id?: string | null
           role?: string
           system_prompt_id?: string | null
           token_usage?: Json | null
@@ -133,6 +139,13 @@ export type Database = {
             columns: ["system_prompt_id"]
             isOneToOne: false
             referencedRelation: "system_prompts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "fk_chat_messages_response_to_message_id"
+            columns: ["response_to_message_id"]
+            isOneToOne: false
+            referencedRelation: "chat_messages"
             referencedColumns: ["id"]
           },
         ]
@@ -191,6 +204,9 @@ export type Database = {
           invited_by_user_id: string | null
           invited_email: string
           invited_user_id: string | null
+          inviter_email: string | null
+          inviter_first_name: string | null
+          inviter_last_name: string | null
           organization_id: string
           role_to_assign: string
           status: string
@@ -203,6 +219,9 @@ export type Database = {
           invited_by_user_id?: string | null
           invited_email: string
           invited_user_id?: string | null
+          inviter_email?: string | null
+          inviter_first_name?: string | null
+          inviter_last_name?: string | null
           organization_id: string
           role_to_assign?: string
           status?: string
@@ -215,6 +234,9 @@ export type Database = {
           invited_by_user_id?: string | null
           invited_email?: string
           invited_user_id?: string | null
+          inviter_email?: string | null
+          inviter_first_name?: string | null
+          inviter_last_name?: string | null
           organization_id?: string
           role_to_assign?: string
           status?: string
@@ -305,6 +327,7 @@ export type Database = {
           deleted_at: string | null
           id: string
           name: string
+          token_usage_policy: Database["public"]["Enums"]["org_token_usage_policy_enum"]
           visibility: string
         }
         Insert: {
@@ -313,6 +336,7 @@ export type Database = {
           deleted_at?: string | null
           id?: string
           name: string
+          token_usage_policy?: Database["public"]["Enums"]["org_token_usage_policy_enum"]
           visibility?: string
         }
         Update: {
@@ -321,54 +345,133 @@ export type Database = {
           deleted_at?: string | null
           id?: string
           name?: string
+          token_usage_policy?: Database["public"]["Enums"]["org_token_usage_policy_enum"]
           visibility?: string
         }
         Relationships: []
       }
+      payment_transactions: {
+        Row: {
+          amount_requested_crypto: number | null
+          amount_requested_fiat: number | null
+          created_at: string
+          currency_requested_crypto: string | null
+          currency_requested_fiat: string | null
+          gateway_transaction_id: string | null
+          id: string
+          metadata_json: Json | null
+          organization_id: string | null
+          payment_gateway_id: string
+          status: string
+          target_wallet_id: string
+          tokens_to_award: number
+          updated_at: string
+          user_id: string | null
+        }
+        Insert: {
+          amount_requested_crypto?: number | null
+          amount_requested_fiat?: number | null
+          created_at?: string
+          currency_requested_crypto?: string | null
+          currency_requested_fiat?: string | null
+          gateway_transaction_id?: string | null
+          id?: string
+          metadata_json?: Json | null
+          organization_id?: string | null
+          payment_gateway_id: string
+          status?: string
+          target_wallet_id: string
+          tokens_to_award: number
+          updated_at?: string
+          user_id?: string | null
+        }
+        Update: {
+          amount_requested_crypto?: number | null
+          amount_requested_fiat?: number | null
+          created_at?: string
+          currency_requested_crypto?: string | null
+          currency_requested_fiat?: string | null
+          gateway_transaction_id?: string | null
+          id?: string
+          metadata_json?: Json | null
+          organization_id?: string | null
+          payment_gateway_id?: string
+          status?: string
+          target_wallet_id?: string
+          tokens_to_award?: number
+          updated_at?: string
+          user_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "payment_transactions_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "payment_transactions_target_wallet_id_fkey"
+            columns: ["target_wallet_id"]
+            isOneToOne: false
+            referencedRelation: "token_wallets"
+            referencedColumns: ["wallet_id"]
+          },
+        ]
+      }
       subscription_plans: {
         Row: {
           active: boolean
-          amount: number
+          amount: number | null
           created_at: string
-          currency: string
+          currency: string | null
           description: Json | null
           id: string
-          interval: string
-          interval_count: number
+          interval: string | null
+          interval_count: number | null
+          item_id_internal: string | null
           metadata: Json | null
           name: string
-          stripe_price_id: string
+          plan_type: string
+          stripe_price_id: string | null
           stripe_product_id: string | null
+          tokens_to_award: number | null
           updated_at: string
         }
         Insert: {
           active?: boolean
-          amount: number
+          amount?: number | null
           created_at?: string
-          currency: string
+          currency?: string | null
           description?: Json | null
           id?: string
-          interval: string
-          interval_count?: number
+          interval?: string | null
+          interval_count?: number | null
+          item_id_internal?: string | null
           metadata?: Json | null
           name: string
-          stripe_price_id: string
+          plan_type?: string
+          stripe_price_id?: string | null
           stripe_product_id?: string | null
+          tokens_to_award?: number | null
           updated_at?: string
         }
         Update: {
           active?: boolean
-          amount?: number
+          amount?: number | null
           created_at?: string
-          currency?: string
+          currency?: string | null
           description?: Json | null
           id?: string
-          interval?: string
-          interval_count?: number
+          interval?: string | null
+          interval_count?: number | null
+          item_id_internal?: string | null
           metadata?: Json | null
           name?: string
-          stripe_price_id?: string
+          plan_type?: string
+          stripe_price_id?: string | null
           stripe_product_id?: string | null
+          tokens_to_award?: number | null
           updated_at?: string
         }
         Relationships: []
@@ -461,6 +564,111 @@ export type Database = {
           updated_at?: string
         }
         Relationships: []
+      }
+      token_wallet_transactions: {
+        Row: {
+          amount: number
+          balance_after_txn: number
+          idempotency_key: string | null
+          notes: string | null
+          payment_transaction_id: string | null
+          recorded_by_user_id: string
+          related_entity_id: string | null
+          related_entity_type: string | null
+          timestamp: string
+          transaction_id: string
+          transaction_type: string
+          wallet_id: string
+        }
+        Insert: {
+          amount: number
+          balance_after_txn: number
+          idempotency_key?: string | null
+          notes?: string | null
+          payment_transaction_id?: string | null
+          recorded_by_user_id: string
+          related_entity_id?: string | null
+          related_entity_type?: string | null
+          timestamp?: string
+          transaction_id?: string
+          transaction_type: string
+          wallet_id: string
+        }
+        Update: {
+          amount?: number
+          balance_after_txn?: number
+          idempotency_key?: string | null
+          notes?: string | null
+          payment_transaction_id?: string | null
+          recorded_by_user_id?: string
+          related_entity_id?: string | null
+          related_entity_type?: string | null
+          timestamp?: string
+          transaction_id?: string
+          transaction_type?: string
+          wallet_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "token_wallet_transactions_payment_transaction_id_fkey"
+            columns: ["payment_transaction_id"]
+            isOneToOne: false
+            referencedRelation: "payment_transactions"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "token_wallet_transactions_wallet_id_fkey"
+            columns: ["wallet_id"]
+            isOneToOne: false
+            referencedRelation: "token_wallets"
+            referencedColumns: ["wallet_id"]
+          },
+        ]
+      }
+      token_wallets: {
+        Row: {
+          balance: number
+          created_at: string
+          currency: string
+          organization_id: string | null
+          updated_at: string
+          user_id: string | null
+          wallet_id: string
+        }
+        Insert: {
+          balance?: number
+          created_at?: string
+          currency?: string
+          organization_id?: string | null
+          updated_at?: string
+          user_id?: string | null
+          wallet_id?: string
+        }
+        Update: {
+          balance?: number
+          created_at?: string
+          currency?: string
+          organization_id?: string | null
+          updated_at?: string
+          user_id?: string | null
+          wallet_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "token_wallets_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "token_wallets_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "user_profiles"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       user_profiles: {
         Row: {
@@ -634,6 +842,14 @@ export type Database = {
         Args: { p_chat_id: string; p_user_id: string }
         Returns: string
       }
+      grant_initial_free_tokens_to_user: {
+        Args: { p_user_id: string; p_free_plan_id: string }
+        Returns: undefined
+      }
+      is_admin_of_org_for_wallet: {
+        Args: { p_organization_id: string }
+        Returns: boolean
+      }
       is_org_admin: {
         Args: { org_id: string }
         Returns: boolean
@@ -654,28 +870,48 @@ export type Database = {
           p_user_id: string
           p_new_user_message_content: string
           p_new_user_message_ai_provider_id: string
-          p_new_user_message_system_prompt_id: string
           p_new_assistant_message_content: string
-          p_new_assistant_message_token_usage: Json
           p_new_assistant_message_ai_provider_id: string
-          p_new_assistant_message_system_prompt_id: string
+          p_new_user_message_system_prompt_id?: string
+          p_new_assistant_message_token_usage?: Json
+          p_new_assistant_message_system_prompt_id?: string
+          p_new_assistant_message_error_type?: string
         }
         Returns: {
-          id: string
-          chat_id: string
-          user_id: string
-          role: string
-          content: string
-          created_at: string
-          updated_at: string
-          is_active_in_thread: boolean
-          token_usage: Json
-          ai_provider_id: string
-          system_prompt_id: string
+          new_user_message_id: string
+          new_assistant_message_id: string
+        }[]
+      }
+      record_token_transaction: {
+        Args: {
+          p_wallet_id: string
+          p_transaction_type: string
+          p_input_amount_text: string
+          p_recorded_by_user_id: string
+          p_idempotency_key?: string
+          p_related_entity_id?: string
+          p_related_entity_type?: string
+          p_notes?: string
+          p_payment_transaction_id?: string
+        }
+        Returns: {
+          transaction_id: string
+          wallet_id: string
+          transaction_type: string
+          amount: number
+          balance_after_txn: number
+          recorded_by_user_id: string
+          idempotency_key: string
+          related_entity_id: string
+          related_entity_type: string
+          notes: string
+          timestamp: string
+          payment_transaction_id: string
         }[]
       }
     }
     Enums: {
+      org_token_usage_policy_enum: "member_tokens" | "organization_tokens"
       user_role: "user" | "admin"
     }
     CompositeTypes: {
@@ -795,6 +1031,7 @@ export const Constants = {
   },
   public: {
     Enums: {
+      org_token_usage_policy_enum: ["member_tokens", "organization_tokens"],
       user_role: ["user", "admin"],
     },
   },

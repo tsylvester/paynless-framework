@@ -6,17 +6,72 @@ import {
   } from "npm:@supabase/supabase-js@^2.43.4";
   import type { User as SupabaseUser } from "npm:@supabase/gotrue-js@^2.6.3";
   import { spy, stub, type Spy } from "jsr:@std/testing/mock";
-  
+
   // Internal types
   import type {
     IMockQueryBuilder,
     IMockSupabaseAuth,
     IMockSupabaseClient,
     IMockClientSpies,
-    MockSupabaseClientSetup,
     User,
   } from "./types.ts";
   
+
+  export interface MockSupabaseClientSetup {
+    client: IMockSupabaseClient;
+    spies: IMockClientSpies;
+    clearAllStubs?: () => void;
+  }
+  
+
+  // --- START: Types moved from supabase.mock.ts ---
+  
+  export interface MockQueryBuilderState {
+      tableName: string;
+      operation: 'select' | 'insert' | 'update' | 'delete' | 'upsert';
+      filters: { column?: string; value?: unknown; type: string; criteria?: object; operator?: string; filters?: string; referencedTable?: string }[];
+      selectColumns: string | null;
+      insertData: object | unknown[] | null;
+      updateData: object | null; 
+      upsertData: object | unknown[] | null;
+      upsertOptions?: { onConflict?: string, ignoreDuplicates?: boolean };
+      rangeFrom?: number;
+      rangeTo?: number;
+      orderBy?: { column: string; options?: { ascending?: boolean; nullsFirst?: boolean; referencedTable?: string } };
+      limitCount?: number;
+      orClause?: string; 
+      matchQuery?: object;
+      textSearchQuery?: { column: string, query: string, options?: { config?: string, type?: 'plain' | 'phrase' | 'websearch' } };
+  }
+  
+  export interface MockSupabaseDataConfig {
+      getUserResult?: { data: { user: User | null }; error: Error | null }; // User is already defined in this file
+      genericMockResults?: {
+          [tableName: string]: {
+              select?: { data: object[] | null; error?: Error | null; count?: number | null; status?: number; statusText?: string } | ((state: MockQueryBuilderState) => Promise<{ data: object[] | null; error?: Error | null; count?: number | null; status?: number; statusText?: string }>);
+              insert?: { data: object[] | null; error?: Error | null; count?: number | null; status?: number; statusText?: string } | ((state: MockQueryBuilderState) => Promise<{ data: object[] | null; error?: Error | null; count?: number | null; status?: number; statusText?: string }>);
+              update?: { data: object[] | null; error?: Error | null; count?: number | null; status?: number; statusText?: string } | ((state: MockQueryBuilderState) => Promise<{ data: object[] | null; error?: Error | null; count?: number | null; status?: number; statusText?: string }>);
+              upsert?: { data: object[] | null; error?: Error | null; count?: number | null; status?: number; statusText?: string } | ((state: MockQueryBuilderState) => Promise<{ data: object[] | null; error?: Error | null; count?: number | null; status?: number; statusText?: string }>);
+              delete?: { data: object[] | null; error?: Error | null; count?: number | null; status?: number; statusText?: string } | ((state: MockQueryBuilderState) => Promise<{ data: object[] | null; error?: Error | null; count?: number | null; status?: number; statusText?: string }>);
+          };
+      };
+      rpcResults?: {
+          [functionName: string]: { data?: object | object[] | null; error?: Error | null } | (() => Promise<{ data?: object | object[] | null; error?: Error | null }>);
+      };
+      mockUser?: User | null; 
+      simulateAuthError?: Error | null;
+  }
+  
+  export type MockPGRSTError = { name: string; message: string; code: string; details?: string; hint?: string };
+  
+  export type MockResolveQueryResult = { 
+      data: object | unknown[] | null;
+      error: Error | MockPGRSTError | null; 
+      count: number | null; 
+      status: number; 
+      statusText: string; 
+  };  
+
   // Environment variable check
   const envSupabaseUrl = Deno.env.get("SUPABASE_URL");
   const envServiceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
@@ -80,56 +135,6 @@ import {
     return { url, serviceRoleKey, anonKey };
   }
   
-
-// Define type for the internal state of the mock query builder
-export interface MockQueryBuilderState {
-    tableName: string;
-    operation: 'select' | 'insert' | 'update' | 'delete' | 'upsert';
-    filters: { column?: string; value?: unknown; type: string; criteria?: object; operator?: string; filters?: string; referencedTable?: string }[];
-    selectColumns: string | null;
-    insertData: object | unknown[] | null;
-    updateData: object | null; 
-    upsertData: object | unknown[] | null;
-    upsertOptions?: { onConflict?: string, ignoreDuplicates?: boolean };
-    rangeFrom?: number;
-    rangeTo?: number;
-    orderBy?: { column: string; options?: { ascending?: boolean; nullsFirst?: boolean; referencedTable?: string } };
-    limitCount?: number;
-    orClause?: string; 
-    matchQuery?: object;
-    textSearchQuery?: { column: string, query: string, options?: { config?: string, type?: 'plain' | 'phrase' | 'websearch' } };
-}
-
-/** Configurable data/handlers for the mock Supabase client */
-export interface MockSupabaseDataConfig {
-    getUserResult?: { data: { user: User | null }; error: Error | null }; 
-    genericMockResults?: {
-        [tableName: string]: {
-            select?: { data: object[] | null; error?: Error | null; count?: number | null; status?: number; statusText?: string } | ((state: MockQueryBuilderState) => Promise<{ data: object[] | null; error?: Error | null; count?: number | null; status?: number; statusText?: string }>);
-            insert?: { data: object[] | null; error?: Error | null; count?: number | null; status?: number; statusText?: string } | ((state: MockQueryBuilderState) => Promise<{ data: object[] | null; error?: Error | null; count?: number | null; status?: number; statusText?: string }>);
-            update?: { data: object[] | null; error?: Error | null; count?: number | null; status?: number; statusText?: string } | ((state: MockQueryBuilderState) => Promise<{ data: object[] | null; error?: Error | null; count?: number | null; status?: number; statusText?: string }>);
-            upsert?: { data: object[] | null; error?: Error | null; count?: number | null; status?: number; statusText?: string } | ((state: MockQueryBuilderState) => Promise<{ data: object[] | null; error?: Error | null; count?: number | null; status?: number; statusText?: string }>);
-            delete?: { data: object[] | null; error?: Error | null; count?: number | null; status?: number; statusText?: string } | ((state: MockQueryBuilderState) => Promise<{ data: object[] | null; error?: Error | null; count?: number | null; status?: number; statusText?: string }>);
-        };
-    };
-    rpcResults?: {
-        [functionName: string]: { data?: object | object[] | null; error?: Error | null } | (() => Promise<{ data?: object | object[] | null; error?: Error | null }>);
-    };
-    mockUser?: User | null; 
-    simulateAuthError?: Error | null;
-}
-
-// Type for the resolved query result, to be used internally and by IMockQueryBuilder terminators
-// Allowing error to be a more structured object for mock errors like PGRST116
-export type MockPGRSTError = { name: string; message: string; code: string; details?: string; hint?: string };
-export type MockResolveQueryResult = { 
-    data: object | unknown[] | null; // Broadened to cover single object, array of unknowns, or null
-    error: Error | MockPGRSTError | null; 
-    count: number | null; 
-    status: number; 
-    statusText: string; 
-};
-
 // --- MockQueryBuilder Implementation ---
 class MockQueryBuilder implements IMockQueryBuilder {
     public methodSpies: { [key: string]: Spy<(...args: unknown[]) => unknown> } = {};
@@ -232,7 +237,10 @@ class MockQueryBuilder implements IMockQueryBuilder {
         console.log(`[Mock QB ${this._state.tableName}] .${methodName}(${args.map(a => typeof a === 'object' ? JSON.stringify(a) : String(a)).join(', ')}) called`);
         switch(methodName as string) {
             case 'select': 
-                this._state.operation = 'select'; 
+                // If current operation is a mutation, select just specifies return shape
+                if (!['insert', 'update', 'upsert'].includes(this._state.operation)) {
+                    this._state.operation = 'select'; 
+                }
                 this._state.selectColumns = typeof args[0] === 'string' || args[0] === undefined ? (args[0] as string | undefined) || '*' : '*'; 
                 return this;
             case 'insert': this._state.operation = 'insert'; this._state.insertData = args[0] as (object | unknown[]); return this;
@@ -335,7 +343,10 @@ class MockQueryBuilder implements IMockQueryBuilder {
             // then PostgREST would typically return a PGRST116 error.
             // We set this error directly on the result object to be returned.
             console.log(`[Mock QB ${this._state.tableName}] _resolveQuery: .single() called, data is null, no mock error. Setting PGRST116.`);
-            result.error = { name: 'PGRST116', message: 'Query returned no rows (data was null after .single())', code: 'PGRST116' };
+            const pgrstError = new Error('Query returned no rows (data was null after .single())') as Error & MockPGRSTError;
+            pgrstError.name = 'PGRST116';
+            pgrstError.code = 'PGRST116';
+            result.error = pgrstError;
             result.status = 406; // Not Acceptable
             result.statusText = 'Not Acceptable';
             result.count = 0;
@@ -368,9 +379,11 @@ class MockQueryBuilder implements IMockQueryBuilder {
 class MockSupabaseAuth implements IMockSupabaseAuth {
     public readonly getUserSpy: Spy;
     private _config: MockSupabaseDataConfig;
+    private _currentTestUserId?: string;
 
-    constructor(config: MockSupabaseDataConfig) {
+    constructor(config: MockSupabaseDataConfig, currentTestUserId?: string) {
         this._config = config;
+        this._currentTestUserId = currentTestUserId;
         this.getUserSpy = spy(this, 'getUser'); 
     }
 
@@ -379,32 +392,41 @@ class MockSupabaseAuth implements IMockSupabaseAuth {
         if (this._config.simulateAuthError) {
             return { data: { user: null }, error: this._config.simulateAuthError };
         }
-        if (this._config.getUserResult) {
-            return this._config.getUserResult;
-        }
-        const userToReturn = this._config.mockUser === undefined ? { id: 'mock-user-id' } as User : this._config.mockUser;
-        return { data: { user: userToReturn }, error: null };
+        const userIdToReturn = this._currentTestUserId || (this._config.mockUser ? this._config.mockUser.id : "mock-user-id");
+        const userToReturn = this._config.mockUser ? 
+            { ...this._config.mockUser, id: userIdToReturn } : 
+            { id: userIdToReturn, aud: "authenticated", role: "authenticated", email: `${userIdToReturn}@example.com` };
+
+        return Promise.resolve({ data: { user: userToReturn as User }, error: null });
     }
 }
 
 class MockSupabaseClient implements IMockSupabaseClient {
     public readonly auth: MockSupabaseAuth;
-    public readonly rpcSpy: Spy;
-    public readonly fromSpy: Spy;
+    public readonly rpcSpy: Spy<IMockSupabaseClient['rpc']>;
+    public readonly fromSpy: Spy<IMockSupabaseClient['from']>;
     private _config: MockSupabaseDataConfig;
     private _latestBuilders: Map<string, MockQueryBuilder> = new Map();
+    private _historicBuildersByTable: Map<string, MockQueryBuilder[]> = new Map();
 
-    constructor(config: MockSupabaseDataConfig) {
+    constructor(config: MockSupabaseDataConfig, auth: MockSupabaseAuth) {
         this._config = config;
-        this.auth = new MockSupabaseAuth(config);
-        this.rpcSpy = spy(this, 'rpc'); 
-        this.fromSpy = spy(this, 'from');
+        this.auth = auth;
+        this.rpcSpy = spy(this, 'rpc') as unknown as Spy<IMockSupabaseClient['rpc']>;
+        this.fromSpy = spy(this, 'from') as unknown as Spy<IMockSupabaseClient['from']>;
     }
 
     from(tableName: string): IMockQueryBuilder { 
         console.log(`[Mock Supabase Client] from('${tableName}') called`);
         const builder = new MockQueryBuilder(tableName, 'select', this._config.genericMockResults);
         this._latestBuilders.set(tableName, builder);
+
+        // Store for historic tracking
+        if (!this._historicBuildersByTable.has(tableName)) {
+            this._historicBuildersByTable.set(tableName, []);
+        }
+        this._historicBuildersByTable.get(tableName)!.push(builder);
+        
         return builder;
     }
 
@@ -423,30 +445,146 @@ class MockSupabaseClient implements IMockSupabaseClient {
     public getLatestBuilder(tableName: string): MockQueryBuilder | undefined { 
         return this._latestBuilders.get(tableName);
     }
+
+    public getAllBuildersUsed(): MockQueryBuilder[] { 
+        // This method's utility might need re-evaluation if _latestBuilders only stores one per table.
+        // For now, its usage in clearAllStubs might be okay if stubs are per-instance.
+        return Array.from(this._latestBuilders.values());
+    }
+
+    public getHistoricBuildersForTable(tableName: string): MockQueryBuilder[] {
+        return this._historicBuildersByTable.get(tableName) || [];
+    }
+
+    public clearAllTrackedBuilders(): void {
+        this._latestBuilders.clear();
+        this._historicBuildersByTable.clear();
+        console.log('[MockSupabaseClient] Cleared all tracked query builders.');
+    }
+
+    public getSpiesForTableQueryMethod(tableName: string, methodName: keyof IMockQueryBuilder, callIndex = -1): Spy | undefined {
+        const historicBuilders = this.getHistoricBuildersForTable(tableName);
+        if (!historicBuilders || historicBuilders.length === 0) {
+            console.warn(`[MockSupabaseClient getSpiesForTableQueryMethod] No historic builders found for table: ${tableName}`);
+            return undefined;
+        }
+
+        let targetBuilder: IMockQueryBuilder | undefined;
+
+        if (callIndex === -1) {
+            // Default to the latest builder instance for this table if callIndex is -1
+            targetBuilder = historicBuilders[historicBuilders.length - 1];
+        } else if (callIndex >= 0 && callIndex < historicBuilders.length) {
+            targetBuilder = historicBuilders[callIndex];
+        } else {
+            console.warn(`[MockSupabaseClient getSpiesForTableQueryMethod] Invalid callIndex ${callIndex} for table ${tableName}. Max index: ${historicBuilders.length - 1}`);
+            return undefined;
+        }
+
+        if (!targetBuilder) {
+            console.warn(`[MockSupabaseClient getSpiesForTableQueryMethod] Could not determine target builder for table ${tableName} with callIndex ${callIndex}`);
+            return undefined;
+        }
+
+        const spy = targetBuilder.methodSpies[methodName];
+        if (!spy) {
+            console.warn(`[MockSupabaseClient getSpiesForTableQueryMethod] Spy for method '${String(methodName)}' not found on builder for table '${tableName}'. Available spies: ${Object.keys(targetBuilder.methodSpies).join(', ')}`);
+        }
+        return spy;
+    }
 }
 
 // --- Refactored createMockSupabaseClient (Phase 3) ---
 /** Creates a mocked Supabase client instance for unit testing (Revised & Extended) */
 export function createMockSupabaseClient(
+    currentTestUserId?: string,
     config: MockSupabaseDataConfig = {}
 ): MockSupabaseClientSetup {
-    const mockClientInstance = new MockSupabaseClient(config);
+    console.log(`[Mock Supabase] Creating mock client. TestUserId: ${currentTestUserId || 'N/A (will use default or config)'}`);
 
-    const spies: IMockClientSpies = {
+    const mockAuth = new MockSupabaseAuth(config, currentTestUserId);
+    const mockClientInstance = new MockSupabaseClient(config, mockAuth);
+
+    const clientSpies: IMockClientSpies = {
         auth: {
-            getUserSpy: mockClientInstance.auth.getUserSpy,
+            getUserSpy: mockAuth.getUserSpy,
         },
         rpcSpy: mockClientInstance.rpcSpy,
         fromSpy: mockClientInstance.fromSpy,
         getLatestQueryBuilderSpies: (tableName: string) => {
-            const builder = mockClientInstance.getLatestBuilder(tableName); // Already MockQueryBuilder | undefined
-            return builder?.methodSpies as ReturnType<IMockClientSpies['getLatestQueryBuilderSpies']> | undefined; 
+            const builder = mockClientInstance.getLatestBuilder(tableName);
+            return (builder as MockQueryBuilder)?.methodSpies as ReturnType<IMockClientSpies['getLatestQueryBuilderSpies']> | undefined;
+        },
+        getHistoricQueryBuilderSpies: (tableName: string, methodName: string): { callCount: number; callsArgs: unknown[][] } => {
+            const historicBuilders = mockClientInstance.getHistoricBuildersForTable(tableName);
+            let totalCallCount = 0;
+            const allCallsArgs: unknown[][] = [];
+            if (historicBuilders) { // Ensure historicBuilders is not undefined
+                for (const builder of historicBuilders) {
+                    // Ensure builder and methodSpies are defined, and methodName is a valid key
+                    if (builder && builder.methodSpies && methodName in builder.methodSpies) {
+                        const spyCandidate = builder.methodSpies[methodName as keyof typeof builder.methodSpies];
+                        // Check if spyCandidate looks like a Deno Spy object before asserting its type
+                        if (spyCandidate && 
+                            typeof (spyCandidate as any).callCount === 'number' && 
+                            (spyCandidate as any).callCount > 0 && 
+                            Array.isArray((spyCandidate as any).calls)) {
+
+                            // Use (spyCandidate as any) to access properties if linter complains about Spy type
+                            totalCallCount += (spyCandidate as any).callCount;
+                            ((spyCandidate as any).calls as Array<{args: unknown[]}>).forEach(call => {
+                                if (call && Array.isArray(call.args)) { // Ensure call and call.args are valid
+                                    allCallsArgs.push(call.args);
+                                }
+                            });
+                        }
+                    }
+                }
+            }
+            return { callCount: totalCallCount, callsArgs: allCallsArgs };
         }
     };
 
+    const clearAllStubs = () => {
+        // Restore client-level spies
+        const spiesToRestore: Array<Spy<any, any[], any> | undefined> = [
+            clientSpies.auth.getUserSpy as Spy<any, any[], any> | undefined,
+            clientSpies.rpcSpy as Spy<any, any[], any> | undefined,
+            clientSpies.fromSpy as Spy<any, any[], any> | undefined,
+        ];
+
+        // Iterate over spies and restore if they are actual spy instances
+        spiesToRestore.forEach(s => {
+            if (s && typeof s.restore === 'function' && !s.restored) {
+                try {
+                    s.restore();
+                } catch (e) {
+                    console.warn(`[MockSupabaseClientSetup] Failed to restore client spy:`, (e as Error).message);
+                }
+            }
+        });
+
+        // Restore spies from all latest query builders that were used
+        mockClientInstance.getAllBuildersUsed().forEach(builder => { // Assuming getAllBuildersUsed() exists and returns MockQueryBuilder[]
+            Object.values(builder.methodSpies).forEach(spyInstance => {
+                // Ensure spyInstance is indeed a Spy and has a restore method and is not already restored
+                const s = spyInstance as Spy<any, any[], any>; 
+                if (s && typeof s.restore === 'function' && !s.restored) {
+                    try {
+                        s.restore();
+                    } catch (e) {
+                        console.warn("[MockSupabaseClientSetup] Failed to restore builder spy:", (e as Error).message);
+                    }
+                }
+            });
+        });
+        mockClientInstance.clearAllTrackedBuilders(); // Use new comprehensive clearer
+    };
+
     return {
-        client: mockClientInstance, // mockClientInstance is already IMockSupabaseClient
-        spies
+        client: mockClientInstance,
+        spies: clientSpies,
+        clearAllStubs, // Provide the cleanup function
     };
 }
 

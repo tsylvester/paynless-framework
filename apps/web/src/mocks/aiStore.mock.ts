@@ -1,7 +1,7 @@
-import { vi } from 'vitest';
+import { vi, Mock } from 'vitest';
 import { act } from '@testing-library/react';
 import { initialAiStateValues, useAiStore as originalUseAiStore } from '@paynless/store';
-import type { AiStore, AiProvider, SystemPrompt, UserProfile } from '@paynless/types';
+import type { AiStore, AiProvider, SystemPrompt, UserProfile, ChatMessageRow } from '@paynless/types';
 
 // Hold the current mock state for aiStore
 // Initialize with spread of initialAiStateValues and then override actions with vi.fn()
@@ -23,6 +23,23 @@ let currentAiMockState: AiStore = {
     setChatContextHydrated: vi.fn(),
     hydrateChatContext: vi.fn(),
     resetChatContextToDefaults: vi.fn(),
+    toggleMessageSelection: vi.fn(),
+    selectAllMessages: vi.fn(),
+    deselectAllMessages: vi.fn(),
+    clearMessageSelections: vi.fn(),
+    _addOptimisticUserMessage: vi.fn() as unknown as AiStore['_addOptimisticUserMessage'],
+    _updateChatContextInProfile: vi.fn(),
+    _fetchAndStoreUserProfiles: vi.fn(),
+    _dangerouslySetStateForTesting: vi.fn(),
+    addOptimisticMessageForReplay: vi.fn() as unknown as AiStore['addOptimisticMessageForReplay'],
+    selectCurrentChatSessionTokenUsage: vi.fn(() => ({ 
+        userTokens: 0, 
+        assistantPromptTokens: 0, 
+        assistantCompletionTokens: 0, 
+        assistantTotalTokens: 0, 
+        overallTotalTokens: 0 
+    })),
+    selectSelectedChatMessages: vi.fn(() => [] as ChatMessageRow[]),
 };
 
 const mockSetState = vi.fn((updater) => {
@@ -45,9 +62,10 @@ function useAiStoreHookImpl<S>(selector?: (state: AiStore) => S) {
         try {
             return selector(currentAiMockState);
         } catch (e) {
-            // console.error("Error in selector during mock execution:", e); // Optional: uncomment for debugging selectors
-            // Fallback to returning undefined or rethrow, depending on desired strictness.
-            // For stability in tests that might not perfectly mock all selector paths:
+            console.error("Error in selector during mock execution (aiStore.mock.ts):", e);
+            if (typeof (currentAiMockState as any)[selector.name] === 'undefined') {
+                 console.warn(`Selector '${selector.name}' not found on currentAiMockState. Available keys: ${Object.keys(currentAiMockState).join(', ')}`);
+            }
             return undefined as S; 
         }
     }
@@ -61,6 +79,21 @@ useAiStoreHookImpl.subscribe = vi.fn(() => vi.fn()) as typeof originalUseAiStore
 useAiStoreHookImpl.destroy = vi.fn() as typeof originalUseAiStore.destroy;
 
 export const mockedUseAiStoreHookLogic = useAiStoreHookImpl as typeof originalUseAiStore;
+
+// --- Export mockSetState directly for easier use in tests ---
+export { mockSetState }; 
+// --- End export ---
+
+// --- New Exported Getters ---
+export const getAiStoreState = (): AiStore => {
+    return currentAiMockState;
+};
+
+export const getToggleMessageSelectionSpy = (): Mock => {
+    // Ensure the function is indeed a mock (it is, by initialization)
+    return currentAiMockState.toggleMessageSelection as Mock;
+};
+// --- End New Exported Getters ---
 
 // Setter utilities for tests to modify parts of the mock state
 export const mockSetAvailableProviders = (providers: AiProvider[]) => {
@@ -150,6 +183,23 @@ export const resetAiStoreMock = () => {
         setChatContextHydrated: vi.fn(),
         hydrateChatContext: vi.fn(),
         resetChatContextToDefaults: vi.fn(),
+        toggleMessageSelection: vi.fn(),
+        selectAllMessages: vi.fn(),
+        deselectAllMessages: vi.fn(),
+        clearMessageSelections: vi.fn(),
+        _addOptimisticUserMessage: vi.fn() as unknown as AiStore['_addOptimisticUserMessage'],
+        _updateChatContextInProfile: vi.fn(),
+        _fetchAndStoreUserProfiles: vi.fn(),
+        _dangerouslySetStateForTesting: vi.fn(),
+        addOptimisticMessageForReplay: vi.fn() as unknown as AiStore['addOptimisticMessageForReplay'],
+        selectCurrentChatSessionTokenUsage: vi.fn(() => ({ 
+            userTokens: 0, 
+            assistantPromptTokens: 0, 
+            assistantCompletionTokens: 0, 
+            assistantTotalTokens: 0, 
+            overallTotalTokens: 0 
+        })),
+        selectSelectedChatMessages: vi.fn(() => [] as ChatMessageRow[]),
     };
     // The vi.fn() calls above ensure mocks are fresh, no need to loop and clear.
 }; 

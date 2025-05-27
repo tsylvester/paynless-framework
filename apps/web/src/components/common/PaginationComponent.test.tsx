@@ -1,6 +1,6 @@
-import { render, screen } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { vi, describe, it, expect, beforeEach } from 'vitest';
+import { vi, describe, it, expect, beforeEach, beforeAll } from 'vitest';
 import { PaginationComponent } from './PaginationComponent'; // Adjust path as needed
 
 // Mock callback functions
@@ -19,6 +19,14 @@ const defaultProps = {
 
 describe('PaginationComponent', () => {
   let user: ReturnType<typeof userEvent.setup>;
+
+  // Mock browser APIs not fully implemented in JSDOM that Radix UI uses
+  beforeAll(() => {
+    const htmlElementPrototype = HTMLElement.prototype as unknown as HTMLElement;
+    htmlElementPrototype.hasPointerCapture = vi.fn();
+    htmlElementPrototype.releasePointerCapture = vi.fn();
+    htmlElementPrototype.scrollIntoView = vi.fn(); // Add mock for scrollIntoView
+  });
 
   beforeEach(() => {
     // Reset mocks before each test
@@ -96,9 +104,15 @@ describe('PaginationComponent', () => {
     render(<PaginationComponent {...defaultProps} />);
     const trigger = screen.getByRole('combobox');
     await user.click(trigger);
-    
-    // Find the element containing the text '25' within the dropdown
-    const optionElement = await screen.findByText('25'); 
+
+    // Wait for the dropdown to open
+    await waitFor(() => {
+      expect(trigger).toHaveAttribute('aria-expanded', 'true');
+    });
+
+    // For debugging: screen.debug(undefined, 300000); 
+
+    const optionElement = await screen.findByRole('option', { name: '25' }); 
     await user.click(optionElement);
     
     expect(mockOnPageSizeChange).toHaveBeenCalledTimes(1);
@@ -110,12 +124,13 @@ describe('PaginationComponent', () => {
     const trigger = screen.getByRole('combobox');
     await user.click(trigger);
 
-    // Verify the specified options are present using findByText
-    expect(await screen.findByText('5')).toBeInTheDocument();
-    expect(await screen.findByText('15')).toBeInTheDocument();
-    expect(await screen.findByText('30')).toBeInTheDocument();
+    // Use findByRole to verify options
+    expect(await screen.findByRole('option', { name: '5' })).toBeInTheDocument();
+    expect(await screen.findByRole('option', { name: '15' })).toBeInTheDocument();
+    expect(await screen.findByRole('option', { name: '30' })).toBeInTheDocument();
 
     // Verify a default option (not in the allowed list) is absent using queryByText
+    // queryByRole might also work here, but queryByText is fine for absence check
     expect(screen.queryByText('10')).not.toBeInTheDocument();
   });
 

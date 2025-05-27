@@ -12,6 +12,7 @@ import { AiApiClient } from './ai.api';
 import { NotificationApiClient } from './notifications.api'; // Import new client
 import { OrganizationApiClient } from './organizations.api'; // <<< Import Org client
 import { UserApiClient } from './users.api'; // +++ Add import
+import { WalletApiClient } from './wallet.api'; // Corrected WalletApiClient import path
 import { logger } from '@paynless/utils';
 import type { Database } from '@paynless/db-types'; // Keep this for createClient
 
@@ -54,6 +55,7 @@ export class ApiClient {
     public notifications: NotificationApiClient; // Add new client property
     public organizations: OrganizationApiClient; // <<< Add Org client property
     public users: UserApiClient; // +++ Add users property
+    public wallet: WalletApiClient; // Added wallet property
 
     // Update constructor signature
     constructor(options: ApiClientConstructorOptions) {
@@ -70,6 +72,7 @@ export class ApiClient {
         this.notifications = new NotificationApiClient(this); // Initialize new client
         this.organizations = new OrganizationApiClient(this); // <<< Initialize Org client
         this.users = new UserApiClient(this); // +++ Initialize UserApiClient
+        this.wallet = new WalletApiClient(this); // Initialize WalletApiClient
     }
 
     /**
@@ -97,10 +100,12 @@ export class ApiClient {
         headers.append('Content-Type', 'application/json');
         headers.append('apikey', this.supabaseAnonKey); // <<< Always add apikey header
 
-        const token = options.token || (await this.getToken());
-
-        if (!options.isPublic && token) {
-            headers.append('Authorization', `Bearer ${token}`);
+        // Only add Authorization if not already present in options.headers and not public
+        if (!options.isPublic && !headers.has('Authorization')) {
+            const tokenFromAuthGetSession = options.token || (await this.getToken());
+            if (tokenFromAuthGetSession) {
+                headers.append('Authorization', `Bearer ${tokenFromAuthGetSession}`);
+            }
         }
         
         // ---> Log headers right before fetch (Revised) <--- 
@@ -119,19 +124,30 @@ export class ApiClient {
             logger.info('[apiClient] Response Content-Type:', { contentType });
             
             let responseData: unknown;
-            try {
-                responseData = contentType?.includes('application/json') 
-                                    ? await response.json() 
-                                    : await response.text(); 
-            } catch (parseError: unknown) {
-                 logger.error('[apiClient] Failed to parse response body:', { error: (parseError as Error)?.message ?? String(parseError) });
-                 // Use the imported ApiErrorType structure for consistency when throwing
-                 const errorPayload: ApiErrorType = {
-                    code: String(response.status), // Use status as code if parsing failed
-                    message: (parseError as Error)?.message ?? 'Failed to parse response body'
-                 };
-                throw new ApiError(errorPayload.message, errorPayload.code);
+
+            // --- BEGIN MODIFICATION ---
+            // Handle 204 No Content: Body should be empty, do not parse
+            if (response.status === 204) {
+                responseData = null; // Or undefined, or a specific marker object
+                logger.info('[apiClient] Received 204 No Content. Skipping body parsing.');
+            } else {
+            // --- END MODIFICATION ---
+                try {
+                    responseData = contentType?.includes('application/json') 
+                                        ? await response.json() 
+                                        : await response.text(); 
+                } catch (parseError: unknown) {
+                     logger.error('[apiClient] Failed to parse response body:', { error: (parseError as Error)?.message ?? String(parseError) });
+                     // Use the imported ApiErrorType structure for consistency when throwing
+                     const errorPayload: ApiErrorType = {
+                        code: String(response.status), // Use status as code if parsing failed
+                        message: (parseError as Error)?.message ?? 'Failed to parse response body'
+                     };
+                    throw new ApiError(errorPayload.message, errorPayload.code);
+                }
+            // --- ADDED closing brace for the new else block ---
             }
+            // --- END ADDED closing brace ---
 
             // ---> Add specific debug log for 401 response data (using WARN level) <--- 
             if (response.status === 401) {
@@ -285,6 +301,7 @@ export const api = {
     notifications: () => getApiClient().notifications,
     organizations: () => getApiClient().organizations,
     users: () => getApiClient().users,
+    wallet: () => getApiClient().wallet, // Added wallet accessor
     getSupabaseClient: (): SupabaseClient<Database> => 
         getApiClient().getSupabaseClient(),
 }; 

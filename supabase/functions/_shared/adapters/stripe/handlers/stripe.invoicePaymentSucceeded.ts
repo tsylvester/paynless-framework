@@ -1,0 +1,340 @@
+import type Stripe from 'npm:stripe';
+import type { TablesInsert } from '../../../../types_db.ts'; // Ensure TablesInsert is imported
+import type { HandlerContext } from '../../../stripe.mock.ts';
+import type { PaymentConfirmation } from '../../../types/payment.types.ts';
+
+// Helper function to retrieve plan details from a Stripe Subscription
+async function retrieveSubscriptionPlanDetails(
+  context: HandlerContext,
+  stripeSubscriptionId: string
+): Promise<{ tokens_to_award: number; plan_type: string; item_id_internal: string; stripe_price_id: string; } | null> {
+  try {
+    context.logger.info(`[retrieveSubscriptionPlanDetails] Retrieving Stripe subscription ${stripeSubscriptionId} to find plan details.`);
+    const subscription = await context.stripe.subscriptions.retrieve(stripeSubscriptionId);
+
+    if (!subscription?.items?.data?.[0]?.price?.id) {
+      context.logger.warn(`[retrieveSubscriptionPlanDetails] Could not find price ID on subscription ${stripeSubscriptionId}.`);
+      return null;
+    }
+    const stripePriceId = subscription.items.data[0].price.id;
+    context.logger.info(`[retrieveSubscriptionPlanDetails] Found Stripe Price ID ${stripePriceId} for subscription ${stripeSubscriptionId}. Querying local subscription_plans.`);
+
+    const { data: planData, error: planError } = await context.supabaseClient
+      .from('subscription_plans')
+      .select('tokens_to_award, plan_type, item_id_internal, stripe_price_id')
+      .eq('stripe_price_id', stripePriceId)
+      .single();
+
+    if (planError) {
+      context.logger.error(`[retrieveSubscriptionPlanDetails] Error fetching plan details for Stripe Price ID ${stripePriceId} from subscription_plans. DB Error: ${planError.message}`);
+      throw planError; 
+    }
+    if (!planData) {
+      context.logger.warn(`[retrieveSubscriptionPlanDetails] No plan found in subscription_plans for Stripe Price ID ${stripePriceId}.`);
+      return null;
+    }
+    context.logger.info(`[retrieveSubscriptionPlanDetails] Found plan details for Stripe Price ID ${stripePriceId}: Tokens ${planData.tokens_to_award}.`);
+    return planData as { tokens_to_award: number; plan_type: string; item_id_internal: string; stripe_price_id: string; };
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error during subscription/plan retrieval';
+    context.logger.error(`[retrieveSubscriptionPlanDetails] Error during subscription/plan retrieval for ${stripeSubscriptionId}. Error: ${errorMessage}`, { errorObj: error });
+    throw error;
+  }
+}
+
+export async function handleInvoicePaymentSucceeded(
+  context: HandlerContext,
+  event: Stripe.Event
+): Promise<PaymentConfirmation> {
+  const invoice = event.data.object as Stripe.Invoice;
+  const stripeEventId = event.id;
+  context.logger.info(`[handleInvoicePaymentSucceeded] Received event for Invoice ID: ${invoice.id}, Stripe Event ID: ${stripeEventId}`);
+
+  const stripeCustomerId = typeof invoice.customer === 'string' ? invoice.customer : invoice.customer?.id;
+  if (!stripeCustomerId) {
+    context.logger.error(`[handleInvoicePaymentSucceeded] Stripe customer ID not found on invoice. Invoice ID: ${invoice.id}`, { eventId: stripeEventId });
+    return { success: false, transactionId: undefined, error: 'Stripe customer ID missing on invoice.' };
+  }
+
+  // Idempotency Check: See if we've already successfully processed this invoice_id
+  const { data: existingSuccessfulTx, error: checkError } = await context.supabaseClient
+    .from('payment_transactions')
+    .select('id, status, tokens_to_award')
+    .eq('gateway_transaction_id', invoice.id)
+    .eq('status', 'succeeded') // Check specifically for a 'succeeded' status
+    .maybeSingle();
+
+  if (checkError) {
+    context.logger.error(`[handleInvoicePaymentSucceeded] Error checking for existing transaction. Invoice ID: ${invoice.id}`, { error: checkError, eventId: stripeEventId });
+    return { success: false, transactionId: undefined, error: 'Failed to check for existing transaction.' };
+  }
+
+  if (existingSuccessfulTx) {
+    context.logger.info(`[handleInvoicePaymentSucceeded] Invoice ${invoice.id} already successfully processed with transaction ID ${existingSuccessfulTx.id}. Skipping.`, { eventId: stripeEventId });
+    return { 
+      success: true, 
+      transactionId: existingSuccessfulTx.id, 
+      tokensAwarded: existingSuccessfulTx.tokens_to_award ?? 0,
+      message: 'Invoice already processed.' 
+    };
+  }
+  
+  // --- Get User and Wallet Details ---
+  // 1. Get user_id from user_subscriptions using stripe_customer_id
+  const { data: subscriptionData, error: subscriptionError } = await context.supabaseClient
+    .from('user_subscriptions')
+    .select('user_id') // We only need user_id
+    .eq('stripe_customer_id', stripeCustomerId)
+    .limit(1) // A customer might have old/canceled subscriptions, but user_id should be the same. Pick one.
+    .single(); // Using .single() assuming a customer ID should map to at least one subscription with a user_id.
+              // If a customer can exist in Stripe without a local user_subscription record yet, .maybeSingle() and handling null would be safer.
+
+  if (subscriptionError || !subscriptionData?.user_id) {
+    context.logger.error(`[handleInvoicePaymentSucceeded] Could not find user_id for Stripe customer ${stripeCustomerId} via user_subscriptions. Invoice: ${invoice.id}.`, { error: subscriptionError, eventId: stripeEventId });
+    return { success: false, transactionId: undefined, error: 'User subscription data not found for Stripe customer ID.', status: 500 };
+  }
+  const userId = subscriptionData.user_id;
+  context.logger.info(`[handleInvoicePaymentSucceeded] Found user_id ${userId} for Stripe customer ${stripeCustomerId}.`);
+
+  // 2. Now that we have userId, get the user's token wallet
+  const { data: walletData, error: walletError } = await context.supabaseClient
+    .from('token_wallets')
+    .select('wallet_id')
+    .eq('user_id', userId)
+    .single();
+
+  if (walletError || !walletData) {
+    context.logger.error(`[handleInvoicePaymentSucceeded] Token wallet not found for user ${userId}. Invoice: ${invoice.id}.`, { error: walletError, eventId: stripeEventId });
+    return { success: false, transactionId: undefined, error: 'Token wallet not found for user.', status: 404 };
+  }
+  const targetWalletId = walletData.wallet_id;
+
+  // --- Determine Tokens to Award ---
+  let tokensToAward = 0;
+  let rawTokensValue: string | number | null | undefined = null;
+  let planItemIdInternal: string | null = null; // Added to store item_id_internal
+  
+  // Retrieve checkout_session_id earlier for potential use in metadata lookup
+  let checkoutSessionId: string | null = null;
+  // Use a more specific type assertion for checkout_session
+  const cs = (invoice as Stripe.Invoice & { checkout_session?: string | { id: string } | null }).checkout_session;
+
+  if (cs && typeof cs === 'string') {
+    checkoutSessionId = cs;
+  } else if (cs && typeof cs === 'object' && cs.id && typeof cs.id === 'string') {
+    // It's an expanded Checkout.Session object on the Invoice
+    checkoutSessionId = cs.id;
+  }
+
+  if (invoice.metadata && typeof invoice.metadata.tokens_to_award === 'string') {
+    rawTokensValue = invoice.metadata.tokens_to_award;
+  } else if (invoice.metadata && typeof invoice.metadata.tokens_to_award === 'number') {
+     rawTokensValue = invoice.metadata.tokens_to_award;
+  } else if (rawTokensValue === null && invoice.lines?.data?.[0]?.metadata && typeof invoice.lines.data[0].metadata.tokens_to_award === 'string') {
+    rawTokensValue = invoice.lines.data[0].metadata.tokens_to_award;
+  } else if (rawTokensValue === null && invoice.lines?.data?.[0]?.metadata && typeof invoice.lines.data[0].metadata.tokens_to_award === 'number') {
+    rawTokensValue = invoice.lines.data[0].metadata.tokens_to_award;
+  } else if (rawTokensValue === null && typeof invoice.subscription === 'string') {
+    // If it's a subscription invoice and tokens not found in metadata, try to get from the plan
+    context.logger.info(`[handleInvoicePaymentSucceeded] Tokens not in invoice/line_item metadata. Invoice ${invoice.id} is for subscription ${invoice.subscription}. Attempting to check plan details.`, { eventId: stripeEventId });
+    const planDetails = await retrieveSubscriptionPlanDetails(context, invoice.subscription);
+    if (planDetails && typeof planDetails.tokens_to_award === 'number') {
+      rawTokensValue = planDetails.tokens_to_award;
+      planItemIdInternal = planDetails.item_id_internal; // Store item_id_internal
+      context.logger.info(`[handleInvoicePaymentSucceeded] Found tokens_to_award (${rawTokensValue}) and item_id_internal (${planItemIdInternal}) from subscription plan for invoice ${invoice.id}.`, { eventId: stripeEventId });
+    } else {
+      context.logger.info(`[handleInvoicePaymentSucceeded] tokens_to_award not found via subscription plan for invoice ${invoice.id}. Proceeding to check CheckoutSession metadata if applicable.`, { eventId: stripeEventId });
+    }
+  } else if (rawTokensValue === null && checkoutSessionId) {
+    context.logger.info(`[handleInvoicePaymentSucceeded] Tokens not in invoice/line_item metadata. Attempting to check Checkout Session ${checkoutSessionId}. Invoice ID: ${invoice.id}`, { eventId: stripeEventId });
+    try {
+      const checkoutSession = await context.stripe.checkout.sessions.retrieve(checkoutSessionId);
+      if (checkoutSession.metadata && typeof checkoutSession.metadata.tokens_to_award === 'string') {
+        rawTokensValue = checkoutSession.metadata.tokens_to_award;
+        context.logger.info(`[handleInvoicePaymentSucceeded] Found tokens_to_award ('${rawTokensValue}') in Checkout Session ${checkoutSessionId} metadata. Invoice ID: ${invoice.id}`, { eventId: stripeEventId });
+      } else if (checkoutSession.metadata && typeof checkoutSession.metadata.tokens_to_award === 'number') {
+        rawTokensValue = checkoutSession.metadata.tokens_to_award;
+        context.logger.info(`[handleInvoicePaymentSucceeded] Found tokens_to_award (${rawTokensValue}) in Checkout Session ${checkoutSessionId} metadata. Invoice ID: ${invoice.id}`, { eventId: stripeEventId });
+      } else {
+        context.logger.info(`[handleInvoicePaymentSucceeded] tokens_to_award not found in metadata of Checkout Session ${checkoutSessionId}. Invoice ID: ${invoice.id}`, { eventId: stripeEventId });
+      }
+    } catch (csError) {
+      context.logger.error(`[handleInvoicePaymentSucceeded] Error retrieving Checkout Session ${checkoutSessionId} to check for metadata. Invoice ID: ${invoice.id}. This may be okay if tokens are not expected via session.`, { error: csError, eventId: stripeEventId });
+    }
+  }
+
+  if (rawTokensValue !== null) {
+    const parsedTokens = parseInt(String(rawTokensValue), 10);
+    if (!isNaN(parsedTokens)) {
+      tokensToAward = parsedTokens;
+    } else {
+      context.logger.warn(`[handleInvoicePaymentSucceeded] Invalid non-numeric value for tokens_to_award metadata: "${rawTokensValue}". Defaulting to 0. Invoice ID: ${invoice.id}`, { eventId: stripeEventId });
+    }
+  } else {
+    let warningMessage = `[handleInvoicePaymentSucceeded] tokens_to_award not found in invoice metadata or line item metadata`;
+    if (checkoutSessionId) {
+      warningMessage += `, nor in the metadata of associated Checkout Session ${checkoutSessionId}`;
+    }
+    warningMessage += `. Defaulting to 0. Invoice ID: ${invoice.id}`;
+    context.logger.warn(warningMessage, { eventId: stripeEventId });
+  }
+  
+  // --- Prepare New Payment Transaction Data ---
+  const newPaymentTxData: TablesInsert<'payment_transactions'> = {
+    user_id: userId,
+    organization_id: null,
+    target_wallet_id: targetWalletId,
+    payment_gateway_id: 'stripe',
+    gateway_transaction_id: invoice.id,
+    status: 'PROCESSING_RENEWAL',
+    tokens_to_award: tokensToAward,
+    amount_requested_fiat: invoice.total,
+    currency_requested_fiat: invoice.currency,
+    metadata_json: {
+      stripe_event_id: stripeEventId,
+      stripe_customer_id: stripeCustomerId,
+      stripe_subscription_id: typeof invoice.subscription === 'string' ? invoice.subscription : invoice.subscription?.id,
+      stripe_invoice_id: invoice.id,
+      checkout_session_id: checkoutSessionId,
+      billing_reason: invoice.billing_reason,
+      payment_intent_id: typeof invoice.payment_intent === 'string' ? invoice.payment_intent : invoice.payment_intent?.id,
+    },
+  };
+
+  // --- Insert New Payment Transaction ---
+  const { data: newPaymentTx, error: insertError } = await context.supabaseClient
+    .from('payment_transactions')
+    .insert(newPaymentTxData)
+    .select()
+    .single();
+
+  if (insertError || !newPaymentTx) {
+    context.logger.error(`[handleInvoicePaymentSucceeded] Failed to insert new payment transaction for invoice ${invoice.id}.`, { error: insertError, eventId: stripeEventId });
+    return { success: false, transactionId: undefined, error: 'Failed to record new payment transaction.', status: 500 };
+  }
+  context.logger.info(`[handleInvoicePaymentSucceeded] New payment transaction ${newPaymentTx.id} created for invoice ${invoice.id}.`, { eventId: stripeEventId });
+
+  // --- Award Tokens ---
+  if (tokensToAward > 0) {
+    try {
+      const notesObject = {
+        reason: 'Subscription Renewal',
+        invoice_id: invoice.id,
+        payment_transaction_id: newPaymentTx.id,
+        stripe_event_id: stripeEventId,
+        item_id_internal: planItemIdInternal, // Use the stored item_id_internal
+        // Add other relevant details if necessary
+      };
+
+      const tokenTxResult = await context.tokenWalletService.recordTransaction({
+        walletId: targetWalletId,
+        type: 'CREDIT_PURCHASE', // Corrected to uppercase
+        amount: String(tokensToAward),
+        recordedByUserId: userId,
+        idempotencyKey: event.id, // Assuming event.id can serve as idempotency key
+        relatedEntityId: newPaymentTx.id, // Link to the new payment transaction
+        relatedEntityType: 'payment_transactions', // Specify entity type
+        paymentTransactionId: newPaymentTx.id, // Added, assuming newPaymentTx.id is the payment_transaction_id
+        notes: JSON.stringify(notesObject), // Pass stringified JSON
+      });
+      context.logger.info(`[handleInvoicePaymentSucceeded] Tokens awarded successfully for new payment transaction ${newPaymentTx.id}. Invoice ID: ${invoice.id}. Token Tx ID: ${tokenTxResult.transactionId}`, { eventId: stripeEventId });
+    } catch (tokenError) {
+      context.logger.error(`[handleInvoicePaymentSucceeded] Failed to award tokens for new payment transaction ${newPaymentTx.id}. Invoice ID: ${invoice.id}. Attempting to mark PT as TOKEN_AWARD_FAILED.`, { error: tokenError, eventId: stripeEventId });
+      const errorMessage = tokenError instanceof Error ? tokenError.message : String(tokenError);
+      
+      // Attempt to update the payment transaction to reflect token award failure
+      const { error: updatePtxError } = await context.supabaseClient
+        .from('payment_transactions')
+        .update({ status: 'TOKEN_AWARD_FAILED', metadata_json: { ...newPaymentTx.metadata_json, token_award_error: errorMessage } })
+        .eq('id', newPaymentTx.id);
+
+      if (updatePtxError) {
+        context.logger.error(`[handleInvoicePaymentSucceeded] CRITICAL: Failed to update payment transaction ${newPaymentTx.id} to TOKEN_AWARD_FAILED after token award error. Invoice ID: ${invoice.id}.`, { nestedError: updatePtxError, originalTokenError: errorMessage, eventId: stripeEventId });
+      }
+
+      return { 
+        success: false, 
+        transactionId: newPaymentTx.id, 
+        error: `Payment recorded (TX: ${newPaymentTx.id}), but token award failed for invoice ${invoice.id}. Needs reconciliation. Original error: ${errorMessage}`,
+        message: `Payment recorded (TX: ${newPaymentTx.id}), but token award failed. Needs reconciliation. PT status updated to TOKEN_AWARD_FAILED.`, 
+        status: 500 
+      };
+    }
+  } else {
+    context.logger.info(`[handleInvoicePaymentSucceeded] No tokens to award for invoice ${invoice.id} (tokensToAward is 0).`, { eventId: stripeEventId });
+  }
+
+  let subscriptionSyncErrorMsg: string | undefined = undefined;
+
+  // --- Update User Subscription Period (if applicable) ---
+  // Only attempt if it's a subscription-related invoice and we have a subscription ID
+  if (typeof invoice.subscription === 'string' && 
+      (invoice.billing_reason === 'subscription_cycle' || invoice.billing_reason === 'subscription_create' || invoice.billing_reason === 'subscription_update')) {
+    
+    const subscriptionLineItem = invoice.lines?.data?.find(
+      (li) => li.type === 'subscription' && li.subscription === invoice.subscription && li.period?.start && li.period?.end
+    );
+
+    if (subscriptionLineItem?.period) {
+      const newPeriodStart = new Date(subscriptionLineItem.period.start * 1000).toISOString();
+      const newPeriodEnd = new Date(subscriptionLineItem.period.end * 1000).toISOString();
+      
+      context.logger.info(`[handleInvoicePaymentSucceeded] Attempting to update user_subscription ${invoice.subscription} with new period: ${newPeriodStart} - ${newPeriodEnd}`, { eventId: stripeEventId, invoiceId: invoice.id });
+
+      const { error: userSubUpdateError } = await context.supabaseClient
+        .from('user_subscriptions')
+        .update({
+          current_period_start: newPeriodStart,
+          current_period_end: newPeriodEnd,
+          status: 'active', // Payment for a subscription period implies it's active
+          updated_at: new Date().toISOString(),
+        })
+        .eq('stripe_subscription_id', invoice.subscription);
+
+      if (userSubUpdateError) {
+        const criticalErrorMessage = `[handleInvoicePaymentSucceeded] CRITICAL: Failed to update user_subscription ${invoice.subscription} for invoice ${invoice.id}. PT ID: ${newPaymentTx.id}. Error: ${userSubUpdateError.message}`;
+        context.logger.error(criticalErrorMessage, {
+          error: userSubUpdateError,
+          paymentTransactionId: newPaymentTx.id,
+          stripeSubscriptionId: invoice.subscription,
+          invoiceId: invoice.id,
+          eventId: stripeEventId
+        });
+        subscriptionSyncErrorMsg = `Failed to update user subscription record after payment. Database error updating subscription: ${userSubUpdateError.message}`;
+      } else {
+        context.logger.info(`[handleInvoicePaymentSucceeded] Successfully updated user_subscription ${invoice.subscription} for invoice ${invoice.id}. PT ID: ${newPaymentTx.id}.`, { eventId: stripeEventId });
+      }
+    } else {
+      context.logger.warn(`[handleInvoicePaymentSucceeded] Could not find suitable subscription line item period on invoice ${invoice.id} to update user_subscription ${invoice.subscription}. Billing reason: ${invoice.billing_reason}.`, { eventId: stripeEventId });
+    }
+  }
+
+  // Finalize Payment Transaction status to COMPLETED if not already failed
+  const { error: updateStatusError } = await context.supabaseClient
+    .from('payment_transactions')
+    .update({ status: 'COMPLETED', updated_at: new Date().toISOString() })
+    .eq('id', newPaymentTx.id)
+    .eq('status', 'PROCESSING_RENEWAL'); // Only update if it's still in PROCESSING_RENEWAL
+
+  if (updateStatusError) {
+    context.logger.error(`[handleInvoicePaymentSucceeded] Failed to update payment transaction ${newPaymentTx.id} status to COMPLETED. Invoice ID: ${invoice.id}.`, { error: updateStatusError, eventId: stripeEventId });
+    // This is a non-fatal error for the webhook response itself, as payment was recorded and tokens (if any) handled.
+    // However, it indicates a data consistency issue that needs logging/monitoring.
+    if (!subscriptionSyncErrorMsg) { // Prioritize subscription sync error if both occurred.
+        subscriptionSyncErrorMsg = `Failed to finalize payment transaction ${newPaymentTx.id} status to COMPLETED. Error: ${updateStatusError.message}`;
+    }
+  }
+
+  const finalMessageBase = `Invoice ${invoice.id} processed successfully. New payment transaction ID: ${newPaymentTx.id}.`;
+  const finalMessage = subscriptionSyncErrorMsg 
+    ? `${finalMessageBase} WARNING: ${subscriptionSyncErrorMsg}` 
+    : finalMessageBase;
+
+  return {
+    success: true, // Remains true if core payment/token logic succeeded, even if ancillary updates failed.
+    transactionId: newPaymentTx.id,
+    tokensAwarded: tokensToAward,
+    message: finalMessage,
+    error: subscriptionSyncErrorMsg, // Populate error if ancillary updates failed
+  };
+}

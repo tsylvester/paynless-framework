@@ -9,7 +9,6 @@ import { useAuthStore } from './authStore'; // Import auth store
 import {
     mockStripeGetSubscriptionPlans,
     mockStripeGetUserSubscription,
-    mockStripeCreateCheckoutSession,
     mockStripeCreatePortalSession,
     mockStripeCancelSubscription,
     mockStripeResumeSubscription,
@@ -29,7 +28,6 @@ vi.mock('@paynless/api', async (importOriginal) => {
       billing: vi.fn(() => ({ // Ensure api.billing returns an object with mock functions
         getSubscriptionPlans: mockStripeGetSubscriptionPlans,
         getUserSubscription: mockStripeGetUserSubscription,
-        createCheckoutSession: mockStripeCreateCheckoutSession,
         createPortalSession: mockStripeCreatePortalSession,
         cancelSubscription: mockStripeCancelSubscription,
         resumeSubscription: mockStripeResumeSubscription,
@@ -256,64 +254,6 @@ describe('SubscriptionStore', () => {
       expect(state.userSubscription).toBeNull();
    });
    // --- End NEW test ---
-  });
-
-  describe('createCheckoutSession action', () => {
-    const priceId = 'price_abc';
-    const mockSessionUrl = 'http://localhost/checkout/sess_test_123'; // Define mock URL
-
-    it('should set loading, call API, return session URL, and clear state on success', async () => {
-      setAuthenticated();
-      // Correct the mock to return sessionUrl
-      mockStripeCreateCheckoutSession.mockResolvedValue({ data: { sessionUrl: mockSessionUrl }, error: null });
-
-      let resultSessionUrl: string | null = null;
-      await act(async () => {
-        resultSessionUrl = await useSubscriptionStore.getState().createCheckoutSession(priceId);
-      });
-
-      const state = useSubscriptionStore.getState();
-      expect(state.isSubscriptionLoading).toBe(false);
-      expect(state.error).toBeNull();
-      // Verify the call includes success/cancel URLs derived from window.location.origin
-      expect(mockStripeCreateCheckoutSession).toHaveBeenCalledWith(
-          priceId, 
-          false, // isTestMode (defaulted)
-          'http://localhost:3000/subscriptionsuccess', // Expected successUrl
-          'http://localhost:3000/', // Expected cancelUrl
-          { token: mockSession.access_token } // Expected options
-      );
-      expect(resultSessionUrl).toBe(mockSessionUrl);
-    });
-
-    it('should set loading, set error state, and return null if API client fails', async () => {
-      setAuthenticated();
-      const apiErrorMsg = 'Could not create session';
-      // Use imported mock function
-      mockStripeCreateCheckoutSession.mockResolvedValue({ data: null, error: { message: apiErrorMsg, code: 'ERR_CHECKOUT' } });
-
-      let resultSessionUrl: string | null = 'initial';
-      await act(async () => {
-        resultSessionUrl = await useSubscriptionStore.getState().createCheckoutSession(priceId);
-      });
-
-      const state = useSubscriptionStore.getState();
-      expect(state.isSubscriptionLoading).toBe(false);
-      expect(state.error).toBeInstanceOf(Error);
-      expect(state.error?.message).toContain(apiErrorMsg);
-      expect(resultSessionUrl).toBeNull();
-    });
-
-     it('should set error state and return null if user is not authenticated', async () => {
-        act(() => { resetAuthStore(); });
-        let resultSessionUrl: string | null = 'initial';
-        await act(async () => {
-          resultSessionUrl = await useSubscriptionStore.getState().createCheckoutSession(priceId);
-        });
-        expect(mockStripeCreateCheckoutSession).not.toHaveBeenCalled();
-        expect(useSubscriptionStore.getState().error?.message).toContain('User not authenticated');
-        expect(resultSessionUrl).toBeNull();
-     });
   });
 
   describe('createBillingPortalSession action', () => {

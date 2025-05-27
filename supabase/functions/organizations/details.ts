@@ -38,12 +38,12 @@ export async function handleUpdateOrgDetails(
     supabaseClient: SupabaseClient<Database>,
     user: User, 
     orgId: string,
-    body: any
+    body: Database['public']['Tables']['organizations']['Update']
 ): Promise<Response> {
     console.log(`[details.ts] Handling PUT /organizations/${orgId} (update)...`);
      
      // 1. Validate payload
-     const { name, visibility, allow_member_chat_creation } = body || {};
+     const { name, visibility, allow_member_chat_creation, token_usage_policy } = body || {};
      if (name !== undefined && (typeof name !== 'string' || name.trim().length < 3)) {
          return createErrorResponse('Invalid update payload. Name must be at least 3 characters.', 400, req);
      }
@@ -53,11 +53,18 @@ export async function handleUpdateOrgDetails(
      if (allow_member_chat_creation !== undefined && typeof allow_member_chat_creation !== 'boolean') {
         return createErrorResponse('Invalid update payload. allow_member_chat_creation must be a boolean.', 400, req);
     }
+    if (token_usage_policy !== undefined && 
+        (typeof token_usage_policy !== 'string' || !['member_tokens', 'organization_tokens'].includes(token_usage_policy))) {
+        return createErrorResponse('Invalid update payload. token_usage_policy must be "member_tokens" or "organization_tokens".', 400, req);
+    }
 
      const updatePayload: Partial<Database['public']['Tables']['organizations']['Update']> = {};
      if (name !== undefined) updatePayload.name = name.trim();
      if (visibility !== undefined) updatePayload.visibility = visibility;
      if (allow_member_chat_creation !== undefined) updatePayload.allow_member_chat_creation = allow_member_chat_creation;
+     if (token_usage_policy !== undefined) {
+        updatePayload.token_usage_policy = token_usage_policy as Database["public"]["Enums"]["org_token_usage_policy_enum"];
+     }
 
      if (Object.keys(updatePayload).length === 0) {
         return createErrorResponse('No valid fields provided for update.', 400, req);

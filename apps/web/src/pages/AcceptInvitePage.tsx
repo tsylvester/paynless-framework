@@ -121,7 +121,7 @@ export const AcceptInvitePage: React.FC = () => {
   return (
     <div className="flex justify-center items-center min-h-screen bg-muted/40">
       <Toaster richColors position="top-right" />
-      <ErrorBoundary fallbackMessage="There was a problem loading the invitation page.">
+      <ErrorBoundary fallback="There was a problem loading the invitation page.">
         <Card className="w-full max-w-md">
           <CardHeader>
             <CardTitle>Organization Invitation</CardTitle>

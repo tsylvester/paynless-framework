@@ -197,7 +197,7 @@ export const WalletBackupDemoCard: React.FC<WalletBackupDemoCardProps> = () => {
   };
 
   return (
-    <ErrorBoundary fallbackMessage="An unexpected error occurred in the Wallet Backup component.">
+    <ErrorBoundary fallback="An unexpected error occurred in the Wallet Backup component.">
       <div className="p-4 border rounded-lg space-y-4">
         <h2 className="text-lg font-semibold">Wallet Backup/Recovery Demo</h2>
         {renderContent()} 

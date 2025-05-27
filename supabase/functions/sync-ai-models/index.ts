@@ -1,3 +1,4 @@
+import { type Json } from '../types_db.ts';
 // IMPORTANT: Supabase Edge Functions require relative paths for imports from shared modules.
 // Do not use path aliases (like @shared/) as they will cause deployment failures.
 import { serve } from 'https://deno.land/std@0.177.0/http/server.ts'
@@ -38,6 +39,7 @@ export interface DbAiProvider {
   description: string | null;
   is_active: boolean;
   provider: string; 
+  config: Json | null;
 }
 
 // Structure for sync results
@@ -98,7 +100,7 @@ const PROVIDERS_TO_SYNC: ProviderSyncConfig[] = [
 export async function getCurrentDbModels(supabaseClient: SupabaseClient, providerName: string): Promise<DbAiProvider[]> {
   const { data, error } = await supabaseClient
     .from('ai_providers')
-    .select('id, api_identifier, name, description, is_active, provider')
+    .select('id, api_identifier, name, description, is_active, provider, config')
     .eq('provider', providerName);
 
   if (error) {

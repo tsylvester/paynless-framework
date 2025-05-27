@@ -5,6 +5,8 @@ import type { UserConfig } from 'vitest/config';
 import path from 'node:path'; // Keep path for alias
 import tsconfigPaths from 'vite-tsconfig-paths';
 import { nodePolyfills } from 'vite-plugin-node-polyfills';
+import wasm from "vite-plugin-wasm";
+import topLevelAwait from "vite-plugin-top-level-await";
 
 // https://vitejs.dev/config/
 export default defineConfig({
@@ -16,6 +18,8 @@ export default defineConfig({
         Buffer: true,
       },
     }),
+    wasm(),
+    topLevelAwait(),
   ],
   optimizeDeps: {
     // Explicitly include problematic transitive dependencies based on errors

@@ -152,19 +152,23 @@ export class OrganizationApiClient {
   }
 
   /**
-   * Updates specific settings for an organization.
-   * Uses the main client's patch method.
+   * Updates specific details for an organization.
+   * Uses the main client's PUT method to the base organization endpoint.
    * @param orgId - The ID of the organization whose settings to update.
-   * @param settings - An object containing the settings to update, e.g., { allow_member_chat_creation: boolean }.
+   * @param updateData - An object containing the fields to update.
    * @returns An ApiResponse containing the updated organization details or an error.
    */
   async updateOrganizationSettings(
       orgId: string, 
-      settings: { allow_member_chat_creation: boolean } // Specify the expected settings structure
+      updateData: {
+          name?: string;
+          visibility?: 'public' | 'private';
+          allow_member_chat_creation?: boolean;
+          token_usage_policy?: 'member_tokens' | 'organization_tokens';
+      }
   ): Promise<ApiResponse<Organization>> {
-      // Use PATCH as we are updating specific fields (settings)
-      // Endpoint assumes /organizations/{orgId}/settings structure
-      return this.client.patch<Organization, typeof settings>(`organizations/${orgId}/settings`, settings);
+      // Use PUT to the main organization endpoint /organizations/{orgId}
+      return this.client.put<Organization, typeof updateData>(`organizations/${orgId}`, updateData);
   }
 
   /**

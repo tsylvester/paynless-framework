@@ -3,9 +3,22 @@ import { describe, it, expect, vi, beforeEach, afterEach, MockInstance } from 'v
 import { createMockOrganizationApiClient, resetMockOrganizationApiClient } from '../../api/src/mocks/organizations.api.mock';
 
 // Other imports
-import { useOrganizationStore, OrganizationStoreImplementation, DEFAULT_PAGE_SIZE } from './organizationStore';
+import { useOrganizationStore, DEFAULT_PAGE_SIZE } from './organizationStore';
 import { useAuthStore } from './authStore';
-import { Organization, OrganizationMemberWithProfile, SupabaseUser, ApiError as ApiErrorType, AuthStore, ApiResponse, Invite, PendingOrgItems, UserProfile, OrganizationUpdate, PaginatedMembersResponse, PendingInviteWithInviter, PendingRequestWithDetails } from '@paynless/types';
+import { 
+  Organization, 
+  OrganizationMemberWithProfile, 
+  SupabaseUser, 
+  ApiError, 
+  AuthStore, 
+  Invite, 
+  PendingOrgItems, 
+  UserProfile, 
+  OrganizationUpdate, 
+  PaginatedMembersResponse, 
+  PendingInviteWithInviter, 
+  PendingRequestWithDetails 
+} from '@paynless/types';
 // Removed unused imports
 // import { initializeApiClient, _resetApiClient, ApiClient, OrganizationApiClient } from '@paynless/api'; 
 import { logger } from '@paynless/utils';
@@ -24,6 +37,8 @@ const mockOrg1: Organization = {
     created_at: new Date().toISOString(),
     visibility: 'private',
     deleted_at: null,
+    allow_member_chat_creation: true,
+    token_usage_policy: 'member_tokens',
 };
 const mockOrg2: Organization = {
     id: 'org-2',
@@ -31,6 +46,8 @@ const mockOrg2: Organization = {
     created_at: new Date().toISOString(),
     visibility: 'public',
     deleted_at: null,
+    allow_member_chat_creation: true,
+    token_usage_policy: 'member_tokens',
 };
 
 const mockMember1Profile: UserProfile = {
@@ -40,7 +57,9 @@ const mockMember1Profile: UserProfile = {
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
     role: 'admin',
-    last_selected_org_id: null
+    last_selected_org_id: null,
+    chat_context: null,
+    profile_privacy_setting: 'public',
 };
 
 const mockMember1: OrganizationMemberWithProfile = {
@@ -60,7 +79,9 @@ const mockMember2Profile: UserProfile = {
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
     role: 'user',
-    last_selected_org_id: null
+    last_selected_org_id: null,
+    chat_context: null,
+    profile_privacy_setting: 'public',
 };
 
 const mockMember2: OrganizationMemberWithProfile = {
@@ -328,24 +349,62 @@ describe('OrganizationStore', () => {
      });
 
      const mockInvite1Profile: UserProfile = {
-       id: 'user-admin', created_at: new Date().toISOString(), updated_at: new Date().toISOString(), first_name: 'Admin', last_name: 'Inviter', last_selected_org_id: null, role: 'user'
+       id: 'user-admin', 
+       created_at: new Date().toISOString(), 
+       updated_at: new Date().toISOString(), 
+       first_name: 'Admin', 
+       last_name: 'Inviter', 
+       last_selected_org_id: null, 
+       role: 'user',
+       chat_context: null,
+       profile_privacy_setting: 'public',
      };
      
      // +++ Define NEW Mock Data for Pending Items +++
      const mockPendingInvite1: PendingInviteWithInviter = {
-       id: 'pending-invite-1', organization_id: 'org-1', invited_email: 'pending1@example.com', role_to_assign: 'member', 
-       invited_by_user_id: 'user-admin', status: 'pending', created_at: new Date().toISOString(), expires_at: null, invited_user_id: null,
-       inviter_email: 'admin@inviter.com', inviter_first_name: 'Admin', inviter_last_name: 'Inviter',
+       id: 'pending-invite-1', 
+       organization_id: 'org-1', 
+       invited_email: 'pending1@example.com', 
+       role_to_assign: 'member', 
+       invited_by_user_id: 'user-admin', 
+       status: 'pending', 
+       created_at: new Date().toISOString(), 
+       expires_at: null, 
+       invited_user_id: null,
+       inviter_email: 'admin@inviter.com', 
+       inviter_first_name: 'Admin', 
+       inviter_last_name: 'Inviter',
+       invite_token: '1234567890',
      };
      const mockPendingInvite2: PendingInviteWithInviter = {
-       id: 'pending-invite-2', organization_id: 'org-1', invited_email: 'pending2@example.com', role_to_assign: 'admin', 
-       invited_by_user_id: 'user-other', status: 'pending', created_at: new Date().toISOString(), expires_at: null, invited_user_id: null,
-       inviter_email: 'other@inviter.com', inviter_first_name: null, inviter_last_name: null,
+       id: 'pending-invite-2', 
+       organization_id: 'org-1', 
+       invited_email: 'pending2@example.com', 
+       role_to_assign: 'admin', 
+       invited_by_user_id: 'user-other', 
+       status: 'pending', 
+       created_at: new Date().toISOString(), 
+       expires_at: null, 
+       invited_user_id: null,
+       inviter_email: 'other@inviter.com', 
+       inviter_first_name: null, 
+       inviter_last_name: null,
+       invite_token: '1234567890',
      };
      const mockPendingRequest1: PendingRequestWithDetails = {
        id: 'pending-req-1', organization_id: 'org-1', user_id: 'user-req', role: 'member', status: 'pending_approval', 
        created_at: new Date().toISOString(), 
-       user_profiles: { id: 'user-req', first_name: 'Request', last_name: 'User', created_at: new Date().toISOString(), updated_at: new Date().toISOString(), last_selected_org_id: null, role: 'user' },
+       user_profiles: { 
+        id: 'user-req', 
+        first_name: 'Request', 
+        last_name: 'User', 
+        created_at: new Date().toISOString(), 
+        updated_at: new Date().toISOString(), 
+        last_selected_org_id: null, 
+        role: 'user',
+        chat_context: null,
+        profile_privacy_setting: 'public',
+      },
        user_email: 'request@example.com'
      };
      const mockPendingItemsPayload: PendingOrgItems = {
@@ -453,7 +512,7 @@ describe('OrganizationStore', () => {
 
       let returnedOrg: Organization | null = null;
       await act(async () => { 
-          returnedOrg = await useOrganizationStore.getState().createOrganization(newOrgName);
+          returnedOrg = await useOrganizationStore.getState().createOrganization(newOrgName, 'private');
       });
 
       expect(getApiClientSpy).toHaveBeenCalled();
@@ -479,7 +538,7 @@ describe('OrganizationStore', () => {
       // Get the mocked navigate function directly from the current mock state
       const mockNavigate = vi.mocked(useAuthStore.getState()).navigate;
 
-      await act(async () => { await useOrganizationStore.getState().createOrganization(newOrgName); }); 
+      await act(async () => { await useOrganizationStore.getState().createOrganization(newOrgName, 'private'); }); 
       
       expect(getApiClientSpy).toHaveBeenCalled();
       expect(mockOrgApi.createOrganization).toHaveBeenCalledWith({ name: newOrgName, visibility: 'private' });
@@ -880,7 +939,10 @@ describe('OrganizationStore', () => {
       created_at: new Date().toISOString(),
       invited_by_user_id: 'user-123',
       invited_user_id: null,
-      expires_at: null
+      expires_at: null,
+      inviter_email: 'inviter@example.com',
+      inviter_first_name: 'Inviter',
+      inviter_last_name: 'User',
     };
 
     beforeEach(() => {

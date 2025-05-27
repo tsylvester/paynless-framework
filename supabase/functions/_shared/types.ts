@@ -1,11 +1,38 @@
 // supabase/functions/_shared/types.ts
 // Centralized APPLICATION-LEVEL types for Supabase Edge Functions.
 // Types directly related to DB tables should be imported from ../types_db.ts
-import type { Database } from '../types_db.ts';
+import type { Database, Json } from '../types_db.ts';
 import type { handleCorsPreflightRequest, createSuccessResponse, createErrorResponse } from './cors-headers.ts';
-import { createClient } from "npm:@supabase/supabase-js";
+import { createClient, SupabaseClient } from "npm:@supabase/supabase-js";
 import type { Spy } from "jsr:@std/testing@0.225.1/mock";
 import type { User as SupabaseUser } from "npm:@supabase/supabase-js";
+import { Tables } from '../types_db.ts';
+import type { ITokenWalletService } from './types/tokenWallet.types.ts';
+// Import MessageForTokenCounting from the centralized location AT THE TOP
+
+
+
+// Define PaymentTransaction using the Tables helper type from types_db.ts
+export type PaymentTransaction = Tables<'payment_transactions'>;
+
+export type UpdatePaymentTransactionFn = (
+  transactionId: string,
+  updates: Partial<Omit<PaymentTransaction, 'id' | 'created_at' | 'user_id' | 'payment_provider' | 'transaction_type' | 'amount' | 'currency' | 'provider_transaction_id' | 'metadata_json'>> & { 
+    metadata_json?: Json | Record<string, unknown>;
+    status?: string; // Explicitly allow status here, or ensure it's not in Omit
+    gateway_transaction_id?: string; // Allow this as well, as it's used
+  },
+  stripeEventId?: string
+) => Promise<PaymentTransaction | null>;
+
+
+// We can add more specific context types if needed for other categories of handlers.
+
+export interface PaymentConfirmation {
+  success: boolean;
+  transactionId: string | undefined;
+  error?: string;
+}
 
 /**
  * Logging levels
@@ -121,12 +148,20 @@ export interface ChatApiRequest {
   providerId: string; // uuid for ai_providers table
   promptId: string;   // uuid for system_prompts table, or '__none__'
   chatId?: string;   // uuid, optional for new chats
+  selectedMessages?: { // User-selected messages for context
+    role: 'system' | 'user' | 'assistant';
+    content: string;
+    // Potentially include other relevant fields from ChatMessage if needed by adapter,
+    // e.g., id, if adapters need to reference original messages.
+    // For now, keeping it minimal to role and content.
+  }[];
   messages?: { // For sending history to adapter, optional
     role: 'system' | 'user' | 'assistant';
     content: string;
   }[];
   organizationId?: string; // uuid, optional for org chats - ADDED
   rewindFromMessageId?: string; // uuid, optional for rewinding - ADDED
+  max_tokens_to_generate?: number; // ADDED: Max tokens for the AI to generate in its response
 }
 
 /**
@@ -214,15 +249,139 @@ export interface ILogger {
   // setLogLevel?: (level: LogLevel) => void; // Example if needed
 }
 
+  // Define the specific type for the RPC parameters based on types_db.ts
+  export type PerformChatRewindArgs = Database['public']['Functions']['perform_chat_rewind']['Args'];
+  
+  // Define derived DB types needed locally
+  export type ChatMessageInsert = Database['public']['Tables']['chat_messages']['Insert']; // Added for storing AI provider errors
+  
+  export type ChatMessageRow = Database['public']['Tables']['chat_messages']['Row'];
+  // type ChatRow = Database['public']['Tables']['chats']['Row']; // Not directly used in handlePostRequest return
+  
+  export interface ChatHandlerSuccessResponse {
+    userMessage?: ChatMessageRow;       // Populated for normal new messages and new user message in rewind
+    assistantMessage: ChatMessageRow;  // Always populated on success
+    chatId: string;                    // ID of the chat session (new or existing) - ADDED
+    isRewind?: boolean;                 // True if this was a rewind operation
+    isDummy?: boolean;                  // True if dummy provider was used
+  }
+  export interface ChatDetailsHandlerDeps {
+    createSupabaseClient: typeof createClient;
+    createJsonResponse: typeof createSuccessResponse;
+    createErrorResponse: typeof createErrorResponse;
+    // Add other specific dependencies if needed, e.g., a logger
+  }
+  
+
+// Interface for messages argument in CountTokensForMessagesFn
+// REMOVED Local Definition:
+// export interface MessageForTokenCounting {
+//   role: "system" | "user" | "assistant" | "function";
+//   content: string | null;
+//   name?: string;
+// }
+
+export interface MessageForTokenCounting {
+  role: "system" | "user" | "assistant" | "function"; // Function role might be needed for some models
+  content: string | null; // Content can be null for some function calls
+  name?: string; // Optional, for function calls
+}
+
+// Accepted Tiktoken encoding names - aligned with js-tiktoken
+export type TiktokenEncoding = 'cl100k_base' | 'p50k_base' | 'r50k_base' | 'gpt2' | 'o200k_base';
+
+// Helper type for tiktoken_model_name_for_rules_fallback
+export type TiktokenModelForRules = 'gpt-4' | 'gpt-3.5-turbo' | 'gpt-4o' | 'gpt-3.5-turbo-0301';
+
+// This AiModelConfig is a simpler version, potentially for getMaxOutputTokens internal logic after defaults.
+// It is NOT the source of truth for the DB ai_providers.config structure.
+export interface AiModelConfig {
+  input_token_cost_rate: number;
+  output_token_cost_rate: number;
+  hard_cap_output_tokens?: number;
+  context_window_tokens?: number;
+  tokenization_strategy: {
+    type: 'tiktoken' | 'rough_char_count' | 'provider_specific_api' | 'unknown';
+    tiktoken_encoding_name?: TiktokenEncoding;
+    is_chatml_model?: boolean;
+    api_identifier_for_tokenization?: string;
+    chars_per_token_ratio?: number;
+  };
+  provider_max_input_tokens?: number;
+  provider_max_output_tokens?: number;
+  default_temperature?: number;
+  default_top_p?: number;
+}
+
+// Comprehensive configuration for an AI model, reflecting ai_providers.config structure
+export interface AiModelExtendedConfig {
+  model_id?: string; // Optional: Internal model ID or name, for display or logging
+  api_identifier: string; // Crucial: The string used to call the AI provider's API (e.g., "gpt-4-turbo")
+  
+  input_token_cost_rate: number | null; // Cost per 1000 input tokens, can be null from DB
+  output_token_cost_rate: number | null; // Cost per 1000 output tokens, can be null from DB
+  
+  tokenization_strategy: 
+    | { type: 'tiktoken'; tiktoken_encoding_name: TiktokenEncoding; tiktoken_model_name_for_rules_fallback?: TiktokenModelForRules; } 
+    | { type: 'rough_char_count'; chars_per_token_ratio?: number; }
+    | { type: 'claude_tokenizer'; } // Placeholder for Anthropic's official tokenizer
+    | { type: 'google_gemini_tokenizer'; } // Placeholder for Google's official tokenizer
+    | { type: 'none'; }; // If token counting is not applicable or handled externally
+
+  hard_cap_output_tokens?: number; // An absolute maximum for output tokens
+  context_window_tokens?: number;   // Provider's max context window (input + output usually)
+  
+  // Defaults that might be applied if the main rates are null (e.g., from a service-level config)
+  service_default_input_cost_rate?: number; 
+  service_default_output_cost_rate?: number;
+  
+  status?: 'active' | 'beta' | 'deprecated' | 'experimental';
+  features?: string[]; // e.g., ["json_mode", "tool_use", "image_input"]
+  max_context_window_tokens?: number; // Duplicates context_window_tokens? Consolidate if same meaning.
+  notes?: string;
+
+  // Optional: Provider-returned limits (can be synced automatically if API provides them)
+  // These seem to overlap with hard_cap_output_tokens and context_window_tokens above.
+  // Let's keep the ones defined initially for AiModelConfig (lines 300-301) if they are distinct.
+  // provider_max_input_tokens?: number; // from the other AiModelConfig def
+  // provider_max_output_tokens?: number; // from the other AiModelConfig def
+
+  // Optional: Default parameters for the model (also from other AiModelConfig def)
+  default_temperature?: number;
+  default_top_p?: number;
+  // is_chatml_model?: boolean; // Covered by tiktoken_model_name_for_rules_fallback or inferred
+  // api_identifier_for_tokenization?: string; // Covered by main api_identifier generally
+}
+
+// Signature for countTokensForMessages function (this might be an old definition)
+// export type CountTokensForMessagesFn = (
+//   messages: MessageForTokenCounting[], 
+//   modelName: string
+// ) => number;
+
 export interface ChatHandlerDeps {
   createSupabaseClient: typeof createClient;
   fetch: typeof fetch; // Global fetch type
   handleCorsPreflightRequest: typeof handleCorsPreflightRequest;
   createSuccessResponse: typeof createSuccessResponse; // Use the corrected type name
   createErrorResponse: typeof createErrorResponse;
-  getAiProviderAdapter: GetAiProviderAdapter; // Use the new specific type
-  verifyApiKey: VerifyApiKey;
+  getAiProviderAdapter: (
+    providerApiIdentifier: string,
+    providerDbConfig: Json | null, // Added
+    apiKey: string,
+    logger?: ILogger
+  ) => AiProviderAdapter | null; // Changed signature and return type
+  getAiProviderAdapterOverride?: ( // Also update this for consistency
+    providerApiIdentifier: string,
+    providerDbConfig: Json | null, // Added
+    apiKey: string,
+    logger?: ILogger
+  ) => AiProviderAdapter | null; // Changed signature and return type
+  verifyApiKey: (apiKey: string, providerName: string) => Promise<boolean>;
   logger: ILogger;
+  tokenWalletService?: ITokenWalletService; 
+  countTokensForMessages: (messages: MessageForTokenCounting[], modelConfig: AiModelExtendedConfig) => number; // Updated signature
+  supabaseClient?: SupabaseClient; // Added for test overrides
 }
 
 // --- Interfaces for Mock Supabase Client (for testing) ---
@@ -233,7 +392,7 @@ export interface IMockQueryBuilder {
   select: (columns?: string) => IMockQueryBuilder;
   insert: (data: unknown[] | object) => IMockQueryBuilder;
   update: (data: object) => IMockQueryBuilder;
-  delete: () => IMockQueryBuilder; // delete often doesn't take args directly, filters applied before
+  delete: () => IMockQueryBuilder;
   upsert: (data: unknown[] | object, options?: { onConflict?: string, ignoreDuplicates?: boolean }) => IMockQueryBuilder;
 
   // Filtering
@@ -259,7 +418,7 @@ export interface IMockQueryBuilder {
   match: (query: object) => IMockQueryBuilder;
   or: (filters: string, options?: { referencedTable?: string }) => IMockQueryBuilder;
   filter: (column: string, operator: string, value: unknown) => IMockQueryBuilder;
-  not: (column: string, operator: string, value: unknown) => IMockQueryBuilder; // Simplified not, full not is more complex
+  not: (column: string, operator: string, value: unknown) => IMockQueryBuilder;
 
   // Modifiers
   order: (column: string, options?: { ascending?: boolean, nullsFirst?: boolean, referencedTable?: string }) => IMockQueryBuilder;
@@ -269,82 +428,58 @@ export interface IMockQueryBuilder {
   // Terminators
   single: () => Promise<{ data: object | null; error: Error | null; count: number | null; status: number; statusText: string; }>;
   maybeSingle: () => Promise<{ data: object | null; error: Error | null; count: number | null; status: number; statusText: string; }>;
-  // .then is implicitly supported by async functions / promises in JS/TS, 
-  // but if we want to spy on it explicitly as a method:
   then: (
     onfulfilled?: ((value: { data: unknown[] | null; error: Error | null; count: number | null; status: number; statusText: string; }) => unknown | PromiseLike<unknown>) | null | undefined, 
     onrejected?: ((reason: unknown) => unknown | PromiseLike<unknown>) | null | undefined
   ) => Promise<unknown>; 
-  // For RPC-like calls if the builder supports it (e.g. PostgREST functions)
-  returns: () => IMockQueryBuilder; // Or Promise<any> if it's terminal
-
-  // TODO: Add other methods as needed: e.g., rpc within builder, with, modifiers like .csv()
+  returns: () => IMockQueryBuilder;
+  methodSpies: { [key: string]: Spy<(...args: unknown[]) => unknown> };
 }
 
 export interface IMockSupabaseAuth {
-  // Define methods we need to mock, e.g.:
-  getUser: () => Promise<{ data: { user: User | null }; error: Error | null }>; // Now User is defined
-  // Add signOut, signUp, signInWithPassword etc. if needed for tests
-  // For admin actions if used by client directly (usually not)
-  // admin?: { listUsers: () => Promise<any>, deleteUser: (id: string) => Promise<any> };
+  getUser: () => Promise<{ data: { user: User | null }; error: Error | null }>;
 }
 
 export interface IMockSupabaseClient {
   from: (tableName: string) => IMockQueryBuilder;
-  // Define simplified auth object for now based on what's typically used client-side
   auth: IMockSupabaseAuth; 
   rpc: (name: string, params?: object, options?: { head?: boolean, count?: 'exact' | 'planned' | 'estimated' }) => Promise<{ data: unknown | null; error: Error | null; count: number | null; status: number; statusText: string; }>;
-  // Add removeChannel, getChannels etc. if realtime is tested
+  getLatestBuilder(tableName: string): IMockQueryBuilder | undefined;
+  getHistoricBuildersForTable(tableName: string): IMockQueryBuilder[] | undefined;
+  clearAllTrackedBuilders(): void;
+  getSpiesForTableQueryMethod: (tableName: string, methodName: keyof IMockQueryBuilder, callIndex?: number) => Spy | undefined;
 }
 
-// Interface for the collection of spies returned by the mock client setup
 export interface IMockClientSpies {
   auth: {
-    getUserSpy: Spy<IMockSupabaseAuth['getUser']>; // Spy type is now available
-    // Add other auth method spies here
+    getUserSpy: Spy<IMockSupabaseAuth['getUser']>;
   };
-  rpcSpy: Spy<IMockSupabaseClient['rpc']>; // Spy type is now available
-  fromSpy: Spy<IMockSupabaseClient['from']>; // Spy type is now available
-  
-  // New way to access query builder method spies for a specific table
-  // This function would be part of the returned spies object.
-  // It retrieves the spies from the *last* MockQueryBuilder instance created for that table.
+  rpcSpy: Spy<IMockSupabaseClient['rpc']>;
+  fromSpy: Spy<IMockSupabaseClient['from']>;
   getLatestQueryBuilderSpies: (tableName: string) => ({
-    select?: Spy<IMockQueryBuilder['select']>; // Spy type is now available
-    insert?: Spy<IMockQueryBuilder['insert']>; // Spy type is now available
-    update?: Spy<IMockQueryBuilder['update']>; // Spy type is now available
-    delete?: Spy<IMockQueryBuilder['delete']>; // Spy type is now available
-    upsert?: Spy<IMockQueryBuilder['upsert']>; // Spy type is now available
-    eq?: Spy<IMockQueryBuilder['eq']>; // Spy type is now available
-    neq?: Spy<IMockQueryBuilder['neq']>; // Spy type is now available
-    gt?: Spy<IMockQueryBuilder['gt']>; // Spy type is now available
-    gte?: Spy<IMockQueryBuilder['gte']>; // Spy type is now available
-    lt?: Spy<IMockQueryBuilder['lt']>; // Spy type is now available
-    lte?: Spy<IMockQueryBuilder['lte']>; // Spy type is now available
-    // Add other filter/modifier/terminator method spies as needed
-    single?: Spy<IMockQueryBuilder['single']>; // Spy type is now available
-    maybeSingle?: Spy<IMockQueryBuilder['maybeSingle']>; // Spy type is now available
-    then?: Spy<IMockQueryBuilder['then']>; // Spy type is now available
+    select?: Spy<IMockQueryBuilder['select']>;
+    insert?: Spy<IMockQueryBuilder['insert']>;
+    update?: Spy<IMockQueryBuilder['update']>;
+    delete?: Spy<IMockQueryBuilder['delete']>;
+    upsert?: Spy<IMockQueryBuilder['upsert']>;
+    eq?: Spy<IMockQueryBuilder['eq']>;
+    neq?: Spy<IMockQueryBuilder['neq']>;
+    gt?: Spy<IMockQueryBuilder['gt']>;
+    gte?: Spy<IMockQueryBuilder['gte']>;
+    lt?: Spy<IMockQueryBuilder['lt']>;
+    lte?: Spy<IMockQueryBuilder['lte']>;
+    single?: Spy<IMockQueryBuilder['single']>;
+    maybeSingle?: Spy<IMockQueryBuilder['maybeSingle']>;
+    then?: Spy<IMockQueryBuilder['then']>;
   } | undefined);
+  getHistoricQueryBuilderSpies: (tableName: string, methodName: string) => { callCount: number; callsArgs: unknown[][] } | undefined;
 }
 
-// The return type of the refined createMockSupabaseClient function
-export interface MockSupabaseClientSetup {
-  client: IMockSupabaseClient; // The mock client instance
-  spies: IMockClientSpies;   // The collection of spies
-}
+export type PerformChatRewindResult = Database['public']['Functions']['perform_chat_rewind']['Returns'];
 
-// Define the specific type for the RPC parameters based on types_db.ts
-export type PerformChatRewindArgs = Database['public']['Functions']['perform_chat_rewind']['Args'];
-
-// Define derived DB types needed locally
-export type ChatMessageInsert = Database['public']['Tables']['chat_messages']['Insert'];
-export type ChatMessageRow = Database['public']['Tables']['chat_messages']['Row'];
-// type ChatRow = Database['public']['Tables']['chats']['Row']; // Not directly used in handlePostRequest return
-
-export interface ChatHandlerSuccessResponse {
-  userMessage?: ChatMessageRow;       // Populated for normal new messages and new user message in rewind
-  assistantMessage: ChatMessageRow;  // Always populated on success
-  isRewind?: boolean;                 // True if this was a rewind operation
-  isDummy?: boolean;                  // True if dummy provider was used
+// Add this new interface
+export interface TokenUsage {
+  prompt_tokens: number;
+  completion_tokens: number;
+  total_tokens: number;
 }

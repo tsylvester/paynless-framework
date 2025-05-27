@@ -7,32 +7,41 @@ import React from 'react';
 // --- Mock Data & Functions ---
 const mockPlan: SubscriptionPlan = {
   id: 'plan_pro_456',
-  stripePriceId: 'price_pro_stripe_456',
-  stripeProductId: 'prod_pro_stripe',
+  stripe_price_id: 'price_pro_stripe_456',
+  stripe_product_id: 'prod_pro_stripe',
   name: 'Pro Plan',
   description: { subtitle: 'For professionals', features: ['Pro Feature 1'] },
   amount: 2500, // $25.00
   currency: 'usd',
   interval: 'month',
-  intervalCount: 1,
+  interval_count: 1,
   active: true,
   metadata: null,
-  createdAt: new Date().toISOString(),
-  updatedAt: new Date().toISOString(),
+  created_at: new Date().toISOString(),
+  updated_at: new Date().toISOString(),
+  item_id_internal: null,
+  plan_type: 'subscription'
 };
 
 const mockSubscription: UserSubscription & { plan: SubscriptionPlan } = {
   id: 'sub_user_123',
-  userId: 'user-abc',
-  stripeCustomerId: 'cus_xyz',
-  stripeSubscriptionId: 'stripe_sub_xyz',
+  user_id: 'user-abc',
+  stripe_customer_id: 'cus_xyz',
+  stripe_subscription_id: 'stripe_sub_xyz',
   status: 'active',
-  plan: mockPlan, // Link the mock plan
-  currentPeriodStart: new Date(Date.now() - 15 * 24 * 60 * 60 * 1000).toISOString(), // 15 days ago
-  currentPeriodEnd: new Date(Date.now() + 15 * 24 * 60 * 60 * 1000).toISOString(), // 15 days from now
-  cancelAtPeriodEnd: false,
-  createdAt: new Date().toISOString(),
-  updatedAt: new Date().toISOString(),
+  plan_id: mockPlan.id,
+  plan: mockPlan,
+  current_period_start: new Date(Date.now() - 15 * 24 * 60 * 60 * 1000).toISOString(),
+  current_period_end: new Date(Date.now() + 15 * 24 * 60 * 60 * 1000).toISOString(),
+  cancel_at_period_end: false,
+  created_at: new Date().toISOString(),
+  updated_at: new Date().toISOString(),
+  trial_start: null,
+  trial_end: null,
+  ended_at: null,
+  canceled_at: null,
+  metadata: null,
+  price_id: mockPlan.stripe_price_id,
 };
 
 const mockHandleManageSubscription = vi.fn();
@@ -49,6 +58,13 @@ const defaultProps = {
   handleCancelSubscription: mockHandleCancelSubscription,
   formatAmount: mockFormatAmount,
   formatInterval: mockFormatInterval,
+};
+
+// Helper function to render the component with provided props
+const renderCurrentSubscriptionCard = (props: Partial<Parameters<typeof CurrentSubscriptionCard>[0]>) => {
+  const mergedProps = { ...defaultProps, ...props };
+  const view = render(<CurrentSubscriptionCard {...mergedProps} />);
+  return { ...view, props: mergedProps }; // Return props for easy access in tests if needed
 };
 
 // --- Test Suite ---
@@ -71,7 +87,7 @@ describe('CurrentSubscriptionCard Component', () => {
   });
 
   it('should display cancel notice if cancelAtPeriodEnd is true', () => {
-    const cancelingSub = { ...mockSubscription, cancelAtPeriodEnd: true };
+    const cancelingSub = { ...mockSubscription, cancel_at_period_end: true };
     render(<CurrentSubscriptionCard {...defaultProps} userSubscription={cancelingSub} />);
     expect(screen.getByText(/Your subscription will be canceled/i)).toBeInTheDocument();
   });
@@ -100,18 +116,35 @@ describe('CurrentSubscriptionCard Component', () => {
   });
 
   it('should hide Cancel button if cancelAtPeriodEnd is true', () => {
-    const cancelingSub = { ...mockSubscription, cancelAtPeriodEnd: true };
+    const cancelingSub = { ...mockSubscription, cancel_at_period_end: true };
     render(<CurrentSubscriptionCard {...defaultProps} userSubscription={cancelingSub} />);
     expect(screen.queryByRole('button', { name: /Cancel Subscription/i })).not.toBeInTheDocument();
   });
 
   it('should disable buttons when isProcessing is true', () => {
-    render(<CurrentSubscriptionCard {...defaultProps} isProcessing={true} />);
-    expect(screen.getByRole('button', { name: /Manage Billing/i })).toBeDisabled();
-    // Cancel button might be hidden or shown depending on status, check if it exists before checking disabled
-    const cancelButton = screen.queryByRole('button', { name: /Cancel Subscription/i });
-    if (cancelButton) {
-        expect(cancelButton).toBeDisabled();
-    }
+    const { rerender } = renderCurrentSubscriptionCard({ isProcessing: false });
+    // Initial state: buttons are enabled
+    expect(screen.getByRole('button', { name: /Manage Billing/i })).toBeEnabled();
+    expect(screen.getByRole('button', { name: /Cancel Subscription/i })).toBeEnabled();
+
+    // Set isProcessing to true
+    rerender(renderCurrentSubscriptionCard({ isProcessing: true }).ui);
+
+    // Now buttons should be named "Processing..." and be disabled
+    const processingButtons = screen.getAllByRole('button', { name: /Processing.../i });
+    expect(processingButtons.length).toBe(2); // Expecting two buttons to be in processing state
+    processingButtons.forEach(button => {
+      expect(button).toBeDisabled();
+    });
+    
+    // Ensure original named buttons are not found (because their text changed)
+    expect(screen.queryByRole('button', { name: /Manage Billing/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Cancel Subscription/i })).not.toBeInTheDocument();
+  });
+
+  it('should not render cancel button if cancelAtPeriodEnd is true', () => {
+    const cancelingSub = { ...mockSubscription, cancel_at_period_end: true };
+    render(<CurrentSubscriptionCard {...defaultProps} userSubscription={cancelingSub} />);
+    expect(screen.queryByRole('button', { name: /Cancel Subscription/i })).not.toBeInTheDocument();
   });
 }); 

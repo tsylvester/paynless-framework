@@ -11,8 +11,9 @@ import {
   selectIsRewinding,
   selectChatTokenUsage,
   selectAllPersonalChatMessages,
-} from './aiStore.selectors'; // Import new selectors
-import { Chat, AiState, ChatMessage, TokenUsage } from '@paynless/types';
+  selectCurrentChatSessionTokenUsage,
+} from './aiStore.selectors.ts'; // Added .ts extension
+import { Chat, AiState, ChatMessage, TokenUsage, Json, ChatSessionTokenUsageDetails } from '@paynless/types';
 import { vi, describe, beforeEach, it, expect } from 'vitest';
 
 // Mock useOrganizationStore - REMOVE THIS MOCK
@@ -30,8 +31,8 @@ const mockPersonalChat2: Partial<Chat> = { id: 'chat-p2', title: 'Personal Chat 
 const mockOrg1Chat1: Partial<Chat> = { id: 'chat-o1-1', title: 'Org1 Chat 1', organization_id: mockOrgId1 };
 
 // New Mock Data for Token Usage Tests
-const mockTokenUsage1: TokenUsage = { promptTokens: 100, completionTokens: 150, totalTokens: 250 };
-const mockTokenUsage2: TokenUsage = { promptTokens: 50, completionTokens: 70, totalTokens: 120 };
+const mockTokenUsage1: TokenUsage = { prompt_tokens: 100, completion_tokens: 150, total_tokens: 250 };
+const mockTokenUsage2: TokenUsage = { prompt_tokens: 50, completion_tokens: 70, total_tokens: 120 };
 const mockTokenUsageSnakeCase: any = { prompt_tokens: 10, completion_tokens: 20, total_tokens: 30 };
 
 const mockMsgWithTokens1: Partial<ChatMessage> = {
@@ -39,7 +40,7 @@ const mockMsgWithTokens1: Partial<ChatMessage> = {
   chat_id: 'chat-p1',
   content: 'Hello with tokens',
   is_active_in_thread: true,
-  token_usage: mockTokenUsage1,
+  token_usage: mockTokenUsage1 as unknown as Json,
   role: 'assistant',
   created_at: new Date().toISOString(),
 };
@@ -49,7 +50,7 @@ const mockMsgWithTokens2: Partial<ChatMessage> = {
   chat_id: 'chat-p1',
   content: 'World with more tokens',
   is_active_in_thread: true,
-  token_usage: mockTokenUsage2,
+  token_usage: mockTokenUsage2 as unknown as Json,
   role: 'assistant',
   created_at: new Date().toISOString(),
 };
@@ -59,7 +60,7 @@ const mockMsgWithSnakeCaseTokens: Partial<ChatMessage> = {
     chat_id: 'chat-p1',
     content: 'Snake tokens',
     is_active_in_thread: true,
-    token_usage: mockTokenUsageSnakeCase as TokenUsage, // Cast for test setup
+    token_usage: mockTokenUsageSnakeCase as unknown as Json, // Cast for test setup
     role: 'assistant',
     created_at: new Date().toISOString(),
 };
@@ -89,7 +90,7 @@ const mockMsgInactiveWithTokens: Partial<ChatMessage> = {
     chat_id: 'chat-p1',
     content: 'Inactive with tokens',
     is_active_in_thread: false,
-    token_usage: mockTokenUsage1,
+    token_usage: mockTokenUsage1 as unknown as Json,
     role: 'assistant',
     created_at: new Date().toISOString(),
   };
@@ -97,27 +98,7 @@ const mockMsgInactiveWithTokens: Partial<ChatMessage> = {
 describe('useAiStore - Selectors', () => {
   let storeState: AiState;
 
-  // Helper to set up the AiStore state for each test
   const setAiStoreState = (newState: Partial<AiState>) => {
-    // Construct the full initial state for the store if it's not already comprehensive
-    // For testing selectors, we primarily care about the state snapshot passed to them.
-    // The actual useAiStore.setState might not even be necessary if we directly construct
-    // the AiState object to pass to selectors.
-    // However, to keep structure similar if some tests rely on get() from within actions (not selectors):
-    const baseState = useAiStore.getState(); // Get a full state structure
-    storeState = { ...baseState, ...newState } as AiState;
-  };
-
-  // Helper to set the mocked currentOrganizationId - REMOVE THIS HELPER
-  // const setMockCurrentOrganizationId = (orgId: string | null) => {
-  //   (useOrganizationStore.getState as vi.Mock).mockReturnValue({ currentOrganizationId: orgId });
-  // };
-
-  beforeEach(() => {
-    vi.clearAllMocks();
-    
-    // Set a default clean state for storeState directly
-    // This is the object that will be passed to our selectors
     storeState = {
       availableProviders: [],
       availablePrompts: [],
@@ -127,13 +108,47 @@ describe('useAiStore - Selectors', () => {
       isLoadingAiResponse: false,
       isConfigLoading: false,
       isLoadingHistoryByContext: { personal: false, orgs: {} },
+      historyErrorByContext: { personal: null, orgs: {} }, 
       isDetailsLoading: false,
       newChatContext: null,
       rewindTargetMessageId: null,
       aiError: null,
-      // Ensure all AiState fields are initialized if selectors depend on them
-      // For example, if a selector used a field not listed above, it would need to be here.
-    } as AiState; // Cast to ensure all AiState fields are present or considered
+      selectedMessagesMap: {}, 
+      selectedProviderId: null, 
+      selectedPromptId: null, 
+      chatParticipantsProfiles: {}, 
+      ...newState,
+    } as AiState;
+  };
+
+  // Helper to set the mocked currentOrganizationId - REMOVE THIS HELPER
+  // const setMockCurrentOrganizationId = (orgId: string | null) => {
+  //   (useOrganizationStore.getState as vi.Mock).mockReturnValue({ currentOrganizationId: orgId });
+  // };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    // Initialize storeState with a minimal default structure for AiState
+    // This will be overridden by setAiStoreState in most tests
+    storeState = {
+      availableProviders: [],
+      availablePrompts: [],
+      chatsByContext: { personal: [], orgs: {} },
+      messagesByChatId: {},
+      currentChatId: null,
+      isLoadingAiResponse: false,
+      isConfigLoading: false,
+      isLoadingHistoryByContext: { personal: false, orgs: {} },
+      historyErrorByContext: { personal: null, orgs: {} },
+      isDetailsLoading: false,
+      newChatContext: null,
+      rewindTargetMessageId: null,
+      aiError: null,
+      selectedMessagesMap: {},
+      selectedProviderId: null,
+      selectedPromptId: null,
+      chatParticipantsProfiles: {},
+    } as AiState;
   });
 
   describe('selectChatHistoryList', () => {
@@ -356,9 +371,9 @@ describe('useAiStore - Selectors', () => {
       });
       const usage = selectChatTokenUsage(storeState, 'chat-p1');
       expect(usage).toEqual({
-        promptTokens: 100 + 50,
-        completionTokens: 150 + 70,
-        totalTokens: 250 + 120,
+        prompt_tokens: 100 + 50,
+        completion_tokens: 150 + 70,
+        total_tokens: 250 + 120,
       });
     });
 
@@ -370,9 +385,9 @@ describe('useAiStore - Selectors', () => {
         });
         const usage = selectChatTokenUsage(storeState, 'chat-p1');
         expect(usage).toEqual({
-          promptTokens: 10,
-          completionTokens: 20,
-          totalTokens: 30,
+          prompt_tokens: 10,
+          completion_tokens: 20,
+          total_tokens: 30,
         });
       });
 
@@ -383,7 +398,7 @@ describe('useAiStore - Selectors', () => {
         },
       });
       const usage = selectChatTokenUsage(storeState, 'chat-p1');
-      expect(usage).toEqual({ promptTokens: 0, completionTokens: 0, totalTokens: 0 });
+      expect(usage).toEqual({ prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 });
     });
 
     it('should return null if chatId does not exist in messagesByChatId', () => {
@@ -445,6 +460,150 @@ describe('useAiStore - Selectors', () => {
           const messages = selectAllPersonalChatMessages(storeState);
           expect(messages).toEqual([activeMsgUndefined, activeMsgTrue]);
           expect(messages.find(m => m.id === 'inactive')).toBeUndefined();
+    });
+  });
+
+  describe('selectCurrentChatSessionTokenUsage', () => {
+    const mockUserMessage: Partial<ChatMessage> = {
+      id: 'user-msg-sel-1',
+      chat_id: 'chat-sel-1',
+      // user_id: 'user-sel-123', // Not needed for this selector test directly if we use Partial<ChatMessage>
+      role: 'user',
+      content: 'Hello',
+      created_at: new Date().toISOString(),
+      // updated_at: new Date().toISOString(), // Not strictly needed for selector logic
+      token_usage: null, 
+      is_active_in_thread: true,
+    };
+
+    const mockAssistantMessage1: Partial<ChatMessage> = {
+      id: 'assistant-msg-sel-1',
+      chat_id: 'chat-sel-1',
+      role: 'assistant',
+      content: 'Response 1',
+      created_at: new Date().toISOString(),
+      token_usage: { prompt_tokens: 10, completion_tokens: 20, total_tokens: 30 } as unknown as Json, // Cast to full TokenUsage if store expects it, else this is fine for partial testing
+      is_active_in_thread: true,
+    };
+
+    const mockAssistantMessage2: Partial<ChatMessage> = {
+      id: 'assistant-msg-sel-2',
+      chat_id: 'chat-sel-1',
+      role: 'assistant',
+      content: 'Response 2',
+      created_at: new Date().toISOString(),
+      token_usage: { prompt_tokens: 5, completion_tokens: 15, total_tokens: 20 } as unknown as Json,
+      is_active_in_thread: true,
+    };
+
+    const mockAssistantMessageNoTokens: Partial<ChatMessage> = {
+      id: 'assistant-msg-sel-3',
+      chat_id: 'chat-sel-1',
+      role: 'assistant',
+      content: 'Response 3 no tokens',
+      created_at: new Date().toISOString(),
+      token_usage: null,
+      is_active_in_thread: true,
+    };
+    
+    beforeEach(() => {
+      setAiStoreState({ 
+        messagesByChatId: {},
+        currentChatId: null,
+      });
+    });
+
+    it('should return zeros if currentChatId is null', () => {
+      setAiStoreState({ currentChatId: null, messagesByChatId: { 'chat-sel-1': [mockAssistantMessage1 as ChatMessage]} } as unknown as AiState);
+      // Directly call the selector function from the store's instance if it's part of the store object
+      // Or if it's an exported selector function, call it with the mocked state.
+      // Assuming the selector is on the store instance for this example:
+      const usage = selectCurrentChatSessionTokenUsage(storeState);
+      expect(usage).toEqual({ assistantPromptTokens: 0, assistantCompletionTokens: 0, assistantTotalTokens: 0, overallTotalTokens: 0 });
+    });
+
+    it('should return zeros if no messages for the currentChatId', () => {
+      setAiStoreState({ currentChatId: 'chat-sel-1', messagesByChatId: {} } as AiState);
+      const usage = selectCurrentChatSessionTokenUsage(storeState);
+      expect(usage).toEqual({ assistantPromptTokens: 0, assistantCompletionTokens: 0, assistantTotalTokens: 0, overallTotalTokens: 0 });
+    });
+
+    it('should return zeros if messages exist but have no token_usage or are inactive', () => {
+      setAiStoreState({
+        currentChatId: 'chat-sel-1',
+        messagesByChatId: { 
+          'chat-sel-1': [
+            mockUserMessage as ChatMessage, 
+            mockAssistantMessageNoTokens as ChatMessage,
+            { ...mockAssistantMessage1, id: 'inactive-with-tokens', is_active_in_thread: false } as ChatMessage 
+          ]
+        },
+      } as unknown as AiState);
+      const usage = selectCurrentChatSessionTokenUsage(storeState);
+      expect(usage).toEqual({ assistantPromptTokens: 0, assistantCompletionTokens: 0, assistantTotalTokens: 0, overallTotalTokens: 0 });
+    });
+
+    it('should correctly sum token_usage for active assistant messages in the current chat', () => {
+      setAiStoreState({
+        currentChatId: 'chat-sel-1',
+        messagesByChatId: {
+          'chat-sel-1': [
+            mockUserMessage as ChatMessage, 
+            mockAssistantMessage1 as ChatMessage, 
+            mockAssistantMessage2 as ChatMessage, 
+            mockAssistantMessageNoTokens as ChatMessage, 
+            { ...mockAssistantMessage1, id:'inactive-assistant', token_usage: { prompt_tokens: 100, completion_tokens: 100, total_tokens: 200 } as unknown as Json, is_active_in_thread: false } as ChatMessage 
+          ],
+          'chat-sel-2': [{ ...mockAssistantMessage1, id:'other-chat-msg', chat_id: 'chat-sel-2'} as ChatMessage],
+        },
+      });
+      const usage = selectCurrentChatSessionTokenUsage(storeState);
+      expect(usage).toEqual({
+        assistantPromptTokens: 10 + 5, 
+        assistantCompletionTokens: 20 + 15, 
+        assistantTotalTokens: 30 + 20, 
+        overallTotalTokens: 0 + (30 + 20)
+      });
+    });
+
+    it('should correctly sum token_usage even if some active user messages have token_usage (e.g. optimistic estimates)', () => {
+      const userMessageWithTokens: Partial<ChatMessage> = {
+        ...mockUserMessage,
+        id: 'user-optimistic-tokens',
+        token_usage: { prompt_tokens: 7, completion_tokens: 0, total_tokens: 7 } as unknown as Json, 
+      };
+      setAiStoreState({
+        currentChatId: 'chat-sel-1',
+        messagesByChatId: {
+          'chat-sel-1': [userMessageWithTokens as ChatMessage, mockAssistantMessage1 as ChatMessage],
+        },
+      });
+      const usage = selectCurrentChatSessionTokenUsage(storeState);
+      expect(usage).toEqual({
+        assistantPromptTokens: 10,
+        assistantCompletionTokens: 20,
+        assistantTotalTokens: 30,
+        overallTotalTokens: 7 + 30
+      });
+    });
+
+    it('should correctly sum token_usage from assistant messages with snake_case token data (if selector handles it)', () => {
+        const mockAssistantSnake = {
+            ...mockAssistantMessage1, 
+            id: 'asst-msg-snake',
+            token_usage: { prompt_tokens: 3, completion_tokens: 7, total_tokens: 10 } as any, 
+        };
+        setAiStoreState({
+            currentChatId: 'chat-sel-1',
+            messagesByChatId: { 'chat-sel-1': [mockAssistantSnake as ChatMessage] },
+        });
+        const usage = selectCurrentChatSessionTokenUsage(storeState);
+        expect(usage).toEqual({
+            assistantPromptTokens: 3, 
+            assistantCompletionTokens: 7, 
+            assistantTotalTokens: 10, 
+            overallTotalTokens: 0 + 10
+        });
     });
   });
 }); 

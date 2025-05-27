@@ -41,7 +41,9 @@ const mockUser: UserProfile = {
     first_name: null,
     last_name: null,
     last_selected_org_id: null,
-    role: 'user'
+    role: 'user',
+    chat_context: {},
+    profile_privacy_setting: 'public'
 };
 
 const initialTestOrgState: Partial<OrganizationStoreType> = {
@@ -79,6 +81,7 @@ describe('Organization Store - Chat Settings', () => {
     // Hold references to the mock functions obtained from the mocked getApiClient
     let mockedGetOrganizationDetails: Mock;
     let mockedUpdateOrganization: Mock;
+    let mockedUpdateOrganizationSettings: Mock;
 
     beforeEach(() => {
         resetOrganizationStore();
@@ -86,11 +89,13 @@ describe('Organization Store - Chat Settings', () => {
         const apiClient = getApiClient();
         mockedGetOrganizationDetails = apiClient.organizations.getOrganizationDetails as Mock;
         mockedUpdateOrganization = apiClient.organizations.updateOrganization as Mock;
+        mockedUpdateOrganizationSettings = apiClient.organizations.updateOrganizationSettings as Mock;
 
         vi.clearAllMocks(); 
 
         mockedGetOrganizationDetails.mockReset();
         mockedUpdateOrganization.mockReset();
+        mockedUpdateOrganizationSettings.mockReset();
         mockTrackEvent.mockReset();
 
         (useAuthStore.getState as Mock).mockReturnValue({ 
@@ -108,7 +113,8 @@ describe('Organization Store - Chat Settings', () => {
                 created_at: 't',
                 visibility: 'private',
                 deleted_at: null,
-                allow_member_chat_creation: true
+                allow_member_chat_creation: true,
+                token_usage_policy: 'member_tokens'
             };
             mockedGetOrganizationDetails.mockResolvedValue({ data: mockOrgDetails, error: undefined, status: 200 });
 
@@ -126,21 +132,22 @@ describe('Organization Store - Chat Settings', () => {
     });
 
     describe('updateOrganizationSettings', () => {
-        it('should call API (updateOrganization), update state, and track event on successful update', async () => {
+        it('should call API (updateOrganizationSettings), update state, and track event on successful update', async () => {
             const initialOrgDetails: Organization = {
                 id: testOrgId,
                 name: 'Test Settings Org Update',
                 created_at: 't',
                 visibility: 'private',
                 deleted_at: null,
-                allow_member_chat_creation: false
+                allow_member_chat_creation: false,
+                token_usage_policy: 'member_tokens'
             };
             resetOrganizationStore({ currentOrganizationDetails: initialOrgDetails, userOrganizations: [initialOrgDetails] });
 
-            const newSettings = { allow_member_chat_creation: true };
+            const newSettings = { allow_member_chat_creation: true, token_usage_policy: 'organization_tokens' as const };
             const updatedApiResponseOrg = { ...initialOrgDetails, ...newSettings };
             
-            mockedUpdateOrganization.mockResolvedValue({ data: updatedApiResponseOrg, error: undefined, status: 200 });
+            mockedUpdateOrganizationSettings.mockResolvedValue({ data: updatedApiResponseOrg, error: undefined, status: 200 });
 
             let result: boolean | undefined;
             await act(async () => {
@@ -148,30 +155,33 @@ describe('Organization Store - Chat Settings', () => {
             });
 
             expect(result).toBe(true);
-            expect(mockedUpdateOrganization).toHaveBeenCalledWith(testOrgId, newSettings);
+            expect(mockedUpdateOrganizationSettings).toHaveBeenCalledWith(testOrgId, newSettings);
             const state = useOrganizationStore.getState();
             expect(state.currentOrganizationDetails?.allow_member_chat_creation).toBe(true);
+            expect(state.currentOrganizationDetails?.token_usage_policy).toBe('organization_tokens');
             expect(state.currentOrganizationDetails?.name).toBe(initialOrgDetails.name);
             expect(state.userOrganizations.find(o => o.id === testOrgId)?.allow_member_chat_creation).toBe(true);
+            expect(state.userOrganizations.find(o => o.id === testOrgId)?.token_usage_policy).toBe('organization_tokens');
             expect(state.isLoading).toBe(false);
             expect(state.error).toBeNull();
         });
 
-        it('should set error state and return false on API (updateOrganization) failure', async () => {
-             const initialOrgDetails: Organization = {
+        it('should set error state and return false on API (updateOrganizationSettings) failure', async () => {
+            const initialOrgDetails: Organization = {
                 id: testOrgId,
                 name: 'Test Settings Org Fail',
                 created_at: 't',
                 visibility: 'private',
                 deleted_at: null,
-                allow_member_chat_creation: true
+                allow_member_chat_creation: true,
+                token_usage_policy: 'member_tokens'
             };
             resetOrganizationStore({ currentOrganizationDetails: initialOrgDetails });
 
-            const newSettings = { allow_member_chat_creation: false };
+            const newSettings = { allow_member_chat_creation: false, token_usage_policy: 'organization_tokens' as const };
             const apiError = { message: 'Update failed', code: 'API_ERROR' };
             
-            mockedUpdateOrganization.mockResolvedValue({ data: undefined, error: apiError, status: 500 });
+            mockedUpdateOrganizationSettings.mockResolvedValue({ data: undefined, error: apiError, status: 500 });
 
             let result: boolean | undefined;
             await act(async () => {
@@ -179,9 +189,10 @@ describe('Organization Store - Chat Settings', () => {
             });
 
             expect(result).toBe(false);
-            expect(mockedUpdateOrganization).toHaveBeenCalledWith(testOrgId, newSettings);
+            expect(mockedUpdateOrganizationSettings).toHaveBeenCalledWith(testOrgId, newSettings);
             const state = useOrganizationStore.getState();
             expect(state.currentOrganizationDetails?.allow_member_chat_creation).toBe(true);
+            expect(state.currentOrganizationDetails?.token_usage_policy).toBe('member_tokens');
             expect(state.isLoading).toBe(false);
             expect(state.error).toBe(apiError.message);
         });
@@ -198,7 +209,9 @@ describe('Organization Store - Chat Settings', () => {
             role: 'user', // Role is directly on UserProfile
             created_at: '2023-01-01T00:00:00Z',
             updated_at: '2023-01-01T00:00:00Z',
-            last_selected_org_id: null
+            last_selected_org_id: null,
+            chat_context: {},
+            profile_privacy_setting: 'public'
             // Removed: display_name, avatar_url, bio
         };
         const adminUserProfile: UserProfile = { 
@@ -208,7 +221,9 @@ describe('Organization Store - Chat Settings', () => {
             role: 'admin', // Role is directly on UserProfile
             created_at: '2023-01-01T00:00:00Z',
             updated_at: '2023-01-01T00:00:00Z',
-            last_selected_org_id: orgId
+            last_selected_org_id: orgId,
+            chat_context: {},
+            profile_privacy_setting: 'public'
             // Removed: display_name, avatar_url, bio
         };
 
@@ -235,7 +250,7 @@ describe('Organization Store - Chat Settings', () => {
                 ...initialTestOrgState, 
                 currentOrganizationId: orgId,
                 currentOrganizationMembers: members,
-                currentOrganizationDetails: { allow_member_chat_creation: true } as any 
+                currentOrganizationDetails: { allow_member_chat_creation: true } as any
             } as OrganizationStoreType;
             expect(selectCanCreateOrganizationChats(state)).toBe(true);
         });
@@ -247,7 +262,7 @@ describe('Organization Store - Chat Settings', () => {
                 ...initialTestOrgState, 
                 currentOrganizationId: orgId,
                 currentOrganizationMembers: members,
-                currentOrganizationDetails: { allow_member_chat_creation: true } as any 
+                currentOrganizationDetails: { allow_member_chat_creation: true } as any
             } as OrganizationStoreType;
             expect(selectCanCreateOrganizationChats(state)).toBe(true);
         });
@@ -258,7 +273,7 @@ describe('Organization Store - Chat Settings', () => {
                 ...initialTestOrgState, 
                 currentOrganizationId: orgId,
                 currentOrganizationMembers: members,
-                currentOrganizationDetails: { allow_member_chat_creation: false } as any 
+                currentOrganizationDetails: { allow_member_chat_creation: false } as any
             } as OrganizationStoreType;
             expect(selectCanCreateOrganizationChats(state)).toBe(false);
         });
@@ -269,7 +284,7 @@ describe('Organization Store - Chat Settings', () => {
                 ...initialTestOrgState, 
                 currentOrganizationId: orgId,
                 currentOrganizationMembers: members,
-                currentOrganizationDetails: { allow_member_chat_creation: false } as any 
+                currentOrganizationDetails: { allow_member_chat_creation: false } as any
             } as OrganizationStoreType;
             expect(selectCanCreateOrganizationChats(state)).toBe(false);
         });
@@ -280,7 +295,7 @@ describe('Organization Store - Chat Settings', () => {
                 ...initialTestOrgState, 
                 currentOrganizationId: orgId,
                 currentOrganizationMembers: members,
-                currentOrganizationDetails: { allow_member_chat_creation: null } as any 
+                currentOrganizationDetails: { allow_member_chat_creation: null } as any
             } as OrganizationStoreType;
             expect(selectCanCreateOrganizationChats(state)).toBe(false);
             
@@ -288,18 +303,18 @@ describe('Organization Store - Chat Settings', () => {
                 ...initialTestOrgState, 
                 currentOrganizationId: orgId,
                 currentOrganizationMembers: members,
-                currentOrganizationDetails: {} as any // allow_member_chat_creation is undefined
+                currentOrganizationDetails: {} as any
             } as OrganizationStoreType;
             expect(selectCanCreateOrganizationChats(state)).toBe(false);
         });
         
-        it('should return false if organization details are null', () => {
+        it('should return false if organization settings are null', () => {
             (useAuthStore.getState as Mock).mockReturnValue({ user: authMemberUser, session: {} } as any);
             const state = { 
                 ...initialTestOrgState, 
                 currentOrganizationId: orgId,
                 currentOrganizationMembers: members,
-                currentOrganizationDetails: null 
+                currentOrganizationDetails: null
             } as OrganizationStoreType;
             expect(selectCanCreateOrganizationChats(state)).toBe(false);
         });

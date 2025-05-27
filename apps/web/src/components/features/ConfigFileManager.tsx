@@ -230,7 +230,9 @@ export const ConfigFileManager: React.FC<ConfigFileManagerProps> = ({ configName
       console.log('[ConfigFileManager] Unsubscribing from file-drop event.');
       platformEventEmitter.off('file-drop', handleFileDrop);
     };
-  }, [isFileSystemAvailable]); // Depend on file system availability
+  }, [isFileSystemAvailable]); 
+  
+  // Depend on file system availability
   // ---------------------------------------
 
   const renderContent = () => {
@@ -319,7 +321,7 @@ export const ConfigFileManager: React.FC<ConfigFileManagerProps> = ({ configName
   };
 
   return (
-    <ErrorBoundary fallbackMessage={`Error in Config File Manager (${configName})`}>
+    <ErrorBoundary fallback={`Error in Config File Manager (${configName})`}>
       <div className="p-4 border rounded-lg space-y-2">
         <h3 className="text-md font-semibold">Config File Manager ({configName})</h3>
         {renderContent()}

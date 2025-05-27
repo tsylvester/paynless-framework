@@ -1,0 +1,2 @@
+ALTER TABLE subscription_plans
+ADD CONSTRAINT subscription_plans_stripe_product_id_key UNIQUE (stripe_product_id);
