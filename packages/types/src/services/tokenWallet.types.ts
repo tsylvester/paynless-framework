@@ -106,17 +106,16 @@ export interface ITokenWalletService {
   checkBalance(walletId: string, amountToSpend: string): Promise<boolean>;
 
   /**
-   * Retrieves the transaction history for a specific wallet, optionally paginated.
+   * Retrieves the transaction history for a specific wallet.
+   * Can be paginated or fetch all transactions.
    * @param walletId - The ID of the wallet.
-   * @param limit - Optional maximum number of transactions to return.
-   * @param offset - Optional number of transactions to skip (for pagination).
-   * @returns A promise resolving to an array of transaction records.
+   * @param params - Parameters for fetching history (limit, offset, fetchAll).
+   * @returns A promise resolving to PaginatedTransactions (transactions and totalCount).
    */
   getTransactionHistory(
     walletId: string,
-    limit?: number,
-    offset?: number
-  ): Promise<TokenWalletTransaction[]>;
+    params?: GetTransactionHistoryParams
+  ): Promise<PaginatedTransactions>;
 }
 
 // --- Unified Chat Wallet Determination Logic Types ---
@@ -140,6 +139,23 @@ export interface WalletDecisionContext {
   // hasOrgWallet?: boolean; 
   // isOrgWalletLoading?: boolean;
   // userConsentForOrg?: boolean | null; // null if not yet asked
+}
+
+/**
+ * Parameters for getTransactionHistory method.
+ */
+export interface GetTransactionHistoryParams {
+  limit?: number;
+  offset?: number;
+  fetchAll?: boolean;
+}
+
+/**
+ * Represents a paginated list of transactions along with the total count.
+ */
+export interface PaginatedTransactions {
+  transactions: TokenWalletTransaction[];
+  totalCount: number;
 }
 
 // --- End Unified Chat Wallet Determination Logic Types ---

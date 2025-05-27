@@ -6,7 +6,7 @@ import {
   PurchaseRequest,
   PaymentInitiationResult,
   WalletDecisionOutcome,
-  // Ensure org_token_usage_policy_enum is available if directly used, or rely on Organization type
+  GetTransactionHistoryParams
 } from '@paynless/types';
 import { api } from '@paynless/api'; // Uncommented for action implementation
 import { useOrganizationStore } from './organizationStore'; // For accessing organization details
@@ -34,8 +34,7 @@ export interface WalletActions {
   getOrLoadOrganizationWallet: (organizationId: string) => Promise<TokenWallet | null>;
   loadTransactionHistory: (
     organizationId?: string | null,
-    limit?: number,
-    offset?: number
+    params?: GetTransactionHistoryParams
   ) => Promise<void>;
   initiatePurchase: (request: PurchaseRequest) => Promise<PaymentInitiationResult | null>;
   _resetForTesting: () => void; // For test cleanup
@@ -275,12 +274,11 @@ export const useWalletStore = create<WalletStore>((set, get) => ({
 
   loadTransactionHistory: async (
     organizationId?: string | null,
-    limit?: number,
-    offset?: number
+    params?: GetTransactionHistoryParams
   ) => {
     set({ isLoadingHistory: true, personalWalletError: null, transactionHistory: [] });
     try {
-      const response = await api.wallet().getWalletTransactionHistory(organizationId, limit, offset);
+      const response = await api.wallet().getWalletTransactionHistory(organizationId, params);
 
       if (response.error) {
         const errorToSet: ApiError = 
@@ -299,8 +297,11 @@ export const useWalletStore = create<WalletStore>((set, get) => ({
         });
         return;
       }
-      // Ensure data is an array, even if it's empty, it's a valid response.
-      set({ transactionHistory: response.data || [], isLoadingHistory: false, personalWalletError: null });
+      set({
+        transactionHistory: response.data?.transactions || [], 
+        isLoadingHistory: false, 
+        personalWalletError: null 
+      });
     } catch (error: unknown) {
       set({
         personalWalletError: { message: error instanceof Error ? error.message : 'An unknown network error occurred while fetching history', code: 'NETWORK_ERROR' } as ApiError,

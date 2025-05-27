@@ -38,7 +38,17 @@ Deno.test("DummyAdapter - Echo Mode - Basic Echo", async () => {
     assertEquals(response.ai_provider_id, chatRequest.providerId);
     
     const tokenUsage = response.token_usage as TokenUsage | null | undefined;
-    const expectedPromptTokens = (testConfig.basePromptTokens ?? 0) + Math.ceil((chatRequest.message?.length ?? 0) * (testConfig.tokensPerChar ?? 0));
+    
+    // Updated calculation to include historical messages for prompt tokens
+    const historicalMessages = chatRequest.messages ?? []; // Default to empty array if undefined
+    const historyContent = historicalMessages.map(m => m.content).join('\n');
+    const historyTokens = historicalMessages.length > 0 ? Math.ceil(historyContent.length * (testConfig.tokensPerChar ?? 0)) : 0;
+
+    const expectedPromptTokens = 
+        (testConfig.basePromptTokens ?? 0) + 
+        historyTokens + 
+        Math.ceil((chatRequest.message?.length ?? 0) * (testConfig.tokensPerChar ?? 0));
+
     assertEquals(tokenUsage?.prompt_tokens, expectedPromptTokens);
     const expectedCompletionTokens = Math.ceil(response.content.length * (testConfig.tokensPerChar ?? 0));
     assertEquals(tokenUsage?.completion_tokens, expectedCompletionTokens);

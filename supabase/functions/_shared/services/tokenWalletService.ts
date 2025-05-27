@@ -5,6 +5,8 @@ import {
   TokenWallet,
   TokenWalletTransaction,
   TokenWalletTransactionType,
+  PaginatedTransactions,
+  GetTransactionHistoryParams
 } from '../types/tokenWallet.types.ts';
 
 /**
@@ -312,128 +314,122 @@ export class TokenWalletService implements ITokenWalletService {
   }
 
   async checkBalance(walletId: string, amountToSpend: string): Promise<boolean> {
-    console.log('[TokenWalletService] Checking balance for wallet', { walletId, amountToSpend });
+    console.log(`[TokenWalletService] Checking balance for wallet ${walletId} against amount ${amountToSpend}`);
 
-    // 1. Validate walletId format (copied from getBalance for consistency)
-    const uuidRegex = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
+    const uuidRegex = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$/;
     if (!uuidRegex.test(walletId)) {
-      console.error("[TokenWalletService] Invalid walletId format for checkBalance:", walletId);
+      console.error(`[TokenWalletService] Invalid walletId format for checkBalance: ${walletId}`);
       throw new Error("Invalid wallet ID format");
     }
 
-    // 2. Validate amountToSpend
-    let amountToSpendBigInt: bigint;
-    try {
-      amountToSpendBigInt = BigInt(amountToSpend);
-    } catch (e) {
-      console.error("[TokenWalletService] Invalid amountToSpend format (not a valid integer string):", amountToSpend);
-      throw new Error("Invalid amount format: amountToSpend must be a string representing a valid integer.");
+    // Validate amountToSpend: must be a string representing a non-negative integer
+    if (typeof amountToSpend !== 'string' || !/^\d+$/.test(amountToSpend)) {
+      console.error(`[TokenWalletService] Invalid amountToSpend format for checkBalance: ${amountToSpend}`);
+      throw new Error("Amount to spend must be a non-negative integer string");
     }
 
+    const amountToSpendBigInt = BigInt(amountToSpend);
     if (amountToSpendBigInt < 0) {
-      console.error("[TokenWalletService] amountToSpend cannot be negative:", amountToSpend);
-      throw new Error("Amount to spend must be non-negative");
+      // This case should be caught by the regex, but as a safeguard:
+      console.error(`[TokenWalletService] Negative amountToSpend for checkBalance: ${amountToSpend}`);
+      throw new Error("Amount to spend cannot be negative");
     }
 
-    // 3. Get current balance (this will also handle RLS and wallet not found errors)
-    let currentBalanceStr: string;
     try {
-      currentBalanceStr = await this.getBalance(walletId);
-    } catch (error) {
-      console.error(`[TokenWalletService] Error in checkBalance while calling getBalance for wallet ${walletId}:`, error);
-      // Re-throw the error from getBalance (e.g., "Wallet not found", "Invalid wallet ID format", etc.)
-      throw error;
-    }
-
-    // 4. Compare balance with amountToSpend using BigInt
-    try {
+      const currentBalanceStr = await this.getBalance(walletId); // getBalance returns string and throws if wallet not found
       const currentBalanceBigInt = BigInt(currentBalanceStr);
+      
       return currentBalanceBigInt >= amountToSpendBigInt;
-    } catch (e) {
-      console.error("[TokenWalletService] Error converting current balance to BigInt:", { currentBalanceStr, error: e });
-      // This case should be rare if getBalance always returns a valid integer string or throws.
-      throw new Error("Failed to compare balance due to internal error converting balance value.");
+    } catch (error) {
+      // If getBalance throws (e.g. "Wallet not found", "Invalid wallet ID format", or other DB errors),
+      // re-throw the error to be handled by the caller or test.
+      // This ensures that RLS violations or non-existent wallets correctly result in an error.
+      console.error(`[TokenWalletService] Error in checkBalance while getting balance for wallet ${walletId}:`, error);
+      throw error; // Re-throw the original error from getBalance
     }
   }
 
   async getTransactionHistory(
     walletId: string,
-    limit: number = 20,
-    offset: number = 0
-  ): Promise<TokenWalletTransaction[]> {
-    // console.log('[TokenWalletService GH_ENTRY] Fetching transaction history for wallet', { walletId, limit, offset });
+    params?: GetTransactionHistoryParams
+  ): Promise<PaginatedTransactions> {
+    const { limit = 20, offset = 0, fetchAll = false } = params || {}; // Destructure with defaults
+
+    console.log(`[TokenWalletService] Getting transaction history for wallet ${walletId}`, 
+      { limit, offset, fetchAll });
 
     const uuidRegex = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$/;
     if (!uuidRegex.test(walletId)) {
-      // console.warn(`[TokenWalletService GH_DEBUG_INVALID_UUID_FORMAT] Invalid walletId format for getTransactionHistory, throwing error: ${walletId}`);
-      throw new Error('Invalid walletId format');
+      console.warn(`[TokenWalletService] Invalid walletId format for getTransactionHistory: ${walletId}`);
+      return { transactions: [], totalCount: 0 };
     }
 
-    // console.log('[TokenWalletService GH_DEBUG_BEFORE_GETWALLET] Calling this.getWallet()', { walletId });
-    // First verify the wallet exists and user has access (RLS will handle this via getWallet)
-    const wallet = await this.getWallet(walletId);
-    // console.log('[TokenWalletService GH_DEBUG_AFTER_GETWALLET] Result of getWallet call:', wallet ? `Wallet object received for ${walletId}` : `null received for ${walletId}`);
+    // Fetch total count (always useful)
+    const { count, error: countError } = await this.supabaseClient
+      .from('token_wallet_transactions')
+      .select('*', { count: 'exact', head: true })
+      .eq('wallet_id', walletId);
 
-    if (!wallet) {
-      // console.log(`[TokenWalletService GH_DEBUG_WALLET_NULL] Wallet object is null. Wallet not found or access denied logic triggered for: ${walletId}`);
-      // console.log("[TokenWalletService] Wallet not found or access denied:", walletId);
-      // console.log('[TokenWalletService GH_EXIT_WALLET_NULL] Returning empty array due to null wallet.', { walletId });
-      return []; // Return empty array if wallet not found or access denied by getWallet
+    if (countError) {
+      console.error('[TokenWalletService] Error fetching transaction count:', { walletId, error: countError });
+      return { transactions: [], totalCount: 0 };
     }
-    // console.log('[TokenWalletService GH_DEBUG_WALLET_VALID] Wallet object is valid, proceeding to fetch transactions.', { walletId });
+    const totalCount = count === null ? 0 : count;
 
-    const query = this.supabaseClient
+    // Build query for transactions
+    let query = this.supabaseClient
       .from('token_wallet_transactions')
       .select(`
-        transaction_id,
-        wallet_id,
+        transaction_id, 
+        wallet_id, 
         transaction_type,
-        amount,
-        balance_after_txn,
+        amount, 
+        balance_after_txn, 
+        timestamp, 
+        related_entity_id, 
+        related_entity_type, 
+        payment_transaction_id,
         recorded_by_user_id,
         idempotency_key,
-        related_entity_id,
-        related_entity_type,
-        payment_transaction_id,
-        notes,
-        timestamp
+        notes
       `)
       .eq('wallet_id', walletId)
-      .order('timestamp', { ascending: false })
-      .limit(limit)
-      .range(offset, offset + limit - 1);
+      .order('timestamp', { ascending: false });
 
-    const { data: transactionsData, error: transactionsError } = await query;
+    // Apply pagination if not fetching all
+    if (!fetchAll) {
+      query = query.range(offset, offset + limit - 1);
+    }
+    // If fetchAll is true, no .range() is applied, so Supabase returns all matching rows.
 
-    // console.log('[TokenWalletService GH_DEBUG_AFTER_TX_QUERY] Transaction query completed.', { walletId, dataIsTruthy: !!transactionsData, errorIsTruthy: !!transactionsError });
+    const { data, error } = await query;
 
-    if (transactionsError) {
-      // console.error(`[TokenWalletService GH_DEBUG_TX_ERROR] Error fetching transaction history for wallet ${walletId}:`, transactionsError);
-      throw new Error(`Error fetching transaction history: ${transactionsError.message}`);
+    if (error) {
+      console.error('[TokenWalletService] Error fetching transaction history:', { walletId, error });
+      return { transactions: [], totalCount: totalCount }; 
     }
 
-    if (!transactionsData || transactionsData.length === 0) {
-      // console.log(`[TokenWalletService GH_DEBUG_TX_EMPTY_ARRAY] Transaction data array is empty for wallet: ${walletId}`);
-      // console.log('[TokenWalletService GH_EXIT_SUCCESS] Returning mapped transactions.', { walletId, count: 0 });
-      return [];
+    if (!data) {
+      console.log(`[TokenWalletService] No transaction history found for wallet ${walletId}`);
+      return { transactions: [], totalCount: totalCount };
     }
 
-    // console.log(`[TokenWalletService GH_DEBUG_TX_DATA_FOUND] Transactions found (count: ${transactionsData.length}) for wallet: ${walletId}`);
-    const mappedTransactions = transactionsData.map(tx => ({
+    const transactions: TokenWalletTransaction[] = data.map(tx => ({
       transactionId: tx.transaction_id,
       walletId: tx.wallet_id,
       type: tx.transaction_type as TokenWalletTransactionType,
-      amount: tx.amount?.toString(),
-      balanceAfterTxn: tx.balance_after_txn?.toString(),
-      recordedByUserId: tx.recorded_by_user_id,
-      idempotencyKey: tx.idempotency_key!,
+      amount: tx.amount.toString(),
+      balanceAfterTxn: tx.balance_after_txn.toString(),
+      timestamp: new Date(tx.timestamp),
       relatedEntityId: tx.related_entity_id || undefined,
       relatedEntityType: tx.related_entity_type || undefined,
       paymentTransactionId: tx.payment_transaction_id || undefined,
+      recordedByUserId: tx.recorded_by_user_id,
+      idempotencyKey: tx.idempotency_key!,
       notes: tx.notes || undefined,
-      timestamp: new Date(tx.timestamp),
     }));
-    // console.log('[TokenWalletService GH_EXIT_SUCCESS] Returning mapped transactions.', { walletId, count: mappedTransactions.length });
-    return mappedTransactions;
+
+    console.log(`[TokenWalletService] Successfully fetched ${transactions.length} transactions (total: ${totalCount}) for wallet ${walletId}`);
+    return { transactions, totalCount };
   }
 } 

@@ -58,6 +58,7 @@ const mockTransactionArray: TokenWalletTransaction[] = [
     balanceAfterTxn: "1000",
     recordedByUserId: testUserId,
     timestamp: new Date("2023-01-01T10:00:00Z"),
+    idempotencyKey: "idem-key-txn-1",
   },
   {
     transactionId: "txn-2",
@@ -69,6 +70,7 @@ const mockTransactionArray: TokenWalletTransaction[] = [
     relatedEntityId: "chat-123",
     relatedEntityType: "chat_message",
     timestamp: new Date("2023-01-01T11:00:00Z"),
+    idempotencyKey: "idem-key-txn-2",
   },
 ];
 

@@ -75,7 +75,7 @@ describe('WalletApiClient', () => {
       const mockResponse: ApiResponse<TokenWalletTransaction[]> = { status: 200, data: [], error: undefined }; // Changed error to undefined
       mockGet.mockResolvedValue(mockResponse);
 
-      await walletApiClient.getWalletTransactionHistory('org456', 10, 5);
+      await walletApiClient.getWalletTransactionHistory('org456', { limit: 10, offset: 5 });
       expect(mockGet).toHaveBeenCalledWith('/wallet-history?organizationId=org456&limit=10&offset=5', undefined);
     });
 
@@ -87,52 +87,58 @@ describe('WalletApiClient', () => {
 
     it('should handle only limit and offset', async () => {
         mockGet.mockResolvedValue({ status: 200, data: [], error: undefined }); // Changed error to undefined
-        await walletApiClient.getWalletTransactionHistory(null, 20, 0);
+        await walletApiClient.getWalletTransactionHistory(null, { limit: 20, offset: 0 });
         expect(mockGet).toHaveBeenCalledWith('/wallet-history?limit=20&offset=0', undefined);
     });
 
     it('should pass FetchOptions to client.get', async () => {
         const options: FetchOptions = { cache: 'no-cache' };
         mockGet.mockResolvedValue({ status: 200, data: [], error: undefined }); // Changed error to undefined
-        await walletApiClient.getWalletTransactionHistory(null, undefined, undefined, options);
+        await walletApiClient.getWalletTransactionHistory(null, undefined, options);
         expect(mockGet).toHaveBeenCalledWith('/wallet-history', options);
+    });
+
+    it('should correctly include fetchAll parameter', async () => {
+      mockGet.mockResolvedValue({ status: 200, data: [], error: undefined });
+      await walletApiClient.getWalletTransactionHistory('org789', { fetchAll: true });
+      expect(mockGet).toHaveBeenCalledWith('/wallet-history?organizationId=org789&fetchAll=true', undefined);
     });
   });
 
   describe('initiateTokenPurchase', () => {
-    it('should return a placeholder success response and log a warning (temporary)', async () => {
+    it('should call client.post with /initiate-payment and the request body', async () => {
       const purchaseRequest: PurchaseRequest = {
-        userId: 'user-test-id', // Added missing userId
+        userId: 'user-test-id',
         itemId: 'item_abc',
         quantity: 1,
         currency: 'USD',
         paymentGatewayId: 'stripe',
       };
-      const consoleWarnSpy = vi.spyOn(console, 'warn');
+      const mockPaymentResult: PaymentInitiationResult = { success: true, transactionId: 'txn_xyz', paymentGatewayUrl: 'http://example.com/pay' };
+      const mockApiResponse: ApiResponse<PaymentInitiationResult> = { status: 200, data: mockPaymentResult, error: undefined };
+      mockPost.mockResolvedValue(mockApiResponse);
 
       const response = await walletApiClient.initiateTokenPurchase(purchaseRequest);
 
-      expect(consoleWarnSpy).toHaveBeenCalledWith(
-        'initiateTokenPurchase is a placeholder and does not make an API call yet.',
-        purchaseRequest,
-        undefined // For options, which is undefined in this call
-      );
-      expect(response.data?.success).toBe(true);
-      expect(response.error).toBeNull();
-      expect(mockPost).not.toHaveBeenCalled(); // Ensure the actual post isn't called yet
-
-      consoleWarnSpy.mockRestore();
+      expect(mockPost).toHaveBeenCalledWith('/initiate-payment', purchaseRequest, undefined);
+      expect(response).toEqual(mockApiResponse);
     });
 
-    // it('should call client.post with /initiate-payment and the request body (when implemented)', async () => {
-    //   const purchaseRequest: PurchaseRequest = { /* ... */ } as PurchaseRequest;
-    //   const mockPaymentResult: PaymentInitiationResult = { success: true, transactionId: 'txn_xyz' };
-    //   const mockApiResponse: ApiResponse<PaymentInitiationResult> = { status: 200, data: mockPaymentResult, error: null };
-    //   mockPost.mockResolvedValue(mockApiResponse);
-
-    //   // Update WalletApiClient to actually call this.client.post for this test when ready
-    //   // await walletApiClient.initiateTokenPurchase(purchaseRequest);
-    //   // expect(mockPost).toHaveBeenCalledWith('/initiate-payment', purchaseRequest, undefined);
-    // });
+    it('should pass FetchOptions to client.post', async () => {
+        const purchaseRequest: PurchaseRequest = {
+            userId: 'user-test-id-options',
+            itemId: 'item_def',
+            quantity: 2,
+            currency: 'EUR',
+            paymentGatewayId: 'paypal',
+        };
+        const options: FetchOptions = { headers: { 'X-Custom-Post': 'TestPost' } };
+        const mockPaymentResult: PaymentInitiationResult = { success: true, transactionId: 'txn_abc', paymentGatewayUrl: 'http://example.com/pay/paypal' };
+        const mockApiResponse: ApiResponse<PaymentInitiationResult> = { status: 200, data: mockPaymentResult, error: undefined };
+        mockPost.mockResolvedValue(mockApiResponse);
+  
+        await walletApiClient.initiateTokenPurchase(purchaseRequest, options);
+        expect(mockPost).toHaveBeenCalledWith('/initiate-payment', purchaseRequest, options);
+      });
   });
 }); 

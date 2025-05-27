@@ -2,10 +2,11 @@ import { ApiClient } from './apiClient';
 import {
   ApiResponse,
   TokenWallet,
-  TokenWalletTransaction,
+  PaginatedTransactions,
   PurchaseRequest,
   PaymentInitiationResult,
   FetchOptions,
+  GetTransactionHistoryParams
 } from '@paynless/types';
 
 export class WalletApiClient {
@@ -34,33 +35,35 @@ export class WalletApiClient {
   /**
    * Fetches the transaction history for the current user's wallet or a specified organization's wallet.
    * @param organizationId Optional ID of the organization.
-   * @param limit Optional limit for pagination.
-   * @param offset Optional offset for pagination.
+   * @param params Optional parameters for pagination (limit, offset) or fetching all (fetchAll).
    * @param options Optional fetch options.
-   * @returns Promise resolving to the list of transactions.
+   * @returns Promise resolving to PaginatedTransactions.
    */
   async getWalletTransactionHistory(
     organizationId?: string | null,
-    limit?: number,
-    offset?: number,
+    params?: GetTransactionHistoryParams,
     options?: FetchOptions
-  ): Promise<ApiResponse<TokenWalletTransaction[]>> {
+  ): Promise<ApiResponse<PaginatedTransactions>> {
     let endpoint = '/wallet-history';
     const queryParams = new URLSearchParams();
     if (organizationId) {
       queryParams.append('organizationId', organizationId);
     }
-    if (limit !== undefined) {
-      queryParams.append('limit', limit.toString());
+    if (params?.limit !== undefined) {
+      queryParams.append('limit', params.limit.toString());
     }
-    if (offset !== undefined) {
-      queryParams.append('offset', offset.toString());
+    if (params?.offset !== undefined) {
+      queryParams.append('offset', params.offset.toString());
     }
+    if (params?.fetchAll) {
+      queryParams.append('fetchAll', 'true');
+    }
+
     const queryString = queryParams.toString();
     if (queryString) {
       endpoint += `?${queryString}`;
     }
-    return this.client.get<TokenWalletTransaction[]>(endpoint, options);
+    return this.client.get<PaginatedTransactions>(endpoint, options);
   }
 
   /**

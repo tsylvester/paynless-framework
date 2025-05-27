@@ -47,8 +47,7 @@ export class DummyAdapter implements AiProviderAdapter {
         if (this.config.mode === 'echo') {
             responseContent = `Echo: ${request.message || 'No message provided'}`;
             // Simulate token usage for echo
-            prompt_tokens = this.config.basePromptTokens ?? 10; // Base for system prompt, etc.
-            prompt_tokens += Math.ceil((request.message?.length ?? 0) * (this.config.tokensPerChar ?? 0.25));
+            prompt_tokens = (this.config.basePromptTokens ?? 10) + Math.ceil(requestMessagesString.length * (this.config.tokensPerChar ?? 0.25));
             completion_tokens = Math.ceil(responseContent.length * (this.config.tokensPerChar ?? 0.25));
 
         } else if (this.config.mode === 'fixed_response') {

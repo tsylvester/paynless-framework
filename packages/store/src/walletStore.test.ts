@@ -20,7 +20,8 @@ import {
   SuccessResponse, 
   PurchaseRequest, 
   PaymentInitiationResult, 
-  Organization 
+  Organization,
+  PaginatedTransactions
 } from '@paynless/types';
 
 // Import the actual api for type casting, and the reset function from our mock file
@@ -618,26 +619,29 @@ describe('useWalletStore', () => {
       const offset = 5;
 
       it('should load transaction history successfully for personal wallet', async () => {
-        const response: SuccessResponse<TokenWalletTransaction[]> = { data: mockTransactions, error: undefined, status: 200 };
-        mockGetWalletTransactionHistory.mockResolvedValue(response as ApiResponse<TokenWalletTransaction[]>);
+        const response: SuccessResponse<PaginatedTransactions> = { data: { transactions: mockTransactions, total: mockTransactions.length, limit: 0, offset: 0 }, error: undefined, status: 200 };
+        mockGetWalletTransactionHistory.mockResolvedValue(response as ApiResponse<PaginatedTransactions>);
 
-        await useWalletStore.getState().loadTransactionHistory();
+        await useWalletStore.getState().loadTransactionHistory(); // No params, so second arg to API client will be undefined
 
         const state = useWalletStore.getState();
-        expect(mockGetWalletTransactionHistory).toHaveBeenCalledWith(undefined, undefined, undefined);
+        expect(mockGetWalletTransactionHistory).toHaveBeenCalledWith(undefined, undefined); // apiClient.getWalletTransactionHistory(orgId?: string, params?: GetTransactionHistoryParams)
         expect(state.isLoadingHistory).toBe(false);
         expect(state.transactionHistory).toEqual(mockTransactions);
         expect(state.personalWalletError).toBeNull();
       });
 
       it('should load transaction history successfully for an organization wallet with pagination', async () => {
-        const response: SuccessResponse<TokenWalletTransaction[]> = { data: mockTransactions, error: undefined, status: 200 };
-        mockGetWalletTransactionHistory.mockResolvedValue(response as ApiResponse<TokenWalletTransaction[]>);
+        const paginatedResponseData: PaginatedTransactions = { transactions: mockTransactions, total: mockTransactions.length, limit, offset };
+        const response: SuccessResponse<PaginatedTransactions> = { data: paginatedResponseData, error: undefined, status: 200 };
+        mockGetWalletTransactionHistory.mockResolvedValue(response as ApiResponse<PaginatedTransactions>);
 
-        await useWalletStore.getState().loadTransactionHistory(orgId, limit, offset);
+        // Call loadTransactionHistory with the params object
+        await useWalletStore.getState().loadTransactionHistory(orgId, { limit, offset });
 
         const state = useWalletStore.getState();
-        expect(mockGetWalletTransactionHistory).toHaveBeenCalledWith(orgId, limit, offset);
+        // Expect the API client method to be called with the orgId and the params object
+        expect(mockGetWalletTransactionHistory).toHaveBeenCalledWith(orgId, { limit, offset });
         expect(state.isLoadingHistory).toBe(false);
         expect(state.transactionHistory).toEqual(mockTransactions);
         expect(state.personalWalletError).toBeNull();
@@ -646,7 +650,7 @@ describe('useWalletStore', () => {
       it('should handle API error when loading transaction history', async () => {
         const apiError: ApiError = { message: 'History API Error', code: 'HISTORY_FETCH_FAILED' }; 
         const response: ErrorResponse = { data: undefined, error: apiError, status: 500 }; 
-        mockGetWalletTransactionHistory.mockResolvedValue(response as ApiResponse<TokenWalletTransaction[]>);
+        mockGetWalletTransactionHistory.mockResolvedValue(response as ApiResponse<PaginatedTransactions>); // Ensure PaginatedTransactions type
 
         await useWalletStore.getState().loadTransactionHistory();
 
@@ -656,9 +660,10 @@ describe('useWalletStore', () => {
         expect(state.personalWalletError).toEqual(expect.objectContaining(apiError));
       });
 
-      it('should handle empty transaction history (API returns empty array)', async () => {
-        const response: SuccessResponse<TokenWalletTransaction[]> = { data: [], error: undefined, status: 200 };
-        mockGetWalletTransactionHistory.mockResolvedValue(response as ApiResponse<TokenWalletTransaction[]>);
+      it('should handle empty transaction history (API returns empty array in PaginatedTransactions)', async () => {
+        const emptyPaginatedResponse: PaginatedTransactions = { transactions: [], total: 0, limit: 0, offset: 0 };
+        const response: SuccessResponse<PaginatedTransactions> = { data: emptyPaginatedResponse, error: undefined, status: 200 };
+        mockGetWalletTransactionHistory.mockResolvedValue(response as ApiResponse<PaginatedTransactions>);
 
         await useWalletStore.getState().loadTransactionHistory();
 
@@ -669,20 +674,27 @@ describe('useWalletStore', () => {
       });
 
       it('should handle history not found (API returns null data, no error)', async () => {
+        // The API for getWalletTransactionHistory is expected to return PaginatedTransactions or an error.
+        // A null response for data would typically be wrapped in an ApiError by the client if it's unexpected,
+        // or the API should return PaginatedTransactions with an empty list if "not found" means no transactions.
+        // For this test, let's assume the API client successfully returns a response where `data` is `null`.
+        // The store currently interprets `null` data (even without an error object) as an issue.
         const response: SuccessResponse<null> = { data: null, error: undefined, status: 200 };
-        mockGetWalletTransactionHistory.mockResolvedValue(response as unknown as ApiResponse<TokenWalletTransaction[]>);
+        mockGetWalletTransactionHistory.mockResolvedValue(response as unknown as ApiResponse<PaginatedTransactions>);
 
         await useWalletStore.getState().loadTransactionHistory();
 
         const state = useWalletStore.getState();
         expect(state.isLoadingHistory).toBe(false);
-        expect(state.transactionHistory).toEqual([]);
-        expect(state.personalWalletError).toEqual(expect.objectContaining({ message: 'Failed to fetch transaction history: No data returned', code: 'NOT_FOUND' }));
+        expect(state.transactionHistory).toEqual([]); // store sets to empty array
+        // When API returns {data: null, error: undefined}, the store interprets this as a "not found" scenario for history.
+        expect(state.personalWalletError).toEqual({ message: 'Failed to fetch transaction history: No data returned', code: 'NOT_FOUND' }); 
       });
 
       it('should set isLoadingHistory to true during fetch and false afterwards', async () => {
-        const response: SuccessResponse<TokenWalletTransaction[]> = { data: mockTransactions, error: undefined, status: 200 };
-        mockGetWalletTransactionHistory.mockResolvedValue(response as ApiResponse<TokenWalletTransaction[]>);
+        const paginatedResponseData: PaginatedTransactions = { transactions: mockTransactions, total: mockTransactions.length, limit: 0, offset: 0 };
+        const response: SuccessResponse<PaginatedTransactions> = { data: paginatedResponseData, error: undefined, status: 200 };
+        mockGetWalletTransactionHistory.mockResolvedValue(response as ApiResponse<PaginatedTransactions>);
         
         const loadPromise = useWalletStore.getState().loadTransactionHistory();
         expect(useWalletStore.getState().isLoadingHistory).toBe(true);
