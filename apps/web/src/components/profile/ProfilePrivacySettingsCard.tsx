@@ -53,7 +53,7 @@ export const ProfilePrivacySettingsCard: React.FC = () => {
     {
       value: 'private',
       label: 'Private',
-      description: 'Only you and members of organizations you share can see your profile details.'
+      description: 'Only you and members of organizations can see your details.'
     },
     {
       value: 'public',
@@ -74,7 +74,6 @@ export const ProfilePrivacySettingsCard: React.FC = () => {
     <Card className="w-full max-w-lg mx-auto">
       <CardHeader className="text-center">
         <CardTitle className="text-2xl font-bold text-textPrimary">Profile Privacy</CardTitle>
-        <CardDescription>Adjust who can see your profile information.</CardDescription>
       </CardHeader>
       <CardContent className="space-y-6 p-6">
         <div className="space-y-2">
@@ -119,7 +118,7 @@ export const ProfilePrivacySettingsCard: React.FC = () => {
             This setting controls who can view your profile details like name and activity.
           </p>
         </div>
-      </CardContent>
+      </div>
       {(isLoading || error) && (
         <CardFooter className={`border-t pt-4 mt-6 ${error ? 'bg-destructive/10 border-destructive/30' : ''}`}>
           {isLoading && !error && <p data-testid="loading-indicator" className="text-sm text-muted-foreground animate-pulse w-full text-center">Saving settings...</p>}
@@ -131,6 +130,6 @@ export const ProfilePrivacySettingsCard: React.FC = () => {
           )}
         </CardFooter>
       )}
-    </Card>
+    </div>
   );
 }; 
