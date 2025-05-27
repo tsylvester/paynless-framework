@@ -1,5 +1,5 @@
 import { getAiProviderAdapter } from '../_shared/ai_service/factory.ts'; 
-import { ChatApiRequest } from '../_shared/types.ts';
+// import { ChatApiRequest } from '../_shared/types.ts'; // ChatApiRequest will be imported from index.test.ts or _shared/types.ts as decided
 import type { TokenWalletTransaction } from '../_shared/types/tokenWallet.types.ts';
 import type { Database, Json } from "../types_db.ts";
 
@@ -21,11 +21,18 @@ import {
     ChatTestConstants, // Collection of common test IDs, etc.
     type ChatTestCase, // Shared TestCase interface
     type ChatMessageRow, // If needed directly by tests beyond what ChatTestCase provides
-    type MockTokenWalletService, // For type hints if setting up wallet stubs
-    type AdapterResponsePayload, // For type hints
-    // IMockSupabaseClient might not be needed directly if createTestDeps handles it
-    type TokenWalletServiceMethodImplementations // Import this type
+    // MockTokenWalletService, // Removed
+    // AdapterResponsePayload, // Removed
+    // TokenWalletServiceMethodImplementations // Removed
   } from "./index.test.ts";
+import type { 
+    ChatApiRequest, // Assuming this is the primary location now
+    AdapterResponsePayload 
+} from '../_shared/types.ts';
+import type { 
+    MockTokenWalletService, 
+    TokenWalletServiceMethodImplementations 
+} from '../_shared/services/tokenWalletService.mock.ts';
   
 
 // --- Test Suite for Chat Functionality with selectedMessages ---
@@ -49,6 +56,8 @@ Deno.test("Chat Selected Messages Tests", async (t) => {
             chat_id: ChatTestConstants.testChatId, // Will be overridden by actual chatId from 'chats' insert
             content: testUserMessageContent,
             user_id: ChatTestConstants.testUserId,
+            error_type: null,
+            response_to_message_id: null
         };
         const expectedAssistantMessageInsertResult: ChatMessageRow = {
             ...ChatTestConstants.mockAssistantDbRow,
@@ -58,6 +67,8 @@ Deno.test("Chat Selected Messages Tests", async (t) => {
             ai_provider_id: ChatTestConstants.testProviderId,
             system_prompt_id: ChatTestConstants.testPromptId,
             token_usage: ChatTestConstants.mockAdapterTokenData as unknown as Json,
+            error_type: null,
+            response_to_message_id: null
         };
         
         if (localMockSupaConfig.genericMockResults && localMockSupaConfig.genericMockResults.chat_messages) {
@@ -239,6 +250,42 @@ Deno.test("Chat Selected Messages Tests", async (t) => {
                 error: null, 
                 status: 200, 
                 count: 1 
+            };
+            localMockSupaConfig.genericMockResults.chat_messages.insert = (state: any) => {
+                if (Array.isArray(state.insertData) && state.insertData.length > 0) {
+                    const messageToInsert = state.insertData[0] as Partial<ChatMessageRow>;
+                    if (messageToInsert.role === 'assistant') {
+                        const assistantResponse = {
+                            ...ChatTestConstants.mockAssistantDbRow,
+                            id: crypto.randomUUID(),
+                            content: messageToInsert.content || ChatTestConstants.mockAssistantDbRow.content,
+                            chat_id: messageToInsert.chat_id || ChatTestConstants.mockAssistantDbRow.chat_id,
+                            ai_provider_id: messageToInsert.ai_provider_id || ChatTestConstants.mockAssistantDbRow.ai_provider_id,
+                            system_prompt_id: messageToInsert.system_prompt_id || ChatTestConstants.mockAssistantDbRow.system_prompt_id,
+                            token_usage: messageToInsert.token_usage || ChatTestConstants.mockAssistantDbRow.token_usage,
+                            response_to_message_id: messageToInsert.response_to_message_id || null,
+                        };
+                        return Promise.resolve({ data: [assistantResponse], error: null, status: 201, count: 1 });
+                    } else if (messageToInsert.role === 'user') {
+                        const userResponse = {
+                            ...ChatTestConstants.mockUserDbRow,
+                            id: crypto.randomUUID(),
+                            content: messageToInsert.content || ChatTestConstants.mockUserDbRow.content,
+                            chat_id: messageToInsert.chat_id || ChatTestConstants.mockUserDbRow.chat_id,
+                            ai_provider_id: messageToInsert.ai_provider_id || ChatTestConstants.mockUserDbRow.ai_provider_id,
+                            system_prompt_id: messageToInsert.system_prompt_id || ChatTestConstants.mockUserDbRow.system_prompt_id,
+                        };
+                        return Promise.resolve({ data: [userResponse], error: null, status: 201, count: 1 });
+                    }
+                }
+                // Fallback
+                const fallbackResponse = {
+                    ...ChatTestConstants.mockUserDbRow,
+                    id: crypto.randomUUID(),
+                    chat_id: (state.insertData && state.insertData[0]?.chat_id) ? state.insertData[0].chat_id : ChatTestConstants.mockUserDbRow.chat_id,
+                    content: (state.insertData && state.insertData[0]?.content) ? state.insertData[0].content : ChatTestConstants.mockUserDbRow.content,
+                };
+                return Promise.resolve({ data: [fallbackResponse], error: null, status: 201, count: 1 });
             };
         }
 

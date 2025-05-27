@@ -39,10 +39,30 @@ ON CONFLICT (id) DO NOTHING; -- Avoid errors if users already exist
 -- ON CONFLICT (id) DO NOTHING;
 
 -- Add Dummy AI Provider for testing
-INSERT INTO public.ai_providers (id, name, provider, api_identifier, is_active)
+INSERT INTO public.ai_providers (id, name, provider, api_identifier, is_active, config, is_enabled)
 VALUES 
-    ('11111111-1111-1111-1111-111111111111', 'Dummy Echo v1', 'dummy', 'dummy-echo-v1', true)
-ON CONFLICT (id) DO NOTHING;
+    ('11111111-1111-1111-1111-111111111111', 'Dummy Echo v1', 'dummy', 'dummy-echo-v1', true,
+     '{
+        "mode": "echo",
+        "modelId": "dummy-echo-v1", 
+        "tokensPerChar": 0.25,
+        "basePromptTokens": 2,
+        "tokenization_strategy": {
+          "type": "tiktoken",
+          "tiktoken_encoding_name": "cl100k_base"
+        },
+        "api_identifier": "dummy-echo-v1",
+        "input_token_cost_rate": 1,
+        "output_token_cost_rate": 1
+      }'::jsonb, 
+      true
+    )
+ON CONFLICT (id) DO UPDATE SET 
+    name = EXCLUDED.name,
+    provider = EXCLUDED.provider,
+    api_identifier = EXCLUDED.api_identifier,
+    is_active = EXCLUDED.is_active,
+    config = EXCLUDED.config;
 
 -- Add Dummy System Prompt for testing
 INSERT INTO public.system_prompts (id, name, prompt_text, is_active)

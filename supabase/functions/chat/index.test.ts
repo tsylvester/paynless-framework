@@ -1,6 +1,6 @@
 import { stub, type Spy } from "jsr:@std/testing@0.225.1/mock"; 
 import { spy } from "jsr:@std/testing@0.225.1/mock";
-import { createClient, type SupabaseClient } from "npm:@supabase/supabase-js";
+import { type SupabaseClient } from "npm:@supabase/supabase-js@2";
 import type { ConnInfo } from "https://deno.land/std@0.177.0/http/server.ts";
 import type { Database, Json } from "../types_db.ts"; 
 import type { 
@@ -8,11 +8,7 @@ import type {
     ChatApiRequest,
     AdapterResponsePayload,
     ChatHandlerDeps,
-    ChatHandlerSuccessResponse,
-    GetAiProviderAdapter,
-    CountTokensForMessagesFn
 } from '../_shared/types.ts'; 
-import { getAiProviderAdapter } from '../_shared/ai_service/factory.ts'; 
 import {
   createMockSupabaseClient,
   type MockSupabaseDataConfig,
@@ -35,18 +31,10 @@ export { spy, type Spy, assertSpyCalls, stub } from "jsr:@std/testing@0.225.1/mo
 export { handler, defaultDeps, logger };
 
 // --- Exported Types ---
-export type { 
-    ChatApiRequest, 
-    AdapterResponsePayload, 
-    ChatHandlerDeps, 
-    ChatHandlerSuccessResponse, 
-    AiProviderAdapter,
-    MockSupabaseDataConfig,
-    MockTokenWalletService,
-    SupabaseClient,
-    TokenWalletServiceMethodImplementations,
-    CountTokensForMessagesFn
-};
+// The re-export block that was here has been removed.
+// Types like ChatApiRequest, MockSupabaseDataConfig, etc., if needed by other files,
+// must be imported directly from their canonical locations.
+
 export type ChatMessageRow = Database['public']['Tables']['chat_messages']['Row'];
 export interface MockAdapterTokenUsage {
   prompt_tokens: number;
@@ -117,10 +105,10 @@ export const createTestDeps = (
   supaConfig: MockSupabaseDataConfig = {},
   adapterSendMessageResult?: AdapterResponsePayload | Error,
   tokenWalletConfig?: TokenWalletServiceMethodImplementations,
-  countTokensFnOverride?: CountTokensForMessagesFn,
+  countTokensFnOverride?: ChatHandlerDeps['countTokensForMessages'],
   pDepOverrides?: CoreDepsOverride,
 ): CreateTestDepsResult => {
-  const mockSupabaseClientSetup = createMockSupabaseClient(supaConfig);
+  const mockSupabaseClientSetup = createMockSupabaseClient(testUserId, supaConfig);
   const tokenWalletServiceToUse = createMockTokenWalletService(tokenWalletConfig || {});
 
   const filterOutHandledDepOverrides = (overrides: CoreDepsOverride): Partial<ChatHandlerDeps> => {
@@ -181,12 +169,12 @@ export const createTestDeps = (
 };
 
 // --- Exported Shared Mock Data Objects ---
-export const testProviderId = 'provider-openai-123';
+export const testProviderId = '123e4567-e89b-12d3-a456-426614174000';
 export const testApiIdentifier = 'openai-gpt-4o';
 export const testProviderString = 'openai';
-export const testPromptId = 'prompt-abc-456';
+export const testPromptId = 'abcdef01-2345-6789-abcd-ef0123456789';
 export const testUserId = 'user-auth-xyz';
-export const testChatId = 'chat-new-789';
+export const testChatId = crypto.randomUUID();
 export const testUserMsgId = 'msg-user-aaa'; 
 export const testAsstMsgId = 'msg-asst-bbb';
 export const testAiContent = 'Mock AI response content from adapter';
@@ -217,6 +205,8 @@ export const mockAssistantDbRow: ChatMessageRow = {
             total_tokens: mockAdapterTokenData.total_tokens,
         },
         is_active_in_thread: true,
+        error_type: null,
+        response_to_message_id: null,
     };
 export const mockUserDbRow: ChatMessageRow = {
         id: testUserMsgId,
@@ -230,6 +220,8 @@ export const mockUserDbRow: ChatMessageRow = {
     system_prompt_id: null, // User messages typically don't have this set on insert
         token_usage: null,
         is_active_in_thread: true,
+        error_type: null,
+        response_to_message_id: null,
     };
 
 export const mockSupaConfigBase: MockSupabaseDataConfig = {
@@ -237,10 +229,27 @@ export const mockSupaConfigBase: MockSupabaseDataConfig = {
     getUserResult: { data: { user: { id: testUserId, app_metadata: {}, user_metadata: {}, aud: 'authenticated', created_at: nowISO } as any }, error: null },
         genericMockResults: {
             'system_prompts': {
-                select: { data: [{ id: testPromptId, prompt_text: 'Test system prompt' }], error: null, status: 200, count: 1 }
+                select: { data: [{ id: testPromptId, prompt_text: 'Test system prompt', is_active: true }], error: null, status: 200, count: 1 }
             },
             'ai_providers': {
-            select: { data: [{ id: testProviderId, api_identifier: testApiIdentifier, provider: testProviderString }], error: null, status: 200, count: 1 }
+                select: { 
+                    data: [{
+                        id: testProviderId, 
+                        name: "Mock Default Provider",
+                        api_identifier: testApiIdentifier, 
+                        provider: testProviderString, 
+                        is_active: true,
+                        config: {
+                            api_identifier: testApiIdentifier, 
+                            tokenization_strategy: { type: "tiktoken", tiktoken_encoding_name: "cl100k_base" },
+                            input_token_cost_rate: 0.001,
+                            output_token_cost_rate: 0.002
+                        } as Json
+                    }], 
+                    error: null, 
+                    status: 200, 
+                    count: 1 
+                }
             },
             'chats': {
                 insert: { data: [{ id: testChatId, system_prompt_id: testPromptId, title: "Hello there AI!".substring(0,50), user_id: testUserId, organization_id: null }], error: null, status: 201, count: 1 },

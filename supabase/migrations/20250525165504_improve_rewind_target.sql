@@ -1,3 +1,5 @@
+DROP FUNCTION IF EXISTS public.perform_chat_rewind(uuid, uuid, uuid, text, uuid, text, uuid, uuid, jsonb, uuid, text);
+
 CREATE OR REPLACE FUNCTION public.perform_chat_rewind(
     p_chat_id UUID,
     p_rewind_from_message_id UUID,

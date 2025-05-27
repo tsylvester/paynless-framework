@@ -1,25 +1,43 @@
 // Import shared testing utilities, types, constants, and helpers
-import type { TokenWalletTransaction } from "../_shared/types/tokenWallet.types.ts"; // Corrected import path
-import type { TokenWalletServiceMethodImplementations } from "../_shared/services/tokenWalletService.mock.ts"; // Added import
+import { createClient, type SupabaseClient } from "npm:@supabase/supabase-js@2";
 import {
-  assert, assertEquals, assertExists, assertObjectMatch,
-  assertSpyCalls, // Assuming this was used or will be
-  type Spy, // Assuming this was used or will be
-  type ChatApiRequest, // Added
-  mainChatHandler as handler, // Use the exported handler
+  assert,
+  assertEquals,
+  assertExists,
+  assertObjectMatch,
+  spy,
+  stub,
+  type Spy,
+  assertSpyCalls,
+  handler,
+  defaultDeps,
+  logger,
   createTestDeps,
-  originalDenoEnvGet,
+  mockSupabaseUrl,
+  mockAnonKey,
+  mockServiceRoleKey,
+  testUserId,
   envGetStub,
+  originalDenoEnvGet,
+  type CreateTestDepsResult,
   mockSupaConfigBase, // Base supa config
   mockAdapterSuccessResponse, // Default adapter response
   ChatTestConstants, // Collection of common test IDs, etc.
   type ChatTestCase, // Shared TestCase interface
   type ChatMessageRow, // If needed directly by tests beyond what ChatTestCase provides
-  type MockTokenWalletService, // For type hints if setting up wallet stubs
-  type AdapterResponsePayload, // For type hints
-  // IMockSupabaseClient might not be needed directly if createTestDeps handles it
-  stub, // Ensure stub is available
 } from "./index.test.ts";
+import type { 
+  ChatApiRequest, 
+  AdapterResponsePayload, 
+  ChatHandlerDeps 
+} from "../_shared/types.ts";
+import type { 
+  MockTokenWalletService, 
+  TokenWalletServiceMethodImplementations 
+} from "../_shared/services/tokenWalletService.mock.ts";
+import type { TokenWalletTransaction } from "../_shared/types/tokenWallet.types.ts";
+
+const testBaseUrl = 'http://localhost:8000'; // Example base URL for requests
 
 // --- Test Suite for Chat Authentication ---
 Deno.test("Chat Auth Tests", async (t) => {
@@ -73,7 +91,18 @@ Deno.test("Chat Auth Tests", async (t) => {
 
     await t.step("POST request with invalid/expired Auth token should return 401 (Supa mock)", async () => {
       const { deps } = createTestDeps({ 
-        getUserResult: { data: { user: null }, error: { message: "Invalid token", name:"AuthApiError" } }
+        simulateAuthError: new Error("Simulated Invalid token"),
+        genericMockResults: {
+          'ai_providers': {
+            select: { data: [{ id: ChatTestConstants.testProviderId, name: "Mock Provider", api_identifier: ChatTestConstants.testApiIdentifier, provider: ChatTestConstants.testProviderString, is_active: true, config: { api_identifier: ChatTestConstants.testApiIdentifier, tokenization_strategy: { type: "tiktoken", tiktoken_encoding_name: "cl100k_base" } } }], error: null, status: 200, count: 1 }
+          },
+          'system_prompts': {
+            select: { data: [{ id: ChatTestConstants.testPromptId, prompt_text: 'Test system prompt', is_active: true }], error: null, status: 200, count: 1 }
+          },
+          'chats': {
+            insert: { data: [{ id: ChatTestConstants.testChatId, user_id: ChatTestConstants.testUserId, system_prompt_id: ChatTestConstants.testPromptId, title:"test" }], error: null, status: 201, count: 1 }
+          }
+        }
       });
       const req = new Request('http://localhost/chat', {
         method: 'POST',
@@ -82,16 +111,19 @@ Deno.test("Chat Auth Tests", async (t) => {
             'Authorization': 'Bearer invalid-token' 
         },
         body: JSON.stringify({ 
-            provider_name: ChatTestConstants.testProviderString, 
-            api_identifier: ChatTestConstants.testApiIdentifier,
-            messages: [{role: "user", content: "test"}] 
+            message: "test",
+            providerId: ChatTestConstants.testProviderId,
+            promptId: ChatTestConstants.testPromptId
         }),
       });
       const response = await handler(req, deps);
       assertEquals(response.status, 401);
       const responseBody = await response.json();
       // The actual error message might come from Supabase client's handling of the error
-      assertEquals(responseBody.error, 'Invalid authentication credentials');
+      // Or from the chat handler's generic message for auth failures.
+      // Given the error message from simulateAuthError contains "Invalid token",
+      // the handler should produce "Invalid authentication credentials".
+      assertEquals(responseBody.error, 'Invalid authentication credentials'); 
     });
     
     await t.step("POST request with valid Auth (New Chat) should proceed past auth check", async () => {
@@ -126,10 +158,10 @@ Deno.test("Chat Auth Tests", async (t) => {
             ...mockSupaConfigBase.genericMockResults,
             // Ensure critical selects for a new chat succeed
             'ai_providers': {
-                select: { data: [{ id: ChatTestConstants.testProviderId, api_identifier: ChatTestConstants.testApiIdentifier, provider: ChatTestConstants.testProviderString, default_model_id: "some-model" }], error: null, status: 200, count: 1 }
+                select: { data: [{ id: ChatTestConstants.testProviderId, name: "Test Provider Active", api_identifier: ChatTestConstants.testApiIdentifier, provider: ChatTestConstants.testProviderString, is_active: true, default_model_id: "some-model", config: { api_identifier: ChatTestConstants.testApiIdentifier, tokenization_strategy: { type: "tiktoken", tiktoken_encoding_name: "cl100k_base" } } }], error: null, status: 200, count: 1 }
             },
             'system_prompts': {
-                select: { data: [{ id: ChatTestConstants.testPromptId, prompt_text: 'Test system prompt' }], error: null, status: 200, count: 1 }
+                select: { data: [{ id: ChatTestConstants.testPromptId, prompt_text: 'Test system prompt', is_active: true }], error: null, status: 200, count: 1 }
             },
             // Mock chat insertion to succeed
             'chats': {

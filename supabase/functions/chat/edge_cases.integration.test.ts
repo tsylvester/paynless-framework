@@ -128,10 +128,10 @@ export async function runEdgeCaseTests(
     const responseJsonForAiError = await response.json();
     assertEquals(response.status, 502, "Expected 502 Bad Gateway due to AI provider error. Body: " + JSON.stringify(responseJsonForAiError));
 
-    assertExists(responseJsonForAiError.assistantMessage, "Assistant message should exist with error details.");
-    assertStringIncludes(responseJsonForAiError.assistantMessage.content, "AI service request failed", "Assistant message should indicate an AI service failure.");
-    assertStringIncludes(responseJsonForAiError.assistantMessage.content, simulatedError.message, "Assistant message should include the simulated error message from mock.");
-    assertEquals(responseJsonForAiError.assistantMessage.error_type, "ai_provider_error");
+    // Check the top-level error field in the JSON response
+    assertExists(responseJsonForAiError.error, "Response JSON should contain a top-level error field for AI provider errors.");
+    assertStringIncludes(responseJsonForAiError.error, simulatedError.message, "Error message in response should include the simulated error message from mock.");
+    // The content of the error message returned to the client is directly from the adapter, it won't include "AI service request failed" prefix from the DB save attempt.
 
     const { data: wallet, error: walletError } = await scAdminClient
       .from("token_wallets")

@@ -64,7 +64,7 @@ export const ChatMessageBubble: React.FC<ChatMessageBubbleProps> = ({ message, o
         {/* Conditionally render PER-MESSAGE TokenUsageDisplay for assistant messages */}
         {message.role === 'assistant' && message.token_usage && (
           <div className="mt-1">
-            <TokenUsageDisplay tokenUsage={message.token_usage as unknown as TokenUsage | null} />
+            <TokenUsageDisplay tokenUsage={message.token_usage as TokenUsage} />
           </div>
         )}
       </Card>

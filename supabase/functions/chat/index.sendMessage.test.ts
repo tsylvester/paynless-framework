@@ -10,10 +10,10 @@ import {
     ChatTestConstants, // Collection of common test IDs, strings, etc.
     type ChatTestCase, // Interface for generic test cases, if applicable
     type ChatMessageRow, // DB row type for chat messages
-    type MockTokenWalletService, // Type for the mock token wallet service
-    type AdapterResponsePayload, // Type for AI adapter responses
-    type TokenWalletServiceMethodImplementations, // Type for token wallet mock config
-    type CountTokensForMessagesFn // Type for countTokensFn
+    // MockTokenWalletService, // Removed
+    // AdapterResponsePayload, // Removed
+    // TokenWalletServiceMethodImplementations, // Removed
+    // CountTokensForMessagesFn // Removed
 } from "./index.test.ts"; // Path to the shared setup file
 
 import type { Database, Json } from "../types_db.ts"; 
@@ -21,8 +21,13 @@ import type {
     AiProviderAdapter, 
     ChatApiRequest,
     ChatHandlerDeps,
-    IMockQueryBuilder
+    IMockQueryBuilder,
+    AdapterResponsePayload // Added
 } from '../_shared/types.ts'; 
+import type { 
+    MockTokenWalletService, // Added
+    TokenWalletServiceMethodImplementations // Added
+} from '../_shared/services/tokenWalletService.mock.ts';
 import { logger } from '../_shared/logger.ts';
 
 import type { ChatHandlerSuccessResponse } from '../_shared/types.ts';
@@ -61,6 +66,8 @@ Deno.test("Chat Function Tests (Adapter Refactor)", async (t) => {
             total_tokens: sharedAdapterTokenData.total_tokens,
         },
         is_active_in_thread: true,
+        error_type: null,
+        response_to_message_id: null
     };
     const mockUserDbRow: ChatMessageRow = {
         id: testUserMsgId,
@@ -74,6 +81,8 @@ Deno.test("Chat Function Tests (Adapter Refactor)", async (t) => {
         system_prompt_id: testPromptId, // This might differ, adjust if needed
         token_usage: null,
         is_active_in_thread: true,
+        error_type: null,
+        response_to_message_id: null
     };
 
     // Base config for Supabase mocks, can be overridden per test
@@ -86,7 +95,25 @@ Deno.test("Chat Function Tests (Adapter Refactor)", async (t) => {
                 select: { data: [{ id: testPromptId, prompt_text: 'Test system prompt' }], error: null, status: 200, count: 1 }
             },
             'ai_providers': {
-                select: { data: [{ id: testProviderId, api_identifier: testApiIdentifier, provider: testProviderString, default_model_id: "a-default-model" }], error: null, status: 200, count: 1 }
+                select: { 
+                    data: [{ 
+                        id: testProviderId, 
+                        name: "Mock Provider for sendMessage tests",
+                        api_identifier: testApiIdentifier, 
+                        provider: testProviderString, 
+                        is_active: true,
+                        default_model_id: "a-default-model",
+                        config: {
+                            api_identifier: testApiIdentifier, 
+                            tokenization_strategy: { type: "tiktoken", tiktoken_encoding_name: "cl100k_base" },
+                            input_token_cost_rate: 0.001,
+                            output_token_cost_rate: 0.002
+                        } as Json
+                    }], 
+                    error: null, 
+                    status: 200, 
+                    count: 1 
+                }
             },
             'chats': {
                 insert: { data: [{ id: testChatId, system_prompt_id: testPromptId, title: "Test Chat Title".substring(0,50), user_id: testUserId, organization_id: null }], error: null, status: 201, count: 1 },
@@ -133,7 +160,7 @@ Deno.test("Chat Function Tests (Adapter Refactor)", async (t) => {
             });
             const response = await handler(req, deps);
             assertEquals(response.status, 400);
-            assertEquals((await response.json()).error, 'Missing or invalid "message" in request body');
+            assertEquals((await response.json()).error, 'Invalid request body: message: Required');
         });
 
         await t.step("POST request with history fetch error proceeds as new chat", async () => {
@@ -153,6 +180,8 @@ Deno.test("Chat Function Tests (Adapter Refactor)", async (t) => {
                 system_prompt_id: ChatTestConstants.testPromptId,
                 token_usage: null,
                 is_active_in_thread: true,
+                error_type: null,
+                response_to_message_id: null
             };
             const expectedAssistantMessageInsertResult: ChatMessageRow = {
                 id: ChatTestConstants.testAsstMsgId, // Can use a generic ID or a new one
@@ -170,6 +199,8 @@ Deno.test("Chat Function Tests (Adapter Refactor)", async (t) => {
                     total_tokens: ChatTestConstants.mockAdapterTokenData.total_tokens,
                 },
                 is_active_in_thread: true,
+                error_type: null,
+                response_to_message_id: null
             };
 
             const historyErrorSupaConfig = { 
@@ -223,7 +254,7 @@ Deno.test("Chat Function Tests (Adapter Refactor)", async (t) => {
                     message: "initiate with bad history chatid", 
                     providerId: testProviderId, 
                     promptId: testPromptId, 
-                    chatId: "some-id-that-will-fail-lookup" 
+                    chatId: ChatTestConstants.testChatId
                 })
             });
             const response = await handler(req, deps);

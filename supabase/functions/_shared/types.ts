@@ -365,8 +365,18 @@ export interface ChatHandlerDeps {
   handleCorsPreflightRequest: typeof handleCorsPreflightRequest;
   createSuccessResponse: typeof createSuccessResponse; // Use the corrected type name
   createErrorResponse: typeof createErrorResponse;
-  getAiProviderAdapter: (provider: string, apiKey: string, logger?: ILogger) => AiProviderAdapter;
-  getAiProviderAdapterOverride?: (provider: string, apiKey: string, logger?: ILogger) => AiProviderAdapter; // For testing
+  getAiProviderAdapter: (
+    providerApiIdentifier: string,
+    providerDbConfig: Json | null, // Added
+    apiKey: string,
+    logger?: ILogger
+  ) => AiProviderAdapter | null; // Changed signature and return type
+  getAiProviderAdapterOverride?: ( // Also update this for consistency
+    providerApiIdentifier: string,
+    providerDbConfig: Json | null, // Added
+    apiKey: string,
+    logger?: ILogger
+  ) => AiProviderAdapter | null; // Changed signature and return type
   verifyApiKey: (apiKey: string, providerName: string) => Promise<boolean>;
   logger: ILogger;
   tokenWalletService?: ITokenWalletService; 

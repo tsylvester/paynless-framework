@@ -1,44 +1,29 @@
-// Removed ChatApiRequest from here, will import from ../_shared/types.ts
-// import { ChatApiRequest } from '../_shared/types.ts';
-
-// Import shared testing utilities, types, constants, and helpers
 import {
-    assert, assertEquals, assertExists, assertObjectMatch,
-    assertSpyCalls, 
-    type Spy, 
+    assertEquals,
+    assertExists,
     spy,
+    assertSpyCalls,
     handler,
     createTestDeps,
-    originalDenoEnvGet,
     envGetStub,
-    mockSupaConfigBase, // KEEP: Base supa config from shared
-    mockAdapterSuccessResponse, // KEEP: Default adapter response from shared
-    ChatTestConstants, 
-    type ChatTestCase , // Using alias to avoid conflict with local TestCase
-    type ChatMessageRow, 
-    type MockTokenWalletService, 
-    type AdapterResponsePayload, // KEEP: Type for AI adapter responses from shared
-    type TokenWalletServiceMethodImplementations,
-    type CountTokensForMessagesFn,
+    mockSupaConfigBase,
+    mockAdapterSuccessResponse,
+    ChatTestConstants,
+    type ChatMessageRow,
     mockSupabaseUrl,
-    // Added missing types that should be imported from index.test.ts:
-    type MockSupabaseDataConfig,
-    type ChatHandlerDeps,
-    type ChatHandlerSuccessResponse,
-    type MockAdapterTokenUsage, // Import this type
-    mockAdapterTokenData // Import this data constant
+    mockAdapterTokenData,
 } from "./index.test.ts";
-
-// Direct import for Database and Json types
-import type { Database, Json } from "../types_db.ts";
-
-// Direct import for AiProviderAdapter, ChatApiRequest, IMockQueryBuilder etc.
-import type { 
-    AiProviderAdapter, 
-    ChatApiRequest, // Import ChatApiRequest from here
-    // ChatHandlerDeps, // This is imported from index.test.ts now
-    IMockQueryBuilder 
+import type {
+    Database,
+    Json
+} from "../types_db.ts";
+import type {
+    AdapterResponsePayload,
+    ChatApiRequest,
+    ChatHandlerDeps,
+    ChatHandlerSuccessResponse,
 } from '../_shared/types.ts';
+import type { MockSupabaseDataConfig } from '../_shared/supabase.mock.ts';
 
 // --- Test Suite ---
 Deno.test("Chat Function Tests (Adapter Refactor)", async (t) => {
@@ -95,6 +80,8 @@ Deno.test("Chat Function Tests (Adapter Refactor)", async (t) => {
             total_tokens: mockAdapterTokenData.total_tokens, // Uses imported mockAdapterTokenData
         },
         is_active_in_thread: true,
+        error_type: null,
+        response_to_message_id: null
     };
     // Define mock DB row for the user message *after* insertion
     const mockUserDbRow: ChatMessageRow = {
@@ -109,6 +96,8 @@ Deno.test("Chat Function Tests (Adapter Refactor)", async (t) => {
         system_prompt_id: testPromptId, // This was 'null', changed to testPromptId for consistency if needed, or can be null
         token_usage: null,
         is_active_in_thread: true,
+        error_type: null,
+        response_to_message_id: null
     };
 
     // Refactored Supabase mock config using genericMockResults
@@ -131,7 +120,7 @@ Deno.test("Chat Function Tests (Adapter Refactor)", async (t) => {
 
         await t.step("POST request for New ORG Chat should include organizationId in insert", async () => {
             console.log("--- Running POST test (New ORG Chat) ---");
-            const orgId = "org-rand-uuid-for-testing";
+            const orgId = crypto.randomUUID();
             const expectedChatTitle = "Org Chat Test Message";
 
             const chatInsertSpy = spy((state: import('../_shared/supabase.mock.ts').MockQueryBuilderState) => {
@@ -162,6 +151,24 @@ Deno.test("Chat Function Tests (Adapter Refactor)", async (t) => {
                 ...localMockSupaConfigBase, // Use the locally adjusted base config
                 genericMockResults: {
                     ...localMockSupaConfigBase.genericMockResults,
+                    'ai_providers': { // Override ai_providers mock for this test
+                        select: { 
+                            data: [{
+                                id: testProviderId, 
+                                name: "Test Org Provider", 
+                                api_identifier: testApiIdentifier, 
+                                provider: testProviderString, 
+                                is_active: true, 
+                                config: { 
+                                    api_identifier: testApiIdentifier, 
+                                    tokenization_strategy: { type: "tiktoken", tiktoken_encoding_name: "cl100k_base" } 
+                                }
+                            }], 
+                            error: null, 
+                            status: 200, 
+                            count: 1 
+                        }
+                    },
                     'chats': {
                         insert: chatInsertSpy as any,
                         select: localMockSupaConfigBase.genericMockResults?.chats?.select

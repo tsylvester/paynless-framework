@@ -11,13 +11,6 @@ import {
   defaultDeps,
   logger,
   createTestDeps,
-  type ChatApiRequest,
-  type MockSupabaseDataConfig,
-  type TokenWalletServiceMethodImplementations,
-  type MockTokenWalletService,
-  type ChatHandlerDeps,
-  type AdapterResponsePayload,
-  type ChatHandlerSuccessResponse,
   mockConnInfo,
   ChatTestConstants,
   envGetStub,
@@ -28,6 +21,17 @@ import {
   mockSupaConfigBase,
   mockAdapterSuccessResponse,
 } from "./index.test.ts";
+import type { 
+    ChatApiRequest,
+    ChatHandlerDeps,
+    AdapterResponsePayload,
+    ChatHandlerSuccessResponse
+} from '../_shared/types.ts';
+import type {
+    TokenWalletServiceMethodImplementations,
+    MockTokenWalletService
+} from '../_shared/services/tokenWalletService.mock.ts';
+import type { MockSupabaseDataConfig } from '../_shared/supabase.mock.ts';
 
 // --- Test Suite for Chat Wallet Functionality ---
 Deno.test("Chat Wallet Functionality Tests", async (t) => {
@@ -407,8 +411,9 @@ Deno.test("Chat Wallet Functionality Tests", async (t) => {
     assertSpyCalls(mockAdapterSpy!, 1);
     assertSpyCalls(deps.tokenWalletService!.recordTransaction as Spy<any>, 0); // Debit skipped
 
-    assertSpyCalls(loggerWarnSpy, 1);
-    assertExists(loggerWarnSpy.calls[0].args[0]?.includes("Invalid or missing token usage data from AI adapter"));
+    assertSpyCalls(loggerWarnSpy, 2); // Expect two warnings now
+    assertExists(loggerWarnSpy.calls[0].args[0]?.includes("[calculateActualChatCost] TokenUsage object is missing or invalid."), "First warning should be about invalid TokenUsage from calculateActualChatCost");
+    assertExists(loggerWarnSpy.calls[1].args[0]?.includes("Calculated debit amount for normal path is zero or less, debit step will be skipped"), "Second warning should be about skipping debit");
     assertSpyCalls(loggerErrorSpy, 0);
   });
 

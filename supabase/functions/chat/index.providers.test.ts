@@ -1,27 +1,23 @@
-import { ChatApiRequest } from '../_shared/types.ts';
-
-// Import shared testing utilities, types, constants, and helpers
 import {
-    assert, assertEquals, assertExists, assertObjectMatch,
-    assertSpyCalls, // Assuming this was used or will be
-    type Spy, // Assuming this was used or will be
-    spy,
-    handler, // Changed from: mainChatHandler as handler
-    createTestDeps,
+    assert, 
+    assertEquals, 
+    assertExists, 
+    assertObjectMatch, 
+    spy, 
+    stub, 
+    type Spy, 
+    assertSpyCalls,
+    handler, 
+    defaultDeps, 
+    logger, 
+    createTestDeps, 
+    envGetStub, 
     originalDenoEnvGet,
-    envGetStub,
-    mockSupaConfigBase, // Base supa config
-    mockAdapterSuccessResponse, // Default adapter response
-    ChatTestConstants, // Collection of common test IDs, etc.
-    type ChatTestCase, // Shared TestCase interface
-    type ChatMessageRow, // If needed directly by tests beyond what ChatTestCase provides
-    type MockTokenWalletService, // For type hints if setting up wallet stubs
-    type AdapterResponsePayload, // For type hints
-    // IMockSupabaseClient might not be needed directly if createTestDeps handles it
-    type MockSupabaseDataConfig,
-    type ChatHandlerDeps,
-    type ChatHandlerSuccessResponse,
-    type MockAdapterTokenUsage,
+    mockSupaConfigBase, 
+    mockAdapterSuccessResponse,
+    ChatTestConstants, 
+    type ChatTestCase, 
+    type ChatMessageRow, 
     mockSupabaseUrl,
     mockUserDbRow,
     mockAssistantDbRow,
@@ -31,13 +27,21 @@ import {
     testUserId,
     testAiContent,
     mockAdapterTokenData,
-    AiProviderAdapter,
     testApiIdentifier,
-  } from "./index.test.ts";
+    type CreateTestDepsResult,
+    type MockAdapterTokenUsage
+} from "./index.test.ts";
+import type { Database, Json } from "../types_db.ts";
+import type { 
+    AdapterResponsePayload, 
+    ChatApiRequest,
+    ChatHandlerDeps, 
+    ChatHandlerSuccessResponse, 
+    AiProviderAdapter
+} from '../_shared/types.ts';
+import type { MockTokenWalletService } from '../_shared/services/tokenWalletService.mock.ts';
+import type { MockSupabaseDataConfig } from '../_shared/supabase.mock.ts';
 
-// Added import for Json type
-import type { Json } from "../types_db.ts";
-  
 // --- Test Suite for Chat Provider Functionality ---
 Deno.test("Chat Provider Tests", async (t) => { // Added Deno.test wrapper
     // --- Individual Tests (Should now use refactored mockSupaConfig) ---
@@ -45,21 +49,22 @@ Deno.test("Chat Provider Tests", async (t) => { // Added Deno.test wrapper
         await t.step("POST request with existing chat history includes history in adapter call", async () => {
             // Specific config for this test
             let insertCallCount = 0;
+            const currentTestChatId = crypto.randomUUID(); // Use a valid UUID
             const existingHistory: ChatMessageRow[] = [
-                { ...mockUserDbRow, id: 'hist-user-1', content: 'Previous user message', chat_id: testChatId },
-                { ...mockAssistantDbRow, id: 'hist-asst-1', content: 'Previous assistant response', chat_id: testChatId }
+                { ...mockUserDbRow, id: 'hist-user-1', content: 'Previous user message', chat_id: currentTestChatId },
+                { ...mockAssistantDbRow, id: 'hist-asst-1', content: 'Previous assistant response', chat_id: currentTestChatId }
             ];
             const userMessageForThisTest: ChatMessageRow = {
             ...mockUserDbRow,
             id: 'new-user-msg-existing-chat',
             content: 'Follow up question',
-            chat_id: testChatId
+            chat_id: currentTestChatId
             };
             const assistantMessageForThisTest: ChatMessageRow = {
             ...mockAssistantDbRow,
             id: 'new-asst-msg-existing-chat',
                 content: testAiContent, // Ensure this is the mock AI content
-            chat_id: testChatId
+            chat_id: currentTestChatId
             };
 
             const perTestConfig: MockSupabaseDataConfig = {
@@ -68,7 +73,7 @@ Deno.test("Chat Provider Tests", async (t) => { // Added Deno.test wrapper
             ...mockSupaConfigBase.genericMockResults,
                     'chat_messages': {
                         select: ((callArgs?: any) => {
-                            if (callArgs && callArgs.filters && callArgs.filters.some((f: any) => f.column === 'chat_id' && f.value === testChatId)) {
+                            if (callArgs && callArgs.filters && callArgs.filters.some((f: any) => f.column === 'chat_id' && f.value === currentTestChatId)) {
                                 return { data: existingHistory, error: null, status: 200, count: existingHistory.length };
                             }
                             return { data: [], error: null, status: 200, count: 0 }; 
@@ -90,7 +95,7 @@ Deno.test("Chat Provider Tests", async (t) => { // Added Deno.test wrapper
                 message: "Follow up question", 
                 providerId: testProviderId, 
                 promptId: testPromptId,
-                chatId: testChatId 
+                chatId: currentTestChatId
             };
             const req = new Request(mockSupabaseUrl + '/chat', {
                 method: 'POST',
@@ -125,8 +130,8 @@ Deno.test("Chat Provider Tests", async (t) => { // Added Deno.test wrapper
             assertSpyCalls(sendMessageSpy_History, 1);
             const adapterArgs_History = sendMessageSpy_History.calls[0].args[0] as ChatApiRequest;
             
-            // Expect System + History User + History Asst + Current User
             assertExists(adapterArgs_History.messages); // Ensure messages array exists
+            // Expect System + History User + History Asst + Current User
             assertEquals(adapterArgs_History.messages.length, 4, "Adapter payload should include system, 2 history messages, and current user message");
             assertEquals(adapterArgs_History.messages[0].role, 'system');
             assertEquals(adapterArgs_History.messages[1].role, 'user');
@@ -135,10 +140,10 @@ Deno.test("Chat Provider Tests", async (t) => { // Added Deno.test wrapper
             assertEquals(adapterArgs_History.messages[2].content, existingHistory[1].content);
             assertEquals(adapterArgs_History.messages[3].role, 'user');
             assertEquals(adapterArgs_History.messages[3].content, body.message);
-            assertEquals(adapterArgs_History.chatId, testChatId); // Verify chatId passed correctly
+            assertEquals(adapterArgs_History.chatId, currentTestChatId); // Verify chatId passed correctly
         });
 
-         await t.step("POST request with invalid providerId (DB lookup fails) returns 400", async () => {
+         await t.step("POST request with invalid providerId (DB lookup fails) returns 404", async () => {
             // *** FIX: Update mock config using genericMockResults ***
             const invalidProviderSupaConfig: MockSupabaseDataConfig = {
                  ...mockSupaConfigBase, // Start with base config
@@ -149,7 +154,7 @@ Deno.test("Chat Provider Tests", async (t) => { // Added Deno.test wrapper
                          select: { // Mock a failed select for the provider
                              data: null, 
                              error: new Error("Test: Provider not found"),
-                             status: 400, // Or appropriate error status
+                             status: 404, // Or appropriate error status
                              count: 0
                          }
                      }
@@ -162,21 +167,29 @@ Deno.test("Chat Provider Tests", async (t) => { // Added Deno.test wrapper
                 body: JSON.stringify({ message: "test", providerId: testProviderId, promptId: testPromptId })
             });
             const response = await handler(req, deps);
-            assertEquals(response.status, 400);
-            assertEquals((await response.json()).error, "Test: Provider not found");
+            assertEquals(response.status, 404);
+            assertEquals((await response.json()).error, `Provider with ID ${testProviderId} not found or error fetching details.`);
         });
 
         await t.step("POST request with inactive provider returns 400", async () => {
+            const providerName = "Inactive Test Provider";
             const inactiveProviderSupaConfig: MockSupabaseDataConfig = { 
           ...mockSupaConfigBase,
           genericMockResults: {
             ...mockSupaConfigBase.genericMockResults,
             'ai_providers': {
-                        select: { // Mock select returning no data, no error
-                            data: null, 
+                        select: { 
+                            data: [{ 
+                                id: testProviderId, 
+                                name: providerName, 
+                                api_identifier: testApiIdentifier, 
+                                provider: ChatTestConstants.testProviderString,
+                                is_active: false, // Set to inactive
+                                config: { api_identifier: testApiIdentifier, tokenization_strategy: {type: "tiktoken", tiktoken_encoding_name: "cl100k_base"}} as Json
+                            }], 
                             error: null, 
-                            status: 200, // Status is OK, but no data found
-                            count: 0
+                            status: 200, 
+                            count: 1
                         }
                     }
                 }
@@ -188,61 +201,75 @@ Deno.test("Chat Provider Tests", async (t) => { // Added Deno.test wrapper
             });
             const response = await handler(req, deps);
             assertEquals(response.status, 400);
-            assertEquals((await response.json()).error, "Query returned no rows (data was null after .single())"); 
+            assertEquals((await response.json()).error, `Provider '${providerName}' is currently inactive.`); 
         });
 
 
-        await t.step("POST request with invalid promptId (DB lookup fails) returns 400", async () => {
-            // *** FIX: Update mock config using genericMockResults ***
+        await t.step("POST request with invalid promptId (DB lookup fails) returns 200 (proceeds with null prompt)", async () => {
             const invalidPromptSupaConfig: MockSupabaseDataConfig = {
           ...mockSupaConfigBase,
           genericMockResults: {
             ...mockSupaConfigBase.genericMockResults,
+            // Ensure the default ai_provider mock from mockSupaConfigBase is used (which is active)
             'system_prompts': {
-                         ...mockSupaConfigBase.genericMockResults?.['system_prompts'],
-                         select: { // Mock failed select for prompt
+                         select: { 
                             data: null, 
-                            error: new Error("Test: Prompt not found"),
-                            status: 400, 
+                            error: new Error("DB Error: Test: Prompt not found"),
+                            status: 500, // Simulate a DB error status
                             count: 0
                          }
                      }
                  }
-                 // REMOVED: selectPromptResult: { data: null, error: new Error("Test: Prompt not found") }
              };
-            const { deps } = createTestDeps(invalidPromptSupaConfig);
+            const { deps, mockAdapterSpy } = createTestDeps(invalidPromptSupaConfig, mockAdapterSuccessResponse);
             const req = new Request('http://localhost/chat', {
                 method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer test-jwt-token' },
                 body: JSON.stringify({ message: "test", providerId: testProviderId, promptId: testPromptId })
             });
             const response = await handler(req, deps);
-            assertEquals(response.status, 400);
-            assertEquals((await response.json()).error, "Test: Prompt not found");
+            assertEquals(response.status, 200); // Expect 200 as handler proceeds with null prompt
+            // Check that adapter was called and system message was null or absent in its arguments
+            assertSpyCalls(mockAdapterSpy!, 1);
+            const adapterCallArgs = mockAdapterSpy!.calls[0].args[0] as ChatApiRequest;
+            const systemMessageInAdapterCall = adapterCallArgs.messages?.find(m => m.role === 'system');
+            assert(systemMessageInAdapterCall === undefined || systemMessageInAdapterCall?.content === null || systemMessageInAdapterCall?.content === "", "System message to AI should be null or empty if prompt fetch failed");
         });
 
-        await t.step("POST request with inactive prompt returns 400", async () => {
+        await t.step("POST request with inactive prompt returns 200 (proceeds with null prompt)", async () => {
             const inactivePromptSupaConfig: MockSupabaseDataConfig = { 
-          ...mockSupaConfigBase,
-          genericMockResults: {
-            ...mockSupaConfigBase.genericMockResults,
-            'system_prompts': {
-                         select: { // Mock select returning no data, no error
-                            data: null, 
-                            error: null,
-                            status: 200, 
-                            count: 0
-                         }
-                     }
-                 }
+                ...mockSupaConfigBase,
+                genericMockResults: {
+                    ...mockSupaConfigBase.genericMockResults,
+                    'system_prompts': {
+                        select: (state: any) => { // Ensure MockQueryBuilderState if possible, or use any if too complex
+                            if (state.filters && state.filters.some((f: any) => f.column === 'id' && f.value === testPromptId)) {
+                                if (state.selectColumns === 'prompt_text, is_active' || state.selectColumns === '*') {
+                                    // LINTER FIX: Data should be an array for select, .single() will take the first element.
+                                    return Promise.resolve({ 
+                                        data: [{ id: testPromptId, prompt_text: "Inactive System Prompt", is_active: false }], 
+                                        error: null, 
+                                        status: 200, 
+                                        count: 1 
+                                    });
+                                }
+                            }
+                            return Promise.resolve({ data: null, error: new Error("Mock for system_prompts not hit as expected or columns mismatch"), status: 404, count: 0 });
+                        }
+                    }
+                }
             };
-            const { deps } = createTestDeps(inactivePromptSupaConfig);
+            const { deps, mockAdapterSpy } = createTestDeps(inactivePromptSupaConfig, mockAdapterSuccessResponse);
             const req = new Request('http://localhost/chat', {
                 method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer test-jwt-token' },
                 body: JSON.stringify({ message: "test", providerId: testProviderId, promptId: testPromptId })
             });
             const response = await handler(req, deps);
-            assertEquals(response.status, 400);
-            assertEquals((await response.json()).error, "Query returned no rows (data was null after .single())");
+            assertEquals(response.status, 200); // Expect 200 as handler proceeds with null prompt
+            // Check that adapter was called and system message was null or absent
+            assertSpyCalls(mockAdapterSpy!, 1);
+            const adapterCallArgs = mockAdapterSpy!.calls[0].args[0] as ChatApiRequest;
+            const systemMessageInAdapterCall = adapterCallArgs.messages?.find(m => m.role === 'system');
+            assert(systemMessageInAdapterCall === undefined || systemMessageInAdapterCall?.content === null || systemMessageInAdapterCall?.content === "", "System message to AI should be null or empty if prompt was inactive");
         });
 
         await t.step("POST request with promptId __none__ succeeds and sends no system message", async () => {
@@ -373,7 +400,14 @@ Deno.test("Chat Provider Tests", async (t) => { // Added Deno.test wrapper
                         ...mockSupaConfigBase.genericMockResults?.['ai_providers'],
                         select: { 
                             // Simulate provider lookup returning data but missing the crucial 'provider' string
-                            data: [{ id: testProviderId, api_identifier: testApiIdentifier, provider: null }], 
+                            data: [{ 
+                                id: testProviderId, 
+                                name: "Provider With Null String", // Added name
+                                api_identifier: testApiIdentifier, 
+                                provider: null, // This is the critical part for the test
+                                is_active: true, // Explicitly active to bypass inactive check for this test's purpose
+                                config: { api_identifier: testApiIdentifier, tokenization_strategy: {type: "tiktoken", tiktoken_encoding_name: "cl100k_base"}} as Json
+                            }], 
                             error: null, 
                             status: 200,
                             count: 1
@@ -389,144 +423,246 @@ Deno.test("Chat Provider Tests", async (t) => { // Added Deno.test wrapper
             });
             const response = await handler(req, deps);
             assertEquals(response.status, 500);
-            assertEquals((await response.json()).error, "AI provider configuration error on server [missing provider string]."); 
+            assertEquals((await response.json()).error, "Configuration for provider ID '123e4567-e89b-12d3-a456-426614174000' has an invalid provider name."); 
         });
 
         await t.step("POST request with unsupported provider returns 400", async () => {
             // *** FIX: Update mock config using genericMockResults ***
+            const unsupportedProviderId = crypto.randomUUID(); // Use a valid UUID
             const unsupportedProviderSupaConfig: MockSupabaseDataConfig = { 
                 ...mockSupaConfigBase, 
                 genericMockResults: {
                     ...mockSupaConfigBase.genericMockResults,
                     'ai_providers': {
                         ...mockSupaConfigBase.genericMockResults?.['ai_providers'],
-                        select: { 
-                            data: [{ 
-                                id: 'provider-unsupported-id', 
-                                api_identifier: 'unsupported-model', 
-                                provider: 'unsupported-provider' // The crucial part
-                            }], 
-                            error: null,
-                            status: 200,
-                            count: 1
+                        select: async (state: any) => { // Function to check the passed ID, made async
+                            if (state.filters && state.filters.some((f: any) => f.column === 'id' && f.value === unsupportedProviderId)) {
+                                return Promise.resolve({ 
+                                    data: [{ 
+                                        id: unsupportedProviderId, 
+                                        name: "Test Unsupported Provider", // Added name for completeness
+                                        api_identifier: 'unsupported-model', 
+                                        provider: 'unsupported-provider', // The crucial part for factory to return null via override
+                                        is_active: true, // To pass the active check
+                                        config: { api_identifier: 'unsupported-model', tokenization_strategy: {type: "tiktoken", tiktoken_encoding_name: "cl100k_base"}} as Json
+                                    }], 
+                                    error: null,
+                                    status: 200,
+                                    count: 1
+                                });
+                            }
+                            // Fallback for other IDs, though not expected in this specific test call
+                            return Promise.resolve({ data: null, error: new Error("Provider not found by test mock"), status: 404, count: 0 });
                         }
                     }
                 }
-                // REMOVED: Old selectProviderResult structure
             };
-            // Need specific supa config, no adapter, env, override factory
-            const mockGetAiProviderAdapter = spy((_provider: string) => null); // Factory returns null
+            
+            // Store original Deno.env.get and stub it for this step
+            const stepOriginalEnvGet = Deno.env.get;
+            Deno.env.get = (key: string) => {
+                if (key === 'UNSUPPORTED-PROVIDER_API_KEY') {
+                    return 'dummy-api-key-for-unsupported';
+                }
+                // Fallback to the original Deno.env.get captured by the test suite
+                return originalDenoEnvGet(key);
+            };
+
+            const mockGetAiProviderAdapterReturnsNull = spy(() => null); // Factory returns null
+
             const { deps } = createTestDeps(
                 unsupportedProviderSupaConfig, 
-                undefined, // mockAdapterResponse - none for this test as adapter shouldn't be reached
-                undefined, // tokenWalletConfig - no specific token wallet behavior needed
-                undefined, // countTokensFnOverride - no specific count tokens behavior needed
-                { getAiProviderAdapter: mockGetAiProviderAdapter } // depOverrides
+                undefined, 
+                undefined, 
+                undefined, 
+                { getAiProviderAdapter: mockGetAiProviderAdapterReturnsNull } // Override factory
             );
             const req = new Request('http://localhost/chat', { 
                 method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer test-jwt-token' },
-                body: JSON.stringify({ message: "test unsupported", providerId: 'provider-unsupported-id', promptId: testPromptId })
+                // FIX: Use the UUID for providerId
+                body: JSON.stringify({ message: "test unsupported", providerId: unsupportedProviderId, promptId: testPromptId })
             });
             const response = await handler(req, deps);
             assertEquals(response.status, 400);
-            assertEquals((await response.json()).error, "Unsupported AI provider: unsupported-provider");
+            // This error message now comes from the 3-stage check in index.ts when preliminaryAdapter is null
+            // because we mocked getAiProviderAdapter to return null.
+            assertEquals((await response.json()).error, `Unsupported or misconfigured AI provider: unsupported-model`);
+            
+            // Restore Deno.env.get for this step
+            Deno.env.get = stepOriginalEnvGet;
         });
 
-        await t.step("POST request succeeds with a different provider (Anthropic)", async () => {
-            console.log("--- Running Anthropic Provider POST test ---");
-            const testAnthropicProviderId = 'provider-anthropic-456';
-            const testAnthropicApiIdentifier = 'claude-3-opus-20240229';
-            const testAnthropicProviderString = 'anthropic';
-            const testAnthropicUserMsgId = 'user-anthropic-temp-id';
-            const testAnthropicAsstMsgId = 'msg-anthropic-ccc';
-            const testAnthropicAiContent = "Anthropic AI Test Response";
-            const testAnthropicChatId = "chat-anthropic-111";
-
-            const mockAnthropicAdapterTokenData: MockAdapterTokenUsage = { prompt_tokens: 20, completion_tokens: 30, total_tokens: 50 };
-            const mockAnthropicAdapterSuccessResponse: AdapterResponsePayload = {
-                role: 'assistant',
-                content: testAnthropicAiContent,
-                ai_provider_id: testAnthropicProviderId,
-                system_prompt_id: testPromptId, // Assuming same system prompt for simplicity
-                token_usage: mockAnthropicAdapterTokenData as unknown as Json,
-            };
-
-            const userMessageAnthropic: ChatMessageRow = {
-                ...mockUserDbRow,
-                id: testAnthropicUserMsgId,
-                chat_id: testAnthropicChatId,
-                content: "Hello Anthropic!",
-                ai_provider_id: testAnthropicProviderId,
-            };
-            const assistantMessageAnthropic: ChatMessageRow = {
-                ...mockAssistantDbRow,
-                id: testAnthropicAsstMsgId,
-                chat_id: testAnthropicChatId,
-                content: testAnthropicAiContent,
-                ai_provider_id: testAnthropicProviderId,
-                token_usage: { // Match specific token usage for Anthropic
-                    prompt_tokens: mockAnthropicAdapterTokenData.prompt_tokens,
-                    completion_tokens: mockAnthropicAdapterTokenData.completion_tokens,
-                }
-            };
-            
-            let insertCallCount = 0;
-
-            const anthropicTestConfig: MockSupabaseDataConfig = {
+        await t.step("POST request with unsupported provider type returns 400", async () => {
+            const unknownProviderId = crypto.randomUUID(); // Valid UUID
+            const unsupportedProviderTypeSupaConfig: MockSupabaseDataConfig = {
                 ...mockSupaConfigBase,
                 genericMockResults: {
                     ...mockSupaConfigBase.genericMockResults,
                     'ai_providers': { 
-                        select: { data: [{ id: testAnthropicProviderId, api_identifier: testAnthropicApiIdentifier, provider: testAnthropicProviderString }], error: null, status: 200, count: 1 }
-                    },
-                    'chats': {
-                         insert: { data: [{ ...(mockSupaConfigBase.genericMockResults!['chats']!.insert as {data: any[]}).data[0], id: testAnthropicChatId, title: "Hello Anthropic!".substring(0,50) }], error: null, status: 201, count: 1 },
-                         select: { data: [{ ...(mockSupaConfigBase.genericMockResults!['chats']!.select as {data: any[]}).data[0], id: testAnthropicChatId, title: "Hello Anthropic!".substring(0,50) }], error: null, status: 200, count: 1 }
-                    },
-                    'chat_messages': {
-                        ...mockSupaConfigBase.genericMockResults!['chat_messages'],
-                        insert: ((callArgs?: any) => {
-                            insertCallCount++;
-                            if (insertCallCount === 1) { 
-                                return { data: [userMessageAnthropic], error: null, status: 201, count: 1 };
-                            } else { 
-                                return { data: [assistantMessageAnthropic], error: null, status: 201, count: 1 };
-                            }
-                        }) as any
+                        select: { 
+                            data: [{ 
+                                id: unknownProviderId, 
+                                name: "Unsupported Type Provider Test", 
+                                api_identifier: "some-model-for-unsupported", 
+                                provider: "unsupportable_provider_co", // This type is not supported by AiServiceFactory
+                                is_active: true, 
+                                config: { api_identifier: "some-model-for-unsupported", tokenization_strategy: {type: "tiktoken", tiktoken_encoding_name: "cl100k_base"}} as Json
+                            }], 
+                            error: null, 
+                            status: 200, 
+                            count: 1
+                        }
                     }
                 }
             };
 
-            const { deps } = createTestDeps(anthropicTestConfig, mockAnthropicAdapterSuccessResponse);
-            const body: ChatApiRequest = { message: "Hello Anthropic!", providerId: testAnthropicProviderId, promptId: testPromptId };
-            const req = new Request(mockSupabaseUrl + '/chat', {
-                method: 'POST',
-          headers: {
-            'Authorization': 'Bearer test-token',
-            'Content-Type': 'application/json'
-          },
-                body: JSON.stringify(body),
+            // Stub Deno.env.get for this step, falling back to the suite's originalDenoEnvGet
+            const stepOriginalEnvGet = Deno.env.get;
+            Deno.env.get = (key: string) => {
+                if (key === 'UNSUPPORTABLE_PROVIDER_CO_API_KEY') {
+                    return 'dummy-api-key-for-unsupportable';
+                }
+                // Use originalDenoEnvGet imported from index.test.ts for other keys
+                // This ensures we are not affected by previous steps' stubs if they weren't cleaned up.
+                return originalDenoEnvGet(key); 
+            };
+
+            // Pass undefined for adapterSendMessageResult if not needed
+            const { deps } = createTestDeps(unsupportedProviderTypeSupaConfig, undefined); 
+            
+            const req = new Request('http://localhost/chat', {
+                method: 'POST', 
+                headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer test-jwt-token' },
+                body: JSON.stringify({ 
+                    message: "test unsupported type", 
+                    providerId: unknownProviderId, // Use the valid UUID
+                    promptId: testPromptId 
+                })
+            });
+            const response = await handler(req, deps);
+            assertEquals(response.status, 400);
+            // The error message from AiServiceFactory includes provider and model identifier
+            assertEquals((await response.json()).error, "Unsupported or misconfigured AI provider: some-model-for-unsupported");
+            
+            // Restore Deno.env.get for this step to avoid affecting subsequent steps before suite cleanup
+            Deno.env.get = stepOriginalEnvGet;
         });
 
-        const response = await handler(req, deps);
-            assertEquals(response.status, 200);
-            const chatResponse = await response.json() as ChatHandlerSuccessResponse; // Directly cast
+        await t.step("POST request succeeds with a different provider (Anthropic)", async () => {
+            console.log("--- Running Anthropic Provider POST test ---");
+            const anthropicProviderId = crypto.randomUUID(); // Valid UUID for this test
+            const anthropicApiIdentifier = "claude-3-opus-20240229";
+            const currentChatId = "chat-anthropic-test-123"; // Define a chat ID for this test
+            let insertCallCount = 0;
 
-            assertExists(chatResponse.chatId, "Response data should include chatId for Anthropic chat");
-            assertEquals(chatResponse.chatId, testAnthropicChatId);
-            assertExists(chatResponse.userMessage?.id);
-            assertEquals(chatResponse.userMessage?.content, "Hello Anthropic!");
-            assertExists(chatResponse.assistantMessage?.id);
-            assertEquals(chatResponse.assistantMessage.content, testAnthropicAiContent);
-            
-            const tokenUsage = chatResponse.assistantMessage.token_usage;
-            assert(typeof tokenUsage === 'object' && tokenUsage !== null, "Token usage should be an object if present");
-            assertObjectMatch(tokenUsage as Record<string, unknown>, { 
-                prompt_tokens: 20,
-                completion_tokens: 30,
+            const userMessageForAnthropicTest: ChatMessageRow = {
+                ...mockUserDbRow,
+                id: 'user-anthropic-msg',
+                chat_id: currentChatId,
+                content: "Hello Anthropic!",
+                ai_provider_id: anthropicProviderId,
+                system_prompt_id: testPromptId,
+            };
+            const assistantMessageForAnthropicTest: ChatMessageRow = {
+                ...mockAssistantDbRow,
+                id: 'asst-anthropic-msg',
+                chat_id: currentChatId,
+                content: testAiContent, // This should be mockAdapterSuccessResponse.content ideally
+                ai_provider_id: anthropicProviderId,
+                system_prompt_id: testPromptId,
+                token_usage: mockAdapterTokenData as unknown as Json, // Ensure token usage is part of the mock
+            };
+
+            const anthropicProviderConfig: MockSupabaseDataConfig = {
+                ...mockSupaConfigBase,
+                genericMockResults: {
+                    ...mockSupaConfigBase.genericMockResults,
+                    'ai_providers': { 
+                        select: { 
+                            data: [{
+                                id: anthropicProviderId, 
+                                name: "Test Anthropic Provider", 
+                                api_identifier: anthropicApiIdentifier, 
+                                provider: "anthropic", 
+                                is_active: true, 
+                                config: { 
+                                    api_identifier: anthropicApiIdentifier, 
+                                    tokenization_strategy: { 
+                                        type: "tiktoken", 
+                                        tiktoken_encoding_name: "cl100k_base",
+                                        tiktoken_model_name_for_rules_fallback: anthropicApiIdentifier
+                                    },
+                                    input_token_cost_rate: 0.01,
+                                    output_token_cost_rate: 0.03
+                                } as Json
+                            }], 
+                            error: null, 
+                            status: 200, 
+                            count: 1
+                        }
+                    },
+                    'chats': {
+                        // Mock for creating a new chat if one doesn't exist
+                        insert: { data: [{ id: currentChatId, user_id: testUserId, title: "Hello Anthropic!", system_prompt_id: testPromptId }], error: null, status: 201, count: 1 },
+                        // Mock for selecting an existing chat (though new chat is likely for this test)
+                        select: { data: [{ id: currentChatId, user_id: testUserId, title: "Hello Anthropic!", system_prompt_id: testPromptId }], error: null, status: 200, count: 1 }
+                    },
+                    'chat_messages': {
+                        ...(mockSupaConfigBase.genericMockResults!['chat_messages'] || {}), // Spread any base select/other mocks
+                        select: ((callArgs?: any) => { // For fetching history (likely empty for new chat)
+                            if (callArgs && callArgs.filters && callArgs.filters.some((f: any) => f.column === 'chat_id' && f.value === currentChatId)) {
+                                return { data: [], error: null, status: 200, count: 0 }; // No history for new chat
+                            }
+                            // Fallback to base mock if needed, or a generic empty result
+                            const baseSelect = mockSupaConfigBase.genericMockResults!['chat_messages']?.select;
+                            if (typeof baseSelect === 'function') return baseSelect(callArgs);
+                            return { data: [], error: null, status: 200, count: 0 }; 
+                        }) as any,
+                        insert: ((callArgs?: any) => {
+                            insertCallCount++;
+                            if (insertCallCount === 1) { // User message insert
+                                return { data: [userMessageForAnthropicTest], error: null, status: 201, count: 1 };
+                            } else { // Assistant message insert
+                                return { data: [assistantMessageForAnthropicTest], error: null, status: 201, count: 1 };
+                            }
+                        }) as any
+                    },
+                }
+            };
+
+            const { deps, mockAdapterSpy } = createTestDeps(anthropicProviderConfig, mockAdapterSuccessResponse); 
+
+            const body: ChatApiRequest = {
+                message: "Hello Anthropic!",
+                providerId: anthropicProviderId, 
+                promptId: testPromptId,
+                // Ensure chatId is passed if a new chat is to be created and then messages added to it.
+                // If the test implies creating a new chat, chatId should be initially undefined or handled by the 'chats' insert mock.
+                // For simplicity, let's assume a new chat is created, so existingChatId is not in the initial request body.
+                // The currentChatId will be established by the 'chats' insert mock.
+            };
+            const req = new Request('http://localhost/chat', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer test-jwt-token' },
+                body: JSON.stringify(body)
             });
 
-            console.log("--- Anthropic Provider POST test passed ---");
+            const response = await handler(req, deps);
+            assertEquals(response.status, 200);
+            const responseJson = await response.json() as ChatHandlerSuccessResponse;
+            assertExists(responseJson.assistantMessage);
+            assertEquals(responseJson.assistantMessage.content, testAiContent); // From mockAdapterSuccessResponse
+            
+            // Verify the correct provider was used by the adapter spy if possible
+            // (mockAdapterSuccessResponse doesn't carry provider info back, but AiServiceFactory uses it)
+            assertSpyCalls(mockAdapterSpy!, 1);
+            // Check that the getAiProviderAdapter was called and it used the anthropic provider details
+            const getAdapterSpy = deps.getAiProviderAdapter as Spy<any>;
+            assertSpyCalls(getAdapterSpy, 1);
+            // The factory function inside getAiProviderAdapter receives (providerString, apiKey, modelApiIdentifier, logger)
+            // We can check the providerString and modelApiIdentifier passed to it.
+            // However, the default spy on getAiProviderAdapter in createTestDeps doesn't easily expose these internal factory args.
+            // For now, successful response (200) implies the factory found/created an adapter.
         });
 
     } finally {

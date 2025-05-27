@@ -54,10 +54,7 @@ export interface ChatSessionTokenUsageDetails {
  * Represents a single message within a Chat.
  * Derived from the `chat_messages` table.
  */
-export type ChatMessage = Omit<Database['public']['Tables']['chat_messages']['Row'], 'token_usage'> & {
-  token_usage?: TokenUsage | null; 
-  status?: 'pending' | 'sent' | 'error';
-};
+export type ChatMessage = Database['public']['Tables']['chat_messages']['Row'] 
 
 // --- Application/API/Adapter/Store Specific Types ---
 
