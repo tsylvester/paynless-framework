@@ -118,7 +118,7 @@ export const ProfilePrivacySettingsCard: React.FC = () => {
             This setting controls who can view your profile details like name and activity.
           </p>
         </div>
-      </div>
+      </CardContent>
       {(isLoading || error) && (
         <CardFooter className={`border-t pt-4 mt-6 ${error ? 'bg-destructive/10 border-destructive/30' : ''}`}>
           {isLoading && !error && <p data-testid="loading-indicator" className="text-sm text-muted-foreground animate-pulse w-full text-center">Saving settings...</p>}
@@ -130,6 +130,6 @@ export const ProfilePrivacySettingsCard: React.FC = () => {
           )}
         </CardFooter>
       )}
-    </div>
+    </Card>
   );
 }; 
