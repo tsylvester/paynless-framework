@@ -51,3 +51,41 @@ Refer to the following documents in the `/docs` directory for detailed informati
 *   `docs/STRUCTURE.md`: In-depth architecture details, API endpoint list, database schema overview, project structure breakdown, and core package information.
 *   `docs/TESTING_PLAN.md`: The testing strategy, philosophy (TDD), tooling, setup, current status, and known limitations.
 *   `docs/IMPLEMENTATION_PLAN.md`: Tracking for work-in-progress, completed features, and planned enhancements.
+
+## Configuration
+
+Setting up the Paynless Framework for local development and deployment requires configuring several environment variables. These variables are typically managed in a `.env` file at the root of the project for local development and set directly in your deployment environment's settings (e.g., Supabase project settings, Vercel environment variables).
+
+### Required Environment Variables
+
+Create a `.env` file in the project root by copying the `.env.example` file:
+
+```bash
+cp .env.example .env
+```
+
+Then, populate the `.env` file with the necessary values. Key variables include:
+
+*   **Supabase Configuration:**
+    *   `SUPABASE_URL`: Your Supabase project URL.
+    *   `SUPABASE_ANON_KEY`: Your Supabase project's anonymous key.
+    *   `SUPABASE_SERVICE_ROLE_KEY`: Your Supabase project's service role key (keep this secret and only use it in secure backend environments).
+
+*   **Stripe Configuration:**
+    *   `STRIPE_SECRET_KEY`: Your Stripe secret key.
+    *   `STRIPE_WEBHOOK_SECRET`: Your Stripe webhook secret for processing events.
+    *   `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY`: Your Stripe publishable key for the frontend.
+
+*   **AI Provider API Keys:**
+    *   To enable AI features, you need to provide API keys for the respective providers. These keys must be securely stored in your Supabase project's Vault for backend Edge Function access and also set in your local `.env` file for local development and testing that involves direct API calls from your local machine (if any).
+    *   `OPENAI_API_KEY`: Your API key for OpenAI services.
+    *   `ANTHROPIC_API_KEY`: Your API key for Anthropic services.
+    *   `GOOGLE_API_KEY`: Your API key for Google AI services (e.g., Gemini).
+
+*   **Other Services:**
+    *   *(You may want to list other critical .env variables here from your .env.example, such as those for Google Analytics, PostHog, Kit, Chatwoot etc., if they are essential for basic setup)*
+
+**Important for AI Dialectic Engine:**
+The AI Dialectic Engine relies on the AI Provider API Keys (`OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GOOGLE_API_KEY`) being correctly configured both in your local `.env` file (for local development or CLI usage that might make direct calls) and, critically, within your **Supabase project's Vault**. The backend Edge Functions for the Dialectic Engine will fetch these keys from the Vault to interact with the AI models.
+
+Default model selections and other configurations for the Dialectic Engine are primarily managed through the application's database (`ai_models_catalog` table) and the `ai sync function`, not through additional environment variables.

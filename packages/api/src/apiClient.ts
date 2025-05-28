@@ -13,6 +13,7 @@ import { NotificationApiClient } from './notifications.api'; // Import new clien
 import { OrganizationApiClient } from './organizations.api'; // <<< Import Org client
 import { UserApiClient } from './users.api'; // +++ Add import
 import { WalletApiClient } from './wallet.api'; // Corrected WalletApiClient import path
+import { DialecticApiClient } from './dialectic.api.ts'; // <<< IMPORT NEW DIALECTIC CLIENT
 import { logger } from '@paynless/utils';
 import type { Database } from '@paynless/db-types'; // Keep this for createClient
 
@@ -56,6 +57,7 @@ export class ApiClient {
     public organizations: OrganizationApiClient; // <<< Add Org client property
     public users: UserApiClient; // +++ Add users property
     public wallet: WalletApiClient; // Added wallet property
+    public dialectic: DialecticApiClient; // <<< ADD DIALECTIC CLIENT PROPERTY
 
     // Update constructor signature
     constructor(options: ApiClientConstructorOptions) {
@@ -73,6 +75,7 @@ export class ApiClient {
         this.organizations = new OrganizationApiClient(this); // <<< Initialize Org client
         this.users = new UserApiClient(this); // +++ Initialize UserApiClient
         this.wallet = new WalletApiClient(this); // Initialize WalletApiClient
+        this.dialectic = new DialecticApiClient(this); // <<< INITIALIZE DIALECTIC CLIENT
     }
 
     /**

@@ -195,6 +195,86 @@ export type Database = {
           },
         ]
       }
+      dialectic_projects: {
+        Row: {
+          created_at: string
+          id: string
+          initial_user_prompt: string
+          project_name: string
+          repo_url: string | null
+          status: string
+          updated_at: string
+          user_domain_overlay_values: Json | null
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          initial_user_prompt: string
+          project_name: string
+          repo_url?: string | null
+          status?: string
+          updated_at?: string
+          user_domain_overlay_values?: Json | null
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          initial_user_prompt?: string
+          project_name?: string
+          repo_url?: string | null
+          status?: string
+          updated_at?: string
+          user_domain_overlay_values?: Json | null
+          user_id?: string
+        }
+        Relationships: []
+      }
+      domain_specific_prompt_overlays: {
+        Row: {
+          created_at: string
+          description: string | null
+          domain_tag: string
+          id: string
+          is_active: boolean
+          overlay_values: Json
+          system_prompt_id: string
+          updated_at: string
+          version: number
+        }
+        Insert: {
+          created_at?: string
+          description?: string | null
+          domain_tag: string
+          id?: string
+          is_active?: boolean
+          overlay_values: Json
+          system_prompt_id: string
+          updated_at?: string
+          version?: number
+        }
+        Update: {
+          created_at?: string
+          description?: string | null
+          domain_tag?: string
+          id?: string
+          is_active?: boolean
+          overlay_values?: Json
+          system_prompt_id?: string
+          updated_at?: string
+          version?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "domain_specific_prompt_overlays_system_prompt_id_fkey"
+            columns: ["system_prompt_id"]
+            isOneToOne: false
+            referencedRelation: "system_prompts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       invites: {
         Row: {
           created_at: string
@@ -540,28 +620,46 @@ export type Database = {
       }
       system_prompts: {
         Row: {
+          context: string | null
           created_at: string
+          description: string | null
           id: string
           is_active: boolean
+          is_stage_default: boolean
           name: string
           prompt_text: string
+          stage_association: string | null
           updated_at: string
+          variables_required: Json | null
+          version: number
         }
         Insert: {
+          context?: string | null
           created_at?: string
+          description?: string | null
           id?: string
           is_active?: boolean
+          is_stage_default?: boolean
           name: string
           prompt_text: string
+          stage_association?: string | null
           updated_at?: string
+          variables_required?: Json | null
+          version?: number
         }
         Update: {
+          context?: string | null
           created_at?: string
+          description?: string | null
           id?: string
           is_active?: boolean
+          is_stage_default?: boolean
           name?: string
           prompt_text?: string
+          stage_association?: string | null
           updated_at?: string
+          variables_required?: Json | null
+          version?: number
         }
         Relationships: []
       }
@@ -569,7 +667,7 @@ export type Database = {
         Row: {
           amount: number
           balance_after_txn: number
-          idempotency_key: string | null
+          idempotency_key: string
           notes: string | null
           payment_transaction_id: string | null
           recorded_by_user_id: string
@@ -583,7 +681,7 @@ export type Database = {
         Insert: {
           amount: number
           balance_after_txn: number
-          idempotency_key?: string | null
+          idempotency_key: string
           notes?: string | null
           payment_transaction_id?: string | null
           recorded_by_user_id: string
@@ -597,7 +695,7 @@ export type Database = {
         Update: {
           amount?: number
           balance_after_txn?: number
-          idempotency_key?: string | null
+          idempotency_key?: string
           notes?: string | null
           payment_transaction_id?: string | null
           recorded_by_user_id?: string
@@ -842,6 +940,10 @@ export type Database = {
         Args: { p_chat_id: string; p_user_id: string }
         Returns: string
       }
+      execute_sql: {
+        Args: { query: string }
+        Returns: Json[]
+      }
       grant_initial_free_tokens_to_user: {
         Args: { p_user_id: string; p_free_plan_id: string }
         Returns: undefined
@@ -888,7 +990,7 @@ export type Database = {
           p_transaction_type: string
           p_input_amount_text: string
           p_recorded_by_user_id: string
-          p_idempotency_key?: string
+          p_idempotency_key: string
           p_related_entity_id?: string
           p_related_entity_type?: string
           p_notes?: string

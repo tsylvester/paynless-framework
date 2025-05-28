@@ -33,13 +33,16 @@
     "npm:@supabase/supabase-js@*": "2.49.4",
     "npm:@supabase/supabase-js@2": "2.49.4",
     "npm:@supabase/supabase-js@^2.43.4": "2.49.4",
+    "npm:@types/chai@4.3.1": "4.3.1",
     "npm:@types/node@*": "20.17.32",
     "npm:@types/node@20": "20.17.32",
+    "npm:chai@4.3.7": "4.3.7",
     "npm:openai@*": "4.96.2",
     "npm:openai@^4.52.5": "4.96.2",
     "npm:stripe@*": "14.11.0",
     "npm:stripe@14.11.0": "14.11.0",
     "npm:stripe@14.20.0": "14.20.0",
+    "npm:stripe@18": "18.0.0",
     "npm:stripe@18.0.0": "18.0.0",
     "npm:stripe@^18.1.0": "18.1.0_@types+node@20.17.32",
     "npm:tiktoken@*": "1.0.14",
@@ -561,6 +564,9 @@
         "@supabase/storage-js"
       ]
     },
+    "@types/chai@4.3.1": {
+      "integrity": "sha512-/zPMqDkzSZ8t3VtxOa4KPq7uzzW978M9Tvh+j7GHKuo6k6GTLxPJ4J5gE5cjfJ26pnXst0N5Hax8Sr0T2Mi9zQ=="
+    },
     "@types/graceful-fs@4.1.9": {
       "integrity": "sha512-olP3sd1qOEe5dXTSaFvQG+02VdRXcdytWLAZsAq1PecU8uqQAhkrnbli7DagjtXKW/Bl7YJbUsa8MPcuc8LHEQ==",
       "dependencies": [
@@ -662,6 +668,9 @@
         "sprintf-js"
       ]
     },
+    "assertion-error@1.1.0": {
+      "integrity": "sha512-jgsaNduz+ndvGyFt3uSuWqvy4lCnIJiovtouQN5JZHOKCS2QuhEdbcQHFhVksz2N2U9hXJo8odG7ETyWlEeuDw=="
+    },
     "asynckit@0.4.0": {
       "integrity": "sha512-Oei9OH4tRh0YqU3GxhX79dM/mwVgvbZJaSNaRk+bshkj0S5cfHcgYakreBjrHwatXKbz+IoIdYLxrKim2MjW0Q=="
     },
@@ -748,11 +757,29 @@
     "caniuse-lite@1.0.30001715": {
       "integrity": "sha512-7ptkFGMm2OAOgvZpwgA4yjQ5SQbrNVGdRjzH0pBdy1Fasvcr+KAeECmbCAECzTuDuoX0FCY8KzUxjf9+9kfZEw=="
     },
+    "chai@4.3.7": {
+      "integrity": "sha512-HLnAzZ2iupm25PlN0xFreAlBA5zaBSv3og0DdeGA4Ar6h6rJ3A0rolRUKJhSF2V10GZKDgWF/VmAEsNWjCRB+A==",
+      "dependencies": [
+        "assertion-error",
+        "check-error",
+        "deep-eql",
+        "get-func-name",
+        "loupe",
+        "pathval",
+        "type-detect"
+      ]
+    },
     "chalk@4.1.2": {
       "integrity": "sha512-oKnbhFyRIXpUuez8iBMmyEa4nbj4IOQyuhc/wy9kY7/WVPcwIO9VA668Pu8RkO7+0G76SLROeyw9CpQ061i4mA==",
       "dependencies": [
         "ansi-styles@4.3.0",
         "supports-color@7.2.0"
+      ]
+    },
+    "check-error@1.0.3": {
+      "integrity": "sha512-iKEoDYaRmd1mxM90a2OEfWhjsjPpYPuQ+lMYsoxB126+t8fw7ySEO48nmDg5COTjxDI65/Y2OWpeEHk3ZOe8zg==",
+      "dependencies": [
+        "get-func-name"
       ]
     },
     "ci-info@3.9.0": {
@@ -783,6 +810,12 @@
       "integrity": "sha512-6WTZ/IxCY/T6BALoZHaE4ctp9xm+Z5kY/pzYaCHRFeyVhojxlrm+46y68HA6hr0TcwEssoxNiDEUJQjfPZ/RYA==",
       "dependencies": [
         "ms"
+      ]
+    },
+    "deep-eql@4.1.4": {
+      "integrity": "sha512-SUwdGfqdKOwxCPeVYjwSyRpJ7Z+fhpwIAtmCUdZIWZ/YP5R9WAsyuSgpLVDi9bjWoN2LXHNss/dk3urXtdQxGg==",
+      "dependencies": [
+        "type-detect"
       ]
     },
     "delayed-stream@1.0.0": {
@@ -900,6 +933,9 @@
     },
     "gensync@1.0.0-beta.2": {
       "integrity": "sha512-3hN7NaskYvMDLQY55gnW3NQ+mesEAepTqlg+VEbj7zzqEMBVNhzcGYYeqFo/TlYz6eQiFcp1HcsCZO+nGgS8zg=="
+    },
+    "get-func-name@2.0.2": {
+      "integrity": "sha512-8vXOvuE167CtIc3OyItco7N/dpRtBbYOsPsXCz7X/PMnlGjYjSGuZJgM1Y7mmew7BKf9BqvLX2tnOVy1BBUsxQ=="
     },
     "get-intrinsic@1.3.0": {
       "integrity": "sha512-9fSjSaos/fRIVIp+xSJlE6lfwhES7LNtKaCBIamHsjr2na1BiABJPo0mOjjz8GJDURarmCPGqaiVg5mfjb98CQ==",
@@ -1136,6 +1172,12 @@
         "p-locate"
       ]
     },
+    "loupe@2.3.7": {
+      "integrity": "sha512-zSMINGVYkdpYSOBmLi0D1Uo7JU9nVdQKrHxC8eYlV+9YKK9WePqAlL7lSlorG/U2Fw1w0hTBmaa/jrQ3UbPHtA==",
+      "dependencies": [
+        "get-func-name"
+      ]
+    },
     "lru-cache@5.1.1": {
       "integrity": "sha512-KpNARQA3Iwv+jTA0utUVVbrh+Jlrr1Fv0e56GGzAFOXN7dk/FviaDW8LHmK52DlcH4WP2n6gI8vN1aesBFgo9w==",
       "dependencies": [
@@ -1243,6 +1285,9 @@
     },
     "path-is-absolute@1.0.1": {
       "integrity": "sha512-AVbw3UJ2e9bq64vSaS9Am0fje1Pa8pbGqTTsmXfaIiMpnr5DlDhfJOuLj9Sf95ZPVDAUerDfEk88MPmPe7UCQg=="
+    },
+    "pathval@1.1.1": {
+      "integrity": "sha512-Dp6zGqpTdETdR63lehJYPeIOqpiNBNtc7BpWSLrOje7UaIsE5aY92r/AunQA7rsXvet3lrJ3JnZX29UPTKXyKQ=="
     },
     "picocolors@1.1.1": {
       "integrity": "sha512-xceH2snhtb5M9liqDsmEw56le376mTZkEX/jEb/RxNFyegNul7eNslCXP9FDj/Lcu0X8KEyMceP2ntpaHrDEVA=="

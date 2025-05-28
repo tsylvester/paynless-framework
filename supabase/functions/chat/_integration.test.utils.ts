@@ -306,19 +306,162 @@ export function getTestUserAuthToken(): string | null {
 
 // New utility function to get provider ID by API identifier
 export async function getProviderIdByApiIdentifier(apiIdentifier: string): Promise<string | null> {
-  if (!supabaseAdminClient) {
-    console.error("getProviderIdByApiIdentifier: supabaseAdminClient is not initialized.");
-    return null;
-  }
+  if (!supabaseAdminClient) throw new Error("Supabase admin client not initialized.");
   const { data, error } = await supabaseAdminClient
     .from('ai_providers')
     .select('id')
     .eq('api_identifier', apiIdentifier)
     .single();
-
   if (error) {
-    console.error(`Error fetching provider ID for ${apiIdentifier}:`, error);
+    testLogger.error(`Error fetching provider ID for ${apiIdentifier}: ${error.message}`);
     return null;
   }
   return data?.id || null;
+}
+
+// --- New Helper Functions for Schema Integration Tests ---
+
+export interface TableColumnInfo {
+  column_name: string;
+  data_type: string;
+  is_nullable: "YES" | "NO";
+  column_default: string | null;
+  udt_name: string; // Underlying data type
+}
+
+export async function getTableColumns(
+  client: SupabaseClient<Database>,
+  tableName: string,
+  schemaName: string = "public"
+): Promise<TableColumnInfo[]> {
+  const query = `
+    SELECT column_name, data_type, is_nullable, column_default, udt_name
+    FROM information_schema.columns
+    WHERE table_schema = '${schemaName}' AND table_name = '${tableName}'
+  `;
+  const { data, error } = await client.rpc('execute_sql' as any, { query: query });
+  if (error) {
+    console.error("Error fetching table columns:", error);
+    throw error;
+  }
+  return data as TableColumnInfo[];
+}
+
+export interface TableConstraintInfo {
+  constraint_name: string;
+  constraint_type: "PRIMARY KEY" | "FOREIGN KEY" | "UNIQUE" | "CHECK";
+  constrained_columns: string[]; // For PK, FK, UNIQUE
+  foreign_table_schema?: string; // For FK
+  foreign_table_name?: string; // For FK
+  foreign_columns?: string[]; // For FK
+  check_clause?: string; // For CHECK
+}
+
+
+export async function getTableConstraints(
+  client: SupabaseClient<Database>,
+  tableName: string,
+  schemaName: string = "public"
+): Promise<TableConstraintInfo[]> {
+  const query = `
+    SELECT
+        tc.constraint_name,
+        tc.constraint_type,
+        kcu.column_name AS constrained_column,
+        CASE 
+            WHEN tc.constraint_type = 'FOREIGN KEY' THEN rcc.unique_constraint_schema 
+            ELSE NULL 
+        END AS foreign_table_schema,
+        CASE 
+            WHEN tc.constraint_type = 'FOREIGN KEY' THEN pk_tc.table_name 
+            ELSE NULL 
+        END AS foreign_table_name,
+        chk.check_clause
+    FROM
+        information_schema.table_constraints AS tc
+    JOIN
+        information_schema.key_column_usage AS kcu
+        ON tc.constraint_name = kcu.constraint_name AND tc.table_schema = kcu.table_schema
+    LEFT JOIN
+        information_schema.referential_constraints AS rcc
+        ON tc.constraint_name = rcc.constraint_name AND tc.constraint_schema = rcc.constraint_schema
+    LEFT JOIN
+        information_schema.table_constraints AS pk_tc
+        ON rcc.unique_constraint_name = pk_tc.constraint_name AND rcc.unique_constraint_schema = pk_tc.table_schema
+    LEFT JOIN
+        information_schema.check_constraints AS chk
+        ON tc.constraint_name = chk.constraint_name AND tc.constraint_schema = chk.constraint_schema
+    WHERE
+        tc.table_name = '${tableName}' AND tc.table_schema = '${schemaName}'
+  `;
+  const { data: rawConstraints, error } = await client.rpc('execute_sql' as any, { query: query });
+
+  if (error) {
+    console.error("Error fetching table constraints:", error);
+    throw error;
+  }
+
+  const processedConstraints: { [key: string]: TableConstraintInfo } = {};
+  (rawConstraints as any[]).forEach(rc => {
+    if (!processedConstraints[rc.constraint_name]) {
+      processedConstraints[rc.constraint_name] = {
+        constraint_name: rc.constraint_name,
+        constraint_type: rc.constraint_type,
+        constrained_columns: [],
+        foreign_table_schema: rc.foreign_table_schema, // Now should be populated by the CASE statement
+        foreign_table_name: rc.foreign_table_name,   // Now should be populated by the CASE statement
+        // foreign_columns: rc.foreign_table_name ? [] : undefined, // We removed direct foreign_column_name from SQL, so this might need adjustment if used
+        check_clause: rc.check_clause,
+      };
+    }
+    if (rc.constrained_column && !processedConstraints[rc.constraint_name].constrained_columns.includes(rc.constrained_column)) {
+      processedConstraints[rc.constraint_name].constrained_columns.push(rc.constrained_column);
+    }
+    // Since foreign_column_name is removed from SQL, this part for populating foreign_columns array is no longer applicable directly from rc.foreign_column_name
+    // If needed, it would require another approach or ensuring the initial foreign_columns array is handled correctly by the test which doesn't check individual foreign columns.
+  });
+
+  // console.log("[Debug getTableConstraints] processedConstraints:", JSON.stringify(processedConstraints, null, 2)); // Debug line removed
+  return Object.values(processedConstraints);
+}
+
+
+export interface IndexInfo {
+  indexname: string;
+  indexdef: string;
+  column_names: string[]; // Extracted from indexdef or a more specific query
+}
+
+export async function getTableIndexes(
+  client: SupabaseClient<Database>,
+  tableName: string,
+  schemaName: string = "public"
+): Promise<IndexInfo[]> {
+  // This query gets basic index info. Parsing column names from indexdef can be complex.
+  // For more robust index column checking, a more targeted query against pg_indexes and pg_index / pg_attribute might be needed.
+  const query = `
+    SELECT
+        indexname,
+        indexdef
+    FROM
+        pg_indexes
+    WHERE
+        schemaname = '${schemaName}' AND tablename = '${tableName}'
+  `;
+  const { data, error } = await client.rpc('execute_sql' as any, { query: query });
+  if (error) {
+    console.error("Error fetching table indexes:", error);
+    throw error;
+  }
+
+  // Basic parsing of column names from indexdef (can be improved)
+  return (data as any[]).map(idx => {
+    const colMatch = idx.indexdef.match(/\(([^)]+)\)/);
+    const column_names = colMatch ? colMatch[1].split(',').map((s: string) => s.trim().replace(/"/g, '')) : [];
+    return {
+      indexname: idx.indexname,
+      indexdef: idx.indexdef,
+      column_names: column_names
+    };
+  });
 } 

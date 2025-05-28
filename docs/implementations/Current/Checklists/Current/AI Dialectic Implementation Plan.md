@@ -148,35 +148,97 @@ The implementation plan uses the following labels to categorize work steps:
 
 ---
 ### 1.0 Project Setup & Foundational Configuration
-*   `[ ] 1.0.1 [CONFIG]` Define new environment variables required for AI Dialectic Engine.
-    *   `[ ] 1.0.1.1` Identify necessary variables (e.g., API keys for new AI providers if not already present, default model settings for Dialectic Engine).
-    *   `[ ] 1.0.1.2` Update `.env.example` or similar template files.
-    *   `[ ] 1.0.1.3` Ensure Supabase project settings (e.g., Vault for secrets) are updated if necessary for new AI provider keys.
-    *   `[ ] 1.0.1.4 [DOCS]` Document new environment variables and their setup.
-*   `[ ] 1.0.2 [DB]` Create `prompt_templates` table for storing system prompt templates.
-    *   `[ ] 1.0.2.1 [TEST-UNIT]` Write migration test for `prompt_templates` table. (RED)
-    *   `[ ] 1.0.2.2` Define columns:
-        *   `id` (UUID, primary key, default `uuid_generate_v4()`)
-        *   `template_name` (TEXT, not nullable, unique, e.g., "dialectic_thesis_default", "dialectic_antithesis_default_critique")
-        *   `stage_association` (TEXT, nullable, e.g., "thesis", "antithesis", "synthesis", helps in filtering)
-        *   `version` (INTEGER, default 1)
-        *   `content` (TEXT, not nullable, the actual prompt template with placeholders like `{{initial_prompt}}`, `{{original_thesis_content}}`)
+*   `[✅] 1.0.1 [CONFIG]` Define new environment variables required for AI Dialectic Engine.
+    *   `[✅] 1.0.1.1` Identify necessary variables (e.g., API keys for new AI providers if not already present, default model settings for Dialectic Engine).
+    *   `[✅] 1.0.1.2` Update `.env.example` or similar template files.
+    *   `[✅] 1.0.1.3` Ensure Supabase project settings (e.g., Vault for secrets) are updated if necessary for new AI provider keys.
+    *   `[✅] 1.0.1.4 [DOCS]` Document new environment variables and their setup.
+*   `[✅] 1.0.2 [DB]` Update existing `system_prompts` table for storing system prompt templates (was: Create `prompt_templates` table).
+    *   `[✅] 1.0.2.1 [TEST-UNIT]` Write migration test for updating `system_prompts` table. (GREEN)
+    *   `[✅] 1.0.2.2` Define target columns for `system_prompts`:
+        *   `id` (UUID, primary key, default `uuid_generate_v4()`) - **Existing**
+        *   `name` (TEXT, not nullable, **will add UNIQUE constraint**. Global uniqueness less critical if fetching by context/stage/default flag. Review existing constraints.) - **Existing**
+        *   `prompt_text` (TEXT, not nullable - was `content` in original plan, maps to existing `prompt_text`) - **Existing**
+        *   `is_active` (BOOLEAN, default true, NOT NULL) - **Existing**
+        *   `created_at` (TIMESTAMPTZ, default `now()`) - **Existing**
+        *   `updated_at` (TIMESTAMPTZ, default `now()`) - **Existing**
+        *   **New Columns to Add:**
+        *   `stage_association` (TEXT, nullable, e.g., "thesis", "antithesis", "synthesis", "critique")
+        *   `version` (INTEGER, not nullable, default 1)
         *   `description` (TEXT, nullable)
-        *   `variables_required` (JSONB, nullable, e.g., `["initial_prompt", "original_thesis_content"]` to document expected placeholders)
-        *   `created_at` (TIMESTAMPTZ, default `now()`)
-        *   `updated_at` (TIMESTAMPTZ, default `now()`)
-    *   `[ ] 1.0.2.3` Create Supabase migration script for `prompt_templates`. (GREEN)
-    *   `[ ] 1.0.2.4 [REFACTOR]` Review migration.
-    *   `[ ] 1.0.2.5 [TEST-UNIT]` Run migration test.
-*   `[ ] 1.0.3 [BE]` Seed initial prompt templates into `prompt_templates` table.
-    *   `[ ] 1.0.3.1 [TEST-UNIT]` Write test for seeding initial prompts. (RED)
-    *   `[ ] 1.0.3.2` Create a seed script (runnable as part of migrations or a separate utility) to insert:
-        *   A default Thesis prompt (e.g., `template_name = "dialectic_thesis_default_v1"`, `stage_association = "thesis"`, content like "Given the following problem: {{initial_prompt}}, provide your initial comprehensive solution.")
-        *   A default Antithesis critique prompt (e.g., `template_name = "dialectic_antithesis_critique_default_v1"`, `stage_association = "antithesis"`, content like "You are a critiquing AI. Review the following solution provided for the initial problem: '{{initial_prompt}}'. The solution is: '{{original_thesis_content}}'. Identify weaknesses, logical fallacies, missing elements, potential biases, and suggest specific improvements or alternative approaches. Be constructive but rigorous.")
-    *   `[ ] 1.0.3.3` (GREEN)
-    *   `[ ] 1.0.3.4 [REFACTOR]` Review seed script.
-    *   `[ ] 1.0.3.5 [TEST-UNIT]` Run seed script test.
-*   `[ ] 1.0.4 [RLS]` Define RLS for `prompt_templates` (e.g., all authenticated users can read, specific admin role to write/update).
+        *   `variables_required` (JSONB, nullable, e.g., `{"core_prompt_text": "text", "user_context": "text"}`)
+        *   `is_stage_default` (BOOLEAN, not nullable, default false)
+        *   `context` (TEXT, nullable, e.g., "software_dev_planning", "legal_analysis", "financial_modeling")
+    *   `[✅] 1.0.2.3` Create Supabase migration script to alter `system_prompts` table (add new columns, **add UNIQUE constraint to `name`**). (GREEN)
+        *   `[✅] 1.0.2.4 [REFACTOR]` Review migration.
+        *   `[✅] 1.0.2.5` Apply migration to local development database.
+*   `[✅] 1.0.3 [BE]` Seed initial prompt templates into `system_prompts` table **via a new migration file**.
+    *   `[✅] 1.0.3.1 [TEST-UNIT]` Write test for seeding initial prompts (`supabase/integration_tests/seeding/system_prompts.seed.test.ts`). (GREEN)
+    *   `[✅] 1.0.3.2` Define the initial prompt data (Thesis & Antithesis base templates from `sample_prompts.md`).
+    *   `[✅] 1.0.3.3` Create Supabase migration scripts (`..._seed_dialectic_thesis_prompt.sql`, `..._seed_dialectic_antithesis_prompt.sql`) with `INSERT` statements. (GREEN)
+    *   `[✅] 1.0.3.4 [REFACTOR]` Review seed migration scripts.
+    *   `[✅] 1.0.3.5 [TEST-UNIT]` Apply seed migrations and run seed test. (GREEN)
+*   `[✅] 1.0.3.A [DB]` Define Storage for Domain-Specific Prompt Overlays
+    *   `[✅] 1.0.3.A.1 [DB]` Create `domain_specific_prompt_overlays` table for system-defined default overlays.
+        *   `[✅] 1.0.3.A.1.1 [TEST-UNIT]` Write migration test for `domain_specific_prompt_overlays` table creation (`supabase/integration_tests/schema/domain_specific_prompt_overlays.migration.test.ts`). (GREEN)
+        *   `[✅] 1.0.3.A.1.2` Define columns for `domain_specific_prompt_overlays`:
+            *   `id` (UUID, Primary Key, default `gen_random_uuid()`)
+            *   `system_prompt_id` (UUID, FK to `public.system_prompts(id)`, NOT NULL)
+            *   `domain_tag` (TEXT, NOT NULL, e.g., "software_development", "finance")
+            *   `overlay_values` (JSONB, NOT NULL, e.g., `{"domain_standards": "XYZ principles"}`)
+            *   `description` (TEXT, NULLABLE)
+            *   `is_active` (BOOLEAN, NOT NULL, default `true`)
+            *   `version` (INTEGER, NOT NULL, default `1`)
+            *   `created_at` (TIMESTAMP WITH TIME ZONE, NOT NULL, default `now()`)
+            *   `updated_at` (TIMESTAMP WITH TIME ZONE, NOT NULL, default `now()`)
+        *   `[✅] 1.0.3.A.1.3` Define UNIQUE constraint on (`system_prompt_id`, `domain_tag`, `version`).
+        *   `[✅] 1.0.3.A.1.4` Create Supabase migration script (`YYYYMMDDHHMMSS_create_domain_specific_prompt_overlays.sql`). (GREEN)
+        *   `[✅] 1.0.3.A.1.5 [REFACTOR]` Review migration script and table definition.
+        *   `[✅] 1.0.3.A.1.6 [TEST-UNIT]` Run `domain_specific_prompt_overlays` schema migration test. (GREEN)
+    *   `[✅] 1.0.3.A.2 [DB]` Add `user_domain_overlay_values` (JSONB, nullable) to `dialectic_projects` table for user-specific overrides. (Renamed from `domain_overlay_values` for clarity).
+        *   `[✅] 1.0.3.A.2.1 [TEST-UNIT]` Write migration test for this column addition to `dialectic_projects`. (GREEN)
+        *   `[✅] 1.0.3.A.2.2` Create Supabase migration script to alter `dialectic_projects`. (GREEN - adapted to create table with column)
+        *   `[✅] 1.0.3.A.2.3 [REFACTOR]` Review migration script. (GREEN)
+        *   `[✅] 1.0.3.A.2.4 [TEST-UNIT]` Run migration test for `dialectic_projects` column addition. (GREEN)
+*   `[✅] 1.0.3.B [BE]` Seed Initial System Default Domain Overlays
+    *   `[✅] 1.0.3.B.1 [TEST-UNIT]` Write test for seeding initial domain overlays (`supabase/integration_tests/seeding/domain_specific_prompt_overlays.seed.test.ts`). (GREEN)
+    *   `[✅] 1.0.3.B.2` Define initial overlay data (e.g., Software Development overlay for Thesis & Antithesis base prompts from `sample_prompts.md`). (GREEN)
+    *   `[✅] 1.0.3.B.3` Create Supabase migration script (`YYYYMMDDHHMMSS_seed_initial_domain_overlays.sql`) with `INSERT` statements into `domain_specific_prompt_overlays`. (GREEN)
+    *   `[✅] 1.0.3.B.4 [REFACTOR]` Review seed migration script. (GREEN)
+    *   `[✅] 1.0.3.B.5 [TEST-UNIT]` Apply seed migration and run overlay seed test. (GREEN)
+*   `[✅] 1.0.3.C [BE]` Backend Prompt Rendering Logic for Overlays
+    *   `[✅] 1.0.3.C.1` Develop/Update prompt rendering utility. (GREEN)
+    *   `[✅] 1.0.3.C.2 [TEST-UNIT]` Write unit tests for the prompt rendering utility, covering various merge scenarios and variable substitutions. (GREEN)
+*   `[ ] 1.0.3.D.0 [BE/API/STORE]` Backend and Frontend Plumbing for Domain Tag Selection
+    *   `[ ] 1.0.3.D.0.1 [BE]` `dialectic-service` Action: Create `listAvailableDomainTags`.
+        *   `[ ] 1.0.3.D.0.1.1 [TEST-INT]` Write tests for `listAvailableDomainTags` (fetches distinct `domain_tag`s from `domain_specific_prompt_overlays`). (RED)
+        *   `[ ] 1.0.3.D.0.1.2` Implement the action in `supabase/functions/dialectic-service/index.ts`. (GREEN)
+        *   `[ ] 1.0.3.D.0.1.3 [TEST-INT]` Run tests.
+    *   `[ ] 1.0.3.D.0.2 [API]` Update `@paynless/api` (in `packages/api/src/dialectic.api.ts`).
+        *   `[ ] 1.0.3.D.0.2.1` Add `listAvailableDomainTags(): Promise<string[]>` to `DialecticAPIInterface` and types.
+        *   `[ ] 1.0.3.D.0.2.2 [TEST-UNIT]` Write adapter method unit tests in `packages/api/src/dialectic.api.test.ts`. (RED)
+        *   `[ ] 1.0.3.D.0.2.3` Implement adapter method. (GREEN)
+        *   `[ ] 1.0.3.D.0.2.4` Update mocks in `packages/api/src/mocks.ts`.
+        *   `[ ] 1.0.3.D.0.2.5 [TEST-UNIT]` Run tests.
+    *   `[ ] 1.0.3.D.0.3 [STORE]` Update `@paynless/store` (in `packages/store/src/dialecticStore.ts` and `packages/store/src/dialecticStore.selectors.ts`).
+        *   `[ ] 1.0.3.D.0.3.1` Add `availableDomainTags: string[] | null` and `selectedDomainTag: string | null` to `DialecticState`. Add relevant loading/error states.
+        *   `[ ] 1.0.3.D.0.3.2 [TEST-UNIT]` Write tests for `fetchAvailableDomainTags` thunk (in `packages/store/src/dialecticStore.thunks.test.ts` or similar) and `setSelectedDomainTag` action. (RED)
+        *   `[ ] 1.0.3.D.0.3.3` Implement thunk and action/reducer logic. (GREEN)
+        *   `[ ] 1.0.3.D.0.3.4` Update selectors in `packages/store/src/dialecticStore.selectors.ts`.
+        *   `[ ] 1.0.3.D.0.3.5 [TEST-UNIT]` Run tests.
+*   `[ ] 1.0.3.D.1 [UI]` Create `DomainSelector` UI Component.
+    *   `[ ] 1.0.3.D.1.1 [TEST-UNIT]` Write unit tests for the `DomainSelector` component (e.g., using ShadCN Dropdown, fetches domains from store, dispatches selection to store). (RED)
+    *   `[ ] 1.0.3.D.1.2` Implement the `DomainSelector` component. (GREEN)
+    *   `[ ] 1.0.3.D.1.3 [TEST-UNIT]` Run tests.
+*   `[ ] 1.0.3.D.2 [DB]` Add `domain_tag` column to `dialectic_projects` table.
+    *   `[ ] 1.0.3.D.2.1 [TEST-UNIT]` Write migration test for adding `domain_tag` (TEXT, nullable) to `dialectic_projects`. (RED)
+    *   `[ ] 1.0.3.D.2.2` Create Supabase migration script. (GREEN)
+    *   `[ ] 1.0.3.D.2.3 [TEST-UNIT]` Run migration test.
+*   `[ ] 1.0.3.D.3 [BE/API/STORE]` Integrate `domain_tag` into Project Creation Flow.
+    *   `[ ] 1.0.3.D.3.1` Modify `createProject` action in `dialectic-service` to accept and store `domain_tag`. (Update tests)
+    *   `[ ] 1.0.3.D.3.2` Modify `CreateProjectPayload` in API and Store to include `domain_tag`. (Update tests)
+    *   `[ ] (Deferred to 1.5.3)` UI for `CreateDialecticProjectPage` will use `DomainSelector` and pass the selected tag.
+*   `[ ] 1.0.4 [RLS]` Define RLS for `system_prompts` (e.g., all authenticated users can read, specific admin role to write/update).
     *   `[ ] 1.0.4.1 [TEST-INT]` Write RLS tests. (RED)
     *   `[ ] 1.0.4.2` Implement RLS. (GREEN)
     *   `[ ] 1.0.4.3 [TEST-INT]` Run RLS tests.
@@ -192,7 +254,7 @@ The implementation plan uses the following labels to categorize work steps:
         *   `initial_user_prompt` (TEXT, not nullable, user's original framing of the problem)
         *   `created_at` (TIMESTAMPTZ, default `now()`)
         *   `updated_at` (TIMESTAMPTZ, default `now()`)
-        *   `github_repo_url` (TEXT, nullable)
+        *   `repo_url` (TEXT, nullable) (Github will be our first repo integration but we should anticipate Dropbox, Sharepoint, and other repo sources for future development)
         *   `status` (TEXT, e.g., 'active', 'archived', 'template', default 'active')
     *   `[ ] 1.1.1.3` Create Supabase migration script for `dialectic_projects`. (GREEN)
     *   `[ ] 1.1.1.4 [REFACTOR]` Review migration script and table definition.
@@ -369,43 +431,50 @@ The implementation plan uses the following labels to categorize work steps:
 *   `[ ] 1.2.10 [COMMIT]` feat(be): implement dialectic-service edge function with core actions
 
 ### 1.3 API Client (`@paynless/api`)
-*   `[ ] 1.3.1 [API]` Define types in `packages/api/src/interface.ts` for Dialectic Engine.
-    *   `[ ] 1.3.1.1` `DialecticProject`, `DialecticSession`, `DialecticSessionModel`, `DialecticContribution`, `AIModelCatalogEntry`, `PromptTemplate`.
+*   `[ ] 1.3.1 [API]` Define types in `packages/api/src/dialectic.api.ts` (or a shared types file if preferred, e.g., `packages/api/src/types.ts` or within the dialectic file) for Dialectic Engine.
+    *   `[ ] 1.3.1.1` `DialecticProject`, `DialecticSession`, `DialecticSessionModel`, `DialecticContribution`, `AIModelCatalogEntry`, `PromptTemplate`, `DomainTag` (string).
     *   `[ ] 1.3.1.2` Input types for new API methods (e.g., `CreateProjectPayload`, `StartSessionPayload`).
     *   `[ ] 1.3.1.3` Ensure these types align with database schema and Edge Function outputs.
-*   `[ ] 1.3.2 [API]` Add new methods to `DialecticAPIInterface` in `packages/api/src/interface.ts`.
+*   `[ ] 1.3.2 [API]` Define `DialecticAPIInterface` in `packages/api/src/dialectic.api.ts`. Add new methods:
     *   `[ ] 1.3.2.1` `createProject(payload: CreateProjectPayload): Promise<DialecticProject>`
     *   `[ ] 1.3.2.2` `startSession(payload: StartSessionPayload): Promise<DialecticSession>`
     *   `[ ] 1.3.2.3` `getProjectDetails(projectId: string): Promise<DialecticProject>` (should include sessions and contributions)
     *   `[ ] 1.3.2.4` `listProjects(): Promise<DialecticProject[]>`
     *   `[ ] 1.3.2.5` `listModelCatalog(): Promise<AIModelCatalogEntry[]>`
-*   `[ ] 1.3.3 [API]` Implement these methods in `packages/api/src/adapter.ts`.
-    *   `[ ] 1.3.3.1 [TEST-UNIT]` Write unit tests for each new adapter method, mocking `supabase.functions.invoke`. (RED)
+    *   `[ ] 1.3.2.6` `listAvailableDomainTags(): Promise<string[]>` (already covered in 1.0.3.D.0.2.1, ensure it's part of this interface)
+*   `[ ] 1.3.3 [API]` Implement this interface in `packages/api/src/dialectic.api.ts`.
+    *   `[ ] 1.3.3.1 [TEST-UNIT]` Write unit tests for each new adapter method in `packages/api/src/dialectic.api.test.ts`, mocking `supabase.functions.invoke`. (RED)
     *   `[ ] 1.3.3.2` Implement `createProject` by invoking `dialectic-service` with action `createProject`. (GREEN)
     *   `[ ] 1.3.3.3` Implement `startSession` by invoking `dialectic-service` with action `startSession`. (GREEN)
     *   `[ ] 1.3.3.4` Implement `getProjectDetails` by invoking `dialectic-service` with action `getProjectDetails`. (GREEN)
     *   `[ ] 1.3.3.5` Implement `listProjects` by invoking `dialectic-service` with action `listProjects`. (GREEN)
     *   `[ ] 1.3.3.6` Implement `listModelCatalog` by invoking `dialectic-service` with action `listModelCatalog`. (GREEN)
-    *   `[ ] 1.3.3.7 [REFACTOR]` Review implementations.
-    *   `[ ] 1.3.3.8 [TEST-UNIT]` Run unit tests.
+    *   `[ ] 1.3.3.7` Implement `listAvailableDomainTags` (already covered in 1.0.3.D.0.2.3).
+    *   `[ ] 1.3.3.8 [REFACTOR]` Review implementations.
+    *   `[ ] 1.3.3.9 [TEST-UNIT]` Run unit tests.
 *   `[ ] 1.3.4 [API]` Update/create mocks in `packages/api/src/mocks.ts` for the new interface methods.
-*   `[ ] 1.3.5 [DOCS]` Update `packages/api/README.md` with new Dialectic API methods.
-*   `[ ] 1.3.6 [COMMIT]` feat(api): add dialectic service methods to api client
+*   `[ ] 1.3.5 [API]` Update `packages/api/src/index.ts` to export the new `DialecticAPI` slice.
+*   `[ ] 1.3.6 [API]` Update `packages/api/src/apiClient.ts` to integrate the `DialecticAPI` slice if applicable.
+*   `[ ] 1.3.7 [DOCS]` Update `packages/api/README.md` with new Dialectic API methods.
+*   `[ ] 1.3.8 [COMMIT]` feat(api): add dialectic service methods to api client
 
 ### 1.4 State Management (`@paynless/store`)
-*   `[ ] 1.4.1 [STORE]` Define a new state slice for Dialectic Engine: `dialecticSlice`.
-    *   `[ ] 1.4.1.1` Interface: `DialecticState` in `packages/store/src/interfaces/dialectic.ts` (or similar location).
+*   `[ ] 1.4.1 [STORE]` Define a new state slice for Dialectic Engine in `packages/store/src/dialecticStore.ts`.
+    *   `[ ] 1.4.1.1` Interface: `DialecticState` (consider placing in a shared `interfaces.ts` or within `dialecticStore.ts`).
         *   `projects: DialecticProject[] | null`
         *   `currentProjectDetails: DialecticProject | null` (includes sessions with their models and contributions)
         *   `modelCatalog: AIModelCatalogEntry[] | null`
+        *   `availableDomainTags: string[] | null` (from 1.0.3.D.0.3.1)
+        *   `selectedDomainTag: string | null` (from 1.0.3.D.0.3.1)
         *   `isLoadingProjects: boolean`
         *   `isLoadingProjectDetails: boolean`
         *   `isLoadingModelCatalog: boolean`
+        *   `isLoadingAvailableDomainTags: boolean`
         *   `error: string | null` (for general errors in this slice)
         *   `isCreatingProject: boolean`
         *   `isStartingSession: boolean`
-*   `[ ] 1.4.2 [STORE]` Define Thunks/Actions for `dialecticSlice`.
-    *   `[ ] 1.4.2.1 [TEST-UNIT]` Write tests for `fetchDialecticProjects` thunk (mocks API call, checks loading states and projects update). (RED)
+*   `[ ] 1.4.2 [STORE]` Define Thunks/Actions for `dialecticSlice` in `packages/store/src/dialecticStore.ts`.
+    *   `[ ] 1.4.2.1 [TEST-UNIT]` Write tests for `fetchDialecticProjects` thunk (in `packages/store/src/dialecticStore.thunks.test.ts` or similar - mocks API call, checks loading states and projects update). (RED)
     *   `[ ] 1.4.2.2` Implement `fetchDialecticProjects` thunk: Calls `api.dialectic.listProjects()`. Handles pending, fulfilled (updates `projects`, clears error), rejected (sets error) states. (GREEN)
     *   `[ ] 1.4.2.3 [TEST-UNIT]` Write tests for `fetchDialecticProjectDetails` thunk. (RED)
     *   `[ ] 1.4.2.4` Implement `fetchDialecticProjectDetails(projectId: string)` thunk. (Updates `currentProjectDetails`). (GREEN)
@@ -415,14 +484,18 @@ The implementation plan uses the following labels to categorize work steps:
     *   `[ ] 1.4.2.8` Implement `startDialecticSession(payload: StartSessionPayload)` thunk. (Refetches project details or updates `currentProjectDetails.sessions` on success). (GREEN)
     *   `[ ] 1.4.2.9 [TEST-UNIT]` Write tests for `fetchAIModelCatalog` thunk. (RED)
     *   `[ ] 1.4.2.10` Implement `fetchAIModelCatalog` thunk. (Updates `modelCatalog`). (GREEN)
-*   `[ ] 1.4.3 [STORE]` Implement reducers for `dialecticSlice` to handle these actions' lifecycle (pending, fulfilled, rejected).
-*   `[ ] 1.4.4 [STORE]` Define selectors for accessing dialectic state (e.g., `selectDialecticProjects`, `selectCurrentProjectDetails`, `selectModelCatalog`, `selectDialecticLoadingStates`).
-*   `[ ] 1.4.5 [STORE]` Add `dialecticSlice.reducer` to the root reducer.
+    *   `[ ] 1.4.2.11 [TEST-UNIT]` Write tests for `fetchAvailableDomainTags` thunk (from 1.0.3.D.0.3.2). (RED)
+    *   `[ ] 1.4.2.12` Implement `fetchAvailableDomainTags` thunk. (GREEN)
+    *   `[ ] 1.4.2.13 [TEST-UNIT]` Write tests for `setSelectedDomainTag` action (from 1.0.3.D.0.3.2). (RED)
+    *   `[ ] 1.4.2.14` Implement `setSelectedDomainTag` action and reducer logic. (GREEN)
+*   `[ ] 1.4.3 [STORE]` Implement reducers for `dialecticSlice` in `packages/store/src/dialecticStore.ts` to handle these actions' lifecycle (pending, fulfilled, rejected).
+*   `[ ] 1.4.4 [STORE]` Define selectors in `packages/store/src/dialecticStore.selectors.ts` for accessing dialectic state (e.g., `selectDialecticProjects`, `selectCurrentProjectDetails`, `selectModelCatalog`, `selectAvailableDomainTags`, `selectSelectedDomainTag`, `selectDialecticLoadingStates`).
+*   `[ ] 1.4.5 [STORE]` Add `dialecticSlice.reducer` to the root reducer in `packages/store/src/index.ts`.
 *   `[ ] 1.4.6 [STORE]` Update/create mocks for `dialecticSlice` initial state and selectors for testing UI components.
-*   `[ ] 1.4.7 [DOCS]` Update `packages/store/README.md` to include details about the new `dialecticSlice`.
+*   `[ ] 1.4.7 [DOCS]` Update `packages/store/README.md` to include details about the new `dialecticStore` slice.
 *   `[ ] 1.4.8 [REFACTOR]` Review all store additions.
-*   `[ ] 1.4.9 [TEST-UNIT]` Run all new store unit tests.
-*   `[ ] 1.4.10 [COMMIT]` feat(store): add dialectic state management
+*   `[ ] 1.4.9 [TEST-UNIT]` Run all new store unit tests (from `dialecticStore.test.ts`, `dialecticStore.thunks.test.ts`, `dialecticStore.selectors.test.ts`).
+*   `[ ] 1.4.10 [COMMIT]` feat(store): add dialectic state management following feature slice pattern
 
 ### 1.5 UI Components (`apps/web`) - Core Pages & Navigation
 *   `[ ] 1.5.1 [UI]` Create new route for Dialectic Projects: `/dialectic` or `/ai-dialectic`.
@@ -501,7 +574,7 @@ The implementation plan uses the following labels to categorize work steps:
 ### 1.6 Basic GitHub Integration (Backend & API)
 *   `[ ] 1.6.1 [CONFIG]` Add new environment variables if needed for GitHub App/PAT specifically for Dialectic outputs, or confirm existing ones are sufficient and securely stored (e.g., in Supabase Vault).
 *   `[ ] 1.6.2 [BE]` `dialectic-service` Action: `configureGitHubRepo`
-    *   `[ ] 1.6.2.1 [TEST-INT]` Write tests (input: `projectId`, `githubRepoUrl`; auth; output: success/failure; updates `dialectic_projects.github_repo_url`). (RED)
+    *   `[ ] 1.6.2.1 [TEST-INT]` Write tests (input: `projectId`, `githubRepoUrl`; auth; output: success/failure; updates `dialectic_projects.repo_url`). (RED)
     *   `[ ] 1.6.2.2` Implement logic:
         *   Validates `githubRepoUrl` format.
         *   Updates `dialectic_projects` table.
@@ -520,7 +593,7 @@ The implementation plan uses the following labels to categorize work steps:
     *   `[ ] 1.6.3.4 [TEST-UNIT]` Run tests.
 *   `[ ] 1.6.4 [BE]` Modify `generateThesisContributions` and `generateAntithesisContributions` actions in `dialectic-service`:
     *   `[ ] 1.6.4.1` After successfully saving a contribution to the DB:
-        *   Fetch `github_repo_url` for the project.
+        *   Fetch `repo_url` for the project.
         *   If URL exists:
             *   Format contribution content as Markdown **using the defined template structure**.
             *   Determine file path and commit message.
@@ -781,7 +854,7 @@ The implementation plan uses the following labels to categorize work steps:
     *   `[ ] 3.2.1.6 [TEST-INT]` Run tests for `generateParalysisContribution`.
     *   `[ ] 3.2.1.7` Ensure these actions are called sequentially after the previous stage completes (Synthesis -> Parenthesis -> Paralysis). Update `dialectic_sessions.current_stage_seed_prompt` for each stage.
     *   `[ ] 3.2.1.8 [REFACTOR]` Review both actions.
-*   `[ ] 3.2.2 [BE]` Orchestration logic in `generateParalysisContribution`'s completion (for `sessionId`, `current_iteration`):
+*   `[ ] 3.2.2 [BE]` Orchestration logic in `generateParalysisContribution's completion (for `sessionId`, `current_iteration`):
     *   `[ ] 3.2.2.1 [TEST-INT]` Write tests for orchestration logic (convergence, termination, iteration). (RED)
     *   `[ ] 3.2.2.2` **Convergence/Termination Detection:**
         *   Parse Paralysis output (the `content` of the 'paralysis' `dialectic_contribution`) for explicit recommendation on iteration (e.g., looking for keywords like "another iteration recommended", "solution is adequate", "do not iterate").
