@@ -16,7 +16,7 @@ import {
   coreGenerateTestUserJwt,
   setSupabaseAdminClientForTests,
   // coreResetDatabaseState, // Potentially for a global teardown
-} from "../chat/_integration.test.utils.ts";
+} from "../_shared/_integration.test.utils.ts";
 import { User } from "npm:@supabase/supabase-js@2";
 
 // Assuming the dialectic-service will have a handler for different actions

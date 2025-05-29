@@ -5,7 +5,7 @@ import {
   assertStringIncludes,
 } from "https://deno.land/std@0.220.1/assert/mod.ts";
 import type { ChatApiRequest, TokenUsage, AiModelExtendedConfig } from "../_shared/types.ts";
-import { CHAT_FUNCTION_URL } from "./_integration.test.utils.ts"; 
+import { CHAT_FUNCTION_URL } from "../_shared/_integration.test.utils.ts"; 
 import { createMockSupabaseClient } from "../_shared/supabase.mock.ts";
 import type { MockQueryBuilderState, MockResolveQueryResult, MockPGRSTError } from "../_shared/supabase.mock.ts";
 
@@ -28,7 +28,7 @@ export async function runEdgeCaseTests(
       currentTestDeps: cTestDeps,
       chatHandler: cHandler,
       mockAiAdapter: cMockAiAdapter,
-    } = await import("./_integration.test.utils.ts");
+    } = await import("../_shared/_integration.test.utils.ts");
     const currentAuthToken = getTestUserAuthToken();
     assertExists(currentAuthToken, "Test user auth token was not set.");
     assertExists(scAdminClient, "Shared Supabase Admin Client is not initialized.");
@@ -90,7 +90,7 @@ export async function runEdgeCaseTests(
       currentTestDeps: cTestDeps,
       chatHandler: cHandler,
       mockAiAdapter: cMockAiAdapter,
-    } = await import("./_integration.test.utils.ts");
+    } = await import("../_shared/_integration.test.utils.ts");
     const currentAuthToken = getTestUserAuthToken();
     assertExists(currentAuthToken, "Test user auth token was not set for AI error test.");
     assertExists(scAdminClient, "Shared Supabase Admin Client is not initialized for AI error test.");
@@ -183,7 +183,7 @@ export async function runEdgeCaseTests(
         currentTestDeps: cTestDeps,
         chatHandler: cHandler,
         mockAiAdapter: cMockAiAdapter,
-    } = await import("./_integration.test.utils.ts");
+    } = await import("../_shared/_integration.test.utils.ts");
 
     const currentAuthToken = getTestUserAuthToken();
     assertExists(currentAuthToken);

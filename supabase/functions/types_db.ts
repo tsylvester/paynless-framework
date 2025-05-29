@@ -1099,6 +1099,10 @@ export type Database = {
       }
     }
     Functions: {
+      begin_transaction: {
+        Args: Record<PropertyKey, never>
+        Returns: string
+      }
       can_select_chat: {
         Args: { check_chat_id: string }
         Returns: boolean
@@ -1207,6 +1211,10 @@ export type Database = {
           timestamp: string
           payment_transaction_id: string
         }[]
+      }
+      rollback_transaction: {
+        Args: Record<PropertyKey, never>
+        Returns: string
       }
     }
     Enums: {

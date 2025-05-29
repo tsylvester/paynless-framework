@@ -25,7 +25,7 @@ import {
   chatHandler, // Use chatHandler from utils
   // Constants
   CHAT_FUNCTION_URL
-} from "./_integration.test.utils.ts";
+} from "../_shared/_integration.test.utils.ts";
 import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 import type { Database } from "../types_db.ts";
 import { createMockSupabaseClient, type MockQueryBuilderState, type MockResolveQueryResult } from "../_shared/supabase.mock.ts";

@@ -15,7 +15,7 @@ import {
   setSharedAdminClient,
   setSharedTestDeps,
   CHAT_FUNCTION_URL,
-} from "./_integration.test.utils.ts";
+} from "../_shared/_integration.test.utils.ts";
 
 // Import types directly from their canonical location
 import type { ChatApiRequest, ChatHandlerSuccessResponse, AiModelExtendedConfig } from "../_shared/types.ts";

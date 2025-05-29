@@ -6,7 +6,7 @@ import {
 } from "https://deno.land/std@0.220.1/assert/mod.ts";
 import { stub } from "https://deno.land/std@0.220.1/testing/mock.ts";
 import type { ChatApiRequest, TokenUsage, AiModelExtendedConfig, ChatHandlerSuccessResponse } from "../_shared/types.ts";
-import { CHAT_FUNCTION_URL } from "./_integration.test.utils.ts";
+import { CHAT_FUNCTION_URL } from "../_shared/_integration.test.utils.ts";
 import { createMockSupabaseClient } from "../_shared/supabase.mock.ts";
 import type { MockQueryBuilderState, MockPGRSTError } from "../_shared/supabase.mock.ts";
 import { DEFAULT_INPUT_TOKEN_COST_RATE, DEFAULT_OUTPUT_TOKEN_COST_RATE } from "../_shared/config/token_cost_defaults.ts";
@@ -70,7 +70,7 @@ export async function runSpecificConfigsTests(
         chatHandler: cHandler,
         mockAiAdapter: cMockAiAdapter,
         getProviderIdByApiIdentifier,
-      } = await import("./_integration.test.utils.ts");
+      } = await import("../_shared/_integration.test.utils.ts");
 
       const currentAuthToken = getTestUserAuthToken();
       assertExists(currentAuthToken);
@@ -254,7 +254,7 @@ export async function runSpecificConfigsTests(
         chatHandler: cHandler,
         mockAiAdapter: cMockAiAdapter,
         getProviderIdByApiIdentifier,
-      } = await import("./_integration.test.utils.ts");
+      } = await import("../_shared/_integration.test.utils.ts");
 
       const currentAuthToken = getTestUserAuthToken();
       assertExists(currentAuthToken);
@@ -423,7 +423,7 @@ export async function runSpecificConfigsTests(
         chatHandler: cHandler,
         mockAiAdapter: cMockAiAdapter,
         getProviderIdByApiIdentifier,
-      } = await import("./_integration.test.utils.ts");
+      } = await import("../_shared/_integration.test.utils.ts");
 
       const currentAuthToken = getTestUserAuthToken();
       assertExists(currentAuthToken);
@@ -579,7 +579,7 @@ export async function runSpecificConfigsTests(
         chatHandler: cHandler,
         mockAiAdapter: cMockAiAdapter, // Should not be called
         getProviderIdByApiIdentifier,
-      } = await import("./_integration.test.utils.ts");
+      } = await import("../_shared/_integration.test.utils.ts");
 
       const currentAuthToken = getTestUserAuthToken();
       assertExists(currentAuthToken);
@@ -695,7 +695,7 @@ export async function runSpecificConfigsTests(
         currentTestDeps: cTestDeps,
         chatHandler: cHandler,
         mockAiAdapter: cMockAiAdapter, // Should not be called
-      } = await import("./_integration.test.utils.ts");
+      } = await import("../_shared/_integration.test.utils.ts");
 
       const currentAuthToken = getTestUserAuthToken();
       assertExists(currentAuthToken);
@@ -810,7 +810,7 @@ export async function runSpecificConfigsTests(
           chatHandler: cHandler,
           mockAiAdapter: cMockAiAdapter,
           getProviderIdByApiIdentifier,
-      } = await import("./_integration.test.utils.ts");
+      } = await import("../_shared/_integration.test.utils.ts");
 
       const currentAuthToken = getTestUserAuthToken();
       assertExists(currentAuthToken);
@@ -907,7 +907,7 @@ export async function runSpecificConfigsTests(
         getTestUserAuthToken, supabaseAdminClient: scAdminClient, 
         currentTestDeps: cTestDeps, chatHandler: cHandler,
         mockAiAdapter: cMockAiAdapter, // Added mockAiAdapter
-      } = await import("./_integration.test.utils.ts");
+      } = await import("../_shared/_integration.test.utils.ts");
 
       const currentAuthToken = getTestUserAuthToken();
       assertExists(currentAuthToken, "Test user auth token was not set.");
@@ -991,7 +991,7 @@ export async function runSpecificConfigsTests(
         getTestUserAuthToken, supabaseAdminClient: scAdminClient, 
         currentTestDeps: cTestDeps, chatHandler: cHandler,
         mockAiAdapter: cMockAiAdapter, // Added mockAiAdapter
-      } = await import("./_integration.test.utils.ts");
+      } = await import("../_shared/_integration.test.utils.ts");
 
       const currentAuthToken = getTestUserAuthToken();
       assertExists(currentAuthToken);
@@ -1110,7 +1110,7 @@ export async function runSpecificConfigsTests(
         getTestUserAuthToken, supabaseAdminClient: scAdminClient, 
         currentTestDeps: cTestDeps, chatHandler: cHandler,
         mockAiAdapter: cMockAiAdapter, // Added mockAiAdapter
-      } = await import("./_integration.test.utils.ts");
+      } = await import("../_shared/_integration.test.utils.ts");
 
       const currentAuthToken = getTestUserAuthToken();
       assertExists(currentAuthToken);
@@ -1230,7 +1230,7 @@ export async function runSpecificConfigsTests(
       const { 
         getTestUserAuthToken, supabaseAdminClient: scAdminClient, 
         currentTestDeps: cTestDeps, chatHandler: cHandler 
-      } = await import("./_integration.test.utils.ts");
+      } = await import("../_shared/_integration.test.utils.ts");
 
       const currentAuthToken = getTestUserAuthToken();
       assertExists(currentAuthToken);
@@ -1302,7 +1302,7 @@ export async function runSpecificConfigsTests(
       const { 
         getTestUserAuthToken, supabaseAdminClient: scAdminClient, 
         currentTestDeps: cTestDeps, chatHandler: cHandler 
-      } = await import("./_integration.test.utils.ts");
+      } = await import("../_shared/_integration.test.utils.ts");
 
       const currentAuthToken = getTestUserAuthToken();
       assertExists(currentAuthToken);
