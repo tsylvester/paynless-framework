@@ -1,5 +1,5 @@
 // @deno-types="npm:@types/chai@4.3.1"
-import { expect } from "npm:chai@4.3.7";
+import { expect } from "https://deno.land/x/expect@v0.3.0/mod.ts";
 import {
   afterAll,
   beforeAll,
@@ -28,18 +28,18 @@ describe("Schema Migration: dialectic_projects Table - Add user_domain_overlay_v
 
   it("dialectic_projects table should exist (pre-requisite)", async () => {
     const columns: TableColumnInfo[] = await getTableColumns(supabaseAdmin, tableName, 'public');
-    expect(columns.length, `Table '${tableName}' should exist and have columns.`).to.be.greaterThan(0);
+    expect(columns.length).toBeGreaterThan(0);
   });
 
   it(`should have the column '${columnName}' with correct type and properties`, async () => {
     const columns: TableColumnInfo[] = await getTableColumns(supabaseAdmin, tableName, 'public');
     const column = columns.find((c: TableColumnInfo) => c.column_name === columnName);
 
-    expect(column, `Column '${columnName}' not found in table '${tableName}'.`).to.exist;
+    expect(column).toBeDefined();
     if (column) {
-      expect(column.data_type, `Column '${columnName}' data type mismatch.`).to.equal("jsonb");
-      expect(column.is_nullable, `Column '${columnName}' nullability mismatch.`).to.equal("YES");
-      expect(column.column_default, `Column '${columnName}' should have no default value.`).to.be.null;
+      expect(column.data_type).toBe("jsonb");
+      expect(column.is_nullable).toBe("YES");
+      expect(column.column_default).toBeNull();
     }
   });
 }); 

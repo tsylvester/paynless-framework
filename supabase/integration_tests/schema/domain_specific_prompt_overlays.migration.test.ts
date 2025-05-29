@@ -1,5 +1,5 @@
 // @deno-types="npm:@types/chai@4.3.1"
-import { expect } from "npm:chai@4.3.7";
+import { expect } from "https://deno.land/x/expect@v0.3.0/mod.ts";
 import {
   afterAll,
   beforeAll,
@@ -56,13 +56,13 @@ describe("Schema Migration: domain_specific_prompt_overlays Table", () => {
 
     for (const columnName in expectedColumns) {
       const column = columns.find((c: TableColumnInfo) => c.column_name === columnName);
-      expect(column, `Column ${columnName} not found`).to.exist;
-      if (column) { // Type guard
+      expect(column).toBeDefined();
+      if (column) {
         const expectedSpec = expectedColumns[columnName];
-        expect(column.data_type, `Column ${columnName} type mismatch`).to.equal(expectedSpec.type);
-        expect(column.is_nullable, `Column ${columnName} nullability mismatch`).to.equal(expectedSpec.is_nullable);
+        expect(column.data_type).toBe(expectedSpec.type);
+        expect(column.is_nullable).toBe(expectedSpec.is_nullable);
         if (expectedSpec.default !== null) {
-          expect(column.column_default, `Column ${columnName} default value mismatch`).to.equal(expectedSpec.default);
+          expect(column.column_default).toBe(expectedSpec.default);
         }
       }
     }
@@ -79,15 +79,15 @@ describe("Schema Migration: domain_specific_prompt_overlays Table", () => {
       },
     ];
 
-    expect(fkConstraints.length, `Expected ${expectedFKs.length} foreign key constraints`).to.equal(expectedFKs.length);
+    expect(fkConstraints.length).toBe(expectedFKs.length);
 
     for (const expectedFK of expectedFKs) {
       const fk = fkConstraints.find((k: TableConstraintInfo) => 
         k.foreign_table_name === expectedFK.foreign_table_name &&
-        k.constrained_columns && // Ensure constrained_columns is defined
+        k.constrained_columns &&
         JSON.stringify(k.constrained_columns.sort()) === JSON.stringify(expectedFK.constrained_columns.sort())
       );
-      expect(fk, `Foreign key for ${expectedFK.foreign_table_name} on ${expectedFK.constrained_columns.join(", ")} not found`).to.exist;
+      expect(fk).toBeDefined();
     }
   });
 
@@ -105,9 +105,9 @@ describe("Schema Migration: domain_specific_prompt_overlays Table", () => {
         (c.constrained_columns && JSON.stringify(c.constrained_columns.sort()) === JSON.stringify(expectedUQ.columns)))
     );
     
-    expect(uniqueConstraint, `Unique constraint on (system_prompt_id, domain_tag, version) not found`).to.exist;
-    if (uniqueConstraint && uniqueConstraint.constrained_columns) { // Type guard
-        expect(uniqueConstraint.constrained_columns.sort(), `Unique constraint columns mismatch`).to.deep.equal(expectedUQ.columns);
+    expect(uniqueConstraint).toBeDefined();
+    if (uniqueConstraint && uniqueConstraint.constrained_columns) {
+        expect(uniqueConstraint.constrained_columns.sort()).toEqual(expectedUQ.columns);
     }
   });
 
@@ -115,9 +115,9 @@ describe("Schema Migration: domain_specific_prompt_overlays Table", () => {
     const constraints: TableConstraintInfo[] = await getTableConstraints(supabaseAdmin, tableName, 'public');
     const pkConstraint = constraints.find((c: TableConstraintInfo) => c.constraint_type === 'PRIMARY KEY');
 
-    expect(pkConstraint, "Primary key constraint not found").to.exist;
-    if (pkConstraint && pkConstraint.constrained_columns) { // Type guard
-      expect(pkConstraint.constrained_columns, "Primary key should be on 'id'").to.deep.equal(["id"]);
+    expect(pkConstraint).toBeDefined();
+    if (pkConstraint && pkConstraint.constrained_columns) {
+      expect(pkConstraint.constrained_columns).toEqual(["id"]);
     }
   });
 
@@ -138,7 +138,7 @@ describe("Schema Migration: domain_specific_prompt_overlays Table", () => {
   //       idx.indexname.endsWith(expectedIndex.name_suffix) &&
   //       JSON.stringify(idx.column_names.sort()) === JSON.stringify(expectedIndex.columns.sort())
   //     );
-  //     expect(index, `Index ${expectedIndex.name_suffix} with columns (${expectedIndex.columns.join(', ')}) not found`).to.exist;
+  //     expect(index).toBeDefined();
   //   }
   // });
 }); 

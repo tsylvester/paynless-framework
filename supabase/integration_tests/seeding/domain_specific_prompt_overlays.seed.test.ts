@@ -1,5 +1,5 @@
 // @deno-types="npm:@types/chai@4.3.1"
-import { expect } from "npm:chai@4.3.7";
+import { expect } from "https://deno.land/x/expect@v0.3.0/mod.ts";
 import {
   afterAll,
   beforeAll,
@@ -60,19 +60,27 @@ describe("Seeding: domain_specific_prompt_overlays Table", () => {
     // Fetch the IDs of the base prompts to link overlays correctly
     const { data: thesisPrompt, error: thesisErr } = await supabaseAdmin
       .from("system_prompts")
-      .select("id")
+      .select("id, name") // Select name for logging
       .eq("name", "dialectic_thesis_base_v1")
       .single();
-    if (thesisErr || !thesisPrompt) throw new Error(`Could not fetch base thesis prompt: ${thesisErr?.message}`);
+    if (thesisErr || !thesisPrompt) {
+        console.error("Error fetching base thesis prompt:", thesisErr);
+        throw new Error(`Could not fetch base thesis prompt: ${thesisErr?.message}`);
+    }
     baseThesisPromptId = thesisPrompt.id;
+    console.log(`Fetched baseThesisPromptId: ${baseThesisPromptId} for name: ${thesisPrompt.name}`);
 
     const { data: antithesisPrompt, error: antiErr } = await supabaseAdmin
       .from("system_prompts")
-      .select("id")
+      .select("id, name") // Select name for logging
       .eq("name", "dialectic_antithesis_base_v1")
       .single();
-    if (antiErr || !antithesisPrompt) throw new Error(`Could not fetch base antithesis prompt: ${antiErr?.message}`);
+    if (antiErr || !antithesisPrompt) {
+        console.error("Error fetching base antithesis prompt:", antiErr);
+        throw new Error(`Could not fetch base antithesis prompt: ${antiErr?.message}`);
+    }
     baseAntithesisPromptId = antithesisPrompt.id;
+    console.log(`Fetched baseAntithesisPromptId: ${baseAntithesisPromptId} for name: ${antithesisPrompt.name}`);
   });
 
   for (const expectedOverlay of expectedOverlays) {
@@ -80,37 +88,53 @@ describe("Seeding: domain_specific_prompt_overlays Table", () => {
       const targetSystemPromptId = expectedOverlay.system_prompt_name === "dialectic_thesis_base_v1" 
         ? baseThesisPromptId 
         : baseAntithesisPromptId;
+      
+      console.log(`Testing overlay for system_prompt_name: ${expectedOverlay.system_prompt_name}, resolved targetSystemPromptId: ${targetSystemPromptId}`);
+      console.log(`Querying domain_specific_prompt_overlays with system_prompt_id: ${targetSystemPromptId}, domain_tag: ${expectedOverlay.domain_tag}, version: ${expectedOverlay.version}`);
 
-      expect(targetSystemPromptId, `Base prompt ID for ${expectedOverlay.system_prompt_name} must be resolved`).to.exist;
-      if (!targetSystemPromptId) return; // Should not happen due to expect above
+      expect(targetSystemPromptId).toBeDefined();
+      if (!targetSystemPromptId) return;
 
       const { data: seededOverlays, error } = await supabaseAdmin
         .from("domain_specific_prompt_overlays")
-        .select("*, system_prompts(name)") // Include base prompt name for easier debugging if needed
+        .select("*, system_prompts(name)")
         .eq("system_prompt_id", targetSystemPromptId)
         .eq("domain_tag", expectedOverlay.domain_tag)
         .eq("version", expectedOverlay.version);
       
-      expect(error).to.be.null;
-      expect(seededOverlays, "Seeded overlay data not found or multiple found when one expected").to.be.an("array").with.lengthOf(1);
-      if (!seededOverlays || seededOverlays.length !== 1) return;
+      console.log(`Query result - error: ${JSON.stringify(error)}, data: ${JSON.stringify(seededOverlays)}`);
+
+      expect(error).toBeNull();
+      expect(seededOverlays).toBeInstanceOf(Array);
+      // Add a more informative assertion failure message for length check
+      if (!seededOverlays || seededOverlays.length !== 1) {
+        // Log all overlays for the given system_prompt_id to see what IS there
+        const { data: allOverlaysForPromptId, error: allError } = await supabaseAdmin
+            .from("domain_specific_prompt_overlays")
+            .select("*")
+            .eq("system_prompt_id", targetSystemPromptId);
+        console.error(`Expected 1 overlay, found ${seededOverlays?.length || 0}. All overlays for prompt ID ${targetSystemPromptId}: ${JSON.stringify(allOverlaysForPromptId)}, error: ${JSON.stringify(allError)}`);
+      }
+      expect(seededOverlays).toHaveLength(1);
+      if (!seededOverlays || seededOverlays.length !== 1) return; // Guard again, though expect would have thrown
 
       const seededOverlay = seededOverlays[0];
-      expect(seededOverlay.description).to.equal(expectedOverlay.description);
-      expect(seededOverlay.is_active).to.equal(expectedOverlay.is_active === undefined ? true : expectedOverlay.is_active);
-      expect(seededOverlay.version).to.equal(expectedOverlay.version);
+      expect(seededOverlay.description).toBe(expectedOverlay.description);
+      expect(seededOverlay.is_active).toBe(expectedOverlay.is_active === undefined ? true : expectedOverlay.is_active);
+      expect(seededOverlay.version).toBe(expectedOverlay.version);
 
       // Check if all expected overlay_values_subset keys and values are present in the actual overlay_values
       if (typeof expectedOverlay.overlay_values_subset === 'object' && expectedOverlay.overlay_values_subset !== null) {
-        expect(seededOverlay.overlay_values, "Overlay values should be an object").to.be.an('object');
+        expect(typeof seededOverlay.overlay_values).toBe('object');
+        expect(seededOverlay.overlay_values).not.toBeNull();
         for (const key in expectedOverlay.overlay_values_subset) {
-          expect(seededOverlay.overlay_values, `Key '${key}' not found in overlay_values`).to.have.property(key);
+          expect(seededOverlay.overlay_values).toHaveProperty(key);
           // deno-lint-ignore no-explicit-any
-          expect((seededOverlay.overlay_values as any)[key], `Value for key '${key}' mismatch`).to.deep.equal((expectedOverlay.overlay_values_subset as any)[key]);
+          expect((seededOverlay.overlay_values as any)[key]).toEqual((expectedOverlay.overlay_values_subset as any)[key]);
         }
       } else {
         // If subset is not an object (e.g. null/undefined), then actual values should match (e.g. be null)
-        expect(seededOverlay.overlay_values).to.deep.equal(expectedOverlay.overlay_values_subset);
+        expect(seededOverlay.overlay_values).toEqual(expectedOverlay.overlay_values_subset);
       }
     });
   }

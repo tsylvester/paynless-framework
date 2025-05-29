@@ -195,6 +195,107 @@ export type Database = {
           },
         ]
       }
+      dialectic_contributions: {
+        Row: {
+          actual_prompt_sent: string | null
+          citations: Json | null
+          content_mime_type: string
+          content_size_bytes: number | null
+          content_storage_bucket: string
+          content_storage_path: string
+          cost_usd: number | null
+          created_at: string
+          id: string
+          iteration_number: number
+          model_version_details: string | null
+          processing_time_ms: number | null
+          prompt_template_id_used: string | null
+          raw_response_storage_path: string | null
+          session_id: string
+          session_model_id: string
+          stage: string
+          target_contribution_id: string | null
+          tokens_used_input: number | null
+          tokens_used_output: number | null
+          updated_at: string
+        }
+        Insert: {
+          actual_prompt_sent?: string | null
+          citations?: Json | null
+          content_mime_type?: string
+          content_size_bytes?: number | null
+          content_storage_bucket?: string
+          content_storage_path: string
+          cost_usd?: number | null
+          created_at?: string
+          id?: string
+          iteration_number?: number
+          model_version_details?: string | null
+          processing_time_ms?: number | null
+          prompt_template_id_used?: string | null
+          raw_response_storage_path?: string | null
+          session_id: string
+          session_model_id: string
+          stage: string
+          target_contribution_id?: string | null
+          tokens_used_input?: number | null
+          tokens_used_output?: number | null
+          updated_at?: string
+        }
+        Update: {
+          actual_prompt_sent?: string | null
+          citations?: Json | null
+          content_mime_type?: string
+          content_size_bytes?: number | null
+          content_storage_bucket?: string
+          content_storage_path?: string
+          cost_usd?: number | null
+          created_at?: string
+          id?: string
+          iteration_number?: number
+          model_version_details?: string | null
+          processing_time_ms?: number | null
+          prompt_template_id_used?: string | null
+          raw_response_storage_path?: string | null
+          session_id?: string
+          session_model_id?: string
+          stage?: string
+          target_contribution_id?: string | null
+          tokens_used_input?: number | null
+          tokens_used_output?: number | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "dialectic_contributions_prompt_template_id_used_fkey"
+            columns: ["prompt_template_id_used"]
+            isOneToOne: false
+            referencedRelation: "system_prompts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "dialectic_contributions_session_id_fkey"
+            columns: ["session_id"]
+            isOneToOne: false
+            referencedRelation: "dialectic_sessions"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "dialectic_contributions_session_model_id_fkey"
+            columns: ["session_model_id"]
+            isOneToOne: false
+            referencedRelation: "dialectic_session_models"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "dialectic_contributions_target_contribution_id_fkey"
+            columns: ["target_contribution_id"]
+            isOneToOne: false
+            referencedRelation: "dialectic_contributions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       dialectic_projects: {
         Row: {
           created_at: string
@@ -233,6 +334,99 @@ export type Database = {
           user_id?: string
         }
         Relationships: []
+      }
+      dialectic_session_models: {
+        Row: {
+          created_at: string
+          id: string
+          model_id: string
+          model_role: string | null
+          session_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          model_id: string
+          model_role?: string | null
+          session_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          model_id?: string
+          model_role?: string | null
+          session_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "fk_session"
+            columns: ["session_id"]
+            isOneToOne: false
+            referencedRelation: "dialectic_sessions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      dialectic_sessions: {
+        Row: {
+          active_antithesis_prompt_template_id: string | null
+          active_thesis_prompt_template_id: string | null
+          created_at: string
+          current_stage_seed_prompt: string | null
+          id: string
+          iteration_count: number
+          project_id: string
+          session_description: string | null
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          active_antithesis_prompt_template_id?: string | null
+          active_thesis_prompt_template_id?: string | null
+          created_at?: string
+          current_stage_seed_prompt?: string | null
+          id?: string
+          iteration_count?: number
+          project_id: string
+          session_description?: string | null
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          active_antithesis_prompt_template_id?: string | null
+          active_thesis_prompt_template_id?: string | null
+          created_at?: string
+          current_stage_seed_prompt?: string | null
+          id?: string
+          iteration_count?: number
+          project_id?: string
+          session_description?: string | null
+          status?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "fk_antithesis_prompt_template"
+            columns: ["active_antithesis_prompt_template_id"]
+            isOneToOne: false
+            referencedRelation: "system_prompts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "fk_project"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "dialectic_projects"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "fk_thesis_prompt_template"
+            columns: ["active_thesis_prompt_template_id"]
+            isOneToOne: false
+            referencedRelation: "system_prompts"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       domain_specific_prompt_overlays: {
         Row: {

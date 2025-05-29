@@ -57,6 +57,7 @@ export function initializeSupabaseAdminClient(): SupabaseClient<Database> {
       detectSessionInUrl: false
     }
   });
+  supabaseAdminClient = client;
   return client;
 }
 
@@ -327,6 +328,8 @@ export interface TableColumnInfo {
   is_nullable: "YES" | "NO";
   column_default: string | null;
   udt_name: string; // Underlying data type
+  numeric_precision: number | null;
+  numeric_scale: number | null;
 }
 
 export async function getTableColumns(
@@ -335,9 +338,11 @@ export async function getTableColumns(
   schemaName: string = "public"
 ): Promise<TableColumnInfo[]> {
   const query = `
-    SELECT column_name, data_type, is_nullable, column_default, udt_name
+    SELECT column_name, data_type, is_nullable, column_default, udt_name,
+           numeric_precision, numeric_scale
     FROM information_schema.columns
     WHERE table_schema = '${schemaName}' AND table_name = '${tableName}'
+    ORDER BY ordinal_position
   `;
   const { data, error } = await client.rpc('execute_sql' as any, { query: query });
   if (error) {
@@ -353,8 +358,10 @@ export interface TableConstraintInfo {
   constrained_columns: string[]; // For PK, FK, UNIQUE
   foreign_table_schema?: string; // For FK
   foreign_table_name?: string; // For FK
-  foreign_columns?: string[]; // For FK
+  foreign_columns?: string[]; // For FK - Names of columns in the foreign table
   check_clause?: string; // For CHECK
+  delete_rule?: string; // Added for FK
+  update_rule?: string; // Added for FK
 }
 
 
@@ -368,31 +375,43 @@ export async function getTableConstraints(
         tc.constraint_name,
         tc.constraint_type,
         kcu.column_name AS constrained_column,
-        CASE 
-            WHEN tc.constraint_type = 'FOREIGN KEY' THEN rcc.unique_constraint_schema 
-            ELSE NULL 
-        END AS foreign_table_schema,
-        CASE 
-            WHEN tc.constraint_type = 'FOREIGN KEY' THEN pk_tc.table_name 
-            ELSE NULL 
-        END AS foreign_table_name,
-        chk.check_clause
+        -- For Foreign Keys, get referenced table details from table_constraints (tc_ref)
+        rc_ref.table_schema AS foreign_table_schema,
+        rc_ref.table_name AS foreign_table_name,
+        -- For Foreign Keys, get referenced column details from key_column_usage (kcu_ref)
+        kcu_ref.column_name AS foreign_column,
+        chk.check_clause,
+        rc.update_rule,
+        rc.delete_rule
     FROM
         information_schema.table_constraints AS tc
     JOIN
         information_schema.key_column_usage AS kcu
-        ON tc.constraint_name = kcu.constraint_name AND tc.table_schema = kcu.table_schema
+        ON tc.constraint_name = kcu.constraint_name
+        AND tc.table_schema = kcu.table_schema
+        AND tc.table_name = kcu.table_name
     LEFT JOIN
-        information_schema.referential_constraints AS rcc
-        ON tc.constraint_name = rcc.constraint_name AND tc.constraint_schema = rcc.constraint_schema
+        information_schema.referential_constraints AS rc
+        ON tc.constraint_name = rc.constraint_name
+        AND tc.constraint_schema = rc.constraint_schema
     LEFT JOIN
-        information_schema.table_constraints AS pk_tc
-        ON rcc.unique_constraint_name = pk_tc.constraint_name AND rcc.unique_constraint_schema = pk_tc.table_schema
+        information_schema.table_constraints AS rc_ref -- Referenced table_constraints
+        ON rc.unique_constraint_schema = rc_ref.table_schema
+        AND rc.unique_constraint_name = rc_ref.constraint_name
+    LEFT JOIN
+        information_schema.key_column_usage AS kcu_ref -- Referenced key_column_usage
+        ON rc_ref.constraint_schema = kcu_ref.constraint_schema
+        AND rc_ref.constraint_name = kcu_ref.constraint_name
+        -- This join needs to also ensure we match columns in the correct order if it's a composite key
+        -- For simple FKs, this might be okay. For composite, kcu.position_in_unique_constraint = kcu_ref.ordinal_position
     LEFT JOIN
         information_schema.check_constraints AS chk
-        ON tc.constraint_name = chk.constraint_name AND tc.constraint_schema = chk.constraint_schema
+        ON tc.constraint_name = chk.constraint_name
+        AND tc.constraint_schema = chk.constraint_schema
     WHERE
         tc.table_name = '${tableName}' AND tc.table_schema = '${schemaName}'
+    ORDER BY
+        tc.constraint_name, kcu.ordinal_position, kcu_ref.ordinal_position
   `;
   const { data: rawConstraints, error } = await client.rpc('execute_sql' as any, { query: query });
 
@@ -402,26 +421,30 @@ export async function getTableConstraints(
   }
 
   const processedConstraints: { [key: string]: TableConstraintInfo } = {};
-  (rawConstraints as any[]).forEach(rc => {
-    if (!processedConstraints[rc.constraint_name]) {
-      processedConstraints[rc.constraint_name] = {
-        constraint_name: rc.constraint_name,
-        constraint_type: rc.constraint_type,
+  (rawConstraints as any[]).forEach(rc_row => { // Renamed loop variable to avoid conflict with outer 'rc' alias
+    if (!processedConstraints[rc_row.constraint_name]) {
+      processedConstraints[rc_row.constraint_name] = {
+        constraint_name: rc_row.constraint_name,
+        constraint_type: rc_row.constraint_type,
         constrained_columns: [],
-        foreign_table_schema: rc.foreign_table_schema, // Now should be populated by the CASE statement
-        foreign_table_name: rc.foreign_table_name,   // Now should be populated by the CASE statement
-        // foreign_columns: rc.foreign_table_name ? [] : undefined, // We removed direct foreign_column_name from SQL, so this might need adjustment if used
-        check_clause: rc.check_clause,
+        foreign_table_schema: rc_row.foreign_table_schema,
+        foreign_table_name: rc_row.foreign_table_name,
+        foreign_columns: rc_row.constraint_type === 'FOREIGN KEY' ? [] : undefined,
+        check_clause: rc_row.check_clause,
+        delete_rule: rc_row.delete_rule,
+        update_rule: rc_row.update_rule,
       };
     }
-    if (rc.constrained_column && !processedConstraints[rc.constraint_name].constrained_columns.includes(rc.constrained_column)) {
-      processedConstraints[rc.constraint_name].constrained_columns.push(rc.constrained_column);
+    // Add constrained column if it's not already there
+    if (rc_row.constrained_column && !processedConstraints[rc_row.constraint_name].constrained_columns.includes(rc_row.constrained_column)) {
+      processedConstraints[rc_row.constraint_name].constrained_columns.push(rc_row.constrained_column);
     }
-    // Since foreign_column_name is removed from SQL, this part for populating foreign_columns array is no longer applicable directly from rc.foreign_column_name
-    // If needed, it would require another approach or ensuring the initial foreign_columns array is handled correctly by the test which doesn't check individual foreign columns.
+    // Add foreign column if it's a FOREIGN KEY constraint and the column is not already there
+    if (rc_row.constraint_type === 'FOREIGN KEY' && rc_row.foreign_column && processedConstraints[rc_row.constraint_name].foreign_columns && !processedConstraints[rc_row.constraint_name].foreign_columns!.includes(rc_row.foreign_column) ) {
+        processedConstraints[rc_row.constraint_name].foreign_columns!.push(rc_row.foreign_column);
+    }
   });
 
-  // console.log("[Debug getTableConstraints] processedConstraints:", JSON.stringify(processedConstraints, null, 2)); // Debug line removed
   return Object.values(processedConstraints);
 }
 

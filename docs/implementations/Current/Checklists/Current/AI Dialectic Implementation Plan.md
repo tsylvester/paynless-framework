@@ -209,34 +209,34 @@ The implementation plan uses the following labels to categorize work steps:
 *   `[✅] 1.0.3.C [BE]` Backend Prompt Rendering Logic for Overlays
     *   `[✅] 1.0.3.C.1` Develop/Update prompt rendering utility. (GREEN)
     *   `[✅] 1.0.3.C.2 [TEST-UNIT]` Write unit tests for the prompt rendering utility, covering various merge scenarios and variable substitutions. (GREEN)
-*   `[ ] 1.0.3.D.0 [BE/API/STORE]` Backend and Frontend Plumbing for Domain Tag Selection
-    *   `[ ] 1.0.3.D.0.1 [BE]` `dialectic-service` Action: Create `listAvailableDomainTags`.
-        *   `[ ] 1.0.3.D.0.1.1 [TEST-INT]` Write tests for `listAvailableDomainTags` (fetches distinct `domain_tag`s from `domain_specific_prompt_overlays`). (RED)
-        *   `[ ] 1.0.3.D.0.1.2` Implement the action in `supabase/functions/dialectic-service/index.ts`. (GREEN)
-        *   `[ ] 1.0.3.D.0.1.3 [TEST-INT]` Run tests.
-    *   `[ ] 1.0.3.D.0.2 [API]` Update `@paynless/api` (in `packages/api/src/dialectic.api.ts`).
-        *   `[ ] 1.0.3.D.0.2.1` Add `listAvailableDomainTags(): Promise<string[]>` to `DialecticAPIInterface` and types.
-        *   `[ ] 1.0.3.D.0.2.2 [TEST-UNIT]` Write adapter method unit tests in `packages/api/src/dialectic.api.test.ts`. (RED)
-        *   `[ ] 1.0.3.D.0.2.3` Implement adapter method. (GREEN)
-        *   `[ ] 1.0.3.D.0.2.4` Update mocks in `packages/api/src/mocks.ts`.
-        *   `[ ] 1.0.3.D.0.2.5 [TEST-UNIT]` Run tests.
-    *   `[ ] 1.0.3.D.0.3 [STORE]` Update `@paynless/store` (in `packages/store/src/dialecticStore.ts` and `packages/store/src/dialecticStore.selectors.ts`).
-        *   `[ ] 1.0.3.D.0.3.1` Add `availableDomainTags: string[] | null` and `selectedDomainTag: string | null` to `DialecticState`. Add relevant loading/error states.
-        *   `[ ] 1.0.3.D.0.3.2 [TEST-UNIT]` Write tests for `fetchAvailableDomainTags` thunk (in `packages/store/src/dialecticStore.thunks.test.ts` or similar) and `setSelectedDomainTag` action. (RED)
-        *   `[ ] 1.0.3.D.0.3.3` Implement thunk and action/reducer logic. (GREEN)
-        *   `[ ] 1.0.3.D.0.3.4` Update selectors in `packages/store/src/dialecticStore.selectors.ts`.
-        *   `[ ] 1.0.3.D.0.3.5 [TEST-UNIT]` Run tests.
-*   `[ ] 1.0.3.D.1 [UI]` Create `DomainSelector` UI Component.
-    *   `[ ] 1.0.3.D.1.1 [TEST-UNIT]` Write unit tests for the `DomainSelector` component (e.g., using ShadCN Dropdown, fetches domains from store, dispatches selection to store). (RED)
-    *   `[ ] 1.0.3.D.1.2` Implement the `DomainSelector` component. (GREEN)
-    *   `[ ] 1.0.3.D.1.3 [TEST-UNIT]` Run tests.
-*   `[ ] 1.0.3.D.2 [DB]` Add `domain_tag` column to `dialectic_projects` table.
-    *   `[ ] 1.0.3.D.2.1 [TEST-UNIT]` Write migration test for adding `domain_tag` (TEXT, nullable) to `dialectic_projects`. (RED)
-    *   `[ ] 1.0.3.D.2.2` Create Supabase migration script. (GREEN)
-    *   `[ ] 1.0.3.D.2.3 [TEST-UNIT]` Run migration test.
-*   `[ ] 1.0.3.D.3 [BE/API/STORE]` Integrate `domain_tag` into Project Creation Flow.
-    *   `[ ] 1.0.3.D.3.1` Modify `createProject` action in `dialectic-service` to accept and store `domain_tag`. (Update tests)
-    *   `[ ] 1.0.3.D.3.2` Modify `CreateProjectPayload` in API and Store to include `domain_tag`. (Update tests)
+*   `[🚧] 1.0.3.D.0 [BE/API/STORE]` Backend and Frontend Plumbing for Domain Tag Selection
+    *   `[✅] 1.0.3.D.0.1 [BE]` `dialectic-service` Action: Create `listAvailableDomainTags`.
+        *   `[✅] 1.0.3.D.0.1.1 [TEST-INT]` Write tests for `listAvailableDomainTags` (fetches distinct `domain_tag`s from `domain_specific_prompt_overlays`). (RED)
+        *   `[✅] 1.0.3.D.0.1.2` Implement the action in `supabase/functions/dialectic-service/index.ts`. (GREEN)
+        *   `[✅] 1.0.3.D.0.1.3 [TEST-INT]` Run tests.
+    *   `[✅] 1.0.3.D.0.2 [API]` Update `@paynless/api` (in `packages/api/src/dialectic.api.ts`).
+        *   `[✅] 1.0.3.D.0.2.1` Add `listAvailableDomainTags(): Promise<string[]>` to `DialecticAPIInterface` and types.
+        *   `[✅] 1.0.3.D.0.2.2 [TEST-UNIT]` Write adapter method unit tests in `packages/api/src/dialectic.api.test.ts`. (RED)
+        *   `[✅] 1.0.3.D.0.2.3` Implement adapter method. (GREEN)
+        *   `[✅] 1.0.3.D.0.2.4` Update mocks in `packages/api/src/mocks.ts`.
+        *   `[✅] 1.0.3.D.0.2.5 [TEST-UNIT]` Run tests.
+    *   `[✅] 1.0.3.D.0.3 [STORE]` Update `@paynless/store` (in `packages/store/src/dialecticStore.ts` and `packages/store/src/dialecticStore.selectors.ts`).
+        *   `[✅] 1.0.3.D.0.3.1` Add `availableDomainTags: string[] | null` and `selectedDomainTag: string | null` to `DialecticState`. Add relevant loading/error states.
+        *   `[✅] 1.0.3.D.0.3.2 [TEST-UNIT]` Write tests for `fetchAvailableDomainTags` thunk (in `packages/store/src/dialecticStore.thunks.test.ts` or similar) and `setSelectedDomainTag` action. (RED)
+        *   `[✅] 1.0.3.D.0.3.3` Implement thunk and action/reducer logic. (GREEN)
+        *   `[✅] 1.0.3.D.0.3.4` Update selectors in `packages/store/src/dialecticStore.selectors.ts`.
+        *   `[✅] 1.0.3.D.0.3.5 [TEST-UNIT]` Run tests.
+*   `[✅] 1.0.3.D.1 [UI]` Create `DomainSelector` UI Component.
+    *   `[✅] 1.0.3.D.1.1 [TEST-UNIT]` Write unit tests for the `DomainSelector` component (e.g., using ShadCN Dropdown, fetches domains from store, dispatches selection to store). (RED)
+    *   `[✅] 1.0.3.D.1.2` Implement the `DomainSelector` component. (GREEN)
+    *   `[✅] 1.0.3.D.1.3 [TEST-UNIT]` Run tests.
+*   `[✅] 1.0.3.D.2 [DB]` Add `selected_domain_tag` column to `dialectic_projects` table.
+    *   `[✅] 1.0.3.D.2.1 [TEST-UNIT]` Write migration test for adding `selected_domain_tag` (TEXT, nullable) to `dialectic_projects`. (RED)
+    *   `[✅] 1.0.3.D.2.2` Create Supabase migration script. (GREEN)
+    *   `[✅] 1.0.3.D.2.3 [TEST-UNIT]` Run migration test.
+*   `[ ] 1.0.3.D.3 [BE/API/STORE]` Integrate `selected_domain_tag` into Project Creation Flow. (SKIPPED FOR NOW)
+    *   `[ ] 1.0.3.D.3.1` Modify `createProject` action in `dialectic-service` to accept and store `selected_domain_tag`. (Update tests)
+    *   `[ ] 1.0.3.D.3.2` Modify `CreateProjectPayload` in API and Store to include `selected_domain_tag`. (Update tests)
     *   `[ ] (Deferred to 1.5.3)` UI for `CreateDialecticProjectPage` will use `DomainSelector` and pass the selected tag.
 *   `[ ] 1.0.4 [RLS]` Define RLS for `system_prompts` (e.g., all authenticated users can read, specific admin role to write/update).
     *   `[ ] 1.0.4.1 [TEST-INT]` Write RLS tests. (RED)
@@ -245,9 +245,9 @@ The implementation plan uses the following labels to categorize work steps:
 *   `[ ] 1.0.5 [COMMIT]` feat: initial setup, configuration, and prompt templates table for AI Dialectic Engine
 
 ### 1.1 Database Schema for Dialectic Core (Continued)
-*   `[ ] 1.1.1 [DB]` Create `dialectic_projects` table.
-    *   `[ ] 1.1.1.1 [TEST-UNIT]` Write migration test for `dialectic_projects` table creation. (RED)
-    *   `[ ] 1.1.1.2` Define columns:
+*   `[✅] 1.1.1 [DB]` Create `dialectic_projects` table.
+    *   `[✅] 1.1.1.1 [TEST-UNIT]` Write migration test for `dialectic_projects` table creation. (RED)
+    *   `[✅] 1.1.1.2` Define columns:
         *   `id` (UUID, primary key, default `uuid_generate_v4()`)
         *   `user_id` (UUID, foreign key to `profiles.id` on delete cascade, not nullable)
         *   `project_name` (TEXT, not nullable)
@@ -256,87 +256,126 @@ The implementation plan uses the following labels to categorize work steps:
         *   `updated_at` (TIMESTAMPTZ, default `now()`)
         *   `repo_url` (TEXT, nullable) (Github will be our first repo integration but we should anticipate Dropbox, Sharepoint, and other repo sources for future development)
         *   `status` (TEXT, e.g., 'active', 'archived', 'template', default 'active')
-    *   `[ ] 1.1.1.3` Create Supabase migration script for `dialectic_projects`. (GREEN)
-    *   `[ ] 1.1.1.4 [REFACTOR]` Review migration script and table definition.
-    *   `[ ] 1.1.1.5 [TEST-UNIT]` Run migration test.
-*   `[ ] 1.1.2 [DB]` Create `dialectic_sessions` table.
-    *   `[ ] 1.1.2.1 [TEST-UNIT]` Write migration test for `dialectic_sessions` table creation. (RED)
-    *   `[ ] 1.1.2.2` Define columns:
+    *   `[✅] 1.1.1.3` Create Supabase migration script for `dialectic_projects`. (GREEN)
+    *   `[✅] 1.1.1.4 [REFACTOR]` Review migration script and table definition.
+    *   `[✅] 1.1.1.5 [TEST-UNIT]` Run `dialectic_projects` schema migration test. (GREEN)
+*   `[✅] 1.1.2 [DB]` Create `dialectic_sessions` table.
+    *   `[✅] 1.1.2.1 [TEST-UNIT]` Write migration test for `dialectic_sessions` table creation. (RED)
+    *   `[✅] 1.1.2.2` Define columns:
         *   `id` (UUID, primary key, default `uuid_generate_v4()`)
         *   `project_id` (UUID, foreign key to `dialectic_projects.id` on delete cascade, not nullable)
         *   `session_description` (TEXT, nullable, e.g., "Initial run with models A, B, C using default thesis prompt")
         *   `current_stage_seed_prompt` (TEXT, nullable, the actual prompt that was used to initiate the current stage, can be a combination of user input and template)
         *   `iteration_count` (INTEGER, default 1, for multi-cycle sessions later)
         *   `active_thesis_prompt_template_id` (UUID, foreign key to `prompt_templates.id`, nullable)
-        *   `active_antithesis_prompt_template_id` (UUID, foreign key to `prompt_templates.id`, nullable)
-        *   `created_at` (TIMESTAMPTZ, default `now()`)
-        *   `updated_at` (TIMESTAMPTZ, default `now()`)
-        *   `status` (TEXT, e.g., 'pending_thesis', 'generating_thesis', 'thesis_complete', 'generating_antithesis', 'antithesis_complete', 'session_complete', 'failed', default 'pending_thesis')
-    *   `[ ] 1.1.2.3` Create Supabase migration script for `dialectic_sessions`. (GREEN)
-    *   `[ ] 1.1.2.4 [REFACTOR]` Review migration script and table definition.
-    *   `[ ] 1.1.2.5 [TEST-UNIT]` Run migration test.
-*   `[ ] 1.1.3 [DB]` Create `dialectic_session_models` table (associative table for models participating in a session).
-    *   `[ ] 1.1.3.1 [TEST-UNIT]` Write migration test for `dialectic_session_models` table. (RED)
-    *   `[ ] 1.1.3.2` Define columns:
+        *   `active_antithesis_prompt_template_id` (UUID, foreign key to `system_prompts.id` on delete set null, nullable)
+        *   `created_at` (TIMESTAMPTZ, default `now()`, not nullable)
+        *   `updated_at` (TIMESTAMPTZ, default `now()`, not nullable)
+        *   `status` (TEXT, e.g., `pending_thesis`, `thesis_complete`, `pending_antithesis`, `antithesis_complete`, `pending_synthesis`, `synthesis_complete`, `critique_recommended`, `complete_final_review`, `archived_failed`, `archived_incomplete`, `archived_complete`)
+    *   `[✅] 1.1.2.3 [DB]` Define constraints (FKs already included with columns, add any CHECK constraints if needed for `status` or `iteration_count`).
+    *   `[✅] 1.1.2.4 [REFACTOR]` Review migration script and table definition.
+    *   `[✅] 1.1.2.5 [TEST-UNIT]` Run `dialectic_sessions` schema migration test. (GREEN)
+*   `[ ] 1.1.3 [DB]` Create `dialectic_session_prompts` table (or consider if columns in `dialectic_sessions` are sufficient for MVP if only one prompt pair per session iteration).
+    *   `[ ] 1.1.3.1 [TEST-UNIT]` Write migration test for `dialectic_session_prompts` table.
+*   `[✅] 1.1.4 [DB]` Create `dialectic_session_models` table (associative table for models participating in a session).
+    *   `[✅] 1.1.4.1 [TEST-UNIT]` Write migration test for `dialectic_session_models` table. (GREEN)
+    *   `[✅] 1.1.4.2` Define columns:
         *   `id` (UUID, primary key, default `uuid_generate_v4()`)
         *   `session_id` (UUID, foreign key to `dialectic_sessions.id` on delete cascade, not nullable)
         *   `model_id` (TEXT, not nullable, e.g., "openai/gpt-4", "anthropic/claude-3-opus". This will later be validated against `ai_models_catalog.id`).
         *   `model_role` (TEXT, nullable, e.g., "thesis_generator", "critiquer", for future advanced role assignment; for Phase 1, all models generate thesis and critique others)
         *   `created_at` (TIMESTAMPTZ, default `now()`)
-    *   `[ ] 1.1.3.3` Add unique constraint on (`session_id`, `model_id`).
-    *   `[ ] 1.1.3.4` Create Supabase migration script for `dialectic_session_models`. (GREEN)
-    *   `[ ] 1.1.3.5 [REFACTOR]` Review migration script.
-    *   `[ ] 1.1.3.6 [TEST-UNIT]` Run migration test.
-*   `[ ] 1.1.4 [DB]` Create `dialectic_contributions` table.
-    *   `[ ] 1.1.4.1 [TEST-UNIT]` Write migration test for `dialectic_contributions` table. (RED)
-    *   `[ ] 1.1.4.2` Define columns:
-        *   `id` (UUID, primary key, default `uuid_generate_v4()`)
-        *   `session_id` (UUID, foreign key to `dialectic_sessions.id` on delete cascade, not nullable)
-        *   `session_model_id` (UUID, foreign key to `dialectic_session_models.id` on delete cascade, not nullable, identifies the specific model instance in the session that made this contribution)
-        *   `stage` (TEXT, not nullable, e.g., 'thesis', 'antithesis') // Corresponds to DialeqAI stages
-        *   `content` (TEXT, not nullable, the actual output from the AI model)
-        *   `target_contribution_id` (UUID, foreign key to `dialectic_contributions.id` on delete set null, nullable, used in 'antithesis' stage to link a critique to the 'thesis' it's critiquing)
-        *   `prompt_template_id_used` (UUID, foreign key to `prompt_templates.id`, nullable)
-        *   `actual_prompt_sent` (TEXT, nullable, the fully rendered prompt text fed to the model for this contribution)
-        *   `tokens_used_input` (INTEGER, nullable)
-        *   `tokens_used_output` (INTEGER, nullable)
-        *   `cost_usd` (NUMERIC(10,6), nullable) // Assuming precision for cost
-        *   `raw_provider_response` (JSONB, nullable, to store the full unprocessed response from the AI provider for debugging/auditing)
-        *   `processing_time_ms` (INTEGER, nullable)
-        *   `model_version_details` (TEXT, nullable, e.g. specific model snapshot if available from provider)
-        *   `created_at` (TIMESTAMPTZ, default `now()`)
-        *   `updated_at` (TIMESTAMPTZ, default `now()`)
-    *   `[ ] 1.1.4.3` Create Supabase migration script for `dialectic_contributions`. (GREEN)
-    *   `[ ] 1.1.4.4 [REFACTOR]` Review migration script.
-    *   `[ ] 1.1.4.5 [TEST-UNIT]` Run migration test.
-*   `[ ] 1.1.5 [DB]` Create `ai_models_catalog` table (moved from optional to required for Phase 1 to support model selection and cost estimation).
-    *   `[ ] 1.1.5.1 [TEST-UNIT]` Write migration test for `ai_models_catalog`. (RED)
-    *   `[ ] 1.1.5.2` Define columns:
-        *   `id` (TEXT, primary key, e.g., "openai/gpt-4-turbo", "anthropic/claude-3-opus-20240229")
-        *   `provider` (TEXT, not nullable, e.g., "openai", "anthropic", "google")
-        *   `model_name` (TEXT, not nullable, e.g., "GPT-4 Turbo", "Claude 3 Opus")
-        *   `description` (TEXT, nullable)
-        *   `strengths` (TEXT[], nullable) // Array of text for multiple strengths
-        *   `weaknesses` (TEXT[], nullable) // Array of text for multiple weaknesses
-        *   `context_window_tokens` (INTEGER, nullable)
-        *   `cost_per_million_input_tokens_usd` (NUMERIC(10,4), nullable)
-        *   `cost_per_million_output_tokens_usd` (NUMERIC(10,4), nullable)
-        *   `supports_json_mode` (BOOLEAN, default false)
-        *   `supports_tool_use` (BOOLEAN, default false)
-        *   `is_active` (BOOLEAN, default true, for soft deletes or deprecation)
-        *   `created_at` (TIMESTAMPTZ, default `now()`)
-        *   `updated_at` (TIMESTAMPTZ, default `now()`)
-    *   `[ ] 1.1.5.3` Create Supabase migration script. (GREEN)
-    *   `[ ] 1.1.5.4 [REFACTOR]` Review.
-    *   `[ ] 1.1.5.5 [TEST-UNIT]` Run migration test.
+    *   `[✅] 1.1.4.3` Add unique constraint on (`session_id`, `model_id`).
+    *   `[✅] 1.1.4.4` Create Supabase migration script for `dialectic_session_models`. (GREEN)
+    *   `[✅] 1.1.4.5 [REFACTOR]` Review migration script.
+    *   `[✅] 1.1.4.6 [TEST-UNIT]` Run migration test. (GREEN)
+*   `[✅] 1.1.5 [DB]` Create `dialectic_contributions` table.
+    *   `[✅] 1.1.5.1 [TEST-UNIT]` Write migration test for `dialectic_contributions` table. (RED -> GREEN)
+        *   `[✅] 1.1.5.1.1` Test for correct column definitions (name, type, nullability, defaults - including `content` and `content_format` being TEXT and nullable for now).
+        *   `[✅] 1.1.5.1.2` Test for primary key constraints.
+        *   `[✅] 1.1.5.1.3` Test for foreign key constraints (to `dialectic_sessions`, `users`, `parent_contribution_id`).
+        *   `[✅] 1.1.5.1.4` Test for `contribution_type` CHECK constraint.
+        *   `[✅] 1.1.5.1.5` Test for RLS policy enablement (ensure `enable_row_level_security` is true).
+        *   `[✅] 1.1.5.1.6` Test for expected indexes (on `session_id`, `user_id`, `parent_contribution_id`, `contribution_type`).
+        *   `[✅] 1.1.5.1.7` Test `updated_at` trigger functionality (if a helper function is used or by observing changes).
+        *   `[✅] 1.1.5.1.8` Test for new storage path columns: `raw_content_storage_path`, `structured_content_storage_path` (TEXT, nullable).
+        *   `[✅] 1.1.5.1.9` Test for original content columns `content`, `content_format` are now nullable (or removed if plan shifts). - *They are nullable per current schema.*
+        *   `[✅] 1.1.5.1.A` Test for FK delete rules (`ON DELETE CASCADE` for `session_id`, `ON DELETE SET NULL` for `user_id` and `parent_contribution_id`).
+    *   `[ ] 1.1.5.3` Create Supabase migration script for `dialectic_contributions` with these storage-oriented columns. (GREEN)
+    *   `[ ] 1.1.5.4 [REFACTOR]` Review migration script.
+    *   `[ ] 1.1.5.5 [TEST-UNIT]` Run migration schema test. (GREEN)
+*   `[ ] 1.1.5.A [BE/CONFIG]` Supabase Storage Setup & Utility Functions
+    *   `[ ] 1.1.5.A.1 [CONFIG]` Create Supabase Storage Bucket named `dialectic_contributions` (or as defined in `content_storage_bucket` default).
+        *   Define initial RLS policies for this bucket (e.g., service role can R/W; authenticated users might get read access to specific paths via signed URLs generated by the backend).
+    *   `[ ] 1.1.5.A.2 [BE]` Develop/consolidate Supabase Storage utility functions (e.g., in `supabase/functions/_shared/supabase_storage_utils.ts` or similar, ensuring it's accessible by `dialectic-service`).
+        *   `uploadToStorage(bucket: string, path: string, content: Buffer | string | ArrayBuffer, options: { contentType: string, upsert?: boolean }): Promise<{ path: string, error: Error | null }>`
+            *   `[ ] 1.1.5.A.2.1 [TEST-UNIT]` Unit test (mock Supabase client). (RED -> GREEN)
+        *   `downloadFromStorage(bucket: string, path: string): Promise<{ data: ArrayBuffer, mimeType?: string, error: Error | null }>` (Returns ArrayBuffer for flexibility, caller converts to string if needed).
+            *   `[ ] 1.1.5.A.2.2 [TEST-UNIT]` Unit test. (RED -> GREEN)
+        *   `deleteFromStorage(bucket: string, paths: string[]): Promise<{ error: Error | null }>`
+            *   `[ ] 1.1.5.A.2.3 [TEST-UNIT]` Unit test. (RED -> GREEN)
+        *   `createSignedUrlForPath(bucket: string, path: string, expiresIn: number): Promise<{ signedURL: string, error: Error | null }>`
+            *   `[ ] 1.1.5.A.2.4 [TEST-UNIT]` Unit test. (RED -> GREEN)
+        *   `getFileMetadata(bucket: string, path: string): Promise<{ size?: number, mimeType?: string, error: Error | null }>` (To get size after upload if not available directly).
+            *   `[ ] 1.1.5.A.2.5 [TEST-UNIT]` Unit test. (RED -> GREEN)
+*   `[ ] 1.1.5.B [BE]` Integrate Storage Utilities into `dialectic-service` (Content Handling)
+    *   Modify relevant actions in `dialectic-service` (e.g., `generateThesisContributions`, `generateAntithesisContributions`, etc., which are called by `callUnifiedAIModel` or its callers).
+    *   `[ ] 1.1.5.B.1` When an AI model's output is received:
+        1.  Generate a UUID for the `dialectic_contributions.id` *before* uploading content, so it can be used in the storage path for consistency.
+        2.  Define the storage path (e.g., using `project_id`, `session_id`, and the new `contribution_id`). Example: `${projectId}/${sessionId}/${contributionId}.md`.
+        3.  Use the `uploadToStorage` utility to save the AI-generated content to the `dialectic_contributions` bucket with the correct `contentType` (e.g., `text/markdown`).
+        4.  Use `getFileMetadata` to get the `sizeBytes` after upload.
+        5.  In the `dialectic_contributions` table, store:
+            *   `content_storage_bucket` (e.g., "dialectic_contributions").
+            *   The actual `content_storage_path` returned by the upload.
+            *   `content_mime_type` (e.g., "text/markdown").
+            *   `content_size_bytes`.
+        6.  (Optional) If storing raw provider responses: generate a separate path (e.g., `${projectId}/${sessionId}/${contributionId}_raw.json`), upload, and save to `raw_response_storage_path`.
+    *   `[ ] 1.1.5.B.2 [TEST-INT]` Update/write integration tests for `dialectic-service` actions (e.g., `generateThesisContributions`) to:
+        *   Mock the storage utility functions.
+        *   Verify that these functions are called with correct parameters.
+        *   Verify that the `dialectic_contributions` record is saved with the correct storage path, bucket, mime type, and size.
+*   `[ ] 1.1.5.C [API/STORE/UI]` Client-Side Content Retrieval and Display
+    *   `[ ] 1.1.5.C.1 [API]` The `DialecticContribution` type (in `packages/api/.../dialectic.api.ts` types) will now include `contentStorageBucket`, `contentStoragePath`, `contentMimeType`, `contentSizeBytes` and *not* the direct `content` string.
+    *   `[ ] 1.1.5.C.2 [API]` Add a new method to `DialecticAPIInterface`: `getContributionContentSignedUrl(contributionId: string): Promise<{ signedUrl: string, mimeType: string, sizeBytes: number | null } | null>`
+        *   The corresponding `dialectic-service` action will:
+            1.  Fetch the `dialectic_contributions` record by `contributionId` to get its `content_storage_bucket` and `content_storage_path`.
+            2.  Use the `createSignedUrlForPath` storage utility to generate a signed URL for reading the content (with a reasonable expiry, e.g., 5-15 minutes).
+            3.  Return the `signedUrl`, `content_mime_type`, and `content_size_bytes`.
+        *   `[ ] 1.1.5.C.2.1 [TEST-INT]` Write integration test for this backend service action. (RED -> GREEN)
+        *   `[ ] 1.1.5.C.2.2 [TEST-UNIT]` Write unit test for the API adapter method. (RED -> GREEN)
+    *   `[ ] 1.1.5.C.3 [STORE]` Update/Create state and thunks in `dialecticStore.ts`:
+        *   State: `contributionContentCache: { [contributionId: string]: { signedUrl?: string, expiry?: number, content?: string, isLoading: boolean, error?: string, mimeType?: string, sizeBytes?: number } }`.
+        *   Thunk: `fetchContributionContent(contributionId: string)`:
+            1.  Check cache: if valid, non-expired URL and content exist, return content. If URL exists but content not fetched, proceed to fetch.
+            2.  Calls `api.dialectic.getContributionContentSignedUrl(contributionId)`.
+            3.  Stores `signedUrl`, `mimeType`, `sizeBytes`, and `expiry` in cache.
+            4.  Performs a `fetch(signedUrl)` to get the actual content (e.g., as text).
+            5.  Stores the fetched content in the cache.
+            6.  Handles loading and error states.
+        *   `[ ] 1.1.5.C.3.1 [TEST-UNIT]` Write unit tests for thunk and reducers. (RED -> GREEN)
+    *   `[ ] 1.1.5.C.4 [UI]` Update UI components (e.g., `DialecticSessionDetailsPage`) that display contribution content:
+        *   Use a selector to get cached data from `contributionContentCache` for the relevant `contributionId`.
+        *   If data is not present or URL is expired (or content not yet fetched), dispatch `fetchContributionContent(contributionId)`.
+        *   Display loading indicators.
+        *   Once content is fetched, render it (e.g., using a Markdown renderer if `mimeType` is `text/markdown`).
+        *   `[ ] 1.1.5.C.4.1 [TEST-UNIT]` Update/write UI component tests. (RED -> GREEN)
+*   `[ ] 1.1.5.D [BE]` Handling Deletion of Contributions
+    *   `[ ] 1.1.5.D.1` When a `dialectic_contribution` record is deleted (e.g., due to cascade delete from session/project, or a direct "delete contribution" feature if ever added):
+        *   Need a mechanism to delete the corresponding file(s) from Supabase Storage to prevent orphaned files.
+        *   This can be achieved using a **PostgreSQL trigger** on the `dialectic_contributions` table (`AFTER DELETE`) that calls a database function, which in turn invokes a Supabase Edge Function (or uses `pg_net` if appropriate) to call the `deleteFromStorage` utility.
+        *   Alternatively, application-level logic in `dialectic-service` must explicitly delete from storage *before* deleting the DB record if it's a direct deletion action. Cascade deletes from DB won't trigger application logic directly. A trigger is more robust for cascades.
+    *   `[ ] 1.1.5.D.2 [DB/BE]` Design and implement this cleanup mechanism (Trigger + DB function preferred for cascade safety).
+        *   `[ ] 1.1.5.D.2.1 [TEST-UNIT]` Write tests for the cleanup mechanism. (RED -> GREEN)
+*   `[ ] 1.1.5.E [COMMIT]` feat(db,be,api,store,ui): Implement Supabase Storage for dialectic contributions
 *   `[ ] 1.1.6 [BE]` Seed `ai_models_catalog` with initial data for core OpenAI, Anthropic, and Google models supported in Phase 1.
     *   `[ ] 1.1.6.1 [TEST-UNIT]` Write test for seeding catalog. (RED)
     *   `[ ] 1.1.6.2` Create seed script. (GREEN)
     *   `[ ] 1.1.6.3 [TEST-UNIT]` Run seed script test.
-*   `[ ] 1.1.7 [RLS]` Define Row Level Security policies for `dialectic_projects`, `dialectic_sessions`, `dialectic_session_models`, `dialectic_contributions`.
-    *   `[ ] 1.1.7.1 [TEST-INT]` Write RLS tests for `dialectic_projects` (user owns their projects). (RED)
-    *   `[ ] 1.1.7.2` Implement RLS for `dialectic_projects`. (GREEN)
-    *   `[ ] 1.1.7.3 [TEST-INT]` Run RLS tests for `dialectic_projects`.
+*   `[❓] 1.1.7 [RLS]` Define Row Level Security policies for `dialectic_projects`, `dialectic_sessions`, `dialectic_session_models`, `dialectic_contributions`.
+    *   `[❓] 1.1.7.1 [TEST-INT]` Write RLS tests for `dialectic_projects` (user owns their projects). (RED)
+    *   `[❓] 1.1.7.2` Implement RLS for `dialectic_projects`. (GREEN)
+    *   `[❓] 1.1.7.3 [TEST-INT]` Run RLS tests for `dialectic_projects`.
     *   `[ ] 1.1.7.4 [TEST-INT]` Write RLS tests for `dialectic_sessions` (user can access sessions of their projects). (RED)
     *   `[ ] 1.1.7.5` Implement RLS for `dialectic_sessions`. (GREEN)
     *   `[ ] 1.1.7.6 [TEST-INT]` Run RLS tests for `dialectic_sessions`.

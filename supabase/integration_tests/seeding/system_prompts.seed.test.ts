@@ -1,5 +1,4 @@
-// @deno-types="npm:@types/chai@4.3.1"
-import { expect } from "npm:chai@4.3.7";
+import { expect } from "https://deno.land/x/expect@v0.3.0/mod.ts";
 import {
   afterAll,
   beforeAll,
@@ -65,27 +64,30 @@ describe("Migration & Seed: Initial system_prompts for Dialectic Engine", () => 
       const { data: promptData, error } = await supabaseAdmin
         .rpc('execute_sql', { query });
 
-      expect(error, `Error querying for prompt ${expectedPrompt.name}`).to.be.null;
-      expect(promptData, `Prompt ${expectedPrompt.name} not found or rpc returned no data`).to.be.an("array").with.lengthOf(1);
+      expect(error).toBeNull();
+      expect(promptData).toBeInstanceOf(Array);
+      expect(promptData).toHaveLength(1);
       
       const seededPrompt = promptData![0] as any;
 
-      expect(seededPrompt.name).to.equal(expectedPrompt.name);
-      expect(seededPrompt.stage_association).to.equal(expectedPrompt.stage_association);
-      expect(seededPrompt.context).to.equal(expectedPrompt.context);
-      expect(seededPrompt.is_stage_default).to.equal(expectedPrompt.is_stage_default);
-      expect(seededPrompt.version).to.equal(expectedPrompt.version);
-      expect(seededPrompt.prompt_text).to.be.a("string").and.not.empty;
+      expect(seededPrompt.name).toBe(expectedPrompt.name);
+      expect(seededPrompt.stage_association).toBe(expectedPrompt.stage_association);
+      expect(seededPrompt.context).toBe(expectedPrompt.context);
+      expect(seededPrompt.is_stage_default).toBe(expectedPrompt.is_stage_default);
+      expect(seededPrompt.version).toBe(expectedPrompt.version);
       
-      expect(seededPrompt.variables_required).to.be.an("array"); // JSONB array comes as a JS array
+      expect(typeof seededPrompt.prompt_text).toBe("string");
+      expect(seededPrompt.prompt_text.length).toBeGreaterThan(0);
+      
+      expect(seededPrompt.variables_required).toBeInstanceOf(Array);
       // Check if all expected variables are present in the variables_required array/object
       if (Array.isArray(seededPrompt.variables_required)) { // If variables_required is an array of strings
         for (const variable of expectedPrompt.variables_expected_subset) {
-          expect(seededPrompt.variables_required).to.include(variable);
+          expect(seededPrompt.variables_required).toContain(variable);
         }
       } else { // If variables_required is an object e.g. {"var1": "text", ...}
          for (const variable of expectedPrompt.variables_expected_subset) {
-          expect(seededPrompt.variables_required).to.have.property(variable);
+          expect(seededPrompt.variables_required).toHaveProperty(variable);
         }
       }
     });

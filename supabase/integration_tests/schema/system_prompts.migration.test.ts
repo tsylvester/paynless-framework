@@ -1,5 +1,5 @@
 // @deno-types="npm:@types/chai@4.3.1"
-import { expect } from "npm:chai@4.3.7";
+import { expect } from "https://deno.land/x/expect@v0.3.0/mod.ts";
 import {
   afterAll,
   beforeAll,
@@ -32,10 +32,13 @@ describe("Migration: Update system_prompts table", () => {
       WHERE table_name = 'system_prompts' AND table_schema = 'public'
     `;
     const { data: columnsData, error: columnsError } = await supabaseAdmin
-      .rpc('execute_sql', { query: columnsQuery }); // Reverted to query
+      .rpc('execute_sql', { query: columnsQuery });
 
-    expect(columnsError).to.be.null;
-    expect(columnsData).to.be.an("array").that.is.not.empty;
+    expect(columnsError).toBeNull();
+    expect(columnsData).toBeInstanceOf(Array);
+    if (columnsData) { // Type guard for columnsData
+      expect(columnsData.length).toBeGreaterThan(0);
+    }
 
     const columnMap = new Map(
       (columnsData as any[]).map((c) => [c.column_name, c]),
@@ -43,67 +46,90 @@ describe("Migration: Update system_prompts table", () => {
 
     // --- Verify Existing Columns (mostly for sanity check) ---
     const idCol = columnMap.get("id");
-    expect(idCol, "Column 'id' should exist").to.exist;
-    expect(idCol.data_type).to.equal("uuid");
-    expect(idCol.is_nullable).to.equal("NO");
+    expect(idCol).toBeDefined();
+    if(idCol) {
+        expect(idCol.data_type).toBe("uuid");
+        expect(idCol.is_nullable).toBe("NO");
+    }
 
     const nameCol = columnMap.get("name");
-    expect(nameCol, "Column 'name' should exist").to.exist;
-    expect(nameCol.data_type).to.equal("text");
-    expect(nameCol.is_nullable).to.equal("NO");
+    expect(nameCol).toBeDefined();
+    if(nameCol) {
+        expect(nameCol.data_type).toBe("text");
+        expect(nameCol.is_nullable).toBe("NO");
+    }
 
     const promptTextCol = columnMap.get("prompt_text");
-    expect(promptTextCol, "Column 'prompt_text' should exist").to.exist;
-    expect(promptTextCol.data_type).to.equal("text");
-    expect(promptTextCol.is_nullable).to.equal("NO");
+    expect(promptTextCol).toBeDefined();
+    if(promptTextCol) {
+        expect(promptTextCol.data_type).toBe("text");
+        expect(promptTextCol.is_nullable).toBe("NO");
+    }
     
     const isActiveCol = columnMap.get("is_active");
-    expect(isActiveCol, "Column 'is_active' should exist").to.exist;
-    expect(isActiveCol.data_type).to.equal("boolean");
-    expect(isActiveCol.is_nullable).to.equal("NO");
-    expect(isActiveCol.column_default).to.equal("true");
+    expect(isActiveCol).toBeDefined();
+    if(isActiveCol) {
+        expect(isActiveCol.data_type).toBe("boolean");
+        expect(isActiveCol.is_nullable).toBe("NO");
+        expect(isActiveCol.column_default).toBe("true");
+    }
 
     const createdAtCol = columnMap.get("created_at");
-    expect(createdAtCol, "Column 'created_at' should exist").to.exist;
-    // Note: data_type for timestamptz can appear as "timestamp with time zone"
-    expect(createdAtCol.data_type).to.equal("timestamp with time zone");
+    expect(createdAtCol).toBeDefined();
+    if(createdAtCol) {
+        expect(createdAtCol.data_type).toBe("timestamp with time zone");
+    }
 
     const updatedAtCol = columnMap.get("updated_at");
-    expect(updatedAtCol, "Column 'updated_at' should exist").to.exist;
-    expect(updatedAtCol.data_type).to.equal("timestamp with time zone");
+    expect(updatedAtCol).toBeDefined();
+    if(updatedAtCol) {
+        expect(updatedAtCol.data_type).toBe("timestamp with time zone");
+    }
 
     // --- Verify New Columns ---
     const stageAssociationCol = columnMap.get("stage_association");
-    expect(stageAssociationCol, "New column 'stage_association' should exist").to.exist;
-    expect(stageAssociationCol.data_type).to.equal("text");
-    expect(stageAssociationCol.is_nullable).to.equal("YES");
+    expect(stageAssociationCol).toBeDefined();
+    if(stageAssociationCol) {
+        expect(stageAssociationCol.data_type).toBe("text");
+        expect(stageAssociationCol.is_nullable).toBe("YES");
+    }
 
     const versionCol = columnMap.get("version");
-    expect(versionCol, "New column 'version' should exist").to.exist;
-    expect(versionCol.data_type).to.equal("integer");
-    expect(versionCol.is_nullable).to.equal("NO");
-    expect(versionCol.column_default).to.equal("1");
+    expect(versionCol).toBeDefined();
+    if(versionCol) {
+        expect(versionCol.data_type).toBe("integer");
+        expect(versionCol.is_nullable).toBe("NO");
+        expect(versionCol.column_default).toBe("1");
+    }
 
     const descriptionCol = columnMap.get("description");
-    expect(descriptionCol, "New column 'description' should exist").to.exist;
-    expect(descriptionCol.data_type).to.equal("text");
-    expect(descriptionCol.is_nullable).to.equal("YES");
+    expect(descriptionCol).toBeDefined();
+    if(descriptionCol) {
+        expect(descriptionCol.data_type).toBe("text");
+        expect(descriptionCol.is_nullable).toBe("YES");
+    }
 
     const variablesRequiredCol = columnMap.get("variables_required");
-    expect(variablesRequiredCol, "New column 'variables_required' should exist").to.exist;
-    expect(variablesRequiredCol.data_type).to.equal("jsonb");
-    expect(variablesRequiredCol.is_nullable).to.equal("YES");
+    expect(variablesRequiredCol).toBeDefined();
+    if(variablesRequiredCol) {
+        expect(variablesRequiredCol.data_type).toBe("jsonb");
+        expect(variablesRequiredCol.is_nullable).toBe("YES");
+    }
 
     const isStageDefaultCol = columnMap.get("is_stage_default");
-    expect(isStageDefaultCol, "New column 'is_stage_default' should exist").to.exist;
-    expect(isStageDefaultCol.data_type).to.equal("boolean");
-    expect(isStageDefaultCol.is_nullable).to.equal("NO");
-    expect(isStageDefaultCol.column_default).to.equal("false");
+    expect(isStageDefaultCol).toBeDefined();
+    if(isStageDefaultCol) {
+        expect(isStageDefaultCol.data_type).toBe("boolean");
+        expect(isStageDefaultCol.is_nullable).toBe("NO");
+        expect(isStageDefaultCol.column_default).toBe("false");
+    }
     
     const contextCol = columnMap.get("context");
-    expect(contextCol, "New column 'context' should exist").to.exist;
-    expect(contextCol.data_type).to.equal("text");
-    expect(contextCol.is_nullable).to.equal("YES");
+    expect(contextCol).toBeDefined();
+    if(contextCol) {
+        expect(contextCol.data_type).toBe("text");
+        expect(contextCol.is_nullable).toBe("YES");
+    }
 
     // 2. Check UNIQUE constraint on 'name' using RPC call
     const constraintQuery = `
@@ -114,15 +140,15 @@ describe("Migration: Update system_prompts table", () => {
         AND constraint_type = 'UNIQUE'
     `;
     const { data: constraintData, error: constraintError } = await supabaseAdmin
-      .rpc('execute_sql', { query: constraintQuery }); // Reverted to query
+      .rpc('execute_sql', { query: constraintQuery });
 
-    expect(constraintError).to.be.null;
-    expect(constraintData).to.be.an("array");
+    expect(constraintError).toBeNull();
+    expect(constraintData).toBeInstanceOf(Array);
 
     const nameConstraintInfo = (constraintData as any[]).find(c => 
       c.constraint_name.includes("name") && 
       (c.constraint_name.includes("_key") || c.constraint_name.includes("_uq") || c.constraint_name.includes("_unique"))
     );
-    expect(nameConstraintInfo, "A unique constraint involving the 'name' column should exist (e.g., system_prompts_name_key)").to.exist;
+    expect(nameConstraintInfo).toBeDefined();
   });
 }); 
