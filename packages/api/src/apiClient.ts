@@ -13,7 +13,7 @@ import { NotificationApiClient } from './notifications.api'; // Import new clien
 import { OrganizationApiClient } from './organizations.api'; // <<< Import Org client
 import { UserApiClient } from './users.api'; // +++ Add import
 import { WalletApiClient } from './wallet.api'; // Corrected WalletApiClient import path
-import { DialecticApiClient } from './dialectic.api.ts'; // <<< IMPORT NEW DIALECTIC CLIENT
+import { DialecticApiClient } from './dialectic.api'; // <<< IMPORT NEW DIALECTIC CLIENT
 import { logger } from '@paynless/utils';
 import type { Database } from '@paynless/db-types'; // Keep this for createClient
 
@@ -305,6 +305,7 @@ export const api = {
     organizations: () => getApiClient().organizations,
     users: () => getApiClient().users,
     wallet: () => getApiClient().wallet, // Added wallet accessor
+    dialectic: () => getApiClient().dialectic, // Added dialectic accessor
     getSupabaseClient: (): SupabaseClient<Database> => 
         getApiClient().getSupabaseClient(),
 }; 

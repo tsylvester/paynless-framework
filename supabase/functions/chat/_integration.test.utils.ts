@@ -464,4 +464,9 @@ export async function getTableIndexes(
       column_names: column_names
     };
   });
+}
+
+// Function to set the shared admin client instance
+export function setSupabaseAdminClientForTests(client: SupabaseClient<Database>) {
+  supabaseAdminClient = client;
 } 

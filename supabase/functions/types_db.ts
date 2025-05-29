@@ -202,6 +202,7 @@ export type Database = {
           initial_user_prompt: string
           project_name: string
           repo_url: string | null
+          selected_domain_tag: string | null
           status: string
           updated_at: string
           user_domain_overlay_values: Json | null
@@ -213,6 +214,7 @@ export type Database = {
           initial_user_prompt: string
           project_name: string
           repo_url?: string | null
+          selected_domain_tag?: string | null
           status?: string
           updated_at?: string
           user_domain_overlay_values?: Json | null
@@ -224,6 +226,7 @@ export type Database = {
           initial_user_prompt?: string
           project_name?: string
           repo_url?: string | null
+          selected_domain_tag?: string | null
           status?: string
           updated_at?: string
           user_domain_overlay_values?: Json | null

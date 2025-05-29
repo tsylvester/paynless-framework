@@ -5,6 +5,27 @@ import type {
 } from '@paynless/types';
 import { logger } from '@paynless/utils';
 
+// Basic type definitions, can be expanded and moved to @paynless/types
+export interface DialecticProject {
+    id: string;
+    user_id: string;
+    project_name: string;
+    initial_user_prompt: string;
+    selected_domain_tag: string | null;
+    repo_url: string | null;
+    status: string;
+    created_at: string;
+    updated_at: string;
+    // Add other fields like sessions, etc., as needed for full project details later
+}
+
+export interface CreateProjectPayload {
+    projectName: string;
+    initialUserPrompt: string;
+    selectedDomainTag?: string | null;
+}
+
+
 /**
  * API Client for interacting with Dialectic-related Edge Functions.
  */
@@ -32,6 +53,27 @@ export class DialecticApiClient {
             logger.error('Error fetching available domain tags:', { error: response.error });
         } else {
             logger.info(`Fetched ${response.data?.length ?? 0} available domain tags`);
+        }
+        return response;
+    }
+
+    /**
+     * Creates a new dialectic project.
+     * Requires authentication.
+     */
+    async createProject(payload: CreateProjectPayload): Promise<ApiResponse<DialecticProject>> {
+        logger.info('Creating a new dialectic project', { projectName: payload.projectName });
+
+        const response = await this.apiClient.post<DialecticProject, { action: string; payload: CreateProjectPayload }>(
+            'dialectic-service',
+            { action: 'createProject', payload },
+            // Default options will ensure authentication is handled by apiClient
+        );
+
+        if (response.error) {
+            logger.error('Error creating dialectic project:', { error: response.error, projectName: payload.projectName });
+        } else {
+            logger.info('Successfully created dialectic project', { projectId: response.data?.id });
         }
         return response;
     }
