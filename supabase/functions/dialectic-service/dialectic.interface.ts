@@ -82,3 +82,12 @@ export interface GenerateAntithesisContributionsSuccessResponse {
   errors?: { modelId: string; thesisContributionId: string; message: string; details?: string }[];
 }
 // --- End Generate Antithesis Contributions ---
+
+    // Define the expected shape of the selected AI provider details
+export interface SelectedAiProvider {
+  id: string;                 // PK of ai_providers table
+  provider_name: string;    // Aliased from 'provider' column in ai_providers
+  model_name: string;       // Aliased from 'name' column in ai_providers
+  api_identifier: string;   // Actual 'api_identifier' column from ai_providers
+  // Removed api_key_name, supports_json_response, supports_system_prompt as they don't exist on ai_providers table
+}

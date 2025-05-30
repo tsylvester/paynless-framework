@@ -90,6 +90,9 @@ enabled = true
 # The maximum file size allowed (e.g. "5MB", "500KB").
 file_size_limit = "50MiB"
 
+[storage.buckets.dialectic-contributions]
+public = false
+
 # Image transformation API is available to Supabase Pro plan.
 # [storage.image_transformation]
 # enabled = true

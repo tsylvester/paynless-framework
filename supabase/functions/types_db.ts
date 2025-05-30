@@ -362,6 +362,13 @@ export type Database = {
         }
         Relationships: [
           {
+            foreignKeyName: "fk_model_id_to_ai_providers"
+            columns: ["model_id"]
+            isOneToOne: false
+            referencedRelation: "ai_providers"
+            referencedColumns: ["id"]
+          },
+          {
             foreignKeyName: "fk_session"
             columns: ["session_id"]
             isOneToOne: false

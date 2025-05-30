@@ -106,6 +106,7 @@ export async function coreCleanupTestResources(executionScope: 'all' | 'local' =
     console.warn("Supabase admin client not initialized; cannot clean up test resources.");
     return;
   }
+  console.log(`[TestUtil] Starting cleanup process with executionScope: '${executionScope}'. Current undo stack size: ${undoActionsStack.length}`);
 
   const actionsToProcess = executionScope === 'all' 
     ? [...undoActionsStack] // Process a copy of all actions
@@ -118,53 +119,53 @@ export async function coreCleanupTestResources(executionScope: 'all' | 'local' =
   // Process actions in the reverse order of their registration (LIFO)
   for (const action of actionsToProcess) {
     try {
+      console.log(`[TestUtil] Processing UNDO action: ${JSON.stringify(action)}`);
       switch (action.type) {
         case 'DELETE_CREATED_USER': {
           const { error: deleteUserError } = await supabaseAdminClient.auth.admin.deleteUser(action.userId);
           if (deleteUserError) {
-            if (deleteUserError instanceof AuthError) {
-              console.error(`Error deleting user ${action.userId}: ${deleteUserError.name} (${deleteUserError.status}) - ${deleteUserError.message}`);
-            } else {
-              console.error(`Error deleting user ${action.userId} (non-AuthError):`, deleteUserError);
-            }
+            console.error(`[TestUtil] Error executing UNDO DELETE_CREATED_USER for ${action.userId}: ${deleteUserError.name} (${deleteUserError.status}) - ${deleteUserError.message}`, deleteUserError);
+          } else {
+            console.log(`[TestUtil] Successfully executed UNDO DELETE_CREATED_USER for ID: ${action.userId}`);
           }
           break;
         }
         case 'DELETE_CREATED_ROW': {
-          // Placeholder: Logic to delete a specific row
           const { error } = await supabaseAdminClient
             .from(action.tableName)
             .delete()
             .match(action.criteria);
           if (error) {
-            console.error(`Error deleting row from ${action.tableName} with criteria ${JSON.stringify(action.criteria)}:`, error);
+            console.error(`[TestUtil] Error executing UNDO DELETE_CREATED_ROW from ${action.tableName} with criteria ${JSON.stringify(action.criteria)}:`, error);
+          } else {
+            console.log(`[TestUtil] Successfully executed UNDO DELETE_CREATED_ROW from ${action.tableName} with criteria ${JSON.stringify(action.criteria)}`);
           }
           break;
         }
         case 'RESTORE_UPDATED_ROW': {
-          // Placeholder: Logic to restore a row to its original state
-          // This will require careful handling of the originalState and criteria
           const { error } = await supabaseAdminClient
             .from(action.tableName)
-            .update(action.originalRow)
-            .match(action.identifier); // Ensure criteria precisely targets the row
+            .update(action.originalRow) // originalRow needs to be just the fields to update, not the whole object with e.g. created_at for insert
+            .match(action.identifier); 
           if (error) {
-            console.error(`Error restoring row in ${action.tableName} with criteria ${JSON.stringify(action.identifier)}:`, error);
+            console.error(`[TestUtil] Error executing UNDO RESTORE_UPDATED_ROW in ${action.tableName} with criteria ${JSON.stringify(action.identifier)}:`, error);
+          } else {
+            console.log(`[TestUtil] Successfully executed UNDO RESTORE_UPDATED_ROW in ${action.tableName} with criteria ${JSON.stringify(action.identifier)}`);
           }
           break;
         }
         default: {
-          // This should ideally be caught by TypeScript if all action types are handled
           const unhandledAction: never = action;
-          console.warn("Unhandled undo action type:", unhandledAction);
+          console.warn("[TestUtil] Unhandled undo action type:", unhandledAction);
           break;
         }
       }
     } catch (e) {
-      console.error("Exception during undo action processing:", action, e);
+      console.error("[TestUtil] Exception during undo action processing:", action, e);
     }
   }
   undoActionsStack = remainingActions; // Update the stack with remaining actions
+  console.log(`[TestUtil] Finished cleanup process. Remaining undo stack size: ${undoActionsStack.length}`);
 }
 
 // --- Exported Shared Instances and Mutable State ---
@@ -261,16 +262,64 @@ export async function coreCreateAndSetupTestUser(
     throw authError || new Error("Test user creation failed and no error object provided.");
   }
   const userId = authData.user.id;
+  console.log(`[TestUtil] Created user in auth.users with ID: ${userId}`);
 
   registerUndoAction({ type: 'DELETE_CREATED_USER', userId, scope });
+  console.log(`[TestUtil] Registered UNDO action: DELETE_CREATED_USER for ID: ${userId}`);
+
+  // Manage user_profiles record
+  const { data: existingProfile, error: fetchProfileError } = await supabaseAdminClient
+    .from('user_profiles')
+    .select('*')
+    .eq('id', userId)
+    .maybeSingle();
+
+  if (fetchProfileError) {
+    console.error(`Error fetching user profile for ${userId} during setup:`, fetchProfileError);
+    // Decide if this is a critical failure
+    throw fetchProfileError;
+  }
+  console.log(`[TestUtil] Existing user_profile for ${userId}: ${existingProfile ? JSON.stringify(existingProfile) : 'Not found'}`);
 
   const profileDataToUpsert = {
     id: userId, 
     role: (profileProps?.role as 'user' | 'admin') || 'user', 
     first_name: profileProps?.first_name || `TestUser${userId.substring(0, 4)}`,
+    // Ensure all required fields for user_profiles are here or have defaults in DB
   };
-  const { error: userProfileUpsertError } = await supabaseAdminClient.from('user_profiles').upsert(profileDataToUpsert, { onConflict: 'id' });
-  if (userProfileUpsertError) throw userProfileUpsertError;
+
+  if (existingProfile) {
+    registerUndoAction({
+      type: 'RESTORE_UPDATED_ROW',
+      tableName: 'user_profiles',
+      identifier: { id: userId },
+      originalRow: existingProfile, // originalRow should be the complete row data
+      scope: scope,
+    });
+    console.log(`[TestUtil] Registered UNDO action: RESTORE_UPDATED_ROW for 'user_profiles' ID: ${userId}`);
+  } else {
+    // If it didn't exist, we are creating it, so plan to delete it.
+    console.log(`[TestUtil] No existing user_profile for ${userId}, will create.`);
+    registerUndoAction({
+      type: 'DELETE_CREATED_ROW',
+      tableName: 'user_profiles',
+      criteria: { id: userId },
+      scope: scope,
+    });
+    console.log(`[TestUtil] Registered UNDO action: DELETE_CREATED_ROW for 'user_profiles' ID: ${userId}`);
+  }
+
+  console.log(`[TestUtil] Upserting user_profile for ${userId} with data: ${JSON.stringify(profileDataToUpsert)}`);
+  const { error: userProfileUpsertError } = await supabaseAdminClient
+    .from('user_profiles')
+    .upsert(profileDataToUpsert, { onConflict: 'id' })
+    .select()
+    .single(); // Assuming upsert returns the row, adjust if not
+
+  if (userProfileUpsertError) {
+    console.error(`Error upserting user profile for ${userId}:`, userProfileUpsertError);
+    throw userProfileUpsertError;
+  }
 
   // Create and return the client for this user
   const userToken = await coreGenerateTestUserJwt(userId, 'authenticated', { user_id: userId });
@@ -299,18 +348,74 @@ export async function coreGenerateTestUserJwt(userId: string, role: string = 'au
   return await djwt.create(header, payload, cryptoKey);
 }
 
-export async function coreEnsureTestUserAndWallet(userId: string, initialBalance: number = 10000) {
+export async function coreEnsureTestUserAndWallet(userId: string, initialBalance: number = 10000, scope: 'global' | 'local' = 'local') {
   if (!supabaseAdminClient) throw new Error("Supabase admin client not initialized.");
-  const { data: existingWallet, error: selectError } = await supabaseAdminClient.from('token_wallets').select('wallet_id, balance').eq('user_id', userId).is('organization_id', null).single();
-  if (selectError && selectError.code !== 'PGRST116') throw selectError;
+
+  // Define identifier for the user's personal wallet
+  const walletIdentifier = { user_id: userId, organization_id: null }; 
+
+  const { data: existingWallet, error: selectError } = await supabaseAdminClient
+    .from('token_wallets')
+    .select('*') // Select all columns for potential restoration
+    .eq('user_id', userId)
+    .is('organization_id', null) // Explicitly check for organization_id IS NULL
+    .maybeSingle();
+
+  if (selectError && selectError.code !== 'PGRST116') { // PGRST116 means no rows found, which is fine
+    console.error(`Error fetching token wallet for user ${userId}:`, selectError);
+    throw selectError;
+  }
+  console.log(`[TestUtil] Existing token_wallet for user ${userId} (org null): ${existingWallet ? JSON.stringify(existingWallet) : 'Not found'}`);
+
+  const desiredWalletState = {
+    user_id: userId,
+    balance: initialBalance,
+    currency: 'AI_TOKEN',
+    organization_id: null,
+    // Ensure all required fields are here or have DB defaults
+  };
+
   if (existingWallet) {
+    // If it exists and we plan to change it (e.g. balance), register to restore it
     if (existingWallet.balance !== initialBalance) {
-      const { error: updateError } = await supabaseAdminClient.from('token_wallets').update({ balance: initialBalance, updated_at: new Date().toISOString() }).eq('wallet_id', existingWallet.wallet_id).select().single();
-      if (updateError) throw updateError;
+      registerUndoAction({
+        type: 'RESTORE_UPDATED_ROW',
+        tableName: 'token_wallets',
+        identifier: { wallet_id: existingWallet.wallet_id }, // Use primary key for identification
+        originalRow: existingWallet, // The complete original row
+        scope: scope,
+      });
+      console.log(`[TestUtil] Registered UNDO action: RESTORE_UPDATED_ROW for 'token_wallets' ID: ${existingWallet.wallet_id}`);
+      const { error: updateError } = await supabaseAdminClient
+        .from('token_wallets')
+        .update({ balance: initialBalance, updated_at: new Date().toISOString() })
+        .eq('wallet_id', existingWallet.wallet_id);
+      if (updateError) {
+        console.error(`Error updating token wallet for user ${userId}:`, updateError);
+        throw updateError;
+      }
     }
   } else {
-    const { error: insertError } = await supabaseAdminClient.from('token_wallets').insert({ user_id: userId, balance: initialBalance, currency: 'AI_TOKEN', organization_id: null }).select().single();
-    if (insertError) throw insertError;
+    // Wallet does not exist, so we will create it and register an action to delete it
+    console.log(`[TestUtil] No existing token_wallet for user ${userId} (org null), will create with balance: ${initialBalance}`);
+    const { data: newWallet, error: insertError } = await supabaseAdminClient
+      .from('token_wallets')
+      .insert(desiredWalletState)
+      .select('wallet_id') // Select wallet_id to use for deletion criteria
+      .single();
+
+    if (insertError || !newWallet) {
+      console.error(`Error inserting token wallet for user ${userId}:`, insertError);
+      throw insertError || new Error('Failed to insert token wallet and get its ID.');
+    }
+
+    registerUndoAction({
+      type: 'DELETE_CREATED_ROW',
+      tableName: 'token_wallets',
+      criteria: { wallet_id: newWallet.wallet_id }, // Use primary key for deletion
+      scope: scope,
+    });
+    console.log(`[TestUtil] Registered UNDO action: DELETE_CREATED_ROW for 'token_wallets' ID: ${newWallet.wallet_id}`);
   }
 }
 
@@ -661,7 +766,7 @@ export async function coreInitializeTestStep(
     config.userProfile,
     executionScope
   );
-  await coreEnsureTestUserAndWallet(primaryUserId, config.initialWalletBalance);
+  await coreEnsureTestUserAndWallet(primaryUserId, config.initialWalletBalance, executionScope);
 
   if (config.resources) {
     for (const requirement of config.resources) {
@@ -670,6 +775,7 @@ export async function coreInitializeTestStep(
         identifier: requirement.identifier,
         status: 'skipped',
       };
+      console.log(`[TestUtil] Processing resource requirement for table '${requirement.tableName}' with identifier: ${JSON.stringify(requirement.identifier)}`);
 
       // Cast tableName to a specific key type to satisfy the linter
       const tableNameKey = requirement.tableName as keyof Database['public']['Tables'];
@@ -694,6 +800,8 @@ export async function coreInitializeTestStep(
           existingRow = existingRows[0] as Database['public']['Tables'][typeof tableNameKey]['Row']; // Use typeof for type indexing
         }
 
+        console.log(`[TestUtil] Existing row for table '${requirement.tableName}': ${existingRow ? JSON.stringify(existingRow) : 'Not found'}`);
+
         // Prepare data for DB operation, explicitly typing it.
         // It must be Partial because desiredState is Partial.
         let dataForDb: Partial<Database['public']['Tables'][typeof tableNameKey]['Insert']>; // Use typeof for type indexing
@@ -712,6 +820,7 @@ export async function coreInitializeTestStep(
             continue;
           }
 
+          console.log(`[TestUtil] Updating existing row in '${requirement.tableName}' (ID: ${existingRowId}) with data: ${JSON.stringify(dataForDb)}`);
           registerUndoAction({
             type: 'RESTORE_UPDATED_ROW',
             tableName: requirement.tableName,
@@ -719,6 +828,7 @@ export async function coreInitializeTestStep(
             originalRow: existingRow,
             scope: executionScope,
           });
+          console.log(`[TestUtil] Registered UNDO action: RESTORE_UPDATED_ROW for '${requirement.tableName}' ID: ${existingRowId}`);
           const { data: updatedRowData, error: updateError } = await supabaseAdminClient
             .from(requirement.tableName)
             .update(dataForDb) // Pass directly, should conform to Partial<Insert>
@@ -737,6 +847,7 @@ export async function coreInitializeTestStep(
           // For insert, merge identifier and dataForDb. Identifier might contain parts of PK or unique keys.
           const insertData = { ...requirement.identifier, ...dataForDb };
 
+          console.log(`[TestUtil] Creating new row in '${requirement.tableName}' with data: ${JSON.stringify(insertData)}`);
           const { data: newRowData, error: insertError } = await supabaseAdminClient
             .from(requirement.tableName)
             .insert(insertData as any) // Use 'as any' if merge creates complex type issue for insert
@@ -760,6 +871,7 @@ export async function coreInitializeTestStep(
                   criteria: { id: newRowId }, 
                   scope: executionScope,
                 });
+                console.log(`[TestUtil] Registered UNDO action: DELETE_CREATED_ROW for '${requirement.tableName}' ID: ${newRowId}`);
             }
           }
         }

@@ -8,7 +8,9 @@ import {
   StartSessionSuccessResponse, 
   GenerateThesisContributionsSuccessResponse, 
   CallUnifiedAIModelOptions, 
-  UnifiedAIResponse } from "./dialectic.interface.ts";
+  UnifiedAIResponse,
+  SelectedAiProvider
+} from "./dialectic.interface.ts";
 import { serve } from "https://deno.land/std@0.170.0/http/server.ts";
 import {
   handleCorsPreflightRequest,
@@ -23,9 +25,10 @@ import type {
     ChatApiRequest,
     TokenUsage,
     ChatHandlerSuccessResponse,
-    ChatMessageRole,
+    ChatMessageRole
 } from "../_shared/types.ts";
-
+import type { Database } from "../types_db.ts";
+import { logger } from "../_shared/logger.ts";
 console.log("dialectic-service function started");
 
 // Initialize Supabase admin client once
@@ -303,280 +306,294 @@ Initial User Prompt: ${project.initial_user_prompt}`;
 async function generateThesisContributions(
   dbClient: typeof supabaseAdmin,
   payload: GenerateThesisContributionsPayload,
-  authToken: string // Added authToken
+  authToken: string 
 ): Promise<{ success: boolean; data?: GenerateThesisContributionsSuccessResponse; error?: { message: string; status?: number; details?: string } }> {
   const { sessionId } = payload;
-  console.log(`generateThesisContributions called for sessionId: ${sessionId}`);
+  logger.info(`[generateThesisContributions] Starting for session ID: ${sessionId}`);
+  const BUCKET_NAME = 'dialectic-contributions'; // Define bucket name
 
-  // 1. Fetch session, models, and seed prompt
-  const { data: sessionDetails, error: sessionError } = await dbClient
-    .from('dialectic_sessions')
-    .select(`
-      id,
-      project_id,
-      current_stage_seed_prompt,
-      status,
-      associated_chat_id,
-      active_thesis_prompt_template_id,
-      dialectic_projects ( user_id ),
-      dialectic_session_models ( id, model_id )
-    `)
-    .eq('id', sessionId)
-    .single();
+  try {
+    // 1. Fetch session details: project_id, initial_user_prompt, selected_domain_tag, and selected models
+    const { data: sessionDetails, error: sessionError } = await dbClient
+      .from('dialectic_sessions')
+      .select(
+        `
+        id,
+        project_id,
+        status,
+        associated_chat_id,
+        dialectic_projects (
+          initial_user_prompt,
+          selected_domain_tag
+        ),
+        dialectic_session_models (
+          id,
+          model_id,
+          ai_providers (
+            id,
+            provider_name: provider,
+            model_name: name,
+            api_identifier
+          )
+        )
+      `
+      )
+      .eq('id', sessionId)
+      .single();
 
-  if (sessionError || !sessionDetails) {
-    console.error(`Error fetching session details for ${sessionId}:`, sessionError);
-    return { success: false, error: { message: "Failed to fetch session details or session not found.", status: sessionError?.code === 'PGRST116' ? 404 : 500, details: sessionError?.message } };
-  }
-  console.log(`Session details for ${sessionId} fetched successfully.`);
-
-  if (sessionDetails.status !== 'pending_thesis') {
-    const message = `Session ${sessionId} is not in 'pending_thesis' state, current state: ${sessionDetails.status}.`;
-    console.warn(message);
-    return { success: false, error: { message, status: 409 } };
-  }
-
-  const { error: statusUpdateError } = await dbClient
-    .from('dialectic_sessions')
-    .update({ status: 'generating_thesis', updated_at: new Date().toISOString() })
-    .eq('id', sessionId);
-
-  if (statusUpdateError) {
-    console.error(`Error updating session ${sessionId} status to 'generating_thesis':`, statusUpdateError);
-  } else {
-    console.log(`Session ${sessionId} status updated to 'generating_thesis'.`);
-  }
-
-  const contributions: unknown[] = []; 
-  const errors: { modelId: string; message: string; details?: string }[] = [];
-  const bucketName = "dialectic-contributions";
-
-  const MAX_RETRIES = 3;
-  const INITIAL_BACKOFF_MS = 1000; 
-
-  for (const sessionModel of sessionDetails.dialectic_session_models) {
-    const modelId = sessionModel.model_id;
-    console.log(`Processing model: ${modelId} for session ${sessionId}`);
-
-    let aiResponse: UnifiedAIResponse | null = null;
-    let lastErrorString: string | null = null; // Renamed to avoid conflict if error object is used
-    let attempt = 0;
-
-    // --- Retry Loop for AI Model Call ---
-    while (attempt < MAX_RETRIES && !aiResponse) {
-      attempt++;
-      if (attempt > 1) {
-        const backoffDelay = INITIAL_BACKOFF_MS * Math.pow(2, attempt - 2); 
-        console.log(`Retrying model ${modelId} (attempt ${attempt}/${MAX_RETRIES}) after ${backoffDelay}ms delay...`);
-        await new Promise(resolve => setTimeout(resolve, backoffDelay));
-      }
-      try {
-        const currentAIResponse = await callUnifiedAIModel(
-          modelId, 
-          sessionDetails.current_stage_seed_prompt || "",
-          sessionDetails.associated_chat_id,
-          authToken, 
-          {
-            currentStageSystemPromptId: sessionDetails.active_thesis_prompt_template_id || "__none__"
-          }
-        );
-
-        if (currentAIResponse.error) {
-          lastErrorString = currentAIResponse.error;
-          console.warn(`Attempt ${attempt} for model ${modelId} failed: ${lastErrorString}`);
-          if (attempt === MAX_RETRIES) {
-            aiResponse = currentAIResponse; // Use this error response after max retries
-          }
-        } else {
-          aiResponse = currentAIResponse; // Success
-        }
-      } catch (e) { 
-        lastErrorString = e instanceof Error ? e.message : String(e);
-        console.error(`Attempt ${attempt} for model ${modelId} threw an exception: ${lastErrorString}`, e);
-        if (attempt === MAX_RETRIES) {
-            aiResponse = { 
-                content: null,
-                error: `Model call failed after ${MAX_RETRIES} attempts: ${lastErrorString}`,
-                errorCode: 'MAX_RETRIES_EXCEEDED',
-                inputTokens: undefined, outputTokens: undefined, cost: undefined, processingTimeMs: undefined, rawProviderResponse: undefined
-            };
-        }
-      }
+    if (sessionError || !sessionDetails) {
+      logger.error(`[generateThesisContributions] Error fetching session ${sessionId}:`, { error: sessionError });
+      return { success: false, error: { message: "Session not found or error fetching details.", status: 404, details: sessionError?.message } };
     }
-    // --- End Retry Loop ---
 
-    // If aiResponse is still null after retries (should be set by the loop, but as a safeguard)
-    if (!aiResponse) {
-        console.error(`Model ${modelId} call definitively failed after ${MAX_RETRIES} attempts. Last error: ${lastErrorString}`);
-        errors.push({ modelId, message: "AI model call failed after retries.", details: lastErrorString || "Unknown error after retries." });
-        const errorContributionId = crypto.randomUUID();
-        await dbClient.from('dialectic_contributions').insert({
-            id: errorContributionId,
-            session_id: sessionId,
-            session_model_id: sessionModel.id,
-            stage: 'thesis',
-            error: `AI model call failed after ${MAX_RETRIES} retries: ${lastErrorString || 'Unknown'}`,
-            actual_prompt_sent: sessionDetails.current_stage_seed_prompt,
+    // Based on logs, dialectic_projects is returned as a single object for this query,
+    // despite types_db.ts suggesting an array. Use 'as unknown as' to bridge this.
+    const projectDetails = sessionDetails.dialectic_projects as unknown as { initial_user_prompt: string; selected_domain_tag: string | null } | null | undefined;
+
+    logger.info(`[generateThesisContributions] Fetched session details for ${sessionId}`, { 
+      joinedProjectData: projectDetails, // Log the raw joined data
+      numModels: sessionDetails.dialectic_session_models.length 
+    });
+
+    if (sessionDetails.status !== 'pending_thesis') {
+      logger.warn(`[generateThesisContributions] Session ${sessionId} is not in 'pending_thesis' status. Current status: ${sessionDetails.status}`);
+      return { success: false, error: { message: `Session is not in 'pending_thesis' status. Current status: ${sessionDetails.status}`, status: 400 } };
+    }
+
+    // projectDetails is already the object we need, or null/undefined if not found.
+    if (!projectDetails) {
+        logger.error(`[generateThesisContributions] Project details (from joined dialectic_projects table) not found for session ${sessionId}.`, { joinedData: sessionDetails.dialectic_projects });
+        return { success: false, error: { message: "Project details (from joined dialectic_projects table) not found for session.", status: 500 } };
+    }
+    
+    const { initial_user_prompt, selected_domain_tag } = projectDetails;
+    if (!initial_user_prompt) {
+        logger.error(`[generateThesisContributions] Initial user prompt is missing for session ${sessionId}`);
+        return { success: false, error: { message: "Initial user prompt is missing for session.", status: 500 } };
+    }
+
+    const associatedChatId = sessionDetails.associated_chat_id;
+    if (!associatedChatId) {
+        logger.error(`[generateThesisContributions] Associated chat ID is missing for session ${sessionId}`);
+        return { success: false, error: { message: "Associated chat ID is missing for session.", status: 500 } };
+    }
+
+    const successfulContributions: Database['public']['Tables']['dialectic_contributions']['Row'][] = []; // Typed contributions
+    const failedContributionAttempts: { modelId: string; sessionModelId: string; error: string; details?: string; code?: string; inputTokens?: number; outputTokens?: number, cost?: number, processingTimeMs?: number }[] = [];
+
+
+    for (const sessionModel of sessionDetails.dialectic_session_models) {
+      // Runtime logs show ai_providers is a single object here due to the to-one join from dialectic_session_models.
+      // The `as unknown` is to bridge the gap if types_db.ts generally types it as an array.
+      const providerDetails = sessionModel.ai_providers as unknown as SelectedAiProvider | null | undefined;
+
+      if (!providerDetails || typeof providerDetails !== 'object') {
+        logger.error(`[generateThesisContributions] AI Provider details (expected as direct object) missing or not an object for sessionModel ${sessionModel.id} (model_id: ${sessionModel.model_id}). Value: ${JSON.stringify(providerDetails)}`);
+        failedContributionAttempts.push({
+          modelId: sessionModel.model_id, 
+          sessionModelId: sessionModel.id,
+          error: "AI Provider details (expected as direct object from joined 'ai_providers' table) missing, null, or not an object.",
+          code: 'PROVIDER_DETAILS_OBJECT_ISSUE' 
         });
-        continue; // Move to the next model
-    }
+        continue;
+      }
 
-    console.log(`AI response finalized for model ${modelId} (after attempt ${attempt}). Content length: ${aiResponse.content?.length}, Error: ${aiResponse.error}`);
+      const modelId = providerDetails.id; 
+      const sessionModelId = sessionModel.id; // This is dialectic_session_models.id
+      const modelIdentifier = `${providerDetails.provider_name} - ${providerDetails.model_name} (SM_ID: ${sessionModelId}, ProviderID: ${modelId}, API_ID: ${providerDetails.api_identifier})`;
+      logger.info(`[generateThesisContributions] Processing model: ${modelIdentifier} for session ${sessionId}`);
 
-    // --- Process the final aiResponse (success or error after retries) ---
-    try {
-      if (aiResponse.error) {
-        console.error(`Error from callUnifiedAIModel for model ${modelId} (final):`, aiResponse.error);
-        errors.push({ modelId, message: "AI model call failed.", details: aiResponse.error });
+      try {
+        // TODO: Implement proper prompt rendering using project's initial_user_prompt and selected_domain_tag
+        // For now, using initial_user_prompt directly.
+        const renderedPrompt = initial_user_prompt; 
+        logger.debug(`[generateThesisContributions] Rendered prompt for ${modelIdentifier}:`, { prompt: renderedPrompt.substring(0, 100) + "..."});
+
+
+        const aiResponse = await callUnifiedAIModel(
+          modelId,
+          renderedPrompt,
+          associatedChatId,
+          authToken,
+          // TODO: Pass system_prompt_id if available from session/project setup
+        );
+        logger.info(`[generateThesisContributions] AI response received from ${modelIdentifier}`, { hasError: !!aiResponse.error, tokens: {in: aiResponse.inputTokens, out: aiResponse.outputTokens}, cost: aiResponse.cost });
+
+
+        if (aiResponse.error || !aiResponse.content) {
+          logger.error(`[generateThesisContributions] Error from callUnifiedAIModel for ${modelIdentifier}:`, { error: aiResponse.error });
+          failedContributionAttempts.push({ 
+            modelId: modelId, 
+            sessionModelId: sessionModelId,
+            error: aiResponse.error || "AI model returned no content.", 
+            details: typeof aiResponse.errorCode === 'string' ? aiResponse.errorCode : undefined, 
+            code: aiResponse.errorCode || 'AI_CALL_FAILED',
+            inputTokens: aiResponse.inputTokens,
+            outputTokens: aiResponse.outputTokens,
+            cost: aiResponse.cost,
+            processingTimeMs: aiResponse.processingTimeMs,
+          });
+          continue; // Move to the next model
+        }
+
+        const contributionContent = aiResponse.content;
+        const contentType = "text/markdown"; // Assuming markdown for now, TODO: make dynamic based on AI response or settings
+        const fileExtension = getExtensionFromMimeType(contentType);
         const contributionId = crypto.randomUUID();
-        const { error: insertErrorContributionError } = await dbClient
+
+        const contentStoragePath = `projects/${sessionDetails.project_id}/sessions/${sessionId}/contributions/${contributionId}/thesis${fileExtension}`;
+        const rawResponseStoragePath = `projects/${sessionDetails.project_id}/sessions/${sessionId}/contributions/${contributionId}/raw_thesis_response.json`;
+
+        logger.info(`[generateThesisContributions] Uploading content for ${modelIdentifier} to: ${contentStoragePath}`);
+        const { error: contentUploadError } = await uploadToStorage(dbClient, BUCKET_NAME, contentStoragePath, contributionContent, { contentType });
+        if (contentUploadError) {
+          logger.error(`[generateThesisContributions] Failed to upload content for ${modelIdentifier} to ${contentStoragePath}:`, { error: contentUploadError });
+          failedContributionAttempts.push({ 
+            modelId: modelId, 
+            sessionModelId: sessionModelId,
+            error: "Failed to upload contribution content.", 
+            details: contentUploadError.message, 
+            code: 'STORAGE_UPLOAD_ERROR' 
+          });
+          continue;
+        }
+        logger.info(`[generateThesisContributions] Content uploaded successfully for ${modelIdentifier}`);
+
+        logger.info(`[generateThesisContributions] Uploading raw response for ${modelIdentifier} to: ${rawResponseStoragePath}`);
+        const { error: rawResponseUploadError } = await uploadToStorage(dbClient, BUCKET_NAME, rawResponseStoragePath, JSON.stringify(aiResponse.rawProviderResponse || {}), { contentType: "application/json" });
+        if (rawResponseUploadError) {
+          logger.warn(`[generateThesisContributions] Failed to upload raw AI response for ${modelIdentifier} to ${rawResponseStoragePath}:`, { error: rawResponseUploadError });
+          // Non-critical, log and continue, but maybe add to a "warnings" array in the future.
+        } else {
+            logger.info(`[generateThesisContributions] Raw response uploaded successfully for ${modelIdentifier}`);
+        }
+        
+        let contentSizeBytes = 0;
+        try {
+            const metadata = await getFileMetadata(dbClient, BUCKET_NAME, contentStoragePath);
+            if (metadata && !metadata.error && metadata.size !== undefined) {
+                contentSizeBytes = metadata.size;
+                logger.info(`[generateThesisContributions] Fetched metadata for ${contentStoragePath}, size: ${contentSizeBytes}`);
+            } else {
+                logger.warn(`[generateThesisContributions] Could not get file metadata for ${contentStoragePath}. File not found, no metadata returned, or error. Defaulting size to 0.`, { error: metadata?.error });
+            }
+        } catch (metaError) {
+            logger.warn(`[generateThesisContributions] Error fetching metadata for ${contentStoragePath}. Defaulting size to 0.`, { error: metaError });
+        }
+
+
+        logger.info(`[generateThesisContributions] Inserting contribution to DB for ${modelIdentifier}`);
+        const { data: dbContribution, error: dbInsertError } = await dbClient
           .from('dialectic_contributions')
           .insert({
-            id: contributionId,
             session_id: sessionId,
-            session_model_id: sessionModel.id,
+            session_model_id: sessionModelId, // Link to the specific dialectic_session_models.id
             stage: 'thesis',
-            error: aiResponse.error,
-            actual_prompt_sent: sessionDetails.current_stage_seed_prompt,
+            content_storage_path: contentStoragePath,
+            raw_response_storage_path: rawResponseStoragePath,
             tokens_used_input: aiResponse.inputTokens,
             tokens_used_output: aiResponse.outputTokens,
-            cost: aiResponse.cost,
+            cost_usd: aiResponse.cost,
+            content_size_bytes: contentSizeBytes,
             processing_time_ms: aiResponse.processingTimeMs,
+            // model_name, provider_name can be joined if needed later
+          })
+          .select()
+          .single();
+
+        if (dbInsertError) {
+          logger.error(`[generateThesisContributions] Error inserting contribution to DB for ${modelIdentifier}:`, { error: dbInsertError });
+          // Attempt to delete orphaned storage files if DB insert fails
+          logger.warn(`[generateThesisContributions] Attempting to clean up storage for failed DB insert for ${modelIdentifier}`);
+          await deleteFromStorage(dbClient, BUCKET_NAME, [contentStoragePath]).catch(e => logger.error(`Cleanup error for ${contentStoragePath}:`, {error: e}));
+          await deleteFromStorage(dbClient, BUCKET_NAME, [rawResponseStoragePath]).catch(e => logger.error(`Cleanup error for ${rawResponseStoragePath}:`, {error: e}));
+          failedContributionAttempts.push({ 
+            modelId: modelId, 
+            sessionModelId: sessionModelId,
+            error: "Failed to insert contribution into database.", 
+            details: dbInsertError.message, 
+            code: dbInsertError.code || 'DB_INSERT_ERROR' 
           });
-        if (insertErrorContributionError) {
-            console.error(`Failed to insert error contribution for model ${modelId}:`, insertErrorContributionError);
+          continue;
         }
-        // No continue here, the error is recorded, and we proceed to next model via the main loop
-      } else {
-        // AI Call was successful (or deemed successful for processing by retry logic)
-        const contributionId = crypto.randomUUID();
-        const contentType = "text/markdown"; 
-        const extension = getExtensionFromMimeType(contentType);
-        const storagePath = `${sessionDetails.project_id}/${sessionId}/${contributionId}${extension}`;
+        logger.info(`[generateThesisContributions] Contribution inserted to DB successfully for ${modelIdentifier}`, { contributionId: dbContribution.id });
+        successfulContributions.push(dbContribution);
 
-        console.log(`Uploading content for model ${modelId} to path: ${storagePath} with contentType: ${contentType}`);
-        const { path: uploadedPath, error: uploadError } = await uploadToStorage(
-          dbClient, 
-          bucketName,
-          storagePath,
-          aiResponse.content || "", 
-          { contentType, upsert: false }
-        );
-
-        if (uploadError || !uploadedPath) {
-          console.error(`Error uploading to storage for model ${modelId}, path ${storagePath}:`, uploadError);
-          errors.push({ modelId, message: "Storage upload failed.", details: uploadError?.message });
-          const storageErrorContributionId = crypto.randomUUID();
-          await dbClient.from('dialectic_contributions').insert({
-              id: storageErrorContributionId,
-              session_id: sessionId,
-              session_model_id: sessionModel.id,
-              stage: 'thesis',
-              content_storage_bucket: bucketName,
-              content_storage_path: storagePath,
-              content_mime_type: contentType,
-              error: `Storage upload failed: ${uploadError?.message || 'Unknown storage error'}`,
-              actual_prompt_sent: sessionDetails.current_stage_seed_prompt,
-              tokens_used_input: aiResponse.inputTokens,
-              tokens_used_output: aiResponse.outputTokens,
-              cost: aiResponse.cost,
-              processing_time_ms: aiResponse.processingTimeMs,
-            });
-        } else {
-          console.log(`Content for model ${modelId} uploaded successfully to: ${uploadedPath}`);
-          let fileSize: number | undefined | null = null;
-          const { size, error: metadataError } = await getFileMetadata(dbClient, bucketName, uploadedPath);
-          if (metadataError) {
-            console.warn(`Could not get file metadata for ${uploadedPath}:`, metadataError.message);
-          } else {
-            fileSize = size;
-            console.log(`File size for ${uploadedPath}: ${fileSize} bytes`);
-          }
-
-          const { data: dbContribution, error: insertError } = await dbClient
-            .from('dialectic_contributions')
-            .insert({
-              id: contributionId,
-              session_id: sessionId,
-              session_model_id: sessionModel.id,
-              stage: 'thesis',
-              content_storage_bucket: bucketName,
-              content_storage_path: uploadedPath,
-              content_mime_type: contentType,
-              content_size_bytes: fileSize,
-              actual_prompt_sent: sessionDetails.current_stage_seed_prompt,
-              tokens_used_input: aiResponse.inputTokens,
-              tokens_used_output: aiResponse.outputTokens,
-              cost: aiResponse.cost,
-              processing_time_ms: aiResponse.processingTimeMs,
-              prompt_template_id_used: sessionDetails.active_thesis_prompt_template_id,
-            })
-            .select()
-            .single();
-
-          if (insertError) {
-            console.error(`Error inserting contribution to DB for model ${modelId}, path ${uploadedPath}:`, insertError);
-            errors.push({ modelId, message: "DB insert failed.", details: insertError.message });
-            console.warn(`Attempting to delete orphaned file from storage: ${uploadedPath}`);
-            const { error: deleteError } = await deleteFromStorage(dbClient, bucketName, [uploadedPath]);
-            if (deleteError) {
-                console.error(`Failed to delete orphaned file ${uploadedPath}:`, deleteError.message);
-            }
-          } else {
-            console.log(`Contribution for model ${modelId} (ID: ${contributionId}) saved successfully to DB.`);
-            contributions.push(dbContribution);
-          }
-        }
-      }
-    } catch (e) { // Catch-all for unexpected errors during this model's post-AI processing
-      const errorMessage = e instanceof Error ? e.message : String(e);
-      console.error(`Outer catch: Unexpected error processing model ${modelId} after AI call:`, e);
-      errors.push({ modelId, message: "Unexpected error during post-AI processing.", details: errorMessage });
-      const unexpectedErrorContributionId = crypto.randomUUID();
-      await dbClient.from('dialectic_contributions').insert({
-          id: unexpectedErrorContributionId,
-          session_id: sessionId,
-          session_model_id: sessionModel.id,
-          stage: 'thesis',
-          error: `Unexpected error after AI call for model ${modelId}: ${errorMessage}`,
-          actual_prompt_sent: sessionDetails.current_stage_seed_prompt,
+      } catch (modelProcessingError) {
+        logger.error(`[generateThesisContributions] Unhandled error processing model ${modelIdentifier}:`, { error: modelProcessingError });
+        failedContributionAttempts.push({
+          modelId: modelId,
+          sessionModelId: sessionModelId,
+          error: "Unhandled error during model processing.",
+          details: modelProcessingError instanceof Error ? modelProcessingError.message : String(modelProcessingError),
+          code: 'MODEL_PROCESSING_ERROR'
         });
-    } // End of outer try-catch for this model's processing
-  } // End of for...of loop over sessionModels
+      }
+    } // End of for...of sessionModels loop
 
-  let finalSessionStatus = 'thesis_complete';
-  if (errors.length > 0 && contributions.length === 0) {
-    finalSessionStatus = 'thesis_failed_to_generate'; 
-  } else if (errors.length > 0) {
-    finalSessionStatus = 'thesis_complete_with_errors';
-  }
-  
-  console.log(`All models processed for session ${sessionId}. Finalizing session status to: ${finalSessionStatus}`);
-  const { error: finalStatusUpdateError } = await dbClient
-    .from('dialectic_sessions')
-    .update({ status: finalSessionStatus, updated_at: new Date().toISOString() })
-    .eq('id', sessionId);
+    logger.info(`[generateThesisContributions] Finished processing all models for session ${sessionId}`, { successful: successfulContributions.length, failed: failedContributionAttempts.length });
 
-  if (finalStatusUpdateError) {
-    console.error(`Error updating final session status for ${sessionId} to '${finalSessionStatus}':`, finalStatusUpdateError);
-  } else {
-     console.log(`Session ${sessionId} final status updated to '${finalSessionStatus}'.`);
-  }
-  
-  if (contributions.length === 0 && errors.length > 0) {
-     return { success: false, error: { message: "Failed to generate any thesis contributions.", status: 500, details: JSON.stringify(errors) } };
-  }
+    if (successfulContributions.length === 0) {
+      logger.error(`[generateThesisContributions] All models failed to generate contributions for session ${sessionId}`, { errors: failedContributionAttempts });
+      // Return a generic error, but include details of all failures
+      const errorDetails = failedContributionAttempts.map(f => `Model (SM_ID ${f.sessionModelId}): ${f.error} (${f.details || f.code})`).join('; ');
+      return { 
+        success: false, 
+        error: { 
+          message: "All models failed to generate thesis contributions.", 
+          status: 500, 
+          details: errorDetails 
+        } 
+      };
+    }
 
-  return {
-    success: true,
-    data: {
-      message: "Thesis contributions processing completed.",
-      sessionId,
-      status: finalSessionStatus,
-      contributions,
-      errors,
-    },
-  };
+    // If at least one contribution was successful
+    const finalStatus = failedContributionAttempts.length > 0 ? 'thesis_generation_partial' : 'thesis_generation_complete';
+    
+    logger.info(`[generateThesisContributions] Updating session ${sessionId} status to: ${finalStatus}`);
+    const { error: sessionUpdateError } = await dbClient
+      .from('dialectic_sessions')
+      .update({ status: finalStatus, updated_at: new Date().toISOString() })
+      .eq('id', sessionId);
+
+    if (sessionUpdateError) {
+      // This is tricky. Contributions were made, but session status update failed.
+      // Log heavily. The client will still get the successful contributions.
+      // The session status might be stale, requiring manual intervention or a retry mechanism for status updates.
+      logger.error(`[generateThesisContributions] CRITICAL: Failed to update session status for ${sessionId} to ${finalStatus}, but contributions were made. Error:`, { error: sessionUpdateError });
+    } else {
+        logger.info(`[generateThesisContributions] Session ${sessionId} status updated to ${finalStatus}`);
+    }
+    
+    const responseData: GenerateThesisContributionsSuccessResponse = {
+      message: failedContributionAttempts.length > 0 
+        ? `Thesis generation partially complete for session ${sessionId}. ${successfulContributions.length} succeeded, ${failedContributionAttempts.length} failed.`
+        : `Thesis generation fully complete for session ${sessionId}.`,
+      sessionId: sessionId,
+      status: finalStatus,
+      contributions: successfulContributions, // Contains successfully inserted DB records
+      errors: failedContributionAttempts.length > 0 ? failedContributionAttempts.map(f => ({
+          modelId: f.modelId, // This is ai_providers.id
+          // sessionModelId: f.sessionModelId, // We might want to expose this to the client if useful for retry/display
+          message: f.error,
+          details: `Code: ${f.code}, Details: ${f.details}${f.inputTokens !== undefined ? `, Input Tokens: ${f.inputTokens}` : ''}${f.outputTokens !== undefined ? `, Output Tokens: ${f.outputTokens}` : ''}${f.cost !== undefined ? `, Cost: ${f.cost}` : ''}${f.processingTimeMs !== undefined ? `, Processing Time: ${f.processingTimeMs}ms` : ''}`
+      })) : undefined,
+    };
+    
+    logger.info(`[generateThesisContributions] Successfully completed for session ${sessionId}. Status: ${finalStatus}`, { numSuccess: successfulContributions.length, numFailed: failedContributionAttempts.length });
+    return { success: true, data: responseData };
+
+  } catch (error) {
+    logger.error(`[generateThesisContributions] Critical unhandled error in generateThesisContributions for session ${payload.sessionId}:`, { error });
+    return { 
+      success: false, 
+      error: { 
+        message: "A critical unexpected error occurred while generating thesis contributions.", 
+        status: 500, 
+        details: error instanceof Error ? error.message : String(error) 
+      } 
+    };
+  }
 }
 
 // --- AI Model Interaction Utilities ---

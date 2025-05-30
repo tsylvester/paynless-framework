@@ -26,7 +26,6 @@ import {
   setSharedAdminClient,
   TestResourceRequirement,
 } from "../_shared/_integration.test.utils.ts";
-import { User } from "npm:@supabase/supabase-js@2";
 import type { DialecticServiceRequest, GenerateThesisContributionsPayload, StartSessionPayload } from "./dialectic.interface.ts";
 
 const TEST_DOMAIN_TAG_1 = "software_development";
@@ -64,134 +63,116 @@ describe("Edge Function: dialectic-service", () => {
     }
     baseAntithesisPromptId = antithesisPrompt.id;
 
-    const overlaysToSeedData = [
-      {
-        system_prompt_id: baseThesisPromptId, 
-        domain_tag: TEST_DOMAIN_TAG_1, 
-        version: 99, 
-        overlay_values: { test_data: "ensure software_development for thesis" } as unknown as Json, 
-        description: "Test overlay for software_development (thesis)",
-        is_active: true,
-      },
-      {
-        system_prompt_id: baseAntithesisPromptId, 
-        domain_tag: TEST_DOMAIN_TAG_1, 
-        version: 99, 
-        overlay_values: { test_data: "ensure software_development for antithesis" } as unknown as Json, 
-        description: "Test overlay for software_development (antithesis)",
-        is_active: true,
-      },
-      {
-        system_prompt_id: baseThesisPromptId, 
-        domain_tag: TEST_DOMAIN_TAG_2, 
-        version: 99, 
-        overlay_values: { test_data: "ensure technical_writing" } as unknown as Json, 
-        description: "Test overlay for technical_writing",
-        is_active: true,
-      },
-    ];
-
-    for (const pełnaDaneNakładki of overlaysToSeedData) {
-        const { error } = await adminClient.from("domain_specific_prompt_overlays").upsert(
-            pełnaDaneNakładki,
-            { onConflict: "system_prompt_id,domain_tag,version" }
-        );
-        if (error) {
-            console.error("Error upserting test domain overlay:", pełnaDaneNakładki, error);
-            throw new Error(`Test setup failed: Could not upsert test domain overlay: ${error.message}`);
-        }
-    }
-    console.log("Shared test domain overlays upserted for dialectic-service tests.");
+    // Removed manual seeding of domain_specific_prompt_overlays
+    // console.log("Shared test domain overlays upserted for dialectic-service tests."); // Keep if other global setup happens
   });
 
   afterAll(async () => {
-    if (adminClient) {
-        const { error: deleteError } = await adminClient
-        .from("domain_specific_prompt_overlays")
-        .delete()
-        .eq("version", 99);
-        if (deleteError) {
-        console.error("Failed to clean up test domain overlays:", deleteError);
-        }
-    }
+    // Removed manual cleanup of domain_specific_prompt_overlays
+    // The global coreCleanupTestResources will handle resources registered with 'global' scope.
     await coreCleanupTestResources('all');
   });
 
   describe("Action: listAvailableDomainTags", () => {
-    it("should return a distinct list of available domain tags", async () => {
-      const request: DialecticServiceRequest = { action: "listAvailableDomainTags" };
-      const { data, error } = await adminClient.functions.invoke("dialectic-service", { body: request });
-      expect(error, "Function invocation should not error").to.be.null;
-      expect(data, "Response data should exist").to.exist;
-      const responsePayload = data as any; 
-      expect(responsePayload.error, `Service action error: ${responsePayload.error?.message}`).to.be.undefined;
-      expect(responsePayload.data, "Payload data should be an array").to.be.an("array");
-      const tags = responsePayload.data as string[];
-      expect(tags).to.include.members([TEST_DOMAIN_TAG_1, TEST_DOMAIN_TAG_2]);
-      const distinctTags = [...new Set(tags)];
-      expect(tags.length, "Tags list should only contain distinct tags").to.equal(distinctTags.length);
+    describe("With existing domain tags", () => {
+      beforeEach(async () => {
+        // Setup the specific overlays needed for this test suite
+        await coreInitializeTestStep({ 
+          resources: [
+            {
+              tableName: "domain_specific_prompt_overlays",
+              identifier: { system_prompt_id: baseThesisPromptId, domain_tag: TEST_DOMAIN_TAG_1, version: 99 },
+              desiredState: { 
+                overlay_values: { test_data: "ensure software_development for thesis" } as unknown as Json, 
+                description: "Test overlay for software_development (thesis)",
+                is_active: true,
+              },
+            },
+            {
+              tableName: "domain_specific_prompt_overlays",
+              identifier: { system_prompt_id: baseAntithesisPromptId, domain_tag: TEST_DOMAIN_TAG_1, version: 99 },
+              desiredState: { 
+                overlay_values: { test_data: "ensure software_development for antithesis" } as unknown as Json, 
+                description: "Test overlay for software_development (antithesis)",
+                is_active: true,
+              },
+            },
+            {
+              tableName: "domain_specific_prompt_overlays",
+              identifier: { system_prompt_id: baseThesisPromptId, domain_tag: TEST_DOMAIN_TAG_2, version: 99 },
+              desiredState: { 
+                overlay_values: { test_data: "ensure technical_writing" } as unknown as Json, 
+                description: "Test overlay for technical_writing",
+                is_active: true,
+              },
+            },
+          ],
+          userProfile: { first_name: "ListDomainTagsUser" }
+        }, 'local');
+      });
+
+      afterEach(async () => {
+        await coreCleanupTestResources('local');
+      });
+
+      it("should return a distinct list of available domain tags", async () => {
+        const request: DialecticServiceRequest = { action: "listAvailableDomainTags" };
+        const { data, error } = await adminClient.functions.invoke("dialectic-service", { body: request });
+        expect(error, "Function invocation should not error").to.be.null;
+        expect(data, "Response data should exist").to.exist;
+        const responsePayload = data as any; 
+        expect(responsePayload.error, `Service action error: ${responsePayload.error?.message}`).to.be.undefined;
+        expect(responsePayload.data, "Payload data should be an array").to.be.an("array");
+        const tags = responsePayload.data as string[];
+        expect(tags).to.include.members([TEST_DOMAIN_TAG_1, TEST_DOMAIN_TAG_2]);
+        const distinctTags = [...new Set(tags)];
+        expect(tags.length, "Tags list should only contain distinct tags").to.equal(distinctTags.length);
+      });
     });
 
-    it("should return an empty list if no domain_specific_prompt_overlays exist", async () => {
-      const { error: delErr } = await adminClient.from("domain_specific_prompt_overlays").delete().neq("domain_tag", "_some_non_existent_tag_for_safety_");
-      expect(delErr, "Failed to clear overlays for empty test").to.be.null;
+    describe("With no existing domain tags", () => {
+      let testUserClient: SupabaseClient<Database>;
 
-      try {
+      beforeEach(async () => {
+        if (!adminClient) {
+          throw new Error("Supabase admin client not available for 'With no existing domain tags' setup.");
+        }
+
+        console.log("[TestEnv] Deleting overlays for specific test tags (TDT1, TDT2) for 'empty list' test precondition.");
+        const tagsToClear = [TEST_DOMAIN_TAG_1, TEST_DOMAIN_TAG_2];
+        for (const tag of tagsToClear) {
+          const { error: deleteError } = await adminClient
+            .from('domain_specific_prompt_overlays')
+            .delete()
+            .eq('domain_tag', tag);
+          if (deleteError && deleteError.code !== 'PGRST116') { // PGRST116 means 0 rows, which is fine
+              console.error(`[TestEnv] Error deleting overlays for tag '${tag}': ${deleteError.message}.`);
+              throw deleteError;
+          }
+        }
+        
+        const setupResult = await coreInitializeTestStep({
+          userProfile: { first_name: `TestUser${crypto.randomUUID().substring(0,4)}` },
+        });
+        testUserClient = setupResult.primaryUserClient;
+      });
+
+      afterEach(async () => {
+        await coreCleanupTestResources('local');
+      });
+
+      it("should return an empty list if no domain_specific_prompt_overlays exist", async () => {
         const request: DialecticServiceRequest = {
           action: "listAvailableDomainTags",
         };
+        // Use adminClient as listAvailableDomainTags is likely an admin/public action not needing user context
         const { data, error } = await adminClient.functions.invoke("dialectic-service", { body: request });
         expect(error).to.be.null;
         expect(data).to.exist;
         const responsePayload = data as any;
         expect(responsePayload.error).to.be.undefined;
         expect(responsePayload.data).to.be.an("array").that.is.empty;
-      } finally {
-        // Re-seed all original overlays to ensure test isolation
-        console.log("Attempting to re-seed all test domain overlays in finally block...");
-        const overlaysToReseed = [
-          {
-            system_prompt_id: baseThesisPromptId, 
-            domain_tag: TEST_DOMAIN_TAG_1, 
-            version: 99, 
-            overlay_values: { test_data: "ensure software_development for thesis" } as unknown as Json, 
-            description: "Test overlay for software_development (thesis)",
-            is_active: true,
-          },
-          {
-            system_prompt_id: baseAntithesisPromptId, 
-            domain_tag: TEST_DOMAIN_TAG_1, 
-            version: 99, 
-            overlay_values: { test_data: "ensure software_development for antithesis" } as unknown as Json, 
-            description: "Test overlay for software_development (antithesis)",
-            is_active: true,
-          },
-          {
-            system_prompt_id: baseThesisPromptId, 
-            domain_tag: TEST_DOMAIN_TAG_2, 
-            version: 99, 
-            overlay_values: { test_data: "ensure technical_writing" } as unknown as Json, 
-            description: "Test overlay for technical_writing",
-            is_active: true,
-          },
-        ];
-
-        for (const overlayData of overlaysToReseed) {
-            // Ensure system_prompt_id is valid before attempting to upsert
-            if (!overlayData.system_prompt_id) {
-                console.error("Cannot re-seed overlay due to missing system_prompt_id:", overlayData);
-                continue; 
-            }
-            const { error: upsertError } = await adminClient.from("domain_specific_prompt_overlays").upsert(
-                overlayData,
-                { onConflict: "system_prompt_id,domain_tag,version" }
-            );
-            if (upsertError) {
-                console.error("Failed to re-seed test domain overlay in finally block:", overlayData, upsertError);
-            }
-        }
-        console.log("Re-seeding of test domain overlays in finally block complete.");
-      }
+      });
     });
   });
 
@@ -203,7 +184,7 @@ describe("Edge Function: dialectic-service", () => {
 
     let testProjectId: string;
     let testSessionId: string;
-    let testSessionModelId: string;
+    let createdSessionModelIds: string[] = [];
     let testAssociatedChatId: string;
 
     // const TEST_AI_PROVIDER_ID = "openai"; // Commenting out as we'll use a dummy model
@@ -213,6 +194,8 @@ describe("Edge Function: dialectic-service", () => {
       testAssociatedChatId = crypto.randomUUID();
 
       const uniqueProjectName = `Thesis Test Project ${crypto.randomUUID()}`;
+      // Use THE single, globally seeded, working dummy provider ID
+      const workingDummyProviderId = '11111111-1111-1111-1111-111111111111'; 
 
       const setupResult = await coreInitializeTestStep({
         userProfile: { first_name: "DialecticThesisUser" },
@@ -226,6 +209,58 @@ describe("Edge Function: dialectic-service", () => {
             },
             linkUserId: true,
           },
+          // NO ai_providers resource definition here. We rely on the globally seeded one.
+          // The following are other necessary resources for the test.
+          {
+            tableName: "domain_specific_prompt_overlays",
+            identifier: { system_prompt_id: baseThesisPromptId, domain_tag: TEST_DOMAIN_TAG_1, version: 99 },
+            desiredState: { 
+              overlay_values: { test_data: "ensure software_development for thesis" } as unknown as Json, 
+              description: "Test overlay for software_development (thesis) for generateThesisContributions",
+              is_active: true,
+            },
+          },
+          {
+            tableName: "domain_specific_prompt_overlays",
+            identifier: { system_prompt_id: baseAntithesisPromptId, domain_tag: TEST_DOMAIN_TAG_1, version: 99 },
+            desiredState: { 
+              overlay_values: { test_data: "ensure software_development for antithesis" } as unknown as Json, 
+              description: "Test overlay for software_development (antithesis) for generateThesisContributions",
+              is_active: true,
+            },
+          },
+          // ADD System Prompts required for startSession for TEST_DOMAIN_TAG_1
+          {
+            tableName: "system_prompts",
+            identifier: { id: baseThesisPromptId }, // Use the known ID from the constant
+            desiredState: {
+              name: "dialectic_thesis_base_v1", // Keep original name, or a test-specific one if not relying on this for lookup
+              prompt_text: "Test-specific thesis prompt for {{domain_tag}}.",
+              description: "Test thesis prompt aligned with service default lookup.",
+              is_active: true,
+              version: 1, // Or appropriate version
+              // Fields for default lookup by startSession:
+              stage_association: 'thesis',
+              is_stage_default: true,
+              context: TEST_DOMAIN_TAG_1, // Align with project's domain tag
+              // prompt_name is not used by service for default lookup, but 'name' column is.
+            },
+          },
+          {
+            tableName: "system_prompts",
+            identifier: { id: baseAntithesisPromptId }, // Use the known ID from the constant
+            desiredState: {
+              name: "dialectic_antithesis_base_v1", // Keep original name
+              prompt_text: "Test-specific antithesis prompt for {{domain_tag}}.",
+              description: "Test antithesis prompt aligned with service default lookup.",
+              is_active: true,
+              version: 1, // Or appropriate version
+              // Fields for default lookup by startSession:
+              stage_association: 'antithesis',
+              is_stage_default: true,
+              context: TEST_DOMAIN_TAG_1, // Align with project's domain tag
+            },
+          }
         ],
       }, 'local');
 
@@ -248,45 +283,142 @@ describe("Edge Function: dialectic-service", () => {
       testProjectId = projectResourceInfo.resource.id as string;
 
       // Ensure we have the initial user prompt from the project data for the session
-      const initialUserPromptForSession = projectResourceInfo.resource?.initial_user_prompt;
-      if (!initialUserPromptForSession) {
-        throw new Error(`Initial user prompt not found for project ${testProjectId} in test setup.`);
-      }
-
-      const { data: session, error: sessionError } = await testAdminClient
-        .from("dialectic_sessions")
-        .insert({
-          project_id: testProjectId,
-          associated_chat_id: testAssociatedChatId,
-          status: "pending_thesis",
-          current_stage_seed_prompt: initialUserPromptForSession,
-        })
-        .select("id")
+      const { data: projectData, error: projectError } = await testAdminClient
+        .from('dialectic_projects')
+        .select('initial_user_prompt, selected_domain_tag')
+        .eq('id', testProjectId)
         .single();
 
-      if (sessionError || !session) {
-        throw new Error(`Failed to create session for test: ${sessionError?.message}`);
+      if (projectError || !projectData) {
+        throw new Error(`Test setup for generateThesisContributions failed to fetch project details: ${projectError?.message || 'No project data'}`);
       }
-      testSessionId = session.id;
-      
-      const modelIdForSession = '11111111-1111-1111-1111-111111111111'; // Changed to use the dummy provider's UUID
 
-      const { data: sessionModel, error: smError } = await testAdminClient
-        .from("dialectic_session_models")
-        .insert({
-          session_id: testSessionId,
-          model_id: modelIdForSession,
-        })
-        .select("id")
-        .single();
-      
-      if (smError || !sessionModel) {
-          throw new Error(`Failed to create session model for test: ${smError?.message}. Ensure AI provider and model catalog entries are seeded.`);
+      // Prepare and call startSession to create session and session_models
+      const startSessionPayload: StartSessionPayload = {
+        projectId: testProjectId,
+        // Use the SAME globally seeded dummy ID twice
+        selectedModelCatalogIds: [workingDummyProviderId, workingDummyProviderId], 
+        sessionDescription: "Test session for generating thesis contributions with duplicated (global) dummy model",
+        originatingChatId: testAssociatedChatId, 
+      };
+
+      const { data: sessionData, error: sessionError } = await testPrimaryUserClient.functions.invoke(
+        "dialectic-service", 
+        { 
+          body: { action: "startSession", payload: startSessionPayload },
+          headers: { Authorization: `Bearer ${testUserAuthToken}` } // Ensure user context
+        }
+      );
+
+      if (sessionError || !sessionData || (sessionData as any).error) {
+        console.error("Test setup: startSession error data:", (sessionData as any)?.error);
+        throw new Error(`Test setup failed: startSession action failed: ${sessionError?.message || (sessionData as any).error?.message || 'Unknown error during startSession'}`);
       }
-      testSessionModelId = sessionModel.id;
+      
+      const sessionResponse = sessionData as any;
+      if (!sessionResponse.data?.sessionId) {
+        throw new Error(`Test setup failed: startSession did not return a sessionId. Response: ${JSON.stringify(sessionResponse)}`);
+      }
+      testSessionId = sessionResponse.data.sessionId;
+      
+      // Fetch all created dialectic_session_models for assertion
+      const { data: createdSessionModels, error: smFetchError } = await testAdminClient
+        .from('dialectic_session_models')
+        .select('id, model_id')
+        .eq('session_id', testSessionId);
+
+      if (smFetchError || !createdSessionModels) {
+        throw new Error(`Test setup failed: Could not fetch dialectic_session_models records for session ${testSessionId}. Error: ${smFetchError?.message}`);
+      }
+      assertEquals(createdSessionModels.length, 2, "Expected two session models to be created (using duplicated global dummy ID).");
+      createdSessionModelIds = createdSessionModels.map(sm => sm.id);
+      const createdModelIds = createdSessionModels.map(sm => sm.model_id);
+      // Both created session models should point to the same workingDummyProviderId
+      expect(createdModelIds[0]).to.equal(workingDummyProviderId, "First session model should link to the global working dummy ID.");
+      expect(createdModelIds[1]).to.equal(workingDummyProviderId, "Second session model should link to the global working dummy ID.");
+
     });
 
     afterEach(async () => {
+      // Manually delete storage files associated with contributions for this session.
+      // This MUST happen before DB records are deleted by coreCleanupTestResources,
+      // especially if there are any triggers or FKs that might care.
+      if (testSessionId && testProjectId && testAdminClient) { // Added testAdminClient null check
+          console.log(`[Test Cleanup] Attempting to delete storage files for project ${testProjectId}, session ${testSessionId}`);
+          const { data: listResults, error: listError } = await testAdminClient.storage
+              .from('dialectic-contributions')
+              .list(`projects/${testProjectId}/sessions/${testSessionId}/contributions`);
+
+          if (listError) {
+              console.warn(`[Test Cleanup] Error listing storage files for session ${testSessionId}:`, listError.message);
+          } else if (listResults && listResults.length > 0) {
+              const filesToDelete = listResults.flatMap(contribFolder => 
+                  contribFolder.name ? [ // Check if contribFolder.name is not null or undefined
+                      `projects/${testProjectId}/sessions/${testSessionId}/contributions/${contribFolder.name}/thesis.md`,
+                      `projects/${testProjectId}/sessions/${testSessionId}/contributions/${contribFolder.name}/raw_thesis_response.json`
+                  ] : [] // Return an empty array if contribFolder.name is null or undefined
+              ).filter(path => path); // Ensure no undefined paths if folder name was missing.
+
+              if (filesToDelete.length > 0) {
+                  console.log(`[Test Cleanup] Deleting ${filesToDelete.length} storage files:`, filesToDelete);
+                  const { data: deleteData, error: deleteError } = await testAdminClient.storage
+                      .from('dialectic-contributions')
+                      .remove(filesToDelete);
+                  if (deleteError) {
+                      console.warn(`[Test Cleanup] Error deleting storage files for session ${testSessionId}:`, deleteError.message);
+                  } else {
+                      console.log(`[Test Cleanup] Successfully deleted ${deleteData?.length || 0} storage files.`);
+                  }
+              } else {
+                  console.log(`[Test Cleanup] No contribution files found in storage to delete for session ${testSessionId}.`);
+              }
+          } else {
+              console.log(`[Test Cleanup] No contribution folders found in storage to delete for session ${testSessionId}.`);
+          }
+      }
+
+      // Clean up chat messages and chat session created by the /chat function
+      if (testAssociatedChatId && testPrimaryUserId && testAdminClient) { // Added testAdminClient null check
+        console.log(`[Test Cleanup] Deleting chat messages for chat ID: ${testAssociatedChatId} and user ID: ${testPrimaryUserId}`);
+        const { error: msgDelError } = await testAdminClient
+          .from('chat_messages')
+          .delete()
+          .eq('chat_id', testAssociatedChatId)
+          .eq('user_id', testPrimaryUserId); // Also scope by user_id for safety
+        if (msgDelError) {
+          console.warn(`[Test Cleanup] Error deleting chat_messages for chat ${testAssociatedChatId}:`, msgDelError);
+        } else {
+          console.log(`[Test Cleanup] Successfully deleted chat_messages for chat ${testAssociatedChatId}.`);
+        }
+
+        console.log(`[Test Cleanup] Deleting chat session for chat ID: ${testAssociatedChatId} and user ID: ${testPrimaryUserId}`);
+        const { error: chatDelError } = await testAdminClient
+          .from('chats')
+          .delete()
+          .eq('id', testAssociatedChatId)
+          .eq('user_id', testPrimaryUserId); // Also scope by user_id for safety
+        if (chatDelError) {
+          console.warn(`[Test Cleanup] Error deleting chat session ${testAssociatedChatId}:`, chatDelError);
+        } else {
+          console.log(`[Test Cleanup] Successfully deleted chat session ${testAssociatedChatId}.`);
+        }
+      }
+
+      // Clean up token wallet transactions recorded by the test user
+      if (testPrimaryUserId && testAdminClient) {
+        console.log(`[Test Cleanup] Deleting token_wallet_transactions for user ID: ${testPrimaryUserId}`);
+        const { error: txnDelError } = await testAdminClient
+          .from('token_wallet_transactions')
+          .delete()
+          .eq('recorded_by_user_id', testPrimaryUserId);
+        if (txnDelError) {
+          console.warn(`[Test Cleanup] Error deleting token_wallet_transactions for user ${testPrimaryUserId}:`, txnDelError);
+        } else {
+          console.log(`[Test Cleanup] Successfully deleted token_wallet_transactions for user ${testPrimaryUserId}.`);
+        }
+      }
+
+      // Then, let the standard cleanup handle DB records.
       await coreCleanupTestResources('local');
     });
 
@@ -320,7 +452,7 @@ describe("Edge Function: dialectic-service", () => {
       assertExists(responseData.data, "Response data object is missing");
       assertExists(responseData.data.contributions, "Contributions array is missing from response data");
       assert(Array.isArray(responseData.data.contributions), "Contributions should be an array");
-      assert(responseData.data.contributions.length > 0, "No contributions were generated");
+      assertEquals(responseData.data.contributions.length, 2, "Expected two contributions in the response for two models.");
 
       const { data: dbContributions, error: dbError } = await testAdminClient
         .from("dialectic_contributions")
@@ -330,19 +462,27 @@ describe("Edge Function: dialectic-service", () => {
 
       assert(!dbError, `Error fetching contributions from DB: ${dbError?.message}`);
       assertExists(dbContributions, "No contributions found in DB for the session and stage");
-      assertEquals(dbContributions.length, responseData.data.contributions.length, "Mismatch in number of contributions in DB vs response");
+      assertEquals(dbContributions.length, 2, "Mismatch in number of contributions in DB vs expected for two models.");
+
+      // Ensure each DB contribution is linked to one of the known session model IDs
+      const dbContributionSessionModelIds = dbContributions.map(c => c.session_model_id);
+      for (const id of createdSessionModelIds) {
+        expect(dbContributionSessionModelIds).to.include(id, `DB contributions should include a link to session_model_id ${id}`);
+      }
 
       for (const contribution of dbContributions) {
         assertExists(contribution.id, "Contribution ID is missing in DB record");
-        assertEquals(contribution.session_model_id, testSessionModelId, "Contribution not linked to the correct session_model_id");
+        // assertEquals(contribution.session_model_id, testSessionModelId, "Contribution not linked to the correct session_model_id"); // Old assertion
+        expect(createdSessionModelIds).to.include(contribution.session_model_id, "Contribution in DB not linked to a known session_model_id for this session.");
         assertExists(contribution.content_storage_path, "content_storage_path is missing");
-        assert(contribution.content_storage_path.startsWith(`${testProjectId}/${testSessionId}/`), `Content storage path '${contribution.content_storage_path}' incorrect for project ${testProjectId} and session ${testSessionId}`);
-        assertEquals(contribution.content_storage_bucket, "dialectic-contributions", "Storage bucket is incorrect");
-        assertEquals(contribution.content_mime_type, "text/markdown", "MIME type is incorrect for thesis content"); 
+        // Storage path check needs project_id, which is testProjectId
+        assert(contribution.content_storage_path.startsWith(`projects/${testProjectId}/sessions/${testSessionId}/`), `Content storage path '${contribution.content_storage_path}' incorrect for project ${testProjectId} and session ${testSessionId}`);
+        // assertEquals(contribution.content_storage_bucket, "dialectic-contributions", "Storage bucket is incorrect"); // Bucket name is not in this table
+        // assertEquals(contribution.content_mime_type, "text/markdown", "MIME type is incorrect for thesis content"); // MIME type is not in this table
         assert(contribution.content_size_bytes && contribution.content_size_bytes > 0, "Content size should be greater than 0");
 
         if (contribution.raw_response_storage_path) {
-          assert(contribution.raw_response_storage_path.startsWith(`${testProjectId}/${testSessionId}/`), "Raw response storage path is incorrect");
+          assert(contribution.raw_response_storage_path.startsWith(`projects/${testProjectId}/sessions/${testSessionId}/`), "Raw response storage path is incorrect");
         }
       }
     });
@@ -365,8 +505,35 @@ describe("Edge Function: dialectic-service", () => {
             desiredState: { initial_user_prompt: "Test for tag update" },
             linkUserId: true,
           },
+          {
+            tableName: "domain_specific_prompt_overlays",
+            identifier: { system_prompt_id: baseThesisPromptId, domain_tag: TEST_DOMAIN_TAG_1, version: 99 },
+            desiredState: { 
+              overlay_values: { test_data: "updateProjectDomainTag suite - TDT1 Thesis" } as unknown as Json, 
+              description: "Test overlay for software_development (thesis) for updateProjectDomainTag suite",
+              is_active: true,
+            },
+          },
+          {
+            tableName: "domain_specific_prompt_overlays",
+            identifier: { system_prompt_id: baseAntithesisPromptId, domain_tag: TEST_DOMAIN_TAG_1, version: 99 },
+            desiredState: { 
+              overlay_values: { test_data: "updateProjectDomainTag suite - TDT1 Antithesis" } as unknown as Json, 
+              description: "Test overlay for software_development (antithesis) for updateProjectDomainTag suite",
+              is_active: true,
+            },
+          },
+          {
+            tableName: "domain_specific_prompt_overlays",
+            identifier: { system_prompt_id: baseThesisPromptId, domain_tag: TEST_DOMAIN_TAG_2, version: 99 },
+            desiredState: { 
+              overlay_values: { test_data: "updateProjectDomainTag suite - TDT2 Thesis" } as unknown as Json, 
+              description: "Test overlay for technical_writing (thesis) for updateProjectDomainTag suite",
+              is_active: true,
+            },
+          },
         ],
-      });
+      }, 'local');
       testUserId = setup.primaryUserId;
       testUserClient = setup.primaryUserClient;
       testUserAuthToken = await coreGenerateTestUserJwt(testUserId);
@@ -663,9 +830,39 @@ describe("Edge Function: dialectic-service", () => {
     beforeEach(async () => {
       createdProjectIds.length = 0; // Clear the array before each test in this suite
       const setup = await coreInitializeTestStep({
-        userProfile: { first_name: "CreateProjectUser" }
-        // No resources needed here as we are testing creation
-      });
+        userProfile: { first_name: "CreateProjectUser" },
+        resources: [
+          // Add required domain_specific_prompt_overlays for TEST_DOMAIN_TAG_1 and TEST_DOMAIN_TAG_2
+          {
+            tableName: "domain_specific_prompt_overlays",
+            identifier: { system_prompt_id: baseThesisPromptId, domain_tag: TEST_DOMAIN_TAG_1, version: 99 },
+            desiredState: { 
+              overlay_values: { test_data: "createProject suite - TDT1 Thesis" } as unknown as Json, 
+              description: "Test overlay for software_development (thesis) for createProject suite",
+              is_active: true,
+            },
+          },
+          {
+            tableName: "domain_specific_prompt_overlays",
+            identifier: { system_prompt_id: baseAntithesisPromptId, domain_tag: TEST_DOMAIN_TAG_1, version: 99 },
+            desiredState: { 
+              overlay_values: { test_data: "createProject suite - TDT1 Antithesis" } as unknown as Json, 
+              description: "Test overlay for software_development (antithesis) for createProject suite",
+              is_active: true,
+            },
+          },
+          {
+            tableName: "domain_specific_prompt_overlays",
+            identifier: { system_prompt_id: baseThesisPromptId, domain_tag: TEST_DOMAIN_TAG_2, version: 99 },
+            desiredState: { 
+              overlay_values: { test_data: "createProject suite - TDT2 Thesis" } as unknown as Json, 
+              description: "Test overlay for technical_writing (thesis) for createProject suite",
+              is_active: true,
+            },
+          },
+        ]
+        // No other resources needed here as we are testing creation
+      }, 'local');
       testUserId = setup.primaryUserId;
       testUserClient = setup.primaryUserClient;
       testUserAuthToken = await coreGenerateTestUserJwt(testUserId);
@@ -816,10 +1013,16 @@ describe("Edge Function: dialectic-service", () => {
       if (error && error.context && typeof error.context.json === 'function') {
         try {
           const parsedBody = await error.context.json();
-          if (parsedBody && parsedBody.error && typeof parsedBody.error.message === 'string') {
-            actualErrorMessage = parsedBody.error.message;
+          if (parsedBody && parsedBody.error) {
+            if (typeof parsedBody.error === 'string') {
+              actualErrorMessage = parsedBody.error;
+            } else if (parsedBody.error.message && typeof parsedBody.error.message === 'string') {
+              actualErrorMessage = parsedBody.error.message;
+            } else {
+               actualErrorMessage = `Parsed error.context.json() but 'error' was not a string and 'error.message' was not a string. Parsed: ${JSON.stringify(parsedBody)}`;
+            }
           } else {
-            actualErrorMessage = `Parsed error.context.json() but expected structure not found. Parsed: ${JSON.stringify(parsedBody)}`;
+            actualErrorMessage = `Parsed error.context.json() but 'error' field was not found. Parsed: ${JSON.stringify(parsedBody)}`;
           }
         } catch (e: any) {
           actualErrorMessage = `Failed to parse error.context.json(). Parse error: ${e.message}`;
@@ -858,10 +1061,16 @@ describe("Edge Function: dialectic-service", () => {
       if (error && error.context && typeof error.context.json === 'function') {
         try {
           const parsedBody = await error.context.json();
-          if (parsedBody && parsedBody.error && typeof parsedBody.error.message === 'string') {
-            actualErrorMessage = parsedBody.error.message;
+          if (parsedBody && parsedBody.error) {
+            if (typeof parsedBody.error === 'string') {
+              actualErrorMessage = parsedBody.error;
+            } else if (parsedBody.error.message && typeof parsedBody.error.message === 'string') {
+              actualErrorMessage = parsedBody.error.message;
+            } else {
+               actualErrorMessage = `Parsed error.context.json() but 'error' was not a string and 'error.message' was not a string. Parsed: ${JSON.stringify(parsedBody)}`;
+            }
           } else {
-            actualErrorMessage = `Parsed error.context.json() but expected structure not found. Parsed: ${JSON.stringify(parsedBody)}`;
+            actualErrorMessage = `Parsed error.context.json() but 'error' field was not found. Parsed: ${JSON.stringify(parsedBody)}`;
           }
         } catch (e: any) {
           actualErrorMessage = `Failed to parse error.context.json(). Parse error: ${e.message}`;

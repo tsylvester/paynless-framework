@@ -247,7 +247,7 @@ The implementation plan uses the following labels to categorize work steps:
     *   `[✅] 1.0.6.1 [BE]` Implement `uploadToStorage` function in `supabase/functions/_shared/supabase_storage_utils.ts`.
     *   `[✅] 1.0.6.2 [BE]` Enhance `supabase/functions/_shared/supabase.mock.ts` to support Supabase client storage mocking.
     *   `[✅] 1.0.6.3 [TEST-UNIT]` Write unit tests for `uploadToStorage` in `supabase/functions/_shared/supabase_storage_utils.test.ts` using the enhanced mock.
-*   `[ ] 1.0.7 [COMMIT]` feat: foundational setup, RLS, and shared storage utility (Adjusted numbering & description)
+*   `[✅] 1.0.7 [COMMIT]` feat: foundational setup, RLS, and shared storage utility (Adjusted numbering & description)
 
 ### 1.1 Database Schema for Dialectic Core (Continued)
 *   `[✅] 1.1.1 [DB]` Create `dialectic_projects` table.
