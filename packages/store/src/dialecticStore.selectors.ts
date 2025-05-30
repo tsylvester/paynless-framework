@@ -1,4 +1,4 @@
-import type { DialecticStateValues } from './dialecticStore'; // Assuming DialecticStateValues is exported
+import type { DialecticStateValues } from '@paynless/types';
 import type { ApiError } from '@paynless/types';
 
 // Selector for the list of available domain tags

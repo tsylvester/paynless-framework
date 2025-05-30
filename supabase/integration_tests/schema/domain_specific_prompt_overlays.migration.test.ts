@@ -16,7 +16,7 @@ import {
     TableColumnInfo, 
     TableConstraintInfo, 
     // IndexInfo, // Not strictly used in the active part of this test yet
-} from "../../functions/chat/_integration.test.utils.ts";
+} from "../../functions/_shared/_integration.test.utils.ts";
 
 describe("Schema Migration: domain_specific_prompt_overlays Table", () => {
   let supabaseAdmin: SupabaseClient<Database>;

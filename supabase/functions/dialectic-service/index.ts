@@ -9,7 +9,8 @@ import {
   GenerateThesisContributionsSuccessResponse, 
   CallUnifiedAIModelOptions, 
   UnifiedAIResponse,
-  SelectedAiProvider
+  SelectedAiProvider,
+  ContributionWithNestedOwner
 } from "./dialectic.interface.ts";
 import { serve } from "https://deno.land/std@0.170.0/http/server.ts";
 import {
@@ -157,6 +158,101 @@ async function createProject(
   return { data: newProjectData };
 }
 
+async function getContributionContentSignedUrlHandler(
+  req: Request, // For user authentication
+  dbClient: typeof supabaseAdmin,
+  payload: { contributionId: string }
+): Promise<{ data?: { signedUrl: string; mimeType: string; sizeBytes: number | null }; error?: { message: string; status?: number; details?: string } }> {
+  const { contributionId } = payload;
+
+  if (!contributionId) {
+    return { error: { message: "contributionId is required", status: 400 } };
+  }
+
+  const supabaseUserClient = createSupabaseClient(req);
+  const { data: { user }, error: userError } = await supabaseUserClient.auth.getUser();
+
+  if (userError || !user) {
+    logger.warn("User not authenticated for getContributionContentSignedUrl", { error: userError });
+    return { error: { message: "User not authenticated", status: 401 } };
+  }
+
+  // Fetch contribution and verify ownership through project
+  const { data: contributionData, error: contributionError } = await dbClient
+    .from('dialectic_contributions')
+    .select(`
+      content_storage_bucket,
+      content_storage_path,
+      content_mime_type,
+      content_size_bytes,
+      dialectic_sessions (
+        project_id,
+        dialectic_projects ( user_id )
+      )
+    `)
+    .eq('id', contributionId)
+    .maybeSingle();
+
+  if (contributionError) {
+    logger.error("Error fetching contribution details:", { error: contributionError, contributionId });
+    return { error: { message: "Failed to fetch contribution details.", details: contributionError.message, status: 500 } };
+  }
+
+  if (!contributionData) {
+    logger.warn("Contribution not found", { contributionId });
+    return { error: { message: "Contribution not found.", status: 404 } };
+  }
+
+  const typedContributionData = contributionData as unknown as ContributionWithNestedOwner;
+  const projectOwnerUserId = typedContributionData.dialectic_sessions?.dialectic_projects?.user_id;
+
+  if (!projectOwnerUserId || projectOwnerUserId !== user.id) {
+    logger.warn("User not authorized to access this contribution", { contributionId, userId: user.id, projectOwnerUserId });
+    return { error: { message: "User not authorized to access this contribution.", status: 403 } }; // 403 Forbidden
+  }
+
+  // Specific check for missing storage bucket
+  if (!typedContributionData.content_storage_bucket) {
+    logger.error("Contribution is missing storage bucket information", { contributionId });
+    return { error: { message: "Contribution is missing storage bucket information.", status: 500 } };
+  }
+
+  // Specific check for missing storage path (even with DB NOT NULL, good for defense in depth)
+  if (!typedContributionData.content_storage_path) {
+    logger.error("Contribution is missing storage path information", { contributionId });
+    return { error: { message: "Contribution is missing storage path information.", status: 500 } };
+  }
+  
+  // Check for missing mime type after specific checks for bucket and path
+  if (!typedContributionData.content_mime_type) {
+      logger.error("Contribution is missing MIME type information", { contributionId });
+      return { error: { message: "Contribution is missing MIME type information.", status: 500 } };
+  }
+
+  const expiresIn = 15 * 60; // 15 minutes
+  const { data: signedUrlData, error: signedUrlError } = await supabaseAdmin.storage
+    .from(typedContributionData.content_storage_bucket)
+    .createSignedUrl(typedContributionData.content_storage_path, expiresIn);
+
+  if (signedUrlError) {
+    logger.error("Error creating signed URL:", { error: signedUrlError, bucket: typedContributionData.content_storage_bucket, path: typedContributionData.content_storage_path });
+    return { error: { message: "Failed to create signed URL.", details: signedUrlError.message, status: 500 } };
+  }
+
+  if (!signedUrlData || !signedUrlData.signedUrl) {
+    logger.error("No signed URL generated despite no error or missing signedUrl property", { bucket: typedContributionData.content_storage_bucket, path: typedContributionData.content_storage_path, signedUrlData });
+    return { error: { message: "Failed to generate signed URL data.", status: 500 } };
+  }
+  
+  logger.info("Successfully generated signed URL for contribution", { contributionId, signedUrl: signedUrlData.signedUrl });
+  return {
+    data: {
+      signedUrl: signedUrlData.signedUrl,
+      mimeType: typedContributionData.content_mime_type, // Already checked for null
+      sizeBytes: typedContributionData.content_size_bytes,
+    },
+  };
+}
 
 // DomainOverlayItem and extractDistinctDomainTags are now imported
 
@@ -489,6 +585,7 @@ async function generateThesisContributions(
             session_id: sessionId,
             session_model_id: sessionModelId, // Link to the specific dialectic_session_models.id
             stage: 'thesis',
+            content_storage_bucket: BUCKET_NAME, // Ensure the bucket name is included
             content_storage_path: contentStoragePath,
             raw_response_storage_path: rawResponseStoragePath,
             tokens_used_input: aiResponse.inputTokens,
@@ -793,6 +890,13 @@ serve(async (req: Request) => {
         }
         else {
             result = await generateThesisContributions(supabaseAdmin, payload as unknown as GenerateThesisContributionsPayload, authToken);
+        }
+        break;
+      case 'getContributionContentSignedUrl':
+        if (!payload || typeof payload !== 'object' || !('contributionId' in payload)) {
+          result = { error: { message: "Invalid payload for getContributionContentSignedUrl. Expected { contributionId: string }", status: 400 } };
+        } else {
+          result = await getContributionContentSignedUrlHandler(req, supabaseAdmin, payload as { contributionId: string });
         }
         break;
       default:

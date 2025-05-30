@@ -3,6 +3,7 @@ import type {
     ApiResponse,
     DialecticProject,
     CreateProjectPayload,
+    ContributionContentSignedUrlResponse,
 } from '@paynless/types';
 import { logger } from '@paynless/utils';
 
@@ -24,18 +25,28 @@ export class DialecticApiClient {
     async listAvailableDomainTags(): Promise<ApiResponse<string[]>> {
         logger.info('Fetching available domain tags for dialectic projects');
         
-        const response = await this.apiClient.post<string[], { action: string }>(
-            'dialectic-service', // Endpoint name
-            { action: 'listAvailableDomainTags' }, // Body of the request
-            { isPublic: true } // Options: this endpoint is public
-        );
+        try {
+            const response = await this.apiClient.post<string[], { action: string }>(
+                'dialectic-service', // Endpoint name
+                { action: 'listAvailableDomainTags' }, // Body of the request
+                { isPublic: true } // Options: this endpoint is public
+            );
 
-        if (response.error) {
-            logger.error('Error fetching available domain tags:', { error: response.error });
-        } else {
-            logger.info(`Fetched ${response.data?.length ?? 0} available domain tags`);
+            if (response.error) {
+                logger.error('Error fetching available domain tags:', { error: response.error });
+            } else {
+                logger.info(`Fetched ${response.data?.length ?? 0} available domain tags`);
+            }
+            return response;
+        } catch (error: unknown) {
+            const message = error instanceof Error ? error.message : 'A network error occurred';
+            logger.error('Network error in listAvailableDomainTags:', { errorMessage: message, errorObject: error });
+            return {
+                data: undefined,
+                error: { code: 'NETWORK_ERROR', message },
+                status: 0,
+            };
         }
-        return response;
     }
 
     /**
@@ -45,18 +56,28 @@ export class DialecticApiClient {
     async createProject(payload: CreateProjectPayload): Promise<ApiResponse<DialecticProject>> {
         logger.info('Creating a new dialectic project', { projectName: payload.projectName });
 
-        const response = await this.apiClient.post<DialecticProject, { action: string; payload: CreateProjectPayload }>(
-            'dialectic-service',
-            { action: 'createProject', payload },
-            // Default options will ensure authentication is handled by apiClient
-        );
+        try {
+            const response = await this.apiClient.post<DialecticProject, { action: string; payload: CreateProjectPayload }>(
+                'dialectic-service',
+                { action: 'createProject', payload },
+                // Default options will ensure authentication is handled by apiClient
+            );
 
-        if (response.error) {
-            logger.error('Error creating dialectic project:', { error: response.error, projectName: payload.projectName });
-        } else {
-            logger.info('Successfully created dialectic project', { projectId: response.data?.id });
+            if (response.error) {
+                logger.error('Error creating dialectic project:', { error: response.error, projectName: payload.projectName });
+            } else {
+                logger.info('Successfully created dialectic project', { projectId: response.data?.id });
+            }
+            return response;
+        } catch (error: unknown) {
+            const message = error instanceof Error ? error.message : 'A network error occurred';
+            logger.error('Network error in createProject:', { errorMessage: message, errorObject: error });
+            return {
+                data: undefined,
+                error: { code: 'NETWORK_ERROR', message },
+                status: 0,
+            };
         }
-        return response;
     }
 
     /**
@@ -66,17 +87,59 @@ export class DialecticApiClient {
     async listProjects(): Promise<ApiResponse<DialecticProject[]>> {
         logger.info('Fetching list of dialectic projects for user');
 
-        const response = await this.apiClient.post<DialecticProject[], { action: string }>(
-            'dialectic-service',
-            { action: 'listProjects' }
-            // Default options will ensure authentication is handled by apiClient
-        );
+        try {
+            const response = await this.apiClient.post<DialecticProject[], { action: string }>(
+                'dialectic-service',
+                { action: 'listProjects' }
+                // Default options will ensure authentication is handled by apiClient
+            );
 
-        if (response.error) {
-            logger.error('Error fetching dialectic projects:', { error: response.error });
-        } else {
-            logger.info(`Fetched ${response.data?.length ?? 0} dialectic projects`);
+            if (response.error) {
+                logger.error('Error fetching dialectic projects:', { error: response.error });
+            } else {
+                logger.info(`Fetched ${response.data?.length ?? 0} dialectic projects`);
+            }
+            return response;
+        } catch (error: unknown) {
+            const message = error instanceof Error ? error.message : 'A network error occurred';
+            logger.error('Network error in listProjects:', { errorMessage: message, errorObject: error });
+            return {
+                data: undefined,
+                error: { code: 'NETWORK_ERROR', message },
+                status: 0,
+            };
         }
-        return response;
+    }
+
+    /**
+     * Fetches a signed URL for a specific dialectic contribution's content.
+     * Requires authentication.
+     */
+    async getContributionContentSignedUrl(contributionId: string): Promise<ApiResponse<ContributionContentSignedUrlResponse | null>> {
+        logger.info('Fetching signed URL for contribution content', { contributionId });
+
+        try {
+            const response = await this.apiClient.post<ContributionContentSignedUrlResponse | null, { action: string; payload: { contributionId: string } }>(
+                'dialectic-service',
+                { action: 'getContributionContentSignedUrl', payload: { contributionId } }
+            );
+
+            if (response.error) {
+                logger.error('Error fetching signed URL for contribution content:', { error: response.error, contributionId });
+            } else if (response.data) {
+                logger.info('Successfully fetched signed URL for contribution content', { contributionId, signedUrl: response.data.signedUrl });
+            } else {
+                logger.warn('No signed URL data returned for contribution content', { contributionId });
+            }
+            return response;
+        } catch (error: unknown) {
+            const message = error instanceof Error ? error.message : 'A network error occurred';
+            logger.error('Network error in getContributionContentSignedUrl:', { errorMessage: message, errorObject: error });
+            return {
+                data: undefined,
+                error: { code: 'NETWORK_ERROR', message },
+                status: 0,
+            };
+        }
     }
 } 

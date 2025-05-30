@@ -12,6 +12,6 @@ export * from './logger.mock';
 export * from './aiStateService.mock';
 export * from './authService.mock';
 export * from './walletService.mock';
-
+export * from './dialectic.api.mock';
 // Add exports for other mocks if they exist and are needed, e.g.:
 // export * from './stripe.mock';

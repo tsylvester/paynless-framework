@@ -15,7 +15,7 @@ import {
   assertNotEquals,
   assertThrows,
 } from "https://deno.land/std@0.208.0/assert/mod.ts";
-import { SupabaseClient } from "npm:@supabase/supabase-js@2";
+import { createClient, type SupabaseClient, FunctionsHttpError } from "npm:@supabase/supabase-js@2";
 import { Database, Json } from "../types_db.ts";
 import {
   initializeTestDeps,
@@ -25,6 +25,7 @@ import {
   initializeSupabaseAdminClient,
   setSharedAdminClient,
   TestResourceRequirement,
+  registerUndoAction,
 } from "../_shared/_integration.test.utils.ts";
 import type { DialecticServiceRequest, GenerateThesisContributionsPayload, StartSessionPayload } from "./dialectic.interface.ts";
 
@@ -607,7 +608,7 @@ describe("Edge Function: dialectic-service", () => {
       });
       
       expect(error, "Expected function invocation to result in an error due to invalid tag").to.exist;
-      expect(error.context.status, "Expected HTTP status to be 400 for invalid domain tag").to.equal(400);
+      expect(error.context.status, "Expected HTTP status 400 for invalid domain tag").to.equal(400);
 
       console.log(`[Test Debug] updateProjectDomainTag - invalid tag - error object:`, error);
       console.log(`[Test Debug] updateProjectDomainTag - invalid tag - error.context object:`, error.context);
@@ -1090,4 +1091,347 @@ describe("Edge Function: dialectic-service", () => {
 
   });
   // --- End Test Suite for createProject ---
+
+  // PLACEHOLDER FOR NEW TEST SUITE
+  describe("Action: getContributionContentSignedUrl", () => {
+    let testPrimaryUserId: string;
+    let testPrimaryUserClient: SupabaseClient<Database>;
+    let testUserAuthToken: string;
+
+    let otherTestUserId: string;
+    let otherUserClient: SupabaseClient<Database>;
+    let otherTestUserAuthToken: string;
+
+    let testProjectId: string;
+    let testSessionId: string;
+    let testContributionId: string;
+    const testBucketName = "dialectic-contributions";
+    let testStoragePath: string;
+    const testFileContent = "This is dummy content for signed URL testing.";
+    const testMimeType = "text/plain";
+    const testFileContentBuffer = new TextEncoder().encode(testFileContent);
+    const testFileSize = testFileContentBuffer.byteLength;
+    let testSessionModelId: string; // Added to store the created session_model_id
+
+    beforeEach(async () => {
+      const primaryUserSetup = await coreInitializeTestStep({
+        userProfile: { first_name: "SignedUrlOwner" },
+        resources: [
+          {
+            tableName: "dialectic_projects",
+            identifier: { project_name: `Signed URL Proj ${crypto.randomUUID().substring(0,4)}` },
+            desiredState: { initial_user_prompt: "Prompt for signed URL test." },
+            linkUserId: true,
+          },
+        ],
+      }, 'local');
+      testPrimaryUserId = primaryUserSetup.primaryUserId;
+      testPrimaryUserClient = primaryUserSetup.primaryUserClient;
+      testUserAuthToken = await coreGenerateTestUserJwt(testPrimaryUserId);
+      const projectResource = primaryUserSetup.processedResources.find(r => r.tableName === 'dialectic_projects');
+      if (!projectResource || !projectResource.resource?.id) throw new Error("Test project not created or ID missing.");
+      testProjectId = projectResource.resource.id as string;
+
+      const otherUserSetup = await coreInitializeTestStep({
+        userProfile: { first_name: "SignedUrlNonOwner" },
+      }, 'local');
+      otherTestUserId = otherUserSetup.primaryUserId;
+      otherUserClient = otherUserSetup.primaryUserClient;
+      otherTestUserAuthToken = await coreGenerateTestUserJwt(otherTestUserId);
+      
+      const { data: session, error: sessionErr } = await adminClient
+        .from("dialectic_sessions")
+        .insert({
+          project_id: testProjectId,
+          status: "thesis_complete", // Assuming this is a valid status for this test context
+          iteration_count: 1,
+          associated_chat_id: crypto.randomUUID(),
+        })
+        .select("id")
+        .single();
+      if (sessionErr || !session) throw new Error(`Failed to create session for test: ${sessionErr?.message}`);
+      testSessionId = session.id;
+      registerUndoAction({ type: 'DELETE_CREATED_ROW', tableName: 'dialectic_sessions', criteria: { id: testSessionId }, scope: 'local' });
+
+      // Create a dialectic_session_models record
+      const dummyModelId = '11111111-1111-1111-1111-111111111111'; // Using the known dummy model ID
+      const { data: sessionModel, error: sessionModelErr } = await adminClient
+        .from('dialectic_session_models')
+        .insert({
+          session_id: testSessionId,
+          model_id: dummyModelId,
+        })
+        .select('id')
+        .single();
+      if (sessionModelErr || !sessionModel) {
+        throw new Error(`Failed to create dialectic_session_models for test: ${sessionModelErr?.message}`);
+      }
+      testSessionModelId = sessionModel.id;
+      registerUndoAction({ type: 'DELETE_CREATED_ROW', tableName: 'dialectic_session_models', criteria: { id: testSessionModelId }, scope: 'local' });
+
+      testContributionId = crypto.randomUUID();
+      testStoragePath = `${testProjectId}/${testSessionId}/${testContributionId}.txt`;
+      const { error: uploadError } = await adminClient.storage
+        .from(testBucketName)
+        .upload(testStoragePath, testFileContentBuffer, { contentType: testMimeType, upsert: true });
+      if (uploadError) throw new Error(`Storage upload failed for test: ${uploadError.message}`);
+      registerUndoAction({ 
+        type: 'DELETE_STORAGE_OBJECT',
+        bucketName: testBucketName, 
+        path: testStoragePath, 
+        scope: 'local' 
+      });
+      
+      const { data: contributionRec, error: contribErr } = await adminClient
+        .from("dialectic_contributions")
+        .insert({
+          id: testContributionId,
+          session_id: testSessionId,
+          session_model_id: testSessionModelId, // Use the created session_model_id
+          stage: "thesis",
+          content_storage_bucket: testBucketName,
+          content_storage_path: testStoragePath,
+          content_mime_type: testMimeType,
+          content_size_bytes: testFileSize,
+        })
+        .select('id')
+        .single();
+      if (contribErr || !contributionRec) throw new Error(`Failed to create contribution for test: ${contribErr?.message}`);
+      registerUndoAction({ type: 'DELETE_CREATED_ROW', tableName: 'dialectic_contributions', criteria: { id: testContributionId }, scope: 'local' });
+    });
+
+    afterEach(async () => {
+      await coreCleanupTestResources('local');
+    });
+
+    it("should return a signed URL for an owned contribution", async () => {
+      const request: DialecticServiceRequest = {
+        action: "getContributionContentSignedUrl",
+        payload: { contributionId: testContributionId },
+      };
+      const { data: funcResponse, error: funcError } = await testPrimaryUserClient.functions.invoke(
+        "dialectic-service",
+        { body: request, headers: { Authorization: `Bearer ${testUserAuthToken}` } }
+      );
+      expect(funcError, `Function invocation error: ${funcError?.message}`).to.be.null;
+      assertExists(funcResponse, "Function response should exist");
+      expect(funcResponse.error, `Service action error: ${JSON.stringify(funcResponse.error)}`).to.be.undefined;
+      assertExists(funcResponse.data, "Response data should exist");
+      const { signedUrl, mimeType, sizeBytes } = funcResponse.data as any;
+      expect(signedUrl).to.be.a("string").and.not.empty;
+      expect(signedUrl).to.include(testBucketName).and.include(testStoragePath.split('/').pop());
+      expect(mimeType).to.equal(testMimeType);
+      expect(sizeBytes).to.equal(testFileSize);
+    });
+
+    it("should fail for an unauthenticated request", async () => {
+      const requestPayload: DialecticServiceRequest = {
+        action: "getContributionContentSignedUrl",
+        payload: { contributionId: testContributionId },
+      };
+
+      let funcError: any = null;
+      let funcResponse: any = null;
+
+      try {
+        // Create an unauthenticated client using createClient
+        const unauthClient = createClient(
+          Deno.env.get("SUPABASE_URL") ?? "",
+          Deno.env.get("SUPABASE_ANON_KEY") ?? "",
+          { auth: { persistSession: false, autoRefreshToken: false } } // Ensure no session persistence or auto-refresh
+        );
+        const { data, error } = await unauthClient.functions.invoke("dialectic-service", {
+          body: requestPayload,
+        });
+        funcResponse = data;
+        funcError = error;
+      } catch (e) {
+        funcError = e;
+      }
+      
+      assertExists(funcError, "Expected an error for unauthenticated request.");
+      if (funcError && Object.prototype.hasOwnProperty.call(funcError, 'context')) {
+        expect(funcError.context.status).to.equal(401);
+        try {
+            const errorBody = JSON.parse(await funcError.context.text());
+            expect(errorBody.error.message).to.equal("User not authenticated");
+        } catch (_e) {
+            console.warn("[Test Warning] Unauthenticated request did not return a JSON error body, but status was 401.");
+        }
+      } else {
+        console.warn("[Test Warning] Unauthenticated request error was not a FunctionsHttpError with context. Error:", funcError);
+      }
+      expect(funcResponse?.data).to.be.undefined;
+    });
+
+    it("should fail if the contribution is not found", async () => {
+      const requestPayload: DialecticServiceRequest = {
+        action: "getContributionContentSignedUrl",
+        payload: { contributionId: crypto.randomUUID() }, // Non-existent ID
+      };
+
+      let invokeException: any = null;
+      let funcHttpError: FunctionsHttpError | null = null;
+      let responseJson: any = null;
+
+      try {
+        const { data, error } = await testPrimaryUserClient.functions.invoke("dialectic-service", {
+          body: requestPayload,
+          headers: { Authorization: `Bearer ${testUserAuthToken}` },
+        });
+        if (error) {
+          funcHttpError = error;
+          if (error.context && typeof error.context.json === 'function') {
+            responseJson = await error.context.json();
+          } else if (error.context && error.context.body) {
+            const text = await error.context.text();
+            try { responseJson = JSON.parse(text); } catch { responseJson = { error: { message: text } }; }
+          } else {
+            responseJson = { error: { message: error.message || 'Unknown error structure'} };
+          }
+        } else {
+          console.warn("[Test Warning] Contribution not found test received a 2xx response unexpectedly.");
+          responseJson = data;
+        }
+      } catch (e) {
+        invokeException = e;
+        if (e instanceof Error) {
+          responseJson = { error: { message: e.message, code: e.name } };
+        } else {
+          responseJson = { error: { message: String(e), code: "UnknownException" } };
+        }
+      }
+      
+      assertExists(funcHttpError, "Function invocation should have resulted in a FunctionsHttpError.");
+      expect(funcHttpError?.message).to.include("Edge Function returned a non-2xx status code");
+      assertExists(funcHttpError?.context, "Error context should exist for HTTP errors.");
+      expect(funcHttpError?.context.status).to.equal(404); 
+
+      console.log("[Test Debug] 'Contribution not found' responseJson:", JSON.stringify(responseJson)); // DEBUGGING
+      assertExists(responseJson, "Parsed JSON error response should exist.");
+      assertExists(responseJson.error, "Expected 'error' property in parsed JSON response.");
+      expect(responseJson.error).to.equal("Contribution not found.");
+    });
+
+    it("should fail if the user is not the owner of the contribution's project", async () => {
+      const requestPayload: DialecticServiceRequest = {
+        action: "getContributionContentSignedUrl",
+        payload: { contributionId: testContributionId }, // testContributionId is owned by testPrimaryUser
+      };
+
+      let invokeException: any = null;
+      let funcHttpError: FunctionsHttpError | null = null;
+      let responseJson: any = null;
+
+      try {
+        const { data, error } = await otherUserClient.functions.invoke("dialectic-service", { 
+          body: requestPayload,
+          headers: { Authorization: `Bearer ${otherTestUserAuthToken}` },
+        });
+        if (error) {
+          funcHttpError = error;
+          if (error.context && typeof error.context.json === 'function') {
+            responseJson = await error.context.json();
+          } else if (error.context && error.context.body) {
+            const text = await error.context.text();
+            try { responseJson = JSON.parse(text); } catch { responseJson = { error: { message: text } }; }
+          } else {
+            responseJson = { error: { message: error.message || 'Unknown error structure'} }; 
+          }
+        } else {
+          console.warn("[Test Warning] Non-owner access test received a 2xx response unexpectedly.");
+          responseJson = data;
+        }
+      } catch (e) {
+        invokeException = e;
+        if (e instanceof Error) {
+          responseJson = { error: { message: e.message, code: e.name } };
+        } else {
+          responseJson = { error: { message: String(e), code: "UnknownException" } };
+        }
+      }
+
+      assertExists(funcHttpError, "Function invocation should have resulted in a FunctionsHttpError for non-owner.");
+      expect(funcHttpError?.message).to.include("Edge Function returned a non-2xx status code");
+      assertExists(funcHttpError?.context, "Error context should exist for HTTP errors.");
+      expect(funcHttpError?.context.status).to.equal(403);
+
+      console.log("[Test Debug] 'Not owner' responseJson:", JSON.stringify(responseJson)); // DEBUGGING
+      assertExists(responseJson, "Parsed JSON error response should exist.");
+      assertExists(responseJson.error, "Expected 'error' property in parsed JSON response.");
+      expect(responseJson.error).to.equal("User not authorized to access this contribution.");
+    });
+
+    it("should return a 401 if the JWT is missing or invalid for getContributionContentSignedUrl", async () => {
+      const requestPayload: DialecticServiceRequest = {
+        action: "getContributionContentSignedUrl",
+        payload: { contributionId: testContributionId },
+      };
+
+      let invokeException: any = null;
+      let funcHttpError: FunctionsHttpError | null = null;
+      let responseJson: any = null;
+
+      try {
+        // Use a clearly invalid token
+        const { data, error } = await testPrimaryUserClient.functions.invoke("dialectic-service", {
+          body: requestPayload,
+          headers: { Authorization: `Bearer invalid.jwt.token` }, 
+        });
+
+        if (error) {
+          if (error instanceof FunctionsHttpError) {
+            funcHttpError = error;
+            try {
+              const parsedError = await error.context.json();
+              // If parsedError is the actual error message (e.g., from GoTrue), wrap it.
+              if (typeof parsedError.msg === 'string') { // GoTrue returns { msg: "..." }
+                responseJson = { error: { message: parsedError.msg, code: String(error.context.status) } };
+              } else if (typeof parsedError.error === 'string') { // Edge function's format
+                responseJson = { error: { message: parsedError.error, code: String(error.context.status) } };
+              } else if (parsedError.error && typeof parsedError.error.message === 'string') { // Deeper nested error
+                responseJson = { error: { message: parsedError.error.message, code: parsedError.error.code || String(error.context.status) } };
+              } else {
+                // Fallback for unknown error structure
+                responseJson = { error: { message: JSON.stringify(parsedError), code: String(error.context.status) } };
+              }
+            } catch (jsonParseError) {
+              // If parsing JSON fails, use the raw response text or a generic message
+              const responseText = await error.context.text().catch(() => "Could not parse error response");
+              responseJson = { error: { message: responseText, code: String(error.context.status) } };
+              console.warn("Error parsing JSON from FunctionsHttpError context, using raw text:", responseText);
+            }
+          } else {
+            // Not a FunctionsHttpError, but still an error from the invoke call itself
+            invokeException = error;
+            responseJson = { error: { message: error.message || String(error), code: error.name || "InvokeClientError" } };
+          }
+        } else if (data) { // Should not happen for an error case, but good to log if it does
+          console.warn("Received data instead of error for an expected error scenario (401). Data:", data);
+          responseJson = { error: { message: "Received data instead of error", code: "UnexpectedSuccess" } };
+        }
+
+      } catch (e) {
+        invokeException = e;
+        if (e instanceof Error) {
+          responseJson = { error: { message: e.message, code: e.name } };
+        } else {
+          responseJson = { error: { message: String(e), code: "UnknownException" } };
+        }
+      }
+      
+      console.log("[Test Debug] '401 Unauthenticated/Invalid JWT' responseJson:", JSON.stringify(responseJson)); // DEBUGGING
+
+      assertExists(funcHttpError, "Function invocation should have resulted in a FunctionsHttpError for invalid JWT.");
+      assertExists(funcHttpError?.context, "Error context should exist for HTTP errors.");
+      expect(funcHttpError?.context.status).to.equal(401); 
+
+      assertExists(responseJson, "Parsed JSON error response should exist.");
+      assertExists(responseJson.error, "Expected 'error' property in parsed JSON response.");
+      // Check for GoTrue's specific message or a general unauthenticated message
+      const possibleMessages = ["Invalid JWT", "JWT invalid", "Unauthorized"];
+      expect(possibleMessages.some(msg => responseJson.error.message.includes(msg))).to.be.true;
+    });
+
+  }); // End of describe("Action: getContributionContentSignedUrl")
 }); 

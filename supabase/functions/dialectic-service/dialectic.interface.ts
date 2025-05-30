@@ -91,3 +91,19 @@ export interface SelectedAiProvider {
   api_identifier: string;   // Actual 'api_identifier' column from ai_providers
   // Removed api_key_name, supports_json_response, supports_system_prompt as they don't exist on ai_providers table
 }
+
+  // Check ownership: contributionData.dialectic_sessions.dialectic_projects.user_id must match user.id
+  // Type acrobatics because of Supabase joins
+  // Define an interim type for the expected structure
+  export interface ContributionWithNestedOwner {
+    content_storage_bucket: string | null;
+    content_storage_path: string | null;
+    content_mime_type: string | null;
+    content_size_bytes: number | null;
+    dialectic_sessions: {
+      project_id: string | null;
+      dialectic_projects: {
+        user_id: string | null;
+      } | null;
+    } | null;
+  }

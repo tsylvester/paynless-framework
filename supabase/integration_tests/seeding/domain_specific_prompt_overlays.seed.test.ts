@@ -8,7 +8,7 @@ import {
 } from "https://deno.land/std@0.208.0/testing/bdd.ts";
 import { SupabaseClient } from "npm:@supabase/supabase-js@2";
 import { Database, Json } from "../../functions/types_db.ts";
-import { initializeSupabaseAdminClient } from "../../functions/chat/_integration.test.utils.ts";
+import { initializeSupabaseAdminClient } from "../../functions/_shared/_integration.test.utils.ts";
 
 // Define the structure of our seed data for clarity in the test
 interface ExpectedDomainOverlaySeed {

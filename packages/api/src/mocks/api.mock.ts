@@ -4,30 +4,17 @@ import {
   TokenWallet, 
   TokenWalletTransaction, 
   PaymentInitiationResult, 
-  PurchaseRequest 
+  PurchaseRequest, 
 } from '@paynless/types';
 // Import types from the actual dialectic.api.ts to ensure consistency
-import type { DialecticProject, CreateProjectPayload } from '../dialectic.api'; 
 import { createMockAiApiClient, resetMockAiApiClient, type MockedAiApiClient } from './ai.api.mock'; // Import from sibling
+import { type MockDialecticApiClient, mockDialecticClientInstance } from './dialectic.api.mock';
 
 // Define the type for the object returned by api.wallet()
 export type MockWalletApiClient = {
   getWalletInfo: ReturnType<typeof vi.fn<[organizationId?: string | null | undefined], Promise<ApiResponse<TokenWallet | null>>>>;
   getWalletTransactionHistory: ReturnType<typeof vi.fn<[organizationId?: string | null | undefined, limit?: number | undefined, offset?: number | undefined], Promise<ApiResponse<TokenWalletTransaction[]>>>>;
   initiateTokenPurchase: ReturnType<typeof vi.fn<[request: PurchaseRequest], Promise<ApiResponse<PaymentInitiationResult | null>>>>;
-};
-
-// --- Dialectic Client Mock Setup ---
-export type MockDialecticApiClient = {
-    listAvailableDomainTags: ReturnType<typeof vi.fn<[], Promise<ApiResponse<string[]>>>>;
-    createProject: ReturnType<typeof vi.fn<[payload: CreateProjectPayload], Promise<ApiResponse<DialecticProject>>>>;
-    listProjects: ReturnType<typeof vi.fn<[], Promise<ApiResponse<DialecticProject[]>>>>;
-};
-
-const mockDialecticClientInstance: MockDialecticApiClient = {
-    listAvailableDomainTags: vi.fn(),
-    createProject: vi.fn(),
-    listProjects: vi.fn(),
 };
 
 // --- AI Client Mock Setup ---
@@ -71,11 +58,6 @@ export function resetApiMock() {
   // Optionally, to ensure absolutely no state leakage if tests improperly hold references:
   // mockAiClientInstance = createMockAiApiClient();
 
-  // Reset the Dialectic client instance
-  mockDialecticClientInstance.listAvailableDomainTags.mockReset();
-  mockDialecticClientInstance.createProject.mockReset();
-  mockDialecticClientInstance.listProjects.mockReset();
-
   // Reset the main accessor mocks
   api.wallet.mockClear();
   api.ai.mockClear();
@@ -83,19 +65,14 @@ export function resetApiMock() {
   // Restore the default implementations to return the (potentially recreated) instances
   api.wallet.mockImplementation(() => mockWalletClientInstance);
   api.ai.mockImplementation(() => mockAiClientInstance);
-  api.dialectic.mockImplementation(() => mockDialecticClientInstance);
-}
+}  api.dialectic.mockImplementation(() => mockDialecticClientInstance);
+
 
 /**
  * Helper to get the current instance of the mock AI client.
  * Useful for tests to access specific mock functions like sendChatMessage.
  */
 export const getMockAiClient = (): MockedAiApiClient => mockAiClientInstance;
-
-/**
- * Helper to get the current instance of the mock Dialectic client.
- */
-export const getMockDialecticClient = (): MockDialecticApiClient => mockDialecticClientInstance;
 
 // Make sure 'api' is exported and is the mockApiObject
 // ... existing code ... 

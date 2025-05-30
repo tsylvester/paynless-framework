@@ -64,7 +64,8 @@ export type UndoAction =
       identifier: Record<string, any>; // To uniquely identify the row for restoration
       originalRow: Database['public']['Tables'][keyof Database['public']['Tables']]['Row']; // The complete original row data
       scope: 'global' | 'local';
-    };
+    }
+  | { type: 'DELETE_STORAGE_OBJECT'; bucketName: string; path: string; scope: 'global' | 'local'; };
   // Future: Add more as needed, e.g., for wallet balance adjustments if not covered by row restoration
   // | { type: 'RESTORE_WALLET_BALANCE'; userId: string; organizationId?: string | null; originalBalance: number; scope: 'global' | 'local'; };
 
@@ -151,6 +152,17 @@ export async function coreCleanupTestResources(executionScope: 'all' | 'local' =
             console.error(`[TestUtil] Error executing UNDO RESTORE_UPDATED_ROW in ${action.tableName} with criteria ${JSON.stringify(action.identifier)}:`, error);
           } else {
             console.log(`[TestUtil] Successfully executed UNDO RESTORE_UPDATED_ROW in ${action.tableName} with criteria ${JSON.stringify(action.identifier)}`);
+          }
+          break;
+        }
+        case 'DELETE_STORAGE_OBJECT': {
+          const { error: deleteStorageError } = await supabaseAdminClient.storage
+            .from(action.bucketName)
+            .remove([action.path]);
+          if (deleteStorageError) {
+            console.error(`[TestUtil] Error executing UNDO DELETE_STORAGE_OBJECT for ${action.bucketName}/${action.path}:`, deleteStorageError);
+          } else {
+            console.log(`[TestUtil] Successfully executed UNDO DELETE_STORAGE_OBJECT for ${action.bucketName}/${action.path}`);
           }
           break;
         }

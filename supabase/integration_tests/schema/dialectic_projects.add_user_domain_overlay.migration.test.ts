@@ -12,7 +12,7 @@ import {
     initializeSupabaseAdminClient, 
     getTableColumns,
     TableColumnInfo,
-} from "../../functions/chat/_integration.test.utils.ts";
+} from "../../functions/_shared/_integration.test.utils.ts";
 
 describe("Schema Migration: dialectic_projects Table - Add user_domain_overlay_values", () => {
   let supabaseAdmin: SupabaseClient<Database>;

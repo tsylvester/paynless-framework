@@ -329,20 +329,20 @@ The implementation plan uses the following labels to categorize work steps:
             *   `[✅] 1.1.5.A.2.5 [TEST-UNIT]` Unit test. (RED -> GREEN)
 *   `[🚧] 1.1.5.B [BE]` Integrate Storage Utilities into `dialectic-service` (Content Handling)
     *   Modify relevant actions in `dialectic-service` (e.g., `generateThesisContributions`, `generateAntithesisContributions`, etc., which are called by `callUnifiedAIModel` or its callers).
-    *   `[🚧] 1.1.5.B.1` When an AI model's output is received:
+    *   `[✅] 1.1.5.B.1` When an AI model's output is received:
         1.  `[✅]` Generate a UUID for the `dialectic_contributions.id` *before* uploading content, so it can be used in the storage path for consistency. (GREEN)
         2.  `[✅]` Define the storage path (e.g., using `project_id`, `session_id`, and the new `contribution_id`). Example: `${projectId}/${sessionId}/${contributionId}.md`. (GREEN)
         3.  `[✅]` Use the `uploadToStorage` utility to save the AI-generated content to the `dialectic_contributions` bucket with the correct `contentType` (e.g., `text/markdown`). (GREEN)
         4.  `[✅]` Use `getFileMetadata` to get the `sizeBytes` after upload. (GREEN)
-         5.  `[🚧]` In the `dialectic_contributions` table, store:
+         5.  `[✅]` In the `dialectic_contributions` table, store:
             *   `[✅]` `content_storage_bucket` (e.g., "dialectic_contributions"). (GREEN)
             *   `[✅]` The actual `content_storage_path` returned by the upload. (GREEN)
             *   `[✅]` `content_mime_type` (e.g., "text/markdown"). (GREEN)
             *   `[✅]` `content_size_bytes`. (GREEN)
          6.  `[ ]` (Optional) If storing raw provider responses: generate a separate path (e.g., `${projectId}/${sessionId}/${contributionId}_raw.json`), upload, and save to `raw_response_storage_path`.
-    *   `[🚧] 1.1.5.B.2 [TEST-INT]` Update/write integration tests for `dialectic-service` actions (e.g., `generateThesisContributions`) to:
+    *   `[✅] 1.1.5.B.2 [TEST-INT]` Update/write integration tests for `dialectic-service` actions (e.g., `generateThesisContributions`) to:
         *   `[✅]` Mock the storage utility functions. (Effectively tested via test utils)
-        *   `[🚧]` Verify that these functions are called with correct parameters.
+        *   `[✅]` Verify that these functions are called with correct parameters.
         *   `[✅]` Verify that the `dialectic_contributions` record is saved with the correct storage path, bucket, mime type, and size. (GREEN)
 *   `[ ] 1.1.5.C [API/STORE/UI]` Client-Side Content Retrieval and Display
     *   `[ ] 1.1.5.C.1 [API]` The `DialecticContribution` type (in `packages/api/.../dialectic.api.ts` types) will now include `contentStorageBucket`, `contentStoragePath`, `contentMimeType`, `contentSizeBytes` and *not* the direct `content` string.
@@ -352,7 +352,7 @@ The implementation plan uses the following labels to categorize work steps:
             1.  Fetch the `dialectic_contributions` record by `contributionId` to get its `content_storage_bucket` and `content_storage_path`.
             2.  Use the `createSignedUrlForPath` storage utility to generate a signed URL for reading the content (with a reasonable expiry, e.g., 5-15 minutes).
             3.  Return the `signedUrl`, `content_mime_type`, and `content_size_bytes`.
-        *   `[ ] 1.1.5.C.2.1 [TEST-INT]` Write integration test for this backend service action. (RED -> GREEN)
+        *   `[✅] 1.1.5.C.2.1 [TEST-INT]` Write integration test for this backend service action. (RED -> GREEN)
         *   `[ ] 1.1.5.C.2.2 [TEST-UNIT]` Write unit test for the API adapter method. (RED -> GREEN)
     *   `[ ] 1.1.5.C.3 [STORE]` Update/Create state and thunks in `dialecticStore.ts`:
         *   State: `contributionContentCache: { [contributionId: string]: { signedUrl?: string, expiry?: number, content?: string, isLoading: boolean, error?: string, mimeType?: string, sizeBytes?: number } }`.
@@ -459,7 +459,7 @@ The implementation plan uses the following labels to categorize work steps:
         2.  `[✅]` Verify session status is `pending_thesis`. Update to `generating_thesis`. Log this transition.
         3.  `[🚧]` For each `session_model` representing an AI provider selected for this session (retrieved from `dialectic_session_models`):
             *   `[✅]` Call `callUnifiedAIModel` with that specific `session_model.model_id` (which is an `ai_providers.id`), the `current_stage_seed_prompt`, and the `session.associated_chat_id`.
-            *   `[🚧]` Save result in `dialectic_contributions` (stage 'thesis', `actual_prompt_sent` = `current_stage_seed_prompt`, store costs, tokens from `UnifiedAIResponse`). If a model call fails, record the error in the contribution and proceed with other models. (Cost/token storage and refined error handling in contribution evolving)
+            *   `[✅]` Save result in `dialectic_contributions` (stage 'thesis', `actual_prompt_sent` = `current_stage_seed_prompt`, store costs, tokens from `UnifiedAIResponse`, ensured `content_storage_bucket` is NOT NULL and correctly populated along with path, mime type, and size). If a model call fails, record the error in the contribution and proceed with other models. (Refined error handling in contribution evolving)
         4.  `[🚧]` Update `dialectic_sessions.status` to `thesis_complete`. Log this transition. (Consider `thesis_complete_with_errors` status)
         5.  `[✅]` This action concludes. The next stage (Antithesis) will be triggered by a separate user action.
     *   `[✅] 1.2.4.3` (GREEN)

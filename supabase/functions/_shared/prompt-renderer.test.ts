@@ -1,5 +1,5 @@
 // @deno-types="npm:@types/chai@4.3.1"
-import { expect } from "npm:chai@4.3.7";
+import { expect } from "https://deno.land/x/expect@v0.3.0/mod.ts";
 import { describe, it } from "https://deno.land/std@0.208.0/testing/bdd.ts";
 import { Json } from "../types_db.ts"; // Assuming Json type is useful here
 import { renderPrompt } from "./prompt-renderer.ts"; // Function to be created
