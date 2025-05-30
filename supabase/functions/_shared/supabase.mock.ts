@@ -71,6 +71,7 @@ export interface IMockSupabaseClient {
   getLatestBuilder(tableName: string): IMockQueryBuilder | undefined;
   getHistoricBuildersForTable(tableName: string): IMockQueryBuilder[] | undefined;
   clearAllTrackedBuilders(): void;
+  getStorageBucketApiInstance(bucketId: string): IMockStorageBucketAPI | undefined;
   getSpiesForTableQueryMethod: (tableName: string, methodName: keyof IMockQueryBuilder, callIndex?: number) => Spy | undefined;
 }
 
@@ -83,6 +84,10 @@ export interface IMockClientSpies {
   storage: {
     from: (bucketId: string) => {
       uploadSpy: Spy<IMockStorageBucketAPI['upload']>;
+      downloadSpy: Spy<IMockStorageBucketAPI['download']>;
+      createSignedUrlSpy: Spy<IMockStorageBucketAPI['createSignedUrl']>;
+      removeSpy: Spy<IMockStorageBucketAPI['remove']>;
+      listSpy: Spy<IMockStorageBucketAPI['list']>;
     };
   };
   getLatestQueryBuilderSpies: (tableName: string) => ({
@@ -153,24 +158,32 @@ export interface IMockClientSpies {
   }
 
   export interface IMockStorageDownloadResponse {
-    data: Blob | null; // Supabase download typically returns Blob
+    data: Blob | null;
+    error: Error | null;
+  }
+  
+  export interface IMockStorageSignedUrlResponse {
+    data: { signedUrl: string } | null;
+    error: Error | null;
+  }
+  
+  export interface IMockStorageListResponse { // New interface for list response
+    data: { name: string; id?: string; updated_at?: string; created_at?: string; last_accessed_at?: string; metadata?: Record<string, any> }[] | null;
     error: Error | null;
   }
   
   // Interface for the API of a specific bucket (e.g., client.storage.from('avatars'))
   export interface IMockStorageBucketAPI {
     upload: (path: string, body: unknown, options?: IMockStorageFileOptions) => Promise<IMockStorageUploadResponse>;
-    // download: Spy< (path: string) => Promise<IMockStorageDownloadResponse> >;
-    // createSignedUrl: Spy< (path: string, expiresIn: number) => Promise<{ data: { signedUrl: string } | null; error: Error | null }> >;
-    // delete: Spy< (paths: string[]) => Promise<IMockStorageBasicResponse> >;
-    // list: Spy< (path?: string, options?: { limit?: number; offset?: number; sortBy?: { column: string; order: string; }; search?: string }) => Promise<{ data: any[] | null; error: Error | null }> >;
-    // Add more methods as needed (download, list, createSignedUrl, delete, etc.)
+    download: (path: string) => Promise<IMockStorageDownloadResponse>;
+    createSignedUrl: (path: string, expiresIn: number) => Promise<IMockStorageSignedUrlResponse>;
+    remove: (paths: string[]) => Promise<IMockStorageBasicResponse>;
+    list: (path?: string, options?: { limit?: number; offset?: number; sortBy?: { column: string; order: string; }; search?: string; }) => Promise<IMockStorageListResponse>;
   }
   
   // Interface for the top-level storage API (e.g., client.storage)
   export interface IMockStorageAPI {
     from: (bucketId: string) => IMockStorageBucketAPI;
-    // listBuckets: Spy< () => Promise<{ data: any[] | null; error: Error | null }> >;
   }
   // --- END: Storage Mock Types ---
   
@@ -188,11 +201,13 @@ export interface IMockClientSpies {
       rpcResults?: {
           [functionName: string]: { data?: object | object[] | null; error?: Error | null } | (() => Promise<{ data?: object | object[] | null; error?: Error | null }>);
       };
-      storageMock?: { // Configuration for storage mocks
-        defaultBucket?: string; // Optional: if most tests use one bucket
+      storageMock?: { 
+        defaultBucket?: string; 
         uploadResult?: IMockStorageUploadResponse | ((bucketId: string, path: string, body: unknown, options?: IMockStorageFileOptions) => Promise<IMockStorageUploadResponse>);
-        // downloadResult?: IMockStorageDownloadResponse | ((bucketId: string, path: string) => Promise<IMockStorageDownloadResponse>);
-        // Add other results like createSignedUrlResult, deleteResult, listResult
+        downloadResult?: IMockStorageDownloadResponse | ((bucketId: string, path: string) => Promise<IMockStorageDownloadResponse>);
+        createSignedUrlResult?: IMockStorageSignedUrlResponse | ((bucketId: string, path: string, expiresIn: number) => Promise<IMockStorageSignedUrlResponse>);
+        removeResult?: IMockStorageBasicResponse | ((bucketId: string, paths: string[]) => Promise<IMockStorageBasicResponse>);
+        listResult?: IMockStorageListResponse | ((bucketId: string, path?: string, options?: object) => Promise<IMockStorageListResponse>);
       };
       mockUser?: User | null; 
       simulateAuthError?: Error | null;
@@ -522,31 +537,87 @@ class MockSupabaseAuth implements IMockSupabaseAuth {
 
 // --- START: MockStorageBucketAPI Implementation ---
 class MockStorageBucketAPIImpl implements IMockStorageBucketAPI {
-    // Change type to be the function signature, matching the interface.
-    // The spy object itself is callable with this signature.
+    private bucketId: string;
+    private config: MockSupabaseDataConfig;
     public upload: (path: string, body: unknown, options?: IMockStorageFileOptions) => Promise<IMockStorageUploadResponse>;
+    public download: (path: string) => Promise<IMockStorageDownloadResponse>;
+    public createSignedUrl: (path: string, expiresIn: number) => Promise<IMockStorageSignedUrlResponse>;
+    public remove: (paths: string[]) => Promise<IMockStorageBasicResponse>;
+    public list: (path?: string, options?: { limit?: number; offset?: number; sortBy?: { column: string; order: string; }; search?: string; }) => Promise<IMockStorageListResponse>;
     
-    // public download: Spy<(path: string) => Promise<IMockStorageDownloadResponse>>;
-    // ... other spies
-
-    constructor(private bucketId: string, private config: MockSupabaseDataConfig) {
-        // _performUpload is now public to ensure spy can bind and for keyof this.
-        // The result of spy() is assigned to this.upload. It's both a spy and callable.
+    constructor(bucketId: string, config: MockSupabaseDataConfig) {
+        this.bucketId = bucketId;
+        this.config = config;
         this.upload = spy(this, 'performUploadInternal') as unknown as (path: string, body: unknown, options?: IMockStorageFileOptions) => Promise<IMockStorageUploadResponse>;
-        // console.log('[MockStorageBucketAPIImpl constructor] this.upload (the spy object):', this.upload);
-        // console.log('[MockStorageBucketAPIImpl constructor] this.upload.callCount (initial):', (this.upload as any).callCount);
+        this.download = spy(this, 'performDownloadInternal') as unknown as (path: string) => Promise<IMockStorageDownloadResponse>;
+        this.createSignedUrl = spy(this, 'performCreateSignedUrlInternal') as unknown as (path: string, expiresIn: number) => Promise<IMockStorageSignedUrlResponse>;
+        this.remove = spy(this, 'performRemoveInternal') as unknown as (paths: string[]) => Promise<IMockStorageBasicResponse>;
+        this.list = spy(this, 'performListInternal') as unknown as (path?: string, options?: { limit?: number; offset?: number; sortBy?: { column: string; order: string; }; search?: string; }) => Promise<IMockStorageListResponse>;
     }
 
-    // Renamed and made public to ensure spy() can access it via keyof this.
     public async performUploadInternal(path: string, body: unknown, options?: IMockStorageFileOptions): Promise<IMockStorageUploadResponse> {
-        console.log(`[Mock Storage API Impl - ${this.bucketId}] performUploadInternal called with path: ${path}, options: ${JSON.stringify(options)}`);
         if (typeof this.config.storageMock?.uploadResult === 'function') {
             return this.config.storageMock.uploadResult(this.bucketId, path, body, options);
         } else if (this.config.storageMock?.uploadResult) {
             return this.config.storageMock.uploadResult;
         }
-        console.warn(`[Mock Storage API Impl - ${this.bucketId}] No specific uploadResult mock for performUploadInternal. Returning default success for path: ${path}`);
         return { data: { path: path }, error: null }; 
+    }
+
+    public async performDownloadInternal(path: string): Promise<IMockStorageDownloadResponse> {
+        if (typeof this.config.storageMock?.downloadResult === 'function') {
+            return this.config.storageMock.downloadResult(this.bucketId, path);
+        } else if (this.config.storageMock?.downloadResult) {
+            return this.config.storageMock.downloadResult;
+        }
+        return { data: null, error: null };
+    }
+
+    public async performCreateSignedUrlInternal(path: string, expiresIn: number): Promise<IMockStorageSignedUrlResponse> {
+        if (typeof this.config.storageMock?.createSignedUrlResult === 'function') {
+            return this.config.storageMock.createSignedUrlResult(this.bucketId, path, expiresIn);
+        } else if (this.config.storageMock?.createSignedUrlResult) {
+            return this.config.storageMock.createSignedUrlResult;
+        }
+        return { data: { signedUrl: `mocked://signed-url/${this.bucketId}/${path}?expires_in=${expiresIn}` }, error: null };
+    }
+
+    public async performRemoveInternal(paths: string[]): Promise<IMockStorageBasicResponse> {
+        console.log(`[MockStorageBucketAPI ${this.bucketId}] performRemoveInternal called with paths:`, paths);
+        if (this.config.storageMock?.removeResult) {
+            if (typeof this.config.storageMock.removeResult === 'function') {
+                try {
+                    return await (this.config.storageMock.removeResult as (bucketId: string, paths: string[]) => Promise<IMockStorageBasicResponse>)(this.bucketId, paths);
+                } catch (e: unknown) {
+                    const message = e instanceof Error ? e.message : 'Error executing removeResult hook';
+                    console.error(`[MockStorageBucketAPI ${this.bucketId}] Error in removeResult hook:`, message);
+                    return { data: null, error: new Error(message) };
+                }
+            } else {
+                return this.config.storageMock.removeResult;
+            }
+        }
+        console.warn(`[MockStorageBucketAPI ${this.bucketId}] No removeResult configured for paths: ${paths.join(', ')}. Returning default success.`);
+        return { data: null, error: null };
+    }
+
+    public async performListInternal(path?: string, options?: { limit?: number; offset?: number; sortBy?: { column: string; order: string; }; search?: string; }): Promise<IMockStorageListResponse> {
+        console.log(`[MockStorageBucketAPI ${this.bucketId}] performListInternal called with path: ${path}, options:`, options);
+        if (this.config.storageMock?.listResult) {
+            if (typeof this.config.storageMock.listResult === 'function') {
+                try {
+                    return await (this.config.storageMock.listResult as (bucketId: string, path?: string, options?: object) => Promise<IMockStorageListResponse>)(this.bucketId, path, options);
+                } catch (e: unknown) {
+                    const message = e instanceof Error ? e.message : 'Error executing listResult hook';
+                    console.error(`[MockStorageBucketAPI ${this.bucketId}] Error in listResult hook:`, message);
+                    return { data: null, error: new Error(message) };
+                }
+            } else {
+                return this.config.storageMock.listResult;
+            }
+        }
+        console.warn(`[MockStorageBucketAPI ${this.bucketId}] No listResult configured for path: ${path}. Returning default empty array.`);
+        return { data: [], error: null };
     }
 }
 // --- END: MockStorageBucketAPI Implementation ---
@@ -631,6 +702,9 @@ class MockSupabaseClient implements IMockSupabaseClient {
         console.log('[MockSupabaseClient] Cleared all tracked storage bucket APIs.');
     }
 
+    public getStorageBucketApiInstance(bucketId: string): IMockStorageBucketAPI | undefined {
+        return this._mockStorageBucketAPIs.get(bucketId);
+    }
 
     public getSpiesForTableQueryMethod(tableName: string, methodName: keyof IMockQueryBuilder, callIndex = -1): Spy | undefined {
         const historicBuilders = this.getHistoricBuildersForTable(tableName);
@@ -682,12 +756,12 @@ export function createMockSupabaseClient(
         storage: { 
             from: (bucketId: string) => {
                 const bucketAPI = mockClientInstance.storage.from(bucketId) as MockStorageBucketAPIImpl; 
-                // console.log('[createMockSupabaseClient spies.storage.from] bucketAPI.upload being assigned to uploadSpy:', bucketAPI.upload);
-                // console.log('[createMockSupabaseClient spies.storage.from] bucketAPI.upload.callCount:', (bucketAPI.upload as any).callCount);
                 return {
-                    // bucketAPI.upload is now the spy object itself, and it's callable.
-                    // Cast to Spy<any,any,any> for tests to access .callCount etc.
                     uploadSpy: bucketAPI.upload as Spy<any, any[], any>,
+                    downloadSpy: bucketAPI.download as Spy<any, any[], any>,
+                    createSignedUrlSpy: bucketAPI.createSignedUrl as Spy<any, any[], any>,
+                    removeSpy: bucketAPI.remove as Spy<any, any[], any>,
+                    listSpy: bucketAPI.list as Spy<any, any[], any>,
                 };
             }
         },
@@ -701,21 +775,18 @@ export function createMockSupabaseClient(
             const historicBuilders = mockClientInstance.getHistoricBuildersForTable(tableName);
             let totalCallCount = 0;
             const allCallsArgs: unknown[][] = [];
-            if (historicBuilders) { // Ensure historicBuilders is not undefined
+            if (historicBuilders) {
                 for (const builder of historicBuilders) {
-                    // Ensure builder and methodSpies are defined, and methodName is a valid key
                     if (builder && builder.methodSpies && methodName in builder.methodSpies) {
                         const spyCandidate = builder.methodSpies[methodName as keyof typeof builder.methodSpies];
-                        // Check if spyCandidate looks like a Deno Spy object before asserting its type
                         if (spyCandidate && 
                             typeof (spyCandidate as any).callCount === 'number' && 
                             (spyCandidate as any).callCount > 0 && 
                             Array.isArray((spyCandidate as any).calls)) {
 
-                            // Use (spyCandidate as any) to access properties if linter complains about Spy type
                             totalCallCount += (spyCandidate as any).callCount;
                             ((spyCandidate as any).calls as Array<{args: unknown[]}>).forEach(call => {
-                                if (call && Array.isArray(call.args)) { // Ensure call and call.args are valid
+                                if (call && Array.isArray(call.args)) {
                                     allCallsArgs.push(call.args);
                                 }
                             });
@@ -728,14 +799,12 @@ export function createMockSupabaseClient(
     };
 
     const clearAllStubs = () => {
-        // Restore client-level spies
         const spiesToRestore: Array<Spy<any, any[], any> | undefined> = [
             clientSpies.auth.getUserSpy as Spy<any, any[], any> | undefined,
             clientSpies.rpcSpy as Spy<any, any[], any> | undefined,
             clientSpies.fromSpy as Spy<any, any[], any> | undefined,
         ];
 
-        // Iterate over spies and restore if they are actual spy instances
         spiesToRestore.forEach(s => {
             if (s && typeof s.restore === 'function' && !s.restored) {
                 try {
@@ -746,10 +815,8 @@ export function createMockSupabaseClient(
             }
         });
 
-        // Restore spies from all latest query builders that were used
-        mockClientInstance.getAllBuildersUsed().forEach(builder => { // Assuming getAllBuildersUsed() exists and returns MockQueryBuilder[]
+        mockClientInstance.getAllBuildersUsed().forEach(builder => {
             Object.values(builder.methodSpies).forEach(spyInstance => {
-                // Ensure spyInstance is indeed a Spy and has a restore method and is not already restored
                 const s = spyInstance as Spy<any, any[], any>; 
                 if (s && typeof s.restore === 'function' && !s.restored) {
                     try {
@@ -760,15 +827,15 @@ export function createMockSupabaseClient(
                 }
             });
         });
-        mockClientInstance.clearAllTrackedBuilders(); // Use new comprehensive clearer
-        mockClientInstance.clearAllTrackedStorageAPIs(); // Clear storage APIs too
+        mockClientInstance.clearAllTrackedBuilders();
+        mockClientInstance.clearAllTrackedStorageAPIs();
 
     };
 
     return {
-        client: mockClientInstance as unknown as IMockSupabaseClient, // Cast to satisfy the return type fully
+        client: mockClientInstance as unknown as IMockSupabaseClient,
         spies: clientSpies,
-        clearAllStubs, // Provide the cleanup function
+        clearAllStubs,
     };
 }
 
@@ -851,17 +918,15 @@ export function restoreFetch() {
 export function withMockEnv(envVars: Record<string, string>, testFn: () => Promise<void>) {
     const originalValues: Record<string, string | undefined> = {};
     const envGetStubInstance = stub(Deno.env, 'get', (key: string): string | undefined => {
-        console.log(`[Test Env Stub] Deno.env.get called with: ${key}`); // Added log for visibility
+        console.log(`[Test Env Stub] Deno.env.get called with: ${key}`);
         if (key in envVars) {
             return envVars[key];
         }
-        // Fallback to original Deno.env.get for unstubbed vars, ensuring it's actually called
         const originalDenoEnvGet = Deno.env.get; 
         return originalDenoEnvGet.call(Deno.env, key);
     });
 
     try {
-        // Store original values for keys we are about to stub
         for (const key in envVars) {
             originalValues[key] = Deno.env.get(key);
         }
@@ -874,18 +939,17 @@ export function withMockEnv(envVars: Record<string, string>, testFn: () => Promi
 // Utility to stub global fetch for a test scope and return its spy
 export function stubFetchForTestScope(): { spy: Spy<unknown, [string | URL, (RequestInit | undefined)?], Promise<Response>>, stub: any } {
     const fetchSpy = spy(async (_url: string | URL, _options?: RequestInit): Promise<Response> => {
-        // Default mock fetch behavior for the stub, can be configured per test
         console.warn("[Fetch Stub] fetch called but no specific mock response provided for this call. Returning default empty 200 OK.");
         return new Response(JSON.stringify({}), { status: 200, headers: { 'Content-Type': 'application/json' } });
     });
-    const fetchStubInstance = stub(globalThis, "fetch", fetchSpy as (...args: unknown[]) => Promise<Response>); // Cast to satisfy stub
+    const fetchStubInstance = stub(globalThis, "fetch", fetchSpy as (...args: unknown[]) => Promise<Response>);
     return { spy: fetchSpy, stub: fetchStubInstance };
 }
 
 // Helper to create a Supabase client with Service Role for admin tasks
 // This was removed in user's previous changes but is needed for createUser/cleanupUser
 function getServiceRoleAdminClient(): SupabaseClient {
-    const { url, serviceRoleKey } = getSupabaseEnvVars(); // Relies on existing getSupabaseEnvVars
+    const { url, serviceRoleKey } = getSupabaseEnvVars();
     return createClient(url, serviceRoleKey, {
         auth: {
             persistSession: false,
@@ -942,4 +1006,22 @@ export async function cleanupUser(email: string, adminClient?: SupabaseClient): 
     } else {
         console.log(`User ${email} (ID: ${userId}) deleted successfully.`);
     }
+}
+
+// Helper to create spies for storage bucket methods for test assertions
+export function getStorageSpies(mockSupabaseClient: IMockSupabaseClient, bucketId: string) {
+  const clientWithDetails = mockSupabaseClient as unknown as MockSupabaseClient; // Cast to access internal details
+  const bucketApiInstance = clientWithDetails.getStorageBucketApiInstance(bucketId) as MockStorageBucketAPIImpl | undefined;
+
+  if (!bucketApiInstance) {
+    throw new Error(`[getStorageSpies] MockStorageBucketAPIImpl instance not found for bucketId: ${bucketId}. Ensure storage.from('${bucketId}') was called.`);
+  }
+
+  return {
+    uploadSpy: bucketApiInstance.upload as Spy<MockStorageBucketAPIImpl['performUploadInternal']>,
+    downloadSpy: bucketApiInstance.download as Spy<MockStorageBucketAPIImpl['performDownloadInternal']>,
+    createSignedUrlSpy: bucketApiInstance.createSignedUrl as Spy<MockStorageBucketAPIImpl['performCreateSignedUrlInternal']>,
+    removeSpy: bucketApiInstance.remove as Spy<MockStorageBucketAPIImpl['performRemoveInternal']>,
+    listSpy: bucketApiInstance.list as Spy<MockStorageBucketAPIImpl['performListInternal']>,
+  };
 }

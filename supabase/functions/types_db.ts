@@ -205,6 +205,7 @@ export type Database = {
           content_storage_path: string
           cost_usd: number | null
           created_at: string
+          error: string | null
           id: string
           iteration_number: number
           model_version_details: string | null
@@ -228,6 +229,7 @@ export type Database = {
           content_storage_path: string
           cost_usd?: number | null
           created_at?: string
+          error?: string | null
           id?: string
           iteration_number?: number
           model_version_details?: string | null
@@ -251,6 +253,7 @@ export type Database = {
           content_storage_path?: string
           cost_usd?: number | null
           created_at?: string
+          error?: string | null
           id?: string
           iteration_number?: number
           model_version_details?: string | null
@@ -371,6 +374,7 @@ export type Database = {
         Row: {
           active_antithesis_prompt_template_id: string | null
           active_thesis_prompt_template_id: string | null
+          associated_chat_id: string | null
           created_at: string
           current_stage_seed_prompt: string | null
           id: string
@@ -383,6 +387,7 @@ export type Database = {
         Insert: {
           active_antithesis_prompt_template_id?: string | null
           active_thesis_prompt_template_id?: string | null
+          associated_chat_id?: string | null
           created_at?: string
           current_stage_seed_prompt?: string | null
           id?: string
@@ -395,6 +400,7 @@ export type Database = {
         Update: {
           active_antithesis_prompt_template_id?: string | null
           active_thesis_prompt_template_id?: string | null
+          associated_chat_id?: string | null
           created_at?: string
           current_stage_seed_prompt?: string | null
           id?: string

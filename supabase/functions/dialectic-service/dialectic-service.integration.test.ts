@@ -8,175 +8,152 @@ import {
   describe,
   it,
 } from "https://deno.land/std@0.208.0/testing/bdd.ts";
+import { 
+  assertEquals,
+  assert,
+  assertExists,
+  assertNotEquals,
+  assertThrows,
+} from "https://deno.land/std@0.208.0/assert/mod.ts";
 import { SupabaseClient } from "npm:@supabase/supabase-js@2";
-import { Database } from "../types_db.ts";
+import { Database, Json } from "../types_db.ts";
 import {
-  initializeSupabaseAdminClient,
-  coreCreateAndSetupTestUser,
+  initializeTestDeps,
+  coreInitializeTestStep,
+  coreCleanupTestResources,
   coreGenerateTestUserJwt,
-  setSupabaseAdminClientForTests,
-  // coreResetDatabaseState, // Potentially for a global teardown
+  initializeSupabaseAdminClient,
+  setSharedAdminClient,
+  TestResourceRequirement,
 } from "../_shared/_integration.test.utils.ts";
 import { User } from "npm:@supabase/supabase-js@2";
+import type { DialecticServiceRequest, GenerateThesisContributionsPayload, StartSessionPayload } from "./dialectic.interface.ts";
 
-// Assuming the dialectic-service will have a handler for different actions
-interface DialecticServiceRequest {
-  action: string;
-  // deno-lint-ignore no-explicit-any
-  payload?: any; // Define more specific payloads as actions are added
-}
-
-// We might need to seed specific data for these tests or ensure it exists.
-const TEST_DOMAIN_TAG_1 = "software_development"; // From existing seeds
+const TEST_DOMAIN_TAG_1 = "software_development";
 const TEST_DOMAIN_TAG_2 = "technical_writing";
 const INVALID_DOMAIN_TAG = "invalid_domain_tag_for_testing";
 
 describe("Edge Function: dialectic-service", () => {
-  let supabaseAdmin: SupabaseClient<Database>;
-  // let userClient: SupabaseClient<Database>; // If auth is needed for the endpoint
+  let adminClient: SupabaseClient<Database>;
+
+  let baseThesisPromptId: string;
+  let baseAntithesisPromptId: string;
 
   beforeAll(async () => {
-    supabaseAdmin = initializeSupabaseAdminClient();
-    setSupabaseAdminClientForTests(supabaseAdmin);
+    initializeTestDeps();
+    adminClient = initializeSupabaseAdminClient();
+    setSharedAdminClient(adminClient);
 
-    // Ensure a second distinct domain tag exists for testing listAvailableDomainTags
-    // This assumes the "software_development" tag is already seeded.
-    // We need to ensure there are at least two overlays with TEST_DOMAIN_TAG_1
-    // and one with TEST_DOMAIN_TAG_2 to test distinctness.
-
-    // Fetch existing base prompts to link new test overlays
-    const { data: thesisPrompt, error: thesisErr } = await supabaseAdmin
+    const { data: thesisPrompt, error: thesisErr } = await adminClient
       .from("system_prompts")
       .select("id")
       .eq("name", "dialectic_thesis_base_v1")
       .single();
     if (thesisErr || !thesisPrompt) {
-      throw new Error("Test setup failed: Could not fetch base thesis prompt.");
+      throw new Error("Test setup failed: Could not fetch base thesis prompt. Ensure it's seeded.");
     }
+    baseThesisPromptId = thesisPrompt.id;
 
-    const { data: antithesisPrompt, error: antiErr } = await supabaseAdmin
-    .from("system_prompts")
-    .select("id")
-    .eq("name", "dialectic_antithesis_base_v1")
-    .single();
-  if (antiErr || !antithesisPrompt) {
-    throw new Error("Test setup failed: Could not fetch base antithesis prompt.");
-  }
+    const { data: antithesisPrompt, error: antiErr } = await adminClient
+      .from("system_prompts")
+      .select("id")
+      .eq("name", "dialectic_antithesis_base_v1")
+      .single();
+    if (antiErr || !antithesisPrompt) {
+      throw new Error("Test setup failed: Could not fetch base antithesis prompt. Ensure it's seeded.");
+    }
+    baseAntithesisPromptId = antithesisPrompt.id;
 
-    // Upsert an overlay with the second test domain tag to ensure it exists.
-    // Also ensure multiple entries for TEST_DOMAIN_TAG_1 if not already present from main seed.
-    const overlaysToUpsert = [
+    const overlaysToSeedData = [
       {
-        system_prompt_id: thesisPrompt.id,
-        domain_tag: TEST_DOMAIN_TAG_1, // Ensuring at least one for this tag
-        overlay_values: { test_data: "ensure software_development for thesis" },
+        system_prompt_id: baseThesisPromptId, 
+        domain_tag: TEST_DOMAIN_TAG_1, 
+        version: 99, 
+        overlay_values: { test_data: "ensure software_development for thesis" } as unknown as Json, 
         description: "Test overlay for software_development (thesis)",
-        version: 99, // Use a distinct version to avoid conflict with actual seeds
+        is_active: true,
       },
       {
-        system_prompt_id: antithesisPrompt.id, // Link to a different prompt to ensure variety
-        domain_tag: TEST_DOMAIN_TAG_1, // Another one for software_development
-        overlay_values: { test_data: "ensure software_development for antithesis" },
+        system_prompt_id: baseAntithesisPromptId, 
+        domain_tag: TEST_DOMAIN_TAG_1, 
+        version: 99, 
+        overlay_values: { test_data: "ensure software_development for antithesis" } as unknown as Json, 
         description: "Test overlay for software_development (antithesis)",
-        version: 99,
+        is_active: true,
       },
       {
-        system_prompt_id: thesisPrompt.id,
-        domain_tag: TEST_DOMAIN_TAG_2,
-        overlay_values: { test_data: "ensure technical_writing" },
+        system_prompt_id: baseThesisPromptId, 
+        domain_tag: TEST_DOMAIN_TAG_2, 
+        version: 99, 
+        overlay_values: { test_data: "ensure technical_writing" } as unknown as Json, 
         description: "Test overlay for technical_writing",
-        version: 99,
+        is_active: true,
       },
     ];
 
-    const { error: upsertError } = await supabaseAdmin
-      .from("domain_specific_prompt_overlays")
-      .upsert(overlaysToUpsert, { onConflict: "system_prompt_id,domain_tag,version" }); // Assumes this unique constraint exists
-
-    if (upsertError) {
-      console.error("Error upserting test domain overlays:", upsertError);
-      throw new Error(`Test setup failed: Could not upsert test domain overlays: ${upsertError.message}`);
+    for (const pełnaDaneNakładki of overlaysToSeedData) {
+        const { error } = await adminClient.from("domain_specific_prompt_overlays").upsert(
+            pełnaDaneNakładki,
+            { onConflict: "system_prompt_id,domain_tag,version" }
+        );
+        if (error) {
+            console.error("Error upserting test domain overlay:", pełnaDaneNakładki, error);
+            throw new Error(`Test setup failed: Could not upsert test domain overlay: ${error.message}`);
+        }
     }
-    console.log("Test domain overlays upserted for dialectic-service tests.");
+    console.log("Shared test domain overlays upserted for dialectic-service tests.");
   });
 
   afterAll(async () => {
-    // Clean up test-specific domain overlays by version
-    const { error: deleteError } = await supabaseAdmin
-      .from("domain_specific_prompt_overlays")
-      .delete()
-      .eq("version", 99);
-    if (deleteError) {
-      console.error("Failed to clean up test domain overlays:", deleteError);
+    if (adminClient) {
+        const { error: deleteError } = await adminClient
+        .from("domain_specific_prompt_overlays")
+        .delete()
+        .eq("version", 99);
+        if (deleteError) {
+        console.error("Failed to clean up test domain overlays:", deleteError);
+        }
     }
-    // Consider calling coreResetDatabaseState here if users/projects aren't cleaned up by specific test suites.
+    await coreCleanupTestResources('all');
   });
 
   describe("Action: listAvailableDomainTags", () => {
     it("should return a distinct list of available domain tags", async () => {
-      // This test is initially RED because the Edge Function action doesn't exist yet.
-      const request: DialecticServiceRequest = {
-        action: "listAvailableDomainTags",
-      };
-
-      const { data, error } = await supabaseAdmin.functions.invoke(
-        "dialectic-service",
-        { body: request }
-      );
-
-      console.log("listAvailableDomainTags response data:", data);
-      console.log("listAvailableDomainTags response error:", error);
-
+      const request: DialecticServiceRequest = { action: "listAvailableDomainTags" };
+      const { data, error } = await adminClient.functions.invoke("dialectic-service", { body: request });
       expect(error, "Function invocation should not error").to.be.null;
       expect(data, "Response data should exist").to.exist;
-      // deno-lint-ignore no-explicit-any
-      const responsePayload = data as any; // Cast for now, will be typed later
-      
+      const responsePayload = data as any; 
       expect(responsePayload.error, `Service action error: ${responsePayload.error?.message}`).to.be.undefined;
       expect(responsePayload.data, "Payload data should be an array").to.be.an("array");
-      
       const tags = responsePayload.data as string[];
       expect(tags).to.include.members([TEST_DOMAIN_TAG_1, TEST_DOMAIN_TAG_2]);
-      
-      // Check for distinctness
       const distinctTags = [...new Set(tags)];
       expect(tags.length, "Tags list should only contain distinct tags").to.equal(distinctTags.length);
     });
 
-    // Add more tests: e.g., what happens if there are no overlays? (should return empty array)
     it("should return an empty list if no domain_specific_prompt_overlays exist", async () => {
-      // Temporarily delete all overlays to test empty case
-      // This is risky if tests run in parallel or if main seed is vital, better to use a unique test table or versioning
-      // For now, we rely on afterAll to clean up version 99, and assume main seeds are different.
-      // A more robust way would be to use a transaction or a specific test context if possible.
-      
-      // To be safe, let's delete only our test versions + any other version for a moment
-      // then re-insert one of our test versions to ensure the table isn't fully empty from other tests.
-      const { error: delErr } = await supabaseAdmin.from("domain_specific_prompt_overlays").delete().neq("domain_tag", "_some_non_existent_tag_for_safety_");
+      const { error: delErr } = await adminClient.from("domain_specific_prompt_overlays").delete().neq("domain_tag", "_some_non_existent_tag_for_safety_");
       expect(delErr, "Failed to clear overlays for empty test").to.be.null;
 
       try {
         const request: DialecticServiceRequest = {
           action: "listAvailableDomainTags",
         };
-        const { data, error } = await supabaseAdmin.functions.invoke("dialectic-service", { body: request });
+        const { data, error } = await adminClient.functions.invoke("dialectic-service", { body: request });
         expect(error).to.be.null;
         expect(data).to.exist;
-        // deno-lint-ignore no-explicit-any
         const responsePayload = data as any;
         expect(responsePayload.error).to.be.undefined;
         expect(responsePayload.data).to.be.an("array").that.is.empty;
       } finally {
-        // Restore the test data for subsequent tests within this describe block or if other tests run.
-        // This is a simplified re-setup; ideally, tests are isolated or use transactions.
-        const { data: thesisPrompt, error: thesisErr } = await supabaseAdmin
+        const { data: thesisPrompt, error: thesisErr } = await adminClient
           .from("system_prompts").select("id").eq("name", "dialectic_thesis_base_v1").single();
         if (thesisErr || !thesisPrompt) {
-          // deno-lint-ignore-line no-unsafe-finally
           throw new Error("Failed to re-fetch thesis prompt for re-seeding");
         }
 
-        const { error: upsertError } = await supabaseAdmin
+        const { error: upsertError } = await adminClient
           .from("domain_specific_prompt_overlays")
           .upsert([
             {
@@ -190,440 +167,171 @@ describe("Edge Function: dialectic-service", () => {
         if (upsertError) console.error("Failed to restore test data for overlays", upsertError);
       }
     });
-
   });
 
-  describe("Action: updateProjectDomainTag", () => {
-    let testUserId: string;
-    let testUserJwt: string;
+  describe("'generateThesisContributions' action", () => {
+    let testPrimaryUserId: string;
+    let testPrimaryUserClient: SupabaseClient<Database>;
+    let testUserAuthToken: string;
+    let testAdminClient: SupabaseClient<Database>;
+
     let testProjectId: string;
-    let testProjectInitialTag: string | null = null;
+    let testSessionId: string;
+    let testSessionModelId: string;
+    let testAssociatedChatId: string;
 
-    beforeAll(async () => {
-      testUserId = await coreCreateAndSetupTestUser({ first_name: "DialecticUpdateTest" });
-      testUserJwt = await coreGenerateTestUserJwt(testUserId);
+    // const TEST_AI_PROVIDER_ID = "openai"; // Commenting out as we'll use a dummy model
+    // const TEST_MODEL_CATALOG_ID = "gpt-4"; // Commenting out
 
-      // Create a project for the test user
-      const { data: project, error: createError } = await supabaseAdmin
-        .from("dialectic_projects")
+    beforeEach(async () => {
+      testAssociatedChatId = crypto.randomUUID();
+
+      const uniqueProjectName = `Thesis Test Project ${crypto.randomUUID()}`;
+
+      const setupResult = await coreInitializeTestStep({
+        userProfile: { first_name: "DialecticThesisUser" },
+        resources: [
+          {
+            tableName: "dialectic_projects",
+            identifier: { project_name: uniqueProjectName },
+            desiredState: {
+              initial_user_prompt: "A fascinating problem for the AI.",
+              selected_domain_tag: TEST_DOMAIN_TAG_1,
+            },
+            linkUserId: true,
+          },
+        ],
+      }, 'local');
+
+      testPrimaryUserId = setupResult.primaryUserId;
+      testPrimaryUserClient = setupResult.primaryUserClient;
+      testAdminClient = setupResult.adminClient;
+      testUserAuthToken = await coreGenerateTestUserJwt(testPrimaryUserId);
+
+      const projectResourceInfo = setupResult.processedResources.find(
+        (r) => 
+          r.tableName === "dialectic_projects" && 
+          (r.identifier as { project_name: string }).project_name === uniqueProjectName
+      );
+
+      if (!projectResourceInfo || projectResourceInfo.status === 'failed' || !projectResourceInfo.resource?.id) {
+        const errorMessage = `Failed to get or create project '${uniqueProjectName}' during test setup. Status: ${projectResourceInfo?.status}, Error: ${projectResourceInfo?.error || 'Unknown error'}`;
+        console.error(errorMessage, projectResourceInfo);
+        throw new Error(errorMessage);
+      }
+      testProjectId = projectResourceInfo.resource.id as string;
+
+      // Ensure we have the initial user prompt from the project data for the session
+      const initialUserPromptForSession = projectResourceInfo.resource?.initial_user_prompt;
+      if (!initialUserPromptForSession) {
+        throw new Error(`Initial user prompt not found for project ${testProjectId} in test setup.`);
+      }
+
+      const { data: session, error: sessionError } = await testAdminClient
+        .from("dialectic_sessions")
         .insert({
-          user_id: testUserId,
-          project_name: "Test Project for Domain Tag Update",
-          initial_user_prompt: "Test initial prompt",
-          selected_domain_tag: testProjectInitialTag, // Initially null or a specific tag
+          project_id: testProjectId,
+          associated_chat_id: testAssociatedChatId,
+          status: "pending_thesis",
+          current_stage_seed_prompt: initialUserPromptForSession,
         })
-        .select("id, selected_domain_tag")
+        .select("id")
         .single();
 
-      if (createError || !project) {
-        throw new Error(`Failed to create test project: ${createError?.message || "No project data"}`);
+      if (sessionError || !session) {
+        throw new Error(`Failed to create session for test: ${sessionError?.message}`);
       }
-      testProjectId = project.id;
-      testProjectInitialTag = project.selected_domain_tag;
-    });
-
-    afterAll(async () => {
-      if (testProjectId) {
-        await supabaseAdmin.from("dialectic_projects").delete().eq("id", testProjectId);
-      }
-      if (testUserId) {
-        // This user will be cleaned up by the global test user cleanup if it exists,
-        // or add: await supabaseAdmin.auth.admin.deleteUser(testUserId);
-      }
-    });
-
-    it("should successfully update selected_domain_tag with a valid tag", async () => {
-      const request: DialecticServiceRequest = {
-        action: "updateProjectDomainTag",
-        payload: { projectId: testProjectId, domainTag: TEST_DOMAIN_TAG_1 },
-      };
-      const { data, error } = await supabaseAdmin.functions.invoke("dialectic-service", {
-        body: request,
-        headers: { Authorization: `Bearer ${testUserJwt}` },
-      });
-
-      expect(error, `Function error: ${error?.message}`).to.be.null;
-      expect(data, "Response data should exist").to.exist;
-      const responsePayload = data as any;
-      expect(responsePayload.error, `Service error: ${responsePayload.error?.message}`).to.be.undefined;
-      expect(responsePayload.data).to.exist;
-      expect(responsePayload.data.id).to.equal(testProjectId);
-      expect(responsePayload.data.selected_domain_tag).to.equal(TEST_DOMAIN_TAG_1);
-
-      // Verify in DB
-      const { data: dbData, error: dbError } = await supabaseAdmin.from("dialectic_projects").select("selected_domain_tag").eq("id", testProjectId).single();
-      expect(dbError).to.be.null;
-      expect(dbData?.selected_domain_tag).to.equal(TEST_DOMAIN_TAG_1);
-    });
-
-    it("should successfully update selected_domain_tag to null", async () => {
-      // First set it to something non-null
-      await supabaseAdmin.from("dialectic_projects").update({ selected_domain_tag: TEST_DOMAIN_TAG_1 }).eq("id", testProjectId);
-
-      const request: DialecticServiceRequest = {
-        action: "updateProjectDomainTag",
-        payload: { projectId: testProjectId, domainTag: null },
-      };
-      const { data, error } = await supabaseAdmin.functions.invoke("dialectic-service", {
-        body: request,
-        headers: { Authorization: `Bearer ${testUserJwt}` },
-      });
-
-      expect(error).to.be.null;
-      expect(data).to.exist;
-      const responsePayload = data as any;
-      expect(responsePayload.error).to.be.undefined;
-      expect(responsePayload.data.selected_domain_tag).to.be.null;
-
-      const { data: dbData, error: dbError } = await supabaseAdmin.from("dialectic_projects").select("selected_domain_tag").eq("id", testProjectId).single();
-      expect(dbError).to.be.null;
-      expect(dbData?.selected_domain_tag).to.be.null;
-    });
-
-    it("should fail to update with an invalid domain_tag", async () => {
-      const request: DialecticServiceRequest = {
-        action: "updateProjectDomainTag",
-        payload: { projectId: testProjectId, domainTag: INVALID_DOMAIN_TAG },
-      };
-      const { data, error } = await supabaseAdmin.functions.invoke("dialectic-service", {
-        body: request,
-        headers: { Authorization: `Bearer ${testUserJwt}` },
-      });
-
-      expect(data).to.be.null;
-      expect(error, "Function invocation should produce an error for invalid input").to.exist;
+      testSessionId = session.id;
       
-      const fnError = error as any; 
-      expect(fnError.context, "Error context should exist").to.exist;
-      expect(fnError.context.status, "HTTP status should be 400").to.equal(400);
+      const modelIdForSession = '11111111-1111-1111-1111-111111111111'; // Changed to use the dummy provider's UUID
 
-      let errorPayload;
-      try {
-        errorPayload = await fnError.context.json();
-      } catch (e: unknown) {
-        const parseError = e as Error;
-        const textContent = await fnError.context.text();
-        console.error("[TEST_ERROR] Failed to parse JSON response. Text content was:", textContent);
-        throw new Error(`Failed to parse JSON response from function. Status: ${fnError.context.status}. Error: ${parseError.message}. Body: ${textContent}`);
-      }
+      const { data: sessionModel, error: smError } = await testAdminClient
+        .from("dialectic_session_models")
+        .insert({
+          session_id: testSessionId,
+          model_id: modelIdForSession,
+        })
+        .select("id")
+        .single();
       
-      expect(errorPayload, "Parsed error payload should exist").to.exist;
-      expect(errorPayload.error, "Error payload should have an 'error' property which is a string message").to.be.a('string');
-      expect(errorPayload.error).to.include(`Invalid domainTag: "${INVALID_DOMAIN_TAG}"`);
-    });
-
-    it("should fail if projectId is missing", async () => {
-      const request: DialecticServiceRequest = {
-        action: "updateProjectDomainTag",
-        payload: { domainTag: TEST_DOMAIN_TAG_1 }, 
-      };
-      const { data, error } = await supabaseAdmin.functions.invoke("dialectic-service", {
-        body: request,
-        headers: { Authorization: `Bearer ${testUserJwt}` },
-      });
-      expect(data).to.be.null;
-      expect(error).to.exist;
-      const fnError = error as any;
-      expect(fnError.context).to.exist;
-      expect(fnError.context.status).to.equal(400);
-      let errorPayload;
-      try { errorPayload = await fnError.context.json(); } 
-      catch (e: unknown) { 
-        const parseError = e as Error;
-        const textContent = await fnError.context.text(); 
-        console.error("[TEST_ERROR] Failed to parse JSON. Body:", textContent); 
-        throw new Error(`Parse failed: ${parseError.message}. Body: ${textContent}`);
+      if (smError || !sessionModel) {
+          throw new Error(`Failed to create session model for test: ${smError?.message}. Ensure AI provider and model catalog entries are seeded.`);
       }
-      expect(errorPayload).to.exist;
-      expect(errorPayload.error).to.be.a('string');
-      expect(errorPayload.error).to.equal("projectId is required");
-    });
-
-    it("should fail if project does not exist or user does not have access", async () => {
-      const nonExistentProjectId = crypto.randomUUID();
-      const request: DialecticServiceRequest = {
-        action: "updateProjectDomainTag",
-        payload: { projectId: nonExistentProjectId, domainTag: TEST_DOMAIN_TAG_1 },
-      };
-      const { data, error } = await supabaseAdmin.functions.invoke("dialectic-service", {
-        body: request,
-        headers: { Authorization: `Bearer ${testUserJwt}` },
-      });
-      expect(data).to.be.null;
-      expect(error).to.exist;
-      const fnError = error as any;
-      expect(fnError.context).to.exist;
-      expect(fnError.context.status).to.equal(404);
-      let errorPayload;
-      try { errorPayload = await fnError.context.json(); }       
-      catch (e: unknown) { 
-        const parseError = e as Error;
-        const textContent = await fnError.context.text(); 
-        console.error("[TEST_ERROR] Failed to parse JSON. Body:", textContent); 
-        throw new Error(`Parse failed: ${parseError.message}. Body: ${textContent}`);
-      }
-      expect(errorPayload).to.exist;
-      expect(errorPayload.error).to.be.a('string');
-      expect(errorPayload.error).to.equal("Project not found or access denied");
-    });
-
-    it("should fail if user is not authenticated", async () => {
-      const request: DialecticServiceRequest = {
-        action: "updateProjectDomainTag",
-        payload: { projectId: testProjectId, domainTag: TEST_DOMAIN_TAG_1 },
-      };
-      const { data, error } = await supabaseAdmin.functions.invoke("dialectic-service", { body: request });
-      expect(data).to.be.null;
-      expect(error).to.exist;
-      const fnError = error as any;
-      expect(fnError.context).to.exist;
-      expect(fnError.context.status).to.equal(401);
-      let errorPayload;
-      try { errorPayload = await fnError.context.json(); } 
-      catch (e: unknown) { 
-        const parseError = e as Error;
-        const textContent = await fnError.context.text(); 
-        console.error("[TEST_ERROR] Failed to parse JSON. Body:", textContent); 
-        throw new Error(`Parse failed: ${parseError.message}. Body: ${textContent}`);
-      }
-      expect(errorPayload).to.exist;
-      expect(errorPayload.error).to.be.a('string');
-      expect(errorPayload.error).to.equal("User not authenticated");
-    });
-  });
-
-  describe("Action: createProject", () => {
-    let testUserId: string;
-    let testUserJwt: string;
-    const validProjectName = "My New Dialectic Project";
-    const validInitialPrompt = "This is the initial problem statement.";
-
-    beforeAll(async () => {
-      testUserId = await coreCreateAndSetupTestUser({ first_name: "DialecticCreateTest" });
-      testUserJwt = await coreGenerateTestUserJwt(testUserId);
-      // Ensure TEST_DOMAIN_TAG_1 is available from the domain_specific_prompt_overlays for validation
-      // This is already handled in the outer describe's beforeAll for listAvailableDomainTags tests
+      testSessionModelId = sessionModel.id;
     });
 
     afterEach(async () => {
-      // Clean up any projects created during tests by this user to keep tests idempotent
-      // This is important if a test fails mid-way
-      await supabaseAdmin
-        .from("dialectic_projects")
-        .delete()
-        .match({ user_id: testUserId, project_name: validProjectName });
+      await coreCleanupTestResources('local');
     });
 
-    afterAll(async () => {
-      if (testUserId) {
-        // User cleanup might be handled by a global teardown, or do it here:
-        // await supabaseAdmin.auth.admin.deleteUser(testUserId);
-      }
-    });
-
-    it("should successfully create a project with required fields and no domain tag", async () => {
-      const request: DialecticServiceRequest = {
-        action: "createProject",
-        payload: {
-          projectName: validProjectName,
-          initialUserPrompt: validInitialPrompt,
-        },
+    it("RED TEST: should generate thesis contributions, store them, and link to storage", async () => {
+      const payload: GenerateThesisContributionsPayload = {
+        sessionId: testSessionId,
       };
 
-      const { data, error } = await supabaseAdmin.functions.invoke("dialectic-service", {
-        body: request,
-        headers: { Authorization: `Bearer ${testUserJwt}` },
+      const response = await fetch(`${Deno.env.get("SUPABASE_URL")!}/functions/v1/dialectic-service`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${testUserAuthToken}`,
+          "X-Client-Info": "supabase-js/0.0.0-automated-test-thesis",
+        },
+        body: JSON.stringify({
+          action: "generateThesisContributions",
+          payload,
+        }),
       });
+      const responseData = await response.json().catch(e => {
+        console.error("Failed to parse JSON response:", e);
+        return { error: { message: "Failed to parse JSON response", details: e.message }, data: null, success: false };
+      });
+      
+      console.log("[generateThesisContributions Test] Response Status:", response.status);
+      console.log("[generateThesisContributions Test] Response Data:", JSON.stringify(responseData, null, 2));
 
-      expect(error, `Function error: ${error?.message}`).to.be.null;
-      expect(data, "Response data should exist").to.exist;
-      const responsePayload = data as any;
-      expect(responsePayload.error, `Service error: ${responsePayload.error?.message}`).to.be.undefined;
-      expect(responsePayload.data).to.exist;
-      expect(responsePayload.data.project_name).to.equal(validProjectName);
-      expect(responsePayload.data.initial_user_prompt).to.equal(validInitialPrompt);
-      expect(responsePayload.data.user_id).to.equal(testUserId);
-      expect(responsePayload.data.selected_domain_tag).to.be.null;
-      expect(responsePayload.data.id).to.be.a("string");
+      assertEquals(response.status, 200, `Service action failed with status ${response.status}: ${JSON.stringify(responseData.error || responseData)}`);
+      assert(responseData.success === true, responseData.error?.message || "Request was not successful or success flag missing/false");
+      assertExists(responseData.data, "Response data object is missing");
+      assertExists(responseData.data.contributions, "Contributions array is missing from response data");
+      assert(Array.isArray(responseData.data.contributions), "Contributions should be an array");
+      assert(responseData.data.contributions.length > 0, "No contributions were generated");
 
-      // Verify in DB
-      const { data: dbData, error: dbError } = await supabaseAdmin
-        .from("dialectic_projects")
+      const { data: dbContributions, error: dbError } = await testAdminClient
+        .from("dialectic_contributions")
         .select("*")
-        .eq("id", responsePayload.data.id)
-        .single();
-      expect(dbError).to.be.null;
-      expect(dbData).to.exist;
-      expect(dbData?.project_name).to.equal(validProjectName);
-      expect(dbData?.selected_domain_tag).to.be.null;
-    });
+        .eq("session_id", testSessionId)
+        .eq("stage", "THESIS");
 
-    it("should successfully create a project with a valid selected_domain_tag", async () => {
-      const request: DialecticServiceRequest = {
-        action: "createProject",
-        payload: {
-          projectName: validProjectName,
-          initialUserPrompt: validInitialPrompt,
-          selectedDomainTag: TEST_DOMAIN_TAG_1, // TEST_DOMAIN_TAG_1 is "software_development"
-        },
-      };
+      assert(!dbError, `Error fetching contributions from DB: ${dbError?.message}`);
+      assertExists(dbContributions, "No contributions found in DB for the session and stage");
+      assertEquals(dbContributions.length, responseData.data.contributions.length, "Mismatch in number of contributions in DB vs response");
 
-      const { data, error } = await supabaseAdmin.functions.invoke("dialectic-service", {
-        body: request,
-        headers: { Authorization: `Bearer ${testUserJwt}` },
-      });
+      for (const contribution of dbContributions) {
+        assertExists(contribution.id, "Contribution ID is missing in DB record");
+        assertEquals(contribution.session_model_id, testSessionModelId, "Contribution not linked to the correct session_model_id");
+        assertExists(contribution.content_storage_path, "content_storage_path is missing");
+        assert(contribution.content_storage_path.startsWith(`${testPrimaryUserId}/${testSessionId}/`), `Content storage path '${contribution.content_storage_path}' incorrect for user ${testPrimaryUserId} and session ${testSessionId}`);
+        assertEquals(contribution.content_storage_bucket, "dialectic-contributions", "Storage bucket is incorrect");
+        assertEquals(contribution.content_mime_type, "application/json", "MIME type is incorrect for thesis content"); 
+        assert(contribution.content_size_bytes && contribution.content_size_bytes > 0, "Content size should be greater than 0");
 
-      expect(error).to.be.null;
-      expect(data).to.exist;
-      const responsePayload = data as any;
-      expect(responsePayload.error).to.be.undefined;
-      expect(responsePayload.data.selected_domain_tag).to.equal(TEST_DOMAIN_TAG_1);
-
-      const { data: dbData, error: dbError } = await supabaseAdmin
-        .from("dialectic_projects")
-        .select("selected_domain_tag")
-        .eq("id", responsePayload.data.id)
-        .single();
-      expect(dbError).to.be.null;
-      expect(dbData?.selected_domain_tag).to.equal(TEST_DOMAIN_TAG_1);
-    });
-
-    it("should successfully create a project when selected_domain_tag is null", async () => {
-      const request: DialecticServiceRequest = {
-        action: "createProject",
-        payload: {
-          projectName: validProjectName,
-          initialUserPrompt: validInitialPrompt,
-          selectedDomainTag: null,
-        },
-      };
-
-      const { data, error } = await supabaseAdmin.functions.invoke("dialectic-service", {
-        body: request,
-        headers: { Authorization: `Bearer ${testUserJwt}` },
-      });
-
-      expect(error).to.be.null;
-      expect(data).to.exist;
-      const responsePayload = data as any;
-      expect(responsePayload.error).to.be.undefined;
-      expect(responsePayload.data.selected_domain_tag).to.be.null;
-    });
-
-    it("should fail to create a project with an invalid selected_domain_tag", async () => {
-      const request: DialecticServiceRequest = {
-        action: "createProject",
-        payload: {
-          projectName: validProjectName,
-          initialUserPrompt: validInitialPrompt,
-          selectedDomainTag: INVALID_DOMAIN_TAG,
-        },
-      };
-      const { data, error } = await supabaseAdmin.functions.invoke("dialectic-service", {
-        body: request,
-        headers: { Authorization: `Bearer ${testUserJwt}` },
-      });
-
-      expect(data).to.be.null;
-      expect(error).to.exist;
-      const fnError = error as any;
-      expect(fnError.context).to.exist;
-      expect(fnError.context.status).to.equal(400);
-      let errorPayload;
-      try { errorPayload = await fnError.context.json(); } 
-      catch (e: unknown) { 
-        const parseError = e as Error;
-        const textContent = await fnError.context.text(); 
-        console.error("[TEST_ERROR] Failed to parse JSON. Body:", textContent); 
-        throw new Error(`Parse failed: ${parseError.message}. Body: ${textContent}`);
+        if (contribution.raw_response_storage_path) {
+          assert(contribution.raw_response_storage_path.startsWith(`${testPrimaryUserId}/${testSessionId}/`), "Raw response storage path is incorrect");
+        }
       }
-      expect(errorPayload).to.exist;
-      expect(errorPayload.error).to.be.a('string');
-      expect(errorPayload.error).to.include(`Invalid selectedDomainTag: "${INVALID_DOMAIN_TAG}"`);
-    });
-
-    it("should fail if projectName is missing", async () => {
-      const request: DialecticServiceRequest = {
-        action: "createProject",
-        payload: { initialUserPrompt: validInitialPrompt },
-      };
-      const { data, error } = await supabaseAdmin.functions.invoke("dialectic-service", {
-        body: request,
-        headers: { Authorization: `Bearer ${testUserJwt}` },
-      });
-      expect(data).to.be.null;
-      expect(error).to.exist;
-      const fnError = error as any;
-      expect(fnError.context).to.exist;
-      expect(fnError.context.status).to.equal(400);
-      let errorPayload;
-      try { errorPayload = await fnError.context.json(); } 
-      catch (e: unknown) { 
-        const parseError = e as Error;
-        const textContent = await fnError.context.text(); 
-        console.error("[TEST_ERROR] Failed to parse JSON. Body:", textContent); 
-        throw new Error(`Parse failed: ${parseError.message}. Body: ${textContent}`);
-      }
-      expect(errorPayload).to.exist;
-      expect(errorPayload.error).to.be.a('string');
-      expect(errorPayload.error).to.equal("projectName and initialUserPrompt are required");
-    });
-
-    it("should fail if initialUserPrompt is missing", async () => {
-      const request: DialecticServiceRequest = {
-        action: "createProject",
-        payload: { projectName: validProjectName },
-      };
-      const { data, error } = await supabaseAdmin.functions.invoke("dialectic-service", {
-        body: request,
-        headers: { Authorization: `Bearer ${testUserJwt}` },
-      });
-      expect(data).to.be.null;
-      expect(error).to.exist;
-      const fnError = error as any;
-      expect(fnError.context).to.exist;
-      expect(fnError.context.status).to.equal(400);
-      let errorPayload;
-      try { errorPayload = await fnError.context.json(); } 
-      catch (e: unknown) { 
-        const parseError = e as Error;
-        const textContent = await fnError.context.text(); 
-        console.error("[TEST_ERROR] Failed to parse JSON. Body:", textContent); 
-        throw new Error(`Parse failed: ${parseError.message}. Body: ${textContent}`);
-      }
-      expect(errorPayload).to.exist;
-      expect(errorPayload.error).to.be.a('string');
-      expect(errorPayload.error).to.equal("projectName and initialUserPrompt are required");
-    });
-
-    it("should fail if user is not authenticated", async () => {
-      const request: DialecticServiceRequest = {
-        action: "createProject",
-        payload: {
-          projectName: validProjectName,
-          initialUserPrompt: validInitialPrompt,
-        },
-      };
-      const { data, error } = await supabaseAdmin.functions.invoke("dialectic-service", { body: request });
-      expect(data).to.be.null;
-      expect(error).to.exist;
-      const fnError = error as any;
-      expect(fnError.context).to.exist;
-      expect(fnError.context.status).to.equal(401);
-      let errorPayload;
-      try { errorPayload = await fnError.context.json(); } 
-      catch (e: unknown) { 
-        const parseError = e as Error;
-        const textContent = await fnError.context.text(); 
-        console.error("[TEST_ERROR] Failed to parse JSON. Body:", textContent); 
-        throw new Error(`Parse failed: ${parseError.message}. Body: ${textContent}`);
-      }
-      expect(errorPayload).to.exist;
-      expect(errorPayload.error).to.be.a('string');
-      expect(errorPayload.error).to.equal("User not authenticated");
     });
   });
 
-  // We will add more describe blocks for other actions of dialectic-service here
-  // e.g., describe("Action: createProject", () => { ... });
+  async function invokeDialecticService(action: string, payload: unknown, authToken: string) {
+    const response = await fetch(`${Deno.env.get("SUPABASE_URL")!}/functions/v1/dialectic-service`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${authToken}`,
+        "X-Client-Info": "supabase-js/0.0.0-automated-test",
+      },
+      body: JSON.stringify({ action, payload }),
+    });
+    return response;
+  }
 }); 

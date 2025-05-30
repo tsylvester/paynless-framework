@@ -83,7 +83,7 @@ let undoActionsStack: UndoAction[] = [];
  * @param action The `UndoAction` (which must include a `scope`) to register.
  */
 export function registerUndoAction(action: UndoAction) {
-  undoActionsStack.unshift(action); // Add to the beginning so we process in reverse order for teardown
+  undoActionsStack.unshift(action);
 }
 
 // The old TestResource interface, currentTestRegisteredResources array,
@@ -169,7 +169,7 @@ export async function coreCleanupTestResources(executionScope: 'all' | 'local' =
 
 // --- Exported Shared Instances and Mutable State ---
 export let supabaseAdminClient: SupabaseClient<Database>;
-export let testUserAuthToken: string | null = null;
+// const testUserAuthToken: string | null = null; // Commented out as it's not set globally by the utility anymore.
 export const mockAiAdapter = new MockAiProviderAdapter();
 export let currentTestDeps: TestUtilityDeps;
 
@@ -315,7 +315,7 @@ export async function coreEnsureTestUserAndWallet(userId: string, initialBalance
 }
 
 export function getTestUserAuthToken(): string | null {
-    return testUserAuthToken;
+    return null; // Commented out as it's not set globally by the utility anymore.
 }
 
 // --- Test Configuration Interfaces for Desired State Management ---
@@ -361,6 +361,8 @@ export interface TestResourceRequirement<T extends keyof Database['public']['Tab
    *   to avoid database errors on insert. The utility merges `identifier` and `desiredState` for creations.
    */
   desiredState: Partial<Database['public']['Tables'][T]['Row']>; 
+  // Optional: If true, and resource has user_id, it will be set to primaryUserId
+  linkUserId?: boolean; 
 }
 
 /**
@@ -390,6 +392,14 @@ export interface TestSetupConfig {
   initialWalletBalance?: number; 
 }
 
+// ADDED: Interface for returning info about processed resources
+export interface ProcessedResourceInfo<T extends keyof Database['public']['Tables'] = any> {
+  tableName: T;
+  identifier: ResourceIdentifier<T>; // The identifier used from TestResourceRequirement
+  resource?: Database['public']['Tables'][T]['Row'] | null; // The actual row data, esp. with ID
+  status: 'created' | 'updated' | 'exists_unchanged' | 'failed' | 'skipped'; // Added skipped
+  error?: string;
+}
 
 // --- New Helper Functions for Schema Integration Tests ---
 
@@ -628,8 +638,9 @@ export async function coreInitializeTestStep(
 ): Promise<{
   primaryUserId: string;
   primaryUserClient: SupabaseClient<Database>;
-  adminClient: SupabaseClient<Database>; // Added to return type
-  anonClient: SupabaseClient<Database>;    // Added to return type
+  adminClient: SupabaseClient<Database>;
+  anonClient: SupabaseClient<Database>;
+  processedResources: ProcessedResourceInfo[];
 }> {
   if (executionScope === 'global') {
     undoActionsStack = [];
@@ -637,70 +648,144 @@ export async function coreInitializeTestStep(
     undoActionsStack = undoActionsStack.filter(action => action.scope === 'global');
   }
 
+  if (!currentTestDeps) {
+    throw new Error("Test dependencies not initialized. Call initializeTestDeps first.");
+  }
   if (!supabaseAdminClient) {
-    throw new Error("Supabase admin client not initialized. Call initializeSupabaseAdminClient first.");
-  }
-  if (!currentTestDeps?.createSupabaseClient) {
-    throw new Error("Test dependencies (currentTestDeps.createSupabaseClient) not initialized. Call initializeTestDeps first.");
-  }
-  if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
-    throw new Error("SUPABASE_URL or SUPABASE_ANON_KEY is not set. Cannot create anonymous or user clients properly.");
+    throw new Error("Supabase admin client not initialized. Call initializeSupabaseAdminClient first (usually via initializeTestDeps).");
   }
 
-  // Process resource requirements (existing logic)
+  const processedResources: ProcessedResourceInfo[] = [];
+
+  const { userId: primaryUserId, userClient: primaryUserClient } = await coreCreateAndSetupTestUser(
+    config.userProfile,
+    executionScope
+  );
+  await coreEnsureTestUserAndWallet(primaryUserId, config.initialWalletBalance);
+
   if (config.resources) {
-    for (const resource of config.resources) {
-      const typedTableName = resource.tableName as keyof Database['public']['Tables'];
-      const { identifier, desiredState } = resource;
-      const { data: existingRowData, error: selectError } = await supabaseAdminClient
-        .from(typedTableName).select('*').match(identifier as any).maybeSingle();
-      if (selectError) throw selectError;
-      if (existingRowData) {
-        const originalRow = existingRowData as Database['public']['Tables'][typeof typedTableName]['Row'];
-        let needsUpdate = false;
-        const desiredStateAny = desiredState as any;
-        const originalRowAny = originalRow as any;
-        for (const key in desiredState) {
-          if (Object.prototype.hasOwnProperty.call(desiredStateAny, key)) {
-            if (originalRowAny[key] !== desiredStateAny[key]) { needsUpdate = true; break; }
+    for (const requirement of config.resources) {
+      let requirementProcessedInfo: ProcessedResourceInfo = {
+        tableName: requirement.tableName,
+        identifier: requirement.identifier,
+        status: 'skipped',
+      };
+
+      // Cast tableName to a specific key type to satisfy the linter
+      const tableNameKey = requirement.tableName as keyof Database['public']['Tables'];
+
+      try {
+        const { data: existingRows, error: fetchError } = await supabaseAdminClient
+          .from(tableNameKey) // Use the casted key (value)
+          .select("*")
+          .match(requirement.identifier as any);
+
+        if (fetchError) {
+          requirementProcessedInfo = { ...requirementProcessedInfo, status: 'failed', error: `Failed to fetch: ${fetchError.message}` };
+          processedResources.push(requirementProcessedInfo);
+          continue;
+        }
+
+        let existingRow: Database['public']['Tables'][typeof tableNameKey]['Row'] | null = null; // Use typeof for type indexing
+        if (existingRows && existingRows.length > 0) {
+          if (existingRows.length > 1) {
+            console.warn(`Identifier ${JSON.stringify(requirement.identifier)} for table ${requirement.tableName} matched >1 row. Using first.`);
+          }
+          existingRow = existingRows[0] as Database['public']['Tables'][typeof tableNameKey]['Row']; // Use typeof for type indexing
+        }
+
+        // Prepare data for DB operation, explicitly typing it.
+        // It must be Partial because desiredState is Partial.
+        let dataForDb: Partial<Database['public']['Tables'][typeof tableNameKey]['Insert']>; // Use typeof for type indexing
+        if (requirement.linkUserId) {
+          dataForDb = { ...requirement.desiredState, user_id: primaryUserId as any }; // Cast primaryUserId if user_id type is not just string
+        } else {
+          dataForDb = { ...requirement.desiredState };
+        }
+
+        if (existingRow) {
+          // Type assertion for existingRow.id
+          const existingRowId = (existingRow as { id: string }).id; 
+          if (!existingRowId) {
+            requirementProcessedInfo = { ...requirementProcessedInfo, status: 'failed', error: 'Existing row found but missing ID.', resource: existingRow };
+            processedResources.push(requirementProcessedInfo);
+            continue;
+          }
+
+          registerUndoAction({
+            type: 'RESTORE_UPDATED_ROW',
+            tableName: requirement.tableName,
+            identifier: { id: existingRowId }, 
+            originalRow: existingRow,
+            scope: executionScope,
+          });
+          const { data: updatedRowData, error: updateError } = await supabaseAdminClient
+            .from(requirement.tableName)
+            .update(dataForDb) // Pass directly, should conform to Partial<Insert>
+            .eq('id', existingRowId)
+            .select("*")
+            .single();
+
+          if (updateError) {
+            requirementProcessedInfo = { ...requirementProcessedInfo, status: 'failed', error: `Update error: ${updateError.message}`, resource: existingRow };
+          } else if (!updatedRowData) {
+            requirementProcessedInfo = { ...requirementProcessedInfo, status: 'failed', error: 'Update succeeded but no data returned.', resource: existingRow };
+          } else {
+            requirementProcessedInfo = { ...requirementProcessedInfo, status: 'updated', resource: updatedRowData };
+          }
+        } else { // Create new row
+          // For insert, merge identifier and dataForDb. Identifier might contain parts of PK or unique keys.
+          const insertData = { ...requirement.identifier, ...dataForDb };
+
+          const { data: newRowData, error: insertError } = await supabaseAdminClient
+            .from(requirement.tableName)
+            .insert(insertData as any) // Use 'as any' if merge creates complex type issue for insert
+            .select("*")
+            .single();
+
+          if (insertError) {
+            requirementProcessedInfo = { ...requirementProcessedInfo, status: 'failed', error: `Insert error: ${insertError.message}` };
+          } else if (!newRowData) {
+            requirementProcessedInfo = { ...requirementProcessedInfo, status: 'failed', error: 'Insert succeeded but no data returned.' };
+          } else {
+            // Type assertion for newRowData.id
+            const newRowId = (newRowData as unknown as { id: string }).id;
+            if (!newRowId) {
+                requirementProcessedInfo = { ...requirementProcessedInfo, status: 'failed', error: 'Created row but missing ID.', resource: newRowData };
+            } else {
+                requirementProcessedInfo = { ...requirementProcessedInfo, status: 'created', resource: newRowData };
+                registerUndoAction({
+                  type: 'DELETE_CREATED_ROW',
+                  tableName: requirement.tableName,
+                  criteria: { id: newRowId }, 
+                  scope: executionScope,
+                });
+            }
           }
         }
-        if (needsUpdate) {
-          await supabaseAdminClient.from(typedTableName).update(desiredState as any).match(identifier as any);
-          registerUndoAction({ type: 'RESTORE_UPDATED_ROW', tableName: typedTableName, identifier: identifier as Record<string, any>, originalRow, scope: executionScope });
-        }
-      } else {
-        const insertPayload = { ...(identifier as any), ...(desiredState as any) };
-        await supabaseAdminClient.from(typedTableName).insert(insertPayload as any).select();
-        registerUndoAction({ type: 'DELETE_CREATED_ROW', tableName: typedTableName, criteria: identifier as Record<string, any>, scope: executionScope });
+      } catch (e: unknown) {
+        const err = e as Error;
+        console.error(`Unexpected error processing resource ${requirement.tableName} with identifier ${JSON.stringify(requirement.identifier)}:`, err);
+        requirementProcessedInfo = {
+            ...requirementProcessedInfo,
+            status: 'failed',
+            error: `Unexpected error: ${err.message}`,
+        };
       }
+      processedResources.push(requirementProcessedInfo);
     }
   }
 
-  // Setup primary user
-  const { userId: createdPrimaryUserId, userClient: createdPrimaryUserClient } = await coreCreateAndSetupTestUser(config.userProfile, executionScope);
-  // Use the destructured primaryUserId and primaryUserClient directly
-  const primaryUserId = createdPrimaryUserId;
-  const primaryUserClient = createdPrimaryUserClient;
-
-  await coreEnsureTestUserAndWallet(primaryUserId, config.initialWalletBalance || 10000);
-  // testUserAuthToken is still set globally for the primary user, might be useful for direct token access if needed.
-  testUserAuthToken = await coreGenerateTestUserJwt(primaryUserId); 
-
-  // Create anonClient (assuming SUPABASE_URL and SUPABASE_ANON_KEY are checked at the start of the function)
-  const anonClientOptions: SupabaseClientOptions<"public"> = {
-    auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
-    db: { schema: 'public' }
-  };
-  const anonClient = currentTestDeps.createSupabaseClient(SUPABASE_URL!, SUPABASE_ANON_KEY!, anonClientOptions);
-  
-  mockAiAdapter.reset();
+  const anonClient = currentTestDeps.createSupabaseClient(currentTestDeps.supabaseUrl, currentTestDeps.supabaseAnonKey, {
+    auth: { autoRefreshToken: false, persistSession: false }
+  });
 
   return {
     primaryUserId,
     primaryUserClient,
-    adminClient: supabaseAdminClient, 
-    anonClient
+    adminClient: supabaseAdminClient,
+    anonClient,
+    processedResources,
   };
 }
 

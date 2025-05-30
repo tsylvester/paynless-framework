@@ -392,3 +392,6 @@ export interface TokenUsage {
   completion_tokens: number;
   total_tokens: number;
 }
+
+// Define ChatMessageRole locally for clarity if not available from shared types
+export type ChatMessageRole = 'system' | 'user' | 'assistant';
