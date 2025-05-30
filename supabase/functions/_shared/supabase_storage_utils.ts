@@ -147,38 +147,43 @@ export async function createSignedUrlForPath(
 export async function getFileMetadata(
   supabase: SupabaseClient,
   bucket: string,
-  path: string
+  path: string // Full path to the file, e.g., "folder/subfolder/file.md"
 ): Promise<{ size?: number; mimeType?: string; error: Error | null }> {
   try {
-    // The list method can be used to get metadata for a specific file by providing its path.
+    const lastSlashIdx = path.lastIndexOf('/');
+    const directoryPath = lastSlashIdx === -1 ? '' : path.substring(0, lastSlashIdx);
+    const fileName = lastSlashIdx === -1 ? path : path.substring(lastSlashIdx + 1);
+
+    if (!fileName) {
+        return { error: new Error(`Invalid file path provided (fileName is empty): "${path}"`) };
+    }
+
     const { data: fileList, error: listError } = await supabase.storage
       .from(bucket)
-      .list(path, { limit: 1 }); // Limit to 1 as we only expect one file or folder if path is a prefix
+      .list(directoryPath, { 
+        search: fileName,
+        limit: 1 
+      });
 
     if (listError) {
-      console.error(`Error listing file metadata for path "${path}":`, listError);
+      console.error(`Error listing file metadata for file "${fileName}" in directory "${directoryPath}":`, listError);
       return { error: listError };
     }
 
     if (!fileList || fileList.length === 0) {
-      return { error: new Error("File not found or no metadata returned.") };
+      return { error: new Error(`File not found: "${fileName}" in directory "${directoryPath}".`) };
     }
-    
-    // If path is a directory, list might return items inside it.
-    // We are interested in the metadata of the file itself.
-    // Supabase list() with a direct file path should return that file if it exists.
-    // If the path *is* the file, it should be the first (and only) item.
-    const fileMetadata = fileList.find(file => file.name === path.split('/').pop());
 
-    if (!fileMetadata) {
-       // This case might occur if the path is a folder and list() returned folder contents
-       // or if the file simply doesn't exist and list() returned empty or other items somehow.
-      return { error: new Error(`File metadata not found for the exact path "${path}" within list results.`) };
+    const fileMetadata = fileList[0]; // The searched file should be the first and only item
+
+    if (fileMetadata.id === null || !fileMetadata.metadata || typeof fileMetadata.metadata.size === 'undefined' || typeof fileMetadata.metadata.mimetype === 'undefined') {
+        console.warn(`Object found for "${fileName}" in "${directoryPath}" does not appear to be a file with complete metadata. ID: ${fileMetadata.id}, Metadata: ${JSON.stringify(fileMetadata.metadata)}`);
+        return { error: new Error(`Object found for "${fileName}" is not a file or lacks expected metadata.`) };
     }
 
     return {
-      size: fileMetadata.metadata?.size,
-      mimeType: fileMetadata.metadata?.mimetype,
+      size: fileMetadata.metadata.size,
+      mimeType: fileMetadata.metadata.mimetype,
       error: null,
     };
   } catch (e) {
@@ -186,5 +191,3 @@ export async function getFileMetadata(
     return { error: e instanceof Error ? e : new Error(String(e)) };
   }
 }
-
-// We will add other utility functions here (deleteFromStorage, createSignedUrlForPath, getFileMetadata) 

@@ -8,7 +8,7 @@ export interface DialecticServiceRequest {
   export interface CreateProjectPayload {
     projectName: string;
     initialUserPrompt: string;
-    selectedDomainTag?: string | null;
+    selected_domain_tag?: string | null;
   }
   
 export interface UpdateProjectDomainTagPayload {
@@ -41,7 +41,10 @@ export interface StartSessionPayload {
   
   export interface GenerateThesisContributionsSuccessResponse {
       message: string;
+      sessionId: string;
+      status: string;
       contributions: unknown[]; // Placeholder for actual contributions
+      errors?: { modelId: string; message: string; details?: string }[]; // Optional errors array
       // Other relevant details
   }
 
@@ -64,3 +67,18 @@ export interface StartSessionPayload {
     error: string | null;
     errorCode: string | null; // e.g., 'CHAT_API_ERROR', 'NETWORK_ERROR'
   }
+
+// --- Generate Antithesis Contributions ---
+export interface GenerateAntithesisContributionsPayload {
+  sessionId: string;
+  // Potentially add options like specific thesis contributions to target if not all
+}
+
+export interface GenerateAntithesisContributionsSuccessResponse {
+  message: string;
+  sessionId: string;
+  status: string; // e.g., 'antithesis_generation_complete', 'antithesis_generation_partial'
+  contributions: unknown[]; // Array of newly created antithesis contributions
+  errors?: { modelId: string; thesisContributionId: string; message: string; details?: string }[];
+}
+// --- End Generate Antithesis Contributions ---

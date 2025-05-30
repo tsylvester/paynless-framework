@@ -155,4 +155,61 @@ describe('DialecticApiClient', () => {
             expect(result.data).toBeUndefined();
         });
     });
+
+    describe('listProjects', () => {
+        const endpoint = 'dialectic-service';
+        const requestBody = { action: 'listProjects' };
+
+        it('should call apiClient.post with the correct endpoint and body', async () => {
+            const mockResponse: ApiResponse<any[]> = { data: [], status: 200 }; // any for DialecticProject for test simplicity
+            (mockApiClient.post as vi.Mock).mockResolvedValue(mockResponse);
+
+            await dialecticApiClient.listProjects();
+
+            expect(mockApiClient.post).toHaveBeenCalledTimes(1);
+            const calls = (mockApiClient.post as vi.Mock).mock.calls;
+            expect(calls[0][0]).toEqual(endpoint);
+            expect(calls[0][1]).toEqual(requestBody);
+            expect(calls[0][2]).toBeUndefined(); // Default options mean no special third argument
+        });
+
+        it('should return an array of projects on successful response', async () => {
+            const mockProjectsData: any[] = [
+                {
+                    id: 'project-123',
+                    user_id: 'user-abc',
+                    project_name: 'Test Project 1',
+                    initial_user_prompt: 'Prompt 1',
+                    selected_domain_tag: 'tech',
+                    repo_url: null,
+                    status: 'active',
+                    created_at: new Date().toISOString(),
+                    updated_at: new Date().toISOString(),
+                },
+            ];
+            const mockResponse: ApiResponse<any[]> = {
+                data: mockProjectsData,
+                status: 200,
+            };
+            (mockApiClient.post as vi.Mock).mockResolvedValue(mockResponse);
+
+            const result = await dialecticApiClient.listProjects();
+
+            expect(result.data).toEqual(mockProjectsData);
+            expect(result.status).toBe(200);
+            expect(result.error).toBeUndefined();
+        });
+
+        it('should return the error object on failed response', async () => {
+            const mockApiError: ApiError = { code: 'FETCH_ERROR', message: 'Failed to fetch projects' };
+            const mockErrorResponse: ApiResponse<any[]> = { error: mockApiError, status: 500 };
+            (mockApiClient.post as vi.Mock).mockResolvedValue(mockErrorResponse);
+
+            const result = await dialecticApiClient.listProjects();
+
+            expect(result.error).toEqual(mockApiError);
+            expect(result.status).toBe(500);
+            expect(result.data).toBeUndefined();
+        });
+    });
 }); 

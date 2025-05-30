@@ -1,29 +1,10 @@
 import type { ApiClient } from './apiClient';
 import type {
     ApiResponse,
-    // Potentially add specific Dialectic-related types from @paynless/types here later
+    DialecticProject,
+    CreateProjectPayload,
 } from '@paynless/types';
 import { logger } from '@paynless/utils';
-
-// Basic type definitions, can be expanded and moved to @paynless/types
-export interface DialecticProject {
-    id: string;
-    user_id: string;
-    project_name: string;
-    initial_user_prompt: string;
-    selected_domain_tag: string | null;
-    repo_url: string | null;
-    status: string;
-    created_at: string;
-    updated_at: string;
-    // Add other fields like sessions, etc., as needed for full project details later
-}
-
-export interface CreateProjectPayload {
-    projectName: string;
-    initialUserPrompt: string;
-    selectedDomainTag?: string | null;
-}
 
 
 /**
@@ -74,6 +55,27 @@ export class DialecticApiClient {
             logger.error('Error creating dialectic project:', { error: response.error, projectName: payload.projectName });
         } else {
             logger.info('Successfully created dialectic project', { projectId: response.data?.id });
+        }
+        return response;
+    }
+
+    /**
+     * Fetches the list of dialectic projects for the authenticated user.
+     * Requires authentication.
+     */
+    async listProjects(): Promise<ApiResponse<DialecticProject[]>> {
+        logger.info('Fetching list of dialectic projects for user');
+
+        const response = await this.apiClient.post<DialecticProject[], { action: string }>(
+            'dialectic-service',
+            { action: 'listProjects' }
+            // Default options will ensure authentication is handled by apiClient
+        );
+
+        if (response.error) {
+            logger.error('Error fetching dialectic projects:', { error: response.error });
+        } else {
+            logger.info(`Fetched ${response.data?.length ?? 0} dialectic projects`);
         }
         return response;
     }
