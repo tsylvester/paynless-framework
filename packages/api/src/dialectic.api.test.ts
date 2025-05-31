@@ -1,16 +1,17 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, type Mock } from 'vitest';
 import { DialecticApiClient } from './dialectic.api';
 import type { ApiClient } from './apiClient';
-import type { ApiResponse, ApiError } from '@paynless/types';
+import type { ApiResponse, ApiError, CreateProjectPayload, DialecticProject, StartSessionPayload, DialecticSession, AIModelCatalogEntry, ContributionContentSignedUrlResponse } from '@paynless/types';
 
 // Mock the base ApiClient
+const mockApiClientPost = vi.fn();
 const mockApiClient = {
     get: vi.fn(),
-    post: vi.fn(),
+    post: mockApiClientPost,
     put: vi.fn(),
     patch: vi.fn(),
     delete: vi.fn(),
-} as unknown as ApiClient; // Use type assertion for the mocked object
+} as unknown as ApiClient; 
 
 // Create an instance of the class we are testing
 const dialecticApiClient = new DialecticApiClient(mockApiClient);
@@ -26,78 +27,66 @@ describe('DialecticApiClient', () => {
         const requestOptions = { isPublic: true };
 
         it('should call apiClient.post with the correct endpoint, body, and options', async () => {
-            // Arrange: Mock a successful response
             const mockResponse: ApiResponse<string[]> = {
                 data: [],
                 status: 200,
             };
-            (mockApiClient.post as vi.Mock).mockResolvedValue(mockResponse);
+            mockApiClientPost.mockResolvedValue(mockResponse);
 
-            // Act
             await dialecticApiClient.listAvailableDomainTags();
 
-            // Assert
-            expect(mockApiClient.post).toHaveBeenCalledTimes(1);
-            expect(mockApiClient.post).toHaveBeenCalledWith(endpoint, requestBody, requestOptions);
+            expect(mockApiClientPost).toHaveBeenCalledTimes(1);
+            expect(mockApiClientPost).toHaveBeenCalledWith(endpoint, requestBody, requestOptions);
         });
 
         it('should return the domain tags array on successful response', async () => {
-            // Arrange
             const mockTags: string[] = ['software_development', 'technical_writing'];
             const mockResponse: ApiResponse<string[]> = {
                 data: mockTags,
                 status: 200,
             };
-            (mockApiClient.post as vi.Mock).mockResolvedValue(mockResponse);
+            mockApiClientPost.mockResolvedValue(mockResponse);
 
-            // Act
             const result = await dialecticApiClient.listAvailableDomainTags();
 
-            // Assert
             expect(result.data).toEqual(mockTags);
             expect(result.status).toBe(200);
             expect(result.error).toBeUndefined();
         });
 
         it('should return the error object on failed response', async () => {
-            // Arrange
             const mockApiError: ApiError = { code: 'SERVER_ERROR', message: 'Failed to fetch tags' };
             const mockErrorResponse: ApiResponse<string[]> = {
                 error: mockApiError,
                 status: 500,
             };
-            (mockApiClient.post as vi.Mock).mockResolvedValue(mockErrorResponse);
+            mockApiClientPost.mockResolvedValue(mockErrorResponse);
 
-            // Act
             const result = await dialecticApiClient.listAvailableDomainTags();
 
-            // Assert
             expect(result.error).toEqual(mockApiError);
             expect(result.status).toBe(500);
             expect(result.data).toBeUndefined();
         });
 
         it('should return a network error if apiClient.post rejects', async () => {
-            // Arrange
             const networkErrorMessage = 'Simulated network failure';
-            (mockApiClient.post as vi.Mock).mockRejectedValueOnce(new Error(networkErrorMessage));
+            mockApiClientPost.mockRejectedValueOnce(new Error(networkErrorMessage));
 
-            // Act
             const result = await dialecticApiClient.listAvailableDomainTags();
 
-            // Assert
             expect(result.error).toEqual({
                 code: 'NETWORK_ERROR',
                 message: networkErrorMessage,
             });
-            expect(result.status).toBe(0); // Or your designated status for network errors
+            expect(result.status).toBe(0); 
             expect(result.data).toBeUndefined();
         });
     });
 
     describe('createProject', () => {
         const endpoint = 'dialectic-service';
-        const validPayload = {
+        const validPayload: CreateProjectPayload = {
             projectName: 'Test Project',
             initialUserPrompt: 'Test prompt',
             selectedDomainTag: 'software_development',
@@ -105,82 +94,78 @@ describe('DialecticApiClient', () => {
         const requestBody = { action: 'createProject', payload: validPayload };
 
         it('should call apiClient.post with the correct endpoint and body for createProject', async () => {
-            // Arrange
-            const mockProjectResponse: any = { id: 'project-123', ...validPayload }; 
-            const mockResponse: ApiResponse<any> = { // Using any for DialecticProject for simplicity in test
+            const mockProjectResponse: DialecticProject = {
+                id: 'project-123',
+                user_id: 'user-xyz',
+                project_name: validPayload.projectName,
+                initial_user_prompt: validPayload.initialUserPrompt,
+                selected_domain_tag: validPayload.selectedDomainTag || null,
+                repo_url: null,
+                status: 'active',
+                created_at: new Date().toISOString(),
+                updated_at: new Date().toISOString(),
+            }; 
+            const mockResponse: ApiResponse<DialecticProject> = {
                 data: mockProjectResponse,
                 status: 201,
             };
-            (mockApiClient.post as vi.Mock).mockResolvedValue(mockResponse);
+            mockApiClientPost.mockResolvedValue(mockResponse);
 
-            // Act
             await dialecticApiClient.createProject(validPayload);
 
-            // Assert
-            expect(mockApiClient.post).toHaveBeenCalledTimes(1);
-            // expect(mockApiClient.post).toHaveBeenCalledWith(endpoint, requestBody, undefined); // No special options
-            // Updated assertion to be less strict about the optional third argument if it's undefined
-            const calls = (mockApiClient.post as vi.Mock).mock.calls;
+            expect(mockApiClientPost).toHaveBeenCalledTimes(1);
+            const calls = mockApiClientPost.mock.calls;
             expect(calls[0][0]).toEqual(endpoint);
             expect(calls[0][1]).toEqual(requestBody);
-            expect(calls[0][2]).toBeUndefined(); // Explicitly check that the third arg was undefined
+            expect(calls[0][2]).toBeUndefined();
         });
 
         it('should return the created project data on successful response', async () => {
-            // Arrange
-            const mockProjectData: any = { 
+            const mockProjectData: DialecticProject = { 
                 id: 'project-123', 
                 user_id: 'user-abc',
                 project_name: validPayload.projectName,
                 initial_user_prompt: validPayload.initialUserPrompt,
-                selected_domain_tag: validPayload.selectedDomainTag,
+                selected_domain_tag: validPayload.selectedDomainTag || null,
                 repo_url: null,
                 status: 'active',
                 created_at: new Date().toISOString(),
                 updated_at: new Date().toISOString(),
             };
-            const mockResponse: ApiResponse<any> = {
+            const mockResponse: ApiResponse<DialecticProject> = {
                 data: mockProjectData,
                 status: 201,
             };
-            (mockApiClient.post as vi.Mock).mockResolvedValue(mockResponse);
+            mockApiClientPost.mockResolvedValue(mockResponse);
 
-            // Act
             const result = await dialecticApiClient.createProject(validPayload);
 
-            // Assert
             expect(result.data).toEqual(mockProjectData);
             expect(result.status).toBe(201);
             expect(result.error).toBeUndefined();
         });
 
         it('should return the error object on failed project creation', async () => {
-            // Arrange
             const mockApiError: ApiError = { code: 'VALIDATION_ERROR', message: 'Project name is required' };
-            const mockErrorResponse: ApiResponse<any> = {
+            const mockErrorResponse: ApiResponse<DialecticProject> = {
                 error: mockApiError,
                 status: 400,
             };
-            (mockApiClient.post as vi.Mock).mockResolvedValue(mockErrorResponse);
+            mockApiClientPost.mockResolvedValue(mockErrorResponse);
 
-            // Act
-            const result = await dialecticApiClient.createProject(validPayload); // Payload doesn't matter for this test path
+            const result = await dialecticApiClient.createProject(validPayload); 
 
-            // Assert
             expect(result.error).toEqual(mockApiError);
             expect(result.status).toBe(400);
             expect(result.data).toBeUndefined();
         });
 
         it('should return a network error if apiClient.post rejects', async () => {
-            // Arrange
             const networkErrorMessage = 'Simulated network failure';
-            (mockApiClient.post as vi.Mock).mockRejectedValueOnce(new Error(networkErrorMessage));
+            mockApiClientPost.mockRejectedValueOnce(new Error(networkErrorMessage));
 
-            // Act
-            const result = await dialecticApiClient.createProject(validPayload); // Payload is arbitrary here
+            const result = await dialecticApiClient.createProject(validPayload); 
 
-            // Assert
             expect(result.error).toEqual({
                 code: 'NETWORK_ERROR',
                 message: networkErrorMessage,
@@ -195,20 +180,20 @@ describe('DialecticApiClient', () => {
         const requestBody = { action: 'listProjects' };
 
         it('should call apiClient.post with the correct endpoint and body', async () => {
-            const mockResponse: ApiResponse<any[]> = { data: [], status: 200 }; // any for DialecticProject for test simplicity
-            (mockApiClient.post as vi.Mock).mockResolvedValue(mockResponse);
+            const mockResponse: ApiResponse<DialecticProject[]> = { data: [], status: 200 }; 
+            mockApiClientPost.mockResolvedValue(mockResponse);
 
             await dialecticApiClient.listProjects();
 
-            expect(mockApiClient.post).toHaveBeenCalledTimes(1);
-            const calls = (mockApiClient.post as vi.Mock).mock.calls;
+            expect(mockApiClientPost).toHaveBeenCalledTimes(1);
+            const calls = mockApiClientPost.mock.calls;
             expect(calls[0][0]).toEqual(endpoint);
             expect(calls[0][1]).toEqual(requestBody);
-            expect(calls[0][2]).toBeUndefined(); // Default options mean no special third argument
+            expect(calls[0][2]).toBeUndefined(); 
         });
 
         it('should return an array of projects on successful response', async () => {
-            const mockProjectsData: any[] = [
+            const mockProjectsData: DialecticProject[] = [
                 {
                     id: 'project-123',
                     user_id: 'user-abc',
@@ -221,11 +206,11 @@ describe('DialecticApiClient', () => {
                     updated_at: new Date().toISOString(),
                 },
             ];
-            const mockResponse: ApiResponse<any[]> = {
+            const mockResponse: ApiResponse<DialecticProject[]> = {
                 data: mockProjectsData,
                 status: 200,
             };
-            (mockApiClient.post as vi.Mock).mockResolvedValue(mockResponse);
+            mockApiClientPost.mockResolvedValue(mockResponse);
 
             const result = await dialecticApiClient.listProjects();
 
@@ -236,8 +221,8 @@ describe('DialecticApiClient', () => {
 
         it('should return the error object on failed response', async () => {
             const mockApiError: ApiError = { code: 'FETCH_ERROR', message: 'Failed to fetch projects' };
-            const mockErrorResponse: ApiResponse<any[]> = { error: mockApiError, status: 500 };
-            (mockApiClient.post as vi.Mock).mockResolvedValue(mockErrorResponse);
+            const mockErrorResponse: ApiResponse<DialecticProject[]> = { error: mockApiError, status: 500 };
+            mockApiClientPost.mockResolvedValue(mockErrorResponse);
 
             const result = await dialecticApiClient.listProjects();
 
@@ -247,18 +232,275 @@ describe('DialecticApiClient', () => {
         });
 
         it('should return a network error if apiClient.post rejects', async () => {
-            // Arrange
             const networkErrorMessage = 'Simulated network failure';
-            (mockApiClient.post as vi.Mock).mockRejectedValueOnce(new Error(networkErrorMessage));
+            mockApiClientPost.mockRejectedValueOnce(new Error(networkErrorMessage));
 
-            // Act
             const result = await dialecticApiClient.listProjects();
 
-            // Assert
             expect(result.error).toEqual({
                 code: 'NETWORK_ERROR',
                 message: networkErrorMessage,
             });
+            expect(result.status).toBe(0);
+            expect(result.data).toBeUndefined();
+        });
+    });
+
+    describe('startSession', () => {
+        const endpoint = 'dialectic-service';
+        const validPayload: StartSessionPayload = {
+            projectId: 'project-123',
+            selectedModelCatalogIds: ['model-abc', 'model-def'],
+            sessionDescription: 'Test session',
+        };
+        const requestBody = { action: 'startSession', payload: validPayload };
+
+        const baseMockSession: DialecticSession = {
+            id: 'session-xyz',
+            project_id: validPayload.projectId,
+            session_description: validPayload.sessionDescription || null,
+            current_stage_seed_prompt: 'Initial prompt for session',
+            iteration_count: 1,
+            active_thesis_prompt_template_id: 'tpl-thesis-001',
+            active_antithesis_prompt_template_id: 'tpl-antithesis-001',
+            active_synthesis_prompt_template_id: null,
+            active_parenthesis_prompt_template_id: null,
+            active_paralysis_prompt_template_id: null,
+            formal_debate_structure_id: null,
+            max_iterations: 3,
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+            status: 'pending_thesis',
+            associated_chat_id: 'chat-123',
+            dialectic_session_models: [],
+            dialectic_contributions: [],
+            convergence_status: null,
+        };
+
+        it('should call apiClient.post with the correct endpoint and body', async () => {
+            const mockResponse: ApiResponse<DialecticSession> = { data: { ...baseMockSession }, status: 201 };
+            mockApiClientPost.mockResolvedValue(mockResponse);
+
+            await dialecticApiClient.startSession(validPayload);
+
+            expect(mockApiClientPost).toHaveBeenCalledTimes(1);
+            const calls = mockApiClientPost.mock.calls;
+            expect(calls[0][0]).toEqual(endpoint);
+            expect(calls[0][1]).toEqual(requestBody);
+            expect(calls[0][2]).toBeUndefined();
+        });
+
+        it('should return the created session data on successful response', async () => {
+            const mockResponse: ApiResponse<DialecticSession> = { data: { ...baseMockSession }, status: 201 };
+            mockApiClientPost.mockResolvedValue(mockResponse);
+
+            const result = await dialecticApiClient.startSession(validPayload);
+
+            expect(result.data).toEqual(baseMockSession);
+            expect(result.status).toBe(201);
+            expect(result.error).toBeUndefined();
+        });
+
+        it('should return the error object on failed session creation', async () => {
+            const mockApiError: ApiError = { code: 'PROJECT_NOT_FOUND', message: 'Project not found' };
+            const mockErrorResponse: ApiResponse<DialecticSession> = { error: mockApiError, status: 404 };
+            mockApiClientPost.mockResolvedValue(mockErrorResponse);
+
+            const result = await dialecticApiClient.startSession(validPayload);
+
+            expect(result.error).toEqual(mockApiError);
+            expect(result.status).toBe(404);
+            expect(result.data).toBeUndefined();
+        });
+
+        it('should return a network error if apiClient.post rejects', async () => {
+            const networkErrorMessage = 'Simulated network failure for startSession';
+            mockApiClientPost.mockRejectedValueOnce(new Error(networkErrorMessage));
+
+            const result = await dialecticApiClient.startSession(validPayload);
+
+            expect(result.error).toEqual({ code: 'NETWORK_ERROR', message: networkErrorMessage });
+            expect(result.status).toBe(0);
+            expect(result.data).toBeUndefined();
+        });
+    });
+
+    describe('getProjectDetails', () => {
+        const endpoint = 'dialectic-service';
+        const projectId = 'project-123';
+        const requestBody = { action: 'getProjectDetails', payload: { projectId } };
+
+        it('should call apiClient.post with the correct endpoint and body', async () => {
+            const mockProjectDetails: DialecticProject = {
+                id: projectId,
+                user_id: 'user-abc',
+                project_name: 'Detailed Project',
+                initial_user_prompt: 'Detailed prompt',
+                selected_domain_tag: 'software_development',
+                repo_url: null,
+                created_at: new Date().toISOString(),
+                updated_at: new Date().toISOString(),
+                status: 'active',
+                sessions: [], 
+            };
+            const mockResponse: ApiResponse<DialecticProject> = { data: mockProjectDetails, status: 200 };
+            mockApiClientPost.mockResolvedValue(mockResponse);
+
+            await dialecticApiClient.getProjectDetails(projectId);
+
+            expect(mockApiClientPost).toHaveBeenCalledTimes(1);
+            const calls = mockApiClientPost.mock.calls;
+            expect(calls[0][0]).toEqual(endpoint);
+            expect(calls[0][1]).toEqual(requestBody);
+            expect(calls[0][2]).toBeUndefined();
+        });
+
+        it('should return project details on successful response', async () => {
+            const mockData: DialecticProject = {
+                id: projectId,
+                user_id: 'user-abc',
+                project_name: 'Detailed Project',
+                initial_user_prompt: 'Detailed prompt',
+                selected_domain_tag: 'design',
+                repo_url: 'https://github.com/test/project',
+                created_at: new Date().toISOString(),
+                updated_at: new Date().toISOString(),
+                status: 'active',
+                sessions: [],
+            };
+            const mockResponse: ApiResponse<DialecticProject> = { data: mockData, status: 200 };
+            mockApiClientPost.mockResolvedValue(mockResponse);
+
+            const result = await dialecticApiClient.getProjectDetails(projectId);
+
+            expect(result.data).toEqual(mockData);
+            expect(result.status).toBe(200);
+            expect(result.error).toBeUndefined();
+        });
+
+        it('should return error on failed response', async () => {
+            const mockApiError: ApiError = { code: 'NOT_FOUND', message: 'Project not found' };
+            const mockErrorResponse: ApiResponse<DialecticProject> = { error: mockApiError, status: 404 };
+            mockApiClientPost.mockResolvedValue(mockErrorResponse);
+
+            const result = await dialecticApiClient.getProjectDetails(projectId);
+
+            expect(result.error).toEqual(mockApiError);
+            expect(result.status).toBe(404);
+            expect(result.data).toBeUndefined();
+        });
+
+        it('should return a network error if apiClient.post rejects', async () => {
+            const networkErrorMessage = 'Simulated network failure for getProjectDetails';
+            mockApiClientPost.mockRejectedValueOnce(new Error(networkErrorMessage));
+
+            const result = await dialecticApiClient.getProjectDetails(projectId);
+
+            expect(result.error).toEqual({ code: 'NETWORK_ERROR', message: networkErrorMessage });
+            expect(result.status).toBe(0);
+            expect(result.data).toBeUndefined();
+        });
+    });
+
+    describe('listModelCatalog', () => {
+        const endpoint = 'dialectic-service';
+        const requestBody = { action: 'listModelCatalog' };
+
+        it('should call apiClient.post with the correct endpoint and body', async () => {
+            const mockCatalog: AIModelCatalogEntry[] = [
+                {
+                    id: 'model-1',
+                    provider_name: 'openai',
+                    model_name: 'GPT-4',
+                    api_identifier: 'gpt-4',
+                    description: 'Powerful model',
+                    strengths: ['reasoning'],
+                    weaknesses: ['cost'],
+                    context_window_tokens: 8000,
+                    input_token_cost_usd_millionths: 10000, // e.g., $0.01 per 1k input tokens
+                    output_token_cost_usd_millionths: 30000, // e.g., $0.03 per 1k output tokens
+                    max_output_tokens: 4096,
+                    is_active: true,
+                    created_at: new Date().toISOString(),
+                    updated_at: new Date().toISOString(),
+                },
+            ];
+            const mockResponse: ApiResponse<AIModelCatalogEntry[]> = { data: mockCatalog, status: 200 };
+            mockApiClientPost.mockResolvedValue(mockResponse);
+
+            await dialecticApiClient.listModelCatalog();
+
+            expect(mockApiClientPost).toHaveBeenCalledTimes(1);
+            const calls = mockApiClientPost.mock.calls;
+            expect(calls[0][0]).toEqual(endpoint);
+            expect(calls[0][1]).toEqual(requestBody);
+            expect(calls[0][2]).toBeUndefined();
+        });
+
+        it('should return model catalog on successful response', async () => {
+            const mockData: AIModelCatalogEntry[] = [
+                {
+                    id: 'model-1',
+                    provider_name: 'openai',
+                    model_name: 'GPT-4',
+                    api_identifier: 'gpt-4',
+                    description: 'Powerful model',
+                    strengths: ['reasoning'],
+                    weaknesses: ['cost'],
+                    context_window_tokens: 8000,
+                    input_token_cost_usd_millionths: 10000,
+                    output_token_cost_usd_millionths: 30000,
+                    max_output_tokens: 4096,
+                    is_active: true,
+                    created_at: new Date().toISOString(),
+                    updated_at: new Date().toISOString(),
+                },
+                {
+                    id: 'model-2',
+                    provider_name: 'anthropic',
+                    model_name: 'Claude 3 Opus',
+                    api_identifier: 'claude-3-opus-20240229',
+                    description: 'Highest-performing model by Anthropic',
+                    strengths: ['analysis', 'long context'],
+                    weaknesses: null,
+                    context_window_tokens: 200000,
+                    input_token_cost_usd_millionths: 15000, 
+                    output_token_cost_usd_millionths: 75000,
+                    max_output_tokens: 4096,
+                    is_active: true,
+                    created_at: new Date().toISOString(),
+                    updated_at: new Date().toISOString(),
+                },
+            ];
+            const mockResponse: ApiResponse<AIModelCatalogEntry[]> = { data: mockData, status: 200 };
+            mockApiClientPost.mockResolvedValue(mockResponse);
+
+            const result = await dialecticApiClient.listModelCatalog();
+
+            expect(result.data).toEqual(mockData);
+            expect(result.status).toBe(200);
+            expect(result.error).toBeUndefined();
+        });
+
+        it('should return error on failed response', async () => {
+            const mockApiError: ApiError = { code: 'INTERNAL_ERROR', message: 'Could not fetch model catalog' };
+            const mockErrorResponse: ApiResponse<AIModelCatalogEntry[]> = { error: mockApiError, status: 500 };
+            mockApiClientPost.mockResolvedValue(mockErrorResponse);
+
+            const result = await dialecticApiClient.listModelCatalog();
+
+            expect(result.error).toEqual(mockApiError);
+            expect(result.status).toBe(500);
+            expect(result.data).toBeUndefined();
+        });
+
+        it('should return a network error if apiClient.post rejects', async () => {
+            const networkErrorMessage = 'Simulated network failure for listModelCatalog';
+            mockApiClientPost.mockRejectedValueOnce(new Error(networkErrorMessage));
+
+            const result = await dialecticApiClient.listModelCatalog();
+
+            expect(result.error).toEqual({ code: 'NETWORK_ERROR', message: networkErrorMessage });
             expect(result.status).toBe(0);
             expect(result.data).toBeUndefined();
         });
@@ -279,15 +521,15 @@ describe('DialecticApiClient', () => {
                 data: mockSignedUrlResponseData,
                 status: 200,
             };
-            (mockApiClient.post as vi.Mock).mockResolvedValue(mockResponse);
+            mockApiClientPost.mockResolvedValue(mockResponse);
 
             await dialecticApiClient.getContributionContentSignedUrl(testContributionId);
 
-            expect(mockApiClient.post).toHaveBeenCalledTimes(1);
-            const calls = (mockApiClient.post as vi.Mock).mock.calls;
+            expect(mockApiClientPost).toHaveBeenCalledTimes(1);
+            const calls = mockApiClientPost.mock.calls;
             expect(calls[0][0]).toEqual(endpoint);
             expect(calls[0][1]).toEqual(requestBody);
-            expect(calls[0][2]).toBeUndefined(); // No special options expected
+            expect(calls[0][2]).toBeUndefined(); 
         });
 
         it('should return signed URL data on successful response', async () => {
@@ -300,7 +542,7 @@ describe('DialecticApiClient', () => {
                 data: mockSignedUrlResponseData,
                 status: 200,
             };
-            (mockApiClient.post as vi.Mock).mockResolvedValue(mockResponse);
+            mockApiClientPost.mockResolvedValue(mockResponse);
 
             const result = await dialecticApiClient.getContributionContentSignedUrl(testContributionId);
 
@@ -309,12 +551,12 @@ describe('DialecticApiClient', () => {
             expect(result.error).toBeUndefined();
         });
 
-        it('should return null data if service action returns null (e.g., contribution not found by service but not an error state)', async () => {
+        it('should return null data if service action returns null', async () => {
             const mockResponse: ApiResponse<ContributionContentSignedUrlResponse | null> = {
-                data: null, // Service explicitly returns null for data
-                status: 200, // Or 404 if the service maps it that way, but API client just passes through
+                data: null, 
+                status: 200, 
             };
-            (mockApiClient.post as vi.Mock).mockResolvedValue(mockResponse);
+            mockApiClientPost.mockResolvedValue(mockResponse);
 
             const result = await dialecticApiClient.getContributionContentSignedUrl(testContributionId);
 
@@ -329,24 +571,21 @@ describe('DialecticApiClient', () => {
                 error: mockApiError,
                 status: 500,
             };
-            (mockApiClient.post as vi.Mock).mockResolvedValue(mockErrorResponse);
+            mockApiClientPost.mockResolvedValue(mockErrorResponse);
 
             const result = await dialecticApiClient.getContributionContentSignedUrl(testContributionId);
 
             expect(result.error).toEqual(mockApiError);
             expect(result.status).toBe(500);
-            expect(result.data).toBeUndefined(); // Or null, depending on stricter ApiResponse typing for error cases
+            expect(result.data).toBeUndefined(); 
         });
 
         it('should return a network error if apiClient.post rejects', async () => {
-            // Arrange
             const networkErrorMessage = 'Simulated network failure';
-            (mockApiClient.post as vi.Mock).mockRejectedValueOnce(new Error(networkErrorMessage));
+            mockApiClientPost.mockRejectedValueOnce(new Error(networkErrorMessage));
 
-            // Act
             const result = await dialecticApiClient.getContributionContentSignedUrl(testContributionId);
 
-            // Assert
             expect(result.error).toEqual({
                 code: 'NETWORK_ERROR',
                 message: networkErrorMessage,

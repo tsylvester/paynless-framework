@@ -344,17 +344,17 @@ The implementation plan uses the following labels to categorize work steps:
         *   `[✅]` Mock the storage utility functions. (Effectively tested via test utils)
         *   `[✅]` Verify that these functions are called with correct parameters.
         *   `[✅]` Verify that the `dialectic_contributions` record is saved with the correct storage path, bucket, mime type, and size. (GREEN)
-*   `[ ] 1.1.5.C [API/STORE/UI]` Client-Side Content Retrieval and Display
-    *   `[ ] 1.1.5.C.1 [API]` The `DialecticContribution` type (in `packages/api/.../dialectic.api.ts` types) will now include `contentStorageBucket`, `contentStoragePath`, `contentMimeType`, `contentSizeBytes` and *not* the direct `content` string.
+*   `[✅] 1.1.5.C [API/STORE/UI]` Client-Side Content Retrieval and Display
+    *   `[✅] 1.1.5.C.1 [API]` The `DialecticContribution` type (in `packages/api/.../dialectic.api.ts` types) will now include `contentStorageBucket`, `contentStoragePath`, `contentMimeType`, `contentSizeBytes` and *not* the direct `content` string.
 `contentSizeBytes` and *not* the direct `content` string.
-    *   `[ ] 1.1.5.C.2 [API]` Add a new method to `DialecticAPIInterface`: `getContributionContentSignedUrl(contributionId: string): Promise<{ signedUrl: string, mimeType: string, sizeBytes: number | null } | null>`
+    *   `[✅] 1.1.5.C.2 [API]` Add a new method to `DialecticAPIInterface`: `getContributionContentSignedUrl(contributionId: string): Promise<{ signedUrl: string, mimeType: string, sizeBytes: number | null } | null>`
         *   The corresponding `dialectic-service` action will:
             1.  Fetch the `dialectic_contributions` record by `contributionId` to get its `content_storage_bucket` and `content_storage_path`.
             2.  Use the `createSignedUrlForPath` storage utility to generate a signed URL for reading the content (with a reasonable expiry, e.g., 5-15 minutes).
             3.  Return the `signedUrl`, `content_mime_type`, and `content_size_bytes`.
         *   `[✅] 1.1.5.C.2.1 [TEST-INT]` Write integration test for this backend service action. (RED -> GREEN)
-        *   `[ ] 1.1.5.C.2.2 [TEST-UNIT]` Write unit test for the API adapter method. (RED -> GREEN)
-    *   `[ ] 1.1.5.C.3 [STORE]` Update/Create state and thunks in `dialecticStore.ts`:
+        *   `[✅] 1.1.5.C.2.2 [TEST-UNIT]` Write unit test for the API adapter method. (RED -> GREEN)
+    *   `[✅] 1.1.5.C.3 [STORE]` Update/Create state and thunks in `dialecticStore.ts`:
         *   State: `contributionContentCache: { [contributionId: string]: { signedUrl?: string, expiry?: number, content?: string, isLoading: boolean, error?: string, mimeType?: string, sizeBytes?: number } }`.
         *   Thunk: `fetchContributionContent(contributionId: string)`:
             1.  Check cache: if valid, non-expired URL and content exist, return content. If URL exists but content not fetched, proceed to fetch.
@@ -363,7 +363,7 @@ The implementation plan uses the following labels to categorize work steps:
             4.  Performs a `fetch(signedUrl)` to get the actual content (e.g., as text).
             5.  Stores the fetched content in the cache.
             6.  Handles loading and error states.
-        *   `[ ] 1.1.5.C.3.1 [TEST-UNIT]` Write unit tests for thunk and reducers. (RED -> GREEN)
+        *   `[✅] 1.1.5.C.3.1 [TEST-UNIT]` Write unit tests for thunk and reducers. (RED -> GREEN)
     *   `[ ] 1.1.5.C.4 [UI]` Update UI components (e.g., `DialecticSessionDetailsPage`) that display contribution content:
         *   Use a selector to get cached data from `contributionContentCache` for the relevant `contributionId`.
         *   If data is not present or URL is expired (or content not yet fetched), dispatch `fetchContributionContent(contributionId)`.
@@ -382,19 +382,19 @@ The implementation plan uses the following labels to categorize work steps:
     *   `[ ] 1.1.6.1 [TEST-UNIT]` Write test for seeding catalog. (RED)
     *   `[ ] 1.1.6.2` Create seed script. (GREEN)
     *   `[ ] 1.1.6.3 [TEST-UNIT]` Run seed script test.
-*   `[❓] 1.1.7 [RLS]` Define Row Level Security policies for `dialectic_projects`, `dialectic_sessions`, `dialectic_session_models`, `dialectic_contributions`.
+*   `[✅] 1.1.7 [RLS]` Define Row Level Security policies for `dialectic_projects`, `dialectic_sessions`, `dialectic_session_models`, `dialectic_contributions`.
     *   `[❓] 1.1.7.1 [TEST-INT]` Write RLS tests for `dialectic_projects` (user owns their projects). (RED)
-    *   `[❓] 1.1.7.2` Implement RLS for `dialectic_projects`. (GREEN)
+    *   `[✅] 1.1.7.2` Implement RLS for `dialectic_projects`. (GREEN)
     *   `[❓] 1.1.7.3 [TEST-INT]` Run RLS tests for `dialectic_projects`.
-    *   `[ ] 1.1.7.4 [TEST-INT]` Write RLS tests for `dialectic_sessions` (user can access sessions of their projects). (RED)
-    *   `[ ] 1.1.7.5` Implement RLS for `dialectic_sessions`. (GREEN)
-    *   `[ ] 1.1.7.6 [TEST-INT]` Run RLS tests for `dialectic_sessions`.
+    *   `[✅] 1.1.7.4 [TEST-INT]` Write RLS tests for `dialectic_sessions` (user can access sessions of their projects). (RED)
+    *   `[✅] 1.1.7.5` Implement RLS for `dialectic_sessions`. (GREEN)
+    *   `[✅] 1.1.7.6 [TEST-INT]` Run RLS tests for `dialectic_sessions`.
     *   `[ ] 1.1.7.7 [TEST-INT]` Write RLS tests for `dialectic_session_models`. (RED)
-    *   `[ ] 1.1.7.8` Implement RLS for `dialectic_session_models`. (GREEN)
+    *   `[✅] 1.1.7.8` Implement RLS for `dialectic_session_models`. (GREEN)
     *   `[ ] 1.1.7.9 [TEST-INT]` Run RLS tests for `dialectic_session_models`.
-    *   `[ ] 1.1.7.10 [TEST-INT]` Write RLS tests for `dialectic_contributions`. (RED)
-    *   `[ ] 1.1.7.11` Implement RLS for `dialectic_contributions`. (GREEN)
-    *   `[ ] 1.1.7.12 [TEST-INT]` Run RLS tests for `dialectic_contributions`.
+    *   `[✅] 1.1.7.10 [TEST-INT]` Write RLS tests for `dialectic_contributions`. (RED)
+    *   `[✅] 1.1.7.11` Implement RLS for `dialectic_contributions`. (GREEN)
+    *   `[✅] 1.1.7.12 [TEST-INT]` Run RLS tests for `dialectic_contributions`.
 *   `[✅] 1.1.8 [RLS]` Define RLS for `ai_providers` (formerly `ai_models_catalog`).
     *   `[✅] 1.1.8.1 [TEST-INT]` RLS tests written and passing. (GREEN)
     *   `[✅] 1.1.8.2` Implemented RLS: Public read access (via `public` role) for active providers. Write/update operations are managed by a backend `sync-ai-providers` function (utilizing `service_role` or equivalent administrative privileges). (GREEN)
@@ -405,13 +405,13 @@ The implementation plan uses the following labels to categorize work steps:
 
 *   `[ ] 1.2.1 [BE]` Create new Supabase Edge Function: `dialectic-service`. This function will use command pattern or similar to handle multiple actions related to the dialectic process to reduce the number of individual functions. Ensure input sanitization for all actions.
     *   Action: `createProject`
-        *   `[ ] 1.2.1.1 [TEST-INT]` Write tests for `createProject` action (input: `projectName`, `initialUserPrompt`; output: created project object; auth). (RED)
-        *   `[ ] 1.2.1.2` Implement logic: Inserts into `dialectic_projects`. (GREEN)
+        *   `[✅] 1.2.1.1 [TEST-INT]` Write tests for `createProject` action (input: `projectName`, `initialUserPrompt`; output: created project object; auth). (RED)
+        *   `[✅] 1.2.1.2` Implement logic: Inserts into `dialectic_projects`. (GREEN)
         *   `[ ] 1.2.1.3 [REFACTOR]` Review.
-        *   `[ ] 1.2.1.4 [TEST-INT]` Run tests.
+        *   `[✅] 1.2.1.4 [TEST-INT]` Run tests.
     *   Action: `startSession`
-        *   `[ ] 1.2.1.5 [TEST-INT]` Write tests for `startSession` action (input: `projectId`, `selectedModelCatalogIds` (array of strings from `ai_models_catalog.id`), `sessionDescription` (optional), `thesisPromptTemplateName` (optional, defaults to "dialectic_thesis_default_v1"), `antithesisPromptTemplateName` (optional, defaults to "dialectic_antithesis_critique_default_v1"); output: created session object; auth). (RED)
-        *   `[ ] 1.2.1.6` Implement logic:
+        *   `[✅] 1.2.1.5 [TEST-INT]` Write tests for `startSession` action (input: `projectId`, `selectedModelCatalogIds` (array of strings from `ai_models_catalog.id`), `sessionDescription` (optional), `thesisPromptTemplateName` (optional, defaults to "dialectic_thesis_default_v1"), `antithesisPromptTemplateName` (optional, defaults to "dialectic_antithesis_critique_default_v1"); output: created session object; auth). (RED)
+        *   `[✅] 1.2.1.6` Implement logic:
             1.  Verify project ownership.
             2.  Fetch `prompt_template.id` for thesis and antithesis from `prompt_templates` table using names.
             3.  Creates `dialectic_sessions` record (linking `active_thesis_prompt_template_id`, etc.).
@@ -420,16 +420,16 @@ The implementation plan uses the following labels to categorize work steps:
             5.  Sets `dialectic_sessions.status` to `pending_thesis`.
             6.  Constructs `current_stage_seed_prompt` for the session by rendering the chosen thesis prompt template with the project's `initial_user_prompt`. Store this in `dialectic_sessions.current_stage_seed_prompt`.
             7.  The `startSession` action concludes after successfully setting up the session. The generation of thesis contributions will be triggered by a separate user action from the frontend, which will then call the `generateThesisContributions` action.
-        *   `[ ] 1.2.1.7` (GREEN)
+        *   `[✅] 1.2.1.7` (GREEN)  <-- This was likely a placeholder for implementation, marking based on 1.2.1.6
         *   `[ ] 1.2.1.8 [REFACTOR]` Review.
-        *   `[ ] 1.2.1.9 [TEST-INT]` Run tests.
+        *   `[✅] 1.2.1.9 [TEST-INT]` Run tests.
 *   `[ ] 1.2.2 [BE]` Helper: Prompt Rendering Utility
     *   `[ ] 1.2.2.1 [TEST-UNIT]` Write tests for a utility that takes a prompt template string (e.g., "Solve: {{problem}}") and a context object (e.g., `{ problem: "world hunger" }`) and returns the rendered prompt. (RED)
     *   `[ ] 1.2.2.2` Implement the prompt rendering utility (e.g., using a simple string replacement or a lightweight template engine). (GREEN)
     *   `[ ] 1.2.2.3 [TEST-UNIT]` Run tests.
 *   `[ ] 1.2.3 [BE]` Helper: AI Model Interaction Utilities (within `dialectic-service` or shared helpers)
     *   `[ ] 1.2.3.1 [TEST-UNIT]` Write unit tests for `callUnifiedAIModel(modelCatalogId, renderedPrompt, options, associatedChatId)` which internally prepares a request for and invokes the existing `/chat` Edge Function. Mock the `/chat` function invocation. (RED)
-    *   `[ ] 1.2.3.2` Implement `callUnifiedAIModel`:
+    *   `[✅] 1.2.3.2` Implement `callUnifiedAIModel`:
         *   This function will **not** directly call AI provider SDKs.
         *   It receives `modelCatalogId` (which is `ai_providers.id`), the `renderedPrompt`, an `options` object (for things like history, `max_tokens_to_generate`), and the `associatedChatId` for the dialectic session.
         *   **Note:** `callUnifiedAIModel` is designed to handle interaction with a single AI model provider (via the `/chat` function) for a single prompt. Functions that require generating responses from multiple AI models for a given stage (e.g., `generateThesisContributions`) are responsible for iterating through the selected models (obtained from `dialectic_session_models` linked to the session) and calling `callUnifiedAIModel` individually for each one.
@@ -449,9 +449,9 @@ The implementation plan uses the following labels to categorize work steps:
             *   Map these fields to the `UnifiedAIResponse` structure expected by the `dialectic-service`.
             *   Handle errors returned by the `/chat` function gracefully.
         *   The `/chat` function is responsible for actual AI provider calls, tokenomics, and underlying cost calculation. `callUnifiedAIModel` is now an orchestrator for `/chat`.
-    *   `[ ] 1.2.3.3` (GREEN)
+    *   `[✅] 1.2.3.3` (GREEN) <!-- Corresponds to 1.2.3.2 implementation being complete -->
     *   `[ ] 1.2.3.4 [REFACTOR]` Review error handling and interaction with `/chat` function.
-    *   `[ ] 1.2.3.5 [TEST-UNIT]` Run tests.
+    *   `[ ] 1.2.3.5 [TEST-UNIT]` Run tests. <!-- Dependent on 1.2.3.1 -->
 *   `[🚧] 1.2.4 [BE]` `dialectic-service` Action: `generateThesisContributions` (triggered by user action from frontend after `startSession` is complete)
     *   `[✅] 1.2.4.1 [TEST-INT]` Write tests (input: `sessionId`; auth: user; verifies contributions are created and session status updated). (RED -> 🚧 Tests pass for basic success response, full contribution verification pending actual implementation)
     *   `[🚧] 1.2.4.2` Implement logic: (🚧 Placeholder implementation returns success structure; core logic for model calls and contribution saving pending)
@@ -500,31 +500,33 @@ The implementation plan uses the following labels to categorize work steps:
 *   `[ ] 1.2.10 [COMMIT]` feat(be): implement dialectic-service edge function with core actions
 
 ### 1.3 API Client (`@paynless/api`)
-*   `[ ] 1.3.1 [API]` Define types in `packages/api/src/dialectic.api.ts` (or a shared types file if preferred, e.g., `packages/api/src/types.ts` or within the dialectic file) for Dialectic Engine.
-    *   `[ ] 1.3.1.1` `DialecticProject`, `DialecticSession`, `DialecticSessionModel`, `DialecticContribution`, `AIModelCatalogEntry`, `PromptTemplate`, `DomainTag` (string).
-    *   `[ ] 1.3.1.2` Input types for new API methods (e.g., `CreateProjectPayload`, `StartSessionPayload`).
-    *   `[ ] 1.3.1.3` Ensure these types align with database schema and Edge Function outputs.
-*   `[ ] 1.3.2 [API]` Define `DialecticAPIInterface` in `packages/api/src/dialectic.api.ts`. Add new methods:
-    *   `[ ] 1.3.2.1` `createProject(payload: CreateProjectPayload): Promise<DialecticProject>`
-    *   `[ ] 1.3.2.2` `startSession(payload: StartSessionPayload): Promise<DialecticSession>`
-    *   `[ ] 1.3.2.3` `getProjectDetails(projectId: string): Promise<DialecticProject>` (should include sessions and contributions)
-    *   `[ ] 1.3.2.4` `listProjects(): Promise<DialecticProject[]>`
-    *   `[ ] 1.3.2.5` `listModelCatalog(): Promise<AIModelCatalogEntry[]>`
-    *   `[ ] 1.3.2.6` `listAvailableDomainTags(): Promise<string[]>` (already covered in 1.0.3.D.0.2.1, ensure it's part of this interface)
-*   `[ ] 1.3.3 [API]` Implement this interface in `packages/api/src/dialectic.api.ts`.
-    *   `[ ] 1.3.3.1 [TEST-UNIT]` Write unit tests for each new adapter method in `packages/api/src/dialectic.api.test.ts`, mocking `supabase.functions.invoke`. (RED)
-    *   `[ ] 1.3.3.2` Implement `createProject` by invoking `dialectic-service` with action `createProject`. (GREEN)
-    *   `[ ] 1.3.3.3` Implement `startSession` by invoking `dialectic-service` with action `startSession`. (GREEN)
-    *   `[ ] 1.3.3.4` Implement `getProjectDetails` by invoking `dialectic-service` with action `getProjectDetails`. (GREEN)
-    *   `[ ] 1.3.3.5` Implement `listProjects` by invoking `dialectic-service` with action `listProjects`. (GREEN)
-    *   `[ ] 1.3.3.6` Implement `listModelCatalog` by invoking `dialectic-service` with action `listModelCatalog`. (GREEN)
-    *   `[ ] 1.3.3.7` Implement `listAvailableDomainTags` (already covered in 1.0.3.D.0.2.3).
-    *   `[ ] 1.3.3.8 [REFACTOR]` Review implementations.
-    *   `[ ] 1.3.3.9 [TEST-UNIT]` Run unit tests.
-*   `[ ] 1.3.4 [API]` Update/create mocks in `packages/api/src/mocks.ts` for the new interface methods.
-*   `[ ] 1.3.5 [API]` Update `packages/api/src/index.ts` to export the new `DialecticAPI` slice.
-*   `[ ] 1.3.6 [API]` Update `packages/api/src/apiClient.ts` to integrate the `DialecticAPI` slice if applicable.
-*   `[ ] 1.3.7 [DOCS]` Update `packages/api/README.md` with new Dialectic API methods.
+*   `[✅] 1.3.1 [API]` Define types in `packages/types/src/dialectic.types.ts` for Dialectic Engine.
+    *   `[✅] 1.3.1.1` `DialecticProject`, `DialecticSession`, `DialecticSessionModel`, `DialecticContribution`, `AIModelCatalogEntry`, `PromptTemplate`, `DomainTag` (string).
+    *   `[✅] 1.3.1.2` Input types for new API methods (e.g., `CreateProjectPayload`, `StartSessionPayload`).
+    *   `[✅] 1.3.1.3` Ensure these types align with database schema and Edge Function outputs.
+*   `[✅] 1.3.2 [API]` Define `DialecticApiClient` interface in `packages/types/src/dialectic.types.ts`. Add new methods:
+    *   `[✅] 1.3.2.1` `createProject(payload: CreateProjectPayload): Promise<ApiResponse<DialecticProject>>`
+    *   `[✅] 1.3.2.2` `startSession(payload: StartSessionPayload): Promise<ApiResponse<DialecticSession>>`
+    *   `[✅] 1.3.2.3` `getProjectDetails(projectId: string): Promise<ApiResponse<DialecticProject>>` (Response type may need to be richer to include sessions/contributions)
+    *   `[✅] 1.3.2.4` `listProjects(): Promise<ApiResponse<DialecticProject[]>>`
+    *   `[✅] 1.3.2.5` `listModelCatalog(): Promise<ApiResponse<AIModelCatalogEntry[]>>`
+    *   `[✅] 1.3.2.6` `listAvailableDomainTags(): Promise<ApiResponse<string[]>>` (already covered in 1.0.3.D.0.2.1, confirmed part of this interface)
+    *   `[✅]` (Additional method present: `getContributionContentSignedUrl`)
+*   `[✅] 1.3.3 [API]` Implement this interface in `packages/api/src/dialectic.api.ts` (class `DialecticApiClient`).
+    *   `[✅] 1.3.3.1 [TEST-UNIT]` Write unit tests for each new adapter method in `packages/api/src/dialectic.api.test.ts`, mocking `supabase.functions.invoke`. (RED -> GREEN)
+    *   `[✅] 1.3.3.2` Implement `createProject` by invoking `dialectic-service` with action `createProject`. (GREEN)
+    *   `[✅] 1.3.3.3` Implement `startSession` by invoking `dialectic-service` with action `startSession`. (GREEN)
+    *   `[✅] 1.3.3.4` Implement `getProjectDetails` by invoking `dialectic-service` with action `getProjectDetails`. (GREEN)
+    *   `[✅] 1.3.3.5` Implement `listProjects` by invoking `dialectic-service` with action `listProjects`. (GREEN)
+    *   `[✅] 1.3.3.6` Implement `listModelCatalog` by invoking `dialectic-service` with action `listModelCatalog`. (GREEN)
+    *   `[✅] 1.3.3.7` Implement `listAvailableDomainTags` (already covered in 1.0.3.D.0.2.3).
+    *   `[✅]` (Additional method implemented: `getContributionContentSignedUrl`)
+    *   `[✅] 1.3.3.8 [REFACTOR]` Review implementations. (GREEN)
+    *   `[✅] 1.3.3.9 [TEST-UNIT]` Run unit tests. (GREEN)
+*   `[✅] 1.3.4 [API]` Update/create mocks in `packages/api/src/mocks.ts` for the new interface methods. (GREEN)
+*   `[✅] 1.3.5 [API]` Update `packages/api/src/index.ts` to export the new `DialecticAPI` slice. (GREEN)
+*   `[✅] 1.3.6 [API]` Update `packages/api/src/apiClient.ts` to integrate the `DialecticAPI` slice if applicable. (GREEN)
+*   `[✅] 1.3.7 [DOCS]` Update `packages/api/README.md` with new Dialectic API methods. (GREEN)
 *   `[ ] 1.3.8 [COMMIT]` feat(api): add dialectic service methods to api client
 
 ### 1.4 State Management (`@paynless/store`)

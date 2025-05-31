@@ -4,6 +4,9 @@ import type {
     DialecticProject,
     CreateProjectPayload,
     ContributionContentSignedUrlResponse,
+    StartSessionPayload,
+    DialecticSession,
+    AIModelCatalogEntry,
 } from '@paynless/types';
 import { logger } from '@paynless/utils';
 
@@ -103,6 +106,96 @@ export class DialecticApiClient {
         } catch (error: unknown) {
             const message = error instanceof Error ? error.message : 'A network error occurred';
             logger.error('Network error in listProjects:', { errorMessage: message, errorObject: error });
+            return {
+                data: undefined,
+                error: { code: 'NETWORK_ERROR', message },
+                status: 0,
+            };
+        }
+    }
+
+    /**
+     * Starts a new dialectic session for a given project.
+     * Requires authentication.
+     */
+    async startSession(payload: StartSessionPayload): Promise<ApiResponse<DialecticSession>> {
+        logger.info('Starting a new dialectic session', { projectId: payload.projectId });
+
+        try {
+            const response = await this.apiClient.post<DialecticSession, { action: string; payload: StartSessionPayload }>(
+                'dialectic-service',
+                { action: 'startSession', payload },
+            );
+
+            if (response.error) {
+                logger.error('Error starting dialectic session:', { error: response.error, projectId: payload.projectId });
+            } else {
+                logger.info('Successfully started dialectic session', { sessionId: response.data?.id });
+            }
+            return response;
+        } catch (error: unknown) {
+            const message = error instanceof Error ? error.message : 'A network error occurred';
+            logger.error('Network error in startSession:', { errorMessage: message, errorObject: error });
+            return {
+                data: undefined,
+                error: { code: 'NETWORK_ERROR', message },
+                status: 0,
+            };
+        }
+    }
+
+    /**
+     * Fetches the details of a specific dialectic project, including its sessions and contributions.
+     * Requires authentication.
+     */
+    async getProjectDetails(projectId: string): Promise<ApiResponse<DialecticProject>> {
+        logger.info('Fetching details for dialectic project', { projectId });
+
+        try {
+            const response = await this.apiClient.post<DialecticProject, { action: string; payload: { projectId: string } }>(
+                'dialectic-service',
+                { action: 'getProjectDetails', payload: { projectId } }
+            );
+
+            if (response.error) {
+                logger.error('Error fetching dialectic project details:', { error: response.error, projectId });
+            } else {
+                logger.info('Successfully fetched dialectic project details', { projectId: response.data?.id });
+            }
+            return response;
+        } catch (error: unknown) {
+            const message = error instanceof Error ? error.message : 'A network error occurred';
+            logger.error('Network error in getProjectDetails:', { errorMessage: message, errorObject: error });
+            return {
+                data: undefined,
+                error: { code: 'NETWORK_ERROR', message },
+                status: 0,
+            };
+        }
+    }
+
+    /**
+     * Fetches the list of available AI models from the catalog.
+     * Requires authentication.
+     */
+    async listModelCatalog(): Promise<ApiResponse<AIModelCatalogEntry[]>> {
+        logger.info('Fetching AI model catalog');
+
+        try {
+            const response = await this.apiClient.post<AIModelCatalogEntry[], { action: string }>(
+                'dialectic-service',
+                { action: 'listModelCatalog' }
+            );
+
+            if (response.error) {
+                logger.error('Error fetching AI model catalog:', { error: response.error });
+            } else {
+                logger.info(`Fetched ${response.data?.length ?? 0} AI models from catalog`);
+            }
+            return response;
+        } catch (error: unknown) {
+            const message = error instanceof Error ? error.message : 'A network error occurred';
+            logger.error('Network error in listModelCatalog:', { errorMessage: message, errorObject: error });
             return {
                 data: undefined,
                 error: { code: 'NETWORK_ERROR', message },
