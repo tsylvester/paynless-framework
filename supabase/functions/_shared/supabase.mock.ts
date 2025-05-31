@@ -469,26 +469,33 @@ class MockQueryBuilder implements IMockQueryBuilder {
             if (result.data && result.data.length === 1) {
                 result.data = result.data[0] as unknown[] | null; // Correctly assign the single object
             } else if (result.data && result.data.length > 1) {
-                result.error = new Error('Query returned more than one row') as Error & MockPGRSTError;
-                (result.error as MockPGRSTError).code = 'PGRST116';
-                result.data = null; // Data becomes null
-                result.status = 406;
+                if (!result.error) { // Only set if no error is already provided by the mock config
+                    result.error = new Error('Query returned more than one row') as Error & MockPGRSTError;
+                    (result.error as MockPGRSTError).code = 'PGRST116';
+                    result.status = 406;
+                }
+                result.data = null; // Data becomes null if error or multiple rows
             } else { // 0 rows or data was null initially
-                result.error = new Error('Query returned no rows') as Error & MockPGRSTError;
-                (result.error as MockPGRSTError).code = 'PGRST116';
-                result.data = null; // Data becomes/stays null
-                result.status = 406;
+                if (!result.error) { // Only set if no error is already provided by the mock config
+                    result.error = new Error('Query returned no rows') as Error & MockPGRSTError;
+                    (result.error as MockPGRSTError).code = 'PGRST116';
+                    result.status = 406;
+                }
+                result.data = null; // Data becomes/stays null if error or 0 rows
             }
         } else if (isMaybeSingle) {
             if (result.data && result.data.length === 1) {
                 result.data = result.data[0] as unknown[] | null; // Correctly assign the single object
             } else if (result.data && result.data.length > 1) {
-                result.error = new Error('Query returned more than one row') as Error & MockPGRSTError;
-                (result.error as MockPGRSTError).code = 'PGRST116'; 
-                result.data = null; // Data becomes null
-                result.status = 406;
+                if (!result.error) { // Only set if no error is already provided by the mock config
+                    result.error = new Error('Query returned more than one row') as Error & MockPGRSTError;
+                    (result.error as MockPGRSTError).code = 'PGRST116'; 
+                    result.status = 406;
+                }
+                result.data = null; // Data becomes null if error or multiple rows
             } else { // 0 rows or data was null initially
-                result.data = null; // Data becomes/stays null, error remains null (if not set before)
+                // For maybeSingle, if 0 rows, data is null, error remains as is (or null if not set)
+                result.data = null; 
             }
         }
 
