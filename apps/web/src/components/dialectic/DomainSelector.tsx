@@ -16,7 +16,6 @@ import {
     SelectContent,
     SelectGroup,
     SelectItem,
-    SelectLabel,
     SelectTrigger,
     SelectValue,
 } from '@/components/ui/select'; // Adjust this path if needed
@@ -61,12 +60,11 @@ export function DomainSelector() {
             value={selectedDomainTag || ''} // Ensure value is not null for Select
             onValueChange={handleValueChange}
         >
-            <SelectTrigger className="w-[280px]">
+            <SelectTrigger className="w-auto">
                 <SelectValue placeholder="Select a domain" />
             </SelectTrigger>
-            <SelectContent>
+            <SelectContent className="bg-background/90 backdrop-blur-md border-border">
                 <SelectGroup>
-                    <SelectLabel>Available Domains</SelectLabel>
                     {availableDomainTags.length === 0 && !isLoadingDomainTags && (
                         <SelectItem value="---" disabled>
                             No domains available

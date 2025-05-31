@@ -7,6 +7,8 @@ import type {
     StartSessionPayload,
     DialecticSession,
     AIModelCatalogEntry,
+    UploadProjectResourceFilePayload,
+    DialecticProjectResource,
 } from '@paynless/types';
 import { logger } from '@paynless/utils';
 
@@ -25,20 +27,19 @@ export class DialecticApiClient {
      * Fetches the list of available domain tags for dialectic projects.
      * This endpoint is public and does not require authentication.
      */
-    async listAvailableDomainTags(): Promise<ApiResponse<string[]>> {
+    async listAvailableDomainTags(): Promise<ApiResponse<{ data: string[] }>> {
         logger.info('Fetching available domain tags for dialectic projects');
         
         try {
-            const response = await this.apiClient.post<string[], { action: string }>(
+            const response = await this.apiClient.post<{ data: string[] }, { action: string }>(
                 'dialectic-service', // Endpoint name
-                { action: 'listAvailableDomainTags' }, // Body of the request
-                { isPublic: true } // Options: this endpoint is public
+                { action: 'listAvailableDomainTags' } // Body of the request
             );
 
             if (response.error) {
                 logger.error('Error fetching available domain tags:', { error: response.error });
             } else {
-                logger.info(`Fetched ${response.data?.length ?? 0} available domain tags`);
+                logger.info(`Fetched ${response.data?.data?.length ?? 0} available domain tags`);
             }
             return response;
         } catch (error: unknown) {
@@ -233,6 +234,42 @@ export class DialecticApiClient {
                 error: { code: 'NETWORK_ERROR', message },
                 status: 0,
             };
+        }
+    }
+
+    /**
+     * Uploads a project resource file.
+     * Requires authentication.
+     */
+    async uploadProjectResourceFile(payload: UploadProjectResourceFilePayload): Promise<ApiResponse<DialecticProjectResource>> {
+        logger.info(`[DialecticApi] Uploading resource for project ${payload.projectId}: ${payload.file.name}`);
+        try {
+            const formData = new FormData();
+            formData.append('action', 'uploadProjectResourceFile');
+            formData.append('projectId', payload.projectId);
+            formData.append('file', payload.file);
+            if (payload.resourceDescription) {
+                formData.append('resourceDescription', payload.resourceDescription);
+            }
+
+            const response = await this.apiClient.post<DialecticProjectResource, FormData>(
+                'dialectic-service',
+                formData
+            );
+
+            if (response.error) {
+                logger.error('[DialecticApi] Error uploading project resource file:', { error: response.error, projectId: payload.projectId });
+            } else {
+                logger.info('[DialecticApi] Successfully uploaded project resource file:', { resource: response.data, projectId: payload.projectId });
+            }
+            return response;
+        } catch (error: unknown) {
+            const err = error as Error;
+            logger.error('[DialecticApi] Network error uploading project resource file:', { error: err.message, projectId: payload.projectId });
+            return {
+                error: { message: err.message, code: 'NETWORK_ERROR' },
+                status: 0
+            } as ApiResponse<DialecticProjectResource>;
         }
     }
 } 

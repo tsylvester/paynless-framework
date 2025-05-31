@@ -299,6 +299,56 @@ export type Database = {
           },
         ]
       }
+      dialectic_project_resources: {
+        Row: {
+          created_at: string
+          file_name: string
+          id: string
+          mime_type: string
+          project_id: string
+          resource_description: string | null
+          size_bytes: number
+          storage_bucket: string
+          storage_path: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          file_name: string
+          id?: string
+          mime_type: string
+          project_id: string
+          resource_description?: string | null
+          size_bytes: number
+          storage_bucket?: string
+          storage_path: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          file_name?: string
+          id?: string
+          mime_type?: string
+          project_id?: string
+          resource_description?: string | null
+          size_bytes?: number
+          storage_bucket?: string
+          storage_path?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "dialectic_project_resources_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "dialectic_projects"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       dialectic_projects: {
         Row: {
           created_at: string

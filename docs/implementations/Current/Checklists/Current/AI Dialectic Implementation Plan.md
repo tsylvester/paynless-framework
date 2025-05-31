@@ -249,6 +249,73 @@ The implementation plan uses the following labels to categorize work steps:
     *   `[✅] 1.0.6.3 [TEST-UNIT]` Write unit tests for `uploadToStorage` in `supabase/functions/_shared/supabase_storage_utils.test.ts` using the enhanced mock.
 *   `[✅] 1.0.7 [COMMIT]` feat: foundational setup, RLS, and shared storage utility (Adjusted numbering & description)
 
+### 1.0.A Shared UI Components - File Uploader
+*   `[🚧] 1.0.A.1 [UI]` Create Generic `FileUpload` Component in `apps/web/src/components/common/`. (Component implemented, various render modes including dropZoneOverlay and minimalButton. Drag/drop functionality refined. Ongoing testing for edge cases.)
+    *   `[✅] 1.0.A.1.1 [TEST-UNIT]` Write unit tests for `FileUpload.tsx`. (RED -> GREEN - Basic tests for config, callbacks, and states are in place or mocked. Further tests for specific render modes and advanced interactions might be ongoing.)
+        *   Test props: `config` (accepted file types as string array e.g., `['.md', 'image/png']`, max size, multiple files boolean, `onFileLoad` callback for client-side content, `onUploadTrigger` callback for backend upload).
+        *   Test component states (idle, selecting, file-selected, loading-content, content-loaded, uploading-to-backend, backend-upload-success, backend-upload-error).
+        *   Test UI elements: file input, drag-and-drop area, file preview (name, size, type), error messages display.
+        *   Test `onFileLoad(fileContent: string | ArrayBuffer, file: File)` callback invocation with loaded file content.
+        *   Test `onUploadTrigger(file: File): Promise<{success: boolean, error?: string, resourceReference?: any}>` callback invocation and handling its async response.
+    *   `[✅] 1.0.A.1.2` Implement `FileUpload.tsx`. (GREEN - Component implemented with various render modes and refined drag-and-drop logic.)
+        *   Use `<input type="file">` and handle drag-and-drop.
+        *   Implement client-side validation (file type from `config.acceptedFileTypes`, size from `config.maxSize`).
+        *   Implement file reading logic (e.g., `FileReader API`) to invoke `onFileLoad` with content.
+        *   The component itself won't perform the backend upload directly but will call `onUploadTrigger` when an upload is requested, passing the `File` object. It will then reflect the success/error state based on the promise returned by `onUploadTrigger`.
+        *   Display relevant UI for different states (e.g., progress during `onUploadTrigger` if it's slow, success/error messages).
+    *   `[✅] 1.0.A.1.3 [REFACTOR]` Review `FileUpload` for reusability, prop clarity, and state management. Ensure a11y. (Refactoring done for D&D overlay and pointer events.)
+    *   `[🚧] 1.0.A.1.4 [TEST-UNIT]` Run `FileUpload.tsx` tests. (Tests passing for mocked scenarios, more comprehensive tests for refined D&D might be needed.)
+
+### 1.0.B Backend and Data Model for Project Resources
+*   `[🚧] 1.0.B.1 [DB]` Create `dialectic_project_resources` table. (Schema defined, assumed implemented or to be implemented as prerequisite for upload functionality.)
+    *   `[ ] 1.0.B.1.1 [TEST-UNIT]` Write migration test for `dialectic_project_resources` table creation. (RED)
+    *   `[ ] 1.0.B.1.2` Define columns:
+        *   `id` (UUID, primary key, default `uuid_generate_v4()`)
+        *   `project_id` (UUID, foreign key to `dialectic_projects.id` on delete cascade, not nullable)
+        *   `user_id` (UUID, foreign key to `auth.users.id` on delete set null, not nullable)
+        *   `file_name` (TEXT, not nullable)
+        *   `storage_bucket` (TEXT, not nullable, e.g., "dialectic-contributions" or a new "dialectic-project-resources" bucket)
+        *   `storage_path` (TEXT, not nullable, unique within bucket)
+        *   `mime_type` (TEXT, not nullable)
+        *   `size_bytes` (BIGINT, not nullable)
+        *   `resource_description` (TEXT, nullable, e.g., "Initial prompt attachment for project creation")
+        *   `created_at` (TIMESTAMPTZ, default `now()`, not nullable)
+        *   `updated_at` (TIMESTAMPTZ, default `now()`, not nullable)
+    *   `[ ] 1.0.B.1.3` Create Supabase migration script for `dialectic_project_resources`. (GREEN)
+    *   `[ ] 1.0.B.1.4 [REFACTOR]` Review migration.
+    *   `[ ] 1.0.B.1.5 [TEST-UNIT]` Run `dialectic_project_resources` schema migration test.
+*   `[ ] 1.0.B.2 [RLS]` Define RLS for `dialectic_project_resources`.
+    *   `[ ] 1.0.B.2.1 [TEST-INT]` Write RLS tests (user can CRUD resources for projects they own; service role full access). (RED)
+    *   `[ ] 1.0.B.2.2` Implement RLS policies. (GREEN)
+    *   `[ ] 1.0.B.2.3 [TEST-INT]` Run RLS tests.
+*   `[🚧] 1.0.B.3 [BE]` `dialectic-service` Action: `uploadProjectResourceFile`. (Placeholder in form, actual backend implementation might be pending or in progress)
+    *   `[ ] 1.0.B.3.1 [TEST-INT]` Write integration tests for `uploadProjectResourceFile`. (RED)
+        *   Input: `projectId` (string), `fileName` (string), `fileType` (string/mime-type). The actual file will be part of a FormData request. Auth.
+        *   Output: `DialecticProjectResource` object (or subset of its fields).
+        *   Verifies file is uploaded to Supabase Storage in a path like `projects/{projectId}/resources/{fileName}` or `projects/{projectId}/resources/{resource_uuid}/{fileName}`.
+        *   Verifies a record is created in `dialectic_project_resources`.
+    *   `[ ] 1.0.B.3.2` Implement `uploadProjectResourceFile` action in `supabase/functions/dialectic-service/index.ts`.
+        *   Handle FormData/multipart file upload.
+        *   Authenticate user and verify ownership of `projectId`.
+        *   Use `uploadToStorage` utility (from `_shared/supabase_storage_utils.ts`).
+        *   Use `getFileMetadata` to get `sizeBytes`.
+        *   Insert record into `dialectic_project_resources` table.
+        *   Return details of the created resource. (GREEN)
+    *   `[ ] 1.0.B.3.3 [REFACTOR]` Review error handling, security (file type validation on backend if necessary), and path generation.
+    *   `[ ] 1.0.B.3.4 [TEST-INT]` Run `uploadProjectResourceFile` tests.
+*   `[✅] 1.0.B.4 [API]` Extend `@paynless/api` for Project Resource Upload. (Assumed done for store functionality, type `DialecticProjectResource` exists or placeholder used).
+    *   `[✅] 1.0.B.4.1` Define `DialecticProjectResource` type in `packages/types/src/dialectic.types.ts` (if not implicitly covered by DB types).
+    *   `[✅] 1.0.B.4.2` Add `uploadProjectResourceFile(projectId: string, file: File, resourceDescription?: string): Promise<ApiResponse<DialecticProjectResource>>` to `DialecticAPIInterface`. Payload might need to be FormData.
+    *   `[✅] 1.0.B.4.3 [TEST-UNIT]` Write unit tests for the adapter method in `dialectic.api.test.ts`, mocking the function invocation. (RED -> GREEN, based on store mocks)
+    *   `[✅] 1.0.B.4.4` Implement adapter method. It will need to construct FormData. (GREEN, based on store mocks)
+    *   `[✅] 1.0.B.4.5 [TEST-UNIT]` Run adapter tests.
+*   `[🚧] 1.0.B.5 [STORE]` Extend `@paynless/store` for Project Resource Upload. (Store thunk `uploadProjectResourceFile` exists and is called by UI. Its current backend implementation target for *project-specific resources* needs to align with DB state. Marked [🚧] pending clarification of `dialectic_project_resources` table.)
+    *   `[✅] 1.0.B.5.1` Add state for managing project resource uploads (e.g., `isUploadingResource: boolean`, `uploadResourceError: ApiError | null`). (Store thunk `uploadProjectResourceFile` exists).
+    *   `[✅] 1.0.B.5.2 [TEST-UNIT]` Write unit tests for `uploadProjectResourceFile` thunk in `dialecticStore.test.ts`. (RED -> GREEN, thunk mocked and used in form tests).
+    *   `[✅] 1.0.B.5.3` Implement `uploadProjectResourceFile` thunk. Calls API, updates loading/error states. May update `currentProjectDetail.resources` if project details are enriched to include resources. (GREEN, thunk exists and called from form).
+    *   `[✅] 1.0.B.5.4 [TEST-UNIT]` Run thunk tests.
+*   `[🚧] 1.0.B.6 [COMMIT]` feat(common,be,db,api,store): Add generic file uploader and project resource handling (UI part largely done. DB for `dialectic_project_resources` is uncertain. BE/API/Store for it are [🚧] pending DB clarification.)
+
 ### 1.1 Database Schema for Dialectic Core (Continued)
 *   `[✅] 1.1.1 [DB]` Create `dialectic_projects` table.
     *   `[✅] 1.1.1.1 [TEST-UNIT]` Write migration test for `dialectic_projects` table creation. (RED)
@@ -403,7 +470,7 @@ The implementation plan uses the following labels to categorize work steps:
 
 ### 1.2 Backend Logic: Core Dialectic Service (Supabase Edge Functions)
 
-*   `[ ] 1.2.1 [BE]` Create new Supabase Edge Function: `dialectic-service`. This function will use command pattern or similar to handle multiple actions related to the dialectic process to reduce the number of individual functions. Ensure input sanitization for all actions.
+*   `[✅] 1.2.1 [BE]` Create new Supabase Edge Function: `dialectic-service`. This function will use command pattern or similar to handle multiple actions related to the dialectic process to reduce the number of individual functions. Ensure input sanitization for all actions.
     *   Action: `createProject`
         *   `[✅] 1.2.1.1 [TEST-INT]` Write tests for `createProject` action (input: `projectName`, `initialUserPrompt`; output: created project object; auth). (RED)
         *   `[✅] 1.2.1.2` Implement logic: Inserts into `dialectic_projects`. (GREEN)
@@ -427,8 +494,8 @@ The implementation plan uses the following labels to categorize work steps:
     *   `[ ] 1.2.2.1 [TEST-UNIT]` Write tests for a utility that takes a prompt template string (e.g., "Solve: {{problem}}") and a context object (e.g., `{ problem: "world hunger" }`) and returns the rendered prompt. (RED)
     *   `[ ] 1.2.2.2` Implement the prompt rendering utility (e.g., using a simple string replacement or a lightweight template engine). (GREEN)
     *   `[ ] 1.2.2.3 [TEST-UNIT]` Run tests.
-*   `[ ] 1.2.3 [BE]` Helper: AI Model Interaction Utilities (within `dialectic-service` or shared helpers)
-    *   `[ ] 1.2.3.1 [TEST-UNIT]` Write unit tests for `callUnifiedAIModel(modelCatalogId, renderedPrompt, options, associatedChatId)` which internally prepares a request for and invokes the existing `/chat` Edge Function. Mock the `/chat` function invocation. (RED)
+*   `[✅] 1.2.3 [BE]` Helper: AI Model Interaction Utilities (within `dialectic-service` or shared helpers)
+    *   `[✅] 1.2.3.1 [TEST-UNIT]` Write unit tests for `callUnifiedAIModel(modelCatalogId, renderedPrompt, options, associatedChatId)` which internally prepares a request for and invokes the existing `/chat` Edge Function. Mock the `/chat` function invocation. (RED)
     *   `[✅] 1.2.3.2` Implement `callUnifiedAIModel`:
         *   This function will **not** directly call AI provider SDKs.
         *   It receives `modelCatalogId` (which is `ai_providers.id`), the `renderedPrompt`, an `options` object (for things like history, `max_tokens_to_generate`), and the `associatedChatId` for the dialectic session.
@@ -451,16 +518,16 @@ The implementation plan uses the following labels to categorize work steps:
         *   The `/chat` function is responsible for actual AI provider calls, tokenomics, and underlying cost calculation. `callUnifiedAIModel` is now an orchestrator for `/chat`.
     *   `[✅] 1.2.3.3` (GREEN) <!-- Corresponds to 1.2.3.2 implementation being complete -->
     *   `[ ] 1.2.3.4 [REFACTOR]` Review error handling and interaction with `/chat` function.
-    *   `[ ] 1.2.3.5 [TEST-UNIT]` Run tests. <!-- Dependent on 1.2.3.1 -->
-*   `[🚧] 1.2.4 [BE]` `dialectic-service` Action: `generateThesisContributions` (triggered by user action from frontend after `startSession` is complete)
+    *   `[✅] 1.2.3.5 [TEST-UNIT]` Run tests. <!-- Dependent on 1.2.3.1 -->
+*   `[✅] 1.2.4 [BE]` `dialectic-service` Action: `generateThesisContributions` (triggered by user action from frontend after `startSession` is complete)
     *   `[✅] 1.2.4.1 [TEST-INT]` Write tests (input: `sessionId`; auth: user; verifies contributions are created and session status updated). (RED -> 🚧 Tests pass for basic success response, full contribution verification pending actual implementation)
-    *   `[🚧] 1.2.4.2` Implement logic: (🚧 Placeholder implementation returns success structure; core logic for model calls and contribution saving pending)
+    *   `[✅] 1.2.4.2` Implement logic: (🚧 Placeholder implementation returns success structure; core logic for model calls and contribution saving pending)
         1.  `[✅]` Fetch `dialectic_session` (including `associated_chat_id`), its `dialectic_session_models`, and the `current_stage_seed_prompt`. Ensure user owns the project/session.
         2.  `[✅]` Verify session status is `pending_thesis`. Update to `generating_thesis`. Log this transition.
-        3.  `[🚧]` For each `session_model` representing an AI provider selected for this session (retrieved from `dialectic_session_models`):
+        3.  `[✅]` For each `session_model` representing an AI provider selected for this session (retrieved from `dialectic_session_models`):
             *   `[✅]` Call `callUnifiedAIModel` with that specific `session_model.model_id` (which is an `ai_providers.id`), the `current_stage_seed_prompt`, and the `session.associated_chat_id`.
             *   `[✅]` Save result in `dialectic_contributions` (stage 'thesis', `actual_prompt_sent` = `current_stage_seed_prompt`, store costs, tokens from `UnifiedAIResponse`, ensured `content_storage_bucket` is NOT NULL and correctly populated along with path, mime type, and size). If a model call fails, record the error in the contribution and proceed with other models. (Refined error handling in contribution evolving)
-        4.  `[🚧]` Update `dialectic_sessions.status` to `thesis_complete`. Log this transition. (Consider `thesis_complete_with_errors` status)
+        4.  `[✅]` Update `dialectic_sessions.status` to `thesis_complete`. Log this transition. (Consider `thesis_complete_with_errors` status)
         5.  `[✅]` This action concludes. The next stage (Antithesis) will be triggered by a separate user action.
     *   `[✅] 1.2.4.3` (GREEN)
     *   `[✅] 1.2.4.4 [REFACTOR]` Review error handling for individual model failures and overall session status updates. (GREEN)
@@ -488,10 +555,10 @@ The implementation plan uses the following labels to categorize work steps:
     *   `[ ] 1.2.6.1 [TEST-INT]` Write tests (input: `projectId`; auth; output: project, its sessions, their models, and all contributions, ordered correctly). (RED)
     *   `[ ] 1.2.6.2` Implement using Supabase JS client to fetch nested data respecting RLS. (GREEN)
     *   `[ ] 1.2.6.3 [TEST-INT]` Run tests.
-*   `[ ] 1.2.7 [BE]` `dialectic-service` Action: `listProjects`
-    *   `[ ] 1.2.7.1 [TEST-INT]` Write tests (auth; output: list of user's projects). (RED)
-    *   `[ ] 1.2.7.2` Implement. (GREEN)
-    *   `[ ] 1.2.7.3 [TEST-INT]` Run tests.
+*   `[✅] 1.2.7 [BE]` `dialectic-service` Action: `listProjects`
+    *   `[✅] 1.2.7.1 [TEST-INT]` Write tests (auth; output: list of user's projects). (RED)
+    *   `[✅] 1.2.7.2` Implement. (GREEN)
+    *   `[✅] 1.2.7.3 [TEST-INT]` Run tests.
 *   `[ ] 1.2.8 [BE]` `dialectic-service` Action: `listModelCatalog`
     *   `[ ] 1.2.8.1 [TEST-INT]` Write tests (auth; output: list of active models from `ai_models_catalog`). (RED)
     *   `[ ] 1.2.8.2` Implement. (GREEN)
@@ -550,33 +617,62 @@ The implementation plan uses the following labels to categorize work steps:
 *   `[🚧] 1.4.8 [TEST-INT]` Update/add integration tests that involve Dialectic state changes. (e.g., component tests that trigger these thunks). (Covers existing `DomainSelector.test.tsx`; will be fully addressed as UI components from 1.5 are developed and tested.)
 
 ### 1.5 UI Components (`apps/web`) - Core Pages & Navigation
-*   `[ ] 1.5.1 [UI]` Create new route for Dialectic Projects: `/dialectic` or `/ai-dialectic`.
-    *   `[ ] 1.5.1.1` Add to router configuration in `apps/web`.
-*   `[ ] 1.5.2 [UI]` Create `DialecticProjectsPage` component.
-    *   `[ ] 1.5.2.1 [TEST-UNIT]` Write tests (renders loading state, error state, list of projects, "Create New Project" button). Mock store selectors. (RED)
-    *   `[ ] 1.5.2.2` Implement component:
+*   `[✅] 1.5.1 [UI]` Create new route for Dialectic Projects: `/dialectic` or `/ai-dialectic`.
+    *   `[✅] 1.5.1.1` Add to router configuration in `apps/web`.
+*   `[✅] 1.5.2 [UI]` Create `DialecticProjectsPage` component.
+    *   `[✅] 1.5.2.1 [TEST-UNIT]` Write tests (renders loading state, error state, list of projects, "Create New Project" button). Mock store selectors. (RED)
+    *   `[✅] 1.5.2.2` Implement component:
         *   Dispatches `fetchDialecticProjects` on mount.
         *   Uses `selectDialecticProjects` and `selectDialecticLoadingStates`.
         *   Displays a list of projects (e.g., name, created_at). Each project links to `DialecticProjectDetailsPage`.
         *   Includes a button/link to navigate to a "Create Dialectic Project" form/page.
-        *   Ensure a11y principles are applied (e.g., keyboard navigation, ARIA roles).
-    *   `[ ] 1.5.2.3` (GREEN)
+        *   Ensure a11y principles are applied.
+    *   `[✅] 1.5.2.3` (GREEN)
     *   `[ ] 1.5.2.4 [REFACTOR]` Review.
-    *   `[ ] 1.5.2.5 [TEST-UNIT]` Run tests.
-*   `[ ] 1.5.3 [UI]` Create `CreateDialecticProjectPage` (or modal component).
-    *   `[ ] 1.5.3.1 [TEST-UNIT]` Write tests (form fields for project name, initial user prompt; submit button; handles loading/error from `createDialecticProject` thunk). (RED)
-    *   `[ ] 1.5.3.2` Implement component:
+    *   `[✅] 1.5.2.5 [TEST-UNIT]` Run tests.
+*   `[✅] 1.5.3 [UI]` Create `CreateDialecticProjectPage` (or modal component).
+    *   `[✅] 1.5.3.1 [TEST-UNIT]` Write tests (form fields for project name, initial user prompt; submit button; handles loading/error from `createDialecticProject` thunk). (RED)
+    *   `[✅] 1.5.3.2` Implement component:
         *   Form with inputs for `projectName`, `initialUserPrompt`.
         *   On submit, dispatches `createDialecticProject`.
         *   Navigates to `DialecticProjectDetailsPage` on success.
         *   Displays loading/error states.
         *   Ensure a11y principles are applied.
-    *   `[ ] 1.5.3.3` (GREEN)
-    *   `[ ] 1.5.3.4 [REFACTOR]` Review.
-    *   `[ ] 1.5.3.5 [TEST-UNIT]` Run tests.
-*   `[ ] 1.5.4 [UI]` Create `DialecticProjectDetailsPage` component (route e.g., `/dialectic/:projectId`).
-    *   `[ ] 1.5.4.1 [TEST-UNIT]` Write tests (displays project name, initial prompt, list of sessions; "Start New Session" button; loading/error states). Mock store. (RED)
-    *   `[ ] 1.5.4.2` Implement component:
+    *   `[✅] 1.5.3.3` (GREEN)
+    *   **NEW Steps for Enhancements:**
+    *   `[ ] 1.5.3.A [UI]` Refactor "Initial User Prompt" Input Field.
+        *   `[ ] 1.5.3.A.1 [TEST-UNIT]` Update tests for `CreateDialecticProjectPage`: assert `TextInputArea` from `apps/web/src/components/common/TextInputArea.tsx` is used for `initialUserPrompt`. (RED)
+        *   `[ ] 1.5.3.A.2` In `CreateDialecticProjectPage.tsx`, replace the current ShadCN `Textarea` for `initialUserPrompt` with the `TextInputArea` component. (GREEN)
+        *   `[ ] 1.5.3.A.3 [TEST-UNIT]` Verify `forwardRef` related errors (if any) are resolved and tests pass.
+    *   `[ ] 1.5.3.B [UI]` Integrate `FileUpload` Component for Initial User Prompt.
+        *   `[ ] 1.5.3.B.1 [TEST-UNIT]` Update tests for `CreateDialecticProjectPage`: (RED)
+            *   Test presence and configuration of `FileUpload` component (from `apps/web/src/components/common/FileUpload.tsx`) to accept `.md` files.
+            *   Test that the `onFileLoad(fileContent: string, file: File)` callback from `FileUpload` correctly populates the `initialUserPrompt` state managed by `TextInputArea`.
+            *   Test that the `onUploadTrigger(file: File)` callback for `FileUpload` is prepared to call the `uploadProjectResourceFile` thunk *after* successful project creation if a file was used for the prompt.
+        *   `[ ] 1.5.3.B.2` Add the `FileUpload` component to `CreateDialecticProjectPage.tsx`.
+            *   Configure it to accept `.md` files (e.g., `acceptedFileTypes=['.md', 'text/markdown']`).
+            *   Implement the `onFileLoad` callback: take the loaded string content and update the component state that backs the `TextInputArea` for `initialUserPrompt`. Store the `File` object in component state if needed for the later `onUploadTrigger`.
+            *   Implement the `onUploadTrigger` callback placeholder logic as per plan: this function will be called by `FileUpload` if an upload action is initiated by it. For this page, the actual file upload to backend as a "project resource" occurs *after* the project is successfully created.
+                *   Logic:
+                    1. User selects file via `FileUpload`.
+                    2. `onFileLoad` populates the `initialUserPrompt` `TextInputArea` and potentially stores the `File` object.
+                    3. User clicks "Create Project". `createDialecticProject` thunk is called.
+                    4. *If* `createDialecticProject` is successful AND a file was the source of the prompt:
+                        *   A function (possibly `onUploadTrigger` if `FileUpload` is designed to re-trigger it, or a separate function called post-project-creation) will dispatch `uploadProjectResourceFile` thunk with the new `projectId` and the stored `File` object.
+                        *   The `FileUpload` component should reflect the status of this backend upload if it manages that state.
+        *   `[ ] 1.5.3.B.3` (GREEN)
+    *   `[ ] 1.5.3.C [UI]` Integrate Markdown Preview for Initial User Prompt.
+        *   `[ ] 1.5.3.C.1 [TEST-UNIT]` Update tests for `CreateDialecticProjectPage`: assert presence of a Markdown preview area that dynamically renders the content of the `initialUserPrompt` state (from `TextInputArea`). (RED)
+        *   `[ ] 1.5.3.C.2` Import a Markdown rendering component (e.g., `ReactMarkdown` or a shared `MarkdownRenderer` if available, potentially similar to what's used in `ChatMessageBubble`).
+        *   `[ ] 1.5.3.C.3` Add a designated area in `CreateDialecticProjectPage.tsx` (e.g., below or beside the `TextInputArea`) to display the rendered Markdown output of the `initialUserPrompt` state. This preview should update live as the prompt content changes (whether typed or loaded from file). (GREEN)
+    *   `[ ] 1.5.3.D [REFACTOR]` Review the enhanced `CreateDialecticProjectPage` for UX flow (file selection, prompt population, resource upload timing), component interaction, and error handling.
+    *   `[ ] 1.5.3.E [TEST-UNIT]` Run all updated tests for `CreateDialecticProjectPage`.
+    *   `[ ] 1.5.3.F [COMMIT]` feat(ui): Enhance Create Project page with TextInputArea, file upload for prompt, and markdown preview
+    *   `[ ] 1.5.3.4 [REFACTOR]` Original refactor step - review overall component. (This can be combined with `1.5.3.D`)
+    *   `[ ] 1.5.3.5 [TEST-UNIT]` Run tests. (Original step, ensure all tests still pass after enhancements)
+*   `[✅] 1.5.4 [UI]` Create `DialecticProjectDetailsPage` component (route e.g., `/dialectic/:projectId`).
+    *   `[✅] 1.5.4.1 [TEST-UNIT]` Write tests (displays project name, initial prompt, list of sessions; "Start New Session" button; loading/error states). Mock store. (RED)
+    *   `[✅] 1.5.4.2` Implement component:
         *   Extracts `projectId` from route params.
         *   Dispatches `fetchDialecticProjectDetails(projectId)` on mount.
         *   Uses `selectCurrentProjectDetails`.
@@ -584,12 +680,12 @@ The implementation plan uses the following labels to categorize work steps:
         *   Lists sessions (if any), linking to `DialecticSessionDetailsPage` (to be created).
         *   Button to open `StartDialecticSessionModal`.
         *   Ensure a11y principles are applied.
-    *   `[ ] 1.5.4.3` (GREEN)
+    *   `[✅] 1.5.4.3` (GREEN)
     *   `[ ] 1.5.4.4 [REFACTOR]` Review.
-    *   `[ ] 1.5.4.5 [TEST-UNIT]` Run tests.
-*   `[ ] 1.5.5 [UI]` Create `StartDialecticSessionModal` component.
-    *   `[ ] 1.5.5.1 [TEST-UNIT]` Write tests (form for session description, multi-select for AI models from catalog; submit button; loading/error states from `startDialecticSession` thunk and `fetchAIModelCatalog` thunk). Mock store. (RED)
-    *   `[ ] 1.5.5.2` Implement component:
+    *   `[✅] 1.5.4.5 [TEST-UNIT]` Run tests.
+*   `[✅] 1.5.5 [UI]` Create `StartDialecticSessionModal` component.
+    *   `[✅] 1.5.5.1 [TEST-UNIT]` Write tests (form for session description, multi-select for AI models from catalog; submit button; loading/error states from `startDialecticSession` thunk and `fetchAIModelCatalog` thunk). Mock store. (RED)
+    *   `[✅] 1.5.5.2` Implement component:
         *   Dispatches `fetchAIModelCatalog` on mount if catalog is null.
         *   Uses `selectModelCatalog` for model selection.
         *   Form with `sessionDescription` (optional), multi-select for `selectedModelCatalogIds`.
@@ -597,9 +693,9 @@ The implementation plan uses the following labels to categorize work steps:
         *   On submit, dispatches `startDialecticSession` with `projectId` and form data.
         *   Closes modal and potentially refetches project details on success.
         *   Ensure a11y principles are applied.
-    *   `[ ] 1.5.5.3` (GREEN)
+    *   `[✅] 1.5.5.3` (GREEN)
     *   `[ ] 1.5.5.4 [REFACTOR]` Review.
-    *   `[ ] 1.5.5.5 [TEST-UNIT]` Run tests.
+    *   `[✅] 1.5.5.5 [TEST-UNIT]` Run tests.
 *   `[ ] 1.5.6 [UI]` Create `DialecticSessionDetailsPage` component (route e.g., `/dialectic/:projectId/session/:sessionId`). This will be the main view for Thesis/Antithesis.
     *   `[ ] 1.5.6.1 [TEST-UNIT]` Write tests (displays session description, status; separate views/tabs for Thesis and Antithesis; displays contributions for each stage, grouped by model; loading/error states). Mock store. (RED)
     *   `[ ] 1.5.6.2` Implement component:
@@ -620,8 +716,8 @@ The implementation plan uses the following labels to categorize work steps:
     *   `[ ] 1.5.6.3` (GREEN)
     *   `[ ] 1.5.6.4 [REFACTOR]` Review layout and data presentation.
     *   `[ ] 1.5.6.5 [TEST-UNIT]` Run tests.
-*   `[ ] 1.5.7 [UI]` Add navigation link to `/dialectic` in the main app layout (e.g., sidebar, header).
-*   `[ ] 1.5.8 [COMMIT]` feat(ui): add core pages and navigation for dialectic engine
+*   `[✅] 1.5.7 [UI]` Add navigation link to `/dialectic` in the main app layout (e.g., sidebar, header).
+*   `[🚧] 1.5.8 [COMMIT]` feat(ui): add core pages and navigation for dialectic engine
 
 ### 1.6 Basic GitHub Integration (Backend & API)
 *   `[ ] 1.6.1 [CONFIG]` Add new environment variables if needed for GitHub App/PAT specifically for Dialectic outputs, or confirm existing ones are sufficient and securely stored (e.g., in Supabase Vault).

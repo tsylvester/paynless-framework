@@ -1,157 +1,83 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, act } from '@testing-library/react';
 import { MemoryRouter, useNavigate } from 'react-router-dom';
-import userEvent from '@testing-library/user-event';
-
-import { useDialecticStore, initialDialecticStateValues } from '@paynless/store';
-import type { DialecticStore, DialecticProject, CreateProjectPayload, ApiError } from '@paynless/store';
 import { CreateDialecticProjectPage } from './CreateDialecticProjectPage';
+// Import the component that is mocked. Due to vi.mock, this will be the mocked version.
+import { CreateDialecticProjectForm } from '@/components/dialectic/CreateDialecticProjectForm';
 
-// Mock @paynless/store
-vi.mock('@paynless/store', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('@paynless/store')>();
-  return {
-    ...actual,
-    useDialecticStore: vi.fn(),
-  };
-});
+// Mock the actual form component to isolate page logic tests
+const mockOnProjectCreatedInternal = vi.fn();
+vi.mock('@/components/dialectic/CreateDialecticProjectForm', () => ({
+  // Capture the onProjectCreated prop to simulate its invocation
+  CreateDialecticProjectForm: vi.fn((props) => {
+    // Store the passed callback so we can call it in tests
+    mockOnProjectCreatedInternal.mockImplementation(props.onProjectCreated);
+    return <div data-testid="mock-create-dialectic-form">Mock Form</div>;
+  }),
+}));
 
 // Mock react-router-dom for navigation
 vi.mock('react-router-dom', async (importOriginal) => {
-    const actual = await importOriginal<typeof import('react-router-dom')>();
-    return {
-        ...actual,
-        useNavigate: vi.fn(),
-    };
+  const actual = await importOriginal<typeof import('react-router-dom')>();
+  return {
+    ...actual,
+    useNavigate: vi.fn(),
+  };
 });
 
-const mockCreateDialecticProject = vi.fn();
 const mockNavigate = vi.fn();
-const mockResetCreateProjectError = vi.fn();
-
-const createMockStoreState = (overrides: Partial<DialecticStore>): DialecticStore => {
-  return {
-    ...initialDialecticStateValues,
-    projects: [],
-    isLoadingProjects: false,
-    projectsError: null,
-    fetchDialecticProjects: vi.fn(),
-    availableDomainTags: [],
-    isLoadingDomainTags: false,
-    domainTagsError: null,
-    selectedDomainTag: null,
-    fetchAvailableDomainTags: vi.fn(),
-    setSelectedDomainTag: vi.fn(),
-    currentProjectDetail: null,
-    isLoadingProjectDetail: false,
-    projectDetailError: null,
-    fetchDialecticProjectDetails: vi.fn(),
-    modelCatalog: [],
-    isLoadingModelCatalog: false,
-    modelCatalogError: null,
-    fetchAIModelCatalog: vi.fn(),
-    isCreatingProject: false,
-    createProjectError: null,
-    createDialecticProject: mockCreateDialecticProject,
-    isStartingSession: false,
-    startSessionError: null,
-    startDialecticSession: vi.fn(),
-    contributionContentCache: {},
-    fetchContributionContent: vi.fn(),
-    _resetForTesting: vi.fn(),
-    resetCreateProjectError: mockResetCreateProjectError,
-    resetProjectDetailsError: vi.fn(),
-    ...overrides,
-  } as DialecticStore;
-};
 
 describe('CreateDialecticProjectPage', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.mocked(useNavigate).mockReturnValue(mockNavigate);
-    const mockStore = createMockStoreState({});
-    vi.mocked(useDialecticStore).mockImplementation((selector) => selector(mockStore));
+    // Reset the mock implementation for onProjectCreated for each test
+    mockOnProjectCreatedInternal.mockImplementation(() => {}); 
   });
 
-  it('renders form fields for project name and initial prompt', () => {
+  it('renders the CreateDialecticProjectForm component', () => {
     render(
       <MemoryRouter>
         <CreateDialecticProjectPage />
       </MemoryRouter>
     );
-    expect(screen.getByLabelText(/Project Name/i)).toBeInTheDocument();
-    expect(screen.getByLabelText(/Initial User Prompt/i)).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /Create Project/i })).toBeInTheDocument();
+    expect(screen.getByTestId('mock-create-dialectic-form')).toBeInTheDocument();
   });
 
-  it('calls createDialecticProject with form data on submit and navigates on success', async () => {
-    const user = userEvent.setup();
-    const mockSuccessfulProject: DialecticProject = {
-      id: 'new-proj-123', userId: 'user-1', projectName: 'New Test Project', initialUserPrompt: 'This is a test prompt.', 
-      createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), status: 'active', 
-      selectedDomainTag: null, userDomainOverlayValues: null, dialecticSessions: []
-    };
-    mockCreateDialecticProject.mockResolvedValueOnce({ success: true, data: mockSuccessfulProject, error: null });
+  it('calls navigate when onProjectCreated callback is invoked from the form', () => {
+    render(
+      <MemoryRouter>
+        <CreateDialecticProjectPage />
+      </MemoryRouter>
+    );
+
+    const testProjectId = 'newly-created-project-123';
+    const testProjectName = 'Test Project Alpha';
+
+    // Simulate the CreateDialecticProjectForm calling its onProjectCreated prop
+    act(() => {
+      // The mockOnProjectCreatedInternal function now holds the onProjectCreated
+      // callback passed from CreateDialecticProjectPage to CreateDialecticProjectForm.
+      // We call it here as if the form itself had called it upon successful creation.
+      mockOnProjectCreatedInternal(testProjectId, testProjectName);
+    });
     
-    const mockStore = createMockStoreState({ isCreatingProject: false });
-    vi.mocked(useDialecticStore).mockImplementation((selector) => selector(mockStore));
-
-    render(
-      <MemoryRouter>
-        <CreateDialecticProjectPage />
-      </MemoryRouter>
-    );
-
-    await user.type(screen.getByLabelText(/Project Name/i), mockSuccessfulProject.projectName);
-    await user.type(screen.getByLabelText(/Initial User Prompt/i), mockSuccessfulProject.initialUserPrompt);
-    await user.click(screen.getByRole('button', { name: /Create Project/i }));
-
-    await waitFor(() => {
-      expect(mockCreateDialecticProject).toHaveBeenCalledWith({
-        projectName: mockSuccessfulProject.projectName,
-        initialUserPrompt: mockSuccessfulProject.initialUserPrompt,
-        selectedDomainTag: null, // Assuming DomainSelector integration later or default null
-      } as CreateProjectPayload);
-    });
-
-    await waitFor(() => {
-      expect(mockNavigate).toHaveBeenCalledWith(`/dialectic/${mockSuccessfulProject.id}`);
-    });
+    expect(mockNavigate).toHaveBeenCalledWith(`/dialectic/${testProjectId}`);
   });
 
-  it('displays loading state when isCreatingProject is true', () => {
-    const mockStore = createMockStoreState({ isCreatingProject: true });
-    vi.mocked(useDialecticStore).mockImplementation((selector) => selector(mockStore));
-
+  it('passes the onProjectCreated callback to CreateDialecticProjectForm', () => {
     render(
       <MemoryRouter>
         <CreateDialecticProjectPage />
       </MemoryRouter>
     );
-    expect(screen.getByRole('button', { name: /Creating Project.../i })).toBeDisabled();
-    // Or check for a specific loader component
-  });
-
-  it('displays error message if createProjectError is present', async () => {
-    const user = userEvent.setup();
-    const error = { message: 'Failed to create project' } as ApiError;
-    mockCreateDialecticProject.mockResolvedValueOnce({ success: false, data: null, error });
-    const mockStore = createMockStoreState({ createProjectError: error, isCreatingProject: false });
-    vi.mocked(useDialecticStore).mockImplementation((selector) => selector(mockStore));
-
-    render(
-      <MemoryRouter>
-        <CreateDialecticProjectPage />
-      </MemoryRouter>
+    // Check if the mock form component was called with a prop named onProjectCreated
+    // and that prop is a function.
+    expect(vi.mocked(CreateDialecticProjectForm)).toHaveBeenCalledWith(
+      expect.objectContaining({
+        onProjectCreated: expect.any(Function),
+      }),
+      expect.anything() // Second argument for React component context, if any
     );
-
-    // Simulate form submission to trigger the error display path
-    await user.type(screen.getByLabelText(/Project Name/i), 'Test');
-    await user.type(screen.getByLabelText(/Initial User Prompt/i), 'Test prompt');
-    await user.click(screen.getByRole('button', { name: /Create Project/i }));
-
-    await waitFor(() => {
-        expect(screen.getByText(error.message)).toBeInTheDocument();
-    });
   });
 }); 

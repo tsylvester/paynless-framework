@@ -97,7 +97,7 @@ describe('useDialecticStore', () => {
     describe('fetchAvailableDomainTags action', () => {
         it('should fetch and set domain tags on success', async () => {
             const mockTags = ['tagA', 'tagB'];
-            const mockResponse: ApiResponse<string[]> = { data: mockTags, status: 200 };
+            const mockResponse: ApiResponse<{ data: string[] }> = { data: { data: mockTags }, status: 200 };
             mockDialecticApi.listAvailableDomainTags.mockResolvedValue(mockResponse);
 
             const { fetchAvailableDomainTags } = useDialecticStore.getState();
@@ -112,7 +112,7 @@ describe('useDialecticStore', () => {
 
         it('should set error state if API returns an error', async () => {
             const mockError: ApiError = { code: 'API_FAIL', message: 'API failed' };
-            const mockResponse: ApiResponse<string[]> = { error: mockError, status: 500 };
+            const mockResponse: ApiResponse<{ data: string[] }> = { error: mockError, status: 500 };
             mockDialecticApi.listAvailableDomainTags.mockResolvedValue(mockResponse);
 
             const { fetchAvailableDomainTags } = useDialecticStore.getState();

@@ -24,9 +24,8 @@ describe('DialecticApiClient', () => {
     describe('listAvailableDomainTags', () => {
         const endpoint = 'dialectic-service';
         const requestBody = { action: 'listAvailableDomainTags' };
-        const requestOptions = { isPublic: true };
 
-        it('should call apiClient.post with the correct endpoint, body, and options', async () => {
+        it('should call apiClient.post with the correct endpoint, body', async () => {
             const mockResponse: ApiResponse<string[]> = {
                 data: [],
                 status: 200,
@@ -36,7 +35,7 @@ describe('DialecticApiClient', () => {
             await dialecticApiClient.listAvailableDomainTags();
 
             expect(mockApiClientPost).toHaveBeenCalledTimes(1);
-            expect(mockApiClientPost).toHaveBeenCalledWith(endpoint, requestBody, requestOptions);
+            expect(mockApiClientPost).toHaveBeenCalledWith(endpoint, requestBody);
         });
 
         it('should return the domain tags array on successful response', async () => {

@@ -151,6 +151,8 @@ export interface DialecticActions {
 
   fetchContributionContent: (contributionId: string) => Promise<void>;
 
+  uploadProjectResourceFile: (payload: UploadProjectResourceFilePayload) => Promise<ApiResponse<DialecticProjectResource>>;
+
   resetCreateProjectError: () => void;
   resetProjectDetailsError: () => void;
 
@@ -195,10 +197,30 @@ export interface DialecticApiClient {
   startSession: (payload: StartSessionPayload) => Promise<ApiResponse<DialecticSession>>;
   listModelCatalog: () => Promise<ApiResponse<AIModelCatalogEntry[]>>;
   getContributionContentSignedUrl: (contributionId: string) => Promise<ApiResponse<ContributionContentSignedUrlResponse | null>>;
+
+  uploadProjectResourceFile: (payload: UploadProjectResourceFilePayload) => Promise<ApiResponse<DialecticProjectResource>>;
 }
 
 export interface ContributionContentSignedUrlResponse {
     signedUrl: string;
     mimeType: string;
     sizeBytes: number | null;
+}
+
+export interface DialecticProjectResource {
+    id: string;
+    project_id: string;
+    file_name: string;
+    storage_path: string;
+    mime_type: string;
+    size_bytes: number;
+    resource_description: string | null;
+    created_at: string;
+    updated_at: string;
+}
+
+export interface UploadProjectResourceFilePayload {
+    projectId: string;
+    file: File;
+    resourceDescription?: string;
 }

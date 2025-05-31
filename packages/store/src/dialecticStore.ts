@@ -8,6 +8,8 @@ import type {
   DialecticStore, 
   StartSessionPayload,
   DialecticSession,
+  UploadProjectResourceFilePayload,
+  DialecticProjectResource,
 } from '@paynless/types';
 import { api } from '@paynless/api';
 import { logger } from '@paynless/utils';
@@ -52,9 +54,10 @@ export const useDialecticStore = create<DialecticStore>((set, get) => ({
         logger.error('[DialecticStore] Error fetching domain tags:', { errorDetails: response.error });
         set({ availableDomainTags: [], isLoadingDomainTags: false, domainTagsError: response.error });
       } else {
-        logger.info('[DialecticStore] Successfully fetched domain tags:', { tags: response.data });
+        const tags = response.data && Array.isArray(response.data.data) ? response.data.data : [];
+        logger.info('[DialecticStore] Successfully fetched domain tags:', { tags });
         set({
-          availableDomainTags: response.data || [],
+          availableDomainTags: tags,
           isLoadingDomainTags: false,
           domainTagsError: null,
         });
@@ -375,6 +378,39 @@ export const useDialecticStore = create<DialecticStore>((set, get) => ({
           [contributionId]: { ...state.contributionContentCache[contributionId], isLoading: false, error: contentFetchErrorMsg }
         }
       }));
+    }
+  },
+
+  uploadProjectResourceFile: async (payload: UploadProjectResourceFilePayload): Promise<ApiResponse<DialecticProjectResource>> => {
+    logger.info('[DialecticStore] Uploading project resource file...', { projectId: payload.projectId, fileName: payload.file.name });
+    try {
+      const response = await api.dialectic().uploadProjectResourceFile(payload);
+
+      if (response.error) {
+        logger.error('[DialecticStore] Error uploading project resource file:', { 
+          projectId: payload.projectId, 
+          fileName: payload.file.name, 
+          errorDetails: response.error 
+        });
+      } else {
+        logger.info('[DialecticStore] Successfully uploaded project resource file:', { 
+          projectId: payload.projectId, 
+          fileName: payload.file.name, 
+          resource: response.data 
+        });
+      }
+      return response;
+    } catch (error: unknown) {
+      const networkError: ApiError = {
+        message: error instanceof Error ? error.message : 'An unknown network error occurred while uploading file',
+        code: 'NETWORK_ERROR',
+      };
+      logger.error('[DialecticStore] Network error uploading project resource file:', { 
+        projectId: payload.projectId, 
+        fileName: payload.file.name, 
+        errorDetails: networkError 
+      });
+      return { error: networkError, status: 0 };
     }
   }
 }));

@@ -3,7 +3,7 @@ import type { DialecticProject, CreateProjectPayload, ApiResponse, ContributionC
 
 // --- Dialectic Client Mock Setup ---
 export type MockDialecticApiClient = {
-    listAvailableDomainTags: ReturnType<typeof vi.fn<[], Promise<ApiResponse<string[]>>>>;
+    listAvailableDomainTags: ReturnType<typeof vi.fn<[], Promise<ApiResponse<{ data: string[] }>>>>;
     createProject: ReturnType<typeof vi.fn<[payload: CreateProjectPayload], Promise<ApiResponse<DialecticProject>>>>;
     listProjects: ReturnType<typeof vi.fn<[], Promise<ApiResponse<DialecticProject[]>>>>;
     getContributionContentSignedUrl: ReturnType<typeof vi.fn<[contributionId: string], Promise<ApiResponse<ContributionContentSignedUrlResponse | null>>>>;
@@ -14,7 +14,7 @@ export type MockDialecticApiClient = {
 
 // Typed vi.fn() calls
 export const mockDialecticClientInstance: MockDialecticApiClient = {
-    listAvailableDomainTags: vi.fn<[], Promise<ApiResponse<string[]>>>(),
+    listAvailableDomainTags: vi.fn<[], Promise<ApiResponse<{ data: string[] }>>>(),
     createProject: vi.fn<[CreateProjectPayload], Promise<ApiResponse<DialecticProject>>>(),
     listProjects: vi.fn<[], Promise<ApiResponse<DialecticProject[]>>>(),
     getContributionContentSignedUrl: vi.fn<[string], Promise<ApiResponse<ContributionContentSignedUrlResponse | null>>>(),
