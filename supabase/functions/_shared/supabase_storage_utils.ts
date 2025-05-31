@@ -5,9 +5,24 @@ interface UploadStorageOptions {
   upsert?: boolean;
 }
 
-interface UploadStorageResult {
+export interface UploadStorageResult {
   path: string | null;
   error: Error | null;
+}
+
+export interface FileMetadataSuccess {
+    size: number;
+    mimeType: string;
+}
+
+export interface FileMetadataError {
+    error: Error;
+    size?: never;
+    mimeType?: never;
+}
+
+export interface DeleteStorageResult {
+    error: Error | null;
 }
 
 // Supabase official client supports: File | Blob | ArrayBuffer | FormData | ReadableStream | string

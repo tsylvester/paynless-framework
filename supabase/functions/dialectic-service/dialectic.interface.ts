@@ -1,109 +1,199 @@
 import { ChatMessage } from "../_shared/types.ts"; 
+// Removed problematic import: import type { DialecticProject as PackageDialecticProject, ... } from "../../../../packages/types/src/dialectic.types.ts";
+
+// --- START: Redefined types based on packages/types/src/dialectic.types.ts ---
+// These are simplified here for the backend interface. 
+// The backend will construct data matching the richer frontend types from packages/types.
+
+export interface AIModelCatalogEntry {
+    id: string;
+    provider_name: string;
+    model_name: string;
+    api_identifier: string;
+    description: string | null;
+    strengths: string[] | null;
+    weaknesses: string[] | null;
+    context_window_tokens: number | null;
+    input_token_cost_usd_millionths: number | null;
+    output_token_cost_usd_millionths: number | null;
+    supports_image_input?: boolean;
+    supports_video_input?: boolean;
+    supports_audio_input?: boolean;
+    max_output_tokens: number | null;
+    is_active: boolean;
+    created_at: string;
+    updated_at: string;
+}
+
+export interface DialecticContribution {
+    id: string;
+    session_id: string;
+    session_model_id: string;
+    user_id: string | null;
+    stage: string;
+    iteration_number: number;
+    actual_prompt_sent: string | null;
+    content_storage_bucket: string | null;
+    content_storage_path: string | null;
+    content_mime_type: string | null;
+    content_size_bytes: number | null;
+    raw_response_storage_path: string | null;
+    tokens_used_input: number | null;
+    tokens_used_output: number | null;
+    cost_usd: number | null;
+    processing_time_ms: number | null;
+    citations: { text: string; url?: string }[] | null;
+    parent_contribution_id: string | null;
+    created_at: string;
+    updated_at: string;
+}
+
+export interface DialecticSessionModel {
+    id: string;
+    session_id: string;
+    model_id: string;
+    model_role: string | null;
+    created_at: string;
+    ai_provider?: AIModelCatalogEntry;
+}
+
+export interface DialecticSession {
+    id: string;
+    project_id: string;
+    session_description: string | null;
+    current_stage_seed_prompt: string | null;
+    iteration_count: number;
+    status: string;
+    associated_chat_id: string | null;
+    active_thesis_prompt_template_id: string | null;
+    active_antithesis_prompt_template_id: string | null;
+    active_synthesis_prompt_template_id: string | null;
+    active_parenthesis_prompt_template_id: string | null;
+    active_paralysis_prompt_template_id: string | null;
+    formal_debate_structure_id?: string | null;
+    max_iterations: number;
+    created_at: string;
+    updated_at: string;
+    dialectic_session_models?: DialecticSessionModel[];
+    dialectic_contributions?: DialecticContribution[];
+    convergence_status?: string | null;
+}
+
+export interface DialecticProject {
+    id: string;
+    user_id: string;
+    project_name: string;
+    initial_user_prompt: string;
+    selected_domain_tag: string | null;
+    repo_url: string | null;
+    status: string;
+    created_at: string;
+    updated_at: string;
+    sessions?: DialecticSession[];
+}
+
+// --- END: Redefined types ---
 
 export interface DialecticServiceRequest {
     action: string;
-    payload?: Record<string, unknown>;
-  }
-  
-  export interface CreateProjectPayload {
-    projectName: string;
-    initialUserPrompt: string;
-    selected_domain_tag?: string | null;
-  }
-  
+    payload?: Record<string, unknown>; 
+}
+
+export interface CreateProjectPayload {
+  projectName: string;
+  initialUserPrompt: string;
+  selected_domain_tag?: string | null;
+}
+
 export interface UpdateProjectDomainTagPayload {
-    projectId: string;
-    domainTag: string | null;
-  }
+  projectId: string;
+  domainTag: string | null;
+}
 
-  
+export interface GetProjectDetailsPayload { 
+  projectId: string;
+}
+
 export interface StartSessionPayload {
-    projectId: string;
-    selectedModelCatalogIds: string[]; // These are ai_providers.id
-    sessionDescription?: string | null;
-    thesisPromptTemplateName?: string;
-    antithesisPromptTemplateName?: string;
-    // associatedChatId could be passed if dialectic originates from existing chat
-    originatingChatId?: string | null;
-  }
-  
-  export interface StartSessionSuccessResponse {
-      message: string;
-      sessionId: string;
-      initialStatus: string;
-      associatedChatId: string; // The chat ID to be used for /chat interactions
-  }
-  
-  export interface GenerateThesisContributionsPayload {
+  projectId: string;
+  selectedModelCatalogIds: string[]; 
+  sessionDescription?: string | null;
+  originatingChatId?: string | null; 
+  thesisPromptTemplateName?: string;
+  antithesisPromptTemplateName?: string;
+  synthesisPromptTemplateId?: string; 
+  parenthesisPromptTemplateId?: string; 
+  paralysisPromptTemplateId?: string; 
+  formalDebateStructureId?: string | null; 
+  maxIterations?: number; 
+}
+
+export interface StartSessionSuccessResponse {
+    message: string;
     sessionId: string;
-    // authToken: string; // authToken will be extracted from the main request by the calling handler
-  }
-  
-  export interface GenerateThesisContributionsSuccessResponse {
-      message: string;
-      sessionId: string;
-      status: string;
-      contributions: unknown[]; // Placeholder for actual contributions
-      errors?: { modelId: string; message: string; details?: string }[]; // Optional errors array
-      // Other relevant details
-  }
+    initialStatus: string;
+    associatedChatId: string; 
+}
 
-  export interface CallUnifiedAIModelOptions {
-    customParameters?: {
-      historyMessages?: ChatMessage[]; // For conversational history
-      max_tokens_to_generate?: number;
-      // Other custom params the /chat function might accept
-    };
-    currentStageSystemPromptId?: string | null; // For system_prompts.id, passed as promptId to /chat
-  }
-  
-  export interface UnifiedAIResponse {
-    content: string | null;
-    inputTokens?: number;
-    outputTokens?: number;
-    cost?: number;
-    rawProviderResponse?: unknown; // This will be the assistantMessage object from /chat
-    processingTimeMs?: number;
-    error: string | null;
-    errorCode: string | null; // e.g., 'CHAT_API_ERROR', 'NETWORK_ERROR'
-  }
+export interface GenerateThesisContributionsPayload {
+  sessionId: string;
+}
 
-// --- Generate Antithesis Contributions ---
+export interface GenerateThesisContributionsSuccessResponse {
+    message: string;
+    sessionId: string;
+    status: string;
+    contributions: DialecticContribution[]; 
+    errors?: { modelId: string; message: string; details?: string }[];
+}
+
+export interface CallUnifiedAIModelOptions {
+  customParameters?: {
+    historyMessages?: ChatMessage[]; 
+    max_tokens_to_generate?: number;
+  };
+  currentStageSystemPromptId?: string | null; 
+}
+
+export interface UnifiedAIResponse {
+  content: string | null;
+  inputTokens?: number;
+  outputTokens?: number;
+  cost?: number;
+  rawProviderResponse?: unknown; 
+  processingTimeMs?: number;
+  error: string | null;
+  errorCode: string | null; 
+}
+
 export interface GenerateAntithesisContributionsPayload {
   sessionId: string;
-  // Potentially add options like specific thesis contributions to target if not all
 }
 
 export interface GenerateAntithesisContributionsSuccessResponse {
   message: string;
   sessionId: string;
-  status: string; // e.g., 'antithesis_generation_complete', 'antithesis_generation_partial'
-  contributions: unknown[]; // Array of newly created antithesis contributions
+  status: string; 
+  contributions: DialecticContribution[]; 
   errors?: { modelId: string; thesisContributionId: string; message: string; details?: string }[];
 }
-// --- End Generate Antithesis Contributions ---
 
-    // Define the expected shape of the selected AI provider details
 export interface SelectedAiProvider {
-  id: string;                 // PK of ai_providers table
-  provider_name: string;    // Aliased from 'provider' column in ai_providers
-  model_name: string;       // Aliased from 'name' column in ai_providers
-  api_identifier: string;   // Actual 'api_identifier' column from ai_providers
-  // Removed api_key_name, supports_json_response, supports_system_prompt as they don't exist on ai_providers table
+  id: string;                 
+  provider_name: string;    
+  model_name: string;       
+  api_identifier: string;   
 }
 
-  // Check ownership: contributionData.dialectic_sessions.dialectic_projects.user_id must match user.id
-  // Type acrobatics because of Supabase joins
-  // Define an interim type for the expected structure
-  export interface ContributionWithNestedOwner {
-    content_storage_bucket: string | null;
-    content_storage_path: string | null;
-    content_mime_type: string | null;
-    content_size_bytes: number | null;
-    dialectic_sessions: {
-      project_id: string | null;
-      dialectic_projects: {
-        user_id: string | null;
-      } | null;
+export interface ContributionWithNestedOwner {
+  content_storage_bucket: string | null;
+  content_storage_path: string | null;
+  content_mime_type: string | null;
+  content_size_bytes: number | null;
+  dialectic_sessions: {
+    project_id: string | null;
+    dialectic_projects: {
+      user_id: string | null;
     } | null;
-  }
+  } | null;
+}

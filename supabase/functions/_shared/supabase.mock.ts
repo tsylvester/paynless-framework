@@ -467,7 +467,7 @@ class MockQueryBuilder implements IMockQueryBuilder {
         // This shaping happens *after* the mock result is obtained.
         if (isSingle) {
             if (result.data && result.data.length === 1) {
-                // data remains an array of one item
+                result.data = result.data[0] as unknown[] | null; // Correctly assign the single object
             } else if (result.data && result.data.length > 1) {
                 result.error = new Error('Query returned more than one row') as Error & MockPGRSTError;
                 (result.error as MockPGRSTError).code = 'PGRST116';
@@ -481,7 +481,7 @@ class MockQueryBuilder implements IMockQueryBuilder {
             }
         } else if (isMaybeSingle) {
             if (result.data && result.data.length === 1) {
-                // data remains an array of one item
+                result.data = result.data[0] as unknown[] | null; // Correctly assign the single object
             } else if (result.data && result.data.length > 1) {
                 result.error = new Error('Query returned more than one row') as Error & MockPGRSTError;
                 (result.error as MockPGRSTError).code = 'PGRST116'; 
