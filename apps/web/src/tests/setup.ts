@@ -4,6 +4,14 @@ import { vi, beforeEach, afterEach, afterAll } from 'vitest';
 import { createMockSupabaseClient } from '../../../../packages/api/src/mocks/supabase.mock.ts'; 
 import { cleanup } from '@testing-library/react';
 
+// Mock ResizeObserver
+const ResizeObserverMock = vi.fn(() => ({
+  observe: vi.fn(),
+  unobserve: vi.fn(),
+  disconnect: vi.fn(),
+}));
+vi.stubGlobal('ResizeObserver', ResizeObserverMock);
+
 // The core mocked 'api' object that stores will use
 const mockedApiObject = {
   get: vi.fn(),

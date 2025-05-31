@@ -91,18 +91,15 @@ describe('AiApiClient', () => {
     describe('getSystemPrompts', () => {
         it('should call apiClient.get with the correct endpoint', async () => {
             // Arrange
-             const mockResponse: ApiResponse<SystemPrompt[]> = {
-                data: [],
-                status: 200,
-            };
-            (mockApiClient.get as vi.Mock).mockResolvedValue(mockResponse);
+            mockApiClient.get.mockResolvedValueOnce({ data: [], status: 200 });
 
             // Act
-            await aiApiClient.getSystemPrompts();
+            await aiApiClient.getSystemPrompts(); // No token passed, should not set isPublic: true
 
             // Assert
             expect(mockApiClient.get).toHaveBeenCalledTimes(1);
-            expect(mockApiClient.get).toHaveBeenCalledWith('/system-prompts', { isPublic: true });
+            // Verify it's called with an empty options object, or at least not with { isPublic: true }
+            expect(mockApiClient.get).toHaveBeenCalledWith('/system-prompts', {}); 
         });
 
         it('should return the prompts array on successful response', async () => {

@@ -22,46 +22,52 @@ serve(async (req) => {
   }
 
   try {
+    const authHeader = req.headers.get('Authorization');
+    console.log('[system-prompts] Received Authorization header:', authHeader ? 'Present' : 'MISSING_OR_NULL');
+    // Optionally, log the token itself for debugging (be careful with sensitive data in production logs)
+    // if (authHeader) {
+    //   console.log('[system-prompts] Auth Token:', authHeader);
+    // }
+
     // Create a Supabase client with the Auth context of the logged in user.
-    // Using ANON KEY as this is likely public or protected by RLS
     const supabaseClient = createClient(
       Deno.env.get('SUPABASE_URL') ?? '',
-      Deno.env.get('SUPABASE_ANON_KEY') ?? ''
+      Deno.env.get('SUPABASE_ANON_KEY') ?? '',
+      {
+        global: { headers: { Authorization: authHeader! } }, // Use the captured authHeader
+      }
     )
 
     // Fetch active system prompts
     const { data: prompts, error } = await supabaseClient
       .from('system_prompts')
-      .select('id, name, prompt_text')
+      .select('*')
       .eq('is_active', true)
 
     if (error) {
-      console.error('Error fetching system prompts:', error)
+      console.error('[system-prompts] Error fetching system prompts:', error)
       // Check for RLS errors (adjust code/message as needed)
       if (error.code === 'PGRST116' || error.message.includes('permission denied')) {
-         // Use shared error response helper, passing the original error
          return createErrorResponse('Unauthorized: RLS policy prevented access.', 403, req, error);
       } 
       throw error // Re-throw other errors to be caught below
     }
 
+    console.log(`[system-prompts] Fetched ${prompts ? prompts.length : 0} prompts from DB.`);
+
     // Use shared success response helper
     return createSuccessResponse({ prompts }, 200, req);
 
   } catch (error) {
-    console.error('Caught error in system-prompts function:', error) // Log raw error
-    // Use shared error response helper, passing the original error
+    console.error('[system-prompts] Caught error in system-prompts function:', error) 
     const errorMessage = error instanceof Error ? error.message : 'An unexpected error occurred';
     
-    // Safely determine status from error
     let status = 500;
-    if (error instanceof Response) { // Check if a Response object was thrown
+    if (error instanceof Response) { 
       status = error.status;
     } else if (typeof error === 'object' && error !== null && 'status' in error && typeof error.status === 'number') {
-      // Check if it's an object with a numeric status property (covers errors like HttpError from Supabase client)
       status = error.status;
     }
-    // No need for the `error instanceof Error` check here as the object check covers it if Error has a status prop
 
     return createErrorResponse(errorMessage, status, req, error);
   }
