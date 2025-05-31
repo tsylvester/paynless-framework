@@ -84,8 +84,12 @@ export const useDialecticStore = create<DialecticStore>((set, get) => ({
         logger.error('[DialecticStore] Error fetching projects:', { errorDetails: response.error });
         set({ projects: [], isLoadingProjects: false, projectsError: response.error });
       } else {
-        logger.info('[DialecticStore] Successfully fetched projects:', { projects: response.data });
-        set({ projects: response.data || [], isLoadingProjects: false, projectsError: null });
+        // response.data is expected to be DialecticProject[] or undefined/null
+        const projectsArray = Array.isArray(response.data) 
+          ? response.data 
+          : []; // Default to empty array if data is not an array (e.g., null/undefined)
+        logger.info('[DialecticStore] Successfully fetched projects:', { projects: projectsArray });
+        set({ projects: projectsArray, isLoadingProjects: false, projectsError: null });
       }
       // set({ projects: [], isLoadingProjects: false, projectsError: null });
     } catch (error: unknown) {

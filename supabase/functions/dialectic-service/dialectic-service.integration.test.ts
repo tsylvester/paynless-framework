@@ -14,6 +14,7 @@ import {
   assertExists,
   assertNotEquals,
   assertThrows,
+  fail, // Added fail to imports
 } from "https://deno.land/std@0.208.0/assert/mod.ts";
 import { createClient, type SupabaseClient, FunctionsHttpError } from "npm:@supabase/supabase-js@2";
 import { Database, Json } from "../types_db.ts";
@@ -174,6 +175,197 @@ describe("Edge Function: dialectic-service", () => {
         expect(responsePayload.error).to.be.undefined;
         expect(responsePayload.data).to.be.an("array").that.is.empty;
       });
+    });
+  });
+
+  describe("Action: listProjects", () => {
+    let testUserClient: SupabaseClient<Database>;
+    let testUserId: string;
+
+    afterEach(async () => {
+      await coreCleanupTestResources('local');
+    });
+
+    it("should return an empty list for a new user with no projects", async () => {
+      const { primaryUserClient, primaryUserId } = await coreInitializeTestStep({ userProfile: { first_name: "ListProjectsUserNoProjects" } });
+      testUserClient = primaryUserClient;
+      testUserId = primaryUserId;
+      const testUserAuthToken = await coreGenerateTestUserJwt(testUserId);
+
+      const request: DialecticServiceRequest = { action: "listProjects" };
+      const { data, error } = await testUserClient.functions.invoke("dialectic-service", {
+        body: request,
+        headers: { Authorization: `Bearer ${testUserAuthToken}` }
+      });
+
+      expect(error, "Function invocation should not error").to.be.null;
+      expect(data, "Response data should exist").to.exist;
+      const responsePayload = data as any;
+      expect(responsePayload.error, `Service action error: ${responsePayload.error?.message}`).to.be.undefined;
+      expect(responsePayload.data, "Payload data should be an array").to.be.an("array").that.is.empty;
+    });
+
+    it("should return a list of projects for a user who owns them", async () => {
+      const uniqueProjectName1 = `MyListProject1-${crypto.randomUUID().substring(0, 8)}`;
+      const uniqueProjectName2 = `MyListProject2-${crypto.randomUUID().substring(0, 8)}`;
+      
+      const { primaryUserClient, primaryUserId } = await coreInitializeTestStep({
+        userProfile: { first_name: "ListProjectsUserWithProjects" },
+        resources: [
+          {
+            tableName: "dialectic_projects",
+            identifier: { project_name: uniqueProjectName1 },
+            desiredState: { initial_user_prompt: "Prompt 1" },
+            linkUserId: true,
+          },
+          {
+            tableName: "dialectic_projects",
+            identifier: { project_name: uniqueProjectName2 },
+            desiredState: { initial_user_prompt: "Prompt 2" },
+            linkUserId: true,
+          },
+        ],
+      });
+      testUserClient = primaryUserClient;
+      testUserId = primaryUserId;
+      const testUserAuthToken = await coreGenerateTestUserJwt(testUserId);
+
+      const request: DialecticServiceRequest = { action: "listProjects" };
+      const { data, error } = await testUserClient.functions.invoke("dialectic-service", {
+        body: request,
+        headers: { Authorization: `Bearer ${testUserAuthToken}` }
+      });
+
+      expect(error).to.be.null;
+      const responsePayload = data as any;
+      expect(responsePayload.error).to.be.undefined;
+      expect(responsePayload.data).to.be.an("array").with.lengthOf(2);
+      expect(responsePayload.data[0].project_name).to.be.oneOf([uniqueProjectName1, uniqueProjectName2]);
+      expect(responsePayload.data[1].project_name).to.be.oneOf([uniqueProjectName1, uniqueProjectName2]);
+      assertNotEquals(responsePayload.data[0].project_name, responsePayload.data[1].project_name, "Project names should be unique");
+    });
+
+    it("should not list projects belonging to another user", async () => {
+      // User A creates a project
+      const projectForUserAName = `ProjectForUserA-${crypto.randomUUID().substring(0,8)}`;
+      const userASetup = await coreInitializeTestStep({
+        userProfile: { first_name: "UserAForListIsolation" },
+        resources: [{
+          tableName: "dialectic_projects",
+          identifier: { project_name: projectForUserAName },
+          desiredState: { initial_user_prompt: "User A's prompt" },
+          linkUserId: true, // This will link it to UserAForListIsolation
+        }],
+      }, 'local'); 
+      // userASetup.primaryUserId now has a project linked to it.
+
+      // User B (our test user) tries to list projects
+      const { primaryUserClient: userBClient, primaryUserId: userBId } = await coreInitializeTestStep({ 
+        userProfile: { first_name: "UserBForListIsolation" }
+      }, 'local'); // Specify 'local' scope for User B's resources as well
+      const userBAuthToken = await coreGenerateTestUserJwt(userBId);
+      
+      const request: DialecticServiceRequest = { action: "listProjects" };
+      const { data, error } = await userBClient.functions.invoke("dialectic-service", {
+        body: request,
+        headers: { Authorization: `Bearer ${userBAuthToken}` }
+      });
+
+      expect(error).to.be.null;
+      const responsePayload = data as any;
+      expect(responsePayload.error).to.be.undefined;
+      expect(responsePayload.data).to.be.an("array").that.is.empty; // User B should see no projects
+    });
+
+    it("should return 401 if JWT is missing or invalid", async () => {
+      const anonClient = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_ANON_KEY")!, {
+        auth: {
+          autoRefreshToken: false,
+          persistSession: false,
+          detectSessionInUrl: false
+        }
+      });
+      const functionUrl = `${Deno.env.get("SUPABASE_URL")!}/functions/v1/dialectic-service`;
+      const supabaseAnonKey = Deno.env.get("SUPABASE_ANON_KEY")!;
+      const requestBody: DialecticServiceRequest = { action: "listProjects" };
+      const allowedOriginForTest = "http://localhost:5173";
+
+      // Test with missing Authorization header (using fetch to ensure no implicit auth from client)
+      try {
+        const response = await fetch(functionUrl, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "apikey": supabaseAnonKey, // Supabase gateway requires this for direct calls
+            "Origin": allowedOriginForTest,
+            // NO "Authorization" header
+          },
+          body: JSON.stringify(requestBody),
+        });
+        
+        console.log("[Test Debug] Missing Auth (fetch) - Response Status:", response.status);
+        const responseBodyText = await response.text();
+        console.log("[Test Debug] Missing Auth (fetch) - Response Body:", responseBodyText);
+
+        expect(response.status, `Expected 401 for missing auth (fetch), got ${response.status}. Body: ${responseBodyText}`).to.equal(401);
+        const parsedBody = JSON.parse(responseBodyText);
+        // Check for the Supabase gateway's specific error message when Authorization header is missing
+        expect(parsedBody.msg || parsedBody.message || parsedBody.error).to.equal("Error: Missing authorization header");
+
+      } catch (e) {
+        // This catch is for network errors or if fetch/parsing itself fails, not for bad HTTP status
+        console.log("[Test Debug] Missing Auth (fetch) - Caught error during fetch/parse:", JSON.stringify(e));
+        console.log("[Test Debug] Missing Auth (fetch) - Error name:", (e as Error).name);
+        console.log("[Test Debug] Missing Auth (fetch) - Error message:", (e as Error).message);
+        fail(`Fetch attempt for missing auth failed unexpectedly: ${(e as Error).message}`);
+      }
+
+      // Test with invalid Authorization header (using anonClient.functions.invoke)
+      try {
+        const { data: invokeData, error: invokeError } = await anonClient.functions.invoke("dialectic-service", {
+          body: requestBody,
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": "Bearer anobviouslyinvalidtoken",
+            "Origin": allowedOriginForTest,
+          },
+        });
+
+        console.log("[Test Debug] Invalid Auth Invoke - Result - Data:", JSON.stringify(invokeData));
+        console.log("[Test Debug] Invalid Auth Invoke - Result - Error:", JSON.stringify(invokeError));
+
+        if (!invokeError) {
+          fail(`Should have thrown an error for invalid auth token, but invoke succeeded. Data: ${JSON.stringify(invokeData)}`);
+          return; // Should not be reached if fail throws
+        }
+        
+        // At this point, invokeError should be a FunctionsHttpError
+        const err = invokeError as FunctionsHttpError;
+        console.log("[Test Debug] Invalid Auth - Error Name (from invokeError.name):", err.name);
+        console.log("[Test Debug] Invalid Auth - Error Message (from invokeError.message):", err.message);
+        expect(err).to.be.instanceOf(FunctionsHttpError, `Error was not a FunctionsHttpError. Name: ${err.name}, Msg: ${err.message}`);
+        
+        expect(err.context.status, `Expected 401 for invalid auth, got ${err.context?.status}`).to.equal(401);
+        
+        let errorBodyText = "Could not get error body from err.context.text()";
+        if (err.context && typeof err.context.text === 'function') {
+          try { errorBodyText = await err.context.text(); } catch { /* ignore */ }
+        }
+        console.log("[Test Debug] Invalid Auth - Error Body (from err.context.text()):", errorBodyText); 
+
+        try {
+          const parsedErrorBody = JSON.parse(errorBodyText);
+          expect(parsedErrorBody.msg || parsedErrorBody.message || parsedErrorBody.error).to.equal("Invalid JWT");
+        } catch (parseErr) {
+          fail(`Failed to parse error body as JSON or assert message. Body: ${errorBodyText}, ParseErr: ${parseErr}`);
+        }
+
+      } catch (unexpectedError) { 
+        // This catch is for truly unexpected errors during the test logic itself, 
+        // not for the expected FunctionsHttpError from the service.
+        console.log("[Test Debug] Invalid Auth - Outer Catch - Unexpected Error:", JSON.stringify(unexpectedError));
+        fail(`Test logic itself failed: ${(unexpectedError as Error).message}`);
+      }
     });
   });
 

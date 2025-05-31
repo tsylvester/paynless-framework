@@ -79,6 +79,16 @@ export function Header() {
                 >
                   Chat
                 </Link>
+                <Link
+                  to="/dialectic"
+                  className={`${
+                    isActive('/dialectic') || location.pathname.startsWith('/dialectic/')
+                      ? 'border-primary text-textPrimary'
+                      : 'border-transparent text-textSecondary hover:border-border hover:text-textPrimary'
+                  } inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium`}
+                >
+                  Dialectic
+                </Link>
               </nav>
             )}
           </div>
@@ -246,6 +256,17 @@ export function Header() {
                 onClick={() => setIsMenuOpen(false)}
               >
                 Chat
+              </Link>
+              <Link
+                to="/dialectic"
+                className={`${
+                  isActive('/dialectic') || location.pathname.startsWith('/dialectic/')
+                    ? 'bg-primary/10 border-primary text-primary'
+                    : 'border-transparent text-textSecondary hover:bg-primary/5 hover:border-border hover:text-textPrimary'
+                } block pl-3 pr-4 py-2 border-l-4 text-base font-medium`}
+                onClick={() => setIsMenuOpen(false)}
+              >
+                Dialectic
               </Link>
               <div className="px-4 py-2">
                 <OrganizationSwitcher />

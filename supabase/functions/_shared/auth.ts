@@ -32,7 +32,11 @@ export const createSupabaseClient = (
 
   return createClientFn(supabaseUrl, supabaseKey, {
     global: { headers: { Authorization: authHeader ?? "" } },
-    auth: { persistSession: false },
+    auth: {
+      persistSession: false,
+      autoRefreshToken: false,
+      detectSessionInUrl: false
+    },
   });
 };
 
@@ -51,7 +55,11 @@ export const createSupabaseAdminClient = (
   }
   
   return createClientFn(supabaseUrl, supabaseServiceKey, {
-    auth: { persistSession: false },
+    auth: {
+      persistSession: false,
+      autoRefreshToken: false,
+      detectSessionInUrl: false
+    },
   });
 };
 

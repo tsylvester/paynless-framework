@@ -158,9 +158,9 @@ describe('useDialecticStore', () => {
     // New tests for fetchDialecticProjects
     describe('fetchDialecticProjects action', () => {
         it('should fetch and set projects on success', async () => {
-            const mockProjects: DialecticProject[] = [{ id: 'proj1', project_name: 'Test Project 1' } as DialecticProject];
+            const mockProjects: DialecticProject[] = [{ id: 'proj1', project_name: 'Test Project 1', user_id: 'user1', initial_user_prompt: 'prompt1', selected_domain_tag: null, repo_url: null, status: 'active', created_at: '2023-01-01T00:00:00Z', updated_at: '2023-01-01T00:00:00Z' } as DialecticProject];
             const mockResponse: ApiResponse<DialecticProject[]> = { data: mockProjects, status: 200 };
-            mockDialecticApi.listProjects.mockResolvedValue(mockResponse);
+            (mockDialecticApi.listProjects as Mock).mockResolvedValue(mockResponse);
 
             const { fetchDialecticProjects } = useDialecticStore.getState();
             await fetchDialecticProjects();
@@ -172,10 +172,24 @@ describe('useDialecticStore', () => {
             expect(mockDialecticApi.listProjects).toHaveBeenCalledTimes(1);
         });
 
+        it('should set projects to an empty array if API returns success with no data', async () => {
+            const mockResponse: ApiResponse<DialecticProject[]> = { data: undefined, status: 200 }; // Or data: null
+            (mockDialecticApi.listProjects as Mock).mockResolvedValue(mockResponse);
+
+            const { fetchDialecticProjects } = useDialecticStore.getState();
+            await fetchDialecticProjects();
+
+            const state = useDialecticStore.getState();
+            expect(state.isLoadingProjects).toBe(false);
+            expect(state.projects).toEqual([]);
+            expect(state.projectsError).toBeNull();
+            expect(mockDialecticApi.listProjects).toHaveBeenCalledTimes(1);
+        });
+
         it('should set error state if listProjects API returns an error', async () => {
             const mockError: ApiError = { code: 'API_FAIL', message: 'Failed to fetch projects' };
             const mockResponse: ApiResponse<DialecticProject[]> = { error: mockError, status: 500 };
-            mockDialecticApi.listProjects.mockResolvedValue(mockResponse);
+            (mockDialecticApi.listProjects as Mock).mockResolvedValue(mockResponse);
 
             const { fetchDialecticProjects } = useDialecticStore.getState();
             await fetchDialecticProjects();
@@ -188,17 +202,18 @@ describe('useDialecticStore', () => {
         });
 
         it('should set loading state during fetchProjects', async () => {
-            mockDialecticApi.listProjects.mockReturnValue(new Promise(() => {})); 
+            (mockDialecticApi.listProjects as Mock).mockReturnValue(new Promise(() => {})); 
             const { fetchDialecticProjects } = useDialecticStore.getState();
-            fetchDialecticProjects();
+            fetchDialecticProjects(); // Do not await
             const state = useDialecticStore.getState();
             expect(state.isLoadingProjects).toBe(true);
             expect(state.projectsError).toBeNull();
+            expect(mockDialecticApi.listProjects).toHaveBeenCalledTimes(1);
         });
 
         it('should set network error state if listProjects API call throws', async () => {
             const networkErrorMessage = 'Connection Timeout';
-            mockDialecticApi.listProjects.mockRejectedValue(new Error(networkErrorMessage));
+            (mockDialecticApi.listProjects as Mock).mockRejectedValue(new Error(networkErrorMessage));
 
             const { fetchDialecticProjects } = useDialecticStore.getState();
             await fetchDialecticProjects();
@@ -443,7 +458,7 @@ describe('useDialecticStore', () => {
             
             let result = await startDialecticSession(startSessionPayload);
 
-            let state = useDialecticStore.getState();
+            const state = useDialecticStore.getState();
             expect(state.isStartingSession).toBe(false);
             expect(state.startSessionError).toBeNull();
             expect(result.data).toEqual(mockSession);

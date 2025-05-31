@@ -158,6 +158,32 @@ async function createProject(
   return { data: newProjectData };
 }
 
+async function listProjects(
+  req: Request, // For user authentication
+  dbClient: typeof supabaseAdmin
+): Promise<{ data?: Database['public']['Tables']['dialectic_projects']['Row'][]; error?: { message: string; status?: number; details?: string } }> {
+  const supabaseUserClient = createSupabaseClient(req);
+  const { data: { user }, error: userError } = await supabaseUserClient.auth.getUser();
+
+  if (userError || !user) {
+    logger.warn("User not authenticated for listProjects", { error: userError });
+    return { error: { message: "User not authenticated", status: 401 } };
+  }
+
+  const { data: projectsData, error: projectsError } = await dbClient
+    .from('dialectic_projects')
+    .select('*') // Select all columns for now, can be refined later if needed
+    .eq('user_id', user.id)
+    .order('created_at', { ascending: false }); // Optional: order by creation date
+
+  if (projectsError) {
+    logger.error("Error fetching projects:", { error: projectsError, userId: user.id });
+    return { error: { message: "Failed to fetch projects", details: projectsError.message, status: 500 } };
+  }
+
+  return { data: projectsData || [] }; // Return empty array if projectsData is null (no projects found)
+}
+
 async function getContributionContentSignedUrlHandler(
   req: Request, // For user authentication
   dbClient: typeof supabaseAdmin,
@@ -899,6 +925,10 @@ serve(async (req: Request) => {
           result = await getContributionContentSignedUrlHandler(req, supabaseAdmin, payload as { contributionId: string });
         }
         break;
+      case 'listProjects':
+        // listProjects only needs the authenticated user from the request, not a specific payload
+        result = await listProjects(req, supabaseAdmin);
+        break;
       default:
         result = { error: { message: `Unknown action: ${action}`, status: 404 } };
     }
@@ -920,9 +950,56 @@ serve(async (req: Request) => {
     // Passing 'result' directly to createSuccessResponse will ensure the correct structure.
     return createSuccessResponse(result, 200, req);
 
-  } catch (e) {
-    console.error("Critical error in dialectic-service:", e);
-    const error = e instanceof Error ? e : new Error(String(e));
-    return createErrorResponse("Internal Server Error", 500, req, error);
+  } catch (e: unknown) { // Explicitly type 'e' as unknown
+    const error = e instanceof Error ? e : new Error(String(e)); 
+
+    const getErrorProperty = (propName: string): unknown => {
+      if (e && typeof e === 'object' && e !== null && propName in e) {
+        return (e as Record<string, unknown>)[propName];
+      }
+      return undefined;
+    };
+
+    const errorCode = getErrorProperty('code');
+    const errorStatus = getErrorProperty('status');
+
+    logger.error("Error in dialectic-service main handler:", { 
+      errorMessage: error.message, 
+      errorName: error.name, 
+      errorStack: error.stack, 
+      errorCode: errorCode,
+      errorStatus: typeof errorStatus === 'number' ? errorStatus : undefined, // Log status if it's a number
+      reqUrl: req.url,
+      reqMethod: req.method,
+      origin: req.headers.get('Origin')
+    });
+
+    const errorNameValue = getErrorProperty('name');
+    const errorName = error.name || (typeof errorNameValue === 'string' ? errorNameValue : undefined);
+    const errorMessage = error.message || String(e);
+    
+    const errorNameStr = typeof errorName === 'string' ? errorName : '';
+    const errorMessageStr = typeof errorMessage === 'string' ? errorMessage : '';
+
+    if (errorNameStr === 'JWSInvalid' || 
+        errorNameStr === 'JWSSignatureVerificationFailed' || 
+        (errorNameStr === 'AuthApiError' && errorMessageStr.toLowerCase().includes('jwt'))) {
+      return createErrorResponse("Invalid or malformed token", 401, req, errorMessageStr);
+    }
+
+    if (error instanceof SyntaxError && errorMessageStr.toLowerCase().includes("json")) {
+      return createErrorResponse("Invalid JSON payload", 400, req, errorMessageStr);
+    }
+    
+    const statusCode = typeof errorStatus === 'number' ? errorStatus : 500;
+    const errorDetails = getErrorProperty('details');
+    const details = errorDetails || error.stack;
+
+    return createErrorResponse(
+      errorMessageStr || "An unexpected error occurred in dialectic-service.",
+      statusCode,
+      req,
+      details
+    );
   }
 }); 

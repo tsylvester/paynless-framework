@@ -253,94 +253,92 @@ export async function coreTeardown() {
 }
 
 export async function coreCreateAndSetupTestUser(
-  profileProps?: Partial<{ role: string; first_name: string }>,
+  profileProps?: Partial<{ role: "user" | "admin"; first_name: string }>,
   scope: 'global' | 'local' = 'local'
 ): Promise<{ userId: string; userClient: SupabaseClient<Database> }> {
-  if (!supabaseAdminClient) throw new Error("Supabase admin client not initialized for user creation.");
-  if (!currentTestDeps?.createSupabaseClient) {
-    throw new Error("Test dependencies (currentTestDeps.createSupabaseClient) not initialized. Call initializeTestDeps first.");
-  }
-  if (!SUPABASE_URL) {
-    throw new Error("SUPABASE_URL is not set. Cannot create user client.");
+  if (!currentTestDeps || !supabaseAdminClient) {
+    throw new Error(
+      "Test dependencies or admin client not initialized. Call initializeTestDeps() first."
+    );
   }
 
-  const testUserEmail = `test-user-${Date.now()}@example.com`;
+  const testUserEmail = `testuser-${crypto.randomUUID()}@example.com`;
   const testUserPassword = "password123";
-  const { data: authData, error: authError } = await supabaseAdminClient.auth.admin.createUser({
-    email: testUserEmail, password: testUserPassword, email_confirm: true,
-  });
-  if (authError || !authData?.user) {
-    console.error("Test user creation failed:", authError);
-    throw authError || new Error("Test user creation failed and no error object provided.");
+
+  const { data: authData, error: authError } =
+    await supabaseAdminClient.auth.admin.createUser({
+      email: testUserEmail,
+      password: testUserPassword,
+      email_confirm: true, // Auto-confirm email for tests
+    });
+
+  if (authError || !authData.user) {
+    console.error("Error creating test user:", authError);
+    throw new Error(`Failed to create test user: ${authError?.message}`);
   }
   const userId = authData.user.id;
-  console.log(`[TestUtil] Created user in auth.users with ID: ${userId}`);
-
   registerUndoAction({ type: 'DELETE_CREATED_USER', userId, scope });
-  console.log(`[TestUtil] Registered UNDO action: DELETE_CREATED_USER for ID: ${userId}`);
 
-  // Manage user_profiles record
-  const { data: existingProfile, error: fetchProfileError } = await supabaseAdminClient
+  // Upsert a corresponding user_profile
+  const profileDataToUpsert: Database['public']['Tables']['user_profiles']['Insert'] = {
+    id: userId, // userId is a string, satisfying the non-optional 'id' for insert/upsert
+    role: profileProps?.role || "user",
+    first_name: profileProps?.first_name || `TestUser-${userId.substring(0, 8)}`,
+    // other non-nullable fields with no defaults must be specified here or have DB defaults
+  };
+
+  // Fetch existing profile to restore later, if any
+  const { data: existingProfile, error: fetchError } = await supabaseAdminClient
     .from('user_profiles')
     .select('*')
     .eq('id', userId)
     .maybeSingle();
 
-  if (fetchProfileError) {
-    console.error(`Error fetching user profile for ${userId} during setup:`, fetchProfileError);
-    // Decide if this is a critical failure
-    throw fetchProfileError;
+  if (fetchError && fetchError.code !== 'PGRST116') { // PGRST116 means no rows found, which is fine
+    console.error(`Error fetching existing profile for user ${userId} before upsert:`, fetchError);
+    // Decide if this should throw or just warn
   }
-  console.log(`[TestUtil] Existing user_profile for ${userId}: ${existingProfile ? JSON.stringify(existingProfile) : 'Not found'}`);
-
-  const profileDataToUpsert = {
-    id: userId, 
-    role: (profileProps?.role as 'user' | 'admin') || 'user', 
-    first_name: profileProps?.first_name || `TestUser${userId.substring(0, 4)}`,
-    // Ensure all required fields for user_profiles are here or have defaults in DB
-  };
-
   if (existingProfile) {
     registerUndoAction({
       type: 'RESTORE_UPDATED_ROW',
       tableName: 'user_profiles',
       identifier: { id: userId },
-      originalRow: existingProfile, // originalRow should be the complete row data
-      scope: scope,
+      originalRow: existingProfile,
+      scope
     });
-    console.log(`[TestUtil] Registered UNDO action: RESTORE_UPDATED_ROW for 'user_profiles' ID: ${userId}`);
   } else {
-    // If it didn't exist, we are creating it, so plan to delete it.
-    console.log(`[TestUtil] No existing user_profile for ${userId}, will create.`);
+    // If it didn't exist, we'll delete it on cleanup
     registerUndoAction({
-      type: 'DELETE_CREATED_ROW',
-      tableName: 'user_profiles',
-      criteria: { id: userId },
-      scope: scope,
+        type: 'DELETE_CREATED_ROW',
+        tableName: 'user_profiles',
+        criteria: { id: userId },
+        scope
     });
-    console.log(`[TestUtil] Registered UNDO action: DELETE_CREATED_ROW for 'user_profiles' ID: ${userId}`);
   }
 
-  console.log(`[TestUtil] Upserting user_profile for ${userId} with data: ${JSON.stringify(profileDataToUpsert)}`);
-  const { error: userProfileUpsertError } = await supabaseAdminClient
-    .from('user_profiles')
-    .upsert(profileDataToUpsert, { onConflict: 'id' })
-    .select()
-    .single(); // Assuming upsert returns the row, adjust if not
+  const { error: profileError } = await supabaseAdminClient
+    .from("user_profiles")
+    .upsert(profileDataToUpsert);
 
-  if (userProfileUpsertError) {
-    console.error(`Error upserting user profile for ${userId}:`, userProfileUpsertError);
-    throw userProfileUpsertError;
+  if (profileError) {
+    console.error("Error upserting user profile:", profileError);
+    throw new Error(
+      `Failed to upsert user profile for ${userId}: ${profileError.message}`
+    );
   }
 
-  // Create and return the client for this user
-  const userToken = await coreGenerateTestUserJwt(userId, 'authenticated', { user_id: userId });
-  const clientOptions: SupabaseClientOptions<"public"> = {
-    auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
-    db: { schema: 'public' }
-  };
-  const userClient = currentTestDeps.createSupabaseClient(SUPABASE_URL, userToken, clientOptions);
-  
+  // Generate a JWT for this user to create a client
+  const jwt = await coreGenerateTestUserJwt(userId, profileDataToUpsert.role);
+
+  const userClient = createClient(SUPABASE_URL!, SUPABASE_ANON_KEY!, {
+    global: { headers: { Authorization: `Bearer ${jwt}` } },
+    auth: {
+      persistSession: false,
+      autoRefreshToken: false, // Explicitly disable auto-refresh for test user clients
+      detectSessionInUrl: false, // Recommended for server-side/test environments
+    },
+  });
+
   return { userId, userClient };
 }
 
@@ -501,7 +499,7 @@ export interface TestSetupConfig {
    * for the test (e.g., role, first_name). This user is always created unless an error occurs earlier.
    * See `coreCreateAndSetupTestUser` for default values if not provided.
    */
-  userProfile?: Partial<{ role: string; first_name: string }>; 
+  userProfile?: Partial<{ role: "user" | "admin"; first_name: string }>; 
   /** 
    * Optional: Specifies the initial token balance for the primary test user's default wallet.
    * Defaults to 10000 if not provided. See `coreEnsureTestUserAndWallet`.
@@ -765,143 +763,118 @@ export async function coreInitializeTestStep(
     undoActionsStack = undoActionsStack.filter(action => action.scope === 'global');
   }
 
-  if (!currentTestDeps) {
-    throw new Error("Test dependencies not initialized. Call initializeTestDeps first.");
+  if (!currentTestDeps || !supabaseAdminClient) {
+    initializeTestDeps(); // Ensure dependencies, including adminClient, are ready
   }
-  if (!supabaseAdminClient) {
-    throw new Error("Supabase admin client not initialized. Call initializeSupabaseAdminClient first (usually via initializeTestDeps).");
-  }
-
   const processedResources: ProcessedResourceInfo[] = [];
+  const userProfileProps: TestSetupConfig['userProfile'] = config.userProfile;
 
-  const { userId: primaryUserId, userClient: primaryUserClient } = await coreCreateAndSetupTestUser(
-    config.userProfile,
-    executionScope
-  );
+  const { userId: primaryUserId, userClient: primaryUserClient } = await coreCreateAndSetupTestUser(userProfileProps, executionScope);
   await coreEnsureTestUserAndWallet(primaryUserId, config.initialWalletBalance, executionScope);
 
   if (config.resources) {
     for (const requirement of config.resources) {
-      let requirementProcessedInfo: ProcessedResourceInfo = {
-        tableName: requirement.tableName,
-        identifier: requirement.identifier,
-        status: 'skipped',
-      };
-      console.log(`[TestUtil] Processing resource requirement for table '${requirement.tableName}' with identifier: ${JSON.stringify(requirement.identifier)}`);
-
-      // Cast tableName to a specific key type to satisfy the linter
+      let resourceId: string | undefined;
       const tableNameKey = requirement.tableName as keyof Database['public']['Tables'];
 
-      try {
-        const { data: existingRows, error: fetchError } = await supabaseAdminClient
-          .from(tableNameKey) // Use the casted key (value)
-          .select("*")
+      // Check if the resource already exists based on the identifier
+      const { data: existingResource, error: selectError } = await supabaseAdminClient
+        .from(tableNameKey)
+        .select('*') // Select all columns to have the full original row for restoration
+        .match(requirement.identifier as any) // Cast identifier to any if type issues
+        .maybeSingle(); // Use maybeSingle to handle 0 or 1 row gracefully
+
+      if (selectError && selectError.code !== 'PGRST116') { // PGRST116 means no rows found
+        console.error(`[TestUtil] Error checking for existing resource in ${requirement.tableName}:`, selectError);
+        processedResources.push({ 
+          tableName: requirement.tableName, 
+          identifier: requirement.identifier, 
+          status: 'failed', 
+          error: `Select error: ${selectError.message}` 
+        });
+        continue; // Skip this resource
+      }
+
+      if (existingResource) {
+        // Resource exists, update it and register for restoration
+        resourceId = (existingResource as any).id; // Assuming there's an 'id' column
+        registerUndoAction({
+          type: 'RESTORE_UPDATED_ROW',
+          tableName: tableNameKey,
+          identifier: requirement.identifier,
+          originalRow: existingResource as Database['public']['Tables'][typeof tableNameKey]['Row'],
+          scope: executionScope
+        });
+        const { error: updateError } = await supabaseAdminClient
+          .from(tableNameKey)
+          .update(requirement.desiredState as any) // Cast to any if type issues with partial update
           .match(requirement.identifier as any);
-
-        if (fetchError) {
-          requirementProcessedInfo = { ...requirementProcessedInfo, status: 'failed', error: `Failed to fetch: ${fetchError.message}` };
-          processedResources.push(requirementProcessedInfo);
-          continue;
+        if (updateError) {
+          console.error(`[TestUtil] Error updating existing resource in ${requirement.tableName} (ID: ${resourceId}):`, updateError);
+          processedResources.push({ 
+            tableName: requirement.tableName, 
+            identifier: requirement.identifier, 
+            resource: existingResource, 
+            status: 'failed', 
+            error: `Update error: ${updateError.message}`
+          });
+        } else {
+          console.log(`[TestUtil] Updated existing resource in ${requirement.tableName} (ID: ${resourceId}) with data: ${JSON.stringify(requirement.desiredState)}`);
+          processedResources.push({ 
+            tableName: requirement.tableName, 
+            identifier: requirement.identifier, 
+            resource: { ...existingResource, ...requirement.desiredState }, // Reflect updated state
+            status: 'updated' 
+          });
         }
-
-        let existingRow: Database['public']['Tables'][typeof tableNameKey]['Row'] | null = null; // Use typeof for type indexing
-        if (existingRows && existingRows.length > 0) {
-          if (existingRows.length > 1) {
-            console.warn(`Identifier ${JSON.stringify(requirement.identifier)} for table ${requirement.tableName} matched >1 row. Using first.`);
-          }
-          existingRow = existingRows[0] as Database['public']['Tables'][typeof tableNameKey]['Row']; // Use typeof for type indexing
-        }
-
-        console.log(`[TestUtil] Existing row for table '${requirement.tableName}': ${existingRow ? JSON.stringify(existingRow) : 'Not found'}`);
-
-        // Prepare data for DB operation, explicitly typing it.
-        // It must be Partial because desiredState is Partial.
+      } else {
+        // Resource does not exist, create it and register for deletion
         let dataForDb: Partial<Database['public']['Tables'][typeof tableNameKey]['Insert']>; // Use typeof for type indexing
         if (requirement.linkUserId) {
-          dataForDb = { ...requirement.desiredState, user_id: primaryUserId as any }; // Cast primaryUserId if user_id type is not just string
+          dataForDb = { ...requirement.identifier, ...requirement.desiredState, user_id: primaryUserId as any }; // Cast primaryUserId if user_id type is not just string
         } else {
-          dataForDb = { ...requirement.desiredState };
+          dataForDb = { ...requirement.identifier, ...requirement.desiredState };
         }
+        const { data: newResource, error: insertError } = await supabaseAdminClient
+          .from(tableNameKey)
+          .insert(dataForDb as any) // Cast to any if type issues
+          .select()
+          .single();
 
-        if (existingRow) {
-          // Type assertion for existingRow.id
-          const existingRowId = (existingRow as { id: string }).id; 
-          if (!existingRowId) {
-            requirementProcessedInfo = { ...requirementProcessedInfo, status: 'failed', error: 'Existing row found but missing ID.', resource: existingRow };
-            processedResources.push(requirementProcessedInfo);
-            continue;
-          }
-
-          console.log(`[TestUtil] Updating existing row in '${requirement.tableName}' (ID: ${existingRowId}) with data: ${JSON.stringify(dataForDb)}`);
-          registerUndoAction({
-            type: 'RESTORE_UPDATED_ROW',
-            tableName: requirement.tableName,
-            identifier: { id: existingRowId }, 
-            originalRow: existingRow,
-            scope: executionScope,
+        if (insertError || !newResource) {
+          console.error(`[TestUtil] Error creating new resource in ${requirement.tableName}:`, insertError);
+          processedResources.push({ 
+            tableName: requirement.tableName, 
+            identifier: requirement.identifier, 
+            status: 'failed', 
+            error: `Insert error: ${insertError?.message || 'No resource returned'}`
           });
-          console.log(`[TestUtil] Registered UNDO action: RESTORE_UPDATED_ROW for '${requirement.tableName}' ID: ${existingRowId}`);
-          const { data: updatedRowData, error: updateError } = await supabaseAdminClient
-            .from(requirement.tableName)
-            .update(dataForDb) // Pass directly, should conform to Partial<Insert>
-            .eq('id', existingRowId)
-            .select("*")
-            .single();
-
-          if (updateError) {
-            requirementProcessedInfo = { ...requirementProcessedInfo, status: 'failed', error: `Update error: ${updateError.message}`, resource: existingRow };
-          } else if (!updatedRowData) {
-            requirementProcessedInfo = { ...requirementProcessedInfo, status: 'failed', error: 'Update succeeded but no data returned.', resource: existingRow };
-          } else {
-            requirementProcessedInfo = { ...requirementProcessedInfo, status: 'updated', resource: updatedRowData };
-          }
-        } else { // Create new row
-          // For insert, merge identifier and dataForDb. Identifier might contain parts of PK or unique keys.
-          const insertData = { ...requirement.identifier, ...dataForDb };
-
-          console.log(`[TestUtil] Creating new row in '${requirement.tableName}' with data: ${JSON.stringify(insertData)}`);
-          const { data: newRowData, error: insertError } = await supabaseAdminClient
-            .from(requirement.tableName)
-            .insert(insertData as any) // Use 'as any' if merge creates complex type issue for insert
-            .select("*")
-            .single();
-
-          if (insertError) {
-            requirementProcessedInfo = { ...requirementProcessedInfo, status: 'failed', error: `Insert error: ${insertError.message}` };
-          } else if (!newRowData) {
-            requirementProcessedInfo = { ...requirementProcessedInfo, status: 'failed', error: 'Insert succeeded but no data returned.' };
-          } else {
-            // Type assertion for newRowData.id
-            const newRowId = (newRowData as unknown as { id: string }).id;
-            if (!newRowId) {
-                requirementProcessedInfo = { ...requirementProcessedInfo, status: 'failed', error: 'Created row but missing ID.', resource: newRowData };
-            } else {
-                requirementProcessedInfo = { ...requirementProcessedInfo, status: 'created', resource: newRowData };
-                registerUndoAction({
-                  type: 'DELETE_CREATED_ROW',
-                  tableName: requirement.tableName,
-                  criteria: { id: newRowId }, 
-                  scope: executionScope,
-                });
-                console.log(`[TestUtil] Registered UNDO action: DELETE_CREATED_ROW for '${requirement.tableName}' ID: ${newRowId}`);
-            }
-          }
+        } else {
+          resourceId = (newResource as any).id;
+          registerUndoAction({
+            type: 'DELETE_CREATED_ROW',
+            tableName: tableNameKey,
+            criteria: { id: resourceId }, // Assuming deletion by ID
+            scope: executionScope
+          });
+          console.log(`[TestUtil] Created new resource in ${requirement.tableName} (ID: ${resourceId}) with data: ${JSON.stringify(dataForDb)}`);
+          processedResources.push({ 
+            tableName: requirement.tableName, 
+            identifier: requirement.identifier, 
+            resource: newResource as Database['public']['Tables'][typeof tableNameKey]['Row'], 
+            status: 'created' 
+          });
         }
-      } catch (e: unknown) {
-        const err = e as Error;
-        console.error(`Unexpected error processing resource ${requirement.tableName} with identifier ${JSON.stringify(requirement.identifier)}:`, err);
-        requirementProcessedInfo = {
-            ...requirementProcessedInfo,
-            status: 'failed',
-            error: `Unexpected error: ${err.message}`,
-        };
       }
-      processedResources.push(requirementProcessedInfo);
     }
   }
-
-  const anonClient = currentTestDeps.createSupabaseClient(currentTestDeps.supabaseUrl, currentTestDeps.supabaseAnonKey, {
-    auth: { autoRefreshToken: false, persistSession: false }
+  
+  const anonClient = createClient(SUPABASE_URL!, SUPABASE_ANON_KEY!, {
+    auth: {
+      autoRefreshToken: false,
+      persistSession: false,
+      detectSessionInUrl: false,
+    },
   });
 
   return {
