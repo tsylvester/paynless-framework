@@ -8,7 +8,7 @@ import {
 } from '@paynless/types';
 // Import types from the actual dialectic.api.ts to ensure consistency
 import { createMockAiApiClient, resetMockAiApiClient, type MockedAiApiClient } from './ai.api.mock'; // Import from sibling
-import { type MockDialecticApiClient, mockDialecticClientInstance } from './dialectic.api.mock';
+import { type MockDialecticApiClient, mockDialecticClientInstance, resetMockDialecticClient } from './dialectic.api.mock';
 
 // Define the type for the object returned by api.wallet()
 export type MockWalletApiClient = {
@@ -55,18 +55,20 @@ export function resetApiMock() {
 
   // Reset the AI client instance using its specific reset function
   resetMockAiApiClient(mockAiClientInstance);
-  // Optionally, to ensure absolutely no state leakage if tests improperly hold references:
-  // mockAiClientInstance = createMockAiApiClient();
+
+  // Reset the Dialectic client instance using its specific reset function
+  resetMockDialecticClient(mockDialecticClientInstance);
 
   // Reset the main accessor mocks
   api.wallet.mockClear();
   api.ai.mockClear();
   api.dialectic.mockClear();
+
   // Restore the default implementations to return the (potentially recreated) instances
   api.wallet.mockImplementation(() => mockWalletClientInstance);
   api.ai.mockImplementation(() => mockAiClientInstance);
-}  api.dialectic.mockImplementation(() => mockDialecticClientInstance);
-
+  api.dialectic.mockImplementation(() => mockDialecticClientInstance);
+}
 
 /**
  * Helper to get the current instance of the mock AI client.

@@ -151,6 +151,9 @@ export interface DialecticActions {
 
   fetchContributionContent: (contributionId: string) => Promise<void>;
 
+  resetCreateProjectError: () => void;
+  resetProjectDetailsError: () => void;
+
   _resetForTesting?: () => void;
 }
 

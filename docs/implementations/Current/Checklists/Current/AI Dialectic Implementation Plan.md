@@ -527,46 +527,27 @@ The implementation plan uses the following labels to categorize work steps:
 *   `[✅] 1.3.5 [API]` Update `packages/api/src/index.ts` to export the new `DialecticAPI` slice. (GREEN)
 *   `[✅] 1.3.6 [API]` Update `packages/api/src/apiClient.ts` to integrate the `DialecticAPI` slice if applicable. (GREEN)
 *   `[✅] 1.3.7 [DOCS]` Update `packages/api/README.md` with new Dialectic API methods. (GREEN)
-*   `[ ] 1.3.8 [COMMIT]` feat(api): add dialectic service methods to api client
+*   `[✅] 1.3.8 [COMMIT]` feat(api): add dialectic service methods to api client
 
 ### 1.4 State Management (`@paynless/store`)
-*   `[ ] 1.4.1 [STORE]` Define a new state slice for Dialectic Engine in `packages/store/src/dialecticStore.ts`.
-    *   `[ ] 1.4.1.1` Interface: `DialecticState` (consider placing in a shared `interfaces.ts` or within `dialecticStore.ts`).
-        *   `projects: DialecticProject[] | null`
-        *   `currentProjectDetails: DialecticProject | null` (includes sessions with their models and contributions)
-        *   `modelCatalog: AIModelCatalogEntry[] | null`
-        *   `availableDomainTags: string[] | null` (from 1.0.3.D.0.3.1)
-        *   `selectedDomainTag: string | null` (from 1.0.3.D.0.3.1)
-        *   `isLoadingProjects: boolean`
-        *   `isLoadingProjectDetails: boolean`
-        *   `isLoadingModelCatalog: boolean`
-        *   `isLoadingAvailableDomainTags: boolean`
-        *   `error: string | null` (for general errors in this slice)
-        *   `isCreatingProject: boolean`
-        *   `isStartingSession: boolean`
-*   `[ ] 1.4.2 [STORE]` Define Thunks/Actions for `dialecticSlice` in `packages/store/src/dialecticStore.ts`.
-    *   `[ ] 1.4.2.1 [TEST-UNIT]` Write tests for `fetchDialecticProjects` thunk (in `packages/store/src/dialecticStore.thunks.test.ts` or similar - mocks API call, checks loading states and projects update). (RED)
-    *   `[ ] 1.4.2.2` Implement `fetchDialecticProjects` thunk: Calls `api.dialectic.listProjects()`. Handles pending, fulfilled (updates `projects`, clears error), rejected (sets error) states. (GREEN)
-    *   `[ ] 1.4.2.3 [TEST-UNIT]` Write tests for `fetchDialecticProjectDetails` thunk. (RED)
-    *   `[ ] 1.4.2.4` Implement `fetchDialecticProjectDetails(projectId: string)` thunk. (Updates `currentProjectDetails`). (GREEN)
-    *   `[ ] 1.4.2.5 [TEST-UNIT]` Write tests for `createDialecticProject` thunk. (RED)
-    *   `[ ] 1.4.2.6` Implement `createDialecticProject(payload: CreateProjectPayload)` thunk. (Updates `projects` list on success, or refetches). (GREEN)
-    *   `[ ] 1.4.2.7 [TEST-UNIT]` Write tests for `startDialecticSession` thunk. (RED)
-    *   `[ ] 1.4.2.8` Implement `startDialecticSession(payload: StartSessionPayload)` thunk. (Refetches project details or updates `currentProjectDetails.sessions` on success). (GREEN)
-    *   `[ ] 1.4.2.9 [TEST-UNIT]` Write tests for `fetchAIModelCatalog` thunk. (RED)
-    *   `[ ] 1.4.2.10` Implement `fetchAIModelCatalog` thunk. (Updates `modelCatalog`). (GREEN)
-    *   `[ ] 1.4.2.11 [TEST-UNIT]` Write tests for `fetchAvailableDomainTags` thunk (from 1.0.3.D.0.3.2). (RED)
-    *   `[ ] 1.4.2.12` Implement `fetchAvailableDomainTags` thunk. (GREEN)
-    *   `[ ] 1.4.2.13 [TEST-UNIT]` Write tests for `setSelectedDomainTag` action (from 1.0.3.D.0.3.2). (RED)
-    *   `[ ] 1.4.2.14` Implement `setSelectedDomainTag` action and reducer logic. (GREEN)
-*   `[ ] 1.4.3 [STORE]` Implement reducers for `dialecticSlice` in `packages/store/src/dialecticStore.ts` to handle these actions' lifecycle (pending, fulfilled, rejected).
-*   `[ ] 1.4.4 [STORE]` Define selectors in `packages/store/src/dialecticStore.selectors.ts` for accessing dialectic state (e.g., `selectDialecticProjects`, `selectCurrentProjectDetails`, `selectModelCatalog`, `selectAvailableDomainTags`, `selectSelectedDomainTag`, `selectDialecticLoadingStates`).
-*   `[ ] 1.4.5 [STORE]` Add `dialecticSlice.reducer` to the root reducer in `packages/store/src/index.ts`.
-*   `[ ] 1.4.6 [STORE]` Update/create mocks for `dialecticSlice` initial state and selectors for testing UI components.
-*   `[ ] 1.4.7 [DOCS]` Update `packages/store/README.md` to include details about the new `dialecticStore` slice.
-*   `[ ] 1.4.8 [REFACTOR]` Review all store additions.
-*   `[ ] 1.4.9 [TEST-UNIT]` Run all new store unit tests (from `dialecticStore.test.ts`, `dialecticStore.thunks.test.ts`, `dialecticStore.selectors.test.ts`).
-*   `[ ] 1.4.10 [COMMIT]` feat(store): add dialectic state management following feature slice pattern
+*   `[✅] 1.4.1 [STORE]` Define `DialecticStateValues` and `DialecticStore` (extending with new actions/state) in `packages/store/src/dialecticStore.ts`.
+    *   `[✅] 1.4.1.1` Add state for `currentProjectDetail: DialecticProject | null`.
+    *   `[✅] 1.4.1.2` Add state for `modelCatalog: AIModelCatalogEntry[] | null`.
+    *   `[✅] 1.4.1.3` Add loading/error states for these and for new actions (e.g., `isLoadingProjectDetail`, `isStartingSession`).
+*   `[✅] 1.4.2 [STORE]` Implement new async thunks in `dialecticStore.ts` for the new API client methods:
+    *   `[✅] 1.4.2.1` `fetchDialecticProjectDetails(projectId: string)`
+    *   `[✅] 1.4.2.2` `startDialecticSession(payload: StartSessionPayload)`
+    *   `[✅] 1.4.2.3` `fetchAIModelCatalog()`
+    *   `[✅] 1.4.2.4` Ensure thunks handle API call, set loading states, and manage errors.
+*   `[✅] 1.4.3 [STORE]` Update `initialDialecticStateValues` to include all new state properties.
+*   `[✅] 1.4.4 [STORE]` Add new selectors in `packages/store/src/dialecticStore.selectors.ts` for all new state (project detail, model catalog, action statuses, loading/error states).
+*   `[✅] 1.4.5 [STORE]` Ensure `useDialecticStore` and new selectors are correctly exported from `packages/store/src/index.ts`.
+*   `[✅] 1.4.6 [STORE-TEST]` Update unit tests in `packages/store/src/dialecticStore.test.ts`.
+    *   `[✅] 1.4.6.1` Verify initial state includes new properties.
+    *   `[✅] 1.4.6.2` Add tests for new thunks, mocking API responses, checking state updates (loading, data, error).
+    *   `[✅] 1.4.6.3` Ensure mock setup for `@paynless/api` correctly provides mocks for new `DialecticApiClient` methods.
+*   `[✅] 1.4.7 [STORE-DOCS]` Update `packages/store/README.md` to document the `DialecticStore`, its state, thunks, and selectors.
+*   `[🚧] 1.4.8 [TEST-INT]` Update/add integration tests that involve Dialectic state changes. (e.g., component tests that trigger these thunks). (Covers existing `DomainSelector.test.tsx`; will be fully addressed as UI components from 1.5 are developed and tested.)
 
 ### 1.5 UI Components (`apps/web`) - Core Pages & Navigation
 *   `[ ] 1.5.1 [UI]` Create new route for Dialectic Projects: `/dialectic` or `/ai-dialectic`.

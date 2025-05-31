@@ -1,5 +1,4 @@
-import type { DialecticStateValues } from '@paynless/types';
-import type { ApiError } from '@paynless/types';
+import type { DialecticStateValues, DialecticProject, AIModelCatalogEntry, ApiError } from '@paynless/types';
 
 // Selector for the list of available domain tags
 export const selectAvailableDomainTags = (state: DialecticStateValues): string[] => state.availableDomainTags;
@@ -12,6 +11,48 @@ export const selectDomainTagsError = (state: DialecticStateValues): ApiError | n
 
 // Selector for the currently selected domain tag
 export const selectSelectedDomainTag = (state: DialecticStateValues): string | null => state.selectedDomainTag;
+
+// Selector for the list of projects
+export const selectDialecticProjects = (state: DialecticStateValues): DialecticProject[] => state.projects;
+
+// Selector for the loading state of projects
+export const selectIsLoadingProjects = (state: DialecticStateValues): boolean => state.isLoadingProjects;
+
+// Selector for any error related to fetching projects
+export const selectProjectsError = (state: DialecticStateValues): ApiError | null => state.projectsError;
+
+// Selector for the current project detail
+export const selectCurrentProjectDetail = (state: DialecticStateValues): DialecticProject | null => state.currentProjectDetail;
+
+// Selector for the loading state of project detail
+export const selectIsLoadingProjectDetail = (state: DialecticStateValues): boolean => state.isLoadingProjectDetail;
+
+// Selector for any error related to fetching project detail
+export const selectProjectDetailError = (state: DialecticStateValues): ApiError | null => state.projectDetailError;
+
+// Selector for the model catalog
+export const selectModelCatalog = (state: DialecticStateValues): AIModelCatalogEntry[] => state.modelCatalog;
+
+// Selector for the loading state of the model catalog
+export const selectIsLoadingModelCatalog = (state: DialecticStateValues): boolean => state.isLoadingModelCatalog;
+
+// Selector for any error related to fetching the model catalog
+export const selectModelCatalogError = (state: DialecticStateValues): ApiError | null => state.modelCatalogError;
+
+// Selector for the action status of creating a project
+export const selectIsCreatingProject = (state: DialecticStateValues): boolean => state.isCreatingProject;
+
+// Selector for any error related to creating a project
+export const selectCreateProjectError = (state: DialecticStateValues): ApiError | null => state.createProjectError;
+
+// Selector for the action status of starting a session
+export const selectIsStartingSession = (state: DialecticStateValues): boolean => state.isStartingSession;
+
+// Selector for any error related to starting a session
+export const selectStartSessionError = (state: DialecticStateValues): ApiError | null => state.startSessionError;
+
+// Selector for the contribution content cache
+export const selectContributionContentCache = (state: DialecticStateValues) => state.contributionContentCache;
 
 // Example of how you might use these with the store hook directly in a component:
 // import { useDialecticStore } from './dialecticStore';

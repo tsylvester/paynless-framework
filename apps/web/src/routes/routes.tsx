@@ -13,10 +13,13 @@ import { AcceptInvitePage } from '../pages/AcceptInvitePage';
 import { OrganizationHubPage } from '../pages/OrganizationHubPage';
 import { OrganizationFocusedViewPage } from '../pages/OrganizationFocusedViewPage';
 import { TransactionHistoryPage } from '../pages/TransactionHistory';
+/*import { HomePage } from '../pages/Home';*/
+import { DialecticProjectsPage } from '../pages/DialecticProjectsPage';
+import { CreateDialecticProjectPage } from '../pages/CreateDialecticProjectPage';
+import { DialecticProjectDetailsPage } from '../pages/DialecticProjectDetailsPage';
 //import { ForgotPassword } from '../pages/ForgotPassword';
 //import { ResetPassword } from '../pages/ResetPassword';
 //import { VerifyEmail } from '../pages/VerifyEmail';
-import { HomePage } from '../pages/Home';
 
 // Import the new wrapper and the demo component
 //import { TauriOnlyWrapper } from '../components/routes/TauriOnlyWrapper';
@@ -28,7 +31,7 @@ const routes: RouteObject[] = [
     path: '/',
     element: <RootRoute />,
     children: [
-      { index: true, element: <HomePage /> },
+  /*    { index: true, element: <HomePage /> },*/
       {
         path: 'login',
         element: <LoginPage />,
@@ -122,6 +125,30 @@ const routes: RouteObject[] = [
         element: (
           <ProtectedRoute>
             <OrganizationFocusedViewPage />
+          </ProtectedRoute>
+        ),
+      },
+      {
+        path: 'dialectic',
+        element: (
+          <ProtectedRoute>
+            <DialecticProjectsPage />
+          </ProtectedRoute>
+        ),
+      },
+      {
+        path: 'dialectic/new',
+        element: (
+          <ProtectedRoute>
+            <CreateDialecticProjectPage />
+          </ProtectedRoute>
+        ),
+      },
+      {
+        path: 'dialectic/:projectId',
+        element: (
+          <ProtectedRoute>
+            <DialecticProjectDetailsPage />
           </ProtectedRoute>
         ),
       },

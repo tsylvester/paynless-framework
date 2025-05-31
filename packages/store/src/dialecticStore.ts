@@ -6,6 +6,8 @@ import type {
   CreateProjectPayload, 
   DialecticStateValues, 
   DialecticStore, 
+  StartSessionPayload,
+  DialecticSession,
 } from '@paynless/types';
 import { api } from '@paynless/api';
 import { logger } from '@paynless/utils';
@@ -21,8 +23,19 @@ export const initialDialecticStateValues: DialecticStateValues = {
   isLoadingProjects: false,
   projectsError: null,
 
+  currentProjectDetail: null,
+  isLoadingProjectDetail: false,
+  projectDetailError: null,
+
+  modelCatalog: [],
+  isLoadingModelCatalog: false,
+  modelCatalogError: null,
+
   isCreatingProject: false,
   createProjectError: null,
+  isStartingSession: false,
+  startSessionError: null,
+
   contributionContentCache: {},
 };
 
@@ -85,6 +98,32 @@ export const useDialecticStore = create<DialecticStore>((set, get) => ({
     }
   },
 
+  fetchDialecticProjectDetails: async (projectId: string) => {
+    set({ isLoadingProjectDetail: true, projectDetailError: null });
+    logger.info(`[DialecticStore] Fetching project details for project ID: ${projectId}`);
+    try {
+      const response = await api.dialectic().getProjectDetails(projectId);
+      if (response.error) {
+        logger.error('[DialecticStore] Error fetching project details:', { projectId, errorDetails: response.error });
+        set({ currentProjectDetail: null, isLoadingProjectDetail: false, projectDetailError: response.error });
+      } else {
+        logger.info('[DialecticStore] Successfully fetched project details:', { projectId, project: response.data });
+        set({
+          currentProjectDetail: response.data || null,
+          isLoadingProjectDetail: false,
+          projectDetailError: null,
+        });
+      }
+    } catch (error: unknown) {
+      const networkError: ApiError = {
+        message: error instanceof Error ? error.message : 'An unknown network error occurred while fetching project details',
+        code: 'NETWORK_ERROR',
+      };
+      logger.error('[DialecticStore] Network error fetching project details:', { projectId, errorDetails: networkError });
+      set({ currentProjectDetail: null, isLoadingProjectDetail: false, projectDetailError: networkError });
+    }
+  },
+
   createDialecticProject: async (payload: CreateProjectPayload): Promise<ApiResponse<DialecticProject>> => {
     set({ isCreatingProject: true, createProjectError: null });
     logger.info('[DialecticStore] Creating dialectic project...', { projectPayload: payload });
@@ -111,9 +150,77 @@ export const useDialecticStore = create<DialecticStore>((set, get) => ({
     }
   },
 
+  startDialecticSession: async (payload: StartSessionPayload): Promise<ApiResponse<DialecticSession>> => {
+    set({ isStartingSession: true, startSessionError: null });
+    logger.info('[DialecticStore] Starting dialectic session...', { sessionPayload: payload });
+    try {
+      const response = await api.dialectic().startSession(payload);
+      if (response.error) {
+        logger.error('[DialecticStore] Error starting session:', { errorDetails: response.error });
+        set({ isStartingSession: false, startSessionError: response.error });
+      } else {
+        logger.info('[DialecticStore] Successfully started session:', { sessionDetails: response.data });
+        set({ isStartingSession: false, startSessionError: null });
+        // Optionally, refresh project details if the new session is part of the current project
+        if (get().currentProjectDetail?.id === payload.projectId) {
+          await get().fetchDialecticProjectDetails(payload.projectId);
+        } else {
+          // If the session belongs to a project not currently detailed,
+          // or if a full project list refresh is preferred after starting any session.
+          await get().fetchDialecticProjects(); 
+        }
+      }
+      return response;
+    } catch (error: unknown) {
+      const networkError: ApiError = {
+        message: error instanceof Error ? error.message : 'An unknown network error occurred while starting session',
+        code: 'NETWORK_ERROR',
+      };
+      logger.error('[DialecticStore] Network error starting session:', { errorDetails: networkError });
+      set({ isStartingSession: false, startSessionError: networkError });
+      return { error: networkError, status: 0 };
+    }
+  },
+
+  fetchAIModelCatalog: async () => {
+    set({ isLoadingModelCatalog: true, modelCatalogError: null });
+    logger.info('[DialecticStore] Fetching AI model catalog...');
+    try {
+      const response = await api.dialectic().listModelCatalog();
+      if (response.error) {
+        logger.error('[DialecticStore] Error fetching AI model catalog:', { errorDetails: response.error });
+        set({ modelCatalog: [], isLoadingModelCatalog: false, modelCatalogError: response.error });
+      } else {
+        logger.info('[DialecticStore] Successfully fetched AI model catalog:', { catalog: response.data });
+        set({
+          modelCatalog: response.data || [],
+          isLoadingModelCatalog: false,
+          modelCatalogError: null,
+        });
+      }
+    } catch (error: unknown) {
+      const networkError: ApiError = {
+        message: error instanceof Error ? error.message : 'An unknown network error occurred while fetching AI model catalog',
+        code: 'NETWORK_ERROR',
+      };
+      logger.error('[DialecticStore] Network error fetching AI model catalog:', { errorDetails: networkError });
+      set({ modelCatalog: [], isLoadingModelCatalog: false, modelCatalogError: networkError });
+    }
+  },
+
   _resetForTesting: () => {
     set(initialDialecticStateValues);
     logger.info('[DialecticStore] Reset for testing.');
+  },
+
+  resetCreateProjectError: () => {
+    logger.info('[DialecticStore] Resetting createProjectError.');
+    set({ createProjectError: null });
+  },
+
+  resetProjectDetailsError: () => {
+    logger.info('[DialecticStore] Resetting projectDetailError.');
+    set({ projectDetailError: null });
   },
 
   fetchContributionContent: async (contributionId: string) => {
