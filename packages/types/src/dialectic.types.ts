@@ -221,6 +221,8 @@ export interface DialecticProjectResource {
 
 export interface UploadProjectResourceFilePayload {
     projectId: string;
-    file: File;
+    fileName: string;
+    fileSizeBytes: number;
+    fileType: string;
     resourceDescription?: string;
 }

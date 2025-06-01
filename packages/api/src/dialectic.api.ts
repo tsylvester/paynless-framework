@@ -242,12 +242,14 @@ export class DialecticApiClient {
      * Requires authentication.
      */
     async uploadProjectResourceFile(payload: UploadProjectResourceFilePayload): Promise<ApiResponse<DialecticProjectResource>> {
-        logger.info(`[DialecticApi] Uploading resource for project ${payload.projectId}: ${payload.file.name}`);
+        logger.info(`[DialecticApi] Uploading resource for project ${payload.projectId}: ${payload.fileName}`);
         try {
             const formData = new FormData();
             formData.append('action', 'uploadProjectResourceFile');
             formData.append('projectId', payload.projectId);
-            formData.append('file', payload.file);
+            formData.append('fileName', payload.fileName);
+            formData.append('fileSizeBytes', payload.fileSizeBytes.toString());
+            formData.append('fileType', payload.fileType);
             if (payload.resourceDescription) {
                 formData.append('resourceDescription', payload.resourceDescription);
             }

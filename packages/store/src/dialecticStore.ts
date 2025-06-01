@@ -382,20 +382,20 @@ export const useDialecticStore = create<DialecticStore>((set, get) => ({
   },
 
   uploadProjectResourceFile: async (payload: UploadProjectResourceFilePayload): Promise<ApiResponse<DialecticProjectResource>> => {
-    logger.info('[DialecticStore] Uploading project resource file...', { projectId: payload.projectId, fileName: payload.file.name });
+    logger.info('[DialecticStore] Uploading project resource file...', { projectId: payload.projectId, fileName: payload.fileName });
     try {
       const response = await api.dialectic().uploadProjectResourceFile(payload);
 
       if (response.error) {
         logger.error('[DialecticStore] Error uploading project resource file:', { 
           projectId: payload.projectId, 
-          fileName: payload.file.name, 
+          fileName: payload.fileName, 
           errorDetails: response.error 
         });
       } else {
         logger.info('[DialecticStore] Successfully uploaded project resource file:', { 
           projectId: payload.projectId, 
-          fileName: payload.file.name, 
+          fileName: payload.fileName, 
           resource: response.data 
         });
       }
@@ -407,7 +407,7 @@ export const useDialecticStore = create<DialecticStore>((set, get) => ({
       };
       logger.error('[DialecticStore] Network error uploading project resource file:', { 
         projectId: payload.projectId, 
-        fileName: payload.file.name, 
+        fileName: payload.fileName, 
         errorDetails: networkError 
       });
       return { error: networkError, status: 0 };

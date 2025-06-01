@@ -1,0 +1,265 @@
+import { assertEquals, assertExists, assertObjectMatch, assertRejects, assert } from "https://deno.land/std@0.170.0/testing/asserts.ts";
+import { spy, stub, type Stub, returnsNext } from "jsr:@std/testing@0.225.1/mock";
+import { generateStageContributions } from "./generateContribution.ts";
+import type { 
+    GenerateStageContributionsPayload, 
+    UnifiedAIResponse
+} from "./dialectic.interface.ts";
+import { logger } from "../_shared/logger.ts";
+
+Deno.test("generateStageContributions - Session not in 'pending_stage' status", async () => {
+    const mockAuthToken = "test-auth-token-status";
+    const mockSessionId = "test-session-id-status";
+    const mockPayload: GenerateStageContributionsPayload = { sessionId: mockSessionId, stage: 'thesis' };
+
+    const localLoggerInfo = spy(logger, 'info');
+    const localLoggerError = spy(logger, 'error');
+    const localLoggerWarn = spy(logger, 'warn');
+
+    // Mock for DB client: session fetch
+    const mockSessionSelectEqSingleSpy = spy(async () => await Promise.resolve({
+        data: {
+            id: mockSessionId,
+            project_id: "any-project-id",
+            status: 'completed', // Key for this test
+            associated_chat_id: "any-chat-id",
+            dialectic_projects: { initial_user_prompt: "any-prompt", selected_domain_tag: null },
+            dialectic_session_models: [{ /* minimal model data */
+                id: "sm-id", model_id: "m-id", 
+                ai_providers: { id: "m-id", provider_name: "p", model_name: "m", api_identifier: "api-id" }
+            }],
+        },
+        error: null,
+    }));
+    const mockSessionSelectEqSpy = spy<[string, string], { single: Stub }>(() => ({ single: mockSessionSelectEqSingleSpy as Stub }));
+    const mockSessionSelectSpy = spy(() => ({ eq: mockSessionSelectEqSpy }));
+
+    const mockDbClient: any = {
+        from: spy((tableName: string) => {
+            if (tableName === 'dialectic_sessions') {
+                return { select: mockSessionSelectSpy }; 
+            }
+            return { select: spy(), insert: spy(), update: spy() };
+        }),
+    };
+    
+    const mockCallUnifiedAIModel = spy(async () => await Promise.resolve({ content: "dummy" } as UnifiedAIResponse));
+    const mockUploadToStorage = spy(async () => await Promise.resolve({ error: null, path: "dummy" }));
+    const mockGetFileMetadata = spy(async () => await Promise.resolve({ size: 0, error: null }));
+    const mockDeleteFromStorage = spy(async () => await Promise.resolve({ data: [], error: null }));
+    const mockGetExtensionFromMimeType = spy(() => ".txt");
+    const mockRandomUUID = spy(() => "dummy-uuid");
+
+    try {
+        const result = await generateStageContributions(
+            mockDbClient as any,
+            mockPayload,
+            mockAuthToken,
+            { 
+                callUnifiedAIModel: mockCallUnifiedAIModel,
+                uploadToStorage: mockUploadToStorage,
+                getFileMetadata: mockGetFileMetadata,
+                deleteFromStorage: mockDeleteFromStorage,
+                getExtensionFromMimeType: mockGetExtensionFromMimeType,
+                logger: logger, 
+                randomUUID: mockRandomUUID
+            }
+        );
+
+        assertEquals(result.success, false);
+        assertExists(result.error);
+        assertEquals(result.error?.message, `Session is not in 'pending_stage' status. Current status: completed`);
+        assertEquals(result.error?.status, 400);
+
+        const fromSpy = mockDbClient.from as Stub;
+        assertEquals(fromSpy.calls.length, 1);
+        assertEquals(fromSpy.calls[0].args[0], 'dialectic_sessions');
+        assertEquals(mockSessionSelectSpy.calls.length, 1);
+        
+        assertEquals(mockCallUnifiedAIModel.calls.length, 0);
+        
+        assert(localLoggerInfo.calls.some(call => typeof call.args[0] === 'string' && call.args[0].includes(`Starting for session ID: ${mockSessionId}`)));
+        assert(localLoggerWarn.calls.some(call => typeof call.args[0] === 'string' && call.args[0].includes(`Session ${mockSessionId} is not in 'pending_thesis' status. Current status: completed`)));
+        assertEquals(localLoggerError.calls.length, 0);
+
+    } finally {
+        localLoggerInfo.restore();
+        localLoggerError.restore();
+        localLoggerWarn.restore();
+    }
+});
+
+Deno.test("generateStageContributions - Project details (dialectic_projects) not found", async () => {
+    const mockAuthToken = "test-auth-token-proj-details";
+    const mockSessionId = "test-session-id-proj-details";
+    const mockPayload: GenerateStageContributionsPayload = { sessionId: mockSessionId, stage: 'thesis' };
+
+    const localLoggerInfo = spy(logger, 'info');
+    const localLoggerError = spy(logger, 'error');
+    const localLoggerWarn = spy(logger, 'warn');
+
+    const mockSessionSelectEqSingleSpy = spy(async () => await Promise.resolve({
+        data: {
+            id: mockSessionId,
+            project_id: "any-project-id",
+            status: 'pending_thesis',
+            associated_chat_id: "any-chat-id",
+            dialectic_projects: null, // Key for this test
+            dialectic_session_models: [{ id: "sm-id", model_id: "m-id", ai_providers: { id: "m-id", provider_name: "p", model_name: "m", api_identifier: "api-id" }}],
+        },
+        error: null,
+    }));
+    const mockSessionSelectEqSpy = spy<[string, string], { single: Stub }>(() => ({ single: mockSessionSelectEqSingleSpy as Stub }));
+    const mockSessionSelectSpy = spy(() => ({ eq: mockSessionSelectEqSpy }));
+
+    const mockDbClient: any = {
+        from: spy((tableName: string) => {
+            if (tableName === 'dialectic_sessions') return { select: mockSessionSelectSpy };
+            return { select: spy(), insert: spy(), update: spy() };
+        }),
+    };
+    
+    const mockDeps = {
+        logger: logger,
+        randomUUID: spy(() => "dummy-uuid"),
+        callUnifiedAIModel: spy(async () => await Promise.resolve({ content: null, error: "mock error", errorCode: "MOCK_ERROR"} as UnifiedAIResponse)),
+        uploadToStorage: spy(async () => await Promise.resolve({error: null, path: "dummy"})),
+        getFileMetadata: spy(async () => await Promise.resolve({size: 0, error: null})),
+        deleteFromStorage: spy(async () => await Promise.resolve({data:[], error: null})),
+        getExtensionFromMimeType: spy(() => ".txt")
+    };
+
+    try {
+        const result = await generateStageContributions(mockDbClient as any, mockPayload, mockAuthToken, mockDeps);
+
+        assertEquals(result.success, false);
+        assertExists(result.error);
+        assertEquals(result.error?.message, "Project details (from joined dialectic_projects table) not found for session.");
+        assertEquals(result.error?.status, 500);
+
+        assert(localLoggerInfo.calls.some(call => typeof call.args[0] === 'string' && call.args[0].includes(`Starting for session ID: ${mockSessionId}`)));
+        assert(localLoggerError.calls.some(call => typeof call.args[0] === 'string' && call.args[0].includes(`Project details (from joined dialectic_projects table) not found for session ${mockSessionId}`)));
+
+    } finally {
+        localLoggerInfo.restore();
+        localLoggerError.restore();
+        localLoggerWarn.restore();
+    }
+});
+
+Deno.test("generateStageContributions - Initial user prompt missing", async () => {
+    const mockAuthToken = "test-auth-token-prompt-missing";
+    const mockSessionId = "test-session-id-prompt-missing";
+    const mockPayload: GenerateStageContributionsPayload = { sessionId: mockSessionId, stage: 'thesis' };
+
+    const localLoggerInfo = spy(logger, 'info');
+    const localLoggerError = spy(logger, 'error');
+    const localLoggerWarn = spy(logger, 'warn');
+
+    const mockSessionSelectEqSingleSpy = spy(async () => await Promise.resolve({
+        data: {
+            id: mockSessionId,
+            project_id: "any-project-id",
+            status: 'pending_thesis',
+            associated_chat_id: "any-chat-id",
+            dialectic_projects: { initial_user_prompt: null, selected_domain_tag: null }, // Key for this test
+            dialectic_session_models: [{ id: "sm-id", model_id: "m-id", ai_providers: { id: "m-id", provider_name: "p", model_name: "m", api_identifier: "api-id" }}],
+        },
+        error: null,
+    }));
+    const mockSessionSelectEqSpy = spy<[string, string], { single: Stub }>(() => ({ single: mockSessionSelectEqSingleSpy as Stub }));
+    const mockSessionSelectSpy = spy(() => ({ eq: mockSessionSelectEqSpy }));
+
+    const mockDbClient: any = {
+        from: spy((tableName: string) => {
+            if (tableName === 'dialectic_sessions') return { select: mockSessionSelectSpy };
+            return { select: spy(), insert: spy(), update: spy() };
+        }),
+    };
+
+    const mockDeps = { 
+        logger: logger, 
+        randomUUID: spy(() => "dummy-uuid"), 
+        callUnifiedAIModel: spy(async () => await Promise.resolve({ content: null, error: "mock error", errorCode: "MOCK_ERROR"} as UnifiedAIResponse)), 
+        uploadToStorage: spy(async () => await Promise.resolve({error: null, path: "dummy"})),
+        getFileMetadata: spy(async () => await Promise.resolve({size: 0, error: null})), 
+        deleteFromStorage: spy(async () => await Promise.resolve({data:[], error: null})), 
+        getExtensionFromMimeType: spy(() => ".txt")
+    };
+
+
+    try {
+        const result = await generateStageContributions(mockDbClient as any, mockPayload, mockAuthToken, mockDeps);
+
+        assertEquals(result.success, false);
+        assertExists(result.error);
+        assertEquals(result.error?.message, "Initial user prompt is missing for session.");
+        assertEquals(result.error?.status, 500);
+        
+        assert(localLoggerInfo.calls.some(call => typeof call.args[0] === 'string' && call.args[0].includes(`Starting for session ID: ${mockSessionId}`)));
+        assert(localLoggerError.calls.some(call => typeof call.args[0] === 'string' && call.args[0].includes(`Initial user prompt is missing for session ${mockSessionId}`)));
+
+    } finally {
+        localLoggerInfo.restore();
+        localLoggerError.restore();
+        localLoggerWarn.restore();
+    }
+});
+
+Deno.test("generateStageContributions - Associated chat ID missing", async () => {
+    const mockAuthToken = "test-auth-token-chatid-missing";
+    const mockSessionId = "test-session-id-chatid-missing";
+    const mockPayload: GenerateStageContributionsPayload = { sessionId: mockSessionId, stage: 'thesis' };
+
+    const localLoggerInfo = spy(logger, 'info');
+    const localLoggerError = spy(logger, 'error');
+    const localLoggerWarn = spy(logger, 'warn');
+
+    const mockSessionSelectEqSingleSpy = spy(async () => await Promise.resolve({
+        data: {
+            id: mockSessionId,
+            project_id: "any-project-id",
+            status: 'pending_thesis',
+            associated_chat_id: null, // Key for this test
+            dialectic_projects: { initial_user_prompt: "Valid prompt", selected_domain_tag: null },
+            dialectic_session_models: [{ id: "sm-id", model_id: "m-id", ai_providers: { id: "m-id", provider_name: "p", model_name: "m", api_identifier: "api-id" }}],
+        },
+        error: null,
+    }));
+    const mockSessionSelectEqSpy = spy<[string, string], { single: Stub }>(() => ({ single: mockSessionSelectEqSingleSpy as Stub }));
+    const mockSessionSelectSpy = spy(() => ({ eq: mockSessionSelectEqSpy }));
+
+    const mockDbClient: any = {
+        from: spy((tableName: string) => {
+            if (tableName === 'dialectic_sessions') return { select: mockSessionSelectSpy };
+            return { select: spy(), insert: spy(), update: spy() };
+        }),
+    };
+    const mockDeps = { 
+        logger: logger, 
+        randomUUID: spy(() => "dummy-uuid"), 
+        callUnifiedAIModel: spy(async () => await Promise.resolve({ content: null, error: "mock error", errorCode: "MOCK_ERROR"} as UnifiedAIResponse)), 
+        uploadToStorage: spy(async () => await Promise.resolve({error: null, path: "dummy"})),
+        getFileMetadata: spy(async () => await Promise.resolve({size: 0, error: null})), 
+        deleteFromStorage: spy(async () => await Promise.resolve({data:[], error: null})), 
+        getExtensionFromMimeType: spy(() => ".txt")
+    };
+
+
+    try {
+        const result = await generateStageContributions(mockDbClient as any, mockPayload, mockAuthToken, mockDeps);
+
+        assertEquals(result.success, false);
+        assertExists(result.error);
+        assertEquals(result.error?.message, "Associated chat ID is missing for session.");
+        assertEquals(result.error?.status, 500);
+
+        assert(localLoggerInfo.calls.some(call => typeof call.args[0] === 'string' && call.args[0].includes(`Starting for session ID: ${mockSessionId}`)));
+        assert(localLoggerError.calls.some(call => typeof call.args[0] === 'string' && call.args[0].includes(`Associated chat ID is missing for session ${mockSessionId}`)));
+
+    } finally {
+        localLoggerInfo.restore();
+        localLoggerError.restore();
+        localLoggerWarn.restore();
+    }
+});

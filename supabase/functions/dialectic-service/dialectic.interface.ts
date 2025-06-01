@@ -135,18 +135,6 @@ export interface StartSessionSuccessResponse {
     associatedChatId: string; 
 }
 
-export interface GenerateThesisContributionsPayload {
-  sessionId: string;
-}
-
-export interface GenerateThesisContributionsSuccessResponse {
-    message: string;
-    sessionId: string;
-    status: string;
-    contributions: DialecticContribution[]; 
-    errors?: { modelId: string; message: string; details?: string }[];
-}
-
 export interface CallUnifiedAIModelOptions {
   customParameters?: {
     historyMessages?: ChatMessage[]; 
@@ -166,16 +154,21 @@ export interface UnifiedAIResponse {
   errorCode: string | null; 
 }
 
-export interface GenerateAntithesisContributionsPayload {
+export interface GenerateStageContributionsPayload {
   sessionId: string;
+  stage: string;
 }
 
-export interface GenerateAntithesisContributionsSuccessResponse {
+export interface GenerateStageContributionsSuccessResponse {
   message: string;
   sessionId: string;
   status: string; 
   contributions: DialecticContribution[]; 
-  errors?: { modelId: string; thesisContributionId: string; message: string; details?: string }[];
+  errors?: { 
+    modelId: string; 
+    message: string;
+    details?: string;
+  }[];
 }
 
 export interface SelectedAiProvider {

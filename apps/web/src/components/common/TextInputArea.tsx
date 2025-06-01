@@ -60,6 +60,7 @@ export const TextInputArea = React.forwardRef<HTMLTextAreaElement, TextInputArea
   }, externalRef) => {
     const [isPreviewMode, setIsPreviewMode] = useState<boolean>(initialPreviewMode);
     const [inputAreaHeight, setInputAreaHeight] = useState<number | null>(null);
+    const [inputAreaWidth, setInputAreaWidth] = useState<number | null>(null);
     const internalTextAreaRef = useRef<HTMLTextAreaElement>(null);
     const ref = externalRef || internalTextAreaRef;
 
@@ -85,6 +86,12 @@ export const TextInputArea = React.forwardRef<HTMLTextAreaElement, TextInputArea
       }
     }, [ref]);
 
+    const updateInputAreaWidth = useCallback(() => {
+      if (ref && 'current' in ref && ref.current) {
+        setInputAreaWidth(ref.current.offsetWidth);
+      }
+    }, [ref]);
+
     useEffect(() => {
       updateInputAreaHeight();
       // Also update on window resize for responsive adjustments
@@ -92,6 +99,11 @@ export const TextInputArea = React.forwardRef<HTMLTextAreaElement, TextInputArea
       return () => window.removeEventListener('resize', updateInputAreaHeight);
     }, [value, updateInputAreaHeight]);
 
+    useEffect(() => {
+      updateInputAreaWidth();
+      window.addEventListener('resize', updateInputAreaWidth);
+      return () => window.removeEventListener('resize', updateInputAreaWidth);
+    }, [value, updateInputAreaWidth]);
 
     // Default FileUploadConfig if showFileUpload is true but no config is provided by parent
     const defaultMdUploadConfig: FileUploadConfig = {
@@ -106,6 +118,7 @@ export const TextInputArea = React.forwardRef<HTMLTextAreaElement, TextInputArea
     };
 
     const minHeightStyle = `${Math.max(rows * 20, 80)}px`;
+    const minWidthStyle = `${Math.max(rows * 20, 80)}px`;
 
     return (
       <div className="grid w-full gap-1.5">
@@ -145,7 +158,8 @@ export const TextInputArea = React.forwardRef<HTMLTextAreaElement, TextInputArea
               className="p-3 border rounded-md bg-muted/20 prose prose-sm dark:prose-invert max-w-full overflow-y-auto relative"
               style={{ 
                 minHeight: inputAreaHeight ? `${Math.max(inputAreaHeight, parseFloat(minHeightStyle))}px` : minHeightStyle, 
-                height: inputAreaHeight ? `${Math.max(inputAreaHeight, parseFloat(minHeightStyle))}px` : minHeightStyle 
+                height: inputAreaHeight ? `${Math.max(inputAreaHeight, parseFloat(minHeightStyle))}px` : minHeightStyle,
+                minWidth: inputAreaWidth ? `${Math.max(inputAreaWidth, parseFloat(minWidthStyle))}` : minWidthStyle,
               }}
               data-testid={dataTestId ? `${dataTestId}-markdown-preview` : "markdown-preview"}
             >

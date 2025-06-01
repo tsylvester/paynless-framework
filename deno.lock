@@ -1,0 +1,54 @@
+{
+  "version": "5",
+  "specifiers": {
+    "jsr:@std/assert@1.0.0-rc.1": "1.0.0-rc.1",
+    "jsr:@std/internal@1": "1.0.7",
+    "jsr:@std/testing@0.225.1": "0.225.1"
+  },
+  "jsr": {
+    "@std/assert@1.0.0-rc.1": {
+      "integrity": "f2f1f1d5b5eab3a2165744996c42b3c501688d887a015067e12267fe5e6fb804",
+      "dependencies": [
+        "jsr:@std/internal"
+      ]
+    },
+    "@std/internal@1.0.7": {
+      "integrity": "39eeb5265190a7bc5d5591c9ff019490bd1f2c3907c044a11b0d545796158a0f"
+    },
+    "@std/testing@0.225.1": {
+      "integrity": "1a11119553fc33410abe8566731ae513c53e73db040cedbf901858fbd7587819",
+      "dependencies": [
+        "jsr:@std/assert"
+      ]
+    }
+  },
+  "remote": {
+    "https://deno.land/std@0.170.0/fmt/colors.ts": "03ad95e543d2808bc43c17a3dd29d25b43d0f16287fe562a0be89bf632454a12",
+    "https://deno.land/std@0.170.0/testing/_diff.ts": "a23e7fc2b4d8daa3e158fa06856bedf5334ce2a2831e8bf9e509717f455adb2c",
+    "https://deno.land/std@0.170.0/testing/_format.ts": "cd11136e1797791045e639e9f0f4640d5b4166148796cad37e6ef75f7d7f3832",
+    "https://deno.land/std@0.170.0/testing/asserts.ts": "51353e79437361d4b02d8e32f3fc83b22231bc8f8d4c841d86fd32b0b0afe940"
+  },
+  "workspace": {
+    "packageJson": {
+      "dependencies": [
+        "npm:@nx/eslint@20.7.1",
+        "npm:@nx/vite@20.7.1",
+        "npm:@nx/web@20.7.1",
+        "npm:@supabase/supabase-js@^2.49.4",
+        "npm:@testing-library/react@^16.3.0",
+        "npm:@vitest/ui@^1.3.1",
+        "npm:copyfiles@^2.4.1",
+        "npm:dotenv@^16.5.0",
+        "npm:globals@^15.8.0",
+        "npm:jiti@2.4.2",
+        "npm:jsdom@26",
+        "npm:msw@^2.7.3",
+        "npm:nx@20.7.1",
+        "npm:rimraf@^5.0.10",
+        "npm:typescript@^5.5.3",
+        "npm:vite@6",
+        "npm:vitest@^1.6.1"
+      ]
+    }
+  }
+}
