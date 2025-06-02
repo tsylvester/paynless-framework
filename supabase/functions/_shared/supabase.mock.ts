@@ -533,10 +533,31 @@ class MockSupabaseAuth implements IMockSupabaseAuth {
         if (this._config.simulateAuthError) {
             return { data: { user: null }, error: this._config.simulateAuthError };
         }
-        const userIdToReturn = this._currentTestUserId || (this._config.mockUser ? this._config.mockUser.id : "mock-user-id");
-        const userToReturn = this._config.mockUser ? 
-            { ...this._config.mockUser, id: userIdToReturn } : 
-            { id: userIdToReturn, aud: "authenticated", role: "authenticated", email: `${userIdToReturn}@example.com` };
+
+        // Prioritize explicitly provided mockUser in config, even if null
+        if (this._config.hasOwnProperty('mockUser')) { // Check if mockUser key is present in config
+            // If mockUser is explicitly set to null in config, return unauthenticated state
+            if (this._config.mockUser === null) {
+                return Promise.resolve({ data: { user: null }, error: null });
+            }
+            // If mockUser is an object, use it (potentially overriding id with currentTestUserId if provided)
+            if (typeof this._config.mockUser === 'object' && this._config.mockUser !== null) {
+                 const baseUser = { ...this._config.mockUser };
+                 if (this._currentTestUserId) { // currentTestUserId can override the id in mockUser if both are present
+                     baseUser.id = this._currentTestUserId;
+                 }
+                 return Promise.resolve({ data: { user: baseUser as User }, error: null });
+            }
+        }
+
+        // Fallback to currentTestUserId or a default mock user if mockUser is not explicitly in config
+        const userIdToReturn = this._currentTestUserId || "mock-user-id"; // Default if no currentTestUserId
+        const userToReturn = {
+            id: userIdToReturn,
+            aud: "authenticated",
+            role: "authenticated",
+            email: `${userIdToReturn}@example.com` 
+        };
 
         return Promise.resolve({ data: { user: userToReturn as User }, error: null });
     }

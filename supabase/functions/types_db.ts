@@ -427,6 +427,54 @@ export type Database = {
           },
         ]
       }
+      dialectic_session_prompts: {
+        Row: {
+          created_at: string
+          id: string
+          iteration_number: number
+          rendered_prompt_text: string
+          session_id: string
+          stage_association: string
+          system_prompt_id: string | null
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          iteration_number?: number
+          rendered_prompt_text: string
+          session_id: string
+          stage_association: string
+          system_prompt_id?: string | null
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          iteration_number?: number
+          rendered_prompt_text?: string
+          session_id?: string
+          stage_association?: string
+          system_prompt_id?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "dialectic_session_prompts_session_id_fkey"
+            columns: ["session_id"]
+            isOneToOne: false
+            referencedRelation: "dialectic_sessions"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "dialectic_session_prompts_system_prompt_id_fkey"
+            columns: ["system_prompt_id"]
+            isOneToOne: false
+            referencedRelation: "system_prompts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       dialectic_sessions: {
         Row: {
           active_antithesis_prompt_template_id: string | null

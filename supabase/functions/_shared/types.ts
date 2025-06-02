@@ -3,9 +3,7 @@
 // Types directly related to DB tables should be imported from ../types_db.ts
 import type { Database, Json } from '../types_db.ts';
 import type { handleCorsPreflightRequest, createSuccessResponse, createErrorResponse } from './cors-headers.ts';
-import { createClient, SupabaseClient } from "npm:@supabase/supabase-js";
-import type { Spy } from "jsr:@std/testing@0.225.1/mock";
-import type { User as SupabaseUser } from "npm:@supabase/supabase-js";
+import { createClient, SupabaseClient, User } from "npm:@supabase/supabase-js";
 import { Tables } from '../types_db.ts';
 import type { ITokenWalletService } from './types/tokenWallet.types.ts';
 // Import MessageForTokenCounting from the centralized location AT THE TOP
@@ -395,3 +393,23 @@ export interface TokenUsage {
 
 // Define ChatMessageRole locally for clarity if not available from shared types
 export type ChatMessageRole = 'system' | 'user' | 'assistant';
+
+// --- START: New/Standardized Interfaces ---
+
+export interface ServiceError {
+  message: string;
+  status?: number;
+  details?: string;
+  code?: string;
+}
+
+export interface GetUserFnResult {
+  data: { user: User | null };
+  error: ServiceError | null;
+}
+
+export interface GetUserFn {
+  (): Promise<GetUserFnResult>;
+}
+
+// --- END: New/Standardized Interfaces ---

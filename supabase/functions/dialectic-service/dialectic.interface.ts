@@ -190,3 +190,32 @@ export interface ContributionWithNestedOwner {
     } | null;
   } | null;
 }
+
+// --- START: Added for Project Resource Upload (1.0.B) ---
+export interface DialecticProjectResource {
+  id: string; // UUID
+  project_id: string; // UUID
+  user_id: string; // UUID
+  file_name: string;
+  storage_bucket: string;
+  storage_path: string;
+  mime_type: string;
+  size_bytes: number; // Represent BIGINT as number
+  resource_description: string | null;
+  created_at: string; // TIMESTAMPTZ as string
+  updated_at: string; // TIMESTAMPTZ as string
+}
+
+export interface UploadProjectResourceFilePayload {
+  projectId: string;
+  fileName: string; // Original file name
+  fileType: string; // MIME type
+  resourceDescription?: string | null;
+  // The actual file will be part of FormData, not this JSON payload
+}
+
+export interface UploadProjectResourceFileSuccessResponse {
+  message: string;
+  resource: DialecticProjectResource;
+}
+// --- END: Added for Project Resource Upload (1.0.B) ---

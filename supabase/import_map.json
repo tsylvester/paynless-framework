@@ -10,6 +10,7 @@
     "@paynless/db-types": "./functions/types_db.ts",
     "jsr:@std/assert": "jsr:@std/assert@^0.225.3",
     "jsr:@std/testing/bdd": "jsr:@std/testing@0.225.1/bdd",
-    "jsr:@std/testing/mock": "jsr:@std/testing@0.225.1/mock"
+    "jsr:@std/testing/mock": "jsr:@std/testing@0.225.1/mock",
+    "deno.land/x/expect/": "https://deno.land/x/expect@v0.3.0/"
   }
 }

@@ -237,7 +237,7 @@ The implementation plan uses the following labels to categorize work steps:
 *   `[✅] 1.0.3.D.3 [BE/API/STORE]` Integrate `selected_domain_tag` into Project Creation Flow.
     *   `[✅] 1.0.3.D.3.1` Modify `createProject` action in `dialectic-service` to accept and store `selected_domain_tag`. (Update tests)
     *   `[✅] 1.0.3.D.3.2` Modify `CreateProjectPayload` in API and Store to include `selected_domain_tag`. (Update tests)
-    *   `[ ] (Deferred to 1.5.3)` UI for `CreateDialecticProjectPage` will use `DomainSelector` and pass the selected tag.
+    *   `[✅] (Deferred to 1.5.3)` UI for `CreateDialecticProjectPage` will use `DomainSelector` and pass the selected tag.
 *   `[✅] 1.0.4 [RLS]` Define RLS for `system_prompts`.
     *   `[✅] 1.0.4.1 [TEST-INT]` RLS tests written and passing. (GREEN)
     *   `[✅] 1.0.4.2` Implemented RLS: Authenticated users can read active prompts (via `authenticated` role). Write/update operations restricted to `service_role` (e.g., for migrations, seed data scripts). Future admin role functionality deferred. (GREEN)
@@ -250,7 +250,7 @@ The implementation plan uses the following labels to categorize work steps:
 *   `[✅] 1.0.7 [COMMIT]` feat: foundational setup, RLS, and shared storage utility (Adjusted numbering & description)
 
 ### 1.0.A Shared UI Components - File Uploader
-*   `[🚧] 1.0.A.1 [UI]` Create Generic `FileUpload` Component in `apps/web/src/components/common/`. (Component implemented, various render modes including dropZoneOverlay and minimalButton. Drag/drop functionality refined. Refactored into `TextInputArea` and working well there. Standalone testing might still be partial.)
+*   `[✅] 1.0.A.1 [UI]` Create Generic `FileUpload` Component in `apps/web/src/components/common/`. (Component implemented, various render modes including dropZoneOverlay and minimalButton. Drag/drop functionality refined. Refactored into `TextInputArea` and working well there. Standalone testing might still be partial.)
     *   `[✅] 1.0.A.1.1 [TEST-UNIT]` Write unit tests for `FileUpload.tsx`. (RED -> GREEN - Basic tests for config, callbacks, and states are in place or mocked. Component is heavily used and tested via `TextInputArea.test.tsx`. Dedicated tests for `FileUpload` might be less comprehensive if covered by `TextInputArea`.)
         *   Test props: `config` (accepted file types as string array e.g., `['.md', 'image/png']`, max size, multiple files boolean, `onFileLoad` callback for client-side content, `onUploadTrigger` callback for backend upload).
         *   Test component states (idle, selecting, file-selected, loading-content, content-loaded, uploading-to-backend, backend-upload-success, backend-upload-error).
@@ -268,8 +268,8 @@ The implementation plan uses the following labels to categorize work steps:
 
 ### 1.0.B Backend and Data Model for Project Resources
 *   `[🚧] 1.0.B.1 [DB]` Create `dialectic_project_resources` table. (Schema defined, assumed implemented or to be implemented as prerequisite for upload functionality.)
-    *   `[ ] 1.0.B.1.1 [TEST-UNIT]` Write migration test for `dialectic_project_resources` table creation. (RED)
-    *   `[ ] 1.0.B.1.2` Define columns:
+    *   `[✅] 1.0.B.1.1 [TEST-UNIT]` Write migration test for `dialectic_project_resources` table creation. (RED)
+    *   `[✅] 1.0.B.1.2` Define columns:
         *   `id` (UUID, primary key, default `uuid_generate_v4()`)
         *   `project_id` (UUID, foreign key to `dialectic_projects.id` on delete cascade, not nullable)
         *   `user_id` (UUID, foreign key to `auth.users.id` on delete set null, not nullable)
@@ -281,28 +281,25 @@ The implementation plan uses the following labels to categorize work steps:
         *   `resource_description` (TEXT, nullable, e.g., "Initial prompt attachment for project creation")
         *   `created_at` (TIMESTAMPTZ, default `now()`, not nullable)
         *   `updated_at` (TIMESTAMPTZ, default `now()`, not nullable)
-    *   `[ ] 1.0.B.1.3` Create Supabase migration script for `dialectic_project_resources`. (GREEN)
-    *   `[ ] 1.0.B.1.4 [REFACTOR]` Review migration.
-    *   `[ ] 1.0.B.1.5 [TEST-UNIT]` Run `dialectic_project_resources` schema migration test.
-*   `[ ] 1.0.B.2 [RLS]` Define RLS for `dialectic_project_resources`.
-    *   `[ ] 1.0.B.2.1 [TEST-INT]` Write RLS tests (user can CRUD resources for projects they own; service role full access). (RED)
-    *   `[ ] 1.0.B.2.2` Implement RLS policies. (GREEN)
-    *   `[ ] 1.0.B.2.3 [TEST-INT]` Run RLS tests.
-*   `[🚧] 1.0.B.3 [BE]` `dialectic-service` Action: `uploadProjectResourceFile`. (Placeholder in form, actual backend implementation might be pending or in progress)
-    *   `[ ] 1.0.B.3.1 [TEST-INT]` Write integration tests for `uploadProjectResourceFile`. (RED)
+    *   `[✅] 1.0.B.1.3` Create Supabase migration script for `dialectic_project_resources`. (GREEN)
+    *   `[✅] 1.0.B.1.4 [REFACTOR]` Review migration.
+    *   `[✅] 1.0.B.1.5 [TEST-UNIT]` Run `dialectic_project_resources` schema migration test.
+*   `[✅] 1.0.B.2 [RLS]` Define RLS for `dialectic_project_resources`.
+    *   `[✅] 1.0.B.2.1 [TEST-INT]` Write RLS tests (user can CRUD resources for projects they own; service role full access). (RED)
+    *   `[✅] 1.0.B.2.2` Implement RLS policies. (GREEN)
+    *   `[✅ 1.0.B.2.3 [TEST-INT]` Run RLS tests.
+*   `[✅] 1.0.B.3 [BE]` `dialectic-service` Action: `uploadProjectResourceFile`.
+    *   `[✅] 1.0.B.3.1 [TEST-INT]` Write integration tests for `uploadProjectResourceFile`. (GREEN)
         *   Input: `projectId` (string), `fileName` (string), `fileType` (string/mime-type). The actual file will be part of a FormData request. Auth.
         *   Output: `DialecticProjectResource` object (or subset of its fields).
         *   Verifies file is uploaded to Supabase Storage in a path like `projects/{projectId}/resources/{fileName}` or `projects/{projectId}/resources/{resource_uuid}/{fileName}`.
         *   Verifies a record is created in `dialectic_project_resources`.
-    *   `[ ] 1.0.B.3.2` Implement `uploadProjectResourceFile` action in `supabase/functions/dialectic-service/index.ts`.
+    *   `[✅] 1.0.B.3.2` Implement `uploadProjectResourceFile` action in `supabase/functions/dialectic-service/index.ts`.
         *   Handle FormData/multipart file upload.
         *   Authenticate user and verify ownership of `projectId`.
         *   Use `uploadToStorage` utility (from `_shared/supabase_storage_utils.ts`).
-        *   Use `getFileMetadata` to get `sizeBytes`.
-        *   Insert record into `dialectic_project_resources` table.
-        *   Return details of the created resource. (GREEN)
-    *   `[ ] 1.0.B.3.3 [REFACTOR]` Review error handling, security (file type validation on backend if necessary), and path generation.
-    *   `[ ] 1.0.B.3.4 [TEST-INT]` Run `uploadProjectResourceFile` tests.
+    *   `[✅] 1.0.B.3.3 [REFACTOR]` Review error handling, security (file type validation on backend if necessary), and path generation.
+    *   `[✅] 1.0.B.3.4 [TEST-INT]` Run `uploadProjectResourceFile` tests.
 *   `[✅] 1.0.B.4 [API]` Extend `@paynless/api` for Project Resource Upload. (Assumed done for store functionality, type `DialecticProjectResource` exists or placeholder used).
     *   `[✅] 1.0.B.4.1` Define `DialecticProjectResource` type in `packages/types/src/dialectic.types.ts` (if not implicitly covered by DB types).
     *   `[✅] 1.0.B.4.2` Add `uploadProjectResourceFile(projectId: string, file: File, resourceDescription?: string): Promise<ApiResponse<DialecticProjectResource>>` to `DialecticAPIInterface`. Payload might need to be FormData.
@@ -348,8 +345,24 @@ The implementation plan uses the following labels to categorize work steps:
     *   `[✅] 1.1.2.3 [DB]` Define constraints (FKs already included with columns, add any CHECK constraints if needed for `status` or `iteration_count`).
     *   `[✅] 1.1.2.4 [REFACTOR]` Review migration script and table definition.
     *   `[✅] 1.1.2.5 [TEST-UNIT]` Run `dialectic_sessions` schema migration test. (GREEN)
-*   `[ ] 1.1.3 [DB]` Create `dialectic_session_prompts` table (or consider if columns in `dialectic_sessions` are sufficient for MVP if only one prompt pair per session iteration).
-    *   `[ ] 1.1.3.1 [TEST-UNIT]` Write migration test for `dialectic_session_prompts` table.
+*   `[✅] 1.1.3 [DB]` Create `dialectic_session_prompts` table (or consider if columns in `dialectic_sessions` are sufficient for MVP if only one prompt pair per session iteration).
+    *   `[✅] 1.1.3.1 [TEST-UNIT]` Write migration test for `dialectic_session_prompts` table.
+    *   `[✅] 1.1.3.2 [DB]` Create migration script for `dialectic_session_prompts` table.
+    *   `[✅] 1.1.3.3 [DB]` Update `types_db.ts` for `dialectic_session_prompts`.
+    *   `[✅] 1.1.3.4 [RLS]` Define RLS policies for `dialectic_session_prompts` table.
+        *   Policy Details:
+            *   **Service Role Access**: Full access (SELECT, INSERT, UPDATE, DELETE).
+            *   **Authenticated User Access (Project/Session Ownership Based)**:
+                *   **SELECT**: Users can SELECT if they own the associated `dialectic_project`.
+                    *   `USING`: `EXISTS (SELECT 1 FROM dialectic_sessions ds JOIN dialectic_projects dp ON ds.project_id = dp.id WHERE ds.id = dialectic_session_prompts.session_id AND dp.user_id = auth.uid())`
+                *   **INSERT**: Users can INSERT if they own the associated `dialectic_project` for the `NEW.session_id`.
+                    *   `WITH CHECK`: `EXISTS (SELECT 1 FROM dialectic_sessions ds JOIN dialectic_projects dp ON ds.project_id = dp.id WHERE ds.id = NEW.session_id AND dp.user_id = auth.uid())`
+                *   **UPDATE**: Users can UPDATE if they own the associated `dialectic_project`.
+                    *   `USING`: `EXISTS (SELECT 1 FROM dialectic_sessions ds JOIN dialectic_projects dp ON ds.project_id = dp.id WHERE ds.id = dialectic_session_prompts.session_id AND dp.user_id = auth.uid())`
+                    *   `WITH CHECK`: `EXISTS (SELECT 1 FROM dialectic_sessions ds JOIN dialectic_projects dp ON ds.project_id = dp.id WHERE ds.id = NEW.session_id AND dp.user_id = auth.uid())` (assuming session_id is not changed, otherwise OLD.session_id for the check part related to the original row context if session_id were mutable).
+                *   **DELETE**: Users can DELETE if they own the associated `dialectic_project`.
+                    *   `USING`: `EXISTS (SELECT 1 FROM dialectic_sessions ds JOIN dialectic_projects dp ON ds.project_id = dp.id WHERE ds.id = dialectic_session_prompts.session_id AND dp.user_id = auth.uid())`
+    *   `[✅] 1.1.3.5 [TEST-INT]` Write RLS tests for `dialectic_session_prompts`.
 *   `[✅] 1.1.4 [DB]` Create `dialectic_session_models` table (associative table for models participating in a session).
     *   `[✅] 1.1.4.1 [TEST-UNIT]` Write migration test for `dialectic_session_models` table. (GREEN)
     *   `[✅] 1.1.4.2` Define columns:

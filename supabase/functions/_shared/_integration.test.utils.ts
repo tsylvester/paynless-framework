@@ -583,13 +583,10 @@ export async function getTableConstraints(
         information_schema.table_constraints AS tc
     JOIN
         information_schema.key_column_usage AS kcu
-        ON tc.constraint_name = kcu.constraint_name
-        AND tc.table_schema = kcu.table_schema
-        AND tc.table_name = kcu.table_name
+        ON tc.constraint_name = kcu.constraint_name AND tc.table_schema = kcu.table_schema AND tc.table_name = kcu.table_name
     LEFT JOIN
         information_schema.referential_constraints AS rc
-        ON tc.constraint_name = rc.constraint_name
-        AND tc.constraint_schema = rc.constraint_schema
+        ON tc.constraint_name = rc.constraint_name AND tc.constraint_schema = rc.constraint_schema
     LEFT JOIN
         information_schema.table_constraints AS rc_ref -- Referenced table_constraints
         ON rc.unique_constraint_schema = rc_ref.table_schema
@@ -690,6 +687,261 @@ export async function getTableIndexes(
 export function setSharedAdminClient(client: SupabaseClient<Database>) {
   supabaseAdminClient = client;
 }
+
+export interface TriggerInfo {
+  trigger_name: string;
+  event_manipulation: string; // INSERT, DELETE, UPDATE, TRUNCATE
+  action_timing: string; // BEFORE, AFTER, INSTEAD OF
+  action_statement: string; // The command executed by the trigger
+  // Add other fields if needed, e.g., trigger_schema, trigger_table
+}
+
+export async function getTriggersForTable(
+  client: SupabaseClient<Database>,
+  tableName: string,
+  schemaName: string = "public"
+): Promise<TriggerInfo[]> {
+  const query = `
+    SELECT
+        trg.tgname AS trigger_name,
+        evt.evtname AS event_manipulation, -- This gives 'insert', 'delete', 'update', 'truncate'
+        CASE trg.tgtype::integer & 66 -- TG_TYPE_ROW (2) + TG_TYPE_BEFORE (0) / TG_TYPE_AFTER (4) / TG_TYPE_INSTEAD (64)
+            WHEN 2 THEN 'BEFORE' -- ROW BEFORE
+            WHEN 4 THEN 'AFTER'  -- ROW AFTER
+            WHEN 66 THEN 'INSTEAD OF' -- ROW INSTEAD OF
+            -- Add other combinations if needed, e.g., for statement-level triggers
+            ELSE 'UNKNOWN'
+        END AS action_timing,
+        pg_get_triggerdef(trg.oid) AS action_statement -- Gets the CREATE TRIGGER statement
+    FROM
+        pg_trigger trg
+    JOIN
+        pg_class cls ON cls.oid = trg.tgrelid
+    JOIN
+        pg_namespace nsp ON nsp.oid = cls.relnamespace
+    JOIN
+        pg_event_trigger evt ON evt.oid = trg.tgevent_oid -- This join might be incorrect, need to verify how to get event type simply.
+                                                        -- Simpler: parse from pg_get_triggerdef or use tgtype bits more extensively.
+
+    -- Correctly mapping event manipulation from tgtype as evtname from pg_event_trigger is not for specific table triggers
+    -- Let's use a more direct way to get event_manipulation
+    WHERE
+        cls.relname = '${tableName}' AND nsp.nspname = '${schemaName}' AND NOT trg.tgisinternal
+    ORDER BY
+        trigger_name;
+  `;
+  // A more robust way to get event_manipulation:
+   const query_correct_event = `
+    SELECT
+        trg.tgname AS trigger_name,
+        pg_get_triggerdef(trg.oid) AS trigger_definition, -- Contains full def, can parse event from here
+        CASE
+            WHEN (trg.tgtype::integer & (1<<2)) <> 0 THEN 'INSERT'
+            WHEN (trg.tgtype::integer & (1<<3)) <> 0 THEN 'DELETE'
+            WHEN (trg.tgtype::integer & (1<<4)) <> 0 THEN 'UPDATE'
+            WHEN (trg.tgtype::integer & (1<<5)) <> 0 THEN 'TRUNCATE'
+            ELSE 'UNKNOWN'
+        END AS event_manipulation,
+        CASE
+            WHEN (trg.tgtype::integer & (1<<0)) <> 0 THEN 'ROW' -- TG_ROW_TRIGGER
+            ELSE 'STATEMENT'
+        END AS trigger_level, -- ROW or STATEMENT
+        CASE
+            WHEN (trg.tgtype::integer & (1<<1)) <> 0 THEN 'BEFORE' -- TG_BEFORE_TRIGGER
+            WHEN (trg.tgtype::integer & (1<<6)) <> 0 THEN 'INSTEAD OF' -- TG_INSTEAD_TRIGGER
+            ELSE 'AFTER' -- AFTER by default if not BEFORE or INSTEAD OF (assuming tgtype & 4 for AFTER)
+        END AS action_timing,
+        proc.proname AS function_name, -- Name of the trigger function
+        nsp_proc.nspname AS function_schema -- Schema of the trigger function
+    FROM
+        pg_trigger trg
+    JOIN
+        pg_class cls ON cls.oid = trg.tgrelid
+    JOIN
+        pg_namespace nsp ON nsp.oid = cls.relnamespace
+    JOIN
+        pg_proc proc ON proc.oid = trg.tgfoid
+    JOIN
+        pg_namespace nsp_proc ON nsp_proc.oid = proc.pronamespace
+    WHERE
+        cls.relname = '${tableName}' AND nsp.nspname = '${schemaName}' AND NOT trg.tgisinternal
+    ORDER BY
+        trigger_name;
+   `;
+  // The above query for event is still a bit complex.
+  // pg_get_triggerdef(trg.oid) itself is very informative.
+  // Let's simplify and derive from execute_sql and process, or use a known structure.
+  // For the 'handle_updated_at' use case, we often just need to know if a trigger calls a specific function.
+
+  // Simplified query focusing on typical needs for 'handle_updated_at'
+  const final_query = `
+    SELECT
+        tgname AS trigger_name,
+        tgtype, -- Raw type, can decode later if needed
+        pg_get_triggerdef(oid) as action_statement, -- Full definition, good for checks
+        CASE
+            WHEN (tgtype::integer & (1<<2)) <> 0 THEN 'INSERT'
+            WHEN (tgtype::integer & (1<<3)) <> 0 THEN 'DELETE'
+            WHEN (tgtype::integer & (1<<4)) <> 0 THEN 'UPDATE'
+            ELSE 'TRUNCATE' -- Assuming tgconstrrelid means it's not TRUNCATE if others are false
+        END AS event_manipulation,
+        CASE
+            WHEN (tgtype::integer & (1<<1)) <> 0 THEN 'BEFORE'
+            WHEN (tgtype::integer & (1<<6)) <> 0 THEN 'INSTEAD OF'
+            ELSE 'AFTER'
+        END AS action_timing
+    FROM pg_trigger
+    WHERE tgrelid = (SELECT oid FROM pg_class WHERE relname = '${tableName}' AND relnamespace = (SELECT oid FROM pg_namespace WHERE nspname = '${schemaName}'))
+      AND NOT tgisinternal
+    ORDER BY trigger_name
+  `;
+
+  const { data, error } = await client.rpc('execute_sql' as any, { query: final_query });
+  if (error) {
+    console.error(`Error fetching triggers for ${schemaName}.${tableName}:`, error);
+    throw error;
+  }
+  return (data as any[]).map(trg => ({
+      trigger_name: trg.trigger_name,
+      event_manipulation: trg.event_manipulation,
+      action_timing: trg.action_timing,
+      action_statement: trg.action_statement,
+  }));
+}
+
+export interface ForeignKeyInfo {
+    constraint_name: string;
+    foreign_key_column: string; // Name of the column in the referencing table
+    referenced_table_name: string;
+    referenced_column_name: string; // Name of the column in the referenced table
+    delete_rule: string; // NO ACTION, RESTRICT, CASCADE, SET NULL, SET DEFAULT
+    update_rule: string; // NO ACTION, RESTRICT, CASCADE, SET NULL, SET DEFAULT
+}
+
+export async function getForeignKeyInfo(
+  client: SupabaseClient<Database>,
+  tableName: string,
+  schemaName: string = "public"
+): Promise<ForeignKeyInfo[]> {
+  const fkQuery = `
+    SELECT
+        tc.constraint_name AS constraint_name,
+        kcu.column_name AS foreign_key_column,
+        tc_ref.table_name AS referenced_table_name,
+        kcu_ref.column_name AS referenced_column_name,
+        rc.delete_rule,
+        rc.update_rule
+    FROM
+        information_schema.table_constraints AS tc
+    JOIN
+        information_schema.key_column_usage AS kcu
+        ON tc.constraint_schema = kcu.constraint_schema
+        AND tc.constraint_name = kcu.constraint_name
+        AND tc.table_name = kcu.table_name
+    LEFT JOIN
+        information_schema.referential_constraints AS rc
+        ON tc.constraint_schema = rc.constraint_schema
+        AND tc.constraint_name = rc.constraint_name
+    LEFT JOIN
+        information_schema.table_constraints AS tc_ref
+        ON rc.unique_constraint_schema = tc_ref.constraint_schema
+        AND rc.unique_constraint_name = tc_ref.constraint_name
+    LEFT JOIN
+        information_schema.key_column_usage AS kcu_ref
+        ON tc_ref.constraint_schema = kcu_ref.constraint_schema
+        AND tc_ref.constraint_name = kcu_ref.constraint_name
+        AND kcu.position_in_unique_constraint = kcu_ref.ordinal_position
+    WHERE
+        tc.table_schema = '${schemaName}'
+        AND tc.table_name = '${tableName}'
+        AND tc.constraint_type = 'FOREIGN KEY'
+    ORDER BY
+        tc.constraint_name, kcu.ordinal_position
+  `;
+
+   const { data: rawFks, error } = await client.rpc('execute_sql' as any, { query: fkQuery });
+
+   if (error) {
+     console.error(`Error fetching detailed foreign key info for ${schemaName}.${tableName}:`, error);
+     throw error;
+   }
+
+  return (rawFks as any[]).map((fk: any) => ({
+    constraint_name: fk.constraint_name,
+    foreign_key_column: fk.foreign_key_column,
+    referenced_table_name: fk.referenced_table_name,
+    referenced_column_name: fk.referenced_column_name,
+    delete_rule: fk.delete_rule,
+    update_rule: fk.update_rule,
+  }));
+}
+
+
+export interface UniqueConstraintInfo {
+  constraint_name: string;
+  column_names: string[];
+}
+
+export async function getUniqueConstraintInfo(
+  client: SupabaseClient<Database>,
+  tableName: string,
+  schemaName: string = "public"
+): Promise<UniqueConstraintInfo[]> {
+  const constraints = await getTableConstraints(client, tableName, schemaName);
+  return constraints
+    .filter(c => c.constraint_type === 'UNIQUE')
+    .map(c => ({
+      constraint_name: c.constraint_name,
+      column_names: c.constrained_columns.sort(), // Sort for consistent comparison
+    }));
+}
+
+export interface PrimaryKeyInfo {
+  constraint_name: string;
+  column_name: string; // Assuming PKs are usually single-column for this simplified version
+                       // Or we can make it column_names: string[] like UNIQUE
+}
+// To match the test which expects an array of {column_name: string} for PKs
+export interface PrimaryKeyColumnInfo {
+    column_name: string;
+}
+
+
+export async function getPrimaryKeyInfo(
+  client: SupabaseClient<Database>,
+  tableName: string,
+  schemaName: string = "public"
+): Promise<PrimaryKeyColumnInfo[]> {
+  const constraints = await getTableConstraints(client, tableName, schemaName);
+  const pkConstraint = constraints.find(c => c.constraint_type === 'PRIMARY KEY');
+  if (pkConstraint) {
+    return pkConstraint.constrained_columns.map(colName => ({ column_name: colName }));
+  }
+  return [];
+}
+
+export async function isRLSEnabled(
+  client: SupabaseClient<Database>,
+  tableName: string,
+  schemaName: string = "public"
+): Promise<boolean> {
+  const query = `
+    SELECT relrowsecurity
+    FROM pg_class cl
+    JOIN pg_namespace nsp ON nsp.oid = cl.relnamespace
+    WHERE cl.relname = '${tableName}' AND nsp.nspname = '${schemaName}'
+  `;
+  const { data, error } = await client.rpc('execute_sql' as any, { query: query });
+  if (error) {
+    console.error(`Error checking RLS status for ${schemaName}.${tableName}:`, error);
+    throw error;
+  }
+  if (data && data.length > 0) {
+    return (data[0] as any).relrowsecurity === true;
+  }
+  return false; // Or throw error if table not found
+}
+
 
 /**
  * Initializes the testing environment for a single test case or a group of related test cases.

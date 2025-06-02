@@ -15,7 +15,7 @@ import { Database } from '../../functions/types_db.ts';
 import {
     initializeSupabaseAdminClient, 
     coreCreateAndSetupTestUser 
-} from '../../functions/chat/_integration.test.utils.ts';
+} from '../../functions/_shared/_integration.test.utils.ts';
 
 describe('Integration Test: dialectic_sessions table and migrations', () => {
     let supabase: SupabaseClient<Database>;
@@ -29,7 +29,9 @@ describe('Integration Test: dialectic_sessions table and migrations', () => {
         
         // 1. Create a dummy user using the utility function
         try {
-            testUserId = await coreCreateAndSetupTestUser();
+            const { userId, userClient } = await coreCreateAndSetupTestUser();
+            testUserId = userId;
+            supabase = userClient;
         } catch (error) {
             console.error('Error creating test user via utility:', error);
             throw error; // Fail fast if user creation fails

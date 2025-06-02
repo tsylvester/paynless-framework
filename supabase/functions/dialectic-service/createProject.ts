@@ -1,5 +1,5 @@
 // deno-lint-ignore-file no-explicit-any
-import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2.39.8";
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { 
     CreateProjectPayload, 
   } from "./dialectic.interface.ts";

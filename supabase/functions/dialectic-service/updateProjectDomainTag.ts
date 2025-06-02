@@ -2,105 +2,100 @@
 import { 
     UpdateProjectDomainTagPayload, 
   } from "./dialectic.interface.ts";
-// import { createSupabaseClient } from "../_shared/auth.ts"; // To be replaced by DI
-import type { SupabaseClient } from '@supabase/supabase-js';
+import type { SupabaseClient, PostgrestError } from 'npm:@supabase/supabase-js'; // Import User and PostgrestError
+import type { 
+    ServiceError, 
+    GetUserFn, 
+    ILogger 
+} from '../_shared/types.ts'; // Import shared types
 
 console.log("updateProjectDomainTag function started");
 
-// --- START: Added for DI ---
-interface User {
-  id: string;
-  // Add other user properties if needed by the function
-}
+// --- START: Added for DI --- (REMOVING THESE LOCAL DEFINITIONS)
+// interface User {
+//   id: string;
+// }
+// interface AuthError {
+//     message: string;
+//     status?: number;
+// }
+// interface GetUserFnResult {
+//   data: { user: User | null };
+//   error: AuthError | null;
+// }
+// interface GetUserFn {
+//   (): Promise<GetUserFnResult>;
+// }
+// --- END: Added for DI ---
 
-interface AuthError {
-    message: string;
-    status?: number;
-    // Add other relevant Supabase auth error properties if needed
-}
-
-interface GetUserFnResult {
-  data: { user: User | null };
-  error: AuthError | null;
-}
-
-interface GetUserFn {
-  (): Promise<GetUserFnResult>;
-}
-
+// IsValidDomainTagFn is specific to this service's DI, keep its definition local or move to dialectic.interface.ts if shared across dialectic actions
 interface IsValidDomainTagFn {
   (dbClient: SupabaseClient, domainTag: string): Promise<boolean>;
 }
-// --- END: Added for DI ---
 
-// Placeholder for isValidDomainTag - this should be implemented or imported properly
-// For now, to make the function runnable, we'll create a dummy one.
-// In a real scenario, this would interact with the DB or a predefined list.
-async function dummyIsValidDomainTag(dbClient: SupabaseClient, domainTag: string): Promise<boolean> {
-  console.warn(`dummyIsValidDomainTag called with: ${domainTag}. Returning true by default.`);
-  // In a real implementation, you would query `domain_specific_prompt_overlays`
-  // to see if the tag exists, e.g.:
-  // const { data, error } = await dbClient.from('domain_specific_prompt_overlays').select('domain_tag').eq('domain_tag', domainTag).maybeSingle();
-  // return !error && !!data;
-  return true; // Returning true for now so refactoring can proceed.
+interface UpdateProjectDomainTagSuccessData {
+  id: string;
+  project_name: string;
+  selected_domain_tag: string | null;
+  updated_at: string;
 }
 
 export async function updateProjectDomainTag(
-    // req: Request, // Replaced by getUserFn
-    getUserFn: GetUserFn,
-    dbAdminClient: SupabaseClient, // Typed as SupabaseClient
-    isValidDomainTagFn: IsValidDomainTagFn, // Injected
-    payload: UpdateProjectDomainTagPayload
-  ) {
+    getUserFn: GetUserFn, // Use imported GetUserFn
+    dbAdminClient: SupabaseClient, 
+    isValidDomainTagFn: IsValidDomainTagFn, 
+    payload: UpdateProjectDomainTagPayload,
+    logger: ILogger // Add ILogger parameter
+  ): Promise<{ data?: UpdateProjectDomainTagSuccessData; error?: ServiceError }> { // Return type uses ServiceError and specific data type
     const { projectId, domainTag } = payload;
   
     if (!projectId) {
+      logger.warn('updateProjectDomainTag: projectId is required', { payload });
       return { error: { message: "projectId is required", status: 400, code: "VALIDATION_ERROR" } };
     }
   
-    // const supabaseUserClient = createSupabaseClient(req); // Replaced
-    // const { data: { user }, error: userError } = await supabaseUserClient.auth.getUser(); // Replaced
-    const { data: { user }, error: userError } = await getUserFn();
+    const { data: { user }, error: userAuthError } = await getUserFn(); // userAuthError will be ServiceError | null
   
-    if (userError || !user) {
-      console.warn("User not authenticated for updateProjectDomainTag", userError);
-      return { error: { message: "User not authenticated", status: 401, code: "AUTH_ERROR" } };
+    if (userAuthError || !user) {
+      logger.warn("User not authenticated for updateProjectDomainTag", { error: userAuthError });
+      const errorResponse: ServiceError = userAuthError 
+        ? { ...userAuthError, code: userAuthError.code || 'AUTH_ERROR' } 
+        : { message: 'User not authenticated.', status: 401, code: 'AUTH_ERROR' };
+      return { error: errorResponse };
     }
+    // user is now of type User (from npm:@supabase/supabase-js)
   
-    if (domainTag !== null) {
-      // const tagIsValid = await isValidDomainTag(dbAdminClient, domainTag); // Original call
-      const tagIsValid = await isValidDomainTagFn(dbAdminClient, domainTag); // Use injected function
+    if (domainTag !== null && domainTag !== undefined) { // Check for undefined too, if null means clear, empty string might be invalid
+      const tagIsValid = await isValidDomainTagFn(dbAdminClient, domainTag);
       if (!tagIsValid) {
+        logger.warn('updateProjectDomainTag: Invalid domainTag', { domainTag, projectId });
         return { error: { message: `Invalid domainTag: "${domainTag}"`, status: 400, code: "INVALID_DOMAIN_TAG" } };
       }
     }
   
-    const { data: projectData, error: projectError } = await dbAdminClient
+    const { data: projectData, error: projectDbError } = await dbAdminClient
       .from('dialectic_projects')
       .update({ selected_domain_tag: domainTag, updated_at: new Date().toISOString() })
       .eq('id', projectId)
-      .eq('user_id', user.id) // Security: ensure user owns the project
+      .eq('user_id', user.id) 
       .select('id, project_name, selected_domain_tag, updated_at')
-      .single(); // Use single() to expect one row or throw PGRST116 if not found/not unique
+      .single(); 
   
-    if (projectError) {
-      console.error("Error updating project domain tag:", projectError);
-      if (projectError.code === 'PGRST116') { // PGRST116: "Searched for a single row, but 0 or more than 1 rows were found"
+    if (projectDbError) {
+      logger.error("Error updating project domain tag in DB", { error: projectDbError, projectId, userId: user.id });
+      const pgError = projectDbError as PostgrestError; // Type cast to PostgrestError
+      if (pgError.code === 'PGRST116') { 
           return { error: { message: "Project not found or access denied", status: 404, code: "NOT_FOUND_OR_FORBIDDEN" } };
       }
-      return { error: { message: "Failed to update project domain tag", details: projectError.message, status: 500, code: "DB_UPDATE_ERROR" } };
+      return { error: { message: "Failed to update project domain tag", details: pgError.message, status: 500, code: "DB_UPDATE_ERROR" } };
     }
   
-    // .single() should guarantee projectData is not null if no error occurred.
-    // However, an explicit check for !projectData is fine for robustness, though typically PGRST116 would cover it.
-    // If .single() succeeds, projectData will be an object. If it fails (0 or >1 rows), projectError will be set.
-    // So, this explicit !projectData check might be redundant if PGRST116 handling is comprehensive.
-    // For now, keeping it as in the original, but noting .single() behavior.
     if (!projectData) { 
-      // This case should ideally be caught by projectError.code === 'PGRST116' from .single()
-      return { error: { message: "Project not found or access denied after update attempt (unexpected)", status: 404, code: "UNEXPECTED_NOT_FOUND" } };
+      logger.error('Project not found after successful DB update attempt (unexpected)', { projectId, userId: user.id });
+      return { error: { message: "Project not found after update attempt (unexpected)", status: 404, code: "UNEXPECTED_NOT_FOUND" } };
     }
-  
+    
+    logger.info('Project domain tag updated successfully', { projectId, newDomainTag: domainTag });
     return { data: projectData };
   }
   

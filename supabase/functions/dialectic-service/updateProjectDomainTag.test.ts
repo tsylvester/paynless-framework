@@ -11,31 +11,61 @@ import {
     type MockSupabaseClientSetup,
     type MockQueryBuilderState
 } from '../_shared/supabase.mock.ts';
-import type { SupabaseClient, PostgrestError } from "@supabase/supabase-js";
+import type { SupabaseClient, PostgrestError, User } from "@supabase/supabase-js";
+import type { ILogger, LogMetadata, GetUserFn, ServiceError, GetUserFnResult } from '../_shared/types.ts';
 
+// Removed local DI Interface definitions as they conflict with or are superseded by shared/imported types
 // --- START: Local DI Interfaces from updateProjectDomainTag.ts ---
-interface User {
-  id: string;
-}
-interface AuthError {
-    message: string;
-    status?: number;
-}
-interface GetUserFnResult {
-  data: { user: User | null };
-  error: AuthError | null;
-}
-interface GetUserFn {
-  (): Promise<GetUserFnResult>;
-}
+// interface User { ... }
+// interface AuthError { ... }
+// interface GetUserFnResult { ... }
+// interface GetUserFn { ... }
+// --- END: Local DI Interfaces ---
+
+// IsValidDomainTagFn is specific to this service's DI
 interface IsValidDomainTagFn {
   (dbClient: SupabaseClient, domainTag: string): Promise<boolean>;
 }
-// --- END: Local DI Interfaces ---
 
-// Helper objects for stubbing
+const mockLogger: ILogger = {
+    debug: (message: string, metadata?: LogMetadata) => console.debug("[DEBUG]", message, metadata || ''),
+    info: (message: string, metadata?: LogMetadata) => console.log("[INFO]", message, metadata || ''),
+    warn: (message: string, metadata?: LogMetadata) => console.warn("[WARN]", message, metadata || ''),
+    error: (message: string | Error, metadata?: LogMetadata) => console.error("[ERROR]", message, metadata || ''),
+};
+
+// Helper function to create a more complete mock Supabase User
+const createMockSupabaseUser = (id: string, email?: string): User => ({
+    id,
+    app_metadata: { provider: 'email', providers: ['email'] },
+    user_metadata: { name: `Test User ${id}` },
+    aud: 'authenticated',
+    confirmation_sent_at: new Date().toISOString(),
+    recovery_sent_at: new Date().toISOString(),
+    email_change_sent_at: new Date().toISOString(),
+    new_email: undefined,
+    new_phone: undefined,
+    invited_at: undefined,
+    action_link: undefined,
+    email: email || `${id}@example.com`,
+    phone: undefined,
+    created_at: new Date().toISOString(),
+    confirmed_at: new Date().toISOString(),
+    email_confirmed_at: new Date().toISOString(),
+    phone_confirmed_at: undefined,
+    last_sign_in_at: new Date().toISOString(),
+    role: 'authenticated',
+    updated_at: new Date().toISOString(),
+    identities: [],
+    factors: [],
+});
+
+// Helper objects for stubbing using the correct User type
 const mockAuthFunctions = {
-    getUser: async (): Promise<GetUserFnResult> => ({ data: { user: { id: 'default-user' } }, error: null })
+    getUser: async (): Promise<GetUserFnResult> => ({
+         data: { user: createMockSupabaseUser('default-user') }, 
+         error: null 
+    })
 };
 
 const mockValidationFunctions = {
@@ -57,7 +87,7 @@ describe('updateProjectDomainTag', () => {
 
     beforeEach(() => {
         // Stub the methods on the helper objects
-        mockGetUserFnStub = stub(mockAuthFunctions, "getUser", async () => ({ data: { user: { id: defaultUserId } }, error: null }));
+        mockGetUserFnStub = stub(mockAuthFunctions, "getUser", async () => ({ data: { user: createMockSupabaseUser(defaultUserId) }, error: null }));
         mockIsValidDomainTagFnStub = stub(mockValidationFunctions, "isValidTag", async () => true); 
 
         const defaultConfig: MockSupabaseDataConfig = {
@@ -94,7 +124,7 @@ describe('updateProjectDomainTag', () => {
 
     it('should return error if projectId is missing', async () => {
         const payload: UpdateProjectDomainTagPayload = { projectId: '', domainTag: 'test' };
-        const result = await updateProjectDomainTag(mockAuthFunctions.getUser, mockDbAdminClient as any, mockValidationFunctions.isValidTag, payload);
+        const result = await updateProjectDomainTag(mockAuthFunctions.getUser as GetUserFn, mockDbAdminClient as any, mockValidationFunctions.isValidTag, payload, mockLogger);
         
         assertExists(result.error);
         assertEquals(result.error.message, 'projectId is required');
@@ -104,9 +134,9 @@ describe('updateProjectDomainTag', () => {
 
     it('should return error if user is not authenticated', async () => {
         mockGetUserFnStub.restore(); // restore default stub
-        mockGetUserFnStub = stub(mockAuthFunctions, "getUser", async () => ({ data: { user: null }, error: { message: "Auth failed"} }));
+        mockGetUserFnStub = stub(mockAuthFunctions, "getUser", async () => ({ data: { user: null }, error: { message: "User not authenticated", status: 401, code: 'AUTH_ERROR' } as ServiceError }));
         const payload: UpdateProjectDomainTagPayload = { projectId: defaultProjectId, domainTag: 'test' };
-        const result = await updateProjectDomainTag(mockAuthFunctions.getUser, mockDbAdminClient as any, mockValidationFunctions.isValidTag, payload);
+        const result = await updateProjectDomainTag(mockAuthFunctions.getUser as GetUserFn, mockDbAdminClient as any, mockValidationFunctions.isValidTag, payload, mockLogger);
 
         assertExists(result.error);
         assertEquals(result.error.message, 'User not authenticated');
@@ -118,7 +148,7 @@ describe('updateProjectDomainTag', () => {
         mockIsValidDomainTagFnStub.restore();
         mockIsValidDomainTagFnStub = stub(mockValidationFunctions, "isValidTag", async () => false);
         const payload: UpdateProjectDomainTagPayload = { projectId: defaultProjectId, domainTag: 'invalid-tag' };
-        const result = await updateProjectDomainTag(mockAuthFunctions.getUser, mockDbAdminClient as any, mockValidationFunctions.isValidTag, payload);
+        const result = await updateProjectDomainTag(mockAuthFunctions.getUser as GetUserFn, mockDbAdminClient as any, mockValidationFunctions.isValidTag, payload, mockLogger);
 
         assertExists(result.error);
         assertEquals(result.error.message, 'Invalid domainTag: "invalid-tag"');
@@ -159,7 +189,7 @@ describe('updateProjectDomainTag', () => {
         mockSupabaseSetup = createMockSupabaseClient(defaultUserId, config);
         mockDbAdminClient = mockSupabaseSetup.client;
 
-        const result = await updateProjectDomainTag(mockAuthFunctions.getUser, mockDbAdminClient as any, mockValidationFunctions.isValidTag, payload);
+        const result = await updateProjectDomainTag(mockAuthFunctions.getUser as GetUserFn, mockDbAdminClient as any, mockValidationFunctions.isValidTag, payload, mockLogger);
 
         assertExists(result.data);
         assertEquals(result.error, undefined);
@@ -195,7 +225,7 @@ describe('updateProjectDomainTag', () => {
         mockSupabaseSetup = createMockSupabaseClient(defaultUserId, config);
         mockDbAdminClient = mockSupabaseSetup.client;
 
-        const result = await updateProjectDomainTag(mockAuthFunctions.getUser, mockDbAdminClient as any, mockValidationFunctions.isValidTag, payload);
+        const result = await updateProjectDomainTag(mockAuthFunctions.getUser as GetUserFn, mockDbAdminClient as any, mockValidationFunctions.isValidTag, payload, mockLogger);
 
         assertExists(result.data);
         assertEquals(result.error, undefined);
@@ -217,7 +247,7 @@ describe('updateProjectDomainTag', () => {
         mockDbAdminClient = mockSupabaseSetup.client;
 
         const payload: UpdateProjectDomainTagPayload = { projectId: 'non-existent-project', domainTag: 'test' };
-        const result = await updateProjectDomainTag(mockAuthFunctions.getUser, mockDbAdminClient as any, mockValidationFunctions.isValidTag, payload);
+        const result = await updateProjectDomainTag(mockAuthFunctions.getUser as GetUserFn, mockDbAdminClient as any, mockValidationFunctions.isValidTag, payload, mockLogger);
 
         assertExists(result.error);
         assertEquals(result.error.message, 'Project not found or access denied');
@@ -239,7 +269,7 @@ describe('updateProjectDomainTag', () => {
         mockDbAdminClient = mockSupabaseSetup.client;
 
         const payload: UpdateProjectDomainTagPayload = { projectId: defaultProjectId, domainTag: 'test' };
-        const result = await updateProjectDomainTag(mockAuthFunctions.getUser, mockDbAdminClient as any, mockValidationFunctions.isValidTag, payload);
+        const result = await updateProjectDomainTag(mockAuthFunctions.getUser as GetUserFn, mockDbAdminClient as any, mockValidationFunctions.isValidTag, payload, mockLogger);
 
         assertExists(result.error);
         assertEquals(result.error.message, 'Failed to update project domain tag');

@@ -5,7 +5,7 @@ import {
   TableColumnInfo,
   TableConstraintInfo,
   initializeSupabaseAdminClient
-} from '../../functions/chat/_integration.test.utils.ts';
+} from '../../functions/_shared/_integration.test.utils.ts';
 import type { Database } from '../../functions/types_db.ts';
 import {
     describe,
